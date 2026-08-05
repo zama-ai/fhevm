@@ -1,14 +1,13 @@
 //! Fixtures for the Solana authorization suite.
 //!
-//! The centre of this module is [`World`] plus [`ScriptedReader`]: a set of accounts at a
-//! slot, and a reader that answers from it while recording what it was asked for. That pair
-//! is what turns a race into a value — a scenario is two worlds, not two moments — and it is
-//! what lets the suite assert how many times authorization reads state, which is otherwise an
-//! invisible property.
+//! The centre of this module is [`World`] plus [`ScriptedReader`]: a set of accounts at a slot, and
+//! a reader that answers from it while recording what it was asked for. That pair is what turns a
+//! race into a value — a scenario is two worlds, not two moments — and it is what lets the suite
+//! assert how many times authorization reads state, which is otherwise an invisible property.
 //!
-//! Everything else here builds the three account layouts authorization reads (lineage,
-//! delegation record, invalidation record) and signs real permits with a real wallet key, so
-//! no test depends on a signature the code under test produced.
+//! Everything else here builds the three account layouts authorization reads (encrypted value
+//! account, delegation record, invalidation record) and signs real permits with a real wallet key,
+//! so no test depends on a signature the code under test produced.
 
 // Groups land one at a time; a builder written for a later group is early, not dead.
 #![allow(dead_code)]
@@ -49,11 +48,11 @@ pub const GENESIS_HASH: [u8; 32] = [9; 32];
 /// chain id must.
 pub const CHAIN_ID: u64 = SOLANA_CHAIN_TYPE_BIT | 0x0123_4567_89ab_cdef;
 
-/// The ACL domain of the default lineage.
+/// The ACL domain of the default encrypted value account.
 pub const DOMAIN: SolanaPubkeyBytes = [1; 32];
-/// The app account of the default lineage.
+/// The app account of the default encrypted value account.
 pub const APP: SolanaPubkeyBytes = [2; 32];
-/// The label of the default lineage.
+/// The label of the default encrypted value account.
 pub const LABEL: [u8; 32] = *b"balance_________________________";
 
 /// FHE type byte of a boolean handle — the narrowest type, two bits.
@@ -276,32 +275,54 @@ impl<'a> RequestBuilder<'a> {
     }
 
     /// Adds a direct current-access entry: the signer owns the handle and claims it is live.
-    pub fn direct_current(self, lineage: &LineageFixture, handle: [u8; 32]) -> Self {
+    pub fn direct_current(
+        self,
+        encrypted_value_account: &EncryptedValueAccountFixture,
+        handle: [u8; 32],
+    ) -> Self {
         let owner = self.wallet.pubkey();
-        self.entry(handle, owner, lineage.encrypted_value_id(), 0, Vec::new())
+        self.entry(
+            handle,
+            owner,
+            encrypted_value_account.encrypted_value_id(),
+            0,
+            Vec::new(),
+        )
     }
 
     /// Adds a delegated current-access entry: `delegator` owns the handle.
     pub fn delegated_current(
         self,
-        lineage: &LineageFixture,
+        encrypted_value_account: &EncryptedValueAccountFixture,
         handle: [u8; 32],
         delegator: SolanaPubkeyBytes,
     ) -> Self {
-        self.entry(handle, delegator, lineage.encrypted_value_id(), 0, Vec::new())
+        self.entry(
+            handle,
+            delegator,
+            encrypted_value_account.encrypted_value_id(),
+            0,
+            Vec::new(),
+        )
     }
 
     /// Adds a historical-access entry carrying a proof.
     pub fn historical(
         self,
-        lineage: &LineageFixture,
+        encrypted_value_account: &EncryptedValueAccountFixture,
         handle: [u8; 32],
         owner: SolanaPubkeyBytes,
         proof: &MmrProof,
         proof_leaf_count: u64,
     ) -> Self {
         let bytes = borsh::to_vec(proof).expect("a proof serializes");
-        self.entry(handle, owner, lineage.encrypted_value_id(), proof_leaf_count, bytes)
+        self.entry(
+            handle,
+            owner,
+            encrypted_value_account.encrypted_value_id(),
+            proof_leaf_count,
+            bytes,
+        )
     }
 
     /// Adds an entry verbatim, for the malformed cases.
@@ -343,24 +364,26 @@ impl<'a> RequestBuilder<'a> {
 // Account layouts
 // ---------------------------------------------------------------------------
 
-/// A lineage as the host program would hold it, with the leaves needed to build proofs.
+/// An encrypted value account as the host program would hold it, with the leaves needed to build
+/// proofs.
 #[derive(Clone, Debug)]
-pub struct LineageFixture {
-    /// The lineage state.
-    pub lineage: EncryptedValue,
+pub struct EncryptedValueAccountFixture {
+    /// The encrypted value account state.
+    pub encrypted_value: EncryptedValue,
     /// Its canonical address.
     pub account_key: SolanaPubkeyBytes,
     /// Every leaf appended so far, so proofs can be rebuilt.
     pub leaves: Vec<[u8; 32]>,
 }
 
-impl LineageFixture {
-    /// A lineage in the fixture domain and app, holding `current_handle` for `subjects`.
+impl EncryptedValueAccountFixture {
+    /// An encrypted value account in the fixture domain and app, holding `current_handle` for
+    /// `subjects`.
     pub fn new(current_handle: [u8; 32], subjects: &[SolanaPubkeyBytes]) -> Self {
         Self::in_domain(DOMAIN, APP, LABEL, current_handle, subjects)
     }
 
-    /// A lineage in an arbitrary domain, app and label.
+    /// An encrypted value account in an arbitrary domain, app and label.
     pub fn in_domain(
         domain: SolanaPubkeyBytes,
         encrypted_value_account_authority: SolanaPubkeyBytes,
@@ -368,10 +391,11 @@ impl LineageFixture {
         current_handle: [u8; 32],
         subjects: &[SolanaPubkeyBytes],
     ) -> Self {
-        let encrypted_value_id = derive_encrypted_value_id(domain, encrypted_value_account_authority, label);
+        let encrypted_value_id =
+            derive_encrypted_value_id(domain, encrypted_value_account_authority, label);
         let (account_key, bump) = encrypted_value_acl_address(PROGRAM_ID, encrypted_value_id);
         Self {
-            lineage: EncryptedValue {
+            encrypted_value: EncryptedValue {
                 domain,
                 encrypted_value_account_authority,
                 label,
@@ -386,35 +410,35 @@ impl LineageFixture {
         }
     }
 
-    /// The lineage identity a request names.
+    /// The encrypted value account identity a request names.
     pub fn encrypted_value_id(&self) -> [u8; 32] {
-        self.lineage.encrypted_value_id()
+        self.encrypted_value.encrypted_value_id()
     }
 
     /// Replaces the current handle, sealing a historical leaf for each current subject —
     /// what the host program does on a write.
     pub fn update(&mut self, new_handle: [u8; 32]) {
-        let replaced = self.lineage.current_handle;
-        for index in 0..self.lineage.subjects.len() {
-            let leaf_index = self.lineage.leaf_count;
+        let replaced = self.encrypted_value.current_handle;
+        for index in 0..self.encrypted_value.subjects.len() {
+            let leaf_index = self.encrypted_value.leaf_count;
             let commitment = historical_access_leaf_commitment(
                 self.account_key,
                 leaf_index,
                 replaced,
-                self.lineage.subjects[index],
+                self.encrypted_value.subjects[index],
             );
             self.append(commitment);
         }
-        self.lineage.current_handle = new_handle;
+        self.encrypted_value.current_handle = new_handle;
     }
 
     /// Seals a public-decrypt leaf for the current handle.
     pub fn mark_public(&mut self) {
-        let leaf_index = self.lineage.leaf_count;
+        let leaf_index = self.encrypted_value.leaf_count;
         let commitment = public_decrypt_leaf_commitment(
             self.account_key,
             leaf_index,
-            self.lineage.current_handle,
+            self.encrypted_value.current_handle,
         );
         self.append(commitment);
     }
@@ -422,8 +446,8 @@ impl LineageFixture {
     /// Appends a commitment, keeping the leaf list in step with the MMR.
     pub fn append(&mut self, commitment: [u8; 32]) {
         mmr_append(
-            &mut self.lineage.peaks,
-            &mut self.lineage.leaf_count,
+            &mut self.encrypted_value.peaks,
+            &mut self.encrypted_value.leaf_count,
             commitment,
         )
         .expect("the fixture MMR accepts an append");
@@ -437,13 +461,15 @@ impl LineageFixture {
 
     /// Replaces the subject set, as a membership rotation does.
     pub fn rotate_subjects(&mut self, subjects: &[SolanaPubkeyBytes]) {
-        self.lineage.subjects = subjects.to_vec();
+        self.encrypted_value.subjects = subjects.to_vec();
     }
 
     /// The account as the host program would write it: discriminator then body.
     pub fn account(&self) -> SnapshotAccount {
         let mut data = encrypted_value_discriminator().to_vec();
-        data.extend_from_slice(&borsh::to_vec(&self.lineage).expect("the lineage serializes"));
+        data.extend_from_slice(
+            &borsh::to_vec(&self.encrypted_value).expect("the encrypted value account serializes"),
+        );
         SnapshotAccount {
             owner: PROGRAM_ID,
             data,
@@ -584,9 +610,15 @@ impl World {
         }
     }
 
-    /// Places a lineage in the world.
-    pub fn with_lineage(mut self, lineage: &LineageFixture) -> Self {
-        self.accounts.insert(lineage.account_key, lineage.account());
+    /// Places an encrypted value account in the world.
+    pub fn with_encrypted_value_account(
+        mut self,
+        encrypted_value_account: &EncryptedValueAccountFixture,
+    ) -> Self {
+        self.accounts.insert(
+            encrypted_value_account.account_key,
+            encrypted_value_account.account(),
+        );
         self
     }
 

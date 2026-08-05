@@ -7,7 +7,7 @@
 //!
 //! Two absences are deliberate and are the whole of rule h6 on the request side: no
 //! `encrypted_value_account_authority` field and no `acl_domain` field, in either the wire form or the validated
-//! form. The app context of a handle is a property of its lineage account, and the only way
+//! form. The app context of a handle is a property of its encrypted value account, and the only way
 //! to learn it is to read and validate that account. A request cannot name it, so a
 //! substituted app context is not a check that can be forgotten — it is a value that does
 //! not exist.
@@ -16,7 +16,7 @@
 //!
 //! Naming an app context in a request must stay a compile error, because the delegated branch
 //! is looked up by app account: a request that could name one could name an app the signer
-//! does hold a delegation for, against a lineage belonging to somebody else's application.
+//! does hold a delegation for, against an encrypted value account belonging to somebody else's application.
 //!
 //! ```compile_fail
 //! use kms_worker::core::solana::request::SolanaHandleEntryWire;
@@ -59,7 +59,7 @@ pub const MAX_ACCESS_PROOF_SIBLINGS: usize = 64;
 ///
 /// Every rule is evaluated against one atomic `getMultipleAccounts` snapshot, and a standard
 /// Solana RPC node serves at most 100 accounts per call. The worst-case request needs three
-/// accounts per entry — the lineage account plus the two delegation rows — and the signer's
+/// accounts per entry — the encrypted value account plus the two delegation rows — and the signer's
 /// invalidation record on top: `3 * N + 1 <= 100` gives 33. The Gateway entry point enforces
 /// the same cap at admission, before the fee, so a request that exists as an event already
 /// satisfies it; this bound keeps the snapshot's readability a property of this module rather
@@ -88,7 +88,7 @@ pub struct SolanaHandleEntryWire {
     /// Claimed 32-byte ciphertext owner: the signer for a direct entry, the delegator for a
     /// delegated one.
     pub owner: Vec<u8>,
-    /// Claimed 32-byte lineage identity.
+    /// Claimed 32-byte encrypted value account identity.
     pub encrypted_value_id: Vec<u8>,
     /// The `leaf_count` the access proof was built against; 0 in current mode. Diagnostic
     /// only — it classifies an already-failed inclusion check and never decides one.
@@ -101,8 +101,8 @@ pub struct SolanaHandleEntryWire {
 /// mixes both.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum AccessEvidence {
-    /// No proof: the handle must be the lineage's current handle and the subject a current
-    /// member.
+    /// No proof: the handle must be the encrypted value account's current handle and the subject a
+    /// current member.
     Current,
     /// An inclusion proof for a replaced handle, verified against the snapshot's live
     /// peaks.
@@ -131,7 +131,7 @@ impl SolanaHandleEntry {
         self.owner
     }
 
-    /// The lineage this entry qualifies under.
+    /// The encrypted value account this entry qualifies under.
     pub fn encrypted_value_id(&self) -> [u8; 32] {
         self.encrypted_value_id
     }
@@ -238,7 +238,11 @@ fn decode_entry(
     Ok(SolanaHandleEntry {
         handle: entry_identity(index, EntryField::Handle, &entry.handle)?,
         owner: entry_identity(index, EntryField::Owner, &entry.owner)?,
-        encrypted_value_id: entry_identity(index, EntryField::EncryptedValueId, &entry.encrypted_value_id)?,
+        encrypted_value_id: entry_identity(
+            index,
+            EntryField::EncryptedValueId,
+            &entry.encrypted_value_id,
+        )?,
         proof_leaf_count: entry.proof_leaf_count,
         access: decode_access_evidence(index, &entry.access_proof)?,
     })
@@ -355,6 +359,6 @@ pub enum EntryField {
     Handle,
     /// The ciphertext owner.
     Owner,
-    /// The lineage identity.
+    /// The encrypted value account identity.
     EncryptedValueId,
 }

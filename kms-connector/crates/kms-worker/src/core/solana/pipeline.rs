@@ -8,11 +8,11 @@
 //!   → deployment identity and chain-id agreement
 //!   → KMS pair servability
 //!   → READ host state
-//!   → if any entry is delegated: resolve its lineage to learn the app account, then READ
+//!   → if any entry is delegated: resolve its encrypted value account to learn the app account, then READ
 //!     again with the delegation records added — that read is the deciding observation and
 //!     the first read's values are discarded
 //!   → invalidation watermark
-//!   → per entry: lineage → app context → handle binding → scope
+//!   → per entry: encrypted value account → app context → handle binding → scope
 //!   → per delegated entry: delegation freshness
 //!   → accepted
 //! ```
@@ -24,7 +24,7 @@
 //!
 //! Every rule below the reads takes the *deciding* snapshot: the last read, whole and on its
 //! own. A delegated request reads twice because a delegation address is not computable before
-//! a lineage has been read, and the earlier read is a discovery step whose values decide
+//! an encrypted value account has been read, and the earlier read is a discovery step whose values decide
 //! nothing (see [`super::snapshot`]). The two are held to their order and nothing else: a
 //! deciding read older than the discovery read is refused as the lagging node it is, transiently.
 //!
@@ -37,12 +37,14 @@
 
 use super::delegation::{check_delegation, delegation_address, wildcard_delegation_address};
 use super::deployment::{DeploymentIdentity, check_deployment};
+use super::encrypted_value_account::{
+    ResolvedEncryptedValueAccount, resolve_encrypted_value_account,
+};
 use super::failure::AuthorizationFailure;
 use super::handle_binding::{
     HandleBindingFailure, check_handle_binding, classify_inclusion_failure,
 };
 use super::kms_pair::KmsPairValidator;
-use super::lineage::{ResolvedLineage, resolve_lineage};
 use super::request::{RequestFormError, SolanaUserDecryptRequest};
 use super::scope::check_scope;
 use super::snapshot::{HostSnapshot, HostStateReader, plan_first_read, plan_second_read};
@@ -68,9 +70,9 @@ pub struct AuthorizedEntry {
     /// The subject whose access was established: the signer for a direct entry, the
     /// delegator for a delegated one.
     pub subject: SolanaPubkeyBytes,
-    /// The app account, read from the validated lineage.
+    /// The app account, read from the validated encrypted value account.
     pub encrypted_value_account_authority: SolanaPubkeyBytes,
-    /// The ACL domain, read from the validated lineage.
+    /// The ACL domain, read from the validated encrypted value account.
     pub domain: SolanaPubkeyBytes,
 }
 
@@ -168,8 +170,8 @@ where
         .await?;
 
     // The reads. The first covers the signer's invalidation record and one account per named
-    // lineage; a delegated entry then needs a second, because its record's address is a function
-    // of an app account only its lineage can supply.
+    // encrypted value account; a delegated entry then needs a second, because its record's address
+    // is a function of an app account only its encrypted value account can supply.
     let first_keys = plan_first_read(request, context.deployment);
     let first = reader.read_accounts(&first_keys).await?;
     let delegation_keys = discover_delegation_keys(&first, program_id, signer, request)?;
@@ -191,32 +193,49 @@ where
     let mut entries = Vec::with_capacity(request.handles().len());
     let mut delegated = Vec::new();
     for (index, entry) in request.handles().iter().enumerate() {
-        let lineage = resolve_lineage(&observation, program_id, entry.encrypted_value_id())
-            .map_err(|source| AuthorizationFailure::Lineage { index, source })?;
+        let encrypted_value_account =
+            resolve_encrypted_value_account(&observation, program_id, entry.encrypted_value_id())
+                .map_err(|source| AuthorizationFailure::EncryptedValueAccount { index, source })?;
 
         // The subject is the entry's owner in both branches: the signer for a direct entry, the
-        // delegator for a delegated one. Proving the signer's own standing in the delegated
-        // branch would authorize a delegate against lineages the delegator never had.
+        // delegator for a delegated one. Proving the signer's own standing in the delegated branch
+        // would authorize a delegate against encrypted value accounts the delegator never had.
         let subject = entry.owner();
-        check_handle_binding(&lineage, entry.handle(), subject, entry.access())
-            .map_err(|source| classify_binding_failure(index, entry.proof_leaf_count(), source))?;
-        check_scope(permit.allowed_acl_domain_keys(), &lineage)
+        check_handle_binding(
+            &encrypted_value_account,
+            entry.handle(),
+            subject,
+            entry.access(),
+        )
+        .map_err(|source| classify_binding_failure(index, entry.proof_leaf_count(), source))?;
+        check_scope(permit.allowed_acl_domain_keys(), &encrypted_value_account)
             .map_err(|source| AuthorizationFailure::Scope { index, source })?;
 
         if subject != signer {
-            delegated.push((index, subject, lineage.encrypted_value_account_authority()));
+            delegated.push((
+                index,
+                subject,
+                encrypted_value_account.encrypted_value_account_authority(),
+            ));
         }
         entries.push(AuthorizedEntry {
             handle: entry.handle(),
             subject,
-            encrypted_value_account_authority: lineage.encrypted_value_account_authority(),
-            domain: lineage.domain(),
+            encrypted_value_account_authority: encrypted_value_account
+                .encrypted_value_account_authority(),
+            domain: encrypted_value_account.domain(),
         });
     }
 
     for (index, delegator, encrypted_value_account_authority) in delegated {
-        check_delegation(&observation, program_id, delegator, signer, encrypted_value_account_authority)
-            .map_err(|source| AuthorizationFailure::Delegation { index, source })?;
+        check_delegation(
+            &observation,
+            program_id,
+            delegator,
+            signer,
+            encrypted_value_account_authority,
+        )
+        .map_err(|source| AuthorizationFailure::Delegation { index, source })?;
     }
 
     Ok(AuthorizedRequest {
@@ -229,15 +248,16 @@ where
 /// Derives the delegation-record addresses a delegated request needs, from the discovery read.
 ///
 /// This is the only use the first read of a delegated request is put to, and it is why the read
-/// happens at all. The lineage is resolved here to learn its app account and for no other
-/// purpose: every rule, including the resolution of this same lineage, is applied again against
-/// the deciding observation.
+/// happens at all. The encrypted value account is resolved here to learn its app account and for no
+/// other purpose: every rule, including the resolution of this same encrypted value account, is
+/// applied again against the deciding observation.
 ///
-/// Two addresses per delegated entry, because two rows can carry the grant: the lineage's app
-/// account and the delegator's wildcard row. Both are planned unconditionally rather than the
-/// wildcard being fetched only when the app-specific row is missing — that would be a third read,
-/// and a rule that reads state after the deciding observation is the thing this pipeline does not
-/// do. Repeats collapse in the key set, so a batch under one delegator costs one wildcard key.
+/// Two addresses per delegated entry, because two rows can carry the grant: the encrypted value
+/// account's app account and the delegator's wildcard row. Both are planned unconditionally rather
+/// than the wildcard being fetched only when the app-specific row is missing — that would be a
+/// third read, and a rule that reads state after the deciding observation is the thing this
+/// pipeline does not do. Repeats collapse in the key set, so a batch under one delegator costs one
+/// wildcard key.
 ///
 /// Empty for a direct-only request, which is what makes that request cost one read.
 fn discover_delegation_keys(
@@ -252,10 +272,15 @@ fn discover_delegation_keys(
         if delegator == signer {
             continue;
         }
-        let lineage: ResolvedLineage = resolve_lineage(first, program_id, entry.encrypted_value_id())
-            .map_err(|source| AuthorizationFailure::Lineage { index, source })?;
-        let (account_key, _) =
-            delegation_address(program_id, delegator, signer, lineage.encrypted_value_account_authority());
+        let encrypted_value_account: ResolvedEncryptedValueAccount =
+            resolve_encrypted_value_account(first, program_id, entry.encrypted_value_id())
+                .map_err(|source| AuthorizationFailure::EncryptedValueAccount { index, source })?;
+        let (account_key, _) = delegation_address(
+            program_id,
+            delegator,
+            signer,
+            encrypted_value_account.encrypted_value_account_authority(),
+        );
         keys.push(account_key);
         let (wildcard_key, _) = wildcard_delegation_address(program_id, delegator, signer);
         keys.push(wildcard_key);

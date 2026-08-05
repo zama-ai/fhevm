@@ -287,13 +287,19 @@ mod tests {
 
     const HOST_PROGRAM_ID: SolanaPubkeyBytes = [42; 32];
     const OWNER: SolanaPubkeyBytes = [3; 32];
-    const APP_ACCOUNT: SolanaPubkeyBytes = [2; 32];
+    const AUTHORITY: SolanaPubkeyBytes = [2; 32];
     const DELEGATE: SolanaPubkeyBytes = [5; 32];
     const OBSERVED_SLOT: u64 = 500;
 
-    fn delegation_for_app(encrypted_value_account_authority: SolanaPubkeyBytes) -> UserDecryptionDelegationWitness {
-        let (account_key, bump) =
-            user_decryption_delegation_address(HOST_PROGRAM_ID, OWNER, DELEGATE, encrypted_value_account_authority);
+    fn delegation_for_authority(
+        encrypted_value_account_authority: SolanaPubkeyBytes,
+    ) -> UserDecryptionDelegationWitness {
+        let (account_key, bump) = user_decryption_delegation_address(
+            HOST_PROGRAM_ID,
+            OWNER,
+            DELEGATE,
+            encrypted_value_account_authority,
+        );
         UserDecryptionDelegationWitness {
             account_key,
             owner: HOST_PROGRAM_ID,
@@ -309,7 +315,7 @@ mod tests {
     }
 
     fn delegation() -> UserDecryptionDelegationWitness {
-        delegation_for_app(APP_ACCOUNT)
+        delegation_for_authority(AUTHORITY)
     }
 
     fn encode_delegation(delegation: &UserDecryptionDelegationWitness) -> Vec<u8> {
@@ -329,14 +335,7 @@ mod tests {
     fn verifies_delegation() {
         let verifier = SolanaAclVerifier::new(HOST_PROGRAM_ID);
         assert_eq!(
-            verifier.verify_delegation(
-                &delegation(),
-                OWNER,
-                DELEGATE,
-                APP_ACCOUNT,
-                9,
-                OBSERVED_SLOT
-            ),
+            verifier.verify_delegation(&delegation(), OWNER, DELEGATE, AUTHORITY, 9, OBSERVED_SLOT),
             Ok(())
         );
     }
@@ -364,7 +363,7 @@ mod tests {
                 &wrong_delegate,
                 OWNER,
                 DELEGATE,
-                APP_ACCOUNT,
+                AUTHORITY,
                 9,
                 OBSERVED_SLOT
             ),
@@ -386,7 +385,7 @@ mod tests {
                 &wildcard_delegate,
                 OWNER,
                 WILDCARD_APP_CONTEXT,
-                APP_ACCOUNT,
+                AUTHORITY,
                 9,
                 OBSERVED_SLOT
             ),
@@ -396,26 +395,19 @@ mod tests {
         let mut wrong_pda = delegation();
         wrong_pda.account_key = [14; 32];
         assert_eq!(
-            verifier.verify_delegation(&wrong_pda, OWNER, DELEGATE, APP_ACCOUNT, 9, OBSERVED_SLOT),
+            verifier.verify_delegation(&wrong_pda, OWNER, DELEGATE, AUTHORITY, 9, OBSERVED_SLOT),
             Err(SolanaAclVerificationError::NonCanonicalDelegation)
         );
 
         assert_eq!(
-            verifier.verify_delegation(
-                &delegation(),
-                OWNER,
-                DELEGATE,
-                APP_ACCOUNT,
-                8,
-                OBSERVED_SLOT
-            ),
+            verifier.verify_delegation(&delegation(), OWNER, DELEGATE, AUTHORITY, 8, OBSERVED_SLOT),
             Err(SolanaAclVerificationError::DelegationCounterMismatch)
         );
 
         let mut revoked = delegation();
         revoked.revoked = true;
         assert_eq!(
-            verifier.verify_delegation(&revoked, OWNER, DELEGATE, APP_ACCOUNT, 9, OBSERVED_SLOT),
+            verifier.verify_delegation(&revoked, OWNER, DELEGATE, AUTHORITY, 9, OBSERVED_SLOT),
             Err(SolanaAclVerificationError::DelegationNotActive)
         );
     }

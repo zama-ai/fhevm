@@ -47,14 +47,14 @@
 pub mod delegation;
 /// Deployment identity: which program, which cluster.
 pub mod deployment;
+/// Encrypted value account resolution: presence, ownership, type, identity binding, app context.
+pub mod encrypted_value_account;
 /// Failure taxonomy and the terminal / transient / retryable classification.
 pub mod failure;
 /// Handle binding: current membership and historical inclusion proofs.
 pub mod handle_binding;
 /// KMS context/epoch servability.
 pub mod kms_pair;
-/// Lineage resolution: presence, ownership, type, identity binding, app context.
-pub mod lineage;
 /// The authorization pipeline.
 pub mod pipeline;
 /// The normalized request and its strict decoding.

@@ -22,60 +22,64 @@
 //! consult one. The count reaches [`classify_inclusion_failure`] only, and only the pipeline
 //! calls it — after the binding rule has already said no.
 
-use super::lineage::ResolvedLineage;
+use super::encrypted_value_account::ResolvedEncryptedValueAccount;
 use super::request::AccessEvidence;
 use crate::core::solana_acl::{HandleBytes, SolanaPubkeyBytes};
 use zama_solana_acl::{AclError, MmrProof, authorize_current, authorize_historical};
 
-/// Establishes that `subject` may decrypt `handle` under this lineage.
+/// Establishes that `subject` may decrypt `handle` under this encrypted value account.
 ///
-/// Takes the resolved lineage — never raw account bytes — so the membership set and the MMR
-/// commitments it reads are the validated ones.
+/// Takes the resolved encrypted value account — never raw account bytes — so the membership set and
+/// the MMR commitments it reads are the validated ones.
 pub fn check_handle_binding(
-    lineage: &ResolvedLineage,
+    encrypted_value_account: &ResolvedEncryptedValueAccount,
     handle: HandleBytes,
     subject: SolanaPubkeyBytes,
     access: &AccessEvidence,
 ) -> Result<(), HandleBindingFailure> {
     match access {
-        AccessEvidence::Current => check_current(lineage, handle, subject),
-        AccessEvidence::Historical(proof) => check_historical(lineage, handle, subject, proof),
+        AccessEvidence::Current => check_current(encrypted_value_account, handle, subject),
+        AccessEvidence::Historical(proof) => {
+            check_historical(encrypted_value_account, handle, subject, proof)
+        }
     }
 }
 
 /// Current mode: the named handle is the live one and the subject is in the live subject set.
 fn check_current(
-    lineage: &ResolvedLineage,
+    encrypted_value_account: &ResolvedEncryptedValueAccount,
     handle: HandleBytes,
     subject: SolanaPubkeyBytes,
 ) -> Result<(), HandleBindingFailure> {
-    authorize_current(lineage.lineage(), handle, subject).map_err(|error| match error {
-        AclError::HandleMismatch => HandleBindingFailure::NotCurrentHandle {
-            requested: handle,
-            current: lineage.lineage().current_handle,
-        },
-        AclError::SubjectMissing => HandleBindingFailure::NotAMember { subject },
-        // Current mode consults no MMR and no proof, so nothing else the shared rule can say
-        // reaches here. Enumerated rather than caught, so a new outcome breaks the build.
-        AclError::MmrInconsistent
-        | AclError::MmrPeakCapacityExceeded
-        | AclError::SubjectCapacityExceeded
-        | AclError::BadDiscriminator
-        | AclError::BadAccountData
-        | AclError::HistoricalProofInvalid
-        | AclError::PublicDecryptProofInvalid => HandleBindingFailure::MmrStateInconsistent,
+    authorize_current(encrypted_value_account.encrypted_value(), handle, subject).map_err(|error| {
+        match error {
+            AclError::HandleMismatch => HandleBindingFailure::NotCurrentHandle {
+                requested: handle,
+                current: encrypted_value_account.encrypted_value().current_handle,
+            },
+            AclError::SubjectMissing => HandleBindingFailure::NotAMember { subject },
+            // Current mode consults no MMR and no proof, so nothing else the shared rule can say
+            // reaches here. Enumerated rather than caught, so a new outcome breaks the build.
+            AclError::MmrInconsistent
+            | AclError::MmrPeakCapacityExceeded
+            | AclError::SubjectCapacityExceeded
+            | AclError::BadDiscriminator
+            | AclError::BadAccountData
+            | AclError::HistoricalProofInvalid
+            | AclError::PublicDecryptProofInvalid => HandleBindingFailure::MmrStateInconsistent,
+        }
     })
 }
 
-/// Historical mode: a sealed leaf naming this lineage, position, handle and subject, proven
-/// against the observed peaks.
+/// Historical mode: a sealed leaf naming this encrypted value account, position, handle and
+/// subject, proven against the observed peaks.
 fn check_historical(
-    lineage: &ResolvedLineage,
+    encrypted_value_account: &ResolvedEncryptedValueAccount,
     handle: HandleBytes,
     subject: SolanaPubkeyBytes,
     proof: &MmrProof,
 ) -> Result<(), HandleBindingFailure> {
-    let value = lineage.lineage();
+    let value = encrypted_value_account.encrypted_value();
 
     // An MMR has one peak per set bit of its leaf count. A state that does not is the host
     // program's own inconsistency, and calling it a proof failure would tell the client to
@@ -84,8 +88,8 @@ fn check_historical(
         return Err(HandleBindingFailure::MmrStateInconsistent);
     }
 
-    // A position the lineage does not have is refused before any hashing: there is nothing for
-    // the proof to be a proof of, and the distinction is worth naming in the failure.
+    // A position the encrypted value account does not have is refused before any hashing: there is
+    // nothing for the proof to be a proof of, and the distinction is worth naming in the failure.
     if proof.leaf_index >= value.leaf_count {
         return Err(HandleBindingFailure::LeafIndexOutOfRange {
             leaf_index: proof.leaf_index,
@@ -96,7 +100,14 @@ fn check_historical(
     // Verify first. Age is not a failure — an append merges only some peaks, so an older proof
     // whose peak survived still verifies, and it must be accepted. Only a proof that genuinely
     // does not verify is reported, and it carries the observed count and not the claimed one.
-    authorize_historical(lineage.account_key(), value, handle, subject, proof).map_err(|error| {
+    authorize_historical(
+        encrypted_value_account.account_key(),
+        value,
+        handle,
+        subject,
+        proof,
+    )
+    .map_err(|error| {
         match error {
             AclError::HistoricalProofInvalid => HandleBindingFailure::ProofDoesNotVerify {
                 live_leaf_count: value.leaf_count,
@@ -147,18 +158,19 @@ pub enum InclusionAction {
 /// Why a handle was not bound to its subject.
 #[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]
 pub enum HandleBindingFailure {
-    /// Current mode: the lineage's current handle is not the one named. The request is not
-    /// silently redirected to whatever is live now — the same handle remains reachable as
+    /// Current mode: the encrypted value account's current handle is not the one named. The request
+    /// is not silently redirected to whatever is live now — the same handle remains reachable as
     /// historical access, because replacing a handle seals a leaf for the then-subjects.
-    #[error("lineage's current handle is not the requested one")]
+    #[error("encrypted value account's current handle is not the requested one")]
     NotCurrentHandle {
         /// The handle the request named.
         requested: HandleBytes,
-        /// The handle the lineage currently holds.
+        /// The handle the encrypted value account currently holds.
         current: HandleBytes,
     },
-    /// Current mode: the subject is not a member of the lineage's current subject set.
-    #[error("subject {subject:?} is not a current member of the lineage")]
+    /// Current mode: the subject is not a member of the encrypted value account's current subject
+    /// set.
+    #[error("subject {subject:?} is not a current member of the encrypted value account")]
     NotAMember {
         /// The subject whose access was being established.
         subject: SolanaPubkeyBytes,
@@ -173,7 +185,7 @@ pub enum HandleBindingFailure {
         /// The leaf count observed in the snapshot.
         live_leaf_count: u64,
     },
-    /// Historical mode: the proof names a leaf position the lineage does not have.
+    /// Historical mode: the proof names a leaf position the encrypted value account does not have.
     #[error("leaf index {leaf_index} is not below the observed leaf count {leaf_count}")]
     LeafIndexOutOfRange {
         /// The position the proof claims.
@@ -181,7 +193,8 @@ pub enum HandleBindingFailure {
         /// The observed count.
         leaf_count: u64,
     },
-    /// The lineage's own MMR state is internally inconsistent, which no retry can repair.
-    #[error("lineage MMR state is internally inconsistent")]
+    /// The encrypted value account's own MMR state is internally inconsistent, which no retry can
+    /// repair.
+    #[error("encrypted value account MMR state is internally inconsistent")]
     MmrStateInconsistent,
 }

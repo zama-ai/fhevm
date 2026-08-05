@@ -39,10 +39,10 @@ mod schema;
 use kms_worker::core::solana::{
     delegation::DelegationFailure,
     deployment::{DeploymentFailure, SOLANA_CHAIN_TYPE_BIT},
+    encrypted_value_account::EncryptedValueAccountFailure,
     failure::{AuthorizationFailure, FailureClass as ConnectorClass},
     handle_binding::HandleBindingFailure,
     kms_pair::{KmsPairFailure, KmsPairValidator},
-    lineage::LineageFailure,
     pipeline::{AuthorizationContext, authorize_request},
     request::{
         MAX_REQUEST_HANDLES, RequestFormError, SolanaHandleEntryWire, SolanaUserDecryptRequest,
@@ -173,28 +173,28 @@ impl Scenario {
 /// The reference direct request: the signer's own live handle, in a signed domain.
 fn reference_direct() -> (
     Wallet,
-    LineageFixture,
+    EncryptedValueAccountFixture,
     [u8; 32],
     SolanaUserDecryptRequestWire,
     World,
 ) {
     let wallet = Wallet::new(1);
     let live = handle(0x10, FHE_TYPE_UINT64);
-    let lineage = LineageFixture::new(live, &[wallet.pubkey()]);
+    let encrypted_value_account = EncryptedValueAccountFixture::new(live, &[wallet.pubkey()]);
     let request = RequestBuilder::new(&wallet)
-        .direct_current(&lineage, live)
+        .direct_current(&encrypted_value_account, live)
         .wire();
     let world = World::at_slot(OBSERVED_SLOT)
-        .with_lineage(&lineage)
+        .with_encrypted_value_account(&encrypted_value_account)
         .with_watermark(wallet.pubkey(), 0);
-    (wallet, lineage, live, request, world)
+    (wallet, encrypted_value_account, live, request, world)
 }
 
 /// The reference delegated request: a handle the delegator owns, used by the signer.
 fn reference_delegated() -> (
     Wallet,
     Wallet,
-    LineageFixture,
+    EncryptedValueAccountFixture,
     [u8; 32],
     DelegationFixture,
     SolanaUserDecryptRequestWire,
@@ -203,52 +203,71 @@ fn reference_delegated() -> (
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let live = handle(0x20, FHE_TYPE_UINT64);
-    let lineage = LineageFixture::new(live, &[delegator.pubkey()]);
+    let encrypted_value_account = EncryptedValueAccountFixture::new(live, &[delegator.pubkey()]);
     let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
     let request = RequestBuilder::new(&signer)
-        .delegated_current(&lineage, live, delegator.pubkey())
+        .delegated_current(&encrypted_value_account, live, delegator.pubkey())
         .wire();
     let world = World::at_slot(OBSERVED_SLOT)
-        .with_lineage(&lineage)
+        .with_encrypted_value_account(&encrypted_value_account)
         .with_watermark(signer.pubkey(), 0)
         .with_delegation(&delegation);
-    (signer, delegator, lineage, live, delegation, request, world)
+    (
+        signer,
+        delegator,
+        encrypted_value_account,
+        live,
+        delegation,
+        request,
+        world,
+    )
 }
 
-/// A lineage whose handle was replaced once, and the proof of the sealed leaf.
-fn replaced_lineage(tag: u8, subject: SolanaPubkeyBytes) -> (LineageFixture, [u8; 32], MmrProof) {
+/// An encrypted value account whose handle was replaced once, and the proof of the sealed leaf.
+fn replaced_encrypted_value_account(
+    tag: u8,
+    subject: SolanaPubkeyBytes,
+) -> (EncryptedValueAccountFixture, [u8; 32], MmrProof) {
     let sealed = handle(tag, FHE_TYPE_UINT64);
-    let mut lineage = LineageFixture::new(sealed, &[subject]);
-    lineage.update(handle(tag.wrapping_add(1), FHE_TYPE_UINT64));
-    let proof = lineage.proof(0);
-    (lineage, sealed, proof)
+    let mut encrypted_value_account = EncryptedValueAccountFixture::new(sealed, &[subject]);
+    encrypted_value_account.update(handle(tag.wrapping_add(1), FHE_TYPE_UINT64));
+    let proof = encrypted_value_account.proof(0);
+    (encrypted_value_account, sealed, proof)
 }
 
 fn accepting_scenarios() -> Vec<Scenario> {
     let mut out = Vec::new();
 
-    let (wallet, _lineage, _live, request, world) = reference_direct();
+    let (wallet, _encrypted_value_account, _live, request, world) = reference_direct();
     out.push(Scenario::accepted(
         "direct-current",
         "The reference request: the signer names their own live handle, is a current member of its \
-         lineage, and the lineage's domain is in the signed scope.",
+         encrypted value account, and the encrypted value account's domain is in the signed scope.",
         request,
         world,
     ));
 
-    let (_signer, _delegator, _lineage, _live, _delegation, request, world) = reference_delegated();
+    let (_signer, _delegator, _encrypted_value_account, _live, _delegation, request, world) =
+        reference_delegated();
     out.push(Scenario::accepted(
         "delegated-current",
         "A handle owned by a delegator, used by the signer under a live delegation for the \
-         lineage's app account. The authorized subject is the delegator.",
+         encrypted value account's app account. The authorized subject is the delegator.",
         request,
         world,
     ));
 
     // The same request, authorized by the delegator's wildcard row instead: no row exists for this
-    // lineage's app account at all.
-    let (wildcard_signer, wildcard_delegator, wildcard_lineage, wildcard_live, _, _, _) =
-        reference_delegated();
+    // encrypted value account's app account at all.
+    let (
+        wildcard_signer,
+        wildcard_delegator,
+        wildcard_encrypted_value_account,
+        wildcard_live,
+        _,
+        _,
+        _,
+    ) = reference_delegated();
     let wildcard_row = DelegationFixture::live_wildcard(
         wildcard_delegator.pubkey(),
         wildcard_signer.pubkey(),
@@ -257,44 +276,45 @@ fn accepting_scenarios() -> Vec<Scenario> {
     out.push(Scenario::accepted(
         "delegated-via-wildcard-row",
         "A delegator grants across every one of their apps with one row carrying the reserved \
-         app-context sentinel instead of an app account. It authorizes a lineage that has no \
+         app-context sentinel instead of an app account. It authorizes an encrypted value account that has no \
          app-specific row, exactly as the EVM ACL's wildcard delegation does. The consequence is \
          part of the rule: revoking the app-specific row does not stop a delegate who holds this \
          one.",
         RequestBuilder::new(&wildcard_signer)
             .delegated_current(
-                &wildcard_lineage,
+                &wildcard_encrypted_value_account,
                 wildcard_live,
                 wildcard_delegator.pubkey(),
             )
             .wire(),
         World::at_slot(OBSERVED_SLOT)
-            .with_lineage(&wildcard_lineage)
+            .with_encrypted_value_account(&wildcard_encrypted_value_account)
             .with_watermark(wildcard_signer.pubkey(), 0)
             .with_delegation(&wildcard_row),
     ));
 
-    let (lineage, sealed, proof) = replaced_lineage(0x30, wallet.pubkey());
+    let (encrypted_value_account, sealed, proof) =
+        replaced_encrypted_value_account(0x30, wallet.pubkey());
     out.push(Scenario::accepted(
         "historical-after-supersession",
         "The handle has been replaced, and the leaf sealed for the signer at that moment proves \
          the access. No new wallet signature is involved: proofs live outside the permit.",
         RequestBuilder::new(&wallet)
-            .historical(&lineage, sealed, wallet.pubkey(), &proof, 1)
+            .historical(&encrypted_value_account, sealed, wallet.pubkey(), &proof, 1)
             .wire(),
         World::at_slot(OBSERVED_SLOT)
-            .with_lineage(&lineage)
+            .with_encrypted_value_account(&encrypted_value_account)
             .with_watermark(wallet.pubkey(), 0),
     ));
 
     // Two supersessions, a proof of the first leaf, then a third supersession that does not merge
     // the proof's peak.
     let first = handle(0x40, FHE_TYPE_UINT64);
-    let mut drifted = LineageFixture::new(first, &[wallet.pubkey()]);
+    let mut drifted = EncryptedValueAccountFixture::new(first, &[wallet.pubkey()]);
     drifted.update(handle(0x41, FHE_TYPE_UINT64));
     drifted.update(handle(0x42, FHE_TYPE_UINT64));
     let drifted_proof = drifted.proof(0);
-    let claimed_before_append = drifted.lineage.leaf_count;
+    let claimed_before_append = drifted.encrypted_value.leaf_count;
     drifted.update(handle(0x43, FHE_TYPE_UINT64));
     out.push(Scenario::accepted(
         "historical-proof-predating-a-non-merging-append",
@@ -311,13 +331,13 @@ fn accepting_scenarios() -> Vec<Scenario> {
             )
             .wire(),
         World::at_slot(OBSERVED_SLOT)
-            .with_lineage(&drifted)
+            .with_encrypted_value_account(&drifted)
             .with_watermark(wallet.pubkey(), 0),
     ));
 
     let foreign_domain: SolanaPubkeyBytes = [0x61; 32];
     let permissive_handle = handle(0x50, FHE_TYPE_UINT64);
-    let permissive_lineage = LineageFixture::in_domain(
+    let permissive_encrypted_value_account = EncryptedValueAccountFixture::in_domain(
         foreign_domain,
         APP,
         LABEL,
@@ -327,28 +347,29 @@ fn accepting_scenarios() -> Vec<Scenario> {
     out.push(Scenario::accepted(
         "permissive-scope-foreign-domain",
         "An empty signed domain list is permissive: the domain rule is skipped entirely, so a \
-         lineage of any domain is in scope. Membership still has to hold.",
+         encrypted value account of any domain is in scope. Membership still has to hold.",
         RequestBuilder::new(&wallet)
             .permit(PermitBuilder::new(wallet.pubkey()).permissive())
-            .direct_current(&permissive_lineage, permissive_handle)
+            .direct_current(&permissive_encrypted_value_account, permissive_handle)
             .wire(),
         World::at_slot(OBSERVED_SLOT)
-            .with_lineage(&permissive_lineage)
+            .with_encrypted_value_account(&permissive_encrypted_value_account)
             .with_watermark(wallet.pubkey(), 0),
     ));
 
     let repeated = handle(0x60, FHE_TYPE_UINT64);
-    let repeated_lineage = LineageFixture::new(repeated, &[wallet.pubkey()]);
+    let repeated_encrypted_value_account =
+        EncryptedValueAccountFixture::new(repeated, &[wallet.pubkey()]);
     out.push(Scenario::accepted(
         "duplicate-handle",
         "Naming the same handle twice is legal: each occurrence counts toward the budget, is \
          authorized independently, and is bound at its own position by the response.",
         RequestBuilder::new(&wallet)
-            .direct_current(&repeated_lineage, repeated)
-            .direct_current(&repeated_lineage, repeated)
+            .direct_current(&repeated_encrypted_value_account, repeated)
+            .direct_current(&repeated_encrypted_value_account, repeated)
             .wire(),
         World::at_slot(OBSERVED_SLOT)
-            .with_lineage(&repeated_lineage)
+            .with_encrypted_value_account(&repeated_encrypted_value_account)
             .with_watermark(wallet.pubkey(), 0),
     ));
 
@@ -357,34 +378,44 @@ fn accepting_scenarios() -> Vec<Scenario> {
     let first_delegator = Wallet::new(2);
     let second_delegator = Wallet::new(3);
     let own = handle(0x70, FHE_TYPE_UINT64);
-    let own_lineage = LineageFixture::new(own, &[signer.pubkey()]);
-    // Distinct labels give distinct value keys and therefore distinct lineage accounts. Note
-    // which byte is picked: `LABEL` already begins with `b'b'`, so reaching for that letter here
-    // would silently give this lineage the default one's address, one account would overwrite the
-    // other in the world, and the record would stop being a mixed batch at all.
+    let own_encrypted_value_account = EncryptedValueAccountFixture::new(own, &[signer.pubkey()]);
+    // Distinct labels give distinct value keys and therefore distinct encrypted value accounts.
+    // Note which byte is picked: `LABEL` already begins with `b'b'`, so reaching for that letter
+    // here would silently give this encrypted value account the default one's address, one account
+    // would overwrite the other in the world, and the record would stop being a mixed batch at all.
     let mut label_a = LABEL;
     label_a[0] = b'a';
     let mut label_b = LABEL;
     label_b[0] = b'c';
     let handle_a = handle(0x71, FHE_TYPE_UINT64);
     let handle_b = handle(0x72, FHE_TYPE_UINT64);
-    let lineage_a =
-        LineageFixture::in_domain(DOMAIN, APP, label_a, handle_a, &[first_delegator.pubkey()]);
-    let lineage_b =
-        LineageFixture::in_domain(DOMAIN, APP, label_b, handle_b, &[second_delegator.pubkey()]);
+    let encrypted_value_account_a = EncryptedValueAccountFixture::in_domain(
+        DOMAIN,
+        APP,
+        label_a,
+        handle_a,
+        &[first_delegator.pubkey()],
+    );
+    let encrypted_value_account_b = EncryptedValueAccountFixture::in_domain(
+        DOMAIN,
+        APP,
+        label_b,
+        handle_b,
+        &[second_delegator.pubkey()],
+    );
     let delegation_a =
         DelegationFixture::live(first_delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
     let delegation_b =
         DelegationFixture::live(second_delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
     assert_eq!(
         BTreeSet::from([
-            own_lineage.account_key,
-            lineage_a.account_key,
-            lineage_b.account_key
+            own_encrypted_value_account.account_key,
+            encrypted_value_account_a.account_key,
+            encrypted_value_account_b.account_key
         ])
         .len(),
         3,
-        "the three lineages of the mixed batch must be three accounts, or the record is not the \
+        "the three encrypted value accounts of the mixed batch must be three accounts, or the record is not the \
          batch it claims to be"
     );
     out.push(Scenario::accepted(
@@ -392,14 +423,22 @@ fn accepting_scenarios() -> Vec<Scenario> {
         "One request freely mixes a direct entry with entries from two different delegators. There \
          is no per-request mode and no separate delegated route.",
         RequestBuilder::new(&signer)
-            .direct_current(&own_lineage, own)
-            .delegated_current(&lineage_a, handle_a, first_delegator.pubkey())
-            .delegated_current(&lineage_b, handle_b, second_delegator.pubkey())
+            .direct_current(&own_encrypted_value_account, own)
+            .delegated_current(
+                &encrypted_value_account_a,
+                handle_a,
+                first_delegator.pubkey(),
+            )
+            .delegated_current(
+                &encrypted_value_account_b,
+                handle_b,
+                second_delegator.pubkey(),
+            )
             .wire(),
         World::at_slot(OBSERVED_SLOT)
-            .with_lineage(&own_lineage)
-            .with_lineage(&lineage_a)
-            .with_lineage(&lineage_b)
+            .with_encrypted_value_account(&own_encrypted_value_account)
+            .with_encrypted_value_account(&encrypted_value_account_a)
+            .with_encrypted_value_account(&encrypted_value_account_b)
             .with_watermark(signer.pubkey(), 0)
             .with_delegation(&delegation_a)
             .with_delegation(&delegation_b),
@@ -416,33 +455,36 @@ fn accepting_scenarios() -> Vec<Scenario> {
         label[0..2].copy_from_slice(&index.to_be_bytes());
         let mut bytes = handle(0x80, FHE_TYPE_UINT64);
         bytes[0..2].copy_from_slice(&index.to_be_bytes());
-        let lineage = LineageFixture::in_domain(DOMAIN, APP, label, bytes, &[wallet.pubkey()]);
-        many_builder = many_builder.direct_current(&lineage, bytes);
-        many_world = many_world.with_lineage(&lineage);
+        let encrypted_value_account =
+            EncryptedValueAccountFixture::in_domain(DOMAIN, APP, label, bytes, &[wallet.pubkey()]);
+        many_builder = many_builder.direct_current(&encrypted_value_account, bytes);
+        many_world = many_world.with_encrypted_value_account(&encrypted_value_account);
     }
     out.push(Scenario::accepted(
         "many-handles-in-one-request",
-        "One request naming many handles of many lineages. No layer of the Connector caps the \
+        "One request naming many handles of many encrypted value accounts. No layer of the Connector caps the \
          count: the system-wide decryption budget is summed and enforced by the Gateway entry \
          point on chain, so a request that exists has already passed it.",
         many_builder.wire(),
         many_world,
     ));
 
-    let (absent_wallet, absent_lineage, absent_live, absent_request, _) = reference_direct();
+    let (absent_wallet, absent_encrypted_value_account, absent_live, absent_request, _) =
+        reference_direct();
     out.push(Scenario::accepted(
         "absent-invalidation-record",
         "A user who has never revoked anything has no invalidation record, and its absence reads as \
          a watermark of zero rather than as a missing initialisation step.",
         {
-            let _ = (absent_live, &absent_lineage);
+            let _ = (absent_live, &absent_encrypted_value_account);
             absent_request
         },
-        World::at_slot(OBSERVED_SLOT).with_lineage(&absent_lineage),
+        World::at_slot(OBSERVED_SLOT).with_encrypted_value_account(&absent_encrypted_value_account),
     ));
     let _ = absent_wallet;
 
-    let (prefunded_wallet, prefunded_lineage, _, prefunded_request, _) = reference_direct();
+    let (prefunded_wallet, prefunded_encrypted_value_account, _, prefunded_request, _) =
+        reference_direct();
     let (prefunded_key, _) = invalidation_address(prefunded_wallet.pubkey());
     out.push(Scenario::accepted(
         "prefunded-invalidation-address",
@@ -454,22 +496,22 @@ fn accepting_scenarios() -> Vec<Scenario> {
          every request for the price of one transfer.",
         prefunded_request,
         World::at_slot(OBSERVED_SLOT)
-            .with_lineage(&prefunded_lineage)
+            .with_encrypted_value_account(&prefunded_encrypted_value_account)
             .with_account(prefunded_key, prefunded_account()),
     ));
 
     // The recorded weakness: a permit pre-signed with a start later than a revocation survives it.
-    let (weak_wallet, weak_lineage, weak_live, _, _) = reference_direct();
+    let (weak_wallet, weak_encrypted_value_account, weak_live, _, _) = reference_direct();
     let revocation_before_the_start = DEFAULT_START - 100;
     out.push(
         Scenario::accepted(
             "future-start-permit-outliving-a-revocation",
             "",
             RequestBuilder::new(&weak_wallet)
-                .direct_current(&weak_lineage, weak_live)
+                .direct_current(&weak_encrypted_value_account, weak_live)
                 .wire(),
             World::at_slot(OBSERVED_SLOT)
-                .with_lineage(&weak_lineage)
+                .with_encrypted_value_account(&weak_encrypted_value_account)
                 .with_watermark(weak_wallet.pubkey(), revocation_before_the_start),
         )
         .recorded_as_acceptable(
@@ -485,7 +527,7 @@ fn accepting_scenarios() -> Vec<Scenario> {
 
 fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
     let mut out = Vec::new();
-    let (wallet, lineage, live, _, world) = reference_direct();
+    let (wallet, encrypted_value_account, live, _, world) = reference_direct();
 
     out.push(Scenario::rejected(
         "wrong-host-program",
@@ -497,14 +539,15 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
         FailureClass::Terminal,
         RequestBuilder::new(&wallet)
             .permit(PermitBuilder::new(wallet.pubkey()).deployment_pair([0x55; 32], CHAIN_ID))
-            .direct_current(&lineage, live)
+            .direct_current(&encrypted_value_account, live)
             .wire(),
         world.clone(),
     ));
 
     let other_chain = SOLANA_CHAIN_TYPE_BIT | 0xdead_beef;
     let other_chain_handle = handle_on_chain(0x11, FHE_TYPE_UINT64, other_chain);
-    let other_chain_lineage = LineageFixture::new(other_chain_handle, &[wallet.pubkey()]);
+    let other_chain_encrypted_value_account =
+        EncryptedValueAccountFixture::new(other_chain_handle, &[wallet.pubkey()]);
     out.push(Scenario::rejected(
         "wrong-host-chain-id",
         "A permit signed for another cluster authorizes nothing here, even under the same program \
@@ -515,10 +558,10 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
         FailureClass::Terminal,
         RequestBuilder::new(&wallet)
             .permit(PermitBuilder::new(wallet.pubkey()).deployment_pair(PROGRAM_ID, other_chain))
-            .direct_current(&other_chain_lineage, other_chain_handle)
+            .direct_current(&other_chain_encrypted_value_account, other_chain_handle)
             .wire(),
         World::at_slot(OBSERVED_SLOT)
-            .with_lineage(&other_chain_lineage)
+            .with_encrypted_value_account(&other_chain_encrypted_value_account)
             .with_watermark(wallet.pubkey(), 0),
     ));
 
@@ -532,11 +575,11 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
         rule::MIXED_EMBEDDED_CHAIN_IDS,
         FailureClass::Terminal,
         RequestBuilder::new(&wallet)
-            .direct_current(&lineage, live)
+            .direct_current(&encrypted_value_account, live)
             .entry(
                 handle_on_chain(0x12, FHE_TYPE_UINT64, foreign_chain),
                 wallet.pubkey(),
-                lineage.encrypted_value_id(),
+                encrypted_value_account.encrypted_value_id(),
                 0,
                 Vec::new(),
             )
@@ -545,7 +588,8 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
     ));
 
     let elsewhere = handle_on_chain(0x13, FHE_TYPE_UINT64, foreign_chain);
-    let elsewhere_lineage = LineageFixture::new(elsewhere, &[wallet.pubkey()]);
+    let elsewhere_encrypted_value_account =
+        EncryptedValueAccountFixture::new(elsewhere, &[wallet.pubkey()]);
     out.push(Scenario::rejected(
         "handle-of-another-cluster",
         "Handles agreeing among themselves is not enough: every embedded chain id must equal the \
@@ -555,10 +599,10 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
         rule::EMBEDDED_CHAIN_ID_MISMATCH,
         FailureClass::Terminal,
         RequestBuilder::new(&wallet)
-            .direct_current(&elsewhere_lineage, elsewhere)
+            .direct_current(&elsewhere_encrypted_value_account, elsewhere)
             .wire(),
         World::at_slot(OBSERVED_SLOT)
-            .with_lineage(&elsewhere_lineage)
+            .with_encrypted_value_account(&elsewhere_encrypted_value_account)
             .with_watermark(wallet.pubkey(), 0),
     ));
 
@@ -593,7 +637,7 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
         .at_time(DEFAULT_START - 1),
     );
 
-    let (_, invalidated_lineage, _, invalidated_request, _) = reference_direct();
+    let (_, invalidated_encrypted_value_account, _, invalidated_request, _) = reference_direct();
     out.push(Scenario::rejected(
         "invalidated-permit",
         "The permit started before its signer's last revocation, so it is dead permanently. This is \
@@ -604,11 +648,12 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
         FailureClass::Terminal,
         invalidated_request,
         World::at_slot(OBSERVED_SLOT)
-            .with_lineage(&invalidated_lineage)
+            .with_encrypted_value_account(&invalidated_encrypted_value_account)
             .with_watermark(Wallet::new(1).pubkey(), DEFAULT_START + 1),
     ));
 
-    let (_, foreign_record_lineage, _, foreign_record_request, _) = reference_direct();
+    let (_, foreign_record_encrypted_value_account, _, foreign_record_request, _) =
+        reference_direct();
     let (watermark_key, _) = permit_invalidation_address(PROGRAM_ID, Wallet::new(1).pubkey());
     out.push(Scenario::rejected(
         "invalidation-record-of-another-user",
@@ -621,7 +666,7 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
         FailureClass::Terminal,
         foreign_record_request,
         World::at_slot(OBSERVED_SLOT)
-            .with_lineage(&foreign_record_lineage)
+            .with_encrypted_value_account(&foreign_record_encrypted_value_account)
             .with_account(
                 watermark_key,
                 invalidation_account(Wallet::new(9).pubkey(), DEFAULT_START),
@@ -687,7 +732,7 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
 
 fn request_form_scenarios() -> Vec<Scenario> {
     let mut out = Vec::new();
-    let (wallet, lineage, live, _, world) = reference_direct();
+    let (wallet, encrypted_value_account, live, _, world) = reference_direct();
 
     out.push(Scenario::rejected(
         "empty-handle-list",
@@ -702,7 +747,7 @@ fn request_form_scenarios() -> Vec<Scenario> {
 
     let mut past_cap = RequestBuilder::new(&wallet);
     for _ in 0..=MAX_REQUEST_HANDLES {
-        past_cap = past_cap.direct_current(&lineage, live);
+        past_cap = past_cap.direct_current(&encrypted_value_account, live);
     }
     out.push(Scenario::rejected(
         "handle-list-past-the-cap",
@@ -720,9 +765,10 @@ fn request_form_scenarios() -> Vec<Scenario> {
         world.clone(),
     ));
 
-    let (proof_lineage, sealed, proof) = replaced_lineage(0x90, wallet.pubkey());
+    let (proof_encrypted_value_account, sealed, proof) =
+        replaced_encrypted_value_account(0x90, wallet.pubkey());
     let proof_world = World::at_slot(OBSERVED_SLOT)
-        .with_lineage(&proof_lineage)
+        .with_encrypted_value_account(&proof_encrypted_value_account)
         .with_watermark(wallet.pubkey(), 0);
 
     let mut trailing = borsh::to_vec(&proof).expect("a proof serializes");
@@ -740,7 +786,7 @@ fn request_form_scenarios() -> Vec<Scenario> {
             .entry(
                 sealed,
                 wallet.pubkey(),
-                proof_lineage.encrypted_value_id(),
+                proof_encrypted_value_account.encrypted_value_id(),
                 1,
                 trailing,
             )
@@ -761,7 +807,13 @@ fn request_form_scenarios() -> Vec<Scenario> {
         rule::ACCESS_PROOF_TOO_MANY_SIBLINGS,
         FailureClass::Terminal,
         RequestBuilder::new(&wallet)
-            .historical(&proof_lineage, sealed, wallet.pubkey(), &oversized, 1)
+            .historical(
+                &proof_encrypted_value_account,
+                sealed,
+                wallet.pubkey(),
+                &oversized,
+                1,
+            )
             .wire(),
         proof_world.clone(),
     ));
@@ -777,7 +829,7 @@ fn request_form_scenarios() -> Vec<Scenario> {
             .entry(
                 sealed,
                 wallet.pubkey(),
-                proof_lineage.encrypted_value_id(),
+                proof_encrypted_value_account.encrypted_value_id(),
                 1,
                 vec![0xff, 0xff, 0xff],
             )
@@ -785,95 +837,100 @@ fn request_form_scenarios() -> Vec<Scenario> {
         proof_world,
     ));
 
-    let _ = (lineage, live);
+    let _ = (encrypted_value_account, live);
     out
 }
 
-fn lineage_scenarios() -> Vec<Scenario> {
+fn encrypted_value_account_scenarios() -> Vec<Scenario> {
     let mut out = Vec::new();
-    let (wallet, lineage, live, request, _) = reference_direct();
+    let (wallet, encrypted_value_account, live, request, _) = reference_direct();
 
     out.push(Scenario::rejected(
-        "missing-lineage",
-        "The lineage account does not exist at this observation. Transient by nature: the account \
+        "missing-encrypted-value-account",
+        "The encrypted value account does not exist at this observation. Transient by nature: the account \
          may simply not have reached the observed commitment yet.",
         "direct-current",
-        "the lineage account is removed from the observation",
+        "the encrypted value account is removed from the observation",
         rule::ENCRYPTED_VALUE_ACCOUNT_ABSENT,
         FailureClass::Transient,
         request.clone(),
         World::at_slot(OBSERVED_SLOT).with_watermark(wallet.pubkey(), 0),
     ));
 
-    let mut foreign_owner = lineage.account();
+    let mut foreign_owner = encrypted_value_account.account();
     foreign_owner.owner = [0xee; 32];
     out.push(Scenario::rejected(
-        "lineage-owned-by-another-program",
+        "encrypted-value-account-owned-by-another-program",
         "Program ownership is the sole trust anchor: an account with impeccable contents under \
          another program's ownership proves nothing.",
         "direct-current",
-        "the lineage account's owner is replaced with another program",
+        "the encrypted value account's owner is replaced with another program",
         rule::ENCRYPTED_VALUE_ACCOUNT_FOREIGN_OWNER,
         FailureClass::Terminal,
         request.clone(),
         World::at_slot(OBSERVED_SLOT)
-            .with_account(lineage.account_key, foreign_owner)
+            .with_account(encrypted_value_account.account_key, foreign_owner)
             .with_watermark(wallet.pubkey(), 0),
     ));
 
     let delegation =
         DelegationFixture::live(Wallet::new(2).pubkey(), wallet.pubkey(), OBSERVED_SLOT);
     out.push(Scenario::rejected(
-        "delegation-record-as-lineage",
+        "delegation-record-as-encrypted-value-account",
         "A host-owned account of another type is caught by the discriminator rather than by what \
-         its bytes happen to mean when read as a lineage.",
+         its bytes happen to mean when read as an encrypted value account.",
         "direct-current",
-        "the lineage address holds a delegation record instead",
+        "the encrypted value account address holds a delegation record instead",
         rule::ENCRYPTED_VALUE_ACCOUNT_WRONG_TYPE,
         FailureClass::Terminal,
         request.clone(),
         World::at_slot(OBSERVED_SLOT)
-            .with_account(lineage.account_key, delegation.account())
+            .with_account(encrypted_value_account.account_key, delegation.account())
             .with_watermark(wallet.pubkey(), 0),
     ));
 
-    let full = lineage.account();
+    let full = encrypted_value_account.account();
     let truncated = SnapshotAccount {
         owner: PROGRAM_ID,
         data: full.data[..full.data.len() - 8].to_vec(),
     };
     out.push(Scenario::rejected(
-        "lineage-with-a-truncated-body",
+        "encrypted-value-account-with-a-truncated-body",
         "A body cut short is not the same thing as a body followed by extra bytes: the first cannot \
          be read, the second is an account with room to spare.",
         "direct-current",
-        "eight bytes are removed from the end of the lineage account",
+        "eight bytes are removed from the end of the encrypted value account",
         rule::ENCRYPTED_VALUE_ACCOUNT_MALFORMED,
         FailureClass::Terminal,
         request.clone(),
         World::at_slot(OBSERVED_SLOT)
-            .with_account(lineage.account_key, truncated)
+            .with_account(encrypted_value_account.account_key, truncated)
             .with_watermark(wallet.pubkey(), 0),
     ));
 
-    let another_app =
-        LineageFixture::in_domain(DOMAIN, [0x33; 32], LABEL, live, &[wallet.pubkey()]);
+    let another_app = EncryptedValueAccountFixture::in_domain(
+        DOMAIN,
+        [0x33; 32],
+        LABEL,
+        live,
+        &[wallet.pubkey()],
+    );
     out.push(Scenario::rejected(
-        "lineage-deriving-another-value-key",
+        "encrypted-value-account-deriving-another-id",
         "The account's own fields must reproduce the identity that was claimed. This is the \
-         backstop that makes a substituted lineage a rejection rather than a redirection.",
+         backstop that makes a substituted encrypted value account a rejection rather than a redirection.",
         "direct-current",
-        "the lineage address holds a lineage of another app account",
+        "the encrypted value account address holds an encrypted value account of another app account",
         rule::ENCRYPTED_VALUE_ID_MISMATCH,
         FailureClass::Terminal,
         request,
         World::at_slot(OBSERVED_SLOT)
-            .with_account(lineage.account_key, another_app.account())
+            .with_account(encrypted_value_account.account_key, another_app.account())
             .with_watermark(wallet.pubkey(), 0),
     ));
 
     let unsigned_domain_handle = handle(0x14, FHE_TYPE_UINT64);
-    let unsigned_domain_lineage = LineageFixture::in_domain(
+    let unsigned_domain_encrypted_value_account = EncryptedValueAccountFixture::in_domain(
         [0x62; 32],
         APP,
         LABEL,
@@ -882,17 +939,17 @@ fn lineage_scenarios() -> Vec<Scenario> {
     );
     out.push(Scenario::rejected(
         "handle-of-an-unsigned-domain",
-        "With a non-empty signed scope, every entry's lineage domain must be in it. The domain \
-         tested is the lineage's — a request has no field for it.",
+        "With a non-empty signed scope, every entry's encrypted value account domain must be in it. The domain \
+         tested is the encrypted value account's — a request has no field for it.",
         "direct-current",
-        "the entry names a lineage whose domain is outside the signed scope",
+        "the entry names an encrypted value account whose domain is outside the signed scope",
         rule::DOMAIN_NOT_ALLOWED,
         FailureClass::Terminal,
         RequestBuilder::new(&wallet)
-            .direct_current(&unsigned_domain_lineage, unsigned_domain_handle)
+            .direct_current(&unsigned_domain_encrypted_value_account, unsigned_domain_handle)
             .wire(),
         World::at_slot(OBSERVED_SLOT)
-            .with_lineage(&unsigned_domain_lineage)
+            .with_encrypted_value_account(&unsigned_domain_encrypted_value_account)
             .with_watermark(wallet.pubkey(), 0),
     ));
 
@@ -905,50 +962,52 @@ fn handle_binding_scenarios() -> Vec<Scenario> {
     let stranger = Wallet::new(9);
 
     let replaced = handle(0xa0, FHE_TYPE_UINT64);
-    let mut moved_on = LineageFixture::new(replaced, &[wallet.pubkey()]);
+    let mut moved_on = EncryptedValueAccountFixture::new(replaced, &[wallet.pubkey()]);
     moved_on.update(handle(0xa1, FHE_TYPE_UINT64));
     out.push(Scenario::rejected(
         "replaced-current-handle",
         "A current-mode entry whose handle is no longer current fails, and is not quietly answered \
          with whatever is current instead. The same handle remains reachable as historical access.",
         "direct-current",
-        "the lineage's current handle moves on before the observation",
+        "the encrypted value account's current handle moves on before the observation",
         rule::HANDLE_NOT_CURRENT,
         FailureClass::Terminal,
         RequestBuilder::new(&wallet)
             .direct_current(&moved_on, replaced)
             .wire(),
         World::at_slot(OBSERVED_SLOT)
-            .with_lineage(&moved_on)
+            .with_encrypted_value_account(&moved_on)
             .with_watermark(wallet.pubkey(), 0),
     ));
 
     let live = handle(0xa2, FHE_TYPE_UINT64);
-    let others_lineage = LineageFixture::new(live, &[stranger.pubkey()]);
+    let others_encrypted_value_account =
+        EncryptedValueAccountFixture::new(live, &[stranger.pubkey()]);
     out.push(Scenario::rejected(
         "subject-outside-the-current-members",
-        "Current access requires membership of the lineage's current subject set, and the set is \
+        "Current access requires membership of the encrypted value account's current subject set, and the set is \
          the account's rather than the request's.",
         "direct-current",
-        "the lineage's subject set names somebody else",
+        "the encrypted value account's subject set names somebody else",
         rule::SUBJECT_NOT_A_MEMBER,
         FailureClass::Terminal,
         RequestBuilder::new(&wallet)
-            .direct_current(&others_lineage, live)
+            .direct_current(&others_encrypted_value_account, live)
             .wire(),
         World::at_slot(OBSERVED_SLOT)
-            .with_lineage(&others_lineage)
+            .with_encrypted_value_account(&others_encrypted_value_account)
             .with_watermark(wallet.pubkey(), 0),
     ));
 
-    let (sealed_lineage, sealed, _) = replaced_lineage(0xb0, wallet.pubkey());
+    let (sealed_encrypted_value_account, sealed, _) =
+        replaced_encrypted_value_account(0xb0, wallet.pubkey());
     let sealed_world = World::at_slot(OBSERVED_SLOT)
-        .with_lineage(&sealed_lineage)
+        .with_encrypted_value_account(&sealed_encrypted_value_account)
         .with_watermark(wallet.pubkey(), 0);
 
     out.push(Scenario::rejected(
         "leaf-index-beyond-the-leaf-count",
-        "A position the lineage does not have is refused before any hashing: there is nothing for \
+        "A position the encrypted value account does not have is refused before any hashing: there is nothing for \
          the proof to be a proof of. From the outside this is an inclusion failure like any other, \
          and it is classified like one — by the leaf count the request claims. Here the claim is \
          at or above the observed count, which is what a proof service running ahead of this \
@@ -959,11 +1018,11 @@ fn handle_binding_scenarios() -> Vec<Scenario> {
         FailureClass::Retryable,
         RequestBuilder::new(&wallet)
             .historical(
-                &sealed_lineage,
+                &sealed_encrypted_value_account,
                 sealed,
                 wallet.pubkey(),
                 &MmrProof {
-                    leaf_index: sealed_lineage.lineage.leaf_count,
+                    leaf_index: sealed_encrypted_value_account.encrypted_value.leaf_count,
                     siblings: Vec::new(),
                 },
                 1,
@@ -976,9 +1035,9 @@ fn handle_binding_scenarios() -> Vec<Scenario> {
     // one value, and each must fail: together they show all four values are inside the commitment.
     for (name, comment, mutation, commitment) in [
         (
-            "leaf-commitment-for-another-lineage",
-            "A leaf sealed for another lineage account authorizes nothing here.",
-            "the sealed leaf commits to another lineage account",
+            "leaf-commitment-for-another-encrypted-value-account",
+            "A leaf sealed for another encrypted value account authorizes nothing here.",
+            "the sealed leaf commits to another encrypted value account",
             historical_access_leaf_commitment([0x99; 32], 0, sealed, wallet.pubkey()),
         ),
         (
@@ -986,7 +1045,7 @@ fn handle_binding_scenarios() -> Vec<Scenario> {
             "A leaf sealed for another subject authorizes only that subject.",
             "the sealed leaf commits to another subject",
             historical_access_leaf_commitment(
-                LineageFixture::new(sealed, &[wallet.pubkey()]).account_key,
+                EncryptedValueAccountFixture::new(sealed, &[wallet.pubkey()]).account_key,
                 0,
                 sealed,
                 stranger.pubkey(),
@@ -997,7 +1056,7 @@ fn handle_binding_scenarios() -> Vec<Scenario> {
             "A leaf sealed for another handle authorizes only that handle.",
             "the sealed leaf commits to another handle",
             historical_access_leaf_commitment(
-                LineageFixture::new(sealed, &[wallet.pubkey()]).account_key,
+                EncryptedValueAccountFixture::new(sealed, &[wallet.pubkey()]).account_key,
                 0,
                 handle(0xbe, FHE_TYPE_UINT64),
                 wallet.pubkey(),
@@ -1008,14 +1067,14 @@ fn handle_binding_scenarios() -> Vec<Scenario> {
             "A leaf whose committed position is not the position it occupies authorizes nothing.",
             "the sealed leaf commits to leaf index one while occupying index zero",
             historical_access_leaf_commitment(
-                LineageFixture::new(sealed, &[wallet.pubkey()]).account_key,
+                EncryptedValueAccountFixture::new(sealed, &[wallet.pubkey()]).account_key,
                 1,
                 sealed,
                 wallet.pubkey(),
             ),
         ),
     ] {
-        let mut substituted = LineageFixture::new(sealed, &[wallet.pubkey()]);
+        let mut substituted = EncryptedValueAccountFixture::new(sealed, &[wallet.pubkey()]);
         substituted.append(commitment);
         out.push(Scenario::rejected(
             name,
@@ -1030,19 +1089,20 @@ fn handle_binding_scenarios() -> Vec<Scenario> {
                     sealed,
                     wallet.pubkey(),
                     &substituted.proof(0),
-                    substituted.lineage.leaf_count,
+                    substituted.encrypted_value.leaf_count,
                 )
                 .wire(),
             World::at_slot(OBSERVED_SLOT)
-                .with_lineage(&substituted)
+                .with_encrypted_value_account(&substituted)
                 .with_watermark(wallet.pubkey(), 0),
         ));
     }
 
     let public_handle = handle(0xc0, FHE_TYPE_UINT64);
-    let mut public_lineage = LineageFixture::new(public_handle, &[wallet.pubkey()]);
-    public_lineage.mark_public();
-    public_lineage.update(handle(0xc1, FHE_TYPE_UINT64));
+    let mut public_encrypted_value_account =
+        EncryptedValueAccountFixture::new(public_handle, &[wallet.pubkey()]);
+    public_encrypted_value_account.mark_public();
+    public_encrypted_value_account.update(handle(0xc1, FHE_TYPE_UINT64));
     out.push(Scenario::rejected(
         "public-decrypt-leaf-as-historical-access",
         "Public decryptability is a separate flow with its own leaf domain. Its leaf says nothing \
@@ -1053,26 +1113,27 @@ fn handle_binding_scenarios() -> Vec<Scenario> {
         FailureClass::Retryable,
         RequestBuilder::new(&wallet)
             .historical(
-                &public_lineage,
+                &public_encrypted_value_account,
                 public_handle,
                 wallet.pubkey(),
-                &public_lineage.proof(0),
-                public_lineage.lineage.leaf_count,
+                &public_encrypted_value_account.proof(0),
+                public_encrypted_value_account.encrypted_value.leaf_count,
             )
             .wire(),
         World::at_slot(OBSERVED_SLOT)
-            .with_lineage(&public_lineage)
+            .with_encrypted_value_account(&public_encrypted_value_account)
             .with_watermark(wallet.pubkey(), 0),
     ));
 
     // A proof invalidated by an append that merged its peak: claimed count below the observed one.
     let merged = handle(0xd2, FHE_TYPE_UINT64);
-    let mut merging = LineageFixture::new(handle(0xd0, FHE_TYPE_UINT64), &[wallet.pubkey()]);
+    let mut merging =
+        EncryptedValueAccountFixture::new(handle(0xd0, FHE_TYPE_UINT64), &[wallet.pubkey()]);
     merging.update(handle(0xd1, FHE_TYPE_UINT64));
     merging.update(merged);
     merging.update(handle(0xd3, FHE_TYPE_UINT64));
     let stale_proof = merging.proof(2);
-    let claimed = merging.lineage.leaf_count;
+    let claimed = merging.encrypted_value.leaf_count;
     merging.update(handle(0xd4, FHE_TYPE_UINT64));
     out.push(Scenario::rejected(
         "proof-predating-a-merging-append",
@@ -1087,13 +1148,14 @@ fn handle_binding_scenarios() -> Vec<Scenario> {
             .historical(&merging, merged, wallet.pubkey(), &stale_proof, claimed)
             .wire(),
         World::at_slot(OBSERVED_SLOT)
-            .with_lineage(&merging)
+            .with_encrypted_value_account(&merging)
             .with_watermark(wallet.pubkey(), 0),
     ));
 
     // The observation behind the proof service: the proof is of state this observation has not seen.
     let ahead_handle = handle(0xe2, FHE_TYPE_UINT64);
-    let mut behind = LineageFixture::new(handle(0xe0, FHE_TYPE_UINT64), &[wallet.pubkey()]);
+    let mut behind =
+        EncryptedValueAccountFixture::new(handle(0xe0, FHE_TYPE_UINT64), &[wallet.pubkey()]);
     behind.update(handle(0xe1, FHE_TYPE_UINT64));
     behind.update(ahead_handle);
     let mut ahead = behind.clone();
@@ -1114,11 +1176,11 @@ fn handle_binding_scenarios() -> Vec<Scenario> {
                 ahead_handle,
                 wallet.pubkey(),
                 &ahead.proof(1),
-                ahead.lineage.leaf_count,
+                ahead.encrypted_value.leaf_count,
             )
             .wire(),
         World::at_slot(OBSERVED_SLOT)
-            .with_lineage(&behind)
+            .with_encrypted_value_account(&behind)
             .with_watermark(wallet.pubkey(), 0),
     ));
 
@@ -1127,10 +1189,11 @@ fn handle_binding_scenarios() -> Vec<Scenario> {
 
 fn delegation_scenarios() -> Vec<Scenario> {
     let mut out = Vec::new();
-    let (signer, delegator, lineage, live, delegation, request, world) = reference_delegated();
+    let (signer, delegator, encrypted_value_account, live, delegation, request, world) =
+        reference_delegated();
     let base_world = || {
         World::at_slot(OBSERVED_SLOT)
-            .with_lineage(&lineage)
+            .with_encrypted_value_account(&encrypted_value_account)
             .with_watermark(signer.pubkey(), 0)
     };
 
@@ -1218,15 +1281,15 @@ fn delegation_scenarios() -> Vec<Scenario> {
     ));
 
     out.push(Scenario::rejected(
-        "lineage-record-as-delegation",
+        "encrypted-value-account-record-as-delegation",
         "A host-owned account of another type at the delegation address is caught by its \
-         discriminator, the mirror of the same substitution against a lineage.",
+         discriminator, the mirror of the same substitution against an encrypted value account.",
         "delegated-current",
-        "the delegation address holds a lineage account instead",
+        "the delegation address holds an encrypted value account instead",
         rule::DELEGATION_WRONG_ACCOUNT_TYPE,
         FailureClass::Terminal,
         request.clone(),
-        base_world().with_account(expected_key, lineage.account()),
+        base_world().with_account(expected_key, encrypted_value_account.account()),
     ));
 
     // Both rows exist and neither is live. The app-specific row alone would report "revoked", which
@@ -1257,7 +1320,7 @@ fn scenarios() -> Vec<Scenario> {
     let mut out = accepting_scenarios();
     out.extend(deployment_and_permit_state_scenarios());
     out.extend(request_form_scenarios());
-    out.extend(lineage_scenarios());
+    out.extend(encrypted_value_account_scenarios());
     out.extend(handle_binding_scenarios());
     out.extend(delegation_scenarios());
     out
@@ -1438,13 +1501,21 @@ fn rule_name(failure: &AuthorizationFailure) -> &'static str {
         },
         AuthorizationFailure::KmsPair(_) => rule::KMS_PAIR_UNSERVABLE,
         AuthorizationFailure::Snapshot(_) => panic!("a record carries one observation"),
-        AuthorizationFailure::Lineage { source, .. } => match source {
-            LineageFailure::Absent { .. } => rule::ENCRYPTED_VALUE_ACCOUNT_ABSENT,
-            LineageFailure::ForeignOwner { .. } => rule::ENCRYPTED_VALUE_ACCOUNT_FOREIGN_OWNER,
-            LineageFailure::WrongAccountType { .. } => rule::ENCRYPTED_VALUE_ACCOUNT_WRONG_TYPE,
-            LineageFailure::Malformed { .. } => rule::ENCRYPTED_VALUE_ACCOUNT_MALFORMED,
-            LineageFailure::ValueKeyMismatch { .. } => rule::ENCRYPTED_VALUE_ID_MISMATCH,
-            LineageFailure::Snapshot(_) => panic!("a record carries one observation"),
+        AuthorizationFailure::EncryptedValueAccount { source, .. } => match source {
+            EncryptedValueAccountFailure::Absent { .. } => rule::ENCRYPTED_VALUE_ACCOUNT_ABSENT,
+            EncryptedValueAccountFailure::ForeignOwner { .. } => {
+                rule::ENCRYPTED_VALUE_ACCOUNT_FOREIGN_OWNER
+            }
+            EncryptedValueAccountFailure::WrongAccountType { .. } => {
+                rule::ENCRYPTED_VALUE_ACCOUNT_WRONG_TYPE
+            }
+            EncryptedValueAccountFailure::Malformed { .. } => {
+                rule::ENCRYPTED_VALUE_ACCOUNT_MALFORMED
+            }
+            EncryptedValueAccountFailure::EncryptedValueIdMismatch { .. } => {
+                rule::ENCRYPTED_VALUE_ID_MISMATCH
+            }
+            EncryptedValueAccountFailure::Snapshot(_) => panic!("a record carries one observation"),
         },
         AuthorizationFailure::HandleBinding { source, .. } => match source {
             HandleBindingFailure::NotCurrentHandle { .. } => rule::HANDLE_NOT_CURRENT,
@@ -1759,7 +1830,8 @@ fn records_carry_the_required_fields() {
             }
         }
         assert!(
-            !record.observation.accounts.is_empty() || record.name == "missing-lineage",
+            !record.observation.accounts.is_empty()
+                || record.name == "missing-encrypted-value-account",
             "record '{}' carries no accounts, which is only meaningful for an absence case",
             record.name
         );

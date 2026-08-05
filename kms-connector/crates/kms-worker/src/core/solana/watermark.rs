@@ -86,9 +86,9 @@ pub fn read_watermark(
         });
     }
 
-    // Exact length, unlike a lineage: this record is fixed-size and is never realloc-grown, so
-    // a tail would mean the layout is not the one being read here rather than an account that
-    // has held more than it holds now.
+    // Exact length, unlike an encrypted value account: this record is fixed-size and is never
+    // realloc-grown, so a tail would mean the layout is not the one being read here rather than an
+    // account that has held more than it holds now.
     let data = &account.data;
     let not_a_record = || WatermarkFailure::NotAnInvalidationRecord { account_key };
     if data.len() != DISCRIMINATOR_LEN + INVALIDATION_BODY_LEN

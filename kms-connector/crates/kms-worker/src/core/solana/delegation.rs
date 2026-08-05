@@ -1,19 +1,18 @@
 //! Delegation freshness.
 //!
 //! A delegated entry needs a live delegation record `delegator → signer`. Two records can carry
-//! one: the row for the lineage's own app account, and the delegator's wildcard row — the same
-//! derivation with the reserved app-context sentinel in place of an app account, which is how a
-//! delegator grants across every one of their apps at once. Either row being live authorizes the
-//! entry, which is the rule the EVM ACL applies to its own wildcard delegation.
+//! one: the row for the encrypted value account's own app account, and the delegator's wildcard row
+//! — the same derivation with the reserved app-context sentinel in place of an app account, which
+//! is how a delegator grants across every one of their apps at once. Either row being live
+//! authorizes the entry, which is the rule the EVM ACL applies to its own wildcard delegation.
 //!
-//! Live means, against the observed slot: not revoked, not expired, and not
-//! written after the observation. The last clause is what keeps a record "from the future"
-//! relative to the snapshot from authorizing anything — it would be a state the rest of the
-//! authorization never saw.
+//! Live means, against the observed slot: not revoked, not expired, and not written after the
+//! observation. The last clause is what keeps a record "from the future" relative to the snapshot
+//! from authorizing anything — it would be a state the rest of the authorization never saw.
 //!
 //! The rows are tried app-specific first, and neither can veto the other: an exact row that is
-//! revoked, expired or newer than the observation still leaves a live wildcard row authorizing,
-//! and the same holds the other way around.
+//! revoked, expired or newer than the observation still leaves a live wildcard row authorizing, and
+//! the same holds the other way around.
 //!
 //! What follows from that is deliberate rather than incidental: revoking the app-specific row does
 //! not stop a delegate who also holds a wildcard row. Scope-by-app is a property of a row, not of
@@ -21,15 +20,15 @@
 //! well — and the host program's revocation instruction takes one record per call, so that is two
 //! transactions rather than one.
 //!
-//! The record's `delegation_counter` takes no part in any of this. It is not signed and is
-//! pinned nowhere in the request: pinning it would kill mixed-delegator batches and permit
-//! reuse, because any update to any delegation record would invalidate requests already in
-//! flight. The counter still exists in the on-chain layout — decoding walks past it — but no
-//! check reads it and no signature commits to it.
+//! The record's `delegation_counter` takes no part in any of this. It is not signed and is pinned
+//! nowhere in the request: pinning it would kill mixed-delegator batches and permit reuse, because
+//! any update to any delegation record would invalidate requests already in flight. The counter
+//! still exists in the on-chain layout — decoding walks past it — but no check reads it and no
+//! signature commits to it.
 //!
-//! The app account comes from the validated lineage. That is what makes the delegated branch
-//! safe against an attacker naming an app they do hold a delegation for: they cannot name it
-//! at all.
+//! The app account comes from the validated encrypted value account. That is what makes the
+//! delegated branch safe against an attacker naming an app they do hold a delegation for: they
+//! cannot name it at all.
 
 use super::snapshot::{HostSnapshot, SnapshotError};
 use crate::core::solana_acl::{SolanaPubkeyBytes, decode_user_decryption_delegation_witness};
@@ -78,7 +77,13 @@ pub fn check_delegation(
     delegate: SolanaPubkeyBytes,
     encrypted_value_account_authority: SolanaPubkeyBytes,
 ) -> Result<(), DelegationFailure> {
-    let exact = match check_row(snapshot, program_id, delegator, delegate, encrypted_value_account_authority)? {
+    let exact = match check_row(
+        snapshot,
+        program_id,
+        delegator,
+        delegate,
+        encrypted_value_account_authority,
+    )? {
         RowOutcome::Live => return Ok(()),
         RowOutcome::NotLive(reason) => reason,
     };
@@ -125,12 +130,16 @@ fn check_row(
     delegate: SolanaPubkeyBytes,
     encrypted_value_account_authority: SolanaPubkeyBytes,
 ) -> Result<RowOutcome, SnapshotError> {
-    let (account_key, canonical_bump) =
-        delegation_address(program_id, delegator, delegate, encrypted_value_account_authority);
+    let (account_key, canonical_bump) = delegation_address(
+        program_id,
+        delegator,
+        delegate,
+        encrypted_value_account_authority,
+    );
 
     let Some(account) = snapshot.account(&account_key)? else {
-        // Includes the case of a delegation granted for another app: that record lives at
-        // another address, and the address derived from this lineage's app is simply empty.
+        // Includes the case of a delegation granted for another app: that record lives at another
+        // address, and the address derived from this encrypted value account's app is simply empty.
         return Ok(RowOutcome::NotLive(DelegationFailure::Absent {
             account_key,
         }));
@@ -265,7 +274,7 @@ pub enum DelegationFailure {
     /// send a delegator to fix a row that was not the one standing in the way.
     #[error("no live delegation: app-specific row: {exact}; wildcard row: {wildcard}")]
     NoLiveGrant {
-        /// Why the row for the lineage's app account did not authorize.
+        /// Why the row for the encrypted value account's app account did not authorize.
         exact: Box<DelegationFailure>,
         /// Why the delegator's wildcard row did not authorize.
         wildcard: Box<DelegationFailure>,

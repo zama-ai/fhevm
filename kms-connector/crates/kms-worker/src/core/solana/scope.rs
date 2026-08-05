@@ -10,7 +10,7 @@
 //! currently holds. What it never touches is ownership and delegation themselves, which are
 //! unconditional.
 //!
-//! The domain being tested comes from the validated lineage. A request has no field for it, and
+//! The domain being tested comes from the validated encrypted value account. A request has no field for it, and
 //! this rule has no parameter through which one could arrive:
 //!
 //! ```compile_fail
@@ -23,20 +23,20 @@
 //! let check: fn(&AclDomainKeys, SolanaPubkeyBytes) -> Result<(), ScopeFailure> = check_scope;
 //! ```
 
-use super::lineage::ResolvedLineage;
+use super::encrypted_value_account::ResolvedEncryptedValueAccount;
 use crate::core::solana_acl::SolanaPubkeyBytes;
 use zama_solana_permit::AclDomainKeys;
 
-/// Tests one entry's lineage domain against the signed scope.
+/// Tests one entry's encrypted value account domain against the signed scope.
 pub fn check_scope(
     signed_scope: &AclDomainKeys,
-    lineage: &ResolvedLineage,
+    encrypted_value_account: &ResolvedEncryptedValueAccount,
 ) -> Result<(), ScopeFailure> {
     // An empty signed list is permissive and skips the rule, for parity with the EVM path.
     if signed_scope.is_permissive() {
         return Ok(());
     }
-    let domain = lineage.domain();
+    let domain = encrypted_value_account.domain();
     if signed_scope
         .as_slice()
         .iter()
@@ -51,10 +51,10 @@ pub fn check_scope(
 /// Why an entry fell outside the signed scope.
 #[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]
 pub enum ScopeFailure {
-    /// The lineage's ACL domain is not in the signed set.
-    #[error("lineage domain {domain:?} is outside the signed scope")]
+    /// The encrypted value account's ACL domain is not in the signed set.
+    #[error("encrypted value account domain {domain:?} is outside the signed scope")]
     DomainNotAllowed {
-        /// The domain the lineage belongs to.
+        /// The domain the encrypted value account belongs to.
         domain: SolanaPubkeyBytes,
     },
 }

@@ -12,9 +12,9 @@
 
 use super::delegation::DelegationFailure;
 use super::deployment::{DeploymentFailure, DeploymentIdentityError};
+use super::encrypted_value_account::EncryptedValueAccountFailure;
 use super::handle_binding::{HandleBindingFailure, InclusionAction};
 use super::kms_pair::KmsPairFailure;
-use super::lineage::LineageFailure;
 use super::request::RequestFormError;
 use super::scope::ScopeFailure;
 use super::snapshot::SnapshotError;
@@ -64,13 +64,13 @@ pub enum AuthorizationFailure {
     /// Host state could not be observed as one point.
     #[error("host state: {0}")]
     Snapshot(#[from] SnapshotError),
-    /// One entry's lineage could not be resolved.
-    #[error("entry {index}: lineage: {source}")]
-    Lineage {
+    /// One entry's encrypted value account could not be resolved.
+    #[error("entry {index}: encrypted value account: {source}")]
+    EncryptedValueAccount {
         /// Which entry.
         index: usize,
         /// Why.
-        source: LineageFailure,
+        source: EncryptedValueAccountFailure,
     },
     /// One entry's handle is not bound to its subject.
     #[error("entry {index}: handle binding: {source}")]
@@ -99,7 +99,7 @@ pub enum AuthorizationFailure {
         /// The count observed in the snapshot.
         live_leaf_count: u64,
     },
-    /// One entry's lineage domain is outside the signed scope.
+    /// One entry's encrypted value account domain is outside the signed scope.
     #[error("entry {index}: scope: {source}")]
     Scope {
         /// Which entry.
@@ -131,7 +131,7 @@ impl AuthorizationFailure {
             Self::Watermark(source) => source.class(),
             Self::KmsPair(source) => source.class(),
             Self::Snapshot(source) => source.class(),
-            Self::Lineage { source, .. } => source.class(),
+            Self::EncryptedValueAccount { source, .. } => source.class(),
             Self::HandleBinding { source, .. } => source.class(),
             Self::InclusionFailed { action, .. } => action.class(),
             Self::Scope { source, .. } => source.class(),
@@ -228,17 +228,17 @@ impl SnapshotError {
     }
 }
 
-impl LineageFailure {
+impl EncryptedValueAccountFailure {
     /// Absence is the one outcome a later observation can change: the account may not have
     /// reached the observed commitment yet. Everything else is a statement about an account that
-    /// exists and is not the lineage it was claimed to be.
+    /// exists and is not the encrypted value account it was claimed to be.
     pub fn class(&self) -> FailureClass {
         match self {
             Self::Absent { .. } => FailureClass::Transient,
             Self::ForeignOwner { .. }
             | Self::WrongAccountType { .. }
             | Self::Malformed { .. }
-            | Self::ValueKeyMismatch { .. } => FailureClass::Terminal,
+            | Self::EncryptedValueIdMismatch { .. } => FailureClass::Terminal,
             Self::Snapshot(source) => source.class(),
         }
     }
@@ -259,9 +259,9 @@ impl HandleBindingFailure {
             Self::ProofDoesNotVerify { .. } | Self::LeafIndexOutOfRange { .. } => {
                 FailureClass::Retryable
             }
-            Self::NotCurrentHandle { .. } | Self::NotAMember { .. } | Self::MmrStateInconsistent => {
-                FailureClass::Terminal
-            }
+            Self::NotCurrentHandle { .. }
+            | Self::NotAMember { .. }
+            | Self::MmrStateInconsistent => FailureClass::Terminal,
         }
     }
 }

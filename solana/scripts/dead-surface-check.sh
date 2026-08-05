@@ -324,8 +324,10 @@ check_alias() {
     fhe)  roots=("${FHE_ROOTS[@]}") ;;
     core) roots=("${CORE_ROOTS[@]}") ;;
     all)  roots=("${ALL_ROOTS[@]}") ;;
-    # ALL plus the connector crates, for a word whose only live occurrences are there.
-    kms)  roots=("${ALL_ROOTS[@]}" kms-connector/crates) ;;
+    # ALL plus the connector crates and the connector-auth fixtures, for a word whose only live
+    # occurrences are there. The fixture tree is in no other root: the generator lives under
+    # kms-worker/tests but the vector constants and the committed JSON do not.
+    kms)  roots=("${ALL_ROOTS[@]}" kms-connector/crates solana/test-fixtures) ;;
     *) echo "check_alias: unknown scope '${scope}' for '${label}'" >&2; exit 2 ;;
   esac
   # `.tsx` and `.json` are swept too: the dapp's React surface is .tsx, and several entries below
@@ -380,11 +382,11 @@ check_alias 'value_key identifier — renamed to encrypted_value_id' all \
 # Solana permit (`allowed_acl_domain_keys` in the user-decryption specification) and of the v3 wire,
 # so the permit crate and the connector keep it deliberately.
 #
-# `app_account` survives in exactly one file on purpose: the `UserDecryptionDelegation` witness in
-# kms-connector names the app a delegation is scoped over, which is a different object from the ID
-# component (it mirrors the on-chain `UserDecryptionDelegation.account` and is a seed of that
-# delegation's PDA). That file is excluded by name through grep's own `--exclude`, which is visible
-# in the command, rather than by a content exception that silently matched the path.
+# The `UserDecryptionDelegation` witness in kms-connector used to be excluded by name: it holds the
+# key a delegation is scoped over, and that was argued to be a different object from the ID
+# component. It is not — the delegation PDA's third seed IS the encrypted value account authority,
+# which is why one delegation covers that authority's values in every domain. The mirror is renamed
+# and the exclusion is gone, so nothing here is exempt.
 #
 # Scope is `kms` because `app_account` has no occurrence anywhere else: under plain `all` this entry
 # could not reach the word it documents, so it passed vacuously and its exception masked nothing.
@@ -395,7 +397,7 @@ check_alias 'value_key identifier — renamed to encrypted_value_id' all \
 # `ExecutionEncryptedValueAccountAuthority`. That rename touched 102 lines of public SDK surface, so
 # the guard matters: nothing else would stop the short name coming back on the next builder change.
 check_alias 'app_account / app_authority — renamed to encrypted_value_account_authority' kms \
-  '' --exclude=solana_acl.rs \
+  '' \
   -E '\bapp_account\b|\bapp_accounts\b|\bapp_account_authority\b|\bauthorized_app_accounts\b|\bappAccount\b|\bapp_authority\b|\bappAuthority\b|\bExecutionAppAuthority\b'
 # There was a `check_alias 'encrypted_value_label — renamed to label'` here, banning the long name.
 # That decision was reversed: bare "label" says only that the component is 32 bytes, which is true of
@@ -445,8 +447,9 @@ check_alias 'supersede — an updated handle is updated' all '' \
 # itself a rotation — "the balance rotates", "before any balance rotation".
 check_alias 'rotation — an updated handle is updated' all '' \
   -iE '(balance|handle|value|amount|output|receipt)s? rotat|rotat[a-z]* the (confidential )?(balance|handle|value|amount)|(balance|handle|value|amount) rotation'
-# encrypted value account <- lineage account.
-check_alias 'lineage — renamed to encrypted value account' all '' -iE '\blineage\b'
+# encrypted value account <- lineage account. Scope is `kms`: every occurrence of the word lived in
+# the connector and in the generated auth vectors, so under plain `all` this entry passed vacuously.
+check_alias 'lineage — renamed to encrypted value account' kms '' -iE '\blineage\b'
 # The adjective matters: "value account" describes every SPL token account, so dropping
 # "encrypted" turns the one distinguishing fact — that this account holds an *encrypted* value's
 # handle, subject list and MMR — into a generic phrase. The struct is `EncryptedValue`; the

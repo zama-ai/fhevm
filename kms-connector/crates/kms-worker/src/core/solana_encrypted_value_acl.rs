@@ -35,8 +35,10 @@ pub fn encrypted_value_acl_address(
     encrypted_value_id: [u8; 32],
 ) -> (SolanaPubkeyBytes, u8) {
     let program_id = Pubkey::new_from_array(host_program_id);
-    let (address, bump) =
-        Pubkey::find_program_address(&[ENCRYPTED_VALUE_SEED, encrypted_value_id.as_ref()], &program_id);
+    let (address, bump) = Pubkey::find_program_address(
+        &[ENCRYPTED_VALUE_SEED, encrypted_value_id.as_ref()],
+        &program_id,
+    );
     (address.to_bytes(), bump)
 }
 
@@ -90,7 +92,8 @@ impl SolanaAclVerifier {
             return Err(SolanaAclVerificationError::InvalidAccountOwner);
         }
         let encrypted_value_id = acl.encrypted_value_id();
-        let (expected, bump) = encrypted_value_acl_address(self.host_program_id, encrypted_value_id);
+        let (expected, bump) =
+            encrypted_value_acl_address(self.host_program_id, encrypted_value_id);
         if account_key != expected {
             return Err(SolanaAclVerificationError::NonCanonicalEncryptedValueAcl);
         }

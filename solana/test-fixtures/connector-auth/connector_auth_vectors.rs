@@ -9,7 +9,7 @@
 //!
 //! * **State is part of the record.** Each record carries the account set it was authorized
 //!   against: pubkey, owning program, and raw data. A rule that reads an account cannot be
-//!   pinned by a request alone, and paraphrasing the account ("a lineage whose handle moved on") would make
+//!   pinned by a request alone, and paraphrasing the account ("an encrypted value account whose handle moved on") would make
 //!   the record depend on whoever wrote the paraphrase.
 //! * **Every 64-bit number is a decimal string.** A JSON number reaches a TypeScript consumer as
 //!   a double and silently loses precision above 2^53; chain ids and slots both go there.
@@ -177,7 +177,7 @@ pub struct WireHandleEntry {
     pub handle: String,
     /// Ciphertext owner, hex: the signer for a direct entry, the delegator for a delegated one.
     pub owner: String,
-    /// Lineage identity, hex.
+    /// Encrypted value account identity, hex.
     pub encrypted_value_id: String,
     /// The leaf count the access proof was built against, decimal string; `"0"` in current mode.
     pub proof_leaf_count: String,
@@ -243,26 +243,26 @@ pub mod rule {
     pub const ACCESS_PROOF_TRAILING_BYTES: &str = "access-proof-trailing-bytes";
     /// An access proof carries more siblings than the tree can produce.
     pub const ACCESS_PROOF_TOO_MANY_SIBLINGS: &str = "access-proof-too-many-siblings";
-    /// The lineage account does not exist at this observation.
+    /// The encrypted value account does not exist at this observation.
     pub const ENCRYPTED_VALUE_ACCOUNT_ABSENT: &str = "encrypted-value-account-absent";
-    /// The lineage account belongs to another program.
+    /// The encrypted value account belongs to another program.
     pub const ENCRYPTED_VALUE_ACCOUNT_FOREIGN_OWNER: &str = "encrypted-value-account-foreign-owner";
-    /// The account is host-owned but is not a lineage.
+    /// The account is host-owned but is not an encrypted value account.
     pub const ENCRYPTED_VALUE_ACCOUNT_WRONG_TYPE: &str = "encrypted-value-account-wrong-type";
-    /// The account carries the lineage type but its body does not decode.
+    /// The account carries the encrypted value account type but its body does not decode.
     pub const ENCRYPTED_VALUE_ACCOUNT_MALFORMED: &str = "encrypted-value-account-malformed";
-    /// The lineage's own fields derive a different identity than the one claimed.
+    /// The encrypted value account's own fields derive a different identity than the one claimed.
     pub const ENCRYPTED_VALUE_ID_MISMATCH: &str = "encrypted-value-id-mismatch";
-    /// The named handle is not the lineage's current handle.
+    /// The named handle is not the encrypted value account's current handle.
     pub const HANDLE_NOT_CURRENT: &str = "handle-not-current";
-    /// The subject is not a current member of the lineage.
+    /// The subject is not a current member of the encrypted value account.
     pub const SUBJECT_NOT_A_MEMBER: &str = "subject-not-a-member";
     /// The proof did not establish inclusion against the observed peaks — because it did not
     /// verify, or because it names a leaf position the observation does not have. Both are the
     /// same observable fact from the outside, and both are classified by the leaf count the
     /// request claimed: below the observed one means rebuild, at or above it means retry.
     pub const INCLUSION_PROOF_DOES_NOT_VERIFY: &str = "inclusion-proof-does-not-verify";
-    /// The lineage's ACL domain is outside the signed scope.
+    /// The encrypted value account's ACL domain is outside the signed scope.
     pub const DOMAIN_NOT_ALLOWED: &str = "domain-not-allowed";
     /// No delegation record exists for the tuple at this observation.
     pub const DELEGATION_ABSENT: &str = "delegation-absent";

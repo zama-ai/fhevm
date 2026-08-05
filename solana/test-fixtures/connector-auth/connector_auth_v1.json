@@ -16,7 +16,7 @@
   "vectors": [
     {
       "name": "direct-current",
-      "comment": "The reference request: the signer names their own live handle, is a current member of its lineage, and the lineage's domain is in the signed scope.",
+      "comment": "The reference request: the signer names their own live handle, is a current member of its encrypted value account, and the encrypted value account's domain is in the signed scope.",
       "result": "valid",
       "request": {
         "permit": {
@@ -62,7 +62,7 @@
     },
     {
       "name": "delegated-current",
-      "comment": "A handle owned by a delegator, used by the signer under a live delegation for the lineage's app account. The authorized subject is the delegator.",
+      "comment": "A handle owned by a delegator, used by the signer under a live delegation for the encrypted value account's app account. The authorized subject is the delegator.",
       "result": "valid",
       "request": {
         "permit": {
@@ -113,7 +113,7 @@
     },
     {
       "name": "delegated-via-wildcard-row",
-      "comment": "A delegator grants across every one of their apps with one row carrying the reserved app-context sentinel instead of an app account. It authorizes a lineage that has no app-specific row, exactly as the EVM ACL's wildcard delegation does. The consequence is part of the rule: revoking the app-specific row does not stop a delegate who holds this one.",
+      "comment": "A delegator grants across every one of their apps with one row carrying the reserved app-context sentinel instead of an app account. It authorizes an encrypted value account that has no app-specific row, exactly as the EVM ACL's wildcard delegation does. The consequence is part of the rule: revoking the app-specific row does not stop a delegate who holds this one.",
       "result": "valid",
       "request": {
         "permit": {
@@ -256,7 +256,7 @@
     },
     {
       "name": "permissive-scope-foreign-domain",
-      "comment": "An empty signed domain list is permissive: the domain rule is skipped entirely, so a lineage of any domain is in scope. Membership still has to hold.",
+      "comment": "An empty signed domain list is permissive: the domain rule is skipped entirely, so a encrypted value account of any domain is in scope. Membership still has to hold.",
       "result": "valid",
       "request": {
         "permit": {
@@ -433,7 +433,7 @@
     },
     {
       "name": "many-handles-in-one-request",
-      "comment": "One request naming many handles of many lineages. No layer of the Connector caps the count: the system-wide decryption budget is summed and enforced by the Gateway entry point on chain, so a request that exists has already passed it.",
+      "comment": "One request naming many handles of many encrypted value accounts. No layer of the Connector caps the count: the system-wide decryption budget is summed and enforced by the Gateway entry point on chain, so a request that exists has already passed it.",
       "result": "valid",
       "request": {
         "permit": {
@@ -2013,13 +2013,13 @@
       }
     },
     {
-      "name": "missing-lineage",
-      "comment": "The lineage account does not exist at this observation. Transient by nature: the account may simply not have reached the observed commitment yet.",
+      "name": "missing-encrypted-value-account",
+      "comment": "The encrypted value account does not exist at this observation. Transient by nature: the account may simply not have reached the observed commitment yet.",
       "result": "invalid",
       "rule": "encrypted-value-account-absent",
       "class": "transient",
       "derived_from": "direct-current",
-      "mutation": "the lineage account is removed from the observation",
+      "mutation": "the encrypted value account is removed from the observation",
       "request": {
         "permit": {
           "user_pubkey": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
@@ -2058,13 +2058,13 @@
       }
     },
     {
-      "name": "lineage-owned-by-another-program",
+      "name": "encrypted-value-account-owned-by-another-program",
       "comment": "Program ownership is the sole trust anchor: an account with impeccable contents under another program's ownership proves nothing.",
       "result": "invalid",
       "rule": "encrypted-value-account-foreign-owner",
       "class": "terminal",
       "derived_from": "direct-current",
-      "mutation": "the lineage account's owner is replaced with another program",
+      "mutation": "the encrypted value account's owner is replaced with another program",
       "request": {
         "permit": {
           "user_pubkey": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
@@ -2108,13 +2108,13 @@
       }
     },
     {
-      "name": "delegation-record-as-lineage",
-      "comment": "A host-owned account of another type is caught by the discriminator rather than by what its bytes happen to mean when read as a lineage.",
+      "name": "delegation-record-as-encrypted-value-account",
+      "comment": "A host-owned account of another type is caught by the discriminator rather than by what its bytes happen to mean when read as an encrypted value account.",
       "result": "invalid",
       "rule": "encrypted-value-account-wrong-type",
       "class": "terminal",
       "derived_from": "direct-current",
-      "mutation": "the lineage address holds a delegation record instead",
+      "mutation": "the encrypted value account address holds a delegation record instead",
       "request": {
         "permit": {
           "user_pubkey": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
@@ -2158,13 +2158,13 @@
       }
     },
     {
-      "name": "lineage-with-a-truncated-body",
+      "name": "encrypted-value-account-with-a-truncated-body",
       "comment": "A body cut short is not the same thing as a body followed by extra bytes: the first cannot be read, the second is an account with room to spare.",
       "result": "invalid",
       "rule": "encrypted-value-account-malformed",
       "class": "terminal",
       "derived_from": "direct-current",
-      "mutation": "eight bytes are removed from the end of the lineage account",
+      "mutation": "eight bytes are removed from the end of the encrypted value account",
       "request": {
         "permit": {
           "user_pubkey": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
@@ -2208,13 +2208,13 @@
       }
     },
     {
-      "name": "lineage-deriving-another-value-key",
-      "comment": "The account's own fields must reproduce the identity that was claimed. This is the backstop that makes a substituted lineage a rejection rather than a redirection.",
+      "name": "encrypted-value-account-deriving-another-id",
+      "comment": "The account's own fields must reproduce the identity that was claimed. This is the backstop that makes a substituted encrypted value account a rejection rather than a redirection.",
       "result": "invalid",
       "rule": "encrypted-value-id-mismatch",
       "class": "terminal",
       "derived_from": "direct-current",
-      "mutation": "the lineage address holds a lineage of another app account",
+      "mutation": "the encrypted value account address holds an encrypted value account of another app account",
       "request": {
         "permit": {
           "user_pubkey": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
@@ -2259,12 +2259,12 @@
     },
     {
       "name": "handle-of-an-unsigned-domain",
-      "comment": "With a non-empty signed scope, every entry's lineage domain must be in it. The domain tested is the lineage's — a request has no field for it.",
+      "comment": "With a non-empty signed scope, every entry's encrypted value account domain must be in it. The domain tested is the encrypted value account's — a request has no field for it.",
       "result": "invalid",
       "rule": "domain-not-allowed",
       "class": "terminal",
       "derived_from": "direct-current",
-      "mutation": "the entry names a lineage whose domain is outside the signed scope",
+      "mutation": "the entry names an encrypted value account whose domain is outside the signed scope",
       "request": {
         "permit": {
           "user_pubkey": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
@@ -2314,7 +2314,7 @@
       "rule": "handle-not-current",
       "class": "terminal",
       "derived_from": "direct-current",
-      "mutation": "the lineage's current handle moves on before the observation",
+      "mutation": "the encrypted value account's current handle moves on before the observation",
       "request": {
         "permit": {
           "user_pubkey": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
@@ -2359,12 +2359,12 @@
     },
     {
       "name": "subject-outside-the-current-members",
-      "comment": "Current access requires membership of the lineage's current subject set, and the set is the account's rather than the request's.",
+      "comment": "Current access requires membership of the encrypted value account's current subject set, and the set is the account's rather than the request's.",
       "result": "invalid",
       "rule": "subject-not-a-member",
       "class": "terminal",
       "derived_from": "direct-current",
-      "mutation": "the lineage's subject set names somebody else",
+      "mutation": "the encrypted value account's subject set names somebody else",
       "request": {
         "permit": {
           "user_pubkey": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
@@ -2409,7 +2409,7 @@
     },
     {
       "name": "leaf-index-beyond-the-leaf-count",
-      "comment": "A position the lineage does not have is refused before any hashing: there is nothing for the proof to be a proof of. From the outside this is an inclusion failure like any other, and it is classified like one — by the leaf count the request claims. Here the claim is at or above the observed count, which is what a proof service running ahead of this observation looks like, so the answer is to retry rather than to rebuild.",
+      "comment": "A position the encrypted value account does not have is refused before any hashing: there is nothing for the proof to be a proof of. From the outside this is an inclusion failure like any other, and it is classified like one — by the leaf count the request claims. Here the claim is at or above the observed count, which is what a proof service running ahead of this observation looks like, so the answer is to retry rather than to rebuild.",
       "result": "invalid",
       "rule": "inclusion-proof-does-not-verify",
       "class": "retryable",
@@ -2458,13 +2458,13 @@
       }
     },
     {
-      "name": "leaf-commitment-for-another-lineage",
-      "comment": "A leaf sealed for another lineage account authorizes nothing here.",
+      "name": "leaf-commitment-for-another-encrypted-value-account",
+      "comment": "A leaf sealed for another encrypted value account authorizes nothing here.",
       "result": "invalid",
       "rule": "inclusion-proof-does-not-verify",
       "class": "retryable",
       "derived_from": "historical-after-supersession",
-      "mutation": "the sealed leaf commits to another lineage account",
+      "mutation": "the sealed leaf commits to another encrypted value account",
       "request": {
         "permit": {
           "user_pubkey": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
@@ -3133,13 +3133,13 @@
       }
     },
     {
-      "name": "lineage-record-as-delegation",
-      "comment": "A host-owned account of another type at the delegation address is caught by its discriminator, the mirror of the same substitution against a lineage.",
+      "name": "encrypted-value-account-record-as-delegation",
+      "comment": "A host-owned account of another type at the delegation address is caught by its discriminator, the mirror of the same substitution against an encrypted value account.",
       "result": "invalid",
       "rule": "delegation-wrong-account-type",
       "class": "terminal",
       "derived_from": "delegated-current",
-      "mutation": "the delegation address holds a lineage account instead",
+      "mutation": "the delegation address holds an encrypted value account instead",
       "request": {
         "permit": {
           "user_pubkey": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
