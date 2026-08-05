@@ -108,7 +108,7 @@ async fn supersession_rejects_a_current_entry_at_the_later_observation() {
         failure,
         AuthorizationFailure::HandleBinding {
             index: 0,
-            source: HandleBindingFailure::Superseded { .. }
+            source: HandleBindingFailure::NotCurrentHandle { .. }
         }
     ));
     assert_eq!(failure.class(), FailureClass::Terminal);

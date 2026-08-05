@@ -440,7 +440,7 @@ async fn the_deciding_state_of_a_delegated_request_is_the_second_reads() {
             failure,
             AuthorizationFailure::HandleBinding {
                 index: 0,
-                source: HandleBindingFailure::Superseded { .. }
+                source: HandleBindingFailure::NotCurrentHandle { .. }
             }
         ),
         "expected the deciding read's supersession, got {failure}"

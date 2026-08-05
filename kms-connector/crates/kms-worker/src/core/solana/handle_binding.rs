@@ -50,7 +50,7 @@ fn check_current(
     subject: SolanaPubkeyBytes,
 ) -> Result<(), HandleBindingFailure> {
     authorize_current(lineage.lineage(), handle, subject).map_err(|error| match error {
-        AclError::HandleMismatch => HandleBindingFailure::Superseded {
+        AclError::HandleMismatch => HandleBindingFailure::NotCurrentHandle {
             requested: handle,
             current: lineage.lineage().current_handle,
         },
@@ -151,7 +151,7 @@ pub enum HandleBindingFailure {
     /// silently redirected to whatever is live now — the same handle remains reachable as
     /// historical access, because supersession seals a leaf for the then-subjects.
     #[error("lineage's current handle is not the requested one")]
-    Superseded {
+    NotCurrentHandle {
         /// The handle the request named.
         requested: HandleBytes,
         /// The handle the lineage currently holds.

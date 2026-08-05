@@ -259,7 +259,7 @@ impl HandleBindingFailure {
             Self::ProofDoesNotVerify { .. } | Self::LeafIndexOutOfRange { .. } => {
                 FailureClass::Retryable
             }
-            Self::Superseded { .. } | Self::NotAMember { .. } | Self::MmrStateInconsistent => {
+            Self::NotCurrentHandle { .. } | Self::NotAMember { .. } | Self::MmrStateInconsistent => {
                 FailureClass::Terminal
             }
         }

@@ -2311,7 +2311,7 @@
       "name": "superseded-current-handle",
       "comment": "A current-mode entry whose handle has been superseded fails, and is not quietly answered with whatever is current instead. The same handle remains reachable as historical access.",
       "result": "invalid",
-      "rule": "handle-superseded",
+      "rule": "handle-not-current",
       "class": "terminal",
       "derived_from": "direct-current",
       "mutation": "the lineage's current handle moves on before the observation",

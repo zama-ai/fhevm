@@ -285,7 +285,7 @@ fn classify_binding_failure(
     match source {
         HandleBindingFailure::ProofDoesNotVerify { live_leaf_count } => inclusion(live_leaf_count),
         HandleBindingFailure::LeafIndexOutOfRange { leaf_count, .. } => inclusion(leaf_count),
-        binding @ (HandleBindingFailure::Superseded { .. }
+        binding @ (HandleBindingFailure::NotCurrentHandle { .. }
         | HandleBindingFailure::NotAMember { .. }
         | HandleBindingFailure::MmrStateInconsistent) => AuthorizationFailure::HandleBinding {
             index,

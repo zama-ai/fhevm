@@ -254,7 +254,7 @@ pub mod rule {
     /// The lineage's own fields derive a different identity than the one claimed.
     pub const ENCRYPTED_VALUE_ID_MISMATCH: &str = "encrypted-value-id-mismatch";
     /// The named handle is not the lineage's current handle.
-    pub const HANDLE_SUPERSEDED: &str = "handle-superseded";
+    pub const HANDLE_NOT_CURRENT: &str = "handle-not-current";
     /// The subject is not a current member of the lineage.
     pub const SUBJECT_NOT_A_MEMBER: &str = "subject-not-a-member";
     /// The proof did not establish inclusion against the observed peaks — because it did not
@@ -302,7 +302,7 @@ pub mod rule {
         ENCRYPTED_VALUE_ACCOUNT_WRONG_TYPE,
         ENCRYPTED_VALUE_ACCOUNT_MALFORMED,
         ENCRYPTED_VALUE_ID_MISMATCH,
-        HANDLE_SUPERSEDED,
+        HANDLE_NOT_CURRENT,
         SUBJECT_NOT_A_MEMBER,
         INCLUSION_PROOF_DOES_NOT_VERIFY,
         DOMAIN_NOT_ALLOWED,

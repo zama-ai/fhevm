@@ -913,7 +913,7 @@ fn handle_binding_scenarios() -> Vec<Scenario> {
          with whatever is current instead. The same handle remains reachable as historical access.",
         "direct-current",
         "the lineage's current handle moves on before the observation",
-        rule::HANDLE_SUPERSEDED,
+        rule::HANDLE_NOT_CURRENT,
         FailureClass::Terminal,
         RequestBuilder::new(&wallet)
             .direct_current(&moved_on, superseded)
@@ -1447,7 +1447,7 @@ fn rule_name(failure: &AuthorizationFailure) -> &'static str {
             LineageFailure::Snapshot(_) => panic!("a record carries one observation"),
         },
         AuthorizationFailure::HandleBinding { source, .. } => match source {
-            HandleBindingFailure::Superseded { .. } => rule::HANDLE_SUPERSEDED,
+            HandleBindingFailure::NotCurrentHandle { .. } => rule::HANDLE_NOT_CURRENT,
             HandleBindingFailure::NotAMember { .. } => rule::SUBJECT_NOT_A_MEMBER,
             // Both proof outcomes reach a client through `InclusionFailed` below, which is where
             // they are classified by the claimed leaf count. Seeing one here would mean the

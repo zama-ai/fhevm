@@ -97,7 +97,7 @@ fn a_superseded_handle_is_not_replaced_by_the_live_one() {
 
     assert!(matches!(
         failure,
-        HandleBindingFailure::Superseded { requested, current }
+        HandleBindingFailure::NotCurrentHandle { requested, current }
             if requested == superseded && current == live
     ));
     assert_eq!(
