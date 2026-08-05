@@ -79,8 +79,8 @@ test("keeps every phase lock cumulative", () => {
   const ordered = [
     phaseVersions.baseline,
     phaseVersions.gatewayContracts,
-    phaseVersions.relayer,
     phaseVersions.hostContracts,
+    phaseVersions.relayer,
     phaseVersions.kms,
     phaseVersions.listenerCore,
     phaseVersions.coprocessor,
@@ -96,19 +96,23 @@ test("keeps every phase lock cumulative", () => {
   }
 });
 
-// The SDK resolves the protocol version from the on-chain ACL version and posts user decryption
-// to /v2/user-decrypt below protocol 0.14 and /v3/user-decrypt from 0.14 on. Upgrading the host
-// ACL switches every client to /v3 at once, and the 0.13 relayer serves only /v2 — so the relayer
-// has to be on 0.14 before the host contracts move. The 0.14 relayer still serves /v2, which is
-// what makes relayer-first safe against the still-0.13 ACL.
-test("upgrades the relayer before the host contracts", () => {
-  expect(phaseOrder.indexOf("relayer")).toBeLessThan(phaseOrder.indexOf("host-contracts"));
-  // The relayer phase is already on the target relayer while host contracts are still on 0.13.
-  expect(phaseVersions.relayer.RELAYER_VERSION).toBe(to.RELAYER_VERSION);
-  expect(phaseVersions.relayer.HOST_VERSION).toBe(from.HOST_VERSION);
-  // ...and the host-contracts phase keeps the upgraded relayer.
-  expect(phaseVersions.hostContracts.RELAYER_VERSION).toBe(to.RELAYER_VERSION);
+// Host contracts and the relayer pin each other across this boundary, so they are one phase with
+// no gate between them:
+//  - the 0.14 relayer boots by calling getCurrentKmsContextAndEpoch() on ProtocolConfig, which
+//    only exists from 0.14, so it cannot run against 0.13 host contracts;
+//  - the SDK resolves the protocol version from the on-chain ACL version and posts user
+//    decryption to /v3/user-decrypt from protocol 0.14 on, which the 0.13 relayer does not serve.
+test("moves the host contracts and the relayer as one gated step", () => {
+  expect(phaseOrder).toContain("host-contracts-relayer");
+  // Neither component gets a gate of its own.
+  expect(phaseOrder).not.toContain("relayer");
+  expect(phaseOrder).not.toContain("host-contracts");
+  // Host contracts land first so the relayer finds the ProtocolConfig call it needs...
   expect(phaseVersions.hostContracts.HOST_VERSION).toBe(to.HOST_VERSION);
+  expect(phaseVersions.hostContracts.RELAYER_VERSION).toBe(from.RELAYER_VERSION);
+  // ...and the relayer follows immediately, keeping the upgraded host contracts.
+  expect(phaseVersions.relayer.HOST_VERSION).toBe(to.HOST_VERSION);
+  expect(phaseVersions.relayer.RELAYER_VERSION).toBe(to.RELAYER_VERSION);
 });
 
 test("ends every phase on the target versions", () => {
@@ -166,8 +170,16 @@ test("gates every phase on rollout-standard by default", () => {
 });
 
 test("covers multi-chain isolation in heavy mode wherever contracts moved", () => {
-  expect(rolloutPhaseTestProfiles("host-contracts", "rollout-heavy")).toContain("multi-chain-isolation");
+  expect(rolloutPhaseTestProfiles("host-contracts-relayer", "rollout-heavy")).toContain("multi-chain-isolation");
   expect(rolloutPhaseTestProfiles("final", "rollout-heavy")).toContain("multi-chain-isolation");
+});
+
+// The merged gate has to keep what both phases used to check, notably the v3 user-decryption
+// route that the host ACL upgrade switches clients onto.
+test("keeps the relayer checks on the merged gate in heavy mode", () => {
+  const profiles = rolloutPhaseTestProfiles("host-contracts-relayer", "rollout-heavy");
+  expect(profiles).toContain("unified-user-decryption");
+  expect(profiles).toContain("negative-acl");
 });
 
 test("rejects unsupported rollout test modes", () => {

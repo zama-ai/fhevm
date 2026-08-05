@@ -31,8 +31,7 @@ type RolloutTestMode = (typeof rolloutTestModes)[number];
 type RolloutPhase =
   | "baseline"
   | "gateway-contracts"
-  | "relayer"
-  | "host-contracts"
+  | "host-contracts-relayer"
   | "kms-prss-bridge"
   | "kms"
   | "final";
@@ -43,8 +42,16 @@ type RolloutPhase =
 const heavyPhaseProfiles: Record<RolloutPhase, string[]> = {
   baseline: ["rollout-standard", "multi-chain-isolation"],
   "gateway-contracts": ["rollout-standard"],
-  "host-contracts": ["rollout-standard", "multi-chain-isolation", "operators", "hcu-block-cap"],
-  relayer: ["rollout-standard", "negative-acl", "unified-user-decryption"],
+  // Both components moved here, so this gate carries what the contract and relayer phases used
+  // to carry separately — including unified-user-decryption, which is the /v3 route itself.
+  "host-contracts-relayer": [
+    "rollout-standard",
+    "multi-chain-isolation",
+    "operators",
+    "hcu-block-cap",
+    "negative-acl",
+    "unified-user-decryption",
+  ],
   "kms-prss-bridge": ["rollout-standard", "public-decryption"],
   kms: ["rollout-standard", "public-decryption", "random-subset"],
   final: [
@@ -206,8 +213,9 @@ export default async function run(ctx: RolloutRunContext) {
   const testMode = resolveRolloutTestMode(process.env.ROLLOUT_TEST_PROFILE);
   const baselineLock = await writePhaseVersionLock(ctx, "00-baseline", phaseVersions.baseline);
   const gatewayContractsLock = await writePhaseVersionLock(ctx, "01-gateway-contracts", phaseVersions.gatewayContracts);
-  const relayerLock = await writePhaseVersionLock(ctx, "02-relayer", phaseVersions.relayer);
-  const hostContractsLock = await writePhaseVersionLock(ctx, "03-host-contracts", phaseVersions.hostContracts);
+  // Two locks, one phase: the host contracts land first, then the relayer, with no gate between.
+  const hostContractsLock = await writePhaseVersionLock(ctx, "02a-host-contracts", phaseVersions.hostContracts);
+  const relayerLock = await writePhaseVersionLock(ctx, "02b-relayer", phaseVersions.relayer);
   const kmsPrssBridgeLock = await writePhaseVersionLock(ctx, "04-kms-prss-bridge", phaseVersions.kmsPrssBridge);
   const kmsLock = await writePhaseVersionLock(ctx, "05-kms", phaseVersions.kms);
   const listenerCoreLock = await writePhaseVersionLock(ctx, "06-listener-core", phaseVersions.listenerCore);
@@ -228,17 +236,21 @@ export default async function run(ctx: RolloutRunContext) {
   await ctx.refreshDiscovery();
   await testPhase(ctx, "gateway-contracts", testMode);
 
-  // Before the host contracts, not after. The SDK resolves the protocol version from the on-chain
-  // ACL version and posts user decryption to /v2/user-decrypt below protocol 0.14 and
-  // /v3/user-decrypt from 0.14 on. Upgrading the host ACL switches every client to /v3 at once,
-  // and the 0.13 relayer serves only /v2, so contracts-then-relayer 404s every user decryption
-  // until the relayer catches up. The 0.14 relayer serves both routes, so moving it first is
-  // backward compatible with the still-0.13 ACL: expand, then migrate.
-  logPhase("02 relayer: upgrade before the host ACL flips clients onto the v3 relayer API");
-  await ctx.upgradeRuntimeGroup("relayer", { lockFile: relayerLock });
-  await testPhase(ctx, "relayer", testMode);
-
-  logPhase("03 host contracts: ProtocolConfig on every chain, canonical first, then the rest");
+  // One phase, deliberately not two: across this boundary the host contracts and the relayer pin
+  // each other in both directions, so neither can cross alone.
+  //
+  //  - The 0.14 relayer cannot boot against 0.13 host contracts. It initializes /v2/keyurl by
+  //    calling getCurrentKmsContextAndEpoch() on ProtocolConfig, which only exists from 0.14;
+  //    against 0.13 that call reverts with empty data and the relayer exits.
+  //  - The 0.14 host contracts cannot be served by a 0.13 relayer. The SDK resolves the protocol
+  //    version from the on-chain ACL version and posts user decryption to /v2/user-decrypt below
+  //    protocol 0.14 and /v3/user-decrypt from 0.14 on; the 0.13 relayer only serves /v2.
+  //
+  // Host contracts therefore move first, giving the relayer the ProtocolConfig call it needs, and
+  // the relayer follows immediately with no gate in between — a gate there would fail by
+  // construction. Clients see failed user decryptions for the width of this window, which is a
+  // property of the release, not of this runbook.
+  logPhase("02 host contracts + relayer: one step; 0.13 and 0.14 pin each other across this edge");
   await prepareContractMigrationSources(ctx, "host", hostContractsLock, hostContractKeys);
   const targets = await hostChainTargets(ctx);
   await migrateProtocolConfig(ctx, targets);
@@ -249,7 +261,9 @@ export default async function run(ctx: RolloutRunContext) {
     }
   }
   await ctx.refreshDiscovery();
-  await testPhase(ctx, "host-contracts", testMode);
+  console.log("[rollout] host contracts are on 0.14; the relayer must follow before anything is tested");
+  await ctx.upgradeRuntimeGroup("relayer", { lockFile: relayerLock });
+  await testPhase(ctx, "host-contracts-relayer", testMode);
 
   // Two KMS phases, not one. 0.13.22 is the only kms-core that serves peers on both sides of
   // the PRSS hotfix, so it is a required stop between 0.13.20 and 0.14. The connector stays on
@@ -280,8 +294,7 @@ export default async function run(ctx: RolloutRunContext) {
 export const phaseOrder = [
   "baseline",
   "gateway-contracts",
-  "relayer",
-  "host-contracts",
+  "host-contracts-relayer",
   "kms-prss-bridge",
   "kms",
   "final",

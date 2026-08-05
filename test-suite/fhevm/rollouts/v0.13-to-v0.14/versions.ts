@@ -112,8 +112,8 @@ const withTargetVersions = (...keys: EnvKey[]): Env => ({
 export type RolloutPhaseKey =
   | "baseline"
   | "gatewayContracts"
-  | "relayer"
   | "hostContracts"
+  | "relayer"
   | "kmsPrssBridge"
   | "kms"
   | "listenerCore"
@@ -122,18 +122,25 @@ export type RolloutPhaseKey =
 /**
  * Every phase lock is cumulative: it carries all earlier phases' target versions.
  *
- * The relayer moves before the host contracts, not after. The SDK resolves the protocol version
- * from the on-chain ACL version and routes user decryption to `/v2/user-decrypt` below protocol
- * 0.14 and `/v3/user-decrypt` from 0.14 on. Upgrading the host ACL therefore switches every
- * client to /v3 at once, and the 0.13 relayer only serves /v2 — so contracts-then-relayer breaks
- * decryption for the whole window between the two. The 0.14 relayer serves both routes, so
- * relayer-first is backward compatible with the still-0.13 ACL: expand, then migrate.
+ * `hostContracts` and `relayer` are two locks but one indivisible step, because 0.13 and 0.14
+ * pin each other in both directions:
+ *
+ *  - The 0.14 relayer cannot boot against 0.13 host contracts. It initializes `/v2/keyurl` by
+ *    calling `getCurrentKmsContextAndEpoch()` on ProtocolConfig, which only exists from 0.14, so
+ *    against 0.13 the call reverts with empty data and the relayer exits.
+ *  - The 0.14 host contracts cannot serve a 0.13 relayer. The SDK resolves the protocol version
+ *    from the on-chain ACL version and posts user decryption to `/v2/user-decrypt` below protocol
+ *    0.14 and `/v3/user-decrypt` from 0.14 on, and the 0.13 relayer only serves /v2.
+ *
+ * So neither component can cross the boundary alone: host contracts move first (giving the
+ * relayer the ProtocolConfig call it needs), the relayer follows immediately, and the phase is
+ * gated only once both have landed.
  */
 export const phaseVersions: Record<RolloutPhaseKey, Env> = {
   baseline: from,
   gatewayContracts: withTargetVersions(...gatewayContractKeys),
-  relayer: withTargetVersions(...gatewayContractKeys, ...relayerKeys),
-  hostContracts: withTargetVersions(...gatewayContractKeys, ...relayerKeys, ...hostContractKeys),
+  hostContracts: withTargetVersions(...gatewayContractKeys, ...hostContractKeys),
+  relayer: withTargetVersions(...gatewayContractKeys, ...hostContractKeys, ...relayerKeys),
   // kms-core only, and only as far as the PRSS bridge. The connector stays on 0.13 here:
   // this phase exists to prove the bridge version serves a pre-hotfix cluster unchanged.
   kmsPrssBridge: {
