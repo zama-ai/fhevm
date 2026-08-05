@@ -1,8 +1,7 @@
 import { assert, expect } from 'chai';
 
 // Encrypts 7, runs TestInput.add42ToInput64, then asserts the result decrypts to 49
-// through both user decryption and public decryption. Shared by the standard input
-// flow and the priority-coprocessor input flow so the two stay in sync.
+// through both user decryption and public decryption.
 export const runAdd42InputAndDecrypt = async function (this: Mocha.Context) {
   const encryptedInput = await this.instances.alice.encryptUint64({
     value: 7n,

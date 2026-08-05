@@ -1,11 +1,11 @@
-import { task, types } from "hardhat/config";
+import { task, types } from 'hardhat/config';
 
-import { getRequiredAddressEnvVar, loadAddressEnvVarsFromFile } from "../../utils";
-import { appendAddressToSolidityFile, createSolidityAddressesFile } from "../utils";
-import { MOCKED_PAYMENT_BRIDGING_ADDRESSES_ENV_FILE_NAME } from "./mocked";
+import { getRequiredAddressEnvVar, loadAddressEnvVarsFromFile } from '../../utils';
+import { appendAddressToSolidityFile, createSolidityAddressesFile } from '../utils';
+import { MOCKED_PAYMENT_BRIDGING_ADDRESSES_ENV_FILE_NAME } from './mocked';
 
 // Define the file names for registering the payment bridging contract addresses
-const PAYMENT_BRIDGING_ADDRESSES_SOLIDITY_FILE_NAME = "PaymentBridgingAddresses.sol";
+const PAYMENT_BRIDGING_ADDRESSES_SOLIDITY_FILE_NAME = 'PaymentBridgingAddresses.sol';
 
 function setPaymentBridgingContractAddress(name: string) {
   const address = getRequiredAddressEnvVar(name);
@@ -22,17 +22,17 @@ export function setPaymentBridgingContractAddresses() {
   createSolidityAddressesFile(PAYMENT_BRIDGING_ADDRESSES_SOLIDITY_FILE_NAME);
 
   // Set the payment bridging contract addresses in the solidity file
-  setPaymentBridgingContractAddress("ZamaOFT");
-  setPaymentBridgingContractAddress("FeesSenderToBurner");
+  setPaymentBridgingContractAddress('ZamaOFT');
+  setPaymentBridgingContractAddress('FeesSenderToBurner');
 
-  console.log("Payment bridging contract addresses set successfully!\n");
+  console.log('Payment bridging contract addresses set successfully!\n');
 }
 
 // Set the payment bridging contract addresses in the environment variables
-task("task:setPaymentBridgingContractAddresses")
+task('task:setPaymentBridgingContractAddresses')
   .addParam(
-    "useInternalAddresses",
-    "If proxy address from the /addresses directory should be used",
+    'useInternalAddresses',
+    'If proxy address from the /addresses directory should be used',
     false,
     types.boolean,
   )

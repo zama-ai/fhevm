@@ -432,6 +432,12 @@ hostListenerPollerShared:
   #     --dependence-cross-block
   #   v0.12 only:
   #     --dependent-ops-max-per-chain=0
+  #   when the image supports it:
+  #     --seed-start-block=-10000            # starting block when no poller state exists yet;
+  #                                             # >= 0 absolute height, negative = blocks behind head.
+  #                                             # Used only at first startup: existing state always
+  #                                             # wins, so restarts never rewind or skip. Set this when
+  #                                             # onboarding a new host chain to avoid walking from genesis.
   extraArgs: []
 
   # Service ports configuration
@@ -1188,9 +1194,10 @@ snsWorker:
 
   # Component-specific configuration
   config:
-    # S3 bucket name for ciphertext storage (ct64 and ct128). Rendered as the
-    # S3_BUCKET_NAME env var and referenced by --bucket-name-ct64 /
-    # --bucket-name-ct128. Accepts `value` or `valueFrom`
+    # S3 bucket name for ciphertext storage. Both ct64 and ct128 objects live in
+    # this single bucket, under their `ct64/` and `ct128/` key prefixes.
+    # Rendered as the S3_BUCKET_NAME env var and referenced by --bucket-name.
+    # Accepts `value` or `valueFrom`
     # (secretKeyRef/configMapKeyRef). Leave unset to inject nothing.
     # Example:
     #   s3BucketName:
@@ -1436,7 +1443,7 @@ txSender:
   #     --error-sleep-max-secs=4
   #     --send-txn-sync-timeout-secs=4           # alias: --txn-receipt-timeout-secs
   #     --review-after-unlimited-retries=30
-  #     --provider-max-retries=4294967295
+  #     --provider-max-retries=10               # finite: alloy retries internally, so we exit on BackendGone
   #     --provider-retry-interval=4s
   #     --health-check-timeout=4s
   #     --log-level=INFO

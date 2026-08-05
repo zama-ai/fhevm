@@ -232,6 +232,8 @@ const applyDiscoveryEnv = (
     KMS_GENERATION_CONTRACT_ADDRESS: primaryHost.KMS_GENERATION_CONTRACT_ADDRESS,
     CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS: primaryHost.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS,
     LZ_ENDPOINT_ADDRESS: primaryHost.LZ_ENDPOINT_ADDRESS,
+    PROTOCOL_PAYMENT_ADDRESS: state.discovery.gateway.PROTOCOL_PAYMENT_ADDRESS,
+    ZAMA_OFT_ADDRESS: envs["gateway-sc"].ZAMA_OFT_ADDRESS,
   });
   envs["test-suite"].BRIDGE_REAL_LZ = chains.some((chain) => realLzEndpointFor(chain.key)) ? "true" : "";
 };
@@ -446,7 +448,9 @@ const buildInstanceEnvs = async (
   }
   for (let index = 0; index < plan.topology.count; index += 1) {
     const wallet = await deriveWallet(mnemonic, COPROCESSOR_WALLET_INDICES[index]);
-    const opBucket = `coproc-${index}-ct128`;
+    // A single bucket per coprocessor holds both its ct128 and ct64 objects,
+    // under their respective key prefixes, as deployed in production.
+    const opBucket = `coproc-${index}`;
     envs["gateway-sc"][`COPROCESSOR_TX_SENDER_ADDRESS_${index}`] = wallet.address;
     envs["gateway-sc"][`COPROCESSOR_SIGNER_ADDRESS_${index}`] = wallet.address;
     envs["gateway-sc"][`COPROCESSOR_S3_BUCKET_URL_${index}`] = `${MINIO_INTERNAL_URL}/${opBucket}`;
@@ -454,6 +458,7 @@ const buildInstanceEnvs = async (
     if (index === 0) {
       envs["coprocessor"].TX_SENDER_PRIVATE_KEY = wallet.privateKey;
       Object.assign(envs["coprocessor"], baseInstance?.env ?? {});
+      envs["coprocessor"].BUCKET_NAME = opBucket;
       continue;
     }
     const next = { ...envs["coprocessor"] };
@@ -461,7 +466,7 @@ const buildInstanceEnvs = async (
     const dbCreds = `${envs.database.POSTGRES_USER}:${envs.database.POSTGRES_PASSWORD}`;
     next.DATABASE_URL = `postgresql://${dbCreds}@${POSTGRES_HOST}/${dbName}`;
     next.TX_SENDER_PRIVATE_KEY = wallet.privateKey;
-    next.BUCKET_NAME_CT128 = opBucket;
+    next.BUCKET_NAME = opBucket;
     const instance = plan.coprocessor.instances.find((item) => item.index === index);
     Object.assign(next, instance?.env ?? {});
     instanceEnvs[`coprocessor.${index}`] = next;
@@ -541,8 +546,6 @@ export const renderEnvMaps = async (
   const instanceEnvs = await buildInstanceEnvs(envs, plan, deriveWallet);
   envs["test-suite"].GATEWAY_DEPLOYER_PRIVATE_KEY = envs["gateway-sc"].DEPLOYER_PRIVATE_KEY;
   envs["test-suite"].GATEWAY_PAUSER_PRIVATE_KEY = envs["gateway-sc"].PAUSER_PRIVATE_KEY;
-  envs["test-suite"].PRIORITY_COPROCESSOR_TX_SENDER_ADDRESS =
-    envs["gateway-sc"].COPROCESSOR_TX_SENDER_ADDRESS_0;
   Object.assign(instanceEnvs, buildKmsConnectorInstanceEnvs(envs, kmsParties));
 
   // Propagate SNS-worker S3 migration configuration.

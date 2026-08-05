@@ -25,11 +25,9 @@ impl KmsInstance {
         // between parallel tests.
         let s3_port: u16 = s3_url.split(":").nth(2).unwrap().parse()?;
         let s3_internal_url = format!("http://host.docker.internal:{s3_port}");
-        let cmd = format!(
-            "kms-gen-keys --public-storage s3 --public-s3-bucket '{KMS_PUBLIC_VAULT_URL}' \\
-            --aws-s3-endpoint '{s3_internal_url}' --private-storage file --private-file-path \\
-            '{KMS_PRIVATE_VAULT_URL}' centralized && kms-server --config-file config/config.toml"
-        );
+
+        let cmd = "kms-gen-keys --config-file config/gen-keys-config.toml && \
+            kms-server --config-file config/config.toml";
         let version = ROOT_CARGO_TOML.get_kms_grpc_version();
         let container = GenericImage::new("ghcr.io/zama-ai/kms/core-service", &version)
             .with_exposed_port(ContainerPort::Tcp(50051))
@@ -57,7 +55,15 @@ impl KmsInstance {
                 ))
                 .unwrap(),
             )
-            .with_cmd(["-c", &cmd])
+            .with_copy_to(
+                "/app/kms/core/service/config/gen-keys-config.toml".to_string(),
+                PathBuf::from_str(&format!(
+                    "{}/tests/data/gen-keys-config.toml",
+                    env!("CARGO_MANIFEST_DIR"),
+                ))
+                .unwrap(),
+            )
+            .with_cmd(["-c", cmd])
             .with_startup_timeout(Duration::from_secs(180))
             .start()
             .await?;

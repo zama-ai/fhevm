@@ -122,7 +122,7 @@ impl DbEventPicker {
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE public_decryption_requests.decryption_id = req.decryption_id
-                RETURNING req.decryption_id, sns_ct_materials, extra_data,
+                RETURNING req.decryption_id, ct_handles, extra_data,
                 tx_hash, already_sent, error_counter, created_at, otlp_context
             ",
         )
@@ -146,7 +146,7 @@ impl DbEventPicker {
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE user_decryption_requests.decryption_id = req.decryption_id
-                RETURNING req.decryption_id, sns_ct_materials, user_address, public_key, extra_data,
+                RETURNING req.decryption_id, ct_handles, user_address, public_key, extra_data,
                 signature, handle_owner_addresses, handle_contract_addresses, allowed_contracts,
                 start_timestamp, duration_seconds,
                 tx_hash, already_sent, error_counter, created_at, otlp_context

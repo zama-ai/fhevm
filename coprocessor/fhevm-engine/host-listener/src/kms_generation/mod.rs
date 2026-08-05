@@ -39,6 +39,7 @@ pub type KeyId = Uint<256, 4>;
 pub enum KeyType {
     ServerKey = 0,
     PublicKey = 1,
+    CompressedKeySet = 3,
 }
 
 impl TryFrom<u8> for KeyType {
@@ -48,6 +49,7 @@ impl TryFrom<u8> for KeyType {
         match value {
             0 => Ok(KeyType::ServerKey),
             1 => Ok(KeyType::PublicKey),
+            3 => Ok(KeyType::CompressedKeySet),
             _ => Err(anyhow!("Invalid KeyType")),
         }
     }

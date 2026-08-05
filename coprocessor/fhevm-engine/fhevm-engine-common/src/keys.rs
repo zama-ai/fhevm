@@ -111,10 +111,6 @@ impl FhevmKeys {
             compact_public_key,
             public_params: Arc::new(crs),
             #[cfg(feature = "gpu")]
-            #[cfg(feature = "latency")]
-            gpu_server_key: vec![compressed_server_key.decompress_to_gpu()],
-            #[cfg(feature = "gpu")]
-            #[cfg(not(feature = "latency"))]
             gpu_server_key: (0..get_number_of_gpus())
                 .map(|i| compressed_server_key.decompress_to_specific_gpu(tfhe::GpuIndex::new(i)))
                 .collect::<Vec<_>>(),
@@ -168,9 +164,9 @@ impl SerializedFhevmKeys {
         println!("Creating file {}", Self::FULL_SKS);
         std::fs::write(Self::FULL_SKS, self.server_key).expect("write sns_pk");
 
-        if self.client_key.is_some() {
+        if let Some(client_key) = self.client_key {
             println!("Creating file {}", Self::CKS);
-            std::fs::write(Self::CKS, self.client_key.unwrap()).expect("write cks");
+            std::fs::write(Self::CKS, client_key).expect("write cks");
         }
 
         println!("Creating file {}", Self::PKS);

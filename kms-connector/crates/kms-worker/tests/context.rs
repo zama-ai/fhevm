@@ -1,8 +1,8 @@
 mod common;
 
 use crate::common::{
-    create_mock_user_decryption_request_tx, init_kms_worker, mock_copro_registry_load,
-    testing_ct_attestation_config,
+    TEST_COPRO_REGISTRY_REFRESH, create_mock_user_decryption_request_tx, init_kms_worker,
+    mock_copro_registry_load,
 };
 use alloy::{
     primitives::U256,
@@ -15,19 +15,20 @@ use connector_utils::{
             InsertRequestOptions, TestEventType, check_no_uncompleted_request_in_db,
             check_request_failed_in_db, insert_rand_request,
         },
-        rand::{rand_digest, rand_sns_ct},
+        rand::{rand_digest, rand_handle},
         setup::{
             DbInstance, TestInstance, TestInstanceBuilder, erc1271_magic_response,
             init_host_chains_acl_contracts_mock,
         },
     },
-    types::{DEFAULT_EPOCH_ID, TESTING_KMS_CONTEXT, extra_data::ExtraData},
+    types::{DEFAULT_EPOCH_ID, TESTING_KMS_CONTEXT, extra_data::ExtraData, u256_to_request_id},
 };
+use kms_grpc::kms::v1::DestroyMpcContextResponse;
 use kms_worker::core::{
     Config,
     event_processor::{ContextManager, DbContextManager, ProcessingError, RequestCheckError},
 };
-use mocktail::server::MockServer;
+use mocktail::{MockSet, server::MockServer};
 use rstest::rstest;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
@@ -57,17 +58,17 @@ async fn test_decryption_context_not_found(
     // context-validation stage, before any ciphertext interaction.
     let asserter = Asserter::new();
     mock_copro_registry_load(&asserter, "http://unused-bucket-url");
-    let sns_ct = rand_sns_ct();
+    let handle = rand_handle();
     let tx_hash = rand_digest();
     let insert_options = InsertRequestOptions::new()
-        .with_sns_ct_materials(vec![sns_ct.clone()])
+        .with_ct_handles(vec![handle])
         .with_tx_hash(tx_hash)
         .with_context_id(unknown_context_id);
 
     for _ in 0..MAX_DECRYPTION_ATTEMPTS {
         if matches!(event_type, TestEventType::UserDecryption) {
             // Mocking `get_transaction_by_hash` call result
-            let mock_tx = create_mock_user_decryption_request_tx(tx_hash, sns_ct.ctHandle)?;
+            let mock_tx = create_mock_user_decryption_request_tx(tx_hash, handle)?;
             asserter.push_success(&mock_tx);
         }
         // The unknown context falls back to on-chain validation: `isValidKmsContext` → false
@@ -100,8 +101,7 @@ async fn test_decryption_context_not_found(
         }
         _ => vec![],
     };
-    let acl_contracts_mock =
-        init_host_chains_acl_contracts_mock(sns_ct.ctHandle.as_slice(), acl_responses);
+    let acl_contracts_mock = init_host_chains_acl_contracts_mock(handle, acl_responses);
 
     // No KMS mocks needed - request should fail before reaching KMS
     let kms_mock_server = MockServer::new_grpc("kms_service.v1.CoreServiceEndpoint");
@@ -112,7 +112,7 @@ async fn test_decryption_context_not_found(
         kms_core_endpoints: vec![kms_mock_server.base_url().unwrap().to_string()],
         max_decryption_attempts: MAX_DECRYPTION_ATTEMPTS,
         db_fast_event_polling: Duration::from_millis(500),
-        ct_attestation: testing_ct_attestation_config(false),
+        copro_registry_refresh: TEST_COPRO_REGISTRY_REFRESH,
         ..Default::default()
     };
     let kms_worker = init_kms_worker(
@@ -170,10 +170,10 @@ async fn test_decryption_context_invalid(#[case] event_type: TestEventType) -> a
     // context-validation stage, before any ciphertext interaction.
     let asserter = Asserter::new();
     mock_copro_registry_load(&asserter, "http://unused-bucket-url");
-    let sns_ct = rand_sns_ct();
+    let handle = rand_handle();
     let tx_hash = rand_digest();
     let insert_options = InsertRequestOptions::new()
-        .with_sns_ct_materials(vec![sns_ct.clone()])
+        .with_ct_handles(vec![handle])
         .with_tx_hash(tx_hash);
     // Default context_id = TESTING_KMS_CONTEXT
 
@@ -183,7 +183,7 @@ async fn test_decryption_context_invalid(#[case] event_type: TestEventType) -> a
             asserter.push_success(&false.abi_encode());
         }
         TestEventType::UserDecryption => {
-            let mock_tx = create_mock_user_decryption_request_tx(tx_hash, sns_ct.ctHandle)?;
+            let mock_tx = create_mock_user_decryption_request_tx(tx_hash, handle)?;
             asserter.push_success(&mock_tx);
         }
         TestEventType::UserDecryptionV2 => (),
@@ -208,8 +208,7 @@ async fn test_decryption_context_invalid(#[case] event_type: TestEventType) -> a
         TestEventType::UserDecryption => vec![true.abi_encode(); 2],
         _ => vec![],
     };
-    let acl_contracts_mock =
-        init_host_chains_acl_contracts_mock(sns_ct.ctHandle.as_slice(), acl_responses);
+    let acl_contracts_mock = init_host_chains_acl_contracts_mock(handle, acl_responses);
 
     let kms_mock_server = MockServer::new_grpc("kms_service.v1.CoreServiceEndpoint");
     kms_mock_server.start().await?;
@@ -219,7 +218,7 @@ async fn test_decryption_context_invalid(#[case] event_type: TestEventType) -> a
         kms_core_endpoints: vec![kms_mock_server.base_url().unwrap().to_string()],
         max_decryption_attempts: MAX_DECRYPTION_ATTEMPTS,
         db_fast_event_polling: Duration::from_millis(500),
-        ct_attestation: testing_ct_attestation_config(false),
+        copro_registry_refresh: TEST_COPRO_REGISTRY_REFRESH,
         ..Default::default()
     };
     let kms_worker = init_kms_worker(
@@ -244,6 +243,105 @@ async fn test_decryption_context_invalid(#[case] event_type: TestEventType) -> a
 
     // Verify no pending requests remain
     check_no_uncompleted_request_in_db(test_instance.db(), event_type).await?;
+
+    cancel_token.cancel();
+    kms_worker_task.await.unwrap();
+    Ok(())
+}
+
+#[rstest]
+#[timeout(Duration::from_secs(60))]
+#[tokio::test]
+async fn test_context_destruction_invalidates_returned_epochs() -> anyhow::Result<()> {
+    let test_instance = TestInstanceBuilder::default()
+        .with_db(DbInstance::setup_external().await?)
+        .build();
+
+    // The registry mocks are only consumed by its initial load — the destruction flow involves
+    // no ciphertext nor ACL interaction.
+    let asserter = Asserter::new();
+    mock_copro_registry_load(&asserter, "http://unused-bucket-url");
+    let mock_provider = ProviderBuilder::new()
+        .disable_recommended_fillers()
+        .connect_mocked_client(asserter);
+    let acl_contracts_mock = init_host_chains_acl_contracts_mock(rand_handle(), vec![]);
+
+    // Two epochs cached as valid under the testing context, to be reported destroyed by the Core
+    let destroyed_epoch_ids = [U256::from(41), U256::from(42)];
+    for epoch_id in destroyed_epoch_ids {
+        sqlx::query(
+            "INSERT INTO kms_epoch(id, context_id, is_valid, created_at, updated_at)
+            VALUES ($1, $2, TRUE, NOW(), NOW())",
+        )
+        .bind(epoch_id.as_le_slice())
+        .bind(TESTING_KMS_CONTEXT.as_le_slice())
+        .execute(test_instance.db())
+        .await?;
+    }
+
+    // Destruction request targeting `TESTING_KMS_CONTEXT`
+    insert_rand_request(
+        test_instance.db(),
+        TestEventType::KmsContextDestroyed,
+        InsertRequestOptions::new().with_id(TESTING_KMS_CONTEXT),
+    )
+    .await?;
+
+    // Mock the KMS Core's response to the destruction request
+    let mut kms_mocks = MockSet::new();
+    kms_mocks.mock(|when, then| {
+        when.path("/kms_service.v1.CoreServiceEndpoint/DestroyMpcContext");
+        then.pb(DestroyMpcContextResponse {
+            epoch_ids: destroyed_epoch_ids.map(u256_to_request_id).to_vec(),
+        });
+    });
+    let kms_mock_server =
+        MockServer::new_grpc("kms_service.v1.CoreServiceEndpoint").with_mocks(kms_mocks);
+    kms_mock_server.start().await?;
+    info!("KMS mock server started!");
+
+    let config = Config {
+        kms_core_endpoints: vec![kms_mock_server.base_url().unwrap().to_string()],
+        copro_registry_refresh: TEST_COPRO_REGISTRY_REFRESH,
+        ..Default::default()
+    };
+    let kms_worker = init_kms_worker(
+        config,
+        mock_provider,
+        acl_contracts_mock,
+        test_instance.db(),
+    )
+    .await?;
+    let cancel_token = CancellationToken::new();
+    let kms_worker_task = tokio::spawn(kms_worker.start(cancel_token.clone()));
+    info!("KmsWorker started!");
+
+    // Waiting for the destruction request to reach a terminal status.
+    while let Err(e) =
+        check_no_uncompleted_request_in_db(test_instance.db(), TestEventType::KmsContextDestroyed)
+            .await
+    {
+        warn!("Request not yet processed: {e}");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+
+    // Both epochs reported by the Core must be invalidated...
+    for epoch_id in destroyed_epoch_ids {
+        let is_valid: bool = sqlx::query_scalar("SELECT is_valid FROM kms_epoch WHERE id = $1")
+            .bind(epoch_id.as_le_slice())
+            .fetch_one(test_instance.db())
+            .await?;
+        assert!(!is_valid, "epoch #{epoch_id} should have been invalidated");
+    }
+    // ...while the epoch not reported (seeded by `DbInstance::setup`) must remain valid.
+    let sibling_valid: bool = sqlx::query_scalar("SELECT is_valid FROM kms_epoch WHERE id = $1")
+        .bind(DEFAULT_EPOCH_ID.as_le_slice())
+        .fetch_one(test_instance.db())
+        .await?;
+    assert!(
+        sibling_valid,
+        "an epoch not reported by the Core should remain valid"
+    );
 
     cancel_token.cancel();
     kms_worker_task.await.unwrap();

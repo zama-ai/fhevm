@@ -9,6 +9,7 @@ use fhevm_engine_common::gcs_activation::{run_gcs_activation_watcher, GCS_NOT_AC
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::check_fhe_operand_types;
 use fhevm_engine_common::types::{FhevmError, Handle, SupportedFheCiphertexts};
+use fhevm_engine_common::versioning::{GcsRollbackPolicy, WriteGuard};
 use fhevm_engine_common::{tfhe_ops::current_ciphertext_version, types::SupportedFheOperations};
 use itertools::Itertools;
 use lazy_static::lazy_static;
@@ -232,24 +233,35 @@ async fn tfhe_worker_cycle(
             "acquire_connection"
         );
         let mut conn = pool.acquire().instrument(acq_span).await?;
-        // Cutover safety (BCS only): begin a write tx fenced against cutover —
-        // BEGIN-time retirement fence + shared cutover lock + retirement re-check.
-        // `None` means a committed cutover retired this stack: exit the cycle
-        // cleanly without writing. GCS workers write the gcs schema (not the
-        // cutover target), so the gate is a no-op for them. See
-        // versioning::begin_write_guarded.
+        // Begin a write tx under the shared controller lock. A retired BCS stack
+        // stops here; a GCS worker skips while a rolled-back dry-run is PAUSED.
+        // Holding the lock for the transaction keeps cutover and schema reset
+        // from overlapping its reads and writes. Shared locks still allow worker
+        // replicas to run concurrently. The state check runs after taking the
+        // lock. See versioning::begin_write_guarded.
         let txn_span = tracing::info_span!(parent: &loop_span, "begin_transaction");
-        let Some(mut trx) =
-            fhevm_engine_common::versioning::begin_write_guarded_conn(&mut conn, gcs_mode)
-                .instrument(txn_span)
-                .await?
-        else {
-            info!(target: "tfhe_worker", "Cutover completed — BCS worker exiting cycle");
-            return Ok(());
+        let mut trx = match fhevm_engine_common::versioning::begin_write_guarded_conn(
+            &mut conn,
+            gcs_mode,
+            GcsRollbackPolicy::Skip,
+        )
+        .instrument(txn_span)
+        .await?
+        {
+            WriteGuard::Proceed(trx) => trx,
+            WriteGuard::Stop => {
+                info!(target: "tfhe_worker", "Cutover completed — BCS worker exiting cycle");
+                return Ok(());
+            }
+            WriteGuard::Skip => {
+                debug!(target: "tfhe_worker", "GCS dry-run rolled back — skipping cycle");
+                immediately_poll_more_work = false;
+                continue;
+            }
         };
 
         // Query for transactions to execute
-        let (mut transactions, earliest_computation, has_more_work) = query_for_work(
+        let (mut transactions, _, has_more_work) = query_for_work(
             args,
             &health_check,
             &mut trx,
@@ -325,14 +337,11 @@ async fn tfhe_worker_cycle(
         } else {
             no_progress_cycles += 1;
             if no_progress_cycles >= args.dcid_max_no_progress_cycles {
-                // If we're not making progress on this dependence
-                // chain, update the last_updated_at field and
-                // release the lock so we can try to execute
-                // another chain.
-                info!(target: "tfhe_worker", "no progress on dependence chain, releasing");
-                dcid_mngr
-                    .release_current_lock(false, Some(earliest_computation))
-                    .await?;
+                // Stop extending this chain's lock so another chain can run.
+                // The parked chain remains pending and can be work-stolen
+                // after its existing lock TTL expires.
+                info!(target: "tfhe_worker", "no progress on dependence chain, parking until lock expiry");
+                dcid_mngr.park_current_lock();
             }
         }
         trx.commit().await?;
@@ -365,6 +374,15 @@ async fn query_ciphertexts<'a>(
     // before activation) still live in `public.ciphertexts` and must be
     // fetched explicitly. We do this as a two-step query: try GCS first,
     // then fetch the missing handles from `public.ciphertexts`.
+    //
+    // The public fallback is *block-gated*: `public.ciphertexts` is the live
+    // BCS table and keeps growing throughout the dry-run, so an unbounded read
+    // could surface a ciphertext BCS produced *after* the snapshot point.
+    // Importing such post-start state (which differs across operators and, for
+    // a breaking upgrade, differs byte-for-byte from GCS's own re-derivation)
+    // would break the consensus gate. We therefore serve a fallback row only
+    // when it is not known to have been produced after its track's start block
+    // — see the query below.
     let mut ciphertext_map: HashMap<Vec<u8>, (i16, Vec<u8>)> =
         HashMap::with_capacity(cts_to_query.len());
 
@@ -391,22 +409,97 @@ async fn query_ciphertexts<'a>(
             .cloned()
             .collect();
         if !missing.is_empty() {
-            // Fully qualified — bypass search_path so this read is unambiguous
-            // even if the connection's search_path changes.
-            let rows: Vec<(Vec<u8>, Vec<u8>, i16)> = sqlx::query_as(
-                "SELECT handle, ciphertext, ciphertext_type
-                 FROM public.ciphertexts
-                 WHERE handle = ANY($1::BYTEA[])",
+            // Per-chain start-block bounds for this GCS upgrade. `upgrade_state`
+            // is a shared (non-duplicated) control-plane table with one row per
+            // host chain; read it fully qualified so the result is unambiguous
+            // regardless of search_path.
+            let windows = sqlx::query!(
+                "SELECT host_chain_id, start_block, gw_start_block
+                 FROM public.upgrade_state WHERE stack_role = 'GCS'",
             )
-            .bind(&missing)
+            .fetch_all(trx.as_mut())
+            .await
+            .map_err(|err| {
+                error!(target: "tfhe_worker", { error = %err }, "error while reading GCS upgrade_state bounds");
+                err
+            })?;
+
+            // Fail safe: without at least one window carrying complete bounds we
+            // cannot prove a public row is pre-snapshot, so we serve none. The
+            // dependent computation then stalls (no consensus) rather than risking
+            // divergence — the intended safety behaviour.
+            if !windows
+                .iter()
+                .any(|w| w.start_block.is_some() && w.gw_start_block.is_some())
+            {
+                warn!(target: "tfhe_worker", { rows = windows.len(), missing = missing.len() },
+                    "GCS upgrade_state bounds incomplete; skipping public.ciphertexts fallback");
+                return Ok(ciphertext_map);
+            }
+
+            // Block-gated fallback into the live `public.ciphertexts`. Fully
+            // qualified to bypass search_path. A missing handle is served only
+            // if it is NOT known to have been produced after its track's start
+            // block. A pre-snapshot row either carries no block lineage
+            // (ancient / not-yet-bound, block_number NULL) or lineage at/below
+            // the bound; any post-start BCS write carries lineage strictly
+            // above it:
+            //   - compute outputs -> public.computations.block_number, scoped to
+            //     each output's own host chain (its `start_block`, joined by
+            //     host_chain_id);
+            //   - ZK input ctxts  -> public.input_handles.block_number, which is
+            //     the *Gateway* block (`gw_start_block`).
+            // Inputs never have a `computations` row and outputs never have an
+            // `input_handles` row, so the two guards route by source without an
+            // explicit `is_input` branch.
+            let rows = sqlx::query!(
+                "SELECT c.handle, c.ciphertext, c.ciphertext_type
+                 FROM public.ciphertexts c
+                 WHERE c.handle = ANY($1::BYTEA[])
+                   AND NOT EXISTS (
+                       SELECT 1 FROM public.computations comp
+                       JOIN public.upgrade_state us
+                         ON us.stack_role = 'GCS' AND us.host_chain_id = comp.host_chain_id
+                       WHERE comp.output_handle = c.handle
+                         AND comp.block_number >= us.start_block)
+                   AND NOT EXISTS (
+                       SELECT 1 FROM public.input_handles ih
+                       WHERE ih.handle = c.handle
+                         AND ih.block_number >= (
+                             SELECT MIN(gw_start_block) FROM public.upgrade_state WHERE stack_role = 'GCS'))",
+                &missing,
+            )
             .fetch_all(trx.as_mut())
             .await
             .map_err(|err| {
                 error!(target: "tfhe_worker", { error = %err }, "error while querying public.ciphertexts for pre-snapshot handles");
                 err
             })?;
-            for (handle, ciphertext, ciphertext_type) in rows {
-                let _ = ciphertext_map.insert(handle, (ciphertext_type, ciphertext));
+            for row in rows {
+                let _ = ciphertext_map.insert(row.handle, (row.ciphertext_type, row.ciphertext));
+            }
+
+            // Trace every handle the gate withheld — either absent from
+            // `public.ciphertexts` or block-gated as post-snapshot. Without this
+            // a stalled dry-run (the dependent computation never reaches
+            // consensus) gives no hint which handle could not be resolved.
+            let withheld: Vec<String> = missing
+                .iter()
+                .filter(|h| !ciphertext_map.contains_key(*h))
+                .map(|h| format!("0x{}", hex::encode(h)))
+                .collect();
+            if !withheld.is_empty() {
+                let gcs_windows: Vec<String> = windows
+                    .iter()
+                    .map(|w| {
+                        format!(
+                            "chain {:?} start={:?} gw={:?}",
+                            w.host_chain_id, w.start_block, w.gw_start_block
+                        )
+                    })
+                    .collect();
+                debug!(target: "tfhe_worker", { gcs_windows = ?gcs_windows, withheld = ?withheld },
+                    "GCS public.ciphertexts fallback withheld handles (absent or block-gated as post-snapshot)");
             }
         }
     }

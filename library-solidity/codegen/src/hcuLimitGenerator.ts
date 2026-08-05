@@ -162,10 +162,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     const functionName = `checkHCUFor${operation.charAt(0).toUpperCase() + operation.slice(1)}`;
     const lhsName = operation === 'fheMulDiv' ? 'factor1' : 'lhs';
     const rhsName = operation === 'fheMulDiv' ? 'factor2' : 'rhs';
-    const lhsDoc =
-      operation === 'fheMulDiv' ? 'The first multiplication factor.' : 'The left-hand side operand.';
-    const rhsDoc =
-      operation === 'fheMulDiv' ? 'The second multiplication factor.' : 'The right-hand side operand.';
+    const lhsDoc = operation === 'fheMulDiv' ? 'The first multiplication factor.' : 'The left-hand side operand.';
+    const rhsDoc = operation === 'fheMulDiv' ? 'The second multiplication factor.' : 'The right-hand side operand.';
 
     if (data.supportScalar && data.scalar && data.nonScalar) {
       switch (data.numberInputs) {
@@ -317,8 +315,20 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     if (data.scalar && data.nonScalar) {
-      const scalarVariantByte = operation === 'fheMulDiv' ? 'FHE_MUL_DIV_FACTOR2_SCALAR' : '0x01';
-      output += `if (scalarByte == ${scalarVariantByte}) {
+      if (operation === 'fheMulDiv') {
+        output += `if (scalarByte == FHE_MUL_DIV_FACTOR2_SCALAR) {
+          ${generatePriceChecks(data.scalar)}
+
+          ${generateCheckTransactionLimit(data.numberInputs, true, lhsName, rhsName)}
+        } else if (scalarByte == FHE_MUL_DIV_FACTOR2_ENCRYPTED) {
+          ${generatePriceChecks(data.nonScalar)}
+
+        ${generateCheckTransactionLimit(data.numberInputs, false, lhsName, rhsName)}
+        } else {
+          revert OnlyScalarOperationsAreSupported();
+    }`;
+      } else {
+        output += `if (scalarByte == 0x01) {
           ${generatePriceChecks(data.scalar)}
 
           ${generateCheckTransactionLimit(data.numberInputs, true, lhsName, rhsName)}
@@ -327,6 +337,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
         ${generateCheckTransactionLimit(data.numberInputs, false, lhsName, rhsName)}
     }`;
+      }
     } else if (data.scalar) {
       output += `if(scalarByte != 0x01) revert OnlyScalarOperationsAreSupported();`;
       output += `${generatePriceChecks(data.scalar)}

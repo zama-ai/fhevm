@@ -15,6 +15,7 @@ use crate::{Config, ExecutionError};
 use aws_sdk_s3::Client;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::db_keys::DbKeyId;
+use fhevm_engine_common::gcs_activation::GCS_NOT_ACTIVATED;
 use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Version};
 use fhevm_engine_common::pg_pool::PostgresPoolManager;
 use fhevm_engine_common::pg_pool::ServiceError;
@@ -22,6 +23,7 @@ use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::{get_ct_type, SupportedFheCiphertexts};
 use fhevm_engine_common::utils::to_hex;
 use fhevm_engine_common::versioning::StackMode;
+use fhevm_engine_common::versioning::{GcsRollbackPolicy, WriteGuard};
 use opentelemetry::trace::{Status, TraceContextExt};
 use rayon::prelude::*;
 use sqlx::postgres::PgListener;
@@ -29,6 +31,7 @@ use sqlx::Pool;
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use std::fmt;
 use std::num::NonZeroUsize;
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::SystemTime;
@@ -76,6 +79,10 @@ pub struct SwitchNSquashService {
     /// Shared blue-green stack mode. While `gcs_mode` is set the worker is the
     /// green stack in its dry-run window and suppresses S3 uploads + GC.
     mode: Arc<StackMode>,
+
+    /// GCS dry-run pause flag, re-checked every iteration so a rollback re-pauses
+    /// the loop. `GCS_NOT_ACTIVATED` parks; a real `start_block` runs.
+    start_block_state: Arc<AtomicI64>,
 }
 impl HealthCheckService for SwitchNSquashService {
     async fn health_check(&self) -> HealthStatus {
@@ -131,6 +138,7 @@ impl HealthCheckService for SwitchNSquashService {
 }
 
 impl SwitchNSquashService {
+    #[allow(clippy::too_many_arguments)]
     pub async fn create(
         pool_mngr: &PostgresPoolManager,
         conf: Config,
@@ -139,6 +147,7 @@ impl SwitchNSquashService {
         s3_client: Arc<Client>,
         events_tx: InternalEvents,
         mode: Arc<StackMode>,
+        start_block_state: Arc<AtomicI64>,
     ) -> Result<SwitchNSquashService, ExecutionError> {
         Ok(SwitchNSquashService {
             pool: pool_mngr.pool(),
@@ -149,6 +158,7 @@ impl SwitchNSquashService {
             tx,
             events_tx,
             mode,
+            start_block_state,
         })
     }
 
@@ -164,6 +174,7 @@ impl SwitchNSquashService {
             let keys_cache = keys_cache.clone();
             let events_tx = self.events_tx.clone();
             let mode = self.mode.clone();
+            let start_block_state = self.start_block_state.clone();
 
             async move {
                 run_loop(
@@ -175,6 +186,7 @@ impl SwitchNSquashService {
                     keys_cache,
                     events_tx,
                     mode,
+                    start_block_state,
                 )
                 .await
                 .map_err(ServiceError::from)
@@ -204,6 +216,7 @@ pub(crate) async fn run_loop(
     keys_cache: Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>>,
     events_tx: InternalEvents,
     mode: Arc<StackMode>,
+    start_block_state: Arc<AtomicI64>,
 ) -> Result<(), ExecutionError> {
     update_last_active(last_active_at.clone()).await;
 
@@ -222,6 +235,16 @@ pub(crate) async fn run_loop(
     loop {
         // Continue looping until the service is cancelled or a critical error occurs
         update_last_active(last_active_at.clone()).await;
+
+        // GCS gating: park while the dry-run flag is unset (pre-activation or after rollback). No-op for BCS.
+        if mode.gcs_mode() && start_block_state.load(Ordering::SeqCst) == GCS_NOT_ACTIVATED {
+            debug!("GCS not activated (or rolled back); sns-worker paused, re-checking shortly");
+            tokio::select! {
+                _ = token.cancelled() => return Ok(()),
+                _ = tokio::time::sleep(Duration::from_secs(5)) => {}
+            }
+            continue;
+        }
 
         let latest_keys = get_keyset(pool.clone(), keys_cache.clone()).await?;
         if let Some((key_id_gw, keyset)) = latest_keys {
@@ -341,7 +364,12 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
     // shared lock + retirement re-check make that airtight instead of relying on
     // the digest-NULL predicate alone. GC only runs for the live (non-GCS) stack,
     // so gcs_mode is false here.
-    let Some(mut trx) = fhevm_engine_common::versioning::begin_write_guarded(pool, false).await?
+    let WriteGuard::Proceed(mut trx) = fhevm_engine_common::versioning::begin_write_guarded(
+        pool,
+        false,
+        GcsRollbackPolicy::Continue,
+    )
+    .await?
     else {
         info!("Cutover completed — skipping ciphertexts128 GC on retired stack");
         return Ok(());
@@ -418,22 +446,31 @@ async fn fetch_and_execute_sns_tasks(
     uploads_enabled: bool,
     gcs_mode: bool,
 ) -> Result<Option<(bool, usize)>, ExecutionError> {
-    // Cutover safety (BCS only): begin a write tx fenced against cutover before
-    // writing any ct128 / digest rows into the tables execute_cutover merges.
-    // `None` means a committed cutover retired this stack. See
+    // Begin the write tx under the shared controller lock before changing any
+    // ct128 or digest rows. A retired BCS stack stops here; a GCS worker skips
+    // while the dry-run is PAUSED after rollback. See
     // versioning::begin_write_guarded.
-    let mut db_txn =
-        match fhevm_engine_common::versioning::begin_write_guarded(pool, gcs_mode).await {
-            Ok(Some(txn)) => txn,
-            Ok(None) => {
-                info!("Cutover completed — SnS BCS worker stopping");
-                return Ok(None);
-            }
-            Err(err) => {
-                error!(error = %err, "Failed to begin transaction");
-                return Err(err.into());
-            }
-        };
+    let mut db_txn = match fhevm_engine_common::versioning::begin_write_guarded(
+        pool,
+        gcs_mode,
+        GcsRollbackPolicy::Skip,
+    )
+    .await
+    {
+        Ok(WriteGuard::Proceed(txn)) => txn,
+        Ok(WriteGuard::Stop) => {
+            info!("Cutover completed — SnS BCS worker stopping");
+            return Ok(None);
+        }
+        Ok(WriteGuard::Skip) => {
+            debug!("GCS dry-run rolled back — SnS worker skipping cycle");
+            return Ok(Some((false, 0)));
+        }
+        Err(err) => {
+            error!(error = %err, "Failed to begin transaction");
+            return Err(err.into());
+        }
+    };
 
     let order = if conf.db.lifo {
         Order::Desc

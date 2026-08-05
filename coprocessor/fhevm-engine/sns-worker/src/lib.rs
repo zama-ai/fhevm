@@ -60,7 +60,6 @@ use crate::{
 };
 
 pub const UPLOAD_QUEUE_SIZE: usize = 20;
-pub const SAFE_SER_LIMIT: u64 = 1024 * 1024 * 66;
 
 pub(crate) const CLEAN_OLD_S3_FORMAT_VERSION: i16 = 0;
 pub(crate) const S3_FORMAT_VERSION_V0: i16 = 0;
@@ -108,8 +107,7 @@ pub struct SNSMetricsConfig {
 
 #[derive(Clone, Default, Debug)]
 pub struct S3Config {
-    pub bucket_ct128: String,
-    pub bucket_ct64: String,
+    pub bucket: String,
     pub max_concurrent_uploads: u32,
     pub retry_policy: S3RetryPolicy,
     pub verify_sha256_checksum: bool,
@@ -775,6 +773,7 @@ pub async fn run_all(
             client.clone(),
             events_tx.clone(),
             stack_mode.clone(),
+            start_block_state.clone(),
         )
         .await?,
     );
@@ -815,7 +814,7 @@ pub async fn run_all(
         max_retries: conf.s3_migration_max_retries,
     };
 
-    let not_ready_error = Err(ExecutionError::BucketNotFound(conf.s3.bucket_ct128.clone()).into());
+    let not_ready_error = Err(ExecutionError::BucketNotFound(conf.s3.bucket.clone()).into());
     let mut concurrent_migration = None;
     match migration_config.mode {
         S3MigrationMode::No => {

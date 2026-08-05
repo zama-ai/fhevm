@@ -29,10 +29,6 @@ pub struct AccountState {
 }
 
 impl ZamaNonceManager {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     /// The primary logic for acquiring and locking the next valid nonce.
     ///
     /// The logic prioritizes filling gaps from `available_nonces` before

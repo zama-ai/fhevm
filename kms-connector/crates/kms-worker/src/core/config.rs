@@ -1,4 +1,5 @@
 use alloy::{primitives::Address, transports::http::reqwest::Url};
+use ciphertext_attestation::MAX_SNS_CIPHERTEXT_SERIALIZED_SIZE;
 use connector_utils::{
     config::{
         ContractConfig, DeserializeConfig,
@@ -17,7 +18,7 @@ use connector_utils::{
 #[cfg(test)]
 use serde::Serialize;
 use serde::{Deserialize, Deserializer};
-use std::{net::SocketAddr, str::FromStr, time::Duration};
+use std::{net::SocketAddr, num::NonZeroUsize, str::FromStr, time::Duration};
 
 /// Configuration of the `KmsWorker`.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -74,12 +75,38 @@ pub struct Config {
     #[serde(default = "default_max_decryption_attempts")]
     pub max_decryption_attempts: u16,
 
-    /// Number of retries for S3 ciphertext retrieval.
-    #[serde(default = "default_s3_ciphertext_retrieval_retries")]
-    pub s3_ciphertext_retrieval_retries: u8,
+    /// Number of attempts for S3 ciphertext retrieval.
+    #[serde(default = "default_s3_ciphertext_retrieval_attempts")]
+    pub s3_ciphertext_retrieval_attempts: u8,
     /// Timeout to connect to a S3 bucket.
     #[serde(with = "humantime_serde", default = "default_s3_connect_timeout")]
     pub s3_connect_timeout: Duration,
+    /// Timeout of a single attestation `HEAD` on a Coprocessor bucket.
+    #[serde(with = "humantime_serde", default = "default_s3_head_timeout")]
+    pub s3_head_timeout: Duration,
+    /// Timeout of a single ciphertext `GET`.
+    #[serde(with = "humantime_serde", default = "default_s3_get_timeout")]
+    pub s3_get_timeout: Duration,
+    /// Ceiling on the attestation `HEAD`s in flight on a single Coprocessor bucket, across all
+    /// requests.
+    #[serde(default = "default_s3_max_concurrent_heads_per_bucket")]
+    pub s3_max_concurrent_heads_per_bucket: NonZeroUsize,
+    /// Ceiling on the ciphertext `GET`s in flight, across all requests and buckets.
+    #[serde(default = "default_s3_max_concurrent_gets")]
+    pub s3_max_concurrent_gets: NonZeroUsize,
+    /// Ceiling on the size of a single ciphertext body, in bytes.
+    #[serde(default = "default_s3_max_ciphertext_size")]
+    pub s3_max_ciphertext_size: NonZeroUsize,
+    /// Refresh interval of the Coprocessor registry, read from the `GatewayConfig` contract.
+    #[serde(with = "humantime_serde", default = "default_copro_registry_refresh")]
+    pub copro_registry_refresh: Duration,
+
+    /// Ceiling on the calls a single host chain endpoint may have in flight, across all requests.
+    #[serde(default = "default_host_rpc_max_concurrent_calls")]
+    pub host_rpc_max_concurrent_calls: NonZeroUsize,
+    /// Timeout of a single host chain RPC call.
+    #[serde(with = "humantime_serde", default = "default_host_rpc_call_timeout")]
+    pub host_rpc_call_timeout: Duration,
 
     /// Gas cap for the host-chain `IERC1271.isValidSignature` static call (RFC-012).
     /// Bounded to prevent resource exhaustion from malicious smart-account contracts.
@@ -98,44 +125,6 @@ pub struct Config {
     /// The timeout to perform each external service connection healthcheck.
     #[serde(with = "humantime_serde", default = "default_healthcheck_timeout")]
     pub healthcheck_timeout: Duration,
-
-    /// Off-chain ciphertext-attestation verifier config.
-    #[serde(default)]
-    pub ct_attestation: CtAttestationConfig,
-}
-
-/// Configuration of the off-chain ciphertext-attestation verifier.
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-#[cfg_attr(test, derive(Serialize))]
-#[serde(default)]
-pub struct CtAttestationConfig {
-    /// Whether the verifier runs at all. Defaults to `true`.
-    #[serde(default = "default_ct_attestation_verifier_enabled")]
-    pub enabled: bool,
-
-    /// Per-bucket S3 attestation HEAD request timeout, in seconds. Defaults to 5.
-    #[serde(
-        with = "humantime_serde",
-        default = "default_ct_attestation_head_timeout"
-    )]
-    pub head_timeout: Duration,
-
-    /// Coprocessor registry snapshot refresh interval, in seconds. Defaults to 60.
-    #[serde(
-        with = "humantime_serde",
-        default = "default_copro_registry_refresh_interval"
-    )]
-    pub registry_refresh: Duration,
-}
-
-impl Default for CtAttestationConfig {
-    fn default() -> Self {
-        Self {
-            enabled: default_ct_attestation_verifier_enabled(),
-            head_timeout: default_ct_attestation_head_timeout(),
-            registry_refresh: default_copro_registry_refresh_interval(),
-        }
-    }
 }
 
 /// Configuration of a single Host Chain.
@@ -209,7 +198,7 @@ fn default_max_decryption_attempts() -> u16 {
     20
 }
 
-fn default_s3_ciphertext_retrieval_retries() -> u8 {
+fn default_s3_ciphertext_retrieval_attempts() -> u8 {
     3
 }
 
@@ -217,20 +206,41 @@ fn default_s3_connect_timeout() -> Duration {
     Duration::from_secs(3)
 }
 
-fn default_erc1271_gas_limit() -> u64 {
-    100_000
-}
-
-fn default_ct_attestation_verifier_enabled() -> bool {
-    true
-}
-
-fn default_ct_attestation_head_timeout() -> Duration {
+fn default_s3_head_timeout() -> Duration {
     Duration::from_secs(5)
 }
 
-fn default_copro_registry_refresh_interval() -> Duration {
+fn default_s3_get_timeout() -> Duration {
+    Duration::from_secs(20)
+}
+
+fn default_copro_registry_refresh() -> Duration {
     Duration::from_secs(60)
+}
+
+fn default_host_rpc_max_concurrent_calls() -> NonZeroUsize {
+    NonZeroUsize::new(128).unwrap()
+}
+
+fn default_host_rpc_call_timeout() -> Duration {
+    Duration::from_secs(10)
+}
+
+fn default_s3_max_concurrent_heads_per_bucket() -> NonZeroUsize {
+    NonZeroUsize::new(64).unwrap()
+}
+
+fn default_s3_max_concurrent_gets() -> NonZeroUsize {
+    // Kept low: SNS ciphertexts are big, so too many buffered at once would OOM the worker.
+    NonZeroUsize::new(16).unwrap()
+}
+
+fn default_s3_max_ciphertext_size() -> NonZeroUsize {
+    NonZeroUsize::new(MAX_SNS_CIPHERTEXT_SERIALIZED_SIZE as usize).unwrap()
+}
+
+fn default_erc1271_gas_limit() -> u64 {
+    100_000
 }
 
 impl DeserializeConfig for Config {}
@@ -260,14 +270,21 @@ impl Default for Config {
             kms_core_endpoints: vec!["http://localhost:50051".to_string()],
             grpc_request_retries: default_grpc_request_retries(),
             max_decryption_attempts: default_max_decryption_attempts(),
-            s3_ciphertext_retrieval_retries: default_s3_ciphertext_retrieval_retries(),
+            s3_ciphertext_retrieval_attempts: default_s3_ciphertext_retrieval_attempts(),
             s3_connect_timeout: default_s3_connect_timeout(),
+            s3_head_timeout: default_s3_head_timeout(),
+            s3_get_timeout: default_s3_get_timeout(),
+            s3_max_concurrent_heads_per_bucket: default_s3_max_concurrent_heads_per_bucket(),
+            s3_max_concurrent_gets: default_s3_max_concurrent_gets(),
+            s3_max_ciphertext_size: default_s3_max_ciphertext_size(),
+            copro_registry_refresh: default_copro_registry_refresh(),
+            host_rpc_max_concurrent_calls: default_host_rpc_max_concurrent_calls(),
+            host_rpc_call_timeout: default_host_rpc_call_timeout(),
             erc1271_gas_limit: default_erc1271_gas_limit(),
             service_name: default_service_name(),
             task_limit: default_task_limit(),
             monitoring_endpoint: default_monitoring_endpoint(),
             healthcheck_timeout: default_healthcheck_timeout(),
-            ct_attestation: CtAttestationConfig::default(),
         }
     }
 }
@@ -295,8 +312,16 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_KMS_CORE_ENDPOINTS");
             env::remove_var("KMS_CONNECTOR_GRPC_REQUEST_RETRIES");
             env::remove_var("KMS_CONNECTOR_MAX_DECRYPTION_ATTEMPTS");
-            env::remove_var("KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_RETRIES");
+            env::remove_var("KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_ATTEMPTS");
             env::remove_var("KMS_CONNECTOR_S3_CONNECT_TIMEOUT");
+            env::remove_var("KMS_CONNECTOR_S3_HEAD_TIMEOUT");
+            env::remove_var("KMS_CONNECTOR_S3_GET_TIMEOUT");
+            env::remove_var("KMS_CONNECTOR_S3_MAX_CONCURRENT_HEADS_PER_BUCKET");
+            env::remove_var("KMS_CONNECTOR_S3_MAX_CONCURRENT_GETS");
+            env::remove_var("KMS_CONNECTOR_S3_MAX_CIPHERTEXT_SIZE");
+            env::remove_var("KMS_CONNECTOR_COPRO_REGISTRY_REFRESH");
+            env::remove_var("KMS_CONNECTOR_HOST_RPC_MAX_CONCURRENT_CALLS");
+            env::remove_var("KMS_CONNECTOR_HOST_RPC_CALL_TIMEOUT");
             env::remove_var("KMS_CONNECTOR_SERVICE_NAME");
         }
     }
@@ -360,8 +385,16 @@ mod tests {
             );
             env::set_var("KMS_CONNECTOR_GRPC_REQUEST_RETRIES", "5");
             env::set_var("KMS_CONNECTOR_MAX_DECRYPTION_ATTEMPTS", "300");
-            env::set_var("KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_RETRIES", "5");
+            env::set_var("KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_ATTEMPTS", "5");
             env::set_var("KMS_CONNECTOR_S3_CONNECT_TIMEOUT", "4s");
+            env::set_var("KMS_CONNECTOR_S3_HEAD_TIMEOUT", "6s");
+            env::set_var("KMS_CONNECTOR_S3_GET_TIMEOUT", "30s");
+            env::set_var("KMS_CONNECTOR_S3_MAX_CONCURRENT_HEADS_PER_BUCKET", "32");
+            env::set_var("KMS_CONNECTOR_S3_MAX_CONCURRENT_GETS", "8");
+            env::set_var("KMS_CONNECTOR_S3_MAX_CIPHERTEXT_SIZE", "1048576");
+            env::set_var("KMS_CONNECTOR_COPRO_REGISTRY_REFRESH", "90s");
+            env::set_var("KMS_CONNECTOR_HOST_RPC_MAX_CONCURRENT_CALLS", "64");
+            env::set_var("KMS_CONNECTOR_HOST_RPC_CALL_TIMEOUT", "15s");
             env::set_var("KMS_CONNECTOR_SERVICE_NAME", "kms-connector-test");
         }
 
@@ -411,9 +444,36 @@ mod tests {
         );
         assert_eq!(config.grpc_request_retries, 5);
         assert_eq!(config.max_decryption_attempts, 300);
-        assert_eq!(config.s3_ciphertext_retrieval_retries, 5);
+        assert_eq!(config.s3_ciphertext_retrieval_attempts, 5);
         assert_eq!(config.s3_connect_timeout.as_secs(), 4);
+        assert_eq!(config.s3_head_timeout.as_secs(), 6);
+        assert_eq!(config.s3_get_timeout.as_secs(), 30);
+        assert_eq!(config.s3_max_concurrent_heads_per_bucket.get(), 32);
+        assert_eq!(config.s3_max_concurrent_gets.get(), 8);
+        assert_eq!(config.s3_max_ciphertext_size.get(), 1048576);
+        assert_eq!(config.copro_registry_refresh.as_secs(), 90);
+        assert_eq!(config.host_rpc_max_concurrent_calls.get(), 64);
+        assert_eq!(config.host_rpc_call_timeout.as_secs(), 15);
         assert_eq!(config.service_name, "kms-connector-test");
+
+        cleanup_env_vars();
+    }
+
+    #[test]
+    #[serial(config_tests)]
+    fn test_zero_ceiling_is_rejected() {
+        for ceiling in [
+            "KMS_CONNECTOR_S3_MAX_CONCURRENT_HEADS_PER_BUCKET",
+            "KMS_CONNECTOR_S3_MAX_CONCURRENT_GETS",
+            "KMS_CONNECTOR_S3_MAX_CIPHERTEXT_SIZE",
+            "KMS_CONNECTOR_HOST_RPC_MAX_CONCURRENT_CALLS",
+        ] {
+            cleanup_env_vars();
+            unsafe { env::set_var(ceiling, "0") }
+
+            let config = Config::from_env_and_file(Some(example_config_path()));
+            assert!(config.is_err(), "{ceiling} = 0 should not have loaded");
+        }
 
         cleanup_env_vars();
     }

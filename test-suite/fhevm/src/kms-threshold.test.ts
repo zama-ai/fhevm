@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 
 import { partyContainers, quorumPlan } from "./commands/kms-generation";
 import { resolveUpgradePlan } from "./flow/repair";
+import { upgradeThresholdKmsNode } from "./flow/up-flow";
 import { buildKmsConnectorOverride } from "./generate/compose";
 import { buildGatewayScSwapEnv, buildHostScSwapEnv, renderEnvMaps } from "./generate/env";
 import {
@@ -28,8 +29,9 @@ import { presetBundle } from "./resolve/target";
 import { resolveKmsTopology } from "./scenario/resolve";
 import { stackSpecForState, type StackSpec } from "./stack-spec/stack-spec";
 import { testDefaultScenario } from "./test-fixtures";
+import { withTempStateDir } from "./test-state";
 import type { State } from "./types";
-import { readEnvFile } from "./utils/fs";
+import { readEnvFile, writeJson } from "./utils/fs";
 
 const RENDER_OPTS = kmsRenderOptionsFor("c57f52f");
 const fourParty = resolveKmsTopology({ mode: "threshold", parties: 4, threshold: 1 });
@@ -186,6 +188,14 @@ describe("buildKmsThresholdOverride", () => {
     expect(JSON.stringify(core.entrypoint)).toContain(KMS_THRESHOLD_CONFIG_NAME);
     expect(JSON.stringify(core.entrypoint)).not.toContain("/bin/sh");
     expect(JSON.stringify(core.volumes)).not.toContain("minio_secrets");
+  });
+
+  test("renders an explicitly selected core version without changing the other nodes", () => {
+    const services = buildKmsThresholdOverride(fourParty, RENDER_OPTS, { 2: "target-core" }).services;
+    expect(services["kms-core"].image).toBe(RENDER_OPTS.coreImage);
+    expect(services["kms-core-2"].image).toBe("ghcr.io/zama-ai/kms/core-service:target-core");
+    expect(services["kms-core-3"].image).toBe(RENDER_OPTS.coreImage);
+    expect(services["kms-core-gen-keys"].image).toBe(RENDER_OPTS.coreImage);
   });
 
   test("cores publish no host ports (everything dials them over the docker network)", () => {
@@ -424,5 +434,186 @@ describe("resolveUpgradePlan (threshold guard)", () => {
   test("refuses to upgrade the single-core/connector KMS groups on a threshold-mode cluster", () => {
     expect(() => resolveUpgradePlan(thresholdState, "kms", { lockFile: true })).toThrow(/threshold-mode KMS/);
     expect(() => resolveUpgradePlan(thresholdState, "kms-core", { lockFile: true })).toThrow(/threshold-mode KMS/);
+  });
+});
+
+describe("upgradeThresholdKmsNode", () => {
+  test("persists a mixed fleet and recreates only the selected serving core", async () => {
+    await withTempStateDir(async (stateDir) => {
+      const versions = presetBundle("latest-main", "abcdef0", "baseline.json");
+      const state: State = {
+        target: "latest-main",
+        lockPath: "/tmp/baseline.json",
+        requiresGitHub: true,
+        versions,
+        overrides: [],
+        scenario: testDefaultScenario({
+          kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" },
+        }),
+        completedSteps: ["base"],
+        updatedAt: "2026-07-14T00:00:00.000Z",
+      };
+      const lockFile = path.join(stateDir, "target.json");
+      await writeJson(lockFile, {
+        ...versions,
+        lockName: "target.json",
+        env: { ...versions.env, CORE_VERSION: "target-core" },
+      });
+      const calls: string[] = [];
+      let persisted = state;
+
+      await upgradeThresholdKmsNode(3, { lockFile }, {
+        async loadState() {
+          return persisted;
+        },
+        async projectContainers() {
+          return ["kms-core", "kms-core-2", "kms-core-3", "kms-core-4"];
+        },
+        async ensureRuntimeArtifacts() {
+          calls.push("artifacts");
+        },
+        async saveState(next) {
+          persisted = next;
+          calls.push(`save:${next.versions.env.CORE_VERSION}:${next.kmsCoreVersionByNodeId?.[3]}`);
+        },
+        async generateRuntime(_next, plan) {
+          calls.push(`generate:${plan.versions.env.CORE_VERSION}:${plan.kmsCoreVersionByNodeId?.[3]}`);
+        },
+        async composeUp(component, services = [], options = {}) {
+          calls.push(`up:${component}:${services.join(",")}:${options.noDeps}:${options.forceRecreate}`);
+        },
+        async waitForContainer(container, want) {
+          calls.push(`wait:${container}:${want}`);
+        },
+      });
+
+      expect(calls).toEqual([
+        "artifacts",
+        `save:${versions.env.CORE_VERSION}:target-core`,
+        `generate:${versions.env.CORE_VERSION}:target-core`,
+        "up:core-threshold:kms-core-3:true:true",
+        "wait:kms-core-3:healthy",
+      ]);
+      expect(persisted.versions.env.CORE_VERSION).toBe(versions.env.CORE_VERSION);
+      expect(persisted.kmsCoreVersionByNodeId).toEqual({ 3: "target-core" });
+    });
+  });
+
+  test("moves the global version only after every serving core reaches the target", async () => {
+    await withTempStateDir(async (stateDir) => {
+      const versions = presetBundle("latest-main", "abcdef0", "baseline.json");
+      let persisted: State = {
+        target: "latest-main",
+        lockPath: "/tmp/baseline.json",
+        requiresGitHub: true,
+        versions,
+        overrides: [],
+        scenario: testDefaultScenario({
+          kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" },
+        }),
+        completedSteps: ["base"],
+        updatedAt: "2026-07-14T00:00:00.000Z",
+      };
+      const lockFile = path.join(stateDir, "target.json");
+      await writeJson(lockFile, {
+        ...versions,
+        lockName: "target.json",
+        env: { ...versions.env, CORE_VERSION: "target-core" },
+      });
+      const operations = {
+        async loadState() {
+          return persisted;
+        },
+        async projectContainers() {
+          return ["kms-core"];
+        },
+        async ensureRuntimeArtifacts() {},
+        async saveState(next: State) {
+          persisted = next;
+        },
+        async generateRuntime() {},
+        async composeUp() {},
+        async waitForContainer() {},
+      };
+
+      for (const nodeId of [1, 2, 3, 4]) {
+        await upgradeThresholdKmsNode(nodeId, { lockFile }, operations);
+      }
+
+      expect(persisted.versions.env.CORE_VERSION).toBe("target-core");
+      expect(persisted.kmsCoreVersionByNodeId).toBeUndefined();
+    });
+  });
+
+  test("keeps a spare core on its prior version when the serving committee reaches the target", async () => {
+    await withTempStateDir(async (stateDir) => {
+      const versions = presetBundle("latest-main", "abcdef0", "baseline.json");
+      let persisted: State = {
+        target: "latest-main",
+        lockPath: "/tmp/baseline.json",
+        requiresGitHub: true,
+        versions,
+        overrides: [],
+        scenario: testDefaultScenario({
+          kms: { mode: "threshold", parties: 5, threshold: 1, committeeSize: 4, fheParams: "Test" },
+        }),
+        completedSteps: ["base"],
+        updatedAt: "2026-07-14T00:00:00.000Z",
+      };
+      const lockFile = path.join(stateDir, "target.json");
+      await writeJson(lockFile, {
+        ...versions,
+        lockName: "target.json",
+        env: { ...versions.env, CORE_VERSION: "target-core" },
+      });
+      const operations = {
+        async loadState() {
+          return persisted;
+        },
+        async projectContainers() {
+          return ["kms-core"];
+        },
+        async ensureRuntimeArtifacts() {},
+        async saveState(next: State) {
+          persisted = next;
+        },
+        async generateRuntime() {},
+        async composeUp() {},
+        async waitForContainer() {},
+      };
+
+      for (const nodeId of [1, 2, 3, 4]) {
+        await upgradeThresholdKmsNode(nodeId, { lockFile }, operations);
+      }
+
+      expect(persisted.versions.env.CORE_VERSION).toBe("target-core");
+      expect(persisted.kmsCoreVersionByNodeId).toEqual({ 5: versions.env.CORE_VERSION });
+    });
+  });
+
+  test("rejects a spare node before changing runtime artifacts", async () => {
+    const state = {
+      scenario: testDefaultScenario({
+        kms: { mode: "threshold", parties: 5, threshold: 1, committeeSize: 4, fheParams: "Test" },
+      }),
+      completedSteps: ["base"],
+    } as State;
+    let touched = false;
+    await expect(upgradeThresholdKmsNode(5, { lockFile: "unused" }, {
+      async loadState() {
+        return state;
+      },
+      async projectContainers() {
+        return ["kms-core"];
+      },
+      async ensureRuntimeArtifacts() {
+        touched = true;
+      },
+      async saveState() {},
+      async generateRuntime() {},
+      async composeUp() {},
+      async waitForContainer() {},
+    })).rejects.toThrow(/between 1 and 4/);
+    expect(touched).toBe(false);
   });
 });
