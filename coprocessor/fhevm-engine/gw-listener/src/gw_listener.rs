@@ -13,12 +13,13 @@ use fhevm_engine_common::utils::to_hex;
 use fhevm_engine_common::versioning::{run_stack_version_listener, StackMode};
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres, Row};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::drift_detector::{DriftDetector, EventContext};
 use crate::metrics::{
     GET_BLOCK_NUM_FAIL_COUNTER, GET_BLOCK_NUM_SUCCESS_COUNTER, GET_LOGS_FAIL_COUNTER,
-    GET_LOGS_SUCCESS_COUNTER, VERIFY_PROOF_FAIL_COUNTER, VERIFY_PROOF_SUCCESS_COUNTER,
+    GET_LOGS_SUCCESS_COUNTER, VERIFY_PROOF_FAIL_COUNTER, VERIFY_PROOF_REPLAY_COUNTER,
+    VERIFY_PROOF_SUCCESS_COUNTER,
 };
 use crate::ConfigSettings;
 use crate::HealthStatus;
@@ -541,12 +542,12 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         response: InputVerification::VerifyProofResponse,
     ) -> anyhow::Result<()> {
         let zk_proof_id = response.zkProofId.to::<i64>();
-        let handles = response
+        let expected_handles = response
             .ctHandles
             .iter()
-            .flat_map(|handle| handle.as_slice())
-            .copied()
+            .map(|handle| handle.as_slice().to_vec())
             .collect::<Vec<_>>();
+        let handles = expected_handles.concat();
 
         let Some(mut tx) = fhevm_engine_common::versioning::begin_write_guarded(
             db_pool,
@@ -577,11 +578,37 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         .execute(tx.as_mut())
         .await?;
 
-        if result.rows_affected() > 0 {
-            info!(
+        let missing_ciphertexts = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*)
+             FROM unnest($1::BYTEA[]) AS expected(handle)
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM ciphertexts c
+                 WHERE c.handle = expected.handle AND c.ciphertext IS NOT NULL
+             )",
+        )
+        .bind(&expected_handles)
+        .fetch_one(tx.as_mut())
+        .await?;
+
+        if missing_ciphertexts == 0 {
+            sqlx::query(
+                "DELETE FROM verify_proofs
+                 WHERE zk_proof_id = $1 AND verified IS DISTINCT FROM TRUE",
+            )
+            .bind(zk_proof_id)
+            .execute(tx.as_mut())
+            .await?;
+            debug!(
                 zk_proof_id,
+                "Gateway-accepted input ciphertexts are already available locally"
+            );
+        } else if result.rows_affected() > 0 {
+            warn!(
+                zk_proof_id,
+                missing_ciphertexts,
                 "Gateway accepted locally unavailable proof; scheduling local replay"
             );
+            VERIFY_PROOF_REPLAY_COUNTER.inc();
             sqlx::query!(
                 "SELECT pg_notify($1, '')",
                 self.conf.verify_proof_req_db_channel
@@ -589,10 +616,31 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             .execute(tx.as_mut())
             .await?;
         } else {
-            debug!(
-                zk_proof_id,
-                "Gateway acceptance found no eligible retained proof; replay not scheduled"
-            );
+            let replay_pending = sqlx::query_scalar::<_, bool>(
+                "SELECT EXISTS (
+                     SELECT 1 FROM verify_proofs
+                     WHERE zk_proof_id = $1
+                       AND verified IS NULL
+                       AND handles IS NOT NULL
+                 )",
+            )
+            .bind(zk_proof_id)
+            .fetch_one(tx.as_mut())
+            .await?;
+
+            if replay_pending {
+                debug!(
+                    zk_proof_id,
+                    "Gateway-accepted proof replay is already pending"
+                );
+            } else {
+                error!(
+                    zk_proof_id,
+                    missing_ciphertexts,
+                    "Gateway accepted proof, but local ciphertexts and retained proof are missing"
+                );
+                VERIFY_PROOF_FAIL_COUNTER.inc();
+            }
         }
         tx.commit().await?;
         Ok(())

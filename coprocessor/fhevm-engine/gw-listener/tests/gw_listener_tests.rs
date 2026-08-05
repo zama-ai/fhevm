@@ -261,6 +261,33 @@ async fn quorum_acceptance_schedules_locally_rejected_proof_for_replay() -> anyh
     assert_eq!(replay_state.0, 3);
     assert!(replay_state.1);
 
+    let handle = vec![7u8; 32];
+    let ciphertext = vec![1u8];
+    test_harness::db_utils::insert_ciphertext64(&env.db_pool, &handle, &ciphertext).await?;
+    let available_receipt = input_verification
+        .emitVerifyProofResponse(U256::ZERO, vec![FixedBytes::from([7u8; 32])])
+        .send()
+        .await?
+        .get_receipt()
+        .await?;
+    assert!(available_receipt.status());
+
+    for retry in 0..=RETRY_EVENT_TO_DB {
+        sleep(RETRY_DELAY).await;
+        let retained = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM verify_proofs WHERE zk_proof_id = 0",
+        )
+        .fetch_one(&env.db_pool)
+        .await?;
+        if retained == 0 {
+            break;
+        }
+        assert!(
+            retry < RETRY_EVENT_TO_DB,
+            "Timed out waiting for already-available proof cleanup"
+        );
+    }
+
     env.cancel_token.cancel();
     run_handle.await??;
     Ok(())
