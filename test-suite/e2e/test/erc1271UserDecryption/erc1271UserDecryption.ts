@@ -75,6 +75,8 @@ describe('ERC-1271 user decryption', function () {
   let rejectWalletAddress: string;
   let safe2of3: SafeFixture;
   let safe3of3: SafeFixture;
+  let safe1of1: SafeFixture;
+  let safeNoHandler: SafeFixture;
   // Nested v=0 contract-signature fixtures: outer 2-of-3 Safes whose first
   // owner is itself a Safe (1-of-1 dave, and 2-of-3 bob/dave/eve).
   let innerSafe1of1: SafeAccount;
@@ -145,8 +147,12 @@ describe('ERC-1271 user decryption', function () {
     const infra = await deploySafeInfra(signers.alice);
     const multisigOwners = [signers.bob.address, signers.carol.address, signers.dave.address];
     const holderFactory = await ethers.getContractFactory('EncryptedValueHolder');
-    const deploySafeFixture = async (owners: readonly string[], threshold: number): Promise<SafeFixture> => {
-      const safe = await deploySafeAccount(infra, signers.alice, owners, threshold);
+    const deploySafeFixture = async (
+      owners: readonly string[],
+      threshold: number,
+      opts?: { readonly fallbackHandler?: string },
+    ): Promise<SafeFixture> => {
+      const safe = await deploySafeAccount(infra, signers.alice, owners, threshold, opts);
       const holder = await holderFactory.connect(signers.alice).deploy();
       await holder.waitForDeployment();
       const holderAddress = await holder.getAddress();
@@ -155,6 +161,10 @@ describe('ERC-1271 user decryption', function () {
     };
     safe2of3 = await deploySafeFixture(multisigOwners, 2);
     safe3of3 = await deploySafeFixture(multisigOwners, 3);
+    safe1of1 = await deploySafeFixture([signers.dave.address], 1);
+    // A Safe set up WITHOUT the fallback handler: it has code, but no
+    // `isValidSignature` to dispatch to (see ./safe.ts).
+    safeNoHandler = await deploySafeFixture(multisigOwners, 2, { fallbackHandler: ethers.ZeroAddress });
 
     // Inner Safes acting as CONTRACT owners of outer Safes (v=0 parts).
     innerSafe1of1 = await deploySafeAccount(infra, signers.alice, [signers.dave.address], 1);
@@ -346,6 +356,19 @@ describe('ERC-1271 user decryption', function () {
     expect(isSignatureRejection(post), JSON.stringify(post.raw)).to.equal(true);
   });
 
+  it('test erc1271 user decrypt rejects a Safe deployed without its fallback handler', async function () {
+    // The same "empty returndata" verifier branch as the no-code case above,
+    // reached by an account that DOES have code: a Safe set up with
+    // `fallbackHandler = address(0)` has no `isValidSignature` to dispatch to,
+    // and Safe's FallbackManager answers `return(0, 0)` — SUCCESS with zero
+    // bytes, not a revert. The signatures themselves are perfectly valid for
+    // the Safe's owners, so this isolates the missing-handler misconfiguration.
+    const req = await freshMultisigRequest(safeNoHandler);
+    const signature = await multisigSignature(safeNoHandler, req, [signers.bob, signers.carol]);
+    const { post } = await submitUnifiedRequest(cfg, req, { kind: 'raw', signature });
+    expect(isSignatureRejection(post), JSON.stringify(post.raw)).to.equal(true);
+  });
+
   it('test erc1271 user decrypt rejects an empty signature for an EOA userAddress', async function () {
     const handle = await userDecrypt.xUint64();
     const req: UnifiedDecryptRequest = {
@@ -419,6 +442,26 @@ describe('ERC-1271 user decryption', function () {
         waitForTerminal: true,
         timeoutMs: POSITIVE_TIMEOUT_MS,
       },
+    );
+    expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
+    expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+  });
+
+  it('test erc1271 user decrypt Safe 1-of-1 single owner signature succeeds', async function () {
+    this.timeout(POSITIVE_TIMEOUT_MS + TIMEOUT_MARGIN_MS);
+    const req = await freshMultisigRequest(safe1of1);
+    const signature = await multisigSignature(safe1of1, req, [signers.dave]);
+    // Exactly 65 bytes — the same length as a plain EOA signature, so every
+    // layer runs `ecrecover` FIRST and recovers a pseudo-random address (dave
+    // signed the SafeMessage wrap, not the digest). The mismatch against the
+    // Safe userAddress must fall through to ERC-1271 rather than reject: this
+    // is the 65-byte contract-wallet path the >65-byte blobs never exercise.
+    expect(signature.length).to.equal(2 + 65 * 2);
+    const { post, poll } = await requestUnifiedUserDecrypt(
+      cfg,
+      req,
+      { kind: 'raw', signature },
+      { waitForTerminal: true, timeoutMs: POSITIVE_TIMEOUT_MS },
     );
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
     expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
@@ -539,6 +582,21 @@ describe('ERC-1271 user decryption', function () {
     expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
   });
 
+  it('test erc1271 user decrypt multisig rejects a pre-approved-hash part that was never approved', async function () {
+    const req = await freshMultisigRequest(safe2of3);
+    const digest = computeUnifiedDigest(cfg, req);
+    // The mixed blob above, minus the on-chain approval: bob's v=1 part claims
+    // an approval that `approvedHashes[bob][safeMessageHash]` does not carry,
+    // so Safe reverts GS025. (The mock-wallet negative keys approvals off the
+    // RAW digest; only a real Safe pins the SafeMessage-hash rule.) Note the
+    // v=1 part carries no signature at all — nothing here is forgeable, which
+    // is exactly why the on-chain approval must be the thing that gates it.
+    const [carolPart] = await collectSafeOwnerParts(safe2of3.safe, digest, [signers.carol]);
+    const signature = concatSignatureParts(sortSignatureParts([safeApprovedHashPart(signers.bob.address), carolPart]));
+    const { post } = await submitUnifiedRequest(cfg, req, { kind: 'raw', signature });
+    expect(isSignatureRejection(post), JSON.stringify(post.raw)).to.equal(true);
+  });
+
   it('test erc1271 user decrypt multisig accepts eth_sign parts (v shifted by 4)', async function () {
     this.timeout(POSITIVE_TIMEOUT_MS + TIMEOUT_MARGIN_MS);
     const req = await freshMultisigRequest(safe2of3);
@@ -592,8 +650,14 @@ describe('ERC-1271 user decryption', function () {
     // Same shape with a multisig INNER Safe (bob+dave of a 2-of-3): 292 bytes
     // = 130 static + 32-byte length + 130 inner. Measured ~91k gas incl.
     // intrinsic — only ~9% under the default 100k erc1271_gas_limit, so this
-    // positive doubles as the gas-headroom canary: deeper nesting or higher
-    // inner thresholds would exceed the cap and be rejected.
+    // positive doubles as a gas-headroom canary. Exceeding the cap does NOT
+    // read as an invalid signature: only an RPC error carrying revert data
+    // becomes `Rejected` (shared/user-decryption-signature/src/lib.rs:136-149)
+    // and out-of-gas carries none (anvil answers `EVM error OutOfGas`, no
+    // `data`), so it lands in `Transport` — the relayer retries and then fails
+    // the request with a 500 without ever queuing it
+    // (relayer/src/host/signature_prechecker.rs:130-157), while the connector
+    // treats the same class as recoverable and retries until it gives up.
     const signature = await buildSafeNestedMultisigSignature(
       nestedOuter2of3.safe,
       digest,

@@ -85,24 +85,32 @@ export async function deploySafeInfra(deployer: Signer): Promise<SafeInfra> {
  * Deploy an M-of-N Safe proxy. The singleton blocks direct `setup()` (its
  * constructor pins `threshold = 1`), so a proxy is the only way to get a
  * usable Safe: `createProxyWithNonce` CREATE2-deploys it and runs `setup()`
- * with the fallback handler wired in — without the handler the proxy has no
- * `isValidSignature` at all. The random salt keeps parallel mocha processes
- * collision-free.
+ * with the fallback handler wired in. The random salt keeps parallel mocha
+ * processes collision-free.
+ *
+ * `fallbackHandler: ZeroAddress` deliberately deploys a Safe WITHOUT the
+ * handler — such a Safe has no `isValidSignature` at all, and Safe's
+ * `FallbackManager.fallback()` answers `return(0, 0)`, i.e. SUCCESS with empty
+ * returndata rather than a revert. The SafeMessage cross-check below is
+ * skipped for those (it would route through the missing handler); everything
+ * else, including local signing, is unaffected.
  */
 export async function deploySafeAccount(
   infra: SafeInfra,
   deployer: Signer,
   owners: readonly string[],
   threshold: number,
-  saltNonce: bigint = BigInt(hexlify(randomBytes(32))),
+  opts?: { readonly saltNonce?: bigint; readonly fallbackHandler?: string },
 ): Promise<SafeAccount> {
+  const saltNonce = opts?.saltNonce ?? BigInt(hexlify(randomBytes(32)));
+  const fallbackHandler = opts?.fallbackHandler ?? infra.handlerAddress;
   const safeInterface = new Contract(infra.singletonAddress, SafeArtifact.abi, deployer).interface;
   const initializer = safeInterface.encodeFunctionData('setup', [
     owners,
     threshold,
     ZeroAddress, // to: no setup delegatecall
     '0x', // data
-    infra.handlerAddress,
+    fallbackHandler,
     ZeroAddress, // paymentToken
     0, // payment
     ZeroAddress, // paymentReceiver
@@ -126,13 +134,16 @@ export async function deploySafeAccount(
   };
 
   // Fail fast on any wiring drift: the local SafeMessage hash must match the
-  // handler's on-chain one, and setup() must have taken.
-  const handlerView = new Contract(address, CompatibilityFallbackHandlerArtifact.abi, provider);
-  const probeDigest = hexlify(randomBytes(32));
-  const onChainHash: string = await handlerView.getMessageHash(probeDigest);
-  const localHash = safeMessageHashOf(account, probeDigest);
-  if (onChainHash !== localHash) {
-    throw new Error(`SafeMessage hash mismatch for ${address}: local ${localHash} vs on-chain ${onChainHash}`);
+  // handler's on-chain one (only meaningful when a handler is installed), and
+  // setup() must have taken.
+  if (fallbackHandler !== ZeroAddress) {
+    const handlerView = new Contract(address, CompatibilityFallbackHandlerArtifact.abi, provider);
+    const probeDigest = hexlify(randomBytes(32));
+    const onChainHash: string = await handlerView.getMessageHash(probeDigest);
+    const localHash = safeMessageHashOf(account, probeDigest);
+    if (onChainHash !== localHash) {
+      throw new Error(`SafeMessage hash mismatch for ${address}: local ${localHash} vs on-chain ${onChainHash}`);
+    }
   }
   const onChainThreshold: bigint = await account.safe.getThreshold();
   if (onChainThreshold !== BigInt(threshold)) {
