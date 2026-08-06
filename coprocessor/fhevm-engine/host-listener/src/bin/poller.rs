@@ -61,7 +61,7 @@ struct Args {
     #[arg(
         long,
         default_value_t = 15,
-        help = "Deprecated: finality follows the host RPC finalized block"
+        help = "Depth behind the head considered final (in blocks)"
     )]
     finality_lag: u64,
 

@@ -303,6 +303,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
     info!(
         chain_id = %chain_id,
         last_caught_up_block = last_caught_up_block,
+        finality_lag = config.finality_lag,
         batch_size = config.batch_size,
         poll_interval_ms = config.poll_interval.as_millis(),
         retry_interval_ms = config.retry_interval.as_millis(),
@@ -338,24 +339,12 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         };
         blockchain_timeout_tick.update();
 
-        let safe_tip = match client.finalized_block_number().await {
-            Ok(block_number) => block_number,
-            Err(err) => {
-                handle_rpc_failure(
-                    &mut consecutive_rpc_failures,
-                    None,
-                    &err,
-                    "Failed to fetch the RPC finalized block",
-                )?;
-                sleep(config.retry_interval).await;
-                continue;
-            }
-        };
+        let safe_tip = latest.saturating_sub(config.finality_lag);
         let client_ref = &client;
         update_finalized_blocks_aux(
             &mut db,
-            safe_tip,
-            0,
+            latest,
+            config.finality_lag,
             |block_number| async move {
                 client_ref
                     .header_for_block(block_number)

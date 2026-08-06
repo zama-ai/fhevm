@@ -12,11 +12,8 @@ use crate::kms_generation::database::{
     all_pending_compressed_key_materials_to_download,
     all_pending_crs_activations_to_download,
     all_pending_key_activations_to_download, applied_compressed_key_materials,
-    apply_ready_compressed_key_materials,
-    cancel_orphaned_compressed_key_materials, cancel_orphaned_crs_activations,
-    cancel_orphaned_key_activations,
-    count_compressed_key_material_remaining_pending,
-    count_crs_activation_remaining_pending,
+    apply_ready_compressed_key_materials, cancel_orphaned_crs_activations,
+    cancel_orphaned_key_activations, count_crs_activation_remaining_pending,
     count_key_activation_remaining_pending,
     insert_compressed_key_material_event, insert_crs_activation_event,
     insert_key_activation_event, mark_compressed_key_material_error,
@@ -177,7 +174,6 @@ pub async fn process_kms_generation_activations<
     //first we handle every thing that is ready to be cancelled or activated
     let mut tx = db_pool.begin().await?;
     cancel_orphaned_key_activations(&mut tx).await?;
-    cancel_orphaned_compressed_key_materials(&mut tx).await?;
     cancel_orphaned_crs_activations(&mut tx).await?;
     activate_ready_key_activations(&mut tx).await?;
     let applied_compressed_materials =
@@ -243,7 +239,6 @@ pub async fn process_kms_generation_activations<
     tx.commit().await?;
     let remain_pending = count_key_activation_remaining_pending(&db_pool)
         .await?
-        + count_compressed_key_material_remaining_pending(&db_pool).await?
         + count_crs_activation_remaining_pending(&db_pool).await?;
     Ok(remain_pending)
 }
