@@ -251,15 +251,16 @@ export default async function run(ctx: RolloutRunContext) {
   // lock is the coprocessor phase's carried forward and is never applied.
   await writePhaseVersionLock(ctx, "08-protocol-flip", phaseVersions.protocolFlip);
 
-  // The harness is overridden to a local build so RELAYER_SDK_VERSION reaches its Dockerfile
-  // as a build arg. The published image bakes an empty value, which would silently select
-  // @fhevm/sdk and pull the whole stack forward from the first phase.
-  logPhase("00 baseline: boot v0.13.2 on kms-core v0.13.20, gates on relayer-sdk 0.4.4");
+  // The harness is overridden to a local build so the @fhevm/sdk it runs is this branch's
+  // source rather than the copy baked into the published v0.14.0-9 image. The client is the
+  // one component whose behaviour this runbook depends on for its ordering, so it is built
+  // from the tree under test.
+  logPhase("00 baseline: boot v0.13.2 on kms-core v0.13.20, gates on @fhevm/sdk over /v2");
   await ctx.up({ lockFile: baselineLock, scenario, overrides: [{ group: "test-suite" }] });
   await testPhase(ctx, "baseline", testMode);
 
   // The component order is the documented default:
-  // Gateway Contracts -> Host Contracts -> Relayer -> KMS -> Listener -> Coprocessors -> SDK.
+  // Gateway Contracts -> Host Contracts -> Relayer -> KMS -> Listener -> Coprocessors -> ACL.
   logPhase("01 gateway contracts: upgrade the gateway chain first");
   await prepareContractMigrationSources(ctx, "gateway", gatewayContractsLock, gatewayContractKeys);
   for (const upgrade of GATEWAY_CONTRACT_UPGRADES) {
