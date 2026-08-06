@@ -1,7 +1,7 @@
 import path from "node:path";
 import { describe, expect, test } from "bun:test";
 
-import { upgradeCoprocessorInstance } from "./flow/up-flow";
+import { assertCoprocessorUpgradeThreshold, upgradeCoprocessorInstance } from "./flow/up-flow";
 import { presetBundle } from "./resolve/target";
 import { testDefaultScenario } from "./test-fixtures";
 import { withTempStateDir } from "./test-state";
@@ -62,6 +62,8 @@ describe("upgradeCoprocessorInstance", () => {
           return ["coprocessor-tfhe-worker"];
         },
         async ensureRuntimeArtifacts() {},
+        async assertThreshold() {},
+        async postBootHealthGate() {},
         async saveState(next) {
           persisted = next;
         },
@@ -101,6 +103,8 @@ describe("upgradeCoprocessorInstance", () => {
           return ["coprocessor-tfhe-worker"];
         },
         async ensureRuntimeArtifacts() {},
+        async assertThreshold() {},
+        async postBootHealthGate() {},
         async saveState(next: State) {
           persisted = next;
         },
@@ -151,6 +155,8 @@ describe("upgradeCoprocessorInstance", () => {
             return ["coprocessor-tfhe-worker"];
           },
           async ensureRuntimeArtifacts() {},
+          async assertThreshold() {},
+          async postBootHealthGate() {},
           async saveState() {},
           async generateRuntime() {},
           async composeUp() {},
@@ -158,6 +164,29 @@ describe("upgradeCoprocessorInstance", () => {
         }),
       ).rejects.toThrow(/share one tag/);
     });
+  });
+
+  // Recreating an operator removes it from the fleet for the width of the upgrade. With 3
+  // operators at threshold 2 that leaves exactly the threshold, so an already-unhealthy peer
+  // means consensus silently stops instead of the rollout stopping.
+  test("refuses to take an operator down when the remaining fleet cannot reach consensus", async () => {
+    const versions = presetBundle("latest-main", "abcdef0", "baseline.json");
+    const state = threeInstanceState(versions);
+    const down = new Set(["coprocessor2-tfhe-worker"]);
+
+    await expect(
+      assertCoprocessorUpgradeThreshold(state, 1, (async (container: string) =>
+        down.has(container) ? [] : [{ State: { Status: "running" } }]) as never),
+    ).rejects.toThrow(/1 remaining operators are ready, but the consensus threshold is 2/);
+  });
+
+  test("allows the upgrade while every remaining operator is running", async () => {
+    const versions = presetBundle("latest-main", "abcdef0", "baseline.json");
+    const state = threeInstanceState(versions);
+
+    await expect(
+      assertCoprocessorUpgradeThreshold(state, 1, (async () => [{ State: { Status: "running" } }]) as never),
+    ).resolves.toBeUndefined();
   });
 
   test("rejects an out-of-range operator index", async () => {
@@ -175,6 +204,8 @@ describe("upgradeCoprocessorInstance", () => {
             return ["coprocessor-tfhe-worker"];
           },
           async ensureRuntimeArtifacts() {},
+          async assertThreshold() {},
+          async postBootHealthGate() {},
           async saveState() {},
           async generateRuntime() {},
           async composeUp() {},

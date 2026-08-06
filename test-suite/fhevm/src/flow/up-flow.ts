@@ -1833,21 +1833,74 @@ const COPROCESSOR_VERSION_KEYS = [
   "COPROCESSOR_SNS_WORKER_VERSION",
 ] as const;
 
+/**
+ * Refuses to take one coprocessor operator down unless the operators left running still
+ * satisfy the consensus threshold.
+ *
+ * Recreating an operator stops its containers, so an upgrade briefly removes it from the
+ * fleet. With 3 operators at threshold 2 that leaves exactly the threshold and no margin,
+ * and if a peer is already unhealthy the fleet silently stops reaching consensus for the
+ * width of the upgrade. Checking first turns that into a refusal with the reason, instead
+ * of a stalled rollout diagnosed from ciphertext drift much later.
+ */
+export const assertCoprocessorUpgradeThreshold = async (
+  state: State,
+  index: number,
+  inspect: typeof dockerInspect = dockerInspect,
+) => {
+  const { count, threshold } = topologyForState(state);
+  const remaining = Array.from({ length: count }, (_, position) => position).filter(
+    (candidate) => candidate !== index,
+  );
+  if (remaining.length < threshold) {
+    throw new PreflightError(
+      `coprocessor instance ${index} cannot be upgraded: only ${remaining.length} operators would remain, but the consensus threshold is ${threshold}`,
+    );
+  }
+  const unavailable: number[] = [];
+  for (const peer of remaining) {
+    const services = coprocessorInstanceUpgradeTargets(state, peer).components.flatMap(
+      (component) => component.runtimeServices,
+    );
+    let ready = true;
+    for (const container of services) {
+      const [details] = await inspect(container);
+      if (!details || details.State.Status !== "running") {
+        ready = false;
+        break;
+      }
+    }
+    if (!ready) {
+      unavailable.push(peer);
+    }
+  }
+  const ready = remaining.length - unavailable.length;
+  if (ready < threshold) {
+    throw new PreflightError(
+      `coprocessor instance ${index} cannot be upgraded: ${ready} remaining operators are ready, but the consensus threshold is ${threshold}; unavailable operators: ${unavailable.join(", ")}`,
+    );
+  }
+};
+
 type CoprocessorInstanceUpgradeOperations = {
+  assertThreshold: typeof assertCoprocessorUpgradeThreshold;
   composeUp: typeof composeUp;
   ensureRuntimeArtifacts: typeof ensureRuntimeArtifacts;
   generateRuntime: typeof generateRuntime;
   loadState: typeof loadState;
+  postBootHealthGate: typeof postBootHealthGate;
   projectContainers: typeof projectContainers;
   saveState: typeof saveState;
   waitForContainer: typeof waitForContainer;
 };
 
 const coprocessorInstanceUpgradeOperations: CoprocessorInstanceUpgradeOperations = {
+  assertThreshold: assertCoprocessorUpgradeThreshold,
   composeUp,
   ensureRuntimeArtifacts,
   generateRuntime,
   loadState,
+  postBootHealthGate,
   projectContainers,
   saveState,
   waitForContainer,
@@ -1927,6 +1980,9 @@ export const upgradeCoprocessorInstance = async (
         updatedAt: new Date().toISOString(),
       };
 
+  // Checked before anything is written, so a refusal leaves the fleet exactly as it was.
+  await operations.assertThreshold(state, index);
+
   await operations.saveState(nextState);
   await operations.generateRuntime(nextState, stackSpecForState(nextState));
 
@@ -1942,6 +1998,9 @@ export const upgradeCoprocessorInstance = async (
       await operations.waitForContainer(service, "running");
     }
   }
+  // Running is not the same as serving. Gate on the same health check boot uses, so the next
+  // operator is not taken down while this one is still coming up.
+  await operations.postBootHealthGate(targets.components.flatMap((component) => component.runtimeServices));
   if (allAtTarget) {
     // The converged bundle can introduce services no instance was running yet
     // (0.14 adds consensus-detector and upgrade-controller), so bring the whole
