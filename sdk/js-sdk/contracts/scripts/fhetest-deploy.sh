@@ -94,7 +94,9 @@ fi
 
 acl_addr="$(fhevm_chain_address ${chain} acl)"
 kms_verifier_addr="$(fhevm_chain_address ${chain} kmsVerifier)"
-protocol_config_addr="$(fhevm_chain_address ${chain} protocolConfig)"
+# ProtocolConfig only exists from v0.13.0 onward — older pinned chains
+# (localstack_v11, localstack_v12) have no such contract to read.
+protocol_config_addr="$(fhevm_chain_address ${chain} protocolConfig 2>/dev/null || true)"
 
 # If this call fails, the ACL proxy isn't deployed (or hasn't been upgraded
 # past the empty UUPS impl) — that's the FHEVM host stack's job, not ours.
@@ -110,7 +112,7 @@ fi
 echo "rpc-url:        $rpc_url"
 echo "ACL:            $acl_addr"
 echo "KMSVerifier:    $kms_verifier_addr"
-echo "ProtocolConfig: $protocol_config_addr"
+echo "ProtocolConfig: ${protocol_config_addr:-<not deployed>}"
 echo "Coprocessor:    $coprocessor_addr"
 
 # ==============================================================================
