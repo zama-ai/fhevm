@@ -12,6 +12,7 @@ import {
   applyVersionLock as applyStackVersionLock,
   refreshDiscovery as refreshStackDiscovery,
   up,
+  upgradeCoprocessorInstance,
   upgradeThresholdKmsNode,
   upgradeRuntimeGroup as upgradeStackRuntimeGroup,
 } from "../flow/up-flow";
@@ -35,6 +36,9 @@ type RolloutRuntimeUpgradeOptions = {
   lockFile?: string;
 };
 type RolloutKmsNodeUpgradeOptions = {
+  lockFile: string;
+};
+type RolloutCoprocessorInstanceUpgradeOptions = {
   lockFile: string;
 };
 type RolloutVersionLockOptions = {
@@ -75,8 +79,19 @@ export type RolloutRunContext = {
   stateDir(): string;
   test(profile?: string, options?: RolloutTestOptions): Promise<void>;
   up(options: RolloutUpOptions): Promise<void>;
-  /** Sequentially applies one CORE_VERSION lock to exactly the listed serving KMS nodes. */
+  /**
+   * Sequentially applies one KMS lock to exactly the listed serving nodes. Each node's
+   * connector moves with its core, since the pair cannot straddle a release boundary.
+   */
   upgradeKmsNodes(nodeIds: readonly number[], options: RolloutKmsNodeUpgradeOptions): Promise<void>;
+  /**
+   * Sequentially moves exactly the listed coprocessor operators to one lock, leaving
+   * their peers behind. The bundle lock only lands once the last one crosses.
+   */
+  upgradeCoprocessorInstances(
+    indexes: readonly number[],
+    options: RolloutCoprocessorInstanceUpgradeOptions,
+  ): Promise<void>;
   /** Runs a check with an exact reconstruction quorum that must include this KMS node. */
   withRequiredKmsNode(nodeId: number, task: () => Promise<void>): Promise<void>;
   upgradeRuntimeGroup(group: string, options?: RolloutRuntimeUpgradeOptions): Promise<void>;
@@ -90,6 +105,7 @@ type RolloutContextOperations = {
   previewBundle: typeof previewBundle;
   setRunning: typeof setRunning;
   upgradeThresholdKmsNode: typeof upgradeThresholdKmsNode;
+  upgradeCoprocessorInstance: typeof upgradeCoprocessorInstance;
   waitForPartiesRunning: typeof waitForPartiesRunning;
   waitForPartiesStopped: typeof waitForPartiesStopped;
 };
@@ -289,6 +305,52 @@ export const createRolloutContext = (
         }
         await receipt.record("upgrade-kms-node", `KMS node ${nodeId}`, {
           details: { nodeId },
+          docker: true,
+          lockFile: options.lockFile,
+        });
+      }
+    },
+    async upgradeCoprocessorInstances(indexes, options) {
+      const state = await loadState();
+      if (!state || state.scenario.kind !== "coprocessor-consensus") {
+        throw new PreflightError("upgradeCoprocessorInstances requires a running coprocessor-consensus scenario");
+      }
+      if (indexes.length === 0) {
+        throw new PreflightError("upgradeCoprocessorInstances requires at least one instance index");
+      }
+      const count = state.scenario.instances.length;
+      const selected = new Set<number>();
+      for (const index of indexes) {
+        if (!Number.isInteger(index) || index < 0 || index >= count) {
+          throw new PreflightError(
+            `upgradeCoprocessorInstances expects instance indexes between 0 and ${count - 1}; received ${index}`,
+          );
+        }
+        if (selected.has(index)) {
+          throw new PreflightError(`upgradeCoprocessorInstances received duplicate instance index ${index}`);
+        }
+        selected.add(index);
+      }
+      for (const index of indexes) {
+        try {
+          await (operationOverrides.upgradeCoprocessorInstance ?? upgradeCoprocessorInstance)(index, options);
+        } catch (error) {
+          try {
+            await receipt.record("upgrade-coprocessor-instance-failed", `coprocessor instance ${index}`, {
+              details: { error: error instanceof Error ? error.message : String(error), index },
+              docker: true,
+              lockFile: options.lockFile,
+            });
+          } catch (receiptError) {
+            throw new AggregateError(
+              [error, receiptError],
+              `coprocessor instance ${index} upgrade failed and its required receipt snapshot also failed`,
+            );
+          }
+          throw error;
+        }
+        await receipt.record("upgrade-coprocessor-instance", `coprocessor instance ${index}`, {
+          details: { index },
           docker: true,
           lockFile: options.lockFile,
         });

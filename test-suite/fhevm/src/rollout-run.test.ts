@@ -73,6 +73,9 @@ const fakeContext = () => {
     async upgradeKmsNodes(nodeIds, options) {
       calls.push(`upgrade-kms-nodes:${nodeIds.join(",")}:${options.lockFile}`);
     },
+    async upgradeCoprocessorInstances(indexes, options) {
+      calls.push(`upgrade-coprocessor-instances:${indexes.join(",")}:${options.lockFile}`);
+    },
     async withRequiredKmsNode(nodeId, task) {
       calls.push(`require-kms-node:${nodeId}`);
       await task();

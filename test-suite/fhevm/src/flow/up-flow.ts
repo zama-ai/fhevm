@@ -133,6 +133,7 @@ import {
   runtimeArtifactPaths,
 } from "./artifacts";
 import {
+  coprocessorInstanceUpgradeTargets,
   multiChainCoprocessorUpgradeTargets,
   resolveUpgradePlan,
   resumeRepairStep,
@@ -1819,6 +1820,133 @@ export const upgradeThresholdKmsNode = async (
     for (const service of runtime) {
       await operations.waitForContainer(service, "running");
     }
+  }
+};
+
+const COPROCESSOR_VERSION_KEYS = [
+  "COPROCESSOR_DB_MIGRATION_VERSION",
+  "COPROCESSOR_HOST_LISTENER_VERSION",
+  "COPROCESSOR_GW_LISTENER_VERSION",
+  "COPROCESSOR_TX_SENDER_VERSION",
+  "COPROCESSOR_TFHE_WORKER_VERSION",
+  "COPROCESSOR_ZKPROOF_WORKER_VERSION",
+  "COPROCESSOR_SNS_WORKER_VERSION",
+] as const;
+
+type CoprocessorInstanceUpgradeOperations = {
+  composeUp: typeof composeUp;
+  ensureRuntimeArtifacts: typeof ensureRuntimeArtifacts;
+  generateRuntime: typeof generateRuntime;
+  loadState: typeof loadState;
+  projectContainers: typeof projectContainers;
+  saveState: typeof saveState;
+  waitForContainer: typeof waitForContainer;
+};
+
+const coprocessorInstanceUpgradeOperations: CoprocessorInstanceUpgradeOperations = {
+  composeUp,
+  ensureRuntimeArtifacts,
+  generateRuntime,
+  loadState,
+  projectContainers,
+  saveState,
+  waitForContainer,
+};
+
+/**
+ * Moves exactly one coprocessor operator to the tag in a lock file, leaving its peers
+ * on the version they are already running.
+ *
+ * This reuses the per-instance image pinning that blue-green already relies on
+ * (`source.mode: "registry"`), so a mixed fleet is an ordinary generated-compose state
+ * rather than a new mechanism. While the fleet is mixed the resolved bundle stays on
+ * the old versions — the pinned instances are the only ones ahead. Once the last
+ * instance crosses, the bundle lock itself is applied and every instance goes back to
+ * inheriting from it, which is also when services introduced by the new release first
+ * appear for the whole component.
+ */
+export const upgradeCoprocessorInstance = async (
+  index: number,
+  options: { lockFile: string },
+  operations: CoprocessorInstanceUpgradeOperations = coprocessorInstanceUpgradeOperations,
+) => {
+  const state = await operations.loadState();
+  if (!state || !(await operations.projectContainers()).length) {
+    throw new PreflightError("Stack is not running; start one with `fhevm-cli up` first");
+  }
+  const scenario = state.scenario;
+  if (scenario.kind !== "coprocessor-consensus" || !scenario.instances.length) {
+    throw new PreflightError("upgradeCoprocessorInstance requires a coprocessor-consensus scenario");
+  }
+  const instances = scenario.instances;
+  if (!Number.isInteger(index) || index < 0 || index >= instances.length) {
+    throw new PreflightError(
+      `upgradeCoprocessorInstance expects an instance index between 0 and ${instances.length - 1}; received ${index}`,
+    );
+  }
+  if (!state.completedSteps.includes("coprocessor")) {
+    throw new PreflightError("upgradeCoprocessorInstance requires a stack that has completed the coprocessor step");
+  }
+
+  await operations.ensureRuntimeArtifacts(state, "upgrade");
+  const lockedState = (await applyRuntimeUpgradeLock(state, "coprocessor", COPROCESSOR_VERSION_KEYS, options.lockFile))
+    .state;
+  await assertSchemaCompatibility(lockedState.versions, lockedState.overrides, lockedState.scenario, false);
+
+  // One image tag per instance is all `source.mode: registry` can express, so a lock
+  // that splits the coprocessor fleet across several tags cannot be staged this way.
+  const targetTags = new Set(COPROCESSOR_VERSION_KEYS.map((key) => lockedState.versions.env[key]).filter(Boolean));
+  if (targetTags.size !== 1) {
+    throw new PreflightError(
+      `upgradeCoprocessorInstance needs every ${"COPROCESSOR_*_VERSION"} in its lock file to share one tag; found ${
+        [...targetTags].join(", ") || "none"
+      }`,
+    );
+  }
+  const targetTag = [...targetTags][0] as string;
+
+  const nextInstances = instances.map((instance) =>
+    instance.index === index ? { ...instance, source: { mode: "registry" as const, tag: targetTag } } : instance,
+  );
+  const allAtTarget = nextInstances.every(
+    (instance) => instance.source.mode === "registry" && instance.source.tag === targetTag,
+  );
+
+  // Converged: land the bundle and hand every instance back to it.
+  const nextState: State = allAtTarget
+    ? {
+        ...lockedState,
+        scenario: {
+          ...scenario,
+          instances: instances.map((instance) => ({ ...instance, source: { mode: "inherit" as const } })),
+        },
+      }
+    : {
+        ...state,
+        scenario: { ...scenario, instances: nextInstances },
+        updatedAt: new Date().toISOString(),
+      };
+
+  await operations.saveState(nextState);
+  await operations.generateRuntime(nextState, stackSpecForState(nextState));
+
+  const targets = coprocessorInstanceUpgradeTargets(nextState, index);
+  console.log(`[upgrade] coprocessor instance ${index} -> ${targetTag}${allAtTarget ? " (fleet converged)" : ""}`);
+  for (const service of targets.migrationServices) {
+    await operations.composeUp("coprocessor", [service], { noDeps: true, forceRecreate: true });
+    await operations.waitForContainer(service, "complete");
+  }
+  for (const component of targets.components) {
+    await operations.composeUp(component.component, component.runtimeServices, { noDeps: true, forceRecreate: true });
+    for (const service of component.runtimeServices) {
+      await operations.waitForContainer(service, "running");
+    }
+  }
+  if (allAtTarget) {
+    // The converged bundle can introduce services no instance was running yet
+    // (0.14 adds consensus-detector and upgrade-controller), so bring the whole
+    // component up once rather than only the instance that happened to cross last.
+    await operations.composeUp("coprocessor", []);
   }
 };
 

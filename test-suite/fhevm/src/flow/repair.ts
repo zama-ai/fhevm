@@ -129,6 +129,35 @@ export const resumeRepairStep = (
   )?.[0];
 };
 
+/** Names the compose prefix owning one coprocessor instance's services. */
+export const coprocessorInstancePrefix = (index: number) => (index === 0 ? "coprocessor-" : `coprocessor${index}-`);
+
+/**
+ * Resolves the compose components and services belonging to exactly one coprocessor
+ * instance, so a rollout can recreate a single operator without touching its peers.
+ * Extra host chains keep their listeners in their own compose component, so they are
+ * returned alongside the main one rather than folded into it.
+ */
+export const coprocessorInstanceUpgradeTargets = (state: State, index: number) => {
+  const prefix = coprocessorInstancePrefix(index);
+  const [defaultChain, ...extraChains] = hostChainsForState(state);
+  return {
+    migrationServices: [`${prefix}db-migration`],
+    components: [
+      {
+        component: "coprocessor",
+        runtimeServices: coprocessorRuntimeSuffixes(state).map(
+          (service) => `${prefix}${service}${defaultChain?.suffix ?? ""}`,
+        ),
+      },
+      ...extraChains.map((chain) => ({
+        component: coprocessorHostKey(chain.key),
+        runtimeServices: coprocessorListenerSuffixes(state).map((service) => `${prefix}${service}${chain.suffix}`),
+      })),
+    ],
+  };
+};
+
 /** Resolves extra-chain coprocessor listener restart targets for in-place upgrades. */
 export const multiChainCoprocessorUpgradeTargets = (
   state: Pick<State, "scenario">,
