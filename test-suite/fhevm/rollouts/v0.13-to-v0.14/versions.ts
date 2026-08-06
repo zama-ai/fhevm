@@ -31,31 +31,12 @@ export const testSuiteTargetTag = "v0.14.0-9";
 // kms-core ships on its own tag line (the `zama-ai/kms` repo), so it does not follow the
 // monorepo tags. Release 0.13.0 serves KMS 0.13.20 and release 0.14.0 serves KMS 0.14.0.
 //
-// The -> 0.13.22 -> 0.14.0-1 tail is mandatory, not cosmetic. 0.14.0-1 always applies the
-// PRSS hotfix and the 0.13.x line never does, so a cluster running both at once cannot
+// The 0.13.20 -> 0.13.22 -> 0.14.0-1 sequence is mandatory, not cosmetic. 0.14.0-1 always
+// applies the PRSS hotfix and 0.13.20 never does, so a cluster running both at once cannot
 // reconstruct shares — it fails user decryption with a Gao decoding error. 0.13.22 is the
 // only version that can serve alongside peers on either side of the hotfix, which makes it
 // the required bridge. Skipping it is what forced the devnet rollback.
-//
-// The baseline is 0.13.11 rather than 0.13.20 because kms-core is what mints the FHE key
-// material at bootstrap, and the two sit on opposite sides of a tfhe-rs serialization break:
-//
-//   kms-core v0.13.11   tfhe = "=1.5.4"
-//   kms-core v0.13.20-0 tfhe = "=1.6.1"
-//
-// tfhe-rs 1.6 added a second variant to CompactCiphertextListExpansionKindVersions, which
-// lives inside the compact public key. @zama-fhe/relayer-sdk 0.4.4 carries node-tfhe
-// 1.4.0-alpha.3, whose copy of that enum has one variant, so it rejects any key a 1.6 KMS
-// generated with "invalid value: integer 1, expected variant index 0 <= i < 1" — surfaced by
-// the SDK as the misleading "Impossible to fetch public key: wrong relayer url.".
-//
-// Booting on 0.13.20 therefore fails the baseline gate before a single component is
-// upgraded. Booting on 0.13.11 mints key material the old client can read, and crossing the
-// tfhe boundary later in the run is safe because an upgrade never regenerates keys — which
-// is also why mainnet/testnet apps on 0.4.x are unaffected by 0.14. The v0.12-to-v0.13
-// runbook already relies on exactly this: it boots kms-core v0.13.10, upgrades to v0.13.20-0
-// mid-run, and stays green on relayer-sdk 0.4.2 throughout.
-const coreFrom = "v0.13.11";
+const coreFrom = "v0.13.20";
 const corePrssBridge = "v0.13.22";
 const coreTo = "v0.14.0-1";
 
