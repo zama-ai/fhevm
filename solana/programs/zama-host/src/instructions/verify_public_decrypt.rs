@@ -15,7 +15,29 @@
 //! operator calls `destroyKmsContext(N)`. Rotation for hygiene keeps in-flight work alive;
 //! `destroy_kms_context(N)` is the revocation lever that instantly invalidates every outstanding
 //! N-cert. The verified context id is surfaced via `return_data` so a calling program can layer its
-//! own policy (accept any live context, or demand current-only) on top.
+//! own policy (accept any live context, or demand current-only) on top. A consumer that ignores the
+//! returned context id is thereby choosing the permissive policy — it accepts a certificate from
+//! *any* live context; demanding current-only means comparing the returned id against
+//! `host_config.current_kms_context_id` in the consuming program.
+//!
+//! ## Act-once: what a consumer owes
+//!
+//! This instruction can be replayed as often as a caller pays for it, so every consumer has to
+//! decide whether its own effect may happen twice. The rule:
+//!
+//! - Releasing information — emitting the certified cleartext, caching it, displaying it — is
+//!   idempotent. A sealed handle is public forever, so a second run reveals nothing new and needs no
+//!   marker (`confidential-token::disclose_secp`).
+//! - Moving value or advancing a state machine on the certified cleartext is not. Guard it with one
+//!   write-once marker account per `(scope, handle)` — `init`-ed in the same instruction, seeded by
+//!   the scope and the handle, and never closed, because closing it makes the payout replayable.
+//!   Anchor's `init` failing on an existing account *is* the guard
+//!   (`confidential-token::redeem_burned_amount`, seeds `["burn-redemption", mint, burned_handle]`).
+//!
+//! The marker cannot ship from a shared crate: Anchor derives an account type's owner from the
+//! program that declares it, so a marker declared here would be owned by this program and unusable
+//! as an app's own state. What is shared is this rule, the reference implementation named above, and
+//! the tests that pin both sides of it — see INVARIANTS #24.
 
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::program::set_return_data;
@@ -42,6 +64,22 @@ impl From<MmrInclusionProof> for zama_solana_acl::MmrProof {
             siblings: proof.siblings,
         }
     }
+}
+
+/// Typed layout of the `return_data` written by `verify_public_decrypt`, shared with CPI
+/// consumers so nobody hand-computes byte offsets. Borsh of this struct is byte-identical to the
+/// historical hand-packed 72 bytes (`handle ‖ cleartext ‖ context_id` little-endian) — the
+/// runtime-test suite pins the exact bytes — so introducing it changed nothing on the wire.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
+pub struct PublicDecryptReturnData {
+    /// The exact handle proven publicly decryptable.
+    pub handle: [u8; 32],
+    /// The certified 32-byte big-endian `uint256` cleartext.
+    pub cleartext: [u8; 32],
+    /// The verified KMS context id, letting a caller set its own rotation policy — an
+    /// informational consumer accepts any live context, a value-releasing one may demand
+    /// `context_id == host_config.current_kms_context_id`.
+    pub context_id: u64,
 }
 
 /// Accounts for `verify_public_decrypt`. All read-only: a pure verifier reads state and returns a
@@ -121,7 +159,7 @@ pub fn verify_public_decrypt(
     );
 
     // Exact-handle public-decrypt proof against the encrypted value account's current peaks (no roll-forward): a
-    // handle sealed public stays provable after later supersedes move the peaks.
+    // handle sealed public stays provable after later updates move the peaks.
     let info = ctx.accounts.encrypted_value.to_account_info();
     let value = read_canonical_encrypted_value(&info)?;
     zama_solana_acl::authorize_public(
@@ -132,13 +170,41 @@ pub fn verify_public_decrypt(
     )
     .map_err(|_| error!(ZamaHostError::PublicDecryptProofInvalid))?;
 
-    // `handle ++ cleartext ++ context_id`: the verified context id (8 little-endian bytes) lets a
-    // caller set its own rotation policy — an informational consumer accepts any live context, a
-    // value-releasing one may demand `context_id == current`.
-    let mut return_data = [0u8; 72];
-    return_data[..32].copy_from_slice(&handle);
-    return_data[32..64].copy_from_slice(&cleartext);
-    return_data[64..].copy_from_slice(&cert_context_id.to_le_bytes());
-    set_return_data(&return_data);
+    let return_data = PublicDecryptReturnData {
+        handle,
+        cleartext,
+        context_id: cert_context_id,
+    };
+    // Fixed buffer, not a Vec: this verifier sits on the CPI hot path of disclose_secp,
+    // redeem_burned_amount, and (transitively) batcher settle, and heap allocation costs CU.
+    let mut return_bytes = [0u8; 72];
+    return_data.serialize(&mut return_bytes.as_mut_slice())?;
+    set_return_data(&return_bytes);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Doc-sync guard (the `resource_bounds_match_liveness_doc` pattern): this module's docs and
+    /// DESIGN_DECISIONS.md quote the return_data as exactly 72 bytes laid out
+    /// `handle ‖ cleartext ‖ context_id (LE)`. Borsh of [`PublicDecryptReturnData`] must stay
+    /// byte-identical to that hand-packed layout — CPI consumers parse return_data through the
+    /// struct, and the mollusk suite pins the same bytes end to end.
+    #[test]
+    fn return_data_matches_quoted_layout() {
+        let value = PublicDecryptReturnData {
+            handle: [0xAB; 32],
+            cleartext: [0xCD; 32],
+            context_id: 0x0102_0304_0506_0708,
+        };
+        let mut bytes = Vec::new();
+        value.serialize(&mut bytes).unwrap();
+        let mut expected = vec![0u8; 72];
+        expected[..32].copy_from_slice(&[0xAB; 32]);
+        expected[32..64].copy_from_slice(&[0xCD; 32]);
+        expected[64..].copy_from_slice(&0x0102_0304_0506_0708u64.to_le_bytes());
+        assert_eq!(bytes, expected);
+    }
 }

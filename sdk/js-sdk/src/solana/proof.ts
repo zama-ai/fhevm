@@ -10,6 +10,10 @@ import { sha256 } from '@noble/hashes/sha2.js';
  * user to sign a decrypt request, so a malformed or stale proof is caught client-side
  * instead of silently failing (or worse, being blindly trusted) downstream.
  *
+ * Public API surface: SDK consumers verifying a proof themselves. A dapp that fetches an MMR
+ * proof from a relayer or indexer calls these directly, which is why the leaf/node primitives are
+ * exported and not only used by `verifyPublicDecrypt`.
+ *
  * Domain-separation prefixes and encodings are pinned 1:1 to the Rust crate:
  * - `ZAMA_MMR_LEAF_V1` / `ZAMA_MMR_NODE_V1`     — MMR leaf/internal node hashing (`mmr.rs`).
  * - `ZAMA_HIST_ACCESS_LEAF_V1`                  — historical-access leaf commitment.
@@ -23,7 +27,7 @@ const LEAF_PREFIX = utf8('ZAMA_MMR_LEAF_V1');
 const NODE_PREFIX = utf8('ZAMA_MMR_NODE_V1');
 const HISTORICAL_ACCESS_LEAF_PREFIX = utf8('ZAMA_HIST_ACCESS_LEAF_V1');
 const PUBLIC_DECRYPT_LEAF_PREFIX = utf8('ZAMA_PUBLIC_DECRYPT_LEAF_V1');
-const VALUE_KEY_PREFIX = utf8('zama-encrypted-value-key-v1');
+const ENCRYPTED_VALUE_ID_PREFIX = utf8('zama-encrypted-value-key-v1');
 
 function utf8(s: string): Uint8Array {
   return new TextEncoder().encode(s);
@@ -81,16 +85,12 @@ export function hexToBytes(hex: string): Uint8Array {
   return out;
 }
 
-/** The encrypted value account's PDA seed / identity. Matches `zama_solana_acl::derive_value_key`. */
-export function deriveValueKey(
-  aclDomainKey: Uint8Array,
-  appAccount: Uint8Array,
-  encryptedValueLabel: Uint8Array,
-): Uint8Array {
-  assertLen(aclDomainKey, 32, 'aclDomainKey');
-  assertLen(appAccount, 32, 'appAccount');
-  assertLen(encryptedValueLabel, 32, 'encryptedValueLabel');
-  return sha256Parts(VALUE_KEY_PREFIX, aclDomainKey, appAccount, encryptedValueLabel);
+/** The encrypted value account's PDA seed / identity. Matches `zama_solana_acl::derive_encrypted_value_id`. */
+export function deriveEncryptedValueId(domain: Uint8Array, authority: Uint8Array, label: Uint8Array): Uint8Array {
+  assertLen(domain, 32, 'domain');
+  assertLen(authority, 32, 'authority');
+  assertLen(label, 32, 'label');
+  return sha256Parts(ENCRYPTED_VALUE_ID_PREFIX, domain, authority, label);
 }
 
 /** Matches `zama_solana_acl::mmr::mmr_leaf_node`. */
@@ -146,9 +146,9 @@ export type MmrProof = {
 export const MAX_MMR_SIBLINGS = 64;
 
 /** Transport-blob mode byte for a historical-access MMR proof. */
-export const MMR_MODE_HISTORICAL = 0x01;
+export const MMR_PROOF_MODE_HISTORICAL = 0x01;
 /** Transport-blob mode byte for a public-decrypt MMR proof. */
-export const MMR_MODE_PUBLIC = 0x02;
+export const MMR_PROOF_MODE_PUBLIC = 0x02;
 
 export type MmrProofTransportBlob = {
   readonly mode: number;

@@ -1,7 +1,7 @@
 //! Solana user-decryption authorization: permit reconstruction, deployment identity, the
 //! atomic state snapshot, and the per-handle rules.
 //!
-//! The shape of this module tree is load-bearing rather than organizational. Every check is
+//! The shape of this module tree is part of the contract, not organization. Every check is
 //! a pure function of `(typed request, snapshot, deployment, now)`, and the only place that
 //! reads host state is [`snapshot`]. Two properties follow from that split, and neither
 //! survives if it is blurred:
@@ -18,7 +18,7 @@
 //!
 //! What lives above this module: the permit canon itself (the `zama-solana-permit` crate —
 //! typed form, canonical text, envelope, signature) and the ACL model (the
-//! `zama-solana-acl` crate — account layout, value keys, leaf commitments, MMR). Neither
+//! `zama-solana-acl` crate — account layout, encrypted value IDs, leaf commitments, MMR). Neither
 //! is reimplemented here; this module is the host policy that consumes both.
 
 //! # What this module replaces
@@ -47,14 +47,15 @@
 pub mod delegation;
 /// Deployment identity: which program, which cluster.
 pub mod deployment;
+/// Encrypted value account resolution: presence, ownership, type, identity binding, and the
+/// authority and domain the account carries.
+pub mod encrypted_value_account;
 /// Failure taxonomy and the terminal / transient / retryable classification.
 pub mod failure;
 /// Handle binding: current membership and historical inclusion proofs.
 pub mod handle_binding;
 /// KMS context/epoch servability.
 pub mod kms_pair;
-/// Lineage resolution: presence, ownership, type, identity binding, app context.
-pub mod lineage;
 /// The authorization pipeline.
 pub mod pipeline;
 /// The normalized request and its strict decoding.

@@ -94,7 +94,7 @@ export interface SolanaUserDecryptInput {
   /** Validity window duration (seconds). */
   readonly durationSeconds: bigint;
   /**
-   * The encrypted value account value key for a current/historical/public decrypt; all-zero (the default) only
+   * The encrypted value ID for a current/historical/public decrypt; all-zero (the default) only
    * when no encrypted value account is named. Mirrors `acl_value_key` in `solana_extra_data.rs`.
    */
   readonly aclValueKey?: Uint8Array | undefined;

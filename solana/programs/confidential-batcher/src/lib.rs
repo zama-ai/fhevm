@@ -108,7 +108,7 @@ pub mod confidential_batcher {
 
     /// Dispatches the batch once it is old enough: burns the batch account's
     /// full encrypted balance via `confidential_burn_from_value` and records
-    /// the born-public burned handle the KMS will certify. Permissionless.
+    /// the created-public burned handle the KMS will certify. Permissionless.
     pub fn dispatch(ctx: Context<Dispatch>) -> Result<()> {
         instructions::dispatch(ctx)
     }
@@ -138,7 +138,7 @@ pub mod confidential_batcher {
     }
 
     /// Claims a user's confidential payout from a settled batch: one MulDiv
-    /// eval frame — the exact proportional floor
+    /// batch — the exact proportional floor
     /// `encrypted(joined) x payout_received / total_joined` — then a
     /// confidential transfer of the resulting handle to the user's payout
     /// account. Permissionless pull — anyone can trigger a user's claim.

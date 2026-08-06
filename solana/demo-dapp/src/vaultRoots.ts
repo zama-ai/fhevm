@@ -1,4 +1,4 @@
-import type { VaultDemoRoots } from "@fhevm/sdk/solana/vault";
+import type { VaultDemoRoots } from "./vault/index.js";
 
 import type { DemoConfig } from "./demoConfig";
 

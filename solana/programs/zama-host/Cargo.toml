@@ -11,16 +11,14 @@ crate-type = ["cdylib", "lib"]
 name = "zama_host"
 
 [features]
-default = ["emit-events"]
+default = []
 cpi = ["no-entrypoint"]
 no-entrypoint = []
-no-idl = []
+# Off-chain instruction/event decoding for indexers (host-listener, proof
+# service). Never enabled for the SBF build.
+decode = []
 no-log-ix-name = []
 idl-build = ["anchor-lang/idl-build"]
-# Emit optional administrative/config events. The narrow born-public `fhe_eval`
-# lifecycle batch is unconditional because its output handles cannot be reconstructed
-# from instruction data alone.
-emit-events = []
 
 [dependencies]
 anchor-lang = { version = "1.0.2", features = ["event-cpi"] }
@@ -35,3 +33,4 @@ borsh = "1"
 
 [dev-dependencies]
 k256 = { version = "0.13.4", features = ["ecdsa"] }
+sha2 = "0.10"

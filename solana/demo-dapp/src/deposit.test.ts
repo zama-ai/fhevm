@@ -1,5 +1,5 @@
 import { address } from "@solana/kit";
-import { deriveBatchAddresses } from "@fhevm/sdk/solana/vault";
+import { deriveBatchAddresses } from "./vault/index.js";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import type { DemoConfig } from "./demoConfig";
@@ -185,7 +185,7 @@ describe("deposit join recovery", () => {
   });
 
   test("preserves the signed join journal on transient RPC errors", async () => {
-    const journal = JSON.stringify({ durable: true });
+    const journal = JSON.stringify({ persistent: true });
     localStorage.setItem(activeDepositKey, journal);
     const rpc = rpcWith(null, null);
     vi.mocked(rpc.getSignatureStatuses).mockReturnValue({
@@ -197,7 +197,7 @@ describe("deposit join recovery", () => {
   });
 
   test("preserves the journal when the join-record lookup fails transiently", async () => {
-    const journal = JSON.stringify({ durable: true });
+    const journal = JSON.stringify({ persistent: true });
     localStorage.setItem(activeDepositKey, journal);
     const rpc = rpcWith(null, null);
     vi.mocked(rpc.getAccountInfo).mockReturnValue({

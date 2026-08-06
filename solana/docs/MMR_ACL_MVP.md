@@ -6,33 +6,34 @@ this note records the operational model in one place.
 
 ## Identity And Authority
 
-- `EncryptedValue` identity is `derive_value_key(acl_domain_key, app_account, encrypted_value_label)`.
-  The derived key prevents collisions between app domains, accounts, and labels. It is not an
+- `EncryptedValue` identity is
+  `derive_encrypted_value_id(domain, encrypted_value_account_authority, label)`.
+  The derived key prevents collisions between app domains, authorities, and labels. It is not an
   authority check.
 - `compute_signer` is separate from identity. In confidential-token it is a mint-scoped PDA and must
   be present in the value's allowed-subject set when token compute needs to use that value.
-- Only `fhe_eval` durable outputs can create or supersede an `EncryptedValue` handle. The raw
-  `create_encrypted_value` / `update_encrypted_value` instructions remain in the ABI but fail closed:
-  they would otherwise accept caller-chosen handles without proving ciphertext provenance. Being an
-  allowed subject is enough to compute/use, grant, request user decrypt, or make the exact current
-  handle public, but it is not enough to supersede the encrypted value account. Durable-output supersession checks
+- Only `fhe_execute` persistent outputs can create or update an `EncryptedValue` handle; there is no
+  instruction that accepts a caller-chosen handle, because such a handle would carry no proof of
+  ciphertext provenance. Being an allowed subject is enough to compute/use, grant, request user decrypt, or make the exact current
+  handle public, but it is not enough to update the encrypted value account. Persistent-output update checks
   `previous_handle` and `previous_subjects` against current account state so stale off-chain state
   cannot rotate a handle.
 
 ## Handle Derivation
 
-- A durable `fhe_eval` output handle **is the base handle** — identical to the transient handle.
+- A persistent `fhe_execute` output handle **is the base handle** — identical to the transient handle.
   Deterministic ops are content-addressed over `(op / plaintext, operands, fhe_type, chain_id,
   previous_bank_hash, unix_timestamp)`; rand seeds alone carry uniqueness (`compute_subject` + the
-  frame's durable-write anchor + `op_index`, see DD-043). There is no per-output binding: a durable output and an instruction-local
+  execution's persistent-write anchor + `op_index`, see DD-043). There is no per-output binding: a persistent output and an instruction-local
   output over the same material derive the same handle. This matches EVM `FHEVMExecutor`, which binds
-  no per-slot / per-caller / per-encrypted value account value into a computed handle. `value_key` is still the
-  `EncryptedValue` PDA seed (`derive_value_key(acl_domain_key, app_account, encrypted_value_label)`) —
+  no per-slot / per-caller / per-encrypted value account value into a computed handle. The encrypted value ID is still the
+  `EncryptedValue` PDA seed
+  (`derive_encrypted_value_id(domain, encrypted_value_account_authority, label)`) —
   it addresses *which* stored value the result becomes — but it is **not** mixed into the handle.
 - There is **no per-output sequence and no encrypted value account binding** in the handle (DD-015). Per-block entropy
   plus the operands/op/type already distinguish distinct ciphertexts. An identical recomputation
   yields an identical handle (deterministic, EVM-parity).
-- Off-chain indexers (host-listener, relayer) obtain durable output handles the same way as transient
+- Off-chain indexers (host-listener, relayer) obtain persistent output handles the same way as transient
   ones — the base-handle derivation over instruction args + block entropy, byte-identical to the
   program — with no encrypted value account leaf-count tracking and no handle hints.
 
@@ -40,12 +41,12 @@ this note records the operational model in one place.
 
 - The ACL is one allowed-subject set. There are no role bits in the MVP account layout. Allowed means
   compute/use, grant another subject, request user decrypt, and make the exact current handle public.
-- Durable-output creation requires at least one subject and at most
+- Persistent-output creation requires at least one subject and at most
   `MAX_ENCRYPTED_VALUE_SUBJECTS = 8`. Subject-list overflow and MMR peak overflow fail explicitly
   instead of relying on implicit vector or arithmetic limits.
 - Subject removal changes only current and future authorization. No new historical leaf is written for
   the removed subject after removal; access sealed before removal remains valid.
-- Audience membership is immutable by default, but a durable-output supersede may explicitly rotate the
+- Audience membership is immutable by default, but a persistent-output update may explicitly rotate the
   subject set: `output_subjects` need not equal the stored set. The outgoing audience is sealed into
   historical leaves first (below), then the new set replaces current membership, and every subject the
   rotation adds passes the grant deny-list exactly as `allow_subjects` does. `previous_handle` and
@@ -53,22 +54,22 @@ this note records the operational model in one place.
 
 ## History And Decrypt
 
-- Historical authorization is handle-scoped and permanent. When a handle is superseded, the program
+- Historical authorization is handle-scoped and permanent. When a handle is replaced, the program
   seals one `HistoricalAccessLeaf` per then-allowed subject into the value's MMR. Historical reads roll
   forward by proving inclusion against confirmed on-chain peaks.
 - Public decrypt is exact-handle. `make_handle_public` seals a `PublicDecryptLeaf` for the current
-  handle only; a later handle update does not inherit public decryptability. An `fhe_eval` durable
-  output may instead be *born* public by setting `make_public` on the output: after the new handle is
+  handle only; a later handle update does not inherit public decryptability. An `fhe_execute` persistent
+  output may instead be created public by setting `make_public` on the output: after the new handle is
   written, the same `PublicDecryptLeaf` is sealed for that NEW handle in the same instruction —
-  byte-identical to `make_handle_public`, appended LAST (after any supersede historical leaves). This
-  is the one exception to "created encrypted value accounts cannot be born public-decryptable" (DD-036).
+  byte-identical to `make_handle_public`, appended LAST (after any update historical leaves). This
+  is the one exception to "created encrypted value accounts cannot be created public-decryptable" (DD-036).
 - Delegated user decrypt is isolated from the core ACL path. Delegation uses standalone
   `UserDecryptionDelegation` PDAs and does not add subjects or mutate `EncryptedValue`.
 
 ## Gates And Trust Boundary
 
-- Pause gates ACL mutations plus `fhe_eval` output paths. The deny-list gates the acting
-  caller/authority for grant and eval flows; it blocks new action and is not an erasure mechanism for
+- Pause gates ACL mutations plus `fhe_execute` output paths. The deny-list gates the acting
+  caller/authority for grant and execution flows; it blocks new action and is not an erasure mechanism for
   already sealed history.
 - Solana programs enforce authorization. The relayer, proof builder, host-listener ingestion, and
   coprocessor scheduling are untrusted for authorization. KMS ACL/proof verification reads confirmed
@@ -87,18 +88,18 @@ this note records the operational model in one place.
 
 ## Flow Diagrams
 
-### ValueAccount state + MMR growth
+### Encrypted value account state + MMR growth
 
 One stable `EncryptedValue` PDA per encrypted value account. `current_handle` is overwritten in place; the MMR only
 ever grows (append-only), so historical and public-decrypt authorizations are permanent once sealed.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Live : fhe_eval durable output<br/>(≥1 subject, leaf_count=0)
+    [*] --> Live : fhe_execute persistent output<br/>(≥1 subject, leaf_count=0)
     Live --> Live : allow_subjects<br/>(add subject, NO leaf)
     Live --> Live : make_handle_public<br/>(+1 PublicDecryptLeaf for current handle)
-    Live --> Live : fhe_eval durable output<br/>(supersede: +1 HistoricalAccessLeaf per then-subject,<br/>rewrite current_handle, then optionally rotate subjects<br/>— added subjects pass the grant deny-list)
-    Live --> Live : fhe_eval durable output with make_public=true<br/>(supersede leaves, rewrite handle,<br/>then +1 PublicDecryptLeaf for the NEW handle — DD-036)
+    Live --> Live : fhe_execute persistent output<br/>(update: +1 HistoricalAccessLeaf per then-subject,<br/>rewrite current_handle, then optionally rotate subjects<br/>— added subjects pass the grant deny-list)
+    Live --> Live : fhe_execute persistent output with make_public=true<br/>(update leaves, rewrite handle,<br/>then +1 PublicDecryptLeaf for the NEW handle — DD-036)
     note right of Live
         Account ≤ 2457 bytes for all time
         (153 + 32·subjects≤8 + 32·peaks≤64).
@@ -108,9 +109,9 @@ stateDiagram-v2
 
 ### MMR leaf types + append order
 
-`fhe_eval` durable-output supersession appends one
+`fhe_execute` persistent-output update appends one
 `HistoricalAccessLeaf{account, leaf_index, handle, subject}` per then-allowed subject;
-`make_handle_public` (or a born-public output) appends one
+`make_handle_public` (or a created-public output) appends one
 `PublicDecryptLeaf{account, leaf_index, handle}`. A single running `leaf_count` assigns `leaf_index`,
 so replay order alone reproduces the leaf list — the reconstruction invariant (DD-033).
 
@@ -118,7 +119,7 @@ so replay order alone reproduces the leaf list — the reconstruction invariant 
 flowchart LR
     subgraph append["append order (leaf_count increments once per leaf)"]
         direction LR
-        H0["HistoricalAccessLeaf<br/>handle=H1, subject=A"] --> H1["HistoricalAccessLeaf<br/>handle=H1, subject=B"] --> P0["PublicDecryptLeaf<br/>handle=H2 (born public)"]
+        H0["HistoricalAccessLeaf<br/>handle=H1, subject=A"] --> H1["HistoricalAccessLeaf<br/>handle=H1, subject=B"] --> P0["PublicDecryptLeaf<br/>handle=H2 (created public)"]
     end
     append --> peaks["on-chain: peaks[] (≤64) + leaf_count"]
     peaks --> verify["off-chain: reconstruct leaves → build MMR proof<br/>→ KMS verifies inclusion vs confirmed peaks"]
@@ -128,8 +129,8 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    base["base_handle = H(op / plaintext / rand-seed,<br/>operands, fhe_type, chain_id,<br/>previous_bank_hash, unix_timestamp)<br/>(rand seed alone adds subject +<br/>durable-write anchor + op_index, DD-043)"]
-    base -->|"durable output"| dh["durable handle = base_handle"]
+    base["base_handle = H(op / plaintext / rand-seed,<br/>operands, fhe_type, chain_id,<br/>previous_bank_hash, unix_timestamp)<br/>(rand seed alone adds subject +<br/>persistent-write anchor + op_index, DD-043)"]
+    base -->|"persistent output"| dh["persistent handle = base_handle"]
     base -->|"transient output"| th["transient handle = base_handle"]
 ```
 
@@ -139,7 +140,7 @@ flowchart TD
 flowchart TD
     req["decrypt request (handle, subject)"] --> kind{authorization kind}
     kind -->|"current"| ac["authorize_current:<br/>handle == current_handle<br/>AND subject ∈ subjects<br/>(no proof)"]
-    kind -->|"historical"| ah["authorize_historical:<br/>MMR proof of HistoricalAccessLeaf(handle, subject)<br/>vs confirmed peaks — survives supersession/removal"]
+    kind -->|"historical"| ah["authorize_historical:<br/>MMR proof of HistoricalAccessLeaf(handle, subject)<br/>vs confirmed peaks — survives update/removal"]
     kind -->|"public"| ap["authorize_public:<br/>MMR proof of PublicDecryptLeaf(handle)<br/>vs confirmed peaks — exact handle, no live flag"]
     ac & ah & ap --> kms["KMS re-verifies against confirmed on-chain state before releasing plaintext"]
 ```
@@ -147,11 +148,11 @@ flowchart TD
 ### Burn → Redeem (Vector-2 closed, DD-036)
 
 Pull-based, mirroring OZ `ConfidentialFungibleTokenERC20Wrapper` unwrap→finalizeUnwrap. The burned
-delta is born public in the burn's `fhe_eval` CPI; redemption is a single `redeem_burned_amount` that
+delta is created public in the burn's `fhe_execute` CPI; redemption is a single `redeem_burned_amount` that
 consumes the stateless host `verify_public_decrypt` verifier (the request-witness lifecycle was
 dissolved in fhevm-internal#1763), authorizing by the pinned handle's public-decrypt proof against the
 live KMS context the cert names (any non-destroyed context, fhevm-internal#1765), so it stays valid
-after later burns supersede the encrypted value account.
+after later burns update the encrypted value account.
 
 ```mermaid
 sequenceDiagram
@@ -160,7 +161,7 @@ sequenceDiagram
     participant ZH as zama-host
     participant KMS as KMS (off-chain)
     U->>CT: confidential_burn(amount)
-    CT->>ZH: fhe_eval sub → durable output make_public=true
+    CT->>ZH: fhe_execute sub → persistent output make_public=true
     ZH-->>ZH: rewrite current_handle,<br/>append PublicDecryptLeaf(new handle)
     KMS-->>KMS: decrypt burned handle (public proof),<br/>sign cleartext cert
     U->>CT: redeem_burned_amount(burned_handle, cleartext, cert, MMR proof)
@@ -173,9 +174,9 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-    prog["zama-host fhe_eval"] -->|"emit_cpi! (single batch CPI, ≤MAX_FHE_EVAL_OPS records;<br/>DD-038; no emit! log fallback)"| ev["op-event (self-CPI inner ix):<br/>carries the block-entropy output handle"]
-    prog -->|"instruction data (args)"| ix["fhe_eval durable-output / make_public args"]
-    ev --> proofsvc["solana-proof-service (Yellowstone + Postgres):<br/>resolves born-public handle from op-event,<br/>reconstructs MMR, cross-checks vs confirmed peaks"]
+    prog["zama-host fhe_execute"] -->|"emit_cpi! (single execution CPI, ≤MAX_FHE_EXECUTION_STEPS records;<br/>DD-038; no emit! log fallback)"| ev["op-event (self-CPI inner ix):<br/>carries the block-entropy output handle"]
+    prog -->|"instruction data (args)"| ix["fhe_execute persistent-output / make_public args"]
+    ev --> proofsvc["solana-proof-service (Yellowstone + Postgres):<br/>resolves created-public handle from op-event,<br/>reconstructs MMR, cross-checks vs confirmed peaks"]
     ix --> listener["host-listener indexer:<br/>Yellowstone gRPC reconstruction-only<br/>(SlotHashes+Clock sysvar streams → block entropy;<br/>never reads events)"]
     proofsvc -.->|"migrate to Carbon/Geyser,<br/>then drop op-event ABI"| followup["fhevm-internal#1665"]
 ```
@@ -195,7 +196,7 @@ history length, and every relevant bound is a hard, small constant:
   `subjects ≤ MAX_ENCRYPTED_VALUE_SUBJECTS = 8` and `peaks ≤ MAX_MMR_PEAKS = 64` (an MMR has exactly
   `popcount(leaf_count)` peaks, `leaf_count: u64`). Solana's per-transaction realloc cap is 10240
   bytes, so even growing a fresh encrypted value account to its maximum in one instruction stays ~4× under the wall.
-- **Supersession cost is leaf-count-independent.** An 8-subject supersession appends 8 leaves =
+- **Update cost is leaf-count-independent.** An 8-subject update appends 8 leaves =
   ≤ 8 leaf hashes + ≤ 64 peak-merge hashes = ≤ 80 SHA-256 ops, regardless of how old/large the encrypted value account
   is (binary-counter amortization on peaks). That is ~1–2% of the 1.4M CU budget; the margin does not
   shrink with age. (These are op-count estimates pending a mollusk CU-trace test.)
@@ -217,7 +218,7 @@ to a follow-up.
 - DD-034: Solana compute is scheduled eagerly (`is_allowed` is a scheduling gate, not decrypt auth).
 - DD-035: proof building is a standalone untrusted service; KMS re-verifies proofs against confirmed
   chain state.
-- DD-036: burn-redemption consume authorizes by MMR public-decrypt proof (born-public delta), not the
+- DD-036: burn-redemption consume authorizes by MMR public-decrypt proof (created-public delta), not the
   live handle — closes the Vector-2 fund-stranding window.
-- DD-037: `fhe_eval` events are `emit_cpi!`-only (no `emit!` fallback); born-public outputs are
-  restricted to CPI-transportable frames so their handles are always recoverable off-chain.
+- DD-037: `fhe_execute` events are `emit_cpi!`-only (no `emit!` fallback); created-public outputs are
+  restricted to CPI-transportable executions so their handles are always recoverable off-chain.

@@ -23,7 +23,8 @@
 //! There is therefore no replay marker by design (contrast `redeem_burned_amount`, which guards
 //! a vault transfer with a per-handle `burn-redemption` marker PDA). An app that needs consume-once
 //! semantics (e.g. gating a one-time state transition on the reveal) tracks a settled flag in its own
-//! account, exactly as an EVM app tracks its decryption callback.
+//! account, exactly as an EVM app tracks its decryption callback. The rule this instruction is
+//! applying is stated once, at `zama_host::instructions::verify_public_decrypt` (INVARIANTS #24).
 
 use super::*;
 
@@ -35,7 +36,7 @@ pub struct DiscloseSecp<'info> {
     pub mint: Box<Account<'info, ConfidentialMint>>,
     /// The `EncryptedValue` encrypted value account the disclosed handle belongs to.
     /// CHECK: canonical PDA, layout, and host ownership are validated by the `verify_public_decrypt`
-    /// CPI; this handler additionally binds its `acl_domain_key` to `mint`.
+    /// CPI; this handler additionally binds its `domain` to `mint`.
     pub encrypted_value: UncheckedAccount<'info>,
     /// Host config carrying the current KMS context id and gateway EIP-712 domain.
     #[account(
@@ -71,9 +72,9 @@ pub fn disclose_secp(
     // the verifier CPI re-reads it and enforces the canonical PDA and inclusion proof.
     let value = fhe::read_encrypted_value(&ctx.accounts.encrypted_value.to_account_info())?;
     require_keys_eq!(
-        value.acl_domain_key,
+        value.domain,
         mint_key,
-        ConfidentialTokenError::AclDomainKeyMismatch
+        ConfidentialTokenError::DomainMismatch
     );
 
     let certified_cleartext = fhe::verify_public_decrypt(fhe::VerifyPublicDecrypt {

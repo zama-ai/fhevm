@@ -1,4 +1,8 @@
 //! Helpers for inspecting native Solana Ed25519 verify instruction data.
+//!
+//! Public API surface: programs verifying an ed25519 co-signature. `zama-host` uses the bitmask
+//! form; the single-message predicate is exported for programs that only need to ask whether one
+//! message was signed in the same transaction.
 
 const SIGNATURE_OFFSETS_SERIALIZED_SIZE: usize = 14;
 const SIGNATURE_OFFSETS_START: usize = 2;

@@ -7,8 +7,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use solana_proof_source::CompletedBlock;
+use zama_solana_acl::encrypted_value_account::EncryptedValueAccountEvent;
 use zama_solana_acl::mmr::mmr_append;
-use zama_solana_acl::value_account::EncryptedValueAccountEvent;
 use zama_solana_acl::{historical_access_leaf_commitment, public_decrypt_leaf_commitment};
 
 use crate::decode::{decode_program_instructions, DecodeError, DecodedInstruction};
@@ -62,8 +62,6 @@ pub struct StagedEncryptedValueAccount {
     pub subjects: Vec<[u8; 32]>,
     pub leaf_count: u64,
     pub peaks: Vec<[u8; 32]>,
-    /// True when this encrypted_value_account did not exist in the store before this block.
-    pub born_in_block: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -88,11 +86,10 @@ fn hex32(bytes: &[u8; 32]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-fn is_encrypted_value_account_birth(instruction: &DecodedInstruction) -> bool {
+fn is_encrypted_value_account_create(instruction: &DecodedInstruction) -> bool {
     matches!(
         instruction,
-        DecodedInstruction::CreateEncryptedValue { .. }
-            | DecodedInstruction::FheEvalCreateEncryptedValue { .. }
+        DecodedInstruction::FheExecuteCreateEncryptedValue { .. }
     )
 }
 
@@ -105,7 +102,7 @@ fn append_events(
     let mut staged = Vec::new();
     for (tx_index, event) in events_with_tx {
         match event {
-            EncryptedValueAccountEvent::HandleSuperseded {
+            EncryptedValueAccountEvent::HandleUpdated {
                 previous_handle,
                 previous_subjects,
             } => {
@@ -173,7 +170,6 @@ pub fn reduce_completed_block(
             )
         })
         .collect();
-    let mut born: BTreeSet<[u8; 32]> = BTreeSet::new();
     let mut block_events: BTreeMap<[u8; 32], Vec<(u64, EncryptedValueAccountEvent)>> =
         BTreeMap::new();
     let mut touched: BTreeSet<[u8; 32]> = BTreeSet::new();
@@ -191,7 +187,7 @@ pub fn reduce_completed_block(
         for instruction in &decoded {
             let encrypted_value_account = instruction.encrypted_value();
             let had_state = working_replay.contains_key(&encrypted_value_account);
-            if !had_state && !is_encrypted_value_account_birth(instruction) {
+            if !had_state && !is_encrypted_value_account_create(instruction) {
                 return Err(ReduceError::UnknownPreBootstrapEncryptedValueAccount {
                     encrypted_value_account: hex32(&encrypted_value_account),
                 });
@@ -211,7 +207,6 @@ pub fn reduce_completed_block(
             let state =
                 state.expect("instruction application leaves encrypted_value_account state");
             if was_absent {
-                born.insert(encrypted_value_account);
                 working_mmr
                     .entry(encrypted_value_account)
                     .or_insert_with(|| (Vec::new(), 0));
@@ -256,7 +251,6 @@ pub fn reduce_completed_block(
             subjects: replay.subjects,
             leaf_count,
             peaks,
-            born_in_block: born.contains(encrypted_value_account),
         });
     }
 
@@ -279,9 +273,8 @@ pub fn reduce_completed_block(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::decode::SubjectGrant;
     use solana_proof_source::{CanonicalTransaction, RawInstruction};
-    use zama_solana_acl::value_account::reconstruct;
+    use zama_solana_acl::encrypted_value_account::reconstruct;
 
     fn pk(tag: u8) -> [u8; 32] {
         [tag; 32]
@@ -378,7 +371,6 @@ mod tests {
         assert!(err
             .to_string()
             .contains("unknown pre-bootstrap encrypted_value_account"));
-        let _ = SubjectGrant { subject: pk(2) };
         let _ = reconstruct(pk(1), &[]);
     }
 }

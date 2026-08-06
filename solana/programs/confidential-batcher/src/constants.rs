@@ -12,7 +12,7 @@ pub const APP_EVENT_VERSION: u8 = 2;
 ///
 /// The rate is event-facing and informational only. Claims do NOT multiply by
 /// it: each claim is the exact proportional floor
-/// `encrypted(joined) * payout_received / total_joined` in one MulDiv eval,
+/// `encrypted(joined) * payout_received / total_joined` in one MulDiv execution,
 /// which strands strictly less than the rate's double rounding would (the
 /// intermediate `joined * payout_received < 2^128` stays inside the
 /// coprocessor's widened MulDiv, and the result is at most `payout_received`,
@@ -24,7 +24,7 @@ pub const RATE_SCALE: u64 = 1_000_000_000;
 pub const BATCH_SEED: &[u8] = b"batch";
 
 /// PDA seed for the per-batch authority that owns the batch's confidential and
-/// SPL token accounts, signs its FHE evals, and authorizes its token CPIs.
+/// SPL token accounts, signs its fhe_execute batches, and authorizes its token CPIs.
 pub const BATCH_AUTHORITY_SEED: &[u8] = b"batch-authority";
 
 /// PDA seed for a user's per-batch join record.

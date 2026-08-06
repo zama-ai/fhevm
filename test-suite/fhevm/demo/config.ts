@@ -19,13 +19,13 @@ import path from "node:path";
 import { address, type Address } from "@solana/kit";
 
 /**
- * Structural mirror of the SDK's normative `VaultDemoRoots` (`@fhevm/sdk/solana/vault`).
+ * Structural mirror of the demo dapp's normative `VaultDemoRoots`
+ * (`solana/demo-dapp/src/vault/derive.ts`, importable here as `@demo-dapp/vault/index.js`).
  *
- * test-suite reaches the SDK only through runtime dynamic imports (the SDK's `_types` are not built
- * at `tsc` check time — see `src/solana/current-user-decrypt.ts`), so a static type import would not
- * resolve here. The 12-field shape is restated so `depositRoots`/`redeemRoots` stay typed; the seed
- * passes these objects straight into `deriveBatchAddresses`, where compatibility is structural. Keep
- * this in lockstep with the SDK interface (names/shape are fixed there).
+ * The 12-field shape is restated so `depositRoots`/`redeemRoots` stay typed without coupling the
+ * demo-config parser to the dapp module graph; the seed passes these objects straight into
+ * `deriveBatchAddresses`, where compatibility is structural. Keep this in lockstep with the vault
+ * interface (names/shape are fixed there).
  */
 export type VaultDemoRoots = {
   readonly batcherProgram: Address;

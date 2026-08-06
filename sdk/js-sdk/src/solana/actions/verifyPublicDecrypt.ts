@@ -62,8 +62,9 @@ export type SolanaVerifyPublicDecryptAccounts = {
 /**
  * Builds the raw, stateless `zama_host::verify_public_decrypt` instruction from a certificate claim.
  * The verifier reads state and returns `(handle, cleartext, context_id)` via `return_data`; it creates and
- * mutates nothing. Use this when consuming the verifier from a non-token program (the token wrapper
- * is `buildDiscloseSecpInstruction`). Async because the host config account defaults to its PDA
+ * mutates nothing. Use this when consuming the verifier from a non-token program. The
+ * confidential-token wrapper that discloses through the token program is not part of this SDK —
+ * it lives with the vault demo dapp. Async because the host config account defaults to its PDA
  * when omitted.
  */
 export async function buildVerifyPublicDecryptInstruction(

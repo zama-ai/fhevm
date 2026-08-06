@@ -50,7 +50,7 @@
 /// request moved behind the wallet-safe UTF-8 digest envelope. Ed25519 is non-malleable, so an
 /// earlier raw-binary signature can never verify against the `v3` message. The in-worker
 /// re-verification (see `event_processor::solana_user_decrypt`) still binds the MMR proof, the
-/// encrypted value account value key, and the proof slot to the user's identity, so a relayer
+/// encrypted value ID, and the proof slot to the user's identity, so a relayer
 /// cannot substitute any of them after the user signs.
 pub const SOLANA_USER_DECRYPT_DOMAIN_TAG: &[u8] = b"zama-solana-user-decrypt-v3";
 
@@ -91,7 +91,7 @@ pub struct SolanaUserDecryptSigningInput<'a> {
     pub start_timestamp: u64,
     /// Validity window duration (seconds).
     pub duration_seconds: u64,
-    /// The encrypted value account value key for a current/historical/public decrypt; all-zero only when no
+    /// The encrypted value ID for a current/historical/public decrypt; all-zero only when no
     /// encrypted value account is named. Flat `&[u8; 32]` (not a typed key) because this crate has no
     /// `zama-solana-acl` dependency — the kms-worker owns the proof decode.
     pub acl_value_key: &'a [u8; 32],
@@ -194,7 +194,7 @@ pub const SOLANA_EXTRA_DATA_VERSION_MMR_PROOF: u8 = 0x03;
 pub struct SolanaUserDecryptExtraData {
     /// The 32-byte KMS context id (zero when absent).
     pub context_id: [u8; 32],
-    /// The encrypted value account value key for a current or MMR-proof decrypt; all-zero only when omitted.
+    /// The encrypted value ID for a current or MMR-proof decrypt; all-zero only when omitted.
     pub acl_value_key: [u8; 32],
     /// The encrypted value account leaf_count the proof was built against; 0 for a current-ACL request.
     pub proof_slot: u64,
@@ -209,6 +209,10 @@ pub struct SolanaUserDecryptExtraData {
 /// Returns `None` unless the blob is exactly the proof-tail version and its length prefix matches
 /// the full body. Public decrypt uses this strict form because a missing or malformed proof must
 /// fail closed instead of silently routing to a no-proof path.
+///
+/// The client-side encoder is `buildSolanaUserDecryptMmrProofExtraData` in
+/// `sdk/js-sdk/src/core/coprocessor/SolanaUserDecrypt-p.ts` — a hand-mirrored codec across
+/// languages (TypeScript there, Rust here); the two layouts must change together.
 pub fn parse_solana_mmr_proof_extra_data(extra_data: &[u8]) -> Option<SolanaUserDecryptExtraData> {
     if extra_data.len() < 33 || extra_data[0] != SOLANA_EXTRA_DATA_VERSION_MMR_PROOF {
         return None;
@@ -432,7 +436,7 @@ mod tests {
         );
     }
 
-    // The new MMR-proof fields are load-bearing in the signed request: changing the proof_slot, the
+    // The new MMR-proof fields are inside the signed request: changing the proof_slot, the
     // proof bytes, or the value_key changes the signed bytes (so a mutated request fails verify).
     #[test]
     fn tail_fields_bind_into_signing_message() {

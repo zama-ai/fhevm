@@ -702,7 +702,7 @@ async fn fallback_same_grant_on_sibling_fork_survives_cleanup() {
     assert_eq!(branch_computation_count(&db, dst_handle).await, 1);
     assert_trivial_encrypt_operands(&db, dst_handle, 123, 5).await;
 
-    // The durable observation for the canonical block survives; the
+    // The persistent observation for the canonical block survives; the
     // orphaned one is gone.
     let pool = db.pool().await;
     let observations: i64 = sqlx::query_scalar(

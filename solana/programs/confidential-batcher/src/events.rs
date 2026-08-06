@@ -74,14 +74,14 @@ pub struct QuitBatch {
 }
 
 /// Emitted when a batch is dispatched: its full encrypted balance was burned
-/// and the born-public burned handle awaits KMS certification.
+/// and the created-public burned handle awaits KMS certification.
 #[event]
 pub struct BatchDispatched {
     /// Event schema version.
     pub version: u8,
     /// Batch account.
     pub batch: Pubkey,
-    /// Born-public handle of the burned batch total.
+    /// Created-public handle of the burned batch total.
     pub burned_total_handle: [u8; 32],
 }
 

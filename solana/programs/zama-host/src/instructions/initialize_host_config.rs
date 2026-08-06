@@ -3,12 +3,13 @@
 use anchor_lang::prelude::*;
 
 use super::common::*;
-#[cfg(feature = "emit-events")]
+use crate::event_cpi::emit_event_cpi;
 use crate::events::HostConfigInitializedEvent;
 use crate::{errors::ZamaHostError, state::*};
 
 /// Accounts for initializing the singleton [`HostConfig`].
 #[derive(Accounts)]
+#[event_cpi]
 pub struct InitializeHostConfig<'info> {
     /// Pays rent for the config account.
     #[account(mut)]
@@ -40,7 +41,6 @@ pub fn initialize_host_config(
         args.coprocessor_threshold,
     )?;
     let updated_slot = Clock::get()?.slot;
-    #[cfg(feature = "emit-events")]
     let config_key = ctx.accounts.host_config.key();
     let config = &mut ctx.accounts.host_config;
     config.admin = ctx.accounts.admin.key();
@@ -54,21 +54,25 @@ pub fn initialize_host_config(
     config.current_kms_context_id = 0;
     config.paused = false;
     config.grant_deny_list_enabled = args.grant_deny_list_enabled;
-    // Ship HCU enforcement disabled (0 = unlimited); an admin enables it post-calibration.
-    config.max_hcu_per_tx = 0;
-    config.max_hcu_depth_per_tx = 0;
+    // Ship HCU enforcement disabled (u64::MAX = unlimited); an admin enables it post-calibration.
+    config.max_hcu_per_tx = u64::MAX;
+    config.max_hcu_depth_per_tx = u64::MAX;
     // Ship the per-app block cap unrestricted (u64::MAX): the neutral state that short-circuits
     // the cap and touches no meter. A `0` default would instead ban every untrusted app on deploy.
     config.hcu_block_cap_per_app = u64::MAX;
     config.updated_slot = updated_slot;
     config.bump = ctx.bumps.host_config;
-    #[cfg(feature = "emit-events")]
-    emit!(HostConfigInitializedEvent {
-        version: EVENT_VERSION,
-        config: config_key,
-        admin: config.admin,
-        chain_id: config.chain_id,
-    });
+    let admin = config.admin;
+    let chain_id = config.chain_id;
+    emit_event_cpi(
+        &ctx.accounts.event_authority,
+        &HostConfigInitializedEvent {
+            version: EVENT_VERSION,
+            config: config_key,
+            admin,
+            chain_id,
+        },
+    )?;
     Ok(())
 }
 

@@ -1,5 +1,14 @@
 {
   "files": [],
+  // Runtime-only mapping for bun consumers (the test-suite seeder / deposit-arc scenario import
+  // src/vault from outside this package): bun resolves @sdk-src against this file, and mapping to
+  // SDK *sources* keeps those flows independent of an SDK build. tsc and vite/vitest never read
+  // this — the project configs and vite.config.ts map @sdk-src to the built SDK in node_modules.
+  "compilerOptions": {
+    "paths": {
+      "@sdk-src/*": ["../../sdk/js-sdk/src/*"]
+    }
+  },
   "references": [
     { "path": "./tsconfig.app.json" },
     { "path": "./tsconfig.node.json" }

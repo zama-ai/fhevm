@@ -10,10 +10,9 @@ use crate::{
     errors::ZamaHostError,
     state::{
         assert_handle_for_chain, deny_subject_address, encrypted_value_address,
-        host_config_address, DenySubjectRecord, EncryptedValue, HostConfig, MAX_ACL_SUBJECTS,
+        host_config_address, DenySubjectRecord, EncryptedValue, HostConfig,
     },
 };
-#[cfg(any(feature = "emit-events", test))]
 use crate::{events::HostConfigUpdatedEvent, state::EVENT_VERSION};
 
 /// Error mapping for the shared EVM signer-address checks used by KMS contexts and the
@@ -131,61 +130,68 @@ pub(super) fn assert_not_paused(config: &Account<HostConfig>) -> Result<()> {
     Ok(())
 }
 
-#[cfg(feature = "emit-events")]
-pub(super) fn emit_config_updated(config: &HostConfig, admin: Pubkey) {
-    emit!(HostConfigUpdatedEvent {
-        version: EVENT_VERSION,
-        config: crate::state::host_config_address().0,
-        admin,
-        paused: config.paused,
-        grant_deny_list_enabled: config.grant_deny_list_enabled,
-        max_hcu_per_tx: config.max_hcu_per_tx,
-        max_hcu_depth_per_tx: config.max_hcu_depth_per_tx,
-        hcu_block_cap_per_app: config.hcu_block_cap_per_app,
-        updated_slot: config.updated_slot,
-    });
+/// Emits the config snapshot after an admin change. Every instruction that touches `HostConfig`
+/// routes through here, which is why the emitter takes the event authority as an argument rather
+/// than using `emit_cpi!`: that macro reads a binding named `ctx`, which a shared helper does not
+/// have.
+pub(super) fn emit_config_updated(
+    config: &HostConfig,
+    admin: Pubkey,
+    event_authority: &AccountInfo<'_>,
+) -> Result<()> {
+    crate::event_cpi::emit_event_cpi(
+        event_authority,
+        &HostConfigUpdatedEvent {
+            version: EVENT_VERSION,
+            config: crate::state::host_config_address().0,
+            admin,
+            paused: config.paused,
+            grant_deny_list_enabled: config.grant_deny_list_enabled,
+            max_hcu_per_tx: config.max_hcu_per_tx,
+            max_hcu_depth_per_tx: config.max_hcu_depth_per_tx,
+            hcu_block_cap_per_app: config.hcu_block_cap_per_app,
+            updated_slot: config.updated_slot,
+        },
+    )
 }
 
-#[cfg(not(feature = "emit-events"))]
-pub(super) fn emit_config_updated(_: &HostConfig, _: Pubkey) {}
-
 /// Enforces the per-app block-cap ordering guard: a metering-band cap (`0 < value < u64::MAX`)
-/// must be at least `max_hcu_per_tx`, so a single legal max-per-tx frame always fits on a fresh
+/// must be at least `max_hcu_per_tx`, so a single legal max-per-tx execution always fits on a fresh
 /// meter. The two sentinels are exempt: `value == u64::MAX` (unrestricted) and `value == 0`
-/// (deliberate ban of untrusted apps). `max_hcu_per_tx == 0` means the per-frame cap is unlimited,
-/// so the guard is vacuous.
+/// (deliberate ban of untrusted apps). `max_hcu_per_tx == u64::MAX` means the per-execution cap is
+/// unlimited, so the guard is vacuous.
 pub(super) fn check_block_cap_ordering(value: u64, max_hcu_per_tx: u64) -> Result<()> {
     require!(
-        value == 0 || value == u64::MAX || max_hcu_per_tx == 0 || value >= max_hcu_per_tx,
+        value == 0 || value == u64::MAX || max_hcu_per_tx == u64::MAX || value >= max_hcu_per_tx,
         ZamaHostError::HcuBlockCapBelowMaxPerTx
     );
     Ok(())
 }
 
-/// Enforces the HCU limit ordering invariant `max_hcu_per_tx >= max_hcu_depth_per_tx`, treating `0`
-/// as unlimited on either side. Both setters reuse this in `(total, depth)` terms:
+/// Enforces the HCU limit ordering invariant `max_hcu_per_tx >= max_hcu_depth_per_tx`, treating
+/// `u64::MAX` as unlimited on either side. Both setters reuse this in `(total, depth)` terms:
 /// `set_max_hcu_per_tx(v)` calls `check_hcu_ordering(v, cfg.max_hcu_depth_per_tx)`;
 /// `set_max_hcu_depth_per_tx(v)` calls `check_hcu_ordering(cfg.max_hcu_per_tx, v)`.
 pub(super) fn check_hcu_ordering(total: u64, depth: u64) -> Result<()> {
     require!(
-        total == 0 || depth == 0 || total >= depth,
+        depth == u64::MAX || total >= depth,
         ZamaHostError::HcuLimitOrderingInvalid
     );
     Ok(())
 }
 
 pub(super) fn assert_output_acl_metadata(
-    app_account_authority: Pubkey,
-    app_account: Pubkey,
+    encrypted_value_account_authority: Pubkey,
+    account: Pubkey,
     subjects: &[Pubkey],
 ) -> Result<()> {
     require_keys_eq!(
-        app_account_authority,
-        app_account,
-        ZamaHostError::AppAccountAuthorityMismatch
+        encrypted_value_account_authority,
+        account,
+        ZamaHostError::EncryptedValueAccountAuthorityMismatch
     );
     require!(
-        !subjects.is_empty() && subjects.len() <= MAX_ACL_SUBJECTS,
+        !subjects.is_empty() && subjects.len() <= zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS,
         ZamaHostError::EncryptedValueSubjectCapacityExceeded
     );
     require!(
@@ -205,7 +211,7 @@ pub(super) fn assert_output_acl_metadata(
 }
 
 /// Decodes an `EncryptedValue` and checks it is program-owned and the
-/// canonical PDA for its stored `(domain, app_account, label)` triple.
+/// canonical PDA for its stored `(domain, encrypted_value_account_authority, label)` triple.
 pub(super) fn read_canonical_encrypted_value(info: &AccountInfo) -> Result<EncryptedValue> {
     require_keys_eq!(
         *info.owner,
@@ -215,7 +221,7 @@ pub(super) fn read_canonical_encrypted_value(info: &AccountInfo) -> Result<Encry
     let data = info.try_borrow_data()?;
     let mut slice: &[u8] = &data;
     let value = EncryptedValue::try_deserialize(&mut slice)?;
-    let (expected, expected_bump) = encrypted_value_address(value.value_key());
+    let (expected, expected_bump) = encrypted_value_address(value.encrypted_value_id());
     require_keys_eq!(
         info.key(),
         expected,
@@ -228,7 +234,7 @@ pub(super) fn read_canonical_encrypted_value(info: &AccountInfo) -> Result<Encry
     Ok(value)
 }
 
-/// Durable input authorization: the account must be a canonical program-owned
+/// Persistent input authorization: the account must be a canonical program-owned
 /// `EncryptedValue`, `handle` must be its *current* handle (for this chain),
 /// and `subject` must be a current allowed member.
 pub(super) fn assert_encrypted_value_subject_allowed(
@@ -250,6 +256,26 @@ pub(super) fn assert_encrypted_value_subject_allowed(
     Ok(())
 }
 
+/// Deny-list gate for one newly granted subject outside `fhe_execute`: locates the
+/// subject's canonical deny record among `remaining_accounts` and applies the
+/// same check the persistent-output path runs through its account table. With the
+/// deny list disabled no witness is required.
+pub(super) fn check_added_subject_not_denied(
+    config: &HostConfig,
+    subject: Pubkey,
+    remaining_accounts: &[AccountInfo],
+) -> Result<()> {
+    if !config.grant_deny_list_enabled {
+        return Ok(());
+    }
+    let (expected, _) = deny_subject_address(subject);
+    let info = remaining_accounts
+        .iter()
+        .find(|account| account.key() == expected)
+        .ok_or_else(|| error!(ZamaHostError::DenyRecordMissing))?;
+    check_grant_not_denied_info(config, subject, Some(info))
+}
+
 pub(super) fn check_grant_not_denied(
     config: &HostConfig,
     subject: Pubkey,
@@ -265,39 +291,35 @@ pub(super) fn check_grant_not_denied_info(
     deny_record: Option<&AccountInfo>,
 ) -> Result<()> {
     if !config.grant_deny_list_enabled {
-        require!(deny_record.is_none(), ZamaHostError::AclDenyRecordMismatch);
+        require!(deny_record.is_none(), ZamaHostError::DenyRecordMismatch);
         return Ok(());
     }
-    let info = deny_record.ok_or_else(|| error!(ZamaHostError::AclDenyRecordMissing))?;
+    let info = deny_record.ok_or_else(|| error!(ZamaHostError::DenyRecordMissing))?;
     let (expected, expected_bump) = deny_subject_address(subject);
-    require_keys_eq!(info.key(), expected, ZamaHostError::AclDenyRecordMismatch);
+    require_keys_eq!(info.key(), expected, ZamaHostError::DenyRecordMismatch);
 
     if is_absent_deny_record(info)? {
         return Ok(());
     }
-    require_keys_eq!(*info.owner, crate::ID, ZamaHostError::AclDenyRecordMismatch);
+    require_keys_eq!(*info.owner, crate::ID, ZamaHostError::DenyRecordMismatch);
     require!(
         info.data_len() == 8 + DenySubjectRecord::SPACE,
-        ZamaHostError::AclDenyRecordMismatch
+        ZamaHostError::DenyRecordMismatch
     );
     let mut data: &[u8] = &info.try_borrow_data()?;
     let record = DenySubjectRecord::try_deserialize(&mut data)?;
     require!(
         record.bump == expected_bump,
-        ZamaHostError::AclDenyRecordMismatch
+        ZamaHostError::DenyRecordMismatch
     );
-    require_keys_eq!(
-        record.subject,
-        subject,
-        ZamaHostError::AclDenyRecordMismatch
-    );
-    require!(!record.denied, ZamaHostError::AclSubjectDenied);
+    require_keys_eq!(record.subject, subject, ZamaHostError::DenyRecordMismatch);
+    require!(!record.denied, ZamaHostError::SubjectDenied);
     Ok(())
 }
 
 pub(super) fn is_absent_deny_record(info: &AccountInfo) -> Result<bool> {
     if info.owner == &System::id() && info.data_is_empty() {
-        require!(!info.executable, ZamaHostError::AclDenyRecordMismatch);
+        require!(!info.executable, ZamaHostError::DenyRecordMismatch);
         return Ok(true);
     }
     Ok(false)
@@ -398,19 +420,19 @@ pub(super) fn create_pda_strict<'info>(
     space: usize,
     seeds: &[&[u8]],
 ) -> Result<()> {
-    require!(account.is_writable, ZamaHostError::InvalidFheEvalAccount);
+    require!(account.is_writable, ZamaHostError::InvalidFheExecuteAccount);
     require_keys_eq!(
         *account.owner,
         System::id(),
-        ZamaHostError::FheEvalOutputAlreadyInitialized
+        ZamaHostError::FheExecuteOutputAlreadyInitialized
     );
     require!(
         account.data_is_empty(),
-        ZamaHostError::FheEvalOutputAlreadyInitialized
+        ZamaHostError::FheExecuteOutputAlreadyInitialized
     );
     require!(
         !account.executable,
-        ZamaHostError::FheEvalOutputAlreadyInitialized
+        ZamaHostError::FheExecuteOutputAlreadyInitialized
     );
     // Predictable output-ACL addresses are equally pre-fundable, so create tolerant of a donated
     // balance (see `fund_allocate_assign`); a lamport donation is not "initialization", so the
@@ -419,19 +441,19 @@ pub(super) fn create_pda_strict<'info>(
     require_keys_eq!(
         *account.owner,
         crate::ID,
-        ZamaHostError::FheEvalOutputAlreadyInitialized
+        ZamaHostError::FheExecuteOutputAlreadyInitialized
     );
     require!(
         !account.executable,
-        ZamaHostError::FheEvalOutputAlreadyInitialized
+        ZamaHostError::FheExecuteOutputAlreadyInitialized
     );
     require!(
         account.data_len() == space,
-        ZamaHostError::FheEvalOutputAlreadyInitialized
+        ZamaHostError::FheExecuteOutputAlreadyInitialized
     );
     require!(
         account.lamports() >= rent,
-        ZamaHostError::FheEvalOutputAlreadyInitialized
+        ZamaHostError::FheExecuteOutputAlreadyInitialized
     );
     Ok(())
 }
@@ -468,7 +490,7 @@ mod tests {
 
         assert_eq!(
             is_absent_deny_record(&info).unwrap_err(),
-            error!(ZamaHostError::AclDenyRecordMismatch)
+            error!(ZamaHostError::DenyRecordMismatch)
         );
     }
 
@@ -505,23 +527,25 @@ mod tests {
     }
 
     #[test]
-    fn check_hcu_ordering_zero_is_unlimited() {
-        // 0 = +inf on either side (the unlimited sentinel); both 0 is the deploy default.
-        assert!(check_hcu_ordering(0, 5_000_000).is_ok());
-        assert!(check_hcu_ordering(4_000_000, 0).is_ok());
-        assert!(check_hcu_ordering(0, 0).is_ok());
+    fn check_hcu_ordering_max_is_unlimited() {
+        // u64::MAX = +inf on either side (the unlimited sentinel); both MAX is the deploy default.
+        assert!(check_hcu_ordering(u64::MAX, 5_000_000).is_ok());
+        assert!(check_hcu_ordering(4_000_000, u64::MAX).is_ok());
+        assert!(check_hcu_ordering(u64::MAX, u64::MAX).is_ok());
     }
 
     #[test]
     fn hcu_ordering_unreachable_under_setter_sequences() {
-        // No ordered setter sequence can reach 0 < total < depth. Simulate both setters as
-        // guarded mutations over a small value space; the bad state must never be reachable.
-        let values = [0u64, 1, 5, 10, 20];
+        // No ordered setter sequence can reach total < depth with both limits finite.
+        // Simulate both setters as guarded mutations over a small value space; the
+        // bad state must never be reachable.
+        let values = [u64::MAX, 1, 5, 10, 20];
         for &a in &values {
             for &b in &values {
                 for &c in &values {
-                    let (mut total, mut depth) = (0u64, 0u64); // init state (both disabled)
-                                                               // sequence: set_total(a), set_depth(b), set_total(c)
+                    // init state (both unlimited)
+                    let (mut total, mut depth) = (u64::MAX, u64::MAX);
+                    // sequence: set_total(a), set_depth(b), set_total(c)
                     if check_hcu_ordering(a, depth).is_ok() {
                         total = a;
                     }
@@ -531,8 +555,11 @@ mod tests {
                     if check_hcu_ordering(c, depth).is_ok() {
                         total = c;
                     }
-                    let bad = total != 0 && depth != 0 && total < depth;
-                    assert!(!bad, "reached 0<total<depth: total={total} depth={depth}");
+                    let bad = total != u64::MAX && depth != u64::MAX && total < depth;
+                    assert!(
+                        !bad,
+                        "reached finite total<depth: total={total} depth={depth}"
+                    );
                 }
             }
         }
@@ -542,8 +569,8 @@ mod tests {
 
     #[test]
     fn host_config_updated_event_carries_hcu_limits() {
-        // If the two fields were missing, this would not build. (The updated_slot write + emit! are
-        // exercised end-to-end by the Mollusk setter tests in runtime-tests/tests/host_mollusk.rs.)
+        // If the two fields were missing, this would not build. The emission itself is exercised
+        // end-to-end by the Mollusk setter tests in runtime-tests/tests/host_mollusk.rs.
         let _event = HostConfigUpdatedEvent {
             version: EVENT_VERSION,
             config: Pubkey::new_unique(),
@@ -579,7 +606,7 @@ mod tests {
 
     #[test]
     fn check_block_cap_ordering_unlimited_per_tx_is_vacuous() {
-        // max_hcu_per_tx == 0 (per-frame cap off) accepts even a tiny band value.
-        assert!(check_block_cap_ordering(1, 0).is_ok());
+        // max_hcu_per_tx == u64::MAX (per-execution cap off) accepts even a tiny band value.
+        assert!(check_block_cap_ordering(1, u64::MAX).is_ok());
     }
 }

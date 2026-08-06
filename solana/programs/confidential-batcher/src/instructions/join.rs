@@ -4,13 +4,13 @@
 //!
 //! One user-signed transaction: the user's signature propagates through the
 //! `confidential_transfer` CPI into the batch's own token account, and the
-//! batcher's own eval re-materializes the transferred amount into the user's
+//! batcher's own execution re-materializes the transferred amount into the user's
 //! joined encrypted value account **in the same transaction**. Same-transaction is
-//! load-bearing: the transfer's recipient rule places the batch authority in
+//! what makes this safe: the transfer's recipient rule places the batch authority in
 //! the `transferred_amount` output audience by construction, but that encrypted value account
-//! is superseded by the user's next transfer and input admission pins the
+//! is replaced by the user's next transfer and input admission pins the
 //! current handle — so the re-materialization must happen before anything can
-//! supersede it.
+//! update it.
 
 use super::*;
 
@@ -19,7 +19,7 @@ use super::*;
 pub struct Join<'info> {
     /// Joining user; transfer authority over their confidential balance.
     pub user: Signer<'info>,
-    /// Pays join-record rent, transfer output rent, and the batcher eval's
+    /// Pays join-record rent, transfer output rent, and the batcher execution's
     /// ACL rent.
     #[account(mut)]
     pub payer: Signer<'info>,
@@ -29,7 +29,7 @@ pub struct Join<'info> {
     #[account(mut, constraint = batch.batcher == batcher.key() @ BatcherError::BatchBatcherMismatch)]
     pub batch: Box<Account<'info, Batch>>,
     /// CHECK: per-batch authority PDA; recipient owner of the transfer and the
-    /// batcher eval's compute subject + app authority.
+    /// batcher execution's compute subject and encrypted value account authority.
     #[account(seeds = [BATCH_AUTHORITY_SEED, batch.key().as_ref()], bump = batch.authority_bump)]
     pub batch_authority: UncheckedAccount<'info>,
     /// The user's join record for this batch; created on first join.
@@ -53,18 +53,18 @@ pub struct Join<'info> {
     /// validated by the token CPI and pinned below.
     #[account(mut)]
     pub batch_join_token_account: UncheckedAccount<'info>,
-    /// CHECK: user's stable balance encrypted value account; superseded by the token CPI.
+    /// CHECK: user's stable balance encrypted value account; replaced by the token CPI.
     #[account(mut)]
     pub user_balance_value: UncheckedAccount<'info>,
-    /// CHECK: batch's stable balance encrypted value account; superseded by the token CPI.
+    /// CHECK: batch's stable balance encrypted value account; replaced by the token CPI.
     #[account(mut)]
     pub batch_balance_value: UncheckedAccount<'info>,
-    /// CHECK: user's stable transferred-amount encrypted value account; superseded by the
-    /// token CPI, then read as the batcher eval's operand.
+    /// CHECK: user's stable transferred-amount encrypted value account; replaced by the
+    /// token CPI, then read as the batcher execution's operand.
     #[account(mut)]
     pub user_transferred_value: UncheckedAccount<'info>,
-    /// CHECK: the user's joined encrypted value account; created on first join, superseded
-    /// (accumulated) on repeat joins by the batcher eval.
+    /// CHECK: the user's joined encrypted value account; created on first join, replaced
+    /// (accumulated) on repeat joins by the batcher execution.
     #[account(mut)]
     pub pending_join_value: UncheckedAccount<'info>,
     /// CHECK: ZamaHost event-CPI authority; validated by the host program.
@@ -141,20 +141,20 @@ pub fn join<'info>(
     // Phase 2: re-materialize the just-transferred amount into the user's joined
     // encrypted value account. The batch authority reads the transferred encrypted value account (it is in its
     // audience as the recipient owner) and accumulates: first join creates
-    // `joined = transferred + 0`, repeats supersede to
+    // `joined = transferred + 0`, repeats update to
     // `joined = joined + transferred`.
     let transferred_value = fhe::read_encrypted_value(&ctx.accounts.user_transferred_value)?;
     let transferred = fhe::uint64_operand(&transferred_value)?;
-    let joined_binding = fhe::DurableBinding::bind(
+    let joined_binding = fhe::PersistentBinding::bind(
         ctx.accounts.pending_join_value.to_account_info(),
-        zama_fhe::EncryptedValueKey::new(
-            batch_key,
+        zama_fhe::EncryptedValueId::new(
+            zama_fhe::Domain::new(batch_key),
             batch_authority,
-            zama_fhe::DurableLabel::new(pending_join_label(user)),
+            zama_fhe::EncryptedValueLabel::new(encrypted_pending_join_label(user)),
         ),
         // The user decrypts their pending amount; the batch authority computes
         // refunds and claims from it; the join mint's compute signer lets
-        // quit's transfer eval read it as the refund amount.
+        // quit's transfer execution read it as the refund amount.
         vec![
             user,
             batch_authority,
@@ -169,10 +169,10 @@ pub fn join<'info>(
     };
     // The joined and transferred encrypted value accounts live in different ACL domains (the
     // batch vs the mint), so their PDAs are distinct by construction; the only
-    // alias in this frame is the joined encrypted value account as both operand and output on
-    // repeat joins, which is the standard same-slot supersede.
-    fhe::eval_as_batch_authority(
-        fhe::BatchAuthorityEval {
+    // alias in this batch is the joined encrypted value account as both operand and output on
+    // repeat joins, which is the standard same-slot update.
+    fhe::execute_as_batch_authority(
+        fhe::BatchAuthorityExecute {
             batch: batch_key,
             authority_bump: ctx.accounts.batch.authority_bump,
             batch_authority: ctx.accounts.batch_authority.to_account_info(),
@@ -187,17 +187,20 @@ pub fn join<'info>(
             joined_binding.account_info(),
             ctx.accounts.user_transferred_value.to_account_info(),
         ],
-        |builder| match previous_joined {
-            Some(joined) => builder.add(joined, transferred, joined_binding.output()),
-            None => builder.add(
-                transferred,
-                zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(0),
-                joined_binding.output(),
-            ),
+        |builder| {
+            match previous_joined {
+                Some(joined) => builder.add(joined, transferred, joined_binding.output())?,
+                None => builder.add(
+                    transferred,
+                    zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(0),
+                    joined_binding.output(),
+                )?,
+            };
+            Ok(())
         },
     )?;
 
-    let joined_handle = joined_binding.handle_after_eval()?;
+    let joined_handle = joined_binding.handle_after_execute()?;
     let record = &mut ctx.accounts.join_record;
     record.batch = batch_key;
     record.user = user;

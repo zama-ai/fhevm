@@ -1,12 +1,12 @@
 //! Anchor program for the Solana FHEVM host PoC.
 //!
 //! `zama-host` owns the protocol-facing parts of the PoC: the append-only
-//! `EncryptedValue` ACL/MMR model, handle derivation, FHE eval, public-decrypt
+//! `EncryptedValue` ACL/MMR model, handle derivation, fhe_execute, public-decrypt
 //! state and the small set of account witnesses that a future
 //! Gateway/KMS request must verify.
 //!
 //! The program intentionally keeps app semantics outside this crate. App
-//! programs, such as `confidential-token`, decide which app accounts and
+//! programs, such as `confidential-token`, decide which encrypted value account authorities and
 //! labels they authorize, then call this program by CPI to create or verify
 //! host-owned ACL state.
 
@@ -16,14 +16,21 @@
 
 /// Shared constants, seed bytes, and fixed protocol sizes.
 pub mod constants;
+/// Off-chain decoding of instruction data and event self-CPIs (feature `decode`).
+#[cfg(feature = "decode")]
+pub mod decode;
 /// EIP-712 v4 verification of EVM-signed KMS / coprocessor certificates.
 pub mod eip712;
 /// Program-specific errors returned by ZamaHost instructions.
 pub mod errors;
-/// Anchor events emitted by protocol and test-shim instructions.
+/// The one event-CPI emitter; every event this program emits goes through it.
+pub(crate) mod event_cpi;
+/// Emitted protocol events (admin and config lifecycle plus the two compute events).
 pub mod events;
 /// Instruction account contexts and handlers.
 pub mod instructions;
+/// Decoded op records reconstructed off-chain from instruction data; never emitted.
+pub mod records;
 /// Account layouts, PDA helpers, and handle derivation helpers.
 pub mod state;
 
@@ -35,6 +42,8 @@ pub use constants::*;
 pub use errors::*;
 /// Re-export event types for generated clients, listeners, and tests.
 pub use events::*;
+/// Re-export decoded op records for off-chain decoders.
+pub use records::*;
 /// Re-export account layouts and helper functions used by app programs.
 pub use state::*;
 
@@ -95,7 +104,7 @@ pub mod zama_host {
         instructions::set_max_hcu_depth_per_tx(ctx, value)
     }
 
-    /// Sets the per-app, per-slot HCU block cap enforced in `fhe_eval`.
+    /// Sets the per-app, per-slot HCU block cap enforced in `fhe_execute`.
     pub fn set_hcu_block_cap_per_app(ctx: Context<HostAdmin>, value: u64) -> Result<()> {
         instructions::set_hcu_block_cap_per_app(ctx, value)
     }
@@ -120,10 +129,15 @@ pub mod zama_host {
     pub fn delegate_for_user_decryption(
         ctx: Context<DelegateForUserDecryption>,
         delegate: Pubkey,
-        app_account: Pubkey,
+        encrypted_value_account_authority: Pubkey,
         expiration_slot: u64,
     ) -> Result<()> {
-        instructions::delegate_for_user_decryption(ctx, delegate, app_account, expiration_slot)
+        instructions::delegate_for_user_decryption(
+            ctx,
+            delegate,
+            encrypted_value_account_authority,
+            expiration_slot,
+        )
     }
 
     pub fn revoke_delegation_for_user_decryption(
@@ -138,33 +152,18 @@ pub mod zama_host {
         instructions::revoke_permits(ctx)
     }
 
-    pub fn fhe_eval<'info>(ctx: Context<'info, FheEval<'info>>, args: FheEvalArgs) -> Result<()> {
-        instructions::fhe_eval(ctx, args)
-    }
-
-    // ---- RFC-024 EncryptedValue ACL model ----
-
-    pub fn create_encrypted_value(
-        ctx: Context<CreateEncryptedValue>,
-        acl_domain_key: Pubkey,
-        app_account: Pubkey,
-        encrypted_value_label: [u8; 32],
-        handle: [u8; 32],
-        subjects: Vec<EncryptedValueSubjectGrant>,
+    pub fn fhe_execute<'info>(
+        ctx: Context<'info, FheExecute<'info>>,
+        args: FheExecuteArgs,
     ) -> Result<()> {
-        instructions::create_encrypted_value(
-            ctx,
-            acl_domain_key,
-            app_account,
-            encrypted_value_label,
-            handle,
-            subjects,
-        )
+        instructions::fhe_execute(ctx, args)
     }
+
+    // ---- EncryptedValue ACL model ----
 
     pub fn allow_subjects(
         ctx: Context<AllowEncryptedValueSubjects>,
-        subjects: Vec<EncryptedValueSubjectGrant>,
+        subjects: Vec<Pubkey>,
     ) -> Result<()> {
         instructions::allow_subjects(ctx, subjects)
     }
@@ -174,15 +173,6 @@ pub mod zama_host {
         subject: Pubkey,
     ) -> Result<()> {
         instructions::remove_subject(ctx, subject)
-    }
-
-    pub fn update_encrypted_value(
-        ctx: Context<UpdateEncryptedValue>,
-        new_handle: [u8; 32],
-        previous_handle: [u8; 32],
-        previous_subjects: Vec<Pubkey>,
-    ) -> Result<()> {
-        instructions::update_encrypted_value(ctx, new_handle, previous_handle, previous_subjects)
     }
 
     pub fn make_handle_public(

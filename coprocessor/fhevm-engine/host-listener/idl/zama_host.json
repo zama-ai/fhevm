@@ -78,117 +78,7 @@
         {
           "name": "subjects",
           "type": {
-            "vec": {
-              "defined": {
-                "name": "EncryptedValueSubjectGrant"
-              }
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "create_encrypted_value",
-      "discriminator": [
-        16,
-        78,
-        219,
-        132,
-        226,
-        111,
-        211,
-        78
-      ],
-      "accounts": [
-        {
-          "name": "payer",
-          "docs": [
-            "Pays rent for the new account."
-          ],
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "app_account_authority",
-          "docs": [
-            "App account authority; must sign and match `app_account`."
-          ],
-          "signer": true
-        },
-        {
-          "name": "encrypted_value",
-          "writable": true
-        },
-        {
-          "name": "host_config",
-          "docs": [
-            "Singleton config PDA."
-          ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  115,
-                  116,
-                  45,
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "deny_subject_record",
-          "optional": true
-        },
-        {
-          "name": "system_program",
-          "address": "11111111111111111111111111111111"
-        }
-      ],
-      "args": [
-        {
-          "name": "acl_domain_key",
-          "type": "pubkey"
-        },
-        {
-          "name": "app_account",
-          "type": "pubkey"
-        },
-        {
-          "name": "encrypted_value_label",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "handle",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "subjects",
-          "type": {
-            "vec": {
-              "defined": {
-                "name": "EncryptedValueSubjectGrant"
-              }
-            }
+            "vec": "pubkey"
           }
         }
       ]
@@ -281,6 +171,12 @@
             "System program used for account creation."
           ],
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
         }
       ],
       "args": [
@@ -381,7 +277,7 @@
           "type": "pubkey"
         },
         {
-          "name": "app_account",
+          "name": "encrypted_value_account_authority",
           "type": "pubkey"
         },
         {
@@ -469,6 +365,12 @@
               }
             ]
           }
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
         }
       ],
       "args": [
@@ -479,22 +381,22 @@
       ]
     },
     {
-      "name": "fhe_eval",
+      "name": "fhe_execute",
       "discriminator": [
-        176,
-        42,
-        63,
-        177,
-        244,
-        167,
-        120,
-        109
+        96,
+        253,
+        7,
+        139,
+        8,
+        187,
+        108,
+        43
       ],
       "accounts": [
         {
           "name": "payer",
           "docs": [
-            "Pays rent for any durable output ACL records."
+            "Pays rent for any persistent output ACL records."
           ],
           "writable": true,
           "signer": true
@@ -502,14 +404,16 @@
         {
           "name": "compute_subject",
           "docs": [
-            "Compute subject that must be allowed on durable encrypted inputs."
+            "Compute subject that must be allowed on persistent encrypted inputs."
           ],
           "signer": true
         },
         {
-          "name": "app_account_authority",
+          "name": "encrypted_value_account_authority",
           "docs": [
-            "App account signer authorizing any durable output ACL metadata."
+            "Default authority signer: signs for every persistent output that does not name an authority",
+            "of its own. An output that sets `authority_index` points at a remaining account instead, and",
+            "that account must sign and must equal the authority the output declares."
           ],
           "signer": true
         },
@@ -544,7 +448,7 @@
         {
           "name": "system_program",
           "docs": [
-            "System program used for durable output ACL creation."
+            "System program used for persistent output ACL creation."
           ],
           "address": "11111111111111111111111111111111"
         },
@@ -582,7 +486,7 @@
           "name": "args",
           "type": {
             "defined": {
-              "name": "FheEvalArgs"
+              "name": "FheExecuteArgs"
             }
           }
         }
@@ -649,6 +553,12 @@
             "System program used for account creation."
           ],
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
         }
       ],
       "args": [
@@ -942,6 +852,12 @@
               }
             ]
           }
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
         }
       ],
       "args": [
@@ -1026,6 +942,12 @@
             "System program used for account creation."
           ],
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
         }
       ],
       "args": [
@@ -1085,6 +1007,12 @@
               }
             ]
           }
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
         }
       ],
       "args": [
@@ -1161,6 +1089,12 @@
             "System program used for account creation."
           ],
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
         }
       ],
       "args": [
@@ -1177,7 +1111,7 @@
     {
       "name": "set_hcu_block_cap_per_app",
       "docs": [
-        "Sets the per-app, per-slot HCU block cap enforced in `fhe_eval`."
+        "Sets the per-app, per-slot HCU block cap enforced in `fhe_execute`."
       ],
       "discriminator": [
         54,
@@ -1223,6 +1157,12 @@
               }
             ]
           }
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
         }
       ],
       "args": [
@@ -1278,6 +1218,12 @@
               }
             ]
           }
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
         }
       ],
       "args": [
@@ -1333,6 +1279,12 @@
               }
             ]
           }
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
         }
       ],
       "args": [
@@ -1388,100 +1340,18 @@
               }
             ]
           }
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
         }
       ],
       "args": [
         {
           "name": "value",
           "type": "u64"
-        }
-      ]
-    },
-    {
-      "name": "update_encrypted_value",
-      "discriminator": [
-        134,
-        7,
-        12,
-        247,
-        233,
-        80,
-        35,
-        215
-      ],
-      "accounts": [
-        {
-          "name": "payer",
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "app_account_authority",
-          "docs": [
-            "App account authority; must sign and match the encrypted value account's `app_account`."
-          ],
-          "signer": true
-        },
-        {
-          "name": "encrypted_value",
-          "writable": true
-        },
-        {
-          "name": "host_config",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  115,
-                  116,
-                  45,
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "deny_subject_record",
-          "optional": true
-        },
-        {
-          "name": "system_program",
-          "address": "11111111111111111111111111111111"
-        }
-      ],
-      "args": [
-        {
-          "name": "new_handle",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "previous_handle",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "previous_subjects",
-          "type": {
-            "vec": "pubkey"
-          }
         }
       ]
     },
@@ -1646,120 +1516,16 @@
       ]
     },
     {
-      "name": "FheBinaryOpEvent",
+      "name": "FheExecuteRandomSeedsEvent",
       "discriminator": [
-        11,
-        123,
-        30,
-        207,
-        27,
-        218,
-        210,
-        83
-      ]
-    },
-    {
-      "name": "FheEvalRandomSeedsEvent",
-      "discriminator": [
-        17,
-        21,
-        221,
-        157,
-        209,
-        142,
-        88,
-        122
-      ]
-    },
-    {
-      "name": "FheIsInEvent",
-      "discriminator": [
-        103,
-        251,
-        249,
-        102,
-        211,
-        177,
-        130,
-        103
-      ]
-    },
-    {
-      "name": "FheMulDivEvent",
-      "discriminator": [
-        189,
-        13,
-        212,
-        163,
-        7,
-        98,
-        112,
-        86
-      ]
-    },
-    {
-      "name": "FheRandBoundedEvent",
-      "discriminator": [
-        119,
-        162,
-        53,
-        151,
-        188,
-        168,
-        21,
-        181
-      ]
-    },
-    {
-      "name": "FheRandEvent",
-      "discriminator": [
-        125,
-        129,
-        233,
-        222,
-        2,
-        1,
-        246,
-        81
-      ]
-    },
-    {
-      "name": "FheSumEvent",
-      "discriminator": [
-        14,
-        171,
-        141,
-        52,
-        160,
-        184,
-        18,
-        66
-      ]
-    },
-    {
-      "name": "FheTernaryOpEvent",
-      "discriminator": [
-        213,
-        15,
-        41,
-        197,
-        234,
-        166,
-        182,
-        95
-      ]
-    },
-    {
-      "name": "FheUnaryOpEvent",
-      "discriminator": [
-        7,
-        254,
-        34,
-        59,
-        208,
-        172,
-        179,
-        159
+        0,
+        146,
+        84,
+        152,
+        187,
+        240,
+        0,
+        20
       ]
     },
     {
@@ -1839,32 +1605,6 @@
         106,
         181
       ]
-    },
-    {
-      "name": "TrivialEncryptEvent",
-      "discriminator": [
-        157,
-        172,
-        164,
-        241,
-        241,
-        49,
-        80,
-        15
-      ]
-    },
-    {
-      "name": "UserDecryptionDelegationUpdatedEvent",
-      "discriminator": [
-        81,
-        111,
-        188,
-        136,
-        248,
-        174,
-        239,
-        156
-      ]
     }
   ],
   "errors": [
@@ -1885,426 +1625,401 @@
     },
     {
       "code": 6003,
-      "name": "InvalidHostConfig",
-      "msg": "host config initialization fields are invalid"
-    },
-    {
-      "code": 6004,
       "name": "UnexpectedRemainingAccounts",
       "msg": "instruction has unexpected remaining accounts"
     },
     {
+      "code": 6004,
+      "name": "MalformedInputAttestation",
+      "msg": "input attestation payload is malformed"
+    },
+    {
       "code": 6005,
-      "name": "InputVerifierMismatch",
-      "msg": "input verifier authority does not match config"
+      "name": "InvalidInputHandleIndex",
+      "msg": "attestation handle index is invalid"
     },
     {
       "code": 6006,
-      "name": "InvalidInputProof",
-      "msg": "input proof is invalid"
+      "name": "InvalidInputHandle",
+      "msg": "attestation selected handle does not match"
     },
     {
       "code": 6007,
-      "name": "InvalidInputHandleIndex",
-      "msg": "input proof handle index is invalid"
-    },
-    {
-      "code": 6008,
-      "name": "InvalidInputHandle",
-      "msg": "input proof selected handle does not match"
-    },
-    {
-      "code": 6009,
       "name": "InvalidInputAttestation",
       "msg": "coprocessor input attestation is invalid"
     },
     {
-      "code": 6010,
+      "code": 6008,
       "name": "GatewayVerifierConfigUnset",
       "msg": "gateway verifier config is not set"
     },
     {
-      "code": 6011,
+      "code": 6009,
       "name": "EmptyKmsContext",
       "msg": "KMS context has no signers"
     },
     {
-      "code": 6012,
+      "code": 6010,
       "name": "TooManyKmsSigners",
       "msg": "KMS context exceeds the maximum signer count"
     },
     {
-      "code": 6013,
+      "code": 6011,
       "name": "InvalidKmsThreshold",
       "msg": "KMS context threshold is invalid"
     },
     {
-      "code": 6014,
+      "code": 6012,
       "name": "InvalidKmsContextId",
       "msg": "KMS context id is not the next sequential id"
     },
     {
-      "code": 6015,
+      "code": 6013,
       "name": "CurrentKmsContextCannotBeDestroyed",
       "msg": "current KMS context cannot be destroyed"
     },
     {
-      "code": 6016,
+      "code": 6014,
       "name": "InvalidInputHandleVersion",
       "msg": "input handle version is unsupported"
     },
     {
-      "code": 6017,
+      "code": 6015,
       "name": "InvalidInputHandleChain",
       "msg": "input handle chain id does not match host config"
     },
     {
-      "code": 6018,
+      "code": 6016,
       "name": "InvalidInputHandleType",
       "msg": "input handle FHE type is unsupported"
     },
     {
-      "code": 6019,
+      "code": 6017,
       "name": "UnsupportedFheType",
       "msg": "FHE type is unsupported"
     },
     {
-      "code": 6020,
+      "code": 6018,
       "name": "BinaryOperandTypeMismatch",
       "msg": "binary FHE operand type is incompatible"
     },
     {
-      "code": 6021,
+      "code": 6019,
       "name": "InvalidRandomUpperBound",
       "msg": "bounded random upper bound is invalid"
     },
     {
+      "code": 6020,
+      "name": "EncryptedValueAccountAuthorityMismatch",
+      "msg": "signer does not match the declared encrypted value account authority"
+    },
+    {
+      "code": 6021,
+      "name": "DenyRecordMissing",
+      "msg": "deny-list witness account is required"
+    },
+    {
       "code": 6022,
-      "name": "InputProofSignatureMissing",
-      "msg": "input proof Ed25519 signature is missing or malformed"
+      "name": "DenyRecordMismatch",
+      "msg": "deny-list account does not match the canonical PDA"
     },
     {
       "code": 6023,
-      "name": "AppAccountAuthorityMismatch",
-      "msg": "ACL app account authority does not match app account"
+      "name": "SubjectDenied",
+      "msg": "grant authority subject is deny-listed"
     },
     {
       "code": 6024,
-      "name": "PublicDecryptAtBirthUnsupported",
-      "msg": "public decrypt cannot be set at encrypted value birth"
-    },
-    {
-      "code": 6025,
-      "name": "AclDenyRecordMissing",
-      "msg": "ACL deny-list account is required"
-    },
-    {
-      "code": 6026,
-      "name": "AclDenyRecordMismatch",
-      "msg": "ACL deny-list account does not match the canonical PDA"
-    },
-    {
-      "code": 6027,
-      "name": "AclSubjectDenied",
-      "msg": "ACL authority subject is deny-listed"
-    },
-    {
-      "code": 6028,
       "name": "DelegationPdaMismatch",
       "msg": "delegation record does not match the canonical PDA"
     },
     {
-      "code": 6029,
+      "code": 6025,
       "name": "InvalidDelegation",
       "msg": "delegation tuple is invalid"
     },
     {
-      "code": 6030,
+      "code": 6026,
       "name": "DelegationRevoked",
       "msg": "delegation has already been revoked"
     },
     {
-      "code": 6031,
+      "code": 6027,
       "name": "DelegationUpdatedInCurrentSlot",
       "msg": "delegation was already updated in the current slot"
     },
     {
-      "code": 6032,
+      "code": 6028,
       "name": "PreviousBankHashUnavailable",
       "msg": "previous bank hash is not available"
     },
     {
-      "code": 6033,
+      "code": 6029,
       "name": "PdaCreationMismatch",
       "msg": "PDA creation target is invalid"
     },
     {
+      "code": 6030,
+      "name": "InvalidFheExecuteOperationCount",
+      "msg": "fhe_execute operation count is invalid"
+    },
+    {
+      "code": 6031,
+      "name": "InvalidFheExecuteAccount",
+      "msg": "fhe_execute account reference is invalid"
+    },
+    {
+      "code": 6032,
+      "name": "FheExecuteEarlierStepMissing",
+      "msg": "fhe_execute transient operand is missing"
+    },
+    {
+      "code": 6033,
+      "name": "FheExecuteDuplicateHandle",
+      "msg": "fhe_execute output handle is duplicated"
+    },
+    {
       "code": 6034,
-      "name": "InvalidFheEvalOperationCount",
-      "msg": "FHE eval operation count is invalid"
+      "name": "FheExecuteOutputAlreadyInitialized",
+      "msg": "fhe_execute persistent output ACL record already exists"
     },
     {
       "code": 6035,
-      "name": "FheEvalBornPublicFrameTooLarge",
-      "msg": "reserved FHE eval produced-public transport error"
+      "name": "FheExecuteRandRequiresPersistentOutput",
+      "msg": "fhe_execute rand step requires a persistent output in the execution"
     },
     {
       "code": 6036,
-      "name": "InvalidFheEvalAccount",
-      "msg": "FHE eval account reference is invalid"
-    },
-    {
-      "code": 6037,
-      "name": "FheEvalAllowedLocalMissing",
-      "msg": "FHE eval transient operand is missing"
-    },
-    {
-      "code": 6038,
-      "name": "FheEvalDuplicateHandle",
-      "msg": "FHE eval output handle is duplicated"
-    },
-    {
-      "code": 6039,
-      "name": "FheEvalOutputAlreadyInitialized",
-      "msg": "FHE eval durable output ACL record already exists"
-    },
-    {
-      "code": 6040,
-      "name": "FheEvalRandRequiresDurableOutput",
-      "msg": "FHE eval rand step requires a durable output in the frame"
-    },
-    {
-      "code": 6041,
-      "name": "DerivedOutputPublicDecryptDenied",
-      "msg": "transient capability cannot authorize public decrypt"
-    },
-    {
-      "code": 6042,
       "name": "DuplicateKmsSigner",
       "msg": "KMS context signer set contains a duplicate address"
     },
     {
-      "code": 6043,
+      "code": 6037,
       "name": "InputBindContractMismatch",
-      "msg": "attested contract address does not match the output app account"
+      "msg": "attested contract address does not match the fhe_execute compute subject"
     },
     {
-      "code": 6044,
+      "code": 6038,
       "name": "HcuTransactionLimitExceeded",
       "msg": "FHE op total HCU exceeds the per-transaction limit"
     },
     {
-      "code": 6045,
+      "code": 6039,
       "name": "HcuTransactionDepthLimitExceeded",
       "msg": "FHE op depth HCU exceeds the per-transaction depth limit"
     },
     {
-      "code": 6046,
+      "code": 6040,
       "name": "HcuUnknownCost",
       "msg": "no HCU cost is defined for this op / type / scalar combination"
     },
     {
-      "code": 6047,
+      "code": 6041,
       "name": "HcuLimitOrderingInvalid",
       "msg": "HCU limits violate max_hcu_per_tx >= max_hcu_depth_per_tx"
     },
     {
-      "code": 6048,
+      "code": 6042,
       "name": "AttestationChainIdMismatch",
       "msg": "attested contract chain id does not match the host chain id"
     },
     {
-      "code": 6049,
-      "name": "RawEncryptedValueLifecycleDisabled",
-      "msg": "raw encrypted value lifecycle is disabled; use fhe_eval durable outputs"
-    },
-    {
-      "code": 6050,
+      "code": 6043,
       "name": "EncryptedValuePdaMismatch",
       "msg": "encrypted value account does not match the canonical PDA"
     },
     {
-      "code": 6051,
+      "code": 6044,
       "name": "EncryptedValueAccountInvalid",
       "msg": "encrypted value account is not a valid EncryptedValue account"
     },
     {
-      "code": 6052,
+      "code": 6045,
       "name": "EncryptedValueSubjectCapacityExceeded",
       "msg": "encrypted value subject capacity exceeded"
     },
     {
-      "code": 6053,
+      "code": 6046,
       "name": "PreviousStateMismatch",
       "msg": "encrypted value previous state does not match the account"
     },
     {
-      "code": 6054,
+      "code": 6047,
       "name": "EncryptedValuePublicHandleMismatch",
       "msg": "encrypted value public handle does not match the account"
     },
     {
-      "code": 6055,
+      "code": 6048,
       "name": "SubjectNotAllowed",
       "msg": "encrypted value subject is not allowed"
     },
     {
-      "code": 6056,
+      "code": 6049,
       "name": "SubjectNotFound",
       "msg": "encrypted value subject is not a current member"
     },
     {
-      "code": 6057,
+      "code": 6050,
       "name": "EncryptedValueEmptySubjects",
       "msg": "encrypted value must be created with at least one subject"
     },
     {
-      "code": 6058,
+      "code": 6051,
       "name": "EncryptedValueLastSubject",
       "msg": "encrypted value must retain at least one subject"
     },
     {
-      "code": 6059,
+      "code": 6052,
       "name": "EncryptedValueMmrInconsistent",
       "msg": "encrypted value MMR state is inconsistent"
     },
     {
-      "code": 6060,
+      "code": 6053,
       "name": "EncryptedValueMmrPeakCapacityExceeded",
       "msg": "encrypted value MMR peak capacity exceeded"
     },
     {
-      "code": 6061,
+      "code": 6054,
       "name": "HcuBlockLimitExceeded",
       "msg": "per-app in-slot HCU exceeds the block cap"
     },
     {
-      "code": 6062,
+      "code": 6055,
       "name": "HcuBlockMeterMissing",
       "msg": "HCU block meter account is required for a metered app"
     },
     {
-      "code": 6063,
+      "code": 6056,
       "name": "HcuBlockMeterMismatch",
       "msg": "HCU block meter account does not match the canonical PDA"
     },
     {
-      "code": 6064,
+      "code": 6057,
       "name": "HcuTrustedAppRecordMismatch",
       "msg": "HCU trusted-app record does not match the canonical PDA"
     },
     {
-      "code": 6065,
+      "code": 6058,
       "name": "HcuBlockCapBelowMaxPerTx",
       "msg": "HCU block cap is below max_hcu_per_tx"
     },
     {
-      "code": 6066,
+      "code": 6059,
       "name": "MulDivDivisorZero",
       "msg": "fheMulDiv divisor must be non-zero"
     },
     {
-      "code": 6067,
+      "code": 6060,
       "name": "DivisorMustBeScalar",
       "msg": "fheDiv/fheRem divisor must be a plaintext scalar"
     },
     {
-      "code": 6068,
+      "code": 6061,
       "name": "DivisionByZero",
       "msg": "fheDiv/fheRem divisor must be non-zero"
     },
     {
-      "code": 6069,
+      "code": 6062,
       "name": "InvalidChainTypeBit",
       "msg": "host chain id must set the Solana chain-type high bit and the gateway chain id must not"
     },
     {
-      "code": 6070,
-      "name": "FheEvalUnanchoredUnderBlockCap",
-      "msg": "FHE eval frame anchors no durable/verified binding under a finite HCU block cap"
+      "code": 6063,
+      "name": "FheExecuteUnanchoredUnderBlockCap",
+      "msg": "FHE execution anchors no persistent/verified binding under a finite HCU block cap"
     },
     {
-      "code": 6071,
+      "code": 6064,
       "name": "InvalidKmsContext",
       "msg": "KMS context is destroyed or does not match the certificate's committed context"
     },
     {
-      "code": 6072,
+      "code": 6065,
       "name": "InvalidKmsCertificate",
       "msg": "KMS public-decrypt certificate is invalid"
     },
     {
-      "code": 6073,
+      "code": 6066,
       "name": "PublicDecryptProofInvalid",
       "msg": "public-decrypt inclusion proof is invalid"
     },
     {
-      "code": 6074,
+      "code": 6067,
       "name": "EmptyCoprocessorSignerSet",
       "msg": "coprocessor signer set must not be empty"
     },
     {
-      "code": 6075,
+      "code": 6068,
       "name": "TooManyCoprocessorSigners",
       "msg": "coprocessor signer set exceeds the maximum size"
     },
     {
-      "code": 6076,
+      "code": 6069,
       "name": "InvalidCoprocessorThreshold",
       "msg": "coprocessor threshold must be between 1 and the signer count"
     },
     {
-      "code": 6077,
+      "code": 6070,
       "name": "DuplicateCoprocessorSigner",
       "msg": "coprocessor signer set contains a duplicate signer"
     },
     {
-      "code": 6078,
+      "code": 6071,
       "name": "ZeroCoprocessorSigner",
       "msg": "coprocessor signer set contains the zero address"
     },
     {
-      "code": 6079,
+      "code": 6072,
       "name": "ZeroKmsSigner",
       "msg": "KMS signer set contains the zero address"
     },
     {
-      "code": 6080,
+      "code": 6073,
       "name": "PermitInvalidationPdaMismatch",
       "msg": "permit invalidation account is not the canonical account for the signer"
     },
     {
-      "code": 6081,
+      "code": 6074,
       "name": "PermitInvalidationAccountInvalid",
       "msg": "permit invalidation account is not a valid watermark record"
     },
     {
-      "code": 6082,
+      "code": 6075,
       "name": "ClockBeforeEpoch",
       "msg": "clock is before the unix epoch"
     },
     {
-      "code": 6083,
-      "name": "FheEvalPoolIndexOutOfBounds",
-      "msg": "FHE eval pool index out of bounds"
+      "code": 6076,
+      "name": "FheExecuteDictionaryIndexOutOfBounds",
+      "msg": "fhe_execute dictionary index out of bounds"
     },
     {
-      "code": 6084,
-      "name": "FheEvalAccountCountMismatch",
-      "msg": "FHE eval declared account count mismatch"
+      "code": 6077,
+      "name": "FheExecuteAccountCountMismatch",
+      "msg": "fhe_execute declared account count mismatch"
     },
     {
-      "code": 6085,
-      "name": "FheEvalDurableOperandWrittenEarlier",
-      "msg": "FHE eval durable operand was written earlier in the frame"
+      "code": 6078,
+      "name": "FheExecutePersistentOperandWrittenEarlier",
+      "msg": "fhe_execute persistent operand was written earlier in the execution"
+    },
+    {
+      "code": 6079,
+      "name": "FheExecuteDictionaryEntryUnreferenced",
+      "msg": "fhe_execute dictionary entry is not referenced by any step"
+    },
+    {
+      "code": 6080,
+      "name": "HcuLimitZeroReserved",
+      "msg": "0 is not a valid HCU limit; use u64::MAX for unlimited"
     }
   ],
   "types": [
     {
       "name": "CoprocessorInputAttestation",
       "docs": [
-        "A coprocessor input attestation carried inline by a [`FheEvalOperand::VerifiedInput`], re-verified",
-        "in-frame (no account, no PDA) — the instruction-local analog of EVM `allowTransient(input, contract)`."
+        "A coprocessor input attestation carried inline by a [`FheExecuteOperand::VerifiedInput`], re-verified",
+        "in-execution (no account, no PDA) — the instruction-local analog of EVM `allowTransient(input, contract)`."
       ],
       "type": {
         "kind": "struct",
@@ -2444,21 +2159,6 @@
       }
     },
     {
-      "name": "EncryptedValueSubjectGrant",
-      "docs": [
-        "One subject grant: identity to add to the allowed set."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "subject",
-            "type": "pubkey"
-          }
-        ]
-      }
-    },
-    {
       "name": "FheBinaryOpCode",
       "docs": [
         "Binary FHE operators currently modeled by the PoC."
@@ -2530,93 +2230,9 @@
       }
     },
     {
-      "name": "FheBinaryOpEvent",
+      "name": "FheExecuteArgs",
       "docs": [
-        "Emitted for a binary FHE operation accepted by the host."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "op",
-            "docs": [
-              "Binary operator."
-            ],
-            "type": {
-              "defined": {
-                "name": "FheBinaryOpCode"
-              }
-            }
-          },
-          {
-            "name": "subject",
-            "docs": [
-              "Compute subject that passed ACL checks."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "lhs",
-            "docs": [
-              "Left-hand operand handle."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "rhs",
-            "docs": [
-              "Right-hand operand handle or scalar bytes."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "scalar",
-            "docs": [
-              "Whether `rhs` is plaintext scalar bytes."
-            ],
-            "type": "bool"
-          },
-          {
-            "name": "result",
-            "docs": [
-              "Output handle verified by the host formula."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          }
-        ]
-      }
-    },
-    {
-      "name": "FheEvalArgs",
-      "docs": [
-        "Arguments for composed instruction-local FHE evaluation."
+        "Arguments for one composed, instruction-local fhe_execute."
       ],
       "type": {
         "kind": "struct",
@@ -2631,12 +2247,21 @@
             "type": "u8"
           },
           {
-            "name": "pool",
+            "name": "dictionary",
             "docs": [
-              "Interned 32-byte constant pool: operand handles, scalar values, ACL domain keys, app",
-              "account keys, encrypted value labels, and output subjects. Steps reference entries by",
-              "`u8` index, so a value repeated across steps is paid for once (the compiled-message /",
-              "constant-pool encoding; fhevm-internal#1853 W7)."
+              "Interned 32-byte constant dictionary: operand handles, scalar values, ACL domain keys,",
+              "encrypted value account authority keys, encrypted value labels, and output subjects. Steps",
+              "reference entries by `u8` index, so a value repeated across steps is paid for once (the",
+              "compiled-message / constant-dictionary encoding; fhevm-internal#1853 W7).",
+              "",
+              "The entries stay raw `[u8; 32]` on purpose, and must not become an enum of typed",
+              "variants. Interning is what makes the encoding small, and it only works across roles:",
+              "the same 32 bytes can be an operand handle in one step and an output subject in",
+              "another, and both steps then share one entry. A typed dictionary would need one entry",
+              "per role, which grows the packet and buys nothing — the step that reads an index",
+              "already knows which role it is asking for, and `dictionary_key` /",
+              "`dictionary_bytes` are where that reading happens. Types belong at the ends of the",
+              "wire, not in the middle of it (fhevm-internal#1859 §2)."
             ],
             "type": {
               "vec": {
@@ -2650,13 +2275,13 @@
           {
             "name": "steps",
             "docs": [
-              "Ordered step list. Each `AllowedLocal` operand may only reference an output",
+              "Ordered step list. Each `EarlierStep` operand may only reference an output",
               "produced by an earlier index in this vector."
             ],
             "type": {
               "vec": {
                 "defined": {
-                  "name": "FheEvalStep"
+                  "name": "FheExecuteStep"
                 }
               }
             }
@@ -2665,20 +2290,20 @@
       }
     },
     {
-      "name": "FheEvalOperand",
+      "name": "FheExecuteOperand",
       "docs": [
-        "Operand source for a composed FHE eval operation."
+        "Operand source for a composed fhe_execute operation."
       ],
       "type": {
         "kind": "enum",
         "variants": [
           {
-            "name": "AllowedDurable",
+            "name": "StoredValue",
             "fields": [
               {
                 "name": "handle_index",
                 "docs": [
-                  "Pool index of the handle expected as the encrypted value's current handle."
+                  "Dictionary index of the handle expected as the encrypted value's current handle."
                 ],
                 "type": "u8"
               },
@@ -2692,7 +2317,7 @@
             ]
           },
           {
-            "name": "AllowedLocal",
+            "name": "EarlierStep",
             "fields": [
               {
                 "name": "producer_index",
@@ -2709,7 +2334,7 @@
               {
                 "name": "value_index",
                 "docs": [
-                  "Pool index of the scalar value."
+                  "Dictionary index of the scalar value."
                 ],
                 "type": "u8"
               }
@@ -2735,18 +2360,18 @@
       }
     },
     {
-      "name": "FheEvalOutput",
+      "name": "FheExecuteOutput",
       "docs": [
-        "Output policy for a composed FHE eval operation."
+        "Output policy for a composed fhe_execute operation."
       ],
       "type": {
         "kind": "enum",
         "variants": [
           {
-            "name": "AllowedLocal"
+            "name": "Transient"
           },
           {
-            "name": "AllowedDurable",
+            "name": "StoredValue",
             "fields": [
               {
                 "name": "output_encrypted_value_index",
@@ -2756,86 +2381,76 @@
                 "type": "u8"
               },
               {
-                "name": "output_app_account_authority_index",
+                "name": "output_authority_index",
                 "docs": [
-                  "Optional index into `remaining_accounts` for the app account authority signer.",
+                  "Optional index into `remaining_accounts` for the encrypted value account authority",
+                  "signer.",
                   "",
-                  "`None` uses the fixed `app_account_authority` account in the eval",
+                  "`None` uses the fixed `encrypted_value_account_authority` account in the execution",
                   "context. `Some(index)` requires that remaining account to be a signer",
-                  "and to match the output app account."
+                  "and to match the declared output authority."
                 ],
                 "type": {
                   "option": "u8"
                 }
               },
               {
-                "name": "output_acl_domain_key_index",
+                "name": "output_domain_index",
                 "docs": [
-                  "Pool index of the ACL domain key for the output encrypted value account."
+                  "Dictionary index of the ACL domain key for the output encrypted value account."
                 ],
                 "type": "u8"
               },
               {
-                "name": "output_app_account_index",
+                "name": "output_account_index",
                 "docs": [
-                  "Pool index of the app account authorized to bind the output encrypted value account."
+                  "Dictionary index of the encrypted value account authority declared for the output",
+                  "encrypted value account."
                 ],
                 "type": "u8"
               },
               {
-                "name": "output_encrypted_value_label_index",
+                "name": "output_label_index",
                 "docs": [
-                  "Pool index of the encrypted value label for the output encrypted value account."
+                  "Dictionary index of the encrypted value label for the output encrypted value account."
                 ],
                 "type": "u8"
               },
               {
                 "name": "output_subject_indexes",
                 "docs": [
-                  "Pool indexes of the subjects on the output encrypted value account. On create these",
-                  "are the initial subjects; on supersede they become the new audience, which may rotate",
+                  "Dictionary indexes of the subjects on the output encrypted value account. On create these",
+                  "are the initial subjects; on update they become the new audience, which may rotate",
                   "away from the stored set (the outgoing audience is sealed into",
                   "historical leaves first; added subjects pass the grant deny-list)."
                 ],
                 "type": "bytes"
               },
               {
-                "name": "previous_handle",
+                "name": "previous_state",
                 "docs": [
-                  "Superseded handle: `None` on create, `Some(current_handle)` on update.",
-                  "Carried in instruction data so indexers can reconstruct the appended",
-                  "MMR leaves without reading the account; validated against the account."
+                  "Replaced state: `None` on create, the stored handle and exact stored",
+                  "subject set on update. Carried in instruction data so indexers can",
+                  "reconstruct the appended MMR leaves without reading the account;",
+                  "validated against the account."
                 ],
                 "type": {
                   "option": {
-                    "array": [
-                      "u8",
-                      32
-                    ]
-                  }
-                }
-              },
-              {
-                "name": "previous_subjects",
-                "docs": [
-                  "Superseded subject set, parallel to `previous_handle` (`None` on create,",
-                  "exact stored subjects on update). Same indexer-reconstruction purpose."
-                ],
-                "type": {
-                  "option": {
-                    "vec": "pubkey"
+                    "defined": {
+                      "name": "PreviousState"
+                    }
                   }
                 }
               },
               {
                 "name": "make_public",
                 "docs": [
-                  "When true, the newly bound handle is born publicly decryptable: after",
+                  "When true, the newly bound handle is created publicly decryptable: after",
                   "writing it as `current_handle`, a public-decrypt leaf is appended for",
                   "the new handle (byte-identical to `make_handle_public`). Carried in",
                   "instruction data so indexers reconstruct that leaf without reading the",
                   "account. This is the opt-in relaxation of the \"created encrypted value accounts cannot",
-                  "be born public\" invariant (DD-036)."
+                  "be created public\" invariant (DD-036)."
                 ],
                 "type": "bool"
               }
@@ -2845,9 +2460,9 @@
       }
     },
     {
-      "name": "FheEvalRandomSeed",
+      "name": "FheExecuteRandomSeed",
       "docs": [
-        "One host-derived random seed used by an `fhe_eval` step."
+        "One host-derived random seed used by an `fhe_execute` step."
       ],
       "type": {
         "kind": "struct",
@@ -2855,14 +2470,14 @@
           {
             "name": "step_index",
             "docs": [
-              "Zero-based step index within the frame."
+              "Zero-based step index within the execution."
             ],
             "type": "u16"
           },
           {
             "name": "seed",
             "docs": [
-              "Seed derived from live durable account state."
+              "Seed derived from live persistent account state."
             ],
             "type": {
               "array": [
@@ -2875,9 +2490,9 @@
       }
     },
     {
-      "name": "FheEvalRandomSeedsEvent",
+      "name": "FheExecuteRandomSeedsEvent",
       "docs": [
-        "Emitted once for the random steps in an `fhe_eval` frame."
+        "Emitted once for the random steps in an `fhe_execute` execution."
       ],
       "type": {
         "kind": "struct",
@@ -2892,12 +2507,12 @@
           {
             "name": "seeds",
             "docs": [
-              "Random seeds in frame step order."
+              "Random seeds in execution step order."
             ],
             "type": {
               "vec": {
                 "defined": {
-                  "name": "FheEvalRandomSeed"
+                  "name": "FheExecuteRandomSeed"
                 }
               }
             }
@@ -2906,9 +2521,9 @@
       }
     },
     {
-      "name": "FheEvalStep",
+      "name": "FheExecuteStep",
       "docs": [
-        "One step inside a composed FHE eval."
+        "One step inside a composed fhe_execute."
       ],
       "type": {
         "kind": "enum",
@@ -2934,7 +2549,7 @@
                 ],
                 "type": {
                   "defined": {
-                    "name": "FheEvalOperand"
+                    "name": "FheExecuteOperand"
                   }
                 }
               },
@@ -2945,7 +2560,7 @@
                 ],
                 "type": {
                   "defined": {
-                    "name": "FheEvalOperand"
+                    "name": "FheExecuteOperand"
                   }
                 }
               },
@@ -2959,11 +2574,11 @@
               {
                 "name": "output",
                 "docs": [
-                  "Whether this output remains instruction-local or is bound into durable ACL state."
+                  "Whether this output remains instruction-local or is bound into persistent ACL state."
                 ],
                 "type": {
                   "defined": {
-                    "name": "FheEvalOutput"
+                    "name": "FheExecuteOutput"
                   }
                 }
               }
@@ -2990,7 +2605,7 @@
                 ],
                 "type": {
                   "defined": {
-                    "name": "FheEvalOperand"
+                    "name": "FheExecuteOperand"
                   }
                 }
               },
@@ -3001,7 +2616,7 @@
                 ],
                 "type": {
                   "defined": {
-                    "name": "FheEvalOperand"
+                    "name": "FheExecuteOperand"
                   }
                 }
               },
@@ -3012,7 +2627,7 @@
                 ],
                 "type": {
                   "defined": {
-                    "name": "FheEvalOperand"
+                    "name": "FheExecuteOperand"
                   }
                 }
               },
@@ -3026,11 +2641,11 @@
               {
                 "name": "output",
                 "docs": [
-                  "Whether this output remains instruction-local or is bound into durable ACL state."
+                  "Whether this output remains instruction-local or is bound into persistent ACL state."
                 ],
                 "type": {
                   "defined": {
-                    "name": "FheEvalOutput"
+                    "name": "FheExecuteOutput"
                   }
                 }
               }
@@ -3061,11 +2676,11 @@
               {
                 "name": "output",
                 "docs": [
-                  "Whether this output remains instruction-local or is bound into durable ACL state."
+                  "Whether this output remains instruction-local or is bound into persistent ACL state."
                 ],
                 "type": {
                   "defined": {
-                    "name": "FheEvalOutput"
+                    "name": "FheExecuteOutput"
                   }
                 }
               }
@@ -3084,11 +2699,11 @@
               {
                 "name": "output",
                 "docs": [
-                  "Whether this output remains instruction-local or is bound into durable ACL state."
+                  "Whether this output remains instruction-local or is bound into persistent ACL state."
                 ],
                 "type": {
                   "defined": {
-                    "name": "FheEvalOutput"
+                    "name": "FheExecuteOutput"
                   }
                 }
               }
@@ -3115,7 +2730,7 @@
                 ],
                 "type": {
                   "defined": {
-                    "name": "FheEvalOperand"
+                    "name": "FheExecuteOperand"
                   }
                 }
               },
@@ -3129,11 +2744,11 @@
               {
                 "name": "output",
                 "docs": [
-                  "Whether this output remains instruction-local or is bound into durable ACL state."
+                  "Whether this output remains instruction-local or is bound into persistent ACL state."
                 ],
                 "type": {
                   "defined": {
-                    "name": "FheEvalOutput"
+                    "name": "FheExecuteOutput"
                   }
                 }
               }
@@ -3164,11 +2779,11 @@
               {
                 "name": "output",
                 "docs": [
-                  "Whether this output remains instruction-local or is bound into durable ACL state."
+                  "Whether this output remains instruction-local or is bound into persistent ACL state."
                 ],
                 "type": {
                   "defined": {
-                    "name": "FheEvalOutput"
+                    "name": "FheExecuteOutput"
                   }
                 }
               }
@@ -3185,7 +2800,7 @@
                 "type": {
                   "vec": {
                     "defined": {
-                      "name": "FheEvalOperand"
+                      "name": "FheExecuteOperand"
                     }
                   }
                 }
@@ -3200,11 +2815,11 @@
               {
                 "name": "output",
                 "docs": [
-                  "Whether this output remains instruction-local or is bound into durable ACL state."
+                  "Whether this output remains instruction-local or is bound into persistent ACL state."
                 ],
                 "type": {
                   "defined": {
-                    "name": "FheEvalOutput"
+                    "name": "FheExecuteOutput"
                   }
                 }
               }
@@ -3220,7 +2835,7 @@
                 ],
                 "type": {
                   "defined": {
-                    "name": "FheEvalOperand"
+                    "name": "FheExecuteOperand"
                   }
                 }
               },
@@ -3232,7 +2847,7 @@
                 "type": {
                   "vec": {
                     "defined": {
-                      "name": "FheEvalOperand"
+                      "name": "FheExecuteOperand"
                     }
                   }
                 }
@@ -3247,11 +2862,11 @@
               {
                 "name": "output",
                 "docs": [
-                  "Whether this output remains instruction-local or is bound into durable ACL state."
+                  "Whether this output remains instruction-local or is bound into persistent ACL state."
                 ],
                 "type": {
                   "defined": {
-                    "name": "FheEvalOutput"
+                    "name": "FheExecuteOutput"
                   }
                 }
               }
@@ -3267,7 +2882,7 @@
                 ],
                 "type": {
                   "defined": {
-                    "name": "FheEvalOperand"
+                    "name": "FheExecuteOperand"
                   }
                 }
               },
@@ -3278,7 +2893,7 @@
                 ],
                 "type": {
                   "defined": {
-                    "name": "FheEvalOperand"
+                    "name": "FheExecuteOperand"
                   }
                 }
               },
@@ -3304,372 +2919,15 @@
               {
                 "name": "output",
                 "docs": [
-                  "Whether this output remains instruction-local or is bound into durable ACL state."
+                  "Whether this output remains instruction-local or is bound into persistent ACL state."
                 ],
                 "type": {
                   "defined": {
-                    "name": "FheEvalOutput"
+                    "name": "FheExecuteOutput"
                   }
                 }
               }
             ]
-          }
-        ]
-      }
-    },
-    {
-      "name": "FheIsInEvent",
-      "docs": [
-        "Emitted for an FHE is-in test accepted by the host."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "subject",
-            "docs": [
-              "Compute subject that passed ACL checks."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "value",
-            "docs": [
-              "Value handle being tested."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "set",
-            "docs": [
-              "Set of handles to test against."
-            ],
-            "type": {
-              "vec": {
-                "array": [
-                  "u8",
-                  32
-                ]
-              }
-            }
-          },
-          {
-            "name": "fhe_type",
-            "docs": [
-              "FHE type of value and set elements."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "result",
-            "docs": [
-              "Output handle (always ebool) verified by the host formula."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          }
-        ]
-      }
-    },
-    {
-      "name": "FheMulDivEvent",
-      "docs": [
-        "Emitted for an FHE multiply-divide operation accepted by the host."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "subject",
-            "docs": [
-              "Compute subject that passed ACL checks."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "factor1",
-            "docs": [
-              "First factor handle."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "factor2",
-            "docs": [
-              "Second factor handle or scalar bytes."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "divisor",
-            "docs": [
-              "Divisor plaintext scalar bytes."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "scalar",
-            "docs": [
-              "Whether `factor2` is plaintext scalar bytes."
-            ],
-            "type": "bool"
-          },
-          {
-            "name": "result",
-            "docs": [
-              "Output handle verified by the host formula."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          }
-        ]
-      }
-    },
-    {
-      "name": "FheRandBoundedEvent",
-      "docs": [
-        "Emitted for bounded random ciphertext creation accepted by the host."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "subject",
-            "docs": [
-              "Subject associated with the random handle."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "upper_bound",
-            "docs": [
-              "Exclusive upper bound encoded as a 256-bit big-endian integer."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "seed",
-            "docs": [
-              "Random seed carried to worker tests."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                16
-              ]
-            }
-          },
-          {
-            "name": "fhe_type",
-            "docs": [
-              "FHE type byte."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "result",
-            "docs": [
-              "Output handle."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          }
-        ]
-      }
-    },
-    {
-      "name": "FheRandEvent",
-      "docs": [
-        "Test-shim event for random ciphertext creation."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "subject",
-            "docs": [
-              "Subject associated with the random handle."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "seed",
-            "docs": [
-              "Random seed carried to worker tests."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                16
-              ]
-            }
-          },
-          {
-            "name": "fhe_type",
-            "docs": [
-              "FHE type byte."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "result",
-            "docs": [
-              "Output handle."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          }
-        ]
-      }
-    },
-    {
-      "name": "FheSumEvent",
-      "docs": [
-        "Emitted for an FHE sum operation accepted by the host."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "subject",
-            "docs": [
-              "Compute subject that passed ACL checks."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "operands",
-            "docs": [
-              "Input operand handles."
-            ],
-            "type": {
-              "vec": {
-                "array": [
-                  "u8",
-                  32
-                ]
-              }
-            }
-          },
-          {
-            "name": "fhe_type",
-            "docs": [
-              "FHE type of all operands and the output."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "result",
-            "docs": [
-              "Output handle verified by the host formula."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
           }
         ]
       }
@@ -3684,95 +2942,6 @@
         "variants": [
           {
             "name": "IfThenElse"
-          }
-        ]
-      }
-    },
-    {
-      "name": "FheTernaryOpEvent",
-      "docs": [
-        "Emitted for a ternary FHE operation accepted by the host."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "op",
-            "docs": [
-              "Ternary operator."
-            ],
-            "type": {
-              "defined": {
-                "name": "FheTernaryOpCode"
-              }
-            }
-          },
-          {
-            "name": "subject",
-            "docs": [
-              "Compute subject that passed ACL checks."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "control",
-            "docs": [
-              "Encrypted control handle."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "if_true",
-            "docs": [
-              "Handle selected when `control` is true."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "if_false",
-            "docs": [
-              "Handle selected when `control` is false."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "result",
-            "docs": [
-              "Output handle verified by the host formula."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
           }
         ]
       }
@@ -3793,71 +2962,6 @@
           },
           {
             "name": "Cast"
-          }
-        ]
-      }
-    },
-    {
-      "name": "FheUnaryOpEvent",
-      "docs": [
-        "Emitted for a unary FHE operation accepted by the host."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "op",
-            "docs": [
-              "Unary operator."
-            ],
-            "type": {
-              "defined": {
-                "name": "FheUnaryOpCode"
-              }
-            }
-          },
-          {
-            "name": "subject",
-            "docs": [
-              "Compute subject that passed ACL checks."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "operand",
-            "docs": [
-              "Operand handle."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "result",
-            "docs": [
-              "Output handle verified by the host formula."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
           }
         ]
       }
@@ -3887,7 +2991,7 @@
           {
             "name": "app",
             "docs": [
-              "The app authority governed by the record."
+              "The compute subject governed by the record."
             ],
             "type": "pubkey"
           },
@@ -4026,23 +3130,26 @@
           {
             "name": "max_hcu_per_tx",
             "docs": [
-              "Max total HCU summed over one `fhe_eval` plan. `0` = unlimited (enforcement off)."
+              "Max total HCU summed over one `fhe_execute` execution. `u64::MAX` = unlimited",
+              "(enforcement off); `0` is rejected at set time."
             ],
             "type": "u64"
           },
           {
             "name": "max_hcu_depth_per_tx",
             "docs": [
-              "Max critical-path (depth) HCU within one `fhe_eval` plan. `0` = unlimited."
+              "Max critical-path (depth) HCU within one `fhe_execute` execution. `u64::MAX` =",
+              "unlimited; `0` is rejected at set time."
             ],
             "type": "u64"
           },
           {
             "name": "hcu_block_cap_per_app",
             "docs": [
-              "Per-app HCU budget per slot, enforced in `fhe_eval`. `u64::MAX` = unrestricted (the ship",
-              "default; short-circuits, touching no meter); `0` = ban untrusted apps (trusted still bypass);",
-              "any other value is the metering band (must be `>= max_hcu_per_tx` unless that is `0`)."
+              "Per-app HCU budget per slot, enforced in `fhe_execute`. `u64::MAX` = unrestricted (the ship",
+              "default; short-circuits, touching no meter); `0` = ban untrusted apps (trusted still",
+              "bypass) — the one knob where `0` is a real semantic; any other value is the metering band",
+              "(must be `>= max_hcu_per_tx` unless that is unlimited)."
             ],
             "type": "u64"
           },
@@ -4148,14 +3255,14 @@
           {
             "name": "max_hcu_per_tx",
             "docs": [
-              "Current max total HCU per `fhe_eval` plan (`0` = unlimited)."
+              "Current max total HCU per `fhe_execute` execution (`u64::MAX` = unlimited)."
             ],
             "type": "u64"
           },
           {
             "name": "max_hcu_depth_per_tx",
             "docs": [
-              "Current max critical-path HCU per `fhe_eval` plan (`0` = unlimited)."
+              "Current max critical-path HCU per `fhe_execute` execution (`u64::MAX` = unlimited)."
             ],
             "type": "u64"
           },
@@ -4466,9 +3573,45 @@
       }
     },
     {
+      "name": "PreviousState",
+      "docs": [
+        "The replaced state a persistent-output update declares: the stored handle",
+        "and the exact stored subject set, together (making a half-declared previous",
+        "state unrepresentable). Validated against the account, and carried in",
+        "instruction data so indexers reconstruct the appended MMR leaves without",
+        "reading the account."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "handle",
+            "docs": [
+              "The handle being replaced (`current_handle` at the time of the update)."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "subjects",
+            "docs": [
+              "The exact stored subject set being replaced."
+            ],
+            "type": {
+              "vec": "pubkey"
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "ProducedPublicOutput",
       "docs": [
-        "One public durable output produced by an `fhe_eval` frame."
+        "One public persistent output produced by an `fhe_execute` execution."
       ],
       "type": {
         "kind": "struct",
@@ -4476,14 +3619,14 @@
           {
             "name": "step_index",
             "docs": [
-              "Zero-based step index within the frame."
+              "Zero-based step index within the execution."
             ],
             "type": "u16"
           },
           {
             "name": "encrypted_value",
             "docs": [
-              "Host-owned durable `EncryptedValue` account bound by the step."
+              "Host-owned persistent `EncryptedValue` account bound by the step."
             ],
             "type": "pubkey"
           },
@@ -4505,7 +3648,7 @@
     {
       "name": "PublicOutputsProducedEvent",
       "docs": [
-        "Emitted once for the public outputs produced by an `fhe_eval` frame."
+        "Emitted once for the public outputs produced by an `fhe_execute` execution."
       ],
       "type": {
         "kind": "struct",
@@ -4520,7 +3663,7 @@
           {
             "name": "outputs",
             "docs": [
-              "Produced public outputs in frame step order."
+              "Produced public outputs in execution step order."
             ],
             "type": {
               "vec": {
@@ -4534,73 +3677,20 @@
       }
     },
     {
-      "name": "TrivialEncryptEvent",
-      "docs": [
-        "Emitted for a trivial encryption accepted by the host."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "subject",
-            "docs": [
-              "Subject associated with the created handle."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "plaintext",
-            "docs": [
-              "Plaintext encoded into the handle."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "fhe_type",
-            "docs": [
-              "FHE type byte embedded in the handle."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "result",
-            "docs": [
-              "Output handle verified by the host formula."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          }
-        ]
-      }
-    },
-    {
       "name": "UserDecryptionDelegation",
       "docs": [
         "PoC user-decryption delegation witness.",
         "",
         "Gateway/KMS payloads do not yet carry these records, but the account shape is",
-        "present so the final witness format has a concrete Solana state target."
+        "present so the final witness format has a concrete Solana state target.",
+        "",
+        "Freshness contract for the future KMS consumer (stated here so the integration",
+        "doesn't have to reverse-engineer it): `delegation_counter` is a strictly monotonic",
+        "version — of two snapshots of the same record, the higher counter is authoritative —",
+        "and `last_update_slot` lets a reader require the witness be at least as fresh as a",
+        "slot it has observed. Writes require `last_update_slot < current slot`, so a record",
+        "mutates at most once per slot and every `(delegation_counter, last_update_slot)`",
+        "pair is unambiguous."
       ],
       "type": {
         "kind": "struct",
@@ -4620,9 +3710,10 @@
             "type": "pubkey"
           },
           {
-            "name": "app_account",
+            "name": "encrypted_value_account_authority",
             "docs": [
-              "App context for the delegation."
+              "The encrypted value account authority the delegation is scoped over. A delegation covers",
+              "every value of that authority in every domain: the domain is not one of the PDA's seeds."
             ],
             "type": "pubkey"
           },
@@ -4660,80 +3751,6 @@
               "PDA bump for this delegation account."
             ],
             "type": "u8"
-          }
-        ]
-      }
-    },
-    {
-      "name": "UserDecryptionDelegationUpdatedEvent",
-      "docs": [
-        "Emitted when user-decryption delegation state changes."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "delegator",
-            "docs": [
-              "User granting delegated decrypt rights."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "delegate",
-            "docs": [
-              "Delegate allowed to request user decryption."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "app_account",
-            "docs": [
-              "App context for the delegation."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "delegation_counter",
-            "docs": [
-              "Monotonic counter after this update."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "old_expiration_slot",
-            "docs": [
-              "Expiration slot before this update."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "new_expiration_slot",
-            "docs": [
-              "Expiration slot after this update."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "last_update_slot",
-            "docs": [
-              "Slot in which this update was applied."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "revoked",
-            "docs": [
-              "Whether the delegation is revoked after this update."
-            ],
-            "type": "bool"
           }
         ]
       }

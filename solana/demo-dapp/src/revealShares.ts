@@ -10,7 +10,7 @@ import {
   decryptPosition,
   getEncryptedValueState,
   tokenAccountAddress,
-} from '@fhevm/sdk/solana/vault';
+} from './vault/index.js';
 
 import type { DemoSession } from './demoSession';
 import { recordDecryptionEvidence } from './evidenceStore';

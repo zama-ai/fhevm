@@ -37,13 +37,13 @@ pub struct WrapUsdc<'info> {
     /// CHECK: Program-controlled compute signer PDA.
     #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
     pub compute_signer: UncheckedAccount<'info>,
-    /// CHECK: Mint-scoped app authority for total-supply handles.
+    /// CHECK: Mint-scoped encrypted value account authority for total-supply handles.
     #[account(seeds = [b"total-supply", mint.key().as_ref()], bump)]
     pub total_supply_authority: UncheckedAccount<'info>,
-    /// Stable balance encrypted value account; read for the current handle and superseded by this eval.
+    /// Stable balance encrypted value account; read for the current handle and replaced by this execution.
     #[account(mut, address = token_account.balance_encrypted_value)]
     pub balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
-    /// Stable total-supply encrypted value account; read for the current handle and superseded by this eval.
+    /// Stable total-supply encrypted value account; read for the current handle and replaced by this execution.
     #[account(mut, address = mint.total_supply_encrypted_value)]
     pub total_supply_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
@@ -56,21 +56,22 @@ pub struct WrapUsdc<'info> {
     pub token_program: Program<'info, Token>,
     /// System program used for ACL account creation.
     pub system_program: Program<'info, System>,
-    /// CHECK: forwarded verbatim into the ZamaHost `fhe_eval` CPI, which validates it against the
+    /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it against the
     /// canonical `["hcu-block-meter", compute_signer]` PDA. Supplied by an untrusted mint under a
     /// metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
     #[account(mut)]
     pub hcu_block_meter: Option<UncheckedAccount<'info>>,
-    /// CHECK: forwarded verbatim into the ZamaHost `fhe_eval` CPI, which validates it against the
+    /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it against the
     /// canonical `["hcu-trusted", compute_signer]` PDA. Present + valid bypasses the cap; absent
     /// means the mint is metered.
     pub hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
 }
 
-/// Escrows public USDC and rotates the confidential balance by `amount`.
+/// Escrows public USDC and updates the confidential balance by `amount`.
 pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Result<()> {
     assert_confidential_mint_shape(&ctx.accounts.mint)?;
     let mint_key = ctx.accounts.mint.key();
+    let mint_domain = zama_fhe::Domain::new(mint_key);
     let decimals = ctx.accounts.mint.decimals;
     let compute_signer = ctx.accounts.mint.compute_signer;
     let total_supply_authority = ctx.accounts.total_supply_authority.key();
@@ -109,15 +110,19 @@ pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Re
         total_supply_authority_address(mint_key).0,
         ConfidentialTokenError::TotalSupplyAuthorityMismatch
     );
-    let balance_output = fhe::DurableOutput::new(
+    let balance_output = fhe::PersistentOutput::new(
         ctx.accounts.balance_value.to_account_info(),
-        encrypted_value_key(mint_key, token_account.key(), balance_label()),
-        fhe::DurableAudience::for_owner(token_account.owner, compute_signer),
+        encrypted_value_id(mint_domain, token_account.key(), encrypted_balance_label()),
+        fhe::PersistentAudience::for_owner(token_account.owner, compute_signer),
     )?;
-    let total_supply_output = fhe::DurableOutput::new(
+    let total_supply_output = fhe::PersistentOutput::new(
         ctx.accounts.total_supply_value.to_account_info(),
-        encrypted_value_key(mint_key, total_supply_authority, total_supply_label()),
-        fhe::DurableAudience::compute_only(compute_signer),
+        encrypted_value_id(
+            mint_domain,
+            total_supply_authority,
+            encrypted_total_supply_label(),
+        ),
+        fhe::PersistentAudience::compute_only(compute_signer),
     )?;
 
     spl_token::transfer_checked(
@@ -136,38 +141,37 @@ pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Re
 
     let balance = uint64_from_value(
         old_balance_handle,
-        mint_key,
+        mint_domain,
         token_account.key(),
-        balance_label(),
+        encrypted_balance_label(),
     )?;
     let total_supply = uint64_from_value(
         old_total_supply_handle,
-        mint_key,
+        mint_domain,
         total_supply_authority,
-        total_supply_label(),
+        encrypted_total_supply_label(),
     )?;
     let mut amount_context = [0u8; 32];
     amount_context[24..].copy_from_slice(&amount.to_be_bytes());
-    let mut builder =
-        zama_fhe::EvalBuilder::new(zama_fhe::EvalAppAuthority::new(token_account.key()));
-    let encrypted_amount = builder
-        .trivial_encrypt_u64(amount, zama_fhe::Output::transient())
-        .map_err(invalid_eval_plan)?;
-    builder
-        .add(balance, encrypted_amount, balance_output.output())
-        .map_err(invalid_eval_plan)?;
-    builder
-        .add(total_supply, encrypted_amount, total_supply_output.output())
-        .map_err(invalid_eval_plan)?;
-    let plan = builder.finish().map_err(invalid_eval_plan)?;
+    let execution = zama_fhe::FheExecution::build(
+        zama_fhe::ExecutionEncryptedValueAccountAuthority::new(token_account.key()),
+        |builder| {
+            let encrypted_amount =
+                builder.trivial_encrypt_u64(amount, zama_fhe::Output::transient())?;
+            builder.add(balance, encrypted_amount, balance_output.output())?;
+            builder.add(total_supply, encrypted_amount, total_supply_output.output())?;
+            Ok(())
+        },
+    )
+    .map_err(invalid_execution)?;
     let compute_authority = fhe::ComputeAuthority::for_mint(
         &ctx.accounts.compute_signer,
         mint_key,
         ctx.bumps.compute_signer,
     )?;
     let total_supply_authority_bump = total_supply_authority_address(mint_key).1;
-    let eval_accounts = fhe::EvalAccountSet::for_plan(
-        &plan,
+    let execution_accounts = fhe::ExecutionAccountSet::for_execution(
+        &execution,
         [
             balance_output.account_info(),
             total_supply_output.account_info(),
@@ -181,8 +185,8 @@ pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Re
             )?,
         ],
     )?;
-    fhe::eval(fhe::Eval {
-        context: fhe::EvalContext {
+    fhe::execute(fhe::Execute {
+        context: fhe::ExecuteContext {
             payer: &ctx.accounts.owner,
             event_authority: &ctx.accounts.zama_event_authority,
             zama_program: &ctx.accounts.zama_program,
@@ -201,8 +205,8 @@ pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Re
                 .as_ref()
                 .map(|account| account.to_account_info()),
         },
-        accounts: &eval_accounts,
-        plan,
+        accounts: &execution_accounts,
+        execution,
     })?;
     let new_balance_handle = balance_output.handle()?;
     let new_total_supply_handle = total_supply_output.handle()?;

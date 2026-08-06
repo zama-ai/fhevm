@@ -28,9 +28,9 @@ vertical. Multi-replica / prod auth remain later slices.
 Both proof endpoints are **semantic**: the caller asks the product question — "prove `subject`
 had historical access to `handle`" or "prove `handle` is publicly decryptable" — and the service
 resolves `(encrypted value account, handle[, subject], kind) → leaf_index` internally via one indexed lookup. A
-historical-access key maps to a unique leaf by construction (a handle is superseded at most once
+historical-access key maps to a unique leaf by construction (a handle is updated at most once
 per encrypted value account, sealing one leaf per subject). A public-decrypt key may match several leaves for one
-handle (a born-public output plus later `make_handle_public` re-releases, which have no
+handle (a created-public output plus later `make_handle_public` re-releases, which have no
 already-public guard); the service resolves to the earliest — any public leaf proves publicness,
 and the earliest is deterministic and append-stable. Clients never compute, assume, or supply a
 leaf index; `leaf_index` and `leaf_count` are OUTPUTS they pass through from the response.
@@ -102,7 +102,7 @@ A semantic key that resolves to **no leaf** is classified against chain: while t
 `leaf_count` is still behind the live on-chain `leaf_count`, the miss is a retryable `503`
 `status: "lagging"` (ingest has not caught up to a just-sealed leaf); once the snapshot is at
 parity with chain, the miss is terminal — `404` with `status: "leaf_not_found"` (same proof
-envelope, carrying the chain-context fields, `mmr_proof: null`). A encrypted value account with no on-chain
+envelope, carrying the chain-context fields, `mmr_proof: null`). An encrypted value account with no on-chain
 account at all is `404` `code: encrypted_value_account_not_found` (`ErrorResponse`).
 
 Other client/server failures use the same

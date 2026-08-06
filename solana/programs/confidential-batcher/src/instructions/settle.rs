@@ -64,7 +64,7 @@ pub struct Settle<'info> {
     pub batch: Box<Account<'info, Batch>>,
     /// CHECK: per-batch authority PDA; redemption recipient, vault
     /// depositor/withdrawer, and wrap owner via invoke_signed. Receives
-    /// funding for the rent the redeem marker and wrap eval charge to the
+    /// funding for the rent the redeem marker and wrap execution charge to the
     /// owner.
     #[account(mut, seeds = [BATCH_AUTHORITY_SEED, batch.key().as_ref()], bump = batch.authority_bump)]
     pub batch_authority: UncheckedAccount<'info>,
@@ -133,10 +133,10 @@ pub struct Settle<'info> {
     pub payout_compute_signer: UncheckedAccount<'info>,
     /// CHECK: payout mint total-supply authority PDA; validated by the token CPI.
     pub payout_total_supply_authority: UncheckedAccount<'info>,
-    /// CHECK: batch's confidential payout balance encrypted value account; superseded by the wrap.
+    /// CHECK: batch's confidential payout balance encrypted value account; replaced by the wrap.
     #[account(mut)]
     pub batch_payout_balance_value: UncheckedAccount<'info>,
-    /// CHECK: payout mint's total-supply encrypted value account; superseded by the wrap.
+    /// CHECK: payout mint's total-supply encrypted value account; replaced by the wrap.
     #[account(mut)]
     pub payout_total_supply_value: UncheckedAccount<'info>,
 

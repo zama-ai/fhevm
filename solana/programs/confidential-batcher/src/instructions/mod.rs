@@ -29,7 +29,7 @@ pub use settle::*;
 
 /// Moves lamports from the transaction payer to the batch authority PDA, which
 /// pays the rent that token CPIs charge to the account owner (token-account
-/// creation at open, the redemption marker and eval growth at settle).
+/// creation at open, the redemption marker and execution growth at settle).
 /// Unspent lamports stay on the PDA and are unrecoverable by design in this
 /// PoC — there is no sweep instruction.
 pub(crate) fn fund_batch_authority<'info>(

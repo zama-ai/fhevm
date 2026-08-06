@@ -15,9 +15,7 @@ trap cleanup EXIT
 
 cp -RL "$SOURCE/." "$STAGED/"
 [ -f "$STAGED/_esm/solana/index.js" ] || { echo "SDK ESM output is not built" >&2; exit 1; }
-[ -f "$STAGED/_esm/solana/vault/index.js" ] || { echo "SDK vault ESM output is not built" >&2; exit 1; }
 [ -f "$STAGED/_types/solana/index.d.ts" ] || { echo "SDK type output is not built" >&2; exit 1; }
-[ -f "$STAGED/_types/solana/vault/index.d.ts" ] || { echo "SDK vault type output is not built" >&2; exit 1; }
 
 rm -rf "$DEST"
 mv "$STAGED" "$DEST"

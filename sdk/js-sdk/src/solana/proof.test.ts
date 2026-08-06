@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   bytesToHex,
   decodeMmrProofTransportBlob,
-  deriveValueKey,
+  deriveEncryptedValueId,
   hexToBytes,
   historicalAccessLeafCommitment,
   MAX_MMR_SIBLINGS,
-  MMR_MODE_HISTORICAL,
+  MMR_PROOF_MODE_HISTORICAL,
   mmrLeafNode,
   mmrNode,
   mmrVerify,
@@ -23,7 +23,7 @@ import {
 // byte-identical to the Rust implementation the on-chain program and the KMS connector run —
 // not merely internally consistent with itself.
 const domain = new Uint8Array(32).fill(1);
-const app = new Uint8Array(32).fill(2);
+const authority = new Uint8Array(32).fill(2);
 const label = new Uint8Array(32).fill(3);
 const account = new Uint8Array(32).fill(4);
 const handle = new Uint8Array(32).fill(5);
@@ -82,23 +82,23 @@ describe('decodeMmrProofTransportBlob', () => {
   const sibling = new Uint8Array(32).fill(0x42);
 
   it('decodes a canonical mode-prefixed Borsh MmrProof', () => {
-    const decoded = decodeMmrProofTransportBlob(proofBlob(MMR_MODE_HISTORICAL, 7n, [sibling]));
-    expect(decoded.mode).toBe(MMR_MODE_HISTORICAL);
+    const decoded = decodeMmrProofTransportBlob(proofBlob(MMR_PROOF_MODE_HISTORICAL, 7n, [sibling]));
+    expect(decoded.mode).toBe(MMR_PROOF_MODE_HISTORICAL);
     expect(decoded.proof.leafIndex).toBe(7n);
     expect(decoded.proof.siblings).toEqual([sibling]);
   });
 
   it('rejects trailing bytes after the Borsh MmrProof', () => {
-    const canonical = proofBlob(MMR_MODE_HISTORICAL, 7n, [sibling]);
+    const canonical = proofBlob(MMR_PROOF_MODE_HISTORICAL, 7n, [sibling]);
     const withTrailing = concatBytes(canonical, new Uint8Array([0xde, 0xad]));
     expect(() => decodeMmrProofTransportBlob(withTrailing)).toThrow(/trailing byte/);
   });
 });
 
-describe('deriveValueKey', () => {
+describe('deriveEncryptedValueId', () => {
   it('matches the Rust crate vector', () => {
-    const valueKey = deriveValueKey(domain, app, label);
-    expect(bytesToHex(valueKey)).toBe('0xcb421159e2c7709e401334c46b4bcee90093cb616d040fca9c1dc9a14ad77820');
+    const encryptedValueId = deriveEncryptedValueId(domain, authority, label);
+    expect(bytesToHex(encryptedValueId)).toBe('0xcb421159e2c7709e401334c46b4bcee90093cb616d040fca9c1dc9a14ad77820');
   });
 });
 
@@ -188,8 +188,8 @@ describe('mmrVerify against a real 3-leaf MMR (Rust crate vectors)', () => {
   });
 
   it('verifyPublicDecryptProof rejects a historical leaf under the public-decrypt domain', () => {
-    // Same account/leaf_index/handle shape but hashed under the WRONG domain prefix must not
-    // verify — domain separation between historical and public leaves is load-bearing.
+    // Same account/leaf_index/handle shape hashed under the WRONG domain prefix must not verify:
+    // without domain separation, a historical leaf would prove a public decrypt.
     const proof: MmrProof = { leafIndex: 0n, siblings: [] };
     expect(verifyPublicDecryptProof(account, peaks, leafCount, new Uint8Array(32).fill(0), proof)).toBe(false);
   });

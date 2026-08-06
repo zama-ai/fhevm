@@ -1,49 +1,60 @@
-//! Anchor events emitted by ZamaHost.
+//! Event types for ZamaHost. An event is either emitted through the event CPI or not emitted at all,
+//! and which one it gets depends on whether an off-chain component has to be able to query it (DD-044).
 //!
-//! Events are indexing hints for listeners. Authorization still comes from
-//! host-owned account state, so KMS-style consumers must verify the referenced
-//! ACL records and witnesses instead of trusting event bytes alone.
+//! - **Emitted, always, through the event CPI** (`crate::event_cpi`). Two groups qualify. The admin and
+//!   config lifecycle — `HostConfig*`, `*KmsContext*`, `DenySubjectUpdated`, `HcuAppTrustUpdated` —
+//!   because an admin change is a protocol-level fact a component must be able to read without
+//!   replaying instruction data to find it. And `FheExecuteRandomSeedsEvent` plus
+//!   `PublicOutputsProducedEvent`, which carry the only data an indexer cannot recompute from
+//!   instruction data at all (seeds derived from block entropy, and output handles). Nothing here uses
+//!   `emit!`: a log can be truncated by the RPC provider a reader goes through, so it delivers a hint
+//!   rather than the event. Authorization still comes from host-owned account state and never from
+//!   event bytes; what the event CPI buys is that a reader sees the change, not that it may trust it.
+//! - **Not emitted at all.** Everything else, which is most of it: per-step compute shapes (they live
+//!   in `records.rs` as decoded op records), `EncryptedValue` ACL mutations (indexers rebuild MMR
+//!   leaves through the shared `zama_solana_acl` crate), and user-decryption delegation. The listener
+//!   reconstructs these from instruction data over Yellowstone, which is the normal path for anything
+//!   reconstructible. Delegating is a user ability rather than administration, which is why its event
+//!   is gone; INVARIANTS #27 records the separate fact that nothing off-chain consumes delegation yet.
 
 use anchor_lang::prelude::*;
 
-use crate::state::{FheBinaryOpCode, FheTernaryOpCode, FheUnaryOpCode};
-
-/// One public durable output produced by an `fhe_eval` frame.
+/// One public persistent output produced by an `fhe_execute` execution.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub struct ProducedPublicOutput {
-    /// Zero-based step index within the frame.
+    /// Zero-based step index within the execution.
     pub step_index: u16,
-    /// Host-owned durable `EncryptedValue` account bound by the step.
+    /// Host-owned persistent `EncryptedValue` account bound by the step.
     pub encrypted_value: Pubkey,
     /// Block-entropy-derived output handle written to the account.
     pub output_handle: [u8; 32],
 }
 
-/// Emitted once for the public outputs produced by an `fhe_eval` frame.
+/// Emitted once for the public outputs produced by an `fhe_execute` execution.
 #[event]
 pub struct PublicOutputsProducedEvent {
     /// Event schema version.
     pub version: u8,
-    /// Produced public outputs in frame step order.
+    /// Produced public outputs in execution step order.
     pub outputs: Vec<ProducedPublicOutput>,
 }
 
-/// One host-derived random seed used by an `fhe_eval` step.
+/// One host-derived random seed used by an `fhe_execute` step.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
-pub struct FheEvalRandomSeed {
-    /// Zero-based step index within the frame.
+pub struct FheExecuteRandomSeed {
+    /// Zero-based step index within the execution.
     pub step_index: u16,
-    /// Seed derived from live durable account state.
+    /// Seed derived from live persistent account state.
     pub seed: [u8; 16],
 }
 
-/// Emitted once for the random steps in an `fhe_eval` frame.
+/// Emitted once for the random steps in an `fhe_execute` execution.
 #[event]
-pub struct FheEvalRandomSeedsEvent {
+pub struct FheExecuteRandomSeedsEvent {
     /// Event schema version.
     pub version: u8,
-    /// Random seeds in frame step order.
-    pub seeds: Vec<FheEvalRandomSeed>,
+    /// Random seeds in execution step order.
+    pub seeds: Vec<FheExecuteRandomSeed>,
 }
 
 /// Emitted when the singleton host config is initialized.
@@ -72,9 +83,9 @@ pub struct HostConfigUpdatedEvent {
     pub paused: bool,
     /// Current grant deny-list gate.
     pub grant_deny_list_enabled: bool,
-    /// Current max total HCU per `fhe_eval` plan (`0` = unlimited).
+    /// Current max total HCU per `fhe_execute` execution (`u64::MAX` = unlimited).
     pub max_hcu_per_tx: u64,
-    /// Current max critical-path HCU per `fhe_eval` plan (`0` = unlimited).
+    /// Current max critical-path HCU per `fhe_execute` execution (`u64::MAX` = unlimited).
     pub max_hcu_depth_per_tx: u64,
     /// Current per-app HCU block cap (`u64::MAX` = unrestricted, `0` = ban untrusted apps).
     pub hcu_block_cap_per_app: u64,
@@ -128,184 +139,10 @@ pub struct HcuAppTrustUpdatedEvent {
     pub version: u8,
     /// Canonical trust-registry record PDA.
     pub hcu_trusted_app_record: Pubkey,
-    /// The app authority governed by the record.
+    /// The compute subject governed by the record.
     pub app: Pubkey,
     /// Whether the app bypasses the per-app block cap.
     pub trusted: bool,
     /// Slot in which this update was applied.
     pub updated_slot: u64,
-}
-
-/// Emitted when user-decryption delegation state changes.
-#[event]
-pub struct UserDecryptionDelegationUpdatedEvent {
-    /// Event schema version.
-    pub version: u8,
-    /// User granting delegated decrypt rights.
-    pub delegator: Pubkey,
-    /// Delegate allowed to request user decryption.
-    pub delegate: Pubkey,
-    /// App context for the delegation.
-    pub app_account: Pubkey,
-    /// Monotonic counter after this update.
-    pub delegation_counter: u64,
-    /// Expiration slot before this update.
-    pub old_expiration_slot: u64,
-    /// Expiration slot after this update.
-    pub new_expiration_slot: u64,
-    /// Slot in which this update was applied.
-    pub last_update_slot: u64,
-    /// Whether the delegation is revoked after this update.
-    pub revoked: bool,
-}
-
-/// Emitted for a binary FHE operation accepted by the host.
-#[event]
-pub struct FheBinaryOpEvent {
-    /// Event schema version.
-    pub version: u8,
-    /// Binary operator.
-    pub op: FheBinaryOpCode,
-    /// Compute subject that passed ACL checks.
-    pub subject: [u8; 32],
-    /// Left-hand operand handle.
-    pub lhs: [u8; 32],
-    /// Right-hand operand handle or scalar bytes.
-    pub rhs: [u8; 32],
-    /// Whether `rhs` is plaintext scalar bytes.
-    pub scalar: bool,
-    /// Output handle verified by the host formula.
-    pub result: [u8; 32],
-}
-
-/// Emitted for a ternary FHE operation accepted by the host.
-#[event]
-pub struct FheTernaryOpEvent {
-    /// Event schema version.
-    pub version: u8,
-    /// Ternary operator.
-    pub op: FheTernaryOpCode,
-    /// Compute subject that passed ACL checks.
-    pub subject: [u8; 32],
-    /// Encrypted control handle.
-    pub control: [u8; 32],
-    /// Handle selected when `control` is true.
-    pub if_true: [u8; 32],
-    /// Handle selected when `control` is false.
-    pub if_false: [u8; 32],
-    /// Output handle verified by the host formula.
-    pub result: [u8; 32],
-}
-
-/// Emitted for a trivial encryption accepted by the host.
-#[event]
-pub struct TrivialEncryptEvent {
-    /// Event schema version.
-    pub version: u8,
-    /// Subject associated with the created handle.
-    pub subject: [u8; 32],
-    /// Plaintext encoded into the handle.
-    pub plaintext: [u8; 32],
-    /// FHE type byte embedded in the handle.
-    pub fhe_type: u8,
-    /// Output handle verified by the host formula.
-    pub result: [u8; 32],
-}
-
-/// Test-shim event for random ciphertext creation.
-#[event]
-pub struct FheRandEvent {
-    /// Event schema version.
-    pub version: u8,
-    /// Subject associated with the random handle.
-    pub subject: [u8; 32],
-    /// Random seed carried to worker tests.
-    pub seed: [u8; 16],
-    /// FHE type byte.
-    pub fhe_type: u8,
-    /// Output handle.
-    pub result: [u8; 32],
-}
-
-/// Emitted for bounded random ciphertext creation accepted by the host.
-#[event]
-pub struct FheRandBoundedEvent {
-    /// Event schema version.
-    pub version: u8,
-    /// Subject associated with the random handle.
-    pub subject: [u8; 32],
-    /// Exclusive upper bound encoded as a 256-bit big-endian integer.
-    pub upper_bound: [u8; 32],
-    /// Random seed carried to worker tests.
-    pub seed: [u8; 16],
-    /// FHE type byte.
-    pub fhe_type: u8,
-    /// Output handle.
-    pub result: [u8; 32],
-}
-
-/// Emitted for a unary FHE operation accepted by the host.
-#[event]
-pub struct FheUnaryOpEvent {
-    /// Event schema version.
-    pub version: u8,
-    /// Unary operator.
-    pub op: FheUnaryOpCode,
-    /// Compute subject that passed ACL checks.
-    pub subject: [u8; 32],
-    /// Operand handle.
-    pub operand: [u8; 32],
-    /// Output handle verified by the host formula.
-    pub result: [u8; 32],
-}
-
-/// Emitted for an FHE sum operation accepted by the host.
-#[event]
-pub struct FheSumEvent {
-    /// Event schema version.
-    pub version: u8,
-    /// Compute subject that passed ACL checks.
-    pub subject: [u8; 32],
-    /// Input operand handles.
-    pub operands: Vec<[u8; 32]>,
-    /// FHE type of all operands and the output.
-    pub fhe_type: u8,
-    /// Output handle verified by the host formula.
-    pub result: [u8; 32],
-}
-
-/// Emitted for an FHE is-in test accepted by the host.
-#[event]
-pub struct FheIsInEvent {
-    /// Event schema version.
-    pub version: u8,
-    /// Compute subject that passed ACL checks.
-    pub subject: [u8; 32],
-    /// Value handle being tested.
-    pub value: [u8; 32],
-    /// Set of handles to test against.
-    pub set: Vec<[u8; 32]>,
-    /// FHE type of value and set elements.
-    pub fhe_type: u8,
-    /// Output handle (always ebool) verified by the host formula.
-    pub result: [u8; 32],
-}
-
-/// Emitted for an FHE multiply-divide operation accepted by the host.
-#[event]
-pub struct FheMulDivEvent {
-    /// Event schema version.
-    pub version: u8,
-    /// Compute subject that passed ACL checks.
-    pub subject: [u8; 32],
-    /// First factor handle.
-    pub factor1: [u8; 32],
-    /// Second factor handle or scalar bytes.
-    pub factor2: [u8; 32],
-    /// Divisor plaintext scalar bytes.
-    pub divisor: [u8; 32],
-    /// Whether `factor2` is plaintext scalar bytes.
-    pub scalar: bool,
-    /// Output handle verified by the host formula.
-    pub result: [u8; 32],
 }

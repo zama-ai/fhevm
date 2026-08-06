@@ -92,7 +92,7 @@ pub struct MmrProofResponse {
     pub leaf_count: u64,
     /// Confirmed Solana RPC context slot of the on-chain peak comparison.
     pub rpc_context_slot: u64,
-    /// Durable ingest slot at which this encrypted_value_account's served leaves were last written.
+    /// Persistent ingest slot at which this encrypted_value_account's served leaves were last written.
     /// Omitted when no snapshot backed the response (e.g. store not yet ingested).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub encrypted_value_account_last_slot: Option<u64>,

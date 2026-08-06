@@ -23,24 +23,24 @@ use solana_keypair::{read_keypair_file, Keypair};
 const EVENT_AUTHORITY_SEED: &[u8] = b"__event_authority";
 const HISTORICAL_LABEL_MARKER: u8 = 3;
 const PROOF_SERVICE_LAGGING_PREFIX: &str = "proof service lagging:";
-const MMR_MODE_HISTORICAL: u8 = 0x01;
-const MMR_MODE_PUBLIC: u8 = 0x02;
+const MMR_PROOF_MODE_HISTORICAL: u8 = 0x01;
+const MMR_PROOF_MODE_PUBLIC: u8 = 0x02;
 
 type EncryptedValueAccountState = ([u8; 32], Vec<Pubkey>);
 
-struct DurableEvalTarget {
+struct PersistentExecutionTarget {
     value: u64,
     plaintext: [u8; 32],
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-    encrypted_value_label: [u8; 32],
-    value_key: [u8; 32],
+    domain: Pubkey,
+    account: Pubkey,
+    label: [u8; 32],
+    encrypted_value_id: [u8; 32],
     encrypted_value: Pubkey,
 }
 
-struct DurableEvalResult {
+struct PersistentExecutionResult {
     encrypted_value: Pubkey,
-    value_key: [u8; 32],
+    encrypted_value_id: [u8; 32],
     handle: [u8; 32],
 }
 
@@ -52,7 +52,7 @@ struct TokenBalanceState {
     owner: String,
     token_account: String,
     encrypted_value_account: String,
-    acl_value_key: String,
+    encrypted_value_id: String,
     current_handle: String,
     chain_id: String,
 }
@@ -92,19 +92,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    // TRIVIAL_ENCRYPT_EVAL drives the SAME trivial-encryption through the eval-plan executor
-    // (fhe_eval): a single TrivialEncrypt step with a durable output ACL record. The host computes
-    // the result handle on-chain and the host-listener reconstructs the successful frame,
-    // exercising the #2755 eval path.
-    if std::env::var("TRIVIAL_ENCRYPT_EVAL").is_ok() {
-        trivial_encrypt_eval(&host, &payer, host_config)?;
+    // TRIVIAL_ENCRYPT_EXECUTE drives the SAME trivial-encryption through the fhe_execute executor
+    // (fhe_execute): a single TrivialEncrypt step with a persistent output ACL record. The host computes
+    // the result handle on-chain and the host-listener reconstructs the successful execution,
+    // exercising the #2755 fhe_execute path.
+    if std::env::var("TRIVIAL_ENCRYPT_EXECUTE").is_ok() {
+        execute_trivial_encrypt(&host, &payer, host_config)?;
         return Ok(());
     }
 
     // HISTORICAL_STEP=compute creates the old handle, then the shell waits for SNS materialization.
-    // HISTORICAL_STEP=supersede rotates the same encrypted value account and prints the historical MMR proof.
+    // HISTORICAL_STEP=update rotates the same encrypted value account and prints the historical MMR proof.
     if let Ok(step) = std::env::var("HISTORICAL_STEP") {
-        historical_supersede_step(&host, &payer, host_config, &step)?;
+        historical_update_step(&host, &payer, host_config, &step)?;
         return Ok(());
     }
 
@@ -115,14 +115,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    // FHE_EVAL_VERIFIED_INPUT drives the #1539 input flow in one fhe_eval: a Binary Add of a
-    // coprocessor-attested external input (FheEvalOperand::VerifiedInput, re-verified in-frame via
-    // secp256k1 with no scratch PDA) and a public scalar, binding the result to a durable output ACL
-    // record under the attested acl_domain_key. The attestation comes from the same relayer
+    // FHE_EXECUTE_VERIFIED_INPUT drives the #1539 input flow in one fhe_execute: a Binary Add of a
+    // coprocessor-attested external input (FheExecuteOperand::VerifiedInput, re-verified in-execution via
+    // secp256k1 with no scratch PDA) and a public scalar, binding the result to a persistent output ACL
+    // record under the attested domain. The attestation comes from the same relayer
     // input-proof the BIND_INPUT phase uses (BIND_* env); TE_ADD is the scalar addend (default 2);
     // TE_ALLOW makes the result publicly decryptable. Proves encrypt V -> +2 -> decrypt V+2.
-    if std::env::var("FHE_EVAL_VERIFIED_INPUT").is_ok() {
-        fhe_eval_verified_input_add(&host, &payer, host_config)?;
+    if std::env::var("FHE_EXECUTE_VERIFIED_INPUT").is_ok() {
+        fhe_execute_verified_input_add(&host, &payer, host_config)?;
         return Ok(());
     }
 
@@ -164,65 +164,65 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    // FHE_EVAL_BINARY drives a single binary fhe_eval step. BINARY_OP names the op (Sub/Mul/…);
+    // FHE_EXECUTE_BINARY drives a single binary fhe_execute step. BINARY_OP names the op (Sub/Mul/…);
     // BINARY_A and BINARY_B are the u64 operands (defaults 10/5); BINARY_FHE_TYPE is the input
     // FHE type byte (default 5 = euint64). BINARY_B_SCALAR=1 passes rhs as a plaintext scalar.
     // Output FHE type is auto-derived: 0 (ebool) for comparison ops, else BINARY_FHE_TYPE.
     // BINARY_ALLOW marks the result publicly decryptable.
-    if std::env::var("FHE_EVAL_BINARY").is_ok() {
-        fhe_eval_binary(&host, &payer, host_config)?;
+    if std::env::var("FHE_EXECUTE_BINARY").is_ok() {
+        fhe_execute_binary(&host, &payer, host_config)?;
         return Ok(());
     }
 
-    // FHE_EVAL_UNARY drives a single unary fhe_eval step. UNARY_OP names the op (Neg/Not/Cast);
+    // FHE_EXECUTE_UNARY drives a single unary fhe_execute step. UNARY_OP names the op (Neg/Not/Cast);
     // UNARY_A is the u64 operand (default 42); UNARY_IN_FHE_TYPE is the input type (default 2 =
     // euint8); UNARY_OUT_FHE_TYPE is the output type (defaults to UNARY_IN_FHE_TYPE). UNARY_ALLOW
     // marks the result publicly decryptable.
-    if std::env::var("FHE_EVAL_UNARY").is_ok() {
-        fhe_eval_unary(&host, &payer, host_config)?;
+    if std::env::var("FHE_EXECUTE_UNARY").is_ok() {
+        fhe_execute_unary(&host, &payer, host_config)?;
         return Ok(());
     }
 
-    // FHE_EVAL_TERNARY drives a ternary IfThenElse fhe_eval step. TERNARY_CTRL (0 or 1, default 1)
+    // FHE_EXECUTE_TERNARY drives a ternary IfThenElse fhe_execute step. TERNARY_CTRL (0 or 1, default 1)
     // selects the branch; TERNARY_TRUE/TERNARY_FALSE are the euint64 branch values (defaults 42/99);
     // TERNARY_FHE_TYPE selects the branch FHE type (default 5). TERNARY_ALLOW marks the result
     // publicly decryptable.
-    if std::env::var("FHE_EVAL_TERNARY").is_ok() {
-        fhe_eval_ternary(&host, &payer, host_config)?;
+    if std::env::var("FHE_EXECUTE_TERNARY").is_ok() {
+        fhe_execute_ternary(&host, &payer, host_config)?;
         return Ok(());
     }
 
-    // FHE_EVAL_RAND_BOUNDED drives a bounded random fhe_eval step. RAND_UPPER is the exclusive
+    // FHE_EXECUTE_RAND_BOUNDED drives a bounded random fhe_execute step. RAND_UPPER is the exclusive
     // u64 upper bound (default 100); RAND_FHE_TYPE is the output FHE type (default 5 = euint64).
     // RAND_ALLOW marks the result publicly decryptable.
-    if std::env::var("FHE_EVAL_RAND_BOUNDED").is_ok() {
-        fhe_eval_rand_bounded(&host, &payer, host_config)?;
+    if std::env::var("FHE_EXECUTE_RAND_BOUNDED").is_ok() {
+        fhe_execute_rand_bounded(&host, &payer, host_config)?;
         return Ok(());
     }
 
-    // FHE_EVAL_SUM drives a multi-step fhe_eval: two TrivialEncrypt steps (AllowedLocal) followed
-    // by a Sum step (AllowedDurable). SUM_A/SUM_B select the euint64 addends (defaults 10/20);
+    // FHE_EXECUTE_SUM drives a multi-step fhe_execute: two TrivialEncrypt steps (Transient) followed
+    // by a Sum step (StoredValue). SUM_A/SUM_B select the euint64 addends (defaults 10/20);
     // SUM_ALLOW makes the result publicly decryptable. Expected cleartext: SUM_A + SUM_B.
-    if std::env::var("FHE_EVAL_SUM").is_ok() {
-        fhe_eval_sum(&host, &payer, host_config)?;
+    if std::env::var("FHE_EXECUTE_SUM").is_ok() {
+        fhe_execute_sum(&host, &payer, host_config)?;
         return Ok(());
     }
 
-    // FHE_EVAL_IS_IN drives a multi-step fhe_eval: TrivialEncrypt steps for value and set elements
-    // (all AllowedLocal) followed by an IsIn step (AllowedDurable → ebool). ISIN_VALUE selects the
+    // FHE_EXECUTE_IS_IN drives a multi-step fhe_execute: TrivialEncrypt steps for value and set elements
+    // (all Transient) followed by an IsIn step (StoredValue → ebool). ISIN_VALUE selects the
     // euint64 value (default 42); the set is hardcoded as [10, 42, 100]. ISIN_ALLOW makes the
     // result publicly decryptable. Expected cleartext: 1 (true) when ISIN_VALUE is in the set.
-    if std::env::var("FHE_EVAL_IS_IN").is_ok() {
-        fhe_eval_is_in(&host, &payer, host_config)?;
+    if std::env::var("FHE_EXECUTE_IS_IN").is_ok() {
+        fhe_execute_is_in(&host, &payer, host_config)?;
         return Ok(());
     }
 
-    // FHE_EVAL_MUL_DIV drives a multi-step fhe_eval: TrivialEncrypt(factor1, AllowedLocal) then
-    // MulDiv(factor1, scalar_factor2, divisor, AllowedDurable). MULDIV_A/MULDIV_B/MULDIV_D select
+    // FHE_EXECUTE_MUL_DIV drives a multi-step fhe_execute: TrivialEncrypt(factor1, Transient) then
+    // MulDiv(factor1, scalar_factor2, divisor, StoredValue). MULDIV_A/MULDIV_B/MULDIV_D select
     // the euint64 operands (defaults 6/7/3); MULDIV_ALLOW makes the result publicly decryptable.
     // Expected cleartext: MULDIV_A * MULDIV_B / MULDIV_D (integer division).
-    if std::env::var("FHE_EVAL_MUL_DIV").is_ok() {
-        fhe_eval_mul_div(&host, &payer, host_config)?;
+    if std::env::var("FHE_EXECUTE_MUL_DIV").is_ok() {
+        fhe_execute_mul_div(&host, &payer, host_config)?;
         return Ok(());
     }
 
@@ -266,43 +266,32 @@ fn te_value() -> u64 {
         .unwrap_or(42)
 }
 
-fn encrypted_value_address(
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-    encrypted_value_label: [u8; 32],
-) -> Pubkey {
-    let value_key = zama_solana_acl::derive_value_key(
-        acl_domain_key.to_bytes(),
-        app_account.to_bytes(),
-        encrypted_value_label,
-    );
-    zama_host::encrypted_value_address(value_key).0
+fn encrypted_value_address(domain: Pubkey, account: Pubkey, label: [u8; 32]) -> Pubkey {
+    let encrypted_value_id =
+        zama_solana_acl::derive_encrypted_value_id(domain.to_bytes(), account.to_bytes(), label);
+    zama_host::encrypted_value_address(encrypted_value_id).0
 }
 
-fn durable_eval_target(payer: &Rc<Keypair>, label_marker: u8) -> DurableEvalTarget {
+fn persistent_execution_target(payer: &Rc<Keypair>, label_marker: u8) -> PersistentExecutionTarget {
     let value = te_value();
     let mut plaintext = [0u8; 32];
     plaintext[24..32].copy_from_slice(&value.to_be_bytes());
 
-    let app_account = payer.pubkey();
-    let acl_domain_key = payer.pubkey();
-    let mut encrypted_value_label = [label_marker; 32];
-    encrypted_value_label[24..32].copy_from_slice(&value.to_be_bytes());
-    let value_key = zama_solana_acl::derive_value_key(
-        acl_domain_key.to_bytes(),
-        app_account.to_bytes(),
-        encrypted_value_label,
-    );
-    let encrypted_value =
-        encrypted_value_address(acl_domain_key, app_account, encrypted_value_label);
+    let account = payer.pubkey();
+    let domain = payer.pubkey();
+    let mut label = [label_marker; 32];
+    label[24..32].copy_from_slice(&value.to_be_bytes());
+    let encrypted_value_id =
+        zama_solana_acl::derive_encrypted_value_id(domain.to_bytes(), account.to_bytes(), label);
+    let encrypted_value = encrypted_value_address(domain, account, label);
 
-    DurableEvalTarget {
+    PersistentExecutionTarget {
         value,
         plaintext,
-        acl_domain_key,
-        app_account,
-        encrypted_value_label,
-        value_key,
+        domain,
+        account,
+        label,
+        encrypted_value_id,
         encrypted_value,
     }
 }
@@ -343,20 +332,26 @@ fn token_balance_state(
         return Err("confidential token account body does not match its canonical PDA".into());
     }
 
-    let label = confidential_token::balance_label();
-    let value_key =
-        zama_solana_acl::derive_value_key(mint.to_bytes(), token_account_key.to_bytes(), label);
-    let (encrypted_value_key, encrypted_value_bump) = zama_host::encrypted_value_address(value_key);
-    if token_account.balance_encrypted_value != encrypted_value_key {
+    let label = confidential_token::encrypted_balance_label();
+    let encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
+        mint.to_bytes(),
+        token_account_key.to_bytes(),
+        label,
+    );
+    let (value_account_address, encrypted_value_bump) =
+        zama_host::encrypted_value_address(encrypted_value_id);
+    if token_account.balance_encrypted_value != value_account_address {
         return Err(
             "token balance pointer does not match the canonical encrypted value PDA".into(),
         );
     }
     // Re-read the pointer, encrypted value account, and HostConfig in one RPC response. Rejecting a changed pointer
     // prevents the probe from combining a token account from one bank state with a newer encrypted value account.
-    let mut accounts =
-        host.rpc()
-            .get_multiple_accounts(&[token_account_key, encrypted_value_key, host_config])?;
+    let mut accounts = host.rpc().get_multiple_accounts(&[
+        token_account_key,
+        value_account_address,
+        host_config,
+    ])?;
     let config_info = accounts
         .pop()
         .flatten()
@@ -382,7 +377,7 @@ fn token_balance_state(
     if token_account.owner != owner
         || token_account.mint != mint
         || token_account.bump != token_account_bump
-        || token_account.balance_encrypted_value != encrypted_value_key
+        || token_account.balance_encrypted_value != value_account_address
     {
         return Err("confidential token account changed during balance-state read".into());
     }
@@ -402,13 +397,16 @@ fn token_balance_state(
     {
         return Err("balance encrypted value account has trailing or truncated data".into());
     }
-    if encrypted_value.acl_domain_key != mint
-        || encrypted_value.app_account != token_account_key
-        || encrypted_value.encrypted_value_label != label
+    if encrypted_value.domain != mint
+        || encrypted_value.encrypted_value_account_authority != token_account_key
+        || encrypted_value.label != label
         || encrypted_value.bump != encrypted_value_bump
-        || encrypted_value.value_key() != value_key
+        || encrypted_value.encrypted_value_id() != encrypted_value_id
     {
-        return Err("balance encrypted value body does not match its canonical encrypted value account".into());
+        return Err(
+            "balance encrypted value body does not match its canonical encrypted value account"
+                .into(),
+        );
     }
     let compute_signer = confidential_token::compute_signer_address(mint).0;
     if encrypted_value.subjects != [owner, compute_signer] {
@@ -442,8 +440,8 @@ fn token_balance_state(
             mint: mint.to_string(),
             owner: owner.to_string(),
             token_account: token_account_key.to_string(),
-            encrypted_value_account: encrypted_value_key.to_string(),
-            acl_value_key: format!("0x{}", hex(&value_key)),
+            encrypted_value_account: value_account_address.to_string(),
+            encrypted_value_id: format!("0x{}", hex(&encrypted_value_id)),
             current_handle: format!("0x{}", hex(&handle)),
             chain_id: config.chain_id.to_string(),
         })?
@@ -489,17 +487,17 @@ fn existing_value_account_state(
     }
 }
 
-/// Builds the frame's interned 32-byte constant pool while a flow assembles its steps.
+/// Builds the execution's interned 32-byte constant dictionary while a flow assembles its steps.
 /// Interning deduplicates: repeated constants share one entry.
 #[derive(Default)]
-struct FramePool(Vec<[u8; 32]>);
+struct ExecutionDictionary(Vec<[u8; 32]>);
 
-impl FramePool {
+impl ExecutionDictionary {
     fn intern(&mut self, bytes: [u8; 32]) -> u8 {
         if let Some(index) = self.0.iter().position(|entry| *entry == bytes) {
-            return u8::try_from(index).expect("frame pool fits u8");
+            return u8::try_from(index).expect("execution dictionary fits u8");
         }
-        let index = u8::try_from(self.0.len()).expect("frame pool fits u8");
+        let index = u8::try_from(self.0.len()).expect("execution dictionary fits u8");
         self.0.push(bytes);
         index
     }
@@ -517,30 +515,26 @@ impl FramePool {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn durable_output(
+fn persistent_output(
     program: &Program<Rc<Keypair>>,
-    pool: &mut FramePool,
+    dictionary: &mut ExecutionDictionary,
     encrypted_value: Pubkey,
     index: u8,
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
+    domain: Pubkey,
+    account: Pubkey,
     encrypted_value_label: [u8; 32],
     subjects: Vec<Pubkey>,
-) -> Result<zama_host::FheEvalOutput, Box<dyn std::error::Error>> {
-    let (previous_handle, previous_subjects) =
-        match existing_value_account_state(program, encrypted_value)? {
-            Some((handle, subjects)) => (Some(handle), Some(subjects)),
-            None => (None, None),
-        };
-    Ok(zama_host::FheEvalOutput::AllowedDurable {
+) -> Result<zama_host::FheExecuteOutput, Box<dyn std::error::Error>> {
+    let previous_state = existing_value_account_state(program, encrypted_value)?
+        .map(|(handle, subjects)| zama_host::PreviousState { handle, subjects });
+    Ok(zama_host::FheExecuteOutput::StoredValue {
         output_encrypted_value_index: index,
-        output_app_account_authority_index: None,
-        output_acl_domain_key_index: pool.intern_key(acl_domain_key),
-        output_app_account_index: pool.intern_key(app_account),
-        output_encrypted_value_label_index: pool.intern(encrypted_value_label),
-        output_subject_indexes: pool.intern_subjects(subjects),
-        previous_handle,
-        previous_subjects,
+        output_authority_index: None,
+        output_domain_index: dictionary.intern_key(domain),
+        output_account_index: dictionary.intern_key(account),
+        output_label_index: dictionary.intern(encrypted_value_label),
+        output_subject_indexes: dictionary.intern_subjects(subjects),
+        previous_state,
         make_public: false,
     })
 }
@@ -562,9 +556,7 @@ fn allow_for_decryption(
             system_program: system_program::ID,
         })
         .args(zama_host::instruction::AllowSubjects {
-            subjects: vec![zama_host::instructions::EncryptedValueSubjectGrant {
-                subject: payer.pubkey(),
-            }],
+            subjects: vec![payer.pubkey()],
         })
         .send()?;
     println!("OK allow_subjects (idempotent membership): {grant_sig}");
@@ -572,7 +564,7 @@ fn allow_for_decryption(
     let (handle, _) = existing_value_account_state(host, encrypted_value)?.ok_or_else(|| {
         std::io::Error::new(
             std::io::ErrorKind::NotFound,
-            "encrypted value encrypted value account missing before make_handle_public",
+            "encrypted value account missing before make_handle_public",
         )
     })?;
     let public_sig = host
@@ -622,6 +614,8 @@ fn bootstrap(
         .collect();
 
     if host.rpc().get_account(&host_config).is_err() {
+        let (zama_event_authority, _) =
+            Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
         let sig = host
             .request()
             .accounts(zama_host::accounts::InitializeHostConfig {
@@ -629,6 +623,8 @@ fn bootstrap(
                 admin: authority,
                 host_config,
                 system_program: system_program::ID,
+                event_authority: zama_event_authority,
+                program: zama_host::ID,
             })
             .args(zama_host::instruction::InitializeHostConfig {
                 args: zama_host::InitializeHostConfigArgs {
@@ -669,6 +665,8 @@ fn bootstrap(
         )
         .into());
     }
+    let (zama_event_authority, _) =
+        Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let sig = host
         .request()
         .accounts(zama_host::accounts::DefineKmsContext {
@@ -676,6 +674,8 @@ fn bootstrap(
             host_config,
             kms_context,
             system_program: system_program::ID,
+            event_authority: zama_event_authority,
+            program: zama_host::ID,
         })
         .args(zama_host::instruction::DefineKmsContext {
             context_id,
@@ -700,37 +700,37 @@ fn bootstrap(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn trivial_encrypt_eval_with_label(
+fn execute_trivial_encrypt_with_label(
     host: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,
     host_config: Pubkey,
     label_marker: u8,
     ok_marker: &str,
-) -> Result<DurableEvalResult, Box<dyn std::error::Error>> {
+) -> Result<PersistentExecutionResult, Box<dyn std::error::Error>> {
     use anchor_lang::solana_program::instruction::AccountMeta;
 
-    let target = durable_eval_target(payer, label_marker);
+    let target = persistent_execution_target(payer, label_marker);
     let fhe_type: u8 = 5; // euint64
 
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let subjects = vec![payer.pubkey()];
 
-    let mut pool = FramePool::default();
-    let output = durable_output(
+    let mut dictionary = ExecutionDictionary::default();
+    let output = persistent_output(
         host,
-        &mut pool,
+        &mut dictionary,
         target.encrypted_value,
         0,
-        target.acl_domain_key,
-        target.app_account,
-        target.encrypted_value_label,
+        target.domain,
+        target.account,
+        target.label,
         subjects,
     )?;
-    let args = zama_host::FheEvalArgs {
+    let args = zama_host::FheExecuteArgs {
         account_count: 1,
-        pool: pool.0,
-        steps: vec![zama_host::FheEvalStep::TrivialEncrypt {
+        dictionary: dictionary.0,
+        steps: vec![zama_host::FheExecuteStep::TrivialEncrypt {
             plaintext: target.plaintext,
             fhe_type,
             output,
@@ -741,10 +741,10 @@ fn trivial_encrypt_eval_with_label(
     // real execution but not in RPC preflight simulation, so skip preflight for this op.
     let sig = host
         .request()
-        .accounts(zama_host::accounts::FheEval {
+        .accounts(zama_host::accounts::FheExecute {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
-            app_account_authority: payer.pubkey(),
+            encrypted_value_account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
             // Block-cap optional accounts: default cap is unrestricted, so existing flows
@@ -756,7 +756,7 @@ fn trivial_encrypt_eval_with_label(
             program: zama_host::ID,
         })
         .accounts(vec![AccountMeta::new(target.encrypted_value, false)])
-        .args(zama_host::instruction::FheEval { args })
+        .args(zama_host::instruction::FheExecute { args })
         .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
             skip_preflight: true,
             ..Default::default()
@@ -767,31 +767,31 @@ fn trivial_encrypt_eval_with_label(
     let handle = encrypted_value_account.current_handle;
     let handle_hex = hex(&handle);
     println!("  output ACL record {}", target.encrypted_value);
-    println!("  acl value key 0x{}", hex(&target.value_key));
+    println!("  encrypted value id 0x{}", hex(&target.encrypted_value_id));
     println!("  result handle 0x{handle_hex}  (tfhe-worker materializes this ciphertext)");
 
     if std::env::var("TE_ALLOW").is_ok() {
         allow_for_decryption(host, payer, host_config, target.encrypted_value)?;
     }
-    Ok(DurableEvalResult {
+    Ok(PersistentExecutionResult {
         encrypted_value: target.encrypted_value,
-        value_key: target.value_key,
+        encrypted_value_id: target.encrypted_value_id,
         handle,
     })
 }
 
-/// Eval-based compute phase: drives a single-step fhe_eval plan (one TrivialEncrypt step with a
-/// durable output ACL record). The host runs the eval executor, computes the result handle on-chain,
-/// creates the durable output ACL record
+/// Compute phase: drives a single-step fhe_execute execution (one TrivialEncrypt step with a
+/// persistent output ACL record). The host runs the executor, computes the result handle on-chain,
+/// creates the persistent output ACL record
 /// (passed as the sole remaining_account). The live host-listener reconstructs the successful
-/// frame for the tfhe-worker to materialize. TE_VALUE selects the euint64 plaintext; TE_ALLOW
+/// execution for the tfhe-worker to materialize. TE_VALUE selects the euint64 plaintext; TE_ALLOW
 /// marks it publicly decryptable afterward.
-fn trivial_encrypt_eval(
+fn execute_trivial_encrypt(
     host: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,
     host_config: Pubkey,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    trivial_encrypt_eval_with_label(host, payer, host_config, 2, "fhe_eval trivial_encrypt")?;
+    execute_trivial_encrypt_with_label(host, payer, host_config, 2, "fhe_execute trivial_encrypt")?;
     Ok(())
 }
 
@@ -810,7 +810,7 @@ fn proof_service_url() -> String {
 
 /// JSON mirror of `solana_proof_service::http::MmrProofResponse`. Only the fields
 /// this client consumes are declared; the response also carries `rpc_context_slot`,
-/// `value_account_last_slot`, `commitment`, and `proof_format_version` (ignored here).
+/// `encrypted_value_account_last_slot`, `commitment`, and `proof_format_version` (ignored here).
 #[derive(Deserialize)]
 struct ProofServiceMmrProofResponse {
     mmr_proof: Option<ProofServiceMmrProofDto>,
@@ -863,7 +863,7 @@ fn fetch_access_proof(
 /// Retries a bounded number of times while ingestion is still catching up to chain
 /// (`503 lagging`). REQUIRES `verified == true`; every other response, including `500
 /// corrupt_cache` and `404 leaf_not_found`, fails loudly at once. Retrying HERE (not by
-/// re-invoking the client) keeps the caller idempotent — the historical `supersede` step appends
+/// re-invoking the client) keeps the caller idempotent — the historical `update` step appends
 /// on-chain leaves, so re-running it would corrupt the encrypted value account.
 fn fetch_proof_with_retry(
     url: &str,
@@ -954,7 +954,7 @@ fn public_decrypt_proof_step(
     let handle = bytes32_env("PUB_HANDLE")?;
     let encrypted_value = public_proof_encrypted_value_from_env()?;
     let encrypted_value_account = fetch_encrypted_value(host, encrypted_value)?;
-    let value_key = encrypted_value_account.value_key();
+    let encrypted_value_id = encrypted_value_account.encrypted_value_id();
     // Chain facts (peaks/leaf_count/current handle) come from the live account; the proof itself
     // comes from solana-proof-service, which resolves the public-decrypt leaf from the handle.
     let proof = fetch_public_proof(&encrypted_value, handle)?;
@@ -967,7 +967,7 @@ fn public_decrypt_proof_step(
                 "solana-proof-service public-decrypt proof did not verify against live encrypted value account: {e:?}"
             ))
         })?;
-    let proof_bytes = proof_blob(MMR_MODE_PUBLIC, &proof)?;
+    let proof_bytes = proof_blob(MMR_PROOF_MODE_PUBLIC, &proof)?;
 
     println!("PUB H 0x{}", hex(&handle));
     println!("PUB encryptedValueAccount {encrypted_value}");
@@ -975,21 +975,21 @@ fn public_decrypt_proof_step(
         "PUB encryptedValueAccountHex 0x{}",
         hex(&encrypted_value.to_bytes())
     );
-    println!("PUB aclValueKey 0x{}", hex(&value_key));
+    println!("PUB aclValueKey 0x{}", hex(&encrypted_value_id));
     println!("PUB peaks {}", hex_csv(&encrypted_value_account.peaks));
     println!("PUB leafCount {}", encrypted_value_account.leaf_count);
     println!("PUB proofSlot {}", encrypted_value_account.leaf_count);
     println!("PUB leafIndex {}", proof.leaf_index);
     println!("PUB siblings {}", hex_csv(&proof.siblings));
     println!("PUB mmrProofBytes 0x{}", hex(&proof_bytes));
-    // Same proof, mode-byte stripped: proof_blob prepends a 1-byte MMR_MODE tag, but the
+    // Same proof, mode-byte stripped: proof_blob prepends a 1-byte MMR proof-mode tag, but the
     // on-chain consume steps (redeem_burned_amount / disclose_secp, PROOF env) borsh-decode
     // a bare MmrInclusionProof, whose wire shape == borsh(MmrProof). So this is proof_bytes[1..].
     println!("PUB mmrInclusionProofBytes 0x{}", hex(&proof_bytes[1..]));
     Ok(())
 }
 
-fn historical_supersede_step(
+fn historical_update_step(
     host: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,
     host_config: Pubkey,
@@ -997,7 +997,7 @@ fn historical_supersede_step(
 ) -> Result<(), Box<dyn std::error::Error>> {
     match step {
         "compute" => {
-            let target = durable_eval_target(payer, HISTORICAL_LABEL_MARKER);
+            let target = persistent_execution_target(payer, HISTORICAL_LABEL_MARKER);
             if existing_value_account_state(host, target.encrypted_value)?.is_some() {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::AlreadyExists,
@@ -1005,7 +1005,7 @@ fn historical_supersede_step(
                 )
                 .into());
             }
-            let result = trivial_encrypt_eval_with_label(
+            let result = execute_trivial_encrypt_with_label(
                 host,
                 payer,
                 host_config,
@@ -1018,26 +1018,26 @@ fn historical_supersede_step(
                 "HIST encryptedValueAccountHex 0x{}",
                 hex(&result.encrypted_value.to_bytes())
             );
-            println!("HIST aclValueKey 0x{}", hex(&result.value_key));
+            println!("HIST aclValueKey 0x{}", hex(&result.encrypted_value_id));
             Ok(())
         }
-        "supersede" => {
-            let target = durable_eval_target(payer, HISTORICAL_LABEL_MARKER);
+        "update" => {
+            let target = persistent_execution_target(payer, HISTORICAL_LABEL_MARKER);
             let Some((old_handle, _)) = existing_value_account_state(host, target.encrypted_value)?
             else {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::NotFound,
-                    "HISTORICAL_STEP=supersede requires HISTORICAL_STEP=compute first",
+                    "HISTORICAL_STEP=update requires HISTORICAL_STEP=compute first",
                 )
                 .into());
             };
 
-            let result = trivial_encrypt_eval_with_label(
+            let result = execute_trivial_encrypt_with_label(
                 host,
                 payer,
                 host_config,
                 HISTORICAL_LABEL_MARKER,
-                "historical supersede",
+                "historical update",
             )?;
             let encrypted_value_account = fetch_encrypted_value(host, target.encrypted_value)?;
             let subject = payer.pubkey().to_bytes();
@@ -1064,7 +1064,7 @@ fn historical_supersede_step(
                 )
                 .into());
             }
-            let proof_bytes = proof_blob(MMR_MODE_HISTORICAL, &proof)?;
+            let proof_bytes = proof_blob(MMR_PROOF_MODE_HISTORICAL, &proof)?;
 
             println!("HIST H_old 0x{}", hex(&old_handle));
             println!("HIST H_new 0x{}", hex(&result.handle));
@@ -1073,7 +1073,7 @@ fn historical_supersede_step(
                 "HIST encryptedValueAccountHex 0x{}",
                 hex(&target.encrypted_value.to_bytes())
             );
-            println!("HIST aclValueKey 0x{}", hex(&target.value_key));
+            println!("HIST aclValueKey 0x{}", hex(&target.encrypted_value_id));
             println!("HIST peaks {}", hex_csv(&encrypted_value_account.peaks));
             println!("HIST leafCount {}", encrypted_value_account.leaf_count);
             println!("HIST proofSlot {}", encrypted_value_account.leaf_count);
@@ -1085,21 +1085,21 @@ fn historical_supersede_step(
         }
         other => Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            format!("unknown HISTORICAL_STEP={other}; expected compute or supersede"),
+            format!("unknown HISTORICAL_STEP={other}; expected compute or update"),
         )
         .into()),
     }
 }
 
-/// Input flow phase (#1539): one fhe_eval that adds a public scalar to a coprocessor-attested external
-/// input and binds the result to a durable output ACL record. The verified input is resolved in-frame
-/// (FheEvalOperand::VerifiedInput) — its attestation is re-verified on-chain via secp256k1 with no
-/// scratch PDA — and the durable output is pinned to the attested acl_domain_key (the input's domain;
+/// Input flow phase (#1539): one fhe_execute that adds a public scalar to a coprocessor-attested external
+/// input and binds the result to a persistent output ACL record. The verified input is resolved in-execution
+/// (FheExecuteOperand::VerifiedInput) — its attestation is re-verified on-chain via secp256k1 with no
+/// scratch PDA — and the persistent output is pinned to the attested domain (the input's domain;
 /// the on-chain binding rejects any other). The attestation is supplied via the same BIND_* env vars
 /// the standalone input-verify phase uses; TE_ADD is the scalar addend (default 2). The host-listener
-/// reconstructs the successful frame so the tfhe-worker materializes (input + TE_ADD); TE_ALLOW
+/// reconstructs the successful execution so the tfhe-worker materializes (input + TE_ADD); TE_ALLOW
 /// then makes the result publicly decryptable.
-fn fhe_eval_verified_input_add(
+fn fhe_execute_verified_input_add(
     host: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,
     host_config: Pubkey,
@@ -1124,10 +1124,10 @@ fn fhe_eval_verified_input_add(
         .map(|s| hexdec(&s))
         .unwrap_or_else(|_| vec![0u8]);
 
-    // The attested contract IS the input's acl_domain_key; the durable output must bind that exact
-    // domain (the on-chain VerifiedInput -> durable binding enforces it). app_account is the signer.
-    let acl_domain_key = Pubkey::new_from_array(contract_address);
-    let app_account = payer.pubkey();
+    // The attested contract IS the input's domain; the persistent output must bind that exact
+    // domain (the on-chain VerifiedInput -> persistent binding enforces it). account is the signer.
+    let domain = Pubkey::new_from_array(contract_address);
+    let account = payer.pubkey();
 
     // Scalar addend (default 2). ClearConst reads big-endian, so place the u64 in the low bytes.
     let addend: u64 = std::env::var("TE_ADD")
@@ -1140,10 +1140,9 @@ fn fhe_eval_verified_input_add(
 
     // Label distinct from the trivial-encrypt phases ([1]/[2] markers) so output PDAs never collide;
     // keyed on the input handle tail so distinct inputs derive distinct output records.
-    let mut encrypted_value_label = [3u8; 32];
-    encrypted_value_label[24..32].copy_from_slice(&input_handle[24..32]);
-    let output_encrypted_value =
-        encrypted_value_address(acl_domain_key, app_account, encrypted_value_label);
+    let mut label = [3u8; 32];
+    label[24..32].copy_from_slice(&input_handle[24..32]);
+    let output_encrypted_value = encrypted_value_address(domain, account, label);
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let subjects = vec![payer.pubkey()];
@@ -1159,40 +1158,40 @@ fn fhe_eval_verified_input_add(
         signatures: vec![signature],
     };
 
-    let mut pool = FramePool::default();
-    let args = zama_host::FheEvalArgs {
+    let mut dictionary = ExecutionDictionary::default();
+    let args = zama_host::FheExecuteArgs {
         account_count: 1,
-        steps: vec![zama_host::FheEvalStep::Binary {
+        steps: vec![zama_host::FheExecuteStep::Binary {
             op: zama_host::FheBinaryOpCode::Add,
-            lhs: zama_host::FheEvalOperand::VerifiedInput {
+            lhs: zama_host::FheExecuteOperand::VerifiedInput {
                 attestation: Box::new(attestation),
             },
-            rhs: zama_host::FheEvalOperand::Scalar {
-                value_index: pool.intern(scalar),
+            rhs: zama_host::FheExecuteOperand::Scalar {
+                value_index: dictionary.intern(scalar),
             },
             output_fhe_type: fhe_type,
-            output: durable_output(
+            output: persistent_output(
                 host,
-                &mut pool,
+                &mut dictionary,
                 output_encrypted_value,
                 0,
-                acl_domain_key,
-                app_account,
-                encrypted_value_label,
+                domain,
+                account,
+                label,
                 subjects,
             )?,
         }],
-        pool: pool.0,
+        dictionary: dictionary.0,
     };
 
     let input_hex: String = input_handle.iter().map(|b| format!("{b:02x}")).collect();
-    println!("fhe_eval verified input 0x{input_hex} + {addend} (euint64)");
+    println!("fhe_execute verified input 0x{input_hex} + {addend} (euint64)");
     let sig = host
         .request()
-        .accounts(zama_host::accounts::FheEval {
+        .accounts(zama_host::accounts::FheExecute {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
-            app_account_authority: payer.pubkey(),
+            encrypted_value_account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
             // Block-cap optional accounts: default cap is unrestricted, so existing flows
@@ -1204,12 +1203,12 @@ fn fhe_eval_verified_input_add(
             program: zama_host::ID,
         })
         .accounts(vec![AccountMeta::new(output_encrypted_value, false)])
-        .args(zama_host::instruction::FheEval { args })
+        .args(zama_host::instruction::FheExecute { args })
         .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
             skip_preflight: true,
             ..Default::default()
         })?;
-    println!("OK fhe_eval verified-input add: {sig}");
+    println!("OK fhe_execute verified-input add: {sig}");
 
     let encrypted_value_account = fetch_encrypted_value(host, output_encrypted_value)?;
     let handle_hex: String = encrypted_value_account
@@ -1218,7 +1217,10 @@ fn fhe_eval_verified_input_add(
         .map(|b| format!("{b:02x}"))
         .collect();
     println!("  output ACL record {output_encrypted_value}");
-    println!("  acl value key 0x{}", hex(&encrypted_value_account.value_key()));
+    println!(
+        "  encrypted value id 0x{}",
+        hex(&encrypted_value_account.encrypted_value_id())
+    );
     println!("  result handle 0x{handle_hex}  (tfhe-worker materializes input + {addend})");
 
     if std::env::var("TE_ALLOW").is_ok() {
@@ -1254,9 +1256,7 @@ fn consume_seal(
             system_program: system_program::ID,
         })
         .args(zama_host::instruction::AllowSubjects {
-            subjects: vec![zama_host::instructions::EncryptedValueSubjectGrant {
-                subject: payer.pubkey(),
-            }],
+            subjects: vec![payer.pubkey()],
         })
         .send()?;
     println!("OK allow_subjects (idempotent membership): {grant_sig}");
@@ -1375,7 +1375,7 @@ fn consume_wrap(
 
     let mint_state: confidential_token::ConfidentialMint = token.account(mint)?;
     let total_supply_value = mint_state.total_supply_encrypted_value;
-    // The wrap amount is trivial-encrypted as a transient inside wrap_usdc's eval frame.
+    // The wrap amount is trivial-encrypted as a transient inside wrap_usdc's execution.
     let (zama_evt, _) = Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let (token_evt, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &confidential_token::ID);
@@ -1398,8 +1398,13 @@ fn consume_wrap(
         println!("created vault USDC ATA {vault_usdc}");
     }
 
-    // wrap_usdc runs several FHE ops in one instruction and exhausts the default 32KB SBF
-    // heap; request the max heap frame (256KB) and raise the compute-unit limit.
+    // Raise the compute-unit limit: wrap_usdc runs several FHE steps in one instruction.
+    // The 256 KB heap-frame request next to it does nothing for these programs and is kept only
+    // because it is what the deployed demo sends: Anchor's entrypoint installs a bump allocator
+    // fixed at `solana_program_entrypoint::HEAP_LENGTH` (32 KB) unless the program declares
+    // `custom-heap`, which none of ours do, so a larger heap frame is granted and never used. What
+    // actually keeps these instructions inside 32 KB is the step budget — see
+    // `zama_fhe::MAX_ON_CHAIN_EXECUTION_STEPS`.
     let cb_prog = Pubkey::from_str("ComputeBudget111111111111111111111111111111")?;
     let mut heap_data = vec![1u8];
     heap_data.extend_from_slice(&(256u32 * 1024).to_le_bytes());
@@ -1496,9 +1501,10 @@ fn initialize_token_account_if_missing(
 
 /// Burns an encrypted amount from the confidential balance (confidential_burn): the heaviest
 /// FHE instruction — ge + sub + select + sub + sub across five zama-host CPIs. Reads the current
-/// balance/total-supply ACLs and next nonce sequences live from chain, mints an owner-scoped
-/// random burn amount (create_random_amount Burn kind), then burns it. Produces the burned-amount
-/// handle (and ACL) the redeem path publicly decrypts and releases against the vault. MINT via env.
+/// balance/total-supply ACLs and next nonce sequences live from chain, takes a coprocessor-attested
+/// burn amount (fromExternal, via the relayer input-proof), then burns it. Produces the
+/// burned-amount handle (and ACL) the redeem path publicly decrypts and releases against the vault.
+/// MINT via env.
 fn consume_burn(
     token: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,
@@ -1521,8 +1527,8 @@ fn consume_burn(
 
     // 1. fromExternal burn amount: a coprocessor-attested external input (BIND_* env from the
     // relayer input-proof), bound to (user = owner, contract = compute_signer PDA). confidential_burn
-    // re-verifies the EIP-712 attestation in-frame and transient-allows it for the burn eval — no
-    // durable amount ACL, no create_random_amount. The attested handle must be a euint64.
+    // re-verifies the EIP-712 attestation in-execution and transient-allows it for the burn execution —
+    // no persistent amount ACL. The attested handle must be a euint64.
     let input_handle: [u8; 32] = hexdec(&std::env::var("BIND_HANDLE")?)
         .try_into()
         .expect("BIND_HANDLE must be 32 bytes");
@@ -1552,16 +1558,16 @@ fn consume_burn(
     let hh: String = input_handle.iter().map(|b| format!("{b:02x}")).collect();
     println!("  burn amount (attested external input) handle 0x{hh}");
 
-    // 2. Durable burn outputs supersede the stable balance/total-supply encrypted value accounts in place and
-    // create or supersede the stable burned-amount encrypted value account for this token account.
+    // 2. Persistent burn outputs update the stable balance/total-supply encrypted value accounts in place and
+    // create or update the stable burned-amount encrypted value account for this token account.
     let (burned_acl, _) = confidential_token::encrypted_value_address(
         mint,
         token_account,
-        confidential_token::burned_amount_label(),
+        confidential_token::encrypted_burned_amount_label(),
     );
 
-    // 3. confidential_burn — five FHE ops in one instruction; request the max heap frame + a
-    // raised CU limit like wrap. SlotHashes entropy is only populated in real execution, so skip
+    // 3. confidential_burn — five FHE steps in one instruction; same CU raise and same
+    // (inert, see wrap above) heap-frame request as wrap. SlotHashes entropy is only populated in real execution, so skip
     // preflight unless BURN_NO_PREFLIGHT forces an on-chain log capture.
     let cb_prog = Pubkey::from_str("ComputeBudget111111111111111111111111111111")?;
     let mut heap_data = vec![1u8];
@@ -1726,6 +1732,8 @@ fn ensure_host_config(
         println!("host_config {host_config} already initialized — skipping");
         return Ok(());
     }
+    let (zama_event_authority, _) =
+        Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let sig = host
         .request()
         .accounts(zama_host::accounts::InitializeHostConfig {
@@ -1733,6 +1741,8 @@ fn ensure_host_config(
             admin: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
+            event_authority: zama_event_authority,
+            program: zama_host::ID,
         })
         .args(zama_host::instruction::InitializeHostConfig {
             args: zama_host::InitializeHostConfigArgs {
@@ -1797,49 +1807,49 @@ fn is_comparison_op(op: zama_host::FheBinaryOpCode) -> bool {
     )
 }
 
-/// Creates a durable operand (TrivialEncrypt → AllowedDurable, `user` subject).
+/// Creates a persistent operand (TrivialEncrypt → StoredValue, `user` subject).
 /// Returns (encrypted_value, current_handle).
-fn create_durable_public_decrypt_operand(
+fn create_persistent_public_decrypt_operand(
     host: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,
     host_config: Pubkey,
     value: u64,
     fhe_type: u8,
-    label: [u8; 32],
+    encrypted_value_label: [u8; 32],
 ) -> Result<(Pubkey, [u8; 32]), Box<dyn std::error::Error>> {
     use anchor_lang::solana_program::instruction::AccountMeta;
     let mut plaintext = [0u8; 32];
     plaintext[24..32].copy_from_slice(&value.to_be_bytes());
-    let app_account = payer.pubkey();
-    let acl_domain_key = payer.pubkey();
-    let encrypted_value = encrypted_value_address(acl_domain_key, app_account, label);
+    let account = payer.pubkey();
+    let domain = payer.pubkey();
+    let encrypted_value = encrypted_value_address(domain, account, encrypted_value_label);
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let subjects = vec![payer.pubkey()];
-    let mut pool = FramePool::default();
-    let args = zama_host::FheEvalArgs {
+    let mut dictionary = ExecutionDictionary::default();
+    let args = zama_host::FheExecuteArgs {
         account_count: 1,
-        steps: vec![zama_host::FheEvalStep::TrivialEncrypt {
+        steps: vec![zama_host::FheExecuteStep::TrivialEncrypt {
             plaintext,
             fhe_type,
-            output: durable_output(
+            output: persistent_output(
                 host,
-                &mut pool,
+                &mut dictionary,
                 encrypted_value,
                 0,
-                acl_domain_key,
-                app_account,
-                label,
+                domain,
+                account,
+                encrypted_value_label,
                 subjects,
             )?,
         }],
-        pool: pool.0,
+        dictionary: dictionary.0,
     };
     host.request()
-        .accounts(zama_host::accounts::FheEval {
+        .accounts(zama_host::accounts::FheExecute {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
-            app_account_authority: payer.pubkey(),
+            encrypted_value_account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
             hcu_block_meter: None,
@@ -1848,7 +1858,7 @@ fn create_durable_public_decrypt_operand(
             program: zama_host::ID,
         })
         .accounts(vec![AccountMeta::new(encrypted_value, false)])
-        .args(zama_host::instruction::FheEval { args })
+        .args(zama_host::instruction::FheExecute { args })
         .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
             skip_preflight: true,
             ..Default::default()
@@ -1857,11 +1867,11 @@ fn create_durable_public_decrypt_operand(
     Ok((encrypted_value, value.current_handle))
 }
 
-/// Generic binary fhe_eval: encrypted operands become durable public-decrypt handles (so
+/// Generic binary fhe_execute: encrypted operands become persistent public-decrypt handles (so
 /// public-decrypt propagates to the output); scalar-RHS ops create only the LHS.
 /// Env: BINARY_OP, BINARY_A, BINARY_B, BINARY_B_SCALAR (flag), BINARY_FHE_TYPE, BINARY_ALLOW.
 /// Comparison ops (Eq/Ne/Ge/Gt/Le/Lt) automatically set output_fhe_type=0 (ebool).
-fn fhe_eval_binary(
+fn fhe_execute_binary(
     host: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,
     host_config: Pubkey,
@@ -1885,20 +1895,19 @@ fn fhe_eval_binary(
         .unwrap_or(5);
     let output_fhe_type: u8 = if is_comparison_op(op) { 0 } else { in_fhe_type };
 
-    let app_account = payer.pubkey();
-    let acl_domain_key = payer.pubkey();
-    let mut encrypted_value_label = [7u8; 32];
-    encrypted_value_label[1] = op.as_u8();
-    encrypted_value_label[2] = in_fhe_type;
-    encrypted_value_label[3] = if b_scalar { 1 } else { 0 };
-    encrypted_value_label[8..16].copy_from_slice(&a.to_be_bytes());
-    encrypted_value_label[16..24].copy_from_slice(&b.to_be_bytes());
-    let output_encrypted_value =
-        encrypted_value_address(acl_domain_key, app_account, encrypted_value_label);
+    let account = payer.pubkey();
+    let domain = payer.pubkey();
+    let mut label = [7u8; 32];
+    label[1] = op.as_u8();
+    label[2] = in_fhe_type;
+    label[3] = if b_scalar { 1 } else { 0 };
+    label[8..16].copy_from_slice(&a.to_be_bytes());
+    label[16..24].copy_from_slice(&b.to_be_bytes());
+    let output_encrypted_value = encrypted_value_address(domain, account, label);
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let subjects = vec![payer.pubkey()];
-    let mut pool = FramePool::default();
+    let mut dictionary = ExecutionDictionary::default();
 
     // Operand A. Label = marker 0x0a|op|type|pos|value → distinct PDA per operand/op (no collisions).
     let mut operand_label_a = [0x0au8; 32];
@@ -1906,7 +1915,7 @@ fn fhe_eval_binary(
     operand_label_a[2] = in_fhe_type;
     operand_label_a[3] = 0;
     operand_label_a[8..16].copy_from_slice(&a.to_be_bytes());
-    let (encrypted_value_a, handle_a) = create_durable_public_decrypt_operand(
+    let (encrypted_value_a, handle_a) = create_persistent_public_decrypt_operand(
         host,
         payer,
         host_config,
@@ -1920,8 +1929,8 @@ fn fhe_eval_binary(
     let rhs_operand = if b_scalar {
         let mut scalar_b = [0u8; 32];
         scalar_b[24..32].copy_from_slice(&b.to_be_bytes());
-        zama_host::FheEvalOperand::Scalar {
-            value_index: pool.intern(scalar_b),
+        zama_host::FheExecuteOperand::Scalar {
+            value_index: dictionary.intern(scalar_b),
         }
     } else {
         let mut operand_label_b = [0x0au8; 32];
@@ -1929,7 +1938,7 @@ fn fhe_eval_binary(
         operand_label_b[2] = in_fhe_type;
         operand_label_b[3] = 1;
         operand_label_b[8..16].copy_from_slice(&b.to_be_bytes());
-        let (encrypted_value_b, handle_b) = create_durable_public_decrypt_operand(
+        let (encrypted_value_b, handle_b) = create_persistent_public_decrypt_operand(
             host,
             payer,
             host_config,
@@ -1938,29 +1947,29 @@ fn fhe_eval_binary(
             operand_label_b,
         )?;
         operand_values.push(encrypted_value_b);
-        zama_host::FheEvalOperand::AllowedDurable {
-            handle_index: pool.intern(handle_b),
+        zama_host::FheExecuteOperand::StoredValue {
+            handle_index: dictionary.intern(handle_b),
             encrypted_value_index: 1,
         }
     };
 
     let output_index = operand_values.len() as u8;
-    let steps = vec![zama_host::FheEvalStep::Binary {
+    let steps = vec![zama_host::FheExecuteStep::Binary {
         op,
-        lhs: zama_host::FheEvalOperand::AllowedDurable {
-            handle_index: pool.intern(handle_a),
+        lhs: zama_host::FheExecuteOperand::StoredValue {
+            handle_index: dictionary.intern(handle_a),
             encrypted_value_index: 0,
         },
         rhs: rhs_operand,
         output_fhe_type,
-        output: durable_output(
+        output: persistent_output(
             host,
-            &mut pool,
+            &mut dictionary,
             output_encrypted_value,
             output_index,
-            acl_domain_key,
-            app_account,
-            encrypted_value_label,
+            domain,
+            account,
+            label,
             subjects,
         )?,
     }];
@@ -1979,10 +1988,10 @@ fn fhe_eval_binary(
     };
     let sig = host
         .request()
-        .accounts(zama_host::accounts::FheEval {
+        .accounts(zama_host::accounts::FheExecute {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
-            app_account_authority: payer.pubkey(),
+            encrypted_value_account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
             hcu_block_meter: None,
@@ -1991,10 +2000,10 @@ fn fhe_eval_binary(
             program: zama_host::ID,
         })
         .accounts(remaining)
-        .args(zama_host::instruction::FheEval {
-            args: zama_host::FheEvalArgs {
+        .args(zama_host::instruction::FheExecute {
+            args: zama_host::FheExecuteArgs {
                 account_count: (operand_values.len() + 1) as u8,
-                pool: pool.0,
+                dictionary: dictionary.0,
                 steps,
             },
         })
@@ -2002,7 +2011,7 @@ fn fhe_eval_binary(
             skip_preflight: true,
             ..Default::default()
         })?;
-    println!("OK fhe_eval binary {op_name}(enc({a}), {b_desc}) fhe_type={in_fhe_type} out_type={output_fhe_type}: {sig}");
+    println!("OK fhe_execute binary {op_name}(enc({a}), {b_desc}) fhe_type={in_fhe_type} out_type={output_fhe_type}: {sig}");
 
     let value = fetch_encrypted_value(host, output_encrypted_value)?;
     let handle_hex: String = value
@@ -2019,10 +2028,10 @@ fn fhe_eval_binary(
     Ok(())
 }
 
-/// Generic unary fhe_eval: TrivialEncrypt(operand) → Unary(op, AllowedDurable).
+/// Generic unary fhe_execute: TrivialEncrypt(operand) → Unary(op, StoredValue).
 /// Env: UNARY_OP (Neg/Not/Cast), UNARY_A, UNARY_IN_FHE_TYPE (default 2=euint8),
 /// UNARY_OUT_FHE_TYPE (default = UNARY_IN_FHE_TYPE), UNARY_ALLOW.
-fn fhe_eval_unary(
+fn fhe_execute_unary(
     host: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,
     host_config: Pubkey,
@@ -2044,26 +2053,26 @@ fn fhe_eval_unary(
         .and_then(|s| s.parse().ok())
         .unwrap_or(in_fhe_type);
 
-    let app_account = payer.pubkey();
-    let acl_domain_key = payer.pubkey();
-    let mut encrypted_value_label = [8u8; 32];
-    encrypted_value_label[1] = op.as_u8();
-    encrypted_value_label[2] = in_fhe_type;
-    encrypted_value_label[3] = out_fhe_type;
-    encrypted_value_label[24..32].copy_from_slice(&a.to_be_bytes());
-    let output_encrypted_value =
-        encrypted_value_address(acl_domain_key, app_account, encrypted_value_label);
+    let account = payer.pubkey();
+    let domain = payer.pubkey();
+    let mut label = [8u8; 32];
+    label[1] = op.as_u8();
+    label[2] = in_fhe_type;
+    label[3] = out_fhe_type;
+    label[24..32].copy_from_slice(&a.to_be_bytes());
+    let output_encrypted_value = encrypted_value_address(domain, account, label);
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let subjects = vec![payer.pubkey()];
 
-    // Encrypted operand as a durable public-decrypt handle (propagates to output; AllowedLocal → 6063).
+    // Encrypted operand as a persistent public-decrypt handle (propagates to output; an
+    // `EarlierStep` operand here would fail `FheExecuteEarlierStepMissing`, error code 6032).
     let mut operand_label_a = [0x0bu8; 32];
     operand_label_a[1] = op.as_u8();
     operand_label_a[2] = in_fhe_type;
     operand_label_a[3] = out_fhe_type;
     operand_label_a[8..16].copy_from_slice(&a.to_be_bytes());
-    let (encrypted_value_a, handle_a) = create_durable_public_decrypt_operand(
+    let (encrypted_value_a, handle_a) = create_persistent_public_decrypt_operand(
         host,
         payer,
         host_config,
@@ -2072,36 +2081,36 @@ fn fhe_eval_unary(
         operand_label_a,
     )?;
 
-    let mut pool = FramePool::default();
-    let args = zama_host::FheEvalArgs {
+    let mut dictionary = ExecutionDictionary::default();
+    let args = zama_host::FheExecuteArgs {
         account_count: 2,
-        steps: vec![zama_host::FheEvalStep::Unary {
+        steps: vec![zama_host::FheExecuteStep::Unary {
             op,
-            operand: zama_host::FheEvalOperand::AllowedDurable {
-                handle_index: pool.intern(handle_a),
+            operand: zama_host::FheExecuteOperand::StoredValue {
+                handle_index: dictionary.intern(handle_a),
                 encrypted_value_index: 0,
             },
             output_fhe_type: out_fhe_type,
-            output: durable_output(
+            output: persistent_output(
                 host,
-                &mut pool,
+                &mut dictionary,
                 output_encrypted_value,
                 1,
-                acl_domain_key,
-                app_account,
-                encrypted_value_label,
+                domain,
+                account,
+                label,
                 subjects,
             )?,
         }],
-        pool: pool.0,
+        dictionary: dictionary.0,
     };
 
     let sig = host
         .request()
-        .accounts(zama_host::accounts::FheEval {
+        .accounts(zama_host::accounts::FheExecute {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
-            app_account_authority: payer.pubkey(),
+            encrypted_value_account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
             hcu_block_meter: None,
@@ -2113,12 +2122,12 @@ fn fhe_eval_unary(
             AccountMeta::new_readonly(encrypted_value_a, false),
             AccountMeta::new(output_encrypted_value, false),
         ])
-        .args(zama_host::instruction::FheEval { args })
+        .args(zama_host::instruction::FheExecute { args })
         .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
             skip_preflight: true,
             ..Default::default()
         })?;
-    println!("OK fhe_eval unary {op_name}(enc({a})) in_type={in_fhe_type} out_type={out_fhe_type}: {sig}");
+    println!("OK fhe_execute unary {op_name}(enc({a})) in_type={in_fhe_type} out_type={out_fhe_type}: {sig}");
 
     let value = fetch_encrypted_value(host, output_encrypted_value)?;
     let handle_hex: String = value
@@ -2135,11 +2144,11 @@ fn fhe_eval_unary(
     Ok(())
 }
 
-/// Ternary fhe_eval: TrivialEncrypt(ctrl as ebool) + TrivialEncrypt(if_true) +
-/// TrivialEncrypt(if_false) → Ternary(IfThenElse, AllowedDurable).
+/// Ternary fhe_execute: TrivialEncrypt(ctrl as ebool) + TrivialEncrypt(if_true) +
+/// TrivialEncrypt(if_false) → Ternary(IfThenElse, StoredValue).
 /// Env: TERNARY_CTRL (0|1, default 1), TERNARY_TRUE/TERNARY_FALSE (u64 defaults 42/99),
 /// TERNARY_FHE_TYPE (default 5=euint64), TERNARY_ALLOW.
-fn fhe_eval_ternary(
+fn fhe_execute_ternary(
     host: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,
     host_config: Pubkey,
@@ -2163,34 +2172,33 @@ fn fhe_eval_ternary(
         .and_then(|s| s.parse().ok())
         .unwrap_or(5);
 
-    let app_account = payer.pubkey();
-    let acl_domain_key = payer.pubkey();
-    let mut encrypted_value_label = [9u8; 32];
-    encrypted_value_label[1] = ctrl as u8;
-    encrypted_value_label[2] = fhe_type;
-    encrypted_value_label[8..16].copy_from_slice(&if_true.to_be_bytes());
-    encrypted_value_label[16..24].copy_from_slice(&if_false.to_be_bytes());
-    let output_encrypted_value =
-        encrypted_value_address(acl_domain_key, app_account, encrypted_value_label);
+    let account = payer.pubkey();
+    let domain = payer.pubkey();
+    let mut label = [9u8; 32];
+    label[1] = ctrl as u8;
+    label[2] = fhe_type;
+    label[8..16].copy_from_slice(&if_true.to_be_bytes());
+    label[16..24].copy_from_slice(&if_false.to_be_bytes());
+    let output_encrypted_value = encrypted_value_address(domain, account, label);
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let subjects = vec![payer.pubkey()];
 
     let expected = if ctrl != 0 { if_true } else { if_false };
 
-    // Each operand a durable public-decrypt handle. remaining_accounts: [control, if_true, if_false, output].
+    // Each operand a persistent public-decrypt handle. remaining_accounts: [control, if_true, if_false, output].
     let mut label_ctrl = [0x0cu8; 32];
     label_ctrl[1] = ctrl as u8;
     label_ctrl[3] = 0; // control is ebool (type 0)
     label_ctrl[8..16].copy_from_slice(&ctrl.to_be_bytes());
     let (value_ctrl, h_ctrl) =
-        create_durable_public_decrypt_operand(host, payer, host_config, ctrl, 0, label_ctrl)?;
+        create_persistent_public_decrypt_operand(host, payer, host_config, ctrl, 0, label_ctrl)?;
 
     let mut label_true = [0x0cu8; 32];
     label_true[2] = fhe_type;
     label_true[3] = 1;
     label_true[8..16].copy_from_slice(&if_true.to_be_bytes());
-    let (value_true, h_true) = create_durable_public_decrypt_operand(
+    let (value_true, h_true) = create_persistent_public_decrypt_operand(
         host,
         payer,
         host_config,
@@ -2203,7 +2211,7 @@ fn fhe_eval_ternary(
     label_false[2] = fhe_type;
     label_false[3] = 2;
     label_false[8..16].copy_from_slice(&if_false.to_be_bytes());
-    let (value_false, h_false) = create_durable_public_decrypt_operand(
+    let (value_false, h_false) = create_persistent_public_decrypt_operand(
         host,
         payer,
         host_config,
@@ -2212,44 +2220,44 @@ fn fhe_eval_ternary(
         label_false,
     )?;
 
-    let mut pool = FramePool::default();
-    let args = zama_host::FheEvalArgs {
+    let mut dictionary = ExecutionDictionary::default();
+    let args = zama_host::FheExecuteArgs {
         account_count: 4,
-        steps: vec![zama_host::FheEvalStep::Ternary {
+        steps: vec![zama_host::FheExecuteStep::Ternary {
             op: zama_host::FheTernaryOpCode::IfThenElse,
-            control: zama_host::FheEvalOperand::AllowedDurable {
-                handle_index: pool.intern(h_ctrl),
+            control: zama_host::FheExecuteOperand::StoredValue {
+                handle_index: dictionary.intern(h_ctrl),
                 encrypted_value_index: 0,
             },
-            if_true: zama_host::FheEvalOperand::AllowedDurable {
-                handle_index: pool.intern(h_true),
+            if_true: zama_host::FheExecuteOperand::StoredValue {
+                handle_index: dictionary.intern(h_true),
                 encrypted_value_index: 1,
             },
-            if_false: zama_host::FheEvalOperand::AllowedDurable {
-                handle_index: pool.intern(h_false),
+            if_false: zama_host::FheExecuteOperand::StoredValue {
+                handle_index: dictionary.intern(h_false),
                 encrypted_value_index: 2,
             },
             output_fhe_type: fhe_type,
-            output: durable_output(
+            output: persistent_output(
                 host,
-                &mut pool,
+                &mut dictionary,
                 output_encrypted_value,
                 3,
-                acl_domain_key,
-                app_account,
-                encrypted_value_label,
+                domain,
+                account,
+                label,
                 subjects,
             )?,
         }],
-        pool: pool.0,
+        dictionary: dictionary.0,
     };
 
     let sig = host
         .request()
-        .accounts(zama_host::accounts::FheEval {
+        .accounts(zama_host::accounts::FheExecute {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
-            app_account_authority: payer.pubkey(),
+            encrypted_value_account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
             hcu_block_meter: None,
@@ -2263,12 +2271,12 @@ fn fhe_eval_ternary(
             AccountMeta::new_readonly(value_false, false),
             AccountMeta::new(output_encrypted_value, false),
         ])
-        .args(zama_host::instruction::FheEval { args })
+        .args(zama_host::instruction::FheExecute { args })
         .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
             skip_preflight: true,
             ..Default::default()
         })?;
-    println!("OK fhe_eval ternary select(ctrl={ctrl}, true={if_true}, false={if_false}) -> {expected}: {sig}");
+    println!("OK fhe_execute ternary select(ctrl={ctrl}, true={if_true}, false={if_false}) -> {expected}: {sig}");
 
     let value = fetch_encrypted_value(host, output_encrypted_value)?;
     let handle_hex: String = value
@@ -2285,10 +2293,10 @@ fn fhe_eval_ternary(
     Ok(())
 }
 
-/// Bounded random fhe_eval: RandBounded(upper_bound, AllowedDurable).
+/// Bounded random fhe_execute: RandBounded(upper_bound, StoredValue).
 /// Env: RAND_UPPER (u64 exclusive upper bound, default 100), RAND_FHE_TYPE (default 5=euint64),
 /// RAND_ALLOW. Expected: cleartext in [0, RAND_UPPER).
-fn fhe_eval_rand_bounded(
+fn fhe_execute_rand_bounded(
     host: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,
     host_config: Pubkey,
@@ -2304,13 +2312,12 @@ fn fhe_eval_rand_bounded(
         .and_then(|s| s.parse().ok())
         .unwrap_or(5);
 
-    let app_account = payer.pubkey();
-    let acl_domain_key = payer.pubkey();
-    let mut encrypted_value_label = [0x0au8; 32];
-    encrypted_value_label[1] = fhe_type;
-    encrypted_value_label[24..32].copy_from_slice(&upper.to_be_bytes());
-    let output_encrypted_value =
-        encrypted_value_address(acl_domain_key, app_account, encrypted_value_label);
+    let account = payer.pubkey();
+    let domain = payer.pubkey();
+    let mut label = [0x0au8; 32];
+    label[1] = fhe_type;
+    label[24..32].copy_from_slice(&upper.to_be_bytes());
+    let output_encrypted_value = encrypted_value_address(domain, account, label);
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let subjects = vec![payer.pubkey()];
@@ -2318,32 +2325,32 @@ fn fhe_eval_rand_bounded(
     let mut upper_bound = [0u8; 32];
     upper_bound[24..32].copy_from_slice(&upper.to_be_bytes());
 
-    let mut pool = FramePool::default();
-    let args = zama_host::FheEvalArgs {
+    let mut dictionary = ExecutionDictionary::default();
+    let args = zama_host::FheExecuteArgs {
         account_count: 1,
-        steps: vec![zama_host::FheEvalStep::RandBounded {
+        steps: vec![zama_host::FheExecuteStep::RandBounded {
             upper_bound,
             fhe_type,
-            output: durable_output(
+            output: persistent_output(
                 host,
-                &mut pool,
+                &mut dictionary,
                 output_encrypted_value,
                 0,
-                acl_domain_key,
-                app_account,
-                encrypted_value_label,
+                domain,
+                account,
+                label,
                 subjects,
             )?,
         }],
-        pool: pool.0,
+        dictionary: dictionary.0,
     };
 
     let sig = host
         .request()
-        .accounts(zama_host::accounts::FheEval {
+        .accounts(zama_host::accounts::FheExecute {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
-            app_account_authority: payer.pubkey(),
+            encrypted_value_account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
             hcu_block_meter: None,
@@ -2352,12 +2359,12 @@ fn fhe_eval_rand_bounded(
             program: zama_host::ID,
         })
         .accounts(vec![AccountMeta::new(output_encrypted_value, false)])
-        .args(zama_host::instruction::FheEval { args })
+        .args(zama_host::instruction::FheExecute { args })
         .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
             skip_preflight: true,
             ..Default::default()
         })?;
-    println!("OK fhe_eval rand_bounded(upper={upper}) fhe_type={fhe_type}: {sig}");
+    println!("OK fhe_execute rand_bounded(upper={upper}) fhe_type={fhe_type}: {sig}");
 
     let value = fetch_encrypted_value(host, output_encrypted_value)?;
     let handle_hex: String = value
@@ -2374,10 +2381,10 @@ fn fhe_eval_rand_bounded(
     Ok(())
 }
 
-/// Multi-step fhe_eval Sum: two TrivialEncrypt(AllowedLocal) → Sum(AllowedDurable).
+/// Multi-step fhe_execute Sum: two TrivialEncrypt(Transient) → Sum(StoredValue).
 /// SUM_A/SUM_B select the euint64 addends (defaults 10/20). Expected result: SUM_A + SUM_B.
-/// SUM_ALLOW marks the output publicly decryptable after the eval.
-fn fhe_eval_sum(
+/// SUM_ALLOW marks the output publicly decryptable after the execution.
+fn fhe_execute_sum(
     host: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,
     host_config: Pubkey,
@@ -2393,67 +2400,66 @@ fn fhe_eval_sum(
         .unwrap_or(20);
     let fhe_type: u8 = 5; // euint64
 
-    let app_account = payer.pubkey();
-    let acl_domain_key = payer.pubkey();
-    let mut encrypted_value_label = [4u8; 32];
-    encrypted_value_label[16..24].copy_from_slice(&a.to_be_bytes());
-    encrypted_value_label[24..32].copy_from_slice(&b.to_be_bytes());
-    let output_encrypted_value =
-        encrypted_value_address(acl_domain_key, app_account, encrypted_value_label);
+    let account = payer.pubkey();
+    let domain = payer.pubkey();
+    let mut label = [4u8; 32];
+    label[16..24].copy_from_slice(&a.to_be_bytes());
+    label[24..32].copy_from_slice(&b.to_be_bytes());
+    let output_encrypted_value = encrypted_value_address(domain, account, label);
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let subjects = vec![payer.pubkey()];
 
-    // Each addend a durable public-decrypt handle. remaining_accounts: [a, b, output].
+    // Each addend a persistent public-decrypt handle. remaining_accounts: [a, b, output].
     let mut label_a = [0x0du8; 32];
     label_a[2] = fhe_type;
     label_a[3] = 0;
     label_a[8..16].copy_from_slice(&a.to_be_bytes());
     let (value_a, h_a) =
-        create_durable_public_decrypt_operand(host, payer, host_config, a, fhe_type, label_a)?;
+        create_persistent_public_decrypt_operand(host, payer, host_config, a, fhe_type, label_a)?;
 
     let mut label_b = [0x0du8; 32];
     label_b[2] = fhe_type;
     label_b[3] = 1;
     label_b[8..16].copy_from_slice(&b.to_be_bytes());
     let (value_b, h_b) =
-        create_durable_public_decrypt_operand(host, payer, host_config, b, fhe_type, label_b)?;
+        create_persistent_public_decrypt_operand(host, payer, host_config, b, fhe_type, label_b)?;
 
-    let mut pool = FramePool::default();
-    let args = zama_host::FheEvalArgs {
+    let mut dictionary = ExecutionDictionary::default();
+    let args = zama_host::FheExecuteArgs {
         account_count: 3,
-        steps: vec![zama_host::FheEvalStep::Sum {
+        steps: vec![zama_host::FheExecuteStep::Sum {
             operands: vec![
-                zama_host::FheEvalOperand::AllowedDurable {
-                    handle_index: pool.intern(h_a),
+                zama_host::FheExecuteOperand::StoredValue {
+                    handle_index: dictionary.intern(h_a),
                     encrypted_value_index: 0,
                 },
-                zama_host::FheEvalOperand::AllowedDurable {
-                    handle_index: pool.intern(h_b),
+                zama_host::FheExecuteOperand::StoredValue {
+                    handle_index: dictionary.intern(h_b),
                     encrypted_value_index: 1,
                 },
             ],
             fhe_type,
-            output: durable_output(
+            output: persistent_output(
                 host,
-                &mut pool,
+                &mut dictionary,
                 output_encrypted_value,
                 2,
-                acl_domain_key,
-                app_account,
-                encrypted_value_label,
+                domain,
+                account,
+                label,
                 subjects,
             )?,
         }],
-        pool: pool.0,
+        dictionary: dictionary.0,
     };
 
     let sig = host
         .request()
-        .accounts(zama_host::accounts::FheEval {
+        .accounts(zama_host::accounts::FheExecute {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
-            app_account_authority: payer.pubkey(),
+            encrypted_value_account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
             hcu_block_meter: None,
@@ -2466,12 +2472,12 @@ fn fhe_eval_sum(
             AccountMeta::new_readonly(value_b, false),
             AccountMeta::new(output_encrypted_value, false),
         ])
-        .args(zama_host::instruction::FheEval { args })
+        .args(zama_host::instruction::FheExecute { args })
         .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
             skip_preflight: true,
             ..Default::default()
         })?;
-    println!("OK fhe_eval sum({a} + {b} as euint64): {sig}");
+    println!("OK fhe_execute sum({a} + {b} as euint64): {sig}");
 
     let value = fetch_encrypted_value(host, output_encrypted_value)?;
     let handle_hex: String = value
@@ -2488,11 +2494,11 @@ fn fhe_eval_sum(
     Ok(())
 }
 
-/// Multi-step fhe_eval IsIn: TrivialEncrypt(value) + TrivialEncrypt(set elements) (all AllowedLocal)
-/// → IsIn(AllowedDurable → ebool). ISIN_VALUE selects the euint64 value (default 42); the set is
+/// Multi-step fhe_execute IsIn: TrivialEncrypt(value) + TrivialEncrypt(set elements) (all Transient)
+/// → IsIn(StoredValue → ebool). ISIN_VALUE selects the euint64 value (default 42); the set is
 /// hardcoded as [10, 42, 100]. ISIN_ALLOW marks the output publicly decryptable. Expected result:
 /// 1 (true) when ISIN_VALUE is in the set, 0 (false) otherwise.
-fn fhe_eval_is_in(
+fn fhe_execute_is_in(
     host: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,
     host_config: Pubkey,
@@ -2504,25 +2510,24 @@ fn fhe_eval_is_in(
         .unwrap_or(42);
     let elem_fhe_type: u8 = 5; // euint64
 
-    let app_account = payer.pubkey();
-    let acl_domain_key = payer.pubkey();
-    let mut encrypted_value_label = [5u8; 32];
-    encrypted_value_label[24..32].copy_from_slice(&value.to_be_bytes());
-    let output_encrypted_value =
-        encrypted_value_address(acl_domain_key, app_account, encrypted_value_label);
+    let account = payer.pubkey();
+    let domain = payer.pubkey();
+    let mut label = [5u8; 32];
+    label[24..32].copy_from_slice(&value.to_be_bytes());
+    let output_encrypted_value = encrypted_value_address(domain, account, label);
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let subjects = vec![payer.pubkey()];
-    let mut pool = FramePool::default();
+    let mut dictionary = ExecutionDictionary::default();
 
-    // value + set as durable public-decrypt handles. remaining_accounts: [value, set.., output].
+    // value + set as persistent public-decrypt handles. remaining_accounts: [value, set.., output].
     let set_values: [u64; 3] = [10, 42, 100];
 
     let mut label_value = [0x0eu8; 32];
     label_value[2] = elem_fhe_type;
     label_value[3] = 0;
     label_value[8..16].copy_from_slice(&value.to_be_bytes());
-    let (encrypted_value_input, h_value) = create_durable_public_decrypt_operand(
+    let (encrypted_value_input, h_value) = create_persistent_public_decrypt_operand(
         host,
         payer,
         host_config,
@@ -2532,14 +2537,14 @@ fn fhe_eval_is_in(
     )?;
 
     let mut operand_values = vec![encrypted_value_input];
-    let mut set_operands: Vec<zama_host::FheEvalOperand> = Vec::with_capacity(set_values.len());
+    let mut set_operands: Vec<zama_host::FheExecuteOperand> = Vec::with_capacity(set_values.len());
     for (i, &v) in set_values.iter().enumerate() {
         let mut label = [0x0eu8; 32];
         label[2] = elem_fhe_type;
         label[3] = (i as u8) + 1;
         label[8..16].copy_from_slice(&v.to_be_bytes());
         label[16..24].copy_from_slice(&value.to_be_bytes());
-        let (encrypted_value, handle) = create_durable_public_decrypt_operand(
+        let (encrypted_value, handle) = create_persistent_public_decrypt_operand(
             host,
             payer,
             host_config,
@@ -2547,36 +2552,36 @@ fn fhe_eval_is_in(
             elem_fhe_type,
             label,
         )?;
-        set_operands.push(zama_host::FheEvalOperand::AllowedDurable {
-            handle_index: pool.intern(handle),
+        set_operands.push(zama_host::FheExecuteOperand::StoredValue {
+            handle_index: dictionary.intern(handle),
             encrypted_value_index: operand_values.len() as u8,
         });
         operand_values.push(encrypted_value);
     }
     let output_index = operand_values.len() as u8;
 
-    let steps = vec![zama_host::FheEvalStep::IsIn {
-        value: zama_host::FheEvalOperand::AllowedDurable {
-            handle_index: pool.intern(h_value),
+    let steps = vec![zama_host::FheExecuteStep::IsIn {
+        value: zama_host::FheExecuteOperand::StoredValue {
+            handle_index: dictionary.intern(h_value),
             encrypted_value_index: 0,
         },
         set: set_operands,
         fhe_type: elem_fhe_type,
-        output: durable_output(
+        output: persistent_output(
             host,
-            &mut pool,
+            &mut dictionary,
             output_encrypted_value,
             output_index,
-            acl_domain_key,
-            app_account,
-            encrypted_value_label,
+            domain,
+            account,
+            label,
             subjects,
         )?,
     }];
 
-    let args = zama_host::FheEvalArgs {
+    let args = zama_host::FheExecuteArgs {
         account_count: (operand_values.len() + 1) as u8,
-        pool: pool.0,
+        dictionary: dictionary.0,
         steps,
     };
     let in_set = set_values.contains(&value);
@@ -2589,10 +2594,10 @@ fn fhe_eval_is_in(
 
     let sig = host
         .request()
-        .accounts(zama_host::accounts::FheEval {
+        .accounts(zama_host::accounts::FheExecute {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
-            app_account_authority: payer.pubkey(),
+            encrypted_value_account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
             hcu_block_meter: None,
@@ -2601,12 +2606,12 @@ fn fhe_eval_is_in(
             program: zama_host::ID,
         })
         .accounts(remaining)
-        .args(zama_host::instruction::FheEval { args })
+        .args(zama_host::instruction::FheExecute { args })
         .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
             skip_preflight: true,
             ..Default::default()
         })?;
-    println!("OK fhe_eval isIn({value} in {set_values:?} as euint64): {sig}");
+    println!("OK fhe_execute isIn({value} in {set_values:?} as euint64): {sig}");
 
     let encrypted_value_account = fetch_encrypted_value(host, output_encrypted_value)?;
     let handle_hex: String = encrypted_value_account
@@ -2623,10 +2628,10 @@ fn fhe_eval_is_in(
     Ok(())
 }
 
-/// Multi-step fhe_eval MulDiv: TrivialEncrypt(factor1, AllowedLocal) → MulDiv(factor1, scalar_b,
-/// divisor, AllowedDurable). MULDIV_A/MULDIV_B/MULDIV_D select the euint64 operands (defaults
+/// Multi-step fhe_execute MulDiv: TrivialEncrypt(factor1, Transient) → MulDiv(factor1, scalar_b,
+/// divisor, StoredValue). MULDIV_A/MULDIV_B/MULDIV_D select the euint64 operands (defaults
 /// 6/7/3). MULDIV_ALLOW marks the output publicly decryptable. Expected result: A * B / D.
-fn fhe_eval_mul_div(
+fn fhe_execute_mul_div(
     host: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,
     host_config: Pubkey,
@@ -2646,14 +2651,13 @@ fn fhe_eval_mul_div(
         .unwrap_or(3);
     let fhe_type: u8 = 5; // euint64
 
-    let app_account = payer.pubkey();
-    let acl_domain_key = payer.pubkey();
-    let mut encrypted_value_label = [6u8; 32];
-    encrypted_value_label[8..16].copy_from_slice(&a.to_be_bytes());
-    encrypted_value_label[16..24].copy_from_slice(&b.to_be_bytes());
-    encrypted_value_label[24..32].copy_from_slice(&d.to_be_bytes());
-    let output_encrypted_value =
-        encrypted_value_address(acl_domain_key, app_account, encrypted_value_label);
+    let account = payer.pubkey();
+    let domain = payer.pubkey();
+    let mut label = [6u8; 32];
+    label[8..16].copy_from_slice(&a.to_be_bytes());
+    label[16..24].copy_from_slice(&b.to_be_bytes());
+    label[24..32].copy_from_slice(&d.to_be_bytes());
+    let output_encrypted_value = encrypted_value_address(domain, account, label);
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let subjects = vec![payer.pubkey()];
@@ -2663,47 +2667,47 @@ fn fhe_eval_mul_div(
     let mut divisor = [0u8; 32];
     divisor[24..32].copy_from_slice(&d.to_be_bytes());
 
-    // factor1 as a durable public-decrypt handle (factor2/divisor are public scalars).
+    // factor1 as a persistent public-decrypt handle (factor2/divisor are public scalars).
     let mut label_a = [0x0fu8; 32];
     label_a[2] = fhe_type;
     label_a[8..16].copy_from_slice(&a.to_be_bytes());
     let (encrypted_value_a, h_a) =
-        create_durable_public_decrypt_operand(host, payer, host_config, a, fhe_type, label_a)?;
+        create_persistent_public_decrypt_operand(host, payer, host_config, a, fhe_type, label_a)?;
 
-    let mut pool = FramePool::default();
-    let args = zama_host::FheEvalArgs {
+    let mut dictionary = ExecutionDictionary::default();
+    let args = zama_host::FheExecuteArgs {
         account_count: 2,
-        steps: vec![zama_host::FheEvalStep::MulDiv {
-            factor1: zama_host::FheEvalOperand::AllowedDurable {
-                handle_index: pool.intern(h_a),
+        steps: vec![zama_host::FheExecuteStep::MulDiv {
+            factor1: zama_host::FheExecuteOperand::StoredValue {
+                handle_index: dictionary.intern(h_a),
                 encrypted_value_index: 0,
             },
-            factor2: zama_host::FheEvalOperand::Scalar {
-                value_index: pool.intern(scalar_b),
+            factor2: zama_host::FheExecuteOperand::Scalar {
+                value_index: dictionary.intern(scalar_b),
             },
             divisor,
             output_fhe_type: fhe_type,
-            output: durable_output(
+            output: persistent_output(
                 host,
-                &mut pool,
+                &mut dictionary,
                 output_encrypted_value,
                 1,
-                acl_domain_key,
-                app_account,
-                encrypted_value_label,
+                domain,
+                account,
+                label,
                 subjects,
             )?,
         }],
-        pool: pool.0,
+        dictionary: dictionary.0,
     };
 
     let expected = a * b / d;
     let sig = host
         .request()
-        .accounts(zama_host::accounts::FheEval {
+        .accounts(zama_host::accounts::FheExecute {
             payer: payer.pubkey(),
             compute_subject: payer.pubkey(),
-            app_account_authority: payer.pubkey(),
+            encrypted_value_account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
             hcu_block_meter: None,
@@ -2715,12 +2719,12 @@ fn fhe_eval_mul_div(
             AccountMeta::new_readonly(encrypted_value_a, false),
             AccountMeta::new(output_encrypted_value, false),
         ])
-        .args(zama_host::instruction::FheEval { args })
+        .args(zama_host::instruction::FheExecute { args })
         .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
             skip_preflight: true,
             ..Default::default()
         })?;
-    println!("OK fhe_eval mulDiv({a} * {b} / {d} = {expected} as euint64): {sig}");
+    println!("OK fhe_execute mulDiv({a} * {b} / {d} = {expected} as euint64): {sig}");
 
     let value = fetch_encrypted_value(host, output_encrypted_value)?;
     let handle_hex: String = value

@@ -17,12 +17,12 @@ product-open
 
 ## DD-001: Store Handles In ACL Records, Not PDA Seeds
 
-Status: **superseded** — the keyed-nonce `AclRecord` was replaced by the stable
+Status: **replaced** — the keyed-nonce `AclRecord` was replaced by the stable
 `EncryptedValue` + MMR encrypted value account (DD-032), and both handle-binding components (the
-`nonce_sequence` leaf-count and the `value_key`) were **deleted from
-durable-output handle derivation** (DD-015): a durable output handle is now the
+`nonce_sequence` leaf-count and the encrypted value ID) were **deleted from
+persistent-output handle derivation** (DD-015): a persistent output handle is now the
 plain base handle, matching EVM `FHEVMExecutor` (no per-slot/per-caller/per-encrypted value account
-binding). `value_key` survives only as the `EncryptedValue` PDA seed. The
+binding). The encrypted value ID survives only as the `EncryptedValue` PDA seed. The
 description below is retained for historical context only.
 
 Context:
@@ -136,23 +136,23 @@ Consequences:
 Negative tests are part of the contract. Changes to account layout must update program checks,
 KMS witness decoders, fixture encoders, listener expectations, and docs together.
 
-## DD-005: Public Decrypt Is A Post-Birth Release
+## DD-005: Public Decrypt Is A Post-Creation Release
 
-Status: **superseded** by DD-032 (`allow_for_decryption` and the `AclRecord.public_decrypt` flag are
+Status: **replaced** by DD-032 (`allow_for_decryption` and the `AclRecord.public_decrypt` flag are
 deleted; public release is now `make_handle_public`, an exact-handle `PublicDecryptLeaf` sealed into
 the `EncryptedValue` MMR)
 
-Status (superseded): adopted
+Status (replaced): adopted
 
 Context:
 
-Public decrypt is mutable authorization state. Letting handle-birth instructions create an ACL
+Public decrypt is mutable authorization state. Letting handle-creation instructions create an ACL
 record that is already public-decryptable bypasses the dedicated authority check and release event.
 
 Decision:
 
-Host-owned handle birth paths initialize `public_decrypt = false`. Releasing a handle for public
-decrypt must go through `allow_for_decryption` after ACL birth.
+Host-owned handle creation paths initialize `public_decrypt = false`. Releasing a handle for public
+decrypt must go through `allow_for_decryption` after ACL creation.
 
 Rationale:
 
@@ -173,7 +173,7 @@ decryptability state:
 
 ## DD-006: Material Commitment Is Separate From ACL Authorization
 
-Status: **superseded** by DD-031 (`HandleMaterialCommitment` deleted; materiality moved to the
+Status: **replaced** by DD-031 (`HandleMaterialCommitment` deleted; materiality moved to the
 gateway's `CiphertextCommits`)
 
 Context:
@@ -181,24 +181,24 @@ Context:
 An ACL record can prove who may use or decrypt a handle. It does not prove that ciphertext material
 is available, bound to the right key, or ready for KMS release.
 
-Decision (superseded):
+Decision (replaced):
 
 Use host-owned `HandleMaterialCommitment` accounts, committed by the configured material authority
 for supported host-chain handles. Seal the material commitment pubkey, hash, and key id onto the ACL
 record.
 
-Rationale (superseded):
+Rationale (replaced):
 
 This lets KMS verify both authorization and decryptability without trusting app-local state or
 events.
 
-Consequences (superseded):
+Consequences (replaced):
 
 Public decrypt, certified disclosure, and burn redemption must verify the ACL record and material
-commitment agree. Durable archival and compaction rules for ACL/material evidence remain
+commitment agree. Persistent archival and compaction rules for ACL/material evidence remain
 product-open.
 
-Why superseded: see DD-031.
+Why replaced: see DD-031.
 
 ## DD-007: External Inputs Verify Against An On-Chain secp256k1 Coprocessor Attestation (verify, not bind)
 
@@ -213,16 +213,16 @@ was a Solana-only trust root divorced from the EVM coprocessor trust model.
 
 Decision:
 
-Inputs enter compute through the `FheEvalOperand::VerifiedInput` operand consumed inside `fhe_eval`
+Inputs enter compute through the `FheExecuteOperand::VerifiedInput` operand consumed inside `fhe_execute`
 — the Solana `FHE.fromExternal` analog. The operand carries the coprocessor's EIP-712
 `CiphertextVerification` attestation; the shared `verify_input_attestation` verifier
-(`zama_host::instructions::input_verification`) re-verifies it **in-frame** by recovering the EVM
+(`zama_host::instructions::input_verification`) re-verifies it **in-execution** by recovering the EVM
 coprocessor signer via `secp256k1_recover` and threshold-checking it against the configured signer
 set, and asserts the attested `contract_chain_id` equals the host chain id (EVM's
 `contractChainId == block.chainid`). On success the input is *transient-allowed for that eval only* —
 there is no persistent `AclRecord` for the input, mirroring EVM `FHEVMExecutor.verifyInput` (verify ≠
 allow). Solana has no transient-storage analog (DD-008); the transient allow lives only for the
-duration of the frame.
+duration of the batch.
 
 **Binding model (the `contractAddress` analog).** EVM binds an attestation to a `contractAddress`.
 The Solana equivalent is the consuming program's **compute-authority PDA** — a PDA the program signs
@@ -236,8 +236,8 @@ attested but the contract decides its meaning. Per-state-account (per-mint) scop
 finer-grained than EVM's per-contract binding.
 
 **Derived outputs are NOT tainted by the input attestation.** Once verified, the input is an ordinary
-operand; any *durable* ACL on an input-derived handle is the app's separate, explicit choice at
-output-binding time — exactly EVM parity, where the input gets a transient allow and durable output
+operand; any *persistent* ACL on an input-derived handle is the app's separate, explicit choice at
+output-binding time — exactly EVM parity, where the input gets a transient allow and persistent output
 ACLs are the contract's decision. There is no output-taint from the input.
 
 The gateway side is the RFC-021 bytes32 input path:
@@ -252,14 +252,14 @@ Why:
 
 Reusing the coprocessor attestation makes Solana input trust identical to EVM input trust — one
 trust root, recovered and threshold-checked on-chain — instead of a parallel verifier-set subsystem
-that could drift. Consuming it as an in-frame eval operand (rather than a standalone verify + durable
+that could drift. Consuming it as an in-execution operand (rather than a standalone verify + persistent
 receipt) restores EVM parity (verify ≠ allow) and removes a persistent ACL account per input — one of
 the "3 ACLs" that inflated per-tx cost — so it is also a cost win.
 
 What changed:
 
 - The bespoke input verifier-set and the `verify_input_and_bind` Ed25519 path were REMOVED.
-- Inputs are now the `FheEvalOperand::VerifiedInput` operand of `fhe_eval`. The earlier standalone
+- Inputs are now the `FheExecuteOperand::VerifiedInput` operand of `fhe_execute`. The earlier standalone
   `verify_coprocessor_input` instruction and its `InputVerifiedEvent` receipt were **deleted**, along
   with the short-lived output-taint binding (`VerifiedInputBinding` / output-ACL constraints): derived
   outputs are unconstrained by the input.
@@ -267,9 +267,9 @@ What changed:
   (`attestation.contract_address == compute_subject`, the msg.sender analog).
 - The `verify_input_and_bind` and standalone `mock_input_verified_and_bind` instructions were removed;
   the shared verifier `zama_host::eip712::verify_coprocessor_input` (via
-  `instructions::input_verification::verify_input_attestation`) is invoked in-frame by `fhe_eval`.
+  `instructions::input_verification::verify_input_attestation`) is invoked in-execution by `fhe_execute`.
 
-Superseded design (stub): the earlier `verify_input_and_bind` bound inputs with a native Ed25519
+Replaced design (stub): the earlier `verify_input_and_bind` bound inputs with a native Ed25519
 "input verifier set" signing a `SolanaInputBindIntent`. Reversed because it was a Solana-only trust
 root divorced from the EVM coprocessor; the coprocessor attestation is the canonical trust root.
 
@@ -287,37 +287,39 @@ that a later instruction can read.
 
 Decision:
 
-The lifetime model is `{AllowedLocal, AllowedDurable}`:
+The lifetime model is `{Transient, StoredValue}` (renamed from `{AllowedLocal, AllowedPersistent}`
+in fhevm-internal#1859 §5b, which took the admission rationale out of the variant names):
 
 ```text
-AllowedLocal   an fhe_eval-local value (FheEvalOperand::AllowedLocal): produced by an earlier step,
-               consumed by a later step in the same instruction. No AclRecord, no AclAllowedEvent.
-AllowedDurable a durable ACL record (Output::durable()) bound with the nonce-key model (DD-001).
+Transient    an fhe_execute-local value: FheExecuteOutput::Transient when produced, referenced by a
+             later step of the same instruction as FheExecuteOperand::EarlierStep. No persistent
+             record, no ACL event.
+StoredValue  a persistent ACL record (Output::persistent()) bound with the nonce-key model (DD-001).
 ```
 
-EVM `allowTransient(handle, account)` (tx-scoped) maps to `AllowedLocal` **plus CPI signer
+EVM `allowTransient(handle, account)` (tx-scoped) maps to `Transient` **plus CPI signer
 propagation within one instruction's CPI tree**: the compute subject carried through the CPI chain
 authorizes existing allowed inputs. A verified external input is transient-allowed for one eval this
-way (DD-007). There is no mechanism to pass a not-yet-durable value across separate top-level
-instructions — if a value must persist, it becomes `AllowedDurable`.
+way (DD-007). There is no mechanism to pass a not-yet-persistent value across separate top-level
+instructions — if a value must persist, it becomes a `StoredValue` output.
 
 Rationale:
 
 Solana has no hidden transaction-local map a later instruction can read; temporary permission must be
 explicit. Keeping intermediates instruction-local avoids rent and prevents a temporary compute grant
-from silently becoming durable ACL or decrypt authority.
+from silently becoming persistent ACL or decrypt authority.
 
 Consequences:
 
 The earlier persisted one-shot `TransientSession` / capability-account tier (a cross-instruction
 handoff account with same-transaction creation proof) was **removed** (zama-ai/fhevm#2834): it was
-real rent-bearing state that added a durable-ACL leak surface for no path the PoC needed. Any durable
+real rent-bearing state that added a persistent-ACL leak surface for no path the PoC needed. Any persistent
 output derived from transient inputs still passes explicit output-policy binding (output ACL domain,
 app account, allowed roles) and is born with `public_decrypt = false`.
 
 ## DD-009: Operator Transfer Model Removed
 
-Status: superseded
+Status: replaced
 
 Context:
 
@@ -374,7 +376,7 @@ disclosure. Balance disclosure remains a separate path.
 
 ## DD-011: Transfer-And-Call Removed In Favor Of App-Driven CPI Composition
 
-Status: superseded (issue #1593; supersedes DD-018)
+Status: replaced (issue #1593; updates DD-018)
 
 Was: a ported multi-phase transfer-and-call callback flow (`confidential_transfer` →
 `confidential_call_transfer_receiver` → `confidential_prepare_transfer_callback` →
@@ -439,7 +441,7 @@ The reconciliation initially relaxed EVM input validation unconditionally to adm
 which weakened EVM (CI caught empty-contracts / wrong-sig being accepted). Fixed with the chain-aware
 cross-field validator (DD-027).
 
-Superseded design (stub): the earlier decision kept a Solana-native KMS request/response subsystem
+Replaced design (stub): the earlier decision kept a Solana-native KMS request/response subsystem
 (`native-v0`) out of EVM Gateway routing, on the theory the data models were too different to share.
 Reversed to reuse one decrypt trust model and routing path. Some `native-v0` library/store code still
 exists in the connector but is no longer the chosen path.
@@ -471,32 +473,32 @@ Consequences:
 Tests should cover both positive Solana witness acceptance and negative cases where EVM-shaped
 checks are unavailable or inappropriate.
 
-## DD-014: Host Handle Birth Has No Local-PoC Relaxation
+## DD-014: Host Handle Creation Has No Local-PoC Relaxation
 
 Status: adopted
 
 Context:
 
-Earlier local tests used admin-toggled `HostConfig` flags and a zero birth-entropy fallback when the
-Mollusk slot-hash sysvar was empty. That made test setup diverge from the deployed handle-birth path.
+Earlier local tests used admin-toggled `HostConfig` flags and a zero creation-entropy fallback when the
+Mollusk slot-hash sysvar was empty. That made test setup diverge from the deployed handle-creation path.
 
 Decision:
 
-The host `poc` feature, its admin controls, and the zero-entropy fallback are removed. Handle birth
+The host `poc` feature, its admin controls, and the zero-entropy fallback are removed. Handle creation
 always reads the previous bank hash and fails with `PreviousBankHashUnavailable` if the runtime does
 not provide one. Mollusk and LiteSVM tests seed `Clock` and `SlotHashes` as a validator would. The real
-input path remains the in-frame secp256k1 attestation verify (DD-007).
+input path remains the in-execution secp256k1 attestation verify (DD-007).
 
 Rationale:
 
-One handle-birth path is easier to reason about and tests the same entropy requirement as deployment.
+One handle-creation path is easier to reason about and tests the same entropy requirement as deployment.
 
 Consequences:
 
 Missing prior-bank entropy fails closed on every chain. The confidential-token demo retains its own
 compile-gated receiver helpers; those do not alter host verification or handle derivation.
 
-## DD-015: Handle Birth Entropy Policy — RESOLVED: Keep The Entropy
+## DD-015: Handle Creation Entropy Policy — RESOLVED: Keep The Entropy
 
 Status: adopted (June 2026 reconciliation — RESOLVED; was product-open)
 
@@ -507,16 +509,16 @@ leaving ~168 bits of keccak digest → roughly 2^84 birthday collision resistanc
 grind offline for an extreme adversary. Computed handles therefore mix per-block entropy into the
 digest (`previous_bank_hash` + `clock.unix_timestamp` on Solana). EVM does the identical thing via
 `blockhash(block.number - 1)` (and `block.timestamp`) in `FHEVMExecutor._binaryOp` /
-`_ternaryOp` / `_mulDivOp` / `_naryOp`. Durable outputs derive **the same base handle** as transient
-outputs — no per-output binding. The former durable-output binding (the encrypted value account `value_key`, plus an
+`_ternaryOp` / `_mulDivOp` / `_naryOp`. Persistent outputs derive **the same base handle** as transient
+outputs — no per-output binding. The former persistent-output binding (the encrypted value account's encrypted value ID, plus an
 even earlier per-update `output_nonce_sequence` = the encrypted value account's MMR `leaf_count` read at execution)
 was **removed** entirely — see "Binding removal" below.
 
 Decision:
 
 Keep the per-block-entropy-seeded derivation. The alternative — widening `bytes32` → `bytes` (full
-hash) to remove the collision concern without entropy — was rejected. Durable outputs derive the
-plain base handle; do not mix a per-output sequence or a per-encrypted value account `value_key` into the handle.
+hash) to remove the collision concern without entropy — was rejected. Persistent outputs derive the
+plain base handle; do not mix a per-output sequence or a per-encrypted value account encrypted value ID into the handle.
 
 Why:
 
@@ -534,19 +536,19 @@ eager scheduling and leaves reorg unwind as optional resource recovery (DD-025, 
 
 Consequences:
 
-Handle byte layout remains stable; handle birth is not idempotent across slots/blocks. The
+Handle byte layout remains stable; handle creation is not idempotent across slots/blocks. The
 `PreviousBankHashUnavailable` fail-closed surface remains as designed; handle derivation never falls
 back to zero entropy (DD-014).
 
-Binding removal (durable-output handle binding deleted entirely):
+Binding removal (persistent-output handle binding deleted entirely):
 
-The durable-output binding once folded two components into the handle hash: `output_nonce_sequence`
-(the encrypted value account's MMR `leaf_count` read at execution) and the `value_key` (the encrypted value account identity). Both
+The persistent-output binding once folded two components into the handle hash: `output_nonce_sequence`
+(the encrypted value account's MMR `leaf_count` read at execution) and the encrypted value ID (the encrypted value account identity). Both
 were vestiges of the retired keyed-nonce `AclRecord` (DD-001) and the root of the off-chain
-reconstruction complexity (leaf-count tracking + "hints"). Both are now **deleted**. A durable output
+reconstruction complexity (leaf-count tracking + "hints"). Both are now **deleted**. A persistent output
 handle is now the plain `base_handle = computed_eval_handle(op, operands, scalar, fhe_type, chain_id,
 previous_bank_hash, unix_timestamp, context_id, op_index)` — byte-identical to the transient (local)
-handle. A Fable analysis confirmed the `value_key` binding was defense-in-depth: strictly *stricter*
+handle. A Fable analysis confirmed the encrypted-value-ID binding was defense-in-depth: strictly *stricter*
 than EVM, never required for collision safety, so removing it makes Solana match EVM's handle shape
 exactly rather than weakening it.
 
@@ -564,10 +566,10 @@ binary/ternary/trivial/unary/cast; its only counter is the global `counterRand` 
 ```text
 case                                             prevented by
 different slot                                   previous_bank_hash (+ unix_timestamp) block entropy
-same slot, same eval frame, different steps      op_index (+ the FheEvalDuplicateHandle guard)
+same slot, same batch, different steps      op_index (+ the FheExecuteDuplicateHandle guard)
 same slot, different txs, same op/operands/ctx   Solana write-lock serializes the two mut writes to
                                                  the one EncryptedValue PDA (single-writer-per-value,
-                                                 DD-036); a supersede must match previous_handle, so
+                                                 DD-036); an update must match previous_handle, so
                                                  the 2nd is a distinct state transition. If it does
                                                  recompute byte-identically, the material is identical
                                                  (deterministic) → sharing a handle is correct, not a
@@ -575,19 +577,19 @@ same slot, different txs, same op/operands/ctx   Solana write-lock serializes th
 cross-value_account, same computation, same slot       not a collision: identical op/operands/type/ctx is
                                                  identical ciphertext material, so a shared handle is
                                                  correct (exactly EVM's behavior). The encrypted value accounts are
-                                                 still distinct on-chain accounts (distinct value_key
+                                                 still distinct on-chain accounts (distinct encrypted value ID
                                                  PDA seed); only the handle is shared, as on EVM
 fhe_rand / trivial / ternary outputs             same as above; rand within-slot distinctness comes
                                                  from context_id + op_index + entropy (as it already
                                                  did for transient rand), never from a binding
 ```
 
-Verdict: SAFE-TO-DELETE. Both handle-binding components (the `value_key` and the sequence) are gone;
-the durable handle is the plain base handle, matching EVM's shape. `value_key` remains only as the
+Verdict: SAFE-TO-DELETE. Both handle-binding components (the encrypted value ID and the sequence) are gone;
+the persistent handle is the plain base handle, matching EVM's shape. The encrypted value ID remains only as the
 `EncryptedValue` PDA seed, so encrypted value accounts are still distinct accounts. The IDL/wire is unchanged — the
 binding was never an instruction argument (the sequence was the on-chain `leaf_count` read at
-execution; the `value_key` is derived from args already present), so `FheEvalArgs` and the
-durable-output args (including Option-2 `make_public`) are unaffected.
+execution; the encrypted value ID is derived from args already present), so `FheExecuteArgs` and the
+persistent-output args (including Option-2 `make_public`) are unaffected.
 
 ## DD-016: Confidential Balances Use The Immediate-Available-Balance Profile
 
@@ -598,14 +600,14 @@ Context:
 `acl_storage_rationale.md` Part 5 describes two Solana token profiles: a staged inbound-credit profile
 (recommended default for public-receivable tokens, where the recipient applies pending funds under
 their own transaction timing) and an immediate available-balance profile (EVM-style, where the sender
-updates the recipient's balance directly). The latter lets a sender force a supersede of the recipient's
+updates the recipient's balance directly). The latter lets a sender force an update of the recipient's
 stable balance `EncryptedValue`, which can invalidate a transaction the recipient already built against
 the prior `current_handle`.
 
 Decision:
 
 The PoC uses the immediate available-balance profile: `execute_transfer` credits the recipient by
-superseding `to.balance_encrypted_value` inside the sender's transaction, with no recipient
+updating `to.balance_encrypted_value` inside the sender's transaction, with no recipient
 participation in the base transfer.
 
 Rationale:
@@ -620,7 +622,7 @@ public-receivable token should evaluate the staged inbound-credit profile (pendi
 recipient timing) or otherwise predeclare/lock the recipient's next balance transition so the
 inbound-write surface is bounded.
 
-## DD-017: Role-Aware `fhe_eval` And Per-Op Bind Instructions Supersede The RFC-024 execute_frame Frame
+## DD-017: Role-Aware `fhe_execute` And Per-Op Bind Instructions Replace The RFC-024 `execute_frame` Prototype
 
 Status: adopted
 
@@ -634,10 +636,10 @@ Decision:
 
 The host exposes per-handle-class binding instructions — `fhe_binary_op_and_bind_output`,
 `fhe_ternary_op_and_bind_output`, `trivial_encrypt_and_bind`, `fhe_rand_and_bind`,
-`fhe_rand_bounded_and_bind` — plus one batched eval instruction for composed plans: `fhe_eval`. The
+`fhe_rand_bounded_and_bind` — plus one batched eval instruction for composed batches: `fhe_execute`. The
 eval instruction accepts mixed binary/ternary, trivial-encrypt, rand, and verified-input steps with
-instruction-local transients. It is the practical successor to `execute_frame`. (Input birth is not a
-separate instruction: external inputs enter through the `fhe_eval` `VerifiedInput` operand, DD-007.) Every durable-output path takes a signer witness: either the fixed
+instruction-local transients. It is the practical successor to `execute_frame`. (Input creation is not a
+separate instruction: external inputs enter through the `fhe_execute` `VerifiedInput` operand, DD-007.) Every persistent-output path takes a signer witness: either the fixed
 `app_account_authority: Signer` account, or an explicit per-output authority account in
 `remaining_accounts` that must be a signer and match `output_app_account`. The host then validates the
 metadata with `assert_output_acl_metadata` (`instructions/common.rs`). This reinstates and now
@@ -645,44 +647,44 @@ enforces the signer the RFC had removed.
 
 The OpenZeppelin-track `execute_frame` ABI is intentionally not ported as a host instruction. Its
 useful ergonomic idea — symbolic previous results inside one instruction — is represented by
-`FheEvalOperand::AllowedLocal` in the host ABI and by the app-facing `zama-fhe::EvalBuilder`. The SDK
+`FheExecuteOperand::EarlierStep` in the host ABI and by the app-facing `zama-fhe::FheExecutionBuilder`. The SDK
 builder hides raw producer indices and `remaining_accounts` indices from app code, returns typed
-`Encrypted<T>` values for intermediate results, derives durable output nonce keys / ACL record PDAs
-from `EncryptedValueKey`, accepts ACL subjects directly, and returns an opaque `EvalPlan`.
-The `cpi` feature can resolve that plan through a pubkey-keyed account resolver, so app code does
+`Encrypted<T>` values for intermediate results, derives persistent output nonce keys / ACL record PDAs
+from `EncryptedValueKey`, accepts ACL subjects directly, and returns an opaque `FheExecution`.
+The `cpi` feature can resolve that batch through a pubkey-keyed account resolver, so app code does
 not hand-maintain ordered host accounts. Output authority, validated subject lists, overflow permissions,
 material commitments, and public-decrypt policy remain enforced by the current host ABI.
 
-`fhe_eval` also owns its replay transport boundary. Frames with at most eight replay events use
-Anchor event CPI for compatibility with existing event consumers. Larger frames emit the same replay
-payloads through Anchor `Program data` logs to avoid self-CPI heap pressure. Durable ACL metadata
+`fhe_execute` also owns its replay transport boundary. Batches with at most eight replay events use
+Anchor event CPI for compatibility with existing event consumers. Larger batches emit the same replay
+payloads through Anchor `Program data` logs to avoid self-CPI heap pressure. Persistent ACL metadata
 events remain log-only, and the listener rejects transactions that mix host CPI replay events with
 host log replay events so DB log ordering stays unambiguous.
 
 Rationale:
 
 A validated `app_account_authority == output_app_account` signer makes the app account that receives
-durable ACL output prove control via a Solana signature, rather than trusting an unsigned
+persistent ACL output prove control via a Solana signature, rather than trusting an unsigned
 `authorized_app_accounts[]` declaration. Per-output signer witnesses extend the same guarantee to
 multi-app evals without making authorization a free-form unsigned list. Per-class instructions remain
-for compatibility and individually testable handle-birth paths; `fhe_eval` provides batched multi-step
-composition with transient/durable outputs when a single CPI is required.
+for compatibility and individually testable handle-creation paths; `fhe_execute` provides batched multi-step
+composition with transient/persistent outputs when a single CPI is required.
 
 Consequences:
 
-This supersedes the older RFC-024 `execute_frame` sketch and its "app_account_authority removed"
+This replaces the older RFC-024 `execute_frame` sketch and its "app_account_authority removed"
 note. Multi-account atomic effects (e.g. ERC7984 transfer crediting both sender and receiver) are
-expressed as one eval frame with per-output authority witnesses rather than one frame with
-`authorized_app_accounts[]`. Future multi-app eval extensions should keep that signer-witness model
+expressed as one batch with per-output authority witnesses rather than a batch carrying an
+unsigned `authorized_app_accounts[]`. Future multi-app eval extensions should keep that signer-witness model
 and should not resurrect unsigned `authorized_app_accounts[]`.
 
-## DD-018: Transfer-And-Call Refund Prepare/Finalize (superseded)
+## DD-018: Transfer-And-Call Refund Prepare/Finalize (replaced)
 
-Status: superseded (with DD-011, issue #1593)
+Status: replaced (with DD-011, issue #1593)
 
 Was: the split refund phases (`confidential_prepare_transfer_callback` /
 `confidential_finalize_transfer_callback`) of the transfer-and-call flow, with a recoverable
-(non-atomic) sender credit from a durable refund snapshot. Removed with the whole callback flow — apps
+(non-atomic) sender credit from a persistent refund snapshot. Removed with the whole callback flow — apps
 now compose deposits by CPI (DD-011), so there is no refund phase.
 
 ## DD-019: Confidential Transfer Persists Only Final Balance And Transferred-Amount ACL Records
@@ -693,22 +695,22 @@ Context:
 
 A successful direct confidential transfer needs five FHE results: `ge(balance, amount)`,
 `sub(balance, amount)`, `if_then_else(success, debit_candidate, balance)`, `sub(balance, new_from)`,
-and `add(to_balance, transferred)`. The first implementation bound every result into a durable ACL
-record because `fhe_eval` was binary-only and the ternary select needed durable inputs. That made one
-plain transfer create five durable records, including two pure scratch records (`transfer_success` and
+and `add(to_balance, transferred)`. The first implementation bound every result into a persistent ACL
+record because `fhe_execute` was binary-only and the ternary select needed persistent inputs. That made one
+plain transfer create five persistent records, including two pure scratch records (`transfer_success` and
 `debit_candidate`) that are not meaningful historical decrypt targets.
 
 Decision:
 
-The token transfer path now uses one host `fhe_eval` frame instead of the older scratch-account
+The token transfer path now uses one host `fhe_execute` batch instead of the older scratch-account
 sequence. The eval emits `ge` and debit-candidate `sub` as instruction-local transient handles,
 consumes them in a ternary `if_then_else`, persists the sender's new balance plus the transferred
-amount, and then credits the recipient in the same frame using a per-output recipient authority
-witness. The helper crate exposes typed durable handles, scalar helpers, `EncryptedValueKey`,
-`EvalBuilder`, and plan-driven CPI resolution, so app code assembles this shape
+amount, and then credits the recipient in the same batch using a per-output recipient authority
+witness. The helper crate exposes typed persistent handles, scalar helpers, `EncryptedValueKey`,
+`FheExecutionBuilder`, and batch-driven CPI resolution, so app code assembles this shape
 without hand-maintaining raw producer indices, raw account indices, signer flags, writable flags,
 nonce keys, ACL record addresses, or repeated output type bytes for common operations. A successful
-direct transfer therefore binds exactly three durable ACL records:
+direct transfer therefore binds exactly three persistent ACL records:
 
 - sender balance output
 - transferred amount
@@ -719,17 +721,17 @@ remain observable only through host FHE operation events for coprocessor/event r
 
 Rationale:
 
-Only the final sender balance, the transferred amount, and the final recipient balance need durable ACL
+Only the final sender balance, the transferred amount, and the final recipient balance need persistent ACL
 history for later permission checks or decryption. Persisting the boolean success bit and intermediate
 debit candidate makes rent scale with scratch state, not product state. Keeping those values transient
 avoids that rent cost without adding a close/refund path, while retaining the validated
-`app_account_authority == output_app_account` signer rule for every durable output.
+`app_account_authority == output_app_account` signer rule for every persistent output.
 
 Consequences:
 
-Indexers replay transfer math from the `fhe_eval` plan and Yellowstone-provided entropy; there is
+Indexers replay transfer math from the `fhe_execute` batch and Yellowstone-provided entropy; there is
 intentionally no ACL permission record for decrypting the scratch success/debit values after the
-transaction. The burn flow still uses its own durable scratch records today and should be considered
+transaction. The burn flow still uses its own persistent scratch records today and should be considered
 separately if its rent profile becomes a product issue.
 
 ## DD-020: VerifierSet Removed → Canonical KMS Context Singleton
@@ -825,7 +827,7 @@ Replay / expiry / context-mismatch are rejected (Mollusk + live).
 
 Why / what worked:
 
-Request-before-consume gives a durable, replay-once witness with explicit expiry and pinned context.
+Request-before-consume gives a persistent, replay-once witness with explicit expiry and pinned context.
 This replaces the earlier "verify against `host_config.current_kms_context_id`" hazard where a cert for
 context N could be consumed after rotation to N+1.
 
@@ -833,36 +835,36 @@ Open for debate:
 
 Expiry slot policy and request-PDA rent reclamation cadence are PoC-shaped.
 
-## DD-023: `fhe_eval` Composed Executor + Typed `EvalBuilder` DSL (DD-017 realized)
+## DD-023: `fhe_execute` Composed Executor + Typed `FheExecutionBuilder` DSL (DD-017 realized)
 
 Status: adopted (reconciliation; cross-reference DD-017 / DD-019, do not duplicate)
 
 Context:
 
-DD-017 set the direction: a batched `fhe_eval` with instruction-local transients superseding the
+DD-017 set the direction: a batched `fhe_execute` with instruction-local transients updating the
 RFC-024 `execute_frame` sketch. The reconciliation realized it end-to-end.
 
 Decision:
 
-`fhe_eval` is the composed-eval executor with steps **Binary / Ternary / TrivialEncrypt / Rand**.
-External encrypted inputs are not a step type: they enter as the `FheEvalOperand::VerifiedInput`
-operand of a step and are verified in-frame (DD-007). Intermediate results can be `Output::transient()`
-(instruction-local, **no durable ACL record / no `AclAllowedEvent`**) and consumed by later steps; only
-`Output::durable()` results bind an `EncryptedValue` account and its `current_handle`. The app-facing `zama-fhe` crate
-(`solana/crates/zama-fhe`) exposes a typed `EvalBuilder` DSL returning `Encrypted<T>` for transients,
-hiding raw producer/account indices, with a `cpi`-feature account resolver for plan execution.
+`fhe_execute` is the composed-eval executor with steps **Binary / Ternary / TrivialEncrypt / Rand**.
+External encrypted inputs are not a step type: they enter as the `FheExecuteOperand::VerifiedInput`
+operand of a step and are verified in-execution (DD-007). Intermediate results can be `Output::transient()`
+(instruction-local, **no persistent ACL record / no `AclAllowedEvent`**) and consumed by later steps; only
+`Output::persistent()` results bind an `EncryptedValue` account and its `current_handle`. The app-facing `zama-fhe` crate
+(`solana/crates/zama-fhe`) exposes a typed `FheExecutionBuilder` DSL returning `Encrypted<T>` for transients,
+hiding raw producer/account indices, with a `cpi`-feature account resolver for batch execution.
 
 Why:
 
-Transient intermediates reduce durable PDA / rent footprint (a plain transfer binds 3 durable records,
+Transient intermediates reduce persistent PDA / rent footprint (a plain transfer binds 3 persistent records,
 not 5 — DD-019) while keeping per-output signer-witness authority (DD-017).
 
 Open for debate:
 
-The step cap `MAX_FHE_EVAL_OPS` is derived from measured instruction-data and compute-unit budgets
+The step cap `MAX_FHE_EXECUTION_STEPS` is derived from measured instruction-data and compute-unit budgets
 on the interned wire format (fhevm-internal#1853 W8; see the constant's doc in
 `programs/zama-host/src/constants.rs`). The old per-operation replay-event transport split is
-superseded by the single born-public lifecycle batch — see DD-038. (An earlier revision cited
+replaced by the single created-public lifecycle batch — see DD-038. (An earlier revision cited
 DD-024 here, which is the coprocessor-side ciphertext-material decision and was never about the
 event transport.)
 
@@ -877,8 +879,8 @@ validates the live `EncryptedValue` PDA and any MMR proof before decrypting.
 
 Decision:
 
-Confirmed instruction reconstruction emits concrete material requests at handle birth/update and
-durable binding. The listener inserts those handles directly into `pbs_computations`. Subject grants
+Confirmed instruction reconstruction emits concrete material requests at handle creation/update and
+persistent binding. The listener inserts those handles directly into `pbs_computations`. Subject grants
 may reuse already-prepared material; revocation never deletes it. No account-fetch queue, witness
 store, retry state machine, or coprocessor-owned ACL decision remains.
 
@@ -1042,7 +1044,7 @@ Status: adopted (reconciliation) — stated so the debate doesn't assume more th
 - **Single local validator** in the harness — real reorgs / finality lag are not exercised end-to-end.
 - **Input proof / transciphering** behind the coprocessor attestation is a PoC shortcut; real ZKPoK +
   transciphering is production work (DD-007).
-- Host handle birth always requires the previous bank hash; local runtime tests seed the real
+- Host handle creation always requires the previous bank hash; local runtime tests seed the real
   `Clock` and `SlotHashes` sysvars (DD-014).
 
 ## DD-029: `drift_revert` ≠ On-Chain Reorg (disambiguation)
@@ -1103,7 +1105,7 @@ EVM-migration lands.
 
 ## DD-031: Materiality Moves To The Gateway's `CiphertextCommits` (DD-006 revision)
 
-Status: adopted — supersedes DD-006
+Status: adopted — updates DD-006
 
 Context:
 
@@ -1131,20 +1133,20 @@ authorization. `HandleMaterialCommitmentWitness` is deleted from the KMS connect
 
 ## DD-032: `EncryptedValue` + MMR Replaces Keyed-Nonce `AclRecord` (RFC-024)
 
-Status: adopted — supersedes DD-005's `AclRecord.public_decrypt` model and the keyed-nonce ACL shape
+Status: adopted — updates DD-005's `AclRecord.public_decrypt` model and the keyed-nonce ACL shape
 referenced throughout DD-004–DD-008
 
 Context:
 
-The original ACL model (RFC-024) minted a fresh, keyed-nonce `AclRecord` PDA per handle birth.
-Superseding a handle meant superseding its ACL record's address, which complicated stable addressing
+The original ACL model (RFC-024) minted a fresh, keyed-nonce `AclRecord` PDA per handle creation.
+Updating a handle meant updating its ACL record's address, which complicated stable addressing
 for indexers, apps, and historical decrypt (an old handle's authorization evidence disappeared once its
-record was superseded).
+record was replaced).
 
 Decision:
 
 One stable, `zama-host`-owned `EncryptedValue` PDA per logical encrypted value (seeds
-`["encrypted-value", value_key]`), reused across every handle update. A handle update supersedes the
+`["encrypted-value", encrypted_value_id]`), reused across every handle update. A handle update updates the
 previous handle by sealing one `HistoricalAccessLeaf` per allowed subject into an on-account SHA-256
 Merkle Mountain Range (peaks + leaf count only — the MMR never stores the full leaf history
 on-chain). The MVP ACL is a single allowed-subject set: `EncryptedValue.subjects` is the complete
@@ -1153,19 +1155,20 @@ allowed subject can use the current handle in compute, add another subject, requ
 mark the exact current handle public. Public decrypt is an exact-handle `PublicDecryptLeaf`, so
 publicness never survives a handle update (there is no live public flag to leak across updates — see
 the connector-side rationale in the kms-connector/sdk commit message). Active lifecycle changes are
-performed by `fhe_eval` durable outputs, `allow_subjects`, and `make_handle_public`. The raw
-`create_encrypted_value` and `update_encrypted_value` ABI entries are fail-closed stubs because they
-would otherwise accept caller-chosen handles without proving ciphertext provenance. Deleted:
+performed by `fhe_execute` persistent outputs, `allow_subjects`, and `make_handle_public`; no instruction
+accepts a caller-chosen handle, because such a handle would carry no proof of ciphertext
+provenance (the former fail-closed `create_encrypted_value` / `update_encrypted_value` ABI stubs
+are deleted). Deleted:
 `AclRecord`/`AclPermission` and their nonce-sequence machinery, the legacy single-op instructions
-(`fhe_binary_op*`, `fhe_ternary_op*`, `fhe_rand*`, `trivial_encrypt_and_bind` — `fhe_eval` is now the
+(`fhe_binary_op*`, `fhe_ternary_op*`, `fhe_rand*`, `trivial_encrypt_and_bind` — `fhe_execute` is now the
 only compute path), and `allow_for_decryption`.
 
 Rationale:
 
 Stable addressing means indexers, apps, and CPI callers reference one PDA for a logical value's whole
-lifetime instead of re-deriving a new one per birth. The MMR gives historical/public decrypt a
+lifetime instead of re-deriving a new one per creation. The MMR gives historical/public decrypt a
 verifiable, compact (peaks-only) proof of past authorization state without keeping every past ACL
-record alive. The `previous_handle`/`previous_subjects` args on durable `fhe_eval` outputs are
+record alive. The `previous_handle`/`previous_subjects` args on persistent `fhe_execute` outputs are
 verified against account state — redundant on-chain, but they make every transaction independently
 interpretable, so indexers reconstruct MMR leaves statelessly from instruction data alone (see DD-033).
 The shared `zama_solana_acl` crate (byte-identical MMR math and account codec) is the single source of
@@ -1179,23 +1182,23 @@ separately in DD-017/DD-023 and is not this decision).
 
 Consequences:
 
-`fhe_eval` operand/output authorization now targets `EncryptedValue` accounts (canonical PDA +
-`current_handle` + membership in `subjects`) instead of `AclRecord`. Confidential-token's per-rotation
+`fhe_execute` operand/output authorization now targets `EncryptedValue` accounts (canonical PDA +
+`current_handle` + membership in `subjects`) instead of `AclRecord`. Confidential-token's per-update
 balance address prediction (nonce counters, `balance_acl_record`) disappears —
 `ConfidentialTokenAccount` now just points at one stable `balance_encrypted_value`.
 
-Membership gates every decrypt-relevant surface consistently: `fhe_eval` operands, current-handle
+Membership gates every decrypt-relevant surface consistently: `fhe_execute` operands, current-handle
 user-decrypt authorization in the KMS connector, delegation-mediated user decrypt, subject grants,
 and public leaf creation. Historical authorization is the sealed `HistoricalAccessLeaf` for the
-subject at the time of supersession, not a later live-role lookup.
+subject at the time of update, not a later live-role lookup.
 
 Amendment (fhevm-internal#1741): current membership is immutable by default but not frozen — a
-durable-output supersede may explicitly rotate the subject set (`output_subjects` need not equal the
-stored set). Order is load-bearing: the outgoing audience is sealed into historical leaves first, then
-the new set replaces current membership, so past authorization stays exactly as sealed. Every subject a
-rotation adds passes the grant deny-list exactly as `allow_subjects` does (so rotation is not a
+persistent-output update may explicitly replace the subject set (`output_subjects` need not equal the
+stored set). Order matters: the outgoing audience is sealed into historical leaves first, then
+the new set replaces current membership, so past authorization stays exactly as sealed. Every subject an
+update adds passes the grant deny-list exactly as `allow_subjects` does (so audience replacement is not a
 deny-list bypass); `previous_handle`/`previous_subjects` still pin the outgoing state exactly, keeping
-supersedes stateless-replayable (DD-033). This lets a per-sender encrypted value account (e.g. confidential-token's
+updates stateless-replayable (DD-033). This lets a per-sender encrypted value account (e.g. confidential-token's
 `transferred_amount`) re-target its audience across recipients instead of reverting.
 
 ## DD-033: No ACL-Lifecycle Events — Self-Describing Args + Instruction-Replay Indexing
@@ -1209,16 +1212,16 @@ events do, or stay event-free and let consumers decode instruction data instead.
 
 Decision:
 
-State-changing `EncryptedValue` lifecycle paths (`fhe_eval` durable outputs, `allow_subjects`, and
+State-changing `EncryptedValue` lifecycle paths (`fhe_execute` persistent outputs, `allow_subjects`, and
 `make_handle_public`) emit no ACL lifecycle Anchor events by design. The host-listener reconstructs
 compute and material requests from confirmed Yellowstone transaction instructions plus streamed
 Clock/SlotHashes state. The solana-proof-service decodes lifecycle changes from instruction data —
 including inner/CPI instructions, since confidential-token and other app programs invoke them via CPI
-— rather than subscribing to emitted ACL events. Durable `fhe_eval` outputs carry
+— rather than subscribing to emitted ACL events. Persistent `fhe_execute` outputs carry
 `previous_handle`/`previous_subjects` args that are self-describing: verified against account state
 on-chain (redundant there) specifically so every transaction is independently interpretable off-chain,
 letting indexers reconstruct MMR leaves statelessly from instruction data alone, in replay order,
-without reading account state first. Ordinary compute facts are reconstructed from the plan and
+without reading account state first. Ordinary compute facts are reconstructed from the batch and
 Yellowstone sysvars; only produced-public output handles use the narrow lifecycle batch in DD-038.
 
 Rationale:
@@ -1228,7 +1231,7 @@ Anchor `emit_cpi!` adds nested CPI frames; avoiding events for a lifecycle that 
 replayed byte-for-byte from cold RPC history (the solana-proof-service recovers from
 `getSignaturesForAddress`/`getTransaction` alone, see DD-035) sidesteps both concerns for this
 particular subsystem. No further code-comment rationale beyond this was found for the CPI-depth angle
-specifically; `EVM_PARITY.md` separately notes `fhe_eval`'s own step batching is bounded partly to
+specifically; `EVM_PARITY.md` separately notes `fhe_execute`'s own step batching is bounded partly to
 limit CPI depth (DD-008), which is a related but distinct concern from why ACL lifecycle avoids events.
 
 Consequences:
@@ -1250,7 +1253,7 @@ longer maps cleanly onto MMR-based historical authorization.
 
 Decision:
 
-Solana computations are inserted eager/schedulable immediately. Concrete durable handles are also
+Solana computations are inserted eager/schedulable immediately. Concrete persistent handles are also
 inserted directly into `pbs_computations` for SnS preparation. The coprocessor does not decide decrypt
 availability; KMS reads and validates the live `EncryptedValue` authorization state.
 
@@ -1288,7 +1291,7 @@ against the live confirmed account and fails closed on divergence (`lagging` / `
 
 Rationale: extracting MMR ownership keeps the relayer focused on the Solana v3 decrypt envelope
 (ed25519 attestation, `0x03` extraData validation, gateway forwarding) while the proof service owns
-durable ingest/recovery. Clients discover proofs over the internal HTTP endpoint and embed them in
+persistent ingest/recovery. Clients discover proofs over the internal HTTP endpoint and embed them in
 signed user-decrypt requests.
 
 Consequences:
@@ -1305,12 +1308,12 @@ Status: adopted
 Context:
 
 `burned_amount` is one stable `EncryptedValue` encrypted value account per token account (DD-019/DD-032),
-superseded in place on every burn to that burn's own delta handle. The secp redeem path
+replaced in place on every burn to that burn's own delta handle. The secp redeem path
 (`redeem_burned_amount_secp`) required `current_handle == burned_handle`. That stranded funds: a
 redemption requested against handle `H1` (still `PENDING`, awaiting the off-chain KMS round-trip)
-becomes unredeemable the moment a second burn supersedes the encrypted value account to `H2` — the redeem reverts
+becomes unredeemable the moment a second burn updates the encrypted value account to `H2` — the redeem reverts
 forever even though `H1`'s public-decrypt leaf and KMS cert are still valid. The encrypted value account was reusing
-one shared, in-place-superseded slot as an implicit "pending operation" record.
+one shared, in-place-replaced slot as an implicit "pending operation" record.
 
 Decision:
 
@@ -1318,7 +1321,7 @@ The consume authorizes the *pinned* handle by an MMR public-decrypt proof rather
 equality. `redeem_burned_amount_secp` gains a `proof` argument and calls
 `zama_solana_acl::authorize_public(encrypted_value_account, value, burned_handle, proof)` against the
 encrypted value account's current peaks (the same primitive and leaf commitments the KMS connector re-verifies,
-DD-032/DD-035). A redemption therefore stays valid after later burns supersede the encrypted value account. The
+DD-032/DD-035). A redemption therefore stays valid after later burns update the encrypted value account. The
 `request` path is unchanged — it still requires the live handle, because that is where the
 public-decrypt leaf is appended (while the handle is current). Double-redeem is still prevented by the
 per-handle `burn-redemption` marker PDA (DD-022), independent of the dropped equality check. The proof
@@ -1329,34 +1332,34 @@ Why tactical, not structural: the design-idiomaticity audit confirmed the write 
 single-writer-per-value (Solana's write-lock scheduler serializes `mut` access), so this is a
 sequential cross-transaction TOCTOU, not a race. Per-operation escrow accounts would double-provision
 history for no soundness gain; the MMR is the mechanism this system already built for exactly this
-"prove a past/public state after supersession" need. This is the first on-chain consumer of the
+"prove a past/public state after update" need. This is the first on-chain consumer of the
 `authorize_*` MMR API.
 
-Addendum (Vector 2 closed — born-public eval output):
+Addendum (Vector 2 closed — created-public eval output):
 
 The second vector is now closed by making the burn's delta *born* publicly decryptable inside the
-same `fhe_eval` CPI that produces it, rather than by a separate `make_handle_public` CPI after the
-eval. `FheEvalOutput::AllowedDurable` gains a `make_public: bool` (carried in instruction data, like
+same `fhe_execute` CPI that produces it, rather than by a separate `make_handle_public` CPI after the
+eval. `FheExecuteOutput::StoredValue` gains a `make_public: bool` (carried in instruction data, like
 `previous_handle`/`previous_subjects`, so indexers reconstruct the leaf without reading the account).
 When set, `bind_eval_output` — after writing the new `current_handle` — appends a public-decrypt leaf
 for that NEW handle using the exact same `public_decrypt_leaf_commitment` + `mmr_append` as
-`make_handle_public` (byte-identical). Leaf order on a supersede-with-`make_public`: the outgoing
+`make_handle_public` (byte-identical). Leaf order on an update-with-`make_public`: the outgoing
 handle's historical-access leaves (one per current subject) FIRST, then the new handle's
 public-decrypt leaf LAST; on a create-with-`make_public`, just the new handle's public-decrypt leaf.
 
 This mirrors EVM `unwrap`'s `makePubliclyDecryptable(unwrapAmount)` happening inside the burn's own
 state transition, and — critically — it drops the second CPI that overflowed Solana's fixed 32 KiB
-bump heap on every supersede burn (the production OOM). `confidential_burn` sets `make_public: true`
+bump heap on every update burn (the production OOM). `confidential_burn` sets `make_public: true`
 on the burned-delta output only; balance/total-supply outputs stay `make_public: false`.
 `request_burn_redemption` now pins a (possibly historical) burned handle and appends no leaf — the
 burn owns the public-decrypt leaf. Authorization: the output binder already authorizes the
 app-account-authority to bind the output; that same authority is what authorizes making it public
 (the binder is *creating* the value), so no separate subject check is required — consistent with, and
 gated by the same deny-list path as, the rest of the binding. This is the opt-in relaxation of the
-"created encrypted value accounts cannot be born public-decryptable" invariant: it holds for all outputs except those
+"created encrypted value accounts cannot be created public-decryptable" invariant: it holds for all outputs except those
 that explicitly set `make_public`.
 
-Addendum (disclose consume — now the host verifier; superseded by DD-040):
+Addendum (disclose consume — now the host verifier; replaced by DD-040):
 
 The same live-handle TOCTOU existed on the disclosure consume path. It described the old
 `disclose_amount_secp` / `disclose_balance_secp` instructions authorizing the witness-pinned handle
@@ -1365,11 +1368,11 @@ PR 2 (DD-040): the disclose consume is now the single generic `disclose_secp`, w
 host `verify_public_decrypt` verifier; `authorize_disclosed_handle` is deleted along with the rest of
 the disclosure witness machinery.
 
-The survives-supersession property this addendum secured is preserved — now one layer down, by the
+The survives-update property this addendum secured is preserved — now one layer down, by the
 host verifier itself. The public-decrypt leaf is sealed permanently (via `make_handle_public`) and the
 KMS honors historical public leaves, so `verify_public_decrypt` authorizes the caller-pinned exact
 handle by its MMR public-decrypt inclusion proof plus a KMS cert, never reading the live
-`current_handle`. An OLD sealed handle therefore stays disclosable after its encrypted value account is superseded
+`current_handle`. An OLD sealed handle therefore stays disclosable after its encrypted value account is replaced
 during the off-chain KMS round-trip, matching EVM's permanent public-decryptability. This closes the
 same TOCTOU (including balance mode's third-party griefability) without a witness.
 
@@ -1388,7 +1391,7 @@ in [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
   proof/transciphering service behind the attestation (FUTURE_DESIGN §1).
 - Whether resource-recovery reorg unwind should be added after confirmed eager scheduling
   (DD-024/DD-025/DD-028).
-- Handle birth entropy/idempotency policy is RESOLVED (keep per-block entropy, DD-015); reorg-unstable
+- Handle creation entropy/idempotency policy is RESOLVED (keep per-block entropy, DD-015); reorg-unstable
   handles are accepted on every chain.
 - Whether confidential balances move to the staged inbound-credit profile (DD-016).
 - The PoC sentinel `chain_id` is RESOLVED (zama-ai/fhevm-internal#1635): `SOLANA_POC_CHAIN_ID` now
@@ -1397,7 +1400,7 @@ in [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
   low-63-bit allocation for canonical MAINNET/DEVNET Solana host chain ids remains a deployment-config
   decision, tracked separately.
 - Rent/archival policy for the `EncryptedValue` MMR itself (DD-032): the account no longer needs
-  per-supersession PDA closes (one stable PDA is reused for an encrypted value account's whole life), but growth of
+  per-update PDA closes (one stable PDA is reused for an encrypted value account's whole life), but growth of
   `peaks`/`subjects` over a long-lived encrypted value account's history still needs a compaction story if rent becomes
   a product issue.
 - General `HostConfig` config-version rotation semantics beyond the KMS-context pointer.
@@ -1408,7 +1411,7 @@ in [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
 - Production role and governance names for public-decrypt and grant authority.
 - Reorg unwind is unimplemented on the Solana listener path (DD-028/DD-034); live KMS authorization
   remains the plaintext-release boundary.
-- `fhe_eval` supports `RandBounded`; the superseded standalone bounded-random instructions were
+- `fhe_execute` supports `RandBounded`; the replaced standalone bounded-random instructions were
   removed with the old model (DD-032).
 - The relayer's Solana user-decrypt path does not call the MMR proof service in-process
   (DD-035). Clients fetch proofs from standalone `solana-proof-service` via `PROOF_SERVICE_URL`
@@ -1416,7 +1419,7 @@ in [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
   user-decrypt dedup hash must also cover the proof fields (`acl_value_key`, `proof_slot`, proof
   bytes).
 - Proof-service high availability (DD-035): a single standalone instance with Yellowstone ingest +
-  PostgreSQL durable store (plus bounded confirmed RPC recovery) is the whole story today;
+  PostgreSQL persistent store (plus bounded confirmed RPC recovery) is the whole story today;
   replication/failover is unaddressed.
 - The old 4-phase receiver-callback flow was deleted with the legacy model, but a Solana-native
   composition pattern for contract-to-contract confidential calls has not been designed to replace
@@ -1424,41 +1427,41 @@ in [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
 - Subject-list overflow beyond `MAX_ENCRYPTED_VALUE_SUBJECTS` (8 subjects per `EncryptedValue`) is
   deferred; there is no overflow/paging account yet.
 
-## DD-037: `fhe_eval` Events — `emit_cpi!`-Only, No `emit!` Log Fallback (DD-033 addendum)
+## DD-037: `fhe_execute` Events — `emit_cpi!`-Only, No `emit!` Log Fallback (DD-033 addendum)
 
-Status: superseded by DD-038
+Status: replaced by DD-038
 
 Context:
 
-DD-033 kept compute-step (`fhe_eval`) events while making the ACL lifecycle event-free. Those
-compute events used a size-based transport switch: `emit_cpi!` for frames of `≤ MAX_CPI_EVAL_EVENTS`
+DD-033 kept compute-step (`fhe_execute`) events while making the ACL lifecycle event-free. Those
+compute events used a size-based transport switch: `emit_cpi!` for batches of `≤ MAX_CPI_EVAL_EVENTS`
 (8) events, falling back to plain `emit!` logs for larger frames (the self-CPI frames would otherwise
 overflow the 32KiB bump heap). Two consumers exist: the host-listener indexer and the standalone MMR
 proof service (DD-035).
 
 Decision:
 
-Delete the `emit!` log-transport half. `fhe_eval` events are emitted **only** via `emit_cpi!`, and a
-frame with more than `MAX_CPI_EVAL_EVENTS` events carries **no** on-chain event at all. To keep this
-safe, a born-public (`make_public`, DD-036) durable output is **rejected at write time** if its frame
-is too large for CPI transport (`ZamaHostError::FheEvalBornPublicFrameTooLarge`,
-`assert_born_public_frame_transportable`), because a born-public handle is derived from block entropy
+Delete the `emit!` log-transport half. `fhe_execute` events are emitted **only** via `emit_cpi!`, and a
+batch with more than `MAX_CPI_EVAL_EVENTS` events carries **no** on-chain event at all. To keep this
+safe, a created-public (`make_public`, DD-036) persistent output is **rejected at write time** if its batch
+is too large for CPI transport (`ZamaHostError::FheExecuteCreatedPublicFrameTooLarge`,
+`assert_created_public_frame_transportable`), because a created-public handle is derived from block entropy
 (DD-015) and lives in no instruction argument, so its `emit_cpi!` event is the only way an off-chain
 proof builder can recover it. The host-listener runs reconstruction-only (Yellowstone gRPC, DD-003):
 it never needed these events and derives every handle from instruction data + sysvar-streamed block
 entropy. The `emit_cpi!` path and the proof service's op-event resolution are retained as a
-transitional indexing ABI until Carbon/Geyser indexing fully owns born-public handle recovery
+transitional indexing ABI until Carbon/Geyser indexing fully owns created-public handle recovery
 (fhevm-internal#1665).
 
 Rationale:
 
 No consumer reads `emit!` logs: the proof service / host-listener path reads only inner-instruction `emit_cpi!`
-results, and a `> 8`-step born-public frame already failed closed (its handle was unresolvable). So
+results, and a `> 8`-step created-public batch already failed closed (its handle was unresolvable). So
 the log fallback was dead weight that also hid a latent stranding case; deleting it and adding the
-fail-closed frame guard turns "silently unrecoverable later" into "rejected now." Non-born-public
-durable handles are unaffected — they reconstruct from the `fhe_eval` durable-output arguments and
+fail-closed batch guard turns "silently unrecoverable later" into "rejected now." Non-created-public
+persistent handles are unaffected — they reconstruct from the `fhe_execute` persistent-output arguments and
 need no event. `emit_cpi!` cannot yet be removed entirely: `solana-proof-service` still resolves
-born-public handles from the op-event (block entropy is not recoverable from instruction args alone),
+created-public handles from the op-event (block entropy is not recoverable from instruction args alone),
 so the op event remains its sole source of those handles until #1665's Carbon/Geyser ingestion
 (with SlotHashes+Clock sysvar subscriptions and a historical-bankhash backfill policy) lands.
 
@@ -1466,34 +1469,35 @@ Consequences:
 
 - `event_budget.rs` loses the log-byte budget machinery; it keeps `MAX_CPI_EVAL_EVENTS` (now a hard
   cap, not a transport switch), `eval_event_capacity`, and `should_emit_eval_events_as_cpi`, and gains
-  `assert_born_public_frame_transportable`.
-- `event_transport.rs` emits `emit_cpi!` only; oversized frames return without emitting.
-- The `FheEvalEventLogBudgetExceeded` error was renamed in place to `FheEvalBornPublicFrameTooLarge`
-  (same discriminant; no error-code shift).
-- No IDL/wire change: `make_public` was already an `AllowedDurable` field (DD-036); the guard adds a
+  `assert_created_public_frame_transportable`.
+- `event_transport.rs` emits `emit_cpi!` only; oversized batches return without emitting.
+- The `FheExecuteEventLogBudgetExceeded` error was renamed in place to `FheExecuteCreatedPublicFrameTooLarge`
+  (same discriminant; no error-code shift). The variant was later deleted with the rest of the
+  retired guard (fhevm-internal#1859 §3-D2).
+- No IDL/wire change: `make_public` was already a `StoredValue` output field (DD-036); the guard adds a
   validation, not an argument.
-- #1665 must remove the op event only after migrating born-public handle recovery off it — treat the
+- #1665 must remove the op event only after migrating created-public handle recovery off it — treat the
   event as an ABI surface whose last consumer must move first.
 
 ## DD-038: One Host-Owned Born-Public Lifecycle Batch Replaces Per-Operation Events
 
 Status: adopted
 
-Ordinary `fhe_eval` computation facts remain reconstructed from instruction data plus Yellowstone
+Ordinary `fhe_execute` computation facts remain reconstructed from instruction data plus Yellowstone
 sysvars. The host no longer produces the general per-operation event stream or its eight-event
-transport guard. Instead, a frame with one or more `make_public` durable outputs emits exactly one
+transport guard. Instead, a batch with one or more `make_public` persistent outputs emits exactly one
 versioned Anchor self-CPI event after successful execution. Its ordered records contain only the
 zero-based step index, the host-owned `EncryptedValue` account, and the host-derived output handle;
-a frame with no produced public output emits no lifecycle event.
+a batch with no produced public output emits no lifecycle event.
 
 This narrow batch exists because block-entropy output handles are absent from instruction arguments.
-At the maximum `MAX_FHE_EVAL_OPS` frame (32), the records serialize to one 2,133-byte CPI
+At the maximum `MAX_FHE_EXECUTION_STEPS` batch (32), the records serialize to one 2,133-byte CPI
 instruction — far below the 10,240-byte CPI instruction-data cap — avoiding the old
-one-CPI-per-step heap growth. (Execution, not the batch, bounds the all-born-public frame shape:
-the fixed 32KB Anchor bump heap fits 20 durable creates per frame, measured and pinned by
-`mollusk_fhe_eval_born_public_heap_boundary`.) The event is unconditional when optional
-`emit-events` features are disabled. Consumers must still validate the host program, its canonical
-event-authority PDA, transaction success, record ordering, and one-to-one agreement with durable
+one-CPI-per-step heap growth. (Execution, not the batch, bounds the all-created-public batch shape:
+the fixed 32KB Anchor bump heap fits 20 persistent creates per batch, measured and pinned by
+`mollusk_fhe_execute_created_public_heap_boundary`.) The event is unconditional, as every event this program
+emits now is (DD-044). Consumers must still validate the host program, its canonical
+event-authority PDA, transaction success, record ordering, and one-to-one agreement with persistent
 `make_public` outputs; the event grants no authority by itself.
 
 ## DD-039: HCU Block Cap Meters The Signed `compute_subject`, Not A Separate Authority
@@ -1501,50 +1505,50 @@ event-authority PDA, transaction success, record ordering, and one-to-one agreem
 Status: adopted
 
 The per-slot HCU block cap keys its meter and trust-registry PDAs (`["hcu-block-meter", subject]`,
-`["hcu-trusted", subject]`) on the frame's `compute_subject` — the mandatory signed caller identity
-already used for durable-input ACL admission (the `msg.sender` analog). The earlier design metered a
+`["hcu-trusted", subject]`) on the batch's `compute_subject` — the mandatory signed caller identity
+already used for persistent-input ACL admission (the `msg.sender` analog). The earlier design metered a
 dedicated `hcu_authority` signer supplied alongside `compute_subject`. That extra account bound the
-meter to nothing the frame otherwise required: a direct caller could hand a fresh `hcu_authority`
+meter to nothing the batch otherwise required: a direct caller could hand a fresh `hcu_authority`
 keypair on every call and receive a fresh per-slot meter each time, so any finite
 `hcu_block_cap_per_app` was bypassable by signer rotation. The gap was dormant only because
 `initialize_host_config` ships the cap at `u64::MAX` (unrestricted), which short-circuits before the
 meter is consulted.
 
-Metering the `compute_subject` closes the rotation bypass wherever the frame binds that identity to
+Metering the `compute_subject` closes the rotation bypass wherever the batch binds that identity to
 something the caller cannot freely re-pick:
 
 - The confidential-token program: `compute_subject` is the mint's `["fhe-compute", mint]` PDA, signed
   only via the program's CPI seeds, so a caller cannot swap it for a fresh key — the per-mint meter is
   unforgeable.
-- Any frame consuming a durable or verified input: the subject must be an allowed member of the input
-  encrypted value account's ACL (durable), or match the attestation's bound contract (verified), so substituting an
+- Any batch consuming a persistent or verified input: the subject must be an allowed member of the input
+  encrypted value account's ACL (persistent), or match the attestation's bound contract (verified), so substituting an
   unrelated key loses input access. No other account the caller controls (`payer`,
   `app_account_authority`, output authorities) yields a fresh meter.
 
-Metering the `compute_subject` does NOT, by itself, constrain a **persist-nothing frame** — `Rand` /
-`TrivialEncrypt` / scalar-only work with a transient (non-durable) output and no verified input —
+Metering the `compute_subject` does NOT, by itself, constrain a **persist-nothing batch** — `Rand` /
+`TrivialEncrypt` / scalar-only work with a transient (non-persistent) output and no verified input —
 submitted by a direct caller: there `compute_subject` is an unconstrained signer, so such a caller
 could still rotate it for a fresh per-slot meter. The value-less part of that residual case
 (fhevm-internal#1744) is now closed: when `hcu_block_cap_per_app` is finite (`!= u64::MAX`),
-`fhe_eval` preflight rejects any frame that binds no `AllowedDurable` operand, no `VerifiedInput`
-operand, and no `AllowedDurable` output (`FheEvalUnanchoredUnderBlockCap`). Such a frame persists
-nothing and verifies nothing — `compute_subject` is a free variable and the frame is also value-less
+`fhe_execute` preflight rejects any batch that binds no `StoredValue` operand, no `VerifiedInput`
+operand, and no `StoredValue` output (`FheExecuteUnanchoredUnderBlockCap`). Such a batch persists
+nothing and verifies nothing — `compute_subject` is a free variable and the batch is also value-less
 (its transient outputs create no ACL leaf and are undecryptable) — so nothing legitimate is
 forbidden. Under the ship default (`u64::MAX`) the check short-circuits, so behavior is unchanged
 where no finite cap is deployed. This never affected the token program, whose compute subject is
-always the mint PDA and whose frames always bind durable balance inputs.
+always the mint PDA and whose batches always bind persistent balance inputs.
 
-This is #1744's Option 1 broadened by a durable-output allowance to preserve the legitimate
-trivial-encrypt/`Rand` -> durable-output bootstrap/mint path. That allowance is not a full close: a
-durable output does NOT pin `compute_subject` (output binding authorizes against
+This is #1744's Option 1 broadened by a persistent-output allowance to preserve the legitimate
+trivial-encrypt/`Rand` -> persistent-output bootstrap/mint path. That allowance is not a full close: a
+persistent output does NOT pin `compute_subject` (output binding authorizes against
 `app_account_authority`, never the subject), so a caller can still rotate the subject while binding a
 throwaway output encrypted value account and get a fresh per-slot meter each time. That vector remains open but is
 now rent-bounded — each rotation costs ~one `HcuBlockMeter` PDA rent rather than being free —
 whereas the persist-nothing rotation was free. Closing it fully requires a host-registered app
-identity an input-free frame must present to be metered (#1708 Option B / #1744 Option 2), still
-deferred as speculative until input-free frames become a real metered workload.
+identity an input-free batch must present to be metered (#1708 Option B / #1744 Option 2), still
+deferred as speculative until input-free batches become a real metered workload.
 
-`hcu_authority` is removed everywhere: the host `fhe_eval` account list (an intended ABI break,
+`hcu_authority` is removed everywhere: the host `fhe_execute` account list (an intended ABI break,
 resynced in the host-listener IDL), the `zama-fhe` CPI account struct, the confidential-token
 `HcuAuthority` PDA and the account slot on all six token instructions, and the deposit app's
 forwarded account. The token program now meters per mint automatically: `compute_subject` is that
@@ -1607,7 +1611,7 @@ The accepted footgun (as on EVM): valid-until-destroyed means a forgotten `destr
 signer set powerful indefinitely. EVM manages this by runbook and we do the same for the PoC; a cheap
 `max_context_lag` in `HostConfig` (accept only contexts within K of current) is the natural guard if we
 ever want one — noted, not in scope. Earlier revisions of this DD verified against the CURRENT context
-only and framed a cert-after-rotation as a hazard to fail closed on; that framing is superseded here —
+only and framed a cert-after-rotation as a hazard to fail closed on; that framing is replaced here —
 rotation is no longer the revocation boundary, `destroy` is.
 
 The verified context id is surfaced in `return_data` (8 little-endian bytes appended after `handle ++
@@ -1623,11 +1627,11 @@ nothing new. If a decrypt-path kill-switch is ever wanted, gate `host_config.pau
 
 Return-data-only to start: today's KMS cleartexts are ≤32 bytes; if larger types are ever revealed the
 fallback is a caller-provided scratch account. The proof-freshness (stale-proof) retry race is the
-known bounded-retry surface (#1687): a supersede between proof generation and consume moves the MMR
+known bounded-retry surface (#1687): an update between proof generation and consume moves the MMR
 peaks and fails the inclusion proof; the victim regenerates the proof and retries. The one wrong app
 pattern is binding consume logic to the live `current_handle` instead of the sealed handle — the
-sealed leaf is append-only, so the OLD sealed handle stays verifiable after a supersede (covered by
-`mollusk_verify_public_decrypt_survives_supersede_after_seal`).
+sealed leaf is append-only, so the OLD sealed handle stays verifiable after an update (covered by
+`mollusk_verify_public_decrypt_survives_update_after_seal`).
 
 Scope: this PR added the host verifier additively. Dissolving the confidential-token `DisclosureRequest`
 lifecycle (`request_disclose_*`, `disclose_*_secp`, `close_*_disclosure_request`,
@@ -1660,7 +1664,7 @@ no per-request PDA, no `kms_context_id` pin, and no `expires_slot`.
 
 Verify against the cert-named context: the cert is verified by the host against the `KmsContext` the
 cert names, for any live context (see "Any live context" above), not a request-time pin. (Originally
-this read "against the CURRENT context, context rotation fails closed"; superseded by
+this read "against the CURRENT context, context rotation fails closed"; replaced by
 fhevm-internal#1765 — `destroy` is now the revocation boundary, not rotation.)
 
 Idempotent by design: act-once is intentionally NOT enforced on-chain. Disclosure is idempotent
@@ -1684,12 +1688,12 @@ cleartext_amount, signatures, extra_data, proof)` that binds the burned encrypte
 (`assert_burned_amount_value_account`, unchanged), CPIs `zama_host::verify_public_decrypt`, asserts the
 proven handle equals `burned_handle` and the certified cleartext equals `cleartext_amount`, then
 pays out and writes the marker. Every field the witness pinned is carried elsewhere (destination
-integrity by the redeem-time signer check, handle binding by the born-public MMR leaf sealed in the
+integrity by the redeem-time signer check, handle binding by the created-public MMR leaf sealed in the
 burn per DD-036, owner/mint by the value_account), so the witness was pure scaffolding.
 
 The stateless verifier replaces the request-time KMS pin: the cert is verified against the context it
 names inside the verifier, not the witness's pinned `kms_context_id`. (This note originally said the
-verifier used `host_config.current_kms_context_id` and failed closed on rotation; superseded by
+verifier used `host_config.current_kms_context_id` and failed closed on rotation; replaced by
 fhevm-internal#1765, which accepts any live context and makes `destroy_kms_context` the revocation
 lever — see "Any live context" above.)
 
@@ -1698,7 +1702,7 @@ out. The request's no-op `allow_subjects` CPI (which only re-proved the owner al
 a read-only `deny_subject_record` consultation at payout, mirroring the host's own
 `check_grant_not_denied` model.
 
-Marker retained as the sole durable bit: unlike disclosure (idempotent, no marker), redemption keeps
+Marker retained as the sole persistent bit: unlike disclosure (idempotent, no marker), redemption keeps
 the write-once, never-closed per-handle `BurnRedemption` PDA at `["burn-redemption", mint,
 burned_handle]` as the one "paid out" bit; a second redeem of the same handle fails on the `init`.
 This also simplifies the vault batcher (fhevm-internal#1757): dispatch is burn tx → redeem tx, with
@@ -1717,7 +1721,7 @@ option). `HostConfig` gains `coprocessor_signers: [[u8; 20]; MAX_COPROCESSOR_SIG
 `coprocessor_signer_count: u8` + `coprocessor_threshold: u8`, replacing the single `[u8; 20]`. A
 fixed-capacity array keeps the singleton's byte layout **pinned** (the account serializes to the same
 size regardless of how many signers are active), and avoids threading a second account through
-`fhe_eval`, which is byte-tight. The cap is 8: comfortably above realistic coprocessor-quorum sizes
+`fhe_execute`, which is byte-tight. The cap is 8: comfortably above realistic coprocessor-quorum sizes
 while bounding both the account size (+142 bytes vs the single-signer layout, SPACE 151 -> 293) and
 the worst-case per-attestation recovery cost. Rotation is admin-driven for the PoC via the new
 admin-gated `set_coprocessor_signers` instruction (same admin/pause-neutral pattern as the other
@@ -1775,12 +1779,12 @@ burn-redemption certificate (`confidential_burn` -> KMS-certified `redeem_burned
 current context, DD-040 family; the request-witness lifecycle is dissolved by fhevm-internal#1763) —
 the burn certificate *is* the aggregate decrypt, no separate reveal instruction.
 
-Load-bearing mechanics, all pre-existing host semantics (verified, no host changes): the transfer's
+The mechanics this relies on, all pre-existing host behaviour (verified, no host changes): the transfer's
 recipient rule already places the receiving account's owner in the `transferred_amount` output
 audience, so the batcher PDA gains read admission on the deposit handle **by construction**; the
 batcher re-materializes each deposit into its own batcher-owned encrypted value account in the same join transaction
 (audience `{user, batcher}`) because input admission pins `current_handle` and the user's
-`transferred_amount` encrypted value account is superseded by their next transfer. Each batch gets its **own token
+`transferred_amount` encrypted value account is replaced by their next transfer. Each batch gets its **own token
 account**, so the burned/revealed total is exactly that batch's sum (the EVM code documents the
 inter-batch dust leak this prevents). Lifecycle is Pending -> Dispatched -> Finalized/Canceled with
 permissionless dispatch/settle/claim and an exact-refund `quit` — no operator custody of principal.
@@ -1812,7 +1816,7 @@ eval `compute_subject` AND `app_account_authority`, and signs every token CPI vi
 `join` moves the amount with the ATTESTED `confidential_transfer` arm (a wallet user's fresh
 encryption is a fromExternal input; `confidential_transfer_from_value` remains the mechanism for
 `quit` refunds and `claim` payouts, whose amounts ARE existing computed handles); deposit/claim
-encrypted value accounts carry the relevant mint's compute signer in their audience from birth, so the token's eval
+encrypted value accounts carry the relevant mint's compute signer in their audience from creation, so the token's eval
 can read them with no `allow_subjects` round trip; "next batch opens immediately" is a
 permissionless `open_batch` gated only on the previous batch no longer being pending, rather than
 being folded into `dispatch` (keeps each instruction inside one transaction envelope); and the rate
@@ -1876,7 +1880,7 @@ token/host CPI passes deny-list records and HCU accounts (`deny_subject_record`,
 `hcu_block_meter`, `hcu_trusted_app_record`) as hardcoded `None` — the program assumes
 `grant_deny_list_enabled = false` and no binding HCU cap, which is how the PoC host fixtures run.
 
-## DD-043: Two Derivation Regimes — Content-Addressed Deterministic Handles, Durable-Write-Anchored Rand Seeds (`context_id` deleted)
+## DD-043: Two Derivation Regimes — Content-Addressed Deterministic Handles, Persistent-Write-Anchored Rand Seeds (`context_id` deleted)
 
 Decision (fhevm-internal#1853 W3+W4). Handle derivation is unified on keccak (the recorded
 2026-07-06 team position: EVM-side handle math is keccak, and both are same-price syscalls) and
@@ -1888,33 +1892,131 @@ split into exactly two regimes, mirroring `FHEVMExecutor`:
    an identical computation derives the identical handle, which is the same value by construction
    (EVM's exact behavior; a second party can only reproduce a result whose inputs it was
    independently authorized on, and the DAG is public in instruction data regardless).
-2. **Rand / rand-bounded seeds** are compulsorily fresh: `H(domain, compute_subject, the frame's
-   durable-write anchor, op_index, program_id, chain_id, previous_bank_hash, unix_timestamp)`.
-   The durable-write anchor is every durable output's live `(account key, create/update tag,
+2. **Rand / rand-bounded seeds** are compulsorily fresh: `H(domain, compute_subject, the batch's
+   persistent-write anchor, op_index, program_id, chain_id, previous_bank_hash, unix_timestamp)`.
+   The persistent-write anchor is every persistent output's live `(account key, create/update tag,
    current_handle, leaf_count)` state in wire order. `leaf_count` is read by the host, not declared
    by the caller, and advances whenever an outgoing handle is sealed. Therefore an account that
    cycles back to an earlier content-addressed handle still produces a new seed. The host emits the
-   resolved random seeds through a signed event-CPI batch so the listener does not need caller
-   hints or historical account reads. A frame containing a rand step must therefore
-   declare at least one durable output (preflight `FheEvalRandRequiresDurableOutput`); the
+   resolved random seeds through a signed event-CPI frame so the listener does not need caller
+   hints or historical account reads. A batch containing a rand step must therefore
+   declare at least one persistent output (preflight `FheExecuteRandRequiresPersistentOutput`); the
    excluded all-transient class is provably useless — no ACL record, no decrypt path, no
    `make_public`, so its randomness is unobservable by everyone including the author.
 
-`context_id` is deleted from `FheEvalArgs` (−32 B per frame), `EvalContextId` from the SDK, and
+`context_id` is deleted from `FheExecuteArgs` (−32 B per batch), `EvalContextId` from the SDK, and
 `transfer_eval_context` from the confidential token. Its two jobs are covered better: handle
 domain separation was never needed for deterministic ops (content addressing), and rand freshness
-was only caller-supplied *advice* (two frames sharing a `context_id` in one slot derived identical
+was only caller-supplied *advice* (two batches sharing a `context_id` in one slot derived identical
 rand seeds), where the anchor is *enforced*.
 
-Load-bearing invariants (must survive refactors):
-- Every declared durable output is always written, and duplicate durable-output accounts within a
-  frame are rejected (`EvalAccountTable::claim_durable_output`) — these make the anchor a consumed
+Properties that must survive any refactor:
+- Every declared persistent output is always written, and duplicate persistent-output accounts within a
+  batch are rejected (`ExecutionAccountTable::claim_persistent_output`) — these make the anchor a consumed
   ticket.
 - Sequential writes to one account advance `leaf_count`, even if the current handle and subjects
-  later return to earlier values; a reverted frame does not advance it or emit a usable seed.
-- No seed-steering: the preimage is fully determined by the caller's own signed frame + slot
-  context; front-running the pinned handle makes the frame fail loudly, never compute on an
+  later return to earlier values; a reverted batch does not advance it or emit a usable seed.
+- No seed-steering: the preimage is fully determined by the caller's own signed batch + slot
+  context; front-running the pinned handle makes the batch fail loudly, never compute on an
   attacker-chosen seed.
 - **Standing invariant**: no close/expiry/reopen path exists for `EncryptedValue` (the lifecycle
   is deliberately sealed). If one is ever added (#1705, #1710), close-then-recreate can reset the
   live version anchor, and this argument must be re-derived.
+
+## DD-044: Every Event Goes Through The Event CPI, Or Is Not Emitted At All (`emit-events` deleted)
+
+Status: adopted
+
+Context:
+
+DD-037 deleted the `emit!` log fallback for `fhe_execute` events, on the grounds that no consumer read
+logs and the fallback hid a stranding case. The admin and config events were left as they were: emitted
+with `emit!`, behind a default-on `emit-events` cargo feature, described in the code as "indexing
+hints". That left three problems.
+
+The feature made the shipped IDL misleading. The event structs were declared unconditionally, so the
+IDL advertised all nine of them under any feature set; what `anchor build -p zama_host --
+--no-default-features` removed — the build the e2e deploys — was the code that emits seven of them. An
+indexer reading the IDL would wait forever for an event the deployed program never sends.
+
+The transport did not match the claim. A log can be truncated by whichever RPC provider a reader goes
+through, so a logged event is a hint rather than a delivery. That is fine for something you can
+reconstruct and not fine for something you cannot, and "indexing hint" did not distinguish the two.
+
+And the grouping was wrong. `UserDecryptionDelegationUpdatedEvent` sat with the admin events, but
+`delegate_for_user_decryption` takes a `delegator: Signer` and no admin: any user may delegate their
+own decrypt rights. It is a user action, not administration.
+
+Decision:
+
+There are two options for an event and no third. Either it is emitted unconditionally through the event
+CPI, or it is not emitted at all and off-chain readers reconstruct it from instruction data over
+Yellowstone, which is the normal path. `emit!` is not used anywhere in `zama-host`, and the
+`emit-events` feature is deleted.
+
+Which option an event gets is decided by whether the instruction is administration, and by nothing
+else. An admin instruction changes a protocol-level setting that off-chain components have to be able
+to query directly, so it emits. Everything else is reconstructed on demand.
+
+The six admin and config events — `HostConfigInitializedEvent`, `HostConfigUpdatedEvent`,
+`DenySubjectUpdatedEvent`, `HcuAppTrustUpdatedEvent`, `NewKmsContextEvent`, `KmsContextDestroyedEvent` —
+take the first option. Their eleven instructions gain Anchor's `#[event_cpi]` accounts
+(`event_authority`, `program`), which is a visible ABI change: `initialize_host_config` and
+`define_kms_context` go from four accounts to six, `destroy_kms_context` from three to five,
+`set_deny_subject` and `set_hcu_app_trusted` from five to seven, and the six `HostAdmin` config setters
+from two to four.
+
+Note that no in-tree component reads any of the six today; the only off-chain reader of host config
+state reads the account, not an event (`host-listener`'s `parse_host_config`). That is deliberate and is
+not an argument against emitting them: the transport exists because the category calls for it, so that
+a component which needs an admin change does not have to replay instruction data to find one. The test
+is the category, not the current existence of a reader — otherwise the rule would flip every time
+somebody wrote or deleted an indexer.
+
+`UserDecryptionDelegationUpdatedEvent` takes the second option and is deleted, for the categorical
+reason above: delegating is a user ability, so it is reconstructed from `delegate_for_user_decryption`
+instruction data like every other user action. Two facts about delegation that are true but are *not*
+the reason, recorded so they are not mistaken for it: nothing in the request path consumes delegation
+at all (INVARIANTS #27 records the gap — the KMS connector's `verify_delegation` checks an
+already-decoded record against its canonical PDA and fetches nothing, its only callers are its own unit
+tests, and the signed user-decrypt payload has no delegation field), and a reader, when it arrives,
+will have to fetch the record and hand it to that checker.
+
+`fhe_execute`'s two compute events are unchanged in behaviour and now share one emitter with the
+admin events (`event_cpi.rs`), instead of keeping their own copy of the expansion.
+
+Rationale:
+
+Reliable delivery costs an account pair on the instruction and a self-CPI per emission. That is nothing
+on an admin instruction, which runs when an operator changes configuration, and would be real weight on
+a per-step compute event — which is why the per-step shapes are still not emitted. DD-003 said the same
+thing in weaker terms ("events are indexing hints"); this entry replaces that framing for `zama-host`
+but not its other half, which is that authorization never rests on an event.
+
+Anchor's `emit_cpi!` macro is not used, though the bytes it produces are. It reads a binding named
+`ctx`, and six of the eleven instructions emit through a shared `emit_config_updated` helper that has
+no `ctx`; using the macro would mean copying a nine-field event literal into each of them. One
+hand-written emitter takes the event authority as an argument and serves all eight call sites, covering
+thirteen emissions.
+
+The tag and the payload encoding come from anchor-lang, so they track upstream; only the assembly is
+ours. What happens if the assembly itself drifts is worth stating precisely, because it is less than it
+looks. A wrong tag fails the transaction: `dispatch` routes on the tag, and an unrouted instruction hits
+the fallback. Past that, Anchor's generated `__event_dispatch` checks that the *first* account is a
+signer and is the canonical event authority — and nothing else. It never reads the event data, and it
+ignores any account after the first. So an extra account or a changed payload encoding would not be
+caught by the runtime at all. What catches those is two tests, and they are the reason the emitter
+returns an `Instruction` as a value: `event_transport.rs`'s unit test asserts the built instruction's
+program, account count, signer and writable flags, and data length, and `host_mollusk.rs`'s
+`sole_emitted_event` reads an event back out of the inner instructions and asserts one account, the
+canonical authority, and every payload field. Those two cover `PublicOutputsProducedEvent` and
+`NewKmsContextEvent`. Keep it that way: if they ever stop being covered, this becomes an unchecked copy
+of an upstream wire format.
+
+Consequences:
+
+The `--no-default-features` build in `setup-solana-side.sh` is gone, since zama-host has no features
+left to vary. Callers of the eleven instructions pass two more accounts: the Mollusk fixtures and the
+e2e live client are updated here, and there are no TypeScript callers. `dead-surface-check.sh`'s
+never-emitted-event check learned the shared emitter, without which it would have reported all eight
+surviving events as dead.

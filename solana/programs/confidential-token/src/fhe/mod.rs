@@ -1,7 +1,7 @@
 //! Token-local FHE helper functions.
 //!
 //! The confidential token program keeps ZamaHost CPI assembly in this module
-//! so business logic can build typed eval frames and receive host-verified
+//! so business logic can build typed executions and receive host-verified
 //! output handles.
 
 use anchor_lang::{prelude::*, AccountDeserialize};
@@ -15,29 +15,29 @@ use crate::{
 mod verify_public_decrypt;
 pub(crate) use verify_public_decrypt::*;
 
-/// Audience for a confidential-token durable output.
+/// Audience for a confidential-token persistent output.
 ///
 /// Holder-scoped encrypted value accounts (balances, `transferred_amount`, `burned_amount`) must
 /// always grant the holder's owner key and the mint compute-signer PDA: the owner
 /// keeps decrypt access to their own value, and the compute signer gates the next
-/// eval that reads it. [`DurableAudience::for_owner`] takes both as required
+/// execution that reads it. [`PersistentAudience::for_owner`] takes both as required
 /// parameters, so a holder output can never be built missing either; extra owners
-/// (the recipient phase of a `transferred_amount` rotation) are additive via
-/// [`DurableAudience::with_owner`]. Mint-scoped encrypted value accounts with no single holder
+/// (the recipient phase of a `transferred_amount` update) are additive via
+/// [`PersistentAudience::with_owner`]. Mint-scoped encrypted value accounts with no single holder
 /// (total supply, freshly minted random amounts) use
-/// [`DurableAudience::compute_only`], the one owner-less path.
+/// [`PersistentAudience::compute_only`], the one owner-less path.
 ///
-/// This is the only way token instructions produce durable-output subjects:
-/// [`DurableOutput::new`]/[`DurableOutput::new_public`] accept a `DurableAudience`
+/// This is the only way token instructions produce persistent-output subjects:
+/// [`PersistentOutput::new`]/[`PersistentOutput::new_public`] accept a `PersistentAudience`
 /// rather than a raw subject vector, so the owner+compute invariant holds
 /// by construction rather than by convention at each call site.
-pub(crate) struct DurableAudience {
+pub(crate) struct PersistentAudience {
     owner: Option<Pubkey>,
     extra_owners: Vec<Pubkey>,
     compute: Pubkey,
 }
 
-impl DurableAudience {
+impl PersistentAudience {
     /// Holder-scoped audience granting `owner` and the mint `compute` signer.
     pub(crate) fn for_owner(owner: Pubkey, compute: Pubkey) -> Self {
         Self {
@@ -73,43 +73,43 @@ impl DurableAudience {
     }
 }
 
-/// A durable eval output account bound to the exact `EncryptedValue` encrypted value account
-/// it is allowed to create or supersede.
-pub(crate) struct DurableOutput<'info> {
+/// A persistent execution output account bound to the exact `EncryptedValue` encrypted value account
+/// it is allowed to create or update.
+pub(crate) struct PersistentOutput<'info> {
     encrypted_value: AccountInfo<'info>,
-    output: Box<zama_fhe::DurableOutput>,
+    output: Box<zama_fhe::PersistentOutput>,
 }
 
-impl<'info> DurableOutput<'info> {
-    /// Binds `encrypted_value` as the output of a durable eval step: creates the
-    /// encrypted value account's first handle if the PDA does not exist yet, or supersedes it
+impl<'info> PersistentOutput<'info> {
+    /// Binds `encrypted_value` as the output of a persistent execution step: creates the
+    /// encrypted value account's first handle if the PDA does not exist yet, or updates it
     /// (reading `previous_handle`/`previous_subjects` off the on-chain account)
-    /// if it does. Either way the eval CPI's attestation matches exactly what
+    /// if it does. Either way the execution CPI's attestation matches exactly what
     /// the host will verify.
     pub(crate) fn new(
         encrypted_value: AccountInfo<'info>,
-        key: zama_fhe::EncryptedValueKey,
-        audience: DurableAudience,
+        key: zama_fhe::EncryptedValueId,
+        audience: PersistentAudience,
     ) -> Result<Self> {
         Self::new_inner(encrypted_value, key, audience, false)
     }
 
-    /// Like [`new`], but binds the output born publicly decryptable: the host
-    /// seals a public-decrypt leaf for the new handle inside the same eval CPI
+    /// Like [`new`], but binds the output created publicly decryptable: the host
+    /// seals a public-decrypt leaf for the new handle inside the same execution CPI
     /// (EVM `unwrap` parity; DD-036). Used by `confidential_burn` for the burned
     /// delta so every burn stays permanently redeemable with no second CPI.
     pub(crate) fn new_public(
         encrypted_value: AccountInfo<'info>,
-        key: zama_fhe::EncryptedValueKey,
-        audience: DurableAudience,
+        key: zama_fhe::EncryptedValueId,
+        audience: PersistentAudience,
     ) -> Result<Self> {
         Self::new_inner(encrypted_value, key, audience, true)
     }
 
     fn new_inner(
         encrypted_value: AccountInfo<'info>,
-        key: zama_fhe::EncryptedValueKey,
-        audience: DurableAudience,
+        key: zama_fhe::EncryptedValueId,
+        audience: PersistentAudience,
         make_public: bool,
     ) -> Result<Self> {
         require_keys_eq!(
@@ -121,17 +121,17 @@ impl<'info> DurableOutput<'info> {
         let output = if *encrypted_value.owner == System::id() {
             require!(
                 encrypted_value.data_is_empty() && !encrypted_value.executable,
-                ConfidentialTokenError::InvalidFheEvalPlan
+                ConfidentialTokenError::InvalidFheExecution
             );
-            zama_fhe::DurableOutput::create(key, subjects)
+            zama_fhe::PersistentOutput::create(key, subjects)
         } else {
             let value = read_encrypted_value(&encrypted_value)?;
-            zama_fhe::DurableOutput::update(key, subjects, &value)
+            zama_fhe::PersistentOutput::update(key, subjects, &value)
         }
         .with_make_public(make_public);
-        output.birth().map_err(|error| {
-            msg!("invalid durable FHE output: {:?}", error);
-            error!(ConfidentialTokenError::InvalidFheEvalPlan)
+        output.binding().map_err(|error| {
+            msg!("invalid persistent FHE output: {:?}", error);
+            error!(ConfidentialTokenError::InvalidFheExecution)
         })?;
         Ok(Self {
             encrypted_value,
@@ -140,16 +140,16 @@ impl<'info> DurableOutput<'info> {
     }
 
     pub(crate) fn output(&self) -> zama_fhe::Output {
-        zama_fhe::Output::durable_output((*self.output).clone())
+        zama_fhe::Output::persistent((*self.output).clone())
     }
 
-    /// Reads the handle the host bound into `encrypted_value` by this eval CPI.
+    /// Reads the handle the host bound into `encrypted_value` by this execution CPI.
     /// Call only after the CPI that carries this output has executed.
     pub(crate) fn handle(&self) -> Result<[u8; 32]> {
-        let birth = self.birth()?;
+        let binding = self.binding()?;
         require_keys_eq!(
             self.encrypted_value.key(),
-            birth.encrypted_value(),
+            binding.encrypted_value(),
             ConfidentialTokenError::CurrentEncryptedValueMismatch
         );
         let value = read_encrypted_value(&self.encrypted_value)?;
@@ -160,10 +160,10 @@ impl<'info> DurableOutput<'info> {
         self.encrypted_value.clone()
     }
 
-    fn birth(&self) -> Result<zama_fhe::DurableOutputBirth> {
-        self.output.birth().map_err(|error| {
-            msg!("invalid durable FHE output: {:?}", error);
-            error!(ConfidentialTokenError::InvalidFheEvalPlan)
+    fn binding(&self) -> Result<zama_fhe::PersistentOutputBinding> {
+        self.output.binding().map_err(|error| {
+            msg!("invalid persistent FHE output: {:?}", error);
+            error!(ConfidentialTokenError::InvalidFheExecution)
         })
     }
 }
@@ -184,7 +184,7 @@ pub(crate) fn read_encrypted_value(info: &AccountInfo) -> Result<EncryptedValue>
 #[derive(Clone)]
 pub(crate) struct ComputeAuthority<'info> {
     account: AccountInfo<'info>,
-    acl_domain_key: Pubkey,
+    domain: Pubkey,
     bump: u8,
 }
 
@@ -206,7 +206,7 @@ impl<'info> ComputeAuthority<'info> {
         );
         Ok(Self {
             account: account.to_account_info(),
-            acl_domain_key: mint,
+            domain: mint,
             bump,
         })
     }
@@ -216,16 +216,13 @@ impl<'info> ComputeAuthority<'info> {
     }
 
     fn signer_seeds<'a>(&'a self, bump: &'a [u8; 1]) -> [&'a [u8]; 3] {
-        [b"fhe-compute", self.acl_domain_key.as_ref(), bump]
+        [b"fhe-compute", self.domain.as_ref(), bump]
     }
 }
 
-/// Signer model for a durable output authority required by an eval frame.
+/// Signer model for a persistent output authority required by an execution.
 #[derive(Clone)]
 pub(crate) enum OutputAuthoritySigner {
-    // Only constructed by the `poc`-gated create_random_amount helpers.
-    #[cfg_attr(not(feature = "poc"), allow(dead_code))]
-    Transaction,
     TokenAccount {
         mint: Pubkey,
         owner: Pubkey,
@@ -238,11 +235,6 @@ pub(crate) enum OutputAuthoritySigner {
 }
 
 impl OutputAuthoritySigner {
-    #[cfg_attr(not(feature = "poc"), allow(dead_code))]
-    pub(crate) fn transaction_signer() -> Self {
-        Self::Transaction
-    }
-
     pub(crate) fn token_account(account: &Account<'_, ConfidentialTokenAccount>) -> Self {
         Self::TokenAccount {
             mint: account.mint,
@@ -257,7 +249,6 @@ impl OutputAuthoritySigner {
 
     fn seed_bytes(&self) -> Vec<Vec<u8>> {
         match self {
-            Self::Transaction => Vec::new(),
             Self::TokenAccount { mint, owner, bump } => vec![
                 b"token-account".to_vec(),
                 mint.to_bytes().to_vec(),
@@ -273,7 +264,7 @@ impl OutputAuthoritySigner {
     }
 }
 
-/// Durable output authority account plus the signer model that authorizes it.
+/// Persistent output authority account plus the signer model that authorizes it.
 #[derive(Clone)]
 pub(crate) struct OutputAuthority<'info> {
     account: AccountInfo<'info>,
@@ -281,14 +272,6 @@ pub(crate) struct OutputAuthority<'info> {
 }
 
 impl<'info> OutputAuthority<'info> {
-    #[cfg_attr(not(feature = "poc"), allow(dead_code))]
-    pub(crate) fn transaction_signer(account: &Signer<'info>) -> Self {
-        Self {
-            account: account.to_account_info(),
-            signer: Box::new(OutputAuthoritySigner::transaction_signer()),
-        }
-    }
-
     pub(crate) fn token_account(
         account: &Account<'info, ConfidentialTokenAccount>,
     ) -> Result<Self> {
@@ -338,15 +321,15 @@ impl<'info> OutputAuthority<'info> {
     }
 }
 
-/// Pubkey-indexed accounts and authorities available to satisfy an eval plan.
-pub(crate) struct EvalAccountSet<'info> {
-    accounts: zama_fhe::ResolvedEvalAccounts<'info>,
+/// Pubkey-indexed accounts and authorities available to satisfy an execution.
+pub(crate) struct ExecutionAccountSet<'info> {
+    accounts: zama_fhe::ResolvedExecutionAccounts<'info>,
     output_authorities: Vec<OutputAuthority<'info>>,
 }
 
-impl<'info> EvalAccountSet<'info> {
-    pub(crate) fn for_plan(
-        plan: &zama_fhe::EvalPlan,
+impl<'info> ExecutionAccountSet<'info> {
+    pub(crate) fn for_execution(
+        execution: &zama_fhe::FheExecution,
         available_accounts: impl IntoIterator<Item = AccountInfo<'info>>,
         output_authorities: impl IntoIterator<Item = OutputAuthority<'info>>,
     ) -> Result<Self> {
@@ -355,9 +338,9 @@ impl<'info> EvalAccountSet<'info> {
             .iter()
             .map(OutputAuthority::account_info)
             .collect::<Vec<_>>();
-        let accounts = plan
+        let accounts = execution
             .resolve_accounts(available_accounts, output_authority_accounts)
-            .map_err(map_eval_account_resolution_error)?;
+            .map_err(map_execution_account_resolution_error)?;
 
         Ok(Self {
             accounts,
@@ -372,41 +355,43 @@ impl<'info> EvalAccountSet<'info> {
             .cloned()
     }
 
-    fn resolved_accounts(&self) -> &zama_fhe::ResolvedEvalAccounts<'info> {
+    fn resolved_accounts(&self) -> &zama_fhe::ResolvedExecutionAccounts<'info> {
         &self.accounts
     }
 }
 
-fn map_eval_account_resolution_error(error: zama_fhe::EvalAccountResolutionError) -> Error {
-    msg!("invalid FHE eval account set: {:?}", error);
+fn map_execution_account_resolution_error(
+    error: zama_fhe::ExecutionAccountResolutionError,
+) -> Error {
+    msg!("invalid fhe_execute account set: {:?}", error);
     match error {
-        zama_fhe::EvalAccountResolutionError::DuplicateDynamicAccount { .. } => {
-            error!(ConfidentialTokenError::DuplicateFheEvalAccount)
+        zama_fhe::ExecutionAccountResolutionError::DuplicateDynamicAccount { .. } => {
+            error!(ConfidentialTokenError::DuplicateFheExecuteAccount)
         }
-        zama_fhe::EvalAccountResolutionError::UnexpectedDynamicAccount { .. } => {
-            error!(ConfidentialTokenError::UnexpectedFheEvalAccount)
+        zama_fhe::ExecutionAccountResolutionError::UnexpectedDynamicAccount { .. } => {
+            error!(ConfidentialTokenError::UnexpectedFheExecuteAccount)
         }
-        zama_fhe::EvalAccountResolutionError::MissingDynamicAccount { .. } => {
-            error!(ConfidentialTokenError::MissingFheEvalAccount)
+        zama_fhe::ExecutionAccountResolutionError::MissingDynamicAccount { .. } => {
+            error!(ConfidentialTokenError::MissingFheExecuteAccount)
         }
-        zama_fhe::EvalAccountResolutionError::DynamicAccountNotWritable { .. } => {
-            error!(ConfidentialTokenError::FheEvalAccountNotWritable)
+        zama_fhe::ExecutionAccountResolutionError::DynamicAccountNotWritable { .. } => {
+            error!(ConfidentialTokenError::FheExecuteAccountNotWritable)
         }
-        zama_fhe::EvalAccountResolutionError::DuplicateOutputAuthority { .. } => {
+        zama_fhe::ExecutionAccountResolutionError::DuplicateOutputAuthority { .. } => {
             error!(ConfidentialTokenError::DuplicateFheOutputAuthority)
         }
-        zama_fhe::EvalAccountResolutionError::UnexpectedOutputAuthority { .. } => {
+        zama_fhe::ExecutionAccountResolutionError::UnexpectedOutputAuthority { .. } => {
             error!(ConfidentialTokenError::UnexpectedFheOutputAuthority)
         }
-        zama_fhe::EvalAccountResolutionError::MissingOutputAuthority { .. } => {
+        zama_fhe::ExecutionAccountResolutionError::MissingOutputAuthority { .. } => {
             error!(ConfidentialTokenError::MissingFheOutputAuthority)
         }
     }
 }
 
-/// Inputs required to evaluate an instruction-local FHE plan.
-pub(crate) struct EvalContext<'a, 'info> {
-    /// Transaction payer and rent payer for any durable output ACL records.
+/// Inputs required to evaluate an instruction-local FHE execution.
+pub(crate) struct ExecuteContext<'a, 'info> {
+    /// Transaction payer and rent payer for any persistent output ACL records.
     pub payer: &'a Signer<'info>,
     /// Anchor event CPI authority for ZamaHost.
     pub event_authority: &'a UncheckedAccount<'info>,
@@ -420,35 +405,38 @@ pub(crate) struct EvalContext<'a, 'info> {
     pub compute_authority: ComputeAuthority<'info>,
     /// System program used for output ACL creation.
     pub system_program: &'a Program<'info, System>,
-    /// Per-`compute_subject` HCU block meter forwarded into the host `fhe_eval` CPI (`None` unless
+    /// Per-`compute_subject` HCU block meter forwarded into the host `fhe_execute` CPI (`None` unless
     /// the caller threads it; behavior-neutral while the host cap is unrestricted). The host keys
     /// the meter on `compute_subject` — here the mint's compute signer PDA — so metering stays
     /// per-mint automatically, with no separate HCU authority account.
     pub hcu_block_meter: Option<AccountInfo<'info>>,
-    /// HCU trust witness forwarded into the host `fhe_eval` CPI (`None` unless threaded).
+    /// HCU trust witness forwarded into the host `fhe_execute` CPI (`None` unless threaded).
     pub hcu_trusted_app_record: Option<AccountInfo<'info>>,
 }
 
-/// Inputs required to evaluate an instruction-local FHE plan.
-pub(crate) struct Eval<'a, 'info> {
-    /// Fixed ZamaHost CPI accounts shared by eval requests in this instruction.
-    pub context: EvalContext<'a, 'info>,
-    /// Typed resolver for dynamic accounts required by the eval plan.
-    pub accounts: &'a EvalAccountSet<'info>,
-    /// SDK-built host eval request and dynamic account role plan.
-    pub plan: zama_fhe::EvalPlan,
+/// Inputs for one instruction-local FHE execution.
+pub(crate) struct Execute<'a, 'info> {
+    /// Fixed ZamaHost CPI accounts shared by every execution in this instruction.
+    pub context: ExecuteContext<'a, 'info>,
+    /// Typed resolver for dynamic accounts required by the execution.
+    pub accounts: &'a ExecutionAccountSet<'info>,
+    /// SDK-built host execution request and dynamic account roles.
+    pub execution: zama_fhe::FheExecution,
 }
 
-/// Evaluates an FHE plan using the current token account authority model.
-pub(crate) fn eval<'info>(request: Eval<'_, 'info>) -> Result<()> {
-    let app_authority_key = request.plan.app_authority().pubkey();
-    let app_authority = request
+/// Invokes one FHE execution under the current token account authority model.
+pub(crate) fn execute<'info>(request: Execute<'_, 'info>) -> Result<()> {
+    let encrypted_value_account_authority_key = request
+        .execution
+        .encrypted_value_account_authority()
+        .pubkey();
+    let encrypted_value_account_authority = request
         .accounts
-        .output_authority(app_authority_key)
+        .output_authority(encrypted_value_account_authority_key)
         .ok_or_else(|| error!(ConfidentialTokenError::MissingFheOutputAuthority))?;
     require_keys_eq!(
-        app_authority.key(),
-        app_authority_key,
+        encrypted_value_account_authority.key(),
+        encrypted_value_account_authority_key,
         ConfidentialTokenError::MissingFheOutputAuthority
     );
     let compute_bump = [request.context.compute_authority.bump];
@@ -456,12 +444,16 @@ pub(crate) fn eval<'info>(request: Eval<'_, 'info>) -> Result<()> {
         .context
         .compute_authority
         .signer_seeds(&compute_bump);
-    let app_authority_seed_bytes = app_authority.signer.seed_bytes();
-    let app_authority_seeds: Vec<&[u8]> =
-        app_authority_seed_bytes.iter().map(Vec::as_slice).collect();
+    let encrypted_value_account_authority_seed_bytes =
+        encrypted_value_account_authority.signer.seed_bytes();
+    let encrypted_value_account_authority_seeds: Vec<&[u8]> =
+        encrypted_value_account_authority_seed_bytes
+            .iter()
+            .map(Vec::as_slice)
+            .collect();
     let mut additional_authorities = Vec::new();
-    for authority in request.plan.additional_output_authorities() {
-        if authority == app_authority.key() {
+    for authority in request.execution.additional_output_authorities() {
+        if authority == encrypted_value_account_authority.key() {
             continue;
         }
         if additional_authorities.contains(&authority) {
@@ -494,8 +486,8 @@ pub(crate) fn eval<'info>(request: Eval<'_, 'info>) -> Result<()> {
         .collect();
 
     let mut signer_seed_vec: Vec<&[&[u8]]> = vec![compute_signer_seeds.as_slice()];
-    if !app_authority_seeds.is_empty() {
-        signer_seed_vec.push(app_authority_seeds.as_slice());
+    if !encrypted_value_account_authority_seeds.is_empty() {
+        signer_seed_vec.push(encrypted_value_account_authority_seeds.as_slice());
     }
     for seeds in &extra_output_authority_seeds {
         signer_seed_vec.push(seeds.as_slice());
@@ -503,17 +495,16 @@ pub(crate) fn eval<'info>(request: Eval<'_, 'info>) -> Result<()> {
     validate_deny_subject_records_for_grant_subjects(
         request.context.host_config.grant_deny_list_enabled,
         request.context.deny_subject_records,
-        app_authority.key(),
+        encrypted_value_account_authority.key(),
         &extra_output_authorities,
-        &request.plan.rotation_added_subjects(),
+        &request.execution.newly_granted_subjects(),
     )?;
 
-    zama_fhe::invoke_eval_signed_resolved(
-        &request.plan,
-        zama_fhe::EvalCpiAccounts {
+    request.execution.invoke(
+        zama_fhe::ExecutionCpiAccounts {
             payer: request.context.payer.to_account_info(),
             compute_subject: request.context.compute_authority.account_info(),
-            app_account_authority: app_authority.account.clone(),
+            encrypted_value_account_authority: encrypted_value_account_authority.account.clone(),
             host_config: request.context.host_config.to_account_info(),
             deny_subject_records: request.context.deny_subject_records,
             system_program: request.context.system_program.to_account_info(),
@@ -531,9 +522,9 @@ pub(crate) fn eval<'info>(request: Eval<'_, 'info>) -> Result<()> {
 fn validate_deny_subject_records_for_grant_subjects<'info>(
     deny_list_enabled: bool,
     supplied_records: &[AccountInfo<'info>],
-    app_authority: Pubkey,
+    encrypted_value_account_authority: Pubkey,
     extra_output_authorities: &[OutputAuthority<'info>],
-    rotation_added_subjects: &[Pubkey],
+    newly_granted_subjects: &[Pubkey],
 ) -> Result<()> {
     if !deny_list_enabled {
         require!(
@@ -551,14 +542,14 @@ fn validate_deny_subject_records_for_grant_subjects<'info>(
             ConfidentialTokenError::UnexpectedRemainingAccounts
         );
         // A supplied deny record must witness either an output authority or a subject a
-        // supersede grants for the first time (rotation-added) — the host deny-list-checks
-        // both, so both may reach it through remaining accounts.
+        // persistent output grants for the first time (created or update-added) — the host
+        // deny-list-checks both, so both may reach it through remaining accounts.
         require!(
-            is_deny_record_for_authority(supplied.key(), app_authority)
+            is_deny_record_for_authority(supplied.key(), encrypted_value_account_authority)
                 || extra_output_authorities
                     .iter()
                     .any(|authority| is_deny_record_for_authority(supplied.key(), authority.key()))
-                || rotation_added_subjects
+                || newly_granted_subjects
                     .iter()
                     .any(|subject| is_deny_record_for_authority(supplied.key(), *subject)),
             ConfidentialTokenError::UnexpectedRemainingAccounts
@@ -575,7 +566,7 @@ fn is_deny_record_for_authority(record: Pubkey, authority: Pubkey) -> bool {
 mod tests {
     use super::*;
 
-    fn audience_subjects(audience: DurableAudience) -> Vec<Pubkey> {
+    fn audience_subjects(audience: PersistentAudience) -> Vec<Pubkey> {
         audience.into_subjects()
     }
 
@@ -584,7 +575,7 @@ mod tests {
         let owner = Pubkey::new_unique();
         let compute = Pubkey::new_unique();
         assert_eq!(
-            audience_subjects(DurableAudience::for_owner(owner, compute)),
+            audience_subjects(PersistentAudience::for_owner(owner, compute)),
             vec![owner, compute]
         );
     }
@@ -595,7 +586,7 @@ mod tests {
         let recipient = Pubkey::new_unique();
         let compute = Pubkey::new_unique();
         assert_eq!(
-            audience_subjects(DurableAudience::for_owner(owner, compute).with_owner(recipient)),
+            audience_subjects(PersistentAudience::for_owner(owner, compute).with_owner(recipient)),
             vec![owner, recipient, compute]
         );
     }
@@ -604,7 +595,7 @@ mod tests {
     fn compute_only_audience_grants_compute_and_no_owner() {
         let compute = Pubkey::new_unique();
         assert_eq!(
-            audience_subjects(DurableAudience::compute_only(compute)),
+            audience_subjects(PersistentAudience::compute_only(compute)),
             vec![compute]
         );
     }
@@ -614,18 +605,18 @@ mod tests {
         let owner = Pubkey::new_unique();
         let compute = Pubkey::new_unique();
         // A holder audience whose extra owner repeats the compute signer
-        // renders a duplicate subject; the durable output rejects it.
-        let output = zama_fhe::DurableOutput::create(
-            zama_fhe::EncryptedValueKey::new(
+        // renders a duplicate subject; the persistent output rejects it.
+        let output = zama_fhe::PersistentOutput::create(
+            zama_fhe::EncryptedValueId::new(
+                zama_fhe::Domain::new(Pubkey::new_unique()),
                 Pubkey::new_unique(),
-                Pubkey::new_unique(),
-                zama_fhe::DurableLabel::new([1; 32]),
+                zama_fhe::EncryptedValueLabel::new([1; 32]),
             ),
-            DurableAudience::for_owner(owner, compute)
+            PersistentAudience::for_owner(owner, compute)
                 .with_owner(compute)
                 .into_subjects(),
         );
-        assert!(output.birth().is_err());
+        assert!(output.binding().is_err());
     }
 
     fn handle(tag: u8) -> [u8; 32] {
@@ -646,18 +637,22 @@ mod tests {
         AccountInfo::new(key, false, is_writable, lamports, data, owner, false)
     }
 
+    // The signer model is irrelevant to these tests — they resolve authorities by address, and the
+    // seeds are only used when actually signing a CPI, which a host unit test never does. Any real
+    // variant serves; `Transaction` used to be chosen because it carried no seeds, and it existed
+    // only for that.
     fn output_authority(pubkey: Pubkey) -> OutputAuthority<'static> {
         OutputAuthority {
             account: account_info(pubkey, false),
-            signer: Box::new(OutputAuthoritySigner::transaction_signer()),
+            signer: Box::new(OutputAuthoritySigner::total_supply(Pubkey::new_unique(), 0)),
         }
     }
 
-    fn encrypted_value_key(account: Pubkey, label_tag: u8) -> zama_fhe::EncryptedValueKey {
-        zama_fhe::EncryptedValueKey::new(
-            Pubkey::new_unique(),
+    fn encrypted_value_id(account: Pubkey, label_tag: u8) -> zama_fhe::EncryptedValueId {
+        zama_fhe::EncryptedValueId::new(
+            zama_fhe::Domain::new(Pubkey::new_unique()),
             account,
-            zama_fhe::DurableLabel::new(handle(label_tag)),
+            zama_fhe::EncryptedValueLabel::new(handle(label_tag)),
         )
     }
 
@@ -665,22 +660,29 @@ mod tests {
         vec![subject]
     }
 
-    fn sample_plan() -> (zama_fhe::EvalPlan, Pubkey, Pubkey, Pubkey) {
+    fn sample_plan() -> (zama_fhe::FheExecution, Pubkey, Pubkey, Pubkey) {
         let authority = Pubkey::new_unique();
-        let input_key = encrypted_value_key(authority, 1);
+        let input_key = encrypted_value_id(authority, 1);
         let input_acl = input_key.address();
-        let output_key = encrypted_value_key(authority, 2);
+        let output_key = encrypted_value_id(authority, 2);
         let output_acl = output_key.address();
-        let input = zama_fhe::Uint64Handle::durable(balance_handle(1), input_key).unwrap();
-        let mut builder = zama_fhe::EvalBuilder::new(zama_fhe::EvalAppAuthority::new(authority));
-        builder
-            .add(
-                input,
-                zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(1),
-                zama_fhe::Output::durable(output_key, subjects(authority)),
-            )
-            .unwrap();
-        (builder.finish().unwrap(), input_acl, output_acl, authority)
+        let input = zama_fhe::Uint64Handle::persistent(balance_handle(1), input_key).unwrap();
+        let execution = zama_fhe::FheExecution::build(
+            zama_fhe::ExecutionEncryptedValueAccountAuthority::new(authority),
+            |builder| {
+                builder.add(
+                    input,
+                    zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(1),
+                    zama_fhe::Output::persistent(zama_fhe::PersistentOutput::create(
+                        output_key,
+                        subjects(authority),
+                    )),
+                )?;
+                Ok(())
+            },
+        )
+        .unwrap();
+        (execution, input_acl, output_acl, authority)
     }
 
     fn token_error_number(error: Error) -> u32 {
@@ -698,11 +700,11 @@ mod tests {
     }
 
     #[test]
-    fn eval_account_set_maps_dynamic_account_errors() {
-        let (plan, input_acl, output_acl, authority) = sample_plan();
+    fn batch_account_set_maps_dynamic_account_errors() {
+        let (execution, input_acl, output_acl, authority) = sample_plan();
 
-        let error = EvalAccountSet::for_plan(
-            &plan,
+        let error = ExecutionAccountSet::for_execution(
+            &execution,
             vec![
                 account_info(input_acl, false),
                 account_info(input_acl, false),
@@ -712,10 +714,10 @@ mod tests {
         )
         .err()
         .unwrap();
-        assert_token_error(error, ConfidentialTokenError::DuplicateFheEvalAccount);
+        assert_token_error(error, ConfidentialTokenError::DuplicateFheExecuteAccount);
 
-        let error = EvalAccountSet::for_plan(
-            &plan,
+        let error = ExecutionAccountSet::for_execution(
+            &execution,
             vec![
                 account_info(input_acl, false),
                 account_info(output_acl, true),
@@ -725,19 +727,19 @@ mod tests {
         )
         .err()
         .unwrap();
-        assert_token_error(error, ConfidentialTokenError::UnexpectedFheEvalAccount);
+        assert_token_error(error, ConfidentialTokenError::UnexpectedFheExecuteAccount);
 
-        let error = EvalAccountSet::for_plan(
-            &plan,
+        let error = ExecutionAccountSet::for_execution(
+            &execution,
             vec![account_info(output_acl, true)],
             vec![output_authority(authority)],
         )
         .err()
         .unwrap();
-        assert_token_error(error, ConfidentialTokenError::MissingFheEvalAccount);
+        assert_token_error(error, ConfidentialTokenError::MissingFheExecuteAccount);
 
-        let error = EvalAccountSet::for_plan(
-            &plan,
+        let error = ExecutionAccountSet::for_execution(
+            &execution,
             vec![
                 account_info(input_acl, false),
                 account_info(output_acl, false),
@@ -746,15 +748,15 @@ mod tests {
         )
         .err()
         .unwrap();
-        assert_token_error(error, ConfidentialTokenError::FheEvalAccountNotWritable);
+        assert_token_error(error, ConfidentialTokenError::FheExecuteAccountNotWritable);
     }
 
     #[test]
-    fn eval_account_set_maps_output_authority_errors() {
-        let (plan, input_acl, output_acl, authority) = sample_plan();
+    fn batch_account_set_maps_output_authority_errors() {
+        let (execution, input_acl, output_acl, authority) = sample_plan();
 
-        let error = EvalAccountSet::for_plan(
-            &plan,
+        let error = ExecutionAccountSet::for_execution(
+            &execution,
             vec![
                 account_info(input_acl, false),
                 account_info(output_acl, true),
@@ -765,8 +767,8 @@ mod tests {
         .unwrap();
         assert_token_error(error, ConfidentialTokenError::DuplicateFheOutputAuthority);
 
-        let error = EvalAccountSet::for_plan(
-            &plan,
+        let error = ExecutionAccountSet::for_execution(
+            &execution,
             vec![
                 account_info(input_acl, false),
                 account_info(output_acl, true),
@@ -780,8 +782,8 @@ mod tests {
         .unwrap();
         assert_token_error(error, ConfidentialTokenError::UnexpectedFheOutputAuthority);
 
-        let error = EvalAccountSet::for_plan(
-            &plan,
+        let error = ExecutionAccountSet::for_execution(
+            &execution,
             vec![
                 account_info(input_acl, false),
                 account_info(output_acl, true),

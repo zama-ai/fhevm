@@ -7,7 +7,16 @@
     "noEmit": true,
     "allowSyntheticDefaultImports": true,
     "skipLibCheck": true,
-    "types": ["bun-types"]
+    "types": ["bun-types"],
+    // The vault module is dapp code and lives with the demo dapp (fhevm-internal#1859 §6d);
+    // the seeder and the deposit-arc scenario drive it from here. Its files reach into SDK
+    // sources via @sdk-src for internals the published package deliberately does not export —
+    // bun resolves both aliases natively at runtime (no SDK build needed), and the published
+    // `@fhevm/sdk` surface is unaffected.
+    "paths": {
+      "@demo-dapp/*": ["../../solana/demo-dapp/src/*"],
+      "@sdk-src/*": ["../../sdk/js-sdk/src/*"]
+    }
   },
   "include": [
     "src/cli.ts",

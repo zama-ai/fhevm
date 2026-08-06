@@ -4,8 +4,12 @@ use crate::http::endpoints::v2::types::DelegatedUserDecryptRequestJson;
 use crate::http::endpoints::v2::types::{
     InputProofRequestJson, PublicDecryptRequestJson, UserDecryptRequestJson,
 };
-use crate::http::endpoints::v3::types::AttestedUserDecryptRequestJson;
-use crate::http::utils::validations::V3_ATTESTATION_TYPE_SOLANA_ED25519_V2;
+use crate::http::endpoints::v3::types::{
+    AttestedUserDecryptRequestJson, Eip712UnifiedUserDecryptPayloadJson,
+};
+use crate::http::utils::validations::{
+    V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1, V3_ATTESTATION_TYPE_SOLANA_ED25519_V2,
+};
 use crate::orchestrator::traits::Event;
 use alloy::primitives::{Address, Bytes, FixedBytes, TxHash, B256};
 use alloy::{primitives::U256, rpc::types::Log};
@@ -624,13 +628,16 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
     fn try_from(value: UserDecryptRequestJson) -> Result<Self, Self::Error> {
         info!("Converting UserDecryptRequestJson to UserDecryptRequest");
 
-        // Parse the contract chain ID first: it selects the EVM vs RFC-021 (Solana) identity shapes.
         let contracts_chain_id = parse_chain_id(&value.contracts_chain_id)?;
-        let is_solana = is_solana_host_chain_id(contracts_chain_id);
+        // The DEPRECATED v2 legacy path is EVM-only. No Solana client ever shipped against it
+        // (the Solana SDK action has only ever called `/v3/user-decrypt`), so reject outright
+        // instead of fabricating zeroed EVM address placeholders for Solana requests.
+        if is_solana_host_chain_id(contracts_chain_id) {
+            anyhow::bail!(
+                "Solana user decrypts are served by the v3 endpoint only; the legacy v2 path is EVM-only"
+            );
+        }
 
-        // Parse handle/contract pairs. Handles are 32-byte values on both paths; on Solana the
-        // per-pair contract identity is off-gateway (enforced by the KMS solana_acl), so it is not
-        // an EVM address and is left zero.
         let mut ct_handle_contract_pairs = Vec::new();
         for json_data in &value.handle_contract_pairs {
             let ct_handle = if json_data.handle.starts_with("0x") {
@@ -641,12 +648,8 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
             }
             .map_err(|e| anyhow::anyhow!("Failed to parse ctHandle: {}", e))?;
 
-            let contract_address = if is_solana {
-                Address::ZERO
-            } else {
-                Address::from_str(&json_data.contract_address)
-                    .map_err(|e| anyhow::anyhow!("Failed to parse contractAddress: {}", e))?
-            };
+            let contract_address = Address::from_str(&json_data.contract_address)
+                .map_err(|e| anyhow::anyhow!("Failed to parse contractAddress: {}", e))?;
 
             ct_handle_contract_pairs.push(HandleContractPair {
                 ct_handle,
@@ -673,17 +676,11 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
             duration_days,
         };
 
-        // On Solana the contract identities are off-gateway (enforced by the KMS solana_acl), so
-        // the EVM `contract_addresses` list is empty; on EVM each entry is a 20-byte address.
-        let contract_addresses = if is_solana {
-            Vec::new()
-        } else {
-            value
-                .contract_addresses
-                .iter()
-                .map(|addr| Address::from_str(addr))
-                .collect::<Result<Vec<_>, _>>()?
-        };
+        let contract_addresses = value
+            .contract_addresses
+            .iter()
+            .map(|addr| Address::from_str(addr))
+            .collect::<Result<Vec<_>, _>>()?;
 
         // Parse extraData (validated at HTTP layer)
         let extra_data = Bytes::from_str(&value.extra_data)?;
@@ -817,55 +814,104 @@ impl TryFrom<AttestedUserDecryptRequestJson> for UserDecryptRequest {
         let public_key = Bytes::from_str(&payload_inner.public_key)?;
         let extra_data = Bytes::from_str(&payload_inner.extra_data)?;
 
-        if value.attestation_type == V3_ATTESTATION_TYPE_SOLANA_ED25519_V2 {
-            let user_identity = B256::from_str(payload_inner.solana_user_identity.as_deref().ok_or_else(
-                || anyhow::anyhow!("solanaUserIdentity is required for the Solana ed25519 attestation type"),
-            )?)
-            .map_err(|e| anyhow::anyhow!("Failed to parse solanaUserIdentity: {}", e))?;
-
-            let nonce = B256::from_str(payload_inner.solana_nonce.as_deref().ok_or_else(|| {
-                anyhow::anyhow!("solanaNonce is required for the Solana ed25519 attestation type")
-            })?)
-            .map_err(|e| anyhow::anyhow!("Failed to parse solanaNonce: {}", e))?;
-
-            let allowed_acl_domain_keys = payload_inner
-                .solana_allowed_acl_domain_keys
-                .unwrap_or_default()
-                .iter()
-                .map(|k| B256::from_str(k))
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|e| {
-                    anyhow::anyhow!("Failed to parse solanaAllowedAclDomainKeys: {}", e)
-                })?;
-
-            return Ok(UserDecryptRequest::SolanaUnifiedV1 {
+        // Exhaustive per-protocol dispatch: an unknown attestation type is rejected HERE, not
+        // only by the HTTP-layer validator — the conversion must never default a request it
+        // doesn't recognize onto the EVM arm (DD-027: validation is per-protocol).
+        match value.attestation_type.as_str() {
+            V3_ATTESTATION_TYPE_SOLANA_ED25519_V2 => solana_unified_v1(
+                payload_inner,
                 handles,
-                user_identity,
-                allowed_acl_domain_keys,
                 request_validity,
-                nonce,
                 signature,
                 public_key,
                 extra_data,
-            });
+            ),
+            V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1 => eip712_unified_v1(
+                payload_inner,
+                handles,
+                request_validity,
+                signature,
+                public_key,
+                extra_data,
+            ),
+            other => Err(anyhow::anyhow!(
+                "Unsupported attestationType {other:?}; expected {V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1:?} or {V3_ATTESTATION_TYPE_SOLANA_ED25519_V2:?}"
+            )),
         }
-
-        let allowed_contracts = payload_inner
-            .allowed_contracts
-            .iter()
-            .map(|addr| Address::from_str(addr))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Ok(UserDecryptRequest::Eip712UnifiedV1 {
-            handles,
-            user_address: Address::from_str(&payload_inner.user_address)?,
-            allowed_contracts,
-            request_validity,
-            signature,
-            public_key,
-            extra_data,
-        })
     }
+}
+
+/// Builds the Solana ed25519 variant of the unified request. The three `solana*` payload fields
+/// are required by this protocol and only read here; the EVM-shaped `userAddress`,
+/// `allowedContracts`, and per-handle addresses stay untouched wire placeholders (removing them
+/// from the Solana wire shape is a v3 wire change, proposed to the decryption-envelope rework).
+fn solana_unified_v1(
+    payload: Eip712UnifiedUserDecryptPayloadJson,
+    handles: Vec<HandleEntry>,
+    request_validity: RequestValiditySeconds,
+    signature: Bytes,
+    public_key: Bytes,
+    extra_data: Bytes,
+) -> Result<UserDecryptRequest, anyhow::Error> {
+    let user_identity =
+        B256::from_str(payload.solana_user_identity.as_deref().ok_or_else(|| {
+            anyhow::anyhow!(
+                "solanaUserIdentity is required for the Solana ed25519 attestation type"
+            )
+        })?)
+        .map_err(|e| anyhow::anyhow!("Failed to parse solanaUserIdentity: {}", e))?;
+
+    let nonce = B256::from_str(payload.solana_nonce.as_deref().ok_or_else(|| {
+        anyhow::anyhow!("solanaNonce is required for the Solana ed25519 attestation type")
+    })?)
+    .map_err(|e| anyhow::anyhow!("Failed to parse solanaNonce: {}", e))?;
+
+    let allowed_acl_domain_keys = payload
+        .solana_allowed_acl_domain_keys
+        .unwrap_or_default()
+        .iter()
+        .map(|k| B256::from_str(k))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| anyhow::anyhow!("Failed to parse solanaAllowedAclDomainKeys: {}", e))?;
+
+    Ok(UserDecryptRequest::SolanaUnifiedV1 {
+        handles,
+        user_identity,
+        allowed_acl_domain_keys,
+        request_validity,
+        nonce,
+        signature,
+        public_key,
+        extra_data,
+    })
+}
+
+/// Builds the EVM EIP-712 variant of the unified request. Any `solana*` payload fields are
+/// tolerated and ignored (wire compatibility: they have always been accepted alongside an EVM
+/// attestation type).
+fn eip712_unified_v1(
+    payload: Eip712UnifiedUserDecryptPayloadJson,
+    handles: Vec<HandleEntry>,
+    request_validity: RequestValiditySeconds,
+    signature: Bytes,
+    public_key: Bytes,
+    extra_data: Bytes,
+) -> Result<UserDecryptRequest, anyhow::Error> {
+    let allowed_contracts = payload
+        .allowed_contracts
+        .iter()
+        .map(|addr| Address::from_str(addr))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(UserDecryptRequest::Eip712UnifiedV1 {
+        handles,
+        user_address: Address::from_str(&payload.user_address)?,
+        allowed_contracts,
+        request_validity,
+        signature,
+        public_key,
+        extra_data,
+    })
 }
 
 impl TryFrom<PublicDecryptRequestJson> for PublicDecryptRequest {
@@ -1266,6 +1312,116 @@ mod tests {
             }
             other => panic!("expected SolanaUnifiedV1, got {}", other.attestation_kind()),
         }
+    }
+
+    /// A v3 envelope carrying `attestation_type`, otherwise a well-formed Solana payload. Both
+    /// `solana*` fields are populated so a rejection can only come from the attestation type.
+    fn attested_envelope(attestation_type: &str) -> AttestedUserDecryptRequestJson {
+        use crate::http::endpoints::common::types::{HandleEntryJson, RequestValiditySecondsJson};
+        use crate::http::endpoints::v3::types::Eip712UnifiedUserDecryptPayloadJson;
+
+        let mut extra = vec![0x01u8];
+        extra.extend_from_slice(&[0u8; 32]);
+
+        AttestedUserDecryptRequestJson {
+            attestation_type: attestation_type.to_string(),
+            attested_payload: Eip712UnifiedUserDecryptPayloadJson {
+                version: "2.0".to_string(),
+                r#type: "user_decryption".to_string(),
+                handles: vec![HandleEntryJson {
+                    ct_handle: format!("0x{}", "11".repeat(32)),
+                    contract_address: CONTRACT_ADDRESS.to_string(),
+                    owner_address: USER_ADDRESS.to_string(),
+                }],
+                user_address: USER_ADDRESS.to_string(),
+                allowed_contracts: vec![CONTRACT_ADDRESS.to_string()],
+                request_validity: RequestValiditySecondsJson {
+                    start_timestamp: "1700000000".to_string(),
+                    duration_seconds: "604800".to_string(),
+                },
+                public_key: "0x04b8e5d3".to_string(),
+                extra_data: format!("0x{}", hex::encode(&extra)),
+                solana_user_identity: Some(format!("0x{}", "07".repeat(32))),
+                solana_nonce: Some(format!("0x{}", "09".repeat(32))),
+                solana_allowed_acl_domain_keys: Some(vec![format!("0x{}", "05".repeat(32))]),
+            },
+            signature: format!("0x{}", "ab".repeat(64)),
+        }
+    }
+
+    /// An unrecognized `attestationType` is rejected by the conversion itself, not only by the
+    /// HTTP-layer validator: an unknown protocol must never fall through onto the EVM arm and be
+    /// served with EVM authorization rules (DD-027, validation is per-protocol).
+    #[test]
+    fn attested_user_decrypt_rejects_unknown_attestation_type() {
+        let error =
+            UserDecryptRequest::try_from(attested_envelope("solana-ed25519-user-decrypt-v3"))
+                .expect_err("an unknown attestation type has no arm to route to");
+        let message = error.to_string();
+        assert!(
+            message.contains("Unsupported attestationType"),
+            "unexpected rejection reason: {message}"
+        );
+    }
+
+    /// The other arm of the same dispatch: the EVM attestation type still routes to
+    /// `Eip712UnifiedV1`, so the rejection above is narrow and not a blanket refusal. The
+    /// `solana*` fields present in this fixture are tolerated and ignored on the EVM arm.
+    #[test]
+    fn attested_user_decrypt_routes_evm_attestation_type_to_eip712_unified() {
+        let request =
+            UserDecryptRequest::try_from(attested_envelope(V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1))
+                .expect("the EVM attestation type converts");
+        match request {
+            UserDecryptRequest::Eip712UnifiedV1 {
+                user_address,
+                allowed_contracts,
+                ..
+            } => {
+                assert_eq!(user_address, USER_ADDRESS.parse::<Address>().unwrap());
+                assert_eq!(
+                    allowed_contracts,
+                    vec![CONTRACT_ADDRESS.parse::<Address>().unwrap()]
+                );
+            }
+            other => panic!("expected Eip712UnifiedV1, got {}", other.attestation_kind()),
+        }
+    }
+
+    /// The DEPRECATED v2 user-decrypt path is EVM-only: a Solana host chain id is rejected at
+    /// conversion instead of being converted with zeroed EVM address placeholders. The EVM twin of
+    /// the same fixture must still convert, so the rejection is attributable to the chain id alone
+    /// and not to a malformed fixture.
+    #[test]
+    fn legacy_v2_user_decrypt_rejects_solana_host_chain_id() {
+        use crate::http::endpoints::common::types::{HandleContractPairJson, RequestValidityJson};
+
+        let envelope = |chain_id: &str| UserDecryptRequestJson {
+            handle_contract_pairs: vec![HandleContractPairJson {
+                handle: format!("0x{}", "11".repeat(32)),
+                contract_address: CONTRACT_ADDRESS.to_string(),
+            }],
+            request_validity: RequestValidityJson {
+                start_timestamp: "1700000000".to_string(),
+                duration_days: "1".to_string(),
+            },
+            contracts_chain_id: chain_id.to_string(),
+            contract_addresses: vec![CONTRACT_ADDRESS.to_string()],
+            user_address: USER_ADDRESS.to_string(),
+            signature: "ab".repeat(65),
+            public_key: "04b8e5d3".to_string(),
+            extra_data: EXTRA_DATA.to_string(),
+        };
+
+        UserDecryptRequest::try_from(envelope(CHAIN_ID)).expect("the EVM twin still converts");
+
+        let error = UserDecryptRequest::try_from(envelope(SOLANA_CHAIN_ID_HEX))
+            .expect_err("a Solana host chain id has no legal v2 shape");
+        let message = error.to_string();
+        assert!(
+            message.contains("v3 endpoint only"),
+            "unexpected rejection reason: {message}"
+        );
     }
 
     /// The Relayer must propagate `extraData` to the Gateway verbatim, without

@@ -14,7 +14,7 @@
 //!
 //! The rows, in the order the specification lists them:
 //!
-//! 1. the current handle is superseded;
+//! 1. the current handle is replaced;
 //! 2. the subject set rotates and the owner leaves it;
 //! 3. the delegation is revoked;
 //! 4. an append that does not merge the proof's peak;
@@ -65,77 +65,77 @@ fn assert_frozen_at(authorized: &AuthorizedRequest, reads: usize, expected_reads
 }
 
 // ---------------------------------------------------------------------------
-// 1. Current-handle supersession
+// 1. A current handle being updated
 // ---------------------------------------------------------------------------
 
-/// A current-mode entry racing a supersession fails at the later observation, and fails
+/// A current-mode entry racing a handle update fails at the later observation, and fails
 /// terminally: the handle it named will never be current again. What it does not do is return the
 /// value that is current instead.
 #[tokio::test]
-async fn supersession_rejects_a_current_entry_at_the_later_observation() {
+async fn a_handle_update_rejects_a_current_entry_at_the_later_observation() {
     let signer = Wallet::new(1);
     let named = handle(0x10, FHE_TYPE_UINT64);
-    let before = LineageFixture::new(named, &[signer.pubkey()]);
+    let before = EncryptedValueAccountFixture::new(named, &[signer.pubkey()]);
     let mut after = before.clone();
-    after.supersede(handle(0x11, FHE_TYPE_UINT64));
+    after.update(handle(0x11, FHE_TYPE_UINT64));
     let request = RequestBuilder::new(&signer)
         .direct_current(&before, named)
         .typed();
 
     let (accepted, reads) = observe(
         World::at_slot(BEFORE)
-            .with_lineage(&before)
+            .with_encrypted_value_account(&before)
             .with_watermark(signer.pubkey(), 0),
         &request,
     )
     .await;
     assert_frozen_at(
-        &accepted.expect("before the supersession the handle is current"),
+        &accepted.expect("before the update the handle is current"),
         reads,
         1,
     );
 
     let (outcome, _) = observe(
         World::at_slot(AFTER)
-            .with_lineage(&after)
+            .with_encrypted_value_account(&after)
             .with_watermark(signer.pubkey(), 0),
         &request,
     )
     .await;
 
-    let failure = outcome.expect_err("after the supersession the handle is not current");
+    let failure = outcome.expect_err("after the update the handle is not current");
     assert!(matches!(
         failure,
         AuthorizationFailure::HandleBinding {
             index: 0,
-            source: HandleBindingFailure::Superseded { .. }
+            source: HandleBindingFailure::NotCurrentHandle { .. }
         }
     ));
     assert_eq!(failure.class(), FailureClass::Terminal);
 }
 
-/// The griefed request is not a dead end. Supersession seals a leaf for the subjects that held the
+/// The griefed request is not a dead end. An update seals a leaf for the subjects that held the
 /// handle, so the same handle is reachable at the later observation as historical access — under
 /// the same permit, with no new signature.
 #[tokio::test]
-async fn supersession_leaves_the_historical_path_open() {
+async fn a_handle_update_leaves_the_historical_path_open() {
     let signer = Wallet::new(1);
     let named = handle(0x12, FHE_TYPE_UINT64);
-    let mut after = LineageFixture::new(named, &[signer.pubkey()]);
-    after.supersede(handle(0x13, FHE_TYPE_UINT64));
+    let mut after = EncryptedValueAccountFixture::new(named, &[signer.pubkey()]);
+    after.update(handle(0x13, FHE_TYPE_UINT64));
     let retry = RequestBuilder::new(&signer)
         .historical(&after, named, signer.pubkey(), &after.proof(0), 1)
         .typed();
 
     let (outcome, _) = observe(
         World::at_slot(AFTER)
-            .with_lineage(&after)
+            .with_encrypted_value_account(&after)
             .with_watermark(signer.pubkey(), 0),
         &retry,
     )
     .await;
 
-    outcome.expect("the sealed leaf authorizes the same handle after supersession");
+    outcome.expect("the sealed leaf authorizes the same handle after the update");
 }
 
 // ---------------------------------------------------------------------------
@@ -149,8 +149,9 @@ async fn subject_rotation_rejects_a_current_entry_at_the_later_observation() {
     let signer = Wallet::new(1);
     let stranger = Wallet::new(9);
     let live = handle(0x21, FHE_TYPE_UINT64);
-    let mut before = LineageFixture::new(handle(0x20, FHE_TYPE_UINT64), &[signer.pubkey()]);
-    before.supersede(live);
+    let mut before =
+        EncryptedValueAccountFixture::new(handle(0x20, FHE_TYPE_UINT64), &[signer.pubkey()]);
+    before.update(live);
     let mut after = before.clone();
     after.rotate_subjects(&[stranger.pubkey()]);
     let request = RequestBuilder::new(&signer)
@@ -159,7 +160,7 @@ async fn subject_rotation_rejects_a_current_entry_at_the_later_observation() {
 
     let (accepted, reads) = observe(
         World::at_slot(BEFORE)
-            .with_lineage(&before)
+            .with_encrypted_value_account(&before)
             .with_watermark(signer.pubkey(), 0),
         &request,
     )
@@ -172,7 +173,7 @@ async fn subject_rotation_rejects_a_current_entry_at_the_later_observation() {
 
     let (outcome, _) = observe(
         World::at_slot(AFTER)
-            .with_lineage(&after)
+            .with_encrypted_value_account(&after)
             .with_watermark(signer.pubkey(), 0),
         &request,
     )
@@ -194,8 +195,8 @@ async fn subject_rotation_does_not_reach_leaves_sealed_before_it() {
     let signer = Wallet::new(1);
     let stranger = Wallet::new(9);
     let sealed = handle(0x22, FHE_TYPE_UINT64);
-    let mut after = LineageFixture::new(sealed, &[signer.pubkey()]);
-    after.supersede(handle(0x23, FHE_TYPE_UINT64));
+    let mut after = EncryptedValueAccountFixture::new(sealed, &[signer.pubkey()]);
+    after.update(handle(0x23, FHE_TYPE_UINT64));
     let proof = after.proof(0);
     after.rotate_subjects(&[stranger.pubkey()]);
     let request = RequestBuilder::new(&signer)
@@ -204,7 +205,7 @@ async fn subject_rotation_does_not_reach_leaves_sealed_before_it() {
 
     let (outcome, _) = observe(
         World::at_slot(AFTER)
-            .with_lineage(&after)
+            .with_encrypted_value_account(&after)
             .with_watermark(signer.pubkey(), 0),
         &request,
     )
@@ -224,18 +225,18 @@ async fn delegation_revocation_rejects_its_entry_at_the_later_observation() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let live = handle(0x30, FHE_TYPE_UINT64);
-    let lineage = LineageFixture::new(live, &[delegator.pubkey()]);
+    let encrypted_value_account = EncryptedValueAccountFixture::new(live, &[delegator.pubkey()]);
     let granted = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), BEFORE);
     let mut revoked = granted;
     revoked.revoked = true;
     revoked.last_update_slot = AFTER;
     let request = RequestBuilder::new(&signer)
-        .delegated_current(&lineage, live, delegator.pubkey())
+        .delegated_current(&encrypted_value_account, live, delegator.pubkey())
         .typed();
 
     let (accepted, reads) = observe(
         World::at_slot(BEFORE)
-            .with_lineage(&lineage)
+            .with_encrypted_value_account(&encrypted_value_account)
             .with_watermark(signer.pubkey(), 0)
             .with_delegation(&granted),
         &request,
@@ -249,7 +250,7 @@ async fn delegation_revocation_rejects_its_entry_at_the_later_observation() {
 
     let (outcome, _) = observe(
         World::at_slot(AFTER)
-            .with_lineage(&lineage)
+            .with_encrypted_value_account(&encrypted_value_account)
             .with_watermark(signer.pubkey(), 0)
             .with_delegation(&revoked),
         &request,
@@ -272,16 +273,16 @@ async fn delegation_revocation_does_not_touch_the_direct_branch() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let own = handle(0x31, FHE_TYPE_UINT64);
-    let own_lineage = LineageFixture::new(own, &[signer.pubkey()]);
+    let own_encrypted_value_account = EncryptedValueAccountFixture::new(own, &[signer.pubkey()]);
     let mut revoked = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), BEFORE);
     revoked.revoked = true;
     let request = RequestBuilder::new(&signer)
-        .direct_current(&own_lineage, own)
+        .direct_current(&own_encrypted_value_account, own)
         .typed();
 
     let (outcome, reads) = observe(
         World::at_slot(AFTER)
-            .with_lineage(&own_lineage)
+            .with_encrypted_value_account(&own_encrypted_value_account)
             .with_watermark(signer.pubkey(), 0)
             .with_delegation(&revoked),
         &request,
@@ -306,22 +307,22 @@ async fn delegation_revocation_does_not_touch_the_direct_branch() {
 async fn an_append_that_leaves_the_peak_alone_still_authorizes() {
     let signer = Wallet::new(1);
     let sealed = handle(0x40, FHE_TYPE_UINT64);
-    let mut before = LineageFixture::new(sealed, &[signer.pubkey()]);
-    before.supersede(handle(0x41, FHE_TYPE_UINT64));
-    before.supersede(handle(0x42, FHE_TYPE_UINT64));
-    assert_eq!(before.lineage.leaf_count, 2);
+    let mut before = EncryptedValueAccountFixture::new(sealed, &[signer.pubkey()]);
+    before.update(handle(0x41, FHE_TYPE_UINT64));
+    before.update(handle(0x42, FHE_TYPE_UINT64));
+    assert_eq!(before.encrypted_value.leaf_count, 2);
     let proof = before.proof(0);
-    let claimed = before.lineage.leaf_count;
+    let claimed = before.encrypted_value.leaf_count;
     let mut after = before.clone();
-    after.supersede(handle(0x43, FHE_TYPE_UINT64));
-    assert_eq!(after.lineage.leaf_count, 3);
+    after.update(handle(0x43, FHE_TYPE_UINT64));
+    assert_eq!(after.encrypted_value.leaf_count, 3);
     let request = RequestBuilder::new(&signer)
         .historical(&before, sealed, signer.pubkey(), &proof, claimed)
         .typed();
 
     let (accepted, reads) = observe(
         World::at_slot(BEFORE)
-            .with_lineage(&before)
+            .with_encrypted_value_account(&before)
             .with_watermark(signer.pubkey(), 0),
         &request,
     )
@@ -334,7 +335,7 @@ async fn an_append_that_leaves_the_peak_alone_still_authorizes() {
 
     let (outcome, _) = observe(
         World::at_slot(AFTER)
-            .with_lineage(&after)
+            .with_encrypted_value_account(&after)
             .with_watermark(signer.pubkey(), 0),
         &request,
     )
@@ -354,23 +355,24 @@ async fn an_append_that_leaves_the_peak_alone_still_authorizes() {
 async fn an_append_that_merges_the_peak_asks_for_a_rebuilt_proof() {
     let signer = Wallet::new(1);
     let sealed = handle(0x52, FHE_TYPE_UINT64);
-    let mut before = LineageFixture::new(handle(0x50, FHE_TYPE_UINT64), &[signer.pubkey()]);
-    before.supersede(handle(0x51, FHE_TYPE_UINT64));
-    before.supersede(sealed);
-    before.supersede(handle(0x53, FHE_TYPE_UINT64));
-    assert_eq!(before.lineage.leaf_count, 3);
+    let mut before =
+        EncryptedValueAccountFixture::new(handle(0x50, FHE_TYPE_UINT64), &[signer.pubkey()]);
+    before.update(handle(0x51, FHE_TYPE_UINT64));
+    before.update(sealed);
+    before.update(handle(0x53, FHE_TYPE_UINT64));
+    assert_eq!(before.encrypted_value.leaf_count, 3);
     let proof = before.proof(2);
-    let claimed = before.lineage.leaf_count;
+    let claimed = before.encrypted_value.leaf_count;
     let mut after = before.clone();
-    after.supersede(handle(0x54, FHE_TYPE_UINT64));
-    assert_eq!(after.lineage.leaf_count, 4);
+    after.update(handle(0x54, FHE_TYPE_UINT64));
+    assert_eq!(after.encrypted_value.leaf_count, 4);
     let request = RequestBuilder::new(&signer)
         .historical(&before, sealed, signer.pubkey(), &proof, claimed)
         .typed();
 
     let (accepted, reads) = observe(
         World::at_slot(BEFORE)
-            .with_lineage(&before)
+            .with_encrypted_value_account(&before)
             .with_watermark(signer.pubkey(), 0),
         &request,
     )
@@ -383,7 +385,7 @@ async fn an_append_that_merges_the_peak_asks_for_a_rebuilt_proof() {
 
     let (outcome, _) = observe(
         World::at_slot(AFTER)
-            .with_lineage(&after)
+            .with_encrypted_value_account(&after)
             .with_watermark(signer.pubkey(), 0),
         &request,
     )
@@ -421,28 +423,29 @@ async fn an_append_that_merges_the_peak_asks_for_a_rebuilt_proof() {
 async fn a_proof_ahead_of_the_observation_is_retryable_and_then_authorized() {
     let signer = Wallet::new(1);
     let sealed = handle(0x62, FHE_TYPE_UINT64);
-    let mut behind = LineageFixture::new(handle(0x60, FHE_TYPE_UINT64), &[signer.pubkey()]);
-    behind.supersede(handle(0x61, FHE_TYPE_UINT64));
-    behind.supersede(sealed);
-    assert_eq!(behind.lineage.leaf_count, 2);
+    let mut behind =
+        EncryptedValueAccountFixture::new(handle(0x60, FHE_TYPE_UINT64), &[signer.pubkey()]);
+    behind.update(handle(0x61, FHE_TYPE_UINT64));
+    behind.update(sealed);
+    assert_eq!(behind.encrypted_value.leaf_count, 2);
 
     // The state the proof service observed: two more leaves, and a proof of the sealed handle
     // built against that later state.
     let mut caught_up = behind.clone();
-    caught_up.supersede(handle(0x63, FHE_TYPE_UINT64));
-    caught_up.supersede(handle(0x64, FHE_TYPE_UINT64));
-    assert_eq!(caught_up.lineage.leaf_count, 4);
-    // Leaf 2 is the one that commits `sealed`: superseding a handle seals the *outgoing* one, so
-    // the leaf appended by `supersede(0x63)` is the one naming 0x62.
+    caught_up.update(handle(0x63, FHE_TYPE_UINT64));
+    caught_up.update(handle(0x64, FHE_TYPE_UINT64));
+    assert_eq!(caught_up.encrypted_value.leaf_count, 4);
+    // Leaf 2 is the one that commits `sealed`: replacing a handle seals the *outgoing* one, so
+    // the leaf appended by `update(0x63)` is the one naming 0x62.
     let proof = caught_up.proof(2);
-    let claimed = caught_up.lineage.leaf_count;
+    let claimed = caught_up.encrypted_value.leaf_count;
     let request = RequestBuilder::new(&signer)
         .historical(&caught_up, sealed, signer.pubkey(), &proof, claimed)
         .typed();
 
     let (outcome, _) = observe(
         World::at_slot(BEFORE)
-            .with_lineage(&behind)
+            .with_encrypted_value_account(&behind)
             .with_watermark(signer.pubkey(), 0),
         &request,
     )
@@ -466,7 +469,7 @@ async fn a_proof_ahead_of_the_observation_is_retryable_and_then_authorized() {
 
     let (outcome, _) = observe(
         World::at_slot(AFTER)
-            .with_lineage(&caught_up)
+            .with_encrypted_value_account(&caught_up)
             .with_watermark(signer.pubkey(), 0),
         &request,
     )

@@ -1,4 +1,8 @@
-//! Dynamic-account bookkeeping for lowered eval plans.
+//! Dynamic-account bookkeeping for lowered executions.
+//!
+//! Public API surface: app programs. An app that assembles its own account list reads these
+//! predicates to decide which accounts a lowered execution still needs, so they stay exported even
+//! where this repository's own programs let the CPI helper do it.
 
 use anchor_lang::prelude::Pubkey;
 
@@ -6,26 +10,26 @@ use anchor_lang::prelude::Pubkey;
 use anchor_lang::{prelude::AccountInfo, Key};
 
 #[cfg(feature = "cpi")]
-use crate::plan::EvalPlan;
+use crate::execution::FheExecution;
 
-/// Why an eval plan needs a dynamic account.
+/// Why an execution needs a dynamic account.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EvalAccountPurpose {
-    DurableInputAcl,
-    DurableOutputAcl,
-    DurableOutputAuthority,
+pub enum ExecutionAccountPurpose {
+    PersistentInputAcl,
+    PersistentOutputAcl,
+    PersistentOutputAuthority,
 }
 
-/// Public view of one dynamic account required by an eval plan.
+/// Public view of one dynamic account required by an execution.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EvalAccountRequirement {
+pub struct ExecutionAccountRequirement {
     pubkey: Pubkey,
     is_writable: bool,
     is_signer: bool,
-    purposes: Vec<EvalAccountPurpose>,
+    purposes: Vec<ExecutionAccountPurpose>,
 }
 
-impl EvalAccountRequirement {
+impl ExecutionAccountRequirement {
     pub fn pubkey(&self) -> Pubkey {
         self.pubkey
     }
@@ -38,36 +42,36 @@ impl EvalAccountRequirement {
         self.is_signer
     }
 
-    pub fn has_purpose(&self, purpose: EvalAccountPurpose) -> bool {
+    pub fn has_purpose(&self, purpose: ExecutionAccountPurpose) -> bool {
         self.purposes.contains(&purpose)
     }
 
-    pub fn purposes(&self) -> &[EvalAccountPurpose] {
+    pub fn purposes(&self) -> &[ExecutionAccountPurpose] {
         &self.purposes
     }
 
     pub fn requires_dynamic_account(&self) -> bool {
         self.purposes
             .iter()
-            .any(|purpose| *purpose != EvalAccountPurpose::DurableOutputAuthority)
+            .any(|purpose| *purpose != ExecutionAccountPurpose::PersistentOutputAuthority)
     }
 
     pub fn requires_output_authority(&self) -> bool {
-        self.has_purpose(EvalAccountPurpose::DurableOutputAuthority)
+        self.has_purpose(ExecutionAccountPurpose::PersistentOutputAuthority)
     }
 }
 
-/// Dynamic account role required by an eval plan.
+/// Dynamic account role required by an execution.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct EvalAccountMeta {
+pub(crate) struct ExecutionAccountMeta {
     pub(crate) pubkey: Pubkey,
     pub(crate) is_writable: bool,
     pub(crate) is_signer: bool,
-    pub(crate) purposes: Vec<EvalAccountPurpose>,
+    pub(crate) purposes: Vec<ExecutionAccountPurpose>,
 }
 
-impl EvalAccountMeta {
-    pub(crate) fn readonly(pubkey: Pubkey, purpose: EvalAccountPurpose) -> Self {
+impl ExecutionAccountMeta {
+    pub(crate) fn readonly(pubkey: Pubkey, purpose: ExecutionAccountPurpose) -> Self {
         Self {
             pubkey,
             is_writable: false,
@@ -76,7 +80,7 @@ impl EvalAccountMeta {
         }
     }
 
-    pub(crate) fn writable(pubkey: Pubkey, purpose: EvalAccountPurpose) -> Self {
+    pub(crate) fn writable(pubkey: Pubkey, purpose: ExecutionAccountPurpose) -> Self {
         Self {
             pubkey,
             is_writable: true,
@@ -85,7 +89,7 @@ impl EvalAccountMeta {
         }
     }
 
-    pub(crate) fn readonly_signer(pubkey: Pubkey, purpose: EvalAccountPurpose) -> Self {
+    pub(crate) fn readonly_signer(pubkey: Pubkey, purpose: ExecutionAccountPurpose) -> Self {
         Self {
             pubkey,
             is_writable: false,
@@ -94,7 +98,16 @@ impl EvalAccountMeta {
         }
     }
 
-    pub(crate) fn promote(&mut self, required: Self) {
+    /// Widens this entry so it also satisfies `required`, returning the record that undoes it.
+    /// The record lives next to the mutation on purpose: it is only complete because `promote`
+    /// does exactly two things — OR the flags and append purposes — so anything added here has to
+    /// be added to [`ExecutionAccountMeta::demote`] in the same edit.
+    pub(crate) fn promote(&mut self, required: Self) -> MetaPromotion {
+        let undo = MetaPromotion {
+            was_writable: self.is_writable,
+            was_signer: self.is_signer,
+            purposes_len: self.purposes.len(),
+        };
         self.is_writable |= required.is_writable;
         self.is_signer |= required.is_signer;
         for purpose in required.purposes {
@@ -102,11 +115,27 @@ impl EvalAccountMeta {
                 self.purposes.push(purpose);
             }
         }
+        undo
+    }
+
+    /// Restores the entry to what it was before the [`MetaPromotion`] was taken.
+    pub(crate) fn demote(&mut self, undo: MetaPromotion) {
+        self.is_writable = undo.was_writable;
+        self.is_signer = undo.was_signer;
+        self.purposes.truncate(undo.purposes_len);
     }
 }
 
-impl From<&EvalAccountMeta> for EvalAccountRequirement {
-    fn from(meta: &EvalAccountMeta) -> Self {
+/// What one [`ExecutionAccountMeta::promote`] changed, small enough to record without allocating.
+#[derive(Debug)]
+pub(crate) struct MetaPromotion {
+    was_writable: bool,
+    was_signer: bool,
+    purposes_len: usize,
+}
+
+impl From<&ExecutionAccountMeta> for ExecutionAccountRequirement {
+    fn from(meta: &ExecutionAccountMeta) -> Self {
         Self {
             pubkey: meta.pubkey,
             is_writable: meta.is_writable,
@@ -116,11 +145,13 @@ impl From<&EvalAccountMeta> for EvalAccountRequirement {
     }
 }
 
-/// App authority that signs the fixed ZamaHost eval CPI account.
+/// The encrypted value account authority that signs the fixed ZamaHost `fhe_execute` CPI account —
+/// the execution-wide one, as opposed to the per-output authority an
+/// [`ExecutionOutputAuthorityRequirement`] names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct EvalAppAuthority(Pubkey);
+pub struct ExecutionEncryptedValueAccountAuthority(Pubkey);
 
-impl EvalAppAuthority {
+impl ExecutionEncryptedValueAccountAuthority {
     pub fn new(pubkey: Pubkey) -> Self {
         Self(pubkey)
     }
@@ -130,48 +161,47 @@ impl EvalAppAuthority {
     }
 }
 
-/// Output authority required by an eval plan.
+/// Output authority required by an execution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct EvalOutputAuthorityRequirement {
+pub struct ExecutionOutputAuthorityRequirement {
     pub(crate) pubkey: Pubkey,
-    pub(crate) cpi_account_authority: bool,
 }
 
-impl EvalOutputAuthorityRequirement {
+impl ExecutionOutputAuthorityRequirement {
     pub fn pubkey(&self) -> Pubkey {
         self.pubkey
     }
-
-    pub fn signs_cpi_account(&self) -> bool {
-        self.cpi_account_authority
-    }
 }
 
-/// Account-list resolution failure for an [`EvalPlan`].
+/// Account-list resolution failure for an [`FheExecution`].
 #[cfg(feature = "cpi")]
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum EvalAccountResolutionError {
+pub enum ExecutionAccountResolutionError {
     /// The same dynamic account pubkey was supplied more than once.
     DuplicateDynamicAccount { pubkey: Pubkey },
-    /// A supplied dynamic account is not required by this plan's non-authority
+    /// A supplied dynamic account is not required by this execution's non-authority
     /// remaining-account slots.
     UnexpectedDynamicAccount { pubkey: Pubkey },
     /// A non-authority remaining-account slot could not be resolved.
-    MissingDynamicAccount { requirement: EvalAccountRequirement },
+    MissingDynamicAccount {
+        requirement: ExecutionAccountRequirement,
+    },
     /// A writable remaining-account slot was supplied as readonly.
-    DynamicAccountNotWritable { requirement: EvalAccountRequirement },
-    /// The same durable output authority witness was supplied more than once.
+    DynamicAccountNotWritable {
+        requirement: ExecutionAccountRequirement,
+    },
+    /// The same persistent output authority witness was supplied more than once.
     DuplicateOutputAuthority { pubkey: Pubkey },
-    /// A supplied output authority is not required by this plan.
+    /// A supplied output authority is not required by this execution.
     UnexpectedOutputAuthority { pubkey: Pubkey },
-    /// A required durable output authority witness could not be resolved.
+    /// A required persistent output authority witness could not be resolved.
     MissingOutputAuthority {
-        authority: EvalOutputAuthorityRequirement,
+        authority: ExecutionOutputAuthorityRequirement,
     },
 }
 
 #[cfg(feature = "cpi")]
-impl EvalAccountResolutionError {
+impl ExecutionAccountResolutionError {
     pub fn pubkey(&self) -> Pubkey {
         match self {
             Self::DuplicateDynamicAccount { pubkey }
@@ -185,15 +215,15 @@ impl EvalAccountResolutionError {
     }
 }
 
-/// Ordered dynamic accounts resolved from an [`EvalPlan`].
+/// Ordered dynamic accounts resolved from an [`FheExecution`].
 #[cfg(feature = "cpi")]
 #[derive(Debug)]
-pub struct ResolvedEvalAccounts<'info> {
+pub struct ResolvedExecutionAccounts<'info> {
     accounts: Vec<AccountInfo<'info>>,
 }
 
 #[cfg(feature = "cpi")]
-impl<'info> ResolvedEvalAccounts<'info> {
+impl<'info> ResolvedExecutionAccounts<'info> {
     pub fn account_infos(&self) -> &[AccountInfo<'info>] {
         &self.accounts
     }
@@ -207,11 +237,11 @@ impl<'info> ResolvedEvalAccounts<'info> {
 }
 
 #[cfg(feature = "cpi")]
-pub(crate) fn resolve_eval_accounts<'info>(
-    plan: &EvalPlan,
+pub(crate) fn resolve_execution_accounts<'info>(
+    execution: &FheExecution,
     dynamic_accounts: impl IntoIterator<Item = AccountInfo<'info>>,
     output_authorities: impl IntoIterator<Item = AccountInfo<'info>>,
-) -> std::result::Result<ResolvedEvalAccounts<'info>, EvalAccountResolutionError> {
+) -> std::result::Result<ResolvedExecutionAccounts<'info>, ExecutionAccountResolutionError> {
     let dynamic_accounts = dynamic_accounts.into_iter().collect::<Vec<_>>();
     let output_authorities = output_authorities.into_iter().collect::<Vec<_>>();
 
@@ -221,16 +251,16 @@ pub(crate) fn resolve_eval_accounts<'info>(
             .iter()
             .any(|candidate| candidate.key() == pubkey)
         {
-            return Err(EvalAccountResolutionError::DuplicateDynamicAccount { pubkey });
+            return Err(ExecutionAccountResolutionError::DuplicateDynamicAccount { pubkey });
         }
-        let Some(required) = plan
+        let Some(required) = execution
             .dynamic_account_requirements()
             .find(|required| required.pubkey() == pubkey)
         else {
-            return Err(EvalAccountResolutionError::UnexpectedDynamicAccount { pubkey });
+            return Err(ExecutionAccountResolutionError::UnexpectedDynamicAccount { pubkey });
         };
         if !required.requires_dynamic_account() {
-            return Err(EvalAccountResolutionError::UnexpectedDynamicAccount { pubkey });
+            return Err(ExecutionAccountResolutionError::UnexpectedDynamicAccount { pubkey });
         }
     }
 
@@ -240,33 +270,35 @@ pub(crate) fn resolve_eval_accounts<'info>(
             .iter()
             .any(|candidate| candidate.key() == pubkey)
         {
-            return Err(EvalAccountResolutionError::DuplicateOutputAuthority { pubkey });
+            return Err(ExecutionAccountResolutionError::DuplicateOutputAuthority { pubkey });
         }
-        if !plan.output_authorities().any(|required| required == pubkey) {
-            return Err(EvalAccountResolutionError::UnexpectedOutputAuthority { pubkey });
+        if !execution
+            .output_authorities()
+            .any(|required| required == pubkey)
+        {
+            return Err(ExecutionAccountResolutionError::UnexpectedOutputAuthority { pubkey });
         }
     }
 
-    for authority in plan.output_authority_requirements() {
+    for authority in execution.output_authority_requirements() {
         if !output_authorities
             .iter()
             .any(|candidate| candidate.key() == authority.pubkey())
         {
-            return Err(EvalAccountResolutionError::MissingOutputAuthority { authority });
+            return Err(ExecutionAccountResolutionError::MissingOutputAuthority { authority });
         }
     }
 
     let mut accounts = Vec::new();
-    for required in plan.dynamic_account_requirements() {
+    for required in execution.dynamic_account_requirements() {
         let account = if required.requires_output_authority() {
             output_authorities
                 .iter()
                 .find(|candidate| candidate.key() == required.pubkey())
                 .cloned()
-                .ok_or(EvalAccountResolutionError::MissingOutputAuthority {
-                    authority: EvalOutputAuthorityRequirement {
+                .ok_or(ExecutionAccountResolutionError::MissingOutputAuthority {
+                    authority: ExecutionOutputAuthorityRequirement {
                         pubkey: required.pubkey(),
-                        cpi_account_authority: false,
                     },
                 })?
         } else if required.requires_dynamic_account() {
@@ -274,19 +306,19 @@ pub(crate) fn resolve_eval_accounts<'info>(
                 .iter()
                 .find(|candidate| candidate.key() == required.pubkey())
                 .cloned()
-                .ok_or_else(|| EvalAccountResolutionError::MissingDynamicAccount {
+                .ok_or_else(|| ExecutionAccountResolutionError::MissingDynamicAccount {
                     requirement: required.clone(),
                 })?
         } else {
             continue;
         };
         if required.is_writable() && !account.is_writable {
-            return Err(EvalAccountResolutionError::DynamicAccountNotWritable {
+            return Err(ExecutionAccountResolutionError::DynamicAccountNotWritable {
                 requirement: required,
             });
         }
         accounts.push(account);
     }
 
-    Ok(ResolvedEvalAccounts { accounts })
+    Ok(ResolvedExecutionAccounts { accounts })
 }

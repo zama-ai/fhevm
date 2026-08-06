@@ -27,7 +27,6 @@ PROGRAMS = {
         "constants": "programs/zama-host/src/constants.rs",
         "event_version_consts": {
             "zama_host": "EVENT_VERSION",
-            "zama_host_public_outputs_produced": "PUBLIC_OUTPUTS_PRODUCED_EVENT_VERSION",
         },
     },
     "confidential_token": {
@@ -40,15 +39,43 @@ PROGRAMS = {
     },
 }
 
+# The two demo-only programs. Their IDLs are vendored next to the dapp that consumes
+# them (solana/demo-dapp/idl), because the SDK's Codama codegen renders their
+# TypeScript clients from those copies. They stay out of the manifest below on
+# purpose — nothing off-chain mirrors their layouts, so they have no schema hash and
+# no Borsh golden — but the vendored copy still has to be what `anchor build` wrote
+# and not something edited by hand, so it is copied and compared like the two above.
+DEMO_PROGRAMS = {
+    "confidential_batcher": {
+        "target_idl": "target/idl/confidential_batcher.json",
+        "vendored_idl": "demo-dapp/idl/confidential_batcher.json",
+    },
+    "demo_vault": {
+        "target_idl": "target/idl/demo_vault.json",
+        "vendored_idl": "demo-dapp/idl/demo_vault.json",
+    },
+}
+
+
+def vendored_idls() -> dict[str, dict[str, Any]]:
+    """Every IDL whose committed copy must equal the build output.
+
+    One list drives both directions: `--write` copies each of these out of
+    target/idl, and the check compares each one back. Keeping the two directions on
+    separate lists is what left the demo programs' IDLs copied by sync-zama-host-idl.sh
+    and compared by nothing.
+    """
+    return {**PROGRAMS, **DEMO_PROGRAMS}
+
+
 PINNED_SCHEMAS = [
     ("zama_host", "account", "HostConfig", True),
     ("zama_host", "account", "KmsContext", True),
     ("zama_host", "type", "InitializeHostConfigArgs", True),
-    ("zama_host", "type", "FheEvalArgs", True),
+    ("zama_host", "type", "FheExecuteArgs", True),
     ("zama_host", "event", "PublicOutputsProducedEvent", True),
-    ("zama_host", "type", "EncryptedValueSubjectGrant", True),
     ("zama_host", "instruction_args", "initialize_host_config", True),
-    ("zama_host", "instruction_args", "fhe_eval", True),
+    ("zama_host", "instruction_args", "fhe_execute", True),
     # EncryptedValue itself is intentionally not an Anchor `Account<'info, T>`
     # (see solana/programs/zama-host/src/instructions/encrypted_value.rs) —
     # every instruction takes it as `UncheckedAccount` and hand-rolls the
@@ -57,10 +84,8 @@ PINNED_SCHEMAS = [
     # instead pinned by `zama-host`'s own
     # `state::encrypted_value::tests::discriminator_matches_shared_crate` and
     # `zama-solana-acl`'s codec tests, not by this golden file.
-    ("zama_host", "instruction_args", "create_encrypted_value", True),
     ("zama_host", "instruction_args", "allow_subjects", True),
     ("zama_host", "instruction_args", "remove_subject", True),
-    ("zama_host", "instruction_args", "update_encrypted_value", True),
     ("zama_host", "instruction_args", "make_handle_public", True),
     ("zama_host", "instruction_args", "define_kms_context", True),
     ("zama_host", "instruction_args", "delegate_for_user_decryption", True),
@@ -83,14 +108,12 @@ PINNED_SCHEMAS = [
     # (request_burn_redemption + both close_* instructions) was dissolved onto the stateless host
     # verifier (fhevm-internal#1763). Token disclosure is the thin `disclose_secp` consumer and
     # redemption is the thin `redeem_burned_amount` consumer of `verify_public_decrypt`. Only the
-    # permanent per-handle `BurnRedemption` replay marker remains as durable token state.
+    # permanent per-handle `BurnRedemption` replay marker remains as persistent token state.
     ("confidential_token", "account", "BurnRedemption", True),
     ("confidential_token", "instruction_args", "confidential_burn", True),
     ("confidential_token", "instruction_args", "confidential_burn_from_value", True),
     ("confidential_token", "instruction_args", "confidential_transfer", True),
     ("confidential_token", "instruction_args", "confidential_transfer_from_value", True),
-    # create_random_amount / create_random_bounded_amount are `poc`-gated demo helpers and are
-    # intentionally absent from the production IDL, so they are not pinned here.
     ("confidential_token", "instruction_args", "disclose_secp", True),
     ("confidential_token", "instruction_args", "initialize_mint", True),
     ("confidential_token", "instruction_args", "initialize_token_account", True),
@@ -116,7 +139,7 @@ def main() -> int:
     ).resolve()
 
     if args.write:
-        for spec in PROGRAMS.values():
+        for spec in vendored_idls().values():
             shutil.copyfile(
                 root / spec["target_idl"],
                 (root / spec["vendored_idl"]).resolve(),
@@ -132,16 +155,23 @@ def main() -> int:
         return 0
 
     errors: list[str] = []
-    for program, spec in PROGRAMS.items():
+    for program, spec in vendored_idls().items():
         target = root / spec["target_idl"]
         vendored = (root / spec["vendored_idl"]).resolve()
+        if not target.exists():
+            errors.append(
+                f"{program}: {target} is missing, so its vendored IDL was compared "
+                "with nothing; anchor build must run before this check"
+            )
+            continue
         if not vendored.exists():
             errors.append(f"{program}: missing vendored IDL {vendored}")
             continue
         if load_json(target) != load_json(vendored):
             errors.append(
                 f"{program}: vendored IDL is out of sync with {target}; "
-                "run solana/scripts/sync-zama-host-idl.sh"
+                "run solana/scripts/sync-zama-host-idl.sh to copy the build output "
+                "over it — never edit a vendored IDL by hand"
             )
 
     if not manifest_path.exists():

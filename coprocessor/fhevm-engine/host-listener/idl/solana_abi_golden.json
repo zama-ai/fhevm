@@ -2,8 +2,7 @@
   "description": "Pinned Solana Anchor schema hashes and deterministic Borsh golden fixtures for off-chain listener/KMS layout mirrors.",
   "event_versions": {
     "confidential_token": 1,
-    "zama_host": 1,
-    "zama_host_public_outputs_produced": 1
+    "zama_host": 1
   },
   "pending_schemas": [],
   "schemas": [
@@ -21,7 +20,7 @@
       "fixture_len": 169,
       "name": "ConfidentialMint",
       "program": "confidential_token",
-      "schema_hash": "adda0300985e06f9d2e944344f91d511a4e07904e289cf63853b3e4283ef5aa8"
+      "schema_hash": "43d6fb586410fe30500fdfa952c62a75bbfcc1bd658e141cd377e20e82551251"
     },
     {
       "category": "account",
@@ -70,14 +69,6 @@
       "name": "HandleDisclosedEvent",
       "program": "confidential_token",
       "schema_hash": "a359718c3ebe70c4ba30252a1ec092a2d36000b76e7f5b332fabb9871896aa50"
-    },
-    {
-      "category": "event",
-      "fixture_hex": "c57d20ad734696040102020202020202020202020202020202020202020202020202020202020202020303030303030303030303030303030303030303030303030303030303030303040404040404040404040404040404040404040404040404040404040404040400060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021222324250707070707070707070707070707070707070707070707070707070707070707",
-      "fixture_len": 170,
-      "name": "RandomAmountCreatedEvent",
-      "program": "confidential_token",
-      "schema_hash": "668f61855c5a1202454651b2c29afa3be21dedb8123f354892cd949a929f3c36"
     },
     {
       "category": "event",
@@ -185,75 +176,11 @@
     },
     {
       "category": "event",
-      "fixture_hex": "0b7b1ecf1bdad2530100030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021220405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021222305060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021222324010708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20212223242526",
-      "fixture_len": 139,
-      "name": "FheBinaryOpEvent",
-      "program": "zama_host",
-      "schema_hash": "3af445c0276b74d6f46406e54b27c5305f35b7cd106db2ca00dc67bcb830f4aa"
-    },
-    {
-      "category": "event",
-      "fixture_hex": "1115dd9dd18e587a01010000001200030405060708090a0b0c0d0e0f101112",
+      "fixture_hex": "00925498bbf0001401010000001200030405060708090a0b0c0d0e0f101112",
       "fixture_len": 31,
-      "name": "FheEvalRandomSeedsEvent",
+      "name": "FheExecuteRandomSeedsEvent",
       "program": "zama_host",
-      "schema_hash": "ff7deebcbe2147bab616622abc9633f03e6d5bd9ee9c63e6622bc4d1d959b337"
-    },
-    {
-      "category": "event",
-      "fixture_hex": "67fbf966d3b182670102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122010000000405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021222305060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425",
-      "fixture_len": 142,
-      "name": "FheIsInEvent",
-      "program": "zama_host",
-      "schema_hash": "0c9b49a4d81a139dcac3385882f922d00c972e6376ea8d773287800c9699f50a"
-    },
-    {
-      "category": "event",
-      "fixture_hex": "bd0dd4a3076270560102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021220405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021222305060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021222324010708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20212223242526",
-      "fixture_len": 170,
-      "name": "FheMulDivEvent",
-      "program": "zama_host",
-      "schema_hash": "3244251efb2171338af56a6578a0b3d924e40cb8c65980e17bed6fefcee4f544"
-    },
-    {
-      "category": "event",
-      "fixture_hex": "77a23597bca815b50102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021220405060708090a0b0c0d0e0f1011121305060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425",
-      "fixture_len": 122,
-      "name": "FheRandBoundedEvent",
-      "program": "zama_host",
-      "schema_hash": "977e4089a4fa72e29ddad661ac8d253ad27d9a24f5d6763cc860f7b8594ad6e2"
-    },
-    {
-      "category": "event",
-      "fixture_hex": "7d81e9de0201f6510102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021030405060708090a0b0c0d0e0f1011120405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021222324",
-      "fixture_len": 90,
-      "name": "FheRandEvent",
-      "program": "zama_host",
-      "schema_hash": "fced74dccde153eebdb0c3a216612ba47b441ab213fa60982d220b730330b4af"
-    },
-    {
-      "category": "event",
-      "fixture_hex": "0eab8d34a0b812420102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202101000000030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021220405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021222324",
-      "fixture_len": 110,
-      "name": "FheSumEvent",
-      "program": "zama_host",
-      "schema_hash": "b58e853a0b552f710c4511c0d0708bc20269d5694c317afb80c41cd81a6f1c5f"
-    },
-    {
-      "category": "event",
-      "fixture_hex": "d50f29c5eaa6b65f0100030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021220405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021222305060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021222324060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021222324250708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20212223242526",
-      "fixture_len": 170,
-      "name": "FheTernaryOpEvent",
-      "program": "zama_host",
-      "schema_hash": "bdcfe5d92307b80785708113e45114f9c73e49a17b0d9ba99bf0673c5f4a785a"
-    },
-    {
-      "category": "event",
-      "fixture_hex": "07fe223bd0acb39f0100030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021220405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021222305060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021222324",
-      "fixture_len": 106,
-      "name": "FheUnaryOpEvent",
-      "program": "zama_host",
-      "schema_hash": "c6c6ea1fab61d74b417a786fa40b039452b393713130c85656dc276c21a94c65"
+      "schema_hash": "605997fd6e7388b326b0596ac0b58fc911a8e64c5ddefbb850b0c3a4963a2856"
     },
     {
       "category": "event",
@@ -304,36 +231,12 @@
       "schema_hash": "6bbe522d3ea9d324d0eef718b45f1c14be10fe66683650f504914ebde96509d4"
     },
     {
-      "category": "event",
-      "fixture_hex": "9daca4f1f131500f0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021220405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021222324",
-      "fixture_len": 106,
-      "name": "TrivialEncryptEvent",
-      "program": "zama_host",
-      "schema_hash": "5a717ca1af81bb5c0165b56bcf4bc4a0d7182b1962cf7fd344fae5964998a4a0"
-    },
-    {
-      "category": "event",
-      "fixture_hex": "516fbc88f8aeef9c01020202020202020202020202020202020202020202020202020202020202020203030303030303030303030303030303030303030303030303030303030303030404040404040404040404040404040404040404040404040404040404040404450000000000000046000000000000004700000000000000480000000000000001",
-      "fixture_len": 138,
-      "name": "UserDecryptionDelegationUpdatedEvent",
-      "program": "zama_host",
-      "schema_hash": "b98f6d001691e0ce85d0a0f63d280d8eb7cfa81c42fa3e6ee819e04f4446e749"
-    },
-    {
       "category": "instruction_args",
       "fixture_hex": "bacd1f14b711051a010000000101010101010101010101010101010101010101010101010101010101010101",
       "fixture_len": 44,
       "name": "allow_subjects",
       "program": "zama_host",
-      "schema_hash": "90c0125c8507638be8bd62dd63578a806ffb97fffcb9cecf2a90f933726802e1"
-    },
-    {
-      "category": "instruction_args",
-      "fixture_hex": "104edb84e26fd34e01010101010101010101010101010101010101010101010101010101010101010202020202020202020202020202020202020202020202020202020202020202030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021220405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20212223010000000505050505050505050505050505050505050505050505050505050505050505",
-      "fixture_len": 172,
-      "name": "create_encrypted_value",
-      "program": "zama_host",
-      "schema_hash": "c742c3e673693b94e87d3c902aca2d75eb8dfd36dc2f32bb40c516d4e9835184"
+      "schema_hash": "9e080c6b9f31e70948cd4d5c5cfa11a059c042d026b6adbb455e6ec2526db58b"
     },
     {
       "category": "instruction_args",
@@ -341,7 +244,7 @@
       "fixture_len": 44,
       "name": "define_kms_context",
       "program": "zama_host",
-      "schema_hash": "8076dd7013b952401ea25d0ce52328a825ec5b4cca97d9d3c2749af854c3f88d"
+      "schema_hash": "cc8a0482562328c29e2061f8ab265e881996322a7fa0a36b9e806d9380f8072e"
     },
     {
       "category": "instruction_args",
@@ -349,7 +252,7 @@
       "fixture_len": 80,
       "name": "delegate_for_user_decryption",
       "program": "zama_host",
-      "schema_hash": "8b8752ab947784a48026351ff483ba0ee1e253799cf8c4cb461c4d2bea9007e0"
+      "schema_hash": "bfe49c12a23b01fc1422b732b66cfbd5fd7683b74653150f9b34f9dd12285d13"
     },
     {
       "category": "instruction_args",
@@ -357,15 +260,15 @@
       "fixture_len": 16,
       "name": "destroy_kms_context",
       "program": "zama_host",
-      "schema_hash": "18447ba3d01d021ce89c1f243a4b740b66bca8c28ae8d29de8cad49327616a24"
+      "schema_hash": "7943b3a5d342398e02b4411ffb919afbd24c5cf81be6c74cfedfd5b8d505034b"
     },
     {
       "category": "instruction_args",
-      "fixture_hex": "b02a3fb1f4a7786d010100000002030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20210100000000000004050005060600",
+      "fixture_hex": "60fd078b08bb6c2b010100000002030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20210100000000000004050005060600",
       "fixture_len": 59,
-      "name": "fhe_eval",
+      "name": "fhe_execute",
       "program": "zama_host",
-      "schema_hash": "db061ac2c87ceee3dec03f4cff92cf87ad868fb41211b8bc036800acc9e54498"
+      "schema_hash": "ab98eeff43923cfc9dfc0c71b1e2cc15d9fc2a24dac7ee448342c07bfd6799aa"
     },
     {
       "category": "instruction_args",
@@ -373,7 +276,7 @@
       "fixture_len": 90,
       "name": "initialize_host_config",
       "program": "zama_host",
-      "schema_hash": "e09039a78a6dec2c05a8fc48ee13da3c0569ce1d8453d947aeeb24b8b2a385e6"
+      "schema_hash": "407b5732f1bfda8b6dfd63a68788602ad0c21f05f47aa3f4166c4ad776bb6372"
     },
     {
       "category": "instruction_args",
@@ -413,7 +316,7 @@
       "fixture_len": 33,
       "name": "set_coprocessor_signers",
       "program": "zama_host",
-      "schema_hash": "363dfb6c5951d4abebe64e2a3cf9f1684247940f47e9be1b28ca92c3c15e79a0"
+      "schema_hash": "5cf21828dcdea992366fba783412c9d947d9598b1cad5db3b4b92a000dd9990c"
     },
     {
       "category": "instruction_args",
@@ -421,7 +324,7 @@
       "fixture_len": 41,
       "name": "set_deny_subject",
       "program": "zama_host",
-      "schema_hash": "fd2d92bd1e96bda8efc441ab7cf5f5c6b6565a4391fb9fa76f6d85c5da1c9346"
+      "schema_hash": "ddc2a74840ffcc5eeb2dcb45a7d0981246672811abdb93a9e9225d907e7f7696"
     },
     {
       "category": "instruction_args",
@@ -429,7 +332,7 @@
       "fixture_len": 9,
       "name": "set_grant_deny_list_enabled",
       "program": "zama_host",
-      "schema_hash": "ea88ca1b750d828eaf1a6436b7cff1927a98d9bb5ef28470381538c69d681ae4"
+      "schema_hash": "dc8160bec4586f5f1bdf0f8e6ccd42797465cc2b39a3ccc256181fc9c98a06e0"
     },
     {
       "category": "instruction_args",
@@ -437,7 +340,7 @@
       "fixture_len": 41,
       "name": "set_hcu_app_trusted",
       "program": "zama_host",
-      "schema_hash": "e635ef68bbc3094760ba078a663f336aade556ac3f6818cc67fd6abdf13b14bf"
+      "schema_hash": "e1850b6c12a6951e04948e71fa503b3a4d40a692865b5940a4937f7b55e4c173"
     },
     {
       "category": "instruction_args",
@@ -445,7 +348,7 @@
       "fixture_len": 16,
       "name": "set_hcu_block_cap_per_app",
       "program": "zama_host",
-      "schema_hash": "4c62df1838aaada72fb420dbc25d30bc7459dff34a2f6b708580190936494743"
+      "schema_hash": "b71785805541f6fe4743fde71d6d2e404cd95d01c78fe471bb8afaa15e14f15d"
     },
     {
       "category": "instruction_args",
@@ -453,7 +356,7 @@
       "fixture_len": 9,
       "name": "set_host_pause",
       "program": "zama_host",
-      "schema_hash": "00d019ec36c7282cfc505252517aa3c8391e6c89711683a8deada2d02f5febc0"
+      "schema_hash": "100e731b8b1941af234900380421081f7496095278a5b71a32c3c018fb38f6df"
     },
     {
       "category": "instruction_args",
@@ -461,7 +364,7 @@
       "fixture_len": 16,
       "name": "set_max_hcu_depth_per_tx",
       "program": "zama_host",
-      "schema_hash": "15e4024ae517586e051f1474041cdba04cdd181f97d3ba38e714cf6498a78358"
+      "schema_hash": "3b7d3082871bae26e666825e15907ecfb1037a6241a0b2b5753e09b43348cfe5"
     },
     {
       "category": "instruction_args",
@@ -469,15 +372,7 @@
       "fixture_len": 16,
       "name": "set_max_hcu_per_tx",
       "program": "zama_host",
-      "schema_hash": "2d5d2c8a78afbf325972f3dd5abe964b90eaab618211724e5a26203b2b4a813a"
-    },
-    {
-      "category": "instruction_args",
-      "fixture_hex": "86070cf7e95023d70102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2002030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021010000000303030303030303030303030303030303030303030303030303030303030303",
-      "fixture_len": 108,
-      "name": "update_encrypted_value",
-      "program": "zama_host",
-      "schema_hash": "82af334cd0b5150a9094cf49e1bcf9f4d52fbae6375b527c88c771cbc433a976"
+      "schema_hash": "9d28530ac9b1e2e3db8be2e4e0f435061e96939cddcb3cd8be8c3b95c0e24fd0"
     },
     {
       "category": "instruction_args",
@@ -489,19 +384,11 @@
     },
     {
       "category": "type",
-      "fixture_hex": "0101010101010101010101010101010101010101010101010101010101010101",
-      "fixture_len": 32,
-      "name": "EncryptedValueSubjectGrant",
-      "program": "zama_host",
-      "schema_hash": "361765b1614050eb63d1e3f052e53f9e5a6d131ffdbbb6219dcb618881ea0889"
-    },
-    {
-      "category": "type",
       "fixture_hex": "010100000002030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20210100000000000004050005060600",
       "fixture_len": 51,
-      "name": "FheEvalArgs",
+      "name": "FheExecuteArgs",
       "program": "zama_host",
-      "schema_hash": "4c9b77b4539ba372769e0bda93ba2fe9bc02bee5026dfdb80fc2e2b5def6f03d"
+      "schema_hash": "8c554e609d36d1ceeee4ac4a926beda13ce125510396aa9b608a891fcf954108"
     },
     {
       "category": "type",

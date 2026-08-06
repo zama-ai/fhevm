@@ -47,6 +47,6 @@ tracing-subscriber = { version = "0.3.20", features = ["env-filter", "json"] }
 utoipa = { version = "5.4.0", features = ["axum_extras"] }
 utoipa-swagger-ui = { version = "9.0.2", features = ["axum", "vendored"] }
 yellowstone-grpc-proto = { git = "https://github.com/rpcpool/yellowstone-grpc", tag = "v5.0.1+solana.2.1.21", default-features = false, features = ["tonic", "tonic-compression"] }
-zama-host = { path = "../solana/programs/zama-host", features = ["no-entrypoint"] }
+zama-host = { path = "../solana/programs/zama-host", features = ["no-entrypoint", "decode"] }
 zama-solana-acl = { path = "../solana/crates/zama-solana-acl" }
 zama-solana-transaction = { path = "../solana/crates/zama-solana-transaction" }

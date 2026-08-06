@@ -63,11 +63,11 @@ impl KmsPairValidator for RecordingValidator {
 }
 
 /// A request, a world that authorizes it, and this deployment.
-fn scenario() -> (Wallet, LineageFixture, [u8; 32]) {
+fn scenario() -> (Wallet, EncryptedValueAccountFixture, [u8; 32]) {
     let wallet = Wallet::new(1);
     let live = handle(0x10, FHE_TYPE_UINT64);
-    let lineage = LineageFixture::new(live, &[wallet.pubkey()]);
-    (wallet, lineage, live)
+    let encrypted_value_account = EncryptedValueAccountFixture::new(live, &[wallet.pubkey()]);
+    (wallet, encrypted_value_account, live)
 }
 
 fn context<'a>(
@@ -85,13 +85,13 @@ async fn authorize_with<V: KmsPairValidator>(
     validator: &V,
     permit: PermitBuilder,
 ) -> (Result<(), AuthorizationFailure>, usize) {
-    let (wallet, lineage, live) = scenario();
+    let (wallet, encrypted_value_account, live) = scenario();
     let request = RequestBuilder::new(&wallet)
         .permit(permit)
-        .direct_current(&lineage, live)
+        .direct_current(&encrypted_value_account, live)
         .typed();
     let world = World::at_slot(100)
-        .with_lineage(&lineage)
+        .with_encrypted_value_account(&encrypted_value_account)
         .with_watermark(wallet.pubkey(), 0);
     let reader = ScriptedReader::constant(world);
     let deployment = deployment();

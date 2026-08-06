@@ -6,7 +6,7 @@ name: solana-e2e
 # user-decrypt de-signcryption runs entirely in @fhevm/sdk/solana, so no kms-core checkout.
 #
 # Ordinary computation ingestion is Yellowstone-only: zama-host disables optional events and the
-# coprocessor is fed by gRPC off-chain reconstruction. The narrow born-public lifecycle batch stays
+# coprocessor is fed by gRPC off-chain reconstruction. The narrow created-public lifecycle batch stays
 # enabled for non-reconstructible handles. The single-value `reconstruct` matrix is
 # kept so the job/artifact names keep their `-reconstruct` suffix; setup-solana-side.sh no longer
 # keys off it.
@@ -97,6 +97,12 @@ jobs:
           # and whose branch-published images (:feature-solana-<sha>) it uses for untouched groups.
           fetch-depth: 2
 
+      # Seconds, and it guards the phase-to-phase plumbing of the two long scripts below: they read
+      # the live clients' stdout by grepping printed labels, so a renamed label aborts full-vertical.sh
+      # under `bash -e` with no message, ~45 minutes into this job. Fail here instead.
+      - name: Check the e2e scripts grep for labels the clients still print
+        run: python3 solana/scripts/check-e2e-greps.py
+
       - name: Setup Node
         # full-vertical.sh runs the TypeScript @fhevm/sdk clients directly under Node.
         uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
@@ -175,17 +181,32 @@ jobs:
         run: bun run demo up
 
       - name: Verify @fhevm/sdk runtime deps and demo consumer build
-        # Lifecycle bring-up builds the SDK, then refreshes each frozen consumer graph. Assert both
-        # public entrypoints before spending the remainder of the job on the vertical.
+        # Lifecycle bring-up builds the SDK, then refreshes each frozen consumer graph. Assert the
+        # public Solana entrypoint before spending the remainder of the job on the vertical. The
+        # vault module is no longer an SDK subpath (it lives in the demo dapp), so the dapp build
+        # below is what proves it resolves.
         run: |
           cd "$GITHUB_WORKSPACE/test-suite/fhevm"
           node --input-type=module -e "await import('@fhevm/sdk/solana'); console.log('@fhevm/sdk/solana imports OK')"
-          node --input-type=module -e "await import('@fhevm/sdk/solana/vault'); console.log('@fhevm/sdk/solana/vault imports OK')"
           cd "$GITHUB_WORKSPACE/solana/demo-dapp"
           bun run build
 
       - name: Drive the Solana decrypt vertical (full-vertical.sh)
         run: bash solana/scripts/e2e/full-vertical.sh
+
+      # The deposit-arc scenario drives the demo dapp's vault module from bun, and the vault reaches
+      # into SDK *sources* (`@sdk-src`) for internals the published package deliberately does not
+      # export (fhevm-internal#1859 §6d). Source resolution starts at sdk/js-sdk/, so the SDK's own
+      # runtime dependencies have to exist there or at the repo root — the frozen consumer graph
+      # under test-suite/fhevm only serves the *built* package, which is why the suite below failed on
+      # `Cannot find module '@noble/hashes/sha2.js'` while the import check above passed.
+      #
+      # After the bring-up, not before: with no node_modules anywhere, bun installs test-suite/fhevm's
+      # own graph on demand, and creating a root tree first suppresses that — an earlier attempt at
+      # this position broke `bun run demo up` on `Cannot find module '@solana/kit'`. The lifecycle's
+      # consumer graphs live in their own directories and are not touched by this root install.
+      - name: Install the SDK's own dependency graph (bun resolves SDK sources)
+        run: npm ci --workspace=@fhevm/sdk-dev --workspace=@fhevm/sdk --include-workspace-root=false
 
       - name: Run the Solana e2e scenario suite (SDK-driven, against the up stack)
         # The lifecycle-owned stack is still up. These bun:test scenarios drive product arcs through

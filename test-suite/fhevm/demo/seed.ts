@@ -6,9 +6,9 @@
 // validator with the two demo programs deployed (their keypairs are classifier-gated in this
 // environment — see solana/scripts/demo/demo-keypairs/README). It is exercised end-to-end only by the
 // `solana-e2e` workflow's demo phase (per-PR and manual dispatch), which deploys the programs and runs
-// `demo-up.sh` (which calls this) before the smoke. The SDK provisioning surface is reached through
-// the runtime dynamic-import seam (string module specifier) the rest of test-suite uses, because the
-// SDK's generated `_types` are not built at `tsc` check time (see `src/solana/current-user-decrypt.ts`).
+// `demo-up.sh` (which calls this) before the smoke. The vault provisioning surface is the demo
+// dapp's own module (`solana/demo-dapp/src/vault`, fhevm-internal#1859 §6d), imported statically
+// and fully typed.
 //
 // Seeding sequence (writes nothing until every step has produced a real on-chain address):
 //   0. verify the bring-up's kms-context account exists on-chain — the seeder never creates it, it
@@ -65,6 +65,7 @@ import {
   type SolanaDemoConfig,
   type VaultDemoRoots,
 } from "./config";
+import * as vault from "@demo-dapp/vault/index.js";
 
 // Well-known program ids (the same literals `faucet-server.ts` and the SDK's `derive.ts` use).
 const SPL_TOKEN_PROGRAM_ADDRESS = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
@@ -83,88 +84,17 @@ const BATCH_AUTHORITY_FUNDING_LAMPORTS = 100_000_000n;
 // Host KMS-context id used at bring-up (context 1). The demo runs against this single context; the
 // gateway/user-decrypt context id is a separate value carried in `userDecryptContextId`.
 const BRINGUP_KMS_CONTEXT_ID = 1n;
-// Addresses per ALT extend transaction. The full settle table is 32 addresses; a single extend of
-// all 32 is ~1274 bytes of instruction data alone and overflows the 1232-byte transaction wire
-// limit (even before the create instruction and signatures), so the extend is chunked. 20 keeps the
-// first chunk — which rides in the same transaction as the table create — comfortably under the
-// limit; 32 addresses then split into two chunks (20 + 12).
-const SETTLE_ALT_EXTEND_CHUNK_SIZE = 20;
-
 const addressEncoder = getAddressEncoder();
 const encodeAddress = (value: Address): Uint8Array => new Uint8Array(addressEncoder.encode(value));
 
-/** Splits `items` into consecutive slices of at most `size`, preserving order. */
-const chunk = <T>(items: readonly T[], size: number): T[][] => {
-  const chunks: T[][] = [];
-  for (let index = 0; index < items.length; index += size) chunks.push(items.slice(index, index + size));
-  return chunks;
-};
-
 /**
  * A signer account meta: the `signer` field rides along at runtime so `signTransactionMessageWithSigners`
- * produces the signature, while the meta stays typed as a plain `AccountMeta` (same shape the SDK's
- * lookup-table builder uses). Used for the hand-built SPL `CreateAccount`, whose new-account keypair
+ * produces the signature, while the meta stays typed as a plain `AccountMeta` (same shape the demo
+ * dapp's address-lookup-table builder uses). Used for the hand-built SPL `CreateAccount`, whose keypair
  * must sign its own creation.
  */
 const signerMeta = (signer: TransactionSigner, role: AccountRole): AccountMeta =>
   ({ address: signer.address, role, signer }) as unknown as AccountMeta;
-
-// Structural view of the provisioning members the seed uses from `@fhevm/sdk/solana/vault`. The
-// import itself is untyped (runtime dynamic-import seam); this interface restates only what the seed
-// calls, so a signature drift on the SDK side surfaces as a local type error here rather than an
-// opaque runtime failure. Keep it in lockstep with the vault subpath exports.
-type BatchDirectionValue = number;
-type OpenBatchResult = {
-  readonly instructions: readonly Instruction[];
-  readonly lookupTableAddress: Address;
-  readonly lookupTableAddresses: readonly Address[];
-};
-type VaultProvisioning = {
-  buildInitializeVaultInstruction(parameters: {
-    payer: TransactionSigner;
-    vault: TransactionSigner;
-    underlyingMint: Address;
-  }): Promise<Instruction>;
-  buildInitializeMintInstruction(parameters: {
-    authority: TransactionSigner;
-    mint: TransactionSigner;
-    underlyingMint: Address;
-    hostConfig: Address;
-  }): Promise<Instruction>;
-  buildInitializeBatcherInstruction(parameters: {
-    payer: TransactionSigner;
-    batcher: TransactionSigner;
-    joinConfidentialMint: Address;
-    payoutConfidentialMint: Address;
-    vault: Address;
-    minBatchAgeSlots: number | bigint;
-    direction: BatchDirectionValue;
-  }): Instruction;
-  BatchDirection: { readonly Deposit: BatchDirectionValue; readonly Redeem: BatchDirectionValue };
-  openBatchForBatcher(parameters: {
-    roots: VaultDemoRoots;
-    batchIndex: bigint;
-    payer: TransactionSigner;
-    recentSlot: bigint;
-    authorityFundingLamports: number | bigint;
-  }): Promise<OpenBatchResult>;
-  getExtendLookupTableInstruction(parameters: {
-    lookupTable: Address;
-    authority: TransactionSigner;
-    payer: TransactionSigner;
-    addresses: readonly Address[];
-  }): Instruction;
-  DEMO_VAULT_PROGRAM_ADDRESS: Address;
-  CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS: Address;
-  ZAMA_HOST_PROGRAM_ADDRESS: Address;
-  CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS: Address;
-};
-
-/** Loads the vault provisioning surface through the runtime dynamic-import seam (untyped by construction). */
-const loadVaultModule = async (): Promise<VaultProvisioning> => {
-  const vaultModule = "@fhevm/sdk/solana/vault";
-  return (await import(vaultModule)) as unknown as VaultProvisioning;
-};
 
 /** ComputeBudget `SetComputeUnitLimit` (tag 2): raises the per-tx CU ceiling for the FHE-heavy CPIs. */
 const setComputeUnitLimitInstruction = (units: number): Instruction => {
@@ -268,8 +198,6 @@ const main = async (): Promise<void> => {
       { description: `airdrop to ${recipient}`, timeoutMs: 30_000 },
     );
   };
-
-  const vault = await loadVaultModule();
 
   // Actors. The deployer wallet pays for and signs all provisioning; the mint authority is the
   // committed key `demo:faucet` mints mock USDC from; the personas are the demo end-users + operator.
@@ -440,11 +368,9 @@ const main = async (): Promise<void> => {
   };
 
   // 5. Open the first batch on each batcher and stand up its settle lookup table. open_batch carries
-  // ~24 accounts, so it goes in its own transaction. The table's create then rides with the FIRST
-  // extend chunk; the remaining chunks follow one transaction at a time. The single 32-address extend
-  // the SDK returns is rebuilt here in `SETTLE_ALT_EXTEND_CHUNK_SIZE` chunks because a lone 32-address
-  // extend overflows the 1232-byte wire limit. Each extend is confirmed before the next, so the table
-  // is fully populated before `settle` ever reads it.
+  // ~24 accounts, so it goes in its own transaction. The vault builder returns the extend already
+  // chunked at the wire limit: the table's create rides with the FIRST extend chunk, and each later
+  // chunk is confirmed on its own, so the table is fully populated before `settle` ever reads it.
   const openFirstBatch = async (roots: VaultDemoRoots): Promise<Address> => {
     const recentSlot = await rpc.getSlot({ commitment: "finalized" }).send();
     const opened = await vault.openBatchForBatcher({
@@ -454,19 +380,13 @@ const main = async (): Promise<void> => {
       recentSlot,
       authorityFundingLamports: BATCH_AUTHORITY_FUNDING_LAMPORTS,
     });
-    const [openBatchInstruction, createLookupTable] = opened.instructions;
+    const [openBatchInstruction, createLookupTable, firstExtend, ...laterExtends] = opened.instructions;
     await send(deployer, [openBatchInstruction!]);
-    const extendChunks = chunk(opened.lookupTableAddresses, SETTLE_ALT_EXTEND_CHUNK_SIZE);
-    for (const [chunkIndex, addresses] of extendChunks.entries()) {
-      const extendLookupTable = vault.getExtendLookupTableInstruction({
-        lookupTable: opened.lookupTableAddress,
-        authority: deployer,
-        payer: deployer,
-        addresses,
-      });
-      // The create must land in the same transaction that first extends the table (or immediately
-      // before it); pair it with chunk 0, then send each later chunk on its own.
-      await send(deployer, chunkIndex === 0 ? [createLookupTable!, extendLookupTable] : [extendLookupTable]);
+    // The create must land in the same transaction that first extends the table (or immediately
+    // before it); pair it with the first chunk, then send each later chunk on its own.
+    await send(deployer, [createLookupTable!, firstExtend!]);
+    for (const extendLookupTable of laterExtends) {
+      await send(deployer, [extendLookupTable]);
     }
     return opened.lookupTableAddress;
   };

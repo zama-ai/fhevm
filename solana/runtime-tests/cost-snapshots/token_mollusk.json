@@ -1,42 +1,42 @@
 {
   "confidential_burn_from_value/direct": {
-    "compute_units": 218703,
+    "compute_units": 217104,
     "unique_accounts": 15,
     "instruction_data_bytes": 8,
     "cpi_instructions": 8,
-    "total_cpi_instruction_data_bytes": 1412,
-    "max_cpi_instruction_data_bytes": 668
+    "total_cpi_instruction_data_bytes": 1409,
+    "max_cpi_instruction_data_bytes": 665
   },
   "confidential_transfer/direct": {
-    "compute_units": 299155,
+    "compute_units": 297997,
     "unique_accounts": 14,
     "instruction_data_bytes": 223,
     "cpi_instructions": 7,
-    "total_cpi_instruction_data_bytes": 1881,
-    "max_cpi_instruction_data_bytes": 1096
+    "total_cpi_instruction_data_bytes": 1878,
+    "max_cpi_instruction_data_bytes": 1093
   },
   "confidential_transfer/steady_state": {
-    "compute_units": 316434,
+    "compute_units": 314794,
     "unique_accounts": 14,
     "instruction_data_bytes": 223,
     "cpi_instructions": 5,
-    "total_cpi_instruction_data_bytes": 1965,
-    "max_cpi_instruction_data_bytes": 1228
+    "total_cpi_instruction_data_bytes": 1962,
+    "max_cpi_instruction_data_bytes": 1225
   },
   "confidential_transfer_from_value/direct": {
-    "compute_units": 261733,
+    "compute_units": 260325,
     "unique_accounts": 15,
     "instruction_data_bytes": 8,
     "cpi_instructions": 7,
-    "total_cpi_instruction_data_bytes": 1487,
-    "max_cpi_instruction_data_bytes": 702
+    "total_cpi_instruction_data_bytes": 1484,
+    "max_cpi_instruction_data_bytes": 699
   },
   "initialize_token_account": {
-    "compute_units": 61791,
+    "compute_units": 61984,
     "unique_accounts": 11,
     "instruction_data_bytes": 16,
     "cpi_instructions": 6,
-    "total_cpi_instruction_data_bytes": 580,
+    "total_cpi_instruction_data_bytes": 579,
     "max_cpi_instruction_data_bytes": 242
   }
 }

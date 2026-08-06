@@ -17,9 +17,9 @@
 //! writes the fixture's bytes, and the fixture's bytes still hand-decode to the fields it
 //! declares.
 //!
-//! Build the program artifact with the `poc` feature before running these; a default
-//! or stale `.so` makes the whole harness fail on an unrelated missing sysvar rather
-//! than on anything these tests assert.
+//! Build the program artifact before running these (`bash scripts/check-zama-host-idl.sh`); a
+//! stale `.so` makes the whole harness fail on an unrelated missing sysvar rather than on anything
+//! these tests assert.
 
 use anchor_lang::{
     prelude::system_program, AccountDeserialize, AccountSerialize, Discriminator, InstructionData,

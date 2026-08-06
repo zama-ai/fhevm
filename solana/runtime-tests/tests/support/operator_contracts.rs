@@ -1,4 +1,4 @@
-//! Explicit test-owned contract catalog for the shipped Solana `fhe_eval` surface.
+//! Explicit test-owned contract catalog for the shipped Solana `fhe_execute` surface.
 //!
 //! Accepted cases are explicit rather than generated from production predicates. The macros
 //! expand to ordinary named tests and can be reused by a later Mollusk target through the same
