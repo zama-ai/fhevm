@@ -42,7 +42,13 @@ const UPGRADE_VERSION_KEYS: Record<UpgradeGroup, string[]> = {
   ],
   "listener-core": ["LISTENER_CORE_VERSION"],
   "relayer": ["RELAYER_VERSION", "RELAYER_MIGRATE_VERSION"],
-  "test-suite": ["TEST_SUITE_VERSION"],
+  // RELAYER_SDK_VERSION belongs to this group even though it is a build arg rather than an
+  // image tag: it selects which client library the e2e suite calls the relayer with (empty =
+  // the in-repo @fhevm/sdk, otherwise that exact @zama-fhe/relayer-sdk release). Rollouts move
+  // the client last, so it has to be lockable like any other version. The upgrade path already
+  // rebuilds every locally overridden component image, which is what makes the changed build
+  // arg take effect.
+  "test-suite": ["TEST_SUITE_VERSION", "RELAYER_SDK_VERSION"],
 };
 const LISTENER_CORE_SERVICES = ["listener-redis", "listener-publisher-for-anvil"];
 type UpgradeComponentPlan = {
