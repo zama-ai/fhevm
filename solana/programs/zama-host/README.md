@@ -123,13 +123,18 @@ is retained only as the replaced-design stub in DD-007.
 
 ## ACL Model
 
-`EncryptedValue.subjects` is the complete MVP ACL: if a subject is in the set, it can use the
-current handle in `fhe_execute`, request user decrypt, add another subject through `allow_subjects`,
-and call `make_handle_public` for the exact current handle. If a subject is not in the set, it cannot
-do any of those actions.
+`EncryptedValue.subjects` is the complete MVP ACL for **use**: a subject in the set can use the
+current handle in `fhe_execute` and request user decrypt. Subject-list mutation
+(`allow_subjects` / `remove_subject`) and exact-handle public sealing are **not** subject-admin:
+the signer must equal `EncryptedValue.encrypted_value_account_authority` (the same gate as
+persistent create/update; fhevm-internal#1862 #13). Apps that use a PDA as the encrypted value
+account authority rotate auditors or seal a handle by CPI + `invoke_signed` as that PDA.
+Confidential-token exposes owner-authorized token-account wrappers and mint-authority-authorized
+total-supply wrappers for both operations. A subject outside the set cannot use or user-decrypt the
+handle; a subject inside the set still cannot mutate peers or make the handle public.
 
-`allow_subjects` is append-only and idempotent for existing subjects. Its authority must already be
-in the allowed set, and deny-list/pause checks still apply. Updating a handle seals one
+`allow_subjects` is append-only and idempotent for existing subjects. Its authority must equal
+`EncryptedValue.encrypted_value_account_authority`, and deny-list/pause checks still apply. Updating a handle seals one
 `HistoricalAccessLeaf` per allowed subject in current order. Public decryptability is represented
 only by `PublicDecryptLeaf`; it never rolls forward to later handles.
 

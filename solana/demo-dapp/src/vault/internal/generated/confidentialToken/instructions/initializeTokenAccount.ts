@@ -14,8 +14,6 @@ import {
   getBytesEncoder,
   getStructDecoder,
   getStructEncoder,
-  getU64Decoder,
-  getU64Encoder,
   SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
   SolanaError,
   transformEncoder,
@@ -99,31 +97,19 @@ export type InitializeTokenAccountInstruction<
 
 export type InitializeTokenAccountInstructionData = {
   discriminator: ReadonlyUint8Array;
-  initialBalance: bigint;
 };
 
-export type InitializeTokenAccountInstructionDataArgs = {
-  initialBalance: number | bigint;
-};
+export type InitializeTokenAccountInstructionDataArgs = {};
 
 export function getInitializeTokenAccountInstructionDataEncoder(): FixedSizeEncoder<InitializeTokenAccountInstructionDataArgs> {
-  return transformEncoder(
-    getStructEncoder([
-      ['discriminator', fixEncoderSize(getBytesEncoder(), 8)],
-      ['initialBalance', getU64Encoder()],
-    ]),
-    (value) => ({
-      ...value,
-      discriminator: INITIALIZE_TOKEN_ACCOUNT_DISCRIMINATOR,
-    }),
-  );
+  return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)]]), (value) => ({
+    ...value,
+    discriminator: INITIALIZE_TOKEN_ACCOUNT_DISCRIMINATOR,
+  }));
 }
 
 export function getInitializeTokenAccountInstructionDataDecoder(): FixedSizeDecoder<InitializeTokenAccountInstructionData> {
-  return getStructDecoder([
-    ['discriminator', fixDecoderSize(getBytesDecoder(), 8)],
-    ['initialBalance', getU64Decoder()],
-  ]);
+  return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)]]);
 }
 
 export function getInitializeTokenAccountInstructionDataCodec(): FixedSizeCodec<
@@ -183,7 +169,6 @@ export type InitializeTokenAccountAsyncInput<
   hcuTrustedAppRecord?: Address<TAccountHcuTrustedAppRecord>;
   eventAuthority: Address<TAccountEventAuthority>;
   program: Address<TAccountProgram>;
-  initialBalance: InitializeTokenAccountInstructionDataArgs['initialBalance'];
 };
 
 export async function getInitializeTokenAccountInstructionAsync<
@@ -270,9 +255,6 @@ export async function getInitializeTokenAccountInstructionAsync<
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
-  // Original args.
-  const args = { ...input };
-
   // Resolve default values.
   if (!accounts.computeSigner.value) {
     accounts.computeSigner.value = await findComputeSignerPda({
@@ -311,7 +293,7 @@ export async function getInitializeTokenAccountInstructionAsync<
       getAccountMeta('eventAuthority', accounts.eventAuthority),
       getAccountMeta('program', accounts.program),
     ],
-    data: getInitializeTokenAccountInstructionDataEncoder().encode(args as InitializeTokenAccountInstructionDataArgs),
+    data: getInitializeTokenAccountInstructionDataEncoder().encode({}),
     programAddress,
   } as InitializeTokenAccountInstruction<
     TProgramAddress,
@@ -379,7 +361,6 @@ export type InitializeTokenAccountInput<
   hcuTrustedAppRecord?: Address<TAccountHcuTrustedAppRecord>;
   eventAuthority: Address<TAccountEventAuthority>;
   program: Address<TAccountProgram>;
-  initialBalance: InitializeTokenAccountInstructionDataArgs['initialBalance'];
 };
 
 export function getInitializeTokenAccountInstruction<
@@ -464,9 +445,6 @@ export function getInitializeTokenAccountInstruction<
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
-  // Original args.
-  const args = { ...input };
-
   // Resolve default values.
   if (!accounts.zamaProgram.value) {
     accounts.zamaProgram.value =
@@ -494,7 +472,7 @@ export function getInitializeTokenAccountInstruction<
       getAccountMeta('eventAuthority', accounts.eventAuthority),
       getAccountMeta('program', accounts.program),
     ],
-    data: getInitializeTokenAccountInstructionDataEncoder().encode(args as InitializeTokenAccountInstructionDataArgs),
+    data: getInitializeTokenAccountInstructionDataEncoder().encode({}),
     programAddress,
   } as InitializeTokenAccountInstruction<
     TProgramAddress,

@@ -8,12 +8,11 @@ import {
   tokenAccountAddress,
 } from './vault/index.js';
 
-import type { BatchTarget, VaultDirection } from './batchTypes';
+import { BatchStatus, type BatchTarget, type VaultDirection } from './batchTypes';
 import type { DemoConfig } from './demoConfig';
 import { sendTransaction } from './sendTransaction';
 import { vaultRoots } from './vaultRoots';
 
-const BATCH_SETTLED = 2;
 const CLAIM_COMPUTE_UNIT_LIMIT = 1_200_000;
 const SYSTEM_PROGRAM_ADDRESS = '11111111111111111111111111111111';
 
@@ -34,7 +33,7 @@ const readClaimState = async (
   if (batch.index !== position.batchIndex || batch.addresses.batch !== position.batch) {
     throw new Error(`Batch reference ${position.batch} does not match index ${position.batchIndex}`);
   }
-  if (batch.state.status !== BATCH_SETTLED) throw new Error('The batch has not settled yet');
+  if (batch.state.status !== BatchStatus.Settled) throw new Error('The batch has not settled yet');
 
   const joinRecord = await getJoinRecord(rpc, await deriveJoinRecordAddress(position.batch, user), {
     commitment: 'confirmed',

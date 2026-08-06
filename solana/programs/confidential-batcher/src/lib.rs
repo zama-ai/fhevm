@@ -48,7 +48,9 @@ pub use errors::*;
 pub use events::*;
 use instructions::*;
 /// Re-export instruction account contexts for tests.
-pub use instructions::{Claim, Dispatch, InitializeBatcher, Join, OpenBatch, Quit, Settle};
+pub use instructions::{
+    CancelDispatch, Claim, Dispatch, InitializeBatcher, Join, OpenBatch, Quit, Settle,
+};
 /// Re-export account layouts, PDA helpers, and payout math.
 pub use state::*;
 
@@ -98,10 +100,10 @@ pub mod confidential_batcher {
         instructions::join(ctx, amount_attestation)
     }
 
-    /// Leaves the pending batch before dispatch: transfers the user's exact
+    /// Leaves a pending batch before dispatch, or a refunding batch after dispatch cancellation:
+    /// transfers the user's exact
     /// recorded amount back from the batch account (all-or-nothing) and
-    /// resets the joined encrypted value account to zero. Always available while pending;
-    /// there is no exit between dispatch and settle (fhevm-internal#1773).
+    /// resets the joined encrypted value account to zero.
     pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
         instructions::quit(ctx)
     }
@@ -111,6 +113,17 @@ pub mod confidential_batcher {
     /// the created-public burned handle the KMS will certify. Permissionless.
     pub fn dispatch(ctx: Context<Dispatch>) -> Result<()> {
         instructions::dispatch(ctx)
+    }
+
+    /// Cancels a dispatched burn when settlement cannot complete. The join mint's wrapper
+    /// authority authorizes the operation. The burned total is restored to the batch token account
+    /// and encrypted total supply, and the batch becomes refund-only so users can retrieve their
+    /// recorded joins through `quit`.
+    pub fn cancel_dispatch(
+        ctx: Context<CancelDispatch>,
+        authority_funding_lamports: u64,
+    ) -> Result<()> {
+        instructions::cancel_dispatch(ctx, authority_funding_lamports)
     }
 
     /// Settles a dispatched batch with the KMS certificate for its burned

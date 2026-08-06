@@ -13,7 +13,9 @@ pub struct InitializeMint<'info> {
     #[account(init, payer = authority, space = 8 + ConfidentialMint::SPACE)]
     pub mint: Box<Account<'info, ConfidentialMint>>,
     /// Underlying SPL mint wrapped by this confidential mint.
-    pub underlying_mint: Box<Account<'info, SplMint>>,
+    pub underlying_mint: Box<InterfaceAccount<'info, SplMint>>,
+    /// Classic Token or Token-2022 program owning `underlying_mint`.
+    pub token_program: Interface<'info, TokenInterface>,
     /// CHECK: Program-controlled compute signer PDA.
     #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
     pub compute_signer: UncheckedAccount<'info>,
@@ -44,6 +46,7 @@ pub struct InitializeMint<'info> {
 
 /// Initializes a confidential mint and records its host ACL domain.
 pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Result<()> {
+    assert_supported_underlying_mint(&ctx.accounts.underlying_mint, &ctx.accounts.token_program)?;
     let mint_key = ctx.accounts.mint.key();
     let mint_domain = zama_fhe::Domain::new(mint_key);
     let compute_signer = compute_signer_address(mint_key).0;

@@ -28,19 +28,20 @@ pub struct ConfidentialBurn<'info> {
     #[account(mut, address = mint.total_supply_encrypted_value)]
     pub total_supply_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// CHECK: stable `burned_amount` encrypted value account for `token_account`; created on the
-    /// account's first burn, replaced in place thereafter to each burn's own
-    /// delta. Each burn makes its own delta handle publicly decryptable at burn
-    /// (ERC-7984 `unwrap` parity), so every burn stays permanently redeemable
-    /// even after a later burn updates this encrypted value account (DD-036 / Vector 2 closed).
+    /// account's first burn and replaced after the prior pending burn is settled.
     #[account(mut, address = encrypted_value_address(mint.key(), token_account.key(), encrypted_burned_amount_label()).0)]
     pub burned_amount_value: UncheckedAccount<'info>,
+    /// CHECK: single pending-burn PDA for this token account, created after `fhe_execute`.
+    /// A burn is rejected before execution while this account is already initialized.
+    #[account(mut)]
+    pub pending_burn: UncheckedAccount<'info>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
     /// ZamaHost program used for FHE operations.
     pub zama_program: Program<'info, ZamaHost>,
     /// ZamaHost config used for handle derivation.
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
-    /// System program used for ACL account creation.
+    /// System program used for ACL account creation and the pending-burn PDA.
     pub system_program: Program<'info, System>,
     /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it against the
     /// canonical `["hcu-block-meter", compute_signer]` PDA. Supplied by an untrusted mint under a
@@ -68,6 +69,7 @@ impl<'info> ConfidentialBurn<'info> {
             balance_value: self.balance_value.to_account_info(),
             total_supply_value: self.total_supply_value.to_account_info(),
             burned_amount_value: self.burned_amount_value.to_account_info(),
+            pending_burn: self.pending_burn.to_account_info(),
             zama_event_authority: &self.zama_event_authority,
             zama_program: &self.zama_program,
             host_config: &self.host_config,
@@ -163,16 +165,20 @@ pub struct ConfidentialBurnFromValue<'info> {
     /// Stable total-supply encrypted value account; read for the current handle and replaced by this execution.
     #[account(mut, address = mint.total_supply_encrypted_value)]
     pub total_supply_value: Box<Account<'info, zama_host::EncryptedValue>>,
-    /// CHECK: stable `burned_amount` encrypted value account for `token_account`, created publicly decryptable exactly
-    /// as in [`ConfidentialBurn`]; created on the account's first burn, replaced in place
-    /// thereafter to each burn's own delta (DD-036 / Vector 2). This is the same output shape
-    /// `redeem_burned_amount` later consumes — only where the amount comes from differs.
+    /// CHECK: stable `burned_amount` encrypted value account for `token_account`, created publicly
+    /// decryptable exactly as in [`ConfidentialBurn`].
     #[account(mut, address = encrypted_value_address(mint.key(), token_account.key(), encrypted_burned_amount_label()).0)]
     pub burned_amount_value: UncheckedAccount<'info>,
+    /// CHECK: single pending-burn PDA for this token account, created after `fhe_execute`.
+    /// A burn is rejected before execution while this account is already initialized.
+    #[account(mut)]
+    pub pending_burn: UncheckedAccount<'info>,
     /// The existing encrypted amount to burn: a computed or received `euint64` handle. Read-only
     /// persistent operand — never replaced, never consumed. Its address is the canonical PDA of its
-    /// own `(domain, authority, label)` fields, so an encrypted value account from any app
-    /// may be passed here once its owner has granted the mint's compute subject via `allow_subjects`.
+    /// own `(domain, authority, label)` fields, so an encrypted value account from any app may be
+    /// passed here once that app's encrypted value account authority has granted the mint's compute
+    /// subject. `allow_token_account_subjects` applies only to confidential-token-owned values;
+    /// another app must authorize through its own authority path.
     pub amount_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
@@ -180,7 +186,7 @@ pub struct ConfidentialBurnFromValue<'info> {
     pub zama_program: Program<'info, ZamaHost>,
     /// ZamaHost config used for handle derivation.
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
-    /// System program used for ACL account creation.
+    /// System program used for ACL account creation and the pending-burn PDA.
     pub system_program: Program<'info, System>,
     /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it against the
     /// canonical `["hcu-block-meter", compute_signer]` PDA. Supplied by an untrusted mint under a
@@ -208,6 +214,7 @@ impl<'info> ConfidentialBurnFromValue<'info> {
             balance_value: self.balance_value.to_account_info(),
             total_supply_value: self.total_supply_value.to_account_info(),
             burned_amount_value: self.burned_amount_value.to_account_info(),
+            pending_burn: self.pending_burn.to_account_info(),
             zama_event_authority: &self.zama_event_authority,
             zama_program: &self.zama_program,
             host_config: &self.host_config,
@@ -316,6 +323,8 @@ struct BurnAccounts<'a, 'info> {
     total_supply_value: AccountInfo<'info>,
     /// Stable burned-amount encrypted value account: replaced to this burn's created-public delta.
     burned_amount_value: AccountInfo<'info>,
+    /// Single pending-burn PDA opened after the burned handle is known.
+    pending_burn: AccountInfo<'info>,
     zama_event_authority: &'a UncheckedAccount<'info>,
     zama_program: &'a Program<'info, ZamaHost>,
     host_config: &'a Account<'info, zama_host::HostConfig>,
@@ -378,6 +387,9 @@ fn execute_burn<'info>(
         total_supply_authority_address(mint_key).0,
         ConfidentialTokenError::TotalSupplyAuthorityMismatch
     );
+    // The pending account is checked before the expensive FHE execution. Repeating this check in
+    // `open_pending_burn` keeps creation safe if this helper is ever reordered.
+    assert_pending_burn_available(&accounts.pending_burn, mint_key, token_account_key)?;
 
     if let BurnAmountSource::Attested(amount_attestation) = &amount_source {
         // fromExternal parity: the burn amount is a coprocessor-attested external input authored by
@@ -393,8 +405,8 @@ fn execute_burn<'info>(
         fhe::PersistentAudience::for_owner(owner, compute_signer),
     )?;
     // ERC-7984 `unwrap` parity (`makePubliclyDecryptable(unwrapAmount)`): the burned delta is created
-    // publicly decryptable inside this execution CPI, so the burn is permanently redeemable even after a
-    // later burn updates this shared encrypted value account (DD-036 / Vector 2) — with no second make-public CPI.
+    // publicly decryptable inside this execution. The sequential pending-burn invariant prevents a
+    // later burn from replacing it before redeem or cancel.
     let burned_output = fhe::PersistentOutput::new_public(
         accounts.burned_amount_value.clone(),
         encrypted_value_id(
@@ -527,11 +539,23 @@ fn execute_burn<'info>(
         execution,
     })?;
 
+    let burned_handle = burned_output.handle()?;
+    open_pending_burn(
+        accounts.payer,
+        &accounts.pending_burn,
+        accounts.system_program,
+        mint_key,
+        owner,
+        token_account_key,
+        burned_handle,
+        accounts.burned_amount_value.key(),
+    )?;
+
     Ok(BurnOutcome {
         mint: mint_key,
         owner,
         token_account: token_account_key,
-        burned_handle: burned_output.handle()?,
+        burned_handle,
         burned_encrypted_value: accounts.burned_amount_value.key(),
         old_balance_handle,
         new_balance_handle: balance_output.handle()?,
@@ -540,4 +564,119 @@ fn execute_burn<'info>(
         new_total_supply_handle: total_supply_output.handle()?,
         total_supply_encrypted_value: accounts.total_supply_value.key(),
     })
+}
+
+/// Verifies that the canonical pending-burn PDA is available for creation.
+fn assert_pending_burn_available(
+    pending_burn_ai: &AccountInfo<'_>,
+    mint: Pubkey,
+    token_account: Pubkey,
+) -> Result<()> {
+    let expected = pending_burn_address(mint, token_account).0;
+    require_keys_eq!(
+        pending_burn_ai.key(),
+        expected,
+        ConfidentialTokenError::PendingBurnAddressMismatch
+    );
+    require!(
+        pending_burn_ai.is_writable,
+        ConfidentialTokenError::PendingBurnAddressMismatch
+    );
+    require_keys_eq!(
+        *pending_burn_ai.owner,
+        System::id(),
+        ConfidentialTokenError::PendingBurnAlreadyInitialized
+    );
+    require!(
+        pending_burn_ai.data_is_empty() && !pending_burn_ai.executable,
+        ConfidentialTokenError::PendingBurnAlreadyInitialized
+    );
+    Ok(())
+}
+
+/// Opens the single `PendingBurn` account after a successful burn `fhe_execute`.
+///
+/// Creates the PDA with fund/allocate/assign so a pre-funded lamport balance cannot grief creation
+/// (same pattern as zama-host `create_pda_strict`).
+fn open_pending_burn<'info>(
+    payer: &Signer<'info>,
+    pending_burn_ai: &AccountInfo<'info>,
+    system_program: &Program<'info, System>,
+    mint: Pubkey,
+    owner: Pubkey,
+    token_account: Pubkey,
+    burned_handle: [u8; 32],
+    burned_encrypted_value: Pubkey,
+) -> Result<()> {
+    let (_, bump) = pending_burn_address(mint, token_account);
+    assert_pending_burn_available(pending_burn_ai, mint, token_account)?;
+
+    let space = 8 + PendingBurn::SPACE;
+    let bump_seed = [bump];
+    let seeds: &[&[u8]] = &[
+        PENDING_BURN_SEED,
+        mint.as_ref(),
+        token_account.as_ref(),
+        &bump_seed,
+    ];
+    let rent = fund_allocate_assign(
+        &payer.to_account_info(),
+        pending_burn_ai,
+        &system_program.to_account_info(),
+        space,
+        seeds,
+    )?;
+    require_keys_eq!(
+        *pending_burn_ai.owner,
+        crate::ID,
+        ConfidentialTokenError::PendingBurnAddressMismatch
+    );
+    require!(
+        !pending_burn_ai.executable
+            && pending_burn_ai.data_len() == space
+            && pending_burn_ai.lamports() >= rent,
+        ConfidentialTokenError::PendingBurnAddressMismatch
+    );
+
+    let pending = PendingBurn {
+        mint,
+        owner,
+        token_account,
+        burned_handle,
+        burned_encrypted_value,
+        bump,
+    };
+    let mut data = pending_burn_ai.try_borrow_mut_data()?;
+    let mut cursor = &mut data[..];
+    pending.try_serialize(&mut cursor)?;
+    Ok(())
+}
+
+/// Creates a program-owned PDA at `account`, tolerant of a pre-existing lamport balance.
+fn fund_allocate_assign<'info>(
+    payer: &AccountInfo<'info>,
+    account: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    space: usize,
+    seeds: &[&[u8]],
+) -> Result<u64> {
+    let rent = Rent::get()?.minimum_balance(space);
+    let balance = account.lamports();
+    if balance < rent {
+        invoke(
+            &system_instruction::transfer(payer.key, account.key, rent - balance),
+            &[payer.clone(), account.clone(), system_program.clone()],
+        )?;
+    }
+    invoke_signed(
+        &system_instruction::allocate(account.key, space as u64),
+        &[account.clone(), system_program.clone()],
+        &[seeds],
+    )?;
+    invoke_signed(
+        &system_instruction::assign(account.key, &crate::ID),
+        &[account.clone(), system_program.clone()],
+        &[seeds],
+    )?;
+    Ok(rent)
 }

@@ -67,7 +67,7 @@ export type SettleInstruction<
   TAccountJoinMintVaultAuthority extends string | AccountMeta<string> = string,
   TAccountBatchJoinUnderlying extends string | AccountMeta<string> = string,
   TAccountBatchBurnedAmountValue extends string | AccountMeta<string> = string,
-  TAccountRedemptionRecord extends string | AccountMeta<string> = string,
+  TAccountPendingBurn extends string | AccountMeta<string> = string,
   TAccountHostConfig extends string | AccountMeta<string> = string,
   TAccountKmsContext extends string | AccountMeta<string> = string,
   TAccountVault extends string | AccountMeta<string> = string,
@@ -122,7 +122,7 @@ export type SettleInstruction<
       TAccountBatchBurnedAmountValue extends string
         ? ReadonlyAccount<TAccountBatchBurnedAmountValue>
         : TAccountBatchBurnedAmountValue,
-      TAccountRedemptionRecord extends string ? WritableAccount<TAccountRedemptionRecord> : TAccountRedemptionRecord,
+      TAccountPendingBurn extends string ? WritableAccount<TAccountPendingBurn> : TAccountPendingBurn,
       TAccountHostConfig extends string ? ReadonlyAccount<TAccountHostConfig> : TAccountHostConfig,
       TAccountKmsContext extends string ? ReadonlyAccount<TAccountKmsContext> : TAccountKmsContext,
       TAccountVault extends string ? ReadonlyAccount<TAccountVault> : TAccountVault,
@@ -241,7 +241,7 @@ export type SettleAsyncInput<
   TAccountJoinMintVaultAuthority extends string = string,
   TAccountBatchJoinUnderlying extends string = string,
   TAccountBatchBurnedAmountValue extends string = string,
-  TAccountRedemptionRecord extends string = string,
+  TAccountPendingBurn extends string = string,
   TAccountHostConfig extends string = string,
   TAccountKmsContext extends string = string,
   TAccountVault extends string = string,
@@ -273,8 +273,8 @@ export type SettleAsyncInput<
   batch: Address<TAccountBatch>;
   /**
    * depositor/withdrawer, and wrap owner via invoke_signed. Receives
-   * funding for the rent the redeem marker and wrap execution charge to the
-   * owner.
+   * funding for the rent the wrap execution (and any other owner-charged CPIs)
+   * charge to the owner; redemption closes the already-open pending burn.
    */
   batchAuthority?: Address<TAccountBatchAuthority>;
   /** Confidential mint the batch total was burned on. */
@@ -292,7 +292,7 @@ export type SettleAsyncInput<
   /** Batch's plain SPL account receiving the redeemed batch total. */
   batchJoinUnderlying?: Address<TAccountBatchJoinUnderlying>;
   batchBurnedAmountValue: Address<TAccountBatchBurnedAmountValue>;
-  redemptionRecord: Address<TAccountRedemptionRecord>;
+  pendingBurn: Address<TAccountPendingBurn>;
   hostConfig: Address<TAccountHostConfig>;
   /** verifier CPI. */
   kmsContext: Address<TAccountKmsContext>;
@@ -350,7 +350,7 @@ export async function getSettleInstructionAsync<
   TAccountJoinMintVaultAuthority extends string,
   TAccountBatchJoinUnderlying extends string,
   TAccountBatchBurnedAmountValue extends string,
-  TAccountRedemptionRecord extends string,
+  TAccountPendingBurn extends string,
   TAccountHostConfig extends string,
   TAccountKmsContext extends string,
   TAccountVault extends string,
@@ -387,7 +387,7 @@ export async function getSettleInstructionAsync<
     TAccountJoinMintVaultAuthority,
     TAccountBatchJoinUnderlying,
     TAccountBatchBurnedAmountValue,
-    TAccountRedemptionRecord,
+    TAccountPendingBurn,
     TAccountHostConfig,
     TAccountKmsContext,
     TAccountVault,
@@ -426,7 +426,7 @@ export async function getSettleInstructionAsync<
     TAccountJoinMintVaultAuthority,
     TAccountBatchJoinUnderlying,
     TAccountBatchBurnedAmountValue,
-    TAccountRedemptionRecord,
+    TAccountPendingBurn,
     TAccountHostConfig,
     TAccountKmsContext,
     TAccountVault,
@@ -488,10 +488,7 @@ export async function getSettleInstructionAsync<
       value: input.batchBurnedAmountValue ?? null,
       isWritable: false,
     },
-    redemptionRecord: {
-      value: input.redemptionRecord ?? null,
-      isWritable: true,
-    },
+    pendingBurn: { value: input.pendingBurn ?? null, isWritable: true },
     hostConfig: { value: input.hostConfig ?? null, isWritable: false },
     kmsContext: { value: input.kmsContext ?? null, isWritable: false },
     vault: { value: input.vault ?? null, isWritable: false },
@@ -615,7 +612,7 @@ export async function getSettleInstructionAsync<
       getAccountMeta('joinMintVaultAuthority', accounts.joinMintVaultAuthority),
       getAccountMeta('batchJoinUnderlying', accounts.batchJoinUnderlying),
       getAccountMeta('batchBurnedAmountValue', accounts.batchBurnedAmountValue),
-      getAccountMeta('redemptionRecord', accounts.redemptionRecord),
+      getAccountMeta('pendingBurn', accounts.pendingBurn),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('kmsContext', accounts.kmsContext),
       getAccountMeta('vault', accounts.vault),
@@ -654,7 +651,7 @@ export async function getSettleInstructionAsync<
     TAccountJoinMintVaultAuthority,
     TAccountBatchJoinUnderlying,
     TAccountBatchBurnedAmountValue,
-    TAccountRedemptionRecord,
+    TAccountPendingBurn,
     TAccountHostConfig,
     TAccountKmsContext,
     TAccountVault,
@@ -692,7 +689,7 @@ export type SettleInput<
   TAccountJoinMintVaultAuthority extends string = string,
   TAccountBatchJoinUnderlying extends string = string,
   TAccountBatchBurnedAmountValue extends string = string,
-  TAccountRedemptionRecord extends string = string,
+  TAccountPendingBurn extends string = string,
   TAccountHostConfig extends string = string,
   TAccountKmsContext extends string = string,
   TAccountVault extends string = string,
@@ -724,8 +721,8 @@ export type SettleInput<
   batch: Address<TAccountBatch>;
   /**
    * depositor/withdrawer, and wrap owner via invoke_signed. Receives
-   * funding for the rent the redeem marker and wrap execution charge to the
-   * owner.
+   * funding for the rent the wrap execution (and any other owner-charged CPIs)
+   * charge to the owner; redemption closes the already-open pending burn.
    */
   batchAuthority: Address<TAccountBatchAuthority>;
   /** Confidential mint the batch total was burned on. */
@@ -743,7 +740,7 @@ export type SettleInput<
   /** Batch's plain SPL account receiving the redeemed batch total. */
   batchJoinUnderlying: Address<TAccountBatchJoinUnderlying>;
   batchBurnedAmountValue: Address<TAccountBatchBurnedAmountValue>;
-  redemptionRecord: Address<TAccountRedemptionRecord>;
+  pendingBurn: Address<TAccountPendingBurn>;
   hostConfig: Address<TAccountHostConfig>;
   /** verifier CPI. */
   kmsContext: Address<TAccountKmsContext>;
@@ -801,7 +798,7 @@ export function getSettleInstruction<
   TAccountJoinMintVaultAuthority extends string,
   TAccountBatchJoinUnderlying extends string,
   TAccountBatchBurnedAmountValue extends string,
-  TAccountRedemptionRecord extends string,
+  TAccountPendingBurn extends string,
   TAccountHostConfig extends string,
   TAccountKmsContext extends string,
   TAccountVault extends string,
@@ -838,7 +835,7 @@ export function getSettleInstruction<
     TAccountJoinMintVaultAuthority,
     TAccountBatchJoinUnderlying,
     TAccountBatchBurnedAmountValue,
-    TAccountRedemptionRecord,
+    TAccountPendingBurn,
     TAccountHostConfig,
     TAccountKmsContext,
     TAccountVault,
@@ -876,7 +873,7 @@ export function getSettleInstruction<
   TAccountJoinMintVaultAuthority,
   TAccountBatchJoinUnderlying,
   TAccountBatchBurnedAmountValue,
-  TAccountRedemptionRecord,
+  TAccountPendingBurn,
   TAccountHostConfig,
   TAccountKmsContext,
   TAccountVault,
@@ -937,10 +934,7 @@ export function getSettleInstruction<
       value: input.batchBurnedAmountValue ?? null,
       isWritable: false,
     },
-    redemptionRecord: {
-      value: input.redemptionRecord ?? null,
-      isWritable: true,
-    },
+    pendingBurn: { value: input.pendingBurn ?? null, isWritable: true },
     hostConfig: { value: input.hostConfig ?? null, isWritable: false },
     kmsContext: { value: input.kmsContext ?? null, isWritable: false },
     vault: { value: input.vault ?? null, isWritable: false },
@@ -1049,7 +1043,7 @@ export function getSettleInstruction<
       getAccountMeta('joinMintVaultAuthority', accounts.joinMintVaultAuthority),
       getAccountMeta('batchJoinUnderlying', accounts.batchJoinUnderlying),
       getAccountMeta('batchBurnedAmountValue', accounts.batchBurnedAmountValue),
-      getAccountMeta('redemptionRecord', accounts.redemptionRecord),
+      getAccountMeta('pendingBurn', accounts.pendingBurn),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('kmsContext', accounts.kmsContext),
       getAccountMeta('vault', accounts.vault),
@@ -1088,7 +1082,7 @@ export function getSettleInstruction<
     TAccountJoinMintVaultAuthority,
     TAccountBatchJoinUnderlying,
     TAccountBatchBurnedAmountValue,
-    TAccountRedemptionRecord,
+    TAccountPendingBurn,
     TAccountHostConfig,
     TAccountKmsContext,
     TAccountVault,
@@ -1128,8 +1122,8 @@ export type ParsedSettleInstruction<
     batch: TAccountMetas[2];
     /**
      * depositor/withdrawer, and wrap owner via invoke_signed. Receives
-     * funding for the rent the redeem marker and wrap execution charge to the
-     * owner.
+     * funding for the rent the wrap execution (and any other owner-charged CPIs)
+     * charge to the owner; redemption closes the already-open pending burn.
      */
     batchAuthority: TAccountMetas[3];
     /** Confidential mint the batch total was burned on. */
@@ -1147,7 +1141,7 @@ export type ParsedSettleInstruction<
     /** Batch's plain SPL account receiving the redeemed batch total. */
     batchJoinUnderlying: TAccountMetas[9];
     batchBurnedAmountValue: TAccountMetas[10];
-    redemptionRecord: TAccountMetas[11];
+    pendingBurn: TAccountMetas[11];
     hostConfig: TAccountMetas[12];
     /** verifier CPI. */
     kmsContext: TAccountMetas[13];
@@ -1218,7 +1212,7 @@ export function parseSettleInstruction<TProgram extends string, TAccountMetas ex
       joinMintVaultAuthority: getNextAccount(),
       batchJoinUnderlying: getNextAccount(),
       batchBurnedAmountValue: getNextAccount(),
-      redemptionRecord: getNextAccount(),
+      pendingBurn: getNextAccount(),
       hostConfig: getNextAccount(),
       kmsContext: getNextAccount(),
       vault: getNextAccount(),

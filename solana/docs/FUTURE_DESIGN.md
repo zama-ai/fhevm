@@ -38,7 +38,7 @@ specific seed layout.
 
 EVM `setOperator` / `confidentialTransferFrom` are **deliberately absent** (DD-009): one owner-signed
 transfer authority, no operator rows. This is an intentional ERC7984 parity gap, not a Solana
-constraint.
+constraint. Tracked as zama-ai/fhevm-internal#1692.
 
 **Revisit** for RFQ / third-party settlement use cases. Any reintroduction must be a separate,
 signature-backed authority design — not hidden operator compatibility in the token surface.

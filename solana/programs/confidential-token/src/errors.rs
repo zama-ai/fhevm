@@ -29,7 +29,9 @@ pub enum ConfidentialTokenError {
     /// Retired (zero references). Kept so Anchor error ordinals stay stable.
     #[msg("ACL nonce overflow")]
     AclNonceOverflow,
-    /// Token account initialization cannot mint unbacked confidential supply.
+    /// Retired (zero references): token accounts now always initialize with a hardcoded
+    /// zero balance, so the nonzero-rejection check no longer exists to trip. Kept so Anchor
+    /// error ordinals stay stable.
     #[msg("nonzero initial confidential balances are unsupported")]
     NonZeroInitialBalanceUnsupported,
     /// Underlying SPL mint did not match the confidential mint metadata.
@@ -127,14 +129,41 @@ pub enum ConfidentialTokenError {
     /// The handle proven public by the host verifier did not equal the caller-pinned handle.
     #[msg("disclosed handle does not match the pinned handle")]
     DisclosedHandleMismatch,
-    /// The redeem signer is on the host deny-list, so it cannot cash out.
-    #[msg("redemption subject is denied")]
-    RedemptionSubjectDenied,
-    /// The redeem deny-list record was missing, malformed, or not the canonical PDA for the signer,
-    /// or one was supplied while the host grant deny-list is disabled.
-    #[msg("redemption deny-list record is invalid")]
-    RedemptionDenyRecordInvalid,
     /// The certified `uint256` cleartext does not fit the token's euint64 width (nonzero high bytes).
     #[msg("certified cleartext exceeds euint64 width")]
     CleartextExceedsEuint64,
+    /// The supplied pending-burn account is not the canonical PDA for `(mint, token_account)`.
+    #[msg("pending burn address does not match")]
+    PendingBurnAddressMismatch,
+    /// The pending-burn PDA is already initialized (or is not a fresh system-owned empty account).
+    #[msg("pending burn is already initialized")]
+    PendingBurnAlreadyInitialized,
+    /// Redeem/cancel requires the burned handle to still be the burned-amount encrypted value
+    /// account's `current_handle`.
+    #[msg("pending burn handle is not the burned amount current handle")]
+    PendingBurnHandleNotCurrent,
+    /// Pending-burn account fields do not match the redeem/cancel accounts.
+    #[msg("pending burn fields do not match")]
+    PendingBurnMismatch,
+    /// The supplied token program does not own the underlying mint or token account.
+    #[msg("underlying token program does not match")]
+    UnderlyingTokenProgramMismatch,
+    /// Token-2022 extensions are unsupported unless explicitly allowed by the wrapper.
+    #[msg("unsupported Token-2022 extension")]
+    UnsupportedToken2022Extension,
+    /// A frozen underlying token account cannot participate in wrap or redeem.
+    #[msg("underlying token account is frozen")]
+    UnderlyingTokenAccountFrozen,
+    /// The disclosed encrypted value account does not match the declared token state field.
+    #[msg("disclosed value does not match its declared token state field")]
+    DisclosedValueBindingMismatch,
+    /// An encrypted value account is not controlled by the supplied token account PDA.
+    #[msg("encrypted value account authority does not match token account")]
+    EncryptedValueAuthorityMismatch,
+    /// A token-account-scoped encrypted value has the wrong domain or canonical address.
+    #[msg("token encrypted value account is not canonical")]
+    TokenEncryptedValueMismatch,
+    /// The encrypted total-supply value is not the canonical mint-scoped account.
+    #[msg("encrypted total supply value is not canonical")]
+    TotalSupplyValueMismatch,
 }

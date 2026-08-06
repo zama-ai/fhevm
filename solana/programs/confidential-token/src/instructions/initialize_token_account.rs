@@ -1,4 +1,4 @@
-//! Initializes confidential token accounts and their initial balance handles.
+//! Initializes confidential token accounts and their zero-balance handles.
 
 use super::*;
 
@@ -48,16 +48,11 @@ pub struct InitializeTokenAccount<'info> {
     pub hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
 }
 
-/// Initializes a token account and creates its initial confidential balance handle.
+/// Initializes a token account and creates its zero confidential balance handle.
 pub fn initialize_token_account<'info>(
     ctx: Context<'info, InitializeTokenAccount<'info>>,
-    initial_balance: u64,
 ) -> Result<()> {
     assert_confidential_mint_shape(&ctx.accounts.mint)?;
-    require!(
-        initial_balance == 0,
-        ConfidentialTokenError::NonZeroInitialBalanceUnsupported
-    );
     {
         let token_account = &mut ctx.accounts.token_account;
         token_account.owner = ctx.accounts.owner.key();
@@ -89,7 +84,7 @@ pub fn initialize_token_account<'info>(
     let execution = zama_fhe::FheExecution::build(
         zama_fhe::ExecutionEncryptedValueAccountAuthority::new(token_account_key),
         |builder| {
-            builder.trivial_encrypt_u64(initial_balance, balance_output.output())?;
+            builder.trivial_encrypt_u64(0, balance_output.output())?;
             Ok(())
         },
     )

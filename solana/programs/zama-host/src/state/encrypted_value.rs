@@ -20,20 +20,20 @@ pub struct EncryptedValue {
     /// App-level ACL domain, such as a confidential token mint.
     pub domain: Pubkey,
     /// The account that controls this encrypted value: it must sign to create it, update its
-    /// handle, or replace its subject list. Enforced by address rather than by comparing this
-    /// field — the signer must equal the authority declared in the execution
+    /// handle, or replace its subject list — including out-of-band `allow_subjects` /
+    /// `remove_subject` (decrypt subjects are not co-admins). Enforced by address rather than by
+    /// comparing this field — the signer must equal the authority declared in the execution
     /// (`assert_output_acl_metadata`) and the account written to must be the PDA rederived from
     /// that declared triple, which is what ties the signer to the stored value on update. For a
-    /// token balance this is the token account itself. It is not the sole controller of the
-    /// audience — any current subject may also add or remove subjects through `allow_subjects` /
-    /// `remove_subject`.
+    /// token balance this is the token account itself.
     pub encrypted_value_account_authority: Pubkey,
     /// The encrypted value label: the third component of the encrypted value ID, naming which
     /// encrypted value of the authority this is.
     pub label: [u8; 32],
     /// Current encrypted value identifier (the live handle).
     pub current_handle: [u8; 32],
-    /// Current persistent subjects. Membership in this set is the whole ACL.
+    /// Current persistent subjects. Membership grants decrypt/compute; subject-list mutation
+    /// requires `encrypted_value_account_authority` (INVARIANT #11).
     pub subjects: Vec<Pubkey>,
     /// Number of MMR leaves appended; `0` means no history.
     pub leaf_count: u64,

@@ -5,7 +5,10 @@ import { base58 } from '@scure/base';
 import { buildInitializeVaultInstruction } from './initializeVault.js';
 import { buildInitializeBatcherInstruction, BatchDirection } from './initializeBatcher.js';
 import { buildInitializeMintInstruction } from './initializeMint.js';
-import { buildInitializeTokenAccountInstruction } from './initializeTokenAccount.js';
+import {
+  buildInitializeTokenAccountInstruction,
+  getOrCreateConfidentialTokenAccountInstruction,
+} from './initializeTokenAccount.js';
 import { buildWrapUsdcInstruction } from './wrapUsdc.js';
 import { openBatchForBatcher } from './openBatchForBatcher.js';
 import type { VaultDemoRoots } from './derive.js';
@@ -86,7 +89,7 @@ describe('vault provisioning builders', () => {
     expect(Array.from(decoded.discriminator)).toEqual(Array.from(INITIALIZE_MINT_DISCRIMINATOR));
   });
 
-  it('initialize_token_account: right program + discriminator + initial balance', async () => {
+  it('initialize_token_account: right program + discriminator (always zero balance)', async () => {
     const payer = signer(addr(1));
     const owner = addr(2);
     const instruction = await buildInitializeTokenAccountInstruction({
@@ -94,14 +97,38 @@ describe('vault provisioning builders', () => {
       owner,
       mint: addr(3),
       hostConfig: HOST_CONFIG,
-      initialBalance: 0,
     });
     expect(instruction.programAddress).toBe(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);
     expect(instruction.accounts?.[0]?.address).toBe(payer.address);
     expect(instruction.accounts?.[1]?.address).toBe(owner);
     const decoded = getInitializeTokenAccountInstructionDataDecoder().decode(instruction.data!);
     expect(Array.from(decoded.discriminator)).toEqual(Array.from(INITIALIZE_TOKEN_ACCOUNT_DISCRIMINATOR));
-    expect(decoded.initialBalance).toBe(0n);
+  });
+
+  it('get-or-create returns create only for absent or System-owned canonical accounts', async () => {
+    const parameters = {
+      payer: signer(addr(1)),
+      owner: addr(2),
+      mint: addr(3),
+      hostConfig: HOST_CONFIG,
+    };
+    const rpc = (accountOwner: Address | null) =>
+      ({
+        getAccountInfo: () => ({
+          send: async () => ({ value: accountOwner === null ? null : { owner: accountOwner } }),
+        }),
+      }) as unknown as Parameters<typeof getOrCreateConfidentialTokenAccountInstruction>[0];
+
+    await expect(getOrCreateConfidentialTokenAccountInstruction(rpc(null), parameters)).resolves.not.toBeNull();
+    await expect(
+      getOrCreateConfidentialTokenAccountInstruction(rpc(address('11111111111111111111111111111111')), parameters),
+    ).resolves.not.toBeNull();
+    await expect(
+      getOrCreateConfidentialTokenAccountInstruction(rpc(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS), parameters),
+    ).resolves.toBeNull();
+    await expect(getOrCreateConfidentialTokenAccountInstruction(rpc(addr(4)), parameters)).rejects.toThrow(
+      'unexpected program',
+    );
   });
 
   it('wrap_usdc: public amount, no proof; encodes the u64 amount', async () => {
@@ -140,12 +167,13 @@ describe('vault provisioning builders', () => {
       recentSlot: 100n,
       authorityFundingLamports: 100_000_000n,
     });
-    // open_batch + create_lookup_table + the wire-limit-chunked extends (32 addresses -> 20 + 12),
+    // open_batch + create_lookup_table + the wire-limit-chunked extends (23 addresses -> 20 + 3),
     // in submission order.
     expect(result.instructions).toHaveLength(4);
     // The first (open_batch) targets the batcher program; the ALT pair targets the ALT program.
     expect(result.instructions[0]!.programAddress).toBe(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS);
-    // Every settle-table entry is derived (no fee payer, no post-dispatch redemption record).
-    expect(result.lookupTableAddresses.length).toBeGreaterThan(0);
+    // Pin the current table size so account-set growth requires an intentional test update. The
+    // address contents and pending-burn membership are covered in derive.test.ts.
+    expect(result.lookupTableAddresses.length).toBe(23);
   });
 });

@@ -6,6 +6,7 @@
  * @see https://github.com/codama-idl/codama
  */
 
+export * from './cancelDispatch.js';
 export * from './claim.js';
 export * from './dispatch.js';
 export * from './initializeBatcher.js';

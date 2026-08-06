@@ -417,11 +417,6 @@ fn persistent_output_authority<'info>(
             .encrypted_value_account_authority
             .to_account_info(),
     };
-    let deny_record = table.deny_record(
-        ctx.accounts.host_config.grant_deny_list_enabled,
-        authority.key(),
-    )?;
-    check_grant_not_denied_info(&ctx.accounts.host_config, authority.key(), deny_record)?;
     Ok(authority)
 }
 
@@ -522,6 +517,16 @@ fn bind_execution_output<'info>(
         // from instruction data alone. `output_subjects` may replace the audience.
         let mut value = read_canonical_encrypted_value(output_info)?;
         validate_persistent_output_previous_state(&value, previous_state)?;
+        if output_subjects
+            .iter()
+            .any(|subject| !value.subjects.contains(subject))
+        {
+            check_grant_authority_not_denied(
+                &ctx.accounts.host_config,
+                table,
+                encrypted_value_account_authority,
+            )?;
+        }
         check_new_grants_not_denied(
             &ctx.accounts.host_config,
             table,
@@ -555,6 +560,13 @@ fn bind_execution_output<'info>(
             previous_state.is_none(),
             ZamaHostError::PreviousStateMismatch
         );
+        if !output_subjects.is_empty() {
+            check_grant_authority_not_denied(
+                &ctx.accounts.host_config,
+                table,
+                encrypted_value_account_authority,
+            )?;
+        }
         check_new_grants_not_denied(&ctx.accounts.host_config, table, &[], output_subjects)?;
         let mut value = EncryptedValue {
             domain: output_domain,
@@ -583,6 +595,18 @@ fn bind_execution_output<'info>(
         write_account(output_info, &value)?;
     }
     Ok(output_info.key())
+}
+
+/// Deny-list gate for the authority performing a real subject grant. Persistent updates that keep
+/// or reduce the audience are settlement/state transitions, not grants, so denial must not block
+/// them (in particular, it must not trap a pending burn).
+fn check_grant_authority_not_denied(
+    host_config: &HostConfig,
+    table: &ExecutionAccountTable<'_, '_>,
+    authority: Pubkey,
+) -> Result<()> {
+    let deny_record = table.deny_record(host_config.grant_deny_list_enabled, authority)?;
+    check_grant_not_denied_info(host_config, authority, deny_record)
 }
 
 /// Update execution validation against an existing encrypted value account. The execution's

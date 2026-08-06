@@ -18,14 +18,9 @@ import {
   type Address,
   type Instruction,
   type Signature,
-} from "@solana/kit";
+} from '@solana/kit';
+import { createFhevmEncryptClient, defineFhevmSolanaChain, setFhevmRuntimeConfig } from '@fhevm/sdk/solana';
 import {
-  createFhevmEncryptClient,
-  defineFhevmSolanaChain,
-  setFhevmRuntimeConfig,
-} from "@fhevm/sdk/solana";
-import {
-  buildInitializeTokenAccountInstruction,
   buildWrapUsdcInstruction,
   computeSignerAddress,
   deriveBatchAddresses,
@@ -33,73 +28,52 @@ import {
   getBatchByIndex,
   getBatcher,
   getCurrentBatch,
+  getOrCreateConfidentialTokenAccountInstruction,
   getJoinRecord,
   joinBatch,
-  tokenAccountAddress,
-} from "./vault/index.js";
+} from './vault/index.js';
 
-import type { BatchPosition, BatchTarget } from "./batchTypes";
-import type { DemoSession } from "./demoSession";
-import { loadDemoEncryptionKey } from "./encryptionKey";
-import { recordTransactionEvidence } from "./evidenceStore";
-import { readClaimedUsdcHandle } from "./revealShares";
-import {
-  simulateSignedTransactionLocally,
-  simulateUnsignedTransactionLocally,
-} from "./transactionSimulation";
-import { vaultRoots } from "./vaultRoots";
+import type { BatchPosition, BatchTarget } from './batchTypes';
+import type { DemoSession } from './demoSession';
+import { loadDemoEncryptionKey } from './encryptionKey';
+import { recordTransactionEvidence } from './evidenceStore';
+import { readClaimedUsdcHandle } from './revealShares';
+import { simulateSignedTransactionLocally, simulateUnsignedTransactionLocally } from './transactionSimulation';
+import { vaultRoots } from './vaultRoots';
 
-export type DepositStage =
-  | "preparing"
-  | "shielding"
-  | "proving"
-  | "joining"
-  | "joined";
+export type DepositStage = 'preparing' | 'shielding' | 'proving' | 'joining' | 'joined';
 
-export type DepositSource = "usdc" | "cusdc";
+export type DepositSource = 'usdc' | 'cusdc';
 
-export const needsShieldTransaction = (source: DepositSource): boolean => source === "usdc";
+export const needsShieldTransaction = (source: DepositSource): boolean => source === 'usdc';
 
-export const assertDepositSourceHandle = (
-  expectedSourceHandle: string | undefined,
-  currentHandle: string,
-): void => {
+export const assertDepositSourceHandle = (expectedSourceHandle: string | undefined, currentHandle: string): void => {
   if (expectedSourceHandle === undefined || currentHandle !== expectedSourceHandle) {
-    throw new Error("Your private cUSDC balance changed. Reveal it again before depositing.");
+    throw new Error('Your private cUSDC balance changed. Reveal it again before depositing.');
   }
 };
 
-type Bytes32Hex = Parameters<typeof joinBatch>[0]["aclProgramAddress"];
+type Bytes32Hex = Parameters<typeof joinBatch>[0]['aclProgramAddress'];
 
 const USDC_DECIMALS = 6;
 const SHIELD_COMPUTE_UNIT_LIMIT = 1_200_000;
 const JOIN_COMPUTE_UNIT_LIMIT = 800_000;
-const SYSTEM_PROGRAM_ADDRESS = "11111111111111111111111111111111";
 
 const addressEncoder = getAddressEncoder();
 
 const asBytes32Hex = (value: Address): Bytes32Hex => {
   const bytes = new Uint8Array(addressEncoder.encode(value));
-  return `0x${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}` as Bytes32Hex;
+  return `0x${Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')}` as Bytes32Hex;
 };
 
 export const usdcToBaseUnits = (amount: number): bigint => {
   if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000) {
-    throw new Error("Deposit amount must be between 0 and 1,000 USDC");
+    throw new Error('Deposit amount must be between 0 and 1,000 USDC');
   }
   return BigInt(Math.round(amount * 10 ** USDC_DECIMALS));
 };
 
-export const needsTokenAccountInitialization = (
-  accountOwner: Address | null,
-  tokenProgram: Address,
-): boolean => {
-  if (accountOwner === null || accountOwner === SYSTEM_PROGRAM_ADDRESS) return true;
-  if (accountOwner === tokenProgram) return false;
-  throw new Error("The canonical confidential token account is owned by an unexpected program");
-};
-
-const depositRoots = (session: DemoSession) => vaultRoots(session.config, "deposit");
+const depositRoots = (session: DemoSession) => vaultRoots(session.config, 'deposit');
 
 const shieldJournalKey = (session: DemoSession): string =>
   `fhevm-solana-demo:shield:${session.config.chainId}:${session.config.batchers.deposit.batcher}:${session.signer.address}`;
@@ -111,7 +85,7 @@ type ShieldJournal = {
   readonly signature: string;
   readonly blockhash: string;
   readonly lastValidBlockHeight: string;
-  readonly state: "submitted" | "confirmed";
+  readonly state: 'submitted' | 'confirmed';
 };
 
 export type SubmittedDepositTransaction = {
@@ -130,11 +104,11 @@ const readShieldJournal = (session: DemoSession): ShieldJournal | null => {
     if (value === null) return null;
     const parsed = JSON.parse(value) as Partial<ShieldJournal>;
     if (
-      typeof parsed.amountBaseUnits !== "string" ||
-      typeof parsed.signature !== "string" ||
-      typeof parsed.blockhash !== "string" ||
-      typeof parsed.lastValidBlockHeight !== "string" ||
-      (parsed.state !== "submitted" && parsed.state !== "confirmed")
+      typeof parsed.amountBaseUnits !== 'string' ||
+      typeof parsed.signature !== 'string' ||
+      typeof parsed.blockhash !== 'string' ||
+      typeof parsed.lastValidBlockHeight !== 'string' ||
+      (parsed.state !== 'submitted' && parsed.state !== 'confirmed')
     ) {
       return null;
     }
@@ -186,9 +160,9 @@ const readActiveDeposit = (session: DemoSession): StoredDeposit | null => {
     if (value === null) return null;
     const parsed = JSON.parse(value) as Record<string, unknown>;
     if (
-      typeof parsed.batchIndex !== "string" ||
-      typeof parsed.batch !== "string" ||
-      typeof parsed.amountBaseUnits !== "string"
+      typeof parsed.batchIndex !== 'string' ||
+      typeof parsed.batch !== 'string' ||
+      typeof parsed.amountBaseUnits !== 'string'
     ) {
       return null;
     }
@@ -197,11 +171,11 @@ const readActiveDeposit = (session: DemoSession): StoredDeposit | null => {
       batch: address(parsed.batch),
       amountBaseUnits: BigInt(parsed.amountBaseUnits),
       transaction:
-        typeof parsed.transaction === "object" &&
+        typeof parsed.transaction === 'object' &&
         parsed.transaction !== null &&
-        typeof (parsed.transaction as Record<string, unknown>).signature === "string" &&
-        typeof (parsed.transaction as Record<string, unknown>).blockhash === "string" &&
-        typeof (parsed.transaction as Record<string, unknown>).lastValidBlockHeight === "string"
+        typeof (parsed.transaction as Record<string, unknown>).signature === 'string' &&
+        typeof (parsed.transaction as Record<string, unknown>).blockhash === 'string' &&
+        typeof (parsed.transaction as Record<string, unknown>).lastValidBlockHeight === 'string'
           ? {
               signature: (parsed.transaction as Record<string, string>).signature,
               blockhash: (parsed.transaction as Record<string, string>).blockhash,
@@ -217,18 +191,16 @@ const readActiveDeposit = (session: DemoSession): StoredDeposit | null => {
 export const reconcileDepositTransaction = async (
   rpc: ReturnType<typeof createSolanaRpc>,
   transaction: SubmittedDepositTransaction,
-): Promise<"pending" | "retry"> => {
+): Promise<'pending' | 'retry'> => {
   const status = (
-    await rpc
-      .getSignatureStatuses([transaction.signature as Signature], { searchTransactionHistory: true })
-      .send()
+    await rpc.getSignatureStatuses([transaction.signature as Signature], { searchTransactionHistory: true }).send()
   ).value[0];
-  if (status !== null && status.err !== null) return "retry";
+  if (status !== null && status.err !== null) return 'retry';
   if (status === null) {
-    const currentBlockHeight = await rpc.getBlockHeight({ commitment: "confirmed" }).send();
-    if (currentBlockHeight > BigInt(transaction.lastValidBlockHeight)) return "retry";
+    const currentBlockHeight = await rpc.getBlockHeight({ commitment: 'confirmed' }).send();
+    if (currentBlockHeight > BigInt(transaction.lastValidBlockHeight)) return 'retry';
   }
-  return "pending";
+  return 'pending';
 };
 
 export const reconcileSavedDeposit = async (
@@ -243,12 +215,10 @@ export const reconcileSavedDeposit = async (
     return null;
   }
   const joinRecord = await deriveJoinRecordAddress(saved.batch, session.signer.address);
-  const account = await rpc
-    .getAccountInfo(joinRecord, { commitment: "confirmed", encoding: "base64" })
-    .send();
+  const account = await rpc.getAccountInfo(joinRecord, { commitment: 'confirmed', encoding: 'base64' }).send();
   if (account.value !== null) {
     if (saved.transaction !== undefined) {
-      recordTransactionEvidence(session, { label: "Deposit", signature: saved.transaction.signature as Signature });
+      recordTransactionEvidence(session, { label: 'Deposit', signature: saved.transaction.signature as Signature });
     }
     const confirmed = {
       batchIndex: saved.batchIndex,
@@ -261,26 +231,24 @@ export const reconcileSavedDeposit = async (
   }
   if (saved.transaction !== undefined) {
     const outcome = await reconcileDepositTransaction(rpc, saved.transaction);
-    if (outcome === "pending") {
-      throw new Error("The previous deposit transaction is still being confirmed. Try again shortly.");
+    if (outcome === 'pending') {
+      throw new Error('The previous deposit transaction is still being confirmed. Try again shortly.');
     }
   }
   clearActiveDeposit(session);
   return null;
 };
 
-export async function findExistingDeposit(
-  session: DemoSession,
-): Promise<BatchPosition | null> {
+export async function findExistingDeposit(session: DemoSession): Promise<BatchPosition | null> {
   const rpc = createSolanaRpc(session.config.rpcUrl);
   const saved = readActiveDeposit(session);
   if (saved !== null) {
     const reconciled = await reconcileSavedDeposit(rpc, session, saved);
     if (reconciled !== null) return reconciled;
   }
-  const batch = await getCurrentBatch(rpc, depositRoots(session), { commitment: "confirmed" });
+  const batch = await getCurrentBatch(rpc, depositRoots(session), { commitment: 'confirmed' });
   const joinRecord = await deriveJoinRecordAddress(batch.addresses.batch, session.signer.address);
-  const account = await rpc.getAccountInfo(joinRecord, { commitment: "confirmed", encoding: "base64" }).send();
+  const account = await rpc.getAccountInfo(joinRecord, { commitment: 'confirmed', encoding: 'base64' }).send();
   if (account.value === null) return null;
   clearShieldJournal(session);
   const result = { batchIndex: batch.index, batch: batch.addresses.batch, amountBaseUnits: 0n };
@@ -291,15 +259,13 @@ export async function findExistingDeposit(
 export const hasClaimedDeposit = async (session: DemoSession): Promise<boolean> => {
   const rpc = createSolanaRpc(session.config.rpcUrl);
   const roots = depositRoots(session);
-  const batcher = await getBatcher(rpc, roots.batcher, { commitment: "confirmed" });
+  const batcher = await getBatcher(rpc, roots.batcher, { commitment: 'confirmed' });
   for (let batchIndex = 0n; batchIndex < batcher.nextBatchIndex; batchIndex += 1n) {
     const batch = await deriveBatchAddresses(roots, batchIndex);
     const joinRecordAddress = await deriveJoinRecordAddress(batch.batch, session.signer.address);
-    const account = await rpc
-      .getAccountInfo(joinRecordAddress, { commitment: "confirmed", encoding: "base64" })
-      .send();
+    const account = await rpc.getAccountInfo(joinRecordAddress, { commitment: 'confirmed', encoding: 'base64' }).send();
     if (account.value !== null) {
-      const joinRecord = await getJoinRecord(rpc, joinRecordAddress, { commitment: "confirmed" });
+      const joinRecord = await getJoinRecord(rpc, joinRecordAddress, { commitment: 'confirmed' });
       if (joinRecord.claimed) return true;
     }
   }
@@ -311,7 +277,7 @@ export async function depositToVault(
   amount: number,
   onStage: (stage: DepositStage) => void,
   target?: BatchTarget,
-  source: DepositSource = "usdc",
+  source: DepositSource = 'usdc',
   expectedSourceHandle?: string,
 ): Promise<BatchPosition> {
   session.assertActive();
@@ -328,30 +294,27 @@ export async function depositToVault(
   ) {
     const reconciled = await reconcileSavedDeposit(rpc, session, saved);
     if (reconciled !== null) {
-      onStage("joined");
+      onStage('joined');
       return reconciled;
     }
   }
   const batch =
     target === undefined
-      ? await getCurrentBatch(rpc, roots, { commitment: "confirmed" })
-      : await getBatchByIndex(rpc, roots, target.batchIndex, { commitment: "confirmed" });
-  if (
-    target !== undefined &&
-    (batch.index !== target.batchIndex || batch.addresses.batch !== target.batch)
-  ) {
-    throw new Error("The prepared deposit batch no longer matches the requested batch");
+      ? await getCurrentBatch(rpc, roots, { commitment: 'confirmed' })
+      : await getBatchByIndex(rpc, roots, target.batchIndex, { commitment: 'confirmed' });
+  if (target !== undefined && (batch.index !== target.batchIndex || batch.addresses.batch !== target.batch)) {
+    throw new Error('The prepared deposit batch no longer matches the requested batch');
   }
   const joinRecord = await deriveJoinRecordAddress(batch.addresses.batch, signer.address);
   const joinRecordAccount = await rpc
-    .getAccountInfo(joinRecord, { commitment: "confirmed", encoding: "base64" })
+    .getAccountInfo(joinRecord, { commitment: 'confirmed', encoding: 'base64' })
     .send();
   if (joinRecordAccount.value !== null) {
     clearShieldJournal(session);
-    throw new Error("This wallet already joined the current batch. Reconnect to recover the confirmed deposit.");
+    throw new Error('This wallet already joined the current batch. Reconnect to recover the confirmed deposit.');
   }
-  if (batch.state.status !== 0) throw new Error("The current deposit batch is no longer accepting deposits");
-  if (source === "cusdc") {
+  if (batch.state.status !== 0) throw new Error('The current deposit batch is no longer accepting deposits');
+  if (source === 'cusdc') {
     const currentHandle = await readClaimedUsdcHandle(session);
     assertDepositSourceHandle(expectedSourceHandle, currentHandle);
   }
@@ -359,22 +322,22 @@ export async function depositToVault(
   const send = async (
     instructions: readonly Instruction[],
     computeUnitLimit: number,
-    beforeSend?: (journal: Omit<ShieldJournal, "amountBaseUnits" | "state">) => void,
+    beforeSend?: (journal: Omit<ShieldJournal, 'amountBaseUnits' | 'state'>) => void,
   ): Promise<Signature> => {
-    const { value: latestBlockhash } = await rpc.getLatestBlockhash({ commitment: "confirmed" }).send();
+    const { value: latestBlockhash } = await rpc.getLatestBlockhash({ commitment: 'confirmed' }).send();
     const base = setTransactionMessageFeePayerSigner(signer, createTransactionMessage({ version: 0 }));
     const withLifetime = setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, base);
     const withComputeLimit = setTransactionMessageComputeUnitLimit(computeUnitLimit, withLifetime);
     const message = appendTransactionMessageInstructions(instructions, withComputeLimit);
     session.assertActive();
-    await simulateUnsignedTransactionLocally(rpc, compileTransaction(message), "Shield transaction");
+    await simulateUnsignedTransactionLocally(rpc, compileTransaction(message), 'Shield transaction');
     session.assertActive();
     const transaction = await signTransactionMessageWithSigners(message);
     session.assertActive();
     assertIsFullySignedTransaction(transaction);
     assertIsTransactionWithBlockhashLifetime(transaction);
     assertIsTransactionWithinSizeLimit(transaction);
-    await simulateSignedTransactionLocally(rpc, transaction, "Signed shield transaction");
+    await simulateSignedTransactionLocally(rpc, transaction, 'Signed shield transaction');
     session.assertActive();
     const signature = getSignatureFromTransaction(transaction);
     beforeSend?.({
@@ -382,14 +345,14 @@ export async function depositToVault(
       blockhash: latestBlockhash.blockhash,
       lastValidBlockHeight: latestBlockhash.lastValidBlockHeight.toString(),
     });
-    await sendAndConfirm(transaction, { commitment: "confirmed", skipPreflight: true });
+    await sendAndConfirm(transaction, { commitment: 'confirmed', skipPreflight: true });
     return signature;
   };
 
   let shieldAlreadyConfirmed = false;
   const shieldJournal = needsShieldTransaction(source) ? readShieldJournal(session) : null;
   if (shieldJournal?.amountBaseUnits === amountBaseUnits.toString()) {
-    if (shieldJournal.state === "confirmed") {
+    if (shieldJournal.state === 'confirmed') {
       shieldAlreadyConfirmed = true;
     } else {
       const status = (
@@ -398,14 +361,14 @@ export async function depositToVault(
           .send()
       ).value[0];
       if (status !== null && status.err === null) {
-        writeShieldJournal(session, { ...shieldJournal, state: "confirmed" });
+        writeShieldJournal(session, { ...shieldJournal, state: 'confirmed' });
         shieldAlreadyConfirmed = true;
       } else if (status !== null) {
         clearShieldJournal(session);
       } else {
-        const currentBlockHeight = await rpc.getBlockHeight({ commitment: "confirmed" }).send();
+        const currentBlockHeight = await rpc.getBlockHeight({ commitment: 'confirmed' }).send();
         if (currentBlockHeight <= BigInt(shieldJournal.lastValidBlockHeight)) {
-          throw new Error("The shield transaction is still being confirmed. Try again shortly.");
+          throw new Error('The shield transaction is still being confirmed. Try again shortly.');
         }
         clearShieldJournal(session);
       }
@@ -414,29 +377,17 @@ export async function depositToVault(
     clearShieldJournal(session);
   }
   if (shieldAlreadyConfirmed && shieldJournal !== null) {
-    recordTransactionEvidence(session, { label: "Shield USDC", signature: shieldJournal.signature as Signature });
+    recordTransactionEvidence(session, { label: 'Shield USDC', signature: shieldJournal.signature as Signature });
   }
   if (needsShieldTransaction(source) && !shieldAlreadyConfirmed) {
-    onStage("preparing");
-    const joinTokenAccount = await tokenAccountAddress(config.mints.joinConfidential, signer.address);
-    const joinTokenAccountInfo = await rpc
-      .getAccountInfo(joinTokenAccount, { commitment: "confirmed", encoding: "base64" })
-      .send();
-    const initializeJoinTokenAccount = needsTokenAccountInitialization(
-      joinTokenAccountInfo.value?.owner ?? null,
-      config.programs.token,
-    );
-    const shieldInstructions: Instruction[] =
-      initializeJoinTokenAccount
-        ? [
-            await buildInitializeTokenAccountInstruction({
-              payer: signer,
-              owner: signer.address,
-              mint: config.mints.joinConfidential,
-              hostConfig: config.hostConfig,
-            }),
-          ]
-        : [];
+    onStage('preparing');
+    const initializeJoinTokenAccount = await getOrCreateConfidentialTokenAccountInstruction(rpc, {
+      payer: signer,
+      owner: signer.address,
+      mint: config.mints.joinConfidential,
+      hostConfig: config.hostConfig,
+    });
+    const shieldInstructions: Instruction[] = initializeJoinTokenAccount === null ? [] : [initializeJoinTokenAccount];
     shieldInstructions.push(
       await buildWrapUsdcInstruction({
         owner: signer,
@@ -447,24 +398,24 @@ export async function depositToVault(
       }),
     );
 
-    onStage("shielding");
+    onStage('shielding');
     let submittedJournal: ShieldJournal | undefined;
     const shieldSignature = await send(shieldInstructions, SHIELD_COMPUTE_UNIT_LIMIT, (submitted) => {
       submittedJournal = {
         ...submitted,
         amountBaseUnits: amountBaseUnits.toString(),
-        state: "submitted",
+        state: 'submitted',
       };
       writeShieldJournal(session, submittedJournal);
     });
-    if (submittedJournal === undefined) throw new Error("Shield transaction journal was not created");
-    writeShieldJournal(session, { ...submittedJournal, state: "confirmed" });
-    recordTransactionEvidence(session, { label: "Shield USDC", signature: shieldSignature });
+    if (submittedJournal === undefined) throw new Error('Shield transaction journal was not created');
+    writeShieldJournal(session, { ...submittedJournal, state: 'confirmed' });
+    recordTransactionEvidence(session, { label: 'Shield USDC', signature: shieldSignature });
   }
 
-  const supportsThreads = globalThis.crossOriginIsolated === true && typeof SharedArrayBuffer !== "undefined";
+  const supportsThreads = globalThis.crossOriginIsolated === true && typeof SharedArrayBuffer !== 'undefined';
   setFhevmRuntimeConfig({
-    auth: { type: "ApiKeyHeader", value: "local" },
+    auth: { type: 'ApiKeyHeader', value: 'local' },
     singleThread: !supportsThreads,
   });
   const chain = defineFhevmSolanaChain({
@@ -482,18 +433,18 @@ export async function depositToVault(
   });
   const joinComputeSigner = await computeSignerAddress(config.mints.joinConfidential);
 
-  onStage("proving");
+  onStage('proving');
   session.assertActive();
   const inputProof = await encryptClient.buildInputProof({
     contractAddress: asBytes32Hex(joinComputeSigner),
     userAddress: asBytes32Hex(signer.address),
-    values: [{ type: "uint64", value: amountBaseUnits }],
+    values: [{ type: 'uint64', value: amountBaseUnits }],
   });
   const inputProofResult = await encryptClient.submitInputProof({ inputProof });
 
-  onStage("joining");
+  onStage('joining');
   session.assertActive();
-  if (source === "cusdc") {
+  if (source === 'cusdc') {
     const currentHandle = await readClaimedUsdcHandle(session);
     assertDepositSourceHandle(expectedSourceHandle, currentHandle);
   }
@@ -530,11 +481,11 @@ export async function depositToVault(
     },
   );
   if (joinSignature !== undefined) {
-    recordTransactionEvidence(session, { label: "Deposit", signature: joinSignature });
+    recordTransactionEvidence(session, { label: 'Deposit', signature: joinSignature });
   }
 
   clearShieldJournal(session);
-  onStage("joined");
+  onStage('joined');
   const result = { batchIndex: batch.index, batch: batch.addresses.batch, amountBaseUnits };
   writeActiveDeposit(session, result);
   return result;

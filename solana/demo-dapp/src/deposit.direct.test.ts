@@ -29,7 +29,6 @@ vi.mock('@fhevm/sdk/solana', () => ({
 }));
 
 vi.mock('./vault/index.js', () => ({
-  buildInitializeTokenAccountInstruction: vi.fn(),
   buildWrapUsdcInstruction: mocks.buildWrap,
   computeSignerAddress: vi.fn().mockResolvedValue('11111111111111111111111111111111'),
   deriveBatchAddresses: vi.fn(),
@@ -41,6 +40,7 @@ vi.mock('./vault/index.js', () => ({
     addresses: { batch: '11111111111111111111111111111111' },
     state: { status: 0 },
   }),
+  getOrCreateConfidentialTokenAccountInstruction: vi.fn(),
   getJoinRecord: vi.fn(),
   joinBatch: mocks.joinBatch,
   tokenAccountAddress: vi.fn(),

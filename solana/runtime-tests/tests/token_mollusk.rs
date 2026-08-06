@@ -14,18 +14,12 @@
 //! (mint/token-account creation and `confidential_transfer`'s persistent-output update), plus
 //! the token-level end-to-end coverage requested for this pass (stable addressing across a
 //! transfer, a `transferred_amount` encrypted value account entry, and self-transfer no-op). It also covers the
-//! two consume paths that are now thin consumers of the stateless host `verify_public_decrypt`
-//! (DD-040): `redeem_burned_amount` and `disclose_secp` authorize by an MMR public-decrypt proof
-//! against the pinned handle rather than the live encrypted value account handle, so their after-update,
-//! foreign-proof, live/destroyed-context, and (for redeem) deny/marker/destination behaviour is
-//! exercised directly here. The old suite's coverage of `wrap_usdc`, `confidential_burn`,
-//! and `request_disclose_balance`/`request_disclose_amount` was not ported 1:1 for this pass: none
-//! of that instruction logic changed shape from the ACL rewrite itself (it still reads/writes one
-//! `EncryptedValue` encrypted value account per amount the same way `confidential_transfer` does), and each needs
-//! its own multi-account Mollusk fixture that was not feasible to rebuild faithfully here. Every
-//! dropped test's instruction still compiles and is exercised indirectly by `mollusk_initialize_*`
-//! and `mollusk_confidential_transfer_*` (same persistent-output machinery); a follow-up pass should
-//! port them individually using the patterns established here and in `host_mollusk.rs`.
+//! two consume paths that are thin consumers of the stateless host `verify_public_decrypt`
+//! (DD-040). `disclose_secp` supports historical publicly sealed handles and remains idempotent;
+//! `redeem_burned_amount` additionally requires the current sequential `PendingBurn` and consumes it
+//! exactly once. Their foreign-proof, live/destroyed-context, binding, and replay behavior is
+//! exercised directly here. Confidential burn, cancellation, and `wrap_usdc` are also covered with
+//! SPL Token and Token-2022 fixtures.
 //!
 //! Also dropped: the old file's event-shaped, `u128`-limited `support::fhe_runtime` simulator.
 //! The confidential-transfer test below instead evaluates the canonical `FheExecuteArgs` captured
@@ -78,6 +72,8 @@ fn mollusk() -> Mollusk {
     }
     let mut mollusk = Mollusk::new(&token::id(), "confidential_token");
     mollusk.add_program(&host::id(), "zama_host");
+    mollusk_svm_programs_token::token::add_program(&mut mollusk);
+    mollusk_svm_programs_token::token2022::add_program(&mut mollusk);
     // fhe_execute derives handle entropy from the previous bank hash: run at a
     // nonzero slot with a SlotHashes entry below it, like a real validator.
     mollusk.sysvars.clock.slot = 100;
@@ -720,6 +716,7 @@ fn initialize_mint_ix(
             authority,
             mint,
             underlying_mint,
+            token_program: spl_token::id(),
             compute_signer,
             total_supply_authority,
             total_supply_encrypted_value,
@@ -741,7 +738,6 @@ fn initialize_token_account_ix(
     owner: Pubkey,
     mint: Pubkey,
     host_config: Pubkey,
-    initial_balance: u64,
 ) -> Instruction {
     let compute_signer = token::compute_signer_address(mint).0;
     let (token_account, _bump) = token::token_account_address(mint, owner);
@@ -764,7 +760,7 @@ fn initialize_token_account_ix(
             event_authority: event_authority(token::id()),
             program: token::id(),
         },
-        token::instruction::InitializeTokenAccount { initial_balance },
+        token::instruction::InitializeTokenAccount {},
     )
 }
 
@@ -918,29 +914,364 @@ fn seed_amount_value(
     address
 }
 
-/// Host `allow_subjects` instruction granting `subject` on `encrypted_value`, authorized by a
-/// current subject `authority`. Mirrors the cross-app grant of the mint's compute subject.
-fn allow_subject_ix(
-    payer: Pubkey,
-    authority: Pubkey,
+/// Token `allow_token_account_subjects` instruction: the owner-authorized CPI wrapper that grants
+/// `subject` on a token-account-scoped `encrypted_value` by signing the host `allow_subjects` call
+/// as the `token_account` PDA (`EncryptedValue.encrypted_value_account_authority`), since host subject-list mutation requires
+/// the signer to equal `EncryptedValue.encrypted_value_account_authority` (fhevm-internal#1862 #13) and wallet owners are
+/// decrypt/compute subjects, not ACL admins.
+fn allow_token_account_subjects_ix(
+    owner: Pubkey,
+    mint: Pubkey,
+    token_account: Pubkey,
     encrypted_value: Pubkey,
     host_config: Pubkey,
     subject: Pubkey,
 ) -> Instruction {
     anchor_ix(
-        host::id(),
-        host::accounts::AllowEncryptedValueSubjects {
-            payer,
-            authority,
+        token::id(),
+        token::accounts::AllowTokenAccountSubjects {
+            payer: owner,
+            owner,
+            mint,
+            token_account,
             encrypted_value,
             host_config,
             deny_subject_record: None,
+            zama_program: host::id(),
             system_program: system_program::ID,
         },
-        host::instruction::AllowSubjects {
+        token::instruction::AllowTokenAccountSubjects {
             subjects: vec![subject],
         },
     )
+}
+
+fn remove_token_account_subject_ix(
+    owner: Pubkey,
+    mint: Pubkey,
+    token_account: Pubkey,
+    encrypted_value: Pubkey,
+    host_config: Pubkey,
+    subject: Pubkey,
+) -> Instruction {
+    anchor_ix(
+        token::id(),
+        token::accounts::RemoveTokenAccountSubject {
+            owner,
+            mint,
+            token_account,
+            encrypted_value,
+            host_config,
+            zama_program: host::id(),
+        },
+        token::instruction::RemoveTokenAccountSubject { subject },
+    )
+}
+
+fn allow_total_supply_subjects_ix(
+    fixture: &BurnRedeemFixture,
+    authority: Pubkey,
+    subject: Pubkey,
+) -> Instruction {
+    anchor_ix(
+        token::id(),
+        token::accounts::AllowTotalSupplySubjects {
+            payer: authority,
+            authority,
+            mint: fixture.mint,
+            total_supply_authority: fixture.total_supply_authority,
+            total_supply_value: fixture.total_supply_value,
+            host_config: fixture.host_config,
+            deny_subject_record: None,
+            zama_program: host::id(),
+            system_program: system_program::ID,
+        },
+        token::instruction::AllowTotalSupplySubjects {
+            subjects: vec![subject],
+        },
+    )
+}
+
+fn remove_total_supply_subject_ix(
+    fixture: &BurnRedeemFixture,
+    authority: Pubkey,
+    subject: Pubkey,
+) -> Instruction {
+    anchor_ix(
+        token::id(),
+        token::accounts::RemoveTotalSupplySubject {
+            authority,
+            mint: fixture.mint,
+            total_supply_authority: fixture.total_supply_authority,
+            total_supply_value: fixture.total_supply_value,
+            host_config: fixture.host_config,
+            zama_program: host::id(),
+        },
+        token::instruction::RemoveTotalSupplySubject { subject },
+    )
+}
+
+fn make_token_account_handle_public_ix(
+    fixture: &BurnRedeemFixture,
+    kind: token::DisclosedValueKind,
+    encrypted_value: Pubkey,
+    handle: [u8; 32],
+) -> Instruction {
+    anchor_ix(
+        token::id(),
+        token::accounts::MakeTokenAccountHandlePublic {
+            payer: fixture.owner,
+            owner: fixture.owner,
+            mint: fixture.mint,
+            token_account: fixture.token_account,
+            encrypted_value,
+            host_config: fixture.host_config,
+            zama_program: host::id(),
+            system_program: system_program::ID,
+        },
+        token::instruction::MakeTokenAccountHandlePublic { kind, handle },
+    )
+}
+
+fn make_total_supply_handle_public_ix(
+    fixture: &BurnRedeemFixture,
+    authority: Pubkey,
+    handle: [u8; 32],
+) -> Instruction {
+    anchor_ix(
+        token::id(),
+        token::accounts::MakeTotalSupplyHandlePublic {
+            payer: authority,
+            authority,
+            mint: fixture.mint,
+            total_supply_authority: fixture.total_supply_authority,
+            total_supply_value: fixture.total_supply_value,
+            host_config: fixture.host_config,
+            zama_program: host::id(),
+            system_program: system_program::ID,
+        },
+        token::instruction::MakeTotalSupplyHandlePublic { handle },
+    )
+}
+
+#[test]
+fn mollusk_mint_authority_rotates_total_supply_subjects() {
+    let fixture = BurnRedeemFixture::new();
+    let auditor = Pubkey::new_unique();
+    let context = burn_redeem_mollusk().with_context(fixture.accounts(0));
+
+    context.process_and_validate_instruction(
+        &allow_total_supply_subjects_ix(&fixture, fixture.owner, auditor),
+        &[Check::success()],
+    );
+    assert!(read_encrypted_value(&context, fixture.total_supply_value).has_subject(auditor));
+
+    context.process_and_validate_instruction(
+        &remove_total_supply_subject_ix(&fixture, fixture.owner, auditor),
+        &[Check::success()],
+    );
+    assert!(!read_encrypted_value(&context, fixture.total_supply_value).has_subject(auditor));
+}
+
+#[test]
+fn mollusk_owner_rotates_token_account_subjects() {
+    let fixture = TokenFixture::new();
+    let auditor = Pubkey::new_unique();
+    let context = mollusk().with_context(fixture.base_accounts());
+
+    context.process_and_validate_instruction(
+        &allow_token_account_subjects_ix(
+            fixture.owner,
+            fixture.mint,
+            fixture.alice_token,
+            fixture.alice_balance_value,
+            fixture.host_config,
+            auditor,
+        ),
+        &[Check::success()],
+    );
+    assert!(read_encrypted_value(&context, fixture.alice_balance_value).has_subject(auditor));
+
+    context.process_and_validate_instruction(
+        &remove_token_account_subject_ix(
+            fixture.owner,
+            fixture.mint,
+            fixture.alice_token,
+            fixture.alice_balance_value,
+            fixture.host_config,
+            auditor,
+        ),
+        &[Check::success()],
+    );
+    assert!(!read_encrypted_value(&context, fixture.alice_balance_value).has_subject(auditor));
+}
+
+#[test]
+fn mollusk_non_owner_cannot_rotate_token_account_subjects() {
+    let fixture = TokenFixture::new();
+    let stranger = Pubkey::new_unique();
+    let mut accounts = fixture.base_accounts();
+    accounts.insert(stranger, system_account(1_000_000_000));
+    let context = mollusk().with_context(accounts);
+
+    for instruction in [
+        allow_token_account_subjects_ix(
+            stranger,
+            fixture.mint,
+            fixture.alice_token,
+            fixture.alice_balance_value,
+            fixture.host_config,
+            Pubkey::new_unique(),
+        ),
+        remove_token_account_subject_ix(
+            stranger,
+            fixture.mint,
+            fixture.alice_token,
+            fixture.alice_balance_value,
+            fixture.host_config,
+            fixture.owner,
+        ),
+    ] {
+        context.process_and_validate_instruction(
+            &instruction,
+            &[anchor_error(anchor_lang::error::ErrorCode::ConstraintSeeds)],
+        );
+    }
+}
+
+#[test]
+fn mollusk_non_mint_authority_cannot_rotate_total_supply_subjects() {
+    let fixture = BurnRedeemFixture::new();
+    let stranger = Pubkey::new_unique();
+    let mut accounts = fixture.accounts(0);
+    accounts.insert(stranger, system_account(1_000_000_000));
+    let context = mollusk().with_context(accounts);
+
+    context.process_and_validate_instruction(
+        &allow_total_supply_subjects_ix(&fixture, stranger, Pubkey::new_unique()),
+        &[token_error(
+            token::ConfidentialTokenError::MintAuthorityMismatch,
+        )],
+    );
+    context.process_and_validate_instruction(
+        &make_total_supply_handle_public_ix(&fixture, stranger, fixture.initial_total_supply),
+        &[token_error(
+            token::ConfidentialTokenError::MintAuthorityMismatch,
+        )],
+    );
+}
+
+#[test]
+fn mollusk_total_supply_rotation_rejects_wrong_value_shape() {
+    let fixture = BurnRedeemFixture::new();
+    let mut accounts = fixture.accounts(0);
+    let (_, wrong_value) = new_encrypted_value(
+        fixture.mint,
+        fixture.total_supply_authority,
+        token::encrypted_balance_label(),
+        fixture.initial_total_supply,
+        &[fixture.compute_signer],
+    );
+    accounts.insert(
+        fixture.total_supply_value,
+        encrypted_value_account(&wrong_value),
+    );
+    let context = mollusk().with_context(accounts);
+
+    context.process_and_validate_instruction(
+        &allow_total_supply_subjects_ix(&fixture, fixture.owner, Pubkey::new_unique()),
+        &[token_error(
+            token::ConfidentialTokenError::TotalSupplyValueMismatch,
+        )],
+    );
+}
+
+#[test]
+fn mollusk_owner_seals_exact_token_account_state_field() {
+    let fixture = BurnRedeemFixture::new();
+    let transferred_handle = handle_for_chain(77, BALANCE_FHE_TYPE);
+    let transferred_value = token::encrypted_value_address(
+        fixture.mint,
+        fixture.token_account,
+        token::encrypted_transferred_amount_label(),
+    )
+    .0;
+    let mut accounts = fixture.accounts(0);
+    accounts.insert(
+        transferred_value,
+        encrypted_value_account(
+            &new_encrypted_value(
+                fixture.mint,
+                fixture.token_account,
+                token::encrypted_transferred_amount_label(),
+                transferred_handle,
+                &[fixture.owner, fixture.compute_signer],
+            )
+            .1,
+        ),
+    );
+    let context = burn_redeem_mollusk().with_context(accounts);
+
+    context.process_and_validate_instruction(
+        &make_token_account_handle_public_ix(
+            &fixture,
+            token::DisclosedValueKind::Balance,
+            fixture.balance_value,
+            fixture.initial_balance,
+        ),
+        &[Check::success()],
+    );
+    let value = read_encrypted_value(&context, fixture.balance_value);
+    assert_eq!(value.leaf_count, 1);
+    assert_eq!(
+        value.peaks,
+        zama_solana_acl::mmr_peaks_from_leaves(&[zama_solana_acl::public_decrypt_leaf_commitment(
+            fixture.balance_value.to_bytes(),
+            0,
+            fixture.initial_balance,
+        ),])
+    );
+
+    context.process_and_validate_instruction(
+        &make_token_account_handle_public_ix(
+            &fixture,
+            token::DisclosedValueKind::BurnedAmount,
+            fixture.balance_value,
+            fixture.initial_balance,
+        ),
+        &[token_error(
+            token::ConfidentialTokenError::DisclosedValueBindingMismatch,
+        )],
+    );
+
+    context.process_and_validate_instruction(
+        &make_token_account_handle_public_ix(
+            &fixture,
+            token::DisclosedValueKind::TransferredAmount,
+            transferred_value,
+            transferred_handle,
+        ),
+        &[Check::success()],
+    );
+    assert_eq!(
+        read_encrypted_value(&context, transferred_value).leaf_count,
+        1
+    );
+}
+
+#[test]
+fn mollusk_mint_authority_seals_total_supply() {
+    let fixture = BurnRedeemFixture::new();
+    let context = burn_redeem_mollusk().with_context(fixture.accounts(0));
+
+    context.process_and_validate_instruction(
+        &make_total_supply_handle_public_ix(&fixture, fixture.owner, fixture.initial_total_supply),
+        &[Check::success()],
+    );
+    assert_eq!(
+        read_encrypted_value(&context, fixture.total_supply_value).leaf_count,
+        1
+    );
 }
 
 fn deny_enabled_transfer_accounts(
@@ -970,9 +1301,10 @@ fn deny_enabled_transfer_accounts(
     };
     accounts.insert(from_deny, from_account);
     accounts.insert(to_deny, to_account);
-    // The transferred-amount create grants [owner, bob_owner, compute_signer];
-    // each newly created subject needs a deny witness too (fhevm-internal#1859 §3-S1).
-    let mut records = vec![from_deny, to_deny];
+    // The transferred-amount create grants [owner, bob_owner, compute_signer] under the sender
+    // token-account authority. The recipient balance update preserves its audience, so the
+    // recipient token-account authority is not part of the grant policy.
+    let mut records = vec![from_deny];
     for subject in [fixture.owner, fixture.bob_owner, fixture.compute_signer] {
         let record = host::deny_subject_address(subject).0;
         accounts.insert(record, system_account(0));
@@ -1063,7 +1395,7 @@ fn mollusk_initialize_token_account_creates_initial_balance_encrypted_value() {
     accounts.insert(token_account, system_account(0));
     accounts.insert(balance_encrypted_value, system_account(0));
     let context = mollusk().with_context(accounts);
-    let ix = initialize_token_account_ix(owner, owner, fixture.mint, fixture.host_config, 0);
+    let ix = initialize_token_account_ix(owner, owner, fixture.mint, fixture.host_config);
 
     let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
 
@@ -1119,7 +1451,7 @@ fn mollusk_initialize_token_account_allows_distinct_sponsor_and_owner() {
     accounts.insert(token_account, system_account(0));
     accounts.insert(balance_encrypted_value, system_account(0));
     let context = mollusk().with_context(accounts);
-    let ix = initialize_token_account_ix(payer, owner, fixture.mint, fixture.host_config, 0);
+    let ix = initialize_token_account_ix(payer, owner, fixture.mint, fixture.host_config);
 
     context.process_and_validate_instruction(&ix, &[Check::success()]);
 
@@ -1139,30 +1471,6 @@ fn mollusk_initialize_token_account_allows_distinct_sponsor_and_owner() {
         balance_value.current_handle
     );
     assert_eq!(balance_after_retry.subjects, balance_value.subjects);
-}
-
-#[test]
-fn mollusk_initialize_token_account_rejects_nonzero_initial_balance() {
-    let fixture = TokenFixture::new();
-    let owner = Pubkey::new_unique();
-    let (token_account, _bump) = token::token_account_address(fixture.mint, owner);
-    let balance_encrypted_value =
-        token::balance_encrypted_value_address(fixture.mint, token_account).0;
-    let mut accounts = fixture.base_accounts();
-    accounts.insert(owner, system_account(5_000_000_000));
-    accounts.insert(token_account, system_account(0));
-    accounts.insert(balance_encrypted_value, system_account(0));
-    let context = mollusk().with_context(accounts);
-    let ix = initialize_token_account_ix(owner, owner, fixture.mint, fixture.host_config, 1);
-
-    let result = context.process_instruction(&ix);
-
-    assert!(result.raw_result.is_err());
-    assert!(account_is_system_owned_and_empty(&context, token_account));
-    assert!(account_is_system_owned_and_empty(
-        &context,
-        balance_encrypted_value
-    ));
 }
 
 // ---------------------------------------------------------------------------
@@ -1619,8 +1927,8 @@ fn mollusk_confidential_transfer_deny_list_enabled_rotation_to_new_recipient_suc
     let context = mollusk().with_context(accounts);
     let receipt_address = fixture.transferred_amount_value_address(fixture.alice_token);
 
-    // First transfer (create): the two token-account authorities plus every
-    // created subject of the transferred-amount value are deny-checked.
+    // First transfer (create): the sender authority plus every created subject of the
+    // transferred-amount value are deny-checked.
     context.process_and_validate_instruction(
         &confidential_transfer_ix_with_remaining(
             &fixture,
@@ -1633,19 +1941,13 @@ fn mollusk_confidential_transfer_deny_list_enabled_rotation_to_new_recipient_suc
                 fixture.owner,
                 fixture.compute_signer,
             ),
-            vec![
-                alice_deny,
-                bob_deny,
-                owner_deny,
-                bob_owner_deny,
-                compute_deny,
-            ],
+            vec![alice_deny, owner_deny, bob_owner_deny, compute_deny],
         ),
         &[Check::success()],
     );
 
-    // Second transfer (rotation): authorities alice_token + charlie_token, plus the rotation-added
-    // subject charlie_owner, each needs a (non-denied) deny witness.
+    // Second transfer (rotation): the sender authority and rotation-added subject charlie_owner
+    // each need a non-denied witness. Charlie's balance update preserves its audience.
     context.process_and_validate_instruction(
         &confidential_transfer_ix_with_remaining(
             &fixture,
@@ -1658,7 +1960,7 @@ fn mollusk_confidential_transfer_deny_list_enabled_rotation_to_new_recipient_suc
                 fixture.owner,
                 fixture.compute_signer,
             ),
-            vec![alice_deny, charlie_token_deny, charlie_owner_deny],
+            vec![alice_deny, charlie_owner_deny],
         ),
         &[Check::success()],
     );
@@ -1726,13 +2028,7 @@ fn mollusk_confidential_transfer_deny_list_rejects_denied_rotation_added_subject
                 fixture.owner,
                 fixture.compute_signer,
             ),
-            vec![
-                alice_deny,
-                bob_deny,
-                owner_deny,
-                bob_owner_deny,
-                compute_deny,
-            ],
+            vec![alice_deny, owner_deny, bob_owner_deny, compute_deny],
         ),
         &[Check::success()],
     );
@@ -1749,7 +2045,7 @@ fn mollusk_confidential_transfer_deny_list_rejects_denied_rotation_added_subject
                 fixture.owner,
                 fixture.compute_signer,
             ),
-            vec![alice_deny, charlie_token_deny, charlie_owner_deny],
+            vec![alice_deny, charlie_owner_deny],
         ),
         &[host_error(host::errors::ZamaHostError::SubjectDenied)],
     );
@@ -1825,7 +2121,7 @@ fn mollusk_confidential_transfer_with_deny_list_rejects_denied_from_authority() 
 }
 
 #[test]
-fn mollusk_confidential_transfer_with_deny_list_rejects_denied_to_authority() {
+fn mollusk_confidential_transfer_with_deny_list_allows_denied_non_grant_output_authority() {
     let fixture = TokenFixture::new();
     let (accounts, deny_records) =
         deny_enabled_transfer_accounts(&fixture, Some(fixture.bob_token));
@@ -1842,16 +2138,13 @@ fn mollusk_confidential_transfer_with_deny_list_rejects_denied_to_authority() {
         deny_records,
     );
 
-    context.process_and_validate_instruction(
-        &ix,
-        &[host_error(host::errors::ZamaHostError::SubjectDenied)],
-    );
+    context.process_and_validate_instruction(&ix, &[Check::success()]);
 
     let alice_balance = read_encrypted_value(&context, fixture.alice_balance_value);
     let bob_balance = read_encrypted_value(&context, fixture.bob_balance_value);
-    assert_eq!(alice_balance.current_handle, fixture.alice_initial);
-    assert_eq!(bob_balance.current_handle, fixture.bob_initial);
-    assert!(account_is_system_owned_and_empty(
+    assert_ne!(alice_balance.current_handle, fixture.alice_initial);
+    assert_ne!(bob_balance.current_handle, fixture.bob_initial);
+    assert!(!account_is_system_owned_and_empty(
         &context,
         fixture.transferred_amount_value_address(fixture.alice_token)
     ));
@@ -2142,7 +2435,7 @@ fn mollusk_confidential_transfer_rejects_stale_balance_encrypted_value() {
     let (stale_address, stale_value) = new_encrypted_value(
         fixture.mint,
         fixture.alice_token,
-        token::encrypted_wrap_amount_label(),
+        token::encrypted_transfer_amount_label(),
         fixture.alice_initial,
         &[fixture.owner],
     );
@@ -2274,7 +2567,7 @@ fn mollusk_confidential_transfer_rejects_balance_wrong_token_account_authority()
 // single thin consumer of the stateless host `verify_public_decrypt`, verifying the KMS cert
 // against the live KMS context it names (any non-destroyed context, fhevm-internal#1765) plus an
 // exact-handle MMR public-decrypt proof, then paying out
-// and writing the permanent per-handle marker.
+// and closing the token account's `PendingBurn` (rent to owner).
 //
 // Vector 2 (burn-stranding) fix, unchanged: every burn is created publicly decryptable at the burn
 // instant (ERC-7984 `unwrap` parity, DD-036), so a historical burned handle stays redeemable even
@@ -2282,6 +2575,7 @@ fn mollusk_confidential_transfer_rejects_balance_wrong_token_account_authority()
 // ---------------------------------------------------------------------------
 
 use anchor_spl::token::spl_token;
+use anchor_spl::token_2022::spl_token_2022;
 use solana_sdk::program_option::COption;
 
 use support::kms_cert::{cleartext_u256, kms_signing_key, kms_signing_key_n};
@@ -2433,6 +2727,164 @@ fn spl_token_account(mint: Pubkey, owner: Pubkey, amount: u64) -> Account {
     }
 }
 
+fn token_2022_mint_account(decimals: u8) -> Account {
+    let mut data = vec![0u8; spl_token_2022::state::Mint::LEN];
+    spl_token_2022::state::Mint::pack(
+        spl_token_2022::state::Mint {
+            mint_authority: COption::None,
+            supply: 1_000_000,
+            decimals,
+            is_initialized: true,
+            freeze_authority: COption::None,
+        },
+        &mut data,
+    )
+    .unwrap();
+    Account {
+        lamports: 1_000_000_000,
+        data,
+        owner: spl_token_2022::id(),
+        executable: false,
+        rent_epoch: 0,
+    }
+}
+
+fn token_2022_non_transferable_mint_account(decimals: u8) -> Account {
+    use spl_token_2022::extension::{
+        non_transferable::NonTransferable, BaseStateWithExtensionsMut, ExtensionType,
+        StateWithExtensionsMut,
+    };
+    let len = ExtensionType::try_calculate_account_len::<spl_token_2022::state::Mint>(&[
+        ExtensionType::NonTransferable,
+    ])
+    .unwrap();
+    let mut data = vec![0u8; len];
+    let mut state =
+        StateWithExtensionsMut::<spl_token_2022::state::Mint>::unpack_uninitialized(&mut data)
+            .unwrap();
+    state.base = spl_token_2022::state::Mint {
+        mint_authority: COption::None,
+        supply: 1_000_000,
+        decimals,
+        is_initialized: true,
+        freeze_authority: COption::None,
+    };
+    state.init_extension::<NonTransferable>(true).unwrap();
+    state.init_account_type().unwrap();
+    state.pack_base();
+    Account {
+        lamports: 1_000_000_000,
+        data,
+        owner: spl_token_2022::id(),
+        executable: false,
+        rent_epoch: 0,
+    }
+}
+
+fn token_2022_token_account(
+    mint: Pubkey,
+    owner: Pubkey,
+    amount: u64,
+    state: spl_token_2022::state::AccountState,
+) -> Account {
+    let mut data = vec![0u8; spl_token_2022::state::Account::LEN];
+    spl_token_2022::state::Account::pack(
+        spl_token_2022::state::Account {
+            mint,
+            owner,
+            amount,
+            delegate: COption::None,
+            state,
+            is_native: COption::None,
+            delegated_amount: 0,
+            close_authority: COption::None,
+        },
+        &mut data,
+    )
+    .unwrap();
+    Account {
+        lamports: 1_000_000_000,
+        data,
+        owner: spl_token_2022::id(),
+        executable: false,
+        rent_epoch: 0,
+    }
+}
+
+fn token_2022_immutable_owner_account(
+    mint: Pubkey,
+    owner: Pubkey,
+    amount: u64,
+    account_state: spl_token_2022::state::AccountState,
+) -> Account {
+    use spl_token_2022::extension::{
+        immutable_owner::ImmutableOwner, BaseStateWithExtensionsMut, ExtensionType,
+        StateWithExtensionsMut,
+    };
+    let len = ExtensionType::try_calculate_account_len::<spl_token_2022::state::Account>(&[
+        ExtensionType::ImmutableOwner,
+    ])
+    .unwrap();
+    let mut data = vec![0u8; len];
+    let mut state =
+        StateWithExtensionsMut::<spl_token_2022::state::Account>::unpack_uninitialized(&mut data)
+            .unwrap();
+    state.base = spl_token_2022::state::Account {
+        mint,
+        owner,
+        amount,
+        delegate: COption::None,
+        state: account_state,
+        is_native: COption::None,
+        delegated_amount: 0,
+        close_authority: COption::None,
+    };
+    state.init_extension::<ImmutableOwner>(true).unwrap();
+    state.init_account_type().unwrap();
+    state.pack_base();
+    Account {
+        lamports: 1_000_000_000,
+        data,
+        owner: spl_token_2022::id(),
+        executable: false,
+        rent_epoch: 0,
+    }
+}
+
+fn token_2022_cpi_guard_account(mint: Pubkey, owner: Pubkey, amount: u64) -> Account {
+    use spl_token_2022::extension::{
+        cpi_guard::CpiGuard, BaseStateWithExtensionsMut, ExtensionType, StateWithExtensionsMut,
+    };
+    let len = ExtensionType::try_calculate_account_len::<spl_token_2022::state::Account>(&[
+        ExtensionType::CpiGuard,
+    ])
+    .unwrap();
+    let mut data = vec![0u8; len];
+    let mut state =
+        StateWithExtensionsMut::<spl_token_2022::state::Account>::unpack_uninitialized(&mut data)
+            .unwrap();
+    state.base = spl_token_2022::state::Account {
+        mint,
+        owner,
+        amount,
+        delegate: COption::None,
+        state: spl_token_2022::state::AccountState::Initialized,
+        is_native: COption::None,
+        delegated_amount: 0,
+        close_authority: COption::None,
+    };
+    state.init_extension::<CpiGuard>(true).unwrap();
+    state.init_account_type().unwrap();
+    state.pack_base();
+    Account {
+        lamports: 1_000_000_000,
+        data,
+        owner: spl_token_2022::id(),
+        executable: false,
+        rent_epoch: 0,
+    }
+}
+
 fn read_spl_amount(
     context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
     address: Pubkey,
@@ -2443,12 +2895,20 @@ fn read_spl_amount(
         .get(&address)
         .expect("missing spl token account")
         .clone();
-    spl_token::state::Account::unpack(&account.data)
-        .expect("valid spl token account")
-        .amount
+    if account.owner == spl_token::id() {
+        spl_token::state::Account::unpack(&account.data)
+            .expect("valid classic token account")
+            .amount
+    } else {
+        use spl_token_2022::extension::StateWithExtensions;
+        StateWithExtensions::<spl_token_2022::state::Account>::unpack(&account.data)
+            .expect("valid Token-2022 account")
+            .base
+            .amount
+    }
 }
 
-/// Self-contained fixture for the burn/request/redeem vertical: one owner, one
+/// Self-contained fixture for the burn/redeem/cancel vertical: one owner, one
 /// confidential mint with an SPL-backed vault, and one funded token account.
 struct BurnRedeemFixture {
     owner: Pubkey,
@@ -2461,6 +2921,7 @@ struct BurnRedeemFixture {
     total_supply_value: Pubkey,
     burned_amount_value: Pubkey,
     underlying_mint: Pubkey,
+    token_program: Pubkey,
     vault_authority: Pubkey,
     vault_usdc: Pubkey,
     destination_usdc: Pubkey,
@@ -2479,10 +2940,28 @@ impl BurnRedeemFixture {
         )
     }
 
+    fn new_token_2022() -> Self {
+        Self::with_keys_and_token_program(
+            Pubkey::new_unique(),
+            Pubkey::new_unique(),
+            Pubkey::new_unique(),
+            spl_token_2022::id(),
+        )
+    }
+
     /// Fixed-key variant for cost snapshots and the PDA-owner CPI-driver test: PDA bump searches are
     /// part of the measured compute, and the owner must be a chosen program PDA, so the addresses
     /// must not change between runs.
     fn with_keys(owner: Pubkey, mint: Pubkey, underlying_mint: Pubkey) -> Self {
+        Self::with_keys_and_token_program(owner, mint, underlying_mint, spl_token::id())
+    }
+
+    fn with_keys_and_token_program(
+        owner: Pubkey,
+        mint: Pubkey,
+        underlying_mint: Pubkey,
+        token_program: Pubkey,
+    ) -> Self {
         let compute_signer = token::compute_signer_address(mint).0;
         let host_config = host::host_config_address().0;
         let token_account = token::token_account_address(mint, owner).0;
@@ -2497,7 +2976,7 @@ impl BurnRedeemFixture {
         )
         .0;
         let vault_authority = token::vault_authority_address(mint).0;
-        let vault_usdc = token::vault_token_account_address(mint, underlying_mint);
+        let vault_usdc = token::vault_token_account_address(mint, underlying_mint, token_program);
         let destination_usdc = Pubkey::new_unique();
         let kms_context_id = 9;
         let kms_context = host::kms_context_address(kms_context_id).0;
@@ -2512,6 +2991,7 @@ impl BurnRedeemFixture {
             total_supply_value,
             burned_amount_value,
             underlying_mint,
+            token_program,
             vault_authority,
             vault_usdc,
             destination_usdc,
@@ -2579,18 +3059,44 @@ impl BurnRedeemFixture {
                 encrypted_value_account(&total_supply_value),
             ),
             (self.burned_amount_value, system_account(0)),
-            (self.underlying_mint, spl_mint_account(6)),
+            (
+                self.underlying_mint,
+                if self.token_program == spl_token::id() {
+                    spl_mint_account(6)
+                } else {
+                    token_2022_mint_account(6)
+                },
+            ),
             (
                 self.vault_usdc,
-                spl_token_account(self.underlying_mint, self.vault_authority, vault_balance),
+                if self.token_program == spl_token::id() {
+                    spl_token_account(self.underlying_mint, self.vault_authority, vault_balance)
+                } else {
+                    token_2022_immutable_owner_account(
+                        self.underlying_mint,
+                        self.vault_authority,
+                        vault_balance,
+                        spl_token_2022::state::AccountState::Initialized,
+                    )
+                },
             ),
             (
                 self.destination_usdc,
-                spl_token_account(self.underlying_mint, self.owner, 0),
+                if self.token_program == spl_token::id() {
+                    spl_token_account(self.underlying_mint, self.owner, 0)
+                } else {
+                    token_2022_immutable_owner_account(
+                        self.underlying_mint,
+                        self.owner,
+                        0,
+                        spl_token_2022::state::AccountState::Initialized,
+                    )
+                },
             ),
             (event_authority(host::id()), system_account(0)),
             (event_authority(token::id()), system_account(0)),
             mollusk_svm_programs_token::token::keyed_account(),
+            mollusk_svm_programs_token::token2022::keyed_account(),
         ])
     }
 }
@@ -2611,14 +3117,71 @@ fn token_account_account(mint: Pubkey, owner: Pubkey, balance_value: Pubkey) -> 
 }
 
 fn burn_redeem_mollusk() -> Mollusk {
-    let mut mollusk = mollusk();
-    mollusk_svm_programs_token::token::add_program(&mut mollusk);
-    mollusk
+    mollusk()
+}
+
+fn pending_burn_account(pending: token::PendingBurn) -> Account {
+    Account {
+        lamports: 1_000_000,
+        data: serialized_account(pending),
+        owner: token::id(),
+        executable: false,
+        rent_epoch: 0,
+    }
+}
+
+/// Seeds an initialized `PendingBurn` account (for redeem-only tests that skip a real burn).
+fn seed_pending_burn_in_context(
+    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
+    fixture: &BurnRedeemFixture,
+    burned_handle: [u8; 32],
+) -> Pubkey {
+    let (address, bump) = token::pending_burn_address(fixture.mint, fixture.token_account);
+    let pending = token::PendingBurn {
+        mint: fixture.mint,
+        owner: fixture.owner,
+        token_account: fixture.token_account,
+        burned_handle,
+        burned_encrypted_value: fixture.burned_amount_value,
+        bump,
+    };
+    context
+        .account_store
+        .borrow_mut()
+        .insert(address, pending_burn_account(pending));
+    address
+}
+
+fn prepare_empty_pending_burn(
+    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
+    fixture: &BurnRedeemFixture,
+) -> Pubkey {
+    let pending_burn = token::pending_burn_address(fixture.mint, fixture.token_account).0;
+    context
+        .account_store
+        .borrow_mut()
+        .insert(pending_burn, system_account(0));
+    pending_burn
+}
+
+fn assert_pending_burn_closed(
+    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
+    pending_burn: Pubkey,
+) {
+    let account = context.account_store.borrow().get(&pending_burn).cloned();
+    match account {
+        None => {}
+        Some(account) => {
+            assert_eq!(account.owner, system_program::ID);
+            assert!(account.data.is_empty());
+        }
+    }
 }
 
 fn confidential_burn_ix(
     fixture: &BurnRedeemFixture,
     amount_attestation: host::CoprocessorInputAttestation,
+    pending_burn: Pubkey,
 ) -> Instruction {
     anchor_ix(
         token::id(),
@@ -2631,6 +3194,7 @@ fn confidential_burn_ix(
             balance_value: fixture.balance_value,
             total_supply_value: fixture.total_supply_value,
             burned_amount_value: fixture.burned_amount_value,
+            pending_burn,
             zama_event_authority: event_authority(host::id()),
             zama_program: host::id(),
             host_config: fixture.host_config,
@@ -2653,6 +3217,7 @@ fn confidential_burn_from_value_ix(
     owner: Pubkey,
     payer: Pubkey,
     amount_value: Pubkey,
+    pending_burn: Pubkey,
 ) -> Instruction {
     anchor_ix(
         token::id(),
@@ -2666,6 +3231,7 @@ fn confidential_burn_from_value_ix(
             balance_value: fixture.balance_value,
             total_supply_value: fixture.total_supply_value,
             burned_amount_value: fixture.burned_amount_value,
+            pending_burn,
             amount_value,
             zama_event_authority: event_authority(host::id()),
             zama_program: host::id(),
@@ -2683,6 +3249,17 @@ fn confidential_burn_from_value_ix(
 /// Seeds a spendable amount encrypted value account (a stand-in for a computed/received `euint64` handle) at the
 /// canonical PDA `(mint, account, label)` with the given subjects and current handle into the
 /// burn fixture's account map, returning its address.
+fn confidential_burn_from_value_auto(
+    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
+    fixture: &BurnRedeemFixture,
+    owner: Pubkey,
+    payer: Pubkey,
+    amount_value: Pubkey,
+) -> Instruction {
+    let pending_burn = prepare_empty_pending_burn(context, fixture);
+    confidential_burn_from_value_ix(fixture, owner, payer, amount_value, pending_burn)
+}
+
 fn seed_burn_amount_value(
     fixture: &BurnRedeemFixture,
     accounts: &mut HashMap<Pubkey, Account>,
@@ -2704,7 +3281,7 @@ fn seed_burn_amount_value(
 
 /// Builds a single-leaf public-decrypt inclusion proof for `fixture.burned_amount_value` after one
 /// burn (the sole leaf, at index 0, is `burned_handle`'s public-decrypt commitment), returning it
-/// with the encrypted value account peaks the burn wrote. Mirrors `two_burn_value_account_proof` for the one-burn case.
+/// with the encrypted value account peaks the burn wrote.
 fn single_burn_public_decrypt_proof(
     fixture: &BurnRedeemFixture,
     burned_handle: [u8; 32],
@@ -2722,6 +3299,28 @@ fn single_burn_public_decrypt_proof(
     }
 }
 
+fn seed_single_burn_value_account(
+    fixture: &BurnRedeemFixture,
+    accounts: &mut HashMap<Pubkey, Account>,
+    burned_handle: [u8; 32],
+) {
+    let (_, mut value) = new_encrypted_value(
+        fixture.mint,
+        fixture.token_account,
+        token::encrypted_burned_amount_label(),
+        burned_handle,
+        &[fixture.owner, fixture.compute_signer],
+    );
+    value.leaf_count = 1;
+    value.peaks =
+        zama_solana_acl::mmr_peaks_from_leaves(&[zama_solana_acl::public_decrypt_leaf_commitment(
+            fixture.burned_amount_value.to_bytes(),
+            0,
+            burned_handle,
+        )]);
+    accounts.insert(fixture.burned_amount_value, encrypted_value_account(&value));
+}
+
 #[allow(clippy::too_many_arguments)]
 fn redeem_burned_amount_ix(
     fixture: &BurnRedeemFixture,
@@ -2730,8 +3329,7 @@ fn redeem_burned_amount_ix(
     signatures: Vec<[u8; 65]>,
     extra_data: Vec<u8>,
     proof: host::instructions::MmrInclusionProof,
-    redemption_record: Pubkey,
-    deny_subject_record: Option<Pubkey>,
+    pending_burn: Pubkey,
 ) -> Instruction {
     anchor_ix(
         token::id(),
@@ -2744,13 +3342,11 @@ fn redeem_burned_amount_ix(
             destination_usdc: fixture.destination_usdc,
             vault_authority: fixture.vault_authority,
             burned_amount_value: fixture.burned_amount_value,
-            redemption_record,
+            pending_burn,
             host_config: fixture.host_config,
             kms_context: fixture.kms_context,
-            deny_subject_record,
             zama_program: host::id(),
-            token_program: spl_token::id(),
-            system_program: system_program::ID,
+            token_program: fixture.token_program,
             event_authority: event_authority(token::id()),
             program: token::id(),
         },
@@ -2764,16 +3360,16 @@ fn redeem_burned_amount_ix(
     )
 }
 
-/// Burns `amount_seed`'s attested amount and returns the resulting burned handle
-/// (the encrypted value account's new current handle) read back from the replaced encrypted value account.
+/// Burns `amount_seed`'s attested amount and returns the resulting burned handle.
 fn run_burn(
     context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
     fixture: &BurnRedeemFixture,
     amount_seed: u8,
 ) -> [u8; 32] {
+    let pending_burn = prepare_empty_pending_burn(context, fixture);
     let amount_handle = handle_for_chain(amount_seed, BALANCE_FHE_TYPE);
     let attestation = amount_attestation_for(amount_handle, fixture.owner, fixture.compute_signer);
-    let ix = confidential_burn_ix(fixture, attestation);
+    let ix = confidential_burn_ix(fixture, attestation, pending_burn);
     context.process_and_validate_instruction(&ix, &[Check::success()]);
     read_encrypted_value(context, fixture.burned_amount_value).current_handle
 }
@@ -2800,6 +3396,89 @@ fn mollusk_confidential_burn_makes_burned_amount_publicly_decryptable() {
         value.peaks,
         zama_solana_acl::mmr_peaks_from_leaves(&[public_leaf])
     );
+}
+
+#[test]
+fn mollusk_confidential_burn_accepts_prefunded_pending_pda() {
+    for lamports in [1, 10_000_000_000] {
+        let fixture = BurnRedeemFixture::new();
+        let pending_burn = token::pending_burn_address(fixture.mint, fixture.token_account).0;
+        let mut accounts = fixture.accounts(1_000);
+        accounts.insert(pending_burn, system_account(lamports));
+        let context = burn_redeem_mollusk().with_context(accounts);
+        let amount_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
+        let attestation =
+            amount_attestation_for(amount_handle, fixture.owner, fixture.compute_signer);
+
+        context.process_and_validate_instruction(
+            &confidential_burn_ix(&fixture, attestation, pending_burn),
+            &[Check::success()],
+        );
+
+        let pending = context
+            .account_store
+            .borrow()
+            .get(&pending_burn)
+            .expect("pending burn created")
+            .clone();
+        assert_eq!(pending.owner, token::id());
+        assert!(!pending.data.is_empty());
+    }
+}
+
+#[test]
+fn mollusk_confidential_burn_rejects_occupied_pending_pda_atomically() {
+    let fixture = BurnRedeemFixture::new();
+    let pending_burn = token::pending_burn_address(fixture.mint, fixture.token_account).0;
+    for occupied in [
+        Account {
+            lamports: 1,
+            data: Vec::new(),
+            owner: Pubkey::new_unique(),
+            executable: false,
+            rent_epoch: 0,
+        },
+        Account {
+            lamports: 1,
+            data: vec![0x01],
+            owner: system_program::ID,
+            executable: false,
+            rent_epoch: 0,
+        },
+    ] {
+        let mut accounts = fixture.accounts(1_000);
+        accounts.insert(pending_burn, occupied.clone());
+        let context = burn_redeem_mollusk().with_context(accounts);
+        let old_balance = read_encrypted_value(&context, fixture.balance_value).current_handle;
+        let old_supply = read_encrypted_value(&context, fixture.total_supply_value).current_handle;
+        let amount_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
+        let attestation =
+            amount_attestation_for(amount_handle, fixture.owner, fixture.compute_signer);
+
+        context.process_and_validate_instruction(
+            &confidential_burn_ix(&fixture, attestation, pending_burn),
+            &[token_error(
+                token::ConfidentialTokenError::PendingBurnAlreadyInitialized,
+            )],
+        );
+
+        assert_eq!(
+            read_encrypted_value(&context, fixture.balance_value).current_handle,
+            old_balance
+        );
+        assert_eq!(
+            read_encrypted_value(&context, fixture.total_supply_value).current_handle,
+            old_supply
+        );
+        let unchanged = context
+            .account_store
+            .borrow()
+            .get(&pending_burn)
+            .expect("occupied account remains")
+            .clone();
+        assert_eq!(unchanged.owner, occupied.owner);
+        assert_eq!(unchanged.data, occupied.data);
+    }
 }
 
 /// Reconstructs the burned_amount encrypted value account's four leaves after two burns
@@ -2840,63 +3519,31 @@ fn two_burn_value_account_proof(
     )
 }
 
-/// Seeds `fixture.burned_amount_value` with the post-two-burn encrypted value account state (current handle
-/// `second_handle`, four leaves) into `accounts`, returning the peaks it wrote.
-fn seed_two_burn_value_account(
-    fixture: &BurnRedeemFixture,
-    accounts: &mut HashMap<Pubkey, Account>,
-    second_handle: [u8; 32],
-    peaks: Vec<[u8; 32]>,
-) {
-    let (_, mut value) = new_encrypted_value(
-        fixture.mint,
-        fixture.token_account,
-        token::encrypted_burned_amount_label(),
-        second_handle,
-        &[fixture.owner, fixture.compute_signer],
-    );
-    value.leaf_count = 4;
-    value.peaks = peaks;
-    accounts.insert(fixture.burned_amount_value, encrypted_value_account(&value));
-}
-
-/// Redeem the historical first-burn handle H1 after a later burn replaced the encrypted value account to H2,
-/// then reject the double-redeem via the permanent per-handle marker PDA. This drives the exact
-/// consumer path the dissolution added: redeem accepting a HISTORICAL handle authorized by the
-/// burn-appended public-decrypt MMR proof through the `verify_public_decrypt` CPI, with no request
-/// witness. (The two real burns overflow the 32 KiB per-tx heap in Mollusk, so the seeded
-/// post-update encrypted value account stands in for them; the burn-execution path is the burn test above.)
+/// Redeem the current pending burn, then reject a second redemption because the pending account is
+/// already closed.
 #[test]
-fn mollusk_redeem_historical_burned_handle_after_an_update_then_rejects_double_redeem() {
+fn mollusk_redeem_current_pending_burn_then_rejects_double_settlement() {
     let fixture = BurnRedeemFixture::new();
-    let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
-    let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
-    let (proof, expected_peaks) =
-        two_burn_value_account_proof(&fixture, first_handle, second_handle, 0);
+    let burned_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
+    let proof = single_burn_public_decrypt_proof(&fixture, burned_handle);
 
     let mut accounts = fixture.accounts(1_000);
-    seed_two_burn_value_account(&fixture, &mut accounts, second_handle, expected_peaks);
+    seed_single_burn_value_account(&fixture, &mut accounts, burned_handle);
     let context = burn_redeem_mollusk().with_context(accounts);
 
-    // redeem(H1) with the real public-decrypt proof + KMS cert releases H1's amount even though
-    // H1 is historical (the live handle is H2).
+    // redeem(H1) with the public-decrypt proof + certificate releases the current pending amount.
     let cleartext_amount = 500;
-    let (signatures, extra_data) = kms_public_decrypt_cert(first_handle, cleartext_amount);
-    let redemption_record = token::burn_redemption_address(fixture.mint, first_handle).0;
-    context
-        .account_store
-        .borrow_mut()
-        .insert(redemption_record, system_account(0));
+    let (signatures, extra_data) = kms_public_decrypt_cert(burned_handle, cleartext_amount);
+    let pending_burn = seed_pending_burn_in_context(&context, &fixture, burned_handle);
     context.process_and_validate_instruction(
         &redeem_burned_amount_ix(
             &fixture,
-            first_handle,
+            burned_handle,
             cleartext_amount,
             signatures.clone(),
             extra_data.clone(),
             proof.clone(),
-            redemption_record,
-            None,
+            pending_burn,
         ),
         &[Check::success()],
     );
@@ -2909,60 +3556,129 @@ fn mollusk_redeem_historical_burned_handle_after_an_update_then_rejects_double_r
         read_spl_amount(&context, fixture.vault_usdc),
         1_000 - cleartext_amount
     );
-    let record = context
-        .account_store
-        .borrow()
-        .get(&redemption_record)
-        .expect("redemption record")
-        .clone();
-    let redemption = token::BurnRedemption::try_deserialize(&mut record.data.as_slice())
-        .expect("burn redemption record");
-    assert_eq!(redemption.burned_handle, first_handle);
-    assert_eq!(redemption.cleartext_amount, cleartext_amount);
+    assert_pending_burn_closed(&context, pending_burn);
 
-    // Double-redeem of the same handle is blocked: Anchor's `init` on the already-initialized
-    // per-handle marker PDA fails.
+    // A second redemption fails because the single pending-burn account was closed.
     let dup = redeem_burned_amount_ix(
         &fixture,
-        first_handle,
+        burned_handle,
         cleartext_amount,
         signatures,
         extra_data,
         proof,
-        redemption_record,
-        None,
+        pending_burn,
     );
     assert!(context.process_instruction(&dup).raw_result.is_err());
     assert_eq!(
         read_spl_amount(&context, fixture.destination_usdc),
         cleartext_amount
     );
+
+    // The alternate settlement path is excluded by the same closed account.
+    assert!(context
+        .process_instruction(&cancel_pending_burn_ix(&fixture, pending_burn))
+        .raw_result
+        .is_err());
 }
 
-/// A structurally valid proof aimed at the WRONG leaf position: the host verifier recomputes
-/// public(H1)@leaf_index against the peaks, it no longer matches, so the redeem fails closed with
-/// the host's `PublicDecryptProofInvalid` (surfaced through the CPI) and the vault is untouched.
 #[test]
-fn mollusk_redeem_rejects_foreign_public_decrypt_proof() {
+fn mollusk_redeem_current_burn_with_token_2022() {
+    let fixture = BurnRedeemFixture::new_token_2022();
+    let burned_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
+    let proof = single_burn_public_decrypt_proof(&fixture, burned_handle);
+    let (_, mut burned_value) = new_encrypted_value(
+        fixture.mint,
+        fixture.token_account,
+        token::encrypted_burned_amount_label(),
+        burned_handle,
+        &[fixture.owner, fixture.compute_signer],
+    );
+    burned_value.leaf_count = 1;
+    burned_value.peaks =
+        zama_solana_acl::mmr_peaks_from_leaves(&[zama_solana_acl::public_decrypt_leaf_commitment(
+            fixture.burned_amount_value.to_bytes(),
+            0,
+            burned_handle,
+        )]);
+    let mut accounts = fixture.accounts(1_000);
+    accounts.insert(
+        fixture.burned_amount_value,
+        encrypted_value_account(&burned_value),
+    );
+    let context = burn_redeem_mollusk().with_context(accounts);
+    let pending_burn = seed_pending_burn_in_context(&context, &fixture, burned_handle);
+    let (signatures, extra_data) = kms_public_decrypt_cert(burned_handle, 500);
+
+    context.process_and_validate_instruction(
+        &redeem_burned_amount_ix(
+            &fixture,
+            burned_handle,
+            500,
+            signatures,
+            extra_data,
+            proof,
+            pending_burn,
+        ),
+        &[Check::success()],
+    );
+    assert_eq!(read_spl_amount(&context, fixture.destination_usdc), 500);
+    assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 500);
+}
+
+#[test]
+fn mollusk_redeem_rejects_frozen_token_2022_destination() {
+    let fixture = BurnRedeemFixture::new_token_2022();
+    let burned_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
+    let mut accounts = fixture.accounts(1_000);
+    accounts.insert(
+        fixture.destination_usdc,
+        token_2022_token_account(
+            fixture.underlying_mint,
+            fixture.owner,
+            0,
+            spl_token_2022::state::AccountState::Frozen,
+        ),
+    );
+    let context = burn_redeem_mollusk().with_context(accounts);
+    let pending_burn = seed_pending_burn_in_context(&context, &fixture, burned_handle);
+    let (signatures, extra_data) = kms_public_decrypt_cert(burned_handle, 500);
+
+    context.process_and_validate_instruction(
+        &redeem_burned_amount_ix(
+            &fixture,
+            burned_handle,
+            500,
+            signatures,
+            extra_data,
+            single_burn_public_decrypt_proof(&fixture, burned_handle),
+            pending_burn,
+        ),
+        // Anchor's token-interface account loader treats a frozen destination as unavailable and
+        // rejects it before the handler runs. The vault therefore remains untouched.
+        &[anchor_error(
+            anchor_lang::error::ErrorCode::AccountNotInitialized,
+        )],
+    );
+    assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 1_000);
+}
+
+/// An out-of-range leaf index for the one-leaf accumulator fails closed with the host's
+/// `PublicDecryptProofInvalid` (surfaced through the CPI) and leaves the vault untouched.
+#[test]
+fn mollusk_redeem_rejects_out_of_range_public_decrypt_leaf() {
     let fixture = BurnRedeemFixture::new();
     let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
-    let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
-    let (mut proof, expected_peaks) =
-        two_burn_value_account_proof(&fixture, first_handle, second_handle, 0);
+    let mut proof = single_burn_public_decrypt_proof(&fixture, first_handle);
 
     let mut accounts = fixture.accounts(1_000);
-    seed_two_burn_value_account(&fixture, &mut accounts, second_handle, expected_peaks);
+    seed_single_burn_value_account(&fixture, &mut accounts, first_handle);
     let context = burn_redeem_mollusk().with_context(accounts);
 
-    proof.leaf_index = 3; // H2's public-decrypt leaf, not H1's.
+    proof.leaf_index = 1; // Outside the one-leaf accumulator.
 
     let cleartext_amount = 500;
     let (signatures, extra_data) = kms_public_decrypt_cert(first_handle, cleartext_amount);
-    let redemption_record = token::burn_redemption_address(fixture.mint, first_handle).0;
-    context
-        .account_store
-        .borrow_mut()
-        .insert(redemption_record, system_account(0));
+    let pending_burn = seed_pending_burn_in_context(&context, &fixture, first_handle);
     context.process_and_validate_instruction(
         &redeem_burned_amount_ix(
             &fixture,
@@ -2971,8 +3687,7 @@ fn mollusk_redeem_rejects_foreign_public_decrypt_proof() {
             signatures,
             extra_data,
             proof,
-            redemption_record,
-            None,
+            pending_burn,
         ),
         &[host_error(
             host::errors::ZamaHostError::PublicDecryptProofInvalid,
@@ -2990,12 +3705,10 @@ fn mollusk_redeem_rejects_foreign_public_decrypt_proof() {
 fn mollusk_redeem_accepts_live_rotated_out_kms_context() {
     let fixture = BurnRedeemFixture::new();
     let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
-    let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
-    let (proof, expected_peaks) =
-        two_burn_value_account_proof(&fixture, first_handle, second_handle, 0);
+    let proof = single_burn_public_decrypt_proof(&fixture, first_handle);
 
     let mut accounts = fixture.accounts(1_000);
-    seed_two_burn_value_account(&fixture, &mut accounts, second_handle, expected_peaks);
+    seed_single_burn_value_account(&fixture, &mut accounts, first_handle);
     // Rotate the host's current context id to 10; the fixture's context-9 account stays live in the
     // account set. The cert commits id 9, so verification binds to that still-live context.
     accounts.insert(
@@ -3011,11 +3724,7 @@ fn mollusk_redeem_accepts_live_rotated_out_kms_context() {
     let cleartext_amount = 500;
     let (signatures, extra_data) =
         kms_public_decrypt_cert_for_context(first_handle, cleartext_amount, fixture.kms_context_id);
-    let redemption_record = token::burn_redemption_address(fixture.mint, first_handle).0;
-    context
-        .account_store
-        .borrow_mut()
-        .insert(redemption_record, system_account(0));
+    let pending_burn = seed_pending_burn_in_context(&context, &fixture, first_handle);
     context.process_and_validate_instruction(
         &redeem_burned_amount_ix(
             &fixture,
@@ -3024,8 +3733,7 @@ fn mollusk_redeem_accepts_live_rotated_out_kms_context() {
             signatures,
             extra_data,
             proof,
-            redemption_record,
-            None,
+            pending_burn,
         ),
         &[Check::success()],
     );
@@ -3046,12 +3754,10 @@ fn mollusk_redeem_accepts_live_rotated_out_kms_context() {
 fn mollusk_redeem_rejects_destroyed_kms_context() {
     let fixture = BurnRedeemFixture::new();
     let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
-    let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
-    let (proof, expected_peaks) =
-        two_burn_value_account_proof(&fixture, first_handle, second_handle, 0);
+    let proof = single_burn_public_decrypt_proof(&fixture, first_handle);
 
     let mut accounts = fixture.accounts(1_000);
-    seed_two_burn_value_account(&fixture, &mut accounts, second_handle, expected_peaks);
+    seed_single_burn_value_account(&fixture, &mut accounts, first_handle);
     // The fixture's context 9 has been destroyed (rotated for compromise, then revoked).
     accounts.insert(
         fixture.kms_context,
@@ -3062,11 +3768,7 @@ fn mollusk_redeem_rejects_destroyed_kms_context() {
     let cleartext_amount = 500;
     let (signatures, extra_data) =
         kms_public_decrypt_cert_for_context(first_handle, cleartext_amount, fixture.kms_context_id);
-    let redemption_record = token::burn_redemption_address(fixture.mint, first_handle).0;
-    context
-        .account_store
-        .borrow_mut()
-        .insert(redemption_record, system_account(0));
+    let pending_burn = seed_pending_burn_in_context(&context, &fixture, first_handle);
     context.process_and_validate_instruction(
         &redeem_burned_amount_ix(
             &fixture,
@@ -3075,8 +3777,7 @@ fn mollusk_redeem_rejects_destroyed_kms_context() {
             signatures,
             extra_data,
             proof,
-            redemption_record,
-            None,
+            pending_burn,
         ),
         &[host_error(host::errors::ZamaHostError::InvalidKmsContext)],
     );
@@ -3089,12 +3790,10 @@ fn mollusk_redeem_rejects_destroyed_kms_context() {
 fn mollusk_redeem_rejects_destination_not_owned_by_signer() {
     let fixture = BurnRedeemFixture::new();
     let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
-    let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
-    let (proof, expected_peaks) =
-        two_burn_value_account_proof(&fixture, first_handle, second_handle, 0);
+    let proof = single_burn_public_decrypt_proof(&fixture, first_handle);
 
     let mut accounts = fixture.accounts(1_000);
-    seed_two_burn_value_account(&fixture, &mut accounts, second_handle, expected_peaks);
+    seed_single_burn_value_account(&fixture, &mut accounts, first_handle);
     // Re-own the destination account by a stranger (right mint, wrong owner).
     let stranger = Pubkey::new_unique();
     accounts.insert(
@@ -3105,11 +3804,7 @@ fn mollusk_redeem_rejects_destination_not_owned_by_signer() {
 
     let cleartext_amount = 500;
     let (signatures, extra_data) = kms_public_decrypt_cert(first_handle, cleartext_amount);
-    let redemption_record = token::burn_redemption_address(fixture.mint, first_handle).0;
-    context
-        .account_store
-        .borrow_mut()
-        .insert(redemption_record, system_account(0));
+    let pending_burn = seed_pending_burn_in_context(&context, &fixture, first_handle);
     context.process_and_validate_instruction(
         &redeem_burned_amount_ix(
             &fixture,
@@ -3118,27 +3813,23 @@ fn mollusk_redeem_rejects_destination_not_owned_by_signer() {
             signatures,
             extra_data,
             proof,
-            redemption_record,
-            None,
+            pending_burn,
         ),
         &[token_error(token::ConfidentialTokenError::OwnerMismatch)],
     );
     assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 1_000);
 }
 
-/// Explicit deny-at-redeem: with the host grant deny-list enabled, a signer whose canonical
-/// `deny_subject_record` marks it denied cannot cash out — the redeem fails with the token's
-/// `RedemptionSubjectDenied` before the vault is touched.
+/// The deny-list controls future ACL grants, not token settlement. An owner who is denied from new
+/// grants can still redeem an already-authorized pending burn, so the deny-list cannot trap funds.
 #[test]
-fn mollusk_redeem_rejects_denied_subject() {
+fn mollusk_redeem_is_not_blocked_by_grant_deny_list() {
     let fixture = BurnRedeemFixture::new();
     let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
-    let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
-    let (proof, expected_peaks) =
-        two_burn_value_account_proof(&fixture, first_handle, second_handle, 0);
+    let proof = single_burn_public_decrypt_proof(&fixture, first_handle);
 
     let mut accounts = fixture.accounts(1_000);
-    seed_two_burn_value_account(&fixture, &mut accounts, second_handle, expected_peaks);
+    seed_single_burn_value_account(&fixture, &mut accounts, first_handle);
     // Enable the grant deny-list on the host config (keeping the fixture's current KMS context)
     // and mark the signer denied.
     accounts.insert(
@@ -3157,11 +3848,7 @@ fn mollusk_redeem_rejects_denied_subject() {
 
     let cleartext_amount = 500;
     let (signatures, extra_data) = kms_public_decrypt_cert(first_handle, cleartext_amount);
-    let redemption_record = token::burn_redemption_address(fixture.mint, first_handle).0;
-    context
-        .account_store
-        .borrow_mut()
-        .insert(redemption_record, system_account(0));
+    let pending_burn = seed_pending_burn_in_context(&context, &fixture, first_handle);
     context.process_and_validate_instruction(
         &redeem_burned_amount_ix(
             &fixture,
@@ -3170,39 +3857,25 @@ fn mollusk_redeem_rejects_denied_subject() {
             signatures,
             extra_data,
             proof,
-            redemption_record,
-            Some(deny_record),
+            pending_burn,
         ),
-        &[token_error(
-            token::ConfidentialTokenError::RedemptionSubjectDenied,
-        )],
+        &[Check::success()],
     );
-    assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 1_000);
+    assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 500);
+    assert_eq!(read_spl_amount(&context, fixture.destination_usdc), 500);
 }
 
-/// Two concurrent burns from one account produce an encrypted value account where both H1 (leaf 0) and H2 (leaf 3)
-/// carry public-decrypt leaves. Each is redeemable exactly once: redeem(H1) and redeem(H2) both
-/// succeed against their own per-handle marker PDA, and re-redeeming either fails on the marker.
+/// Two burns can be redeemed sequentially after the first pending account closes.
 #[test]
-fn mollusk_two_concurrent_burns_each_redeemable_exactly_once() {
+fn mollusk_two_sequential_burns_each_redeemable_exactly_once() {
     let fixture = BurnRedeemFixture::new();
-    let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
-    let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
-    let (proof_h1, expected_peaks) =
-        two_burn_value_account_proof(&fixture, first_handle, second_handle, 0);
-    let (proof_h2, _) = two_burn_value_account_proof(&fixture, first_handle, second_handle, 3);
+    let context = burn_redeem_mollusk().with_context(fixture.accounts(1_000));
+    let pending_burn = token::pending_burn_address(fixture.mint, fixture.token_account).0;
 
-    let mut accounts = fixture.accounts(1_000);
-    seed_two_burn_value_account(&fixture, &mut accounts, second_handle, expected_peaks);
-    let context = burn_redeem_mollusk().with_context(accounts);
-
-    // redeem(H1): 300 from leaf 0.
+    // Execute a real first burn, then redeem its sole public leaf.
+    let first_handle = run_burn(&context, &fixture, 41);
+    let proof_h1 = single_burn_public_decrypt_proof(&fixture, first_handle);
     let (sig_h1, extra_h1) = kms_public_decrypt_cert(first_handle, 300);
-    let record_h1 = token::burn_redemption_address(fixture.mint, first_handle).0;
-    context
-        .account_store
-        .borrow_mut()
-        .insert(record_h1, system_account(0));
     context.process_and_validate_instruction(
         &redeem_burned_amount_ix(
             &fixture,
@@ -3211,19 +3884,41 @@ fn mollusk_two_concurrent_burns_each_redeemable_exactly_once() {
             sig_h1.clone(),
             extra_h1.clone(),
             proof_h1.clone(),
-            record_h1,
-            None,
+            pending_burn,
         ),
         &[Check::success()],
     );
 
-    // redeem(H2): 200 from leaf 3, a distinct marker PDA.
+    // Only after H1 settles can a real second burn reopen the canonical pending account. Its
+    // update seals H1's historical audience before appending public(H2) at leaf 3.
+    let second_handle = run_burn(&context, &fixture, 42);
+    let (proof_h2, expected_peaks) =
+        two_burn_value_account_proof(&fixture, first_handle, second_handle, 3);
+    assert_eq!(
+        read_encrypted_value(&context, fixture.burned_amount_value).peaks,
+        expected_peaks
+    );
+
+    // The old H1 proof/certificate cannot consume the reopened H2 pending burn.
+    let stale = redeem_burned_amount_ix(
+        &fixture,
+        first_handle,
+        300,
+        sig_h1.clone(),
+        extra_h1.clone(),
+        proof_h1.clone(),
+        pending_burn,
+    );
+    context.process_and_validate_instruction(
+        &stale,
+        &[token_error(
+            token::ConfidentialTokenError::PendingBurnMismatch,
+        )],
+    );
+    assert_eq!(read_spl_amount(&context, fixture.destination_usdc), 300);
+
+    // Redeem H2 from leaf 3, reusing the canonical pending account after H1 closed.
     let (sig_h2, extra_h2) = kms_public_decrypt_cert(second_handle, 200);
-    let record_h2 = token::burn_redemption_address(fixture.mint, second_handle).0;
-    context
-        .account_store
-        .borrow_mut()
-        .insert(record_h2, system_account(0));
     context.process_and_validate_instruction(
         &redeem_burned_amount_ix(
             &fixture,
@@ -3232,8 +3927,7 @@ fn mollusk_two_concurrent_burns_each_redeemable_exactly_once() {
             sig_h2,
             extra_h2,
             proof_h2,
-            record_h2,
-            None,
+            pending_burn,
         ),
         &[Check::success()],
     );
@@ -3241,7 +3935,7 @@ fn mollusk_two_concurrent_burns_each_redeemable_exactly_once() {
     assert_eq!(read_spl_amount(&context, fixture.destination_usdc), 500);
     assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 500);
 
-    // Re-redeem(H1) fails on the already-initialized marker.
+    // Re-redeem(H1) fails because no pending account remains.
     let dup = redeem_burned_amount_ix(
         &fixture,
         first_handle,
@@ -3249,23 +3943,10 @@ fn mollusk_two_concurrent_burns_each_redeemable_exactly_once() {
         sig_h1,
         extra_h1,
         proof_h1,
-        record_h1,
-        None,
+        pending_burn,
     );
     assert!(context.process_instruction(&dup).raw_result.is_err());
     assert_eq!(read_spl_amount(&context, fixture.destination_usdc), 500);
-}
-
-/// Builds the fixture's host config with the grant deny-list enabled (keeping the current KMS
-/// context so the redeem reaches the deny gate rather than failing the verifier config).
-fn deny_enabled_redeem_host_config(fixture: &BurnRedeemFixture) -> Account {
-    host_config_account_with_flags(
-        fixture.owner,
-        &[secp_evm_address(&coprocessor_signing_key())],
-        1,
-        fixture.kms_context_id,
-        true,
-    )
 }
 
 /// Builds the fixture's host config with `paused = true` so the redeem is rejected at the pause gate.
@@ -3282,160 +3963,21 @@ fn paused_redeem_host_config(fixture: &BurnRedeemFixture) -> Account {
     account
 }
 
-/// Deny-list ENABLED but no `deny_subject_record` passed: the redeem cannot prove the signer is not
-/// denied, so it fails closed with `RedemptionDenyRecordInvalid` and the vault is untouched.
-#[test]
-fn mollusk_redeem_deny_enabled_missing_record_rejected() {
-    let fixture = BurnRedeemFixture::new();
-    let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
-    let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
-    let (proof, expected_peaks) =
-        two_burn_value_account_proof(&fixture, first_handle, second_handle, 0);
-
-    let mut accounts = fixture.accounts(1_000);
-    seed_two_burn_value_account(&fixture, &mut accounts, second_handle, expected_peaks);
-    accounts.insert(
-        fixture.host_config,
-        deny_enabled_redeem_host_config(&fixture),
-    );
-    let context = burn_redeem_mollusk().with_context(accounts);
-
-    let (signatures, extra_data) = kms_public_decrypt_cert(first_handle, 500);
-    let redemption_record = token::burn_redemption_address(fixture.mint, first_handle).0;
-    context
-        .account_store
-        .borrow_mut()
-        .insert(redemption_record, system_account(0));
-    context.process_and_validate_instruction(
-        &redeem_burned_amount_ix(
-            &fixture,
-            first_handle,
-            500,
-            signatures,
-            extra_data,
-            proof,
-            redemption_record,
-            None,
-        ),
-        &[token_error(
-            token::ConfidentialTokenError::RedemptionDenyRecordInvalid,
-        )],
-    );
-    assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 1_000);
-    assert_eq!(read_spl_amount(&context, fixture.destination_usdc), 0);
-}
-
-/// Deny-list DISABLED but a `deny_subject_record` IS passed: the optional-account convention rejects
-/// a supplied record when the deny-list is off, with `RedemptionDenyRecordInvalid`, vault untouched.
-#[test]
-fn mollusk_redeem_deny_disabled_unexpected_record_rejected() {
-    let fixture = BurnRedeemFixture::new();
-    let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
-    let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
-    let (proof, expected_peaks) =
-        two_burn_value_account_proof(&fixture, first_handle, second_handle, 0);
-
-    let mut accounts = fixture.accounts(1_000);
-    seed_two_burn_value_account(&fixture, &mut accounts, second_handle, expected_peaks);
-    // Default fixture host config has the deny-list DISABLED. Supply a (non-denied) record anyway.
-    let (deny_record, record_account) = deny_subject_record_account(fixture.owner, false);
-    accounts.insert(deny_record, record_account);
-    let context = burn_redeem_mollusk().with_context(accounts);
-
-    let (signatures, extra_data) = kms_public_decrypt_cert(first_handle, 500);
-    let redemption_record = token::burn_redemption_address(fixture.mint, first_handle).0;
-    context
-        .account_store
-        .borrow_mut()
-        .insert(redemption_record, system_account(0));
-    context.process_and_validate_instruction(
-        &redeem_burned_amount_ix(
-            &fixture,
-            first_handle,
-            500,
-            signatures,
-            extra_data,
-            proof,
-            redemption_record,
-            Some(deny_record),
-        ),
-        &[token_error(
-            token::ConfidentialTokenError::RedemptionDenyRecordInvalid,
-        )],
-    );
-    assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 1_000);
-    assert_eq!(read_spl_amount(&context, fixture.destination_usdc), 0);
-}
-
-/// Deny-list ENABLED with a non-canonical `deny_subject_record` (the deny PDA for a DIFFERENT
-/// subject, not the signer): the key check against `deny_subject_address(signer)` fails, so the
-/// redeem is rejected with `RedemptionDenyRecordInvalid` and the vault is untouched.
-#[test]
-fn mollusk_redeem_deny_wrong_subject_record_rejected() {
-    let fixture = BurnRedeemFixture::new();
-    let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
-    let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
-    let (proof, expected_peaks) =
-        two_burn_value_account_proof(&fixture, first_handle, second_handle, 0);
-
-    let mut accounts = fixture.accounts(1_000);
-    seed_two_burn_value_account(&fixture, &mut accounts, second_handle, expected_peaks);
-    accounts.insert(
-        fixture.host_config,
-        deny_enabled_redeem_host_config(&fixture),
-    );
-    // A deny record for a stranger — a valid record, but not the canonical PDA for the signer.
-    let stranger = Pubkey::new_unique();
-    let (stranger_record, record_account) = deny_subject_record_account(stranger, false);
-    accounts.insert(stranger_record, record_account);
-    let context = burn_redeem_mollusk().with_context(accounts);
-
-    let (signatures, extra_data) = kms_public_decrypt_cert(first_handle, 500);
-    let redemption_record = token::burn_redemption_address(fixture.mint, first_handle).0;
-    context
-        .account_store
-        .borrow_mut()
-        .insert(redemption_record, system_account(0));
-    context.process_and_validate_instruction(
-        &redeem_burned_amount_ix(
-            &fixture,
-            first_handle,
-            500,
-            signatures,
-            extra_data,
-            proof,
-            redemption_record,
-            Some(stranger_record),
-        ),
-        &[token_error(
-            token::ConfidentialTokenError::RedemptionDenyRecordInvalid,
-        )],
-    );
-    assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 1_000);
-    assert_eq!(read_spl_amount(&context, fixture.destination_usdc), 0);
-}
-
 /// A paused host config rejects the redeem at the pause gate (`assert_host_config_allows_token_response`)
 /// before any vault movement, with `RequestWitnessUnavailable`.
 #[test]
 fn mollusk_redeem_rejected_when_host_paused() {
     let fixture = BurnRedeemFixture::new();
     let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
-    let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
-    let (proof, expected_peaks) =
-        two_burn_value_account_proof(&fixture, first_handle, second_handle, 0);
+    let proof = single_burn_public_decrypt_proof(&fixture, first_handle);
 
     let mut accounts = fixture.accounts(1_000);
-    seed_two_burn_value_account(&fixture, &mut accounts, second_handle, expected_peaks);
+    seed_single_burn_value_account(&fixture, &mut accounts, first_handle);
     accounts.insert(fixture.host_config, paused_redeem_host_config(&fixture));
     let context = burn_redeem_mollusk().with_context(accounts);
 
     let (signatures, extra_data) = kms_public_decrypt_cert(first_handle, 500);
-    let redemption_record = token::burn_redemption_address(fixture.mint, first_handle).0;
-    context
-        .account_store
-        .borrow_mut()
-        .insert(redemption_record, system_account(0));
+    let pending_burn = seed_pending_burn_in_context(&context, &fixture, first_handle);
     context.process_and_validate_instruction(
         &redeem_burned_amount_ix(
             &fixture,
@@ -3444,8 +3986,7 @@ fn mollusk_redeem_rejected_when_host_paused() {
             signatures,
             extra_data,
             proof,
-            redemption_record,
-            None,
+            pending_burn,
         ),
         &[token_error(
             token::ConfidentialTokenError::RequestWitnessUnavailable,
@@ -3455,27 +3996,22 @@ fn mollusk_redeem_rejected_when_host_paused() {
     assert_eq!(read_spl_amount(&context, fixture.destination_usdc), 0);
 }
 
-/// A balance-encrypted value account passed as `burned_amount_value` is rejected by the burned-amount
-/// label / canonical-PDA pin in `assert_burned_amount_value_account` (`AmountAclMismatch`), before the
+/// A balance encrypted value account passed as `burned_amount_value` is rejected by the pending
+/// burn binding (`PendingBurnMismatch`) when the account does not match the pending burn's stored
+/// `burned_encrypted_value`, before the
 /// verifier CPI and before any payout.
 #[test]
 fn mollusk_redeem_rejects_wrong_value_account_label() {
     let fixture = BurnRedeemFixture::new();
     let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
-    let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
-    let (proof, expected_peaks) =
-        two_burn_value_account_proof(&fixture, first_handle, second_handle, 0);
+    let proof = single_burn_public_decrypt_proof(&fixture, first_handle);
 
     let mut accounts = fixture.accounts(1_000);
-    seed_two_burn_value_account(&fixture, &mut accounts, second_handle, expected_peaks);
+    seed_single_burn_value_account(&fixture, &mut accounts, first_handle);
     let context = burn_redeem_mollusk().with_context(accounts);
 
     let (signatures, extra_data) = kms_public_decrypt_cert(first_handle, 500);
-    let redemption_record = token::burn_redemption_address(fixture.mint, first_handle).0;
-    context
-        .account_store
-        .borrow_mut()
-        .insert(redemption_record, system_account(0));
+    let pending_burn = seed_pending_burn_in_context(&context, &fixture, first_handle);
     // Substitute the balance encrypted value account (balance label) for the burned_amount encrypted value account.
     let mut ix = redeem_burned_amount_ix(
         &fixture,
@@ -3484,24 +4020,667 @@ fn mollusk_redeem_rejects_wrong_value_account_label() {
         signatures,
         extra_data,
         proof,
-        redemption_record,
-        None,
+        pending_burn,
     );
     let burned_meta = ix
         .accounts
         .iter_mut()
         .find(|meta| meta.pubkey == fixture.burned_amount_value)
-        .expect("burned_amount_encrypted value account meta");
+        .expect("burned_amount encrypted value account meta");
     burned_meta.pubkey = fixture.balance_value;
     context.process_and_validate_instruction(
         &ix,
         &[token_error(
-            token::ConfidentialTokenError::AmountAclMismatch,
+            token::ConfidentialTokenError::PendingBurnMismatch,
         )],
     );
     assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 1_000);
     assert_eq!(read_spl_amount(&context, fixture.destination_usdc), 0);
 }
+
+fn cancel_pending_burn_ix(fixture: &BurnRedeemFixture, pending_burn: Pubkey) -> Instruction {
+    anchor_ix(
+        token::id(),
+        token::accounts::CancelPendingBurn {
+            owner: fixture.owner,
+            mint: fixture.mint,
+            token_account: fixture.token_account,
+            compute_signer: fixture.compute_signer,
+            total_supply_authority: fixture.total_supply_authority,
+            balance_value: fixture.balance_value,
+            total_supply_value: fixture.total_supply_value,
+            burned_amount_value: fixture.burned_amount_value,
+            pending_burn,
+            host_config: fixture.host_config,
+            zama_event_authority: event_authority(host::id()),
+            zama_program: host::id(),
+            system_program: system_program::ID,
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
+            event_authority: event_authority(token::id()),
+            program: token::id(),
+        },
+        token::instruction::CancelPendingBurn {},
+    )
+}
+
+/// Burn then cancel: the pending account closes and confidential balance + supply restore.
+#[test]
+fn mollusk_cancel_pending_burn_restores_balance_and_supply() {
+    let fixture = BurnRedeemFixture::new();
+    let mut accounts = fixture.accounts(1_000);
+    let amount_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
+    let amount_value = seed_burn_amount_value(
+        &fixture,
+        &mut accounts,
+        fixture.token_account,
+        token::encrypted_transfer_amount_label(),
+        amount_handle,
+        &[fixture.owner, fixture.compute_signer],
+    );
+    let context = burn_redeem_mollusk().with_context(accounts);
+
+    let mut cleartext = CleartextLedger::default();
+    cleartext.seed_amount(fixture.initial_balance, 1_000);
+    cleartext.seed_amount(fixture.initial_total_supply, 5_000);
+    cleartext.seed_amount(amount_handle, 250);
+
+    let burn = confidential_burn_from_value_auto(
+        &context,
+        &fixture,
+        fixture.owner,
+        fixture.owner,
+        amount_value,
+    );
+    let burn_result = context.process_and_validate_instruction(&burn, &[Check::success()]);
+    cleartext.evaluate_fhe_cpi(&context, &burn_result);
+    assert_eq!(cleartext.balance(&context, fixture.token_account), 750);
+    assert_eq!(
+        cleartext.u64_at(&context, fixture.total_supply_value),
+        4_750
+    );
+
+    let pending_burn = token::pending_burn_address(fixture.mint, fixture.token_account).0;
+    assert!(context
+        .account_store
+        .borrow()
+        .get(&pending_burn)
+        .is_some_and(|account| account.owner == token::id() && !account.data.is_empty()));
+
+    // Denial governs future grants only. Even denied existing output authorities must be able to
+    // restore unchanged audiences, otherwise policy changes could trap a pending burn.
+    context.account_store.borrow_mut().insert(
+        fixture.host_config,
+        host_config_account_with_flags(
+            fixture.owner,
+            &[secp_evm_address(&coprocessor_signing_key())],
+            1,
+            fixture.kms_context_id,
+            true,
+        ),
+    );
+    for authority in [fixture.token_account, fixture.total_supply_authority] {
+        let (record, account) = deny_subject_record_account(authority, true);
+        context.account_store.borrow_mut().insert(record, account);
+    }
+
+    let cancel = cancel_pending_burn_ix(&fixture, pending_burn);
+    let cancel_result = context.process_and_validate_instruction(&cancel, &[Check::success()]);
+    cleartext.evaluate_fhe_cpi(&context, &cancel_result);
+
+    assert_eq!(cleartext.balance(&context, fixture.token_account), 1_000);
+    assert_eq!(
+        cleartext.u64_at(&context, fixture.total_supply_value),
+        5_000
+    );
+    assert_pending_burn_closed(&context, pending_burn);
+
+    // Closing is act-once: neither a second cancel nor the alternate redeem path can settle the
+    // same burn after the pending account is gone.
+    assert!(context.process_instruction(&cancel).raw_result.is_err());
+    let burned_handle = read_encrypted_value(&context, fixture.burned_amount_value).current_handle;
+    let (signatures, extra_data) = kms_public_decrypt_cert(burned_handle, 250);
+    assert!(context
+        .process_instruction(&redeem_burned_amount_ix(
+            &fixture,
+            burned_handle,
+            250,
+            signatures,
+            extra_data,
+            single_burn_public_decrypt_proof(&fixture, burned_handle),
+            pending_burn,
+        ))
+        .raw_result
+        .is_err());
+    assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 1_000);
+}
+
+/// A signer other than the confidential token account owner cannot cancel its pending burn.
+#[test]
+fn mollusk_cancel_pending_burn_rejects_non_owner_atomically() {
+    let fixture = BurnRedeemFixture::new();
+    let context = burn_redeem_mollusk().with_context(fixture.accounts(1_000));
+    run_burn(&context, &fixture, 41);
+
+    let pending_burn = token::pending_burn_address(fixture.mint, fixture.token_account).0;
+    let old_balance = context
+        .account_store
+        .borrow()
+        .get(&fixture.balance_value)
+        .expect("balance exists")
+        .data
+        .clone();
+    let old_supply = context
+        .account_store
+        .borrow()
+        .get(&fixture.total_supply_value)
+        .expect("total supply exists")
+        .data
+        .clone();
+    let old_pending = context
+        .account_store
+        .borrow()
+        .get(&pending_burn)
+        .expect("pending burn exists")
+        .clone();
+
+    let stranger = Pubkey::new_unique();
+    context
+        .account_store
+        .borrow_mut()
+        .insert(stranger, system_account(1_000_000_000));
+    let mut cancel = cancel_pending_burn_ix(&fixture, pending_burn);
+    let owner_meta = cancel
+        .accounts
+        .iter_mut()
+        .find(|meta| meta.pubkey == fixture.owner && meta.is_signer)
+        .expect("owner signer meta");
+    owner_meta.pubkey = stranger;
+
+    context.process_and_validate_instruction(
+        &cancel,
+        &[token_error(token::ConfidentialTokenError::OwnerMismatch)],
+    );
+    assert_eq!(
+        context
+            .account_store
+            .borrow()
+            .get(&fixture.balance_value)
+            .expect("balance remains")
+            .data,
+        old_balance
+    );
+    assert_eq!(
+        context
+            .account_store
+            .borrow()
+            .get(&fixture.total_supply_value)
+            .expect("total supply remains")
+            .data,
+        old_supply
+    );
+    assert_eq!(
+        context
+            .account_store
+            .borrow()
+            .get(&pending_burn)
+            .expect("pending burn remains"),
+        &old_pending
+    );
+}
+
+/// Cancellation fails atomically if the burned-amount account no longer points at the handle
+/// pinned by the pending burn.
+#[test]
+fn mollusk_cancel_pending_burn_rejects_stale_current_handle_atomically() {
+    let fixture = BurnRedeemFixture::new();
+    let context = burn_redeem_mollusk().with_context(fixture.accounts(1_000));
+    run_burn(&context, &fixture, 41);
+
+    let pending_burn = token::pending_burn_address(fixture.mint, fixture.token_account).0;
+    let old_balance_data = context
+        .account_store
+        .borrow()
+        .get(&fixture.balance_value)
+        .expect("balance exists")
+        .data
+        .clone();
+    let old_supply_data = context
+        .account_store
+        .borrow()
+        .get(&fixture.total_supply_value)
+        .expect("total supply exists")
+        .data
+        .clone();
+    let old_pending = context
+        .account_store
+        .borrow()
+        .get(&pending_burn)
+        .expect("pending burn exists")
+        .clone();
+    let old_vault_amount = read_spl_amount(&context, fixture.vault_usdc);
+
+    let mut burned = read_encrypted_value(&context, fixture.burned_amount_value);
+    burned.current_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
+    context
+        .account_store
+        .borrow_mut()
+        .get_mut(&fixture.burned_amount_value)
+        .expect("burned amount exists")
+        .data = serialized_account(burned);
+
+    context.process_and_validate_instruction(
+        &cancel_pending_burn_ix(&fixture, pending_burn),
+        &[token_error(
+            token::ConfidentialTokenError::PendingBurnHandleNotCurrent,
+        )],
+    );
+
+    assert_eq!(
+        context
+            .account_store
+            .borrow()
+            .get(&fixture.balance_value)
+            .expect("balance remains")
+            .data,
+        old_balance_data
+    );
+    assert_eq!(
+        context
+            .account_store
+            .borrow()
+            .get(&fixture.total_supply_value)
+            .expect("total supply remains")
+            .data,
+        old_supply_data
+    );
+    assert_eq!(
+        read_spl_amount(&context, fixture.vault_usdc),
+        old_vault_amount
+    );
+    assert_eq!(
+        context
+            .account_store
+            .borrow()
+            .get(&pending_burn)
+            .expect("pending burn remains"),
+        &old_pending
+    );
+}
+
+/// A token account cannot burn again until its pending burn is redeemed or cancelled.
+#[test]
+fn mollusk_confidential_burn_is_sequential_until_cancelled() {
+    let fixture = BurnRedeemFixture::new();
+    let mut accounts = fixture.accounts(1_000);
+    let amount_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
+    let amount_value = seed_burn_amount_value(
+        &fixture,
+        &mut accounts,
+        fixture.token_account,
+        token::encrypted_transfer_amount_label(),
+        amount_handle,
+        &[fixture.owner, fixture.compute_signer],
+    );
+    let context = burn_redeem_mollusk().with_context(accounts);
+    let pending_burn = prepare_empty_pending_burn(&context, &fixture);
+
+    let burn = confidential_burn_from_value_ix(
+        &fixture,
+        fixture.owner,
+        fixture.owner,
+        amount_value,
+        pending_burn,
+    );
+    context.process_and_validate_instruction(&burn, &[Check::success()]);
+
+    // The same canonical pending account is occupied, so another burn is rejected before FHE.
+    context.process_and_validate_instruction(
+        &burn,
+        &[token_error(
+            token::ConfidentialTokenError::PendingBurnAlreadyInitialized,
+        )],
+    );
+
+    context.process_and_validate_instruction(
+        &cancel_pending_burn_ix(&fixture, pending_burn),
+        &[Check::success()],
+    );
+    context.process_and_validate_instruction(&burn, &[Check::success()]);
+}
+
+// ---------------------------------------------------------------------------
+// wrap_usdc: escrows public USDC into the mint's SPL vault and credits the
+// confidential balance and total supply by the wrapped amount. Reuses
+// `BurnRedeemFixture`'s SPL-backed vault/underlying-mint accounts;
+// `destination_usdc` (an owner-owned SPL account of the underlying mint,
+// already present in `BurnRedeemFixture::accounts`) doubles as the wrap
+// source (`user_usdc`) since its shape is identical to what wrap needs.
+// ---------------------------------------------------------------------------
+
+/// Builder for a `wrap_usdc` instruction against `BurnRedeemFixture`'s accounts, with every
+/// account that a negative test needs to substitute exposed as a mutable field (defaulting to
+/// the fixture's canonical accounts).
+struct WrapUsdcParams<'a> {
+    fixture: &'a BurnRedeemFixture,
+    owner: Pubkey,
+    underlying_mint: Pubkey,
+    user_usdc: Pubkey,
+    vault_usdc: Pubkey,
+    total_supply_authority: Pubkey,
+    token_program: Pubkey,
+    amount: u64,
+}
+
+impl<'a> WrapUsdcParams<'a> {
+    fn new(fixture: &'a BurnRedeemFixture, user_usdc: Pubkey, amount: u64) -> Self {
+        Self {
+            fixture,
+            owner: fixture.owner,
+            underlying_mint: fixture.underlying_mint,
+            user_usdc,
+            vault_usdc: fixture.vault_usdc,
+            total_supply_authority: fixture.total_supply_authority,
+            token_program: fixture.token_program,
+            amount,
+        }
+    }
+
+    fn build(self) -> Instruction {
+        let fixture = self.fixture;
+        anchor_ix(
+            token::id(),
+            token::accounts::WrapUsdc {
+                owner: self.owner,
+                mint: fixture.mint,
+                token_account: fixture.token_account,
+                underlying_mint: self.underlying_mint,
+                user_usdc: self.user_usdc,
+                vault_usdc: self.vault_usdc,
+                vault_authority: fixture.vault_authority,
+                compute_signer: fixture.compute_signer,
+                total_supply_authority: self.total_supply_authority,
+                balance_value: fixture.balance_value,
+                total_supply_value: fixture.total_supply_value,
+                zama_event_authority: event_authority(host::id()),
+                zama_program: host::id(),
+                host_config: fixture.host_config,
+                token_program: self.token_program,
+                system_program: system_program::ID,
+                hcu_block_meter: None,
+                hcu_trusted_app_record: None,
+                event_authority: event_authority(token::id()),
+                program: token::id(),
+            },
+            token::instruction::WrapUsdc {
+                amount: self.amount,
+            },
+        )
+    }
+}
+
+fn wrap_usdc_ix(fixture: &BurnRedeemFixture, user_usdc: Pubkey, amount: u64) -> Instruction {
+    WrapUsdcParams::new(fixture, user_usdc, amount).build()
+}
+
+/// Funds `fixture.destination_usdc` (reused as the wrap source account) with `balance` and
+/// returns its address for use as `user_usdc`.
+fn fund_wrap_source(
+    accounts: &mut HashMap<Pubkey, Account>,
+    fixture: &BurnRedeemFixture,
+    balance: u64,
+) -> Pubkey {
+    accounts.insert(
+        fixture.destination_usdc,
+        if fixture.token_program == spl_token::id() {
+            spl_token_account(fixture.underlying_mint, fixture.owner, balance)
+        } else {
+            token_2022_immutable_owner_account(
+                fixture.underlying_mint,
+                fixture.owner,
+                balance,
+                spl_token_2022::state::AccountState::Initialized,
+            )
+        },
+    );
+    fixture.destination_usdc
+}
+
+/// Happy-path smoke: wrapping 100 escrows 100 into the vault, debits the source USDC account,
+/// and credits the confidential balance and total supply by 100 (both started at cleartext 0).
+#[test]
+fn mollusk_wrap_usdc_credits_balance_and_total_supply() {
+    let fixture = BurnRedeemFixture::new();
+    let mut accounts = fixture.accounts(0);
+    let user_usdc = fund_wrap_source(&mut accounts, &fixture, 1_000);
+    let context = burn_redeem_mollusk().with_context(accounts);
+
+    let mut cleartext = CleartextLedger::default();
+    cleartext.seed_amount(fixture.initial_balance, 0);
+    cleartext.seed_amount(fixture.initial_total_supply, 0);
+
+    let ix = wrap_usdc_ix(&fixture, user_usdc, 100);
+    let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
+    cleartext.evaluate_fhe_cpi(&context, &result);
+
+    assert_eq!(cleartext.balance(&context, fixture.token_account), 100);
+    assert_eq!(cleartext.u64_at(&context, fixture.total_supply_value), 100);
+    assert_eq!(read_spl_amount(&context, user_usdc), 900);
+    assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 100);
+}
+
+#[test]
+fn mollusk_wrap_token_2022_credits_balance_and_total_supply() {
+    let fixture = BurnRedeemFixture::new_token_2022();
+    let mut accounts = fixture.accounts(0);
+    let user_tokens = fund_wrap_source(&mut accounts, &fixture, 1_000);
+    let context = burn_redeem_mollusk().with_context(accounts);
+
+    let mut cleartext = CleartextLedger::default();
+    cleartext.seed_amount(fixture.initial_balance, 0);
+    cleartext.seed_amount(fixture.initial_total_supply, 0);
+
+    let result = context.process_and_validate_instruction(
+        &wrap_usdc_ix(&fixture, user_tokens, 100),
+        &[Check::success()],
+    );
+    cleartext.evaluate_fhe_cpi(&context, &result);
+    assert_eq!(cleartext.balance(&context, fixture.token_account), 100);
+    assert_eq!(cleartext.u64_at(&context, fixture.total_supply_value), 100);
+    assert_eq!(read_spl_amount(&context, user_tokens), 900);
+    assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 100);
+}
+
+#[test]
+fn mollusk_wrap_rejects_classic_program_for_token_2022_accounts() {
+    let fixture = BurnRedeemFixture::new_token_2022();
+    let mut accounts = fixture.accounts(0);
+    let user_tokens = fund_wrap_source(&mut accounts, &fixture, 1_000);
+    let context = burn_redeem_mollusk().with_context(accounts);
+    let mut params = WrapUsdcParams::new(&fixture, user_tokens, 100);
+    params.token_program = spl_token::id();
+
+    context.process_and_validate_instruction(
+        &params.build(),
+        &[token_error(
+            token::ConfidentialTokenError::UnderlyingTokenProgramMismatch,
+        )],
+    );
+    assert_eq!(read_spl_amount(&context, user_tokens), 1_000);
+    assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 0);
+}
+
+#[test]
+fn mollusk_wrap_rejects_frozen_token_2022_source() {
+    let fixture = BurnRedeemFixture::new_token_2022();
+    let mut accounts = fixture.accounts(0);
+    accounts.insert(
+        fixture.destination_usdc,
+        token_2022_token_account(
+            fixture.underlying_mint,
+            fixture.owner,
+            1_000,
+            spl_token_2022::state::AccountState::Frozen,
+        ),
+    );
+    let context = burn_redeem_mollusk().with_context(accounts);
+
+    context.process_and_validate_instruction(
+        &wrap_usdc_ix(&fixture, fixture.destination_usdc, 100),
+        &[token_error(
+            token::ConfidentialTokenError::UnderlyingTokenAccountFrozen,
+        )],
+    );
+    assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 0);
+}
+
+#[test]
+fn mollusk_wrap_rejects_token_2022_mint_extensions() {
+    let fixture = BurnRedeemFixture::new_token_2022();
+    let mut accounts = fixture.accounts(0);
+    accounts.insert(
+        fixture.underlying_mint,
+        token_2022_non_transferable_mint_account(6),
+    );
+    let user_tokens = fund_wrap_source(&mut accounts, &fixture, 1_000);
+    let context = burn_redeem_mollusk().with_context(accounts);
+
+    context.process_and_validate_instruction(
+        &wrap_usdc_ix(&fixture, user_tokens, 100),
+        &[token_error(
+            token::ConfidentialTokenError::UnsupportedToken2022Extension,
+        )],
+    );
+    assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 0);
+}
+
+#[test]
+fn mollusk_wrap_rejects_token_2022_account_extensions() {
+    let fixture = BurnRedeemFixture::new_token_2022();
+    let mut accounts = fixture.accounts(0);
+    accounts.insert(
+        fixture.destination_usdc,
+        token_2022_cpi_guard_account(fixture.underlying_mint, fixture.owner, 1_000),
+    );
+    let context = burn_redeem_mollusk().with_context(accounts);
+
+    context.process_and_validate_instruction(
+        &wrap_usdc_ix(&fixture, fixture.destination_usdc, 100),
+        &[token_error(
+            token::ConfidentialTokenError::UnsupportedToken2022Extension,
+        )],
+    );
+    assert_eq!(read_spl_amount(&context, fixture.destination_usdc), 1_000);
+    assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 0);
+}
+
+/// The signer must be the token account's stored owner: a stranger whose own USDC account
+/// satisfies the Anchor-level `user_usdc.owner == owner` constraint still fails the handler's
+/// `token_account.owner == owner` check.
+#[test]
+fn mollusk_wrap_usdc_rejects_wrong_owner() {
+    let fixture = BurnRedeemFixture::new();
+    let mut accounts = fixture.accounts(0);
+    let stranger = Pubkey::new_unique();
+    accounts.insert(stranger, system_account(1_000_000_000));
+    let stranger_usdc = Pubkey::new_unique();
+    accounts.insert(
+        stranger_usdc,
+        spl_token_account(fixture.underlying_mint, stranger, 1_000),
+    );
+    let context = burn_redeem_mollusk().with_context(accounts);
+
+    let mut params = WrapUsdcParams::new(&fixture, stranger_usdc, 100);
+    params.owner = stranger;
+    context.process_and_validate_instruction(
+        &params.build(),
+        &[token_error(token::ConfidentialTokenError::OwnerMismatch)],
+    );
+    assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 0);
+}
+
+/// A source/vault pair for a mint the confidential mint does NOT wrap satisfies every Anchor-level
+/// account constraint (mint/owner equality) but fails the handler's `mint.underlying_mint` check.
+#[test]
+fn mollusk_wrap_usdc_rejects_wrong_underlying_mint() {
+    let fixture = BurnRedeemFixture::new();
+    let mut accounts = fixture.accounts(0);
+    let other_mint = Pubkey::new_unique();
+    accounts.insert(other_mint, spl_mint_account(6));
+    let other_user_usdc = Pubkey::new_unique();
+    accounts.insert(
+        other_user_usdc,
+        spl_token_account(other_mint, fixture.owner, 1_000),
+    );
+    let other_vault_usdc = Pubkey::new_unique();
+    accounts.insert(
+        other_vault_usdc,
+        spl_token_account(other_mint, fixture.vault_authority, 0),
+    );
+    let context = burn_redeem_mollusk().with_context(accounts);
+
+    let mut params = WrapUsdcParams::new(&fixture, other_user_usdc, 100);
+    params.underlying_mint = other_mint;
+    params.vault_usdc = other_vault_usdc;
+    context.process_and_validate_instruction(
+        &params.build(),
+        &[token_error(
+            token::ConfidentialTokenError::UnderlyingMintMismatch,
+        )],
+    );
+}
+
+/// A vault account with the right mint and right owner (`vault_authority`) but a non-canonical
+/// address (not the `(vault_authority, underlying_mint)` associated-token-account) fails the
+/// handler's canonical-vault check even though every Anchor-level constraint is satisfied.
+#[test]
+fn mollusk_wrap_usdc_rejects_noncanonical_vault() {
+    let fixture = BurnRedeemFixture::new();
+    let mut accounts = fixture.accounts(0);
+    let user_usdc = fund_wrap_source(&mut accounts, &fixture, 1_000);
+    let bogus_vault = Pubkey::new_unique();
+    accounts.insert(
+        bogus_vault,
+        spl_token_account(fixture.underlying_mint, fixture.vault_authority, 0),
+    );
+    let context = burn_redeem_mollusk().with_context(accounts);
+
+    let mut params = WrapUsdcParams::new(&fixture, user_usdc, 100);
+    params.vault_usdc = bogus_vault;
+    context.process_and_validate_instruction(
+        &params.build(),
+        &[token_error(
+            token::ConfidentialTokenError::VaultAccountMismatch,
+        )],
+    );
+    assert_eq!(read_spl_amount(&context, user_usdc), 1_000);
+}
+
+/// `total_supply_authority` is declared `seeds = [b"total-supply", mint.key()], bump`, so Anchor
+/// itself derives and enforces the canonical PDA before the handler's (structurally identical,
+/// defense-in-depth) `TotalSupplyAuthorityMismatch` re-check ever runs: any non-canonical account
+/// is rejected by Anchor's own seeds constraint first. Substituting the canonical PDA for a
+/// *different* mint reaches exactly that: `ConstraintSeeds`, not the token error.
+#[test]
+fn mollusk_wrap_usdc_rejects_wrong_total_supply_authority_pda() {
+    let fixture = BurnRedeemFixture::new();
+    let mut accounts = fixture.accounts(0);
+    let user_usdc = fund_wrap_source(&mut accounts, &fixture, 1_000);
+    let context = burn_redeem_mollusk().with_context(accounts);
+
+    let mut params = WrapUsdcParams::new(&fixture, user_usdc, 100);
+    params.total_supply_authority = token::total_supply_authority_address(Pubkey::new_unique()).0;
+    context.process_and_validate_instruction(
+        &params.build(),
+        &[anchor_error(anchor_lang::error::ErrorCode::ConstraintSeeds)],
+    );
+    assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 0);
+}
+
+// Note: `amount = 0` is intentionally not covered as a negative case. `wrap_usdc` has no
+// `amount > 0` guard of its own (see `instructions/wrap_usdc.rs`), and the underlying
+// `spl_token::transfer_checked` CPI does not reject a zero-amount transfer either — a zero-amount
+// wrap is a valid (if useless) no-op that would succeed, not a negative test.
 
 // ---------------------------------------------------------------------------
 // disclose_secp consume: the whole disclosure "consume" path after the
@@ -3596,6 +4775,10 @@ impl DiscloseFixture {
                 ),
             ),
             (self.kms_context, kms_context_account(self.kms_context_id)),
+            (
+                self.token_account,
+                token_account_account(self.mint, self.owner, self.balance_value),
+            ),
             (event_authority(token::id()), system_account(0)),
         ])
     }
@@ -3666,10 +4849,39 @@ fn disclose_secp_ix(
     extra_data: Vec<u8>,
     proof: host::instructions::MmrInclusionProof,
 ) -> Instruction {
+    let kind = if encrypted_value == fixture.balance_value {
+        token::DisclosedValueKind::Balance
+    } else {
+        token::DisclosedValueKind::BurnedAmount
+    };
+    disclose_secp_ix_with_kind(
+        fixture,
+        encrypted_value,
+        kind,
+        handle,
+        cleartext,
+        signatures,
+        extra_data,
+        proof,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn disclose_secp_ix_with_kind(
+    fixture: &DiscloseFixture,
+    encrypted_value: Pubkey,
+    kind: token::DisclosedValueKind,
+    handle: [u8; 32],
+    cleartext: [u8; 32],
+    signatures: Vec<[u8; 65]>,
+    extra_data: Vec<u8>,
+    proof: host::instructions::MmrInclusionProof,
+) -> Instruction {
     anchor_ix(
         token::id(),
         token::accounts::DiscloseSecp {
             mint: fixture.mint,
+            token_account: Some(fixture.token_account),
             encrypted_value,
             host_config: fixture.host_config,
             kms_context: fixture.kms_context,
@@ -3678,6 +4890,40 @@ fn disclose_secp_ix(
             program: token::id(),
         },
         token::instruction::DiscloseSecp {
+            kind,
+            handle,
+            cleartext,
+            signatures,
+            extra_data,
+            proof,
+        },
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn disclose_total_supply_ix(
+    fixture: &DiscloseFixture,
+    encrypted_value: Pubkey,
+    handle: [u8; 32],
+    cleartext: [u8; 32],
+    signatures: Vec<[u8; 65]>,
+    extra_data: Vec<u8>,
+    proof: host::instructions::MmrInclusionProof,
+) -> Instruction {
+    anchor_ix(
+        token::id(),
+        token::accounts::DiscloseSecp {
+            mint: fixture.mint,
+            token_account: None,
+            encrypted_value,
+            host_config: fixture.host_config,
+            kms_context: fixture.kms_context,
+            zama_program: host::id(),
+            event_authority: event_authority(token::id()),
+            program: token::id(),
+        },
+        token::instruction::DiscloseSecp {
+            kind: token::DisclosedValueKind::TotalSupply,
             handle,
             cleartext,
             signatures,
@@ -3690,23 +4936,36 @@ fn disclose_secp_ix(
 /// Asserts `disclose_secp` succeeds and emits exactly one `HandleDisclosedEvent` with the expected
 /// fields. (The host verifier's `return_data` — `handle ++ cleartext` — is asserted directly in
 /// `host_mollusk.rs`; it is consumed inside the token program and not re-surfaced at the top level.)
-fn assert_disclosed(
-    result: &InstructionResult,
+struct ExpectedDisclosure {
     mint: Pubkey,
     handle: [u8; 32],
     encrypted_value: Pubkey,
     cleartext_amount: u64,
-) {
+    kind: token::DisclosedValueKind,
+    authority: Pubkey,
+    encrypted_value_label: [u8; 32],
+}
+
+fn assert_disclosed(result: &InstructionResult, expected: ExpectedDisclosure) {
     let events: Vec<token::HandleDisclosedEvent> = result
         .inner_instructions
         .iter()
         .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
         .collect();
     assert_eq!(events.len(), 1);
-    assert_eq!(events[0].mint, mint);
-    assert_eq!(events[0].handle, handle);
-    assert_eq!(events[0].encrypted_value, encrypted_value);
-    assert_eq!(events[0].cleartext_amount, cleartext_amount);
+    assert_eq!(events[0].mint, expected.mint);
+    assert_eq!(events[0].handle, expected.handle);
+    assert_eq!(events[0].encrypted_value, expected.encrypted_value);
+    assert_eq!(events[0].cleartext_amount, expected.cleartext_amount);
+    assert_eq!(events[0].kind, expected.kind);
+    assert_eq!(
+        events[0].encrypted_value_account_authority,
+        expected.authority
+    );
+    assert_eq!(
+        events[0].encrypted_value_label,
+        expected.encrypted_value_label
+    );
 }
 
 #[test]
@@ -3744,10 +5003,50 @@ fn mollusk_disclose_secp_amount_happy_path() {
     );
     assert_disclosed(
         &result,
-        fixture.mint,
-        pinned,
+        ExpectedDisclosure {
+            mint: fixture.mint,
+            handle: pinned,
+            encrypted_value: fixture.amount_value,
+            cleartext_amount,
+            kind: token::DisclosedValueKind::BurnedAmount,
+            authority: fixture.token_account,
+            encrypted_value_label: token::encrypted_burned_amount_label(),
+        },
+    );
+}
+
+#[test]
+fn mollusk_disclose_secp_rejects_kind_label_mismatch() {
+    let fixture = DiscloseFixture::new();
+    let pinned = handle_for_chain(43, BALANCE_FHE_TYPE);
+    let (value, proof) = public_leaf_value_account(
         fixture.amount_value,
-        cleartext_amount,
+        fixture.token_account,
+        fixture.mint,
+        token::encrypted_burned_amount_label(),
+        &[fixture.owner, fixture.compute_signer],
+        pinned,
+        None,
+    );
+    let mut accounts = fixture.base();
+    accounts.insert(fixture.amount_value, encrypted_value_account(&value));
+    let context = mollusk().with_context(accounts);
+    let (signatures, extra_data) = kms_public_decrypt_cert(pinned, 500);
+
+    context.process_and_validate_instruction(
+        &disclose_secp_ix_with_kind(
+            &fixture,
+            fixture.amount_value,
+            token::DisclosedValueKind::Balance,
+            pinned,
+            cleartext_u256(500),
+            signatures,
+            extra_data,
+            proof,
+        ),
+        &[token_error(
+            token::ConfidentialTokenError::DisclosedValueBindingMismatch,
+        )],
     );
 }
 
@@ -3785,10 +5084,130 @@ fn mollusk_disclose_secp_balance_happy_path() {
     );
     assert_disclosed(
         &result,
+        ExpectedDisclosure {
+            mint: fixture.mint,
+            handle: pinned,
+            encrypted_value: fixture.balance_value,
+            cleartext_amount,
+            kind: token::DisclosedValueKind::Balance,
+            authority: fixture.token_account,
+            encrypted_value_label: token::encrypted_balance_label(),
+        },
+    );
+}
+
+#[test]
+fn mollusk_disclose_secp_transferred_amount_happy_path() {
+    let fixture = DiscloseFixture::new();
+    let pinned = handle_for_chain(34, BALANCE_FHE_TYPE);
+    let transferred_value = token::encrypted_value_address(
         fixture.mint,
+        fixture.token_account,
+        token::encrypted_transferred_amount_label(),
+    )
+    .0;
+    let (value, proof) = public_leaf_value_account(
+        transferred_value,
+        fixture.token_account,
+        fixture.mint,
+        token::encrypted_transferred_amount_label(),
+        &[fixture.owner, fixture.compute_signer],
         pinned,
-        fixture.balance_value,
-        cleartext_amount,
+        None,
+    );
+    let mut accounts = fixture.base();
+    accounts.insert(transferred_value, encrypted_value_account(&value));
+    let context = mollusk().with_context(accounts);
+    let cleartext_amount = 125;
+    let (signatures, extra_data) = kms_public_decrypt_cert(pinned, cleartext_amount);
+
+    let result = context.process_and_validate_instruction(
+        &disclose_secp_ix_with_kind(
+            &fixture,
+            transferred_value,
+            token::DisclosedValueKind::TransferredAmount,
+            pinned,
+            cleartext_u256(cleartext_amount),
+            signatures,
+            extra_data,
+            proof,
+        ),
+        &[Check::success()],
+    );
+    assert_disclosed(
+        &result,
+        ExpectedDisclosure {
+            mint: fixture.mint,
+            handle: pinned,
+            encrypted_value: transferred_value,
+            cleartext_amount,
+            kind: token::DisclosedValueKind::TransferredAmount,
+            authority: fixture.token_account,
+            encrypted_value_label: token::encrypted_transferred_amount_label(),
+        },
+    );
+}
+
+#[test]
+fn mollusk_disclose_secp_total_supply_requires_no_token_account() {
+    let fixture = DiscloseFixture::new();
+    let pinned = handle_for_chain(35, BALANCE_FHE_TYPE);
+    let authority = token::total_supply_authority_address(fixture.mint).0;
+    let total_supply_value = token::total_supply_encrypted_value_address(fixture.mint, authority).0;
+    let (value, proof) = public_leaf_value_account(
+        total_supply_value,
+        authority,
+        fixture.mint,
+        token::encrypted_total_supply_label(),
+        &[fixture.compute_signer],
+        pinned,
+        None,
+    );
+    let mut accounts = fixture.base();
+    accounts.insert(total_supply_value, encrypted_value_account(&value));
+    let context = mollusk().with_context(accounts);
+    let cleartext_amount = 10_000;
+    let (signatures, extra_data) = kms_public_decrypt_cert(pinned, cleartext_amount);
+
+    let result = context.process_and_validate_instruction(
+        &disclose_total_supply_ix(
+            &fixture,
+            total_supply_value,
+            pinned,
+            cleartext_u256(cleartext_amount),
+            signatures.clone(),
+            extra_data.clone(),
+            proof.clone(),
+        ),
+        &[Check::success()],
+    );
+    assert_disclosed(
+        &result,
+        ExpectedDisclosure {
+            mint: fixture.mint,
+            handle: pinned,
+            encrypted_value: total_supply_value,
+            cleartext_amount,
+            kind: token::DisclosedValueKind::TotalSupply,
+            authority,
+            encrypted_value_label: token::encrypted_total_supply_label(),
+        },
+    );
+
+    context.process_and_validate_instruction(
+        &disclose_secp_ix_with_kind(
+            &fixture,
+            total_supply_value,
+            token::DisclosedValueKind::TotalSupply,
+            pinned,
+            cleartext_u256(cleartext_amount),
+            signatures,
+            extra_data,
+            proof,
+        ),
+        &[token_error(
+            token::ConfidentialTokenError::DisclosedValueBindingMismatch,
+        )],
     );
 }
 
@@ -3832,10 +5251,15 @@ fn mollusk_disclose_secp_after_an_update_consumes_with_public_proof() {
     );
     assert_disclosed(
         &result,
-        fixture.mint,
-        pinned,
-        fixture.amount_value,
-        cleartext_amount,
+        ExpectedDisclosure {
+            mint: fixture.mint,
+            handle: pinned,
+            encrypted_value: fixture.amount_value,
+            cleartext_amount,
+            kind: token::DisclosedValueKind::BurnedAmount,
+            authority: fixture.token_account,
+            encrypted_value_label: token::encrypted_burned_amount_label(),
+        },
     );
 }
 
@@ -4343,16 +5767,15 @@ fn mollusk_transfer_from_value_settles_select_computed_amount() {
     assert_eq!(cleartext.balance(&context, carol_token), 400);
 }
 
-/// Done-when 2: a handle whose subjects lack the mint's compute subject fails at the host's
-/// compute-read check; after a single `allow_subjects` grant of the compute subject it succeeds
-/// (the cross-app shape — EVM `FHE.allow(handle, token)`).
+/// A token-owned handle whose subjects lack the mint's compute subject fails at the host's
+/// compute-read check; after the token owner grants that subject through the token wrapper it
+/// succeeds. Foreign-app values require the equivalent grant from their own account authority.
 #[test]
-fn mollusk_transfer_from_value_cross_app_requires_compute_subject_grant() {
+fn mollusk_transfer_from_value_requires_compute_subject_grant() {
     let fixture = TokenFixture::new();
     let mut accounts = fixture.base_accounts();
     let amount_handle = handle_for_chain(60, BALANCE_FHE_TYPE);
-    // A handle from another app: Alice is a subject (she may spend it), but the mint's compute
-    // subject is not yet allowed.
+    // Alice is a subject (she may spend it), but the mint's compute subject is not yet allowed.
     let amount_value = seed_amount_value(
         &fixture,
         &mut accounts,
@@ -4378,10 +5801,12 @@ fn mollusk_transfer_from_value_cross_app_requires_compute_subject_grant() {
         &[host_error(host::errors::ZamaHostError::SubjectNotFound)],
     );
 
-    // The handle's owner grants the mint's compute subject.
-    let grant = allow_subject_ix(
+    // The token owner grants the mint's compute subject through the token CPI wrapper. Host
+    // `allow_subjects` requires the signer to be the token-account PDA that owns this value.
+    let grant = allow_token_account_subjects_ix(
         fixture.owner,
-        fixture.owner,
+        fixture.mint,
+        fixture.alice_token,
         amount_value,
         fixture.host_config,
         fixture.compute_signer,
@@ -4717,7 +6142,7 @@ fn cost_snapshot_initialize_token_account() {
     accounts.insert(token_account, system_account(0));
     accounts.insert(balance_encrypted_value, system_account(0));
     let context = mollusk().with_context(accounts);
-    let ix = initialize_token_account_ix(owner, owner, fixture.mint, fixture.host_config, 0);
+    let ix = initialize_token_account_ix(owner, owner, fixture.mint, fixture.host_config);
 
     let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
 
@@ -4817,8 +6242,13 @@ fn mollusk_burn_from_value_burns_existing_amount() {
     cleartext.seed_amount(fixture.initial_total_supply, 5_000);
     cleartext.seed_amount(amount_handle, 250);
 
-    let burn =
-        confidential_burn_from_value_ix(&fixture, fixture.owner, fixture.owner, amount_value);
+    let burn = confidential_burn_from_value_auto(
+        &context,
+        &fixture,
+        fixture.owner,
+        fixture.owner,
+        amount_value,
+    );
     let result = context.process_and_validate_instruction(&burn, &[Check::success()]);
     let persistent_outputs = cleartext.evaluate_fhe_cpi(&context, &result);
 
@@ -4872,7 +6302,8 @@ fn mollusk_burn_from_value_whole_balance_alias() {
     cleartext.seed_amount(fixture.initial_total_supply, 5_000);
 
     // Amount aliased to the account's own balance encrypted value account: burn the whole balance.
-    let burn = confidential_burn_from_value_ix(
+    let burn = confidential_burn_from_value_auto(
+        &context,
         &fixture,
         fixture.owner,
         fixture.owner,
@@ -4919,16 +6350,29 @@ fn mollusk_burn_from_value_reburns_burned_amount_that_is_also_this_output() {
     cleartext.seed_amount(amount_handle, 250);
 
     // First burn (250) creates the burned_amount encrypted value account: balance 750, total_supply 4750, burned 250.
-    let first =
-        confidential_burn_from_value_ix(&fixture, fixture.owner, fixture.owner, amount_value);
+    let first = confidential_burn_from_value_auto(
+        &context,
+        &fixture,
+        fixture.owner,
+        fixture.owner,
+        amount_value,
+    );
     let first_result = context.process_and_validate_instruction(&first, &[Check::success()]);
     cleartext.evaluate_fhe_cpi(&context, &first_result);
     let first_burned = read_encrypted_value(&context, fixture.burned_amount_value).current_handle;
     assert_eq!(cleartext.u64_at(&context, fixture.burned_amount_value), 250);
 
-    // Second burn spends the burned_amount encrypted value account itself as the amount — which is also this burn's
+    // Settle the first pending burn before opening the next one. Cancellation restores balance and
+    // supply while retaining the burned-amount encrypted value account and its public leaf.
+    let pending_burn = token::pending_burn_address(fixture.mint, fixture.token_account).0;
+    let cancel = cancel_pending_burn_ix(&fixture, pending_burn);
+    let cancel_result = context.process_and_validate_instruction(&cancel, &[Check::success()]);
+    cleartext.evaluate_fhe_cpi(&context, &cancel_result);
+
+    // The next burn spends the burned-amount encrypted value account itself as the amount — which is also this burn's
     // burned_amount output account (the alias the dedup must merge, not double-push).
-    let again = confidential_burn_from_value_ix(
+    let again = confidential_burn_from_value_auto(
+        &context,
         &fixture,
         fixture.owner,
         fixture.owner,
@@ -4937,19 +6381,20 @@ fn mollusk_burn_from_value_reburns_burned_amount_that_is_also_this_output() {
     let again_result = context.process_and_validate_instruction(&again, &[Check::success()]);
     let persistent_outputs = cleartext.evaluate_fhe_cpi(&context, &again_result);
 
-    // Conservation: the second burn's amount equals the previous burned delta (250), so the balance
-    // and encrypted total supply each drop by another 250, and the new burned delta is again 250.
+    // Conservation after cancellation: the next burn's amount equals the previous burned delta
+    // (250), so the restored balance and encrypted total supply each drop by 250.
     assert_eq!(persistent_outputs, 3);
-    assert_eq!(cleartext.balance(&context, fixture.token_account), 500);
+    assert_eq!(cleartext.balance(&context, fixture.token_account), 750);
     assert_eq!(
         cleartext.u64_at(&context, fixture.total_supply_value),
-        4_500
+        4_750
     );
     assert_eq!(cleartext.u64_at(&context, fixture.burned_amount_value), 250);
 
     // The burned_amount encrypted value account stays a well-formed two-burn MMR: both burns' handles are present as
-    // public-decrypt leaves (public(H1)@0 and public(H2)@3), so each remains permanently redeemable
-    // (DD-036 / Vector 2) even though the second burn also read H1 as its amount operand.
+    // public-decrypt leaves (public(H1)@0 and public(H2)@3), even though the first pending burn was
+    // cancelled and the second burn read H1 as its amount operand. Only H2 remains pending and
+    // redeemable.
     let second_burned = read_encrypted_value(&context, fixture.burned_amount_value).current_handle;
     let value = read_encrypted_value(&context, fixture.burned_amount_value);
     assert_eq!(value.current_handle, second_burned);
@@ -4994,7 +6439,8 @@ fn mollusk_burn_from_value_pda_owner_via_invoke_signed() {
     cleartext.seed_amount(fixture.initial_total_supply, 5_000);
     cleartext.seed_amount(amount_handle, 400);
 
-    let burn = confidential_burn_from_value_ix(&fixture, pda_owner, payer, amount_value);
+    let burn =
+        confidential_burn_from_value_auto(&context, &fixture, pda_owner, payer, amount_value);
     let result = context.process_and_validate_instruction(&burn, &[Check::success()]);
     cleartext.evaluate_fhe_cpi(&context, &result);
 
@@ -5031,8 +6477,13 @@ fn mollusk_burn_from_value_burned_handle_redeems() {
     cleartext.seed_amount(fixture.initial_balance, 1_000);
     cleartext.seed_amount(fixture.initial_total_supply, 5_000);
     cleartext.seed_amount(amount_handle, 500);
-    let burn =
-        confidential_burn_from_value_ix(&fixture, fixture.owner, fixture.owner, amount_value);
+    let burn = confidential_burn_from_value_auto(
+        &context,
+        &fixture,
+        fixture.owner,
+        fixture.owner,
+        amount_value,
+    );
     let burn_result = context.process_and_validate_instruction(&burn, &[Check::success()]);
     cleartext.evaluate_fhe_cpi(&context, &burn_result);
     let burned_handle = read_encrypted_value(&context, fixture.burned_amount_value).current_handle;
@@ -5041,11 +6492,7 @@ fn mollusk_burn_from_value_burned_handle_redeems() {
     let cleartext_amount = 500;
     let (signatures, extra_data) = kms_public_decrypt_cert(burned_handle, cleartext_amount);
     let proof = single_burn_public_decrypt_proof(&fixture, burned_handle);
-    let redemption_record = token::burn_redemption_address(fixture.mint, burned_handle).0;
-    context
-        .account_store
-        .borrow_mut()
-        .insert(redemption_record, system_account(0));
+    let pending_burn = token::pending_burn_address(fixture.mint, fixture.token_account).0;
     context.process_and_validate_instruction(
         &redeem_burned_amount_ix(
             &fixture,
@@ -5054,8 +6501,7 @@ fn mollusk_burn_from_value_burned_handle_redeems() {
             signatures,
             extra_data,
             proof,
-            redemption_record,
-            None,
+            pending_burn,
         ),
         &[Check::success()],
     );
@@ -5090,8 +6536,13 @@ fn mollusk_burn_from_value_rejects_non_subject_signer() {
     );
     let context = burn_redeem_mollusk().with_context(accounts);
 
-    let burn =
-        confidential_burn_from_value_ix(&fixture, fixture.owner, fixture.owner, amount_value);
+    let burn = confidential_burn_from_value_auto(
+        &context,
+        &fixture,
+        fixture.owner,
+        fixture.owner,
+        amount_value,
+    );
     context.process_and_validate_instruction(
         &burn,
         &[token_error(
@@ -5124,8 +6575,13 @@ fn mollusk_burn_from_value_rejects_non_euint64_amount() {
     );
     let context = burn_redeem_mollusk().with_context(accounts);
 
-    let burn =
-        confidential_burn_from_value_ix(&fixture, fixture.owner, fixture.owner, amount_value);
+    let burn = confidential_burn_from_value_auto(
+        &context,
+        &fixture,
+        fixture.owner,
+        fixture.owner,
+        amount_value,
+    );
     context.process_and_validate_instruction(
         &burn,
         &[token_error(
@@ -5154,23 +6610,28 @@ fn mollusk_burn_from_value_rejects_owner_not_token_account_owner() {
     );
     let context = burn_redeem_mollusk().with_context(accounts);
 
-    let burn = confidential_burn_from_value_ix(&fixture, wrong_owner, wrong_owner, amount_value);
+    let burn = confidential_burn_from_value_auto(
+        &context,
+        &fixture,
+        wrong_owner,
+        wrong_owner,
+        amount_value,
+    );
     context.process_and_validate_instruction(
         &burn,
         &[token_error(token::ConfidentialTokenError::OwnerMismatch)],
     );
 }
 
-/// Done-when (cross-app): an amount handle whose subjects lack the mint's compute subject fails at
-/// the host's compute-read check; after a single `allow_subjects` grant of the compute subject the
-/// same burn succeeds (EVM `FHE.allow(handle, token)` shape).
+/// A token-owned amount handle whose subjects lack the mint's compute subject fails at the host's
+/// compute-read check; after the token owner grants that subject through the token wrapper the same
+/// burn succeeds. Foreign-app values require the equivalent grant from their own account authority.
 #[test]
-fn mollusk_burn_from_value_cross_app_requires_compute_subject_grant() {
+fn mollusk_burn_from_value_requires_compute_subject_grant() {
     let fixture = BurnRedeemFixture::new();
     let mut accounts = fixture.accounts(1_000);
     let amount_handle = handle_for_chain(60, BALANCE_FHE_TYPE);
-    // A handle from another app: the owner may spend it, but the mint's compute subject is not yet
-    // allowed on it.
+    // The owner may spend this handle, but the mint's compute subject is not yet allowed on it.
     let amount_value = seed_burn_amount_value(
         &fixture,
         &mut accounts,
@@ -5181,18 +6642,25 @@ fn mollusk_burn_from_value_cross_app_requires_compute_subject_grant() {
     );
     let context = burn_redeem_mollusk().with_context(accounts);
 
-    let burn =
-        confidential_burn_from_value_ix(&fixture, fixture.owner, fixture.owner, amount_value);
+    let burn = confidential_burn_from_value_auto(
+        &context,
+        &fixture,
+        fixture.owner,
+        fixture.owner,
+        amount_value,
+    );
     // Without the grant, the host rejects the persistent operand at its compute-read check.
     context.process_and_validate_instruction(
         &burn,
         &[host_error(host::errors::ZamaHostError::SubjectNotFound)],
     );
 
-    // The handle's owner grants the mint's compute subject.
-    let grant = allow_subject_ix(
+    // The token owner grants the mint's compute subject through the token CPI wrapper. Host
+    // `allow_subjects` requires the signer to be the token-account PDA that owns this value.
+    let grant = allow_token_account_subjects_ix(
         fixture.owner,
-        fixture.owner,
+        fixture.mint,
+        fixture.token_account,
         amount_value,
         fixture.host_config,
         fixture.compute_signer,
@@ -5204,8 +6672,13 @@ fn mollusk_burn_from_value_cross_app_requires_compute_subject_grant() {
     cleartext.seed_amount(fixture.initial_balance, 1_000);
     cleartext.seed_amount(fixture.initial_total_supply, 5_000);
     cleartext.seed_amount(amount_handle, 300);
-    let burn_again =
-        confidential_burn_from_value_ix(&fixture, fixture.owner, fixture.owner, amount_value);
+    let burn_again = confidential_burn_from_value_auto(
+        &context,
+        &fixture,
+        fixture.owner,
+        fixture.owner,
+        amount_value,
+    );
     let result = context.process_and_validate_instruction(&burn_again, &[Check::success()]);
     cleartext.evaluate_fhe_cpi(&context, &result);
     assert_eq!(cleartext.balance(&context, fixture.token_account), 700);
@@ -5218,15 +6691,18 @@ fn mollusk_burn_from_value_cross_app_requires_compute_subject_grant() {
 fn burn_from_value_instruction_is_smaller_than_attested_arm() {
     let fixture = BurnRedeemFixture::new();
     let amount_handle = handle_for_chain(70, BALANCE_FHE_TYPE);
+    let pending_burn = token::pending_burn_address(fixture.mint, fixture.token_account).0;
     let attested = confidential_burn_ix(
         &fixture,
         amount_attestation_for(amount_handle, fixture.owner, fixture.compute_signer),
+        pending_burn,
     );
     let from_value = confidential_burn_from_value_ix(
         &fixture,
         fixture.owner,
         fixture.owner,
         Pubkey::new_unique(),
+        pending_burn,
     );
     assert!(
         from_value.data.len() < attested.data.len(),
@@ -5254,8 +6730,13 @@ fn cost_snapshot_confidential_burn_from_value() {
         &[fixture.owner, fixture.compute_signer],
     );
     let context = burn_redeem_mollusk().with_context(accounts);
-    let burn =
-        confidential_burn_from_value_ix(&fixture, fixture.owner, fixture.owner, amount_value);
+    let burn = confidential_burn_from_value_auto(
+        &context,
+        &fixture,
+        fixture.owner,
+        fixture.owner,
+        amount_value,
+    );
 
     let result = context.process_and_validate_instruction(&burn, &[Check::success()]);
 

@@ -45,6 +45,9 @@ pub struct Dispatch<'info> {
     /// decryptable; created by the token CPI (first and only burn per batch).
     #[account(mut)]
     pub batch_burned_amount_value: UncheckedAccount<'info>,
+    /// CHECK: pending-burn PDA for the batch token account; created by the token CPI.
+    #[account(mut)]
+    pub pending_burn: UncheckedAccount<'info>,
     /// CHECK: ZamaHost event-CPI authority; validated by the host program.
     pub zama_event_authority: UncheckedAccount<'info>,
     /// ZamaHost program (FHE compute + ACL).
@@ -90,6 +93,11 @@ pub fn dispatch(ctx: Context<Dispatch>) -> Result<()> {
 
     let authority = BatchAuthoritySeeds::new(batch_key, ctx.accounts.batch.authority_bump);
     let authority_seeds = authority.seeds();
+    require_keys_eq!(
+        ctx.accounts.pending_burn.key(),
+        ct::pending_burn_address(mint_key, ctx.accounts.batch_join_token_account.key()).0,
+        BatcherError::DerivedAccountMismatch
+    );
     ct::cpi::confidential_burn_from_value(CpiContext::new_with_signer(
         ctx.accounts.confidential_token_program.key(),
         ct::cpi::accounts::ConfidentialBurnFromValue {
@@ -102,6 +110,7 @@ pub fn dispatch(ctx: Context<Dispatch>) -> Result<()> {
             balance_value: ctx.accounts.batch_balance_value.to_account_info(),
             total_supply_value: ctx.accounts.total_supply_value.to_account_info(),
             burned_amount_value: ctx.accounts.batch_burned_amount_value.to_account_info(),
+            pending_burn: ctx.accounts.pending_burn.to_account_info(),
             // Whole-balance burn: the balance encrypted value account is also the amount.
             amount_value: ctx.accounts.batch_balance_value.to_account_info(),
             zama_event_authority: ctx.accounts.zama_event_authority.to_account_info(),

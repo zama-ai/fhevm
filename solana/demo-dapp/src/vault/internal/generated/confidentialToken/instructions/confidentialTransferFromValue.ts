@@ -175,8 +175,10 @@ export type ConfidentialTransferFromValueAsyncInput<
   /**
    * The existing encrypted amount to spend: a computed or received `euint64` handle. Read-only
    * persistent operand — never replaced, never consumed. Its address is the canonical PDA of its
-   * own `(domain, authority, label)` fields, so an encrypted value account from any app
-   * may be passed here once its owner has granted the mint's compute subject via `allow_subjects`.
+   * own `(domain, authority, label)` fields, so an encrypted value account from any app may be
+   * passed here once that app's encrypted value account authority has granted the mint's compute
+   * subject. `allow_token_account_subjects` applies only to confidential-token-owned values;
+   * another app must authorize through its own authority path.
    */
   amountValue: Address<TAccountAmountValue>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
@@ -403,8 +405,10 @@ export type ConfidentialTransferFromValueInput<
   /**
    * The existing encrypted amount to spend: a computed or received `euint64` handle. Read-only
    * persistent operand — never replaced, never consumed. Its address is the canonical PDA of its
-   * own `(domain, authority, label)` fields, so an encrypted value account from any app
-   * may be passed here once its owner has granted the mint's compute subject via `allow_subjects`.
+   * own `(domain, authority, label)` fields, so an encrypted value account from any app may be
+   * passed here once that app's encrypted value account authority has granted the mint's compute
+   * subject. `allow_token_account_subjects` applies only to confidential-token-owned values;
+   * another app must authorize through its own authority path.
    */
   amountValue: Address<TAccountAmountValue>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
@@ -610,8 +614,10 @@ export type ParsedConfidentialTransferFromValueInstruction<
     /**
      * The existing encrypted amount to spend: a computed or received `euint64` handle. Read-only
      * persistent operand — never replaced, never consumed. Its address is the canonical PDA of its
-     * own `(domain, authority, label)` fields, so an encrypted value account from any app
-     * may be passed here once its owner has granted the mint's compute subject via `allow_subjects`.
+     * own `(domain, authority, label)` fields, so an encrypted value account from any app may be
+     * passed here once that app's encrypted value account authority has granted the mint's compute
+     * subject. `allow_token_account_subjects` applies only to confidential-token-owned values;
+     * another app must authorize through its own authority path.
      */
     amountValue: TAccountMetas[9];
     zamaEventAuthority: TAccountMetas[10];

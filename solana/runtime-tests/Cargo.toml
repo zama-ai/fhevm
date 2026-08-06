@@ -13,7 +13,7 @@ confidential-batcher = { path = "../programs/confidential-batcher", features = [
 confidential-token = { path = "../programs/confidential-token", features = ["no-entrypoint"] }
 demo-vault = { path = "../programs/demo-vault", features = ["no-entrypoint"] }
 mollusk-svm = { version = "0.12.1-agave-4.0", features = ["inner-instructions", "precompiles"] }
-mollusk-svm-programs-token = { version = "0.12.1-agave-4.0", default-features = false, features = ["token"] }
+mollusk-svm-programs-token = { version = "0.12.1-agave-4.0", default-features = false, features = ["token", "token-2022"] }
 solana-program = "3.0.0"
 solana-sha256-hasher = "3.1.0"
 solana-compute-budget-interface = "3.0.0"

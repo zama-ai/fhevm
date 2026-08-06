@@ -11,6 +11,150 @@
   ],
   "instructions": [
     {
+      "name": "cancel_dispatch",
+      "docs": [
+        "Cancels a dispatched burn when settlement cannot complete. The join mint's wrapper",
+        "authority authorizes the operation. The burned total is restored to the batch token account",
+        "and encrypted total supply, and the batch becomes refund-only so users can retrieve their",
+        "recorded joins through `quit`."
+      ],
+      "discriminator": [
+        199,
+        154,
+        246,
+        33,
+        207,
+        32,
+        108,
+        75
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "Join-mint wrapper authority and optional funding payer."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "batcher",
+          "docs": [
+            "Batcher config."
+          ]
+        },
+        {
+          "name": "batch",
+          "docs": [
+            "The dispatched batch whose burn is cancelled."
+          ],
+          "writable": true
+        },
+        {
+          "name": "batch_authority",
+          "docs": [
+            "destination. Mutable because it pays the token cancellation execution."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  97,
+                  116,
+                  99,
+                  104,
+                  45,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "batch"
+              }
+            ]
+          }
+        },
+        {
+          "name": "join_confidential_mint",
+          "docs": [
+            "Confidential mint whose encrypted total supply is restored."
+          ]
+        },
+        {
+          "name": "join_compute_signer"
+        },
+        {
+          "name": "total_supply_authority"
+        },
+        {
+          "name": "batch_join_token_account",
+          "writable": true
+        },
+        {
+          "name": "batch_balance_value",
+          "writable": true
+        },
+        {
+          "name": "total_supply_value",
+          "writable": true
+        },
+        {
+          "name": "batch_burned_amount_value"
+        },
+        {
+          "name": "pending_burn",
+          "writable": true
+        },
+        {
+          "name": "host_config"
+        },
+        {
+          "name": "zama_event_authority"
+        },
+        {
+          "name": "zama_program",
+          "docs": [
+            "ZamaHost program."
+          ],
+          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+        },
+        {
+          "name": "confidential_token_event_authority"
+        },
+        {
+          "name": "confidential_token_program",
+          "docs": [
+            "Confidential-token program composed via CPI."
+          ],
+          "address": "pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg"
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "System program used by the token execution and optional authority funding."
+          ],
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "authority_funding_lamports",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "claim",
       "docs": [
         "Claims a user's confidential payout from a settled batch: one MulDiv",
@@ -313,6 +457,10 @@
           "docs": [
             "decryptable; created by the token CPI (first and only burn per batch)."
           ],
+          "writable": true
+        },
+        {
+          "name": "pending_burn",
           "writable": true
         },
         {
@@ -925,10 +1073,10 @@
     {
       "name": "quit",
       "docs": [
-        "Leaves the pending batch before dispatch: transfers the user's exact",
+        "Leaves a pending batch before dispatch, or a refunding batch after dispatch cancellation:",
+        "transfers the user's exact",
         "recorded amount back from the batch account (all-or-nothing) and",
-        "resets the joined encrypted value account to zero. Always available while pending;",
-        "there is no exit between dispatch and settle (fhevm-internal#1773)."
+        "resets the joined encrypted value account to zero."
       ],
       "discriminator": [
         191,
@@ -1160,8 +1308,8 @@
           "name": "batch_authority",
           "docs": [
             "depositor/withdrawer, and wrap owner via invoke_signed. Receives",
-            "funding for the rent the redeem marker and wrap execution charge to the",
-            "owner."
+            "funding for the rent the wrap execution (and any other owner-charged CPIs)",
+            "charge to the owner; redemption closes the already-open pending burn."
           ],
           "writable": true,
           "pda": {
@@ -1266,7 +1414,7 @@
           "name": "batch_burned_amount_value"
         },
         {
-          "name": "redemption_record",
+          "name": "pending_burn",
           "writable": true
         },
         {
@@ -1511,6 +1659,19 @@
       ]
     },
     {
+      "name": "BatchDispatchCancelled",
+      "discriminator": [
+        1,
+        113,
+        239,
+        120,
+        144,
+        108,
+        42,
+        204
+      ]
+    },
+    {
       "name": "BatchDispatched",
       "discriminator": [
         237,
@@ -1707,6 +1868,16 @@
       "code": 6020,
       "name": "PayoutBalanceUnderflow",
       "msg": "batch payout balance decreased across the vault phase"
+    },
+    {
+      "code": 6021,
+      "name": "BatchNotRefundable",
+      "msg": "batch does not accept refunds"
+    },
+    {
+      "code": 6022,
+      "name": "CancelAuthorityMismatch",
+      "msg": "cancel authority does not match the join confidential mint authority"
     }
   ],
   "types": [
@@ -1852,6 +2023,31 @@
           },
           {
             "name": "Redeem"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BatchDispatchCancelled",
+      "docs": [
+        "Emitted when a dispatched burn is cancelled and the batch becomes refund-only."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "batch",
+            "docs": [
+              "Batch account."
+            ],
+            "type": "pubkey"
           }
         ]
       }
@@ -2015,6 +2211,9 @@
           },
           {
             "name": "Canceled"
+          },
+          {
+            "name": "Refunding"
           }
         ]
       }

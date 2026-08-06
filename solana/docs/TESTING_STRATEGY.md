@@ -26,8 +26,8 @@ all fail closed (see the `*_rejects_*` mollusk tests).
 2. **On-chain integration — Mollusk** (`solana/runtime-tests/tests/{host,token}_mollusk.rs`): runs the
    **real compiled `.so`** against Mollusk. Covers all three auth paths, the
    full token flows (wrap / transfer / burn→redeem / disclose), the produced-public lifecycle execution
-   (zero/one/multiple/max-size/fail-closed), the burn-redemption consume-once replay marker and
-   expired-request rejection, and handle update. Token disclosure is now the thin `disclose_secp`
+   (zero/one/multiple/max-size/fail-closed), the sequential pending-burn redeem/cancel act-once
+   lifecycle, and handle update. Token disclosure is now the thin `disclose_secp`
    consumer of the host `verify_public_decrypt` verifier (DD-040); `token_mollusk` covers its happy path
    (amount + balance), after-update consume, idempotency / no-replay-marker, foreign-proof
    rejection surfaced from the host, and mint-domain binding. The verifier's own negatives (destroyed
@@ -47,7 +47,7 @@ all fail closed (see the `*_rejects_*` mollusk tests).
    fail-closed), decode (incl. `emit_cpi!` op-event resolution for created-public handles), replay, and
    `build_verified_proof` cross-check against confirmed peaks (a wrong record surfaces as
    `PeaksDiverged`/`CorruptCache`, never a bad proof).
-6. **ABI / IDL golden** (`scripts/check-zama-host-idl.sh`, `plan_contracts.rs`): vendored IDLs and the
+6. **ABI / IDL golden** (`scripts/check-zama-host-idl.sh`, `execution_contracts.rs`): vendored IDLs and the
    Borsh golden manifest must match the freshly-built Anchor IDLs; EVENT_VERSION consistency across
    zama-host / confidential-token / host-listener is asserted (a mismatch would silently drop events).
 7. **End-to-end** (`.github/workflows/solana-e2e.yml`, `full-vertical.sh`): the Yellowstone-only

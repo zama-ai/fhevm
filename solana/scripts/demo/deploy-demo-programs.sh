@@ -17,10 +17,10 @@ DEPLOYER_KEYPAIR="${SOLANA_DEPLOYER_KEYPAIR:-$HOME/.config/solana/id.json}"
 
 echo "==> [demo-deploy] build + deploy demo_vault, confidential_batcher"
 mkdir -p "$SOLANA/target/deploy"
-# Seed the committed program keypairs so the built program ids match each declare_id! (-n keeps any
-# pre-existing local key, exactly as setup-solana-side.sh does for zama_host/confidential_token).
+# Seed the committed program keypairs so the built program ids match each declare_id!. Always
+# overwrite target artifacts left by older branches, as setup-solana-side.sh does for host programs.
 for p in demo_vault confidential_batcher; do
-  cp -n "$SOLANA/scripts/e2e/test-keypairs/$p-keypair.json" "$SOLANA/target/deploy/$p-keypair.json" 2>/dev/null || true
+  cp -f "$SOLANA/scripts/e2e/test-keypairs/$p-keypair.json" "$SOLANA/target/deploy/$p-keypair.json"
 done
 
 # Per-crate anchor build (--ignore-keys: keep the committed keypairs, do not regenerate ids).

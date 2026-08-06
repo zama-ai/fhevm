@@ -14,6 +14,7 @@
 export { joinBatch, type SolanaVaultJoinParameters } from './joinBatch.js';
 export { buildQuitInstruction, type SolanaVaultQuitParameters } from './quit.js';
 export { buildDispatchBatchInstruction, type SolanaVaultDispatchParameters } from './dispatchBatch.js';
+export { buildCancelDispatchInstruction, type SolanaVaultCancelDispatchParameters } from './cancelDispatch.js';
 export { settleBatch, type SolanaVaultSettleOptions } from './settleBatch.js';
 export { buildClaimInstruction, type SolanaVaultClaimParameters } from './claim.js';
 export {
@@ -37,6 +38,8 @@ export {
 export { buildInitializeMintInstruction, type SolanaVaultInitializeMintParameters } from './initializeMint.js';
 export {
   buildInitializeTokenAccountInstruction,
+  getOrCreateConfidentialTokenAccountInstruction,
+  needsConfidentialTokenAccountInitialization,
   type SolanaVaultInitializeTokenAccountParameters,
 } from './initializeTokenAccount.js';
 export { buildWrapUsdcInstruction, type SolanaVaultWrapUsdcParameters } from './wrapUsdc.js';
@@ -47,6 +50,11 @@ export { openBatchForBatcher, type SolanaVaultOpenBatchForBatcherParameters } fr
 // the host protocol.
 export { confidentialTransfer, type SolanaConfidentialTransferParameters } from './actions/confidentialTransfer.js';
 export { buildDiscloseSecpInstruction, type SolanaDiscloseSecpAccounts } from './actions/discloseSecp.js';
+export {
+  buildMakeTokenAccountHandlePublicInstruction,
+  type SolanaMakeTokenAccountHandlePublicParameters,
+} from './actions/makeHandlePublic.js';
+export { DisclosedValueKind } from './internal/generated/confidentialToken/types/disclosedValueKind.js';
 
 // Program ids the seeder records into the demo-config `programs` block. `CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS`
 // is already exported below with the batcher internals; the other three come from the generated
@@ -87,7 +95,7 @@ export {
 export {
   batchAddress,
   tokenAccountAddress,
-  burnRedemptionAddress,
+  pendingBurnAddress,
   burnedAmountValueAccount,
   pendingJoinValueAccount,
   claimAmountValueAccount,

@@ -174,8 +174,8 @@ fn token_idl_removed_operator_surface_and_splits_payer_from_owner() {
             .any(|name| name == "redeem_burned_amount"),
         "token IDL must expose the thin `redeem_burned_amount` consumer"
     );
-    // The BurnRedemptionRequest witness account is gone; the permanent per-handle replay marker
-    // remains as the sole persistent token redemption state.
+    // The BurnRedemptionRequest witness account is gone; PendingBurn is the sole persistent
+    // token redemption state (open-at-burn, close-at-redeem-or-cancel).
     assert!(
         !names(&idl, "accounts")
             .iter()
@@ -186,10 +186,19 @@ fn token_idl_removed_operator_surface_and_splits_payer_from_owner() {
         "BurnRedemptionRequest account must be removed from the token IDL"
     );
     assert!(
+        !names(&idl, "accounts")
+            .iter()
+            .any(|name| name == "BurnRedemption")
+            && !names(&idl, "types")
+                .iter()
+                .any(|name| name == "BurnRedemption"),
+        "BurnRedemption replay marker must be removed from the token IDL"
+    );
+    assert!(
         names(&idl, "accounts")
             .iter()
-            .any(|name| name == "BurnRedemption"),
-        "token IDL must retain the permanent BurnRedemption replay marker"
+            .any(|name| name == "PendingBurn"),
+        "token IDL must expose the PendingBurn account"
     );
 
     let source = format!("{TOKEN_LIB}\n{TOKEN_COMMON}");
@@ -269,18 +278,17 @@ fn token_idl_drops_transfer_and_call_callback_surface() {
 }
 
 #[test]
-fn token_redeem_consumes_stateless_verifier_with_value_account_and_deny_binding() {
+fn token_redeem_consumes_stateless_verifier_with_value_account_binding() {
     // The BurnRedemptionRequest witness lifecycle was dissolved (fhevm-internal#1763): redeem is now
     // a single thin consumer that binds the burned encrypted value account (`assert_burned_amount_value_account`), CPIs the
     // stateless host `verify_public_decrypt` against the live KMS context the cert names, asserts the certified
-    // cleartext equals the claimed amount, consults the deny-list explicitly at payout, and writes
-    // the permanent per-handle replay marker.
+    // cleartext equals the claimed amount, and closes the token account's `PendingBurn`. The grant
+    // deny-list is deliberately not consulted during settlement, so it cannot trap funds.
     for required in [
         "assert_burned_amount_value_account",
         "fhe::verify_public_decrypt",
-        "assert_redeem_subject_not_denied",
         "kms_decrypted_result_bytes(cleartext_amount)",
-        "b\"burn-redemption\"",
+        "PENDING_BURN_SEED",
         "transfer_checked",
     ] {
         assert!(
@@ -306,8 +314,11 @@ fn token_redeem_consumes_stateless_verifier_with_value_account_and_deny_binding(
             "dissolved witness symbol `{removed}` should not remain in production paths"
         );
     }
-    // The deny consultation and the current-context verifier CPI live one layer down; the token layer
-    // must NOT re-pin a request-time context id or hand-roll the secp cert verification anymore.
+    assert!(
+        !TOKEN_REDEEM.contains("deny_subject"),
+        "redemption must not consult the grant deny-list"
+    );
+    // The token layer must not re-pin a request-time context id or hand-roll secp verification.
     assert!(
         !TOKEN_COMMON.contains("verify_kms_public_decrypt"),
         "token layer must not hand-roll KMS cert verification; the host verifier owns it"
@@ -409,7 +420,7 @@ fn abi_golden_drift_checks_cover_host_token_listener_and_kms_layouts() {
         .get("schemas")
         .and_then(Value::as_array)
         .expect("ABI golden schemas should be an array");
-    for required in ["KmsContext", "BurnRedemption"] {
+    for required in ["KmsContext", "PendingBurn"] {
         assert!(
             schemas
                 .iter()
@@ -433,6 +444,8 @@ fn abi_golden_drift_checks_cover_host_token_listener_and_kms_layouts() {
         // Dissolved by fhevm-internal#1763 (BurnRedemptionRequest lifecycle -> thin host verifier).
         "BurnRedemptionRequest",
         "BurnRedemptionRequestedEvent",
+        // Replaced by one PendingBurn per token account (fhevm-internal#1862).
+        "BurnRedemption",
     ] {
         assert!(
             !schemas

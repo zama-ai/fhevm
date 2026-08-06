@@ -30,6 +30,11 @@ export default defineConfig(({ mode }) => ({
       'Cross-Origin-Opener-Policy': 'same-origin',
     },
   },
+  ssr: {
+    // Operator routes load the local SDK through Vite. Bundle it so its runtime dependencies
+    // resolve from this app's frozen graph instead of the file-linked SDK source directory.
+    noExternal: ['@fhevm/sdk'],
+  },
   // Vitest needs only transforms; omitting the development server plugin keeps tests independent
   // of runtime credentials without creating a credential bypass mode.
   plugins: mode === 'test' ? [] : [demoServerPlugin()],

@@ -374,13 +374,11 @@ pub(crate) fn assert_amount_attestation_binding(
     Ok(())
 }
 
-/// ValueAccount checks for the redeem path: burned-amount handle type, canonical address,
-/// domain/encrypted value account authority, the burned-amount label, and current membership for
-/// the owner and mint compute signer. Does NOT authorize the specific handle: the redeem path
-/// proves the handle's publicness via the exact-handle MMR public-decrypt proof verified inside the
-/// `verify_public_decrypt` CPI, since the burn already made the handle public (DD-036 / Vector 2).
-/// The handle need not be the live one, so a historical handle replaced by a later burn stays
-/// redeemable.
+/// Encrypted value account checks for the redeem path: burned-amount handle type, canonical
+/// address, domain, encrypted value account authority, encrypted value label, and current
+/// membership for the owner and mint compute signer. The caller separately requires the pending
+/// handle to be current and proves its publicness through the exact-handle MMR proof verified by
+/// `verify_public_decrypt`.
 pub(crate) fn assert_burned_amount_value_account(
     amount_value: &Account<zama_host::EncryptedValue>,
     burned_handle: [u8; 32],
@@ -453,16 +451,87 @@ pub(crate) fn assert_canonical_vault_token_account(
     vault_usdc: Pubkey,
     vault_authority: Pubkey,
     underlying_mint: Pubkey,
+    token_program: Pubkey,
 ) -> Result<()> {
     require_keys_eq!(
         vault_usdc,
         get_associated_token_address_with_program_id(
             &vault_authority,
             &underlying_mint,
-            &spl_token::ID,
+            &token_program,
         ),
         ConfidentialTokenError::VaultAccountMismatch
     );
+    Ok(())
+}
+
+/// Accepts the classic token program and extension-free Token-2022 mints. Extension behavior can
+/// change transfer amounts or invoke external programs, so unsupported extensions fail closed.
+pub(crate) fn assert_supported_underlying_mint(
+    mint: &InterfaceAccount<SplMint>,
+    token_program: &Interface<TokenInterface>,
+) -> Result<()> {
+    require_keys_eq!(
+        *mint.to_account_info().owner,
+        token_program.key(),
+        ConfidentialTokenError::UnderlyingTokenProgramMismatch
+    );
+    if token_program.key() == anchor_spl::token_2022::ID {
+        use anchor_spl::token_interface::spl_token_2022::extension::{
+            BaseStateWithExtensions, StateWithExtensions,
+        };
+        let mint_info = mint.to_account_info();
+        let data = mint_info.try_borrow_data()?;
+        let state = StateWithExtensions::<
+            anchor_spl::token_interface::spl_token_2022::state::Mint,
+        >::unpack(&data)
+        .map_err(|_| error!(ConfidentialTokenError::UnsupportedToken2022Extension))?;
+        require!(
+            state
+                .get_extension_types()
+                .map_err(|_| error!(ConfidentialTokenError::UnsupportedToken2022Extension))?
+                .is_empty(),
+            ConfidentialTokenError::UnsupportedToken2022Extension
+        );
+    }
+    Ok(())
+}
+
+/// Validates an underlying token account against the selected token program. Token-2022 ATAs may
+/// carry only `ImmutableOwner`; all amount-affecting or callback extensions are rejected by the
+/// extension-free mint rule above and this account-side fail-closed check.
+pub(crate) fn assert_supported_underlying_token_account(
+    account: &InterfaceAccount<TokenAccount>,
+    token_program: &Interface<TokenInterface>,
+) -> Result<()> {
+    require_keys_eq!(
+        *account.to_account_info().owner,
+        token_program.key(),
+        ConfidentialTokenError::UnderlyingTokenProgramMismatch
+    );
+    require!(
+        account.state != anchor_spl::token_interface::spl_token_2022::state::AccountState::Frozen,
+        ConfidentialTokenError::UnderlyingTokenAccountFrozen
+    );
+    if token_program.key() == anchor_spl::token_2022::ID {
+        use anchor_spl::token_interface::spl_token_2022::extension::{
+            BaseStateWithExtensions, ExtensionType, StateWithExtensions,
+        };
+        let account_info = account.to_account_info();
+        let data = account_info.try_borrow_data()?;
+        let state = StateWithExtensions::<
+            anchor_spl::token_interface::spl_token_2022::state::Account,
+        >::unpack(&data)
+        .map_err(|_| error!(ConfidentialTokenError::UnsupportedToken2022Extension))?;
+        require!(
+            state
+                .get_extension_types()
+                .map_err(|_| error!(ConfidentialTokenError::UnsupportedToken2022Extension))?
+                .iter()
+                .all(|extension| *extension == ExtensionType::ImmutableOwner),
+            ConfidentialTokenError::UnsupportedToken2022Extension
+        );
+    }
     Ok(())
 }
 
@@ -521,65 +590,6 @@ pub(crate) fn assert_confidential_token_account_shape(
         token_account.owner,
         owner,
         ConfidentialTokenError::OwnerMismatch
-    );
-    Ok(())
-}
-
-/// Explicit deny-list consultation at redeem payout (fhevm-internal#1763): a denied signer cannot
-/// cash out. Mirrors the host's own `check_grant_not_denied` model so the token layer reads the deny
-/// list exactly as the host would.
-///
-/// When the host grant deny-list is disabled, no `deny_subject_record` may be passed. When it is
-/// enabled, the canonical record PDA for `subject` must be passed: an absent (system-owned, empty)
-/// record means "never denied" and clears; a present record must be the host-owned canonical PDA for
-/// `subject` and must not mark it denied.
-pub(crate) fn assert_redeem_subject_not_denied(
-    host_config: &Account<zama_host::HostConfig>,
-    subject: Pubkey,
-    deny_subject_record: Option<&UncheckedAccount>,
-) -> Result<()> {
-    if !host_config.grant_deny_list_enabled {
-        require!(
-            deny_subject_record.is_none(),
-            ConfidentialTokenError::RedemptionDenyRecordInvalid
-        );
-        return Ok(());
-    }
-    let info = deny_subject_record
-        .ok_or(ConfidentialTokenError::RedemptionDenyRecordInvalid)?
-        .to_account_info();
-    let (expected, expected_bump) = zama_host::deny_subject_address(subject);
-    require_keys_eq!(
-        info.key(),
-        expected,
-        ConfidentialTokenError::RedemptionDenyRecordInvalid
-    );
-    // An uninitialized (system-owned, empty) record means the subject was never denied.
-    if *info.owner == System::id() && info.data_is_empty() {
-        require!(
-            !info.executable,
-            ConfidentialTokenError::RedemptionDenyRecordInvalid
-        );
-        return Ok(());
-    }
-    require_keys_eq!(
-        *info.owner,
-        zama_host::ID,
-        ConfidentialTokenError::RedemptionDenyRecordInvalid
-    );
-    require!(
-        info.data_len() == 8 + zama_host::DenySubjectRecord::SPACE,
-        ConfidentialTokenError::RedemptionDenyRecordInvalid
-    );
-    let mut data: &[u8] = &info.try_borrow_data()?;
-    let record = zama_host::DenySubjectRecord::try_deserialize(&mut data)?;
-    require!(
-        record.bump == expected_bump && record.subject == subject,
-        ConfidentialTokenError::RedemptionDenyRecordInvalid
-    );
-    require!(
-        !record.denied,
-        ConfidentialTokenError::RedemptionSubjectDenied
     );
     Ok(())
 }

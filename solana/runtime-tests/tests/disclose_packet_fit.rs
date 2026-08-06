@@ -25,12 +25,13 @@ fn event_authority(program_id: Pubkey) -> Pubkey {
     Pubkey::find_program_address(&[b"__event_authority"], &program_id).0
 }
 
-/// Builds a `disclose_secp` legacy transaction carrying `sig_count` signatures and an MMR proof of
+/// Builds a `disclose_secp` transaction carrying `sig_count` signatures and an MMR proof of
 /// `sibling_count` siblings over the real account layout, and returns its bincode-serialized wire
 /// size.
 fn disclose_secp_tx_size(sig_count: usize, sibling_count: usize) -> usize {
     let owner = Pubkey::new_unique();
     let mint = Pubkey::new_unique();
+    let token_account = Pubkey::new_unique();
     let encrypted_value = Pubkey::new_unique();
     let host_config = host::host_config_address().0;
     let kms_context = host::kms_context_address(1).0;
@@ -42,6 +43,7 @@ fn disclose_secp_tx_size(sig_count: usize, sibling_count: usize) -> usize {
         token::id(),
         token::accounts::DiscloseSecp {
             mint,
+            token_account: Some(token_account),
             encrypted_value,
             host_config,
             kms_context,
@@ -50,6 +52,7 @@ fn disclose_secp_tx_size(sig_count: usize, sibling_count: usize) -> usize {
             program: token::id(),
         },
         token::instruction::DiscloseSecp {
+            kind: token::DisclosedValueKind::Balance,
             handle: [0u8; 32],
             cleartext: [0u8; 32],
             signatures: vec![[0u8; 65]; sig_count],
@@ -67,7 +70,7 @@ fn disclose_secp_tx_size(sig_count: usize, sibling_count: usize) -> usize {
 /// Builds a `redeem_burned_amount` legacy transaction carrying `sig_count` signatures and an MMR
 /// proof of `sibling_count` siblings over the real account layout, and returns its
 /// bincode-serialized wire size. Redeem carries the same cert + MMR proof payload as `disclose_secp`
-/// but over the larger burn-redemption account list (vault, destination, replay marker, ...), so its
+/// but over the larger burn-redemption account list (vault, destination, pending_burn, ...), so its
 /// single-packet envelope is the binding one for the shared verifier path.
 fn redeem_burned_amount_tx_size(sig_count: usize, sibling_count: usize) -> usize {
     let owner = Pubkey::new_unique();
@@ -89,13 +92,11 @@ fn redeem_burned_amount_tx_size(sig_count: usize, sibling_count: usize) -> usize
             destination_usdc: Pubkey::new_unique(),
             vault_authority: Pubkey::new_unique(),
             burned_amount_value: Pubkey::new_unique(),
-            redemption_record: Pubkey::new_unique(),
+            pending_burn: Pubkey::new_unique(),
             host_config,
             kms_context,
-            deny_subject_record: None,
             zama_program: host::id(),
             token_program: Pubkey::new_unique(),
-            system_program: Pubkey::new_unique(),
             event_authority: event_authority(token::id()),
             program: token::id(),
         },
@@ -118,7 +119,7 @@ fn redeem_burned_amount_tx_size(sig_count: usize, sibling_count: usize) -> usize
 fn redeem_burned_amount_threshold_fit_table() {
     // Companion to `disclose_secp_threshold_fit_table` for the burn-redemption path introduced by
     // #3243, which reuses the same stateless-verifier cert + MMR proof payload. Redeem carries a
-    // larger fixed account list than disclose (vault, destination, replay marker, deny-record slot),
+    // larger fixed account list than disclose (vault, destination, and pending_burn),
     // so at the same (t, depth) it is ~242B larger and its single-packet envelope is strictly
     // tighter. Measured fitting corner: t=7 at depth 0 (1159B); t=7/depth-10 already overflows
     // (1479B, over by 247), and t>=9 overflows before the proof. Same qualitative boundary as

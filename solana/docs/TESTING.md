@@ -59,7 +59,7 @@ cargo test --workspace
 # Individual test targets (use --nocapture to see program logs from the Mollusk targets):
 cargo test -p zama-solana-runtime-tests --test operator_conformance
 cargo test -p zama-solana-runtime-tests --test operator_conformance binary::add::u128::scalar -- --exact
-cargo test -p zama-solana-runtime-tests --test plan_contracts
+cargo test -p zama-solana-runtime-tests --test execution_contracts
 cargo test -p zama-solana-runtime-tests --test operator_mollusk_conformance
 cargo test -p zama-solana-runtime-tests --test operator_mollusk_conformance encrypted_scalar_add_executes_then_reads_cleartext_outcome -- --exact
 cargo test -p zama-solana-runtime-tests --test host_mollusk -- --nocapture

@@ -156,9 +156,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // CONSUME_REDEEM: redeem a KMS-certified burned amount from the SPL vault via the thin token
     // `redeem_burned_amount`, which CPIs the stateless host `verify_public_decrypt` (KMS
     // PublicDecryptVerification EIP-712 cert verified against the live cert-named KMS context + an MMR
-    // public-leaf inclusion proof), consults the deny-list at payout, writes the permanent per-handle
-    // replay marker, and releases the cleartext amount of underlying USDC to the owner. The
-    // vault-releasing Consume seam; no request witness (fhevm-internal#1763).
+    // public-leaf inclusion proof), consumes the current handle-bound PendingBurn exactly once,
+    // and releases the cleartext amount of underlying USDC to the owner. There is no request
+    // witness or separate replay marker (fhevm-internal#1763).
     if std::env::var("CONSUME_REDEEM").is_ok() {
         consume_redeem(&token, &payer, host_config)?;
         return Ok(());
@@ -545,11 +545,24 @@ fn allow_for_decryption(
     host_config: Pubkey,
     encrypted_value: Pubkey,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let encrypted_value_account = fetch_encrypted_value(host, encrypted_value)?;
+    // Host allow_subjects / remove_subject require signer == EncryptedValue.encrypted_value_account_authority
+    // (fhevm-internal#1862 #13). Host-demo values bind that authority to the payer wallet;
+    // token-scoped values must go through confidential-token's PDA-signed CPI wrappers.
+    let account = encrypted_value_account.encrypted_value_account_authority;
+    if account != payer.pubkey() {
+        return Err(format!(
+            "allow_subjects authority must be EncryptedValue.encrypted_value_account_authority ({account}); \
+             payer is {}. For token-scoped values use allow_token_account_subjects.",
+            payer.pubkey()
+        )
+        .into());
+    }
     let grant_sig = host
         .request()
         .accounts(zama_host::accounts::AllowEncryptedValueSubjects {
             payer: payer.pubkey(),
-            authority: payer.pubkey(),
+            authority: account,
             encrypted_value,
             host_config,
             deny_subject_record: None,
@@ -561,12 +574,7 @@ fn allow_for_decryption(
         .send()?;
     println!("OK allow_subjects (idempotent membership): {grant_sig}");
 
-    let (handle, _) = existing_value_account_state(host, encrypted_value)?.ok_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "encrypted value account missing before make_handle_public",
-        )
-    })?;
+    let handle = encrypted_value_account.current_handle;
     let public_sig = host
         .request()
         .accounts(zama_host::accounts::MakeEncryptedValueHandlePublic {
@@ -574,7 +582,6 @@ fn allow_for_decryption(
             authority: payer.pubkey(),
             encrypted_value,
             host_config,
-            deny_subject_record: None,
             system_program: system_program::ID,
         })
         .args(zama_host::instruction::MakeHandlePublic { handle })
@@ -1229,51 +1236,51 @@ fn fhe_execute_verified_input_add(
     Ok(())
 }
 
-/// Consume step 1: seal a token amount's current handle publicly decryptable by calling the host
-/// `make_handle_public` instruction directly (fhevm-internal#1704 / DD-040). The DisclosureRequest
+/// Consume step 1: seal a token amount's current handle through the owner-authorized token wrapper,
+/// which validates the state field and signs the Host CPI as the token-account PDA. The DisclosureRequest
 /// witness is gone: the sealed public-decrypt leaf IS the request, there is no per-request PDA, no
-/// KMS-context pin, and no expiry. The caller is re-added idempotently first so it is a currently
-/// allowed subject (make_handle_public requires that). Inputs via env: TS_ACL, TS_HANDLE.
+/// KMS-context pin, and no expiry. Inputs via env: MINT, TS_ACL, TS_HANDLE.
 fn consume_seal(
     host: &Program<Rc<Keypair>>,
-    _token: &Program<Rc<Keypair>>,
+    token: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,
     host_config: Pubkey,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let mint = Pubkey::from_str(&std::env::var("MINT")?)?;
     let ts_acl = Pubkey::from_str(&std::env::var("TS_ACL")?)?;
     let handle: [u8; 32] = hexdec(&std::env::var("TS_HANDLE")?)
         .try_into()
         .expect("TS_HANDLE");
 
-    let grant_sig = host
-        .request()
-        .accounts(zama_host::accounts::AllowEncryptedValueSubjects {
-            payer: payer.pubkey(),
-            authority: payer.pubkey(),
-            encrypted_value: ts_acl,
-            host_config,
-            deny_subject_record: None,
-            system_program: system_program::ID,
-        })
-        .args(zama_host::instruction::AllowSubjects {
-            subjects: vec![payer.pubkey()],
-        })
-        .send()?;
-    println!("OK allow_subjects (idempotent membership): {grant_sig}");
+    let encrypted_value_account = fetch_encrypted_value(host, ts_acl)?;
+    let token_account = encrypted_value_account.encrypted_value_account_authority;
+    let kind = if encrypted_value_account.label == confidential_token::encrypted_balance_label() {
+        confidential_token::DisclosedValueKind::Balance
+    } else if encrypted_value_account.label
+        == confidential_token::encrypted_transferred_amount_label()
+    {
+        confidential_token::DisclosedValueKind::TransferredAmount
+    } else if encrypted_value_account.label == confidential_token::encrypted_burned_amount_label() {
+        confidential_token::DisclosedValueKind::BurnedAmount
+    } else {
+        return Err("TS_ACL is not a token-account disclosure field".into());
+    };
 
-    let sig2 = host
+    let sig2 = token
         .request()
-        .accounts(zama_host::accounts::MakeEncryptedValueHandlePublic {
+        .accounts(confidential_token::accounts::MakeTokenAccountHandlePublic {
             payer: payer.pubkey(),
-            authority: payer.pubkey(),
+            owner: payer.pubkey(),
+            mint,
+            token_account,
             encrypted_value: ts_acl,
             host_config,
-            deny_subject_record: None,
+            zama_program: zama_host::ID,
             system_program: system_program::ID,
         })
-        .args(zama_host::instruction::MakeHandlePublic { handle })
+        .args(confidential_token::instruction::MakeTokenAccountHandlePublic { kind, handle })
         .send()?;
-    println!("OK make_handle_public: {sig2}  (handle released for public decrypt)");
+    println!("OK make_handle_public: {sig2}  (ciphertext released for public decrypt)");
     Ok(())
 }
 
@@ -1284,7 +1291,7 @@ fn consume_seal(
 /// marker). Inputs via env: MINT, TS_ACL, TS_HANDLE, CLEARTEXT, KMS_SIG, EXTRA, KMS_CTX_ID, PROOF.
 fn consume_disclose(
     token: &Program<Rc<Keypair>>,
-    _payer: &Rc<Keypair>,
+    payer: &Rc<Keypair>,
     host_config: Pubkey,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mint = Pubkey::from_str(&std::env::var("MINT")?)?;
@@ -1316,11 +1323,13 @@ fn consume_disclose(
     );
     let (token_evt, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &confidential_token::ID);
+    let (token_account, _) = confidential_token::token_account_address(mint, payer.pubkey());
 
     let sig = token
         .request()
         .accounts(confidential_token::accounts::DiscloseSecp {
             mint,
+            token_account: Some(token_account),
             encrypted_value: ts_acl,
             host_config,
             kms_context,
@@ -1329,6 +1338,7 @@ fn consume_disclose(
             program: confidential_token::ID,
         })
         .args(confidential_token::instruction::DiscloseSecp {
+            kind: confidential_token::DisclosedValueKind::BurnedAmount,
             handle,
             cleartext,
             signatures: vec![kms_sig],
@@ -1363,7 +1373,8 @@ fn consume_wrap(
     let ata_prog = Pubkey::from_str("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL")?;
 
     let (vault_authority, _) = confidential_token::vault_authority_address(mint);
-    let vault_usdc = confidential_token::vault_token_account_address(mint, underlying);
+    let vault_usdc =
+        confidential_token::vault_token_account_address(mint, underlying, spl_token_id);
     let (compute_signer, _) = confidential_token::compute_signer_address(mint);
     let (token_account, balance_value) =
         initialize_token_account_if_missing(token, payer, host_config, mint)?;
@@ -1493,7 +1504,7 @@ fn initialize_token_account_if_missing(
             event_authority,
             program: confidential_token::ID,
         })
-        .args(confidential_token::instruction::InitializeTokenAccount { initial_balance: 0 })
+        .args(confidential_token::instruction::InitializeTokenAccount {})
         .send()?;
     println!("OK initialize_token_account: {signature}");
     Ok((token_account, balance_value))
@@ -1502,9 +1513,10 @@ fn initialize_token_account_if_missing(
 /// Burns an encrypted amount from the confidential balance (confidential_burn): the heaviest
 /// FHE instruction — ge + sub + select + sub + sub across five zama-host CPIs. Reads the current
 /// balance/total-supply ACLs and next nonce sequences live from chain, takes a coprocessor-attested
-/// burn amount (fromExternal, via the relayer input-proof), then burns it. Produces the
-/// burned-amount handle (and ACL) the redeem path publicly decrypts and releases against the vault.
-/// MINT via env.
+/// burn amount (fromExternal, via the relayer input-proof), then burns it. Opens the token account's
+/// single `PendingBurn` (closed later by redeem or cancel). Produces
+/// the burned-amount handle (and ACL) the redeem path publicly decrypts and releases against the
+/// vault. MINT via env.
 fn consume_burn(
     token: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,
@@ -1566,6 +1578,10 @@ fn consume_burn(
         confidential_token::encrypted_burned_amount_label(),
     );
 
+    // One pending burn is allowed per token account. A new burn is rejected until this account is
+    // closed by redemption or cancellation.
+    let (pending_burn, _) = confidential_token::pending_burn_address(mint, token_account);
+
     // 3. confidential_burn — five FHE steps in one instruction; same CU raise and same
     // (inert, see wrap above) heap-frame request as wrap. SlotHashes entropy is only populated in real execution, so skip
     // preflight unless BURN_NO_PREFLIGHT forces an on-chain log capture.
@@ -1598,6 +1614,7 @@ fn consume_burn(
             balance_value,
             total_supply_value,
             burned_amount_value: burned_acl,
+            pending_burn,
             zama_event_authority: zama_evt,
             zama_program: zama_host::ID,
             host_config,
@@ -1628,11 +1645,12 @@ fn consume_burn(
 /// `redeem_burned_amount`, which CPIs the stateless host `verify_public_decrypt` (KMS
 /// PublicDecryptVerification EIP-712 cert verified against the live cert-named KMS context + an MMR
 /// public-leaf inclusion proof), asserts the proven handle equals the pinned burned handle and the
-/// certified cleartext equals the claimed amount, consults the deny-list at payout, writes the
-/// permanent per-handle replay marker, and releases the cleartext amount of underlying USDC to the
-/// owner. No request witness (fhevm-internal#1763). Inputs via env: MINT, UNDERLYING_MINT,
-/// BURNED_ACL, BURNED_HANDLE, CLEARTEXT, KMS_SIG, EXTRA, PROOF (borsh MmrInclusionProof for the
-/// burned handle's public-decrypt leaf), optional KMS_CTX_ID (default 1).
+/// certified cleartext equals the claimed amount, closes the token account's `PendingBurn`, and
+/// releases the cleartext amount of underlying USDC to the owner. The grant deny-list is not a
+/// settlement gate. No request witness (fhevm-internal#1763). Inputs via env: MINT,
+/// UNDERLYING_MINT, BURNED_ACL, BURNED_HANDLE,
+/// CLEARTEXT, KMS_SIG, EXTRA, PROOF (borsh MmrInclusionProof for the burned handle's public-decrypt
+/// leaf), optional KMS_CTX_ID (default 1).
 fn consume_redeem(
     token: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,
@@ -1666,25 +1684,17 @@ fn consume_redeem(
 
     let (token_account, _) = confidential_token::token_account_address(mint, owner);
     let (vault_authority, _) = confidential_token::vault_authority_address(mint);
-    let vault_usdc = confidential_token::vault_token_account_address(mint, underlying);
+    let vault_usdc =
+        confidential_token::vault_token_account_address(mint, underlying, spl_token_id);
     let (destination_usdc, _) = Pubkey::find_program_address(
         &[owner.as_ref(), spl_token_id.as_ref(), underlying.as_ref()],
         &ata_prog,
     );
-    let (redemption_record, _) = Pubkey::find_program_address(
-        &[b"burn-redemption", mint.as_ref(), burned_handle.as_ref()],
-        &confidential_token::ID,
-    );
+    let (pending_burn, _) = confidential_token::pending_burn_address(mint, token_account);
     let (kms_context, _) = Pubkey::find_program_address(
         &[zama_host::KMS_CONTEXT_SEED, &ctx_id.to_le_bytes()],
         &zama_host::ID,
     );
-    // Optional deny-list record for the signer: passed only when the host grant deny-list is enabled
-    // (DENY_SUBJECT_RECORD hex pubkey). Omitted (None) otherwise, matching the optional convention.
-    let deny_subject_record = std::env::var("DENY_SUBJECT_RECORD")
-        .ok()
-        .map(|s| Pubkey::from_str(&s))
-        .transpose()?;
     let (token_evt, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &confidential_token::ID);
 
@@ -1699,13 +1709,11 @@ fn consume_redeem(
             destination_usdc,
             vault_authority,
             burned_amount_value: burned_acl,
-            redemption_record,
+            pending_burn,
             host_config,
             kms_context,
-            deny_subject_record,
             zama_program: zama_host::ID,
             token_program: spl_token_id,
-            system_program: system_program::ID,
             event_authority: token_evt,
             program: confidential_token::ID,
         })
@@ -2749,6 +2757,7 @@ fn initialize_mint(
     host_config: Pubkey,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let underlying_mint = Pubkey::from_str(&std::env::var("UNDERLYING_MINT")?)?;
+    let token_program = token.rpc().get_account(&underlying_mint)?.owner;
     let mint = Keypair::new();
     let mint_pk = mint.pubkey();
 
@@ -2777,6 +2786,7 @@ fn initialize_mint(
             zama_event_authority,
             zama_program: zama_host::ID,
             host_config,
+            token_program,
             system_program: system_program::ID,
             hcu_block_meter: None,
             hcu_trusted_app_record: None,
