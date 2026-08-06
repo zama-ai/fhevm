@@ -236,7 +236,7 @@ describe('Decryption signature invalidation', function () {
       { kind: 'eoa', signer: signers.eve },
       {
         waitForTerminal: true,
-        timeoutMs: NEGATIVE_WINDOW_MS,
+        timeoutMs: REJECTION_WAIT_MS,
       },
     );
     // Signature is valid, so the relayer accepts; the invalidation check is
