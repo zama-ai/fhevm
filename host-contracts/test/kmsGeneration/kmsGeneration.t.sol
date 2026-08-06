@@ -1488,6 +1488,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         _doMigrationKeygenResponse(migrationPrepId, migrationRequestId, kmsPk0, kmsTxSender0);
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool sawMigrationKeygenRequest;
+        bool sawKeygenResponse;
         bool sawCompressedKeyMaterialAdded;
         for (uint256 i = 0; i < logs.length; i++) {
             assertTrue(
@@ -1503,12 +1504,21 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
                 assertEq(emittedKeyId, keyId);
                 sawMigrationKeygenRequest = true;
             }
+            if (logs[i].topics[0] == IKMSGeneration.KeygenResponse.selector) {
+                (uint256 requestId, , , ) = abi.decode(
+                    logs[i].data,
+                    (uint256, IKMSGeneration.KeyDigest[], bytes, address)
+                );
+                assertEq(requestId, migrationRequestId);
+                sawKeygenResponse = true;
+            }
             if (logs[i].topics[0] == IKMSGeneration.CompressedKeyMaterialAdded.selector) {
                 assertEq(uint256(logs[i].topics[1]), keyId);
                 sawCompressedKeyMaterialAdded = true;
             }
         }
         assertTrue(sawMigrationKeygenRequest);
+        assertTrue(sawKeygenResponse);
         assertTrue(sawCompressedKeyMaterialAdded);
 
         // Publication is not activation.
@@ -1549,6 +1559,25 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
             abi.encodeWithSelector(IKMSGeneration.MissingCompressedKeySetDigest.selector, migrationRequestId)
         );
         kmsGeneration.keygenResponse(migrationRequestId, digests, sig);
+    }
+
+    function test_abortMigrationOnlyBeforeRequestEmission() public {
+        (, uint256 keyId) = _runFullKeygenCycle();
+        vm.prank(owner);
+        kmsGeneration.migrateToCompressedKeySet(keyId);
+        uint256 migrationPrepId = PREP_KEYGEN_COUNTER_BASE + 2;
+
+        vm.prank(owner);
+        kmsGeneration.abortKeygen(migrationPrepId);
+
+        vm.prank(owner);
+        kmsGeneration.migrateToCompressedKeySet(keyId);
+        uint256 retryPrepId = PREP_KEYGEN_COUNTER_BASE + 3;
+        _doPrepKeygenResponse(retryPrepId, kmsPk0, kmsTxSender0);
+
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.AbortKeygenAlreadyDone.selector, retryPrepId));
+        kmsGeneration.abortKeygen(retryPrepId);
     }
 
     function test_revertMigrationKeygenForUngeneratedOrAbortedKey() public {

@@ -585,6 +585,9 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         // The prep request reaches consensus before the paired key request does.
         // Keep abort available until the key lifecycle itself is done.
         uint256 keyId = $.keygenIdPairs[prepKeygenId];
+        if ($.keyIdByMigrationRequestId[keyId] != 0 && $.isRequestDone[prepKeygenId]) {
+            revert AbortKeygenAlreadyDone(prepKeygenId);
+        }
         if ($.isRequestDone[keyId]) {
             revert AbortKeygenAlreadyDone(prepKeygenId);
         }
