@@ -11,8 +11,7 @@ use crate::kms_generation::database::{
     activate_ready_crs_activations, activate_ready_key_activations,
     all_pending_compressed_key_materials_to_download,
     all_pending_crs_activations_to_download,
-    all_pending_key_activations_to_download,
-    applied_compressed_key_material_receipts,
+    all_pending_key_activations_to_download, applied_compressed_key_materials,
     apply_ready_compressed_key_materials,
     cancel_orphaned_compressed_key_materials, cancel_orphaned_crs_activations,
     cancel_orphaned_key_activations,
@@ -185,25 +184,13 @@ pub async fn process_kms_generation_activations<
         apply_ready_compressed_key_materials(&mut tx).await?;
     activate_ready_crs_activations(&mut tx).await?;
     tx.commit().await?;
-    MATERIAL_APPLIED_BLOCK_GAUGE.reset();
-    for receipt in applied_compressed_key_material_receipts(&db_pool).await? {
-        let chain_id = receipt.chain_id.to_string();
-        let block_hash = hex::encode(receipt.block_hash);
-        let transaction_hash = receipt
-            .transaction_hash
-            .map(hex::encode)
-            .unwrap_or_default();
-        let key_id = hex::encode(receipt.key_id);
-        let key_digest = hex::encode(receipt.key_digest);
+    for material in applied_compressed_key_materials(&db_pool).await? {
+        let chain_id = material.chain_id.to_string();
+        let key_id = hex::encode(material.key_id);
+        let key_digest = hex::encode(material.key_digest);
         MATERIAL_APPLIED_BLOCK_GAUGE
-            .with_label_values(&[
-                &chain_id,
-                &block_hash,
-                &transaction_hash,
-                &key_id,
-                &key_digest,
-            ])
-            .set(receipt.block_number);
+            .with_label_values(&[&chain_id, &key_id, &key_digest])
+            .set(material.block_number);
     }
     for material in applied_compressed_materials {
         info!(
@@ -217,7 +204,7 @@ pub async fn process_kms_generation_activations<
         );
     }
 
-    // second we download and check keys and preprocess in background in advance so it's ready when block is finalized
+    // second we download and check keys
     // rows are locked so there's no double work
     let mut tx = db_pool.begin().await?;
     let key_activations =

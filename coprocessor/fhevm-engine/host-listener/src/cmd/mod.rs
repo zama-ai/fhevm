@@ -161,7 +161,7 @@ pub struct Args {
     #[arg(
         long,
         default_value_t = 20,
-        help = "Maximum number of blocks to wait before a block is finalized"
+        help = "Deprecated: finality follows the host RPC finalized block"
     )]
     pub catchup_finalization_in_blocks: u64,
 
@@ -216,7 +216,6 @@ pub struct InfiniteLogIter {
     pub tick_block: HeartBeat,
     reorg_maximum_duration_in_blocks: u64, // in blocks
     block_history: BlockHistory,           // to detect reorgs
-    catchup_finalization_in_blocks: u64,
     timeout_request_websocket: u64,
 }
 
@@ -294,7 +293,6 @@ impl InfiniteLogIter {
             block_history: BlockHistory::new(
                 args.reorg_maximum_duration_in_blocks as usize,
             ),
-            catchup_finalization_in_blocks: args.catchup_finalization_in_blocks,
             timeout_request_websocket: args.timeout_request_websocket,
         }
     }
@@ -500,18 +498,17 @@ impl InfiniteLogIter {
             info!("Catchup no next get_logs step");
             return;
         }
-        let finalized_block =
-            if let Some(current_block) = self.block_history.tip() {
-                // non finalized block will be post-poned until they are finalized
-                current_block
-                    .number
-                    .saturating_sub(self.catchup_finalization_in_blocks)
-            } else {
-                // happen at service start, assuming everything is finalized
-                info!("Unknown top block, assuming full finalized catchup");
-                from_block + self.catchup_paging
-            };
-        if from_block >= finalized_block {
+        let finalized_block = match self.get_finalized_block().await {
+            Ok(block) => block.header.number,
+            Err(err) => {
+                error!(
+                    error = %err,
+                    "Cannot catch up without the RPC finalized block"
+                );
+                return;
+            }
+        };
+        if from_block > finalized_block {
             // non finalized blocks are post-poned
             info!("Post-pone catchup");
             return;
@@ -573,6 +570,10 @@ impl InfiniteLogIter {
 
     async fn get_current_block(&self) -> Result<Block> {
         self.get_block_by_id(BlockId::latest()).await
+    }
+
+    async fn get_finalized_block(&self) -> Result<Block> {
+        self.get_block_by_id(BlockId::finalized()).await
     }
 
     async fn get_block_by_id(&self, block_id: BlockId) -> Result<Block> {
@@ -1262,13 +1263,21 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
                     .max(log_iter.last_valid_block.unwrap_or(0)),
             );
             if !block_logs.catchup {
-                update_finalized_blocks(
-                    &mut db,
-                    &mut log_iter,
-                    block_logs.summary.number,
-                    args.catchup_finalization_in_blocks,
-                )
-                .await;
+                match log_iter.get_finalized_block().await {
+                    Ok(block) => {
+                        update_finalized_blocks(
+                            &mut db,
+                            &mut log_iter,
+                            block.header.number,
+                            0,
+                        )
+                        .await;
+                    }
+                    Err(err) => error!(
+                        error = %err,
+                        "Cannot finalize host blocks without the RPC finalized block"
+                    ),
+                }
             }
             if kms_generation_address.is_some() {
                 background_tasks.spawn(process_kms_generation_activations(
@@ -1334,7 +1343,6 @@ mod tests {
             tick_block: HeartBeat::new(),
             reorg_maximum_duration_in_blocks: reorg_max,
             block_history: BlockHistory::new(reorg_max as usize),
-            catchup_finalization_in_blocks: 20,
             timeout_request_websocket: 15,
         }
     }

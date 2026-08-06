@@ -71,13 +71,7 @@ pub(crate) static MATERIAL_APPLIED_BLOCK_GAUGE: LazyLock<IntGaugeVec> =
         register_int_gauge_vec!(
             "coprocessor_host_listener_compressed_key_material_applied_block",
             "Finalized block of the latest compressed key material record applied by the host listener",
-            &[
-                "chain_id",
-                "block_hash",
-                "transaction_hash",
-                "key_id",
-                "key_digest",
-            ]
+            &["chain_id", "key_id", "key_digest"]
         )
         .unwrap()
     });

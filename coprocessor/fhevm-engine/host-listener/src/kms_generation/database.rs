@@ -37,11 +37,9 @@ pub(crate) struct PendingCompressedKeyMaterial {
 }
 
 #[derive(Debug, sqlx::FromRow)]
-pub(crate) struct AppliedCompressedKeyMaterialReceipt {
+pub(crate) struct AppliedCompressedKeyMaterial {
     pub chain_id: i64,
-    pub block_hash: Vec<u8>,
     pub block_number: i64,
-    pub transaction_hash: Option<Vec<u8>>,
     pub key_id: Vec<u8>,
     pub key_digest: Vec<u8>,
 }
@@ -254,7 +252,7 @@ pub(crate) async fn cancel_orphaned_compressed_key_materials(
         UPDATE kms_compressed_key_material_events AS e
         SET status = 'cancelled', last_updated_at = NOW()
         FROM host_chain_blocks_valid AS b
-        WHERE e.status IN ('pending', 'ready', 'applied')
+        WHERE e.status IN ('pending', 'ready')
           AND e.chain_id = b.chain_id
           AND e.block_hash = b.block_hash
           AND b.block_status = 'orphaned'
@@ -322,17 +320,14 @@ pub(crate) async fn apply_ready_compressed_key_materials(
     Ok(rows)
 }
 
-pub(crate) async fn applied_compressed_key_material_receipts(
+pub(crate) async fn applied_compressed_key_materials(
     db_pool: &Pool<Postgres>,
-) -> anyhow::Result<Vec<AppliedCompressedKeyMaterialReceipt>> {
+) -> anyhow::Result<Vec<AppliedCompressedKeyMaterial>> {
     Ok(sqlx::query_as(
         r#"
-        SELECT e.chain_id, e.block_hash, e.block_number, e.transaction_hash,
-               e.key_id, e.key_digest
+        SELECT e.chain_id, e.block_number, e.key_id, e.key_digest
         FROM kms_compressed_key_material_events AS e
-        INNER JOIN host_chain_blocks_valid AS b
-          ON e.chain_id = b.chain_id AND e.block_hash = b.block_hash
-        WHERE e.status = 'applied' AND b.block_status = 'finalized'
+        WHERE e.status = 'applied'
         "#,
     )
     .fetch_all(db_pool)
@@ -623,11 +618,15 @@ pub(crate) async fn all_pending_compressed_key_materials_to_download(
 ) -> anyhow::Result<Vec<PendingCompressedKeyMaterial>> {
     Ok(sqlx::query_as::<_, PendingCompressedKeyMaterial>(
         r#"
-        SELECT chain_id, block_hash, block_number, transaction_hash,
-               key_id, key_digest, storage_urls
-        FROM kms_compressed_key_material_events
-        WHERE status = 'pending' AND key_content IS NULL
-        FOR UPDATE SKIP LOCKED
+        SELECT e.chain_id, e.block_hash, e.block_number, e.transaction_hash,
+               e.key_id, e.key_digest, e.storage_urls
+        FROM kms_compressed_key_material_events AS e
+        INNER JOIN host_chain_blocks_valid AS b
+          ON e.chain_id = b.chain_id AND e.block_hash = b.block_hash
+        WHERE e.status = 'pending'
+          AND e.key_content IS NULL
+          AND b.block_status = 'finalized'
+        FOR UPDATE OF e SKIP LOCKED
         "#,
     )
     .fetch_all(tx.deref_mut())
@@ -982,7 +981,7 @@ mod tests {
         sqlx::query(
             "INSERT INTO host_chain_blocks_valid
              (chain_id, block_hash, block_number, block_status)
-             VALUES ($1, $2, 10, 'finalized')",
+             VALUES ($1, $2, 10, 'pending')",
         )
         .bind(chain_id)
         .bind(&migration_block)
@@ -990,14 +989,43 @@ mod tests {
         .await?;
         sqlx::query(
             "INSERT INTO kms_compressed_key_material_events
-             (chain_id, block_hash, block_number, key_id, key_digest, storage_urls, key_content, status)
-             VALUES ($1, $2, 10, $3, $4, ARRAY[]::TEXT[], $5, 'ready')",
+             (chain_id, block_hash, block_number, key_id, key_digest, storage_urls)
+             VALUES ($1, $2, 10, $3, $4, ARRAY[]::TEXT[])",
         )
         .bind(chain_id)
         .bind(&migration_block)
         .bind(&key_id)
         .bind(vec![4_u8; 32])
+        .execute(&pool)
+        .await?;
+
+        let mut tx = pool.begin().await?;
+        assert!(all_pending_compressed_key_materials_to_download(&mut tx)
+            .await?
+            .is_empty());
+        tx.commit().await?;
+        sqlx::query(
+            "UPDATE host_chain_blocks_valid SET block_status = 'finalized'
+             WHERE chain_id = $1 AND block_hash = $2",
+        )
+        .bind(chain_id)
+        .bind(&migration_block)
+        .execute(&pool)
+        .await?;
+        let mut tx = pool.begin().await?;
+        assert_eq!(
+            all_pending_compressed_key_materials_to_download(&mut tx)
+                .await?
+                .len(),
+            1
+        );
+        tx.rollback().await?;
+        sqlx::query(
+            "UPDATE kms_compressed_key_material_events
+             SET key_content = $1, status = 'ready' WHERE key_id = $2",
+        )
         .bind(&compressed)
+        .bind(&key_id)
         .execute(&pool)
         .await?;
 
@@ -1027,34 +1055,11 @@ mod tests {
         .fetch_one(&pool)
         .await?;
         assert_eq!(status, "applied");
-        let receipts = applied_compressed_key_material_receipts(&pool).await?;
-        assert_eq!(receipts.len(), 1);
-        assert_eq!(receipts[0].chain_id, chain_id);
-        assert_eq!(receipts[0].block_hash, migration_block);
-        assert_eq!(receipts[0].block_number, 10);
-        assert_eq!(receipts[0].key_id, key_id);
-
-        sqlx::query(
-            "UPDATE host_chain_blocks_valid SET block_status = 'orphaned'
-             WHERE chain_id = $1 AND block_hash = $2",
-        )
-        .bind(chain_id)
-        .bind(&migration_block)
-        .execute(&pool)
-        .await?;
-        let mut tx = pool.begin().await?;
-        assert_eq!(cancel_orphaned_compressed_key_materials(&mut tx).await?, 1);
-        tx.commit().await?;
-        let status = sqlx::query_scalar::<_, String>(
-            "SELECT status FROM kms_compressed_key_material_events WHERE key_id = $1",
-        )
-        .bind(&key_id)
-        .fetch_one(&pool)
-        .await?;
-        assert_eq!(status, "cancelled");
-        assert!(applied_compressed_key_material_receipts(&pool)
-            .await?
-            .is_empty());
+        let applied = applied_compressed_key_materials(&pool).await?;
+        assert_eq!(applied.len(), 1);
+        assert_eq!(applied[0].chain_id, chain_id);
+        assert_eq!(applied[0].block_number, 10);
+        assert_eq!(applied[0].key_id, key_id);
         Ok(())
     }
 }

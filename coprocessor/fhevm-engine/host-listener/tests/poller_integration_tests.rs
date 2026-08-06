@@ -1,8 +1,10 @@
 use std::time::Duration;
 
+use alloy::eips::BlockId;
 use alloy::network::EthereumWallet;
 use alloy::node_bindings::Anvil;
 use alloy::primitives::U256;
+use alloy::providers::ext::AnvilApi;
 use alloy::providers::{Provider, ProviderBuilder, WalletProvider, WsConnect};
 use alloy::signers::local::PrivateKeySigner;
 use alloy::sol;
@@ -40,8 +42,7 @@ sol!(
 #[serial(db)]
 async fn poller_state_round_trip() -> Result<(), Box<dyn std::error::Error>> {
     let db_instance =
-        test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
-            .await?;
+        test_harness::instance::setup_test_db(ImportMode::None).await?;
     let chain_id = ChainId::try_from(42_u64).unwrap();
 
     let db_url: DatabaseURL = db_instance.db_url.clone();
@@ -73,11 +74,10 @@ enum EventKind {
 
 #[tokio::test]
 #[serial(db)]
-async fn poller_catches_up_to_safe_tip(
+async fn poller_catches_up_to_rpc_finalized_block(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let db_instance =
-        test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
-            .await?;
+        test_harness::instance::setup_test_db(ImportMode::None).await?;
     let chain_id = ChainId::try_from(42_u64).unwrap();
 
     let db_url: DatabaseURL = db_instance.db_url.clone();
@@ -152,10 +152,15 @@ async fn poller_catches_up_to_safe_tip(
             EventKind::Acl,
         ));
     }
+    provider.anvil_mine(Some(64), None).await?;
 
     let latest_block = provider.get_block_number().await?;
-    let finality_lag = 2u64;
-    let safe_tip = latest_block.saturating_sub(finality_lag);
+    let safe_tip = provider
+        .get_block(BlockId::finalized())
+        .await?
+        .expect("Anvil exposes the finalized block")
+        .header
+        .number;
 
     let expected_tfhe = receipts
         .iter()
@@ -176,7 +181,7 @@ async fn poller_catches_up_to_safe_tip(
         protocol_config_address: Some(alloy::primitives::Address::ZERO),
         confidential_bridge_address: None,
         database_url: db_url.clone(),
-        finality_lag,
+        finality_lag: u64::MAX,
         batch_size: 2,
         poll_interval: Duration::from_millis(200),
         retry_interval: Duration::from_millis(200),
