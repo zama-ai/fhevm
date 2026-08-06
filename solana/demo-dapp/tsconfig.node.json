@@ -7,7 +7,10 @@
     "allowSyntheticDefaultImports": true,
     "strict": true,
     "noEmit": true,
-    "tsBuildInfoFile": "./node_modules/.cache/tsconfig.node.tsbuildinfo"
+    "tsBuildInfoFile": "./node_modules/.cache/tsconfig.node.tsbuildinfo",
+    "paths": {
+      "@sdk-src/*": ["./node_modules/@fhevm/sdk/_types/*"]
+    }
   },
   "include": [
     "vite.config.ts",
@@ -20,6 +23,7 @@
     "src/sendTransaction.ts",
     "src/settlement.ts",
     "src/transactionSimulation.ts",
+    "src/vault/**/*.ts",
     "src/vaultRoots.ts",
     "src/yieldPolicy.ts",
     "../../test-suite/fhevm/demo/authorization.ts"

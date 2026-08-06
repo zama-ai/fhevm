@@ -42,6 +42,11 @@ jobs:
             - gateway-contracts/rust_bindings/**
             - host-contracts/rust_bindings/**
             - shared/user-decryption-signature/**
+            # `zama-solana-acl` is a path dependency of this workspace (Cargo.toml), so a change to
+            # it alone can break these crates while matching no path above. It did: renaming an
+            # `EncryptedValue` field broke two `#[cfg(test)]` sites in kms-worker, and this workflow
+            # only caught it because the same PR happened to touch kms-connector/crates.
+            - solana/crates/zama-solana-acl/**
 
   test-connector:
     name: kms-connector-tests/test-connector (bpr)

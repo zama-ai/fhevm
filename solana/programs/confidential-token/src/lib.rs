@@ -30,9 +30,6 @@ pub use constants::*;
 pub use errors::*;
 /// Re-export events and instruction argument enums for generated clients and tests.
 pub use events::*;
-/// The random-amount PoC helper account context (gated behind `poc`, see below).
-#[cfg(feature = "poc")]
-pub use instructions::CreateRandomAmount;
 use instructions::*;
 /// Re-export instruction account contexts for compatibility with existing tests.
 pub use instructions::{
@@ -63,34 +60,12 @@ pub mod confidential_token {
         instructions::initialize_token_account(ctx, initial_balance)
     }
 
-    /// Creates a token-scoped random encrypted amount. Vestigial PoC/demo helper: production
-    /// transfers and burns take a coprocessor-attested external amount (fromExternal), not a random
-    /// handle. Gated behind the `poc` feature so it never ships in the production IDL.
-    #[cfg(feature = "poc")]
-    pub fn create_random_amount<'info>(
-        ctx: Context<'info, CreateRandomAmount<'info>>,
-        amount_kind: ConfidentialAmountKind,
-    ) -> Result<()> {
-        instructions::create_random_amount(ctx, amount_kind)
-    }
-
-    /// Creates a token-scoped bounded random encrypted amount. Vestigial PoC/demo helper gated
-    /// behind the `poc` feature with `create_random_amount`.
-    #[cfg(feature = "poc")]
-    pub fn create_random_bounded_amount<'info>(
-        ctx: Context<'info, CreateRandomAmount<'info>>,
-        amount_kind: ConfidentialAmountKind,
-        upper_bound: [u8; 32],
-    ) -> Result<()> {
-        instructions::create_random_bounded_amount(ctx, amount_kind, upper_bound)
-    }
-
-    /// Escrows public USDC and rotates the confidential balance by `amount`.
+    /// Escrows public USDC and updates the confidential balance by `amount`.
     pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Result<()> {
         instructions::wrap_usdc(ctx, amount)
     }
 
-    /// Burns an encrypted amount by rotating the account balance and encrypted total supply.
+    /// Burns an encrypted amount by updating the account balance and encrypted total supply.
     pub fn confidential_burn<'info>(
         ctx: Context<'info, ConfidentialBurn<'info>>,
         amount_attestation: zama_host::CoprocessorInputAttestation,
@@ -101,9 +76,9 @@ pub mod confidential_token {
     /// Burns an encrypted amount taken from an existing on-chain `EncryptedValue` (a computed or
     /// received handle) instead of a freshly attested client-side encryption — the burn-side analog
     /// of `confidential_transfer_from_value` (fhevm-internal#1755). The batcher uses this to burn a
-    /// batch's computed encrypted total, then requests the KMS burn certificate. The signing owner
+    /// execution's computed encrypted total, then requests the KMS burn certificate. The signing owner
     /// must be in the amount value's subject set (the token spend gate); the amount is spent
-    /// read-only, and the burned-amount output is born publicly decryptable exactly as in
+    /// read-only, and the burned-amount output is created publicly decryptable exactly as in
     /// `confidential_burn`, so `redeem_burned_amount` consumes it unchanged.
     pub fn confidential_burn_from_value<'info>(
         ctx: Context<'info, ConfidentialBurnFromValue<'info>>,
@@ -111,7 +86,7 @@ pub mod confidential_token {
         instructions::confidential_burn_from_value(ctx)
     }
 
-    /// Transfers an encrypted amount by rotating the sender and recipient balance handles.
+    /// Transfers an encrypted amount by updating the sender and recipient balance handles.
     pub fn confidential_transfer<'info>(
         ctx: Context<'info, ConfidentialTransfer<'info>>,
         amount_attestation: zama_host::CoprocessorInputAttestation,

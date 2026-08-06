@@ -155,7 +155,7 @@ contract Decryption is
      * @dev The KMS Connector authorizes a Solana request against a single atomic
      * `getMultipleAccounts` snapshot, and a standard Solana RPC node serves at most 100 accounts
      * per call (agave's `--rpc-max-multiple-accounts` default). The worst-case request needs
-     * 3 accounts per entry (its lineage account plus two delegation rows) plus the signer's
+     * 3 accounts per entry (its encrypted value account plus two delegation rows) plus the signer's
      * permit-invalidation record: `3 * N + 1 <= 100` gives `N <= 33`. Enforced at admission,
      * before the fee, so a request the Connector cannot read in one snapshot is never accepted
      * or paid for. Counts list entries, not distinct handles, matching the Connector's own bound.

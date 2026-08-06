@@ -13,9 +13,11 @@
 //! ## Act-once IS enforced here
 //!
 //! Unlike disclosure, redemption moves real value, so it cannot be idempotent: the per-handle
-//! write-once, never-closed `burn-redemption` marker PDA is the single durable "paid out" bit. A
+//! write-once, never-closed `burn-redemption` marker PDA is the single persistent "paid out" bit. A
 //! second redeem of the same burned handle fails when Anchor tries to `init` the already-initialized
-//! marker.
+//! marker. This is the reference shape for the act-once rule stated at
+//! `zama_host::instructions::verify_public_decrypt` (INVARIANTS #24); the marker is never closed,
+//! because closing it would make the payout replayable.
 //!
 //! ## Deny check at payout
 //!
@@ -62,7 +64,7 @@ pub struct RedeemBurnedAmount<'info> {
     /// account/owner by `assert_burned_amount_value_account`; its canonical PDA, layout, host ownership,
     /// and the exact-handle MMR inclusion proof are validated by the `verify_public_decrypt` CPI.
     pub burned_amount_value: Box<Account<'info, zama_host::EncryptedValue>>,
-    /// Replay marker for this burned handle: write-once, never closed, the sole durable "paid out"
+    /// Replay marker for this burned handle: write-once, never closed, the sole persistent "paid out"
     /// bit for `(mint, burned_handle)`.
     #[account(
         init,
@@ -136,7 +138,7 @@ pub fn redeem_burned_amount(
     )?;
 
     // ValueAccount binding: the burned handle need not be current. The burn already made it publicly
-    // decryptable (DD-036 / Vector 2), so a historical handle superseded by a later burn stays
+    // decryptable (DD-036 / Vector 2), so a historical handle replaced by a later burn stays
     // redeemable; the exact-handle MMR public-decrypt proof is checked inside the verifier CPI.
     assert_burned_amount_value_account(
         &ctx.accounts.burned_amount_value,

@@ -31,6 +31,14 @@ jobs:
               - .github/workflows/coprocessor-cargo-tests.yml
               - coprocessor/fhevm-engine/**
               - coprocessor/proto/**
+              # Path dependencies of this workspace: host-listener builds against zama-host and
+              # zama-solana-acl, and tfhe-worker dev-depends on confidential-token. A Solana-only
+              # change can therefore break these crates while matching no path above — renaming a
+              # label helper broke a `#[cfg(test)]` call in tfhe-worker's solana_poc tests, and this
+              # workflow ran only because the same PR also touched coprocessor/.
+              - solana/programs/zama-host/**
+              - solana/programs/confidential-token/**
+              - solana/crates/zama-solana-acl/**
   cargo-tests:
     name: coprocessor-cargo-test/${{ matrix.service }}
     needs: check-changes

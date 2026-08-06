@@ -1,29 +1,30 @@
-//! Routing and delegation: which identity an entry authorizes as, and what a delegation record
-//! has to say for a delegated entry to stand.
+//! Routing and delegation: which identity an entry authorizes as, and what a delegation record has
+//! to say for a delegated entry to stand.
 //!
 //! Routing is per entry and decided by one comparison: the entry's owner against the permit's
-//! signer. Equal means the signer is the subject whose access is proven; unequal means the owner
-//! is that subject and, additionally, that the owner has delegated to the signer for the
-//! lineage's app account. One request mixes both freely, and different delegators freely — there
-//! is no delegated mode and no delegated route.
+//! signer. Equal means the signer is the subject whose access is proven; unequal means the owner is
+//! that subject and, additionally, that the owner has delegated to the signer for the encrypted
+//! value account's authority. One request mixes both freely, and different
+//! delegators freely — there is no delegated mode and no delegated route.
 //!
-//! The load-bearing negative test is the substitution of the subject. In the delegated branch it
-//! would be easy, and wrong, to prove access for the signer: the signer is the one asking, and
-//! the delegation record does name them. But the handle belongs to the delegator, and it is the
-//! delegator's standing in the lineage that the delegation extends. Proving the signer's own
-//! standing instead would authorize a delegate against lineages the delegator never had access
-//! to, wherever the delegate happens to be a member. Two tests below pin the direction from both
-//! sides: the delegator's membership authorizes, and the signer's own membership does not.
+//! The negative test that matters most is the substitution of the subject. In the delegated branch it
+//! would be easy, and wrong, to prove access for the signer: the signer is the one asking, and the
+//! delegation record does name them. But the handle belongs to the delegator, and it is the
+//! delegator's standing in the encrypted value account that the delegation extends. Proving the
+//! signer's own standing instead would authorize a delegate against encrypted value accounts the
+//! delegator never had access to, wherever the delegate happens to be a member. Two tests below pin
+//! the direction from both sides: the delegator's membership authorizes, and the signer's own
+//! membership does not.
 //!
-//! Freshness is evaluated against the observed slot, and the record's `delegation_counter` takes
-//! no part in it. That absence is deliberate: pinning the counter in the request would let any
-//! unrelated update to any delegation record invalidate requests already in flight, and would
-//! make a mixed-delegator batch impossible to build.
+//! Freshness is evaluated against the observed slot, and the record's `delegation_counter` takes no
+//! part in it. That absence is deliberate: pinning the counter in the request would let any
+//! unrelated update to any delegation record invalidate requests already in flight, and would make
+//! a mixed-delegator batch impossible to build.
 //!
-//! Two rows can carry one grant — the lineage's app account, and the delegator's wildcard row — and
-//! the last section pins that rule from both sides: either row alone authorizes, neither vetoes the
-//! other, and revoking one leaves the other standing. That last property is the price of wildcard
-//! scope and is asserted deliberately, not tolerated.
+//! Two rows can carry one grant — the encrypted value account's authority, and the delegator's
+//! wildcard row — and the last section pins that rule from both sides: either row alone authorizes,
+//! neither vetoes the other, and revoking one leaves the other standing. That last property is the
+//! price of wildcard scope and is asserted deliberately, not tolerated.
 
 mod solana_support;
 
@@ -54,10 +55,14 @@ async fn authorize_in(
     (outcome, reader.call_count())
 }
 
-/// A world holding a lineage, the signer's zero watermark, and whatever else is added.
-fn world_with(lineage: &LineageFixture, signer: SolanaPubkeyBytes) -> World {
+/// A world holding an encrypted value account, the signer's zero watermark, and whatever else is
+/// added.
+fn world_with(
+    encrypted_value_account: &EncryptedValueAccountFixture,
+    signer: SolanaPubkeyBytes,
+) -> World {
     World::at_slot(OBSERVED_SLOT)
-        .with_lineage(lineage)
+        .with_encrypted_value_account(encrypted_value_account)
         .with_watermark(signer, 0)
 }
 
@@ -70,34 +75,38 @@ fn world_with(lineage: &LineageFixture, signer: SolanaPubkeyBytes) -> World {
 async fn a_direct_entry_authorizes_as_the_signer() {
     let signer = Wallet::new(1);
     let live = handle(0x10, FHE_TYPE_UINT64);
-    let lineage = LineageFixture::new(live, &[signer.pubkey()]);
+    let encrypted_value_account = EncryptedValueAccountFixture::new(live, &[signer.pubkey()]);
     let request = RequestBuilder::new(&signer)
-        .direct_current(&lineage, live)
+        .direct_current(&encrypted_value_account, live)
         .typed();
 
-    let (outcome, reads) = authorize_in(world_with(&lineage, signer.pubkey()), &request).await;
+    let (outcome, reads) = authorize_in(
+        world_with(&encrypted_value_account, signer.pubkey()),
+        &request,
+    )
+    .await;
 
     let authorized = outcome.expect("the signer owns the handle and is a member");
     assert_eq!(authorized.entries()[0].subject, signer.pubkey());
     assert_eq!(reads, 1, "a direct entry needs no delegation record");
 }
 
-/// An entry owned by somebody else authorizes as *that* owner — the delegator — and the
-/// delegator's membership is what has to hold. The lineage here names only the delegator, so an
+/// An entry owned by somebody else authorizes as *that* owner — the delegator — and the delegator's
+/// membership is what has to hold. The encrypted value account here names only the delegator, so an
 /// implementation proving the signer's standing instead would fail this test.
 #[tokio::test]
 async fn a_delegated_entry_authorizes_as_the_delegator() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let live = handle(0x11, FHE_TYPE_UINT64);
-    let lineage = LineageFixture::new(live, &[delegator.pubkey()]);
+    let encrypted_value_account = EncryptedValueAccountFixture::new(live, &[delegator.pubkey()]);
     let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
     let request = RequestBuilder::new(&signer)
-        .delegated_current(&lineage, live, delegator.pubkey())
+        .delegated_current(&encrypted_value_account, live, delegator.pubkey())
         .typed();
 
     let (outcome, reads) = authorize_in(
-        world_with(&lineage, signer.pubkey()).with_delegation(&delegation),
+        world_with(&encrypted_value_account, signer.pubkey()).with_delegation(&delegation),
         &request,
     )
     .await;
@@ -112,26 +121,27 @@ async fn a_delegated_entry_authorizes_as_the_delegator() {
 }
 
 /// The mirror image, and the substitution this whole branch has to refuse: the signer is a member
-/// of the lineage in their own right, the delegator is not, and a live delegation exists between
-/// them. Nothing about that combination gives the signer access to a handle the delegator owns.
+/// of the encrypted value account in their own right, the delegator is not, and a live delegation
+/// exists between them. Nothing about that combination gives the signer access to a handle the
+/// delegator owns.
 ///
 /// An implementation that proved the signer's membership would accept this, and would thereby let
-/// any delegate reach any lineage they happen to be a member of while attributing the handle to
-/// somebody else.
+/// any delegate reach any encrypted value account they happen to be a member of while attributing
+/// the handle to somebody else.
 #[tokio::test]
 async fn a_delegated_entry_is_not_authorized_by_the_delegates_own_membership() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let live = handle(0x12, FHE_TYPE_UINT64);
     // The signer is the member; the delegator is not.
-    let lineage = LineageFixture::new(live, &[signer.pubkey()]);
+    let encrypted_value_account = EncryptedValueAccountFixture::new(live, &[signer.pubkey()]);
     let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
     let request = RequestBuilder::new(&signer)
-        .delegated_current(&lineage, live, delegator.pubkey())
+        .delegated_current(&encrypted_value_account, live, delegator.pubkey())
         .typed();
 
     let (outcome, _) = authorize_in(
-        world_with(&lineage, signer.pubkey()).with_delegation(&delegation),
+        world_with(&encrypted_value_account, signer.pubkey()).with_delegation(&delegation),
         &request,
     )
     .await;
@@ -160,16 +170,22 @@ async fn a_batch_mixes_a_direct_entry_and_two_delegators() {
     let own = handle(0x20, FHE_TYPE_UINT64);
     let first = handle(0x21, FHE_TYPE_UINT64);
     let second = handle(0x22, FHE_TYPE_UINT64);
-    let own_lineage = LineageFixture::in_domain(DOMAIN, APP, LABEL, own, &[signer.pubkey()]);
+    let own_encrypted_value_account =
+        EncryptedValueAccountFixture::in_domain(DOMAIN, AUTHORITY, LABEL, own, &[signer.pubkey()]);
     let mut first_label = LABEL;
     first_label[0] = b'1';
-    let first_lineage =
-        LineageFixture::in_domain(DOMAIN, APP, first_label, first, &[first_delegator.pubkey()]);
+    let first_encrypted_value_account = EncryptedValueAccountFixture::in_domain(
+        DOMAIN,
+        AUTHORITY,
+        first_label,
+        first,
+        &[first_delegator.pubkey()],
+    );
     let mut second_label = LABEL;
     second_label[0] = b'2';
-    let second_lineage = LineageFixture::in_domain(
+    let second_encrypted_value_account = EncryptedValueAccountFixture::in_domain(
         DOMAIN,
-        APP,
+        AUTHORITY,
         second_label,
         second,
         &[second_delegator.pubkey()],
@@ -180,14 +196,22 @@ async fn a_batch_mixes_a_direct_entry_and_two_delegators() {
         DelegationFixture::live(second_delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
 
     let request = RequestBuilder::new(&signer)
-        .direct_current(&own_lineage, own)
-        .delegated_current(&first_lineage, first, first_delegator.pubkey())
-        .delegated_current(&second_lineage, second, second_delegator.pubkey())
+        .direct_current(&own_encrypted_value_account, own)
+        .delegated_current(
+            &first_encrypted_value_account,
+            first,
+            first_delegator.pubkey(),
+        )
+        .delegated_current(
+            &second_encrypted_value_account,
+            second,
+            second_delegator.pubkey(),
+        )
         .typed();
     let world = World::at_slot(OBSERVED_SLOT)
-        .with_lineage(&own_lineage)
-        .with_lineage(&first_lineage)
-        .with_lineage(&second_lineage)
+        .with_encrypted_value_account(&own_encrypted_value_account)
+        .with_encrypted_value_account(&first_encrypted_value_account)
+        .with_encrypted_value_account(&second_encrypted_value_account)
         .with_watermark(signer.pubkey(), 0)
         .with_delegation(&first_delegation)
         .with_delegation(&second_delegation);
@@ -221,11 +245,11 @@ async fn authorize_delegated(
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let live = handle(0x30, FHE_TYPE_UINT64);
-    let lineage = LineageFixture::new(live, &[delegator.pubkey()]);
+    let encrypted_value_account = EncryptedValueAccountFixture::new(live, &[delegator.pubkey()]);
     let request = RequestBuilder::new(&signer)
-        .delegated_current(&lineage, live, delegator.pubkey())
+        .delegated_current(&encrypted_value_account, live, delegator.pubkey())
         .typed();
-    let world = world_with(&lineage, signer.pubkey()).with_delegation(&delegation);
+    let world = world_with(&encrypted_value_account, signer.pubkey()).with_delegation(&delegation);
     authorize_in(world, &request).await.0
 }
 
@@ -338,11 +362,11 @@ async fn authorize_delegated_with_rows(
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let live = handle(0x31, FHE_TYPE_UINT64);
-    let lineage = LineageFixture::new(live, &[delegator.pubkey()]);
+    let encrypted_value_account = EncryptedValueAccountFixture::new(live, &[delegator.pubkey()]);
     let request = RequestBuilder::new(&signer)
-        .delegated_current(&lineage, live, delegator.pubkey())
+        .delegated_current(&encrypted_value_account, live, delegator.pubkey())
         .typed();
-    let mut world = world_with(&lineage, signer.pubkey());
+    let mut world = world_with(&encrypted_value_account, signer.pubkey());
     for row in rows {
         world = world.with_delegation(row);
     }
@@ -358,10 +382,11 @@ fn live_wildcard() -> DelegationFixture {
     )
 }
 
-/// A wildcard row covers a lineage that has no row of its own — the EVM ACL's wildcard delegation,
-/// with the sentinel standing where an app account would.
+/// A wildcard row covers an encrypted value account that has no row of its own — the EVM ACL's
+/// wildcard delegation, with the sentinel standing where an encrypted value account authority
+/// would.
 #[tokio::test]
-async fn a_wildcard_row_authorizes_a_lineage_with_no_app_specific_row() {
+async fn a_wildcard_row_authorizes_a_encrypted_value_account_with_no_app_specific_row() {
     let authorized = authorize_delegated_with_rows(&[live_wildcard()])
         .await
         .expect("a wildcard row covers every app of its delegator");
@@ -373,7 +398,7 @@ async fn a_wildcard_row_authorizes_a_lineage_with_no_app_specific_row() {
     );
 }
 
-/// The app-specific row is tried first, so a dead wildcard row beside it changes nothing.
+/// The authority-specific row is tried first, so a dead wildcard row beside it changes nothing.
 #[tokio::test]
 async fn an_app_specific_row_authorizes_while_the_wildcard_row_is_dead() {
     let mut dead_wildcard = live_wildcard();
@@ -385,7 +410,7 @@ async fn an_app_specific_row_authorizes_while_the_wildcard_row_is_dead() {
 }
 
 /// The consequence of the rule, stated as a test rather than left to be discovered: revoking the
-/// app-specific row does not stop a delegate who also holds a wildcard row. Scope-by-app is a
+/// authority-specific row does not stop a delegate who also holds a wildcard row. Scope-by-app is a
 /// property of a row, so narrowing one app takes revoking both rows — two transactions, because the
 /// host program's revocation instruction takes one record per call.
 #[tokio::test]
@@ -398,7 +423,7 @@ async fn revoking_the_app_specific_row_does_not_stop_a_wildcard_delegate() {
         .expect("the wildcard row still authorizes, which is what wildcard means");
 }
 
-/// Neither row can veto the other. An app-specific row written after the observation is not part of
+/// Neither row can veto the other. An authority-specific row written after the observation is not part of
 /// the state this authorization saw — and that says nothing about the wildcard row, which is.
 #[tokio::test]
 async fn an_app_specific_row_newer_than_the_observation_does_not_veto_the_wildcard_row() {
@@ -410,7 +435,7 @@ async fn an_app_specific_row_newer_than_the_observation_does_not_veto_the_wildca
         .expect("a row outside the observation cannot invalidate one inside it");
 }
 
-/// The mirror: a wildcard row from the future does not reach a live app-specific row.
+/// The mirror: a wildcard row from the future does not reach a live authority-specific row.
 #[tokio::test]
 async fn a_wildcard_row_newer_than_the_observation_does_not_veto_the_app_specific_row() {
     let mut from_the_future = live_wildcard();
@@ -447,7 +472,7 @@ async fn two_dead_rows_report_both_reasons() {
     assert_eq!(failure.class(), FailureClass::Terminal);
 }
 
-/// Holding no wildcard row is the ordinary case, and in it the app-specific reason is reported as
+/// Holding no wildcard row is the ordinary case, and in it the authority-specific reason is reported as
 /// itself: the rule gained a second row, not a second sentence in every diagnostic.
 #[tokio::test]
 async fn without_a_wildcard_row_the_app_specific_reason_is_reported_alone() {
@@ -514,14 +539,18 @@ async fn a_missing_delegation_rejects_its_entry() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let live = handle(0x31, FHE_TYPE_UINT64);
-    let lineage = LineageFixture::new(live, &[delegator.pubkey()]);
+    let encrypted_value_account = EncryptedValueAccountFixture::new(live, &[delegator.pubkey()]);
     let request = RequestBuilder::new(&signer)
-        .delegated_current(&lineage, live, delegator.pubkey())
+        .delegated_current(&encrypted_value_account, live, delegator.pubkey())
         .typed();
     let expected = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
     let (expected_key, _) = expected.address();
 
-    let (outcome, _) = authorize_in(world_with(&lineage, signer.pubkey()), &request).await;
+    let (outcome, _) = authorize_in(
+        world_with(&encrypted_value_account, signer.pubkey()),
+        &request,
+    )
+    .await;
 
     let failure = outcome.expect_err("an absent delegation authorizes nothing");
     assert!(matches!(
@@ -533,24 +562,30 @@ async fn a_missing_delegation_rejects_its_entry() {
     ));
 }
 
-/// A delegation is scoped to an app account, and the app account is the lineage's. A delegation
-/// for another app is simply not the record that gets read — the address derived from the
-/// lineage's app is empty.
+/// A delegation is scoped to an encrypted value account authority, and the encrypted value account
+/// authority is the encrypted value account's. A delegation for another app is simply not the
+/// record that gets read — the address derived from the encrypted value account's app is empty.
 #[tokio::test]
 async fn a_delegation_for_another_app_does_not_authorize() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let other_app: SolanaPubkeyBytes = [0x77; 32];
     let live = handle(0x32, FHE_TYPE_UINT64);
-    let lineage = LineageFixture::in_domain(DOMAIN, APP, LABEL, live, &[delegator.pubkey()]);
+    let encrypted_value_account = EncryptedValueAccountFixture::in_domain(
+        DOMAIN,
+        AUTHORITY,
+        LABEL,
+        live,
+        &[delegator.pubkey()],
+    );
     let mut elsewhere = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
-    elsewhere.app_account = other_app;
+    elsewhere.encrypted_value_account_authority = other_app;
     let request = RequestBuilder::new(&signer)
-        .delegated_current(&lineage, live, delegator.pubkey())
+        .delegated_current(&encrypted_value_account, live, delegator.pubkey())
         .typed();
 
     let (outcome, _) = authorize_in(
-        world_with(&lineage, signer.pubkey()).with_delegation(&elsewhere),
+        world_with(&encrypted_value_account, signer.pubkey()).with_delegation(&elsewhere),
         &request,
     )
     .await;
@@ -573,18 +608,19 @@ async fn a_delegation_record_naming_another_tuple_is_rejected() {
     let delegator = Wallet::new(2);
     let stranger = Wallet::new(9);
     let live = handle(0x33, FHE_TYPE_UINT64);
-    let lineage = LineageFixture::new(live, &[delegator.pubkey()]);
+    let encrypted_value_account = EncryptedValueAccountFixture::new(live, &[delegator.pubkey()]);
     let expected = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
     let (expected_key, _) = expected.address();
     // A record for a different delegator, planted at the address the request will read.
     let mut foreign = DelegationFixture::live(stranger.pubkey(), signer.pubkey(), OBSERVED_SLOT);
-    foreign.app_account = APP;
+    foreign.encrypted_value_account_authority = AUTHORITY;
     let request = RequestBuilder::new(&signer)
-        .delegated_current(&lineage, live, delegator.pubkey())
+        .delegated_current(&encrypted_value_account, live, delegator.pubkey())
         .typed();
 
     let (outcome, _) = authorize_in(
-        world_with(&lineage, signer.pubkey()).with_account(expected_key, foreign.account()),
+        world_with(&encrypted_value_account, signer.pubkey())
+            .with_account(expected_key, foreign.account()),
         &request,
     )
     .await;
@@ -608,7 +644,7 @@ async fn a_delegation_record_storing_a_non_canonical_bump_is_rejected() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let live = handle(0x34, FHE_TYPE_UINT64);
-    let lineage = LineageFixture::new(live, &[delegator.pubkey()]);
+    let encrypted_value_account = EncryptedValueAccountFixture::new(live, &[delegator.pubkey()]);
     let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
     let (key, canonical_bump) = delegation.address();
     let mut wrong_bump = delegation.account();
@@ -619,11 +655,11 @@ async fn a_delegation_record_storing_a_non_canonical_bump_is_rejected() {
     );
     wrong_bump.data[last] = canonical_bump.wrapping_sub(1);
     let request = RequestBuilder::new(&signer)
-        .delegated_current(&lineage, live, delegator.pubkey())
+        .delegated_current(&encrypted_value_account, live, delegator.pubkey())
         .typed();
 
     let (outcome, _) = authorize_in(
-        world_with(&lineage, signer.pubkey()).with_account(key, wrong_bump),
+        world_with(&encrypted_value_account, signer.pubkey()).with_account(key, wrong_bump),
         &request,
     )
     .await;
@@ -644,17 +680,17 @@ async fn a_delegation_record_owned_by_another_program_is_rejected() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let live = handle(0x34, FHE_TYPE_UINT64);
-    let lineage = LineageFixture::new(live, &[delegator.pubkey()]);
+    let encrypted_value_account = EncryptedValueAccountFixture::new(live, &[delegator.pubkey()]);
     let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
     let (key, _) = delegation.address();
     let mut impostor = delegation.account();
     impostor.owner = [0xee; 32];
     let request = RequestBuilder::new(&signer)
-        .delegated_current(&lineage, live, delegator.pubkey())
+        .delegated_current(&encrypted_value_account, live, delegator.pubkey())
         .typed();
 
     let (outcome, _) = authorize_in(
-        world_with(&lineage, signer.pubkey()).with_account(key, impostor),
+        world_with(&encrypted_value_account, signer.pubkey()).with_account(key, impostor),
         &request,
     )
     .await;
@@ -677,9 +713,9 @@ async fn the_same_permit_stops_working_once_the_delegation_is_revoked() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let live = handle(0x35, FHE_TYPE_UINT64);
-    let lineage = LineageFixture::new(live, &[delegator.pubkey()]);
+    let encrypted_value_account = EncryptedValueAccountFixture::new(live, &[delegator.pubkey()]);
     let request = RequestBuilder::new(&signer)
-        .delegated_current(&lineage, live, delegator.pubkey())
+        .delegated_current(&encrypted_value_account, live, delegator.pubkey())
         .typed();
     let granted = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
     let mut revoked = granted;
@@ -687,14 +723,14 @@ async fn the_same_permit_stops_working_once_the_delegation_is_revoked() {
     revoked.last_update_slot = OBSERVED_SLOT;
 
     let (first, _) = authorize_in(
-        world_with(&lineage, signer.pubkey()).with_delegation(&granted),
+        world_with(&encrypted_value_account, signer.pubkey()).with_delegation(&granted),
         &request,
     )
     .await;
     first.expect("the first request is authorized");
 
     let (second, _) = authorize_in(
-        world_with(&lineage, signer.pubkey()).with_delegation(&revoked),
+        world_with(&encrypted_value_account, signer.pubkey()).with_delegation(&revoked),
         &request,
     )
     .await;

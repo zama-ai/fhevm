@@ -2,7 +2,7 @@
 //! the payout mint is confidential shares for deposit batchers, confidential
 //! underlying for redeem batchers.
 //!
-//! One MulDiv eval frame — the exact proportional floor
+//! One MulDiv batch — the exact proportional floor
 //! `encrypted(joined) x payout_received / total_joined` — then a confidential
 //! transfer of the resulting handle from the batch's payout account to the
 //! user. Permissionless pull: anyone can trigger a user's claim; the payout
@@ -17,7 +17,7 @@
 //! coprocessor's widened MulDiv, and the result is at most `payout_received`,
 //! so it fits euint64. `total_joined > 0` because zero-total batches cancel.
 //!
-//! The eval and transfer assume `grant_deny_list_enabled = false` and no
+//! The execution and transfer assume `grant_deny_list_enabled = false` and no
 //! binding HCU cap: `hcu_block_meter` and `hcu_trusted_app_record` are
 //! hardcoded `None` (the PoC host fixtures never enable them), and deny-list
 //! records ride in as the (empty) remaining accounts.
@@ -38,7 +38,7 @@ pub struct Claim<'info> {
     /// The settled batch being claimed from.
     #[account(constraint = batch.batcher == batcher.key() @ BatcherError::BatchBatcherMismatch)]
     pub batch: Box<Account<'info, Batch>>,
-    /// CHECK: per-batch authority PDA; the claim eval's compute subject + app
+    /// CHECK: per-batch authority PDA; the claim execution's compute subject + encrypted value account
     /// authority and the payout transfer's authority via invoke_signed.
     #[account(seeds = [BATCH_AUTHORITY_SEED, batch.key().as_ref()], bump = batch.authority_bump)]
     pub batch_authority: UncheckedAccount<'info>,
@@ -51,7 +51,7 @@ pub struct Claim<'info> {
     pub join_record: Box<Account<'info, JoinRecord>>,
     /// CHECK: the user's joined encrypted value account; read as the MulDiv operand.
     pub pending_join_value: UncheckedAccount<'info>,
-    /// CHECK: the user's claim encrypted value account; created by the claim eval and spent as
+    /// CHECK: the user's claim encrypted value account; created by the claim execution and spent as
     /// the transfer amount.
     #[account(mut)]
     pub claim_amount_value: UncheckedAccount<'info>,
@@ -68,13 +68,13 @@ pub struct Claim<'info> {
     /// token CPI and pinned below.
     #[account(mut)]
     pub user_payout_token_account: UncheckedAccount<'info>,
-    /// CHECK: batch's confidential payout balance encrypted value account; superseded by the token CPI.
+    /// CHECK: batch's confidential payout balance encrypted value account; replaced by the token CPI.
     #[account(mut)]
     pub batch_payout_balance_value: UncheckedAccount<'info>,
-    /// CHECK: user's confidential payout balance encrypted value account; superseded by the token CPI.
+    /// CHECK: user's confidential payout balance encrypted value account; replaced by the token CPI.
     #[account(mut)]
     pub user_payout_balance_value: UncheckedAccount<'info>,
-    /// CHECK: batch payout account's transferred-amount encrypted value account; superseded by
+    /// CHECK: batch payout account's transferred-amount encrypted value account; replaced by
     /// the token CPI.
     #[account(mut)]
     pub batch_payout_transferred_value: UncheckedAccount<'info>,
@@ -127,20 +127,20 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
         BatcherError::DerivedAccountMismatch
     );
 
-    // Phase 1: the one MulDiv frame — the encrypted joined amount's exact
+    // Phase 1: the one MulDiv batch — the encrypted joined amount's exact
     // proportional share of the public aggregate payout.
     let joined_value = fhe::read_encrypted_value(&ctx.accounts.pending_join_value)?;
     let joined = fhe::uint64_operand(&joined_value)?;
-    let claim_binding = fhe::DurableBinding::bind(
+    let claim_binding = fhe::PersistentBinding::bind(
         ctx.accounts.claim_amount_value.to_account_info(),
-        zama_fhe::EncryptedValueKey::new(
-            batch_key,
+        zama_fhe::EncryptedValueId::new(
+            zama_fhe::Domain::new(batch_key),
             batch_authority,
-            zama_fhe::DurableLabel::new(claim_amount_label(user)),
+            zama_fhe::EncryptedValueLabel::new(encrypted_claim_amount_label(user)),
         ),
         // The user decrypts their claimed amount; the batch authority spends
         // it as the transfer amount; the payout mint's compute signer lets the
-        // transfer eval read it.
+        // transfer execution read it.
         vec![
             user,
             batch_authority,
@@ -149,8 +149,8 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
     )?;
     let payout_received = ctx.accounts.batch.payout_received;
     let total_joined = ctx.accounts.batch.total_joined;
-    fhe::eval_as_batch_authority(
-        fhe::BatchAuthorityEval {
+    fhe::execute_as_batch_authority(
+        fhe::BatchAuthorityExecute {
             batch: batch_key,
             authority_bump: ctx.accounts.batch.authority_bump,
             batch_authority: ctx.accounts.batch_authority.to_account_info(),
@@ -171,7 +171,8 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
                 zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(payout_received),
                 zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(total_joined),
                 claim_binding.output(),
-            )
+            )?;
+            Ok(())
         },
     )?;
 

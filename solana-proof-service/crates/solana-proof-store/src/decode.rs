@@ -1,80 +1,70 @@
 //! Decodes zama-host `EncryptedValue` instructions from raw compiled instruction
 //! data (Anchor discriminator + borsh args), independent of transaction/RPC
-//! shape so it can be unit-tested against synthetic data.
+//! shape so it can be unit-tested against synthetic data. Discriminator
+//! matching and payload decoding go through `zama_host::decode`, built from the
+//! program's generated types, so this module cannot drift from the on-chain
+//! wire layout.
 //!
-//! The instruction/event names matched below are the ingest allowlist. CI keeps
-//! that catalog partitioned against the vendored host IDL via
-//! `solana/scripts/check_proof_store_idl.py` (decoded ∪ ignored = all host
-//! instructions; required lifecycle events must stay wired).
+//! The instruction/event names this module ingests are still the allowlist. CI
+//! keeps that catalog partitioned against the vendored host IDL via
+//! `solana/scripts/check_proof_store_idl.py`, which pins the names referenced
+//! by this file's test fixtures (decoded ∪ ignored = all host instructions;
+//! required lifecycle events must stay wired). The fixtures re-derive every
+//! discriminator from its name via sha256, independently of the generated
+//! consts the production paths use.
 //!
-//! Two event self-CPIs need sibling context: random-seed batches and a born-public (`make_public=true`)
-//! `fhe_eval` durable output commits a public-decrypt leaf to the eval OUTPUT
+//! Two event self-CPIs need sibling context: random-seed batches and a created-public (`make_public=true`)
+//! `fhe_execute` persistent output commits a public-decrypt leaf to the execution's OUTPUT
 //! handle, which is derived on-chain from slot entropy and appears in no
 //! instruction arg. The host therefore emits one narrow lifecycle batch from a
 //! self-CPI. [`decode_program_instructions`] accepts it only when it exactly
-//! matches the enclosing successful `fhe_eval`; the confirmed MMR peak check
+//! matches the enclosing successful `fhe_execute`; the confirmed MMR peak check
 //! remains the defense-in-depth authority at proof time (DD-035).
 //!
 //! Relayers must support a lifecycle version before that producer version is
 //! deployed; an unknown version intentionally halts ingestion. RPC responses
-//! must also include `stackHeight` for every inner instruction so the batch can
+//! must also include `stackHeight` for every inner instruction so the execution can
 //! be bound to its immediate enclosing frame.
 
-use borsh::{BorshDeserialize, BorshSerialize};
-use sha2::{Digest, Sha256};
-use zama_host::state::{FheEvalArgs, FheEvalOutput, FheEvalStep};
+use borsh::BorshDeserialize;
+use zama_host::decode::ZamaHostInstruction;
+use zama_host::events::{FheExecuteRandomSeedsEvent, PublicOutputsProducedEvent};
+use zama_host::state::{FheExecuteArgs, FheExecuteOutput, FheExecuteStep};
 
 pub use solana_proof_source::RawInstruction;
 
-/// One subject grant as carried in `create_encrypted_value`/`allow_subjects` args.
-#[derive(BorshDeserialize, BorshSerialize, Clone, Copy, Debug, PartialEq, Eq)]
-pub struct SubjectGrant {
-    pub subject: [u8; 32],
-}
-
 /// The zama-host `EncryptedValue` instruction, decoded from one compiled instruction.
 ///
-/// Direct create/allow/update/make-public instructions carry `encrypted_value`
-/// at account index 2. `remove_subject` uses index 1, and `fhe_eval` durable
-/// outputs reference `remaining_accounts` by index inside the eval plan.
+/// Direct allow/make-public instructions carry `encrypted_value` at account
+/// index 2. `remove_subject` uses index 1, and `fhe_execute` persistent
+/// outputs reference `remaining_accounts` by index inside the execution.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DecodedInstruction {
-    CreateEncryptedValue {
-        encrypted_value: [u8; 32],
-        handle: [u8; 32],
-        subjects: Vec<SubjectGrant>,
-    },
     AllowSubjects {
         encrypted_value: [u8; 32],
-        subjects: Vec<SubjectGrant>,
-    },
-    UpdateEncryptedValue {
-        encrypted_value: [u8; 32],
-        new_handle: [u8; 32],
-        previous_handle: [u8; 32],
-        previous_subjects: Vec<[u8; 32]>,
+        subjects: Vec<[u8; 32]>,
     },
     RemoveSubject {
         encrypted_value: [u8; 32],
         subject: [u8; 32],
     },
-    FheEvalCreateEncryptedValue {
+    FheExecuteCreateEncryptedValue {
         encrypted_value: [u8; 32],
-        subjects: Vec<SubjectGrant>,
-        /// `Some(output_handle)` when the durable output was born public
+        subjects: Vec<[u8; 32]>,
+        /// `Some(output_handle)` when the persistent output was created public
         /// (`make_public=true`) AND its output handle was resolved from the
         /// lifecycle batch this transaction emitted. `None` otherwise — the output
         /// handle is derived on-chain from slot entropy and appears in no
         /// instruction arg, so without the event it stays unresolved and any
-        /// born-public leaf fails closed at proof time rather than serving a wrong result.
+        /// created-public leaf fails closed at proof time rather than serving a wrong result.
         make_public_handle: Option<[u8; 32]>,
     },
-    FheEvalUpdateEncryptedValue {
+    FheExecuteUpdateEncryptedValue {
         encrypted_value: [u8; 32],
         previous_handle: [u8; 32],
         previous_subjects: Vec<[u8; 32]>,
         output_subjects: Vec<[u8; 32]>,
-        /// See [`DecodedInstruction::FheEvalCreateEncryptedValue::make_public_handle`].
+        /// See [`DecodedInstruction::FheExecuteCreateEncryptedValue::make_public_handle`].
         make_public_handle: Option<[u8; 32]>,
     },
     MakeHandlePublic {
@@ -86,22 +76,16 @@ pub enum DecodedInstruction {
 impl DecodedInstruction {
     pub fn encrypted_value(&self) -> [u8; 32] {
         match self {
-            DecodedInstruction::CreateEncryptedValue {
-                encrypted_value, ..
-            }
-            | DecodedInstruction::AllowSubjects {
-                encrypted_value, ..
-            }
-            | DecodedInstruction::UpdateEncryptedValue {
+            DecodedInstruction::AllowSubjects {
                 encrypted_value, ..
             }
             | DecodedInstruction::RemoveSubject {
                 encrypted_value, ..
             }
-            | DecodedInstruction::FheEvalCreateEncryptedValue {
+            | DecodedInstruction::FheExecuteCreateEncryptedValue {
                 encrypted_value, ..
             }
-            | DecodedInstruction::FheEvalUpdateEncryptedValue {
+            | DecodedInstruction::FheExecuteUpdateEncryptedValue {
                 encrypted_value, ..
             }
             | DecodedInstruction::MakeHandlePublic {
@@ -111,29 +95,8 @@ impl DecodedInstruction {
     }
 }
 
-/// Anchor-style 8-byte global instruction discriminator: `sha256("global:<name>")[..8]`.
-fn discriminator(name: &str) -> [u8; 8] {
-    let digest = Sha256::digest(format!("global:{name}").as_bytes());
-    let mut out = [0u8; 8];
-    out.copy_from_slice(&digest[..8]);
-    out
-}
-
-/// Anchor-style 8-byte event discriminator: `sha256("event:<name>")[..8]`.
-fn event_discriminator(name: &str) -> [u8; 8] {
-    let digest = Sha256::digest(format!("event:{name}").as_bytes());
-    let mut out = [0u8; 8];
-    out.copy_from_slice(&digest[..8]);
-    out
-}
-
-/// Anchor's `emit_cpi!` self-invocation sentinel prefixing the event bytes in an
-/// inner instruction (little-endian of `0x1d9acb512ea545e4`). Mirrors the
-/// host-listener's `ANCHOR_EVENT_IX_TAG_LE`.
-const ANCHOR_EVENT_IX_TAG_LE: [u8; 8] = 0x1d9acb512ea545e4_u64.to_le_bytes();
-
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct BornPublicOutput {
+struct CreatedPublicOutput {
     step_index: u16,
     encrypted_value: [u8; 32],
     output_handle: [u8; 32],
@@ -141,42 +104,38 @@ struct BornPublicOutput {
 
 const ENCRYPTED_VALUE_ACCOUNT_INDEX: usize = 2;
 const REMOVE_SUBJECT_ACCOUNT_INDEX: usize = 1;
-/// `remaining_accounts` follow the 9 named `fhe_eval` accounts — payer,
-/// compute_subject, app_account_authority, host_config, system_program,
+/// `remaining_accounts` follow the 9 named `fhe_execute` accounts — payer,
+/// compute_subject, encrypted_value_account_authority, host_config, system_program,
 /// hcu_block_meter, hcu_trusted_app_record, then `#[event_cpi]`'s
-/// event_authority + program (see `FheEval` in fhe_eval.rs). The two optional HCU
+/// event_authority + program (see `FheExecute` in fhe_execute.rs). The two optional HCU
 /// accounts are always present as program-id placeholders when `None`, so the base
-/// is fixed. Must stay in lockstep with the host-listener's `FHE_EVAL_REMAINING_BASE`
+/// is fixed. Must stay in lockstep with the host-listener's `FHE_EXECUTE_REMAINING_BASE`
 /// and the vendored IDL named-account count (enforced by `check_proof_store_idl.py`).
-const FHE_EVAL_REMAINING_BASE: usize = 9;
+const FHE_EXECUTE_REMAINING_BASE: usize = 9;
 
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
 pub enum DecodeError {
     #[error("instruction data shorter than the 8-byte discriminator")]
     DataTooShort,
-    #[error("unrecognized discriminator (not a zama-host EncryptedValue instruction)")]
-    UnknownDiscriminator,
     #[error("missing account at index {0} (encrypted_value)")]
     MissingAccount(usize),
-    #[error("missing fhe_eval durable output account at remaining index {remaining_index} (absolute account index {absolute_index})")]
-    MissingFheEvalOutputAccount {
+    #[error("missing fhe_execute persistent output account at remaining index {remaining_index} (absolute account index {absolute_index})")]
+    MissingFheExecuteOutputAccount {
         remaining_index: u16,
         absolute_index: usize,
     },
-    #[error("fhe_eval durable output has mismatched previous_handle/previous_subjects options")]
-    InvalidFheEvalPreviousState,
-    #[error("fhe_eval constant pool index {0} out of bounds")]
-    InvalidFheEvalPoolIndex(u8),
+    #[error("fhe_execute constant dictionary index {0} out of bounds")]
+    InvalidFheExecuteDictionaryIndex(u8),
     #[error("missing or invalid Solana instruction stack metadata")]
     InvalidStackMetadata,
-    #[error("born-public lifecycle event is missing for fhe_eval")]
-    MissingBornPublicEvent,
-    #[error("unexpected or unconsumed born-public lifecycle event")]
-    UnexpectedBornPublicEvent,
-    #[error("unexpected zama-host descendant inside fhe_eval execution frame")]
+    #[error("created-public lifecycle event is missing for fhe_execute")]
+    MissingCreatedPublicEvent,
+    #[error("unexpected or unconsumed created-public lifecycle event")]
+    UnexpectedCreatedPublicEvent,
+    #[error("unexpected zama-host descendant inside fhe_execute execution frame")]
     UnexpectedHostDescendant,
-    #[error("born-public lifecycle event has an invalid host self-CPI envelope")]
-    InvalidBornPublicEnvelope,
+    #[error("created-public lifecycle event has an invalid host self-CPI envelope")]
+    InvalidCreatedPublicEnvelope,
     #[error("random-seed event has an invalid host self-CPI envelope")]
     InvalidRandomSeedEnvelope,
     #[error("unexpected random-seed event")]
@@ -185,16 +144,16 @@ pub enum DecodeError {
     UnsupportedRandomSeedVersion(u8),
     #[error("random-seed event is malformed: {0}")]
     MalformedRandomSeedEvent(String),
-    #[error("random-seed event does not match fhe_eval random steps")]
+    #[error("random-seed event does not match fhe_execute random steps")]
     RandomSeedMismatch,
-    #[error("born-public lifecycle event has unsupported version {0}")]
-    UnsupportedBornPublicVersion(u8),
-    #[error("born-public lifecycle event is malformed: {0}")]
-    MalformedBornPublicEvent(String),
-    #[error("born-public lifecycle event does not exactly match fhe_eval outputs")]
-    BornPublicMismatch,
-    #[error("born-public lifecycle event contains duplicate accounts or handles")]
-    DuplicateBornPublicOutput,
+    #[error("created-public lifecycle event has unsupported version {0}")]
+    UnsupportedCreatedPublicVersion(u8),
+    #[error("created-public lifecycle event is malformed: {0}")]
+    MalformedCreatedPublicEvent(String),
+    #[error("created-public lifecycle event does not exactly match fhe_execute outputs")]
+    CreatedPublicMismatch,
+    #[error("created-public lifecycle event contains duplicate accounts or handles")]
+    DuplicateCreatedPublicOutput,
     #[error("borsh decode failed: {0}")]
     Borsh(String),
 }
@@ -203,75 +162,42 @@ pub enum DecodeError {
 /// Returns an empty vector for zama-host instructions this module does not care
 /// about, and `Err` only for malformed data.
 ///
-/// Most lifecycle instructions produce one decoded instruction. `fhe_eval` can
-/// produce several because one eval frame can bind several durable outputs.
+/// Most lifecycle instructions produce one decoded instruction. `fhe_execute` can
+/// produce several because one execution can bind several persistent outputs.
 pub fn decode_instructions(ix: &RawInstruction) -> Result<Vec<DecodedInstruction>, DecodeError> {
     if ix.data.len() < 8 {
         return Err(DecodeError::DataTooShort);
     }
-    let (disc, mut body) = ix.data.split_at(8);
-
-    if disc == discriminator("create_encrypted_value") {
-        let acl_domain_key = <[u8; 32]>::deserialize(&mut body).map_err(borsh_err)?;
-        let app_account = <[u8; 32]>::deserialize(&mut body).map_err(borsh_err)?;
-        let _ = (acl_domain_key, app_account);
-        let _encrypted_value_label = <[u8; 32]>::deserialize(&mut body).map_err(borsh_err)?;
-        let handle = <[u8; 32]>::deserialize(&mut body).map_err(borsh_err)?;
-        let subjects = <Vec<SubjectGrant>>::deserialize(&mut body).map_err(borsh_err)?;
-        Ok(vec![DecodedInstruction::CreateEncryptedValue {
-            encrypted_value: account_at(ix, ENCRYPTED_VALUE_ACCOUNT_INDEX)?,
-            handle,
-            subjects,
-        }])
-    } else if disc == discriminator("allow_subjects") {
-        let subjects = <Vec<SubjectGrant>>::deserialize(&mut body).map_err(borsh_err)?;
-        Ok(vec![DecodedInstruction::AllowSubjects {
-            encrypted_value: account_at(ix, ENCRYPTED_VALUE_ACCOUNT_INDEX)?,
-            subjects,
-        }])
-    } else if disc == discriminator("update_encrypted_value") {
-        let new_handle = <[u8; 32]>::deserialize(&mut body).map_err(borsh_err)?;
-        let previous_handle = <[u8; 32]>::deserialize(&mut body).map_err(borsh_err)?;
-        let previous_subjects = <Vec<[u8; 32]>>::deserialize(&mut body).map_err(borsh_err)?;
-        Ok(vec![DecodedInstruction::UpdateEncryptedValue {
-            encrypted_value: account_at(ix, ENCRYPTED_VALUE_ACCOUNT_INDEX)?,
-            new_handle,
-            previous_handle,
-            previous_subjects,
-        }])
-    } else if disc == discriminator("remove_subject") {
-        let subject = <[u8; 32]>::deserialize(&mut body).map_err(borsh_err)?;
-        Ok(vec![DecodedInstruction::RemoveSubject {
-            encrypted_value: account_at(ix, REMOVE_SUBJECT_ACCOUNT_INDEX)?,
-            subject,
-        }])
-    } else if disc == discriminator("make_handle_public") {
-        let handle = <[u8; 32]>::deserialize(&mut body).map_err(borsh_err)?;
-        Ok(vec![DecodedInstruction::MakeHandlePublic {
-            encrypted_value: account_at(ix, ENCRYPTED_VALUE_ACCOUNT_INDEX)?,
-            handle,
-        }])
-    } else if disc == discriminator("fhe_eval") {
-        // Without the lifecycle batch (single-instruction decode), no born-public
+    match zama_host::decode::decode_instruction(&ix.data).map_err(malformed_err)? {
+        Some(ZamaHostInstruction::AllowSubjects { subjects }) => {
+            Ok(vec![DecodedInstruction::AllowSubjects {
+                encrypted_value: account_at(ix, ENCRYPTED_VALUE_ACCOUNT_INDEX)?,
+                subjects: subjects.iter().map(|subject| subject.to_bytes()).collect(),
+            }])
+        }
+        Some(ZamaHostInstruction::RemoveSubject { subject }) => {
+            Ok(vec![DecodedInstruction::RemoveSubject {
+                encrypted_value: account_at(ix, REMOVE_SUBJECT_ACCOUNT_INDEX)?,
+                subject: subject.to_bytes(),
+            }])
+        }
+        Some(ZamaHostInstruction::MakeHandlePublic { handle }) => {
+            Ok(vec![DecodedInstruction::MakeHandlePublic {
+                encrypted_value: account_at(ix, ENCRYPTED_VALUE_ACCOUNT_INDEX)?,
+                handle,
+            }])
+        }
+        // Without the lifecycle batch (single-instruction decode), no created-public
         // output handle can be resolved; those leaves fail closed at proof time.
-        decode_fhe_eval_instruction(ix, &[])
-    } else {
-        Ok(Vec::new())
+        Some(ZamaHostInstruction::FheExecute(execution)) => {
+            decode_fhe_execute_persistent_outputs(ix, &execution, &[])
+        }
+        None => Ok(Vec::new()),
     }
 }
 
-fn decode_fhe_eval_instruction(
-    ix: &RawInstruction,
-    born_public_handles: &[Option<[u8; 32]>],
-) -> Result<Vec<DecodedInstruction>, DecodeError> {
-    let (disc, mut body) = ix.data.split_at(8);
-    debug_assert_eq!(disc, discriminator("fhe_eval"));
-    let plan = FheEvalArgs::deserialize(&mut body).map_err(borsh_err)?;
-    decode_fhe_eval_durable_outputs(ix, &plan, born_public_handles)
-}
-
 /// Back-compat helper for tests and single-output callers. Transaction replay
-/// uses [`decode_program_instructions`] so multi-output `fhe_eval` frames and
+/// uses [`decode_program_instructions`] so multi-output `fhe_execute` executions and
 /// their lifecycle batches are validated together.
 pub fn decode_instruction(ix: &RawInstruction) -> Result<Option<DecodedInstruction>, DecodeError> {
     Ok(decode_instructions(ix)?.into_iter().next())
@@ -281,6 +207,10 @@ fn borsh_err(e: std::io::Error) -> DecodeError {
     DecodeError::Borsh(e.to_string())
 }
 
+fn malformed_err(error: zama_host::decode::MalformedInstruction) -> DecodeError {
+    DecodeError::Borsh(error.message)
+}
+
 fn account_at(ix: &RawInstruction, index: usize) -> Result<[u8; 32], DecodeError> {
     ix.accounts
         .get(index)
@@ -288,73 +218,71 @@ fn account_at(ix: &RawInstruction, index: usize) -> Result<[u8; 32], DecodeError
         .ok_or(DecodeError::MissingAccount(index))
 }
 
-fn fhe_eval_durable_output_account(
+fn fhe_execute_persistent_output_account(
     ix: &RawInstruction,
     remaining_index: u8,
 ) -> Result<[u8; 32], DecodeError> {
-    // `remaining_index` is the plan's `output_encrypted_value_index`, relative to
+    // `remaining_index` is the execution's `output_encrypted_value_index`, relative to
     // `remaining_accounts`. Those always start at a fixed offset past the 9 named
-    // `fhe_eval` accounts (the optional HCU accounts are program-id placeholders
+    // `fhe_execute` accounts (the optional HCU accounts are program-id placeholders
     // when absent, so the offset never shifts). Any deny record lives inside
-    // `remaining_accounts` and is already accounted for by the plan index.
-    let absolute_index = FHE_EVAL_REMAINING_BASE + usize::from(remaining_index);
+    // `remaining_accounts` and is already accounted for by the execution index.
+    let absolute_index = FHE_EXECUTE_REMAINING_BASE + usize::from(remaining_index);
     ix.accounts
         .get(absolute_index)
         .copied()
-        .ok_or(DecodeError::MissingFheEvalOutputAccount {
+        .ok_or(DecodeError::MissingFheExecuteOutputAccount {
             remaining_index: u16::from(remaining_index),
             absolute_index,
         })
 }
 
-fn decode_fhe_eval_durable_outputs(
+fn decode_fhe_execute_persistent_outputs(
     ix: &RawInstruction,
-    plan: &FheEvalArgs,
-    born_public_handles: &[Option<[u8; 32]>],
+    execution: &FheExecuteArgs,
+    created_public_handles: &[Option<[u8; 32]>],
 ) -> Result<Vec<DecodedInstruction>, DecodeError> {
     let mut out = Vec::new();
-    for (step_index, step) in plan.steps.iter().enumerate() {
-        let FheEvalOutput::AllowedDurable {
+    for (step_index, step) in execution.steps.iter().enumerate() {
+        let FheExecuteOutput::StoredValue {
             output_encrypted_value_index,
             output_subject_indexes,
-            previous_handle,
-            previous_subjects,
+            previous_state,
             make_public,
             ..
-        } = fhe_eval_step_output(step)
+        } = fhe_execute_step_output(step)
         else {
             continue;
         };
-        let encrypted_value = fhe_eval_durable_output_account(ix, *output_encrypted_value_index)?;
+        let encrypted_value =
+            fhe_execute_persistent_output_account(ix, *output_encrypted_value_index)?;
         let make_public_handle = if *make_public {
-            born_public_handles.get(step_index).copied().flatten()
+            created_public_handles.get(step_index).copied().flatten()
         } else {
             None
         };
         let output_subjects = output_subject_indexes
             .iter()
             .map(|index| {
-                plan.pool
+                execution
+                    .dictionary
                     .get(usize::from(*index))
                     .copied()
-                    .ok_or(DecodeError::InvalidFheEvalPoolIndex(*index))
+                    .ok_or(DecodeError::InvalidFheExecuteDictionaryIndex(*index))
             })
             .collect::<Result<Vec<_>, _>>()?;
-        match (previous_handle, previous_subjects) {
-            (None, None) => out.push(DecodedInstruction::FheEvalCreateEncryptedValue {
+        match previous_state {
+            None => out.push(DecodedInstruction::FheExecuteCreateEncryptedValue {
                 encrypted_value,
-                subjects: output_subjects
-                    .iter()
-                    .copied()
-                    .map(|subject| SubjectGrant { subject })
-                    .collect(),
+                subjects: output_subjects.clone(),
                 make_public_handle,
             }),
-            (Some(previous_handle), Some(previous_subjects)) => {
-                out.push(DecodedInstruction::FheEvalUpdateEncryptedValue {
+            Some(previous) => {
+                out.push(DecodedInstruction::FheExecuteUpdateEncryptedValue {
                     encrypted_value,
-                    previous_handle: *previous_handle,
-                    previous_subjects: previous_subjects
+                    previous_handle: previous.handle,
+                    previous_subjects: previous
+                        .subjects
                         .iter()
                         .map(|subject| subject.to_bytes())
                         .collect(),
@@ -362,36 +290,33 @@ fn decode_fhe_eval_durable_outputs(
                     make_public_handle,
                 });
             }
-            _ => return Err(DecodeError::InvalidFheEvalPreviousState),
         }
     }
     Ok(out)
 }
 
-fn fhe_eval_step_output(step: &FheEvalStep) -> &FheEvalOutput {
+fn fhe_execute_step_output(step: &FheExecuteStep) -> &FheExecuteOutput {
     match step {
-        FheEvalStep::Binary { output, .. }
-        | FheEvalStep::Ternary { output, .. }
-        | FheEvalStep::TrivialEncrypt { output, .. }
-        | FheEvalStep::Rand { output, .. }
-        | FheEvalStep::Unary { output, .. }
-        | FheEvalStep::RandBounded { output, .. }
-        | FheEvalStep::Sum { output, .. }
-        | FheEvalStep::IsIn { output, .. }
-        | FheEvalStep::MulDiv { output, .. } => output,
+        FheExecuteStep::Binary { output, .. }
+        | FheExecuteStep::Ternary { output, .. }
+        | FheExecuteStep::TrivialEncrypt { output, .. }
+        | FheExecuteStep::Rand { output, .. }
+        | FheExecuteStep::Unary { output, .. }
+        | FheExecuteStep::RandBounded { output, .. }
+        | FheExecuteStep::Sum { output, .. }
+        | FheExecuteStep::IsIn { output, .. }
+        | FheExecuteStep::MulDiv { output, .. } => output,
     }
 }
 
-fn is_born_public_event(ix: &RawInstruction, program_id: [u8; 32]) -> bool {
+fn is_created_public_event(ix: &RawInstruction, program_id: [u8; 32]) -> bool {
     ix.program_id == program_id
-        && ix.data.starts_with(&ANCHOR_EVENT_IX_TAG_LE)
-        && ix.data.get(8..16) == Some(event_discriminator("PublicOutputsProducedEvent").as_slice())
+        && zama_host::decode::is_event_cpi::<PublicOutputsProducedEvent>(&ix.data)
 }
 
 fn is_random_seed_event(ix: &RawInstruction, program_id: [u8; 32]) -> bool {
     ix.program_id == program_id
-        && ix.data.starts_with(&ANCHOR_EVENT_IX_TAG_LE)
-        && ix.data.get(8..16) == Some(event_discriminator("FheEvalRandomSeedsEvent").as_slice())
+        && zama_host::decode::is_event_cpi::<FheExecuteRandomSeedsEvent>(&ix.data)
 }
 
 fn validate_random_seed_event(
@@ -404,17 +329,15 @@ fn validate_random_seed_event(
     {
         return Err(DecodeError::InvalidRandomSeedEnvelope);
     }
-    let mut body = ix
-        .data
-        .strip_prefix(&ANCHOR_EVENT_IX_TAG_LE)
-        .and_then(|data| data.strip_prefix(&event_discriminator("FheEvalRandomSeedsEvent")))
-        .ok_or(DecodeError::InvalidRandomSeedEnvelope)?;
+    let mut body =
+        zama_host::decode::strip_event_cpi_envelope::<FheExecuteRandomSeedsEvent>(&ix.data)
+            .ok_or(DecodeError::InvalidRandomSeedEnvelope)?;
     let version = u8::deserialize(&mut body)
         .map_err(|error| DecodeError::MalformedRandomSeedEvent(error.to_string()))?;
     if version != zama_host::EVENT_VERSION {
         return Err(DecodeError::UnsupportedRandomSeedVersion(version));
     }
-    let seeds = <Vec<zama_host::events::FheEvalRandomSeed>>::deserialize(&mut body)
+    let seeds = <Vec<zama_host::events::FheExecuteRandomSeed>>::deserialize(&mut body)
         .map_err(|error| DecodeError::MalformedRandomSeedEvent(error.to_string()))?;
     if !body.is_empty() {
         return Err(DecodeError::MalformedRandomSeedEvent(
@@ -431,47 +354,48 @@ fn validate_random_seed_event(
     Ok(())
 }
 
-fn expected_random_step_indexes(plan: &FheEvalArgs) -> Vec<u16> {
-    plan.steps
+fn expected_random_step_indexes(execution: &FheExecuteArgs) -> Vec<u16> {
+    execution
+        .steps
         .iter()
         .enumerate()
         .filter(|(_, step)| {
             matches!(
                 step,
-                FheEvalStep::Rand { .. } | FheEvalStep::RandBounded { .. }
+                FheExecuteStep::Rand { .. } | FheExecuteStep::RandBounded { .. }
             )
         })
         .map(|(index, _)| index as u16)
         .collect()
 }
 
-fn decode_born_public_event(
+fn decode_created_public_event(
     ix: &RawInstruction,
     program_id: [u8; 32],
-) -> Result<Vec<BornPublicOutput>, DecodeError> {
+) -> Result<Vec<CreatedPublicOutput>, DecodeError> {
     if ix.program_id != program_id
         || ix.accounts.as_slice() != [zama_host::EVENT_AUTHORITY_AND_BUMP.0.to_bytes()]
     {
-        return Err(DecodeError::InvalidBornPublicEnvelope);
+        return Err(DecodeError::InvalidCreatedPublicEnvelope);
     }
     // RPC compiled inner instructions do not expose CPI AccountMeta flags.
     // Because failed transactions are discarded in `chain`, successful Anchor
     // dispatch with this exact PDA proves the host supplied its signer seeds;
     // #3136 separately pins the on-chain meta as signed and readonly.
-    let mut body = ix
-        .data
-        .strip_prefix(&ANCHOR_EVENT_IX_TAG_LE)
-        .and_then(|data| data.strip_prefix(&event_discriminator("PublicOutputsProducedEvent")))
-        .ok_or(DecodeError::InvalidBornPublicEnvelope)?;
+    let mut body =
+        zama_host::decode::strip_event_cpi_envelope::<PublicOutputsProducedEvent>(&ix.data)
+            .ok_or(DecodeError::InvalidCreatedPublicEnvelope)?;
     let version = u8::deserialize(&mut body)
-        .map_err(|e| DecodeError::MalformedBornPublicEvent(e.to_string()))?;
-    if version != zama_host::PUBLIC_OUTPUTS_PRODUCED_EVENT_VERSION {
-        return Err(DecodeError::UnsupportedBornPublicVersion(version));
+        .map_err(|e| DecodeError::MalformedCreatedPublicEvent(e.to_string()))?;
+    if version != zama_host::EVENT_VERSION {
+        return Err(DecodeError::UnsupportedCreatedPublicVersion(version));
     }
     const RECORD_BYTES: usize = 66;
     let count_bytes: [u8; 4] = body
         .get(..4)
-        .ok_or_else(|| DecodeError::MalformedBornPublicEvent("missing record count".to_string()))?
+        .ok_or_else(|| {
+            DecodeError::MalformedCreatedPublicEvent("missing record count".to_string())
+        })?
         .try_into()
         .expect("record count slice has fixed length");
     let count = u32::from_le_bytes(count_bytes) as usize;
@@ -479,28 +403,28 @@ fn decode_born_public_event(
         .checked_mul(RECORD_BYTES)
         .and_then(|records| records.checked_add(4))
         .ok_or_else(|| {
-            DecodeError::MalformedBornPublicEvent(
+            DecodeError::MalformedCreatedPublicEvent(
                 "record count overflows encoded length".to_string(),
             )
         })?;
-    // The producer emits no event for an empty batch, so an encoded batch must
+    // The producer emits no event for an empty execution, so an encoded execution must
     // contain at least one record.
-    if !(1..=zama_host::MAX_FHE_EVAL_OPS).contains(&count) || body.len() != expected_len {
-        return Err(DecodeError::MalformedBornPublicEvent(format!(
+    if !(1..=zama_host::MAX_FHE_EXECUTION_STEPS).contains(&count) || body.len() != expected_len {
+        return Err(DecodeError::MalformedCreatedPublicEvent(format!(
             "invalid record count or encoded length: count={count}, bytes={}",
             body.len()
         )));
     }
     let outputs = <Vec<zama_host::events::ProducedPublicOutput>>::deserialize(&mut body)
-        .map_err(|e| DecodeError::MalformedBornPublicEvent(e.to_string()))?;
+        .map_err(|e| DecodeError::MalformedCreatedPublicEvent(e.to_string()))?;
     if !body.is_empty() {
-        return Err(DecodeError::MalformedBornPublicEvent(
+        return Err(DecodeError::MalformedCreatedPublicEvent(
             "trailing-byte payload".to_string(),
         ));
     }
     Ok(outputs
         .into_iter()
-        .map(|output| BornPublicOutput {
+        .map(|output| CreatedPublicOutput {
             step_index: output.step_index,
             encrypted_value: output.encrypted_value.to_bytes(),
             output_handle: output.output_handle,
@@ -508,33 +432,34 @@ fn decode_born_public_event(
         .collect())
 }
 
-fn expected_born_public_outputs(
+fn expected_created_public_outputs(
     ix: &RawInstruction,
-    plan: &FheEvalArgs,
+    execution: &FheExecuteArgs,
 ) -> Result<Vec<(u16, [u8; 32])>, DecodeError> {
-    plan.steps
+    execution
+        .steps
         .iter()
         .enumerate()
         .filter_map(|(step_index, step)| {
-            let FheEvalOutput::AllowedDurable {
+            let FheExecuteOutput::StoredValue {
                 output_encrypted_value_index,
                 make_public: true,
                 ..
-            } = fhe_eval_step_output(step)
+            } = fhe_execute_step_output(step)
             else {
                 return None;
             };
             Some(
-                fhe_eval_durable_output_account(ix, *output_encrypted_value_index)
+                fhe_execute_persistent_output_account(ix, *output_encrypted_value_index)
                     .map(|account| (step_index as u16, account)),
             )
         })
         .collect()
 }
 
-fn validate_born_public_event(
+fn validate_created_public_event(
     expected: &[(u16, [u8; 32])],
-    actual: Vec<BornPublicOutput>,
+    actual: Vec<CreatedPublicOutput>,
     step_count: usize,
 ) -> Result<Vec<Option<[u8; 32]>>, DecodeError> {
     let mut accounts = std::collections::HashSet::with_capacity(actual.len());
@@ -542,7 +467,7 @@ fn validate_born_public_event(
     if actual.iter().any(|record| {
         !accounts.insert(record.encrypted_value) || !handles.insert(record.output_handle)
     }) {
-        return Err(DecodeError::DuplicateBornPublicOutput);
+        return Err(DecodeError::DuplicateCreatedPublicOutput);
     }
     if actual.len() != expected.len()
         || actual
@@ -552,13 +477,13 @@ fn validate_born_public_event(
                 record.step_index != *step_index || record.encrypted_value != *account
             })
     {
-        return Err(DecodeError::BornPublicMismatch);
+        return Err(DecodeError::CreatedPublicMismatch);
     }
     let mut handles_by_step = vec![None; step_count];
     for record in actual {
         let slot = handles_by_step
             .get_mut(usize::from(record.step_index))
-            .ok_or(DecodeError::BornPublicMismatch)?;
+            .ok_or(DecodeError::CreatedPublicMismatch)?;
         *slot = Some(record.output_handle);
     }
     Ok(handles_by_step)
@@ -581,8 +506,8 @@ pub fn decode_program_instructions(
     let mut index = 0;
     while index < instructions.len() {
         let ix = &instructions[index];
-        if is_born_public_event(ix, program_id) {
-            return Err(DecodeError::UnexpectedBornPublicEvent);
+        if is_created_public_event(ix, program_id) {
+            return Err(DecodeError::UnexpectedCreatedPublicEvent);
         }
         if is_random_seed_event(ix, program_id) {
             return Err(DecodeError::UnexpectedRandomSeedEvent);
@@ -591,38 +516,40 @@ pub fn decode_program_instructions(
             index += 1;
             continue;
         }
-        if is_fhe_eval(ix) {
+        if is_fhe_execute(ix) {
             let mut body = &ix.data[8..];
-            let plan = FheEvalArgs::deserialize(&mut body).map_err(borsh_err)?;
-            let expected = expected_born_public_outputs(ix, &plan)?;
-            let eval_height = ix.stack_height.ok_or(DecodeError::InvalidStackMetadata)?;
-            let event_height = eval_height
+            let execution = FheExecuteArgs::deserialize(&mut body).map_err(borsh_err)?;
+            let expected = expected_created_public_outputs(ix, &execution)?;
+            let execute_stack_height = ix.stack_height.ok_or(DecodeError::InvalidStackMetadata)?;
+            let event_height = execute_stack_height
                 .checked_add(1)
                 .ok_or(DecodeError::InvalidStackMetadata)?;
-            let mut frame_end = index + 1;
-            while let Some(child) = instructions.get(frame_end) {
+            let mut batch_end = index + 1;
+            while let Some(child) = instructions.get(batch_end) {
                 let child_height = child
                     .stack_height
                     .ok_or(DecodeError::InvalidStackMetadata)?;
-                if child.top_level_index != ix.top_level_index || child_height <= eval_height {
+                if child.top_level_index != ix.top_level_index
+                    || child_height <= execute_stack_height
+                {
                     break;
                 }
-                frame_end += 1;
+                batch_end += 1;
             }
-            let event_indexes = (index + 1..frame_end)
-                .filter(|&child| is_born_public_event(&instructions[child], program_id))
+            let event_indexes = (index + 1..batch_end)
+                .filter(|&child| is_created_public_event(&instructions[child], program_id))
                 .collect::<Vec<_>>();
-            let random_event_indexes = (index + 1..frame_end)
+            let random_event_indexes = (index + 1..batch_end)
                 .filter(|&child| is_random_seed_event(&instructions[child], program_id))
                 .collect::<Vec<_>>();
-            if instructions[index + 1..frame_end].iter().any(|child| {
+            if instructions[index + 1..batch_end].iter().any(|child| {
                 child.program_id == program_id
-                    && !is_born_public_event(child, program_id)
+                    && !is_created_public_event(child, program_id)
                     && !is_random_seed_event(child, program_id)
             }) {
                 return Err(DecodeError::UnexpectedHostDescendant);
             }
-            let expected_random_steps = expected_random_step_indexes(&plan);
+            let expected_random_steps = expected_random_step_indexes(&execution);
             match (
                 expected_random_steps.is_empty(),
                 random_event_indexes.as_slice(),
@@ -640,21 +567,23 @@ pub fn decode_program_instructions(
                 }
             }
             let handles = match (expected.is_empty(), event_indexes.as_slice()) {
-                (true, []) => vec![None; plan.steps.len()],
-                (true, _) => return Err(DecodeError::UnexpectedBornPublicEvent),
-                (false, []) => return Err(DecodeError::MissingBornPublicEvent),
+                (true, []) => vec![None; execution.steps.len()],
+                (true, _) => return Err(DecodeError::UnexpectedCreatedPublicEvent),
+                (false, []) => return Err(DecodeError::MissingCreatedPublicEvent),
                 (false, [event_index]) => {
                     let event_ix = &instructions[*event_index];
                     if event_ix.stack_height != Some(event_height) {
-                        return Err(DecodeError::InvalidBornPublicEnvelope);
+                        return Err(DecodeError::InvalidCreatedPublicEnvelope);
                     }
-                    let actual = decode_born_public_event(event_ix, program_id)?;
-                    validate_born_public_event(&expected, actual, plan.steps.len())?
+                    let actual = decode_created_public_event(event_ix, program_id)?;
+                    validate_created_public_event(&expected, actual, execution.steps.len())?
                 }
-                (false, _) => return Err(DecodeError::UnexpectedBornPublicEvent),
+                (false, _) => return Err(DecodeError::UnexpectedCreatedPublicEvent),
             };
-            out.extend(decode_fhe_eval_durable_outputs(ix, &plan, &handles)?);
-            index = frame_end;
+            out.extend(decode_fhe_execute_persistent_outputs(
+                ix, &execution, &handles,
+            )?);
+            index = batch_end;
         } else {
             out.extend(decode_instructions(ix)?);
             index += 1;
@@ -663,8 +592,8 @@ pub fn decode_program_instructions(
     Ok(out)
 }
 
-fn is_fhe_eval(ix: &RawInstruction) -> bool {
-    ix.data.len() >= 8 && ix.data[..8] == discriminator("fhe_eval")
+fn is_fhe_execute(ix: &RawInstruction) -> bool {
+    zama_host::decode::is_fhe_execute_instruction(&ix.data)
 }
 
 #[cfg(test)]
@@ -673,7 +602,35 @@ mod tests {
     use anchor_lang::prelude::Pubkey;
     use anchor_lang::AnchorSerialize;
     use borsh::BorshSerialize;
-    use zama_host::state::{FheEvalOutput, FheEvalStep};
+    use sha2::{Digest, Sha256};
+    use zama_host::state::{FheExecuteOutput, FheExecuteStep};
+
+    // The fixtures below re-derive every discriminator and the event self-CPI
+    // tag from first principles (sha256 over the Anchor name scheme, hardcoded
+    // tag bytes) while production decodes through zama-host's generated consts,
+    // so a drift in either side breaks these tests. The names passed to
+    // `discriminator`/`event_discriminator` are also what
+    // `solana/scripts/check_proof_store_idl.py` pins against the vendored IDL.
+
+    /// Anchor-style 8-byte global instruction discriminator: `sha256("global:<name>")[..8]`.
+    fn discriminator(name: &str) -> [u8; 8] {
+        let digest = Sha256::digest(format!("global:{name}").as_bytes());
+        let mut out = [0u8; 8];
+        out.copy_from_slice(&digest[..8]);
+        out
+    }
+
+    /// Anchor-style 8-byte event discriminator: `sha256("event:<name>")[..8]`.
+    fn event_discriminator(name: &str) -> [u8; 8] {
+        let digest = Sha256::digest(format!("event:{name}").as_bytes());
+        let mut out = [0u8; 8];
+        out.copy_from_slice(&digest[..8]);
+        out
+    }
+
+    /// Anchor's `emit_cpi!` self-invocation sentinel prefixing the event bytes
+    /// in an inner instruction (little-endian of `0x1d9acb512ea545e4`).
+    const ANCHOR_EVENT_IX_TAG_LE: [u8; 8] = 0x1d9acb512ea545e4_u64.to_le_bytes();
 
     fn program_id() -> [u8; 32] {
         [7u8; 32]
@@ -719,16 +676,16 @@ mod tests {
         Pubkey::new_from_array(pk(tag))
     }
 
-    /// The 9 named `fhe_eval` accounts (payer, compute_subject,
-    /// app_account_authority, host_config, system_program, hcu_block_meter,
+    /// The 9 named `fhe_execute` accounts (payer, compute_subject,
+    /// encrypted_value_account_authority, host_config, system_program, hcu_block_meter,
     /// hcu_trusted_app_record, event_authority, program) followed by
     /// `remaining_accounts` — matching the real anchor account layout so the
-    /// durable output resolves at `FHE_EVAL_REMAINING_BASE`.
-    fn fhe_eval_accounts(remaining: &[[u8; 32]]) -> Vec<[u8; 32]> {
+    /// persistent output resolves at `FHE_EXECUTE_REMAINING_BASE`.
+    fn fhe_execute_accounts(remaining: &[[u8; 32]]) -> Vec<[u8; 32]> {
         let mut accounts = vec![
             pk(0xA0),     // 0 payer
             pk(0xA1),     // 1 compute_subject
-            pk(0xA2),     // 2 app_account_authority
+            pk(0xA2),     // 2 encrypted_value_account_authority
             pk(0xA3),     // 3 host_config
             pk(0xA4),     // 4 system_program
             program_id(), // 5 hcu_block_meter (None placeholder)
@@ -740,76 +697,81 @@ mod tests {
         accounts
     }
 
-    // Frame constants live in the interned pool (fhevm-internal#1853 W7). The
-    // fixtures intern through a thread-local pool while assembling steps and
-    // `frame` drains it into the finished args; each test runs on its own thread.
+    // Execution constants live in the interned dictionary (fhevm-internal#1853 W7). The
+    // fixtures intern through a thread-local dictionary while assembling steps and
+    // `execution` drains it into the finished args; each test runs on its own thread.
     std::thread_local! {
-        static FRAME_POOL: std::cell::RefCell<Vec<[u8; 32]>> =
+        static INTERNED_DICTIONARY: std::cell::RefCell<Vec<[u8; 32]>> =
             const { std::cell::RefCell::new(Vec::new()) };
     }
 
     fn intern(bytes: [u8; 32]) -> u8 {
-        FRAME_POOL.with(|pool| {
-            let mut pool = pool.borrow_mut();
-            if let Some(index) = pool.iter().position(|entry| *entry == bytes) {
-                return u8::try_from(index).expect("test pool fits u8");
+        INTERNED_DICTIONARY.with(|dictionary| {
+            let mut dictionary = dictionary.borrow_mut();
+            if let Some(index) = dictionary.iter().position(|entry| *entry == bytes) {
+                return u8::try_from(index).expect("test dictionary fits u8");
             }
-            let index = u8::try_from(pool.len()).expect("test pool fits u8");
-            pool.push(bytes);
+            let index = u8::try_from(dictionary.len()).expect("test dictionary fits u8");
+            dictionary.push(bytes);
             index
         })
     }
 
-    fn frame(steps: Vec<FheEvalStep>) -> FheEvalArgs {
-        FheEvalArgs {
+    fn execution(steps: Vec<FheExecuteStep>) -> FheExecuteArgs {
+        FheExecuteArgs {
             account_count: 0,
-            pool: FRAME_POOL.with(|pool| pool.take()),
+            dictionary: INTERNED_DICTIONARY.with(|dictionary| dictionary.take()),
             steps,
         }
     }
 
-    fn durable_output(
+    fn persistent_output(
         output_encrypted_value_index: u8,
         subject_tags: &[u8],
         previous_handle: Option<[u8; 32]>,
         previous_subject_tags: Option<&[u8]>,
-    ) -> FheEvalOutput {
-        FheEvalOutput::AllowedDurable {
+    ) -> FheExecuteOutput {
+        FheExecuteOutput::StoredValue {
             output_encrypted_value_index,
-            output_app_account_authority_index: None,
-            output_acl_domain_key_index: intern(pk(0x40)),
-            output_app_account_index: intern(pk(0x41)),
-            output_encrypted_value_label_index: intern(pk(0x42)),
+            output_authority_index: None,
+            output_domain_index: intern(pk(0x40)),
+            output_account_index: intern(pk(0x41)),
+            output_label_index: intern(pk(0x42)),
             output_subject_indexes: subject_tags.iter().map(|tag| intern(pk(*tag))).collect(),
-            previous_handle,
-            previous_subjects: previous_subject_tags
-                .map(|subjects| subjects.iter().map(|tag| pubkey(*tag)).collect()),
+            previous_state: previous_handle.map(|handle| zama_host::PreviousState {
+                handle,
+                subjects: previous_subject_tags
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|tag| pubkey(*tag))
+                    .collect(),
+            }),
             make_public: false,
         }
     }
 
-    fn make_public_durable_output(
+    fn make_public_persistent_output(
         output_encrypted_value_index: u8,
         subject_tags: &[u8],
         previous_handle: Option<[u8; 32]>,
         previous_subject_tags: Option<&[u8]>,
-    ) -> FheEvalOutput {
-        let mut output = durable_output(
+    ) -> FheExecuteOutput {
+        let mut output = persistent_output(
             output_encrypted_value_index,
             subject_tags,
             previous_handle,
             previous_subject_tags,
         );
-        if let FheEvalOutput::AllowedDurable { make_public, .. } = &mut output {
+        if let FheExecuteOutput::StoredValue { make_public, .. } = &mut output {
             *make_public = true;
         }
         output
     }
 
-    fn born_public_event_ix(records: &[(u16, [u8; 32], [u8; 32])]) -> RawInstruction {
+    fn created_public_event_ix(records: &[(u16, [u8; 32], [u8; 32])]) -> RawInstruction {
         let mut data = ANCHOR_EVENT_IX_TAG_LE.to_vec();
         data.extend_from_slice(&event_discriminator("PublicOutputsProducedEvent"));
-        data.push(zama_host::PUBLIC_OUTPUTS_PRODUCED_EVENT_VERSION);
+        data.push(zama_host::EVENT_VERSION);
         let records = records
             .iter()
             .map(|(step_index, encrypted_value, output_handle)| {
@@ -831,21 +793,21 @@ mod tests {
     }
 
     fn random_seed_event_ix(records: &[(u16, [u8; 16])]) -> RawInstruction {
-        let event = zama_host::events::FheEvalRandomSeedsEvent {
+        let event = zama_host::events::FheExecuteRandomSeedsEvent {
             version: zama_host::EVENT_VERSION,
             seeds: records
                 .iter()
-                .map(|(step_index, seed)| zama_host::events::FheEvalRandomSeed {
-                    step_index: *step_index,
-                    seed: *seed,
-                })
+                .map(
+                    |(step_index, seed)| zama_host::events::FheExecuteRandomSeed {
+                        step_index: *step_index,
+                        seed: *seed,
+                    },
+                )
                 .collect(),
         };
-        let data = ANCHOR_EVENT_IX_TAG_LE
-            .iter()
-            .copied()
-            .chain(anchor_lang::Event::data(&event))
-            .collect();
+        let mut data = ANCHOR_EVENT_IX_TAG_LE.to_vec();
+        data.extend_from_slice(&event_discriminator("FheExecuteRandomSeedsEvent"));
+        AnchorSerialize::serialize(&event, &mut data).unwrap();
         RawInstruction {
             program_id: program_id(),
             accounts: vec![zama_host::EVENT_AUTHORITY_AND_BUMP.0.to_bytes()],
@@ -855,62 +817,36 @@ mod tests {
         }
     }
 
+    /// The full ingest catalog, stated by name: production matches through the
+    /// generated consts, and this test re-derives each one from its Anchor
+    /// name. `check_proof_store_idl.py` reads these names to partition the
+    /// vendored IDL into decoded vs ignored instructions.
     #[test]
-    fn decodes_create_encrypted_value() {
-        let ev = pk(1);
-        let accounts = vec![pk(0xA), pk(0xB), ev, pk(0xC), pk(0xD)];
-        #[derive(BorshSerialize)]
-        struct Args {
-            acl_domain_key: [u8; 32],
-            app_account: [u8; 32],
-            label: [u8; 32],
-            handle: [u8; 32],
-            subjects: Vec<SubjectGrant>,
-        }
-        let args = Args {
-            acl_domain_key: pk(0x10),
-            app_account: pk(0x11),
-            label: pk(0x12),
-            handle: pk(0x20),
-            subjects: vec![SubjectGrant { subject: pk(0x30) }],
-        };
-        let ix = ix_with_data(accounts, "create_encrypted_value", args);
-        let decoded = decode_instruction(&ix).unwrap().unwrap();
+    fn generated_discriminators_match_name_derivation() {
+        use anchor_lang::Discriminator;
         assert_eq!(
-            decoded,
-            DecodedInstruction::CreateEncryptedValue {
-                encrypted_value: ev,
-                handle: pk(0x20),
-                subjects: vec![SubjectGrant { subject: pk(0x30) }],
-            }
+            zama_host::instruction::FheExecute::DISCRIMINATOR,
+            discriminator("fhe_execute")
         );
-    }
-
-    #[test]
-    fn decodes_update_encrypted_value() {
-        let ev = pk(2);
-        let accounts = vec![pk(0xA), pk(0xB), ev, pk(0xC), pk(0xD)];
-        #[derive(BorshSerialize)]
-        struct Args {
-            new_handle: [u8; 32],
-            previous_handle: [u8; 32],
-            previous_subjects: Vec<[u8; 32]>,
-        }
-        let args = Args {
-            new_handle: pk(0x21),
-            previous_handle: pk(0x20),
-            previous_subjects: vec![pk(0x30), pk(0x31)],
-        };
-        let ix = ix_with_data(accounts, "update_encrypted_value", args);
-        let decoded = decode_instruction(&ix).unwrap().unwrap();
         assert_eq!(
-            decoded,
-            DecodedInstruction::UpdateEncryptedValue {
-                encrypted_value: ev,
-                new_handle: pk(0x21),
-                previous_handle: pk(0x20),
-                previous_subjects: vec![pk(0x30), pk(0x31)],
-            }
+            zama_host::instruction::AllowSubjects::DISCRIMINATOR,
+            discriminator("allow_subjects")
+        );
+        assert_eq!(
+            zama_host::instruction::RemoveSubject::DISCRIMINATOR,
+            discriminator("remove_subject")
+        );
+        assert_eq!(
+            zama_host::instruction::MakeHandlePublic::DISCRIMINATOR,
+            discriminator("make_handle_public")
+        );
+        assert_eq!(
+            PublicOutputsProducedEvent::DISCRIMINATOR,
+            event_discriminator("PublicOutputsProducedEvent")
+        );
+        assert_eq!(
+            FheExecuteRandomSeedsEvent::DISCRIMINATOR,
+            event_discriminator("FheExecuteRandomSeedsEvent")
         );
     }
 
@@ -925,6 +861,21 @@ mod tests {
             DecodedInstruction::MakeHandlePublic {
                 encrypted_value: ev,
                 handle: pk(0x20),
+            }
+        );
+    }
+
+    #[test]
+    fn decodes_allow_subjects_with_encrypted_value_at_index_2() {
+        let ev = pk(5);
+        let accounts = vec![pk(0xA), pk(0xB), ev, pk(0xC), pk(0xD)];
+        let ix = ix_with_data(accounts, "allow_subjects", vec![pk(0x21), pk(0x22)]);
+        let decoded = decode_instruction(&ix).unwrap().unwrap();
+        assert_eq!(
+            decoded,
+            DecodedInstruction::AllowSubjects {
+                encrypted_value: ev,
+                subjects: vec![pk(0x21), pk(0x22)],
             }
         );
     }
@@ -945,31 +896,31 @@ mod tests {
     }
 
     #[test]
-    fn decodes_fhe_eval_durable_outputs_in_step_order() {
+    fn decodes_fhe_execute_persistent_outputs_in_step_order() {
         let ev0 = pk(0xE0);
         let ev1 = pk(0xE1);
-        let plan = frame(vec![
-            FheEvalStep::TrivialEncrypt {
+        let execution = execution(vec![
+            FheExecuteStep::TrivialEncrypt {
                 plaintext: pk(0x10),
                 fhe_type: 5,
-                output: durable_output(0, &[0x30], None, None),
+                output: persistent_output(0, &[0x30], None, None),
             },
-            FheEvalStep::Rand {
+            FheExecuteStep::Rand {
                 fhe_type: 5,
-                output: durable_output(1, &[0x31, 0x32], Some(pk(0x20)), Some(&[0x31, 0x32])),
+                output: persistent_output(1, &[0x31, 0x32], Some(pk(0x20)), Some(&[0x31, 0x32])),
             },
         ]);
-        let ix = ix_with_anchor_data(fhe_eval_accounts(&[ev0, ev1]), "fhe_eval", plan);
+        let ix = ix_with_anchor_data(fhe_execute_accounts(&[ev0, ev1]), "fhe_execute", execution);
         let decoded = decode_program_instructions(program_id(), &[ix]).unwrap();
         assert_eq!(
             decoded,
             vec![
-                DecodedInstruction::FheEvalCreateEncryptedValue {
+                DecodedInstruction::FheExecuteCreateEncryptedValue {
                     encrypted_value: ev0,
-                    subjects: vec![SubjectGrant { subject: pk(0x30) }],
+                    subjects: vec![pk(0x30)],
                     make_public_handle: None,
                 },
-                DecodedInstruction::FheEvalUpdateEncryptedValue {
+                DecodedInstruction::FheExecuteUpdateEncryptedValue {
                     encrypted_value: ev1,
                     previous_handle: pk(0x20),
                     previous_subjects: vec![pk(0x31), pk(0x32)],
@@ -1016,39 +967,40 @@ mod tests {
         assert_eq!(decode_instruction(&ix), Err(DecodeError::DataTooShort));
     }
 
-    fn two_born_public_outputs() -> (RawInstruction, RawInstruction) {
+    fn two_created_public_outputs() -> (RawInstruction, RawInstruction) {
         let ev0 = pk(0xE0);
         let ev1 = pk(0xE1);
-        let plan = frame(vec![
-            FheEvalStep::TrivialEncrypt {
+        let execution = execution(vec![
+            FheExecuteStep::TrivialEncrypt {
                 plaintext: pk(0x02),
                 fhe_type: 5,
-                output: make_public_durable_output(0, &[0x30], None, None),
+                output: make_public_persistent_output(0, &[0x30], None, None),
             },
-            FheEvalStep::TrivialEncrypt {
+            FheExecuteStep::TrivialEncrypt {
                 plaintext: pk(0x03),
                 fhe_type: 5,
-                output: make_public_durable_output(1, &[0x31], Some(pk(0x20)), Some(&[0x31])),
+                output: make_public_persistent_output(1, &[0x31], Some(pk(0x20)), Some(&[0x31])),
             },
         ]);
-        let eval = ix_with_anchor_data(fhe_eval_accounts(&[ev0, ev1]), "fhe_eval", plan);
-        let event = born_public_event_ix(&[(0, ev0, pk(0x50)), (1, ev1, pk(0x51))]);
-        (eval, event)
+        let execute_ix =
+            ix_with_anchor_data(fhe_execute_accounts(&[ev0, ev1]), "fhe_execute", execution);
+        let event = created_public_event_ix(&[(0, ev0, pk(0x50)), (1, ev1, pk(0x51))]);
+        (execute_ix, event)
     }
 
     #[test]
-    fn exact_born_public_batch_resolves_each_durable_output() {
-        let (eval, event) = two_born_public_outputs();
-        let decoded = decode_program_instructions(program_id(), &[eval, event]).unwrap();
+    fn exact_created_public_batch_resolves_each_persistent_output() {
+        let (execute_ix, event) = two_created_public_outputs();
+        let decoded = decode_program_instructions(program_id(), &[execute_ix, event]).unwrap();
         assert_eq!(
             decoded,
             vec![
-                DecodedInstruction::FheEvalCreateEncryptedValue {
+                DecodedInstruction::FheExecuteCreateEncryptedValue {
                     encrypted_value: pk(0xE0),
-                    subjects: vec![SubjectGrant { subject: pk(0x30) }],
+                    subjects: vec![pk(0x30)],
                     make_public_handle: Some(pk(0x50)),
                 },
-                DecodedInstruction::FheEvalUpdateEncryptedValue {
+                DecodedInstruction::FheExecuteUpdateEncryptedValue {
                     encrypted_value: pk(0xE1),
                     previous_handle: pk(0x20),
                     previous_subjects: vec![pk(0x31)],
@@ -1060,26 +1012,31 @@ mod tests {
     }
 
     #[test]
-    fn batches_are_associated_with_their_enclosing_fhe_eval() {
-        let (mut first_eval, mut first_event) = two_born_public_outputs();
-        first_eval.stack_height = Some(2);
+    fn batches_are_associated_with_their_enclosing_fhe_execute() {
+        let (mut first_execute_ix, mut first_event) = two_created_public_outputs();
+        first_execute_ix.stack_height = Some(2);
         first_event.stack_height = Some(3);
-        let (mut second_eval, mut second_event) = two_born_public_outputs();
-        second_eval.stack_height = Some(2);
+        let (mut second_execute_ix, mut second_event) = two_created_public_outputs();
+        second_execute_ix.stack_height = Some(2);
         second_event.stack_height = Some(3);
         second_event.data =
-            born_public_event_ix(&[(0, pk(0xE0), pk(0x60)), (1, pk(0xE1), pk(0x61))]).data;
+            created_public_event_ix(&[(0, pk(0xE0), pk(0x60)), (1, pk(0xE1), pk(0x61))]).data;
 
         let decoded = decode_program_instructions(
             program_id(),
-            &[first_eval, first_event, second_eval, second_event],
+            &[
+                first_execute_ix,
+                first_event,
+                second_execute_ix,
+                second_event,
+            ],
         )
         .unwrap();
 
         assert_eq!(decoded.len(), 4);
         assert!(matches!(
             &decoded[2],
-            DecodedInstruction::FheEvalCreateEncryptedValue {
+            DecodedInstruction::FheExecuteCreateEncryptedValue {
                 make_public_handle: Some(handle),
                 ..
             } if *handle == pk(0x60)
@@ -1087,124 +1044,126 @@ mod tests {
     }
 
     #[test]
-    fn missing_born_public_batch_fails_closed() {
-        let (eval, _) = two_born_public_outputs();
+    fn missing_created_public_batch_fails_closed() {
+        let (execute_ix, _) = two_created_public_outputs();
         assert_eq!(
-            decode_program_instructions(program_id(), &[eval]),
-            Err(DecodeError::MissingBornPublicEvent)
+            decode_program_instructions(program_id(), &[execute_ix]),
+            Err(DecodeError::MissingCreatedPublicEvent)
         );
     }
 
     #[test]
-    fn extra_batch_for_non_public_frame_fails_closed() {
-        let plan = frame(vec![FheEvalStep::TrivialEncrypt {
+    fn extra_batch_for_non_public_batch_fails_closed() {
+        let execution = execution(vec![FheExecuteStep::TrivialEncrypt {
             plaintext: pk(0x02),
             fhe_type: 5,
-            output: durable_output(0, &[0x30], None, None),
+            output: persistent_output(0, &[0x30], None, None),
         }]);
-        let eval = ix_with_anchor_data(fhe_eval_accounts(&[pk(0xE0)]), "fhe_eval", plan);
-        let event = born_public_event_ix(&[(0, pk(0xE0), pk(0x50))]);
+        let execute_ix =
+            ix_with_anchor_data(fhe_execute_accounts(&[pk(0xE0)]), "fhe_execute", execution);
+        let event = created_public_event_ix(&[(0, pk(0xE0), pk(0x50))]);
         assert_eq!(
-            decode_program_instructions(program_id(), &[eval, event]),
-            Err(DecodeError::UnexpectedBornPublicEvent)
+            decode_program_instructions(program_id(), &[execute_ix, event]),
+            Err(DecodeError::UnexpectedCreatedPublicEvent)
         );
     }
 
     #[test]
-    fn reordered_or_mismatched_born_public_batch_fails_closed() {
-        let (eval, _) = two_born_public_outputs();
-        let reordered = born_public_event_ix(&[(1, pk(0xE1), pk(0x51)), (0, pk(0xE0), pk(0x50))]);
+    fn reordered_or_mismatched_created_public_batch_fails_closed() {
+        let (execute_ix, _) = two_created_public_outputs();
+        let reordered =
+            created_public_event_ix(&[(1, pk(0xE1), pk(0x51)), (0, pk(0xE0), pk(0x50))]);
         assert_eq!(
-            decode_program_instructions(program_id(), &[eval, reordered]),
-            Err(DecodeError::BornPublicMismatch)
+            decode_program_instructions(program_id(), &[execute_ix, reordered]),
+            Err(DecodeError::CreatedPublicMismatch)
         );
     }
 
     #[test]
     fn duplicate_accounts_and_handles_fail_closed() {
-        let (eval, _) = two_born_public_outputs();
+        let (execute_ix, _) = two_created_public_outputs();
         let duplicate_account =
-            born_public_event_ix(&[(0, pk(0xE0), pk(0x50)), (1, pk(0xE0), pk(0x51))]);
+            created_public_event_ix(&[(0, pk(0xE0), pk(0x50)), (1, pk(0xE0), pk(0x51))]);
         assert_eq!(
-            decode_program_instructions(program_id(), &[eval.clone(), duplicate_account],),
-            Err(DecodeError::DuplicateBornPublicOutput)
+            decode_program_instructions(program_id(), &[execute_ix.clone(), duplicate_account],),
+            Err(DecodeError::DuplicateCreatedPublicOutput)
         );
         let duplicate_handle =
-            born_public_event_ix(&[(0, pk(0xE0), pk(0x50)), (1, pk(0xE1), pk(0x50))]);
+            created_public_event_ix(&[(0, pk(0xE0), pk(0x50)), (1, pk(0xE1), pk(0x50))]);
         assert_eq!(
-            decode_program_instructions(program_id(), &[eval, duplicate_handle]),
-            Err(DecodeError::DuplicateBornPublicOutput)
+            decode_program_instructions(program_id(), &[execute_ix, duplicate_handle]),
+            Err(DecodeError::DuplicateCreatedPublicOutput)
         );
     }
 
     #[test]
     fn malformed_unknown_version_and_wrong_envelope_fail_closed() {
-        let (eval, mut malformed) = two_born_public_outputs();
+        let (execute_ix, mut malformed) = two_created_public_outputs();
         malformed.data.push(0);
         assert!(matches!(
-            decode_program_instructions(program_id(), &[eval.clone(), malformed]),
-            Err(DecodeError::MalformedBornPublicEvent(_))
+            decode_program_instructions(program_id(), &[execute_ix.clone(), malformed]),
+            Err(DecodeError::MalformedCreatedPublicEvent(_))
         ));
 
-        let (_, mut unknown_version) = two_born_public_outputs();
+        let (_, mut unknown_version) = two_created_public_outputs();
         unknown_version.data[16] = 99;
         assert_eq!(
-            decode_program_instructions(program_id(), &[eval.clone(), unknown_version],),
-            Err(DecodeError::UnsupportedBornPublicVersion(99))
+            decode_program_instructions(program_id(), &[execute_ix.clone(), unknown_version],),
+            Err(DecodeError::UnsupportedCreatedPublicVersion(99))
         );
 
-        let (_, mut wrong_envelope) = two_born_public_outputs();
+        let (_, mut wrong_envelope) = two_created_public_outputs();
         wrong_envelope.accounts = vec![pk(0xEE)];
         assert_eq!(
-            decode_program_instructions(program_id(), &[eval, wrong_envelope]),
-            Err(DecodeError::InvalidBornPublicEnvelope)
+            decode_program_instructions(program_id(), &[execute_ix, wrong_envelope]),
+            Err(DecodeError::InvalidCreatedPublicEnvelope)
         );
     }
 
     #[test]
     fn huge_declared_record_count_fails_before_record_decode() {
-        let (eval, mut event) = two_born_public_outputs();
+        let (execute_ix, mut event) = two_created_public_outputs();
         event.data.truncate(21);
         event.data[17..21].copy_from_slice(&u32::MAX.to_le_bytes());
 
         assert!(matches!(
-            decode_program_instructions(program_id(), &[eval, event]),
-            Err(DecodeError::MalformedBornPublicEvent(_))
+            decode_program_instructions(program_id(), &[execute_ix, event]),
+            Err(DecodeError::MalformedCreatedPublicEvent(_))
         ));
     }
 
     #[test]
     fn oversized_batch_fails_closed() {
-        let (eval, _) = two_born_public_outputs();
-        let records = (0..=zama_host::MAX_FHE_EVAL_OPS)
+        let (execute_ix, _) = two_created_public_outputs();
+        let records = (0..=zama_host::MAX_FHE_EXECUTION_STEPS)
             .map(|index| (index as u16, [index as u8; 32], [(index + 1) as u8; 32]))
             .collect::<Vec<_>>();
-        let oversized = born_public_event_ix(&records);
+        let oversized = created_public_event_ix(&records);
         assert!(matches!(
-            decode_program_instructions(program_id(), &[eval, oversized]),
-            Err(DecodeError::MalformedBornPublicEvent(_))
+            decode_program_instructions(program_id(), &[execute_ix, oversized]),
+            Err(DecodeError::MalformedCreatedPublicEvent(_))
         ));
     }
 
     #[test]
     fn extra_unconsumed_and_wrongly_nested_batches_fail_closed() {
-        let (eval, event) = two_born_public_outputs();
+        let (execute_ix, event) = two_created_public_outputs();
         assert_eq!(
-            decode_program_instructions(program_id(), &[event.clone(), eval.clone()]),
-            Err(DecodeError::UnexpectedBornPublicEvent)
+            decode_program_instructions(program_id(), &[event.clone(), execute_ix.clone()]),
+            Err(DecodeError::UnexpectedCreatedPublicEvent)
         );
 
         let mut wrong_nesting = event;
         wrong_nesting.stack_height = Some(3);
         assert_eq!(
-            decode_program_instructions(program_id(), &[eval, wrong_nesting]),
-            Err(DecodeError::InvalidBornPublicEnvelope)
+            decode_program_instructions(program_id(), &[execute_ix, wrong_nesting]),
+            Err(DecodeError::InvalidCreatedPublicEnvelope)
         );
     }
 
     #[test]
-    fn unexpected_host_descendant_inside_eval_frame_fails_closed() {
-        let (eval, event) = two_born_public_outputs();
+    fn unexpected_host_descendant_inside_batch_fails_closed() {
+        let (execute_ix, event) = two_created_public_outputs();
         let mut nested_host_instruction = ix_with_data(
             vec![pk(0xA), pk(0xB), pk(0xE0)],
             "make_handle_public",
@@ -1213,43 +1172,46 @@ mod tests {
         nested_host_instruction.stack_height = Some(2);
 
         assert_eq!(
-            decode_program_instructions(program_id(), &[eval, nested_host_instruction, event],),
+            decode_program_instructions(
+                program_id(),
+                &[execute_ix, nested_host_instruction, event],
+            ),
             Err(DecodeError::UnexpectedHostDescendant)
         );
     }
 
     #[test]
-    fn random_seed_event_is_allowed_only_for_matching_eval_steps() {
+    fn random_seed_event_is_allowed_only_for_matching_execution_steps() {
         let encrypted_value = pk(0xE0);
-        let eval = ix_with_anchor_data(
-            fhe_eval_accounts(&[encrypted_value]),
-            "fhe_eval",
-            frame(vec![FheEvalStep::Rand {
+        let execute_ix = ix_with_anchor_data(
+            fhe_execute_accounts(&[encrypted_value]),
+            "fhe_execute",
+            execution(vec![FheExecuteStep::Rand {
                 fhe_type: 5,
-                output: make_public_durable_output(0, &[0x30], None, None),
+                output: make_public_persistent_output(0, &[0x30], None, None),
             }]),
         );
         let event = random_seed_event_ix(&[(0, [7; 16])]);
-        let public_event = born_public_event_ix(&[(0, encrypted_value, pk(0x90))]);
+        let public_event = created_public_event_ix(&[(0, encrypted_value, pk(0x90))]);
         assert!(decode_program_instructions(
             program_id(),
-            &[eval.clone(), event, public_event.clone()]
+            &[execute_ix.clone(), event, public_event.clone()]
         )
         .is_ok());
 
         let mismatched = random_seed_event_ix(&[(1, [7; 16])]);
         assert_eq!(
-            decode_program_instructions(program_id(), &[eval, mismatched, public_event]),
+            decode_program_instructions(program_id(), &[execute_ix, mismatched, public_event]),
             Err(DecodeError::RandomSeedMismatch)
         );
     }
 
     #[test]
     fn missing_stack_metadata_fails_closed() {
-        let (eval, mut event) = two_born_public_outputs();
+        let (execute_ix, mut event) = two_created_public_outputs();
         event.stack_height = None;
         assert_eq!(
-            decode_program_instructions(program_id(), &[eval, event]),
+            decode_program_instructions(program_id(), &[execute_ix, event]),
             Err(DecodeError::InvalidStackMetadata)
         );
     }

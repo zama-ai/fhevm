@@ -36,7 +36,7 @@ import {
   getJoinRecord,
   joinBatch,
   tokenAccountAddress,
-} from "@fhevm/sdk/solana/vault";
+} from "./vault/index.js";
 
 import type { BatchPosition, BatchTarget } from "./batchTypes";
 import type { DemoSession } from "./demoSession";

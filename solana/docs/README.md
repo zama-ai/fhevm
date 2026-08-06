@@ -1,6 +1,6 @@
 # Solana PoC Docs
 
-Durable documentation for the Solana FHEVM PoC. Every statement is kept true against the code on this
+Persistent documentation for the Solana FHEVM PoC. Every statement is kept true against the code on this
 branch.
 
 ```text

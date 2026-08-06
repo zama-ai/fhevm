@@ -17,7 +17,7 @@ vi.mock('@solana/kit', async (importOriginal) => ({
     getSignatureStatuses: mocks.getSignatureStatuses,
   }),
 }));
-vi.mock('@fhevm/sdk/solana/vault', () => ({
+vi.mock('./vault/index.js', () => ({
   deriveBatchAddresses: mocks.deriveBatchAddresses,
   deriveJoinRecordAddress: mocks.deriveJoinRecordAddress,
   getCurrentBatch: mocks.getCurrentBatch,

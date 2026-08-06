@@ -1,53 +1,53 @@
-//! The atomic host-state snapshot: the only place in the authorization path that reads
-//! chain state.
+//! The atomic host-state snapshot: the only place in the authorization path that reads chain state.
 //!
 //! ## One observation point, and the discovery read
 //!
-//! Authorization must never be assembled from states that never coexisted on any fork. The
-//! way that is guaranteed here is blunt: every rule is evaluated against one snapshot — the
-//! one produced by the **last** account read. Nothing is merged, because a merged observation
-//! is not one observation.
+//! Authorization must never be assembled from states that never coexisted on any fork. The way that
+//! is guaranteed here is blunt: every rule is evaluated against one snapshot — the one produced by
+//! the **last** account read. Nothing is merged, because a merged observation is not one
+//! observation.
 //!
-//! For a request whose entries are all direct, that last read is also the only one: the
-//! lineage accounts are named by their `valueKey`s and the invalidation record by the signer,
+//! For a request whose entries are all direct, that last read is also the only one: the encrypted
+//! value accounts are named by their encrypted value IDs and the invalidation record by the signer,
 //! so every key is computable up front.
 //!
 //! A delegated entry breaks the up-front part. Its delegation record lives at a PDA seeded by
-//! `(delegator, delegate, app_account)`, and the authoritative `app_account` is a field of
-//! the lineage account — a request cannot supply it (see [`super::request`]). So a first read
-//! is needed to learn it. That read is a **discovery read**: it produces addresses, not
-//! decisions, and its account values are discarded. The second read covers the first read's
-//! whole key set alongside the delegation records, and it alone is what the rules see.
+//! `(delegator, delegate, encrypted_value_account_authority)`, and the authoritative
+//! `encrypted_value_account_authority` is a field of the encrypted value account — a request cannot
+//! supply it (see [`super::request`]). So a first read is needed to learn it. That read is a
+//! **discovery read**: it produces addresses, not decisions, and its account values are discarded.
+//! The second read covers the first read's whole key set alongside the delegation records, and it
+//! alone is what the rules see.
 //!
-//! Discarding the first read costs nothing and avoids a hazard. Requiring the two reads to
-//! agree — same slot, identical bytes — would reject delegated requests at whatever rate the
-//! chain advances between two round trips, and a slot is about 400 milliseconds, while proving
-//! nothing that a single deciding snapshot does not already give. Nor can the discarded read
-//! smuggle a stale value in: the delegation address it produced is re-derived from the
-//! deciding snapshot's own lineage inside [`super::delegation::check_delegation`], and a
-//! lineage that resolves at a given address has exactly one `app_account`, because that field
-//! is part of the `valueKey` preimage the address is derived from. A discovery read that named
-//! the wrong record therefore surfaces as a key the deciding snapshot never read, reported as
-//! the key-planning defect it is.
+//! Discarding the first read costs nothing and avoids a hazard. Requiring the two reads to agree —
+//! same slot, identical bytes — would reject delegated requests at whatever rate the chain advances
+//! between two round trips, and a slot is about 400 milliseconds, while proving nothing that a
+//! single deciding snapshot does not already give. Nor can the discarded read smuggle a stale value
+//! in: the delegation address it produced is re-derived from the deciding snapshot's own encrypted
+//! value account inside [`super::delegation::check_delegation`], and an encrypted value account that
+//! resolves at a given address has exactly one `encrypted_value_account_authority`, because that
+//! field is part of the encrypted value ID preimage the address is derived from. A discovery read
+//! that named the wrong record therefore surfaces as a key the deciding snapshot never read,
+//! reported as the key-planning defect it is.
 //!
 //! One thing is asked of the pair, and it is not agreement: order. The deciding read must not be
 //! older than the discovery read ([`HostSnapshot::deciding_after`]). A read that goes backwards is
 //! not a fresher view of the chain — behind a load balancer it is a second node that has fallen
 //! behind — and taking it as the deciding observation turns a grant that demonstrably exists into a
 //! terminal rejection: a delegation record written between the two reads reads as absent from the
-//! older one, and a record the discovery read already saw reads as newer than the observation.
-//! Both of those are terminal, so one lagging node would kill a valid request for good. Ordering
-//! costs one comparison and still compares no values: the chain advancing between the reads
-//! remains fine, which is the case that actually happens.
+//! older one, and a record the discovery read already saw reads as newer than the observation. Both
+//! of those are terminal, so one lagging node would kill a valid request for good. Ordering costs
+//! one comparison and still compares no values: the chain advancing between the reads remains fine,
+//! which is the case that actually happens.
 //!
-//! Reads number exactly one for a direct-only request, exactly two when any entry is
-//! delegated, and never three: nothing after the deciding snapshot reads state at all.
+//! Reads number exactly one for a direct-only request, exactly two when any entry is delegated, and
+//! never three: nothing after the deciding snapshot reads state at all.
 //!
 //! ## Commitment
 //!
 //! `confirmed`, throughout — the recorded decision for this system. A grant observed on a
-//! supermajority-confirmed fork authorizes, and the accepted trade-off is that a rollback of
-//! a confirmed slot could resurrect a grant that canonically never existed.
+//! supermajority-confirmed fork authorizes, and the accepted trade-off is that a rollback of a
+//! confirmed slot could resurrect a grant that canonically never existed.
 
 use crate::core::solana_acl::SolanaPubkeyBytes;
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
@@ -223,12 +223,12 @@ pub trait HostStateReader: Send + Sync {
     ) -> impl Future<Output = Result<HostSnapshot, SnapshotError>> + Send;
 }
 
-/// Plans the first read: the invalidation record of the request signer, plus one lineage
+/// Plans the first read: the invalidation record of the request signer, plus one encrypted value
 /// account per entry.
 ///
-/// Pure, and total over any validated request: every key here is derivable from the request
-/// and the deployment alone. There is no scan in the authorization path, so the plan is the
-/// complete set of accounts the direct branch will ever look at.
+/// Pure, and total over any validated request: every key here is derivable from the request and the
+/// deployment alone. There is no scan in the authorization path, so the plan is the complete set of
+/// accounts the direct branch will ever look at.
 pub fn plan_first_read(
     request: &super::request::SolanaUserDecryptRequest,
     deployment: &super::deployment::DeploymentIdentity,
@@ -236,19 +236,22 @@ pub fn plan_first_read(
     let program_id = deployment.program_id();
     let signer = *request.permit().user_pubkey().as_bytes();
     let (watermark_key, _) = super::watermark::permit_invalidation_address(program_id, signer);
-    let lineages = request.handles().iter().map(|entry| {
-        let (account_key, _) = super::lineage::lineage_address(program_id, entry.value_key());
+    let encrypted_value_accounts = request.handles().iter().map(|entry| {
+        let (account_key, _) = super::encrypted_value_account::encrypted_value_account_address(
+            program_id,
+            entry.encrypted_value_id(),
+        );
         account_key
     });
-    SnapshotKeys::new(std::iter::once(watermark_key).chain(lineages))
+    SnapshotKeys::new(std::iter::once(watermark_key).chain(encrypted_value_accounts))
 }
 
-/// Plans the second read: the first read's key set, unchanged, plus the delegation records
-/// whose addresses the discovery read has just made computable.
+/// Plans the second read: the first read's key set, unchanged, plus the delegation records whose
+/// addresses the discovery read has just made computable.
 ///
 /// The first set is carried over because the second read is the one every rule is evaluated
-/// against, so it has to hold the lineages and the invalidation record too — not in order to
-/// compare the two reads, which this path deliberately does not do (see the module
+/// against, so it has to hold the encrypted value accounts and the invalidation record too — not in
+/// order to compare the two reads, which this path deliberately does not do (see the module
 /// documentation). Starting from `first` is what makes the coverage a property of this function
 /// rather than a discipline of its callers.
 pub fn plan_second_read(

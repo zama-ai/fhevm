@@ -3,7 +3,7 @@
 //! Pulls [`YellowstoneSubscription::next_block`] and applies each block through
 //! [`SqlProofStore`]. On a contiguous parent-chain gap, bounded RPC recovery
 //! fills missing blocks into the same store boundary, then ingest resumes from
-//! the durable checkpoint (inclusive replay). Recovery is never the live source.
+//! the persistent checkpoint (inclusive replay). Recovery is never the live source.
 
 use std::time::Duration;
 
@@ -59,9 +59,9 @@ fn recovery_required_until(reason: impl Into<String>, gap_end_slot: u64) -> Runn
 #[derive(Default)]
 pub struct IngestHooks<'a> {
     /// Fired after a live Yellowstone block is Applied or AlreadyApplied.
-    /// That is the continuity proof: subscription + durable cursor are usable.
+    /// That is the continuity proof: subscription + persistent cursor are usable.
     pub on_progress: Option<&'a (dyn Fn(u64) + Send + Sync)>,
-    /// Durable progress from RPC recovery only. Must not prove Yellowstone continuity.
+    /// Persistent progress from RPC recovery only. Must not prove Yellowstone continuity.
     pub on_recovered_progress: Option<&'a (dyn Fn(u64) + Send + Sync)>,
     pub on_disconnected: Option<&'a (dyn Fn() + Send + Sync)>,
     /// Fired with `true` when bounded RPC recovery starts and `false` when it
@@ -69,14 +69,14 @@ pub struct IngestHooks<'a> {
     pub on_recovery: Option<&'a (dyn Fn(bool) + Send + Sync)>,
 }
 
-/// Runs until `cancel` is cancelled or a durable integrity halt is observed.
+/// Runs until `cancel` is cancelled or a persistent integrity halt is observed.
 ///
 /// Progress hooks fire only after Applied / AlreadyApplied so readiness never
 /// treats a bare gRPC subscribe as a live, continuity-checked source.
 ///
 /// When `recovery` is `Some`, [`RunnerError::RecoveryRequired`] and Yellowstone
 /// [`YellowstoneSourceError::ReplayCursorExpired`] invoke a bounded RPC fill,
-/// then the loop resubscribes from the durable checkpoint. Providers that
+/// then the loop resubscribes from the persistent checkpoint. Providers that
 /// reject `from_slot` entirely ([`YellowstoneSourceError::ReplayUnsupported`])
 /// fail closed — RPC catch-up cannot change that capability (see
 /// fhevm-internal #1823 for cursorless staging). When `recovery` is `None`,
@@ -274,7 +274,7 @@ pub async fn run_sequential_ingest(
                             maybe_mark_history_complete(client, store, confirmed_tip).await?;
                         }
                         backoff = INGEST_INITIAL_BACKOFF;
-                        // Resubscribe from durable checkpoint (inclusive replay).
+                        // Resubscribe from persistent checkpoint (inclusive replay).
                         continue;
                     }
                     Recovered::Cancelled => return Ok(()),
@@ -391,7 +391,7 @@ async fn attempt_recovery(
     }
 
     let checkpoint = store.checkpoint().await?.ok_or_else(|| {
-        recovery_required("recovery requested without a durable checkpoint".to_owned())
+        recovery_required("recovery requested without a persistent checkpoint".to_owned())
     })?;
 
     let (to_slot, confirmed_tip) = match hint {
@@ -550,7 +550,7 @@ struct RecoverRange<'a> {
 }
 
 /// List slots, then fetch+apply each block before the next `getBlock` so the
-/// durable checkpoint advances during catch-up (not only after a full Vec).
+/// persistent checkpoint advances during catch-up (not only after a full Vec).
 async fn recover_range_incremental(range: RecoverRange<'_>) -> Result<Recovered, RunnerError> {
     let RecoverRange {
         client,
@@ -888,7 +888,7 @@ mod tests {
 
     #[test]
     fn bound_exhaustion_never_justifies_complete_without_tip_match() {
-        // After a partial fill, durable tip behind confirmed tip must not flip.
+        // After a partial fill, persistent tip behind confirmed tip must not flip.
         let start = cp(10);
         let partial = cp(20);
         assert!(!history_complete_justified(

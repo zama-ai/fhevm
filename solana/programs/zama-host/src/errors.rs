@@ -18,23 +18,17 @@ pub enum ZamaHostError {
     /// The host config account is not the canonical singleton or has invalid shape.
     #[msg("host config account is invalid")]
     HostConfigMismatch,
-    /// The host config initializer supplied zero or unsupported fields.
-    #[msg("host config initialization fields are invalid")]
-    InvalidHostConfig,
     /// The instruction included undeclared trailing account metas.
     #[msg("instruction has unexpected remaining accounts")]
     UnexpectedRemainingAccounts,
-    /// The input verifier authority account does not match host config.
-    #[msg("input verifier authority does not match config")]
-    InputVerifierMismatch,
-    /// A signed input proof has an invalid handle list, payload, or binding.
-    #[msg("input proof is invalid")]
-    InvalidInputProof,
-    /// The selected input handle index is outside the proof handle list.
-    #[msg("input proof handle index is invalid")]
+    /// The attestation's handle list is empty or oversized, or its extra data exceeds the limit.
+    #[msg("input attestation payload is malformed")]
+    MalformedInputAttestation,
+    /// The selected input handle index is outside the attestation handle list.
+    #[msg("attestation handle index is invalid")]
     InvalidInputHandleIndex,
     /// The selected input handle does not match the requested handle.
-    #[msg("input proof selected handle does not match")]
+    #[msg("attestation selected handle does not match")]
     InvalidInputHandle,
     /// The coprocessor EIP-712 input attestation failed secp256k1 threshold verification.
     #[msg("coprocessor input attestation is invalid")]
@@ -75,24 +69,19 @@ pub enum ZamaHostError {
     /// A bounded random request has an invalid upper bound.
     #[msg("bounded random upper bound is invalid")]
     InvalidRandomUpperBound,
-    /// No matching Ed25519 verifier pre-instruction was found for the input proof.
-    #[msg("input proof Ed25519 signature is missing or malformed")]
-    InputProofSignatureMissing,
-    /// The app account did not sign the ACL birth instruction.
-    #[msg("ACL app account authority does not match app account")]
-    AppAccountAuthorityMismatch,
-    /// Public decrypt release must happen through an explicit make-public instruction, never at birth.
-    #[msg("public decrypt cannot be set at encrypted value birth")]
-    PublicDecryptAtBirthUnsupported,
+    /// The signer for an output does not match the encrypted value account authority the
+    /// execution declared for it.
+    #[msg("signer does not match the declared encrypted value account authority")]
+    EncryptedValueAccountAuthorityMismatch,
     /// A deny-list witness is required but was not supplied.
-    #[msg("ACL deny-list account is required")]
-    AclDenyRecordMissing,
+    #[msg("deny-list witness account is required")]
+    DenyRecordMissing,
     /// A deny-list witness is not canonical or has invalid contents.
-    #[msg("ACL deny-list account does not match the canonical PDA")]
-    AclDenyRecordMismatch,
+    #[msg("deny-list account does not match the canonical PDA")]
+    DenyRecordMismatch,
     /// The grant authority is denied by the configured deny-list.
-    #[msg("ACL authority subject is deny-listed")]
-    AclSubjectDenied,
+    #[msg("grant authority subject is deny-listed")]
+    SubjectDenied,
     /// A delegation account is not the canonical PDA for its tuple.
     #[msg("delegation record does not match the canonical PDA")]
     DelegationPdaMismatch,
@@ -111,42 +100,35 @@ pub enum ZamaHostError {
     /// A PDA account was not fresh or canonical after creation.
     #[msg("PDA creation target is invalid")]
     PdaCreationMismatch,
-    /// An FHE eval instruction exceeded the supported operation count.
-    #[msg("FHE eval operation count is invalid")]
-    InvalidFheEvalOperationCount,
-    /// Retired error slot retained to preserve later Anchor error discriminants.
-    /// Born-public outputs now use one bounded lifecycle batch per eval frame.
-    #[msg("reserved FHE eval produced-public transport error")]
-    FheEvalBornPublicFrameTooLarge,
-    /// An FHE eval instruction referenced a missing or malformed dynamic account.
-    #[msg("FHE eval account reference is invalid")]
-    InvalidFheEvalAccount,
-    /// An FHE eval instruction referenced a transient output that was not produced earlier.
-    #[msg("FHE eval transient operand is missing")]
-    FheEvalAllowedLocalMissing,
-    /// An FHE eval instruction produced the same transient handle twice.
-    #[msg("FHE eval output handle is duplicated")]
-    FheEvalDuplicateHandle,
-    /// An FHE eval durable output account already exists.
-    #[msg("FHE eval durable output ACL record already exists")]
-    FheEvalOutputAlreadyInitialized,
-    /// A frame containing a rand step must declare at least one durable output,
+    /// An fhe_execute instruction exceeded the supported operation count.
+    #[msg("fhe_execute operation count is invalid")]
+    InvalidFheExecuteOperationCount,
+    /// An fhe_execute instruction referenced a missing or malformed dynamic account.
+    #[msg("fhe_execute account reference is invalid")]
+    InvalidFheExecuteAccount,
+    /// An fhe_execute instruction referenced a step output that no earlier step produced.
+    #[msg("fhe_execute transient operand is missing")]
+    FheExecuteEarlierStepMissing,
+    /// An fhe_execute instruction produced the same handle twice, transient or persistent.
+    #[msg("fhe_execute output handle is duplicated")]
+    FheExecuteDuplicateHandle,
+    /// An fhe_execute persistent output account already exists.
+    #[msg("fhe_execute persistent output ACL record already exists")]
+    FheExecuteOutputAlreadyInitialized,
+    /// An execution containing a rand step must declare at least one persistent output,
     /// which anchors the compulsorily fresh rand seed (fhevm-internal#1853 W4).
-    #[msg("FHE eval rand step requires a durable output in the frame")]
-    FheEvalRandRequiresDurableOutput,
-    /// A derived durable output may not be made public-decryptable by a non-authorized subject.
-    #[msg("transient capability cannot authorize public decrypt")]
-    DerivedOutputPublicDecryptDenied,
+    #[msg("fhe_execute rand step requires a persistent output in the execution")]
+    FheExecuteRandRequiresPersistentOutput,
     /// A KMS context was defined with a duplicate signer address.
     #[msg("KMS context signer set contains a duplicate address")]
     DuplicateKmsSigner,
-    /// The coprocessor-attested contract does not match the `fhe_eval` compute subject.
-    #[msg("attested contract address does not match the output app account")]
+    /// The coprocessor-attested contract does not match the `fhe_execute` compute subject.
+    #[msg("attested contract address does not match the fhe_execute compute subject")]
     InputBindContractMismatch,
-    /// An `fhe_eval` frame's summed HCU exceeds `max_hcu_per_tx` (or the running sum overflowed).
+    /// An `fhe_execute` execution's summed HCU exceeds `max_hcu_per_tx` (or the running sum overflowed).
     #[msg("FHE op total HCU exceeds the per-transaction limit")]
     HcuTransactionLimitExceeded,
-    /// An `fhe_eval` value's critical-path HCU exceeds `max_hcu_depth_per_tx` (or the depth sum overflowed).
+    /// An `fhe_execute` value's critical-path HCU exceeds `max_hcu_depth_per_tx` (or the depth sum overflowed).
     #[msg("FHE op depth HCU exceeds the per-transaction depth limit")]
     HcuTransactionDepthLimitExceeded,
     /// The HCU cost table has no row for this op / FHE type / scalar combination (fail-closed).
@@ -158,12 +140,8 @@ pub enum ZamaHostError {
     /// The attested `contract_chain_id` does not match the host chain id (EVM `contractChainId == block.chainid`).
     #[msg("attested contract chain id does not match the host chain id")]
     AttestationChainIdMismatch,
-    /// Raw `EncryptedValue` create/update would accept caller-chosen handles without provenance.
-    #[msg("raw encrypted value lifecycle is disabled; use fhe_eval durable outputs")]
-    RawEncryptedValueLifecycleDisabled,
-
-    // ---- RFC-024 EncryptedValue ACL model ----
-    /// An `EncryptedValue` account is not the canonical PDA for its value key.
+    // ---- EncryptedValue ACL model ----
+    /// An `EncryptedValue` account is not the canonical PDA for its encrypted value ID.
     #[msg("encrypted value account does not match the canonical PDA")]
     EncryptedValuePdaMismatch,
     /// An `EncryptedValue` account has an unexpected owner or discriminator.
@@ -184,7 +162,7 @@ pub enum ZamaHostError {
     /// The caller subject is not a current member of the encrypted value.
     #[msg("encrypted value subject is not a current member")]
     SubjectNotFound,
-    /// Durable `EncryptedValue` creation was requested with an empty subject list.
+    /// Persistent `EncryptedValue` creation was requested with an empty subject list.
     #[msg("encrypted value must be created with at least one subject")]
     EncryptedValueEmptySubjects,
     /// `remove_subject` would leave the encrypted value with no current subjects.
@@ -209,7 +187,7 @@ pub enum ZamaHostError {
     /// A present trust witness is not the canonical PDA / owner (only an absent witness is benign).
     #[msg("HCU trusted-app record does not match the canonical PDA")]
     HcuTrustedAppRecordMismatch,
-    /// A metering-band cap was set below `max_hcu_per_tx`, making a single legal frame impossible.
+    /// A metering-band cap was set below `max_hcu_per_tx`, making a single legal execution impossible.
     /// Analog of EVM `HCUPerBlockBelowMaxPerTx`.
     #[msg("HCU block cap is below max_hcu_per_tx")]
     HcuBlockCapBelowMaxPerTx,
@@ -235,13 +213,13 @@ pub enum ZamaHostError {
     )]
     InvalidChainTypeBit,
 
-    /// Under a finite `hcu_block_cap_per_app`, a frame that binds no durable input, no verified
-    /// input, and no durable output leaves `compute_subject` a free variable: the caller could
-    /// rotate fresh subjects to mint fresh per-slot meters and evade the cap (fhevm-internal#1744).
-    /// Such a frame is also value-less — its transient outputs create no ACL leaf and are
+    /// Under a finite `hcu_block_cap_per_app`, an execution that binds no persistent input, no verified
+    /// input, and no persistent output leaves `compute_subject` a free variable: the caller could
+    /// churn fresh subjects to mint fresh per-slot meters and evade the cap (fhevm-internal#1744).
+    /// Such an execution is also value-less — its transient outputs create no ACL leaf and are
     /// undecryptable — so it is rejected outright.
-    #[msg("FHE eval frame anchors no durable/verified binding under a finite HCU block cap")]
-    FheEvalUnanchoredUnderBlockCap,
+    #[msg("FHE execution anchors no persistent/verified binding under a finite HCU block cap")]
+    FheExecuteUnanchoredUnderBlockCap,
 
     // ---- stateless public-decrypt verifier (verify_public_decrypt, fhevm-internal#1704) ----
     /// The supplied KMS context account is destroyed, is not the canonical PDA for the id the
@@ -302,14 +280,22 @@ pub enum ZamaHostError {
     #[msg("clock is before the unix epoch")]
     ClockBeforeEpoch,
 
-    /// A step referenced an interned pool index past the end of `FheEvalArgs::pool`.
-    #[msg("FHE eval pool index out of bounds")]
-    FheEvalPoolIndexOutOfBounds,
-    /// `FheEvalArgs::account_count` does not match the actual remaining-accounts length.
-    #[msg("FHE eval declared account count mismatch")]
-    FheEvalAccountCountMismatch,
-    /// An `AllowedDurable` operand referenced an account written by an earlier step.
-    /// In-frame dependencies must use `AllowedLocal`.
-    #[msg("FHE eval durable operand was written earlier in the frame")]
-    FheEvalDurableOperandWrittenEarlier,
+    /// A step referenced an interned dictionary index past the end of `FheExecuteArgs::dictionary`.
+    #[msg("fhe_execute dictionary index out of bounds")]
+    FheExecuteDictionaryIndexOutOfBounds,
+    /// `FheExecuteArgs::account_count` does not match the actual remaining-accounts length.
+    #[msg("fhe_execute declared account count mismatch")]
+    FheExecuteAccountCountMismatch,
+    /// A `StoredValue` operand referenced an account written by an earlier step.
+    /// In-execution dependencies must use `EarlierStep`.
+    #[msg("fhe_execute persistent operand was written earlier in the execution")]
+    FheExecutePersistentOperandWrittenEarlier,
+    /// An interned dictionary entry was never referenced by any step; an execution must not
+    /// carry dead bytes.
+    #[msg("fhe_execute dictionary entry is not referenced by any step")]
+    FheExecuteDictionaryEntryUnreferenced,
+    /// `0` is not a valid per-tx HCU limit: `u64::MAX` is the single "unlimited"
+    /// sentinel across every HCU knob, and a `0` limit would reject every execution.
+    #[msg("0 is not a valid HCU limit; use u64::MAX for unlimited")]
+    HcuLimitZeroReserved,
 }

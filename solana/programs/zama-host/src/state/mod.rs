@@ -128,68 +128,77 @@ impl FheUnaryOpCode {
     }
 }
 
-/// Arguments for composed instruction-local FHE evaluation.
+/// Arguments for one composed, instruction-local fhe_execute.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
-pub struct FheEvalArgs {
+pub struct FheExecuteArgs {
     /// Declared `remaining_accounts` length, asserted equal to the actual list. Carried in
     /// instruction data so stateless indexers can validate account references without the
     /// transaction envelope (DD-033 self-description).
     pub account_count: u8,
-    /// Interned 32-byte constant pool: operand handles, scalar values, ACL domain keys, app
-    /// account keys, encrypted value labels, and output subjects. Steps reference entries by
-    /// `u8` index, so a value repeated across steps is paid for once (the compiled-message /
-    /// constant-pool encoding; fhevm-internal#1853 W7).
-    pub pool: Vec<[u8; 32]>,
-    /// Ordered step list. Each `AllowedLocal` operand may only reference an output
+    /// Interned 32-byte constant dictionary: operand handles, scalar values, ACL domain keys,
+    /// encrypted value account authority keys, encrypted value labels, and output subjects. Steps
+    /// reference entries by `u8` index, so a value repeated across steps is paid for once (the
+    /// compiled-message / constant-dictionary encoding; fhevm-internal#1853 W7).
+    ///
+    /// The entries stay raw `[u8; 32]` on purpose, and must not become an enum of typed
+    /// variants. Interning is what makes the encoding small, and it only works across roles:
+    /// the same 32 bytes can be an operand handle in one step and an output subject in
+    /// another, and both steps then share one entry. A typed dictionary would need one entry
+    /// per role, which grows the packet and buys nothing — the step that reads an index
+    /// already knows which role it is asking for, and `dictionary_key` /
+    /// `dictionary_bytes` are where that reading happens. Types belong at the ends of the
+    /// wire, not in the middle of it (fhevm-internal#1859 §2).
+    pub dictionary: Vec<[u8; 32]>,
+    /// Ordered step list. Each `EarlierStep` operand may only reference an output
     /// produced by an earlier index in this vector.
-    pub steps: Vec<FheEvalStep>,
+    pub steps: Vec<FheExecuteStep>,
 }
 
-impl FheEvalArgs {
-    /// Resolves an interned pool entry; an out-of-range index fails the frame.
-    pub fn pool_bytes(&self, index: u8) -> anchor_lang::Result<[u8; 32]> {
-        self.pool
+impl FheExecuteArgs {
+    /// Resolves an interned dictionary entry; an out-of-range index fails the execution.
+    pub fn dictionary_bytes(&self, index: u8) -> anchor_lang::Result<[u8; 32]> {
+        self.dictionary
             .get(index as usize)
             .copied()
-            .ok_or_else(|| error!(ZamaHostError::FheEvalPoolIndexOutOfBounds))
+            .ok_or_else(|| error!(ZamaHostError::FheExecuteDictionaryIndexOutOfBounds))
     }
 
-    /// Resolves an interned pool entry as a public key.
-    pub fn pool_key(&self, index: u8) -> anchor_lang::Result<Pubkey> {
-        Ok(Pubkey::new_from_array(self.pool_bytes(index)?))
+    /// Resolves an interned dictionary entry as a public key.
+    pub fn dictionary_key(&self, index: u8) -> anchor_lang::Result<Pubkey> {
+        Ok(Pubkey::new_from_array(self.dictionary_bytes(index)?))
     }
 }
 
-/// One step inside a composed FHE eval.
+/// One step inside a composed fhe_execute.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
-pub enum FheEvalStep {
+pub enum FheExecuteStep {
     /// Binary operator step.
     Binary {
         /// Binary operator.
         op: FheBinaryOpCode,
         /// Left-hand encrypted operand.
-        lhs: FheEvalOperand,
+        lhs: FheExecuteOperand,
         /// Right-hand encrypted operand or scalar bytes.
-        rhs: FheEvalOperand,
+        rhs: FheExecuteOperand,
         /// FHE type byte embedded in the output handle.
         output_fhe_type: u8,
-        /// Whether this output remains instruction-local or is bound into durable ACL state.
-        output: FheEvalOutput,
+        /// Whether this output remains instruction-local or is bound into persistent ACL state.
+        output: FheExecuteOutput,
     },
     /// Ternary operator step.
     Ternary {
         /// Ternary operator.
         op: FheTernaryOpCode,
         /// Encrypted bool control operand.
-        control: FheEvalOperand,
+        control: FheExecuteOperand,
         /// Encrypted branch selected when control is true.
-        if_true: FheEvalOperand,
+        if_true: FheExecuteOperand,
         /// Encrypted branch selected when control is false.
-        if_false: FheEvalOperand,
+        if_false: FheExecuteOperand,
         /// FHE type byte embedded in the output handle.
         output_fhe_type: u8,
-        /// Whether this output remains instruction-local or is bound into durable ACL state.
-        output: FheEvalOutput,
+        /// Whether this output remains instruction-local or is bound into persistent ACL state.
+        output: FheExecuteOutput,
     },
     /// Trivial encryption step.
     TrivialEncrypt {
@@ -197,26 +206,26 @@ pub enum FheEvalStep {
         plaintext: [u8; 32],
         /// FHE type byte embedded in the output handle.
         fhe_type: u8,
-        /// Whether this output remains instruction-local or is bound into durable ACL state.
-        output: FheEvalOutput,
+        /// Whether this output remains instruction-local or is bound into persistent ACL state.
+        output: FheExecuteOutput,
     },
     /// Random ciphertext step.
     Rand {
         /// FHE type byte embedded in the output handle.
         fhe_type: u8,
-        /// Whether this output remains instruction-local or is bound into durable ACL state.
-        output: FheEvalOutput,
+        /// Whether this output remains instruction-local or is bound into persistent ACL state.
+        output: FheExecuteOutput,
     },
     /// Unary operator step.
     Unary {
         /// Unary operator.
         op: FheUnaryOpCode,
         /// Encrypted operand.
-        operand: FheEvalOperand,
+        operand: FheExecuteOperand,
         /// FHE type byte embedded in the output handle.
         output_fhe_type: u8,
-        /// Whether this output remains instruction-local or is bound into durable ACL state.
-        output: FheEvalOutput,
+        /// Whether this output remains instruction-local or is bound into persistent ACL state.
+        output: FheExecuteOutput,
     },
     /// Bounded random ciphertext step.
     RandBounded {
@@ -224,46 +233,46 @@ pub enum FheEvalStep {
         upper_bound: [u8; 32],
         /// FHE type byte embedded in the output handle.
         fhe_type: u8,
-        /// Whether this output remains instruction-local or is bound into durable ACL state.
-        output: FheEvalOutput,
+        /// Whether this output remains instruction-local or is bound into persistent ACL state.
+        output: FheExecuteOutput,
     },
     /// Sum step.
     Sum {
         /// Encrypted operands.
-        operands: Vec<FheEvalOperand>,
+        operands: Vec<FheExecuteOperand>,
         /// FHE type byte embedded in the output handle.
         fhe_type: u8,
-        /// Whether this output remains instruction-local or is bound into durable ACL state.
-        output: FheEvalOutput,
+        /// Whether this output remains instruction-local or is bound into persistent ACL state.
+        output: FheExecuteOutput,
     },
     /// Is-in membership test step.
     IsIn {
         /// Encrypted value to test.
-        value: FheEvalOperand,
+        value: FheExecuteOperand,
         /// Encrypted set operands.
-        set: Vec<FheEvalOperand>,
+        set: Vec<FheExecuteOperand>,
         /// FHE type byte of the value and set elements.
         fhe_type: u8,
-        /// Whether this output remains instruction-local or is bound into durable ACL state.
-        output: FheEvalOutput,
+        /// Whether this output remains instruction-local or is bound into persistent ACL state.
+        output: FheExecuteOutput,
     },
     /// Multiply-then-divide step.
     MulDiv {
         /// Left-hand encrypted factor.
-        factor1: FheEvalOperand,
+        factor1: FheExecuteOperand,
         /// Right-hand factor, encrypted or scalar bytes.
-        factor2: FheEvalOperand,
+        factor2: FheExecuteOperand,
         /// Divisor encoded as a 256-bit big-endian integer.
         divisor: [u8; 32],
         /// FHE type byte embedded in the output handle.
         output_fhe_type: u8,
-        /// Whether this output remains instruction-local or is bound into durable ACL state.
-        output: FheEvalOutput,
+        /// Whether this output remains instruction-local or is bound into persistent ACL state.
+        output: FheExecuteOutput,
     },
 }
 
-/// A coprocessor input attestation carried inline by a [`FheEvalOperand::VerifiedInput`], re-verified
-/// in-frame (no account, no PDA) — the instruction-local analog of EVM `allowTransient(input, contract)`.
+/// A coprocessor input attestation carried inline by a [`FheExecuteOperand::VerifiedInput`], re-verified
+/// in-execution (no account, no PDA) — the instruction-local analog of EVM `allowTransient(input, contract)`.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub struct CoprocessorInputAttestation {
     /// The verified input handle used as the operand.
@@ -284,82 +293,96 @@ pub struct CoprocessorInputAttestation {
     pub signatures: Vec<[u8; 65]>,
 }
 
-/// Operand source for a composed FHE eval operation.
+/// Operand source for a composed fhe_execute operation.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
-pub enum FheEvalOperand {
-    /// Input allowed through durable ACL state: a canonical `EncryptedValue`
-    /// account in `remaining_accounts` whose current handle matches.
-    AllowedDurable {
-        /// Pool index of the handle expected as the encrypted value's current handle.
+pub enum FheExecuteOperand {
+    /// A value read out of persistent ACL state: a canonical `EncryptedValue` account in
+    /// `remaining_accounts` whose current handle matches the interned one. Admission is the
+    /// caller's subject membership on that account.
+    StoredValue {
+        /// Dictionary index of the handle expected as the encrypted value's current handle.
         handle_index: u8,
         /// Index into `remaining_accounts` for the `EncryptedValue` account.
         encrypted_value_index: u8,
     },
-    /// Instruction-local value produced by an earlier operation in this `fhe_eval`; allowed only
-    /// inside the current evaluation scope and never stored.
-    AllowedLocal {
+    /// The output of an earlier step of this same `fhe_execute`: usable only inside the current
+    /// evaluation scope and never stored.
+    EarlierStep {
         /// Producer operation index.
         producer_index: u8,
     },
-    /// Plaintext scalar bytes (pool index). Scalar operands are only valid on the RHS.
+    /// Plaintext scalar bytes (dictionary index). Scalar operands are only valid on the RHS.
     Scalar {
-        /// Pool index of the scalar value.
+        /// Dictionary index of the scalar value.
         value_index: u8,
     },
-    /// External encrypted input verified in-frame by re-running the coprocessor attestation.
+    /// External encrypted input verified in-execution by re-running the coprocessor attestation.
     /// The "allow" is instruction-local (no ACL record, no session, no PDA): the input is usable
-    /// only where it is consumed in the same `fhe_eval`. Valid as an encrypted operand, not a scalar.
+    /// only where it is consumed in the same `fhe_execute`. Valid as an encrypted operand, not a scalar.
     VerifiedInput {
         /// The inline attestation re-verified to authorize this operand.
         // Boxed so the ~190-byte attestation is paid only by operands that carry one, not
-        // inlined into every `FheEvalOperand` slot of every step (a Rust enum is as large as
-        // its fattest variant, and plans live in `Vec<FheEvalStep>` on the 32KB SBF bump heap
+        // inlined into every `FheExecuteOperand` slot of every step (a Rust enum is as large as
+        // its fattest variant, and executions live in `Vec<FheExecuteStep>` on the 32KB SBF bump heap
         // on both sides of the CPI). `Box<T>` is borsh- and IDL-transparent: the wire format
         // is unchanged.
         attestation: Box<CoprocessorInputAttestation>,
     },
 }
 
-/// Output policy for a composed FHE eval operation.
+/// The replaced state a persistent-output update declares: the stored handle
+/// and the exact stored subject set, together (making a half-declared previous
+/// state unrepresentable). Validated against the account, and carried in
+/// instruction data so indexers reconstruct the appended MMR leaves without
+/// reading the account.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
-pub enum FheEvalOutput {
-    /// Output stays allowed only inside the current `fhe_eval` scope; no durable ACL record.
-    AllowedLocal,
-    /// Output is bound into durable ACL state: the `EncryptedValue` encrypted value account PDA
-    /// is created when absent, or superseded when it exists.
-    AllowedDurable {
+pub struct PreviousState {
+    /// The handle being replaced (`current_handle` at the time of the update).
+    pub handle: [u8; 32],
+    /// The exact stored subject set being replaced.
+    pub subjects: Vec<Pubkey>,
+}
+
+/// Output policy for a composed fhe_execute operation.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
+pub enum FheExecuteOutput {
+    /// The result stays inside the current `fhe_execute` scope; no persistent ACL record.
+    Transient,
+    /// The result is bound into persistent ACL state: the `EncryptedValue` account PDA is created
+    /// when absent, or replaced when it exists.
+    StoredValue {
         /// Index into `remaining_accounts` for the output `EncryptedValue` PDA.
         output_encrypted_value_index: u8,
-        /// Optional index into `remaining_accounts` for the app account authority signer.
+        /// Optional index into `remaining_accounts` for the encrypted value account authority
+        /// signer.
         ///
-        /// `None` uses the fixed `app_account_authority` account in the eval
+        /// `None` uses the fixed `encrypted_value_account_authority` account in the execution
         /// context. `Some(index)` requires that remaining account to be a signer
-        /// and to match the output app account.
-        output_app_account_authority_index: Option<u8>,
-        /// Pool index of the ACL domain key for the output encrypted value account.
-        output_acl_domain_key_index: u8,
-        /// Pool index of the app account authorized to bind the output encrypted value account.
-        output_app_account_index: u8,
-        /// Pool index of the encrypted value label for the output encrypted value account.
-        output_encrypted_value_label_index: u8,
-        /// Pool indexes of the subjects on the output encrypted value account. On create these
-        /// are the initial subjects; on supersede they become the new audience, which may rotate
+        /// and to match the declared output authority.
+        output_authority_index: Option<u8>,
+        /// Dictionary index of the ACL domain key for the output encrypted value account.
+        output_domain_index: u8,
+        /// Dictionary index of the encrypted value account authority declared for the output
+        /// encrypted value account.
+        output_account_index: u8,
+        /// Dictionary index of the encrypted value label for the output encrypted value account.
+        output_label_index: u8,
+        /// Dictionary indexes of the subjects on the output encrypted value account. On create these
+        /// are the initial subjects; on update they become the new audience, which may rotate
         /// away from the stored set (the outgoing audience is sealed into
         /// historical leaves first; added subjects pass the grant deny-list).
         output_subject_indexes: Vec<u8>,
-        /// Superseded handle: `None` on create, `Some(current_handle)` on update.
-        /// Carried in instruction data so indexers can reconstruct the appended
-        /// MMR leaves without reading the account; validated against the account.
-        previous_handle: Option<[u8; 32]>,
-        /// Superseded subject set, parallel to `previous_handle` (`None` on create,
-        /// exact stored subjects on update). Same indexer-reconstruction purpose.
-        previous_subjects: Option<Vec<Pubkey>>,
-        /// When true, the newly bound handle is born publicly decryptable: after
+        /// Replaced state: `None` on create, the stored handle and exact stored
+        /// subject set on update. Carried in instruction data so indexers can
+        /// reconstruct the appended MMR leaves without reading the account;
+        /// validated against the account.
+        previous_state: Option<PreviousState>,
+        /// When true, the newly bound handle is created publicly decryptable: after
         /// writing it as `current_handle`, a public-decrypt leaf is appended for
         /// the new handle (byte-identical to `make_handle_public`). Carried in
         /// instruction data so indexers reconstruct that leaf without reading the
         /// account. This is the opt-in relaxation of the "created encrypted value accounts cannot
-        /// be born public" invariant (DD-036).
+        /// be created public" invariant (DD-036).
         make_public: bool,
     },
 }
@@ -431,7 +454,7 @@ pub fn assert_handle_for_chain(handle: [u8; 32], chain_id: u64) -> Result<()> {
 }
 
 /// Checks that an external encrypted-input handle targets this host chain.
-pub fn assert_input_handle_for_chain(handle: [u8; 32], chain_id: u64) -> Result<()> {
+fn assert_input_handle_for_chain(handle: [u8; 32], chain_id: u64) -> Result<()> {
     assert_handle_for_chain(handle, chain_id)?;
     require!(
         handle[21] != COMPUTED_HANDLE_MARKER,
@@ -463,7 +486,7 @@ pub fn assert_supported_fhe_type(fhe_type: u8) -> Result<()> {
 }
 
 /// Checks that a binary operation's declared result type matches the shipped operator.
-pub fn assert_supported_binary_output_type(op: FheBinaryOpCode, fhe_type: u8) -> Result<()> {
+fn assert_supported_binary_output_type(op: FheBinaryOpCode, fhe_type: u8) -> Result<()> {
     assert_supported_fhe_type(fhe_type)?;
     let valid = match op {
         FheBinaryOpCode::Add
@@ -562,7 +585,7 @@ pub fn assert_supported_rand_type(fhe_type: u8) -> Result<()> {
     Ok(())
 }
 
-pub fn assert_supported_bounded_rand_type(fhe_type: u8) -> Result<()> {
+pub(crate) fn assert_supported_bounded_rand_type(fhe_type: u8) -> Result<()> {
     require!(
         bounded_rand_type_bits(fhe_type).is_some(),
         ZamaHostError::UnsupportedFheType
@@ -583,7 +606,7 @@ pub fn assert_valid_bounded_rand_upper_bound(upper_bound: [u8; 32], fhe_type: u8
     Ok(())
 }
 
-pub fn assert_supported_unary_output_type(op: FheUnaryOpCode, fhe_type: u8) -> Result<()> {
+fn assert_supported_unary_output_type(op: FheUnaryOpCode, fhe_type: u8) -> Result<()> {
     assert_supported_fhe_type(fhe_type)?;
     let valid = match op {
         FheUnaryOpCode::Neg => matches!(fhe_type, 2..=6 | 8),
@@ -651,7 +674,7 @@ pub fn assert_sum_operand_types(operand_handles: &[[u8; 32]], fhe_type: u8) -> R
     // Cap the operand count at the coprocessor's FheSum limit (transient operands use no accounts).
     require!(
         operand_handles.len() <= max_reduction_operands(fhe_type),
-        ZamaHostError::InvalidFheEvalAccount
+        ZamaHostError::InvalidFheExecuteAccount
     );
     for handle in operand_handles {
         require!(
@@ -674,7 +697,7 @@ pub fn assert_is_in_operand_types(
     // Cap the set size at the coprocessor's FheIsIn limit (its `set_size` bound excludes the value).
     require!(
         set_handles.len() <= max_reduction_operands(fhe_type),
-        ZamaHostError::InvalidFheEvalAccount
+        ZamaHostError::InvalidFheExecuteAccount
     );
     require!(
         handle_fhe_type(value_handle) == fhe_type,
@@ -807,14 +830,14 @@ pub fn permit_invalidation_address(user: Pubkey) -> (Pubkey, u8) {
 pub fn user_decryption_delegation_address(
     delegator: Pubkey,
     delegate: Pubkey,
-    app_account: Pubkey,
+    encrypted_value_account_authority: Pubkey,
 ) -> (Pubkey, u8) {
     Pubkey::find_program_address(
         &[
             DELEGATION_SEED,
             delegator.as_ref(),
             delegate.as_ref(),
-            app_account.as_ref(),
+            encrypted_value_account_authority.as_ref(),
         ],
         &crate::ID,
     )
@@ -828,7 +851,18 @@ fn finish_computed_handle(result: &mut [u8; 32], chain_id_bytes: &[u8; 8], fhe_t
     result[31] = HANDLE_VERSION;
 }
 
-/// Derives a content-addressed binary eval handle (EVM `FHEVMExecutor` shape):
+/// Slot and chain context bound into every content-addressed handle
+/// derivation. Passing it as one value keeps `previous_bank_hash` unswappable
+/// with operand handles — three same-repr `[u8; 32]` values meet at these call
+/// sites otherwise.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HandleDerivationContext {
+    pub chain_id: u64,
+    pub previous_bank_hash: [u8; 32],
+    pub unix_timestamp: i64,
+}
+
+/// Derives a content-addressed binary handle (EVM `FHEVMExecutor` shape):
 /// no salt beyond slot entropy, so an identical computation derives the
 /// identical handle — the same value, by construction.
 pub fn computed_eval_handle(
@@ -837,10 +871,13 @@ pub fn computed_eval_handle(
     rhs: [u8; 32],
     scalar: bool,
     fhe_type: u8,
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
+    ctx: &HandleDerivationContext,
 ) -> [u8; 32] {
+    let HandleDerivationContext {
+        chain_id,
+        previous_bank_hash,
+        unix_timestamp,
+    } = *ctx;
     let op_byte = [op.as_u8()];
     let scalar_byte = [u8::from(scalar)];
     let chain_id_bytes = chain_id.to_be_bytes();
@@ -862,17 +899,20 @@ pub fn computed_eval_handle(
     result
 }
 
-/// Derives a content-addressed ternary eval handle (see [`computed_eval_handle`]).
+/// Derives a content-addressed ternary handle (see [`computed_eval_handle`]).
 pub fn computed_eval_ternary_handle(
     op: FheTernaryOpCode,
     control: [u8; 32],
     if_true: [u8; 32],
     if_false: [u8; 32],
     fhe_type: u8,
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
+    ctx: &HandleDerivationContext,
 ) -> [u8; 32] {
+    let HandleDerivationContext {
+        chain_id,
+        previous_bank_hash,
+        unix_timestamp,
+    } = *ctx;
     let op_byte = [op.as_u8()];
     let chain_id_bytes = chain_id.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
@@ -893,14 +933,17 @@ pub fn computed_eval_ternary_handle(
     result
 }
 
-/// Derives a content-addressed trivial-encrypt eval handle (see [`computed_eval_handle`]).
+/// Derives a content-addressed trivial-encrypt handle (see [`computed_eval_handle`]).
 pub fn computed_eval_trivial_handle(
     plaintext: [u8; 32],
     fhe_type: u8,
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
+    ctx: &HandleDerivationContext,
 ) -> [u8; 32] {
+    let HandleDerivationContext {
+        chain_id,
+        previous_bank_hash,
+        unix_timestamp,
+    } = *ctx;
     let chain_id_bytes = chain_id.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
     let fhe_type_bytes = [fhe_type];
@@ -919,29 +962,32 @@ pub fn computed_eval_trivial_handle(
     result
 }
 
-/// Derives the compulsorily fresh seed for an instruction-local eval random handle.
+/// Derives the compulsorily fresh seed for an instruction-local execution random handle.
 ///
-/// Freshness is anchored, never caller-advised: `durable_anchor_bytes` is the frame's
-/// durable-write anchor — every durable output's live account identity and version
+/// Freshness is anchored, never caller-advised: `persistent_anchor_bytes` is the execution's
+/// persistent-write anchor — every persistent output's live account identity and version
 /// concatenated in wire order. The host-observed MMR leaf count prevents a handle cycle
 /// from replaying an earlier anchor.
-/// `compute_subject` separates concurrent frames of different signers in the same slot;
-/// `op_index` separates rand steps within one frame; slot entropy separates slots.
+/// `compute_subject` separates concurrent executions of different signers in the same slot;
+/// `op_index` separates rand steps within one execution; slot entropy separates slots.
 pub fn computed_eval_rand_seed(
     compute_subject: Pubkey,
-    durable_anchor_bytes: &[u8],
+    persistent_anchor_bytes: &[u8],
     op_index: u16,
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
+    ctx: &HandleDerivationContext,
 ) -> [u8; 16] {
+    let HandleDerivationContext {
+        chain_id,
+        previous_bank_hash,
+        unix_timestamp,
+    } = *ctx;
     let chain_id_bytes = chain_id.to_be_bytes();
     let op_index_bytes = op_index.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
     let hash = keccak_hashv(&[
         b"FHE_eval_seed",
         compute_subject.as_ref(),
-        durable_anchor_bytes,
+        persistent_anchor_bytes,
         &op_index_bytes,
         crate::ID.as_ref(),
         &chain_id_bytes,
@@ -954,14 +1000,17 @@ pub fn computed_eval_rand_seed(
     seed
 }
 
-/// Derives a content-addressed sum eval handle (see [`computed_eval_handle`]).
+/// Derives a content-addressed sum handle (see [`computed_eval_handle`]).
 pub fn computed_eval_sum_handle(
     operand_handles: &[[u8; 32]],
     fhe_type: u8,
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
+    ctx: &HandleDerivationContext,
 ) -> [u8; 32] {
+    let HandleDerivationContext {
+        chain_id,
+        previous_bank_hash,
+        unix_timestamp,
+    } = *ctx;
     let chain_id_bytes = chain_id.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
     let fhe_type_bytes = [fhe_type];
@@ -978,15 +1027,18 @@ pub fn computed_eval_sum_handle(
     result
 }
 
-/// Derives a content-addressed is-in eval handle (see [`computed_eval_handle`]).
+/// Derives a content-addressed is-in handle (see [`computed_eval_handle`]).
 pub fn computed_eval_is_in_handle(
     value_handle: [u8; 32],
     set_handles: &[[u8; 32]],
     fhe_type: u8,
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
+    ctx: &HandleDerivationContext,
 ) -> [u8; 32] {
+    let HandleDerivationContext {
+        chain_id,
+        previous_bank_hash,
+        unix_timestamp,
+    } = *ctx;
     let chain_id_bytes = chain_id.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
     let fhe_type_bytes = [fhe_type];
@@ -1003,17 +1055,20 @@ pub fn computed_eval_is_in_handle(
     result
 }
 
-/// Derives a content-addressed mul-div eval handle (see [`computed_eval_handle`]).
+/// Derives a content-addressed mul-div handle (see [`computed_eval_handle`]).
 pub fn computed_eval_mul_div_handle(
     factor1: [u8; 32],
     factor2: [u8; 32],
     divisor: [u8; 32],
     scalar: bool,
     output_fhe_type: u8,
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
+    ctx: &HandleDerivationContext,
 ) -> [u8; 32] {
+    let HandleDerivationContext {
+        chain_id,
+        previous_bank_hash,
+        unix_timestamp,
+    } = *ctx;
     let chain_id_bytes = chain_id.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
     let scalar_byte = [u8::from(scalar)];
@@ -1075,15 +1130,18 @@ pub fn computed_rand_bounded_handle(
     result
 }
 
-/// Derives a content-addressed unary eval handle (see [`computed_eval_handle`]).
+/// Derives a content-addressed unary handle (see [`computed_eval_handle`]).
 pub fn computed_eval_unary_handle(
     op: FheUnaryOpCode,
     operand: [u8; 32],
     fhe_type: u8,
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
+    ctx: &HandleDerivationContext,
 ) -> [u8; 32] {
+    let HandleDerivationContext {
+        chain_id,
+        previous_bank_hash,
+        unix_timestamp,
+    } = *ctx;
     let op_byte = [op.as_u8()];
     let type_byte = [fhe_type];
     let chain_id_bytes = chain_id.to_be_bytes();

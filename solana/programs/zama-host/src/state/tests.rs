@@ -52,9 +52,11 @@ fn eval_handle_derivation_preserves_solana_chain_type_high_bit() {
         [2; 32],
         true,
         3,
-        chain_id,
-        [9; 32],
-        42,
+        &HandleDerivationContext {
+            chain_id,
+            previous_bank_hash: [9; 32],
+            unix_timestamp: 42,
+        },
     );
     assert_canonical_metadata(handle, 3, chain_id);
     assert_eq!(
@@ -92,20 +94,29 @@ fn rand_seed_is_distinct_across_every_uniqueness_axis() {
     let subject = Pubkey::new_unique();
     let anchor: Vec<u8> = [Pubkey::new_unique().to_bytes(), [7; 32]].concat();
     let seed = |subject: Pubkey, anchor: &[u8], op_index: u16, slot_entropy: [u8; 32]| {
-        computed_eval_rand_seed(subject, anchor, op_index, 13, slot_entropy, 42)
+        computed_eval_rand_seed(
+            subject,
+            anchor,
+            op_index,
+            &HandleDerivationContext {
+                chain_id: 13,
+                previous_bank_hash: slot_entropy,
+                unix_timestamp: 42,
+            },
+        )
     };
     let base = seed(subject, &anchor, 0, [9; 32]);
 
     // Cross-subject: two signers in the same slot with the same anchor shape never share a seed.
     assert_ne!(base, seed(Pubkey::new_unique(), &anchor, 0, [9; 32]));
-    // Same subject, same slot: a different durable-write anchor (the consumed
+    // Same subject, same slot: a different persistent-write anchor (the consumed
     // (key, previous_handle) tickets) gives a fresh seed.
     let other_anchor: Vec<u8> = [Pubkey::new_unique().to_bytes(), [7; 32]].concat();
     assert_ne!(base, seed(subject, &other_anchor, 0, [9; 32]));
-    // Sequential supersede of the same account: previous_handle advances, so the anchor differs.
-    let superseded_anchor: Vec<u8> = [anchor[..32].try_into().unwrap(), [8; 32]].concat();
-    assert_ne!(base, seed(subject, &superseded_anchor, 0, [9; 32]));
-    // Two rand steps in one frame differ by op_index.
+    // Sequential update of the same account: previous_handle advances, so the anchor differs.
+    let replaced_anchor: Vec<u8> = [anchor[..32].try_into().unwrap(), [8; 32]].concat();
+    assert_ne!(base, seed(subject, &replaced_anchor, 0, [9; 32]));
+    // Two rand steps in one execution differ by op_index.
     assert_ne!(base, seed(subject, &anchor, 1, [9; 32]));
     // Cross-slot: slot entropy differs.
     assert_ne!(base, seed(subject, &anchor, 0, [10; 32]));
@@ -354,19 +365,19 @@ fn assert_sum_and_is_in_enforce_coprocessor_max_operand_counts() {
     assert!(assert_sum_operand_types(&narrow(100), 2).is_ok());
     assert_error(
         assert_sum_operand_types(&narrow(101), 2),
-        ZamaHostError::InvalidFheEvalAccount,
+        ZamaHostError::InvalidFheExecuteAccount,
     );
     let wide = |n| vec![typed_handle(1, 5); n];
     assert!(assert_sum_operand_types(&wide(60), 5).is_ok());
     assert_error(
         assert_sum_operand_types(&wide(61), 5),
-        ZamaHostError::InvalidFheEvalAccount,
+        ZamaHostError::InvalidFheExecuteAccount,
     );
     // IsIn caps the set size (excluding the tested value) the same way.
     let value = typed_handle(1, 2);
     assert!(assert_is_in_operand_types(value, &narrow(100), 2).is_ok());
     assert_error(
         assert_is_in_operand_types(value, &narrow(101), 2),
-        ZamaHostError::InvalidFheEvalAccount,
+        ZamaHostError::InvalidFheExecuteAccount,
     );
 }

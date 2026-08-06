@@ -8,7 +8,7 @@ import { buildSolanaUserDecryptMmrProofExtraData } from '../../core/coprocessor/
 import { toFhevmHandle } from '../../core/handle/FhevmHandle.js';
 import { RelayerAsyncRequest } from '../../core/modules/relayer/module/RelayerAsyncRequest.js';
 import { removeSuffix } from '../../core/base/string.js';
-import { decodeMmrProofTransportBlob, hexToBytes, MMR_MODE_PUBLIC, verifyPublicDecryptProof } from '../proof.js';
+import { decodeMmrProofTransportBlob, hexToBytes, MMR_PROOF_MODE_PUBLIC, verifyPublicDecryptProof } from '../proof.js';
 
 export type SolanaPublicDecryptCertificateContext = {
   readonly chain: FhevmSolanaChain;
@@ -55,7 +55,7 @@ export async function publicDecryptCertificate(
 ): Promise<SolanaPublicDecryptCertificateClaim> {
   const handle = toFhevmHandle(parameters.handle);
   const decoded = decodeMmrProofTransportBlob(parameters.mmrProofBytes);
-  if (decoded.mode !== MMR_MODE_PUBLIC) {
+  if (decoded.mode !== MMR_PROOF_MODE_PUBLIC) {
     throw new Error(`public-decrypt MMR proof must use mode 0x02, got 0x${decoded.mode.toString(16).padStart(2, '0')}`);
   }
   if (parameters.proofSlot !== parameters.leafCount) {

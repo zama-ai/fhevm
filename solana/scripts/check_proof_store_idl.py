@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
 """Pin solana-proof-store's ingest surface to the vendored zama-host IDL.
 
-The proof-store hand-decodes a lifecycle subset of zama-host instructions
-(`discriminator("…")` / `event_discriminator("…")` in decode.rs). Path deps keep
-arg types honest; this script keeps the *instruction catalog* and the critical
-`fhe_eval` account layout honest:
+The proof-store decodes a lifecycle subset of zama-host instructions through
+`zama_host::decode` (the program's generated types), and decode.rs's tests
+re-derive every matched discriminator from its Anchor name
+(`discriminator("…")` / `event_discriminator("…")`). Those names are what this
+script scans. Path deps keep arg types honest; this script keeps the
+*instruction catalog* and the critical `fhe_execute` account layout honest:
 
 1. Every name decode.rs matches must exist in the host IDL.
 2. Every host instruction must be either decoded or explicitly ignored here.
 3. Required lifecycle events must be referenced from decode.rs.
-4. `FHE_EVAL_REMAINING_BASE` in proof-store and host-listener must equal the
-   IDL named-account count for `fhe_eval` (remaining accounts follow that base).
+4. `FHE_EXECUTE_REMAINING_BASE` in proof-store and host-listener must equal the
+   IDL named-account count for `fhe_execute` (remaining accounts follow that base).
 
-When the host adds an instruction or renames/reorders `fhe_eval` accounts, CI
+When the host adds an instruction or renames/reorders `fhe_execute` accounts, CI
 fails until proof-store (and host-listener) catch up.
 """
 
@@ -26,8 +28,8 @@ import sys
 
 DISC_RE = re.compile(r'discriminator\("([a-z0-9_]+)"\)')
 EVENT_DISC_RE = re.compile(r'event_discriminator\("([A-Za-z0-9_]+)"\)')
-FHE_EVAL_BASE_RE = re.compile(
-    r"const\s+FHE_EVAL_REMAINING_BASE\s*:\s*usize\s*=\s*(\d+)\s*;"
+FHE_EXECUTE_BASE_RE = re.compile(
+    r"const\s+FHE_EXECUTE_REMAINING_BASE\s*:\s*usize\s*=\s*(\d+)\s*;"
 )
 
 # Host instructions the proof-store does not ingest. New host IDL instructions
@@ -52,18 +54,18 @@ INTENTIONALLY_IGNORED_INSTRUCTIONS = frozenset(
     }
 )
 
-# Lifecycle events decode.rs must keep wired (born-public binding).
+# Lifecycle events decode.rs must keep wired (created-public binding).
 REQUIRED_EVENTS = frozenset({"PublicOutputsProducedEvent"})
 
 
 def _parse_bases(source: str, label: str, errors: list[str]) -> int | None:
-    matches = FHE_EVAL_BASE_RE.findall(source)
+    matches = FHE_EXECUTE_BASE_RE.findall(source)
     if not matches:
-        errors.append(f"{label}: missing `const FHE_EVAL_REMAINING_BASE: usize = …;`")
+        errors.append(f"{label}: missing `const FHE_EXECUTE_REMAINING_BASE: usize = …;`")
         return None
     if len(matches) != 1:
         errors.append(
-            f"{label}: expected exactly one FHE_EVAL_REMAINING_BASE, found {len(matches)}"
+            f"{label}: expected exactly one FHE_EXECUTE_REMAINING_BASE, found {len(matches)}"
         )
         return None
     return int(matches[0])
@@ -167,18 +169,18 @@ def main() -> int:
             + ", ".join(missing_required)
         )
 
-    # Account-layout pin: remaining_accounts follow the named fhe_eval accounts.
-    fhe_eval = next(
-        (ix for ix in idl.get("instructions", []) if ix.get("name") == "fhe_eval"),
+    # Account-layout pin: remaining_accounts follow the named fhe_execute accounts.
+    fhe_execute = next(
+        (ix for ix in idl.get("instructions", []) if ix.get("name") == "fhe_execute"),
         None,
     )
-    if fhe_eval is None:
-        errors.append("zama_host IDL is missing the fhe_eval instruction")
+    if fhe_execute is None:
+        errors.append("zama_host IDL is missing the fhe_execute instruction")
         idl_named_count = None
     else:
-        idl_named_count = len(fhe_eval.get("accounts", []))
+        idl_named_count = len(fhe_execute.get("accounts", []))
         if idl_named_count == 0:
-            errors.append("zama_host IDL fhe_eval has zero named accounts")
+            errors.append("zama_host IDL fhe_execute has zero named accounts")
 
     proof_base = _parse_bases(source, "solana-proof-store decode.rs", errors)
     listener_base = None
@@ -193,8 +195,8 @@ def main() -> int:
 
     if idl_named_count is not None and proof_base is not None and proof_base != idl_named_count:
         errors.append(
-            "FHE_EVAL_REMAINING_BASE drift: proof-store decode.rs="
-            f"{proof_base} vs zama_host IDL named fhe_eval accounts={idl_named_count}"
+            "FHE_EXECUTE_REMAINING_BASE drift: proof-store decode.rs="
+            f"{proof_base} vs zama_host IDL named fhe_execute accounts={idl_named_count}"
         )
     if (
         idl_named_count is not None
@@ -202,12 +204,12 @@ def main() -> int:
         and listener_base != idl_named_count
     ):
         errors.append(
-            "FHE_EVAL_REMAINING_BASE drift: host-listener="
-            f"{listener_base} vs zama_host IDL named fhe_eval accounts={idl_named_count}"
+            "FHE_EXECUTE_REMAINING_BASE drift: host-listener="
+            f"{listener_base} vs zama_host IDL named fhe_execute accounts={idl_named_count}"
         )
     if proof_base is not None and listener_base is not None and proof_base != listener_base:
         errors.append(
-            "FHE_EVAL_REMAINING_BASE mismatch between proof-store "
+            "FHE_EXECUTE_REMAINING_BASE mismatch between proof-store "
             f"({proof_base}) and host-listener ({listener_base})"
         )
 
@@ -221,7 +223,7 @@ def main() -> int:
         f"(decoded_ix={len(decoded_instructions)} "
         f"ignored_ix={len(INTENTIONALLY_IGNORED_INSTRUCTIONS)} "
         f"decoded_events={sorted(decoded_events)} "
-        f"fhe_eval_remaining_base={proof_base})"
+        f"fhe_execute_remaining_base={proof_base})"
     )
     return 0
 

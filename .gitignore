@@ -97,3 +97,15 @@ mochawesome-report/
 target/
 
 .solana-test-ledger
+
+# dead-surface-check.sh --self-test plants these inside source trees and deletes them on exit.
+# Ignored so an interrupted run cannot be committed. Note what this does NOT give you: an ignored file
+# is precisely what `git status` will not show, so a leftover is invisible here. The script's own
+# startup guard is what catches one — it refuses to run while any of these exists, because a leftover
+# fixture and a real violation look identical in a report. The list below and SELFTEST_FIXTURES in the
+# script have to stay in step; the caller fixture was missing from this list for one commit.
+solana/crates/zama-fhe/.dead-surface-selftest.md
+solana/crates/zama-fhe/src/dead_surface_selftest.rs
+solana/crates/zama-fhe/src/dead_surface_selftest_caller.rs
+solana/programs/zama-host/src/dead_surface_selftest.rs
+solana/demo-dapp/src/deadSurfaceSelftest.ts

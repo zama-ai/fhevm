@@ -11,16 +11,16 @@ been exercised. Commands are run from `solana/` unless a row changes directory.
 | Layer | Exact command | What it proves | What it does **not** prove | Prerequisites / cost |
 | --- | --- | --- | --- | --- |
 | Pure operator conformance | `cargo test -p zama-solana-runtime-tests --test operator_conformance` | The test-owned evaluator agrees with the explicit operator/type contract, including closed-world admission, operand-source rules, and rejected shapes. | SBF execution, account validation, CPIs, TFHE evaluation, randomness, or any production path. | None beyond a Rust toolchain. Warm: about one second for 379 named, filterable cases. |
-| Plan/ABI contracts | `cargo test -p zama-solana-runtime-tests --test plan_contracts` | SDK plan serialization and checked-in IDL/ABI contracts used by these tests have not drifted. | Program execution, account validation, CPIs, or cryptographic behavior. | None beyond a Rust toolchain. Warm: very fast. |
+| Execution/ABI contracts | `cargo test -p zama-solana-runtime-tests --test execution_contracts` | SDK execution serialization and checked-in IDL/ABI contracts used by these tests have not drifted. | Program execution, account validation, CPIs, or cryptographic behavior. | None beyond a Rust toolchain. Warm: very fast. |
 | Representative SBF operator admission | `bash scripts/check-zama-host-idl.sh && cargo test -p zama-solana-runtime-tests --test operator_mollusk_conformance` | The compiled `zama-host` admits representative operator shapes, binds operands, and emits the expected handles and events; a test-owned evaluator makes the resulting computation readable. | Exhaustive operator coverage, real TFHE, database/listener behavior, or the networked stack. | Rebuilds PoC SBF artifacts. Eleven warm tests run in about 0.05 seconds; a cold SBF build is materially slower. |
 | Real SBF host runtime | `bash scripts/check-zama-host-idl.sh && cargo test -p zama-solana-runtime-tests --test host_mollusk -- --nocapture` | `zama-host` SBF behavior through account state, inner CPIs, return data, and rejection paths under Mollusk. | A validator, off-chain listeners/workers, real TFHE, or the networked stack. | Rebuilds PoC SBF artifacts. Warm tests are fast; a cold SBF build is materially slower. |
 | Real SBF token runtime | `bash scripts/check-zama-host-idl.sh && cargo test -p zama-solana-runtime-tests --test token_mollusk -- --nocapture` | Instruction-first confidential-token flows through real host/token/SPL CPIs, with state transitions, events, settlement, and readable domain outcomes asserted under Mollusk. | A validator, relayer/coprocessor/KMS wiring, or real TFHE. | Same SBF prerequisite and cold-build cost as the host suite. |
-| Yellowstone reconstruction | `cd ../coprocessor/fhevm-engine && SQLX_OFFLINE=true cargo test -p host-listener --features solana-reconstruct solana_reconstruct::` | Solana instruction/account decoding and deterministic reconstruction of ordinary computation and ACL records. | Yellowstone transport, born-public output recovery from the host lifecycle batch, a live validator, database insertion, worker compute, or decrypt completion. | Coprocessor workspace dependencies and offline SQLx metadata. Warm: focused; cold compilation can take minutes. |
+| Yellowstone reconstruction | `cd ../coprocessor/fhevm-engine && SQLX_OFFLINE=true cargo test -p host-listener --features solana-reconstruct solana_reconstruct::` | Solana instruction/account decoding and deterministic reconstruction of ordinary computation and ACL records. | Yellowstone transport, created-public output recovery from the host lifecycle execution, a live validator, database insertion, worker compute, or decrypt completion. | Coprocessor workspace dependencies and offline SQLx metadata. Warm: focused; cold compilation can take minutes. |
 | Solana MMR proof service | `cd ../solana-proof-service && make test` (and `make test-db` with Postgres) | Yellowstone/RPC recovery ingest, PostgreSQL store, readiness, and proof HTTP DTO. | Full vertical / production HA. | `NO_DNA=1`; offline SQLx metadata committed under the store crate. |
 | KMS Solana boundary | `cd ../kms-connector && SQLX_OFFLINE=true cargo test -p kms-worker solana_ -- --nocapture` | Solana account/witness decoding and the Solana-specific user-decrypt/certificate boundary. | A live chain, real relayer delivery, or full user/public-decrypt completion. | KMS workspace dependencies and offline SQLx metadata. Warm: focused; cold compilation can take minutes. |
 | Direct real-TFHE conformance | `cd ../coprocessor/fhevm-engine && SQLX_OFFLINE=true cargo test --profile local -p fhevm-engine-common --test real_tfhe_conformance` | CPU/default-feature `perform_fhe_operation` consumes real encrypted inputs and produces typed ciphertexts that decrypt to explicit deterministic Bool, Uint8, and Uint64 oracles. It covers every operator removed from the full vertical, while grouping sibling operators into compact family tests. | Solana admission, listener/database behavior, GPU execution, random known-answer claims, or high-width scheduled coverage. | Coprocessor workspace dependencies. Warm: about 20 seconds; a cold optimized build can take minutes. |
 | Manual real-TFHE worker boundary | `cd ../coprocessor/fhevm-engine && SQLX_OFFLINE=true cargo test -p tfhe-worker tests::solana_poc::solana_confidential_transfer_with_real_ciphertexts_computes_and_decrypts -- --ignored --exact --nocapture` | A Solana confidential transfer can feed the real TFHE worker through the database and decrypt the computed ciphertexts. | Yellowstone/RPC ingestion, solana-proof-service delivery, KMS networking, or the complete deployed flow. | Intentionally ignored: testcontainers starts disposable migrated Postgres; test keys and built PoC programs are also required. Heavy and manual. |
-| Full vertical | `bash scripts/e2e/clean-e2e.sh` then `bash scripts/e2e/full-vertical.sh` | The local-validator path across SDK/input proof, programs, reconstruction, coprocessor, solana-proof-service MMR proofs, and public/user decrypt. It retains one live example for each distinct eval wiring shape: encrypted/encrypted and encrypted/scalar binary, unary type conversion, ternary, bounded randomness, `Sum`, `IsIn`, and `MulDiv`. | Exhaustive operator semantics (the pure layer owns the full contract; Mollusk and direct real-TFHE supply representative SBF and cryptographic evidence), production reliability, scale, or mainnet readiness. | Docker, Solana tools, Node/Rust toolchains, ports, and a clean local stack. Before operator thinning, four successful CI samples on July 13–14, 2026 ran `full-vertical.sh` in 4m15s–4m29s; complete jobs took 44m49s–53m53s because stack setup dominated. These are observations, not SLOs. |
+| Full vertical | `bash scripts/e2e/clean-e2e.sh` then `bash scripts/e2e/full-vertical.sh` | The local-validator path across SDK/input proof, programs, reconstruction, coprocessor, solana-proof-service MMR proofs, and public/user decrypt. It retains one live example for each distinct execution wiring shape: encrypted/encrypted and encrypted/scalar binary, unary type conversion, ternary, bounded randomness, `Sum`, `IsIn`, and `MulDiv`. | Exhaustive operator semantics (the pure layer owns the full contract; Mollusk and direct real-TFHE supply representative SBF and cryptographic evidence), production reliability, scale, or mainnet readiness. | Docker, Solana tools, Node/Rust toolchains, ports, and a clean local stack. Before operator thinning, four successful CI samples on July 13–14, 2026 ran `full-vertical.sh` in 4m15s–4m29s; complete jobs took 44m49s–53m53s because stack setup dominated. These are observations, not SLOs. |
 | Scenario layer (SDK-driven) | `cd ../test-suite/fhevm && bun run test:e2e` (stack already up) | Product arcs composed **only** through `@fhevm/sdk` Solana actions, against the live stack. Currently the confidential-transfer arc: encrypt input → `submitInputProof` → `confidentialTransfer` → current user-decrypt of both rotated balances (Alice 1000→600, Bob 0→400). | Instruction admission / guards / arithmetic / cost (Mollusk owns those), operator semantics, and provisioning correctness (mint / wrap / balance-state reads still run through the Rust live-client — see the SDK gaps below). | A stack from `clean-e2e.sh` already up, plus `bun` and the built `@fhevm/sdk`. In CI it runs as its own step right after `full-vertical.sh` (same up stack). |
 
 After rebuilding `sdk/js-sdk/src`, refresh the test-suite SDK snapshot with
@@ -68,6 +68,44 @@ cargo test -p zama-solana-runtime-tests --test token_mollusk -- --nocapture
 cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
 ```
+
+#### Renaming anything shared: the four other roots that can see it
+
+`cargo test --workspace` here covers exactly one Cargo workspace root. The
+repository has about fifteen, so the number is not the useful fact — what matters
+is which ones can see a Solana change, and the criterion is a path dependency on
+a crate under `solana/`. Four do: `solana-proof-service`,
+`coprocessor/fhevm-engine` (host-listener, tfhe-worker), `kms-connector`, and
+`solana/scripts/e2e/live-client`. Everything else in the repo — `relayer`,
+`sdk/rust-sdk`, `shared/*`, `test-suite/gateway-stress`, the generated
+`*_bindings` — depends on no Solana crate and cannot break from one.
+
+Do not enumerate these roots by grepping for a `[workspace]` stanza; that misses
+implicit roots (`relayer/Cargo.toml` has no stanza and no parent claims it, so
+cargo treats it as its own). Ask cargo instead:
+`cargo metadata --no-deps --format-version 1 | jq -r .workspace_root`.
+
+A rename that reaches a shared crate compiles cleanly here and still breaks the
+build in those four, because they are invisible to this workspace:
+
+```bash
+# Its own workspace root — `scripts/e2e/live-client/Cargo.toml` ends with a bare
+# `[workspace]`, so nothing above ever compiles it. Built by setup-solana-side.sh.
+(cd scripts/e2e/live-client && cargo check --all-targets)
+
+# Own workspace, own fmt gate.
+(cd ../solana-proof-service && cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings)
+
+# Path-depend on zama-host / confidential-token / zama-solana-acl. `--all-targets`
+# matters: the sites that break are usually `#[cfg(test)]`, so a plain
+# `cargo check` or `cargo build` passes while `cargo test -p …` does not compile.
+(cd ../coprocessor/fhevm-engine && SQLX_OFFLINE=true cargo check --workspace --all-targets)
+(cd ../kms-connector && SQLX_OFFLINE=true cargo check --workspace --all-targets)
+```
+
+Each of those four hid a real break at least once. The grep sweeps in
+`scripts/dead-surface-check.sh` read the live client's tree, but grep does not
+typecheck — a root can be swept and still never compiled.
 
 ### Native unit coverage
 
@@ -119,7 +157,7 @@ files. It sits **on top of** the Mollusk ladder and the full vertical, and owns 
 composition can break (proofs vs live state, KMS round-trips, relayer seams, timing) — never what
 the lower layers already prove.
 
-Runner: `bun:test`, not vitest. The standing plan (#1656) names vitest, but these scenarios reuse
+These scenarios run under `bun:test`. The standing decision (#1656) names vitest, but they reuse
 `test-suite/fhevm/src/solana/*` orchestrators whose `layout.ts` is bun-native (`import.meta.dir`),
 and node-based vitest workers do not provide it; vitest remains the target if/when `layout.ts` is
 ported off bun APIs.
@@ -170,6 +208,13 @@ balance-state reads used by the transfer arc's setup likewise still run through 
   `bash scripts/check-zama-host-idl.sh`: it checks the default production IDL/ABI surface, then
   rebuilds the confidential-token artifact with its PoC-only receiver helpers. The host artifact
   has no alternate test feature or entropy path.
+- **A small CU delta after an incremental SBF build is not a code change.** The committed
+  baselines are minted by `scripts/update-cost-snapshots.sh`, which runs `cargo clean` first. An
+  incremental rebuild of the same source can differ by a few CU: a doc-comment-only edit to
+  `zama-host` was measured at −12 CU on the batcher's `open_batch` and `redeem_open_batch` after
+  `sync-zama-host-idl.sh` (incremental), and byte-identical to the baselines after the snapshot
+  script's clean rebuild. So regenerate with the script before believing a delta of this size, and
+  do not attribute it to the edit in front of you.
 - **SPL Token CPIs in token tests.** `token_mollusk` executes real SPL Token CPIs through the
   matching `mollusk-svm-programs-token` program fixture.
 - **`anchor build` vs program ids.** `anchor build` checks that each program's declared id matches
@@ -186,8 +231,9 @@ balance-state reads used by the transfer arc's setup likewise still run through 
   compute facts from instruction data. If a generated event value type changes, regenerate the
   vendored IDL and validate reconstruction explicitly; there is no emitted-event decoder fallback.
 - **The connector ABI is hand-mirrored and version-pinned.** `kms-worker` re-declares the byte
-  layout of host accounts (`EncryptedValue`, …), the PDA seeds, the hash
-  domains, and `EVENT_VERSION`/`MAX_ACL_SUBJECTS` — with **no compile-time link** to `zama-host`.
+  layout of host accounts (`EncryptedValue`, …), the PDA seeds, and the hash
+  domains — with **no compile-time link** to `zama-host` (the subject cap is the exception:
+  it comes from the shared `zama_solana_acl` crate).
   Change a field order, a `SPACE` constant, a seed, or a hash-domain string in the host and you must
   update the connector decoders (and the coprocessor IDL) by hand, or witness decoding breaks at
   runtime, not at build time. Lengths are checked; a same-length field reorder would *not* be caught.

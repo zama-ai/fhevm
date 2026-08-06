@@ -19,7 +19,7 @@ vi.mock('@solana/kit', async (importOriginal) => {
     }),
   };
 });
-vi.mock('@fhevm/sdk/solana/vault', () => ({
+vi.mock('./vault/index.js', () => ({
   buildClaimInstruction: mocks.buildClaim,
   buildInitializeTokenAccountInstruction: mocks.buildInitialize,
   deriveJoinRecordAddress: vi.fn(async () => address('SysvarC1ock11111111111111111111111111111111')),

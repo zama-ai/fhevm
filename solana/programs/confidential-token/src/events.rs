@@ -2,8 +2,6 @@
 
 use anchor_lang::prelude::*;
 
-use crate::state::{burn_amount_label, transfer_amount_label};
-
 /// App-local balance history event.
 ///
 /// This event is for frontend/app indexers. The generic coprocessor listener
@@ -77,45 +75,6 @@ pub enum TotalSupplyUpdateReason {
     Wrap,
     /// Confidential supply was burned.
     Burn,
-}
-
-/// Token-scoped amount purpose used for amount-handle birth.
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ConfidentialAmountKind {
-    /// Amount intended for confidential transfers.
-    Transfer,
-    /// Amount intended for confidential burns.
-    Burn,
-}
-
-impl ConfidentialAmountKind {
-    // Only reached by the `poc`-gated create_random_amount helpers.
-    #[cfg_attr(not(feature = "poc"), allow(dead_code))]
-    pub(crate) fn encrypted_value_label(self) -> [u8; 32] {
-        match self {
-            ConfidentialAmountKind::Transfer => transfer_amount_label(),
-            ConfidentialAmountKind::Burn => burn_amount_label(),
-        }
-    }
-}
-
-/// Emitted when the token program creates a token-scoped random amount.
-#[event]
-pub struct RandomAmountCreatedEvent {
-    /// Event schema version.
-    pub version: u8,
-    /// Confidential mint.
-    pub mint: Pubkey,
-    /// Token account owner.
-    pub owner: Pubkey,
-    /// Confidential token account.
-    pub token_account: Pubkey,
-    /// Whether this amount is intended for transfer or burn.
-    pub amount_kind: ConfidentialAmountKind,
-    /// Newly created amount handle.
-    pub handle: [u8; 32],
-    /// ZamaHost ACL record initialized for the amount.
-    pub encrypted_value: Pubkey,
 }
 
 /// Emitted when `disclose_secp` publishes a KMS-certified cleartext for a token-scoped handle.

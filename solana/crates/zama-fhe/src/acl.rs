@@ -1,4 +1,8 @@
-//! Durable-output addressing and ACL policy types.
+//! Persistent-output addressing and ACL policy types.
+//!
+//! Public API surface: app programs. The bounded-randomness constructors and the audience types
+//! are how an app declares who may read a persistent output, so they are exported for callers
+//! outside this repository.
 
 use crate::types::FheType;
 
@@ -6,14 +10,37 @@ use anchor_lang::prelude::Pubkey;
 
 use zama_host::encrypted_value_address;
 
-use crate::validate::{validate_encrypted_value_key, validate_subjects};
-use crate::{EvalBuildError, Result};
+use crate::validate::{validate_encrypted_value_id, validate_subjects};
+use crate::{FheExecutionBuildError, Result};
 
-/// App-domain encrypted field label.
+/// App-level ACL domain of an `EncryptedValue` account, such as a confidential token mint.
+///
+/// A domain and the account it scopes are both plain pubkeys, so the two used to be
+/// interchangeable at every derivation site; this type is what makes swapping them a compile
+/// error instead of a wrong PDA.
+///
+/// `repr(transparent)`, so a domain is passed exactly like the pubkey it wraps. What the wrapper
+/// still costs is the copy its constructor makes: measured across the snapshotted instructions,
+/// between 0 and 16 CU each depending on how the surrounding code inlines it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct DurableLabel([u8; 32]);
+#[repr(transparent)]
+pub struct Domain(Pubkey);
 
-impl DurableLabel {
+impl Domain {
+    pub const fn new(pubkey: Pubkey) -> Self {
+        Self(pubkey)
+    }
+
+    pub const fn pubkey(self) -> Pubkey {
+        self.0
+    }
+}
+
+/// The encrypted value label: an encrypted value ID's third component.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct EncryptedValueLabel([u8; 32]);
+
+impl EncryptedValueLabel {
     pub const fn new(bytes: [u8; 32]) -> Self {
         Self(bytes)
     }
@@ -25,50 +52,77 @@ impl DurableLabel {
 
 /// App-domain key of a stable `EncryptedValue` account.
 ///
-/// Addressing is stable per `(namespace, account, label)` — it does not rotate
+/// Addressing is stable per `(domain, encrypted value account authority, encrypted value
+/// label)` — it does not change
 /// on handle updates, unlike the old nonce-keyed ACL records.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EncryptedValueKey {
-    pub(crate) namespace: Pubkey,
-    pub(crate) account: Pubkey,
-    pub(crate) label: DurableLabel,
+pub struct EncryptedValueId {
+    pub(crate) domain: Domain,
+    pub(crate) encrypted_value_account_authority: Pubkey,
+    pub(crate) label: EncryptedValueLabel,
 }
 
-impl EncryptedValueKey {
-    pub fn new(namespace: Pubkey, account: Pubkey, label: DurableLabel) -> Self {
+impl EncryptedValueId {
+    /// ```
+    /// use anchor_lang::prelude::Pubkey;
+    /// use zama_fhe::{Domain, EncryptedValueId, EncryptedValueLabel};
+    ///
+    /// let mint = Pubkey::new_unique();
+    /// let token_account = Pubkey::new_unique();
+    /// let id = EncryptedValueId::new(Domain::new(mint), token_account, EncryptedValueLabel::new([1; 32]));
+    /// assert_eq!(id.domain().pubkey(), mint);
+    /// assert_eq!(id.encrypted_value_account_authority(), token_account);
+    /// ```
+    ///
+    /// Passing the two pubkeys the other way round does not compile, so a swapped pair can no
+    /// longer address a different encrypted value account than the app meant:
+    ///
+    /// ```compile_fail
+    /// use anchor_lang::prelude::Pubkey;
+    /// use zama_fhe::{Domain, EncryptedValueId, EncryptedValueLabel};
+    ///
+    /// let mint = Pubkey::new_unique();
+    /// let token_account = Pubkey::new_unique();
+    /// EncryptedValueId::new(token_account, Domain::new(mint), EncryptedValueLabel::new([1; 32]));
+    /// ```
+    pub fn new(
+        domain: Domain,
+        encrypted_value_account_authority: Pubkey,
+        label: EncryptedValueLabel,
+    ) -> Self {
         Self {
-            namespace,
-            account,
+            domain,
+            encrypted_value_account_authority,
             label,
         }
     }
 
     pub fn address(&self) -> Pubkey {
-        encrypted_value_address(self.value_key()).0
+        encrypted_value_address(self.encrypted_value_id()).0
     }
 
-    pub fn namespace(&self) -> Pubkey {
-        self.namespace
+    pub fn domain(&self) -> Domain {
+        self.domain
     }
 
-    pub fn account(&self) -> Pubkey {
-        self.account
+    pub fn encrypted_value_account_authority(&self) -> Pubkey {
+        self.encrypted_value_account_authority
     }
 
-    pub fn label(&self) -> DurableLabel {
+    pub fn encrypted_value_label(&self) -> EncryptedValueLabel {
         self.label
     }
 
-    pub fn value_key(&self) -> [u8; 32] {
-        zama_solana_acl::derive_value_key(
-            self.namespace.to_bytes(),
-            self.account.to_bytes(),
+    pub fn encrypted_value_id(&self) -> [u8; 32] {
+        zama_solana_acl::derive_encrypted_value_id(
+            self.domain.pubkey().to_bytes(),
+            self.encrypted_value_account_authority.to_bytes(),
             self.label.bytes(),
         )
     }
 }
 
-/// Previous on-chain state a durable output supersedes. `None` means this bind
+/// Previous on-chain state a persistent output updates. `None` means this bind
 /// is the encrypted value account's first (the `EncryptedValue` PDA is created).
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct PreviousEncryptedValueAccountState {
@@ -76,18 +130,18 @@ struct PreviousEncryptedValueAccountState {
     subjects: Vec<Pubkey>,
 }
 
-/// Durable output descriptor accepted by durable-only steps such as input bind.
+/// Persistent output descriptor accepted by persistent-only steps such as input bind.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DurableOutput {
-    key: EncryptedValueKey,
+pub struct PersistentOutput {
+    key: EncryptedValueId,
     subjects: Vec<Pubkey>,
     previous: Option<PreviousEncryptedValueAccountState>,
     make_public: bool,
 }
 
-impl DurableOutput {
+impl PersistentOutput {
     /// First bind for an encrypted value account: creates the `EncryptedValue` PDA.
-    pub fn create(key: EncryptedValueKey, subjects: Vec<Pubkey>) -> Self {
+    pub fn create(key: EncryptedValueId, subjects: Vec<Pubkey>) -> Self {
         Self {
             key,
             subjects,
@@ -100,7 +154,7 @@ impl DurableOutput {
     /// the on-chain account in the same instruction; the host verifies its
     /// handle and subjects exactly.
     pub fn update(
-        key: EncryptedValueKey,
+        key: EncryptedValueId,
         subjects: Vec<Pubkey>,
         current: &zama_host::EncryptedValue,
     ) -> Self {
@@ -115,22 +169,22 @@ impl DurableOutput {
         }
     }
 
-    /// Opts this output into being born publicly decryptable: the host seals a
-    /// public-decrypt leaf for the newly bound handle inside the same eval CPI
+    /// Opts this output into being created publicly decryptable: the host seals a
+    /// public-decrypt leaf for the newly bound handle inside the same fhe_execute CPI
     /// (EVM `unwrap`'s `makePubliclyDecryptable` parity; DD-036).
     pub fn with_make_public(mut self, make_public: bool) -> Self {
         self.make_public = make_public;
         self
     }
 
-    pub fn birth(&self) -> Result<DurableOutputBirth> {
-        validate_encrypted_value_key(&self.key)?;
+    pub fn binding(&self) -> Result<PersistentOutputBinding> {
+        validate_encrypted_value_id(&self.key)?;
         validate_subjects(&self.subjects)?;
-        Ok(DurableOutputBirth {
+        Ok(PersistentOutputBinding {
             encrypted_value: self.key.address(),
-            acl_domain_key: self.key.namespace,
-            app_account: self.key.account,
-            encrypted_value_label: self.key.label.bytes(),
+            domain: self.key.domain,
+            encrypted_value_account_authority: self.key.encrypted_value_account_authority,
+            label: self.key.label.bytes(),
             subjects: self.subjects.clone(),
             previous: self.previous.clone(),
             make_public: self.make_public,
@@ -138,33 +192,33 @@ impl DurableOutput {
     }
 }
 
-/// Host-ready metadata for creating or superseding a durable `EncryptedValue` encrypted value account.
+/// Host-ready metadata for creating or updating a persistent `EncryptedValue` encrypted value account.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DurableOutputBirth {
+pub struct PersistentOutputBinding {
     encrypted_value: Pubkey,
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-    encrypted_value_label: [u8; 32],
+    domain: Domain,
+    encrypted_value_account_authority: Pubkey,
+    label: [u8; 32],
     subjects: Vec<Pubkey>,
     previous: Option<PreviousEncryptedValueAccountState>,
     make_public: bool,
 }
 
-impl DurableOutputBirth {
+impl PersistentOutputBinding {
     pub fn encrypted_value(&self) -> Pubkey {
         self.encrypted_value
     }
 
-    pub fn acl_domain_key(&self) -> Pubkey {
-        self.acl_domain_key
+    pub fn domain(&self) -> Domain {
+        self.domain
     }
 
-    pub fn app_account(&self) -> Pubkey {
-        self.app_account
+    pub fn encrypted_value_account_authority(&self) -> Pubkey {
+        self.encrypted_value_account_authority
     }
 
     pub fn encrypted_value_label(&self) -> [u8; 32] {
-        self.encrypted_value_label
+        self.label
     }
 
     pub fn subjects(&self) -> &[Pubkey] {
@@ -179,6 +233,16 @@ impl DurableOutputBirth {
         self.previous
             .as_ref()
             .map(|previous| previous.subjects.as_slice())
+    }
+
+    /// The declared previous state in the host's wire shape (`None` on create).
+    pub fn previous_state(&self) -> Option<zama_host::PreviousState> {
+        self.previous
+            .as_ref()
+            .map(|previous| zama_host::PreviousState {
+                handle: previous.handle,
+                subjects: previous.subjects.clone(),
+            })
     }
 
     pub fn make_public(&self) -> bool {
@@ -199,27 +263,16 @@ pub struct BoundedU64UpperBound {
 impl BoundedU64UpperBound {
     pub fn power_of_two(value: u64) -> Result<Self> {
         if value == 0 || !value.is_power_of_two() {
-            return Err(EvalBuildError::InvalidRandomUpperBound);
+            return Err(FheExecutionBuildError::InvalidRandomUpperBound);
         }
         let mut bytes = [0u8; 32];
         bytes[24..].copy_from_slice(&value.to_be_bytes());
         Self::from_be_bytes(bytes)
     }
 
-    pub fn full_width() -> Self {
-        let mut value = [0u8; 32];
-        value[23] = 1;
-        debug_assert!(zama_host::assert_valid_bounded_rand_upper_bound(
-            value,
-            FheType::UINT64.byte()
-        )
-        .is_ok());
-        Self { value }
-    }
-
     pub fn from_be_bytes(value: [u8; 32]) -> Result<Self> {
         zama_host::assert_valid_bounded_rand_upper_bound(value, FheType::UINT64.byte())
-            .map_err(|_| EvalBuildError::InvalidRandomUpperBound)?;
+            .map_err(|_| FheExecutionBuildError::InvalidRandomUpperBound)?;
         Ok(Self { value })
     }
 
@@ -229,7 +282,7 @@ impl BoundedU64UpperBound {
 }
 
 impl TryFrom<u64> for BoundedU64UpperBound {
-    type Error = EvalBuildError;
+    type Error = FheExecutionBuildError;
 
     fn try_from(value: u64) -> Result<Self> {
         Self::power_of_two(value)
@@ -243,7 +296,7 @@ pub struct Output(pub(crate) OutputKind);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum OutputKind {
     Transient,
-    Durable(DurableOutput),
+    Persistent(PersistentOutput),
 }
 
 impl Output {
@@ -251,12 +304,10 @@ impl Output {
         Self(OutputKind::Transient)
     }
 
-    /// First bind for an encrypted value account (creates the `EncryptedValue` PDA).
-    pub fn durable(key: EncryptedValueKey, subjects: Vec<Pubkey>) -> Self {
-        Self(OutputKind::Durable(DurableOutput::create(key, subjects)))
-    }
-
-    pub fn durable_output(output: DurableOutput) -> Self {
-        Self(OutputKind::Durable(output))
+    /// Binds the step output persistently. Whether the output creates or updates its
+    /// `EncryptedValue` PDA is said at the call site through [`PersistentOutput::create`] /
+    /// [`PersistentOutput::update`].
+    pub fn persistent(output: PersistentOutput) -> Self {
+        Self(OutputKind::Persistent(output))
     }
 }

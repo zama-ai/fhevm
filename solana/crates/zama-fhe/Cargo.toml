@@ -1,7 +1,7 @@
 [package]
 name = "zama-fhe"
 version = "0.1.0"
-description = "App-facing helpers for building ZamaHost Solana FHE eval requests"
+description = "App-facing helpers for building ZamaHost Solana FHE execution requests"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,6 +9,10 @@ license.workspace = true
 [features]
 default = []
 cpi = ["zama-host/cpi"]
+# For a program that installs its own allocator: lifts the on-chain step ceiling
+# (`MAX_ON_CHAIN_EXECUTION_STEPS`) back to the host's `MAX_FHE_EXECUTION_STEPS`. Off-chain builds are unaffected
+# either way.
+raised-heap = []
 
 [dependencies]
 anchor-lang = "1.0.2"

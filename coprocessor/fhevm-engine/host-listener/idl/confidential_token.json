@@ -13,7 +13,7 @@
     {
       "name": "confidential_burn",
       "docs": [
-        "Burns an encrypted amount by rotating the account balance and encrypted total supply."
+        "Burns an encrypted amount by updating the account balance and encrypted total supply."
       ],
       "discriminator": [
         4,
@@ -106,24 +106,24 @@
         {
           "name": "balance_value",
           "docs": [
-            "Stable balance encrypted value account; read for the current handle and superseded by this eval."
+            "Stable balance encrypted value account; read for the current handle and replaced by this execution."
           ],
           "writable": true
         },
         {
           "name": "total_supply_value",
           "docs": [
-            "Stable total-supply encrypted value account; read for the current handle and superseded by this eval."
+            "Stable total-supply encrypted value account; read for the current handle and replaced by this execution."
           ],
           "writable": true
         },
         {
           "name": "burned_amount_value",
           "docs": [
-            "account's first burn, superseded in place thereafter to each burn's own",
+            "account's first burn, replaced in place thereafter to each burn's own",
             "delta. Each burn makes its own delta handle publicly decryptable at burn",
             "(ERC-7984 `unwrap` parity), so every burn stays permanently redeemable",
-            "even after a later burn supersedes this encrypted value account (DD-036 / Vector 2 closed)."
+            "even after a later burn updates this encrypted value account (DD-036 / Vector 2 closed)."
           ],
           "writable": true
         },
@@ -191,9 +191,9 @@
         "Burns an encrypted amount taken from an existing on-chain `EncryptedValue` (a computed or",
         "received handle) instead of a freshly attested client-side encryption — the burn-side analog",
         "of `confidential_transfer_from_value` (fhevm-internal#1755). The batcher uses this to burn a",
-        "batch's computed encrypted total, then requests the KMS burn certificate. The signing owner",
+        "execution's computed encrypted total, then requests the KMS burn certificate. The signing owner",
         "must be in the amount value's subject set (the token spend gate); the amount is spent",
-        "read-only, and the burned-amount output is born publicly decryptable exactly as in",
+        "read-only, and the burned-amount output is created publicly decryptable exactly as in",
         "`confidential_burn`, so `redeem_burned_amount` consumes it unchanged."
       ],
       "discriminator": [
@@ -296,21 +296,21 @@
         {
           "name": "balance_value",
           "docs": [
-            "Stable balance encrypted value account; read for the current handle and superseded by this eval."
+            "Stable balance encrypted value account; read for the current handle and replaced by this execution."
           ],
           "writable": true
         },
         {
           "name": "total_supply_value",
           "docs": [
-            "Stable total-supply encrypted value account; read for the current handle and superseded by this eval."
+            "Stable total-supply encrypted value account; read for the current handle and replaced by this execution."
           ],
           "writable": true
         },
         {
           "name": "burned_amount_value",
           "docs": [
-            "as in [`ConfidentialBurn`]; created on the account's first burn, superseded in place",
+            "as in [`ConfidentialBurn`]; created on the account's first burn, replaced in place",
             "thereafter to each burn's own delta (DD-036 / Vector 2). This is the same output shape",
             "`redeem_burned_amount` later consumes — only where the amount comes from differs."
           ],
@@ -320,8 +320,8 @@
           "name": "amount_value",
           "docs": [
             "The existing encrypted amount to burn: a computed or received `euint64` handle. Read-only",
-            "durable operand — never superseded, never consumed. Its address is the canonical PDA of its",
-            "own `(acl_domain_key, app_account, encrypted_value_label)` fields, so an encrypted value account from any app",
+            "persistent operand — never replaced, never consumed. Its address is the canonical PDA of its",
+            "own `(domain, authority, label)` fields, so an encrypted value account from any app",
             "may be passed here once its owner has granted the mint's compute subject via `allow_subjects`."
           ]
         },
@@ -377,7 +377,7 @@
     {
       "name": "confidential_transfer",
       "docs": [
-        "Transfers an encrypted amount by rotating the sender and recipient balance handles."
+        "Transfers an encrypted amount by updating the sender and recipient balance handles."
       ],
       "discriminator": [
         97,
@@ -453,7 +453,7 @@
           "name": "from_balance_value",
           "docs": [
             "Sender's stable balance `EncryptedValue` encrypted value account; read for the current",
-            "handle and superseded in place by this eval's CPI."
+            "handle and replaced in place by this execution's CPI."
           ],
           "writable": true
         },
@@ -467,7 +467,7 @@
         {
           "name": "transferred_amount_value",
           "docs": [
-            "the sender's first transfer, superseded thereafter."
+            "the sender's first transfer, replaced thereafter."
           ],
           "writable": true
         },
@@ -610,7 +610,7 @@
           "name": "from_balance_value",
           "docs": [
             "Sender's stable balance `EncryptedValue` encrypted value account; read for the current",
-            "handle and superseded in place by this eval's CPI."
+            "handle and replaced in place by this execution's CPI."
           ],
           "writable": true
         },
@@ -624,7 +624,7 @@
         {
           "name": "transferred_amount_value",
           "docs": [
-            "the sender's first transfer, superseded thereafter."
+            "the sender's first transfer, replaced thereafter."
           ],
           "writable": true
         },
@@ -632,8 +632,8 @@
           "name": "amount_value",
           "docs": [
             "The existing encrypted amount to spend: a computed or received `euint64` handle. Read-only",
-            "durable operand — never superseded, never consumed. Its address is the canonical PDA of its",
-            "own `(acl_domain_key, app_account, encrypted_value_label)` fields, so an encrypted value account from any app",
+            "persistent operand — never replaced, never consumed. Its address is the canonical PDA of its",
+            "own `(domain, authority, label)` fields, so an encrypted value account from any app",
             "may be passed here once its owner has granted the mint's compute subject via `allow_subjects`."
           ]
         },
@@ -713,7 +713,7 @@
           "name": "encrypted_value",
           "docs": [
             "The `EncryptedValue` encrypted value account the disclosed handle belongs to.",
-            "CPI; this handler additionally binds its `acl_domain_key` to `mint`."
+            "CPI; this handler additionally binds its `domain` to `mint`."
           ]
         },
         {
@@ -1249,7 +1249,7 @@
         {
           "name": "redemption_record",
           "docs": [
-            "Replay marker for this burned handle: write-once, never closed, the sole durable \"paid out\"",
+            "Replay marker for this burned handle: write-once, never closed, the sole persistent \"paid out\"",
             "bit for `(mint, burned_handle)`."
           ],
           "writable": true,
@@ -1434,7 +1434,7 @@
     {
       "name": "wrap_usdc",
       "docs": [
-        "Escrows public USDC and rotates the confidential balance by `amount`."
+        "Escrows public USDC and updates the confidential balance by `amount`."
       ],
       "discriminator": [
         88,
@@ -1578,14 +1578,14 @@
         {
           "name": "balance_value",
           "docs": [
-            "Stable balance encrypted value account; read for the current handle and superseded by this eval."
+            "Stable balance encrypted value account; read for the current handle and replaced by this execution."
           ],
           "writable": true
         },
         {
           "name": "total_supply_value",
           "docs": [
-            "Stable total-supply encrypted value account; read for the current handle and superseded by this eval."
+            "Stable total-supply encrypted value account; read for the current handle and replaced by this execution."
           ],
           "writable": true
         },
@@ -1759,19 +1759,6 @@
       ]
     },
     {
-      "name": "RandomAmountCreatedEvent",
-      "discriminator": [
-        197,
-        125,
-        32,
-        173,
-        115,
-        70,
-        150,
-        4
-      ]
-    },
-    {
       "name": "TotalSupplyHandleUpdatedEvent",
       "discriminator": [
         140,
@@ -1848,7 +1835,7 @@
     },
     {
       "code": 6012,
-      "name": "AclDomainKeyMismatch",
+      "name": "DomainMismatch",
       "msg": "Confidential mint ACL domain key is invalid"
     },
     {
@@ -1933,43 +1920,43 @@
     },
     {
       "code": 6029,
-      "name": "InvalidFheEvalPlan",
-      "msg": "FHE eval plan is invalid"
+      "name": "InvalidFheExecution",
+      "msg": "FHE execution is invalid"
     },
     {
       "code": 6030,
-      "name": "DuplicateFheEvalAccount",
-      "msg": "FHE eval account list contains a duplicate account"
+      "name": "DuplicateFheExecuteAccount",
+      "msg": "fhe_execute account list contains a duplicate account"
     },
     {
       "code": 6031,
-      "name": "UnexpectedFheEvalAccount",
-      "msg": "FHE eval account list contains an unexpected account"
+      "name": "UnexpectedFheExecuteAccount",
+      "msg": "fhe_execute account list contains an unexpected account"
     },
     {
       "code": 6032,
-      "name": "MissingFheEvalAccount",
-      "msg": "FHE eval plan is missing a required dynamic account"
+      "name": "MissingFheExecuteAccount",
+      "msg": "FHE execution is missing a required dynamic account"
     },
     {
       "code": 6033,
-      "name": "FheEvalAccountNotWritable",
-      "msg": "FHE eval dynamic account must be writable"
+      "name": "FheExecuteAccountNotWritable",
+      "msg": "fhe_execute dynamic account must be writable"
     },
     {
       "code": 6034,
       "name": "DuplicateFheOutputAuthority",
-      "msg": "FHE eval output authority list contains a duplicate authority"
+      "msg": "fhe_execute output authority list contains a duplicate authority"
     },
     {
       "code": 6035,
       "name": "UnexpectedFheOutputAuthority",
-      "msg": "FHE eval output authority list contains an unexpected authority"
+      "msg": "fhe_execute output authority list contains an unexpected authority"
     },
     {
       "code": 6036,
       "name": "MissingFheOutputAuthority",
-      "msg": "FHE eval plan is missing a required output authority"
+      "msg": "FHE execution is missing a required output authority"
     },
     {
       "code": 6037,
@@ -2257,23 +2244,6 @@
       }
     },
     {
-      "name": "ConfidentialAmountKind",
-      "docs": [
-        "Token-scoped amount purpose used for amount-handle birth."
-      ],
-      "type": {
-        "kind": "enum",
-        "variants": [
-          {
-            "name": "Transfer"
-          },
-          {
-            "name": "Burn"
-          }
-        ]
-      }
-    },
-    {
       "name": "ConfidentialBurnEvent",
       "docs": [
         "Emitted when a confidential burn computes the all-or-zero burned amount."
@@ -2350,7 +2320,7 @@
             "type": "pubkey"
           },
           {
-            "name": "acl_domain_key",
+            "name": "domain",
             "docs": [
               "ACL domain key, currently equal to the mint pubkey."
             ],
@@ -2505,8 +2475,8 @@
     {
       "name": "CoprocessorInputAttestation",
       "docs": [
-        "A coprocessor input attestation carried inline by a [`FheEvalOperand::VerifiedInput`], re-verified",
-        "in-frame (no account, no PDA) — the instruction-local analog of EVM `allowTransient(input, contract)`."
+        "A coprocessor input attestation carried inline by a [`FheExecuteOperand::VerifiedInput`], re-verified",
+        "in-execution (no account, no PDA) — the instruction-local analog of EVM `allowTransient(input, contract)`."
       ],
       "type": {
         "kind": "struct",
@@ -2604,8 +2574,8 @@
       "docs": [
         "Canonical ACL + history state for one encrypted value account.",
         "",
-        "PDA: `[ENCRYPTED_VALUE_SEED, value_key]` where `value_key =",
-        "zama_solana_acl::derive_value_key(acl_domain_key, app_account, encrypted_value_label)`.",
+        "PDA: `[ENCRYPTED_VALUE_SEED, encrypted_value_id]` where `encrypted_value_id =",
+        "zama_solana_acl::derive_encrypted_value_id(domain, encrypted_value_account_authority, label)`.",
         "The account name must stay exactly `EncryptedValue` — Anchor derives the",
         "discriminator from the type name, and it must match",
         "`zama_solana_acl::encrypted_value_discriminator()`."
@@ -2614,23 +2584,31 @@
         "kind": "struct",
         "fields": [
           {
-            "name": "acl_domain_key",
+            "name": "domain",
             "docs": [
               "App-level ACL domain, such as a confidential token mint."
             ],
             "type": "pubkey"
           },
           {
-            "name": "app_account",
+            "name": "encrypted_value_account_authority",
             "docs": [
-              "App-owned account whose encrypted field this encrypted value account represents."
+              "The account that controls this encrypted value: it must sign to create it, update its",
+              "handle, or replace its subject list. Enforced by address rather than by comparing this",
+              "field — the signer must equal the authority declared in the execution",
+              "(`assert_output_acl_metadata`) and the account written to must be the PDA rederived from",
+              "that declared triple, which is what ties the signer to the stored value on update. For a",
+              "token balance this is the token account itself. It is not the sole controller of the",
+              "audience — any current subject may also add or remove subjects through `allow_subjects` /",
+              "`remove_subject`."
             ],
             "type": "pubkey"
           },
           {
-            "name": "encrypted_value_label",
+            "name": "label",
             "docs": [
-              "Domain-separated encrypted field label inside `app_account`."
+              "The encrypted value label: the third component of the encrypted value ID, naming which",
+              "encrypted value of the authority this is."
             ],
             "type": {
               "array": [
@@ -2654,7 +2632,7 @@
           {
             "name": "subjects",
             "docs": [
-              "Current durable subjects. Membership in this set is the whole ACL."
+              "Current persistent subjects. Membership in this set is the whole ACL."
             ],
             "type": {
               "vec": "pubkey"
@@ -2865,23 +2843,26 @@
           {
             "name": "max_hcu_per_tx",
             "docs": [
-              "Max total HCU summed over one `fhe_eval` plan. `0` = unlimited (enforcement off)."
+              "Max total HCU summed over one `fhe_execute` execution. `u64::MAX` = unlimited",
+              "(enforcement off); `0` is rejected at set time."
             ],
             "type": "u64"
           },
           {
             "name": "max_hcu_depth_per_tx",
             "docs": [
-              "Max critical-path (depth) HCU within one `fhe_eval` plan. `0` = unlimited."
+              "Max critical-path (depth) HCU within one `fhe_execute` execution. `u64::MAX` =",
+              "unlimited; `0` is rejected at set time."
             ],
             "type": "u64"
           },
           {
             "name": "hcu_block_cap_per_app",
             "docs": [
-              "Per-app HCU budget per slot, enforced in `fhe_eval`. `u64::MAX` = unrestricted (the ship",
-              "default; short-circuits, touching no meter); `0` = ban untrusted apps (trusted still bypass);",
-              "any other value is the metering band (must be `>= max_hcu_per_tx` unless that is `0`)."
+              "Per-app HCU budget per slot, enforced in `fhe_execute`. `u64::MAX` = unrestricted (the ship",
+              "default; short-circuits, touching no meter); `0` = ban untrusted apps (trusted still",
+              "bypass) — the one knob where `0` is a real semantic; any other value is the metering band",
+              "(must be `>= max_hcu_per_tx` unless that is unlimited)."
             ],
             "type": "u64"
           },
@@ -3029,75 +3010,6 @@
                 ]
               }
             }
-          }
-        ]
-      }
-    },
-    {
-      "name": "RandomAmountCreatedEvent",
-      "docs": [
-        "Emitted when the token program creates a token-scoped random amount."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "mint",
-            "docs": [
-              "Confidential mint."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "owner",
-            "docs": [
-              "Token account owner."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "token_account",
-            "docs": [
-              "Confidential token account."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "amount_kind",
-            "docs": [
-              "Whether this amount is intended for transfer or burn."
-            ],
-            "type": {
-              "defined": {
-                "name": "ConfidentialAmountKind"
-              }
-            }
-          },
-          {
-            "name": "handle",
-            "docs": [
-              "Newly created amount handle."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "encrypted_value",
-            "docs": [
-              "ZamaHost ACL record initialized for the amount."
-            ],
-            "type": "pubkey"
           }
         ]
       }

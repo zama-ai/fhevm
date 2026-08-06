@@ -13,20 +13,26 @@ import {
   deriveJoinRecordAddress,
   getBatchByIndex,
   getBatcher,
+  getDeactivateLookupTableInstruction,
   getJoinRecord,
   settleBatch,
-} from '@fhevm/sdk/solana/vault';
+} from './vault/index.js';
 
-import type { BatchLifecycle, BatchTarget, VaultDirection } from './batchTypes';
+import {
+  BATCH_CANCELED,
+  BATCH_DISPATCHED,
+  BATCH_PENDING,
+  BATCH_SETTLED,
+  type BatchLifecycle,
+  type BatchTarget,
+  type VaultDirection,
+} from './batchTypes';
 import type { DemoConfig } from './demoConfig';
 import { sendTransaction } from './sendTransaction';
 import { vaultRoots } from './vaultRoots';
 
-const BATCH_PENDING = 0;
-const BATCH_DISPATCHED = 1;
-const BATCH_SETTLED = 2;
-const BATCH_CANCELED = 3;
 const DISPATCH_COMPUTE_UNIT_LIMIT = 600_000;
+const DEACTIVATE_LOOKUP_TABLE_COMPUTE_UNIT_LIMIT = 50_000;
 
 const addressEncoder = getAddressEncoder();
 type Bytes32Hex = Parameters<typeof defineFhevmSolanaChain>[0]['fhevm']['acl']['domainKeys'][number];
@@ -178,7 +184,10 @@ export const settleVaultBatch = async (
   session: DemoOperatorSession,
   position: BatchTarget,
   direction: VaultDirection,
-  lookupTableAddress: Address = session.config.batchers[direction].lookupTable,
+  // Required, not defaulted to the config's table: this address also names the table this
+  // function deactivates on success, so falling back to the batch-0 table would retire a table
+  // belonging to a different batch. Callers get it from `lookupTableForBatch`.
+  lookupTableAddress: Address,
 ): Promise<Signature | null> => {
   const roots = vaultRoots(session.config, direction);
   const { rpc, batch } = await currentPinnedBatch(session, position, direction);
@@ -196,7 +205,7 @@ export const settleVaultBatch = async (
     },
   });
   const publicDecryptClient = createFhevmPublicDecryptClient({ chain });
-  return settleBatch(chain, { proofServiceUrl: session.config.proofServiceUrl }, session.keeper, {
+  const signature = await settleBatch(chain, { proofServiceUrl: session.config.proofServiceUrl }, session.keeper, {
     rpc,
     rpcSubscriptions,
     runtime: publicDecryptClient.runtime,
@@ -207,4 +216,22 @@ export const settleVaultBatch = async (
     authorityFundingLamports: BigInt(session.config.authorityFundingLamports),
     certificateOptions: { timeout: 60_000 },
   });
+  // The batch is settled, so its per-batch table has served its one purpose: deactivate it now and
+  // the crank in prepareNextBatch reclaims the rent once the cooldown has elapsed. A failed
+  // deactivation is a rent-hygiene miss, never a settlement failure — and no longer a permanent
+  // one either: the crank deactivates any table whose batch is settled or canceled, so this eager
+  // attempt is a shortcut on the happy path rather than the only chance the table gets.
+  try {
+    await sendTransaction(
+      session.config,
+      session.keeper,
+      [getDeactivateLookupTableInstruction({ lookupTable: lookupTableAddress, authority: session.keeper })],
+      DEACTIVATE_LOOKUP_TABLE_COMPUTE_UNIT_LIMIT,
+    );
+  } catch (error) {
+    console.warn(
+      `settled, but deactivating lookup table ${lookupTableAddress} failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  return signature;
 };

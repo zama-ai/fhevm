@@ -14,10 +14,10 @@ pub enum ConfidentialTokenError {
     /// Confidential mint account shape or self-domain metadata is invalid.
     #[msg("Confidential mint account is invalid")]
     MintAccountMismatch,
-    /// Confidential mint profile fields are unusable.
+    /// Retired (zero references). Kept so Anchor error ordinals stay stable.
     #[msg("Confidential mint config is invalid")]
     InvalidMintConfig,
-    /// Mint authority did not match signer.
+    /// Retired (zero references). Kept so Anchor error ordinals stay stable.
     #[msg("Confidential mint authority does not match signer")]
     MintAuthorityMismatch,
     /// The instruction included undeclared trailing account metas.
@@ -26,7 +26,7 @@ pub enum ConfidentialTokenError {
     /// Token account was not the canonical owner/mint PDA.
     #[msg("Confidential token account is not canonical")]
     TokenAccountMismatch,
-    /// Balance nonce sequence overflowed.
+    /// Retired (zero references). Kept so Anchor error ordinals stay stable.
     #[msg("ACL nonce overflow")]
     AclNonceOverflow,
     /// Token account initialization cannot mint unbacked confidential supply.
@@ -43,7 +43,7 @@ pub enum ConfidentialTokenError {
     VaultAccountMismatch,
     /// Confidential mint ACL domain key was not the expected mint key.
     #[msg("Confidential mint ACL domain key is invalid")]
-    AclDomainKeyMismatch,
+    DomainMismatch,
     /// Compute signer PDA did not match the confidential mint metadata.
     #[msg("Compute signer does not match confidential mint")]
     ComputeSignerMismatch,
@@ -96,29 +96,29 @@ pub enum ConfidentialTokenError {
     /// Kept so Anchor error ordinals stay stable.
     #[msg("handle is not released for public decrypt (retired)")]
     PublicDecryptNotReleased,
-    /// Internal FHE eval plan construction failed before the host CPI.
-    #[msg("FHE eval plan is invalid")]
-    InvalidFheEvalPlan,
-    /// The FHE eval candidate account list contains the same account twice.
-    #[msg("FHE eval account list contains a duplicate account")]
-    DuplicateFheEvalAccount,
-    /// The FHE eval candidate account list contains an account the plan does not require.
-    #[msg("FHE eval account list contains an unexpected account")]
-    UnexpectedFheEvalAccount,
-    /// The FHE eval plan requires a dynamic account that was not provided.
-    #[msg("FHE eval plan is missing a required dynamic account")]
-    MissingFheEvalAccount,
-    /// The FHE eval plan requires a writable dynamic account but the provided account is readonly.
-    #[msg("FHE eval dynamic account must be writable")]
-    FheEvalAccountNotWritable,
-    /// The FHE eval output authority list contains the same authority twice.
-    #[msg("FHE eval output authority list contains a duplicate authority")]
+    /// Internal FHE execution construction failed before the host CPI.
+    #[msg("FHE execution is invalid")]
+    InvalidFheExecution,
+    /// The fhe_execute candidate account list contains the same account twice.
+    #[msg("fhe_execute account list contains a duplicate account")]
+    DuplicateFheExecuteAccount,
+    /// The fhe_execute candidate account list contains an account the execution does not require.
+    #[msg("fhe_execute account list contains an unexpected account")]
+    UnexpectedFheExecuteAccount,
+    /// The FHE execution requires a dynamic account that was not provided.
+    #[msg("FHE execution is missing a required dynamic account")]
+    MissingFheExecuteAccount,
+    /// The FHE execution requires a writable dynamic account but the provided account is readonly.
+    #[msg("fhe_execute dynamic account must be writable")]
+    FheExecuteAccountNotWritable,
+    /// The fhe_execute output authority list contains the same authority twice.
+    #[msg("fhe_execute output authority list contains a duplicate authority")]
     DuplicateFheOutputAuthority,
-    /// The FHE eval output authority list contains an authority the plan does not require.
-    #[msg("FHE eval output authority list contains an unexpected authority")]
+    /// The fhe_execute output authority list contains an authority the execution does not require.
+    #[msg("fhe_execute output authority list contains an unexpected authority")]
     UnexpectedFheOutputAuthority,
-    /// The FHE eval plan requires an output authority that was not provided.
-    #[msg("FHE eval plan is missing a required output authority")]
+    /// The FHE execution requires an output authority that was not provided.
+    #[msg("FHE execution is missing a required output authority")]
     MissingFheOutputAuthority,
     /// The host public-decrypt verifier CPI did not return well-formed `(handle, cleartext)`
     /// data, or the return was not produced by the ZamaHost program.

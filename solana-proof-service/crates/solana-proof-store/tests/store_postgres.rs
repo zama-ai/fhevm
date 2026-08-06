@@ -14,11 +14,12 @@ use solana_proof_source::{CanonicalTransaction, CompletedBlock, RawInstruction};
 use solana_proof_store::{
     apply_instruction, decode_program_instructions, reduce_completed_block, ApplyOutcome,
     DecodedInstruction, EncryptedValueAccountReplayState, LeafKind,
-    PriorEncryptedValueAccountState, SemanticLeafKey, SqlProofStore, SubjectGrant,
+    PriorEncryptedValueAccountState, SemanticLeafKey, SqlProofStore,
 };
+use zama_host::state::{FheExecuteArgs, FheExecuteOutput, FheExecuteStep};
+use zama_solana_acl::encrypted_value_account::reconstruct;
 use zama_solana_acl::mmr::{mmr_build_proof, mmr_peaks_from_leaves, mmr_verify};
 use zama_solana_acl::public_decrypt_leaf_commitment;
-use zama_solana_acl::value_account::reconstruct;
 
 fn database_url() -> String {
     std::env::var("SOLANA_PROOF_TEST_DATABASE_URL")
@@ -49,48 +50,77 @@ fn ix(accounts: Vec<[u8; 32]>, name: &str, args: impl BorshSerialize) -> RawInst
     }
 }
 
-fn create_ix(ev: [u8; 32], handle: [u8; 32], subject: [u8; 32]) -> RawInstruction {
-    #[derive(BorshSerialize)]
-    struct Args {
-        acl_domain_key: [u8; 32],
-        app_account: [u8; 32],
-        label: [u8; 32],
-        handle: [u8; 32],
-        subjects: Vec<SubjectGrant>,
-    }
-    ix(
-        vec![pk(0xA), pk(0xB), ev, pk(0xC), pk(0xD)],
-        "create_encrypted_value",
-        Args {
-            acl_domain_key: pk(0x10),
-            app_account: pk(0x11),
-            label: pk(0x12),
-            handle,
-            subjects: vec![SubjectGrant { subject }],
+/// Builds an `fhe_execute` instruction with one persistent output on `ev`:
+/// a creation when `previous` is `None`, an update (update of
+/// `previous_handle` over `previous_subjects`) when `Some`. The output
+/// audience equals `subjects`. Mirrors the real anchor account layout:
+/// 9 named accounts, then `ev` as the single remaining account.
+fn fhe_execute_ix(
+    ev: [u8; 32],
+    subjects: &[[u8; 32]],
+    previous: Option<([u8; 32], Vec<[u8; 32]>)>,
+) -> RawInstruction {
+    // Pool layout: [0]=domain, [1]=authority, [2]=label, [3..]=output
+    // subjects. TrivialEncrypt's plaintext is inline, not pooled.
+    let mut dictionary = vec![pk(0x71), pk(0x72), pk(0x73)];
+    let subject_base = dictionary.len() as u8;
+    dictionary.extend_from_slice(subjects);
+    let step = FheExecuteStep::TrivialEncrypt {
+        plaintext: pk(0x70),
+        fhe_type: 5,
+        output: FheExecuteOutput::StoredValue {
+            output_encrypted_value_index: 0,
+            output_authority_index: None,
+            output_domain_index: 0,
+            output_account_index: 1,
+            output_label_index: 2,
+            output_subject_indexes: (0..subjects.len() as u8)
+                .map(|i| subject_base + i)
+                .collect(),
+            previous_state: previous.map(|(handle, subjects)| zama_host::PreviousState {
+                handle,
+                subjects: subjects
+                    .into_iter()
+                    .map(anchor_lang::prelude::Pubkey::new_from_array)
+                    .collect(),
+            }),
+            make_public: false,
         },
-    )
+    };
+    let args = FheExecuteArgs {
+        account_count: 1,
+        dictionary,
+        steps: vec![step],
+    };
+    let named = vec![
+        pk(0xA0), // payer
+        pk(0xA1), // compute_subject
+        pk(0xA2), // encrypted_value_account_authority
+        pk(0xA3), // host_config
+        pk(0xA4), // system_program
+        pk(7),    // hcu_block_meter (None placeholder = program id)
+        pk(7),    // hcu_trusted_app_record (None placeholder = program id)
+        pk(0xA8), // event_authority
+        pk(7),    // program (event_cpi)
+    ];
+    let mut accounts = named;
+    accounts.push(ev);
+    ix(accounts, "fhe_execute", args)
+}
+
+fn create_ix(ev: [u8; 32], subject: [u8; 32]) -> RawInstruction {
+    fhe_execute_ix(ev, &[subject], None)
 }
 
 fn update_ix(
     ev: [u8; 32],
-    new_handle: [u8; 32],
     previous_handle: [u8; 32],
     previous_subjects: Vec<[u8; 32]>,
 ) -> RawInstruction {
-    #[derive(BorshSerialize)]
-    struct Args {
-        new_handle: [u8; 32],
-        previous_handle: [u8; 32],
-        previous_subjects: Vec<[u8; 32]>,
-    }
-    ix(
-        vec![pk(0xA), pk(0xB), ev, pk(0xC), pk(0xD)],
-        "update_encrypted_value",
-        Args {
-            new_handle,
-            previous_handle,
-            previous_subjects,
-        },
+    fhe_execute_ix(
+        ev,
+        &previous_subjects.clone(),
+        Some((previous_handle, previous_subjects)),
     )
 }
 
@@ -230,8 +260,8 @@ async fn deterministic_leaf_order_and_mmr_reconstruction() {
     let store = fresh_store().await;
     let ev = pk(0xE1);
     let owner = pk(0x30);
-    let create = create_ix(ev, pk(0x10), owner);
-    let update = update_ix(ev, pk(0x11), pk(0x10), vec![owner]);
+    let create = create_ix(ev, owner);
+    let update = update_ix(ev, pk(0x10), vec![owner]);
     let make_public = make_public_ix(ev, pk(0x11));
     let b = block(
         10,
@@ -267,7 +297,7 @@ async fn deterministic_leaf_order_and_mmr_reconstruction() {
 }
 
 /// Exercises the semantic columns + `solana_proof_leaves_semantic_idx` resolution at the SQL
-/// layer: a supersede seals a historical-access leaf (old handle + subject) at index 0, then a
+/// layer: an update seals a historical-access leaf (old handle + subject) at index 0, then a
 /// make-public seals a public-decrypt leaf (new handle, no subject) at index 1.
 #[ignore = "requires DATABASE_URL / SOLANA_PROOF_TEST_DATABASE_URL"]
 #[tokio::test]
@@ -277,8 +307,8 @@ async fn semantic_leaf_resolution_maps_handle_and_subject_to_index() {
     let owner = pk(0x30);
     let old_handle = pk(0x10);
     let new_handle = pk(0x11);
-    let create = create_ix(ev, old_handle, owner);
-    let update = update_ix(ev, new_handle, old_handle, vec![owner]);
+    let create = create_ix(ev, owner);
+    let update = update_ix(ev, old_handle, vec![owner]);
     let make_public = make_public_ix(ev, new_handle);
     let b = block(
         10,
@@ -329,7 +359,7 @@ async fn semantic_leaf_resolution_maps_handle_and_subject_to_index() {
         .expect("encrypted_value_account ingested");
     assert_eq!(public.leaf_index, Some(1));
 
-    // A public-decrypt query for the historical (superseded) handle finds no leaf: the kinds
+    // A public-decrypt query for the historical (replaced) handle finds no leaf: the kinds
     // never collide on a shared handle, and the subject binding is enforced.
     let miss_kind = store
         .proof_snapshot_for_leaf(
@@ -375,7 +405,7 @@ async fn semantic_leaf_resolution_maps_handle_and_subject_to_index() {
         .is_none());
 }
 
-/// Regression (PR #3303): a handle can legitimately carry TWO public-decrypt leaves — a born-public
+/// Regression (PR #3303): a handle can legitimately carry TWO public-decrypt leaves — a created-public
 /// output seals one, and a later `make_handle_public` re-release seals another (on-chain
 /// `make_handle_public` has no already-public guard). The public semantic key must resolve to the
 /// EARLIEST such leaf (index 0) deterministically, and that leaf's proof must verify.
@@ -386,11 +416,12 @@ async fn public_decrypt_resolves_duplicate_leaves_to_earliest() {
     let ev = pk(0xE9);
     let owner = pk(0x30);
     let handle = pk(0x10);
-    // create sets current_handle=handle (no leaf); then two public seals of that SAME handle mirror
-    // a born-public lifecycle leaf at index 0 followed by an explicit make_handle_public re-release
-    // at index 1 — both append a public-decrypt leaf for the one handle.
-    let create = create_ix(ev, handle, owner);
-    let seal_born_public = make_public_ix(ev, handle);
+    // create records no handle and no leaf (an fhe_execute output handle is unresolvable without
+    // slot entropy); the two public seals of the SAME handle then mirror a created-public lifecycle
+    // leaf at index 0 followed by an explicit make_handle_public re-release at index 1 — both
+    // append a public-decrypt leaf for the one handle.
+    let create = create_ix(ev, owner);
+    let seal_created_public = make_public_ix(ev, handle);
     let seal_make_public = make_public_ix(ev, handle);
     let b = block(
         10,
@@ -402,7 +433,7 @@ async fn public_decrypt_resolves_duplicate_leaves_to_earliest() {
             index: 1,
             succeeded: true,
             is_vote: false,
-            instructions: vec![create, seal_born_public, seal_make_public],
+            instructions: vec![create, seal_created_public, seal_make_public],
         }],
     );
     assert_eq!(
@@ -450,8 +481,8 @@ async fn detects_pre_semantic_leaf_rows() {
 
     let ev = pk(0xE8);
     let owner = pk(0x30);
-    let create = create_ix(ev, pk(0x10), owner);
-    let update = update_ix(ev, pk(0x11), pk(0x10), vec![owner]);
+    let create = create_ix(ev, owner);
+    let update = update_ix(ev, pk(0x10), vec![owner]);
     let make_public = make_public_ix(ev, pk(0x11));
     let b = block(
         10,
@@ -586,7 +617,7 @@ async fn proof_snapshot_isolation_sees_complete_old_or_new() {
             index: 0,
             succeeded: true,
             is_vote: false,
-            instructions: vec![create_ix(ev, pk(0x10), owner)],
+            instructions: vec![create_ix(ev, owner)],
         }],
     );
     store.apply_completed_block(&first).await.unwrap();
@@ -604,7 +635,7 @@ async fn proof_snapshot_isolation_sees_complete_old_or_new() {
             index: 0,
             succeeded: true,
             is_vote: false,
-            instructions: vec![update_ix(ev, pk(0x11), pk(0x10), vec![owner])],
+            instructions: vec![update_ix(ev, pk(0x10), vec![owner])],
         }],
     );
 
@@ -823,14 +854,14 @@ async fn cross_slot_signature_reuse_halts_as_constraint_conflict() {
 
 #[ignore = "requires DATABASE_URL / SOLANA_PROOF_TEST_DATABASE_URL"]
 #[tokio::test]
-async fn incomplete_bootstrap_and_post_bootstrap_birth() {
+async fn incomplete_bootstrap_and_post_bootstrap_create() {
     let store = fresh_store().await;
     let empty = block(10, 9, pk(0x90), pk(0xA0), Vec::new());
     store.apply_completed_block(&empty).await.unwrap();
     assert!(!store.integrity_status().await.unwrap().history_complete);
 
     let ev = pk(0xE3);
-    let birth = block(
+    let creation_block = block(
         11,
         10,
         pk(0xA0),
@@ -840,11 +871,11 @@ async fn incomplete_bootstrap_and_post_bootstrap_birth() {
             index: 0,
             succeeded: true,
             is_vote: false,
-            instructions: vec![create_ix(ev, pk(0x10), pk(0x30))],
+            instructions: vec![create_ix(ev, pk(0x30))],
         }],
     );
     assert_eq!(
-        store.apply_completed_block(&birth).await.unwrap(),
+        store.apply_completed_block(&creation_block).await.unwrap(),
         ApplyOutcome::Applied
     );
     assert!(store.proof_snapshot(ev).await.unwrap().is_some());
@@ -1006,7 +1037,7 @@ async fn reduce_unit_leaf_order_matches_instruction_event_subject_order() {
             index: 3,
             succeeded: true,
             is_vote: false,
-            instructions: vec![update_ix(ev, pk(0x11), pk(0x10), vec![s1, s2])],
+            instructions: vec![update_ix(ev, pk(0x10), vec![s1, s2])],
         }],
     );
     let staged = reduce_completed_block(pk(7), &b, &existing).unwrap();

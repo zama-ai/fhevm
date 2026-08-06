@@ -1,4 +1,8 @@
 //! Account layouts, PDA helpers, encrypted-value labels, and the payout math.
+//!
+//! Public API surface: off-chain callers deriving batcher PDAs — `runtime-tests`' `batcher_mollusk`
+//! fixtures, and the demo dapp's `vault/internal/batcherPdas.ts`, which reproduces these derivations
+//! in TypeScript and cites these function names as what it must agree with.
 
 use anchor_lang::prelude::*;
 
@@ -75,7 +79,7 @@ pub struct Batch {
     pub authority_bump: u8,
     /// PDA bump for `(batcher, index)`.
     pub bump: u8,
-    /// Born-public handle of the burned batch total (set at dispatch).
+    /// Created-public handle of the burned batch total (set at dispatch).
     pub burned_total_handle: [u8; 32],
     /// KMS-certified batch join total (set at settle; public by design).
     pub total_joined: u64,
@@ -148,39 +152,43 @@ pub fn batch_payout_underlying_address(batch: Pubkey) -> (Pubkey, u8) {
 }
 
 /// Encrypted-value label for a user's accumulated joined batch amount.
-pub fn pending_join_label(user: Pubkey) -> [u8; 32] {
+pub fn encrypted_pending_join_label(user: Pubkey) -> [u8; 32] {
     solana_sha256_hasher::hashv(&[b"batcher-pending-join", user.as_ref()]).to_bytes()
 }
 
 /// Encrypted-value label for a user's claimed payout amount.
-pub fn claim_amount_label(user: Pubkey) -> [u8; 32] {
+pub fn encrypted_claim_amount_label(user: Pubkey) -> [u8; 32] {
     solana_sha256_hasher::hashv(&[b"batcher-claim-amount", user.as_ref()]).to_bytes()
 }
 
 /// Returns the canonical `EncryptedValue` PDA for a batcher encrypted value account. Batcher
-/// encrypted value accounts live in the batch's own ACL domain: `acl_domain_key = batch`,
-/// `app_account = batch_authority`, per-user label.
+/// encrypted value accounts live in the batch's own ACL domain: `domain = batch`,
+/// `account = batch_authority`, per-user label.
 pub fn batcher_encrypted_value_address(
     batch: Pubkey,
     batch_authority: Pubkey,
-    label: [u8; 32],
+    encrypted_value_label: [u8; 32],
 ) -> (Pubkey, u8) {
-    zama_host::encrypted_value_address(zama_solana_acl_value_key(batch, batch_authority, label))
+    zama_host::encrypted_value_address(zama_solana_acl_encrypted_value_id(
+        zama_fhe::Domain::new(batch),
+        batch_authority,
+        encrypted_value_label,
+    ))
 }
 
-fn zama_solana_acl_value_key(
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-    label: [u8; 32],
+fn zama_solana_acl_encrypted_value_id(
+    domain: zama_fhe::Domain,
+    encrypted_value_account_authority: Pubkey,
+    encrypted_value_label: [u8; 32],
 ) -> [u8; 32] {
-    // Delegate to the shared derivation through zama-fhe's EncryptedValueKey so the
+    // Delegate to the shared derivation through zama-fhe's EncryptedValueId so the
     // batcher and host agree exactly.
-    zama_fhe::EncryptedValueKey::new(
-        acl_domain_key,
-        app_account,
-        zama_fhe::DurableLabel::new(label),
+    zama_fhe::EncryptedValueId::new(
+        domain,
+        encrypted_value_account_authority,
+        zama_fhe::EncryptedValueLabel::new(encrypted_value_label),
     )
-    .value_key()
+    .encrypted_value_id()
 }
 
 /// Computes the informational payout rate of a settled batch, rounded DOWN
@@ -193,7 +201,7 @@ fn zama_solana_acl_value_key(
 /// display number. `total_joined` must be non-zero (zero-total batches cancel
 /// instead).
 pub fn payout_rate(payout_received: u64, total_joined: u64) -> Result<u64> {
-    require!(total_joined > 0, BatcherError::InvalidFheEvalPlan);
+    require!(total_joined > 0, BatcherError::InvalidFheExecution);
     let rate = (payout_received as u128) * (RATE_SCALE as u128) / (total_joined as u128);
     Ok(u64::try_from(rate).unwrap_or(u64::MAX))
 }
@@ -208,7 +216,7 @@ mod tests {
         ((joined as u128) * (payout_received as u128) / (total_joined as u128)) as u64
     }
 
-    /// The superseded double-rounding claim math (`joined * rate / RATE_SCALE`
+    /// The replaced double-rounding claim math (`joined * rate / RATE_SCALE`
     /// on a floored rate), kept only to prove the exact division strands less.
     fn claim_payout_via_rate(joined: u64, rate: u64) -> u64 {
         ((joined as u128) * (rate as u128) / (RATE_SCALE as u128)) as u64
@@ -302,7 +310,13 @@ mod tests {
     fn labels_are_distinct_per_user_and_per_purpose() {
         let alice = Pubkey::new_unique();
         let bob = Pubkey::new_unique();
-        assert_ne!(pending_join_label(alice), pending_join_label(bob));
-        assert_ne!(pending_join_label(alice), claim_amount_label(alice));
+        assert_ne!(
+            encrypted_pending_join_label(alice),
+            encrypted_pending_join_label(bob)
+        );
+        assert_ne!(
+            encrypted_pending_join_label(alice),
+            encrypted_claim_amount_label(alice)
+        );
     }
 }

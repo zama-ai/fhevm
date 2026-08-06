@@ -3,8 +3,6 @@
 use anchor_lang::prelude::*;
 
 use super::common::*;
-#[cfg(feature = "emit-events")]
-use crate::events::UserDecryptionDelegationUpdatedEvent;
 use crate::{errors::ZamaHostError, state::*};
 
 /// Accounts for creating or updating a user-decryption delegation.
@@ -29,7 +27,7 @@ pub struct DelegateForUserDecryption<'info> {
 pub fn delegate_for_user_decryption(
     ctx: Context<DelegateForUserDecryption>,
     delegate: Pubkey,
-    app_account: Pubkey,
+    encrypted_value_account_authority: Pubkey,
     expiration_slot: u64,
 ) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
@@ -37,22 +35,31 @@ pub fn delegate_for_user_decryption(
     let clock = Clock::get()?;
     let delegator = ctx.accounts.delegator.key();
     require!(
-        delegate != Pubkey::default() && app_account != Pubkey::default(),
+        delegate != Pubkey::default() && encrypted_value_account_authority != Pubkey::default(),
         ZamaHostError::InvalidDelegation
     );
     require!(
-        delegate.to_bytes() != WILDCARD_APP_CONTEXT_BYTES,
+        delegate.to_bytes() != WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY_BYTES,
         ZamaHostError::InvalidDelegation
     );
     require_keys_neq!(delegator, delegate, ZamaHostError::InvalidDelegation);
-    require_keys_neq!(delegator, app_account, ZamaHostError::InvalidDelegation);
-    require_keys_neq!(delegate, app_account, ZamaHostError::InvalidDelegation);
+    require_keys_neq!(
+        delegator,
+        encrypted_value_account_authority,
+        ZamaHostError::InvalidDelegation
+    );
+    require_keys_neq!(
+        delegate,
+        encrypted_value_account_authority,
+        ZamaHostError::InvalidDelegation
+    );
     require!(
         expiration_slot > clock.slot,
         ZamaHostError::InvalidDelegation
     );
 
-    let (expected, bump) = user_decryption_delegation_address(delegator, delegate, app_account);
+    let (expected, bump) =
+        user_decryption_delegation_address(delegator, delegate, encrypted_value_account_authority);
     require_keys_eq!(
         expected,
         ctx.accounts.delegation_record.key(),
@@ -60,11 +67,6 @@ pub fn delegate_for_user_decryption(
     );
     let info = ctx.accounts.delegation_record.to_account_info();
     let current = read_existing_delegation(&info, bump)?;
-    #[cfg(feature = "emit-events")]
-    let old_expiration_slot = current
-        .as_ref()
-        .map(|record| record.expiration_slot)
-        .unwrap_or(0);
     create_pda_if_needed(
         &ctx.accounts.payer.to_account_info(),
         &info,
@@ -74,7 +76,7 @@ pub fn delegate_for_user_decryption(
             crate::state::DELEGATION_SEED,
             delegator.as_ref(),
             delegate.as_ref(),
-            app_account.as_ref(),
+            encrypted_value_account_authority.as_ref(),
             &[bump],
         ],
     )?;
@@ -87,8 +89,8 @@ pub fn delegate_for_user_decryption(
             );
             require_keys_eq!(record.delegate, delegate, ZamaHostError::InvalidDelegation);
             require_keys_eq!(
-                record.app_account,
-                app_account,
+                record.encrypted_value_account_authority,
+                encrypted_value_account_authority,
                 ZamaHostError::InvalidDelegation
             );
             require!(
@@ -111,7 +113,7 @@ pub fn delegate_for_user_decryption(
         &UserDecryptionDelegation {
             delegator,
             delegate,
-            app_account,
+            encrypted_value_account_authority,
             expiration_slot,
             delegation_counter,
             last_update_slot: clock.slot,
@@ -119,18 +121,6 @@ pub fn delegate_for_user_decryption(
             bump,
         },
     )?;
-    #[cfg(feature = "emit-events")]
-    emit!(UserDecryptionDelegationUpdatedEvent {
-        version: EVENT_VERSION,
-        delegator,
-        delegate,
-        app_account,
-        delegation_counter,
-        old_expiration_slot,
-        new_expiration_slot: expiration_slot,
-        last_update_slot: clock.slot,
-        revoked: false,
-    });
     Ok(())
 }
 

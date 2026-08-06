@@ -34,8 +34,9 @@ pub struct VerifyPublicDecrypt<'a, 'info> {
 /// and the MMR proof against the encrypted value account's peaks; this wrapper adds only the return-data integrity +
 /// pinned-handle checks. It deliberately does NOT constrain the returned context id: token
 /// disclosure and redemption accept any live context, matching EVM's valid-until-destroyed rotation
-/// grace (`destroy_kms_context` is the revocation lever). The verified id is available at
-/// `return_data[64..72]` (little-endian u64) for a consumer that wants a current-only policy.
+/// grace (`destroy_kms_context` is the revocation lever). The verified id is the `context_id`
+/// field of [`zama_host::instructions::PublicDecryptReturnData`] for a consumer that wants a
+/// current-only policy.
 pub(crate) fn verify_public_decrypt(request: VerifyPublicDecrypt<'_, '_>) -> Result<[u8; 32]> {
     let expected_handle = request.expected_handle;
     cpi::verify_public_decrypt(
@@ -61,19 +62,13 @@ pub(crate) fn verify_public_decrypt(request: VerifyPublicDecrypt<'_, '_>) -> Res
         zama_host::ID,
         ConfidentialTokenError::VerifierReturnDataInvalid
     );
+    let returned = zama_host::instructions::PublicDecryptReturnData::try_from_slice(&data)
+        .map_err(|_| ConfidentialTokenError::VerifierReturnDataInvalid)?;
     require!(
-        data.len() == 72,
-        ConfidentialTokenError::VerifierReturnDataInvalid
-    );
-    let mut returned_handle = [0u8; 32];
-    returned_handle.copy_from_slice(&data[..32]);
-    require!(
-        returned_handle == expected_handle,
+        returned.handle == expected_handle,
         ConfidentialTokenError::DisclosedHandleMismatch
     );
-    let mut returned_cleartext = [0u8; 32];
-    returned_cleartext.copy_from_slice(&data[32..64]);
-    // `data[64..72]` is the verified context id (little-endian u64); token disclosure and redemption
-    // accept any live context (EVM parity), so it is not constrained here.
-    Ok(returned_cleartext)
+    // `returned.context_id` is the verified context id; token disclosure and redemption accept
+    // any live context (EVM parity), so it is not constrained here.
+    Ok(returned.cleartext)
 }

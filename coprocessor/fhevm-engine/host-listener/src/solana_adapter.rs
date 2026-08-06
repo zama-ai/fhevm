@@ -10,11 +10,11 @@ use alloy_primitives::{Address, FixedBytes, Log};
 use sha2::{Digest, Sha256};
 use sqlx::Error as SqlxError;
 
-use crate::generated::{
-    FheBinaryOpCode, FheBinaryOpEvent, FheIsInEvent, FheMulDivEvent,
-    FheRandBoundedEvent, FheRandEvent, FheSumEvent, FheTernaryOpCode,
-    FheTernaryOpEvent, FheUnaryOpCode, FheUnaryOpEvent, TrivialEncryptEvent,
+use zama_host::records::{
+    FheBinaryOp, FheIsIn, FheMulDiv, FheRand, FheRandBounded, FheSum,
+    FheTernaryOp, FheUnaryOp, TrivialEncrypt,
 };
+use zama_host::state::{FheBinaryOpCode, FheTernaryOpCode, FheUnaryOpCode};
 
 use crate::cmd::block_history::BlockSummary;
 use crate::contracts::TfheContract;
@@ -30,21 +30,21 @@ pub struct SolanaMaterialRequest {
 }
 
 #[derive(Clone, Debug)]
-pub enum SolanaHostEvent {
-    FheBinaryOp(FheBinaryOpEvent),
-    FheTernaryOp(FheTernaryOpEvent),
-    TrivialEncrypt(TrivialEncryptEvent),
-    FheRand(FheRandEvent),
-    FheRandBounded(FheRandBoundedEvent),
-    FheUnaryOp(FheUnaryOpEvent),
-    FheSum(FheSumEvent),
-    FheIsIn(FheIsInEvent),
-    FheMulDiv(FheMulDivEvent),
+pub enum SolanaHostRecord {
+    FheBinaryOp(FheBinaryOp),
+    FheTernaryOp(FheTernaryOp),
+    TrivialEncrypt(TrivialEncrypt),
+    FheRand(FheRand),
+    FheRandBounded(FheRandBounded),
+    FheUnaryOp(FheUnaryOp),
+    FheSum(FheSum),
+    FheIsIn(FheIsIn),
+    FheMulDiv(FheMulDiv),
     MaterialRequest(SolanaMaterialRequest),
 }
 
 #[derive(Clone, Debug)]
-pub enum SolanaMappedEvent {
+pub enum SolanaMappedRecord {
     Tfhe(Log<TfheContractEvents>),
     MaterialRequest(SolanaMaterialRequest),
 }
@@ -64,6 +64,10 @@ pub struct SolanaIngestStats {
     pub inserted_rows: usize,
 }
 
+/// The coprocessor schema's 32-byte `transaction_id` for a Solana transaction is
+/// `sha256(signature_bytes)`: Solana's native transaction id is the 64-byte ed25519 signature,
+/// hashed down here to fit the EVM-shaped 32-byte column. Anything joining coprocessor rows back
+/// to a Solana explorer must apply this same mapping.
 pub fn solana_transaction_id(signature_bytes: &[u8]) -> TransactionHash {
     let digest: [u8; 32] = Sha256::digest(signature_bytes).into();
     TransactionHash::from(digest)
@@ -82,37 +86,37 @@ fn dedup_material_requests(requests: &mut Vec<SolanaMaterialRequest>) {
     requests.retain(|request| seen.insert(request.handle));
 }
 
-pub fn map_solana_event(event: SolanaHostEvent) -> SolanaMappedEvent {
-    match event {
-        SolanaHostEvent::FheBinaryOp(event) => {
-            SolanaMappedEvent::Tfhe(to_tfhe_event(event))
+pub fn map_solana_record(record: SolanaHostRecord) -> SolanaMappedRecord {
+    match record {
+        SolanaHostRecord::FheBinaryOp(record) => {
+            SolanaMappedRecord::Tfhe(to_tfhe_event(record))
         }
-        SolanaHostEvent::FheTernaryOp(event) => {
-            SolanaMappedEvent::Tfhe(to_tfhe_ternary_event(event))
+        SolanaHostRecord::FheTernaryOp(record) => {
+            SolanaMappedRecord::Tfhe(to_tfhe_ternary_event(record))
         }
-        SolanaHostEvent::TrivialEncrypt(event) => {
-            SolanaMappedEvent::Tfhe(to_trivial_encrypt_event(event))
+        SolanaHostRecord::TrivialEncrypt(record) => {
+            SolanaMappedRecord::Tfhe(to_trivial_encrypt_event(record))
         }
-        SolanaHostEvent::FheRand(event) => {
-            SolanaMappedEvent::Tfhe(to_fhe_rand_event(event))
+        SolanaHostRecord::FheRand(record) => {
+            SolanaMappedRecord::Tfhe(to_fhe_rand_event(record))
         }
-        SolanaHostEvent::FheRandBounded(event) => {
-            SolanaMappedEvent::Tfhe(to_fhe_rand_bounded_event(event))
+        SolanaHostRecord::FheRandBounded(record) => {
+            SolanaMappedRecord::Tfhe(to_fhe_rand_bounded_event(record))
         }
-        SolanaHostEvent::FheUnaryOp(event) => {
-            SolanaMappedEvent::Tfhe(to_fhe_unary_event(event))
+        SolanaHostRecord::FheUnaryOp(record) => {
+            SolanaMappedRecord::Tfhe(to_fhe_unary_event(record))
         }
-        SolanaHostEvent::FheSum(event) => {
-            SolanaMappedEvent::Tfhe(to_fhe_sum_event(event))
+        SolanaHostRecord::FheSum(record) => {
+            SolanaMappedRecord::Tfhe(to_fhe_sum_event(record))
         }
-        SolanaHostEvent::FheIsIn(event) => {
-            SolanaMappedEvent::Tfhe(to_fhe_is_in_event(event))
+        SolanaHostRecord::FheIsIn(record) => {
+            SolanaMappedRecord::Tfhe(to_fhe_is_in_event(record))
         }
-        SolanaHostEvent::FheMulDiv(event) => {
-            SolanaMappedEvent::Tfhe(to_fhe_mul_div_event(event))
+        SolanaHostRecord::FheMulDiv(record) => {
+            SolanaMappedRecord::Tfhe(to_fhe_mul_div_event(record))
         }
-        SolanaHostEvent::MaterialRequest(request) => {
-            SolanaMappedEvent::MaterialRequest(request)
+        SolanaHostRecord::MaterialRequest(request) => {
+            SolanaMappedRecord::MaterialRequest(request)
         }
     }
 }
@@ -121,19 +125,19 @@ pub fn map_solana_event(event: SolanaHostEvent) -> SolanaMappedEvent {
 // soon as their instruction confirms. The KMS independently validates the live
 // EncryptedValue PDA and any MMR proof before releasing plaintext, so this eager
 // work can waste cycles after a rare rollback but cannot authorize decryption.
-pub fn normalize_solana_events_for_db(
-    events: impl IntoIterator<Item = SolanaHostEvent>,
+pub fn normalize_solana_records_for_db(
+    records: impl IntoIterator<Item = SolanaHostRecord>,
     transaction_id: TransactionHash,
     block: SolanaBlockMeta,
 ) -> (Vec<LogTfhe>, Vec<SolanaMaterialRequest>) {
-    let events = events.into_iter().collect::<Vec<_>>();
+    let records = records.into_iter().collect::<Vec<_>>();
 
     let mut tfhe_logs = Vec::new();
     let mut material_requests = Vec::new();
 
-    for (index, event) in events.into_iter().enumerate() {
-        match map_solana_event(event) {
-            SolanaMappedEvent::Tfhe(event) => {
+    for (index, record) in records.into_iter().enumerate() {
+        match map_solana_record(record) {
+            SolanaMappedRecord::Tfhe(event) => {
                 // Eager: schedulable the moment the compute itself confirms,
                 // independent of any allow/ACL signal. See module note above.
                 tfhe_logs.push(to_log_tfhe(
@@ -144,7 +148,7 @@ pub fn normalize_solana_events_for_db(
                     index as u64,
                 ));
             }
-            SolanaMappedEvent::MaterialRequest(request) => {
+            SolanaMappedRecord::MaterialRequest(request) => {
                 material_requests.push(request);
             }
         }
@@ -154,15 +158,15 @@ pub fn normalize_solana_events_for_db(
     (tfhe_logs, material_requests)
 }
 
-pub async fn insert_solana_events(
+pub async fn insert_solana_records(
     db: &Database,
     tx: &mut Transaction<'_>,
-    events: impl IntoIterator<Item = SolanaHostEvent>,
+    records: impl IntoIterator<Item = SolanaHostRecord>,
     transaction_id: TransactionHash,
     block: SolanaBlockMeta,
 ) -> Result<SolanaIngestStats, SqlxError> {
     let (mut tfhe_logs, material_requests) =
-        normalize_solana_events_for_db(events, transaction_id, block);
+        normalize_solana_records_for_db(records, transaction_id, block);
     let mut inserted_rows = 0;
 
     let chains =
@@ -237,19 +241,23 @@ pub fn to_log_tfhe(
         block_number: block.block_number,
         block_hash: FixedBytes::<32>::from(block.block_hash),
         block_timestamp: block.block_timestamp,
+        // Placeholders: overwritten by the shared `dependence_chains()` union-find in
+        // `insert_solana_records` before insertion, exactly like the EVM ingest path's
+        // `Default::default()` placeholders.
         tx_depth_size: 0,
         dependence_chain: transaction_id,
         log_index: Some(log_index),
     }
 }
 
-/// Converts IDL-decoded Solana host events into the existing TFHE event model.
+/// Converts decoded Solana host op records into the existing TFHE event model.
 ///
 /// The current coprocessor worker consumes the database rows produced from
 /// `TfheContractEvents`. Keeping this adapter at the typed-event boundary lets
 /// the Solana listener use native Solana decoding while reusing the existing
 /// computation scheduler and worker unchanged.
-pub fn to_tfhe_event(event: FheBinaryOpEvent) -> Log<TfheContractEvents> {
+pub fn to_tfhe_event(event: FheBinaryOp) -> Log<TfheContractEvents> {
+    // Not persisted: the DB layer discards `caller` on every chain (INVARIANTS #49).
     let caller = Address::ZERO;
     let scalar_byte = FixedBytes::<1>::from([u8::from(event.scalar)]);
     let data = match event.op {
@@ -429,9 +437,8 @@ pub fn to_tfhe_event(event: FheBinaryOpEvent) -> Log<TfheContractEvents> {
     }
 }
 
-pub fn to_tfhe_ternary_event(
-    event: FheTernaryOpEvent,
-) -> Log<TfheContractEvents> {
+pub fn to_tfhe_ternary_event(event: FheTernaryOp) -> Log<TfheContractEvents> {
+    // Not persisted: the DB layer discards `caller` on every chain (INVARIANTS #49).
     let caller = Address::ZERO;
     let data = match event.op {
         FheTernaryOpCode::IfThenElse => {
@@ -452,8 +459,9 @@ pub fn to_tfhe_ternary_event(
 }
 
 pub fn to_trivial_encrypt_event(
-    event: TrivialEncryptEvent,
+    event: TrivialEncrypt,
 ) -> Log<TfheContractEvents> {
+    // Not persisted: the DB layer discards `caller` on every chain (INVARIANTS #49).
     let caller = Address::ZERO;
     Log {
         address: caller,
@@ -468,7 +476,8 @@ pub fn to_trivial_encrypt_event(
     }
 }
 
-pub fn to_fhe_rand_event(event: FheRandEvent) -> Log<TfheContractEvents> {
+pub fn to_fhe_rand_event(event: FheRand) -> Log<TfheContractEvents> {
+    // Not persisted: the DB layer discards `caller` on every chain (INVARIANTS #49).
     let caller = Address::ZERO;
     Log {
         address: caller,
@@ -482,8 +491,9 @@ pub fn to_fhe_rand_event(event: FheRandEvent) -> Log<TfheContractEvents> {
 }
 
 pub fn to_fhe_rand_bounded_event(
-    event: FheRandBoundedEvent,
+    event: FheRandBounded,
 ) -> Log<TfheContractEvents> {
+    // Not persisted: the DB layer discards `caller` on every chain (INVARIANTS #49).
     let caller = Address::ZERO;
     Log {
         address: caller,
@@ -499,7 +509,8 @@ pub fn to_fhe_rand_bounded_event(
     }
 }
 
-pub fn to_fhe_unary_event(event: FheUnaryOpEvent) -> Log<TfheContractEvents> {
+pub fn to_fhe_unary_event(event: FheUnaryOp) -> Log<TfheContractEvents> {
+    // Not persisted: the DB layer discards `caller` on every chain (INVARIANTS #49).
     let caller = Address::ZERO;
     let ct = Handle::from(event.operand);
     let result = Handle::from(event.result);
@@ -531,7 +542,8 @@ pub fn to_fhe_unary_event(event: FheUnaryOpEvent) -> Log<TfheContractEvents> {
     }
 }
 
-pub fn to_fhe_sum_event(event: FheSumEvent) -> Log<TfheContractEvents> {
+pub fn to_fhe_sum_event(event: FheSum) -> Log<TfheContractEvents> {
+    // Not persisted: the DB layer discards `caller` on every chain (INVARIANTS #49).
     let caller = Address::ZERO;
     Log {
         address: caller,
@@ -543,7 +555,8 @@ pub fn to_fhe_sum_event(event: FheSumEvent) -> Log<TfheContractEvents> {
     }
 }
 
-pub fn to_fhe_is_in_event(event: FheIsInEvent) -> Log<TfheContractEvents> {
+pub fn to_fhe_is_in_event(event: FheIsIn) -> Log<TfheContractEvents> {
+    // Not persisted: the DB layer discards `caller` on every chain (INVARIANTS #49).
     let caller = Address::ZERO;
     Log {
         address: caller,
@@ -556,7 +569,8 @@ pub fn to_fhe_is_in_event(event: FheIsInEvent) -> Log<TfheContractEvents> {
     }
 }
 
-pub fn to_fhe_mul_div_event(event: FheMulDivEvent) -> Log<TfheContractEvents> {
+pub fn to_fhe_mul_div_event(event: FheMulDiv) -> Log<TfheContractEvents> {
+    // Not persisted: the DB layer discards `caller` on every chain (INVARIANTS #49).
     let caller = Address::ZERO;
     Log {
         address: caller,
@@ -578,8 +592,8 @@ pub fn to_fhe_mul_div_event(event: FheMulDivEvent) -> Log<TfheContractEvents> {
 mod tests {
     use super::*;
     use crate::database::tfhe_event_propagate::tfhe_inputs_handle;
-    use crate::generated::EVENT_VERSION;
     use time::{Date, Month, PrimitiveDateTime, Time};
+    use zama_host::EVENT_VERSION;
 
     fn handle(byte: u8) -> Handle {
         Handle::from([byte; 32])
@@ -587,7 +601,7 @@ mod tests {
 
     #[test]
     fn maps_binary_add_to_existing_tfhe_event() {
-        let mapped = to_tfhe_event(FheBinaryOpEvent {
+        let mapped = to_tfhe_event(FheBinaryOp {
             version: EVENT_VERSION,
             op: FheBinaryOpCode::Add,
             subject: [0; 32],
@@ -614,7 +628,7 @@ mod tests {
 
     #[test]
     fn maps_binary_ge_to_existing_tfhe_event() {
-        let mapped = to_tfhe_event(FheBinaryOpEvent {
+        let mapped = to_tfhe_event(FheBinaryOp {
             version: EVENT_VERSION,
             op: FheBinaryOpCode::Ge,
             subject: [0; 32],
@@ -641,7 +655,7 @@ mod tests {
 
     #[test]
     fn maps_ternary_if_then_else_to_existing_tfhe_event() {
-        let mapped = to_tfhe_ternary_event(FheTernaryOpEvent {
+        let mapped = to_tfhe_ternary_event(FheTernaryOp {
             version: EVENT_VERSION,
             op: FheTernaryOpCode::IfThenElse,
             subject: [0; 32],
@@ -671,7 +685,7 @@ mod tests {
         let mut plaintext = [0_u8; 32];
         plaintext[31] = 7;
 
-        let mapped = to_trivial_encrypt_event(TrivialEncryptEvent {
+        let mapped = to_trivial_encrypt_event(TrivialEncrypt {
             version: EVENT_VERSION,
             subject: [0; 32],
             plaintext,
@@ -694,7 +708,7 @@ mod tests {
 
     #[test]
     fn maps_random_to_existing_tfhe_event() {
-        let mapped = to_fhe_rand_event(FheRandEvent {
+        let mapped = to_fhe_rand_event(FheRand {
             version: EVENT_VERSION,
             subject: [0; 32],
             seed: [7; 16],
@@ -755,7 +769,7 @@ mod tests {
             Date::from_calendar_date(2026, Month::May, 9).unwrap(),
             Time::MIDNIGHT,
         );
-        let event = to_tfhe_event(FheBinaryOpEvent {
+        let event = to_tfhe_event(FheBinaryOp {
             version: EVENT_VERSION,
             op: FheBinaryOpCode::Sub,
             subject: [0; 32],
@@ -787,7 +801,7 @@ mod tests {
 
     #[test]
     fn compute_is_eager_regardless_of_same_tx_allow_signal() {
-        // Historically, the eval frame's compute would only be marked
+        // Historically, the execution's compute would only be marked
         // materializable when an allow for its result landed in the same tx.
         // Under eager compute (RFC-024 Q11), it is unconditionally scheduled;
         // KMS independently gates plaintext release against Solana ACL state.
@@ -797,16 +811,16 @@ mod tests {
             Time::MIDNIGHT,
         );
 
-        let (tfhe_logs, material_requests) = normalize_solana_events_for_db(
+        let (tfhe_logs, material_requests) = normalize_solana_records_for_db(
             [
-                SolanaHostEvent::TrivialEncrypt(TrivialEncryptEvent {
+                SolanaHostRecord::TrivialEncrypt(TrivialEncrypt {
                     version: EVENT_VERSION,
                     subject: [0; 32],
                     plaintext: [55; 32],
                     fhe_type: 5,
                     result: [3; 32],
                 }),
-                SolanaHostEvent::MaterialRequest(material_request([3; 32])),
+                SolanaHostRecord::MaterialRequest(material_request([3; 32])),
             ],
             tx_id,
             SolanaBlockMeta {
@@ -822,7 +836,7 @@ mod tests {
             tfhe_logs[0].is_allowed,
             "eager compute: schedulable independent of the allow signal"
         );
-        // The durable handle is queued directly for material preparation.
+        // The persistent handle is queued directly for material preparation.
         assert_eq!(material_requests.len(), 1);
     }
 
@@ -834,10 +848,10 @@ mod tests {
             Time::MIDNIGHT,
         );
 
-        let (_, material_requests) = normalize_solana_events_for_db(
+        let (_, material_requests) = normalize_solana_records_for_db(
             [
-                SolanaHostEvent::MaterialRequest(material_request([1; 32])),
-                SolanaHostEvent::MaterialRequest(material_request([2; 32])),
+                SolanaHostRecord::MaterialRequest(material_request([1; 32])),
+                SolanaHostRecord::MaterialRequest(material_request([2; 32])),
             ],
             tx_id,
             SolanaBlockMeta {
@@ -867,16 +881,16 @@ mod tests {
             Time::MIDNIGHT,
         );
 
-        let (tfhe_logs, _) = normalize_solana_events_for_db(
+        let (tfhe_logs, _) = normalize_solana_records_for_db(
             [
-                SolanaHostEvent::TrivialEncrypt(TrivialEncryptEvent {
+                SolanaHostRecord::TrivialEncrypt(TrivialEncrypt {
                     version: EVENT_VERSION,
                     subject: [0; 32],
                     plaintext: [55; 32],
                     fhe_type: 5,
                     result: [3; 32],
                 }),
-                SolanaHostEvent::MaterialRequest(material_request([4; 32])),
+                SolanaHostRecord::MaterialRequest(material_request([4; 32])),
             ],
             tx_id,
             SolanaBlockMeta {
@@ -892,16 +906,16 @@ mod tests {
     }
 
     #[test]
-    fn normalizes_interleaved_eval_frame_events_for_worker_replay() {
+    fn normalizes_interleaved_batch_events_for_worker_replay() {
         let tx_id = solana_transaction_id(&[5_u8; 64]);
         let block_timestamp = PrimitiveDateTime::new(
             Date::from_calendar_date(2026, Month::May, 9).unwrap(),
             Time::MIDNIGHT,
         );
 
-        let (tfhe_logs, material_requests) = normalize_solana_events_for_db(
+        let (tfhe_logs, material_requests) = normalize_solana_records_for_db(
             [
-                SolanaHostEvent::TrivialEncrypt(TrivialEncryptEvent {
+                SolanaHostRecord::TrivialEncrypt(TrivialEncrypt {
                     version: EVENT_VERSION,
                     subject: [0; 32],
                     plaintext: {
@@ -912,14 +926,14 @@ mod tests {
                     fhe_type: 0,
                     result: [1; 32],
                 }),
-                SolanaHostEvent::FheRand(FheRandEvent {
+                SolanaHostRecord::FheRand(FheRand {
                     version: EVENT_VERSION,
                     subject: [0; 32],
                     seed: [2; 16],
                     fhe_type: 5,
                     result: [2; 32],
                 }),
-                SolanaHostEvent::FheTernaryOp(FheTernaryOpEvent {
+                SolanaHostRecord::FheTernaryOp(FheTernaryOp {
                     version: EVENT_VERSION,
                     op: FheTernaryOpCode::IfThenElse,
                     subject: [0; 32],

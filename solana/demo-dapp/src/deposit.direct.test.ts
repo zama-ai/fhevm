@@ -28,7 +28,7 @@ vi.mock('@fhevm/sdk/solana', () => ({
   setFhevmRuntimeConfig: vi.fn(),
 }));
 
-vi.mock('@fhevm/sdk/solana/vault', () => ({
+vi.mock('./vault/index.js', () => ({
   buildInitializeTokenAccountInstruction: vi.fn(),
   buildWrapUsdcInstruction: mocks.buildWrap,
   computeSignerAddress: vi.fn().mockResolvedValue('11111111111111111111111111111111'),

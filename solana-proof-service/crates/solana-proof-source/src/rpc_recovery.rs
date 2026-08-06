@@ -65,7 +65,7 @@ pub struct RpcRecoveryConfig {
     pub program_id: String,
     pub bounds: RecoveryBounds,
     /// Bootstrap A start: completeness may flip only after recovery proves
-    /// contiguous history from this slot through the durable tip.
+    /// contiguous history from this slot through the persistent tip.
     pub bootstrap_slot: Option<u64>,
 }
 
@@ -75,7 +75,7 @@ pub enum RecoveryError {
     /// DNS failure, connect/request timeout on `send()`, or a body that dropped
     /// mid-read or exceeded the body timeout. The endpoint may simply not exist
     /// yet (startup bring-up) or be flapping, so callers retry with backoff
-    /// rather than failing closed. Born only from a `reqwest` `send()`/body-read
+    /// rather than failing closed. Arises only from a `reqwest` `send()`/body-read
     /// error — never from a body the endpoint fully returned.
     #[error("RPC transport error: {0}")]
     Transport(String),
@@ -175,7 +175,7 @@ impl RpcRecoveryClient {
     /// `[from_slot, to_slot]` (inclusive), enforcing lean attempt bounds.
     ///
     /// Prefer [`Self::list_existing_slots`] + [`Self::fetch_completed_block`] in
-    /// the ingest runner so each applied block advances the durable checkpoint
+    /// the ingest runner so each applied block advances the persistent checkpoint
     /// before the next `getBlock` (fhevm-internal #1823 tracks parallel staging).
     pub async fn fetch_completed_blocks(
         &self,
@@ -230,7 +230,7 @@ impl RpcRecoveryClient {
     }
 
     /// Fetch and normalize one confirmed block. Prefer this over buffering an
-    /// entire recovery range so the durable checkpoint can advance per block.
+    /// entire recovery range so the persistent checkpoint can advance per block.
     pub async fn fetch_completed_block(
         &self,
         slot: u64,
@@ -366,21 +366,21 @@ impl RpcRecoveryClient {
 /// Whether Bootstrap A may flip `history_complete` after a successful recovery.
 ///
 /// Requires:
-/// - configured `bootstrap_slot` matching durable `history_start`
-/// - durable tip extending that start
-/// - durable tip equal to the confirmed tip this recovery established
+/// - configured `bootstrap_slot` matching persistent `history_start`
+/// - persistent tip extending that start
+/// - persistent tip equal to the confirmed tip this recovery established
 ///
-/// Single-slot durable tip matching bootstrap is not enough when the confirmed
-/// tip is ahead: `durable_tip.slot == confirmed_tip_slot` fails until recovery
+/// Single-slot persistent tip matching bootstrap is not enough when the confirmed
+/// tip is ahead: `persistent_tip.slot == confirmed_tip_slot` fails until recovery
 /// (or catch-up) proves the full range. Empty recovery must never call this
 /// with a vacuous tip match.
 pub fn history_complete_justified(
     bootstrap_slot: Option<u64>,
     history_start: Option<&BlockCheckpoint>,
-    durable_tip: Option<&BlockCheckpoint>,
+    persistent_tip: Option<&BlockCheckpoint>,
     confirmed_tip_slot: u64,
 ) -> bool {
-    let (Some(bootstrap), Some(start), Some(tip)) = (bootstrap_slot, history_start, durable_tip)
+    let (Some(bootstrap), Some(start), Some(tip)) = (bootstrap_slot, history_start, persistent_tip)
     else {
         return false;
     };

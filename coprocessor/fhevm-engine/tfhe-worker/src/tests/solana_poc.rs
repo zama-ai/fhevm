@@ -1,4 +1,4 @@
-//! Slow manual boundary coverage for Solana token plans and the real TFHE worker.
+//! Slow manual boundary coverage for Solana token batches and the real TFHE worker.
 
 use std::path::PathBuf;
 
@@ -11,9 +11,11 @@ use fhevm_engine_common::{tfhe_ops::current_ciphertext_version, types::Supported
 use host_listener::{
     database::tfhe_event_propagate::Handle,
     solana_adapter::{
-        insert_solana_events, solana_transaction_id, SolanaBlockMeta, SolanaHostEvent,
+        insert_solana_records, solana_transaction_id, SolanaBlockMeta, SolanaHostRecord,
     },
-    solana_reconstruct::{decode_fhe_eval_args, reconstruct_fhe_eval_events, ReconstructContext},
+    solana_reconstruct::{
+        decode_fhe_execute_args, reconstruct_fhe_execute_records, ReconstructContext,
+    },
 };
 use litesvm::{types::TransactionMetadata, LiteSVM};
 use serial_test::serial;
@@ -78,19 +80,19 @@ async fn confidential_transfer_reconstructs_computes_and_decrypts(
     assert_eq!(
         events.len(),
         5,
-        "token transfer must remain a five-step plan"
+        "token transfer must remain a five-step batch"
     );
     assert!(matches!(
         &events[2],
-        SolanaHostEvent::FheTernaryOp(event) if event.result == alice_handle
+        SolanaHostRecord::FheTernaryOp(event) if event.result == alice_handle
     ));
     assert!(matches!(
         &events[3],
-        SolanaHostEvent::FheBinaryOp(event) if event.result == transferred_handle
+        SolanaHostRecord::FheBinaryOp(event) if event.result == transferred_handle
     ));
     assert!(matches!(
         &events[4],
-        SolanaHostEvent::FheBinaryOp(event) if event.result == bob_handle
+        SolanaHostRecord::FheBinaryOp(event) if event.result == bob_handle
     ));
 
     let block = SolanaBlockMeta {
@@ -107,7 +109,7 @@ async fn confidential_transfer_reconstructs_computes_and_decrypts(
         .new_transaction()
         .await?
         .expect("new_transaction() returns Some on a live stack");
-    let stats = insert_solana_events(
+    let stats = insert_solana_records(
         &harness.listener_db,
         &mut db_tx,
         events,
@@ -133,27 +135,27 @@ fn reconstruct_transfer_events(
     fixture: &TokenFixture,
     meta: &TransactionMetadata,
     account_keys: &[Pubkey],
-) -> Vec<SolanaHostEvent> {
-    // fhe_eval has 9 named accounts (incl. event-CPI authority + program); the rest are the
-    // frame's remaining accounts, which the pooled wire format references by index.
-    const FHE_EVAL_REMAINING_BASE: usize = 9;
-    let (plan, remaining_accounts) = meta
+) -> Vec<SolanaHostRecord> {
+    // fhe_execute has 9 named accounts (incl. event-CPI authority + program); the rest are the
+    // batch's remaining accounts, which the dictionary wire format references by index.
+    const FHE_EXECUTE_REMAINING_BASE: usize = 9;
+    let (batch, remaining_accounts) = meta
         .inner_instructions
         .iter()
         .flatten()
         .filter(|inner| *inner.instruction.program_id(account_keys) == fixture.host_program_id)
         .find_map(|inner| {
-            let plan = decode_fhe_eval_args(&inner.instruction.data)?;
-            let remaining = inner.instruction.accounts[FHE_EVAL_REMAINING_BASE..]
+            let batch = decode_fhe_execute_args(&inner.instruction.data)?;
+            let remaining = inner.instruction.accounts[FHE_EXECUTE_REMAINING_BASE..]
                 .iter()
                 .map(|index| account_keys[usize::from(*index)].to_bytes())
                 .collect::<Vec<_>>();
-            Some((plan, remaining))
+            Some((batch, remaining))
         })
-        .expect("confidential transfer must CPI into zama-host fhe_eval");
+        .expect("confidential transfer must CPI into zama-host fhe_execute");
     let clock = fixture.svm.get_sysvar::<Clock>();
-    reconstruct_fhe_eval_events(
-        &plan,
+    reconstruct_fhe_execute_records(
+        &batch,
         fixture.compute_signer.to_bytes(),
         &remaining_accounts,
         &[],
@@ -163,7 +165,7 @@ fn reconstruct_transfer_events(
             unix_timestamp: clock.unix_timestamp,
         },
     )
-    .expect("the token's accepted transfer plan must reconstruct")
+    .expect("the token's accepted transfer batch must reconstruct")
 }
 
 struct TokenFixture {
@@ -199,7 +201,7 @@ fn seed_host_config(svm: &mut LiteSVM, program_id: Pubkey, admin: Pubkey) -> Pub
                 admin,
                 chain_id: host::SOLANA_POC_CHAIN_ID,
                 // Coprocessor `fromExternal` verifier: transfers bind the amount via a
-                // secp256k1 EIP-712 attestation that fhe_eval re-verifies in-frame.
+                // secp256k1 EIP-712 attestation that fhe_execute re-verifies in-execution.
                 gateway_chain_id: SECP_GATEWAY_CHAIN_ID,
                 input_verification_contract: INPUT_VERIFICATION_CONTRACT,
                 coprocessor_signers: host::pack_coprocessor_signers(&[secp_evm_address(
@@ -211,8 +213,8 @@ fn seed_host_config(svm: &mut LiteSVM, program_id: Pubkey, admin: Pubkey) -> Pub
                 current_kms_context_id: 0,
                 paused: false,
                 grant_deny_list_enabled: false,
-                max_hcu_per_tx: 0,
-                max_hcu_depth_per_tx: 0,
+                max_hcu_per_tx: u64::MAX,
+                max_hcu_depth_per_tx: u64::MAX,
                 // Unrestricted (the ship default): the block cap short-circuits without
                 // requiring the optional meter/trust accounts.
                 hcu_block_cap_per_app: u64::MAX,
@@ -407,7 +409,7 @@ fn initialize_token_account(
     );
 }
 
-/// Confidential-token `EncryptedValue` value accounts are addressed by stable app-level
+/// Confidential-token `EncryptedValue` encrypted value accounts are addressed by stable app-level
 /// keys (mint, token account, label) rather than a per-transfer nonce sequence
 /// under RFC-024, so the same balance/transferred-amount accounts are reused
 /// across every transfer.
@@ -418,7 +420,7 @@ fn transfer_output_accounts(fixture: &TokenFixture) -> TransferOutputAccounts {
         transferred: token::encrypted_value_address(
             fixture.mint.pubkey(),
             fixture.alice_token,
-            token::transferred_amount_label(),
+            token::encrypted_transferred_amount_label(),
         )
         .0,
     }
@@ -455,7 +457,7 @@ fn transfer_ix(
         .to_account_metas(None),
         data: token::instruction::ConfidentialTransfer {
             // fromExternal: the amount is a coprocessor-signed attestation bound to
-            // (user = owner, contract = mint compute-signer PDA), re-verified in fhe_eval.
+            // (user = owner, contract = mint compute-signer PDA), re-verified in fhe_execute.
             amount_attestation: amount_attestation_for(
                 amount_handle,
                 fixture.alice.pubkey(),
@@ -493,7 +495,7 @@ fn secp_sign(key: &k256::ecdsa::SigningKey, digest: &[u8; 32]) -> [u8; 65] {
 
 /// Builds a coprocessor-signed `fromExternal` attestation over `amount_handle`, binding it to
 /// (`user`, `contract`). The token program checks `user == transfer owner` and
-/// `contract == mint compute-signer PDA`; the host re-verifies this signature in-frame.
+/// `contract == mint compute-signer PDA`; the host re-verifies this signature in-execution.
 fn amount_attestation_for(
     amount_handle: [u8; 32],
     user: Pubkey,

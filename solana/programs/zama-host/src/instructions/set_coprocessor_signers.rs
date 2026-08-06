@@ -33,6 +33,10 @@ pub fn set_coprocessor_signers(
     config.coprocessor_signer_count = count;
     config.coprocessor_threshold = threshold;
     config.updated_slot = Clock::get()?.slot;
-    emit_config_updated(config, admin);
+    emit_config_updated(
+        &ctx.accounts.host_config,
+        admin,
+        &ctx.accounts.event_authority,
+    )?;
     Ok(())
 }

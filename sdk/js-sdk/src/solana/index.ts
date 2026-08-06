@@ -24,8 +24,6 @@ export type {
   SolanaPublicDecryptCertificateClaim,
   SolanaPublicDecryptCertificateParameters,
 } from './actions/publicDecryptCertificate.js';
-export { buildDiscloseSecpInstruction } from './actions/discloseSecp.js';
-export type { SolanaDiscloseSecpAccounts } from './actions/discloseSecp.js';
 export {
   buildVerifyPublicDecryptInstruction,
   verifyPublicDecryptArgsFromClaim,
@@ -43,7 +41,6 @@ export type {
   SolanaEncryptInputValue,
 } from './actions/encryptInput.js';
 export type { SolanaSubmitInputProofParameters, SolanaSubmitInputProofResult } from './actions/submitInputProof.js';
-export type { SolanaConfidentialTransferParameters } from './actions/confidentialTransfer.js';
 export type { SolanaEncryptActions } from './clients/decorators/encrypt.js';
 export type { SolanaZkProof, SolanaZkProofLike } from '../core/types/zkProof-p.js';
 

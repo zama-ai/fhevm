@@ -24,6 +24,11 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       changes-solana: ${{ steps.filter.outputs.solana }}
+      changes-demo-dapp: ${{ steps.filter.outputs.demo-dapp }}
+      changes-host-listener: ${{ steps.filter.outputs.host-listener }}
+      changes-dead-surface-check: ${{ steps.filter.outputs.dead-surface-check }}
+      changes-dead-surface: ${{ steps.filter.outputs.dead-surface }}
+      changes-e2e-greps-check: ${{ steps.filter.outputs.e2e-greps-check }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -41,6 +46,149 @@ jobs:
               - coprocessor/fhevm-engine/host-listener/src/solana_reconstruct.rs
               - coprocessor/fhevm-engine/host-listener/src/solana_grpc_listener.rs
               - coprocessor/fhevm-engine/host-listener/src/solana_grpc_source.rs
+            # Everything the reconstruct lane compiles, not just its Solana-named files: that lane
+            # builds the whole crate, so `lib.rs`, the generated modules, the manifest, the
+            # lockfile, and the toolchain pin are all inputs to it. Kept separate from `solana` so
+            # an EVM-only listener edit runs reconstruction without dragging in the SBF builds,
+            # mollusk suites, and the live e2e vertical.
+            host-listener:
+              - .github/workflows/solana-tests.yml
+              - coprocessor/fhevm-engine/host-listener/**
+              - coprocessor/fhevm-engine/Cargo.toml
+              - coprocessor/fhevm-engine/Cargo.lock
+              - coprocessor/fhevm-engine/rust-toolchain.toml
+            dead-surface-check:
+              - solana/scripts/dead-surface-check.sh
+            e2e-greps-check:
+              - solana/scripts/check-e2e-greps.py
+            # Every tree dead-surface-check.sh sweeps. The check used to run only inside
+            # build-and-test, which is gated on `solana`, so an edit to the proof service, the
+            # listener, the kms-connector, the SDK, or the test suite could introduce a retired name
+            # or a dead export without it ever running. Keep this list and the script's own
+            # RUST_ROOTS/TS_ROOTS/SCRIPT_ROOTS in step.
+            dead-surface:
+              - .github/workflows/solana-tests.yml
+              - .github/workflows/solana-e2e.yml
+              - solana/**
+              - solana-proof-service/**
+              - coprocessor/fhevm-engine/host-listener/src/**
+              - kms-connector/crates/**
+              - sdk/js-sdk/src/solana/**
+              - test-suite/fhevm/**
+              # Checks 4 and 5 pin a retrofit and its written justification in these two relayer
+              # files. Neither matched any path above, so deleting the justification prose or the
+              # last retrofit did not run this job at all — the staleness guards could not fire on
+              # the change that invalidated them. Named individually rather than `relayer/**`: only
+              # these two files are inputs to the sweep.
+              - relayer/src/core/event.rs
+              - relayer/src/gateway/arbitrum/transaction_calldata.rs
+            demo-dapp:
+              - .github/workflows/solana-tests.yml
+              - solana/demo-dapp/**
+              - sdk/js-sdk/**
+              # The confidential-token IDL the dapp's generated client is rendered from. The other
+              # two source IDLs (confidential_batcher, demo_vault) live under solana/demo-dapp/idl
+              # and are already matched above; this one is vendored with the listener, so without
+              # naming it a token IDL change would not run the codegen check that reads it.
+              - coprocessor/fhevm-engine/host-listener/idl/confidential_token.json
+
+  # Pure grep/sed, no toolchain, half a minute: its own job so it runs for every tree it sweeps,
+  # not only the ones that trigger the SBF builds. See fhevm-internal#1859 §7.
+  dead-surface:
+    name: solana-tests/dead-surface
+    needs: check-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.check-changes.outputs.changes-dead-surface == 'true' }}
+    permissions:
+      contents: 'read'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: solana
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+
+      # DEAD_SURFACE_ONLY_CHECK narrows the script to a single check; the self-test sets it per
+      # assertion. Cleared here so no repository variable, no earlier step writing GITHUB_ENV, and no
+      # copy of this job in another workflow can leave the gate running one check out of seven. The
+      # script also rejects values it does not recognise, but an inherited "6" is a value it does.
+      - name: Check for dead surface and rejected vocabulary
+        env:
+          DEAD_SURFACE_ONLY_CHECK: ''
+        run: bash scripts/dead-surface-check.sh
+
+      # The self-test re-runs every check against a fixture that must fail it, which takes several
+      # minutes: each assertion runs the script again for the one check its fixture violates. Every
+      # one of these greps has been silently vacuous at least once, so it runs whenever the script
+      # itself changes — the only commit that can make a check stop firing.
+      - name: Self-test the dead-surface checks
+        if: ${{ needs.check-changes.outputs.changes-dead-surface-check == 'true' }}
+        env:
+          DEAD_SURFACE_ONLY_CHECK: ''
+        run: bash scripts/dead-surface-check.sh --self-test
+
+      # The same class of miss the sweeps above cannot see: the e2e scripts couple to the live
+      # clients through printed labels, which no alias sweep can enumerate. solana-e2e runs this
+      # too, but only for the trees that trigger it — here it also covers, say, a listener-only PR
+      # that renames a label the scripts read.
+      - name: Check the e2e scripts grep for labels the clients still print
+        run: python3 scripts/check-e2e-greps.py
+
+      - name: Self-test the e2e grep check
+        if: ${{ needs.check-changes.outputs.changes-e2e-greps-check == 'true' }}
+        run: python3 scripts/check-e2e-greps.py --self-test
+
+  # The vault module (batch provisioning, settle composition, the address-lookup-table lifecycle)
+  # lives in the demo dapp, and its unit tests run nowhere else: js-sdk-tests is scoped to PRs
+  # against main/devex, and solana-e2e only builds the dapp. Without this job a regression in
+  # settle composition or ALT encoding surfaces first as a live e2e failure.
+  demo-dapp:
+    name: solana-tests/demo-dapp
+    needs: check-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.check-changes.outputs.changes-demo-dapp == 'true' }}
+    permissions:
+      contents: 'read'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+
+      - name: Setup Node
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2.1.3
+
+      # Same recipe as clean-e2e.sh: the dapp depends on `file:../../sdk/js-sdk/src`, so the ESM
+      # and declaration trees must exist before its graph is installed.
+      - name: Build the SDK the dapp consumes
+        run: |
+          npm ci --workspace=@fhevm/sdk-dev --workspace=@fhevm/sdk --include-workspace-root=false
+          ( cd sdk/js-sdk && npm run clean && npm run build:esm && npm run build:types )
+
+      # The dapp does not hand-write the program clients under src/vault/internal/generated: the
+      # SDK's Codama codegen renders them from the committed IDLs. Its `--check` mode ran in no
+      # workflow, so a client could keep describing an instruction, account, or argument the
+      # program no longer has — and the confidential-token client had in fact drifted. The codegen
+      # lives with the SDK, so it runs off the graph the previous step installed.
+      - name: Check the dapp's generated program clients still match the committed IDLs
+        working-directory: sdk/js-sdk
+        run: npm run codegen:solana:check
+
+      - name: Install the dapp's frozen dependency graph
+        working-directory: solana/demo-dapp
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck, lint, and test the demo dapp
+        working-directory: solana/demo-dapp
+        run: |
+          bun run check
+          bun run lint
+          bun run test
 
   build-and-test:
     name: solana-tests/build-and-test
@@ -92,7 +240,19 @@ jobs:
           test "$(awk -F'"' '/^anchor_version/ { print $2 }' Anchor.toml)" = "${ANCHOR_VERSION}"
 
       - name: Build Anchor programs and check host-listener IDL sync
+        id: idl-sync
         run: bash scripts/check-zama-host-idl.sh
+
+      # A committed IDL that disagrees with the build is fixed by copying the build's output over
+      # it, never by editing the JSON — and whoever hits this may have no local SBF toolchain.
+      # These are the files sync-zama-host-idl.sh would have written.
+      - name: Upload the freshly built IDLs when the sync check fails
+        if: ${{ failure() && steps.idl-sync.conclusion == 'failure' }}
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: solana-built-idls
+          path: solana/target/idl/*.json
+          if-no-files-found: error
 
       - name: Check Rust formatting
         run: cargo fmt --check
@@ -100,8 +260,29 @@ jobs:
       - name: Run Solana workspace tests
         run: cargo test --workspace
 
+      - name: Run zama-host decode-feature tests
+        run: cargo test -p zama-host --features decode
+
       - name: Run Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Run Clippy on the zama-host decode feature
+        run: cargo clippy -p zama-host --features decode --all-targets -- -D warnings
+
+      # `scripts/e2e/live-client/Cargo.toml` ends with a bare `[workspace]`, so this crate is its
+      # own workspace root and `cargo test --workspace` above never compiles it. Nothing in CI did:
+      # its only build was inside `setup-solana-side.sh` during solana-e2e, so a rename that broke it
+      # surfaced ~45 minutes in, at "[3/5] bootstrap", and only on PRs that run the vertical at all.
+      # That is exactly how it shipped broken. Half a minute here instead.
+      - name: Check the e2e live client (its own workspace)
+        working-directory: solana/scripts/e2e/live-client
+        run: cargo check --all-targets
+
+      # Same blind spot, one step over: `cargo fmt --check` above runs in `solana/` and stops at that
+      # workspace boundary, so this crate's formatting was checked by nothing and had drifted.
+      - name: Check the e2e live client's formatting
+        working-directory: solana/scripts/e2e/live-client
+        run: cargo fmt --check
 
   native-coverage:
     name: solana-tests/native-coverage
@@ -198,11 +379,11 @@ jobs:
 
   # The off-chain reconstruction path (host-listener, solana-reconstruct feature) is otherwise
   # only built/exercised by the full solana-e2e job. Compile it here and run its unit tests so a
-  # break (e.g. the fhe_eval ACL-record account-offset) is caught in minutes, not 40+.
+  # break (e.g. the `fhe_execute` ACL-record account-offset) is caught in minutes, not 40+.
   host-listener-reconstruct:
     name: solana-tests/host-listener-reconstruct
     needs: check-changes
-    if: ${{ github.event_name == 'workflow_dispatch' || needs.check-changes.outputs.changes-solana == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.check-changes.outputs.changes-solana == 'true' || needs.check-changes.outputs.changes-host-listener == 'true' }}
     permissions:
       contents: 'read'
     runs-on: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/volume=80gb
@@ -219,6 +400,13 @@ jobs:
       - name: Install protoc (host-listener builds fhevm-engine-common via prost-build)
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
+      # Three `cmd::tests::test_get_missing_ancestors_*` reorg tests in the same lib target spawn
+      # anvil (`Anvil::new().spawn()`). They are EVM-side, not Solana, but the unfiltered `--lib`
+      # run below owns them, so this job needs the same Foundry setup the coprocessor's own
+      # host-listener job declares (`needs_foundry: true`).
+      - name: Install Foundry (the host-listener lib tests spawn anvil)
+        uses: foundry-rs/foundry-toolchain@de808b1eea699e761c404bda44ba8f21aba30b2c
+
       - name: Cache cargo
         uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
         with:
@@ -229,8 +417,14 @@ jobs:
           key: ${{ runner.os }}-cargo-host-listener-reconstruct-${{ hashFiles('coprocessor/fhevm-engine/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-host-listener-reconstruct-
 
-      - name: Test host-listener reconstruct path (compiles the feature + pins fhe_eval layout)
+      - name: Test host-listener reconstruct path (compiles the feature + runs its unit tests)
         working-directory: coprocessor/fhevm-engine
         env:
           SQLX_OFFLINE: 'true'
-        run: cargo test -p host-listener --features solana-grpc,solana-reconstruct fhe_eval_acl
+        # Deliberately unfiltered: a test-name filter here went vacuous once (0 tests matched
+        # after a rename and the job kept passing). The whole feature-gated suite runs in seconds.
+        # The second command compiles the integration tests under the same feature flags without
+        # running them (they need a live database), so the feature keeps building everywhere.
+        run: |
+          cargo test -p host-listener --lib --features solana-grpc,solana-reconstruct
+          cargo test -p host-listener --tests --no-run --features solana-grpc,solana-reconstruct

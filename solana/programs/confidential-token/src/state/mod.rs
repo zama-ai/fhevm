@@ -1,4 +1,12 @@
 //! Account layouts, PDA helpers, and token-domain labels.
+//!
+//! Public API surface: off-chain callers that have to derive a token PDA or name an encrypted value
+//! the same way the program does — `runtime-tests`' Mollusk fixtures, and the demo dapp's TypeScript
+//! derivations in `demo-dapp/src/vault/internal/`, which re-declare these labels as byte strings and
+//! quote these function names as the source they must match. Exports here are that contract, so a
+//! label with no on-chain use is not automatically dead — but one with no use anywhere is: the
+//! `transfer_success` and `debit_candidate` labels were deleted once DD-019 stopped creating the
+//! scratch PDAs they named.
 
 pub mod burn_redemption;
 pub mod confidential_mint;
@@ -21,7 +29,7 @@ pub fn compute_signer_address(mint: Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[b"fhe-compute", mint.as_ref()], &crate::ID)
 }
 
-/// Returns the mint-scoped app authority PDA for encrypted total supply.
+/// Returns the mint-scoped encrypted value account authority PDA for the encrypted total supply.
 pub fn total_supply_authority_address(mint: Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[b"total-supply", mint.as_ref()], &crate::ID)
 }
@@ -57,91 +65,54 @@ pub fn burn_redemption_address(mint: Pubkey, burned_handle: [u8; 32]) -> (Pubkey
 }
 
 /// Returns the canonical `EncryptedValue` PDA for a token balance field.
-pub fn balance_encrypted_value_address(
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-) -> (Pubkey, u8) {
-    encrypted_value_address(acl_domain_key, app_account, balance_label())
+pub fn balance_encrypted_value_address(domain: Pubkey, authority: Pubkey) -> (Pubkey, u8) {
+    encrypted_value_address(domain, authority, encrypted_balance_label())
 }
 
 /// Returns the canonical `EncryptedValue` PDA for the encrypted total supply field.
-pub fn total_supply_encrypted_value_address(
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-) -> (Pubkey, u8) {
-    encrypted_value_address(acl_domain_key, app_account, total_supply_label())
+pub fn total_supply_encrypted_value_address(domain: Pubkey, authority: Pubkey) -> (Pubkey, u8) {
+    encrypted_value_address(domain, authority, encrypted_total_supply_label())
 }
 
 /// Returns the canonical `EncryptedValue` PDA for an arbitrary label, delegating
 /// key derivation to ZamaHost so app and host agree exactly.
-pub fn encrypted_value_address(
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-    encrypted_value_label: [u8; 32],
-) -> (Pubkey, u8) {
-    zama_host::encrypted_value_address(value_key(
-        acl_domain_key,
-        app_account,
-        encrypted_value_label,
-    ))
+pub fn encrypted_value_address(domain: Pubkey, authority: Pubkey, label: [u8; 32]) -> (Pubkey, u8) {
+    zama_host::encrypted_value_address(encrypted_value_id_bytes(domain, authority, label))
 }
 
 /// Fixed encrypted value label for confidential balances.
-pub fn balance_label() -> [u8; 32] {
+pub fn encrypted_balance_label() -> [u8; 32] {
     *b"balance_________________________"
 }
 
 /// Fixed encrypted value label for the encrypted total supply.
-pub fn total_supply_label() -> [u8; 32] {
+pub fn encrypted_total_supply_label() -> [u8; 32] {
     *b"total_supply____________________"
 }
 
 /// Fixed encrypted value label for public wrap amounts.
-pub fn wrap_amount_label() -> [u8; 32] {
+pub fn encrypted_wrap_amount_label() -> [u8; 32] {
     *b"wrap_amount_____________________"
 }
 
-/// Fixed encrypted value label for externally verified burn amounts.
-pub fn burn_amount_label() -> [u8; 32] {
-    *b"burn_amount_____________________"
-}
-
 /// Fixed encrypted value label for externally verified transfer amounts.
-pub fn transfer_amount_label() -> [u8; 32] {
+pub fn encrypted_transfer_amount_label() -> [u8; 32] {
     *b"transfer_amount_________________"
 }
 
-/// Fixed encrypted value label for transfer success bits.
-pub fn transfer_success_label() -> [u8; 32] {
-    *b"transfer_success________________"
-}
-
-/// Fixed encrypted value label for unchecked debit candidates.
-pub fn debit_candidate_label() -> [u8; 32] {
-    *b"debit_candidate_________________"
-}
-
 /// Fixed encrypted value label for the all-or-zero burned amount.
-pub fn burned_amount_label() -> [u8; 32] {
+pub fn encrypted_burned_amount_label() -> [u8; 32] {
     *b"burned_amount___________________"
 }
 
 /// Fixed encrypted value label for the all-or-zero transferred amount.
-pub fn transferred_amount_label() -> [u8; 32] {
+pub fn encrypted_transferred_amount_label() -> [u8; 32] {
     *b"transferred_amount______________"
 }
 
-/// Delegates value-key derivation to the shared ACL crate so app and host agree exactly.
-pub fn value_key(
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-    encrypted_value_label: [u8; 32],
-) -> [u8; 32] {
-    zama_solana_acl::derive_value_key(
-        acl_domain_key.to_bytes(),
-        app_account.to_bytes(),
-        encrypted_value_label,
-    )
+/// Delegates encrypted-value-ID derivation to the shared ACL crate so app and host agree exactly.
+fn encrypted_value_id_bytes(domain: Pubkey, authority: Pubkey, label: [u8; 32]) -> [u8; 32] {
+    zama_solana_acl::derive_encrypted_value_id(domain.to_bytes(), authority.to_bytes(), label)
 }
 
 #[cfg(test)]

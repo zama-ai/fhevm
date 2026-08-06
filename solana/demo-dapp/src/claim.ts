@@ -6,7 +6,7 @@ import {
   getBatchByIndex,
   getJoinRecord,
   tokenAccountAddress,
-} from '@fhevm/sdk/solana/vault';
+} from './vault/index.js';
 
 import type { BatchTarget, VaultDirection } from './batchTypes';
 import type { DemoConfig } from './demoConfig';

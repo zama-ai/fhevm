@@ -259,8 +259,8 @@ fi
 "$ROOT/solana/scripts/e2e/materialize-test-sdk.sh"
 [ ! -L "$FHEVM/node_modules/@fhevm/sdk/_esm/solana/index.js" ]
 # Prove both runtimes resolve SDK dependencies from the consumer's frozen graph.
-( cd "$FHEVM" && node --input-type=module -e "await import('@fhevm/sdk/solana'); await import('@fhevm/sdk/solana/vault')" )
-( cd "$FHEVM" && bun -e "await import('@fhevm/sdk/solana'); await import('@fhevm/sdk/solana/vault')" )
+( cd "$FHEVM" && node --input-type=module -e "await import('@fhevm/sdk/solana')" )
+( cd "$FHEVM" && bun -e "await import('@fhevm/sdk/solana')" )
 
 trap cleanup_native_rust_builder_aliases EXIT
 ensure_native_rust_builders
@@ -321,8 +321,8 @@ trap - EXIT
 
 # 3. Bring the Solana side-stack online against the freshly-deployed live backend.
 #    Reads gateway addresses + KMS/coprocessor signer set live, so it tracks the new signer.
-#    The sole supported path deploys a reconstruction-first zama-host on the geyser-plugin validator and
-#    ingests ordinary computation facts through Yellowstone reconstruction.
+#    Deploys zama-host on the geyser-plugin validator; ordinary computation facts are ingested by
+#    reconstructing them from instruction data over Yellowstone, not from events.
 "$ROOT/solana/scripts/e2e/setup-solana-side.sh"
 
 echo "[clean-e2e] stack ready. Drive the full vertical (input -> compute -> public/user-decrypt ->"

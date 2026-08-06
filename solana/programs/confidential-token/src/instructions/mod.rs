@@ -6,8 +6,6 @@
 pub mod common;
 pub mod confidential_burn;
 pub mod confidential_transfer;
-#[cfg(feature = "poc")]
-pub mod create_random_amount;
 pub mod disclose_secp;
 pub mod initialize_mint;
 pub mod initialize_token_account;
@@ -27,8 +25,6 @@ use crate::{errors::*, events::*, fhe, state::*};
 pub(crate) use common::*;
 pub use confidential_burn::*;
 pub use confidential_transfer::*;
-#[cfg(feature = "poc")]
-pub use create_random_amount::*;
 pub use disclose_secp::*;
 pub use initialize_mint::*;
 pub use initialize_token_account::*;

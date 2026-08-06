@@ -14,7 +14,14 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "jsx": "react-jsx"
+    "jsx": "react-jsx",
+    // The vault module (src/vault, fhevm-internal#1859 §6d) is dapp code that reaches into the
+    // built SDK for internals the published package deliberately does not export. Resolving via
+    // node_modules (not ../../sdk/js-sdk sources) keeps one type identity with the package's own
+    // exports. Mirrored in vite.config.ts resolve.alias and tsconfig.node.json.
+    "paths": {
+      "@sdk-src/*": ["./node_modules/@fhevm/sdk/_types/*"]
+    }
   },
   "include": ["src"]
 }

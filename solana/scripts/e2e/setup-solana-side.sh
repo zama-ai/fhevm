@@ -44,7 +44,7 @@ SID_U64=9223372036854788153
 SID_I64=-9223372036854763463
 
 # Yellowstone-first ingestion: disable optional host events and feed ordinary computation facts
-# to the coprocessor via gRPC Yellowstone reconstruction. The narrow born-public lifecycle batch
+# to the coprocessor via gRPC Yellowstone reconstruction. The narrow created-public lifecycle batch
 # remains enabled for its non-reconstructible handles. That needs the geyser plugin, so the host is a native
 # solana-test-validator (agave 2.1.21, multi-arch incl. Apple Silicon) loading the external
 # Yellowstone plugin via --geyser-plugin-config (RPC 8899 + gRPC 10000). It binds 0.0.0.0 so the
@@ -82,7 +82,7 @@ KMS_SIGNERS="$(cast call "$GATEWAY_CONFIG_ADDRESS" 'getKmsSigners()(address[])' 
 echo "    gateway_chain_id=$GATEWAY_CHAIN_ID input_verification=$INPUT_VERIFICATION_ADDRESS"
 echo "    decryption=$DECRYPTION_ADDRESS coprocessor_signers=$COPROCESSOR_SIGNERS threshold=$COPROCESSOR_THRESHOLD kms_signers=$KMS_SIGNERS"
 
-echo "==> [2/5] fresh validator (Yellowstone geyser) + reconstruction-first program deploy"
+echo "==> [2/5] fresh validator (Yellowstone geyser) + program deploy"
 # Seed the committed well-known PoC program keypairs so the build reuses them and the deployed
 # program IDs match each `declare_id!` (see scripts/e2e/test-keypairs/README.md). `-n` keeps any
 # pre-existing local keypair; on a fresh checkout it seeds the committed test keys.
@@ -140,18 +140,15 @@ until curl -s -m2 "$VALIDATOR_RPC" -X POST -H 'Content-Type: application/json' \
   sleep 1
 done
 solana airdrop 500 -u "$VALIDATOR_RPC" -k "$DEPLOYER_KEYPAIR" >/dev/null 2>&1 || true
-# RECONSTRUCTION-FIRST build: drop optional administrative/config events from zama-host.
-# Yellowstone reconstructs ordinary `fhe_eval` computation facts from instructions; the narrow
-# born-public lifecycle batch remains enabled because its block-entropy handles are not present in
-# instruction data. anchor build gives per-crate feature control (cargo build-sbf builds the whole
-# workspace, so it can't disable defaults for just one crate). The other programs keep defaults.
-echo "    building reconstruction-first zama_host (--no-default-features) + default-feature deps"
-# confidential_token is built with `--features poc`: the e2e drives the create_random_amount
-# demo helper, which is gated out of production builds.
+# Two separate `-p` builds, not one workspace build: these produce exactly the two
+# `target/deploy/*.so` the deploy loop below reads, and naming them keeps the e2e from building the
+# batcher and the demo vault it never deploys. (They used to be separate for a different reason —
+# per-crate feature control for zama_host's `emit-events`, which DD-044 deleted.)
+echo "    building zama_host + confidential_token"
 ( cd "$SOLANA" \
-    && anchor build --ignore-keys --no-idl -p zama_host -- --no-default-features \
-    && anchor build --ignore-keys --no-idl -p confidential_token -- --features poc ) \
-  || { echo "[setup] reconstruction-first anchor build failed" >&2; exit 1; }
+    && anchor build --ignore-keys --no-idl -p zama_host \
+    && anchor build --ignore-keys --no-idl -p confidential_token ) \
+  || { echo "[setup] anchor build failed" >&2; exit 1; }
 # --use-rpc: deploy over RPC (8899) since the container doesn't publish the TPU ports.
 for p in zama_host confidential_token; do
   solana program deploy -u "$VALIDATOR_RPC" -k "$DEPLOYER_KEYPAIR" --use-rpc \
@@ -247,7 +244,7 @@ run_logged_background() {
 # gRPC transport + off-chain reconstruction: the listener INGESTS events rebuilt from the tx
 # instructions (the program emits nothing), so this stands in for the whole Yellowstone effort
 # end-to-end. Handle-derivation params are auto-detected from the on-chain HostConfig PDA at
-# startup — no --chain-id / --zero-birth-entropy flags.
+# startup — the listener takes no handle-derivation flags any more.
 ( cd "$ROOT/coprocessor/fhevm-engine" && cargo build -p host-listener --features solana-grpc,solana-reconstruct --bin solana_host_listener >/tmp/solana-host-listener-build.log 2>&1 ) \
   || { echo "[setup] host-listener (grpc,reconstruct) build failed; see /tmp/solana-host-listener-build.log" >&2; tail -20 /tmp/solana-host-listener-build.log >&2; exit 1; }
 run_logged_background "$HOST_LISTENER_LOG" \

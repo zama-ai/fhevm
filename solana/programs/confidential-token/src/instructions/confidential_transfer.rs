@@ -24,15 +24,15 @@ pub struct ConfidentialTransfer<'info> {
     #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
     pub compute_signer: UncheckedAccount<'info>,
     /// Sender's stable balance `EncryptedValue` encrypted value account; read for the current
-    /// handle and superseded in place by this eval's CPI.
+    /// handle and replaced in place by this execution's CPI.
     #[account(mut, address = from_account.balance_encrypted_value)]
     pub from_balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// Recipient's stable balance `EncryptedValue` encrypted value account.
     #[account(mut, dup, address = to_account.balance_encrypted_value)]
     pub to_balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// CHECK: stable `transferred_amount` encrypted value account for `from_account`; created on
-    /// the sender's first transfer, superseded thereafter.
-    #[account(mut, address = encrypted_value_address(mint.key(), from_account.key(), transferred_amount_label()).0)]
+    /// the sender's first transfer, replaced thereafter.
+    #[account(mut, address = encrypted_value_address(mint.key(), from_account.key(), encrypted_transferred_amount_label()).0)]
     pub transferred_amount_value: UncheckedAccount<'info>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
@@ -42,12 +42,12 @@ pub struct ConfidentialTransfer<'info> {
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// System program used for ACL account creation.
     pub system_program: Program<'info, System>,
-    /// CHECK: forwarded verbatim into the ZamaHost `fhe_eval` CPI, which validates it against the
+    /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it against the
     /// canonical `["hcu-block-meter", compute_signer]` PDA. The per-mint HCU block meter — supplied
     /// by an untrusted mint under a metering-band cap, omitted otherwise.
     #[account(mut)]
     pub hcu_block_meter: Option<UncheckedAccount<'info>>,
-    /// CHECK: forwarded verbatim into the ZamaHost `fhe_eval` CPI, which validates it. The HCU
+    /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it. The HCU
     /// trust witness — present + valid bypasses the cap; absent means untrusted (metered).
     pub hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
 }
@@ -84,7 +84,7 @@ impl<'info> ConfidentialTransfer<'info> {
     }
 }
 
-/// Transfers an encrypted amount by rotating the sender and recipient balance handles.
+/// Transfers an encrypted amount by updating the sender and recipient balance handles.
 pub fn confidential_transfer<'info>(
     ctx: Context<'info, ConfidentialTransfer<'info>>,
     amount_attestation: zama_host::CoprocessorInputAttestation,
@@ -140,8 +140,8 @@ pub fn confidential_transfer<'info>(
 /// amount, instead of a freshly attested client-side encryption.
 ///
 /// Identical to [`ConfidentialTransfer`] except the 190-byte attestation argument is gone and one
-/// account is added: `amount_value`, the encrypted amount to spend. It is read-only — the durable
-/// operand the eval reads — and is never superseded or consumed; only the two balance encrypted value accounts
+/// account is added: `amount_value`, the encrypted amount to spend. It is read-only — the persistent
+/// operand the execution reads — and is never replaced or consumed; only the two balance encrypted value accounts
 /// change through the same `ge -> sub -> select` debit and `add` credit.
 #[derive(Accounts)]
 #[event_cpi]
@@ -164,19 +164,19 @@ pub struct ConfidentialTransferFromValue<'info> {
     #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
     pub compute_signer: UncheckedAccount<'info>,
     /// Sender's stable balance `EncryptedValue` encrypted value account; read for the current
-    /// handle and superseded in place by this eval's CPI.
+    /// handle and replaced in place by this execution's CPI.
     #[account(mut, address = from_account.balance_encrypted_value)]
     pub from_balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// Recipient's stable balance `EncryptedValue` encrypted value account.
     #[account(mut, dup, address = to_account.balance_encrypted_value)]
     pub to_balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// CHECK: stable `transferred_amount` encrypted value account for `from_account`; created on
-    /// the sender's first transfer, superseded thereafter.
-    #[account(mut, address = encrypted_value_address(mint.key(), from_account.key(), transferred_amount_label()).0)]
+    /// the sender's first transfer, replaced thereafter.
+    #[account(mut, address = encrypted_value_address(mint.key(), from_account.key(), encrypted_transferred_amount_label()).0)]
     pub transferred_amount_value: UncheckedAccount<'info>,
     /// The existing encrypted amount to spend: a computed or received `euint64` handle. Read-only
-    /// durable operand — never superseded, never consumed. Its address is the canonical PDA of its
-    /// own `(acl_domain_key, app_account, encrypted_value_label)` fields, so an encrypted value account from any app
+    /// persistent operand — never replaced, never consumed. Its address is the canonical PDA of its
+    /// own `(domain, authority, label)` fields, so an encrypted value account from any app
     /// may be passed here once its owner has granted the mint's compute subject via `allow_subjects`.
     pub amount_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
@@ -187,12 +187,12 @@ pub struct ConfidentialTransferFromValue<'info> {
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// System program used for ACL account creation.
     pub system_program: Program<'info, System>,
-    /// CHECK: forwarded verbatim into the ZamaHost `fhe_eval` CPI, which validates it against the
+    /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it against the
     /// canonical `["hcu-block-meter", compute_signer]` PDA. The per-mint HCU block meter — supplied
     /// by an untrusted mint under a metering-band cap, omitted otherwise.
     #[account(mut)]
     pub hcu_block_meter: Option<UncheckedAccount<'info>>,
-    /// CHECK: forwarded verbatim into the ZamaHost `fhe_eval` CPI, which validates it. The HCU
+    /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it. The HCU
     /// trust witness — present + valid bypasses the cap; absent means untrusted (metered).
     pub hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
 }
@@ -229,7 +229,7 @@ impl<'info> ConfidentialTransferFromValue<'info> {
     }
 }
 
-/// Transfers an encrypted amount taken from an existing on-chain `EncryptedValue`, rotating the
+/// Transfers an encrypted amount taken from an existing on-chain `EncryptedValue`, updating the
 /// sender and recipient balance handles. The amount value is spent read-only.
 pub fn confidential_transfer_from_value<'info>(
     ctx: Context<'info, ConfidentialTransferFromValue<'info>>,
@@ -240,7 +240,7 @@ pub fn confidential_transfer_from_value<'info>(
         ConfidentialTokenError::OwnerMismatch
     );
     let amount_value = &ctx.accounts.amount_value;
-    // Reject a non-euint64 amount early for a clear error, before the eval builder / host would
+    // Reject a non-euint64 amount early for a clear error, before the execution builder / host would
     // reject the same handle deeper in the CPI (the host's binary type validation still covers it).
     require!(
         zama_host::handle_fhe_type(amount_value.current_handle) == BALANCE_FHE_TYPE,

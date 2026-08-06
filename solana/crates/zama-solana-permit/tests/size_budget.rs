@@ -114,7 +114,7 @@ fn each_additional_domain_costs_a_fixed_number_of_bytes() {
 
 /// The envelope is a fixed 50 bytes of framing over the text, at every size.
 #[test]
-fn the_envelope_adds_a_constant_frame() {
+fn the_envelope_adds_a_constant_overhead() {
     for count in 0..=MAX_ACL_DOMAIN_KEYS {
         let (text, envelope) = sizes(count);
         assert_eq!(

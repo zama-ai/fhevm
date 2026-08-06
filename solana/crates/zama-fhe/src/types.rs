@@ -4,10 +4,10 @@ use std::marker::PhantomData;
 
 use anchor_lang::prelude::Pubkey;
 
-use crate::acl::EncryptedValueKey;
-use crate::operand::Operand;
-use crate::validate::{handle_fhe_type, validate_encrypted_value_key, validate_supported_fhe_type};
-use crate::{EvalBuildError, Result};
+use crate::acl::EncryptedValueId;
+use crate::operand::{BuilderIdentity, Operand};
+use crate::validate::{handle_fhe_type, validate_encrypted_value_id, validate_supported_fhe_type};
+use crate::{FheExecutionBuildError, Result};
 
 /// Typed FHE handle tag used by the host ABI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,8 +41,8 @@ pub struct Bool;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Uint<const BITS: u16>;
 
-pub type BoolHandle = Encrypted<Bool>;
-pub type Uint64Handle = Encrypted<Uint<64>>;
+pub type BoolHandle = StoredValue<Bool>;
+pub type Uint64Handle = StoredValue<Uint<64>>;
 
 /// Marker for encrypted address handles.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -262,34 +262,60 @@ impl FheIsIn for Uint<128> {}
 impl FheIsIn for Address {}
 impl FheIsIn for Bytes256 {}
 
-/// Typed encrypted eval value.
+/// Typed encrypted execution value.
 ///
-/// Durable values are constructed from app account state. Transient values are
-/// returned by [`EvalBuilder`] methods and can only be fed to later steps in the
-/// same builder.
+/// Transient values are returned by
+/// [`FheExecutionBuilder`](crate::FheExecutionBuilder) methods and can only be fed to later steps of the builder
+/// that produced them: `'id` is that builder's identity, handed out by
+/// [`FheExecution::build`](crate::FheExecution::build) as a fresh invariant lifetime, so mixing two builders'
+/// values is a type error. A persistent value belongs to no builder and takes whatever identity its
+/// use site needs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Encrypted<T> {
+pub struct Encrypted<'id, T> {
+    operand: Operand,
+    marker: PhantomData<T>,
+    identity: BuilderIdentity<'id>,
+}
+
+/// A persistent value as an operand: its handle plus the encrypted value account holding it.
+///
+/// Brand-free on purpose. A stored value belongs to no builder, so app code can read one out of
+/// account state — with its own error handling — before it opens an execution, and then feed it to
+/// whichever builder needs it. Only the values a builder hands back carry an identity ([`Encrypted`]),
+/// because only those are meaningless outside it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StoredValue<T> {
     operand: Operand,
     marker: PhantomData<T>,
 }
 
-impl<T: FheTyped> Encrypted<T> {
-    /// Builds a durable operand from a stable `EncryptedValue` encrypted value account. `handle`
-    /// must be that encrypted value account's current handle; the host re-verifies this on-chain.
-    pub fn durable(handle: [u8; 32], key: EncryptedValueKey) -> Result<Self> {
-        validate_encrypted_value_key(&key)?;
+impl<T: FheTyped> StoredValue<T> {
+    /// Builds a persistent operand from a stable `EncryptedValue` account. `handle` must be that
+    /// account's current handle; the host re-verifies this on-chain.
+    pub fn persistent(handle: [u8; 32], key: EncryptedValueId) -> Result<Self> {
+        validate_encrypted_value_id(&key)?;
         if handle_fhe_type(handle) != T::FHE_TYPE.byte() {
-            return Err(EvalBuildError::UnsupportedFheType);
+            return Err(FheExecutionBuildError::UnsupportedFheType);
         }
-        Ok(Self::from_operand(Operand::durable(handle, key.address())))
+        Ok(Self {
+            operand: Operand::persistent(handle, key.address()),
+            marker: PhantomData,
+        })
     }
 }
 
-impl<T> Encrypted<T> {
+impl<T> From<StoredValue<T>> for Encrypted<'_, T> {
+    fn from(value: StoredValue<T>) -> Self {
+        Self::from_operand(value.operand)
+    }
+}
+
+impl<T> Encrypted<'_, T> {
     pub(crate) fn from_operand(operand: Operand) -> Self {
         Self {
             operand,
             marker: PhantomData,
+            identity: PhantomData,
         }
     }
 
@@ -381,26 +407,33 @@ impl Scalar<Bytes256> {
     }
 }
 
-/// Typed right-hand side accepted by binary eval ops.
+/// Typed right-hand side accepted by binary execution ops. Carries the builder identity of the encrypted
+/// arm; a scalar belongs to no builder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BinaryRhs<T> {
-    Encrypted(Encrypted<T>),
+pub enum BinaryRhs<'id, T> {
+    Encrypted(Encrypted<'id, T>),
     Scalar(Scalar<T>),
 }
 
-impl<T> From<Encrypted<T>> for BinaryRhs<T> {
-    fn from(value: Encrypted<T>) -> Self {
+impl<'id, T> From<Encrypted<'id, T>> for BinaryRhs<'id, T> {
+    fn from(value: Encrypted<'id, T>) -> Self {
         Self::Encrypted(value)
     }
 }
 
-impl<T> From<Scalar<T>> for BinaryRhs<T> {
+impl<T> From<Scalar<T>> for BinaryRhs<'_, T> {
     fn from(value: Scalar<T>) -> Self {
         Self::Scalar(value)
     }
 }
 
-pub(crate) fn binary_rhs_operand<T>(rhs: impl Into<BinaryRhs<T>>) -> Operand {
+impl<T> From<StoredValue<T>> for BinaryRhs<'_, T> {
+    fn from(value: StoredValue<T>) -> Self {
+        Self::Encrypted(value.into())
+    }
+}
+
+pub(crate) fn binary_rhs_operand<'id, T>(rhs: impl Into<BinaryRhs<'id, T>>) -> Operand {
     match rhs.into() {
         BinaryRhs::Encrypted(value) => value.operand(),
         BinaryRhs::Scalar(value) => Operand::scalar(value.bytes()),

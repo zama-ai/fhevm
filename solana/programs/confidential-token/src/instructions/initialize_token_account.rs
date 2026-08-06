@@ -37,12 +37,12 @@ pub struct InitializeTokenAccount<'info> {
     pub host_config: Account<'info, zama_host::HostConfig>,
     /// System program used for account creation.
     pub system_program: Program<'info, System>,
-    /// CHECK: forwarded verbatim into the ZamaHost `fhe_eval` CPI, which validates it against the
+    /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it against the
     /// canonical `["hcu-block-meter", compute_signer]` PDA. Supplied by an untrusted mint under a
     /// metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
     #[account(mut)]
     pub hcu_block_meter: Option<UncheckedAccount<'info>>,
-    /// CHECK: forwarded verbatim into the ZamaHost `fhe_eval` CPI, which validates it against the
+    /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it against the
     /// canonical `["hcu-trusted", compute_signer]` PDA. Present + valid bypasses the cap; absent
     /// means the mint is metered.
     pub hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
@@ -66,9 +66,9 @@ pub fn initialize_token_account<'info>(
         token_account.bump = ctx.bumps.token_account;
     }
     require_keys_eq!(
-        ctx.accounts.mint.acl_domain_key,
+        ctx.accounts.mint.domain,
         ctx.accounts.mint.key(),
-        ConfidentialTokenError::AclDomainKeyMismatch
+        ConfidentialTokenError::DomainMismatch
     );
     require_keys_eq!(
         ctx.accounts.compute_signer.key(),
@@ -76,35 +76,38 @@ pub fn initialize_token_account<'info>(
         ConfidentialTokenError::ComputeSignerMismatch
     );
     let mint_key = ctx.accounts.mint.key();
+    let mint_domain = zama_fhe::Domain::new(mint_key);
     let owner = ctx.accounts.owner.key();
     let compute_signer = ctx.accounts.compute_signer.key();
     let token_account_key = ctx.accounts.token_account.key();
     let balance_encrypted_value = ctx.accounts.balance_encrypted_value.key();
-    let balance_output = fhe::DurableOutput::new(
+    let balance_output = fhe::PersistentOutput::new(
         ctx.accounts.balance_encrypted_value.to_account_info(),
-        encrypted_value_key(mint_key, token_account_key, balance_label()),
-        fhe::DurableAudience::for_owner(owner, compute_signer),
+        encrypted_value_id(mint_domain, token_account_key, encrypted_balance_label()),
+        fhe::PersistentAudience::for_owner(owner, compute_signer),
     )?;
-    let mut builder =
-        zama_fhe::EvalBuilder::new(zama_fhe::EvalAppAuthority::new(token_account_key));
-    builder
-        .trivial_encrypt_u64(initial_balance, balance_output.output())
-        .map_err(invalid_eval_plan)?;
-    let plan = builder.finish().map_err(invalid_eval_plan)?;
+    let execution = zama_fhe::FheExecution::build(
+        zama_fhe::ExecutionEncryptedValueAccountAuthority::new(token_account_key),
+        |builder| {
+            builder.trivial_encrypt_u64(initial_balance, balance_output.output())?;
+            Ok(())
+        },
+    )
+    .map_err(invalid_execution)?;
     let compute_authority = fhe::ComputeAuthority::for_mint(
         &ctx.accounts.compute_signer,
         mint_key,
         ctx.bumps.compute_signer,
     )?;
-    let eval_accounts = fhe::EvalAccountSet::for_plan(
-        &plan,
+    let execution_accounts = fhe::ExecutionAccountSet::for_execution(
+        &execution,
         [balance_output.account_info()],
         [fhe::OutputAuthority::token_account(
             &ctx.accounts.token_account,
         )?],
     )?;
-    fhe::eval(fhe::Eval {
-        context: fhe::EvalContext {
+    fhe::execute(fhe::Execute {
+        context: fhe::ExecuteContext {
             payer: &ctx.accounts.payer,
             event_authority: &ctx.accounts.zama_event_authority,
             zama_program: &ctx.accounts.zama_program,
@@ -123,8 +126,8 @@ pub fn initialize_token_account<'info>(
                 .as_ref()
                 .map(|account| account.to_account_info()),
         },
-        accounts: &eval_accounts,
-        plan,
+        accounts: &execution_accounts,
+        execution,
     })?;
     let balance_handle = balance_output.handle()?;
     let token_account = &mut ctx.accounts.token_account;

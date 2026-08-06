@@ -14,6 +14,10 @@ pub fn set_grant_deny_list_enabled(ctx: Context<HostAdmin>, enabled: bool) -> Re
     }
     ctx.accounts.host_config.grant_deny_list_enabled = enabled;
     ctx.accounts.host_config.updated_slot = Clock::get()?.slot;
-    emit_config_updated(&ctx.accounts.host_config, ctx.accounts.admin.key());
+    emit_config_updated(
+        &ctx.accounts.host_config,
+        ctx.accounts.admin.key(),
+        &ctx.accounts.event_authority,
+    )?;
     Ok(())
 }

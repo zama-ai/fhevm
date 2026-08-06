@@ -11,12 +11,13 @@ use super::common::{
     assert_admin, assert_evm_signer_set, assert_no_remaining_accounts, assert_quorum_threshold,
     EvmSignerSetErrors,
 };
-#[cfg(feature = "emit-events")]
+use crate::event_cpi::emit_event_cpi;
 use crate::events::NewKmsContextEvent;
 use crate::{errors::ZamaHostError, state::*};
 
 /// Accounts for defining a new KMS context.
 #[derive(Accounts)]
+#[event_cpi]
 #[instruction(context_id: u64)]
 pub struct DefineKmsContext<'info> {
     /// Configured host admin and rent payer for the context account.
@@ -86,13 +87,15 @@ pub fn define_kms_context(
     kms_context.bump = ctx.bumps.kms_context;
     ctx.accounts.host_config.current_kms_context_id = context_id;
 
-    #[cfg(feature = "emit-events")]
-    emit!(NewKmsContextEvent {
-        version: EVENT_VERSION,
-        kms_context_id: context_id,
-        signers,
-        public_decryption_threshold: thresholds.public_decryption,
-        user_decryption_threshold: thresholds.user_decryption,
-    });
+    emit_event_cpi(
+        &ctx.accounts.event_authority,
+        &NewKmsContextEvent {
+            version: EVENT_VERSION,
+            kms_context_id: context_id,
+            signers,
+            public_decryption_threshold: thresholds.public_decryption,
+            user_decryption_threshold: thresholds.user_decryption,
+        },
+    )?;
     Ok(())
 }
