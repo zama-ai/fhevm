@@ -60,41 +60,28 @@ test("splits listener-core from the coprocessor image bump", () => {
 
 test("runs the harness at the target tag from the first phase, and moves only the client", () => {
   expect(phaseVersions.baseline.TEST_SUITE_VERSION).toBe(to.TEST_SUITE_VERSION);
-  expect(phaseVersions.sdk.TEST_SUITE_VERSION).toBe(to.TEST_SUITE_VERSION);
+  expect(phaseVersions.protocolFlip.TEST_SUITE_VERSION).toBe(to.TEST_SUITE_VERSION);
 });
 
-// @zama-fhe/relayer-sdk 0.4.4 resolves relayer routes to /v1 or /v2 only — it has no /v3 route
-// at all — so it keeps calling /v2/user-decrypt whatever protocol version the ACL reports. That
-// is what lets each backend component cross the boundary on its own. An empty RELAYER_SDK_VERSION
-// selects the in-repo @fhevm/sdk instead, which follows the on-chain version onto /v3.
-test("holds the client on relayer-sdk 0.4.4 until every backend phase has landed", () => {
-  const backendPhases = [
-    "baseline",
-    "gatewayContracts",
-    "hostContracts",
-    "relayer",
-    "kmsPrssBridge",
-    "kms",
-    "listenerCore",
-    "coprocessor",
-  ] as const;
-  for (const phase of backendPhases) {
-    expect(phaseVersions[phase].RELAYER_SDK_VERSION).toBe("0.4.4");
+// An empty RELAYER_SDK_VERSION selects the in-repo @fhevm/sdk, and it is the client for every
+// phase. No published @zama-fhe/relayer-sdk can be used here at all: kms-core mints the public
+// key at bootstrap on tfhe-rs 1.6, and neither 0.4.4 (node-tfhe 1.4.0-alpha.3) nor 0.5.0-rc.1
+// (1.5.4) can deserialize that key, so they fail before the baseline gate rather than at any
+// upgrade boundary.
+test("runs every phase on the in-repo @fhevm/sdk", () => {
+  for (const env of Object.values(phaseVersions)) {
+    expect(env.RELAYER_SDK_VERSION).toBe("");
   }
-  // Only the last phase hands the gates to @fhevm/sdk.
-  expect(phaseVersions.sdk.RELAYER_SDK_VERSION).toBe("");
 });
 
-test("moves the client strictly last, after every backend component is on target", () => {
-  expect(phaseOrder[phaseOrder.length - 1]).toBe("sdk");
+test("moves the ACL strictly last, after every backend component is on target", () => {
+  expect(phaseOrder[phaseOrder.length - 1]).toBe("protocol-flip");
   // The phase before it already has the whole backend at its target versions...
   for (const key of coprocessorKeys) {
     expect(phaseVersions.coprocessor[key]).toBe(to[key]);
   }
-  // ...so the SDK phase changes nothing but the client.
-  const { RELAYER_SDK_VERSION: _client, ...backend } = phaseVersions.sdk;
-  const { RELAYER_SDK_VERSION: _previous, ...previousBackend } = phaseVersions.coprocessor;
-  expect(backend).toEqual(previousBackend);
+  // ...so the protocol-flip phase moves no image at all: it upgrades on-chain state only.
+  expect(phaseVersions.protocolFlip).toEqual(phaseVersions.coprocessor);
 });
 
 test("pins host-contracts and the harness one tag back, where images actually exist", () => {
@@ -119,7 +106,7 @@ test("keeps every phase lock cumulative", () => {
     phaseVersions.kms,
     phaseVersions.listenerCore,
     phaseVersions.coprocessor,
-    phaseVersions.sdk,
+    phaseVersions.protocolFlip,
   ];
   // Once a key reaches its target it never goes back. The PRSS bridge phase is excluded
   // because its CORE_VERSION is deliberately an intermediate, not a target.
@@ -149,14 +136,16 @@ test("upgrades the host contracts before the relayer, each with its own gate", (
 });
 
 test("ends every phase on the target versions", () => {
-  expect(phaseVersions.sdk).toEqual(to);
+  expect(phaseVersions.protocolFlip).toEqual(to);
 });
 
 test("orders host contract upgrades so verification and limits land before the executor", () => {
   const position = (name: string) => hostContractUpgradeOrder.indexOf(name);
   expect(position("KMSVerifier")).toBeLessThan(position("FHEVMExecutor"));
   expect(position("HCULimit")).toBeLessThan(position("FHEVMExecutor"));
-  expect(position("ACL")).toBe(hostContractUpgradeOrder.length - 1);
+  // The ACL is not upgraded in this phase at all — it moves alone in the last one, because it
+  // is what @fhevm/sdk reads to decide between /v2 and /v3.
+  expect(hostContractUpgradeOrder).not.toContain("ACL");
 });
 
 // Every upgradeable contract guards its reinitializer with `reinitializer(REINITIALIZER_VERSION)`,
@@ -190,7 +179,7 @@ test("upgrades KMSGeneration on the canonical host chain only", () => {
   expect(names(true)).toContain("KMSGeneration");
   expect(names(false)).not.toContain("KMSGeneration");
   // Everything else moves on every chain.
-  for (const name of ["KMSVerifier", "HCULimit", "FHEVMExecutor", "ACL"]) {
+  for (const name of ["KMSVerifier", "HCULimit", "FHEVMExecutor"]) {
     expect(names(false)).toContain(name);
   }
 });
@@ -204,14 +193,14 @@ test("gates every phase on rollout-standard by default", () => {
 
 test("covers multi-chain isolation in heavy mode wherever contracts moved", () => {
   expect(rolloutPhaseTestProfiles("host-contracts", "rollout-heavy")).toContain("multi-chain-isolation");
-  expect(rolloutPhaseTestProfiles("sdk", "rollout-heavy")).toContain("multi-chain-isolation");
+  expect(rolloutPhaseTestProfiles("protocol-flip", "rollout-heavy")).toContain("multi-chain-isolation");
 });
 
-// /v3/user-decrypt is only reachable once the client itself moves, so the route is checked in the
-// SDK phase and nowhere earlier — no earlier phase has a client that would request it.
-test("checks the v3 user-decryption route in the SDK phase in heavy mode", () => {
-  expect(rolloutPhaseTestProfiles("sdk", "rollout-heavy")).toContain("unified-user-decryption");
-  for (const phase of phaseOrder.filter((candidate) => candidate !== "sdk")) {
+// /v3/user-decrypt is only reachable once the ACL reports 0.14, so the route is checked in the
+// protocol-flip phase and nowhere earlier — before it the client resolves 0.13 and asks for /v2.
+test("checks the v3 user-decryption route in the protocol-flip phase in heavy mode", () => {
+  expect(rolloutPhaseTestProfiles("protocol-flip", "rollout-heavy")).toContain("unified-user-decryption");
+  for (const phase of phaseOrder.filter((candidate) => candidate !== "protocol-flip")) {
     expect(rolloutPhaseTestProfiles(phase, "rollout-heavy")).not.toContain("unified-user-decryption");
   }
 });

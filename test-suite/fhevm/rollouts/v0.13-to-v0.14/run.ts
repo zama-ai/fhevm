@@ -36,7 +36,7 @@ type RolloutPhase =
   | "kms-prss-bridge"
   | "kms"
   | "coprocessor"
-  | "sdk";
+  | "protocol-flip";
 
 // Heavy mode adds the checkpoints that are cheap to run at a phase boundary and expensive to
 // debug later. multi-chain-isolation is in every contract phase because this rollout upgrades
@@ -52,9 +52,9 @@ const heavyPhaseProfiles: Record<RolloutPhase, string[]> = {
   kms: ["rollout-standard", "public-decryption"],
   // Runs once per coprocessor operator, at each consensus state the fleet passes through.
   coprocessor: ["rollout-standard", "random-subset"],
-  // The client moves last and alone, so this gate is the widest — and the only one that
-  // reaches /v3/user-decrypt, which is what unified-user-decryption exercises.
-  sdk: [
+  // The ACL moves last and alone, so this gate is the widest — and the only one that reaches
+  // /v3/user-decrypt, which is what unified-user-decryption exercises.
+  "protocol-flip": [
     "rollout-standard",
     "unified-user-decryption",
     "multi-chain-isolation",
@@ -139,8 +139,19 @@ const HOST_CONTRACT_UPGRADES = [
   // HCULimit before FHEVMExecutor: new executor ops call the new HCU checks.
   { task: "task:upgradeHCULimit", name: "HCULimit", canonicalOnly: false },
   { task: "task:upgradeFHEVMExecutor", name: "FHEVMExecutor", canonicalOnly: false },
-  { task: "task:upgradeACL", name: "ACL", canonicalOnly: false },
 ] as const;
+
+/**
+ * The ACL is deliberately not in the list above: it moves alone, in the last phase.
+ *
+ * @fhevm/sdk resolves the protocol version from the on-chain ACL version and switches to
+ * /v3/user-decrypt from 0.14, and /v3 is only served once both the relayer and every KMS
+ * connector are on 0.14. Every phase gate runs `user-decryption`, so upgrading the ACL here
+ * would make the relayer, the connector and kms-core all load-bearing from this phase onward
+ * and force them into a single step. Holding it back keeps the client on /v2 while each
+ * backend component crosses on its own.
+ */
+const ACL_UPGRADE = { task: "task:upgradeACL", name: "ACL", canonicalOnly: false } as const;
 
 /** The host contract upgrades that apply to a given chain. */
 export const hostContractUpgradesForChain = (isCanonical: boolean) =>
@@ -236,7 +247,9 @@ export default async function run(ctx: RolloutRunContext) {
   const kmsLock = await writePhaseVersionLock(ctx, "05-kms", phaseVersions.kms);
   const listenerCoreLock = await writePhaseVersionLock(ctx, "06-listener-core", phaseVersions.listenerCore);
   const coprocessorLock = await writePhaseVersionLock(ctx, "07-coprocessor", phaseVersions.coprocessor);
-  const sdkLock = await writePhaseVersionLock(ctx, "08-sdk", phaseVersions.sdk);
+  // Written for the receipt only: this phase moves on-chain state, not an image tag, so the
+  // lock is the coprocessor phase's carried forward and is never applied.
+  await writePhaseVersionLock(ctx, "08-protocol-flip", phaseVersions.protocolFlip);
 
   // The harness is overridden to a local build so RELAYER_SDK_VERSION reaches its Dockerfile
   // as a build arg. The published image bakes an empty value, which would silently select
@@ -321,11 +334,19 @@ export default async function run(ctx: RolloutRunContext) {
     await testPhase(ctx, "coprocessor", testMode);
   }
 
-  // Last, and alone. Everything behind it is already on 0.14, so this is the first phase where
-  // a client that follows the on-chain protocol version has a stack that can serve /v3.
-  logPhase("08 sdk: move the client from relayer-sdk 0.4.4 to the in-repo @fhevm/sdk");
-  await ctx.upgradeRuntimeGroup("test-suite", { lockFile: sdkLock });
-  await testPhase(ctx, "sdk", testMode);
+  // Last, and alone. Everything behind it is already on 0.14, so this is the first point where
+  // the stack can serve /v3 — and upgrading the ACL is what tells the client to ask for it.
+  // No prepareContractMigrationSources here on purpose. The host phase already left the deploy
+  // container with previous-contracts/ on 0.13 and contracts/ on 0.14, and no version has moved
+  // since. Re-snapshotting now would capture the 0.14 sources as "previous" and upgrade the ACL
+  // from 0.14 to 0.14, while the proxy on chain is still 0.13.
+  logPhase("08 protocol flip: upgrade the host ACL, so the client follows the chain onto /v3");
+  for (const target of canonicalFirst(await hostChainTargets(ctx))) {
+    console.log(`[contracts] host chain ${target.key}`);
+    await upgradeContract(target.runTask, ACL_UPGRADE.task, ACL_UPGRADE.name);
+  }
+  await ctx.refreshDiscovery();
+  await testPhase(ctx, "protocol-flip", testMode);
 }
 
 export const phaseOrder = [
@@ -336,7 +357,7 @@ export const phaseOrder = [
   "kms-prss-bridge",
   "kms",
   "coprocessor",
-  "sdk",
+  "protocol-flip",
 ] as const satisfies readonly RolloutPhase[];
 
 export const hostContractUpgradeOrder: readonly string[] = HOST_CONTRACT_UPGRADES.map((upgrade) => upgrade.name);

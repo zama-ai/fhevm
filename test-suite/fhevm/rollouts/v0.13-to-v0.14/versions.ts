@@ -47,21 +47,24 @@ const coreTo = "v0.14.0-1";
 //   RELAYER_SDK_VERSION non-empty -> @zama-fhe/relayer-sdk at exactly that npm version
 //   RELAYER_SDK_VERSION empty     -> @fhevm/sdk, the in-repo workspace SDK
 //
-// 0.4.4 is the current npm `latest` of @zama-fhe/relayer-sdk. It resolves relayer routes to
-// /v1 or /v2 only — there is no /v3 anywhere in the published package — so it keeps calling
-// /v2/user-decrypt no matter which protocol version the host contracts report. That is what
-// lets every backend component cross the 0.13 -> 0.14 boundary on its own: the client does
-// not change its request shape underneath the rollout.
+// Empty selects @fhevm/sdk, the in-repo workspace SDK, which the harness image builds from
+// its own source tree. It is the client for every phase, and it cannot be @zama-fhe/relayer-sdk.
 //
-// @fhevm/sdk is the opposite: it reads the on-chain ACL version, maps it to a protocol
-// version, and switches to /v3/user-decrypt from protocol 0.14. Running it from the first
-// phase makes host contracts, relayer and KMS connector all become load-bearing the moment
-// the ACL lands, which is why the client moves last and alone.
-const relayerSdkFrom = "0.4.4";
-// Empty selects @fhevm/sdk, which the harness image builds from its own source tree. At the
-// harness tag used here (v0.14.0-9) that workspace package is version 1.1.0-alpha.9 — the
-// 0.14 SDK, and the first client in this rollout to exercise /v3.
-const relayerSdkTo = "";
+// No published @zama-fhe/relayer-sdk can run this rollout at all, at any phase, because of the
+// key material rather than the protocol. kms-core mints the FHE public key at bootstrap, and
+// every kms-core paired with fhevm 0.13+ is on tfhe-rs 1.6 (v0.13.20 -> 1.6.1, v0.14.0-1 ->
+// 1.6.2). tfhe-rs 1.6 added a second variant to CompactCiphertextListExpansionKindVersions,
+// which lives inside the compact public key; the enum derives VersionsDispatch, so a 1.6
+// writer always emits the new variant. relayer-sdk 0.4.4 carries node-tfhe 1.4.0-alpha.3 and
+// 0.5.0-rc.1 carries 1.5.4 — both have the one-variant enum, so both reject the key with
+// "invalid value: integer 1, expected variant index 0 <= i < 1" before the first gate runs.
+//
+// Deployed networks are unaffected: their key material predates tfhe-rs 1.6 and an upgrade
+// never regenerates it. That compatibility can only be reproduced on a stack seeded with
+// legacy key material, which this harness cannot do — it always mints its own. The same
+// constraint is already recorded in .github/workflows/preview-env-deploy.yml, where the
+// routine e2e runs the @fhevm/sdk suite for exactly this reason.
+const relayerSdkVersion = "";
 
 export const from = {
   GATEWAY_VERSION: fromTag,
@@ -86,7 +89,7 @@ export const from = {
   // could not host this rollout anyway: at v0.13.2 test-suite/e2e depends solely on
   // @fhevm/sdk and the runtime switch between the two clients does not exist yet.
   TEST_SUITE_VERSION: testSuiteTargetTag,
-  RELAYER_SDK_VERSION: relayerSdkFrom,
+  RELAYER_SDK_VERSION: relayerSdkVersion,
 } satisfies Env;
 
 export const to = {
@@ -108,7 +111,6 @@ export const to = {
   COPROCESSOR_ZKPROOF_WORKER_VERSION: targetTag,
   COPROCESSOR_SNS_WORKER_VERSION: targetTag,
   LISTENER_CORE_VERSION: targetTag,
-  RELAYER_SDK_VERSION: relayerSdkTo,
 } satisfies Env;
 
 type EnvKey = keyof typeof from;
@@ -135,7 +137,9 @@ export const coprocessorKeys = [
   "COPROCESSOR_ZKPROOF_WORKER_VERSION",
   "COPROCESSOR_SNS_WORKER_VERSION",
 ] as const satisfies readonly EnvKey[];
-export const sdkKeys = ["RELAYER_SDK_VERSION"] as const satisfies readonly EnvKey[];
+// The client never moves, so there is no SDK version step. The final phase upgrades the host
+// ACL instead: that is what changes the protocol version @fhevm/sdk reads off chain.
+export const aclKeys = [] as const satisfies readonly EnvKey[];
 
 const withTargetVersions = (...keys: EnvKey[]): Env => ({
   ...from,
@@ -151,24 +155,26 @@ export type RolloutPhaseKey =
   | "kms"
   | "listenerCore"
   | "coprocessor"
-  | "sdk";
+  | "protocolFlip";
 
 /**
  * Every phase lock is cumulative: it carries all earlier phases' target versions.
  *
- * The order is the documented component order, and the client SDK moves last on purpose.
+ * The order is the documented component order, and the host ACL moves last on purpose.
  * Two directional constraints make that ordering load-bearing rather than conventional:
  *
  *  - The 0.14 relayer cannot boot against 0.13 host contracts. It initializes `/v2/keyurl` by
  *    calling `getCurrentKmsContextAndEpoch()` on ProtocolConfig, which only exists from 0.14,
  *    so against 0.13 the call reverts with empty data and the relayer exits. Host contracts
  *    therefore have to land before the relayer.
- *  - A client that follows the on-chain protocol version pulls the rest of the stack forward
- *    with it. @fhevm/sdk switches to /v3/user-decrypt as soon as the host ACL reports 0.14,
- *    and /v3 needs both the 0.14 relayer and the 0.14 KMS connector to be serving. Holding
- *    the gates on @zama-fhe/relayer-sdk 0.4.4, which only ever calls /v2, keeps each backend
- *    phase independently testable; the `sdk` phase then moves the client on its own, against
- *    a stack that is already fully on 0.14.
+ *  - The client follows the on-chain protocol version, so the ACL is what pulls the rest of
+ *    the stack forward. @fhevm/sdk maps the ACL version to a protocol version and switches to
+ *    /v3/user-decrypt from 0.14, and /v3 needs both the 0.14 relayer and the 0.14 KMS
+ *    connector to be serving. Every gate runs `user-decryption`, so upgrading the ACL early
+ *    would make the relayer and connector load-bearing from that moment and collapse the
+ *    per-component phases into one step. Holding the ACL back keeps the client on /v2 while
+ *    each backend component crosses on its own; the `protocolFlip` phase then upgrades the
+ *    ACL against a stack that is already fully on 0.14, and the client follows it onto /v3.
  */
 export const phaseVersions: Record<RolloutPhaseKey, Env> = {
   baseline: from,
@@ -203,7 +209,9 @@ export const phaseVersions: Record<RolloutPhaseKey, Env> = {
     ...listenerKeys,
     ...coprocessorKeys,
   ),
-  sdk: to,
+  // No version moves here: this phase upgrades the host ACL, which is on-chain state rather
+  // than an image tag. The lock is the coprocessor phase's, carried forward unchanged.
+  protocolFlip: to,
 };
 
 export const versionSources = [
@@ -211,5 +219,5 @@ export const versionSources = [
   `from=${fromTag}`,
   `target=${targetTag}`,
   `kms-core=${coreFrom}->${corePrssBridge}->${coreTo}`,
-  `relayer-sdk=${relayerSdkFrom}->@fhevm/sdk`,
+  "client=@fhevm/sdk",
 ];
