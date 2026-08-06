@@ -1,5 +1,5 @@
-use alloy::primitives::Uint;
 use alloy::rpc::types::Log;
+use alloy::{hex, primitives::Uint};
 use anyhow::anyhow;
 use fhevm_engine_common::chain_id::ChainId;
 use sqlx::{Pool, Postgres, Transaction};
@@ -12,6 +12,7 @@ use crate::kms_generation::database::{
     all_pending_compressed_key_materials_to_download,
     all_pending_crs_activations_to_download,
     all_pending_key_activations_to_download,
+    applied_compressed_key_material_receipts,
     apply_ready_compressed_key_materials,
     cancel_orphaned_compressed_key_materials, cancel_orphaned_crs_activations,
     cancel_orphaned_key_activations,
@@ -30,6 +31,7 @@ use crate::kms_generation::metrics::{
     ACTIVATE_CRS_FAIL_COUNTER, ACTIVATE_CRS_SUCCESS_COUNTER,
     ACTIVATE_KEY_FAIL_COUNTER, ACTIVATE_KEY_SUCCESS_COUNTER,
     CRS_DIGEST_MISMATCH_COUNTER, KEY_DIGEST_MISMATCH_COUNTER,
+    MATERIAL_APPLIED_BLOCK_GAUGE,
 };
 use crate::kms_generation::sks_key::{
     prepare_legacy_server_key_for_db, prepare_xof_key_set_for_db,
@@ -179,9 +181,41 @@ pub async fn process_kms_generation_activations<
     cancel_orphaned_compressed_key_materials(&mut tx).await?;
     cancel_orphaned_crs_activations(&mut tx).await?;
     activate_ready_key_activations(&mut tx).await?;
-    apply_ready_compressed_key_materials(&mut tx).await?;
+    let applied_compressed_materials =
+        apply_ready_compressed_key_materials(&mut tx).await?;
     activate_ready_crs_activations(&mut tx).await?;
     tx.commit().await?;
+    MATERIAL_APPLIED_BLOCK_GAUGE.reset();
+    for receipt in applied_compressed_key_material_receipts(&db_pool).await? {
+        let chain_id = receipt.chain_id.to_string();
+        let block_hash = hex::encode(receipt.block_hash);
+        let transaction_hash = receipt
+            .transaction_hash
+            .map(hex::encode)
+            .unwrap_or_default();
+        let key_id = hex::encode(receipt.key_id);
+        let key_digest = hex::encode(receipt.key_digest);
+        MATERIAL_APPLIED_BLOCK_GAUGE
+            .with_label_values(&[
+                &chain_id,
+                &block_hash,
+                &transaction_hash,
+                &key_id,
+                &key_digest,
+            ])
+            .set(receipt.block_number);
+    }
+    for material in applied_compressed_materials {
+        info!(
+            chain_id = material.chain_id,
+            block_hash = %hex::encode(&material.block_hash),
+            block_number = material.block_number,
+            transaction_hash = ?material.transaction_hash.as_deref().map(hex::encode),
+            key_id = %hex::encode(&material.key_id),
+            key_digest = %hex::encode(&material.key_digest),
+            "Compressed key material applied"
+        );
+    }
 
     // second we download and check keys and preprocess in background in advance so it's ready when block is finalized
     // rows are locked so there's no double work

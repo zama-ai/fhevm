@@ -1,7 +1,7 @@
 use std::ops::DerefMut;
 
 use alloy::rpc::types::Log;
-use sqlx::{Postgres, Transaction};
+use sqlx::{Pool, Postgres, Transaction};
 use tracing::{error, info};
 
 use fhevm_engine_common::chain_id::ChainId;
@@ -29,9 +29,21 @@ pub(crate) struct PendingKeyActivation {
 pub(crate) struct PendingCompressedKeyMaterial {
     pub chain_id: i64,
     pub block_hash: Vec<u8>,
+    pub block_number: i64,
+    pub transaction_hash: Option<Vec<u8>>,
     pub key_id: Vec<u8>,
     pub key_digest: Vec<u8>,
     pub storage_urls: Vec<String>,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub(crate) struct AppliedCompressedKeyMaterialReceipt {
+    pub chain_id: i64,
+    pub block_hash: Vec<u8>,
+    pub block_number: i64,
+    pub transaction_hash: Option<Vec<u8>>,
+    pub key_id: Vec<u8>,
+    pub key_digest: Vec<u8>,
 }
 
 #[derive(Debug, Clone)]
@@ -255,10 +267,11 @@ pub(crate) async fn cancel_orphaned_compressed_key_materials(
 
 pub(crate) async fn apply_ready_compressed_key_materials(
     tx: &mut Transaction<'_, Postgres>,
-) -> anyhow::Result<u64> {
+) -> anyhow::Result<Vec<PendingCompressedKeyMaterial>> {
     let rows = sqlx::query_as::<_, PendingCompressedKeyMaterial>(
         r#"
-        SELECT e.chain_id, e.block_hash, e.key_id, e.key_digest, e.storage_urls
+        SELECT e.chain_id, e.block_hash, e.block_number, e.transaction_hash,
+               e.key_id, e.key_digest, e.storage_urls
         FROM kms_compressed_key_material_events AS e
         INNER JOIN host_chain_blocks_valid AS b
           ON e.chain_id = b.chain_id AND e.block_hash = b.block_hash
@@ -271,8 +284,7 @@ pub(crate) async fn apply_ready_compressed_key_materials(
     .fetch_all(tx.deref_mut())
     .await?;
 
-    let mut applied = 0;
-    for row in rows {
+    for row in &rows {
         let updated = sqlx::query(
             r#"
             UPDATE keys
@@ -306,9 +318,25 @@ pub(crate) async fn apply_ready_compressed_key_materials(
         .bind(&row.key_id)
         .execute(tx.deref_mut())
         .await?;
-        applied += 1;
     }
-    Ok(applied)
+    Ok(rows)
+}
+
+pub(crate) async fn applied_compressed_key_material_receipts(
+    db_pool: &Pool<Postgres>,
+) -> anyhow::Result<Vec<AppliedCompressedKeyMaterialReceipt>> {
+    Ok(sqlx::query_as(
+        r#"
+        SELECT e.chain_id, e.block_hash, e.block_number, e.transaction_hash,
+               e.key_id, e.key_digest
+        FROM kms_compressed_key_material_events AS e
+        INNER JOIN host_chain_blocks_valid AS b
+          ON e.chain_id = b.chain_id AND e.block_hash = b.block_hash
+        WHERE e.status = 'applied' AND b.block_status = 'finalized'
+        "#,
+    )
+    .fetch_all(db_pool)
+    .await?)
 }
 
 pub(crate) async fn cancel_orphaned_crs_activations(
@@ -595,7 +623,8 @@ pub(crate) async fn all_pending_compressed_key_materials_to_download(
 ) -> anyhow::Result<Vec<PendingCompressedKeyMaterial>> {
     Ok(sqlx::query_as::<_, PendingCompressedKeyMaterial>(
         r#"
-        SELECT chain_id, block_hash, key_id, key_digest, storage_urls
+        SELECT chain_id, block_hash, block_number, transaction_hash,
+               key_id, key_digest, storage_urls
         FROM kms_compressed_key_material_events
         WHERE status = 'pending' AND key_content IS NULL
         FOR UPDATE SKIP LOCKED
@@ -973,7 +1002,10 @@ mod tests {
         .await?;
 
         let mut tx = pool.begin().await?;
-        assert_eq!(apply_ready_compressed_key_materials(&mut tx).await?, 1);
+        assert_eq!(
+            apply_ready_compressed_key_materials(&mut tx).await?.len(),
+            1
+        );
         tx.commit().await?;
 
         let row = sqlx::query(
@@ -995,6 +1027,12 @@ mod tests {
         .fetch_one(&pool)
         .await?;
         assert_eq!(status, "applied");
+        let receipts = applied_compressed_key_material_receipts(&pool).await?;
+        assert_eq!(receipts.len(), 1);
+        assert_eq!(receipts[0].chain_id, chain_id);
+        assert_eq!(receipts[0].block_hash, migration_block);
+        assert_eq!(receipts[0].block_number, 10);
+        assert_eq!(receipts[0].key_id, key_id);
 
         sqlx::query(
             "UPDATE host_chain_blocks_valid SET block_status = 'orphaned'
@@ -1014,6 +1052,9 @@ mod tests {
         .fetch_one(&pool)
         .await?;
         assert_eq!(status, "cancelled");
+        assert!(applied_compressed_key_material_receipts(&pool)
+            .await?
+            .is_empty());
         Ok(())
     }
 }
