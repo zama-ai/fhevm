@@ -17,6 +17,12 @@
  *      invalidates its validation cache; and the current context/epoch keeps serving. Skipped on a
  *      node swap: the retired context's committee differs from the current party set, so dropped /
  *      spare nodes can't decommission it (the KMS "at least one must remain" guard).
+ *   4. Recovery + abort (same-committee clusters only) — a further context switch after the destroy
+ *      must still reshare and activate (a destroyed context must not strand the next switch); and a
+ *      same-context epoch rotation stalled with a node down stays Pending, so a second lifecycle op reverts
+ *      `KmsLifecycleOperationInFlight`, `destroyKmsEpoch` aborts the Pending epoch, and — after a
+ *      core restart to clear the aborted reshare's stale session (a temporary workaround) — a fresh
+ *      rotation recovers.
  *
  * Activation is not automatic: the KMS cores must reshare and the connectors must submit
  * `confirmKmsContextCreation` / `confirmEpochActivation` for `getCurrentKmsContextAndEpoch` to
@@ -38,7 +44,7 @@ import { castBool, castCall, resolveKmsGenerationTarget, waitForContainer } from
 import { stepComposeTask } from "../flow/runtime-compose";
 import { columnQuery, pollConnectors } from "../kms-connector-db";
 import { castSend, eventTopicWord, expectRevert, keccakTopic, loadHostOwner, type Owner } from "../kms-onchain";
-import { kmsTxSenderName, reconstructionThreshold } from "../kms-party";
+import { kmsCoreName, kmsTxSenderName, reconstructionThreshold } from "../kms-party";
 import type { State } from "../types";
 import {
   type DecryptionRunner,
@@ -52,6 +58,8 @@ import {
 /** Generous bound: a 4-party reshare + per-party on-chain confirmations. */
 const ACTIVATION_TIMEOUT_MS = 600_000;
 const ACTIVATION_POLL_MS = 5_000;
+/** After restarting the cores to clear a stale reshare session, let the connectors reconnect their gRPC channels. */
+const CORE_RECONNECT_GRACE_MS = 45_000;
 
 export type ContextAndEpoch = { contextId: bigint; epochId: bigint };
 
@@ -433,6 +441,111 @@ const destroyContextAndEpoch = async (
   await runSmoke(`kms-context-switch: input-proof after destroying retired context ${oldContextId} and epoch ${oldEpochId}`);
 };
 
+/**
+ * Aborts a stuck same-context epoch rotation and recovers, exercising the single-in-flight guard and the
+ * Pending-epoch destroy. Stopping one committee node's tx-sender starves the rotation of its final
+ * activation confirmation (activation needs every signer), so the epoch reshares but stays Pending
+ * under the still-Active context — the case destroyKmsEpoch now settles. While it is Pending, any
+ * new lifecycle op reverts KmsLifecycleOperationInFlight; destroying the Pending epoch clears it; and
+ * once the node is back a fresh rotation activates. Same-committee clusters only.
+ */
+const abortStuckRotation = async (
+  state: State,
+  target: SwitchTarget,
+  owner: Owner,
+  baseline: ContextAndEpoch,
+  runDecryption: DecryptionRunner,
+): Promise<void> => {
+  const { rpcUrl, configAddress } = target;
+  const parties = state.scenario.kms.parties;
+  // A committee member: stopping its tx-sender blocks its on-chain confirmation, so activation can
+  // never reach the all-signers quorum. Its core stays up, so the reshare itself still completes.
+  const stalledParty = state.scenario.kms.committeeSize;
+  const stalledTxSender = kmsTxSenderName(stalledParty);
+  const [newKmsEpochTopic, epochDestroyedTopic] = await Promise.all([
+    keccakTopic("NewKmsEpoch(uint256,uint256,uint256,uint256,uint256)"),
+    keccakTopic("KmsEpochDestroyed(uint256)"),
+  ]);
+
+  console.log(`[kms-context-switch] stopping node ${stalledParty} tx-sender to stall an epoch rotation in Pending…`);
+  await setRunning([stalledTxSender], "stop");
+  await waitForContainersStopped([stalledTxSender]);
+
+  try {
+    console.log("[kms-context-switch] broadcasting defineNewEpochForCurrentKmsContext with a node down (rotation sticks Pending)…");
+    const rotationReceipt = await castSend(rpcUrl, configAddress, owner, "defineNewEpochForCurrentKmsContext()");
+    const pendingEpochId = eventTopicWord(rotationReceipt, newKmsEpochTopic, 2, "NewKmsEpoch");
+    const expectedPendingEpochId = baseline.epochId + 1n;
+    if (pendingEpochId !== expectedPendingEpochId) {
+      throw new PreflightError(
+        `kms-context-switch: expected stalled rotation to open epoch ${expectedPendingEpochId}, got ${pendingEpochId}`,
+      );
+    }
+
+    // Single in-flight: a new lifecycle op while this epoch is Pending must revert. This also proves
+    // the epoch really is Pending (in flight), which no view exposes directly.
+    await expectRevert(
+      rpcUrl, configAddress, owner,
+      "open a second lifecycle op while a rotation is in flight",
+      "KmsLifecycleOperationInFlight(uint256,uint256)",
+      "defineNewEpochForCurrentKmsContext()",
+    );
+    await assertCurrentUnchanged(rpcUrl, configAddress, baseline, "stalling the epoch rotation");
+    console.log(
+      `[kms-context-switch] rotation stuck Pending (epoch ${pendingEpochId}); a second lifecycle op reverts KmsLifecycleOperationInFlight and the active pointer held`,
+    );
+
+    // A stuck rotation is one that reshared but never activated (the node down blocks the final
+    // confirmation). Wait for the reshare to finish on every party so the epoch's material exists
+    // before we abort — otherwise destroyKmsEpoch races the reshare and a core has nothing to delete.
+    await pollConnectors(
+      parties, "stalled rotation finished resharing (ready to abort)",
+      columnQuery("new_kms_epoch", "epoch_id", "status", pendingEpochId), ["completed"],
+    );
+
+    // Abort: destroy the Pending epoch (allowed because its context is still Active).
+    console.log(`[kms-context-switch] aborting the stuck rotation — destroyKmsEpoch(${pendingEpochId})…`);
+    const destroyReceipt = await castSend(rpcUrl, configAddress, owner, "destroyKmsEpoch(uint256)", pendingEpochId.toString());
+    if (eventTopicWord(destroyReceipt, epochDestroyedTopic, 1, "KmsEpochDestroyed") !== pendingEpochId) {
+      throw new PreflightError(`kms-context-switch: KmsEpochDestroyed event does not carry epochId=${pendingEpochId}`);
+    }
+    await pollConnectors(
+      parties, "aborted epoch-destroy forwarded to KMS Core",
+      columnQuery("kms_epoch_destroyed", "epoch_id", "status", pendingEpochId), ["completed"],
+    );
+    console.log(`[kms-context-switch] stuck rotation aborted: Pending epoch ${pendingEpochId} destroyed`);
+  } finally {
+    // Restore the node so the recovery rotation can reach the activation quorum.
+    await setRunning([stalledTxSender], "start");
+    await waitForPartiesRunning([stalledParty]);
+  }
+
+  // Recovery. Temporary workaround: destroying the Pending epoch frees its material on the cores but
+  // not the reshare's in-memory networking session, so re-rotating the same context collides with
+  // that stale session until the cores restart. Restart them to clear it. Drop this once the core
+  // drops the session on epoch destroy; the re-rotation should then activate on its own.
+  const coreContainers = Array.from({ length: parties }, (_, i) => kmsCoreName(i + 1));
+  console.log(`[kms-context-switch] restarting cores ${coreContainers.join(", ")} to clear the aborted reshare's stale session…`);
+  await setRunning(coreContainers, "stop");
+  await waitForContainersStopped(coreContainers);
+  await setRunning(coreContainers, "start");
+  for (const core of coreContainers) await waitForContainer(core, "healthy");
+  await Bun.sleep(CORE_RECONNECT_GRACE_MS);
+
+  console.log("[kms-context-switch] recovery: broadcasting defineNewEpochForCurrentKmsContext after the abort…");
+  await castSend(rpcUrl, configAddress, owner, "defineNewEpochForCurrentKmsContext()");
+  const recovered = await waitForActivation(
+    rpcUrl, configAddress, "recovery epoch rotation after abort",
+    (current) => current.contextId === baseline.contextId && current.epochId > baseline.epochId,
+  );
+  console.log(`[kms-context-switch] recovery rotation activated: epochId ${baseline.epochId} -> ${recovered.epochId}`);
+  if (!(await runDecryption(`kms-context-switch: decrypt after abort + recovery (epochId=${recovered.epochId})`))) {
+    throw new PreflightError(
+      "kms-context-switch: user-decryption failed after aborting the stuck rotation and recovering",
+    );
+  }
+};
+
 export const runKmsContextSwitchProfile = async (
   state: State,
   runDecryption: DecryptionRunner,
@@ -459,7 +572,7 @@ export const runKmsContextSwitchProfile = async (
   // 1) NewKmsContext: a node swap when the cluster has a spare core, a same-committee reshare otherwise.
   const afterSwitch = await switchKmsContext(state, runDecryption, runSmoke, { rpcUrl, configAddress, where }, baseline);
 
-  // 2) NewKmsEpoch: same-set epoch rotation under the (now active) context, then prove it activates.
+  // 2) NewKmsEpoch: epoch rotation under the (now active) context, then prove it activates.
   console.log("[kms-context-switch] broadcasting defineNewEpochForCurrentKmsContext (NewKmsEpoch)…");
   await stepComposeTask("host-sc", state, ["host-sc-epoch-rotation"], { noDeps: true });
   await waitForContainer("host-sc-epoch-rotation", "complete");
@@ -519,6 +632,10 @@ export const runKmsContextSwitchProfile = async (
     console.log(
       `[kms-context-switch] post-destroy switch activated: contextId ${afterEpoch.contextId} -> ${afterDestroySwitch.contextId} (epochId=${afterDestroySwitch.epochId})`,
     );
+
+    // 3c) Abort a stuck same-context epoch rotation: prove the single-in-flight guard reverts a second op and
+    //     that destroying the Pending epoch settles it, then that a fresh rotation recovers.
+    await abortStuckRotation(state, { rpcUrl, configAddress, where }, owner, afterDestroySwitch, runDecryption);
   }
 
   // 4) Node swap only: prove the promoted spare actually holds a working reshared key (runs last so
@@ -530,6 +647,6 @@ export const runKmsContextSwitchProfile = async (
   console.log(
     isSwap
       ? "[kms-context-switch] PASS — NewKmsContext (node swap) and NewKmsEpoch both activated on chain, the promoted spare serves the 2t+1 quorum, user-decryption works under each transition, and the input-proof app flow held at every checkpoint"
-      : "[kms-context-switch] PASS — NewKmsContext and NewKmsEpoch both activated on chain, the retired context and epoch were destroyed across contract, connector, and KMS Core, a further context switch after the destroy still reshared and activated, user-decryption works under each transition, and the input-proof app flow held at every checkpoint",
+      : "[kms-context-switch] PASS — NewKmsContext and NewKmsEpoch both activated on chain, the retired context and epoch were destroyed across contract, connector, and KMS Core, a further context switch after the destroy still reshared and activated, a stuck rotation was aborted (single-in-flight revert + Pending-epoch destroy) and recovered, user-decryption works under each transition, and the input-proof app flow held at every checkpoint",
   );
 };
