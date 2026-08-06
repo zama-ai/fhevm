@@ -5,9 +5,9 @@ name: solana-e2e
 # public-decrypt -> PURE-SDK user-decrypt (no kms checkout) -> input-flow -> consume. The
 # user-decrypt de-signcryption runs entirely in @fhevm/sdk/solana, so no kms-core checkout.
 #
-# Ordinary computation ingestion is Yellowstone-only: zama-host disables optional events and the
-# coprocessor is fed by gRPC off-chain reconstruction. The narrow created-public lifecycle batch stays
-# enabled for non-reconstructible handles. The single-value `reconstruct` matrix is
+# Ordinary computation ingestion is Yellowstone-first: the coprocessor is fed by gRPC off-chain
+# reconstruction. Created-public lifecycle outputs also emit their narrow CPI event because their
+# public-leaf append is not reconstructible from the computation alone. The single-value `reconstruct` matrix is
 # kept so the job/artifact names keep their `-reconstruct` suffix; setup-solana-side.sh no longer
 # keys off it.
 #

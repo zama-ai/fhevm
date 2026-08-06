@@ -66,6 +66,7 @@ const targets = [
       instructions: new Set([
         'confidentialTransfer',
         'discloseSecp',
+        'makeTokenAccountHandlePublic',
         'confidentialTransferFromValue',
         'wrapUsdc',
         'initializeTokenAccount',
@@ -74,7 +75,7 @@ const targets = [
       // coprocessorInputAttestation backs confidentialTransfer/wrapUsdc; mmrInclusionProof is the
       // disclose_secp `proof` argument (the flat leaf_index/siblings pair was folded into this
       // Anchor-native struct by #3252/#3248 — keeping it lets the regenerated builder resolve).
-      definedTypes: new Set(['coprocessorInputAttestation', 'mmrInclusionProof']),
+      definedTypes: new Set(['coprocessorInputAttestation', 'disclosedValueKind', 'mmrInclusionProof']),
       // computeSigner defaults confidentialTransfer; the rest default the newly-kept builders
       // (wrapUsdc → vaultAuthority/totalSupplyAuthority, initializeTokenAccount → tokenAccount).
       pdas: new Set(['computeSigner', 'vaultAuthority', 'totalSupplyAuthority', 'tokenAccount']),
@@ -121,7 +122,16 @@ const targets = [
     idlPath: demoIdlUrl('confidential_batcher.json'),
     generatedPath: `${sdkRoot}/../../solana/demo-dapp/src/vault/internal/generated/confidentialBatcher`,
     keep: {
-      instructions: new Set(['initializeBatcher', 'openBatch', 'join', 'quit', 'dispatch', 'settle', 'claim']),
+      instructions: new Set([
+        'initializeBatcher',
+        'openBatch',
+        'join',
+        'quit',
+        'dispatch',
+        'cancelDispatch',
+        'settle',
+        'claim',
+      ]),
       // Anchor inlines the CoprocessorInputAttestation (join) and MmrInclusionProof (settle) structs
       // directly into the instruction data. Keep the initializeBatcher direction enum plus batchStatus
       // — the Batch account decoder references it; confidentialMint/vault stay pruned (account-only).

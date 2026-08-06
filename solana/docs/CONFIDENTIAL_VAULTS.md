@@ -66,6 +66,11 @@ everything below uses Solana-native building blocks.
    one ever divides encrypted by encrypted, and the floor rounding means the
    claims can never add up to more than the batch received.
 
+If settlement cannot complete, the join confidential mint's wrapper authority can cancel the
+dispatch while its burn is pending. The confidential burn is restored, the batch becomes
+refund-only, and each participant can `quit` to retrieve the exact encrypted amount they joined.
+The batch cannot accept new joins or be dispatched, settled, or cancelled again.
+
 Withdrawing works the same way in mirror, in the same program: a *redeem*
 batcher's batches are joined with encrypted shares, the batch total of shares
 is revealed and withdrawn from the vault, and users claim their exact
@@ -93,9 +98,9 @@ joining many times with zero — and we say so instead of pretending otherwise.
 - **A user deposits and then waits.** No user action ever branches on an
   encrypted value (no "instant exit if the pool is big enough"), because
   anything that reacts to encrypted state can be probed until the secret leaks.
-- **Every step is self-serve.** Dispatch, settle, and claim are permissionless;
-  `quit` returns your exact deposit from a pending batch. No operator can
-  hold user funds hostage.
+- **Settlement is self-serve; cancellation is policy-controlled.** Dispatch, settle, and claim are
+  permissionless. The join mint's wrapper authority controls dispatch cancellation; once the batch
+  is refund-only, each participant can self-serve `quit` for their exact joined amount.
 - **One batch, one account.** Each batch has its own token account, so the
   revealed total is exactly that batch's sum — leftover dust from an earlier
   batch can never leak into it.

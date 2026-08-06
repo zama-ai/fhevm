@@ -58,6 +58,8 @@ pub enum BatchStatus {
     Settled,
     /// Certified total was zero; nothing to claim.
     Canceled,
+    /// Dispatch burn was cancelled; existing users may only retrieve their recorded joins.
+    Refunding,
 }
 
 /// One batch: its own confidential token account (so the revealed total is

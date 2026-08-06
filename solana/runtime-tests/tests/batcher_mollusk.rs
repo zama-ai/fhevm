@@ -479,7 +479,11 @@ impl ConfidentialMintKeys {
             )
             .0,
             vault_authority: token::vault_authority_address(mint).0,
-            vault_underlying: token::vault_token_account_address(mint, underlying_mint),
+            vault_underlying: token::vault_token_account_address(
+                mint,
+                underlying_mint,
+                spl_token::id(),
+            ),
             initial_total_supply: handle_for_chain(total_supply_seed, BALANCE_FHE_TYPE),
         }
     }
@@ -615,6 +619,11 @@ impl BatchKeys {
             join_underlying: batcher::batch_join_underlying_address(batch).0,
             payout_underlying: batcher::batch_payout_underlying_address(batch).0,
         }
+    }
+
+    /// Canonical pending burn for this batch's confidential join token account.
+    fn pending_burn(&self, join_mint: Pubkey) -> Pubkey {
+        token::pending_burn_address(join_mint, self.join_token_account).0
     }
 
     fn pending_join_value(&self, user: Pubkey) -> Pubkey {
@@ -1150,6 +1159,7 @@ fn dispatch_ix(fixture: &BatcherFixture, keys: &BatchKeys) -> Instruction {
             batch_balance_value: keys.join_balance_value,
             total_supply_value: fixture.join_mint().total_supply_value,
             batch_burned_amount_value: keys.burned_amount_value,
+            pending_burn: keys.pending_burn(fixture.join_mint().mint),
             zama_event_authority: event_authority(host::id()),
             zama_program: host::id(),
             host_config: fixture.host_config,
@@ -1161,6 +1171,35 @@ fn dispatch_ix(fixture: &BatcherFixture, keys: &BatchKeys) -> Instruction {
     )
 }
 
+fn cancel_dispatch_ix(fixture: &BatcherFixture, keys: &BatchKeys) -> Instruction {
+    anchor_ix(
+        batcher::id(),
+        batcher::accounts::CancelDispatch {
+            payer: fixture.payer,
+            batcher: fixture.batcher,
+            batch: keys.batch,
+            batch_authority: keys.batch_authority,
+            join_confidential_mint: fixture.join_mint().mint,
+            join_compute_signer: fixture.join_mint().compute_signer,
+            total_supply_authority: fixture.join_mint().total_supply_authority,
+            batch_join_token_account: keys.join_token_account,
+            batch_balance_value: keys.join_balance_value,
+            total_supply_value: fixture.join_mint().total_supply_value,
+            batch_burned_amount_value: keys.burned_amount_value,
+            pending_burn: keys.pending_burn(fixture.join_mint().mint),
+            host_config: fixture.host_config,
+            zama_event_authority: event_authority(host::id()),
+            zama_program: host::id(),
+            confidential_token_event_authority: event_authority(token::id()),
+            confidential_token_program: token::id(),
+            system_program: system_program::ID,
+        },
+        batcher::instruction::CancelDispatch {
+            authority_funding_lamports: AUTHORITY_FUNDING,
+        },
+    )
+}
+
 fn settle_ix(
     fixture: &BatcherFixture,
     keys: &BatchKeys,
@@ -1168,7 +1207,7 @@ fn settle_ix(
     signatures: Vec<[u8; 65]>,
     extra_data: Vec<u8>,
     proof: host::instructions::MmrInclusionProof,
-    redemption_record: Pubkey,
+    pending_burn: Pubkey,
 ) -> Instruction {
     anchor_ix(
         batcher::id(),
@@ -1184,7 +1223,7 @@ fn settle_ix(
             join_mint_vault_authority: fixture.join_mint().vault_authority,
             batch_join_underlying: keys.join_underlying,
             batch_burned_amount_value: keys.burned_amount_value,
-            redemption_record,
+            pending_burn,
             host_config: fixture.host_config,
             kms_context: fixture.kms_context,
             vault: fixture.vault,
@@ -1334,17 +1373,33 @@ fn run_dispatch(
     keys: &BatchKeys,
     ledger: &mut CleartextLedger,
 ) -> [u8; 32] {
-    ensure_system_accounts(context, &[keys.burned_amount_value]);
+    ensure_system_accounts(
+        context,
+        &[
+            keys.burned_amount_value,
+            keys.pending_burn(fixture.join_mint().mint),
+        ],
+    );
     let ix = dispatch_ix(fixture, keys);
     let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
     assert_eq!(ledger.evaluate_fhe_cpis(context, &result), 1);
     read_batch(context, keys.batch).burned_total_handle
 }
 
+fn run_cancel_dispatch(
+    context: &Ctx,
+    fixture: &BatcherFixture,
+    keys: &BatchKeys,
+    ledger: &mut CleartextLedger,
+) {
+    let result = context
+        .process_and_validate_instruction(&cancel_dispatch_ix(fixture, keys), &[Check::success()]);
+    assert_eq!(ledger.evaluate_fhe_cpis(context, &result), 1);
+}
+
 /// Settles the batch with a real KMS cert over `total`, replaying the wrap's
-/// execution when the batch is non-zero. Returns settle's consumed compute units so
-/// the fixed-key cost lifecycle can bound them; behavior-test callers ignore
-/// the value (the module policy is that behavior tests never depend on cost).
+/// execution when the batch is non-zero. Returns the instruction and result so the
+/// fixed-key lifecycle can snapshot cost; behavior-test callers ignore them.
 fn run_settle(
     context: &Ctx,
     fixture: &BatcherFixture,
@@ -1352,12 +1407,10 @@ fn run_settle(
     ledger: &mut CleartextLedger,
     burned_handle: [u8; 32],
     total: u64,
-) -> u64 {
+) -> (Instruction, InstructionResult) {
     let (signatures, extra_data) = kms_public_decrypt_cert(burned_handle, total);
     let proof = single_burn_public_decrypt_proof(keys.burned_amount_value, burned_handle);
-    let redemption_record =
-        token::burn_redemption_address(fixture.join_mint().mint, burned_handle).0;
-    ensure_system_accounts(context, &[redemption_record]);
+    let pending_burn = keys.pending_burn(fixture.join_mint().mint);
     let ix = settle_ix(
         fixture,
         keys,
@@ -1365,14 +1418,14 @@ fn run_settle(
         signatures,
         extra_data,
         proof,
-        redemption_record,
+        pending_burn,
     );
     let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
     if total > 0 {
         // Only the wrap phase drives an execution at settle.
         assert_eq!(ledger.evaluate_fhe_cpis(context, &result), 1);
     }
-    result.compute_units_consumed
+    (ix, result)
 }
 
 /// Claims for one user, replaying the MulDiv and transfer executions.
@@ -1676,6 +1729,125 @@ fn mollusk_repeat_join_accumulates_and_quit_refunds_exactly() {
     );
     assert_eq!(ledger.u64_at(&context, pending), 40);
     assert_eq!(ledger.u64_at(&context, keys.join_balance_value), 40);
+}
+
+/// A dispatched batch is not dependent on eventual KMS availability: cancellation restores the
+/// confidential burn, closes the token account's pending burn, and moves the batch into a
+/// refund-only state in which each participant can retrieve their recorded amount.
+#[test]
+fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
+    let context = mollusk().with_context(fixture.accounts(0, 0));
+    let mut ledger = CleartextLedger::default();
+    fixture.seed_ledger(&mut ledger, (1_000, 0), (2_000, 0), (1_000_000, 0));
+
+    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    seed_open_batch_balances(&context, &keys, &mut ledger);
+    run_join(
+        &context,
+        &fixture,
+        &keys,
+        &fixture.alice,
+        &mut ledger,
+        handle_for_chain(41, BALANCE_FHE_TYPE),
+        300,
+    );
+
+    let pending_burn = keys.pending_burn(fixture.join_mint().mint);
+    let _burned_handle = run_dispatch(&context, &fixture, &keys, &mut ledger);
+    assert_eq!(ledger.u64_at(&context, keys.join_balance_value), 0);
+    assert_eq!(
+        ledger.u64_at(&context, fixture.join_mint().total_supply_value),
+        999_700
+    );
+
+    // Cancellation updates existing audiences without granting subjects. Enabling the Host deny
+    // policy must not make the batcher's empty-witness escape path fail.
+    {
+        let mut store = context.account_store.borrow_mut();
+        let account = store
+            .get_mut(&fixture.host_config)
+            .expect("host config exists");
+        let mut config = host::HostConfig::try_deserialize(&mut account.data.as_slice())
+            .expect("host config deserializes");
+        config.grant_deny_list_enabled = true;
+        account.data = serialized_account(config);
+    }
+
+    // A public watcher cannot front-run settlement by forcing the terminal refund path. Only the
+    // join mint's wrapper authority may cancel the dispatch.
+    let stranger = Pubkey::new_unique();
+    context
+        .account_store
+        .borrow_mut()
+        .insert(stranger, system_account(5_000_000_000));
+    let mut unauthorized_cancel = cancel_dispatch_ix(&fixture, &keys);
+    unauthorized_cancel.accounts[0].pubkey = stranger;
+    context.process_and_validate_instruction(
+        &unauthorized_cancel,
+        &[batcher_error(
+            batcher::BatcherError::CancelAuthorityMismatch,
+        )],
+    );
+    assert_eq!(
+        read_batch(&context, keys.batch).status,
+        batcher::BatchStatus::Dispatched
+    );
+    assert_eq!(ledger.u64_at(&context, keys.join_balance_value), 0);
+    assert_eq!(
+        ledger.u64_at(&context, fixture.join_mint().total_supply_value),
+        999_700
+    );
+
+    run_cancel_dispatch(&context, &fixture, &keys, &mut ledger);
+    let batch = read_batch(&context, keys.batch);
+    assert_eq!(batch.status, batcher::BatchStatus::Refunding);
+    assert_eq!(batch.burned_total_handle, [0; 32]);
+    assert_eq!(ledger.u64_at(&context, keys.join_balance_value), 300);
+    assert_eq!(
+        ledger.u64_at(&context, fixture.join_mint().total_supply_value),
+        1_000_000
+    );
+    if let Some(account) = context.account_store.borrow().get(&pending_burn) {
+        assert_eq!(account.owner, system_program::ID);
+        assert!(account.data.is_empty());
+    }
+
+    // Refunding is terminal for aggregation and settlement, but remains live for withdrawals.
+    context.process_and_validate_instruction(
+        &dispatch_ix(&fixture, &keys),
+        &[batcher_error(batcher::BatcherError::BatchNotPending)],
+    );
+    context.process_and_validate_instruction(
+        &cancel_dispatch_ix(&fixture, &keys),
+        &[batcher_error(batcher::BatcherError::BatchNotDispatched)],
+    );
+
+    // The assertion above covers cancellation under deny policy. Restore the fixture policy before
+    // `quit`, whose transfer legitimately grants the user and is tested separately.
+    {
+        let mut store = context.account_store.borrow_mut();
+        let account = store
+            .get_mut(&fixture.host_config)
+            .expect("host config exists");
+        let mut config = host::HostConfig::try_deserialize(&mut account.data.as_slice())
+            .expect("host config deserializes");
+        config.grant_deny_list_enabled = false;
+        account.data = serialized_account(config);
+    }
+
+    let quit = quit_ix(&fixture, &keys, &fixture.alice);
+    let result = context.process_and_validate_instruction(&quit, &[Check::success()]);
+    assert_eq!(ledger.evaluate_fhe_cpis(&context, &result), 2);
+    assert_eq!(
+        ledger.u64_at(&context, fixture.alice.underlying.balance_value),
+        1_000
+    );
+    assert_eq!(ledger.u64_at(&context, keys.join_balance_value), 0);
+    assert_eq!(
+        ledger.u64_at(&context, keys.pending_join_value(fixture.alice.user)),
+        0
+    );
 }
 
 /// A batch with no joins burns zero, and settle with the KMS-certified zero
@@ -2333,7 +2505,13 @@ fn mollusk_dispatch_before_min_batch_age_rejects() {
     let context = mollusk().with_context(fixture.accounts(0, 0));
     // Batch opens at slot 100 and must age 1_000 slots.
     let keys = initialize_and_open_first_batch(&context, &fixture, 1_000);
-    ensure_system_accounts(&context, &[keys.burned_amount_value]);
+    ensure_system_accounts(
+        &context,
+        &[
+            keys.burned_amount_value,
+            keys.pending_burn(fixture.join_mint().mint),
+        ],
+    );
     context.process_and_validate_instruction(
         &dispatch_ix(&fixture, &keys),
         &[batcher_error(batcher::BatcherError::BatchTooYoung)],
@@ -2393,7 +2571,7 @@ fn mollusk_join_quit_and_claim_respect_batch_status() {
     // no exit between dispatch and settle (fhevm-internal#1773).
     context.process_and_validate_instruction(
         &quit_ix(&fixture, &keys, &fixture.alice),
-        &[batcher_error(batcher::BatcherError::BatchNotPending)],
+        &[batcher_error(batcher::BatcherError::BatchNotRefundable)],
     );
     // Second dispatch rejects.
     context.process_and_validate_instruction(
@@ -2497,26 +2675,16 @@ fn assert_batcher_cost(profile: &str, ix: &Instruction, result: &InstructionResu
 }
 
 // Deterministic upper bounds on settle's compute cost, asserted only in the
-// fixed-key cost lifecycle (see `snapshot_lifecycle`). Settle gets no exact
-// snapshot because its redemption-marker PDA is seeded by the runtime-derived
-// burned handle, so its bump-search cost is not key-stable; a bound still
-// catches a real regression. Baselines measured on the CI-pinned toolchain —
-// deposit settle 302_224..=306_724 CU (vault `deposit` CPI + wrap growth; the
-// handle-derived bump search makes this vary run to run — the same reason no
-// exact snapshot is pinned), redeem settle 369_715 CU (vault `withdraw` CPI)
-// — bounds take the highest observed value plus ~15% headroom rounded up to a
-// clean number, which absorbs the ±10% bump-search variance plus minor
-// legitimate drift while still catching real regressions.
+// fixed-key cost lifecycle (see `snapshot_lifecycle`). Exact snapshots detect
+// ordinary drift; these bounds also keep unusually expensive runs below a
+// documented ceiling. The sequential pending-burn PDA is keyed only by mint
+// and token account, so its bump search is stable for the fixed fixture keys.
 const SETTLE_DEPOSIT_MAX_COMPUTE_UNITS: u64 = 360_000;
 const SETTLE_REDEEM_MAX_COMPUTE_UNITS: u64 = 430_000;
 
 /// One fixed-key run through open/join/dispatch/claim, snapshotting each
 /// instruction's cost profile under `prefix`. Fixed fixture keys keep the PDA
-/// bump searches — part of the measured compute — stable across runs. Settle
-/// gets no exact snapshot: its redemption-marker PDA seed is runtime-derived
-/// (the burned handle), so its bump search is not key-stable; it is instead
-/// covered here by a deterministic upper-bound compute assertion (see
-/// `SETTLE_DEPOSIT_MAX_COMPUTE_UNITS` / `SETTLE_REDEEM_MAX_COMPUTE_UNITS`).
+/// bump searches — part of the measured compute — stable across runs.
 fn snapshot_lifecycle(
     fixture: &BatcherFixture,
     context: &Ctx,
@@ -2556,14 +2724,22 @@ fn snapshot_lifecycle(
     ledger.evaluate_fhe_cpis(context, &join_result);
     assert_batcher_cost(&format!("{prefix}join"), &join, &join_result);
 
-    ensure_system_accounts(context, &[keys.burned_amount_value]);
+    ensure_system_accounts(
+        context,
+        &[
+            keys.burned_amount_value,
+            keys.pending_burn(fixture.join_mint().mint),
+        ],
+    );
     let dispatch = dispatch_ix(fixture, &keys);
     let dispatch_result = context.process_and_validate_instruction(&dispatch, &[Check::success()]);
     ledger.evaluate_fhe_cpis(context, &dispatch_result);
     assert_batcher_cost(&format!("{prefix}dispatch"), &dispatch, &dispatch_result);
 
     let burned_handle = read_batch(context, keys.batch).burned_total_handle;
-    let settle_compute_units = run_settle(context, fixture, &keys, ledger, burned_handle, 300);
+    let (settle, settle_result) = run_settle(context, fixture, &keys, ledger, burned_handle, 300);
+    assert_batcher_cost(&format!("{prefix}settle"), &settle, &settle_result);
+    let settle_compute_units = settle_result.compute_units_consumed;
     let settle_bound = match fixture.direction {
         batcher::BatchDirection::Deposit => SETTLE_DEPOSIT_MAX_COMPUTE_UNITS,
         batcher::BatchDirection::Redeem => SETTLE_REDEEM_MAX_COMPUTE_UNITS,
@@ -2652,9 +2828,7 @@ fn mollusk_dust_total_settle_reverts_and_batch_stays_dispatched() {
 
     let (signatures, extra_data) = kms_public_decrypt_cert(burned_handle, 100);
     let proof = single_burn_public_decrypt_proof(keys.burned_amount_value, burned_handle);
-    let redemption_record =
-        token::burn_redemption_address(fixture.join_mint().mint, burned_handle).0;
-    ensure_system_accounts(&context, &[redemption_record]);
+    let pending_burn = keys.pending_burn(fixture.join_mint().mint);
     let ix = settle_ix(
         &fixture,
         &keys,
@@ -2662,7 +2836,7 @@ fn mollusk_dust_total_settle_reverts_and_batch_stays_dispatched() {
         signatures,
         extra_data,
         proof,
-        redemption_record,
+        pending_burn,
     );
     context.process_and_validate_instruction(
         &ix,
@@ -2671,8 +2845,8 @@ fn mollusk_dust_total_settle_reverts_and_batch_stays_dispatched() {
         ))],
     );
 
-    // Atomic revert: still Dispatched, no redemption marker paid out, no
-    // underlying released, vault untouched.
+    // Atomic revert: still Dispatched, the pending burn remains unsettled, no
+    // underlying is released, and the vault is untouched.
     let batch = read_batch(&context, keys.batch);
     assert_eq!(batch.status, batcher::BatchStatus::Dispatched);
     assert_eq!(batch.total_joined, 0);
@@ -2698,9 +2872,7 @@ fn mollusk_dust_total_settle_reverts_and_batch_stays_dispatched() {
 /// out-of-domain bound where even v0+ALT would need a split settle.
 fn assert_settle_wire_sizes(fixture: &BatcherFixture) {
     let keys = BatchKeys::new(fixture, 0);
-    let burned_handle = handle_for_chain(0x92, BALANCE_FHE_TYPE);
-    let redemption_record =
-        token::burn_redemption_address(fixture.join_mint().mint, burned_handle).0;
+    let pending_burn = keys.pending_burn(fixture.join_mint().mint);
 
     let settle_with = |threshold: usize, proof_depth: usize| -> Instruction {
         settle_ix(
@@ -2713,7 +2885,7 @@ fn assert_settle_wire_sizes(fixture: &BatcherFixture) {
                 leaf_index: 0,
                 siblings: vec![[0u8; 32]; proof_depth],
             },
-            redemption_record,
+            pending_burn,
         )
     };
 

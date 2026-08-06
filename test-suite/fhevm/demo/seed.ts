@@ -199,8 +199,9 @@ const main = async (): Promise<void> => {
     );
   };
 
-  // Actors. The deployer wallet pays for and signs all provisioning; the mint authority is the
-  // committed key `demo:faucet` mints mock USDC from; the personas are the demo end-users + operator.
+  // Actors. The deployer drives provisioning; the keeper pays confidential-mint account rent and
+  // is the wrapper authority used by settlement/cancellation. The separate mock-USDC mint
+  // authority backs the faucet, and Alice/Bob are end users.
   const deployer = await loadSigner(env.roots.deployerKeypairPath);
   const mintAuthority = await loadSigner(DEMO_KEYPAIRS.mintAuthority);
   const keeper = await loadSigner(DEMO_KEYPAIRS.keeper);
@@ -283,7 +284,7 @@ const main = async (): Promise<void> => {
   // 3. Confidential mints: cUSDC wraps mock USDC, cShares wraps the share mint.
   await send(deployer, [
     await vault.buildInitializeMintInstruction({
-      authority: deployer,
+      authority: keeper,
       mint: cUsdcMint,
       underlyingMint: mockUsdcMint.address,
       hostConfig,
@@ -291,7 +292,7 @@ const main = async (): Promise<void> => {
   ]);
   await send(deployer, [
     await vault.buildInitializeMintInstruction({
-      authority: deployer,
+      authority: keeper,
       mint: cSharesMint,
       underlyingMint: shareMint,
       hostConfig,

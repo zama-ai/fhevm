@@ -73,6 +73,20 @@ EXTERNAL_PATTERNS = {
     "0x96a56828": "a Solidity error selector, printed by the gateway container",
 }
 
+# High-impact labels must come from the exact live producer, not merely occur in some unrelated
+# source comment or test-suite helper. The full vertical consumes this label after seven different
+# live-client operations; keep all seven concrete `println!` sites present.
+OUTPUT_ENCRYPTED_VALUE_PRINT = re.compile(
+    r'(?m)^\s*println!\(\s*"[^"\n]*output encrypted value \{output_encrypted_value\}"\s*\)'
+)
+PINNED_LABEL_PRODUCERS = {
+    "output encrypted value": (
+        Path("solana/scripts/e2e/live-client/main.rs"),
+        OUTPUT_ENCRYPTED_VALUE_PRINT,
+        7,
+    ),
+}
+
 # A prefix this short is not a label; matching it proves nothing. Five, because the shortest real
 # label these scripts grep for is five characters.
 MIN_LITERAL = 5
@@ -157,6 +171,22 @@ def producer_files() -> list[Path]:
     return files
 
 
+def pinned_label_is_produced(
+    literal: str,
+    root: Path = REPO_ROOT,
+    specs: dict[str, tuple[Path, re.Pattern[str], int]] = PINNED_LABEL_PRODUCERS,
+) -> bool | None:
+    """Pinned producer verdict, or `None` when normal producer-set matching should be used."""
+    spec = specs.get(literal)
+    if spec is None:
+        return None
+    relative_path, pattern, minimum_matches = spec
+    path = root / relative_path
+    if not path.is_file():
+        return False
+    return len(pattern.findall(path.read_text(errors="replace"))) >= minimum_matches
+
+
 def scan(script_dir: Path) -> tuple[list[str], int, int]:
     """Returns the misses, how many labels were checked, and how many scripts were read."""
     # `*.test.sh` are unit tests of the helper functions: every grep in them asserts against a mock
@@ -179,7 +209,8 @@ def scan(script_dir: Path) -> tuple[list[str], int, int]:
                     if len(literal) < MIN_LITERAL or literal in EXTERNAL_PATTERNS:
                         continue
                     checked += 1
-                    found = (
+                    pinned = pinned_label_is_produced(literal)
+                    found = pinned if pinned is not None else (
                         literal.lower() in lowered if "i" in flags else literal in haystack
                     )
                     if not found:
@@ -344,9 +375,34 @@ def self_test() -> int:
             file=sys.stderr,
         )
         return 1
+    if (code := pinned_label_self_test()) != 0:
+        return code
     if (code := probe_key_self_test()) != 0:
         return code
     print("check-e2e-greps: self-test OK (a missing label is reported, a live one is not)")
+    return 0
+
+
+def pinned_label_self_test() -> int:
+    """A comment containing a pinned label must not replace its concrete print producer."""
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        producer = root / "producer.rs"
+        specs = {
+            "critical label": (
+                Path("producer.rs"),
+                re.compile(r'(?m)^\s*println!\("critical label \{value\}"\)'),
+                1,
+            )
+        }
+        producer.write_text('println!("critical label {value}");\n')
+        if pinned_label_is_produced("critical label", root, specs) is not True:
+            print("self-test: concrete pinned producer was not recognized", file=sys.stderr)
+            return 1
+        producer.write_text('// println!("critical label {value}")\n')
+        if pinned_label_is_produced("critical label", root, specs) is not False:
+            print("self-test: a comment vouched for a missing pinned producer", file=sys.stderr)
+            return 1
     return 0
 
 

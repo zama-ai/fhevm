@@ -12,19 +12,12 @@
 //!
 //! ## Act-once IS enforced here
 //!
-//! Unlike disclosure, redemption moves real value, so it cannot be idempotent: the per-handle
-//! write-once, never-closed `burn-redemption` marker PDA is the single persistent "paid out" bit. A
-//! second redeem of the same burned handle fails when Anchor tries to `init` the already-initialized
-//! marker. This is the reference shape for the act-once rule stated at
-//! `zama_host::instructions::verify_public_decrypt` (INVARIANTS #24); the marker is never closed,
-//! because closing it would make the payout replayable.
-//!
-//! ## Deny check at payout
-//!
-//! The denied-subject check is explicit here (fhevm-internal#1763): a denied signer cannot cash out.
-//! When the host grant deny-list is enabled the redeemer must pass the canonical `deny_subject_record`
-//! for the signer; a record marking the signer denied rejects the redemption. This replaces the
-//! request-time no-op `allow_subjects` CPI the dissolved witness relied on.
+//! Unlike disclosure, redemption moves real value, so it cannot be idempotent. Act-once is
+//! **open-at-burn + close-at-redeem/cancel**: each token account may have one `PendingBurn`;
+//! redeem closes it after paying the underlying tokens (rent to the owner). A second redemption
+//! fails because the pending account is gone. Cancel (`cancel_pending_burn`) is the alternate close
+//! path. This is the reference shape for the act-once rule stated at
+//! `zama_host::instructions::verify_public_decrypt` (INVARIANTS #24).
 
 use super::*;
 
@@ -33,7 +26,7 @@ use super::*;
 #[instruction(burned_handle: [u8; 32], cleartext_amount: u64)]
 #[event_cpi]
 pub struct RedeemBurnedAmount<'info> {
-    /// Token owner, redemption recipient, and payer for the replay marker.
+    /// Token owner, redemption recipient, and rent destination for the closed pending burn.
     #[account(mut)]
     pub owner: Signer<'info>,
     /// Confidential mint whose vault backs the redeemed burned amount.
@@ -41,14 +34,14 @@ pub struct RedeemBurnedAmount<'info> {
     /// Confidential token account that produced the burned amount.
     pub token_account: Box<Account<'info, ConfidentialTokenAccount>>,
     /// Underlying SPL mint.
-    pub underlying_mint: Box<Account<'info, SplMint>>,
+    pub underlying_mint: Box<InterfaceAccount<'info, SplMint>>,
     /// Program vault USDC token account.
     #[account(
         mut,
         constraint = vault_usdc.mint == underlying_mint.key() @ ConfidentialTokenError::UnderlyingMintMismatch,
         constraint = vault_usdc.owner == vault_authority.key() @ ConfidentialTokenError::VaultAuthorityMismatch
     )]
-    pub vault_usdc: Box<Account<'info, TokenAccount>>,
+    pub vault_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
     /// Signer's destination USDC token account (any SPL account of the right mint owned by the
     /// signer, not necessarily the ATA).
     #[account(
@@ -56,7 +49,7 @@ pub struct RedeemBurnedAmount<'info> {
         constraint = destination_usdc.mint == underlying_mint.key() @ ConfidentialTokenError::UnderlyingMintMismatch,
         constraint = destination_usdc.owner == owner.key() @ ConfidentialTokenError::OwnerMismatch
     )]
-    pub destination_usdc: Box<Account<'info, TokenAccount>>,
+    pub destination_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
     /// CHECK: PDA authority for the underlying-token vault.
     #[account(seeds = [b"vault-authority", mint.key().as_ref()], bump)]
     pub vault_authority: UncheckedAccount<'info>,
@@ -64,36 +57,27 @@ pub struct RedeemBurnedAmount<'info> {
     /// account/owner by `assert_burned_amount_value_account`; its canonical PDA, layout, host ownership,
     /// and the exact-handle MMR inclusion proof are validated by the `verify_public_decrypt` CPI.
     pub burned_amount_value: Box<Account<'info, zama_host::EncryptedValue>>,
-    /// Replay marker for this burned handle: write-once, never closed, the sole persistent "paid out"
-    /// bit for `(mint, burned_handle)`.
+    /// Pending-burn account opened at burn time; closed on successful redemption.
     #[account(
-        init,
-        payer = owner,
-        space = 8 + BurnRedemption::SPACE,
-        seeds = [b"burn-redemption", mint.key().as_ref(), burned_handle.as_ref()],
-        bump
+        mut,
+        close = owner,
+        seeds = [
+            PENDING_BURN_SEED,
+            mint.key().as_ref(),
+            token_account.key().as_ref()
+        ],
+        bump = pending_burn.bump,
     )]
-    pub redemption_record: Account<'info, BurnRedemption>,
+    pub pending_burn: Account<'info, PendingBurn>,
     /// Host config carrying the current KMS context id and gateway EIP-712 domain.
-    #[account(
-        seeds = [zama_host::HOST_CONFIG_SEED],
-        seeds::program = zama_host::ID,
-        bump = host_config.bump,
-    )]
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// KMS context PDA for the id the certificate commits to (any live context; validated by the
     /// verifier CPI).
     pub kms_context: Box<Account<'info, zama_host::KmsContext>>,
-    /// CHECK: canonical deny-list record for the signer when the host grant deny-list is enabled;
-    /// consulted read-only by `assert_redeem_subject_not_denied`. Absent (must be `None`) when the
-    /// deny-list is disabled.
-    pub deny_subject_record: Option<UncheckedAccount<'info>>,
     /// ZamaHost program used for the stateless verifier CPI.
     pub zama_program: Program<'info, ZamaHost>,
-    /// SPL token program.
-    pub token_program: Program<'info, Token>,
-    /// System program used for the replay marker.
-    pub system_program: Program<'info, System>,
+    /// Classic Token or Token-2022 program owning the underlying mint and token accounts.
+    pub token_program: Interface<'info, TokenInterface>,
 }
 
 /// Redeems a previously burned encrypted amount from the underlying-token vault after the host
@@ -108,6 +92,15 @@ pub fn redeem_burned_amount(
 ) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_confidential_mint_shape(&ctx.accounts.mint)?;
+    assert_supported_underlying_mint(&ctx.accounts.underlying_mint, &ctx.accounts.token_program)?;
+    assert_supported_underlying_token_account(
+        &ctx.accounts.vault_usdc,
+        &ctx.accounts.token_program,
+    )?;
+    assert_supported_underlying_token_account(
+        &ctx.accounts.destination_usdc,
+        &ctx.accounts.token_program,
+    )?;
     assert_host_config_allows_token_response(&ctx.accounts.host_config)?;
     let mint_key = ctx.accounts.mint.key();
     let token_account_key = ctx.accounts.token_account.key();
@@ -120,6 +113,7 @@ pub fn redeem_burned_amount(
         ctx.accounts.vault_usdc.key(),
         ctx.accounts.vault_authority.key(),
         ctx.accounts.underlying_mint.key(),
+        ctx.accounts.token_program.key(),
     )?;
     require_keys_eq!(
         ctx.accounts.token_account.owner,
@@ -137,9 +131,38 @@ pub fn redeem_burned_amount(
         ctx.accounts.owner.key(),
     )?;
 
-    // ValueAccount binding: the burned handle need not be current. The burn already made it publicly
-    // decryptable (DD-036 / Vector 2), so a historical handle replaced by a later burn stays
-    // redeemable; the exact-handle MMR public-decrypt proof is checked inside the verifier CPI.
+    let pending = &ctx.accounts.pending_burn;
+    require_keys_eq!(
+        pending.owner,
+        ctx.accounts.owner.key(),
+        ConfidentialTokenError::PendingBurnMismatch
+    );
+    require_keys_eq!(
+        pending.mint,
+        mint_key,
+        ConfidentialTokenError::PendingBurnMismatch
+    );
+    require_keys_eq!(
+        pending.token_account,
+        token_account_key,
+        ConfidentialTokenError::PendingBurnMismatch
+    );
+    require!(
+        pending.burned_handle == burned_handle,
+        ConfidentialTokenError::PendingBurnMismatch
+    );
+    require_keys_eq!(
+        pending.burned_encrypted_value,
+        ctx.accounts.burned_amount_value.key(),
+        ConfidentialTokenError::PendingBurnMismatch
+    );
+
+    require!(
+        ctx.accounts.burned_amount_value.current_handle == burned_handle,
+        ConfidentialTokenError::PendingBurnHandleNotCurrent
+    );
+    // The sequential pending-burn invariant makes the burned handle current until redeem or cancel.
+    // The exact-handle public-decrypt proof is checked inside the verifier CPI.
     assert_burned_amount_value_account(
         &ctx.accounts.burned_amount_value,
         burned_handle,
@@ -147,13 +170,6 @@ pub fn redeem_burned_amount(
         token_account_key,
         ctx.accounts.owner.key(),
         ctx.accounts.mint.compute_signer,
-    )?;
-
-    // Explicit deny-list check at payout: a denied signer cannot cash out.
-    assert_redeem_subject_not_denied(
-        &ctx.accounts.host_config,
-        ctx.accounts.owner.key(),
-        ctx.accounts.deny_subject_record.as_ref(),
     )?;
 
     // Verify the KMS certificate against the context the cert names (any live, non-destroyed
@@ -194,14 +210,7 @@ pub fn redeem_burned_amount(
         ctx.accounts.mint.decimals,
     )?;
 
-    let redemption = &mut ctx.accounts.redemption_record;
-    redemption.mint = mint_key;
-    redemption.owner = ctx.accounts.owner.key();
-    redemption.token_account = token_account_key;
-    redemption.burned_handle = burned_handle;
-    redemption.burned_encrypted_value = ctx.accounts.burned_amount_value.key();
-    redemption.cleartext_amount = cleartext_amount;
-    redemption.bump = ctx.bumps.redemption_record;
+    // The pending account closes via Anchor `close = owner`.
 
     emit_cpi!(BurnRedeemedEvent {
         version: APP_EVENT_VERSION,

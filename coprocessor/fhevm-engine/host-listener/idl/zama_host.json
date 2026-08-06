@@ -34,7 +34,10 @@
         {
           "name": "authority",
           "docs": [
-            "Current allowed subject on the encrypted value account."
+            "Must equal `EncryptedValue.encrypted_value_account_authority` (same gate as",
+            "`fhe_execute` persistent create/update). Subjects alone cannot mutate",
+            "membership — apps that store a PDA in `encrypted_value_account_authority`",
+            "rotate auditors by CPI + `invoke_signed` as that PDA."
           ],
           "signer": true
         },
@@ -593,7 +596,8 @@
         {
           "name": "authority",
           "docs": [
-            "Current allowed subject."
+            "Must equal `EncryptedValue.encrypted_value_account_authority`; decrypt subjects cannot",
+            "publish a handle."
           ],
           "signer": true
         },
@@ -623,10 +627,6 @@
               }
             ]
           }
-        },
-        {
-          "name": "deny_subject_record",
-          "optional": true
         },
         {
           "name": "system_program",
@@ -661,7 +661,10 @@
         {
           "name": "authority",
           "docs": [
-            "Current allowed subject on the encrypted value account."
+            "Must equal `EncryptedValue.encrypted_value_account_authority` (same gate as",
+            "`fhe_execute` persistent create/update). Subjects alone cannot remove peers —",
+            "apps that store a PDA in `encrypted_value_account_authority` rotate auditors by",
+            "CPI + `invoke_signed` as that PDA."
           ],
           "signer": true
         },
@@ -691,10 +694,6 @@
               }
             ]
           }
-        },
-        {
-          "name": "deny_subject_record",
-          "optional": true
         }
       ],
       "args": [

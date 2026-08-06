@@ -184,7 +184,7 @@ export type WrapUsdcAsyncInput<
   zamaProgram?: Address<TAccountZamaProgram>;
   /** ZamaHost config used for handle derivation. */
   hostConfig: Address<TAccountHostConfig>;
-  /** SPL token program. */
+  /** Classic Token or Token-2022 program owning the underlying mint and token accounts. */
   tokenProgram?: Address<TAccountTokenProgram>;
   /** System program used for ACL account creation. */
   systemProgram?: Address<TAccountSystemProgram>;
@@ -442,7 +442,7 @@ export type WrapUsdcInput<
   zamaProgram?: Address<TAccountZamaProgram>;
   /** ZamaHost config used for handle derivation. */
   hostConfig: Address<TAccountHostConfig>;
-  /** SPL token program. */
+  /** Classic Token or Token-2022 program owning the underlying mint and token accounts. */
   tokenProgram?: Address<TAccountTokenProgram>;
   /** System program used for ACL account creation. */
   systemProgram?: Address<TAccountSystemProgram>;
@@ -667,7 +667,7 @@ export type ParsedWrapUsdcInstruction<
     zamaProgram: TAccountMetas[12];
     /** ZamaHost config used for handle derivation. */
     hostConfig: TAccountMetas[13];
-    /** SPL token program. */
+    /** Classic Token or Token-2022 program owning the underlying mint and token accounts. */
     tokenProgram: TAccountMetas[14];
     /** System program used for ACL account creation. */
     systemProgram: TAccountMetas[15];

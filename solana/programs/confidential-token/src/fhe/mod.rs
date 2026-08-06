@@ -541,9 +541,8 @@ fn validate_deny_subject_records_for_grant_subjects<'info>(
                 .any(|later| later.key() == supplied.key()),
             ConfidentialTokenError::UnexpectedRemainingAccounts
         );
-        // A supplied deny record must witness either an output authority or a subject a
-        // persistent output grants for the first time (created or update-added) — the host
-        // deny-list-checks both, so both may reach it through remaining accounts.
+        // A supplied deny record must witness either the authority performing a real grant or a
+        // subject a persistent output grants for the first time (created or update-added).
         require!(
             is_deny_record_for_authority(supplied.key(), encrypted_value_account_authority)
                 || extra_output_authorities

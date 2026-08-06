@@ -14,8 +14,9 @@ this note records the operational model in one place.
   be present in the value's allowed-subject set when token compute needs to use that value.
 - Only `fhe_execute` persistent outputs can create or update an `EncryptedValue` handle; there is no
   instruction that accepts a caller-chosen handle, because such a handle would carry no proof of
-  ciphertext provenance. Being an allowed subject is enough to compute/use, grant, request user decrypt, or make the exact current
-  handle public, but it is not enough to update the encrypted value account. Persistent-output update checks
+  ciphertext provenance. Being an allowed subject is enough to compute/use and request user
+  decrypt. It is not enough to grant peers, make a handle public, or update the encrypted value
+  account; those operations require the encrypted value account authority. Persistent-output update checks
   `previous_handle` and `previous_subjects` against current account state so stale off-chain state
   cannot rotate a handle.
 
@@ -40,7 +41,8 @@ this note records the operational model in one place.
 ## Allowed Subjects
 
 - The ACL is one allowed-subject set. There are no role bits in the MVP account layout. Allowed means
-  compute/use, grant another subject, request user decrypt, and make the exact current handle public.
+  compute/use and request user decrypt. Peer grants and exact-handle public sealing require the
+  encrypted value account authority.
 - Persistent-output creation requires at least one subject and at most
   `MAX_ENCRYPTED_VALUE_SUBJECTS = 8`. Subject-list overflow and MMR peak overflow fail explicitly
   instead of relying on implicit vector or arithmetic limits.
@@ -150,9 +152,10 @@ flowchart TD
 Pull-based, mirroring OZ `ConfidentialFungibleTokenERC20Wrapper` unwrap→finalizeUnwrap. The burned
 delta is created public in the burn's `fhe_execute` CPI; redemption is a single `redeem_burned_amount` that
 consumes the stateless host `verify_public_decrypt` verifier (the request-witness lifecycle was
-dissolved in fhevm-internal#1763), authorizing by the pinned handle's public-decrypt proof against the
-live KMS context the cert names (any non-destroyed context, fhevm-internal#1765), so it stays valid
-after later burns update the encrypted value account.
+dissolved in fhevm-internal#1763), authorizing by the pending handle's public-decrypt proof against the
+live KMS context the cert names (any non-destroyed context, fhevm-internal#1765). The handle must still
+be current; a second burn on the same token account is rejected until redemption or cancellation
+closes `PendingBurn`.
 
 ```mermaid
 sequenceDiagram
@@ -166,8 +169,8 @@ sequenceDiagram
     KMS-->>KMS: decrypt burned handle (public proof),<br/>sign cleartext cert
     U->>CT: redeem_burned_amount(burned_handle, cleartext, cert, MMR proof)
     CT->>ZH: verify_public_decrypt (live KMS context named by the cert + proof vs peaks)
-    Note over CT: replay-marker PDA created (consume-once, permanent)
-    CT-->>U: release underlying (over-collateralized), mark paid out
+    Note over CT: PendingBurn closed (consume-once)
+    CT-->>U: release underlying (over-collateralized)
 ```
 
 ### Event transport + off-chain reconstruction (DD-037)
@@ -218,7 +221,7 @@ to a follow-up.
 - DD-034: Solana compute is scheduled eagerly (`is_allowed` is a scheduling gate, not decrypt auth).
 - DD-035: proof building is a standalone untrusted service; KMS re-verifies proofs against confirmed
   chain state.
-- DD-036: burn-redemption consume authorizes by MMR public-decrypt proof (created-public delta), not the
-  live handle — closes the Vector-2 fund-stranding window.
+- DD-036: burn-redemption consume authorizes by an MMR public-decrypt proof; DD-045 later narrows
+  settlement to one current-handle `PendingBurn` per token account.
 - DD-037: `fhe_execute` events are `emit_cpi!`-only (no `emit!` fallback); created-public outputs are
   restricted to CPI-transportable executions so their handles are always recoverable off-chain.

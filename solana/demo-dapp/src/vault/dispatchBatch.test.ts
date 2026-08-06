@@ -87,6 +87,11 @@ describe('buildDispatchBatchInstruction', () => {
       await valueAccountPda(joinConfidentialMint, batchJoinTokenAccount, utf8('balance_________________________')),
       await valueAccountPda(joinConfidentialMint, totalSupplyAuthority, utf8('total_supply____________________')),
       await valueAccountPda(joinConfidentialMint, batchJoinTokenAccount, utf8('burned_amount___________________')),
+      await pda(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, [
+        utf8('pending-burn'),
+        base58.decode(joinConfidentialMint),
+        base58.decode(batchJoinTokenAccount),
+      ]),
       await pda(ZAMA_HOST_PROGRAM_ADDRESS, [utf8('__event_authority')]),
       ZAMA_HOST_PROGRAM_ADDRESS,
       hostConfig,
@@ -117,7 +122,8 @@ describe('buildDispatchBatchInstruction', () => {
     expect(addresses[7]).toBe('8iRxqzbzVoCDyN5ruCrtDs3HEJXL6S5khbmijMta8j6z'); // batchJoinTokenAccount
     expect(addresses[8]).toBe('6L34CwYQLjs4e5sHTjCsoNk5UBZwDtTMkKegf7tRdoM7'); // batchBalanceValue
     expect(addresses[9]).toBe('D1kRDX4FNzfiFqnJCjX443t7ZgN3jCk2NLtNk93eH8pt'); // totalSupplyValue
-    expect(addresses[11]).toBe('7usNGbH9WupMAsyDeqdUEoKrjisKcgusGjDiju4vNog'); // zamaEventAuthority
-    expect(addresses[14]).toBe('2KQ5N8YEUTk8hQWXBnkGjsvKPzm2rh2nFH6PeoVt7q8U'); // tokenEventAuthority
+    // addresses[10] = batchBurnedAmountValue; addresses[11] = pendingBurn
+    expect(addresses[12]).toBe('7usNGbH9WupMAsyDeqdUEoKrjisKcgusGjDiju4vNog'); // zamaEventAuthority
+    expect(addresses[15]).toBe('2KQ5N8YEUTk8hQWXBnkGjsvKPzm2rh2nFH6PeoVt7q8U'); // tokenEventAuthority
   });
 });

@@ -16,9 +16,9 @@ export type SolanaVaultOpenBatchParameters = {
    */
   readonly recentSlot: bigint;
   /**
-   * The addresses to seed the settle table with — every one of settle's 34 accounts EXCEPT the fee
-   * payer (always static) and `redemption_record` (seeded by the burned handle, which only exists
-   * after `dispatch`, so it cannot be in a table frozen now). All 32 are derivable at open time.
+   * The addresses to seed the settle table with — every one of settle's accounts EXCEPT the fee
+   * payer (always static). Includes `pending_burn`, which is known at
+   * open time. All entries are derivable at open time.
    */
   readonly settleLookupTableAddresses: readonly Address[];
 };

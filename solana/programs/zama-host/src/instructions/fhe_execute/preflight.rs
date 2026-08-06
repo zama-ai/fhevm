@@ -362,13 +362,13 @@ fn preflight_output(
             preflight.mark_dictionary(*output_account_index)?;
             preflight.mark_dictionary(*output_label_index)?;
             let authority = preflight.mark_output_authority(*output_authority_index)?;
-            preflight.mark_deny_record(authority)?;
             // Every newly granted subject is deny-checked in the bind pass; mark
             // their deny records here so finish() accounts for them. On an update
             // the new set is `output_subjects \ previous_state.subjects` from
             // instruction data alone — a lying previous state is rejected later
             // with PreviousStateMismatch, so trusting it for account-marking is
             // safe. On a create (`None` previous) every output subject is a new grant.
+            let mut adds_subject = false;
             for subject_index in output_subject_indexes {
                 let subject = Pubkey::new_from_array(preflight.mark_dictionary(*subject_index)?);
                 let is_new_grant = match previous_state {
@@ -376,8 +376,12 @@ fn preflight_output(
                     None => true,
                 };
                 if is_new_grant {
+                    adds_subject = true;
                     preflight.mark_deny_record(subject)?;
                 }
+            }
+            if adds_subject {
+                preflight.mark_deny_record(authority)?;
             }
             preflight.persistent_outputs_written.push(output_key);
         }

@@ -79,6 +79,7 @@ export const DEMO_REQUIRED_COMMANDS = [
   "git",
   "grep",
   "head",
+  "id",
   "kill",
   "lsof",
   "mkdir",
@@ -1114,6 +1115,7 @@ const lifecycleEnv = (
   DEMO_LIFECYCLE_DIR: runtimeDir,
   [FHEVM_COMPOSE_PROJECT_ENV]: composeProject,
   FHEVM_REFUSE_EXISTING: "1",
+  SOLANA_LEDGER_DIR: demoSolanaLedgerPath(path.basename(runtimeDir)),
   SOLANA_LOG_DIR: path.join(runtimeDir, "logs"),
 });
 
@@ -1145,6 +1147,40 @@ const readyMessage = (
 
 export const bootAuthorizationTokenPath = (bootId: string): string =>
   path.join(DEMO_RUNTIME_DIR, bootId, DEMO_AUTH_TOKEN_FILENAME);
+
+export const demoSolanaLedgerPath = (bootId: string): string => {
+  demoComposeProject(bootId);
+  const userId = process.getuid?.();
+  if (userId === undefined) {
+    throw new Error("demo Solana ledger requires a Unix user id");
+  }
+  const directoryName = createHash("sha256")
+    .update(`${REPO_ROOT}\0${bootId}`)
+    .digest("hex")
+    .slice(0, 24);
+  return path.join("/tmp", `fhevm-demo-${userId}`, `${directoryName}.ledger`);
+};
+
+const ensurePrivateDemoTempDirectory = async (
+  directoryPath: string,
+): Promise<void> => {
+  await fs.mkdir(directoryPath, { recursive: true, mode: 0o700 });
+  const directory = await fs.lstat(directoryPath);
+  const userId = process.getuid?.();
+  if (userId === undefined) {
+    throw new Error("demo Solana ledger requires a Unix user id");
+  }
+  if (
+    !directory.isDirectory() ||
+    directory.isSymbolicLink() ||
+    directory.uid !== userId
+  ) {
+    throw new Error(
+      `demo Solana ledger parent must be a private owned directory: ${directoryPath}`,
+    );
+  }
+  await fs.chmod(directoryPath, 0o700);
+};
 
 /** Loads the capability for the current running lifecycle-owned boot into this process only. */
 export const readCurrentDemoAuthorization = async () => {
@@ -1568,7 +1604,15 @@ export const upDemo = async ({
       networks: [],
       processes: {},
     };
-    await writeDemoManifest(manifest);
+    const ledgerPath = demoSolanaLedgerPath(bootId);
+    await ensurePrivateDemoTempDirectory(path.dirname(ledgerPath));
+    await fs.mkdir(ledgerPath, { mode: 0o700 });
+    try {
+      await writeDemoManifest(manifest);
+    } catch (error) {
+      await fs.rm(ledgerPath, { recursive: true, force: true });
+      throw error;
+    }
     try {
       const authorization = await createDemoAuthorizationFile(
         runtimeDir,
@@ -2003,6 +2047,10 @@ const stopDemoManifest = async (manifest: DemoManifest): Promise<void> => {
     await readOwnedDockerResources(manifest.composeProject),
   );
   await removeExactDockerResources(manifest);
+  await fs.rm(demoSolanaLedgerPath(manifest.bootId), {
+    recursive: true,
+    force: true,
+  });
   await fs.rm(bootAuthorizationTokenPath(manifest.bootId), { force: true });
   await fs.rm(DEMO_CONFIG_PATH, { force: true });
   await fs.rm(path.join(REPO_ROOT, ".fhevm", "state", "state.json"), {

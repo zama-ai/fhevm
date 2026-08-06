@@ -11,9 +11,414 @@
   ],
   "instructions": [
     {
+      "name": "allow_token_account_subjects",
+      "docs": [
+        "Grants subjects on a token-account-scoped encrypted value by CPI to host",
+        "`allow_subjects`, signing as the token-account PDA",
+        "(`EncryptedValue.encrypted_value_account_authority`).",
+        "Owner-authorized; auditors remain decrypt-only subjects (fhevm-internal#1862 #13)."
+      ],
+      "discriminator": [
+        57,
+        89,
+        32,
+        224,
+        131,
+        12,
+        115,
+        223
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "Pays for EncryptedValue realloc growth on the host."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "owner",
+          "docs": [
+            "Token account owner authorizing the grant."
+          ],
+          "signer": true,
+          "relations": [
+            "token_account"
+          ]
+        },
+        {
+          "name": "mint",
+          "relations": [
+            "token_account"
+          ]
+        },
+        {
+          "name": "token_account",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  45,
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "encrypted_value",
+          "docs": [
+            "Encrypted value whose encrypted value account authority must equal `token_account`."
+          ],
+          "writable": true
+        },
+        {
+          "name": "host_config"
+        },
+        {
+          "name": "deny_subject_record",
+          "optional": true
+        },
+        {
+          "name": "zama_program",
+          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "subjects",
+          "type": {
+            "vec": "pubkey"
+          }
+        }
+      ]
+    },
+    {
+      "name": "allow_total_supply_subjects",
+      "docs": [
+        "Grants decrypt subjects on the encrypted total supply. The existing mint authority",
+        "authorizes the operation; the total-supply PDA signs the host CPI."
+      ],
+      "discriminator": [
+        185,
+        238,
+        101,
+        36,
+        105,
+        179,
+        19,
+        224
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "Pays for encrypted value account growth."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "authority",
+          "docs": [
+            "Existing confidential mint authority. Governance may own this key later."
+          ],
+          "signer": true,
+          "relations": [
+            "mint"
+          ]
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "total_supply_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  116,
+                  97,
+                  108,
+                  45,
+                  115,
+                  117,
+                  112,
+                  112,
+                  108,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "total_supply_value",
+          "docs": [
+            "Encrypted total-supply value whose subjects are changed."
+          ],
+          "writable": true
+        },
+        {
+          "name": "host_config"
+        },
+        {
+          "name": "deny_subject_record",
+          "optional": true
+        },
+        {
+          "name": "zama_program",
+          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "subjects",
+          "type": {
+            "vec": "pubkey"
+          }
+        }
+      ]
+    },
+    {
+      "name": "cancel_pending_burn",
+      "docs": [
+        "Cancels a pending burn by FHE-crediting the burned amount back onto confidential balance and",
+        "encrypted total supply, then closing the `PendingBurn` account."
+      ],
+      "discriminator": [
+        127,
+        252,
+        36,
+        120,
+        42,
+        166,
+        166,
+        86
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "docs": [
+            "Token owner, cancel authority, and rent destination for the closed pending-burn account."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mint",
+          "docs": [
+            "Confidential mint whose compute signer authorizes the balance/supply updates."
+          ]
+        },
+        {
+          "name": "token_account",
+          "docs": [
+            "Token account whose balance is re-credited."
+          ],
+          "writable": true
+        },
+        {
+          "name": "compute_signer",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  104,
+                  101,
+                  45,
+                  99,
+                  111,
+                  109,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "total_supply_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  116,
+                  97,
+                  108,
+                  45,
+                  115,
+                  117,
+                  112,
+                  112,
+                  108,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "balance_value",
+          "docs": [
+            "Stable balance encrypted value account; read for the current handle and replaced by this execution."
+          ],
+          "writable": true
+        },
+        {
+          "name": "total_supply_value",
+          "docs": [
+            "Stable total-supply encrypted value account; read for the current handle and replaced by this execution."
+          ],
+          "writable": true
+        },
+        {
+          "name": "burned_amount_value",
+          "docs": [
+            "Shared `burned_amount` encrypted value account; read as a persistent operand (left unchanged)."
+          ]
+        },
+        {
+          "name": "pending_burn",
+          "docs": [
+            "Pending-burn account; closed on successful cancellation."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  101,
+                  110,
+                  100,
+                  105,
+                  110,
+                  103,
+                  45,
+                  98,
+                  117,
+                  114,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              },
+              {
+                "kind": "account",
+                "path": "token_account"
+              }
+            ]
+          }
+        },
+        {
+          "name": "host_config",
+          "docs": [
+            "ZamaHost config used for handle derivation."
+          ]
+        },
+        {
+          "name": "zama_event_authority"
+        },
+        {
+          "name": "zama_program",
+          "docs": [
+            "ZamaHost program used for FHE operations."
+          ],
+          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "System program used for ACL account creation on the balance/supply update path."
+          ],
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "hcu_block_meter",
+          "docs": [
+            "canonical `[\"hcu-block-meter\", compute_signer]` PDA. Supplied by an untrusted mint under a",
+            "metering-band cap; omitted when the mint is trusted or the cap is unrestricted."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "hcu_trusted_app_record",
+          "docs": [
+            "canonical `[\"hcu-trusted\", compute_signer]` PDA. Present + valid bypasses the cap; absent",
+            "means the mint is metered."
+          ],
+          "optional": true
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "confidential_burn",
       "docs": [
-        "Burns an encrypted amount by updating the account balance and encrypted total supply."
+        "Burns an encrypted amount by updating the account balance and encrypted total supply.",
+        "Exactly one burn may be pending for a token account; redeem or cancel it before burning again."
       ],
       "discriminator": [
         4,
@@ -120,10 +525,14 @@
         {
           "name": "burned_amount_value",
           "docs": [
-            "account's first burn, replaced in place thereafter to each burn's own",
-            "delta. Each burn makes its own delta handle publicly decryptable at burn",
-            "(ERC-7984 `unwrap` parity), so every burn stays permanently redeemable",
-            "even after a later burn updates this encrypted value account (DD-036 / Vector 2 closed)."
+            "account's first burn and replaced after the prior pending burn is settled."
+          ],
+          "writable": true
+        },
+        {
+          "name": "pending_burn",
+          "docs": [
+            "A burn is rejected before execution while this account is already initialized."
           ],
           "writable": true
         },
@@ -146,7 +555,7 @@
         {
           "name": "system_program",
           "docs": [
-            "System program used for ACL account creation."
+            "System program used for ACL account creation and the pending-burn PDA."
           ],
           "address": "11111111111111111111111111111111"
         },
@@ -190,7 +599,7 @@
       "docs": [
         "Burns an encrypted amount taken from an existing on-chain `EncryptedValue` (a computed or",
         "received handle) instead of a freshly attested client-side encryption — the burn-side analog",
-        "of `confidential_transfer_from_value` (fhevm-internal#1755). The batcher uses this to burn a",
+        "of `confidential_transfer_from_value` (fhevm-internal#1755). The batcher uses this to burn an",
         "execution's computed encrypted total, then requests the KMS burn certificate. The signing owner",
         "must be in the amount value's subject set (the token spend gate); the amount is spent",
         "read-only, and the burned-amount output is created publicly decryptable exactly as in",
@@ -310,9 +719,14 @@
         {
           "name": "burned_amount_value",
           "docs": [
-            "as in [`ConfidentialBurn`]; created on the account's first burn, replaced in place",
-            "thereafter to each burn's own delta (DD-036 / Vector 2). This is the same output shape",
-            "`redeem_burned_amount` later consumes — only where the amount comes from differs."
+            "decryptable exactly as in [`ConfidentialBurn`]."
+          ],
+          "writable": true
+        },
+        {
+          "name": "pending_burn",
+          "docs": [
+            "A burn is rejected before execution while this account is already initialized."
           ],
           "writable": true
         },
@@ -321,8 +735,10 @@
           "docs": [
             "The existing encrypted amount to burn: a computed or received `euint64` handle. Read-only",
             "persistent operand — never replaced, never consumed. Its address is the canonical PDA of its",
-            "own `(domain, authority, label)` fields, so an encrypted value account from any app",
-            "may be passed here once its owner has granted the mint's compute subject via `allow_subjects`."
+            "own `(domain, authority, label)` fields, so an encrypted value account from any app may be",
+            "passed here once that app's encrypted value account authority has granted the mint's compute",
+            "subject. `allow_token_account_subjects` applies only to confidential-token-owned values;",
+            "another app must authorize through its own authority path."
           ]
         },
         {
@@ -344,7 +760,7 @@
         {
           "name": "system_program",
           "docs": [
-            "System program used for ACL account creation."
+            "System program used for ACL account creation and the pending-burn PDA."
           ],
           "address": "11111111111111111111111111111111"
         },
@@ -633,8 +1049,10 @@
           "docs": [
             "The existing encrypted amount to spend: a computed or received `euint64` handle. Read-only",
             "persistent operand — never replaced, never consumed. Its address is the canonical PDA of its",
-            "own `(domain, authority, label)` fields, so an encrypted value account from any app",
-            "may be passed here once its owner has granted the mint's compute subject via `allow_subjects`."
+            "own `(domain, authority, label)` fields, so an encrypted value account from any app may be",
+            "passed here once that app's encrypted value account authority has granted the mint's compute",
+            "subject. `allow_token_account_subjects` applies only to confidential-token-owned values;",
+            "another app must authorize through its own authority path."
           ]
         },
         {
@@ -710,6 +1128,13 @@
           ]
         },
         {
+          "name": "token_account",
+          "docs": [
+            "Confidential token account for account-scoped kinds. Must be absent for total supply."
+          ],
+          "optional": true
+        },
+        {
           "name": "encrypted_value",
           "docs": [
             "The `EncryptedValue` encrypted value account the disclosed handle belongs to.",
@@ -720,64 +1145,7 @@
           "name": "host_config",
           "docs": [
             "Host config carrying the current KMS context id and gateway EIP-712 domain."
-          ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  115,
-                  116,
-                  45,
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                76,
-                211,
-                2,
-                45,
-                255,
-                80,
-                74,
-                103,
-                92,
-                175,
-                45,
-                155,
-                79,
-                64,
-                20,
-                208,
-                179,
-                220,
-                62,
-                161,
-                127,
-                251,
-                151,
-                186,
-                53,
-                92,
-                236,
-                90,
-                147,
-                58,
-                48,
-                238
-              ]
-            }
-          }
+          ]
         },
         {
           "name": "kms_context",
@@ -801,6 +1169,14 @@
         }
       ],
       "args": [
+        {
+          "name": "kind",
+          "type": {
+            "defined": {
+              "name": "DisclosedValueKind"
+            }
+          }
+        },
         {
           "name": "handle",
           "type": {
@@ -880,6 +1256,12 @@
           "name": "underlying_mint",
           "docs": [
             "Underlying SPL mint wrapped by this confidential mint."
+          ]
+        },
+        {
+          "name": "token_program",
+          "docs": [
+            "Classic Token or Token-2022 program owning `underlying_mint`."
           ]
         },
         {
@@ -993,7 +1375,7 @@
     {
       "name": "initialize_token_account",
       "docs": [
-        "Initializes a token account and creates its initial confidential balance handle."
+        "Initializes a token account and creates its zero confidential balance handle."
       ],
       "discriminator": [
         150,
@@ -1139,10 +1521,200 @@
           "name": "program"
         }
       ],
+      "args": []
+    },
+    {
+      "name": "make_token_account_handle_public",
+      "docs": [
+        "Seals one token-account state handle publicly. The owner authorizes the request and the",
+        "token-account PDA signs as encrypted value account authority."
+      ],
+      "discriminator": [
+        59,
+        214,
+        155,
+        57,
+        204,
+        66,
+        251,
+        94
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "owner",
+          "signer": true,
+          "relations": [
+            "token_account"
+          ]
+        },
+        {
+          "name": "mint",
+          "relations": [
+            "token_account"
+          ]
+        },
+        {
+          "name": "token_account",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  45,
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "encrypted_value",
+          "writable": true
+        },
+        {
+          "name": "host_config"
+        },
+        {
+          "name": "zama_program",
+          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
       "args": [
         {
-          "name": "initial_balance",
-          "type": "u64"
+          "name": "kind",
+          "type": {
+            "defined": {
+              "name": "DisclosedValueKind"
+            }
+          }
+        },
+        {
+          "name": "handle",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "make_total_supply_handle_public",
+      "docs": [
+        "Seals encrypted total supply publicly. The mint authority authorizes the request and the",
+        "total-supply PDA signs as encrypted value account authority."
+      ],
+      "discriminator": [
+        235,
+        194,
+        199,
+        80,
+        64,
+        227,
+        125,
+        2
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "mint"
+          ]
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "total_supply_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  116,
+                  97,
+                  108,
+                  45,
+                  115,
+                  117,
+                  112,
+                  112,
+                  108,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "total_supply_value",
+          "docs": [
+            "Encrypted total-supply value whose current handle is sealed."
+          ],
+          "writable": true
+        },
+        {
+          "name": "host_config"
+        },
+        {
+          "name": "zama_program",
+          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "handle",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
         }
       ]
     },
@@ -1152,8 +1724,8 @@
         "Redeems a KMS-certified burned amount from the SPL vault through the stateless host verifier.",
         "Verifies the KMS `PublicDecryptVerification` certificate against the context the cert names",
         "(any live, non-destroyed context, EVM-parity rotation grace) plus an exact-handle MMR",
-        "public-decrypt proof, then pays out `cleartext_amount` and writes the",
-        "permanent per-handle `BurnRedemption` marker. See `instructions::redeem_burned_amount`."
+        "public-decrypt proof, then pays out `cleartext_amount` and closes the `PendingBurn`",
+        "account opened at burn time. See `instructions::redeem_burned_amount`."
       ],
       "discriminator": [
         75,
@@ -1169,7 +1741,7 @@
         {
           "name": "owner",
           "docs": [
-            "Token owner, redemption recipient, and payer for the replay marker."
+            "Token owner, redemption recipient, and rent destination for the closed pending burn."
           ],
           "writable": true,
           "signer": true
@@ -1247,10 +1819,9 @@
           ]
         },
         {
-          "name": "redemption_record",
+          "name": "pending_burn",
           "docs": [
-            "Replay marker for this burned handle: write-once, never closed, the sole persistent \"paid out\"",
-            "bit for `(mint, burned_handle)`."
+            "Pending-burn account opened at burn time; closed on successful redemption."
           ],
           "writable": true,
           "pda": {
@@ -1258,20 +1829,17 @@
               {
                 "kind": "const",
                 "value": [
+                  112,
+                  101,
+                  110,
+                  100,
+                  105,
+                  110,
+                  103,
+                  45,
                   98,
                   117,
                   114,
-                  110,
-                  45,
-                  114,
-                  101,
-                  100,
-                  101,
-                  109,
-                  112,
-                  116,
-                  105,
-                  111,
                   110
                 ]
               },
@@ -1280,8 +1848,8 @@
                 "path": "mint"
               },
               {
-                "kind": "arg",
-                "path": "burned_handle"
+                "kind": "account",
+                "path": "token_account"
               }
             ]
           }
@@ -1290,64 +1858,7 @@
           "name": "host_config",
           "docs": [
             "Host config carrying the current KMS context id and gateway EIP-712 domain."
-          ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  115,
-                  116,
-                  45,
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                76,
-                211,
-                2,
-                45,
-                255,
-                80,
-                74,
-                103,
-                92,
-                175,
-                45,
-                155,
-                79,
-                64,
-                20,
-                208,
-                179,
-                220,
-                62,
-                161,
-                127,
-                251,
-                151,
-                186,
-                53,
-                92,
-                236,
-                90,
-                147,
-                58,
-                48,
-                238
-              ]
-            }
-          }
+          ]
         },
         {
           "name": "kms_context",
@@ -1355,14 +1866,6 @@
             "KMS context PDA for the id the certificate commits to (any live context; validated by the",
             "verifier CPI)."
           ]
-        },
-        {
-          "name": "deny_subject_record",
-          "docs": [
-            "consulted read-only by `assert_redeem_subject_not_denied`. Absent (must be `None`) when the",
-            "deny-list is disabled."
-          ],
-          "optional": true
         },
         {
           "name": "zama_program",
@@ -1374,16 +1877,8 @@
         {
           "name": "token_program",
           "docs": [
-            "SPL token program."
-          ],
-          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-        },
-        {
-          "name": "system_program",
-          "docs": [
-            "System program used for the replay marker."
-          ],
-          "address": "11111111111111111111111111111111"
+            "Classic Token or Token-2022 program owning the underlying mint and token accounts."
+          ]
         },
         {
           "name": "event_authority"
@@ -1428,6 +1923,172 @@
               "name": "MmrInclusionProof"
             }
           }
+        }
+      ]
+    },
+    {
+      "name": "remove_token_account_subject",
+      "docs": [
+        "Removes one subject from a token-account-scoped encrypted value by CPI to host",
+        "`remove_subject`, signing as the token-account PDA",
+        "(`EncryptedValue.encrypted_value_account_authority`)."
+      ],
+      "discriminator": [
+        135,
+        46,
+        109,
+        207,
+        38,
+        36,
+        26,
+        243
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true,
+          "relations": [
+            "token_account"
+          ]
+        },
+        {
+          "name": "mint",
+          "relations": [
+            "token_account"
+          ]
+        },
+        {
+          "name": "token_account",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  45,
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "encrypted_value",
+          "docs": [
+            "Encrypted value whose encrypted value account authority must equal `token_account`."
+          ],
+          "writable": true
+        },
+        {
+          "name": "host_config"
+        },
+        {
+          "name": "zama_program",
+          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+        }
+      ],
+      "args": [
+        {
+          "name": "subject",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "remove_total_supply_subject",
+      "docs": [
+        "Removes one decrypt subject from the encrypted total supply. The existing mint authority",
+        "authorizes the operation; the total-supply PDA signs the host CPI."
+      ],
+      "discriminator": [
+        159,
+        210,
+        247,
+        214,
+        248,
+        17,
+        118,
+        84
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "docs": [
+            "Existing confidential mint authority. Governance may own this key later."
+          ],
+          "signer": true,
+          "relations": [
+            "mint"
+          ]
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "total_supply_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  116,
+                  97,
+                  108,
+                  45,
+                  115,
+                  117,
+                  112,
+                  112,
+                  108,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "total_supply_value",
+          "docs": [
+            "Encrypted total-supply value whose subjects are changed."
+          ],
+          "writable": true
+        },
+        {
+          "name": "host_config"
+        },
+        {
+          "name": "zama_program",
+          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+        }
+      ],
+      "args": [
+        {
+          "name": "subject",
+          "type": "pubkey"
         }
       ]
     },
@@ -1608,9 +2269,8 @@
         {
           "name": "token_program",
           "docs": [
-            "SPL token program."
-          ],
-          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+            "Classic Token or Token-2022 program owning the underlying mint and token accounts."
+          ]
         },
         {
           "name": "system_program",
@@ -1653,19 +2313,6 @@
   ],
   "accounts": [
     {
-      "name": "BurnRedemption",
-      "discriminator": [
-        98,
-        115,
-        13,
-        164,
-        230,
-        159,
-        128,
-        195
-      ]
-    },
-    {
       "name": "ConfidentialMint",
       "discriminator": [
         63,
@@ -1689,6 +2336,19 @@
         132,
         103,
         199
+      ]
+    },
+    {
+      "name": "PendingBurn",
+      "discriminator": [
+        203,
+        79,
+        129,
+        4,
+        87,
+        94,
+        246,
+        250
       ]
     }
   ],
@@ -1756,6 +2416,19 @@
         120,
         122,
         51
+      ]
+    },
+    {
+      "name": "PendingBurnCancelledEvent",
+      "discriminator": [
+        74,
+        214,
+        156,
+        105,
+        131,
+        213,
+        242,
+        119
       ]
     },
     {
@@ -1970,18 +2643,63 @@
     },
     {
       "code": 6039,
-      "name": "RedemptionSubjectDenied",
-      "msg": "redemption subject is denied"
+      "name": "CleartextExceedsEuint64",
+      "msg": "certified cleartext exceeds euint64 width"
     },
     {
       "code": 6040,
-      "name": "RedemptionDenyRecordInvalid",
-      "msg": "redemption deny-list record is invalid"
+      "name": "PendingBurnAddressMismatch",
+      "msg": "pending burn address does not match"
     },
     {
       "code": 6041,
-      "name": "CleartextExceedsEuint64",
-      "msg": "certified cleartext exceeds euint64 width"
+      "name": "PendingBurnAlreadyInitialized",
+      "msg": "pending burn is already initialized"
+    },
+    {
+      "code": 6042,
+      "name": "PendingBurnHandleNotCurrent",
+      "msg": "pending burn handle is not the burned amount current handle"
+    },
+    {
+      "code": 6043,
+      "name": "PendingBurnMismatch",
+      "msg": "pending burn fields do not match"
+    },
+    {
+      "code": 6044,
+      "name": "UnderlyingTokenProgramMismatch",
+      "msg": "underlying token program does not match"
+    },
+    {
+      "code": 6045,
+      "name": "UnsupportedToken2022Extension",
+      "msg": "unsupported Token-2022 extension"
+    },
+    {
+      "code": 6046,
+      "name": "UnderlyingTokenAccountFrozen",
+      "msg": "underlying token account is frozen"
+    },
+    {
+      "code": 6047,
+      "name": "DisclosedValueBindingMismatch",
+      "msg": "disclosed value does not match its declared token state field"
+    },
+    {
+      "code": 6048,
+      "name": "EncryptedValueAuthorityMismatch",
+      "msg": "encrypted value account authority does not match token account"
+    },
+    {
+      "code": 6049,
+      "name": "TokenEncryptedValueMismatch",
+      "msg": "token encrypted value account is not canonical"
+    },
+    {
+      "code": 6050,
+      "name": "TotalSupplyValueMismatch",
+      "msg": "encrypted total supply value is not canonical"
     }
   ],
   "types": [
@@ -2007,6 +2725,9 @@
           },
           {
             "name": "BurnDebit"
+          },
+          {
+            "name": "CancelBurn"
           }
         ]
       }
@@ -2174,71 +2895,6 @@
               "KMS-certified cleartext amount released from the vault."
             ],
             "type": "u64"
-          }
-        ]
-      }
-    },
-    {
-      "name": "BurnRedemption",
-      "docs": [
-        "Replay marker for a redeemed burned amount handle."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "mint",
-            "docs": [
-              "Confidential mint whose vault paid the redemption."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "owner",
-            "docs": [
-              "Token owner that redeemed the burned amount."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "token_account",
-            "docs": [
-              "Token account that produced the burned amount."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "burned_handle",
-            "docs": [
-              "Burned amount handle proven by KMS."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "burned_encrypted_value",
-            "docs": [
-              "`EncryptedValue` encrypted value account for `burned_handle`."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "cleartext_amount",
-            "docs": [
-              "KMS-certified cleartext amount released from the vault."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "bump",
-            "docs": [
-              "PDA bump for `(mint, burned_handle)`."
-            ],
-            "type": "u8"
           }
         ]
       }
@@ -2570,6 +3226,29 @@
       }
     },
     {
+      "name": "DisclosedValueKind",
+      "docs": [
+        "Token state field disclosed by [`HandleDisclosedEvent`]."
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Balance"
+          },
+          {
+            "name": "TransferredAmount"
+          },
+          {
+            "name": "BurnedAmount"
+          },
+          {
+            "name": "TotalSupply"
+          }
+        ]
+      }
+    },
+    {
       "name": "EncryptedValue",
       "docs": [
         "Canonical ACL + history state for one encrypted value account.",
@@ -2594,13 +3273,12 @@
             "name": "encrypted_value_account_authority",
             "docs": [
               "The account that controls this encrypted value: it must sign to create it, update its",
-              "handle, or replace its subject list. Enforced by address rather than by comparing this",
-              "field — the signer must equal the authority declared in the execution",
+              "handle, or replace its subject list — including out-of-band `allow_subjects` /",
+              "`remove_subject` (decrypt subjects are not co-admins). Enforced by address rather than by",
+              "comparing this field — the signer must equal the authority declared in the execution",
               "(`assert_output_acl_metadata`) and the account written to must be the PDA rederived from",
               "that declared triple, which is what ties the signer to the stored value on update. For a",
-              "token balance this is the token account itself. It is not the sole controller of the",
-              "audience — any current subject may also add or remove subjects through `allow_subjects` /",
-              "`remove_subject`."
+              "token balance this is the token account itself."
             ],
             "type": "pubkey"
           },
@@ -2632,7 +3310,8 @@
           {
             "name": "subjects",
             "docs": [
-              "Current persistent subjects. Membership in this set is the whole ACL."
+              "Current persistent subjects. Membership grants decrypt/compute; subject-list mutation",
+              "requires `encrypted_value_account_authority` (INVARIANT #11)."
             ],
             "type": {
               "vec": "pubkey"
@@ -2677,7 +3356,8 @@
         "This is the single app-level disclosure event after the `DisclosureRequest` lifecycle was",
         "dissolved (fhevm-internal#1704): it covers both former balance and amount disclosures. It carries",
         "no request witness or `request_hash` — there is no per-request PDA anymore. The request side is",
-        "the owner sealing a public-decrypt leaf via the host `make_handle_public` instruction directly."
+        "the owner or mint authority sealing a public-decrypt leaf through the token wrapper that signs",
+        "the Host `make_handle_public` CPI as the field's encrypted value account authority."
       ],
       "type": {
         "kind": "struct",
@@ -2714,6 +3394,36 @@
               "ZamaHost `EncryptedValue` encrypted value account the handle belongs to."
             ],
             "type": "pubkey"
+          },
+          {
+            "name": "kind",
+            "docs": [
+              "Token state field whose canonical authority and label were validated."
+            ],
+            "type": {
+              "defined": {
+                "name": "DisclosedValueKind"
+              }
+            }
+          },
+          {
+            "name": "encrypted_value_account_authority",
+            "docs": [
+              "Encrypted value account authority bound to `kind`."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "encrypted_value_label",
+            "docs": [
+              "Encrypted value label bound to `kind`."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           },
           {
             "name": "cleartext_amount",
@@ -3015,6 +3725,122 @@
       }
     },
     {
+      "name": "PendingBurn",
+      "docs": [
+        "Open burn awaiting redeem (underlying tokens) or cancel (confidential tokens)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "docs": [
+              "Confidential mint whose underlying-token vault funds a redemption payout."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "docs": [
+              "Token account owner (rent destination on close)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "token_account",
+            "docs": [
+              "Token account that produced the burned amount."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "burned_handle",
+            "docs": [
+              "Burned amount handle produced by the burn execution (stored for redeem matching)."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "burned_encrypted_value",
+            "docs": [
+              "Shared `burned_amount` EncryptedValue account for this token account."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump for `(mint, token_account)`."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PendingBurnCancelledEvent",
+      "docs": [
+        "Emitted when `cancel_pending_burn` re-credits a pending burn into confidential balance."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "mint",
+            "docs": [
+              "Confidential mint."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "docs": [
+              "Token account owner (rent destination of the closed pending-burn account)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "token_account",
+            "docs": [
+              "Confidential token account that produced the burned amount."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "burned_handle",
+            "docs": [
+              "Burned amount handle that was cancelled (must be the current handle)."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "burned_encrypted_value",
+            "docs": [
+              "Shared `burned_amount` EncryptedValue account for the token account."
+            ],
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
       "name": "TotalSupplyHandleUpdatedEvent",
       "docs": [
         "App-local total-supply history event.",
@@ -3108,6 +3934,9 @@
           },
           {
             "name": "Burn"
+          },
+          {
+            "name": "CancelBurn"
           }
         ]
       }

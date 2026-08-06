@@ -2,8 +2,9 @@ import { getProgramDerivedAddress, type Address, type Instruction } from '@solan
 
 import type { SolanaPublicDecryptCertificateClaim } from '@sdk-src/solana/actions/publicDecryptCertificate.js';
 import { verifyPublicDecryptArgsFromClaim } from '@sdk-src/solana/actions/verifyPublicDecrypt.js';
-import { getDiscloseSecpInstructionAsync } from '../internal/generated/confidentialToken/instructions/discloseSecp.js';
+import { getDiscloseSecpInstruction } from '../internal/generated/confidentialToken/instructions/discloseSecp.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../internal/generated/confidentialToken/programAddress.js';
+import type { DisclosedValueKindArgs } from '../internal/generated/confidentialToken/types/disclosedValueKind.js';
 
 const EVENT_AUTHORITY_SEED = new TextEncoder().encode('__event_authority');
 
@@ -11,12 +12,16 @@ const EVENT_AUTHORITY_SEED = new TextEncoder().encode('__event_authority');
 export type SolanaDiscloseSecpAccounts = {
   /** Confidential mint whose ACL domain scopes the disclosed encrypted value account and event. */
   readonly mint: Address;
+  /** Confidential token account for account-scoped state; omit only for total supply. */
+  readonly tokenAccount?: Address | undefined;
+  /** Exact token state field the event will identify. */
+  readonly kind: DisclosedValueKindArgs;
   /** The `EncryptedValue` encrypted value account the disclosed handle belongs to. */
   readonly encryptedValue: Address;
   /** KMS context PDA for the host's current context id. */
   readonly kmsContext: Address;
-  /** Host config; defaults to the host config PDA when omitted. */
-  readonly hostConfig?: Address | undefined;
+  /** ZamaHost config account forwarded to the host verifier. */
+  readonly hostConfig: Address;
 };
 
 async function tokenEventAuthority(): Promise<Address> {
@@ -42,13 +47,15 @@ export async function buildDiscloseSecpInstruction(
   claim: SolanaPublicDecryptCertificateClaim,
 ): Promise<Instruction> {
   const args = verifyPublicDecryptArgsFromClaim(claim);
-  return getDiscloseSecpInstructionAsync({
+  return getDiscloseSecpInstruction({
     mint: accounts.mint,
+    ...(accounts.tokenAccount !== undefined ? { tokenAccount: accounts.tokenAccount } : {}),
     encryptedValue: accounts.encryptedValue,
     kmsContext: accounts.kmsContext,
-    ...(accounts.hostConfig !== undefined ? { hostConfig: accounts.hostConfig } : {}),
+    hostConfig: accounts.hostConfig,
     eventAuthority: await tokenEventAuthority(),
     program: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
+    kind: accounts.kind,
     handle: args.handle,
     cleartext: args.cleartext,
     signatures: [...args.signatures],

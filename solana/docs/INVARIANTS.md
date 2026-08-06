@@ -25,11 +25,11 @@ can: it is a guarantee explicitly withheld, so a reader who skips it walks away
 assuming the opposite. Numbers are stable across both parts and never reused, so an
 entry that moves between them keeps its number.
 
-Scope note: this register covers the **protocol layer** of the Solana feature
-branch — `zama-host`, the `zama-fhe` SDK, the host-listener reconstruction path,
-and the proof service. The app layer (confidential token, batcher) gets its own
-register later. Vocabulary follows GLOSSARY.md (execution, dictionary, persistent,
-update, encrypted value ID…).
+Scope note: this register covers the Solana feature branch: `zama-host`, the
+`zama-fhe` SDK, the host-listener reconstruction path, the proof service, and the
+reference confidential-token and confidential-batcher applications. Vocabulary
+follows GLOSSARY.md (execution, dictionary, persistent, update, encrypted value
+ID…).
 
 ---
 
@@ -67,10 +67,41 @@ update, encrypted value ID…).
     with no deny check (a denied key can still be delegated to by a clean
     subject) — that boundary belongs to the delegation/permit rework.
     (Closed the former create-path gap; fhevm-internal#1859 §3-S1.)
-11. **[ANTI]** No on-chain roles: any current subject may allow further
-    subjects, remove others (not the last), or make the value public.
-    Membership is flat by design; apps that need owner/spender-style
-    distinctions must enforce them in the app program before granting.
+11. **[HOLDS]** Subject-list mutation is gated like persistent create/update:
+    `allow_subjects` and `remove_subject` require the signer to equal
+    `EncryptedValue.encrypted_value_account_authority` (the app-owned account
+    identity). Decrypt subjects are not co-admins. Confidential-token ships
+    owner-gated CPI wrappers that `invoke_signed` as the **token-account** PDA
+    (`allow_token_account_subjects` / `remove_token_account_subject`). The mint
+    authority can rotate total-supply subjects through wrappers that
+    `invoke_signed` as the total-supply authority PDA. (Closed the former flat-admin
+    ANTI; fhevm-internal#1862 #13.)
+    Related token/Host lifecycle guardrails are:
+    - **11b [HOLDS].** `make_handle_public` requires the signer to equal
+      `EncryptedValue.encrypted_value_account_authority`. A decrypt subject cannot
+      make a handle public and the grant deny-list is not consulted because no
+      subject is being granted. Confidential-token owner/mint-authority wrappers
+      validate the exact state field and sign as the token-account/total-supply PDA.
+      (fhevm-internal#1862.)
+    - **11c [HOLDS].** Each confidential token account may have exactly one pending
+      burn, stored at `["pending-burn", mint, token_account]`. A second burn is
+      rejected before FHE execution until `redeem_burned_amount` or
+      `cancel_pending_burn` closes the account and returns its rent to the owner.
+      Parallel burns for one token account are deliberately deferred; applications
+      can aggregate an amount or use separate app-owned token accounts.
+    - **11d [HOLDS].** `cancel_pending_burn` requires the pending burned handle to equal
+      the burned-amount encrypted value account's current handle. A stale or mismatched
+      pending burn cannot restore value.
+    - **11e [HOLDS].** `cancel_pending_burn` restores both confidential balance and
+      encrypted `total_supply` (mirrors wrap's dual add; undoes burn's dual sub).
+      Redeem does not restore encrypted supply — it exits via underlying payout.
+      (fhevm-internal#1862 review P1.)
+    - **11f [HOLDS].** Host pause (`HostConfig.paused`) gates token cash-out /
+      disclose paths that call `assert_host_config_allows_token_response`
+      (redeem, disclose). Opening a burn / cancelling a pending burn still requires a live
+      FHE path through the host; there is no separate token-level pause. No
+      registry / observer / on-chain gov surface in this PoC (out of scope;
+      zama-ai/fhevm-internal#1634).
 
 53. **[ANTI]** `make_handle_public` is not idempotent. Sealing a handle that is
     already sealed appends a second leaf committing to the same
@@ -128,16 +159,18 @@ update, encrypted value ID…).
 23. **[ASSUMPTION]** The coprocessor and KMS committees are honest at their
     thresholds, and their EVM signing keys are not compromised.
 24. **[ANTI]** `verify_public_decrypt` provides no act-once/replay protection;
-    each consuming app owns its own act-once state machine. The rule for that —
-    who needs a marker and what shape it takes — is written at the verifier
-    instruction, and `redeem_burned_amount`'s per-`(mint, handle)` write-once
-    marker is the worked example. The marker cannot ship as shared code: Anchor
-    derives account ownership from the program that declares the type, so it has
-    to live in the app. Pinned from both sides by
-    `mollusk_redeem_historical_burned_handle_after_an_update_then_rejects_double_redeem`,
-    `mollusk_two_concurrent_burns_each_redeemable_exactly_once`, and
+    each consuming app owns its own act-once state machine. The audited rule —
+    who needs act-once state, what shape it takes, and why it cannot ship as
+    shared code (Anchor derives account ownership from the program that
+    declares the type, so the state must live in the app) — is stated at the
+    verifier instruction and demonstrated by `redeem_burned_amount`'s
+    open-at-burn/close-at-redeem-or-cancel `PendingBurn` account (one per token
+    account; rent returns to the owner on close, unlike a forever write-once marker).
+    Pinned from both sides by
+    `mollusk_redeem_current_pending_burn_then_rejects_double_settlement`,
+    `mollusk_two_sequential_burns_each_redeemable_exactly_once`, and
     `mollusk_disclose_secp_is_idempotent_no_replay_marker`.
-    (fhevm-internal#1859 §5.)
+    (fhevm-internal#1859 §5; fhevm-internal#1862 Wave 2.)
 25. **[ANTI]** The verifier accepts any *live* context. Demanding the *current*
     context is caller policy, exercised through the returned context id; it is
     not enforced by the verifier.
@@ -156,7 +189,7 @@ update, encrypted value ID…).
 28. **[HOLDS]** Handles the listener re-derives are byte-identical to the
     on-chain ones, because the listener imports the program's own derivation
     functions and argument types rather than reimplementing them (fixtures and
-    the e2e lane check this too).
+    the e2e derivation check this too).
 29. **[HOLDS]** Every transaction is independently interpretable: replay from
     instruction bytes alone reconstructs full history with zero account reads
     (updates echo the previous handle and subjects).
@@ -242,6 +275,38 @@ update, encrypted value ID…).
     #45). Any feature reading `caller` from these rows must branch on the
     chain type first.
 
+## H. Reference confidential applications
+
+55. **[HOLDS]** Token disclosure binds the requested kind to the complete
+    confidential-token state field: mint domain, canonical encrypted value
+    account address, encrypted value account authority, encrypted value label,
+    and current or historically sealed handle. A valid certificate for another
+    field in the same mint cannot be relabelled in the emitted disclosure event.
+56. **[HOLDS]** An underlying mint's owner pins one token program. Wrap and
+    redeem require that program to own the underlying mint and both token
+    accounts. Classic Token and extension-free Token-2022 are supported.
+    Token-2022 mint extensions are rejected unless explicitly allowlisted;
+    today none are allowlisted. Token accounts allow only `ImmutableOwner`.
+57. **[HOLDS]** Frozen underlying token accounts cannot enter or leave the
+    wrapper through wrap or redeem. Token-2022 transfer-fee, transfer-hook,
+    non-transferable, and confidential-transfer behavior cannot be inherited
+    accidentally because those mint extensions fail closed under #56.
+58. **[HOLDS]** Only `ConfidentialMint.authority` can add or remove subjects on
+    the encrypted total supply. The wrapper signs the Host CPI as the canonical
+    total-supply authority PDA; callers cannot substitute another encrypted
+    value account, encrypted value account authority, label, or domain.
+59. **[HOLDS]** `ConfidentialMint.authority` is the wrapper's policy authority.
+    It is distinct from the authority that can upgrade the Zama Host program.
+    Future governance may own the mint authority without acquiring Host upgrade
+    power; no governance or authority-rotation mechanism is implied here.
+60. **[HOLDS]** A dispatched confidential batch can be cancelled by its join
+    mint's `ConfidentialMint.authority` while the burn is pending. This is the wrapper policy
+    authority from #59, not the Zama Host upgrade authority. Cancellation restores the batch's confidential join balance and
+    encrypted total supply, closes the pending burn, and moves the batch to the
+    refund-only `Refunding` state. That state accepts user quits but rejects new
+    joins, dispatch, settlement, and repeated cancellation, so a failed KMS or
+    vault settlement cannot trap participant funds or reuse a burned amount.
+
 ---
 
 # Part II — Sizes, limits, and how it is run
@@ -304,5 +369,5 @@ not when the threat model changes.
 
 ## I. Roadmap
 
-39. **[V2]** App-layer register (confidential token, batcher lifecycle, ALT
-    construction) — separate section once the protocol register stabilizes.
+39. **[RETIRED]** App-layer invariants were folded into this register rather
+    than split into a second source of truth (#55–#60).

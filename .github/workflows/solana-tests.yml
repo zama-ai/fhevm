@@ -139,6 +139,13 @@ jobs:
         if: ${{ needs.check-changes.outputs.changes-e2e-greps-check == 'true' }}
         run: python3 scripts/check-e2e-greps.py --self-test
 
+      # PendingBurn is derived by handwritten Rust and TypeScript code. A rename on only one side
+      # leaves unit tests green until a live transaction fails with ConstraintSeeds.
+      - name: Check handwritten PendingBurn seed matches Rust
+        run: |
+          python3 scripts/check-pda-seeds.py
+          python3 scripts/check-pda-seeds.py --self-test
+
   # The vault module (batch provisioning, settle composition, the address-lookup-table lifecycle)
   # lives in the demo dapp, and its unit tests run nowhere else: js-sdk-tests is scoped to PRs
   # against main/devex, and solana-e2e only builds the dapp. Without this job a regression in

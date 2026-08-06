@@ -41,6 +41,8 @@ pub enum BalanceHandleUpdateReason {
     TransferCredit,
     /// Confidential burn debit from this account.
     BurnDebit,
+    /// Pending burn cancelled back onto this account.
+    CancelBurn,
 }
 
 /// App-local total-supply history event.
@@ -75,6 +77,8 @@ pub enum TotalSupplyUpdateReason {
     Wrap,
     /// Confidential supply was burned.
     Burn,
+    /// Pending burn cancelled back onto confidential supply.
+    CancelBurn,
 }
 
 /// Emitted when `disclose_secp` publishes a KMS-certified cleartext for a token-scoped handle.
@@ -82,7 +86,8 @@ pub enum TotalSupplyUpdateReason {
 /// This is the single app-level disclosure event after the `DisclosureRequest` lifecycle was
 /// dissolved (fhevm-internal#1704): it covers both former balance and amount disclosures. It carries
 /// no request witness or `request_hash` — there is no per-request PDA anymore. The request side is
-/// the owner sealing a public-decrypt leaf via the host `make_handle_public` instruction directly.
+/// the owner or mint authority sealing a public-decrypt leaf through the token wrapper that signs
+/// the Host `make_handle_public` CPI as the field's encrypted value account authority.
 #[event]
 pub struct HandleDisclosedEvent {
     /// Event schema version.
@@ -93,8 +98,27 @@ pub struct HandleDisclosedEvent {
     pub handle: [u8; 32],
     /// ZamaHost `EncryptedValue` encrypted value account the handle belongs to.
     pub encrypted_value: Pubkey,
+    /// Token state field whose canonical authority and label were validated.
+    pub kind: DisclosedValueKind,
+    /// Encrypted value account authority bound to `kind`.
+    pub encrypted_value_account_authority: Pubkey,
+    /// Encrypted value label bound to `kind`.
+    pub encrypted_value_label: [u8; 32],
     /// KMS-certified cleartext amount (low 64 bits of the certified `uint256`).
     pub cleartext_amount: u64,
+}
+
+/// Token state field disclosed by [`HandleDisclosedEvent`].
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DisclosedValueKind {
+    /// Confidential token-account balance.
+    Balance,
+    /// Amount produced by a confidential transfer.
+    TransferredAmount,
+    /// Amount produced by a confidential burn.
+    BurnedAmount,
+    /// Mint encrypted total supply.
+    TotalSupply,
 }
 
 /// Emitted when a KMS-certified burned amount is redeemed from the vault.
@@ -120,6 +144,23 @@ pub struct BurnRedeemedEvent {
     pub destination_usdc: Pubkey,
     /// KMS-certified cleartext amount released from the vault.
     pub cleartext_amount: u64,
+}
+
+/// Emitted when `cancel_pending_burn` re-credits a pending burn into confidential balance.
+#[event]
+pub struct PendingBurnCancelledEvent {
+    /// Event schema version.
+    pub version: u8,
+    /// Confidential mint.
+    pub mint: Pubkey,
+    /// Token account owner (rent destination of the closed pending-burn account).
+    pub owner: Pubkey,
+    /// Confidential token account that produced the burned amount.
+    pub token_account: Pubkey,
+    /// Burned amount handle that was cancelled (must be the current handle).
+    pub burned_handle: [u8; 32],
+    /// Shared `burned_amount` EncryptedValue account for the token account.
+    pub burned_encrypted_value: Pubkey,
 }
 
 /// Emitted when a confidential burn computes the all-or-zero burned amount.

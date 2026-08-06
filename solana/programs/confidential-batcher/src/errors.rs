@@ -74,4 +74,10 @@ pub enum BatcherError {
     /// (unreachable; guards the delta computation).
     #[msg("batch payout balance decreased across the vault phase")]
     PayoutBalanceUnderflow,
+    /// Quitting is allowed only while a batch is pending or refunding after a cancelled dispatch.
+    #[msg("batch does not accept refunds")]
+    BatchNotRefundable,
+    /// Dispatch cancellation is reserved to the join mint's wrapper authority.
+    #[msg("cancel authority does not match the join confidential mint authority")]
+    CancelAuthorityMismatch,
 }

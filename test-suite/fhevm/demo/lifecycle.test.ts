@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { centralizedKmsCorePlatform } from "../src/generate/compose";
+import { solanaProgramIdFromKeypairFile } from "../src/generate/solana";
 import { createDemoAuthorizationFile } from "./authorization";
 import {
   acceptableDockerContainerState,
@@ -16,6 +17,7 @@ import {
   doctorEnvironmentErrors,
   demoComposeProject,
   demoLaunchUrl,
+  demoSolanaLedgerPath,
   exactEndpointReady,
   expectedBootShutdownAction,
   existingBootAction,
@@ -70,6 +72,57 @@ const readyCommands = new Map([
 ]);
 
 describe("demo lifecycle collision policy", () => {
+  test("uses a short per-worktree Solana ledger path", () => {
+    const ledgerPath = demoSolanaLedgerPath(manifest().bootId);
+    expect(ledgerPath).toStartWith("/tmp/fhevm-demo-");
+    expect(ledgerPath.length).toBeLessThan(100);
+    expect(demoSolanaLedgerPath(manifest().bootId)).toBe(ledgerPath);
+  });
+
+  test("deployment overwrites stale target program identities", async () => {
+    for (const script of [
+      "solana/scripts/e2e/setup-solana-side.sh",
+      "solana/scripts/demo/deploy-demo-programs.sh",
+    ]) {
+      const source = await fs.readFile(
+        path.join(import.meta.dir, "../../..", script),
+        "utf8",
+      );
+      expect(source).toContain(
+        'cp -f "$SOLANA/scripts/e2e/test-keypairs/$p-keypair.json"',
+      );
+      expect(source).not.toContain("cp -n");
+    }
+  });
+
+  test("committed program keypairs match declared program identities", async () => {
+    for (const program of [
+      "zama-host",
+      "confidential-token",
+      "demo-vault",
+      "confidential-batcher",
+    ]) {
+      const root = path.join(import.meta.dir, "../../../solana");
+      const source = await fs.readFile(
+        path.join(root, "programs", program, "src/lib.rs"),
+        "utf8",
+      );
+      const declaredId = source.match(/declare_id!\("([^"]+)"\)/)?.[1];
+      if (declaredId === undefined) {
+        throw new Error(`${program} has no declare_id!`);
+      }
+      expect(
+        solanaProgramIdFromKeypairFile(
+          path.join(
+            root,
+            "scripts/e2e/test-keypairs",
+            `${program.replaceAll("-", "_")}-keypair.json`,
+          ),
+        ),
+      ).toBe(declaredId);
+    }
+  });
+
   test("reseed may recover unhealthy replaceable clients only", () => {
     const health = {
       validator: true,
@@ -370,6 +423,7 @@ describe("demo lifecycle collision policy", () => {
     // through tsconfig paths), which node's type-stripping cannot resolve.
     expect(twoHolderTransfer).toContain('run(["bun", SDK_WORKER]');
     expect(demoViteConfig).toContain("preserveSymlinks: true");
+    expect(demoViteConfig).toContain("noExternal: ['@fhevm/sdk']");
     expect(fullVertical).not.toContain("--preserve-symlinks");
     expect(adversarial).not.toContain("--preserve-symlinks");
     expect(workflow).not.toContain("--preserve-symlinks");
@@ -465,6 +519,7 @@ describe("demo lifecycle collision policy", () => {
       expect.arrayContaining([
         "docker",
         "dirname",
+        "id",
         "lsof",
         "python3",
         "cut",

@@ -7,6 +7,7 @@ import type { SolanaPublicDecryptCertificateClaim } from '@sdk-src/solana/action
 import { buildDiscloseSecpInstruction } from './discloseSecp.js';
 import { getDiscloseSecpInstructionDataDecoder } from '../internal/generated/confidentialToken/instructions/discloseSecp.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../internal/generated/confidentialToken/programAddress.js';
+import { DisclosedValueKind } from '../internal/generated/confidentialToken/types/disclosedValueKind.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@sdk-src/solana/internal/generated/zamaHost/programAddress.js';
 
 function addr(fill: number): Address {
@@ -41,21 +42,29 @@ function claim(overrides: Partial<SolanaPublicDecryptCertificateClaim> = {}): So
 describe('buildDiscloseSecpInstruction', () => {
   it('maps a claim onto the token disclose_secp instruction with the right accounts', async () => {
     const mint = addr(5);
+    const tokenAccount = addr(8);
     const encryptedValue = addr(6);
     const kmsContext = addr(7);
-    const instruction = await buildDiscloseSecpInstruction({ mint, encryptedValue, kmsContext }, claim());
+    const hostConfig = addr(9);
+    const instruction = await buildDiscloseSecpInstruction(
+      { mint, tokenAccount, kind: DisclosedValueKind.BurnedAmount, encryptedValue, kmsContext, hostConfig },
+      claim(),
+    );
 
     expect(instruction.programAddress).toBe(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);
     const addresses = instruction.accounts?.map((a: { readonly address: Address }) => a.address) ?? [];
-    // mint, encryptedValue, hostConfig(PDA), kmsContext, zamaProgram, eventAuthority, program
-    expect(addresses).toHaveLength(7);
+    // mint, tokenAccount, encryptedValue, hostConfig, kmsContext, zamaProgram, eventAuthority, program
+    expect(addresses).toHaveLength(8);
     expect(addresses[0]).toBe(mint);
-    expect(addresses[1]).toBe(encryptedValue);
-    expect(addresses[3]).toBe(kmsContext);
-    expect(addresses[4]).toBe(ZAMA_HOST_PROGRAM_ADDRESS);
-    expect(addresses[6]).toBe(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);
+    expect(addresses[1]).toBe(tokenAccount);
+    expect(addresses[2]).toBe(encryptedValue);
+    expect(addresses[3]).toBe(hostConfig);
+    expect(addresses[4]).toBe(kmsContext);
+    expect(addresses[5]).toBe(ZAMA_HOST_PROGRAM_ADDRESS);
+    expect(addresses[7]).toBe(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);
 
     const decoded = getDiscloseSecpInstructionDataDecoder().decode(instruction.data!);
+    expect(decoded.kind).toBe(DisclosedValueKind.BurnedAmount);
     expect(Array.from(decoded.handle)).toEqual(Array.from(handleBytes));
     expect(Array.from(decoded.cleartext)).toEqual(Array.from(cleartextBytes));
     expect(decoded.signatures.map((s) => Array.from(s))).toEqual([Array.from(signatureBytes)]);
