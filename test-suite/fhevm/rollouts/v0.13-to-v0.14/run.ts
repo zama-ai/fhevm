@@ -31,8 +31,7 @@ type RolloutTestMode = (typeof rolloutTestModes)[number];
 type RolloutPhase =
   | "baseline"
   | "gateway-contracts"
-  | "host-contracts"
-  | "relayer"
+  | "host-contracts-relayer"
   | "kms-prss-bridge"
   | "kms"
   | "coprocessor"
@@ -44,8 +43,13 @@ type RolloutPhase =
 const heavyPhaseProfiles: Record<RolloutPhase, string[]> = {
   baseline: ["rollout-standard", "multi-chain-isolation"],
   "gateway-contracts": ["rollout-standard"],
-  "host-contracts": ["rollout-standard", "multi-chain-isolation", "hcu-block-cap", "negative-acl"],
-  relayer: ["rollout-standard", "operators"],
+  "host-contracts-relayer": [
+    "rollout-standard",
+    "multi-chain-isolation",
+    "hcu-block-cap",
+    "negative-acl",
+    "operators",
+  ],
   "kms-prss-bridge": ["rollout-standard", "public-decryption"],
   // Runs once per KMS node, so it stays deliberately small: each step pins the reconstruction
   // quorum to the node that just moved, which is the property the step exists to prove.
@@ -269,16 +273,22 @@ export default async function run(ctx: RolloutRunContext) {
   await ctx.refreshDiscovery();
   await testPhase(ctx, "gateway-contracts", testMode);
 
-  // Host contracts before the relayer, and the direction matters: the 0.14 relayer initializes
-  // /v2/keyurl by calling getCurrentKmsContextAndEpoch() on ProtocolConfig, which only exists
-  // from 0.14, so starting it against 0.13 contracts makes it exit at boot.
+  // Host contracts and the relayer cross together, with no gate between them. Neither order
+  // survives on its own, which was established one failure at a time:
   //
-  // The reverse direction — 0.14 contracts served by the 0.13 relayer — is safe here only
-  // because the gates run @zama-fhe/relayer-sdk 0.4.4, which has no /v3 route at all and keeps
-  // calling /v2/user-decrypt whatever protocol version the ACL reports. A client that follows
-  // the on-chain version would demand the 0.14 relayer and connector the moment the ACL lands,
-  // which is precisely why the client is held back to the last phase.
-  logPhase("02 host contracts: upgrade every host chain, canonical first");
+  //  - Relayer first fails at boot. The 0.14 relayer initializes /v2/keyurl by calling
+  //    getCurrentKmsContextAndEpoch() on ProtocolConfig, which only exists from 0.14, so
+  //    against 0.13 contracts the call reverts with empty data and the relayer exits.
+  //  - Host contracts first fails at the gate, with the relayer rejecting user decryption as
+  //    `validation_failed ... extraData`. @fhevm/sdk derives the extraData format from host
+  //    contract state, not from the protocol version: kmsSignersContextToExtraData emits v0
+  //    when the KMS context id is 0, v1 when the epoch id is 0, and v2 otherwise. Upgrading
+  //    KMSVerifier and ProtocolConfig gives the client a real context *and* epoch, so it
+  //    starts sending v2 extraData, which the 0.13 relayer does not accept.
+  //
+  // Holding the ACL back does not help here — this is the client's request shape following
+  // host contract state, which changes independently of the ACL's protocol version.
+  logPhase("02 host contracts + relayer: they cross together, gated once at the end");
   await prepareContractMigrationSources(ctx, "host", hostContractsLock, hostContractKeys);
   const targets = await hostChainTargets(ctx);
   await migrateProtocolConfig(ctx, targets);
@@ -289,11 +299,10 @@ export default async function run(ctx: RolloutRunContext) {
     }
   }
   await ctx.refreshDiscovery();
-  await testPhase(ctx, "host-contracts", testMode);
-
-  logPhase("03 relayer: the host contracts now expose the ProtocolConfig call it boots on");
+  // No gate here: between these two lines the client is already emitting v2 extraData that the
+  // 0.13 relayer rejects. The relayer follows immediately, and the pair is gated once.
   await ctx.upgradeRuntimeGroup("relayer", { lockFile: relayerLock });
-  await testPhase(ctx, "relayer", testMode);
+  await testPhase(ctx, "host-contracts-relayer", testMode);
 
   // Two KMS phases, not one. 0.13.22 is the only kms-core that serves peers on both sides of
   // the PRSS hotfix, so it is a required stop between 0.13.20 and 0.14. The connector stays on
@@ -353,8 +362,7 @@ export default async function run(ctx: RolloutRunContext) {
 export const phaseOrder = [
   "baseline",
   "gateway-contracts",
-  "host-contracts",
-  "relayer",
+  "host-contracts-relayer",
   "kms-prss-bridge",
   "kms",
   "coprocessor",

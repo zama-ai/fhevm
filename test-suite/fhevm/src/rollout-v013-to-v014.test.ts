@@ -119,18 +119,23 @@ test("keeps every phase lock cumulative", () => {
   }
 });
 
-// The 0.14 relayer boots by calling getCurrentKmsContextAndEpoch() on ProtocolConfig, which only
-// exists from 0.14, so it cannot start against 0.13 host contracts. The contracts therefore land
-// first — but each still gets its own gate, which only holds because the gates run a client with
-// no /v3 route.
-test("upgrades the host contracts before the relayer, each with its own gate", () => {
-  expect(phaseOrder).toContain("host-contracts");
-  expect(phaseOrder).toContain("relayer");
-  expect(phaseOrder.indexOf("host-contracts")).toBeLessThan(phaseOrder.indexOf("relayer"));
-  // Host contracts land first so the relayer finds the ProtocolConfig call it needs...
+// Host contracts and the relayer cross in one phase, gated only once, because neither order
+// survives a gate between them:
+//
+//  - Relayer first: the 0.14 relayer boots by calling getCurrentKmsContextAndEpoch() on
+//    ProtocolConfig, which only exists from 0.14, so it exits against 0.13 contracts.
+//  - Host contracts first: @fhevm/sdk derives its extraData format from host contract state,
+//    so once KMSVerifier and ProtocolConfig report a KMS context and epoch the client sends
+//    v2 extraData and the 0.13 relayer rejects user decryption with `validation_failed`.
+test("crosses the host contracts and the relayer in a single gated phase", () => {
+  expect(phaseOrder).toContain("host-contracts-relayer");
+  expect(phaseOrder).not.toContain("host-contracts");
+  expect(phaseOrder).not.toContain("relayer");
+  // The contract half still lands first inside the phase, so the relayer finds the
+  // ProtocolConfig call it boots on...
   expect(phaseVersions.hostContracts.HOST_VERSION).toBe(to.HOST_VERSION);
   expect(phaseVersions.hostContracts.RELAYER_VERSION).toBe(from.RELAYER_VERSION);
-  // ...and the relayer follows, keeping the upgraded host contracts.
+  // ...and the relayer lock follows immediately, with no gate observing the state between.
   expect(phaseVersions.relayer.HOST_VERSION).toBe(to.HOST_VERSION);
   expect(phaseVersions.relayer.RELAYER_VERSION).toBe(to.RELAYER_VERSION);
 });
@@ -192,7 +197,7 @@ test("gates every phase on rollout-standard by default", () => {
 });
 
 test("covers multi-chain isolation in heavy mode wherever contracts moved", () => {
-  expect(rolloutPhaseTestProfiles("host-contracts", "rollout-heavy")).toContain("multi-chain-isolation");
+  expect(rolloutPhaseTestProfiles("host-contracts-relayer", "rollout-heavy")).toContain("multi-chain-isolation");
   expect(rolloutPhaseTestProfiles("protocol-flip", "rollout-heavy")).toContain("multi-chain-isolation");
 });
 
