@@ -31,10 +31,12 @@ type RolloutTestMode = (typeof rolloutTestModes)[number];
 type RolloutPhase =
   | "baseline"
   | "gateway-contracts"
-  | "host-contracts-relayer"
+  | "host-contracts"
+  | "relayer"
   | "kms-prss-bridge"
   | "kms"
-  | "final";
+  | "coprocessor"
+  | "sdk";
 
 // Heavy mode adds the checkpoints that are cheap to run at a phase boundary and expensive to
 // debug later. multi-chain-isolation is in every contract phase because this rollout upgrades
@@ -42,20 +44,19 @@ type RolloutPhase =
 const heavyPhaseProfiles: Record<RolloutPhase, string[]> = {
   baseline: ["rollout-standard", "multi-chain-isolation"],
   "gateway-contracts": ["rollout-standard"],
-  // Both components moved here, so this gate carries what the contract and relayer phases used
-  // to carry separately — including unified-user-decryption, which is the /v3 route itself.
-  "host-contracts-relayer": [
-    "rollout-standard",
-    "multi-chain-isolation",
-    "operators",
-    "hcu-block-cap",
-    "negative-acl",
-    "unified-user-decryption",
-  ],
+  "host-contracts": ["rollout-standard", "multi-chain-isolation", "hcu-block-cap", "negative-acl"],
+  relayer: ["rollout-standard", "operators"],
   "kms-prss-bridge": ["rollout-standard", "public-decryption"],
-  kms: ["rollout-standard", "public-decryption", "random-subset"],
-  final: [
+  // Runs once per KMS node, so it stays deliberately small: each step pins the reconstruction
+  // quorum to the node that just moved, which is the property the step exists to prove.
+  kms: ["rollout-standard", "public-decryption"],
+  // Runs once per coprocessor operator, at each consensus state the fleet passes through.
+  coprocessor: ["rollout-standard", "random-subset"],
+  // The client moves last and alone, so this gate is the widest — and the only one that
+  // reaches /v3/user-decrypt, which is what unified-user-decryption exercises.
+  sdk: [
     "rollout-standard",
+    "unified-user-decryption",
     "multi-chain-isolation",
     "operators",
     "random-subset",
@@ -63,9 +64,7 @@ const heavyPhaseProfiles: Record<RolloutPhase, string[]> = {
     "public-decryption",
     "hcu-block-cap",
     "coprocessor-db-state-revert",
-    "rollout-standard",
     "ciphertext-drift-auto-recovery",
-    "rollout-standard",
   ],
 };
 
@@ -209,25 +208,45 @@ const migrateProtocolConfig = async (ctx: RolloutRunContext, targets: HostChainT
   }
 };
 
+/** Serving KMS node ids, in the order they cross the boundary. */
+const kmsNodeIds = async (ctx: RolloutRunContext) => {
+  const state = await ctx.readState();
+  if (state.scenario.kms.mode !== "threshold") {
+    throw new Error("v0.13-to-v0.14 expects a threshold KMS cluster so nodes can be upgraded one at a time");
+  }
+  return Array.from({ length: state.scenario.kms.committeeSize }, (_, index) => index + 1);
+};
+
+/** Coprocessor operator indexes, in the order they cross the boundary. */
+const coprocessorInstanceIndexes = async (ctx: RolloutRunContext) => {
+  const state = await ctx.readState();
+  if (state.scenario.kind !== "coprocessor-consensus") {
+    throw new Error("v0.13-to-v0.14 expects a coprocessor-consensus scenario so operators can be upgraded one by one");
+  }
+  return state.scenario.instances.map((instance) => instance.index);
+};
+
 export default async function run(ctx: RolloutRunContext) {
   const testMode = resolveRolloutTestMode(process.env.ROLLOUT_TEST_PROFILE);
   const baselineLock = await writePhaseVersionLock(ctx, "00-baseline", phaseVersions.baseline);
   const gatewayContractsLock = await writePhaseVersionLock(ctx, "01-gateway-contracts", phaseVersions.gatewayContracts);
-  // Two locks, one phase: the host contracts land first, then the relayer, with no gate between.
-  const hostContractsLock = await writePhaseVersionLock(ctx, "02a-host-contracts", phaseVersions.hostContracts);
-  const relayerLock = await writePhaseVersionLock(ctx, "02b-relayer", phaseVersions.relayer);
+  const hostContractsLock = await writePhaseVersionLock(ctx, "02-host-contracts", phaseVersions.hostContracts);
+  const relayerLock = await writePhaseVersionLock(ctx, "03-relayer", phaseVersions.relayer);
   const kmsPrssBridgeLock = await writePhaseVersionLock(ctx, "04-kms-prss-bridge", phaseVersions.kmsPrssBridge);
   const kmsLock = await writePhaseVersionLock(ctx, "05-kms", phaseVersions.kms);
   const listenerCoreLock = await writePhaseVersionLock(ctx, "06-listener-core", phaseVersions.listenerCore);
   const coprocessorLock = await writePhaseVersionLock(ctx, "07-coprocessor", phaseVersions.coprocessor);
+  const sdkLock = await writePhaseVersionLock(ctx, "08-sdk", phaseVersions.sdk);
 
-  logPhase("00 baseline: boot v0.13.2 on kms-core v0.13.20 with the target test-suite harness");
+  // The harness is overridden to a local build so RELAYER_SDK_VERSION reaches its Dockerfile
+  // as a build arg. The published image bakes an empty value, which would silently select
+  // @fhevm/sdk and pull the whole stack forward from the first phase.
+  logPhase("00 baseline: boot v0.13.2 on kms-core v0.13.20, gates on relayer-sdk 0.4.4");
   await ctx.up({ lockFile: baselineLock, scenario, overrides: [{ group: "test-suite" }] });
   await testPhase(ctx, "baseline", testMode);
 
-  // The component order is the documented default —
-  // Gateway Contracts -> Host Contracts -> Relayer -> KMS -> Coprocessors -> SDK —
-  // with one deliberate departure: the relayer moves before the host contracts.
+  // The component order is the documented default:
+  // Gateway Contracts -> Host Contracts -> Relayer -> KMS -> Listener -> Coprocessors -> SDK.
   logPhase("01 gateway contracts: upgrade the gateway chain first");
   await prepareContractMigrationSources(ctx, "gateway", gatewayContractsLock, gatewayContractKeys);
   for (const upgrade of GATEWAY_CONTRACT_UPGRADES) {
@@ -236,21 +255,16 @@ export default async function run(ctx: RolloutRunContext) {
   await ctx.refreshDiscovery();
   await testPhase(ctx, "gateway-contracts", testMode);
 
-  // One phase, deliberately not two: across this boundary the host contracts and the relayer pin
-  // each other in both directions, so neither can cross alone.
+  // Host contracts before the relayer, and the direction matters: the 0.14 relayer initializes
+  // /v2/keyurl by calling getCurrentKmsContextAndEpoch() on ProtocolConfig, which only exists
+  // from 0.14, so starting it against 0.13 contracts makes it exit at boot.
   //
-  //  - The 0.14 relayer cannot boot against 0.13 host contracts. It initializes /v2/keyurl by
-  //    calling getCurrentKmsContextAndEpoch() on ProtocolConfig, which only exists from 0.14;
-  //    against 0.13 that call reverts with empty data and the relayer exits.
-  //  - The 0.14 host contracts cannot be served by a 0.13 relayer. The SDK resolves the protocol
-  //    version from the on-chain ACL version and posts user decryption to /v2/user-decrypt below
-  //    protocol 0.14 and /v3/user-decrypt from 0.14 on; the 0.13 relayer only serves /v2.
-  //
-  // Host contracts therefore move first, giving the relayer the ProtocolConfig call it needs, and
-  // the relayer follows immediately with no gate in between — a gate there would fail by
-  // construction. Clients see failed user decryptions for the width of this window, which is a
-  // property of the release, not of this runbook.
-  logPhase("02 host contracts + relayer: one step; 0.13 and 0.14 pin each other across this edge");
+  // The reverse direction — 0.14 contracts served by the 0.13 relayer — is safe here only
+  // because the gates run @zama-fhe/relayer-sdk 0.4.4, which has no /v3 route at all and keeps
+  // calling /v2/user-decrypt whatever protocol version the ACL reports. A client that follows
+  // the on-chain version would demand the 0.14 relayer and connector the moment the ACL lands,
+  // which is precisely why the client is held back to the last phase.
+  logPhase("02 host contracts: upgrade every host chain, canonical first");
   await prepareContractMigrationSources(ctx, "host", hostContractsLock, hostContractKeys);
   const targets = await hostChainTargets(ctx);
   await migrateProtocolConfig(ctx, targets);
@@ -261,43 +275,68 @@ export default async function run(ctx: RolloutRunContext) {
     }
   }
   await ctx.refreshDiscovery();
-  console.log("[rollout] host contracts are on 0.14; the relayer must follow before anything is tested");
+  await testPhase(ctx, "host-contracts", testMode);
+
+  logPhase("03 relayer: the host contracts now expose the ProtocolConfig call it boots on");
   await ctx.upgradeRuntimeGroup("relayer", { lockFile: relayerLock });
-  await testPhase(ctx, "host-contracts-relayer", testMode);
+  await testPhase(ctx, "relayer", testMode);
 
   // Two KMS phases, not one. 0.13.22 is the only kms-core that serves peers on both sides of
   // the PRSS hotfix, so it is a required stop between 0.13.20 and 0.14. The connector stays on
-  // 0.13 here: this phase proves the bridge version is a no-op for a pre-hotfix cluster before
-  // any 0.14 KMS code is introduced.
+  // 0.13 here — this lock carries CORE_VERSION alone — which is what proves the bridge version
+  // is a no-op for a pre-hotfix cluster before any 0.14 KMS code is introduced.
   //
-  // This is the whole-cluster stop in the release sequence. The node-by-node mixed-version
-  // proof for the same hotfix lives in rollouts/v0.13.21-to-v0.13.22-kms-node-by-node, which
-  // runs a threshold cluster and forces each upgraded node into the reconstruction quorum.
-  logPhase("04 kms PRSS bridge: move kms-core 0.13.20 -> 0.13.22, connector untouched");
-  await ctx.upgradeRuntimeGroup("kms-core", { lockFile: kmsPrssBridgeLock });
+  // Node by node, like everything else on this cluster: a threshold cluster has no whole-group
+  // kms-core upgrade, and a mixed 0.13.20/0.13.22 cluster is exactly the state the bridge
+  // version exists to make safe. The gate runs once the whole cluster is across, since the
+  // mixed-version reconstruction proof for this same hotfix already has its own runbook in
+  // rollouts/v0.13.21-to-v0.13.22-kms-node-by-node.
+  logPhase("04 kms PRSS bridge: move kms-core 0.13.20 -> 0.13.22 node by node, connector untouched");
+  for (const nodeId of await kmsNodeIds(ctx)) {
+    await ctx.upgradeKmsNodes([nodeId], { lockFile: kmsPrssBridgeLock });
+  }
   await testPhase(ctx, "kms-prss-bridge", testMode);
 
-  logPhase("05 kms: move kms-core 0.13.22 -> 0.14.0-1 and the connector to v0.14 together");
-  await ctx.upgradeRuntimeGroup("kms", { lockFile: kmsLock });
-  await testPhase(ctx, "kms", testMode);
+  // Node by node, each node's connector crossing with its own core. After each node the stack
+  // is tested twice: once with the reconstruction quorum pinned to include the node that just
+  // moved (proving a mixed cluster reconstructs through it), then normally.
+  logPhase("05 kms: move each node's core and connector to v0.14, one node at a time");
+  for (const nodeId of await kmsNodeIds(ctx)) {
+    await ctx.upgradeKmsNodes([nodeId], { lockFile: kmsLock });
+    await ctx.withRequiredKmsNode(nodeId, () => ctx.test("rollout-standard", { parallel: false }));
+    await testPhase(ctx, "kms", testMode);
+  }
 
   logPhase("06 listener-core: upgrade listener-core before the coprocessor consumes it");
   // No test gate here: 0.13 coprocessor listeners do not consume listener-core. The
   // compatibility boundary is the coprocessor upgrade, where consumers switch over.
   await ctx.upgradeRuntimeGroup("listener-core", { lockFile: listenerCoreLock });
 
-  logPhase("07 coprocessor: upgrade coprocessor last");
-  await ctx.upgradeRuntimeGroup("coprocessor", { lockFile: coprocessorLock });
-  await testPhase(ctx, "final", testMode);
+  // One operator at a time. With 3 coprocessors at threshold 2 the fleet is gated at each
+  // consensus state it passes through: one upgraded (below threshold), two (threshold reached),
+  // three (all upgraded, and where the bundle lock itself lands).
+  logPhase("07 coprocessor: upgrade operators one by one");
+  for (const index of await coprocessorInstanceIndexes(ctx)) {
+    await ctx.upgradeCoprocessorInstances([index], { lockFile: coprocessorLock });
+    await testPhase(ctx, "coprocessor", testMode);
+  }
+
+  // Last, and alone. Everything behind it is already on 0.14, so this is the first phase where
+  // a client that follows the on-chain protocol version has a stack that can serve /v3.
+  logPhase("08 sdk: move the client from relayer-sdk 0.4.4 to the in-repo @fhevm/sdk");
+  await ctx.upgradeRuntimeGroup("test-suite", { lockFile: sdkLock });
+  await testPhase(ctx, "sdk", testMode);
 }
 
 export const phaseOrder = [
   "baseline",
   "gateway-contracts",
-  "host-contracts-relayer",
+  "host-contracts",
+  "relayer",
   "kms-prss-bridge",
   "kms",
-  "final",
+  "coprocessor",
+  "sdk",
 ] as const satisfies readonly RolloutPhase[];
 
 export const hostContractUpgradeOrder: readonly string[] = HOST_CONTRACT_UPGRADES.map((upgrade) => upgrade.name);
