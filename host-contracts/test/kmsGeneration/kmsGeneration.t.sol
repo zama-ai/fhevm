@@ -1443,9 +1443,9 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         );
     }
 
-    /// @dev Hash + sign + prank + call migrationResponse with compressed digests
+    /// @dev Hash + sign + prank + call keygenResponse with compressed digests
     /// for a migration request (single KMS node).
-    function _doMigrationResponse(
+    function _doMigrationKeygenResponse(
         uint256 prepKeygenId,
         uint256 migrationRequestId,
         uint256 pk,
@@ -1455,7 +1455,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         bytes32 digest = _hashKeygen(prepKeygenId, migrationRequestId, digests, _buildExtraData());
         bytes memory sig = _computeSignature(pk, digest);
         vm.prank(sender);
-        kmsGeneration.migrationResponse(migrationRequestId, digests, sig);
+        kmsGeneration.keygenResponse(migrationRequestId, digests, sig);
     }
 
     /// @dev Run a full migration cycle for an existing key; returns the migration request pair.
@@ -1469,7 +1469,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         migrationRequestId = kmsGeneration.getKeyCounter();
 
         _doPrepKeygenResponse(migrationPrepId, kmsPk0, kmsTxSender0);
-        _doMigrationResponse(migrationPrepId, migrationRequestId, kmsPk0, kmsTxSender0);
+        _doMigrationKeygenResponse(migrationPrepId, migrationRequestId, kmsPk0, kmsTxSender0);
     }
 
     function test_compressedKeyMigrationFullCycleDoesNotActivate() public {
@@ -1485,7 +1485,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         // The prep consensus triggers the typed migration keygen request, not KeygenRequest.
         vm.recordLogs();
         _doPrepKeygenResponse(migrationPrepId, kmsPk0, kmsTxSender0);
-        _doMigrationResponse(migrationPrepId, migrationRequestId, kmsPk0, kmsTxSender0);
+        _doMigrationKeygenResponse(migrationPrepId, migrationRequestId, kmsPk0, kmsTxSender0);
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool sawMigrationKeygenRequest;
         bool sawCompressedKeyMaterialAdded;
@@ -1531,7 +1531,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         assertEq(originalDigests[0].digest, _mockKeyDigests()[0].digest);
     }
 
-    function test_revertMigrationResponseWithoutCompressedDigest() public {
+    function test_revertMigrationKeygenResponseWithoutCompressedDigest() public {
         (, uint256 keyId) = _runFullKeygenCycle();
         vm.prank(owner);
         kmsGeneration.migrateToCompressedKeySet(keyId);
@@ -1548,7 +1548,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         vm.expectRevert(
             abi.encodeWithSelector(IKMSGeneration.MissingCompressedKeySetDigest.selector, migrationRequestId)
         );
-        kmsGeneration.migrationResponse(migrationRequestId, digests, sig);
+        kmsGeneration.keygenResponse(migrationRequestId, digests, sig);
     }
 
     function test_revertMigrationKeygenForUngeneratedOrAbortedKey() public {

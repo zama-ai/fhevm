@@ -92,15 +92,6 @@ interface IKMSGeneration {
     event KeygenResponse(uint256 keyId, KeyDigest[] keyDigests, bytes signature, address kmsTxSender);
 
     /**
-     * @notice Emitted when a KMS node has responded to a migration material request.
-     * @param migrationRequestId The ID of the migration request.
-     * @param keyDigests The digests of the migrated key material.
-     * @param signature The signature of the KMS node that has responded.
-     * @param kmsTxSender The transaction sender of the KMS node that has called the function.
-     */
-    event MigrationResponse(uint256 migrationRequestId, KeyDigest[] keyDigests, bytes signature, address kmsTxSender);
-
-    /**
      * @notice Emitted when the key is activated.
      * @param keyId The ID of the activated key.
      * @param kmsNodeStorageUrls The KMS nodes' storage URLs that participated in the consensus.
@@ -341,24 +332,12 @@ interface IKMSGeneration {
     function prepKeygenResponse(uint256 prepKeygenId, bytes calldata signature) external;
 
     /**
-     * @notice Handle the response of a keygen request.
-     * @param keyId The ID of the key.
+     * @notice Handle the response of a fresh keygen or compressed-material migration request.
+     * @param keyId The fresh key ID or temporary migration request ID.
      * @param keyDigests The digests of the generated keys.
      * @param signature The signature of the KMS node that has responded.
      */
     function keygenResponse(uint256 keyId, KeyDigest[] calldata keyDigests, bytes calldata signature) external;
-
-    /**
-     * @notice Handle the response of a migration material request.
-     * @param migrationRequestId The ID of the migration request.
-     * @param keyDigests The digests of the migrated key material.
-     * @param signature The signature of the KMS node that has responded.
-     */
-    function migrationResponse(
-        uint256 migrationRequestId,
-        KeyDigest[] calldata keyDigests,
-        bytes calldata signature
-    ) external;
 
     /**
      * @notice Get the compressed key materials published for a given key ID.

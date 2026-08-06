@@ -379,10 +379,6 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     function keygenResponse(uint256 keyId, KeyDigest[] calldata keyDigests, bytes calldata signature) external virtual {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
-        if ($.keyIdByMigrationRequestId[keyId] != 0) {
-            revert KeygenNotRequested(keyId);
-        }
-
         // Make sure the keyId corresponds to a generated keygen request.
         if (keyId > $.keyCounter || keyId <= KEY_COUNTER_BASE) {
             revert KeygenNotRequested(keyId);
@@ -392,6 +388,11 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         // generate at least one key
         if (keyDigests.length == 0) {
             revert EmptyKeyDigests(keyId);
+        }
+
+        uint256 migrationKeyId = $.keyIdByMigrationRequestId[keyId];
+        if (migrationKeyId != 0) {
+            _checkHasCompressedKeySetDigest(keyId, keyDigests);
         }
 
         (bytes memory extraData, uint256 contextId) = _loadExtraDataAndAuthorizeResponse(keyId);
@@ -430,64 +431,15 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
             // Store the digest on which consensus was reached for the keygen request
             $.consensusDigest[keyId] = digest;
 
-            _recordKeygenConsensus(keyId, keyDigests, _buildConsensusStorageUrls(contextId, consensusTxSenders));
-        }
-    }
-
-    /**
-     * @notice See {IKMSGeneration-migrationResponse}.
-     */
-    function migrationResponse(
-        uint256 migrationRequestId,
-        KeyDigest[] calldata keyDigests,
-        bytes calldata signature
-    ) external virtual {
-        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
-
-        uint256 keyId = $.keyIdByMigrationRequestId[migrationRequestId];
-        if (keyId == 0 || migrationRequestId > $.keyCounter || migrationRequestId <= KEY_COUNTER_BASE) {
-            revert KeygenNotRequested(migrationRequestId);
-        }
-
-        if (keyDigests.length == 0) {
-            revert EmptyKeyDigests(migrationRequestId);
-        }
-        _checkHasCompressedKeySetDigest(migrationRequestId, keyDigests);
-
-        (bytes memory extraData, uint256 contextId) = _loadExtraDataAndAuthorizeResponse(migrationRequestId);
-
-        uint256 prepKeygenId = $.keygenIdPairs[migrationRequestId];
-        if (!$.isRequestDone[prepKeygenId]) {
-            revert KeyManagementRequestPending();
-        }
-
-        bytes32 digest = _hashKeygenVerification(prepKeygenId, migrationRequestId, keyDigests, extraData);
-        address kmsSigner = _validateEIP712Signature(contextId, digest, signature);
-
-        if ($.kmsHasSignedForResponse[migrationRequestId][kmsSigner]) {
-            revert KmsAlreadySignedForKeygen(migrationRequestId, kmsSigner);
-        }
-
-        $.kmsHasSignedForResponse[migrationRequestId][kmsSigner] = true;
-
-        address[] storage consensusTxSenders = $.consensusTxSenderAddresses[migrationRequestId][digest];
-        consensusTxSenders.push(msg.sender);
-
-        emit MigrationResponse(migrationRequestId, keyDigests, signature, msg.sender);
-
-        if (
-            !$.isRequestDone[migrationRequestId] &&
-            _isKmsConsensusReachedForContext(contextId, consensusTxSenders.length)
-        ) {
-            $.isRequestDone[migrationRequestId] = true;
-            $.consensusDigest[migrationRequestId] = digest;
-
-            for (uint256 i = 0; i < keyDigests.length; i++) {
-                $.compressedKeyDigests[keyId].push(keyDigests[i]);
-            }
-
             string[] memory consensusUrls = _buildConsensusStorageUrls(contextId, consensusTxSenders);
-            emit CompressedKeyMaterialAdded(keyId, consensusUrls, keyDigests);
+            if (migrationKeyId == 0) {
+                _recordKeygenConsensus(keyId, keyDigests, consensusUrls);
+            } else {
+                for (uint256 i = 0; i < keyDigests.length; i++) {
+                    $.compressedKeyDigests[migrationKeyId].push(keyDigests[i]);
+                }
+                emit CompressedKeyMaterialAdded(migrationKeyId, consensusUrls, keyDigests);
+            }
         }
     }
 
