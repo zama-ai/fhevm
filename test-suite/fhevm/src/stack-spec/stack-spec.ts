@@ -40,6 +40,7 @@ export type StackSpec = {
   target: State["target"];
   versions: VersionBundle;
   kmsCoreVersionByNodeId?: State["kmsCoreVersionByNodeId"];
+  kmsConnectorVersionByNodeId?: State["kmsConnectorVersionByNodeId"];
   overrides: State["overrides"];
   topology: Topology;
   hostChains: HostChainScenario[];
@@ -110,6 +111,7 @@ const stackSpecFromResolved = (input: {
   target: State["target"];
   versions: VersionBundle;
   kmsCoreVersionByNodeId?: State["kmsCoreVersionByNodeId"];
+  kmsConnectorVersionByNodeId?: State["kmsConnectorVersionByNodeId"];
   overrides: State["overrides"];
   scenario: ResolvedScenario;
   requiresGitHub: boolean;
@@ -139,6 +141,7 @@ const stackSpecFromResolved = (input: {
       target: input.target,
       versions: input.versions,
       kmsCoreVersionByNodeId: input.kmsCoreVersionByNodeId,
+      kmsConnectorVersionByNodeId: input.kmsConnectorVersionByNodeId,
       overrides: input.overrides,
       topology: bg.topology,
       hostChains: bg.hostChains,
@@ -152,6 +155,7 @@ const stackSpecFromResolved = (input: {
     target: input.target,
     versions: input.versions,
     kmsCoreVersionByNodeId: input.kmsCoreVersionByNodeId,
+    kmsConnectorVersionByNodeId: input.kmsConnectorVersionByNodeId,
     overrides: input.overrides,
     topology: topologyFromScenario(input.scenario),
     hostChains: input.scenario.hostChains,
@@ -162,13 +166,23 @@ const stackSpecFromResolved = (input: {
 
 /** Rebuilds a stack spec from persisted state. */
 export const stackSpecForState = (
-  state: Pick<State, "requiresGitHub" | "target" | "versions" | "kmsCoreVersionByNodeId" | "overrides" | "scenario">,
+  state: Pick<
+    State,
+    | "requiresGitHub"
+    | "target"
+    | "versions"
+    | "kmsCoreVersionByNodeId"
+    | "kmsConnectorVersionByNodeId"
+    | "overrides"
+    | "scenario"
+  >,
 ): StackSpec =>
   stackSpecFromResolved({
     requiresGitHub: state.requiresGitHub ?? true,
     target: state.target,
     versions: state.versions,
     kmsCoreVersionByNodeId: state.kmsCoreVersionByNodeId,
+    kmsConnectorVersionByNodeId: state.kmsConnectorVersionByNodeId,
     overrides: state.overrides,
     scenario: state.scenario,
   });

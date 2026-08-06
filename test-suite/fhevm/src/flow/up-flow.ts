@@ -102,7 +102,7 @@ import {
   writeJson,
 } from "../utils/fs";
 import { ensureDiscovery, createDiscovery, defaultEndpoints, discoverContracts, minioIp, validateDiscovery } from "./discovery";
-import { kmsConnectorEnvName, kmsCoreName } from "../kms-party";
+import { kmsConnectorEnvName, kmsConnectorPrefix, kmsCoreName } from "../kms-party";
 import { defaultHostChain, extraHostChains, hostChainsForState } from "./topology";
 import {
   kmsConnectorHealthContainers,
@@ -1666,6 +1666,15 @@ export const upgradeRuntimeGroup = async (groupValue: string | undefined, option
   }
 };
 
+const KMS_CONNECTOR_VERSION_KEYS = [
+  "CONNECTOR_DB_MIGRATION_VERSION",
+  "CONNECTOR_GW_LISTENER_VERSION",
+  "CONNECTOR_KMS_WORKER_VERSION",
+  "CONNECTOR_TX_SENDER_VERSION",
+] as const;
+const KMS_NODE_VERSION_KEYS = ["CORE_VERSION", ...KMS_CONNECTOR_VERSION_KEYS] as const;
+const KMS_CONNECTOR_RUNTIME_SUFFIXES = ["gw-listener", "kms-worker", "tx-sender"] as const;
+
 type ThresholdKmsNodeUpgradeOperations = {
   composeUp: typeof composeUp;
   ensureRuntimeArtifacts: typeof ensureRuntimeArtifacts;
@@ -1709,7 +1718,12 @@ export const upgradeThresholdKmsNode = async (
   }
 
   await operations.ensureRuntimeArtifacts(state, "upgrade");
-  const lockedState = (await applyRuntimeUpgradeLock(state, "kms-core", ["CORE_VERSION"], options.lockFile)).state;
+  // The "kms" key set, not just CORE_VERSION: a connector only ever talks to its own
+  // core, and across a release boundary the pair has to move together. Locks that
+  // carry only CORE_VERSION (the PRSS hotfix runbook) still work — buildLockedState
+  // moves whichever of the allowed keys the lock actually changes.
+  const locked = await applyRuntimeUpgradeLock(state, "kms", KMS_NODE_VERSION_KEYS, options.lockFile);
+  const lockedState = locked.state;
   await assertSchemaCompatibility(lockedState.versions, lockedState.overrides, lockedState.scenario, false);
 
   const targetVersion = lockedState.versions.env.CORE_VERSION;
@@ -1723,22 +1737,64 @@ export const upgradeThresholdKmsNode = async (
     }),
   );
   versionByNodeId[nodeId] = targetVersion;
-  const servingNodesAtTarget = Array.from(
-    { length: state.scenario.kms.committeeSize },
-    (_, index) => versionByNodeId[index + 1] === targetVersion,
+
+  // Same staircase for the connector keys this node serves behind — but only for the keys the
+  // lock actually moves. A lock that carries just CORE_VERSION (the PRSS hotfix bridge) must
+  // leave every connector exactly where it is, including this node's.
+  const changedKeys = new Set(locked.changedKeys);
+  const connectorTarget = Object.fromEntries(
+    KMS_CONNECTOR_VERSION_KEYS.filter((key) => changedKeys.has(key) && lockedState.versions.env[key]?.trim()).map(
+      (key) => [key, lockedState.versions.env[key] as string],
+    ),
+  );
+  const connectorByNodeId = Object.fromEntries(
+    Array.from({ length: state.scenario.kms.parties }, (_, index) => {
+      const id = index + 1;
+      const current = Object.fromEntries(
+        KMS_CONNECTOR_VERSION_KEYS.filter((key) => state.versions.env[key]?.trim()).map((key) => [
+          key,
+          state.kmsConnectorVersionByNodeId?.[id]?.[key] ?? (state.versions.env[key] as string),
+        ]),
+      );
+      return [id, id === nodeId ? { ...current, ...connectorTarget } : current];
+    }),
+  );
+
+  const nodeIsAtTarget = (id: number) =>
+    versionByNodeId[id] === targetVersion &&
+    Object.entries(connectorTarget).every(([key, version]) => connectorByNodeId[id]?.[key] === version);
+  const servingNodesAtTarget = Array.from({ length: state.scenario.kms.committeeSize }, (_, index) =>
+    nodeIsAtTarget(index + 1),
   ).every(Boolean);
+
   const globalVersion = servingNodesAtTarget ? targetVersion : state.versions.env.CORE_VERSION;
   const perNodeVersions = Object.fromEntries(
     Object.entries(versionByNodeId).filter(([, version]) => version !== globalVersion),
   );
+  // A node needs a per-node connector pin only where it differs from whatever the bundle says
+  // once this step lands. That keeps a core-only lock from recording redundant pins, and drops
+  // every pin again on the step that converges the cluster.
+  const globalConnector = servingNodesAtTarget ? lockedState.versions.env : state.versions.env;
+  const perNodeConnector = Object.fromEntries(
+    Object.entries(connectorByNodeId)
+      .map(([id, versions]) => [
+        id,
+        Object.fromEntries(Object.entries(versions).filter(([key, version]) => globalConnector[key] !== version)),
+      ])
+      .filter(([, versions]) => Object.keys(versions as Record<string, string>).length),
+  ) as State["kmsConnectorVersionByNodeId"];
+  const hasPerNodeConnector = Object.keys(perNodeConnector ?? {}).length > 0;
+
   const nextState: State = servingNodesAtTarget
     ? {
         ...lockedState,
         kmsCoreVersionByNodeId: Object.keys(perNodeVersions).length ? perNodeVersions : undefined,
+        kmsConnectorVersionByNodeId: hasPerNodeConnector ? perNodeConnector : undefined,
       }
     : {
         ...state,
         kmsCoreVersionByNodeId: perNodeVersions,
+        kmsConnectorVersionByNodeId: hasPerNodeConnector ? perNodeConnector : undefined,
         updatedAt: new Date().toISOString(),
       };
 
@@ -1749,6 +1805,21 @@ export const upgradeThresholdKmsNode = async (
   console.log(`[upgrade] KMS node ${nodeId} (${container})`);
   await operations.composeUp("core-threshold", [container], { noDeps: true, forceRecreate: true });
   await operations.waitForContainer(container, "healthy");
+
+  // Recreate this party's connector tier only once its core is serving again, so the
+  // connector never points at a core mid-restart. Migrations first, as elsewhere.
+  if (Object.keys(connectorTarget).length && state.scenario.kms.mode === "threshold") {
+    const prefix = `${kmsConnectorPrefix(nodeId)}-`;
+    const migration = `${prefix}db-migration`;
+    const runtime = KMS_CONNECTOR_RUNTIME_SUFFIXES.map((suffix) => `${prefix}${suffix}`);
+    console.log(`[upgrade] KMS connector ${nodeId} (${runtime.join(", ")})`);
+    await operations.composeUp("kms-connector", [migration], { noDeps: true, forceRecreate: true });
+    await operations.waitForContainer(migration, "complete");
+    await operations.composeUp("kms-connector", runtime, { noDeps: true, forceRecreate: true });
+    for (const service of runtime) {
+      await operations.waitForContainer(service, "running");
+    }
+  }
 };
 
 const RESUME_HINT_BLOCKERS = new Set([

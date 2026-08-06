@@ -545,6 +545,181 @@ describe("upgradeThresholdKmsNode", () => {
     });
   });
 
+  // A connector only ever talks to its own core, and the two cannot straddle a release
+  // boundary, so a lock that moves both has to move them for the same party in one step.
+  test("moves a node's connector with its core, leaving every other party untouched", async () => {
+    await withTempStateDir(async (stateDir) => {
+      const versions = presetBundle("latest-main", "abcdef0", "baseline.json");
+      let persisted: State = {
+        target: "latest-main",
+        lockPath: "/tmp/baseline.json",
+        requiresGitHub: true,
+        versions,
+        overrides: [],
+        scenario: testDefaultScenario({
+          kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" },
+        }),
+        completedSteps: ["base"],
+        updatedAt: "2026-07-14T00:00:00.000Z",
+      };
+      const lockFile = path.join(stateDir, "target.json");
+      await writeJson(lockFile, {
+        ...versions,
+        lockName: "target.json",
+        env: {
+          ...versions.env,
+          CORE_VERSION: "target-core",
+          CONNECTOR_GW_LISTENER_VERSION: "target-connector",
+          CONNECTOR_KMS_WORKER_VERSION: "target-connector",
+          CONNECTOR_TX_SENDER_VERSION: "target-connector",
+          CONNECTOR_DB_MIGRATION_VERSION: "target-connector",
+        },
+      });
+      const recreated: string[] = [];
+      const operations = {
+        async loadState() {
+          return persisted;
+        },
+        async projectContainers() {
+          return ["kms-core"];
+        },
+        async ensureRuntimeArtifacts() {},
+        async saveState(next: State) {
+          persisted = next;
+        },
+        async generateRuntime() {},
+        async composeUp(_component: string, services: string[] = []) {
+          recreated.push(...services);
+        },
+        async waitForContainer() {},
+      };
+
+      await upgradeThresholdKmsNode(2, { lockFile }, operations);
+
+      // Node 2's core and its own connector tier, and nothing belonging to another party.
+      expect(recreated).toEqual([
+        "kms-core-2",
+        "kms-connector-2-db-migration",
+        "kms-connector-2-gw-listener",
+        "kms-connector-2-kms-worker",
+        "kms-connector-2-tx-sender",
+      ]);
+      expect(persisted.kmsCoreVersionByNodeId).toEqual({ 2: "target-core" });
+      expect(persisted.kmsConnectorVersionByNodeId?.[2]).toEqual({
+        CONNECTOR_DB_MIGRATION_VERSION: "target-connector",
+        CONNECTOR_GW_LISTENER_VERSION: "target-connector",
+        CONNECTOR_KMS_WORKER_VERSION: "target-connector",
+        CONNECTOR_TX_SENDER_VERSION: "target-connector",
+      });
+      expect(persisted.kmsConnectorVersionByNodeId?.[1]).toBeUndefined();
+      // The bundle itself has not moved while the cluster is mixed.
+      expect(persisted.versions.env.CORE_VERSION).toBe(versions.env.CORE_VERSION);
+    });
+  });
+
+  test("drops every per-node pin once the last node carries core and connector to target", async () => {
+    await withTempStateDir(async (stateDir) => {
+      const versions = presetBundle("latest-main", "abcdef0", "baseline.json");
+      let persisted: State = {
+        target: "latest-main",
+        lockPath: "/tmp/baseline.json",
+        requiresGitHub: true,
+        versions,
+        overrides: [],
+        scenario: testDefaultScenario({
+          kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" },
+        }),
+        completedSteps: ["base"],
+        updatedAt: "2026-07-14T00:00:00.000Z",
+      };
+      const lockFile = path.join(stateDir, "target.json");
+      await writeJson(lockFile, {
+        ...versions,
+        lockName: "target.json",
+        env: {
+          ...versions.env,
+          CORE_VERSION: "target-core",
+          CONNECTOR_GW_LISTENER_VERSION: "target-connector",
+          CONNECTOR_KMS_WORKER_VERSION: "target-connector",
+          CONNECTOR_TX_SENDER_VERSION: "target-connector",
+          CONNECTOR_DB_MIGRATION_VERSION: "target-connector",
+        },
+      });
+      const operations = {
+        async loadState() {
+          return persisted;
+        },
+        async projectContainers() {
+          return ["kms-core"];
+        },
+        async ensureRuntimeArtifacts() {},
+        async saveState(next: State) {
+          persisted = next;
+        },
+        async generateRuntime() {},
+        async composeUp() {},
+        async waitForContainer() {},
+      };
+
+      for (const nodeId of [1, 2, 3, 4]) {
+        await upgradeThresholdKmsNode(nodeId, { lockFile }, operations);
+      }
+
+      expect(persisted.versions.env.CORE_VERSION).toBe("target-core");
+      expect(persisted.versions.env.CONNECTOR_KMS_WORKER_VERSION).toBe("target-connector");
+      expect(persisted.kmsCoreVersionByNodeId).toBeUndefined();
+      expect(persisted.kmsConnectorVersionByNodeId).toBeUndefined();
+    });
+  });
+
+  // The PRSS hotfix bridge carries CORE_VERSION alone, and must leave connectors exactly
+  // where they are — including on the node whose core just moved.
+  test("leaves every connector untouched for a core-only lock", async () => {
+    await withTempStateDir(async (stateDir) => {
+      const versions = presetBundle("latest-main", "abcdef0", "baseline.json");
+      let persisted: State = {
+        target: "latest-main",
+        lockPath: "/tmp/baseline.json",
+        requiresGitHub: true,
+        versions,
+        overrides: [],
+        scenario: testDefaultScenario({
+          kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" },
+        }),
+        completedSteps: ["base"],
+        updatedAt: "2026-07-14T00:00:00.000Z",
+      };
+      const lockFile = path.join(stateDir, "target.json");
+      await writeJson(lockFile, {
+        ...versions,
+        lockName: "target.json",
+        env: { ...versions.env, CORE_VERSION: "bridge-core" },
+      });
+      const recreated: string[] = [];
+
+      await upgradeThresholdKmsNode(2, { lockFile }, {
+        async loadState() {
+          return persisted;
+        },
+        async projectContainers() {
+          return ["kms-core"];
+        },
+        async ensureRuntimeArtifacts() {},
+        async saveState(next: State) {
+          persisted = next;
+        },
+        async generateRuntime() {},
+        async composeUp(_component, services = []) {
+          recreated.push(...services);
+        },
+        async waitForContainer() {},
+      });
+
+      expect(recreated).toEqual(["kms-core-2"]);
+      expect(persisted.kmsConnectorVersionByNodeId).toBeUndefined();
+    });
+  });
+
   test("keeps a spare core on its prior version when the serving committee reaches the target", async () => {
     await withTempStateDir(async (stateDir) => {
       const versions = presetBundle("latest-main", "abcdef0", "baseline.json");
