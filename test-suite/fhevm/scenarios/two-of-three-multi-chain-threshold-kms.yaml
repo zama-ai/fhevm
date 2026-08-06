@@ -1,0 +1,27 @@
+version: 1
+kind: coprocessor-consensus
+name: Two Of Three Multi Chain Threshold KMS
+description: >
+  3 coprocessors with threshold 2 across two host chains, plus a real 4-party
+  threshold-mode KMS cluster (t=1) running SECURE keygen with Test FHE parameters.
+  Built for rollouts that upgrade participants one at a time: 4 KMS nodes give a
+  node-by-node core+connector staircase, and 3 coprocessors at threshold 2 make the
+  three consensus states observable as instances cross over (below threshold, at
+  threshold, all upgraded). Two host chains keep the canonical / non-canonical split
+  covered, which is what distinguishes contracts that only exist on the canonical
+  chain. Secure keygen is ~360s for 4 parties (measured).
+hostChains:
+  - key: host
+    chainId: "12345"
+    rpcPort: 8545
+  - key: chain-b
+    chainId: "67890"
+    rpcPort: 8547
+topology:
+  count: 3
+  threshold: 2
+kms:
+  mode: threshold
+  parties: 4 # MPC nodes; KMS core requires parties == 3*threshold + 1
+  threshold: 1 # t (reconstruction needs 2t+1 = 3 matching responses)
+  fheParams: Test # Test only for now; Default deferred to a follow-up PR
