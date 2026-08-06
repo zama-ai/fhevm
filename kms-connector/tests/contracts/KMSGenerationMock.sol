@@ -29,8 +29,6 @@ contract KMSGenerationMock {
 
     event KeygenResponse(uint256 keyId, KeyDigest[] keyDigests, bytes signature, address kmsTxSender);
 
-    event MigrationResponse(uint256 migrationRequestId, KeyDigest[] keyDigests, bytes signature, address kmsTxSender);
-
     event ActivateKey(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
 
     event CompressedKeyMaterialAdded(uint256 indexed keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
@@ -85,18 +83,12 @@ contract KMSGenerationMock {
         string[] memory kmsNodeStorageUrls = new string[](1);
 
         emit KeygenResponse(keyId, keyDigests, signature, kmsTxSender);
-
-        emit ActivateKey(keyId, kmsNodeStorageUrls, keyDigests);
-    }
-
-    function migrationResponse(uint256 migrationRequestId, KeyDigest[] calldata keyDigests, bytes calldata signature)
-        external
-    {
-        address kmsTxSender;
-        string[] memory kmsNodeStorageUrls = new string[](1);
-
-        emit MigrationResponse(migrationRequestId, keyDigests, signature, kmsTxSender);
-        emit CompressedKeyMaterialAdded(keyIdByMigrationRequestId[migrationRequestId], kmsNodeStorageUrls, keyDigests);
+        uint256 migrationKeyId = keyIdByMigrationRequestId[keyId];
+        if (migrationKeyId == 0) {
+            emit ActivateKey(keyId, kmsNodeStorageUrls, keyDigests);
+        } else {
+            emit CompressedKeyMaterialAdded(migrationKeyId, kmsNodeStorageUrls, keyDigests);
+        }
     }
 
     function crsgenRequest(uint256 maxBitLength, ParamsType paramsType) external {

@@ -193,12 +193,7 @@ impl DbKmsResponsePicker {
                 ) AS resp
                 WHERE keygen_responses.key_id = resp.key_id
                 RETURNING resp.key_id, key_digests, signature, keygen_responses.created_at,
-                    keygen_responses.otlp_context,
-                    (
-                        SELECT migration_key_id
-                        FROM keygen_requests
-                        WHERE keygen_requests.key_id = resp.key_id
-                    ) AS migration_key_id
+                    keygen_responses.otlp_context
             ",
         )
         .bind(self.responses_batch_size as i16)

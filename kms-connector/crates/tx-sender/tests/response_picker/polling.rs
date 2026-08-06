@@ -1,11 +1,7 @@
 use connector_utils::tests::{
-    db::{
-        requests::{InsertRequestOptions, insert_rand_compressed_key_migration_request},
-        responses::{TestResponseType, insert_rand_keygen_response, insert_rand_response},
-    },
+    db::responses::{TestResponseType, insert_rand_response},
     setup::TestInstanceBuilder,
 };
-use connector_utils::types::KmsResponseKind;
 use rstest::rstest;
 use std::time::Duration;
 use tracing::info;
@@ -43,30 +39,5 @@ async fn test_pick_response_with_polling_backup(
     info!("Checking {response_type} data...");
     assert_eq!(responses[0].kind, inserted_response);
     info!("Data OK!");
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_recover_migration_response_route_from_request() -> anyhow::Result<()> {
-    let test_instance = TestInstanceBuilder::db_setup().await?;
-    let request = insert_rand_compressed_key_migration_request(
-        test_instance.db(),
-        InsertRequestOptions::default(),
-    )
-    .await?;
-    let mut expected =
-        insert_rand_keygen_response(test_instance.db(), Some(request.migrationRequestId), None)
-            .await?;
-    expected.is_migration = true;
-
-    let config = Config {
-        database_polling_timeout: Duration::from_millis(500),
-        ..Default::default()
-    };
-    let mut response_picker =
-        DbKmsResponsePicker::connect(test_instance.db().clone(), &config).await?;
-
-    let responses = response_picker.pick_responses().await?;
-    assert_eq!(responses[0].kind, KmsResponseKind::Keygen(expected));
     Ok(())
 }
