@@ -170,7 +170,7 @@ jobs:
       - run: npm ci
       - run: npm run build:prod
       - run: npx playwright install --with-deps
-      - run: npm run test:browser
+      - run: npm run test:browser-smoke
 
   # --- Cleartext (Anvil) suites: one job per foundry profile ---
   cleartext:

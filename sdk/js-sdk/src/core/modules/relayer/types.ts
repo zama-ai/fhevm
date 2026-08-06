@@ -18,6 +18,8 @@ import type { ZkProof } from '../../types/zkProof-p.js';
 import type { Handle, InputHandle } from '../../types/encryptedTypes-p.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
 import type { FhevmRuntime } from '../../types/coreFhevmRuntime.js';
+import type { FhevmClientFrozenContext } from '../../types/fhevmClientFrozenContext-p.js';
+import type { Auth } from '../../types/auth.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -79,6 +81,7 @@ export type FetchCoprocessorSignaturesParameters = {
   readonly payload: {
     readonly zkProof: ZkProof;
   };
+  readonly fhevmContext: FhevmClientFrozenContext;
   readonly options?: RelayerInputProofOptions | undefined;
 };
 
@@ -104,6 +107,7 @@ export type FetchPublicDecryptParameters = {
     readonly orderedHandles: readonly Handle[];
     readonly extraData: BytesHex;
   };
+  readonly fhevmContext: FhevmClientFrozenContext;
   readonly options?: RelayerPublicDecryptOptions | undefined;
 };
 
@@ -135,6 +139,7 @@ export type FetchUserDecryptParametersV1 = {
     readonly kmsDecryptEip712Message: KmsUserDecryptEip712V1Message;
     readonly kmsDecryptEip712Signature: Bytes65Hex;
   };
+  readonly fhevmContext: FhevmClientFrozenContext;
   readonly options?: RelayerUserDecryptOptions | undefined;
 };
 
@@ -148,8 +153,10 @@ export type FetchUserDecryptParametersV2 = {
     }>;
     readonly kmsDecryptEip712Signer: ChecksummedAddress;
     readonly kmsDecryptEip712Message: KmsUserDecryptEip712V2Message;
-    readonly kmsDecryptEip712Signature: Bytes65Hex;
+    // Variable length: 65-byte EOA, ERC-1271 blob, or empty `0x`.
+    readonly kmsDecryptEip712Signature: BytesHex;
   };
+  readonly fhevmContext: FhevmClientFrozenContext;
   readonly options?: RelayerUserDecryptOptions | undefined;
 };
 
@@ -179,6 +186,7 @@ export type FetchDelegatedUserDecryptParameters = {
     readonly kmsDecryptEip712Message: KmsDelegatedUserDecryptEip712V1Message;
     readonly kmsDecryptEip712Signature: Bytes65Hex;
   };
+  readonly fhevmContext: FhevmClientFrozenContext;
   readonly options?: RelayerDelegatedUserDecryptOptions | undefined;
 };
 
@@ -192,6 +200,27 @@ export type FetchDelegatedUserDecryptModuleFunction = {
 };
 
 ////////////////////////////////////////////////////////////////////////////////
+// 6. fetchFeatures
+////////////////////////////////////////////////////////////////////////////////
+
+export type FetchFeaturesParameters = {
+  readonly options?:
+    | {
+        readonly auth?: Auth | undefined;
+      }
+    | undefined;
+};
+
+export type FetchFeaturesReturnType = { readonly relayerSupportsV3UserDecryptRoute: boolean };
+
+export type FetchFeaturesModuleFunction = {
+  fetchFeatures(
+    relayerClient: RelayerClientWithRuntime,
+    parameters: FetchFeaturesParameters,
+  ): Promise<FetchFeaturesReturnType>;
+};
+
+////////////////////////////////////////////////////////////////////////////////
 // RelayerModule
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -201,7 +230,8 @@ export type RelayerModule = Prettify<
     FetchCoprocessorSignaturesModuleFunction &
     FetchUserDecryptModuleFunction &
     FetchPublicDecryptModuleFunction &
-    FetchDelegatedUserDecryptModuleFunction
+    FetchDelegatedUserDecryptModuleFunction &
+    FetchFeaturesModuleFunction
 >;
 
 // Relayer is a base module. It does not take any runtime argument

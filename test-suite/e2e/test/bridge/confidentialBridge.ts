@@ -29,7 +29,9 @@ const DECRYPT_TIMEOUT_MS = 180_000;
 
 // Per-chain bridge/endpoint addresses: primary chain uses unindexed vars, others HOST_CHAIN_<i>_*.
 const bridgeAddrFor = (i: number) =>
-  (i === 0 ? process.env.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS : process.env[`HOST_CHAIN_${i}_CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS`]) || undefined;
+  (i === 0
+    ? process.env.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS
+    : process.env[`HOST_CHAIN_${i}_CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS`]) || undefined;
 const endpointAddrFor = (i: number) =>
   (i === 0 ? process.env.LZ_ENDPOINT_ADDRESS : process.env[`HOST_CHAIN_${i}_LZ_ENDPOINT_ADDRESS`]) || undefined;
 
@@ -68,9 +70,7 @@ const publicDecrypt = (end: BridgeEnd, handle: string) =>
 
 const userDecrypt = (end: BridgeEnd, handle: string) =>
   pollDecrypt(async () =>
-    BigInt(
-      await end.instance.userDecryptSingleHandle({ handle, contractAddress: end.appAddr, signer: end.alice }),
-    ),
+    BigInt(await end.instance.userDecryptSingleHandle({ handle, contractAddress: end.appAddr, signer: end.alice })),
   );
 
 /** True if publicDecrypt rejects the handle now (no public-decrypt ACL yet, or no ciphertext). */
@@ -275,7 +275,9 @@ describe('Confidential Bridge', function () {
     const srcHandle = await mint(host, 13);
     // Deliver lzReceive only: the handle associates, but onConfidentialBridgeReceived (makePubliclyDecryptable) hasn't run.
     const { dstHandles, ctx, compose } = await bridge(host, chainB, [srcHandle], '0x', true);
-    expect(await notPubliclyDecryptable(chainB, dstHandles[0]), 'not decryptable before the compose leg').to.equal(true);
+    expect(await notPubliclyDecryptable(chainB, dstHandles[0]), 'not decryptable before the compose leg').to.equal(
+      true,
+    );
 
     // Now run the compose leg -> onConfidentialBridgeReceived -> makePubliclyDecryptable -> decryptable.
     await relayCompose(ctx, compose!);
@@ -296,7 +298,10 @@ describe('Confidential Bridge', function () {
     // persistent stack. Both setters are owner-gated; the e2e env carries the deployer (ACL owner) key.
     const endpoint = new ethers.Contract(
       chainB.endpoint,
-      ['function defaultReceiveLibrary(uint32) view returns (address)', 'function setDefaultReceiveLibrary(uint32,address,uint256)'],
+      [
+        'function defaultReceiveLibrary(uint32) view returns (address)',
+        'function setDefaultReceiveLibrary(uint32,address,uint256)',
+      ],
       owner,
     );
     if ((await endpoint.defaultReceiveLibrary(FAKE_EID)) === ethers.ZeroAddress) {
@@ -311,7 +316,12 @@ describe('Confidential Bridge', function () {
     // Forging the delivery leaves the handle unassociated (no ciphertext) while onConfidentialBridgeReceived still grants
     // on-chain public ACL — the exact state the fallback exists to rescue.
     const srcHandle = await mint(host, 0); // value irrelevant: it's never bridged/associated
-    const ctx = { srcEndpoint: host.endpoint, dstEndpoint: chainB.endpoint, dstBridge: chainB.bridge, dstSigner: chainB.alice };
+    const ctx = {
+      srcEndpoint: host.endpoint,
+      dstEndpoint: chainB.endpoint,
+      dstBridge: chainB.bridge,
+      dstSigner: chainB.alice,
+    };
     const [dstHandle] = await forgeDelivery(ctx, {
       srcEid: FAKE_EID,
       dstEid: Number(chainB.cfg.chainId),
@@ -325,7 +335,11 @@ describe('Confidential Bridge', function () {
     expect(await notPubliclyDecryptable(chainB, dstHandle), 'no ciphertext before the fallback grant').to.equal(true);
 
     // Governance (the ACL owner) grants the plaintext fallback; the coprocessor materializes it.
-    const bridge = new ethers.Contract(chainB.bridge, ['function grantFallbackPlaintext(bytes32 dstHandle, uint256 plaintext)'], owner);
+    const bridge = new ethers.Contract(
+      chainB.bridge,
+      ['function grantFallbackPlaintext(bytes32 dstHandle, uint256 plaintext)'],
+      owner,
+    );
     await (await bridge.grantFallbackPlaintext(dstHandle, value)).wait();
 
     expect(await publicDecrypt(chainB, dstHandle)).to.equal(value);

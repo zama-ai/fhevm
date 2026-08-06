@@ -3,10 +3,13 @@ import { Contract, ContractTransactionReceipt, EventLog } from 'ethers';
 import { ethers } from 'hardhat';
 
 import { ERC1271ApproveHashWallet, UserDecrypt } from '../../types';
-import { aclAddress, createInstances, relayerApiKey, relayerUrl, verifyingContractAddressDecryption } from '../instance';
-import { Signers, getSigners, initSigners } from '../signers';
-import { FhevmInstances } from '../types';
-import { waitForBlock } from '../utils';
+import {
+  aclAddress,
+  createInstances,
+  relayerApiKey,
+  relayerUrl,
+  verifyingContractAddressDecryption,
+} from '../instance';
 import type { UnifiedConfig, UnifiedDecryptRequest } from '../sdk/unified/unifiedUserDecrypt';
 import {
   computeUnifiedDigest,
@@ -16,6 +19,9 @@ import {
   requestUnifiedUserDecrypt,
   submitUnifiedRequest,
 } from '../sdk/unified/unifiedUserDecrypt';
+import { Signers, getSigners, initSigners } from '../signers';
+import { FhevmInstances } from '../types';
+import { waitForBlock } from '../utils';
 
 // Minimal ABI for the decryption-signature-invalidation surface on the host-chain ACL.
 const ACL_ABI = [
@@ -224,10 +230,15 @@ describe('Decryption signature invalidation', function () {
       startTimestamp: startBefore(threshold, 3600),
       durationSeconds: DURATION_SECONDS,
     };
-    const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.eve }, {
-      waitForTerminal: true,
-      timeoutMs: REJECTION_WAIT_MS,
-    });
+    const { post, poll } = await requestUnifiedUserDecrypt(
+      cfg,
+      req,
+      { kind: 'eoa', signer: signers.eve },
+      {
+        waitForTerminal: true,
+        timeoutMs: REJECTION_WAIT_MS,
+      },
+    );
     // Signature is valid, so the relayer accepts; the invalidation check is
     // enforced only by the KMS Connector (startTimestamp < invalidatedBefore),
     // which rejects without responding — the job stays queued.
@@ -265,10 +276,15 @@ describe('Decryption signature invalidation', function () {
       startTimestamp: T, // exactly AT the threshold — pins the >= boundary
       durationSeconds: DURATION_SECONDS,
     };
-    const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.carol }, {
-      waitForTerminal: true,
-      timeoutMs: POSITIVE_TIMEOUT_MS,
-    });
+    const { post, poll } = await requestUnifiedUserDecrypt(
+      cfg,
+      req,
+      { kind: 'eoa', signer: signers.carol },
+      {
+        waitForTerminal: true,
+        timeoutMs: POSITIVE_TIMEOUT_MS,
+      },
+    );
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
     expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
     // Decrypt the same handle through the public SDK and assert the known plaintext.
@@ -294,10 +310,15 @@ describe('Decryption signature invalidation', function () {
       startTimestamp: startBefore(threshold, 3600),
       durationSeconds: DURATION_SECONDS,
     };
-    const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.dave }, {
-      waitForTerminal: true,
-      timeoutMs: POSITIVE_TIMEOUT_MS,
-    });
+    const { post, poll } = await requestUnifiedUserDecrypt(
+      cfg,
+      req,
+      { kind: 'eoa', signer: signers.dave },
+      {
+        waitForTerminal: true,
+        timeoutMs: POSITIVE_TIMEOUT_MS,
+      },
+    );
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
     expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
     // Decrypt the same handle through the public SDK and assert the known plaintext.

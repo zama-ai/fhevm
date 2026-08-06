@@ -1,4 +1,5 @@
 import type { Account, Chain, Hex, PublicClient, Transport } from 'viem';
+import type { TransportKeyPair } from '@fhevm/sdk/actions/decrypt';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createWalletClient, getAddress, http } from 'viem';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
@@ -142,7 +143,7 @@ export function defineClientDecryptStalePermitMigrationTests(parameters: {
      */
     async function forgeV1Permit(
       client: Awaited<ReturnType<typeof createReadyClient>>,
-      transportKeyPair: unknown,
+      transportKeyPair: TransportKeyPair,
       opts: {
         readonly extraData: Hex;
         readonly account?: Account;
@@ -162,7 +163,7 @@ export function defineClientDecryptStalePermitMigrationTests(parameters: {
         verifyingContract: getAddress(config.fhevmChain.fhevm.gateway.contracts.decryption.address as Hex),
       };
 
-      const publicKey = (transportKeyPair as { readonly publicKey: Hex }).publicKey;
+      const publicKey = transportKeyPair.publicKey;
       const contractAddresses = [getAddress(config.fheTestAddress as Hex)];
 
       const message = {
@@ -208,9 +209,7 @@ export function defineClientDecryptStalePermitMigrationTests(parameters: {
           signature,
           signerAddress: account.address,
         },
-        transportKeyPair: transportKeyPair as Parameters<
-          typeof client.parseSignedDecryptionPermit
-        >[0]['transportKeyPair'],
+        transportKeyPair,
       });
     }
 
@@ -254,7 +253,7 @@ export function defineClientDecryptStalePermitMigrationTests(parameters: {
     /** Signs a fresh permit and returns the extraData the current chain embeds. */
     async function currentPermitExtraData(client: Awaited<ReturnType<typeof createReadyClient>>): Promise<string> {
       const transportKeyPair = await client.generateTransportKeyPair();
-      const signedPermit = await client.signDecryptionPermit({
+      const signedPermit = await client.signLegacyDecryptionPermit({
         transportKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationSeconds: 24 * 3600,

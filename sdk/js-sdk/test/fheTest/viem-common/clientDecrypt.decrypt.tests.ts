@@ -44,7 +44,7 @@ export function defineClientDecryptDecryptTests(parameters: {
       expect(typeof client.decryptValues).toBe('function');
       expect(typeof client.decryptValuesFromPairs).toBe('function');
       expect(typeof client.generateTransportKeyPair).toBe('function');
-      expect(typeof client.signDecryptionPermit).toBe('function');
+      expect(typeof client.signLegacyDecryptionPermit).toBe('function');
     });
 
     it('should generate an e2e transport key pair', async () => {
@@ -66,7 +66,7 @@ export function defineClientDecryptDecryptTests(parameters: {
       await client.ready;
 
       const keyPair = await client.generateTransportKeyPair();
-      const signedPermit = await client.signDecryptionPermit({
+      const legacySignedPermit = await client.signLegacyDecryptionPermit({
         transportKeyPair: keyPair,
         contractAddresses: [config.fheTestAddress],
         durationSeconds: 24 * 3600,
@@ -75,12 +75,91 @@ export function defineClientDecryptDecryptTests(parameters: {
         signer: config.account,
       });
 
-      expect(signedPermit).toBeDefined();
-      const [major, minor] = client.protocolVersion!.version.split('.').map(Number);
-      const expectedPermitVersion = major! * 1000 + minor! < 14 ? 1 : 2;
-      expect(signedPermit.version).toBe(expectedPermitVersion);
-      expect(signedPermit.eip712.primaryType).toBe('UserDecryptRequestVerification');
-      expect(signedPermit.isDelegated).toBe(false);
+      expect(legacySignedPermit).toBeDefined();
+      expect(legacySignedPermit.version).toBe(1);
+      expect(legacySignedPermit.eip712.primaryType).toBe('UserDecryptRequestVerification');
+      expect(legacySignedPermit.isDelegated).toBe(false);
+    });
+
+    it('should be idempotent when init()/ready are called multiple times', async () => {
+      const client = parameters.createFhevmDecryptClient({
+        chain: config.fhevmChain,
+        publicClient: config.publicClient,
+      });
+
+      // init() is lazy, shared and idempotent: repeated init() calls (and `ready`)
+      // return the same in-flight promise — no re-initialization, no re-alloc.
+      const init1 = client.init();
+      const init2 = client.init();
+      expect(init2).toBe(init1);
+      expect(client.ready).toBe(init1);
+
+      await Promise.all([init1, init2, client.init(), client.ready]);
+
+      // Still callable after initialization completes (instant no-op).
+      await client.init();
+      await client.ready;
+    });
+
+    it('should generate, serialize and parse an e2e transport key pair', async () => {
+      const client = parameters.createFhevmDecryptClient({
+        chain: config.fhevmChain,
+        publicClient: config.publicClient,
+      });
+      await client.ready;
+
+      const keyPair = await client.generateTransportKeyPair();
+      expect(keyPair).toBeDefined();
+
+      const serialized = await client.serializeTransportKeyPair({ transportKeyPair: keyPair });
+      expect(serialized.publicKey).toBeDefined();
+      expect(serialized.privateKey).toBeDefined();
+
+      const parsed = await client.parseTransportKeyPair({
+        publicKey: serialized.publicKey,
+        privateKey: serialized.privateKey,
+        tkmsVersion: serialized.tkmsVersion,
+      });
+      expect(parsed).toBeDefined();
+      // Round-trip: the parsed key pair carries the same public key and
+      // re-serializes identically.
+      expect(parsed.publicKey).toBe(keyPair.publicKey);
+      expect((await client.serializeTransportKeyPair({ transportKeyPair: parsed })).publicKey).toBe(
+        serialized.publicKey,
+      );
+    });
+
+    it('should serialize, parse and verify a legacy decryption permit', async () => {
+      const client = parameters.createFhevmDecryptClient({
+        chain: config.fhevmChain,
+        publicClient: config.publicClient,
+      });
+      await client.ready;
+
+      const keyPair = await client.generateTransportKeyPair();
+      const legacySignedPermit = await client.signLegacyDecryptionPermit({
+        transportKeyPair: keyPair,
+        contractAddresses: [config.fheTestAddress],
+        durationSeconds: 24 * 3600,
+        startTimestamp: Math.floor(Date.now() / 1000) - 5,
+        signerAddress: config.account.address,
+        signer: config.account,
+      });
+      expect(legacySignedPermit.version).toBe(1);
+
+      const serialized = await client.serializeSignedDecryptionPermit({ signedPermit: legacySignedPermit });
+      expect(serialized.version).toBe(1);
+      expect(serialized.eip712).toBeDefined();
+
+      // parseSignedDecryptionPermit re-validates the permit (EIP-712 signature +
+      // transport key pair binding) — parsing IS the verification step.
+      const parsed = await client.parseSignedDecryptionPermit({
+        serializedPermit: serialized,
+        transportKeyPair: keyPair,
+      });
+      expect(parsed.version).toBe(1);
+      expect(parsed.eip712.primaryType).toBe('UserDecryptRequestVerification');
+      expect(parsed.signerAddress.toLowerCase()).toBe(config.account.address.toLowerCase());
     });
 
     // ┌─────────────────────────────────────────────────────────────────────┐
@@ -124,7 +203,7 @@ export function defineClientDecryptDecryptTests(parameters: {
         await client.ready;
 
         const transportKeyPair = await client.generateTransportKeyPair();
-        const signedPermit = await client.signDecryptionPermit({
+        const signedPermit = await client.signLegacyDecryptionPermit({
           transportKeyPair: transportKeyPair,
           contractAddresses: [config.fheTestAddress],
           durationSeconds: 24 * 3600,
@@ -201,7 +280,7 @@ export function defineClientDecryptDecryptTests(parameters: {
       await client.ready;
 
       const transportKeyPair = await client.generateTransportKeyPair();
-      const signedPermit = await client.signDecryptionPermit({
+      const signedPermit = await client.signLegacyDecryptionPermit({
         transportKeyPair: transportKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationSeconds: 24 * 3600,
@@ -281,7 +360,7 @@ export function defineClientDecryptDecryptTests(parameters: {
       await client.ready;
 
       const transportKeyPair = await client.generateTransportKeyPair();
-      const signedPermit = await client.signDecryptionPermit({
+      const signedPermit = await client.signLegacyDecryptionPermit({
         transportKeyPair: transportKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationSeconds: 24 * 3600,
@@ -350,7 +429,7 @@ export function defineClientDecryptDecryptTests(parameters: {
       await client.ready;
 
       const transportKeyPair = await client.generateTransportKeyPair();
-      const signedPermit = await client.signDecryptionPermit({
+      const signedPermit = await client.signLegacyDecryptionPermit({
         transportKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationSeconds: 24 * 3600,
