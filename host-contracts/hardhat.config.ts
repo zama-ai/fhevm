@@ -181,6 +181,17 @@ const config: HardhatUserConfig = {
   },
   etherscan: {
     apiKey: process.env.ETHERSCAN_API_KEY!,
+    // Chains hardhat-verify does not ship a built-in config for.
+    customChains: [
+      {
+        network: 'hoodi',
+        chainId: chainIds.hoodi,
+        urls: {
+          apiURL: process.env.HOODI_ETHERSCAN_API_URL!,
+          browserURL: process.env.HOODI_ETHERSCAN_BROWSER_URL!,
+        },
+      },
+    ],
   },
   warnings: {
     '*': {
