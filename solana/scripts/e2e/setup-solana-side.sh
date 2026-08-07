@@ -46,7 +46,7 @@ SID_I64=-9223372036854763463
 # Yellowstone-first ingestion: disable optional host events and feed ordinary computation facts
 # to the coprocessor via gRPC Yellowstone reconstruction. The narrow created-public lifecycle batch
 # remains enabled for its non-reconstructible handles. That needs the geyser plugin, so the host is a native
-# solana-test-validator (agave 2.1.21, multi-arch incl. Apple Silicon) loading the external
+# solana-test-validator (agave 4.1.2, multi-arch incl. Apple Silicon) loading the external
 # Yellowstone plugin via --geyser-plugin-config (RPC 8899 + gRPC 10000). It binds 0.0.0.0 so the
 # dockerized KMS worker reaches RPC over host.docker.internal:8899 — the rest of the fhevm-cli
 # stack is unaffected. (surfpool was evaluated and rejected: its LiteSVM does not stream the
@@ -94,12 +94,14 @@ done
 # untouched; fresh CI runners have none (otherwise deploy fails with "No default signer found").
 mkdir -p "$(dirname "$DEPLOYER_KEYPAIR")"
 [ -f "$DEPLOYER_KEYPAIR" ] || solana-keygen new --no-bip39-passphrase --silent -o "$DEPLOYER_KEYPAIR"
-# cargo-build-sbf (agave 2.1.21, used by both `anchor build` and `cargo build-sbf` below) panics
-# with a NotFound error instead of creating its platform-tools cache on a fresh machine; pre-create
-# it so the SBF toolchain can self-provision. Harmless where it already exists (dev machines).
+# cargo-build-sbf (used by both `anchor build` and `cargo build-sbf` below) was observed on agave
+# 2.1.x to panic with a NotFound error instead of creating its platform-tools cache on a fresh
+# machine; pre-create it so the SBF toolchain can self-provision. Kept across the 4.1 bump because
+# it costs nothing and nobody has re-tested the fresh-machine path. Harmless where it already
+# exists (dev machines).
 mkdir -p "$HOME/.cache/solana"
 
-# Host = native solana-test-validator (agave 2.1.21, pinned in solana-e2e.yml) with the
+# Host = native solana-test-validator (agave 4.1.2, pinned in solana-e2e.yml) with the
 # Yellowstone geyser plugin (gRPC :10000) loaded via --geyser-plugin-config. The real validator
 # runs on the host arch directly (multi-arch incl. Apple Silicon) and — unlike surfpool's LiteSVM
 # — streams the SlotHashes/Clock sysvar accounts the reconstruction needs per slot. The matching

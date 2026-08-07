@@ -24,8 +24,8 @@ idl-build = [
 ]
 
 [dependencies]
-anchor-lang = { version = "1.0.2", features = ["init-if-needed"] }
-anchor-spl = { version = "1.0.2", default-features = false, features = ["associated_token", "token", "token_2022"] }
+anchor-lang = { version = "1.1.2", features = ["init-if-needed"] }
+anchor-spl = { version = "1.1.2", default-features = false, features = ["associated_token", "token", "token_2022"] }
 confidential-token = { path = "../confidential-token", features = ["cpi"] }
 demo-vault = { path = "../demo-vault", features = ["cpi"] }
 solana-sha256-hasher = "3.1.0"

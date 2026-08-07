@@ -11,8 +11,12 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
-  ANCHOR_VERSION: "1.0.2"
-  SOLANA_VERSION: "2.1.0"
+  # Every Solana runtime in this repo sits on the agave 4.1 line: this toolchain, the
+  # solana-test-validator in solana-e2e.yml, the Yellowstone geyser plugin, and the in-process
+  # SVMs (mollusk-svm, litesvm). Bump them together or the tiers stop agreeing about compute
+  # costs and feature gates.
+  ANCHOR_VERSION: "1.1.2"
+  SOLANA_VERSION: "4.1.2"
 
 jobs:
   check-changes:
