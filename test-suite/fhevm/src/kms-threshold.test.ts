@@ -165,14 +165,24 @@ describe("buildKmsThresholdOverride", () => {
     );
   });
 
-  test("gen-keys generates ONLY signing keys, sized to exactly N parties", () => {
+  test("gen-keys handles both the new config-file CLI and the legacy flag CLI", () => {
     const entrypoint = JSON.stringify(buildKmsThresholdOverride(fourParty, RENDER_OPTS).services["kms-core-gen-keys"].entrypoint);
-    // `--cmd signing-keys` and `--num-parties` are gated by `--help` probes (newer cores dropped both);
-    // keep the probes so a pinned newer CORE_VERSION still boots.
-    expect(entrypoint).toContain("if kms-gen-keys --help");
-    expect(entrypoint).toContain("if kms-gen-keys threshold --help");
+    // Newer cores take a TOML --config-file (threshold section selects threshold signing material).
+    expect(entrypoint).toContain("if kms-gen-keys --help 2>&1 | grep -q -- '--config-file'");
+    expect(entrypoint).toContain("kms-gen-keys --config-file /tmp/kms-gen-keys-4.toml");
+    expect(entrypoint).toContain("[threshold]");
+    expect(entrypoint).toContain("my_id = 4");
+    // Legacy flag form is kept behind the same probe so a pinned older CORE_VERSION still boots.
     expect(entrypoint).toContain("--cmd signing-keys");
     expect(entrypoint).toContain("--num-parties 4");
+    expect(entrypoint).toContain("threshold --signing-key-party-id 4");
+  });
+
+  test("core services pin the amd64 platform (the core image is published amd64-only)", () => {
+    const services = buildKmsThresholdOverride(fourParty, RENDER_OPTS).services;
+    for (const name of ["kms-core-gen-keys", "kms-core", "kms-core-4", "kms-core-init"]) {
+      expect(services[name].platform).toBe("linux/amd64");
+    }
   });
 
   test("rejects a non-threshold topology", () => {
