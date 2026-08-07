@@ -44,7 +44,7 @@ for arg in "$@"; do
 done
 
 # Keep in lockstep with .github/workflows/solana-tests.yml SOLANA_VERSION.
-EXPECTED_SOLANA="${EXPECTED_SOLANA:-2.1.0}"
+EXPECTED_SOLANA="${EXPECTED_SOLANA:-4.1.2}"
 EXPECTED_ANCHOR="$(awk -F'"' '/^anchor_version/ { print $2; exit }' Anchor.toml)"
 if [[ -z "$EXPECTED_ANCHOR" ]]; then
   echo "error: could not read anchor_version from Anchor.toml" >&2
