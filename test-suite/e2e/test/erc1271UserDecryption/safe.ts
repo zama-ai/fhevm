@@ -29,8 +29,17 @@
 import SafeArtifact from '@safe-global/safe-contracts/build/artifacts/contracts/Safe.sol/Safe.json';
 import CompatibilityFallbackHandlerArtifact from '@safe-global/safe-contracts/build/artifacts/contracts/handler/CompatibilityFallbackHandler.sol/CompatibilityFallbackHandler.json';
 import SafeProxyFactoryArtifact from '@safe-global/safe-contracts/build/artifacts/contracts/proxies/SafeProxyFactory.sol/SafeProxyFactory.json';
-import { Contract, ContractFactory, TypedDataEncoder, ZeroAddress, getBytes, hexlify, randomBytes } from 'ethers';
-import type { InterfaceAbi, Signer, TypedDataDomain } from 'ethers';
+import {
+  Contract,
+  ContractFactory,
+  TypedDataEncoder,
+  ZeroAddress,
+  getBytes,
+  hexlify,
+  keccak256,
+  randomBytes,
+} from 'ethers';
+import type { InterfaceAbi, Provider, Signer, TypedDataDomain } from 'ethers';
 
 import { SignaturePart, concatSignatureParts, sortSignatureParts } from '../sdk/unified/unifiedUserDecrypt';
 
@@ -63,7 +72,62 @@ const SAFE_MESSAGE_TYPES: Record<string, Array<{ name: string; type: string }>> 
   SafeMessage: [{ name: 'message', type: 'bytes' }],
 };
 
-/** Deploy the Safe v1.4.1 singleton, fallback handler and proxy factory from the canonical artifacts. */
+/**
+ * Canonical Safe v1.4.1 deployment addresses. Safe ships these through a
+ * deterministic factory, so they are IDENTICAL on every chain Safe has been
+ * deployed to (Sepolia and mainnet included) — which is why they can be
+ * constants rather than a per-chain table.
+ */
+const CANONICAL_SAFE_V1_4_1 = {
+  singleton: '0x41675C099F32341bf84BFc5382aF534df5C7461a',
+  handler: '0xfd0732Dc9E303f09fCEf3a7388Ad10A83459Ec99',
+  factory: '0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67',
+} as const;
+
+/** True iff `address` already holds exactly the code `artifact` would deploy. */
+async function holdsArtifactCode(
+  provider: Provider,
+  address: string,
+  artifact: { deployedBytecode: string },
+): Promise<boolean> {
+  const code = await provider.getCode(address);
+  return code !== '0x' && keccak256(code) === keccak256(artifact.deployedBytecode);
+}
+
+/**
+ * Safe v1.4.1 infrastructure, REUSED when the chain already has the canonical
+ * deployment and deployed from the packaged artifacts otherwise.
+ *
+ * On a live network (Sepolia, mainnet) this is both cheaper — it saves ~7M gas
+ * of singleton/handler/factory deployment per run — and strictly more faithful:
+ * the suite then exercises the very Safe contracts real users' wallets run on,
+ * not a copy. On an ephemeral devnet nothing is deployed at those addresses, so
+ * it falls back to deploying.
+ *
+ * The reuse is gated on a keccak comparison against the artifacts rather than
+ * on mere presence of code, so a chain with something else at those addresses
+ * deploys its own rather than silently testing an unknown contract.
+ */
+export async function resolveSafeInfra(deployer: Signer): Promise<SafeInfra> {
+  const provider = deployer.provider;
+  if (provider) {
+    const [singletonOk, handlerOk, factoryOk] = await Promise.all([
+      holdsArtifactCode(provider, CANONICAL_SAFE_V1_4_1.singleton, SafeArtifact),
+      holdsArtifactCode(provider, CANONICAL_SAFE_V1_4_1.handler, CompatibilityFallbackHandlerArtifact),
+      holdsArtifactCode(provider, CANONICAL_SAFE_V1_4_1.factory, SafeProxyFactoryArtifact),
+    ]);
+    if (singletonOk && handlerOk && factoryOk) {
+      return {
+        singletonAddress: CANONICAL_SAFE_V1_4_1.singleton,
+        handlerAddress: CANONICAL_SAFE_V1_4_1.handler,
+        factory: new Contract(CANONICAL_SAFE_V1_4_1.factory, SafeProxyFactoryArtifact.abi, deployer),
+      };
+    }
+  }
+  return deploySafeInfra(deployer);
+}
+
+/** Deploy the Safe v1.4.1 singleton, fallback handler and proxy factory from the packaged artifacts. */
 export async function deploySafeInfra(deployer: Signer): Promise<SafeInfra> {
   const deployFrom = async (artifact: { abi: unknown; bytecode: string }): Promise<Contract> => {
     const factory = new ContractFactory(artifact.abi as InterfaceAbi, artifact.bytecode, deployer);
