@@ -80,7 +80,12 @@ async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) -> u16 {
         work_items_batch_size: 40,
         dependence_chains_per_batch: 10,
         key_cache_size: 4,
-        coprocessor_fhe_threads: 4,
+        // Tests are #[serial(db)] so a single app instance owns the machine:
+        // give the FHE blocking pool every core. At 4 threads the operator
+        // matrix tests left 3/4 of the 16-core CI runner idle.
+        coprocessor_fhe_threads: std::thread::available_parallelism()
+            .map(std::num::NonZeroUsize::get)
+            .unwrap_or(4),
         tokio_threads: 2,
         pg_pool_max_connections: 2,
         metrics_addr: None,
