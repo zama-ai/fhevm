@@ -19,6 +19,7 @@ import {
 import { STATE_DIR, composePath, hostChainRuntimes } from "../layout";
 import { reconstructionThreshold } from "../kms-party";
 import { previewBundle } from "../resolve/bundle-store";
+import { OPTIONAL_REPO_KEYS } from "../resolve/target";
 import { loadState } from "../state/state";
 import type { LocalOverride, State, UpOptions, VersionBundle, VersionTarget } from "../types";
 import { ensureDir, writeJson } from "../utils/fs";
@@ -147,6 +148,16 @@ const runRolloutTest = async (receipt: RolloutReceipt, profile: string, options:
 export const matchesExpectedTestFailure = (error: unknown, errorIncludes: string): error is CommandError =>
   error instanceof CommandError && error.stderr.includes(errorIncludes);
 
+/**
+ * A rollout that starts before a component existed has to say so, and the only way a lock
+ * bundle expresses "this release does not run that component" is by leaving its key out —
+ * an optional key that is present must carry a real tag. Runbooks write the empty string
+ * instead, because a version map reads far better with every key listed at every phase than
+ * with keys appearing and disappearing between phases, so the empty string is dropped here.
+ */
+const withoutUnsetOptionalKeys = (versions: Record<string, string>) =>
+  Object.fromEntries(Object.entries(versions).filter(([key, value]) => value.length || !OPTIONAL_REPO_KEYS.has(key)));
+
 const writeRolloutVersionLock = async (name: string, options: RolloutLockOptions) => {
   const filename = name.endsWith(".json") ? name : `${name}.lock.json`;
   const file = path.join(STATE_DIR, "rollout", filename);
@@ -154,7 +165,7 @@ const writeRolloutVersionLock = async (name: string, options: RolloutLockOptions
   const bundle = {
     target: options.target ?? ROLLOUT_TARGET,
     lockName: path.basename(file),
-    env: options.versions,
+    env: withoutUnsetOptionalKeys(options.versions),
     sources: options.sources ?? ["rollout-runbook"],
   } satisfies VersionBundle;
   await writeJson(file, bundle);

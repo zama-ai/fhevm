@@ -171,6 +171,36 @@ describe("rollout runbook", () => {
     });
   });
 
+  // A lock bundle says "this release does not run that component" by leaving its optional key
+  // out; an optional key that is present has to carry a real tag. Runbooks list every key at
+  // every phase and write the empty string for the ones their baseline predates, so a lock that
+  // kept the empty string would be rejected before the stack ever booted.
+  test("drops optional component keys a runbook leaves unset", async () => {
+    await withTempStateDir(async () => {
+      const context = createRolloutContext(undefined, {
+        async previewBundle() {
+          return presetBundle("latest-main", "abcdef0", "latest-main-abcdef0.json");
+        },
+      });
+
+      const baselineFile = await context.resolveVersionLock("00-baseline", {
+        versions: { COPROCESSOR_CONSENSUS_DETECTOR_VERSION: "", COPROCESSOR_UPGRADE_CONTROLLER_VERSION: "" },
+      });
+      const targetFile = await context.resolveVersionLock("01-target", {
+        versions: { COPROCESSOR_CONSENSUS_DETECTOR_VERSION: "v0.14.0", COPROCESSOR_UPGRADE_CONTROLLER_VERSION: "v0.14.0" },
+      });
+      const baseline = await readJson<VersionBundle>(baselineFile);
+      const target = await readJson<VersionBundle>(targetFile);
+
+      // Absent, not empty — and absent even though the resolved target snapshot carries a tag
+      // for both, which is exactly what the baseline must not inherit.
+      expect("COPROCESSOR_CONSENSUS_DETECTOR_VERSION" in baseline.env).toBe(false);
+      expect("COPROCESSOR_UPGRADE_CONTROLLER_VERSION" in baseline.env).toBe(false);
+      expect(target.env.COPROCESSOR_CONSENSUS_DETECTOR_VERSION).toBe("v0.14.0");
+      expect(target.env.COPROCESSOR_UPGRADE_CONTROLLER_VERSION).toBe("v0.14.0");
+    });
+  });
+
   test("derives extracted rollout locks from one resolved target snapshot", async () => {
     await withTempStateDir(async () => {
       const first = presetBundle("latest-main", "abcdef0", "latest-main-abcdef0.json");
