@@ -338,9 +338,10 @@ export const GCS_ONLY_SUFFIXES = new Set(["upgrade-controller", "consensus-detec
 /** Blue-green container names per operator: BCS (previous-release shape) + GCS fleet reusing BCS's db-migration. */
 export const blueGreenServiceNames = (
   state: Pick<State, "scenario" | "versions">,
-  options: { includeMigration: boolean },
+  options: { includeMigration: boolean; includeDeferredGreen?: boolean },
 ): string[] => {
   const includeConsumer = supportsHostListenerConsumer(state);
+  const greenDeferred = state.scenario.kind === "blue-green" && state.scenario.gcs.deferredStart;
   const names: string[] = [];
   for (let index = 0; index < topologyForState(state).count; index += 1) {
     const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
@@ -350,10 +351,12 @@ export const blueGreenServiceNames = (
       if (suffix === "host-listener-consumer" && !includeConsumer) continue;
       names.push(`${prefix}${suffix}`);
     }
-    for (const suffix of GROUP_SERVICE_SUFFIXES.coprocessor) {
-      if (suffix.includes("migration")) continue;
-      if (suffix === "host-listener-consumer" && !includeConsumer) continue;
-      names.push(`${prefix}gcs-${suffix}`);
+    if (!greenDeferred || options.includeDeferredGreen) {
+      for (const suffix of GROUP_SERVICE_SUFFIXES.coprocessor) {
+        if (suffix.includes("migration")) continue;
+        if (suffix === "host-listener-consumer" && !includeConsumer) continue;
+        names.push(`${prefix}gcs-${suffix}`);
+      }
     }
   }
   return names;
@@ -460,7 +463,9 @@ const argPolicyForInstance = (
   compat: CoprocessorArgPolicy,
   instance: ResolvedCoprocessorScenarioInstance,
 ): CoprocessorArgPolicy =>
-  instance.source.mode === "registry" ? compatArgPolicyForPinnedTag(instance.source.tag) : compat;
+  instance.source.mode === "registry"
+    ? compatArgPolicyForPinnedTag(instance.source.compatTag ?? instance.source.tag)
+    : compat;
 
 // Green-side services omitted from BCS so it matches the previous-release shape.
 const GCS_ONLY_SERVICES = new Set([...GCS_ONLY_SUFFIXES].map((suffix) => `coprocessor-${suffix}`));
@@ -491,7 +496,7 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
           ? inheritedBuildServices
           : new Set<string>();
     // Blue-green: force db-migration to HEAD so GCS gets the current schema regardless of BCS's pin.
-    if (isBlueGreen) {
+    if (isBlueGreen && !plan.blueGreen?.gcs.deferredStart) {
       localServices.add("coprocessor-db-migration");
     }
     const argPolicy = argPolicyForInstance(compat, instance);

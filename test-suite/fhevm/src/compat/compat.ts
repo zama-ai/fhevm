@@ -3,7 +3,7 @@
  */
 import { effectiveOverrides } from "../scenario/resolve";
 import type { StackSpec } from "../stack-spec/stack-spec";
-import type { State } from "../types";
+import type { CoprocessorInstanceSource, State } from "../types";
 
 type CompatSemver = readonly [number, number, number];
 type CompatService =
@@ -262,6 +262,20 @@ const parseCompatVersion = (version: string) => {
     prerelease: suffixType === "-" && !/^\d+$/.test(suffix),
     build: suffixType === "-" && /^\d+$/.test(suffix) ? Number(suffix) : undefined,
   };
+};
+
+/** Keeps a release command shape when only the registry image tag changes to a commit SHA. */
+export const replaceRegistrySourceTag = (
+  source: CoprocessorInstanceSource,
+  tag: string,
+): CoprocessorInstanceSource => {
+  if (parseCompatVersion(tag)) {
+    return { mode: "registry", tag };
+  }
+  const compatTag = source.mode === "registry"
+    ? source.compatTag ?? (parseCompatVersion(source.tag) ? source.tag : undefined)
+    : undefined;
+  return { mode: "registry", tag, ...(compatTag ? { compatTag } : {}) };
 };
 
 const compatVersionGte = (
