@@ -55,7 +55,7 @@ interface IKMSGeneration {
      * @param paramsType The type of the parameters to use.
      * @param extraData Additional context data (0x01 || contextId, or 0x02 || contextId || epochId).
      */
-    event PrepKeygenRequest(uint256 prepKeygenId, ParamsType paramsType, bytes extraData);
+    event PrepKeygenRequest(uint256 prepKeygenId, ParamsType paramsType, uint256 existingKeyId, bytes extraData);
 
     /**
      * @notice Emitted when a KMS node has responded to a preprocessing keygen request.
@@ -76,12 +76,12 @@ interface IKMSGeneration {
 
     /**
      * @notice Emitted when a KMS node has responded to a keygen request.
-     * @param keyId The ID of the key.
+     * @param requestId The key generation request ID.
      * @param keyDigests The digests of the generated keys.
      * @param signature The signature of the KMS node that has responded.
      * @param kmsTxSender The transaction sender of the KMS node that has called the function.
      */
-    event KeygenResponse(uint256 keyId, KeyDigest[] keyDigests, bytes signature, address kmsTxSender);
+    event KeygenResponse(uint256 requestId, KeyDigest[] keyDigests, bytes signature, address kmsTxSender);
 
     /**
      * @notice Emitted when the key is activated.
@@ -334,11 +334,11 @@ interface IKMSGeneration {
 
     /**
      * @notice Handle the response of a fresh keygen or compressed-material migration request.
-     * @param keyId The fresh key ID or temporary migration request ID.
+     * @param requestId The fresh key ID or temporary migration request ID.
      * @param keyDigests The digests of the generated keys.
      * @param signature The signature of the KMS node that has responded.
      */
-    function keygenResponse(uint256 keyId, KeyDigest[] calldata keyDigests, bytes calldata signature) external;
+    function keygenResponse(uint256 requestId, KeyDigest[] calldata keyDigests, bytes calldata signature) external;
 
     /**
      * @notice Get the compressed materials added by a completed migration.

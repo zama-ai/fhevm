@@ -296,7 +296,7 @@ async fn publish_keygen_request<'e>(
         "INSERT INTO keygen_requests(prep_keygen_id, key_id, extra_data, tx_hash, created_at, otlp_context)
             VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
         request.prepKeygenId.as_le_slice(),
-        request.keyId.as_le_slice(),
+        request.requestId.as_le_slice(),
         request.extraData.as_ref(),
         tx_hash.map(|h| h.to_vec()),
         created_at,

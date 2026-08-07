@@ -520,7 +520,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         IKMSGeneration.KeyDigest[] memory digests = _mockKeyDigests();
 
         vm.expectEmit(true, true, true, true, address(kmsGeneration));
-        emit IKMSGeneration.PrepKeygenRequest(prepKeygenId, IKMSGeneration.ParamsType.Default, extraData);
+        emit IKMSGeneration.PrepKeygenRequest(prepKeygenId, IKMSGeneration.ParamsType.Default, 0, extraData);
         vm.prank(owner);
         kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
 
