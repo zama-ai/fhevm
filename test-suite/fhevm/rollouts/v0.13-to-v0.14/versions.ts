@@ -83,6 +83,11 @@ export const from = {
   COPROCESSOR_TFHE_WORKER_VERSION: fromTag,
   COPROCESSOR_ZKPROOF_WORKER_VERSION: fromTag,
   COPROCESSOR_SNS_WORKER_VERSION: fromTag,
+  // consensus-detector and upgrade-controller are 0.14-only services. Empty is meaningful
+  // rather than missing: compat reads an empty version as "this bundle predates the service"
+  // and generation drops it, which is what keeps the 0.13 fleet to the services it shipped.
+  COPROCESSOR_CONSENSUS_DETECTOR_VERSION: "",
+  COPROCESSOR_UPGRADE_CONTROLLER_VERSION: "",
   LISTENER_CORE_VERSION: fromTag,
   // The harness image runs at its target tag from the first phase, so every phase is measured
   // by the same e2e suite and only the client library underneath it moves. The 0.13 harness
@@ -110,6 +115,9 @@ export const to = {
   COPROCESSOR_TFHE_WORKER_VERSION: targetTag,
   COPROCESSOR_ZKPROOF_WORKER_VERSION: targetTag,
   COPROCESSOR_SNS_WORKER_VERSION: targetTag,
+  // Introduced by 0.14, so they arrive with the coprocessor fleet rather than at boot.
+  COPROCESSOR_CONSENSUS_DETECTOR_VERSION: targetTag,
+  COPROCESSOR_UPGRADE_CONTROLLER_VERSION: targetTag,
   LISTENER_CORE_VERSION: targetTag,
 } satisfies Env;
 
@@ -136,6 +144,8 @@ export const coprocessorKeys = [
   "COPROCESSOR_TFHE_WORKER_VERSION",
   "COPROCESSOR_ZKPROOF_WORKER_VERSION",
   "COPROCESSOR_SNS_WORKER_VERSION",
+  "COPROCESSOR_CONSENSUS_DETECTOR_VERSION",
+  "COPROCESSOR_UPGRADE_CONTROLLER_VERSION",
 ] as const satisfies readonly EnvKey[];
 // The client never moves, so there is no SDK version step. The final phase upgrades the host
 // ACL instead: that is what changes the protocol version @fhevm/sdk reads off chain.

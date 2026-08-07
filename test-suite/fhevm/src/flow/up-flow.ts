@@ -1831,6 +1831,10 @@ const COPROCESSOR_VERSION_KEYS = [
   "COPROCESSOR_TFHE_WORKER_VERSION",
   "COPROCESSOR_ZKPROOF_WORKER_VERSION",
   "COPROCESSOR_SNS_WORKER_VERSION",
+  // 0.14-only services. They are absent from 0.13 bundles, where the rollout leaves these keys
+  // empty and generation drops the services entirely.
+  "COPROCESSOR_CONSENSUS_DETECTOR_VERSION",
+  "COPROCESSOR_UPGRADE_CONTROLLER_VERSION",
 ] as const;
 
 /**
@@ -1944,13 +1948,19 @@ export const upgradeCoprocessorInstance = async (
   }
 
   await operations.ensureRuntimeArtifacts(state, "upgrade");
-  const lockedState = (await applyRuntimeUpgradeLock(state, "coprocessor", COPROCESSOR_VERSION_KEYS, options.lockFile))
-    .state;
+  const locked = await applyRuntimeUpgradeLock(state, "coprocessor", COPROCESSOR_VERSION_KEYS, options.lockFile);
+  const lockedState = locked.state;
   await assertSchemaCompatibility(lockedState.versions, lockedState.overrides, lockedState.scenario, false);
 
   // One image tag per instance is all `source.mode: registry` can express, so a lock
   // that splits the coprocessor fleet across several tags cannot be staged this way.
-  const targetTags = new Set(COPROCESSOR_VERSION_KEYS.map((key) => lockedState.versions.env[key]).filter(Boolean));
+  //
+  // Only the components the lock actually moves are checked. A lock that says nothing about a
+  // component leaves it wherever the bundle had it, which is not a split fleet — it is a lock
+  // written before that component existed.
+  const pinnedKeys = COPROCESSOR_VERSION_KEYS.filter((key) => locked.changedKeys.includes(key));
+  const checkedKeys = pinnedKeys.length ? pinnedKeys : COPROCESSOR_VERSION_KEYS;
+  const targetTags = new Set(checkedKeys.map((key) => lockedState.versions.env[key]).filter(Boolean));
   if (targetTags.size !== 1) {
     throw new PreflightError(
       `upgradeCoprocessorInstance needs every ${"COPROCESSOR_*_VERSION"} in its lock file to share one tag; found ${
@@ -2011,7 +2021,14 @@ export const upgradeCoprocessorInstance = async (
     // The converged bundle can introduce services no instance was running yet
     // (0.14 adds consensus-detector and upgrade-controller), so bring the whole
     // component up once rather than only the instance that happened to cross last.
-    await operations.composeUp("coprocessor", []);
+    //
+    // The service list has to be explicit. An empty list means "every service in the merged
+    // compose files", and the checked-in template always declares consensus-detector and
+    // upgrade-controller even on bundles that predate them — the generated override simply
+    // omits them. Composing them anyway resolves their tag to the empty string and docker
+    // rejects `.../upgrade-controller:` as an invalid reference. serviceNameList returns only
+    // the services this state actually supports, which is what boot passes too.
+    await operations.composeUp("coprocessor", serviceNameList(nextState, "coprocessor"));
   }
 };
 

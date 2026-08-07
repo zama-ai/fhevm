@@ -175,6 +175,64 @@ describe("upgradeCoprocessorInstance", () => {
     });
   });
 
+  // 0.13 bundles carry no consensus-detector or upgrade-controller, so the rollout leaves those
+  // keys empty and the 0.14 lock is the first thing to name them. A lock that introduces a
+  // component must land it alongside the rest of the fleet rather than being read as a fleet
+  // split across two tags.
+  test("lands a component the running bundle does not have yet", async () => {
+    await withTempStateDir(async (stateDir) => {
+      const versions = presetBundle("latest-main", "abcdef0", "baseline.json");
+      const baseline: State["versions"] = {
+        ...versions,
+        env: { ...versions.env, COPROCESSOR_CONSENSUS_DETECTOR_VERSION: "", COPROCESSOR_UPGRADE_CONTROLLER_VERSION: "" },
+      };
+      let persisted = threeInstanceState(baseline);
+      const lockFile = path.join(stateDir, "coprocessor.json");
+      await writeJson(lockFile, {
+        ...baseline,
+        lockName: "coprocessor.json",
+        env: {
+          ...baseline.env,
+          COPROCESSOR_DB_MIGRATION_VERSION: TARGET_TAG,
+          COPROCESSOR_HOST_LISTENER_VERSION: TARGET_TAG,
+          COPROCESSOR_GW_LISTENER_VERSION: TARGET_TAG,
+          COPROCESSOR_TX_SENDER_VERSION: TARGET_TAG,
+          COPROCESSOR_TFHE_WORKER_VERSION: TARGET_TAG,
+          COPROCESSOR_ZKPROOF_WORKER_VERSION: TARGET_TAG,
+          COPROCESSOR_SNS_WORKER_VERSION: TARGET_TAG,
+          COPROCESSOR_CONSENSUS_DETECTOR_VERSION: TARGET_TAG,
+          COPROCESSOR_UPGRADE_CONTROLLER_VERSION: TARGET_TAG,
+        },
+      });
+
+      const operations = {
+        async loadState() {
+          return persisted;
+        },
+        async projectContainers() {
+          return ["coprocessor-tfhe-worker"];
+        },
+        async ensureRuntimeArtifacts() {},
+        async assertThreshold() {},
+        async postBootHealthGate() {},
+        async saveState(next: State) {
+          persisted = next;
+        },
+        async generateRuntime() {},
+        async composeUp() {},
+        async multiChainComposeUp() {},
+        async waitForContainer() {},
+      };
+
+      for (const index of [0, 1, 2]) {
+        await upgradeCoprocessorInstance(index, { lockFile }, operations);
+      }
+
+      expect(persisted.versions.env.COPROCESSOR_UPGRADE_CONTROLLER_VERSION).toBe(TARGET_TAG);
+      expect(persisted.versions.env.COPROCESSOR_CONSENSUS_DETECTOR_VERSION).toBe(TARGET_TAG);
+    });
+  });
+
   // Recreating an operator removes it from the fleet for the width of the upgrade. With 3
   // operators at threshold 2 that leaves exactly the threshold, so an already-unhealthy peer
   // means consensus silently stops instead of the rollout stopping.
