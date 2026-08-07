@@ -304,11 +304,12 @@ pub async fn insert_rand_prep_keygen_request(
 
     sqlx::query!(
         "INSERT INTO prep_keygen_requests(
-            prep_keygen_id, params_type, extra_data, otlp_context, created_at, already_sent, status
+            prep_keygen_id, params_type, existing_key_id, extra_data, otlp_context, created_at, already_sent, status
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
         prep_keygen_request_id.as_le_slice(),
         params_type as ParamsTypeDb,
+        None::<&[u8]>,
         extra_data.to_vec() as Vec<u8>,
         bc2wrap::serialize(&PropagationContext::empty())?,
         Utc::now(),

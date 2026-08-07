@@ -14,7 +14,10 @@ use tonic::Response;
 pub enum KmsGrpcRequest {
     PublicDecryption(PublicDecryptionRequest),
     UserDecryption(UserDecryptionRequest),
-    PrepKeygen(KeyGenPreprocRequest),
+    PrepKeygen {
+        request: KeyGenPreprocRequest,
+        routing_id: RequestId,
+    },
     Keygen(KeyGenRequest),
     Crsgen(CrsGenRequest),
     AbortKeygen(RequestId),

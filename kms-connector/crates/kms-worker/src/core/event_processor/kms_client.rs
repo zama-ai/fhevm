@@ -99,7 +99,10 @@ impl KmsClient {
         match request {
             KmsGrpcRequest::PublicDecryption(req) => self.request_public_decryption(req).await,
             KmsGrpcRequest::UserDecryption(req) => self.request_user_decryption(req).await,
-            KmsGrpcRequest::PrepKeygen(req) => self.request_prep_keygen(req).await,
+            KmsGrpcRequest::PrepKeygen {
+                request,
+                routing_id,
+            } => self.request_prep_keygen(request, routing_id).await,
             KmsGrpcRequest::Keygen(req) => self.request_keygen(req).await,
             KmsGrpcRequest::Crsgen(req) => self.request_crsgen(req).await,
             KmsGrpcRequest::AbortKeygen(req) => self.request_abort_keygen(req).await,
@@ -129,7 +132,10 @@ impl KmsClient {
         match request {
             KmsGrpcRequest::PublicDecryption(req) => self.poll_public_decryption_result(req).await,
             KmsGrpcRequest::UserDecryption(req) => self.poll_user_decryption_result(req).await,
-            KmsGrpcRequest::PrepKeygen(req) => self.poll_prep_keygen_result(req).await,
+            KmsGrpcRequest::PrepKeygen {
+                request,
+                routing_id,
+            } => self.poll_prep_keygen_result(request, routing_id).await,
             KmsGrpcRequest::Keygen(req) => self.poll_keygen_result(req).await,
             KmsGrpcRequest::Crsgen(req) => self.poll_crsgen_result(req).await,
             // Abort has no result-polling endpoint on the Core: the send-side ack is the only
@@ -201,11 +207,12 @@ impl KmsClient {
     async fn request_prep_keygen(
         &self,
         request: &KeyGenPreprocRequest,
+        routing_id: &RequestId,
     ) -> (i16, Result<SendResponse, ProcessingError>) {
-        let Some(request_id) = request.request_id.clone() else {
+        if request.request_id.is_none() {
             return irrecoverable_error(anyhow!("Missing request ID"));
-        };
-        let inner_client = self.choose_client(request_id.clone());
+        }
+        let inner_client = self.choose_client(routing_id.clone());
 
         send_request_with_retries(
             self.grpc_request_retries,
@@ -224,12 +231,11 @@ impl KmsClient {
         &self,
         request: &KeyGenRequest,
     ) -> (i16, Result<SendResponse, ProcessingError>) {
-        // Route to the shard holding this keygen's preprocessing material (keyed by the
-        // preprocessing ID), so prep-keygen, keygen and abort-keygen all target the same shard.
-        let Some(preproc_id) = request.preproc_id.clone() else {
-            return irrecoverable_error(anyhow!("Missing preprocessing ID"));
+        let routing_id = match keygen_routing_id(request) {
+            Ok(routing_id) => routing_id,
+            Err(error) => return irrecoverable_error(error),
         };
-        let inner_client = self.choose_client(preproc_id);
+        let inner_client = self.choose_client(routing_id);
 
         send_request_with_retries(
             self.grpc_request_retries,
@@ -367,11 +373,12 @@ impl KmsClient {
     async fn poll_prep_keygen_result(
         &self,
         request: KeyGenPreprocRequest,
+        routing_id: RequestId,
     ) -> (i16, Result<KmsGrpcResponse, ProcessingError>) {
         let Some(request_id) = request.request_id.clone() else {
             return irrecoverable_error(anyhow!("Missing request ID"));
         };
-        let inner_client = self.choose_client(request_id.clone());
+        let inner_client = self.choose_client(routing_id);
 
         let (error_count, grpc_result) = poll_for_result(
             self.grpc_request_retries,
@@ -403,12 +410,11 @@ impl KmsClient {
         let Some(request_id) = request.request_id.clone() else {
             return irrecoverable_error(anyhow!("Missing request ID"));
         };
-        // Poll the shard that ran the keygen, i.e. the one holding its preprocessing material
-        // (keyed by the preprocessing ID). The result itself is still fetched by key ID.
-        let Some(preproc_id) = request.preproc_id.clone() else {
-            return irrecoverable_error(anyhow!("Missing preprocessing ID"));
+        let routing_id = match keygen_routing_id(&request) {
+            Ok(routing_id) => routing_id,
+            Err(error) => return irrecoverable_error(error),
         };
-        let inner_client = self.choose_client(preproc_id);
+        let inner_client = self.choose_client(routing_id);
 
         let (error_count, grpc_result) = poll_for_result(
             self.grpc_request_retries,
@@ -624,6 +630,15 @@ impl KmsClient {
     }
 }
 
+fn keygen_routing_id(request: &KeyGenRequest) -> anyhow::Result<RequestId> {
+    request
+        .keyset_added_info
+        .as_ref()
+        .and_then(|info| info.existing_keyset_id.clone())
+        .or_else(|| request.preproc_id.clone())
+        .ok_or_else(|| anyhow!("Missing preprocessing or existing key ID"))
+}
+
 /// Reads the `context_id` U256 out of a `NewMpcContextRequest`.
 fn extract_new_mpc_context_id(request: &NewMpcContextRequest) -> Result<U256, ProcessingError> {
     request
@@ -759,4 +774,43 @@ where
         retries as i16,
         Err(Status::unavailable("all result polling attempts failed")),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use connector_utils::types::{request_id_to_u256, u256_to_request_id};
+    use kms_grpc::kms::v1::KeySetAddedInfo;
+
+    #[test]
+    fn migration_routes_to_the_existing_key_shard() {
+        let preproc_id = u256_to_request_id(U256::from(3));
+        let existing_key_id = u256_to_request_id(U256::from(8));
+        let request = KeyGenRequest {
+            preproc_id: Some(preproc_id),
+            keyset_added_info: Some(KeySetAddedInfo {
+                existing_keyset_id: Some(existing_key_id),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            request_id_to_u256(keygen_routing_id(&request).unwrap()).unwrap(),
+            U256::from(8)
+        );
+    }
+
+    #[test]
+    fn fresh_keygen_routes_to_the_preprocessing_shard() {
+        let request = KeyGenRequest {
+            preproc_id: Some(u256_to_request_id(U256::from(3))),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            request_id_to_u256(keygen_routing_id(&request).unwrap()).unwrap(),
+            U256::from(3)
+        );
+    }
 }

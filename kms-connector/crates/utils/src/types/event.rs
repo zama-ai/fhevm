@@ -366,6 +366,10 @@ pub fn from_prep_keygen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     let kind = ProtocolEventKind::PrepKeygen(PrepKeygenRequest {
         prepKeygenId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?),
         paramsType: row.try_get::<ParamsTypeDb, _>("params_type")? as u8,
+        existingKeyId: row
+            .try_get::<Option<[u8; 32]>, _>("existing_key_id")?
+            .map(U256::from_le_bytes)
+            .unwrap_or_default(),
         extraData: row.try_get::<Vec<u8>, _>("extra_data")?.into(),
     });
     Ok(ProtocolEvent {
