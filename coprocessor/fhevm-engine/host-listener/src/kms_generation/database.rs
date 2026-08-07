@@ -621,11 +621,12 @@ pub(crate) async fn all_pending_compressed_key_materials_to_download(
     Ok(sqlx::query_as::<_, PendingCompressedKeyMaterial>(
         r#"
         SELECT e.chain_id, e.block_hash, e.block_number, e.transaction_hash,
-               e.key_id, e.key_digest_server AS key_digest, e.storage_urls
+               e.key_id, e.key_material_id, e.key_digest_server AS key_digest, e.storage_urls
         FROM kms_key_activation_events AS e
         INNER JOIN host_chain_blocks_valid AS b
           ON e.chain_id = b.chain_id AND e.block_hash = b.block_hash
         WHERE e.status = 'pending'
+          AND b.block_status = 'finalized'
           AND e.key_digest_public IS NULL
           AND e.key_digest_server IS NOT NULL
           AND e.key_material_id IS NOT NULL
@@ -1041,6 +1042,20 @@ mod tests {
         assert_eq!(ordinary[0].key_id, next_key_id);
         let migration =
             all_pending_compressed_key_materials_to_download(&mut tx).await?;
+        assert!(migration.is_empty());
+        tx.rollback().await?;
+        sqlx::query(
+            "UPDATE host_chain_blocks_valid SET block_status = 'finalized'
+             WHERE chain_id = $1 AND block_hash = $2",
+        )
+        .bind(chain_id)
+        .bind(&migration_block)
+        .execute(&pool)
+        .await?;
+
+        let mut tx = pool.begin().await?;
+        let migration =
+            all_pending_compressed_key_materials_to_download(&mut tx).await?;
         assert_eq!(migration.len(), 1);
         assert_eq!(migration[0].key_id, key_id);
         assert_eq!(migration[0].key_material_id, key_material_id);
@@ -1052,20 +1067,6 @@ mod tests {
         )
         .bind(&compressed)
         .bind(&key_id)
-        .execute(&pool)
-        .await?;
-
-        let mut tx = pool.begin().await?;
-        assert!(apply_ready_compressed_key_materials(&mut tx)
-            .await?
-            .is_empty());
-        tx.commit().await?;
-        sqlx::query(
-            "UPDATE host_chain_blocks_valid SET block_status = 'finalized'
-             WHERE chain_id = $1 AND block_hash = $2",
-        )
-        .bind(chain_id)
-        .bind(&migration_block)
         .execute(&pool)
         .await?;
 
