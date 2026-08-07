@@ -1,6 +1,7 @@
 import path from "node:path";
 import { describe, expect, test } from "bun:test";
 
+import { coprocessorInstanceUpgradeTargets } from "./flow/repair";
 import { assertCoprocessorUpgradeThreshold, upgradeCoprocessorInstance } from "./flow/up-flow";
 import { presetBundle } from "./resolve/target";
 import { testDefaultScenario } from "./test-fixtures";
@@ -71,6 +72,12 @@ describe("upgradeCoprocessorInstance", () => {
         async composeUp(_component, services = []) {
           recreated.push(...services);
         },
+        // Extra host chains compose from their generated override alone, so they land here
+        // rather than in composeUp. Both are recorded, since the assertion below covers the
+        // whole set of services the instance upgrade recreates.
+        async multiChainComposeUp(_component, services = []) {
+          recreated.push(...services);
+        },
         async waitForContainer() {},
       });
 
@@ -110,6 +117,7 @@ describe("upgradeCoprocessorInstance", () => {
         },
         async generateRuntime() {},
         async composeUp() {},
+        async multiChainComposeUp() {},
         async waitForContainer() {},
       };
 
@@ -160,6 +168,7 @@ describe("upgradeCoprocessorInstance", () => {
           async saveState() {},
           async generateRuntime() {},
           async composeUp() {},
+          async multiChainComposeUp() {},
           async waitForContainer() {},
         }),
       ).rejects.toThrow(/share one tag/);
@@ -209,9 +218,40 @@ describe("upgradeCoprocessorInstance", () => {
           async saveState() {},
           async generateRuntime() {},
           async composeUp() {},
+          async multiChainComposeUp() {},
           async waitForContainer() {},
         }),
       ).rejects.toThrow(/between 0 and 2/);
     });
+  });
+});
+
+// Extra host chains have no `coprocessor-<chain>-docker-compose.yml` template — they exist only
+// as generated overrides under the runtime compose dir. Composing them the ordinary way fails
+// with "no such file or directory" and takes the whole instance upgrade down with it, so they
+// must be flagged for multiChainComposeUp, which composes the generated file alone.
+describe("coprocessorInstanceUpgradeTargets", () => {
+  test("routes extra host chains through the generated-override compose path", () => {
+    const state = threeInstanceState(presetBundle("latest-main", "abcdef0", "baseline.json"));
+    const multiChainState: State = {
+      ...state,
+      scenario: testDefaultScenario({
+        topology: { count: 3, threshold: 2 },
+        instances: [0, 1, 2].map((index) => ({ index, source: { mode: "inherit" as const }, env: {}, args: {} })),
+        hostChains: [
+          { key: "host", chainId: "12345", rpcPort: 8545 },
+          { key: "chain-b", chainId: "67890", rpcPort: 8547 },
+        ],
+      }),
+    };
+
+    const targets = coprocessorInstanceUpgradeTargets(multiChainState, 0);
+    const defaultChain = targets.components.find((component) => component.component === "coprocessor");
+    const extraChain = targets.components.find((component) => component.component === "coprocessor-chain-b");
+
+    expect(defaultChain?.multiChain).toBe(false);
+    expect(extraChain).toBeDefined();
+    expect(extraChain?.multiChain).toBe(true);
+    expect(extraChain?.runtimeServices.length).toBeGreaterThan(0);
   });
 });

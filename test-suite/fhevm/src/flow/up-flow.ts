@@ -1885,6 +1885,7 @@ export const assertCoprocessorUpgradeThreshold = async (
 type CoprocessorInstanceUpgradeOperations = {
   assertThreshold: typeof assertCoprocessorUpgradeThreshold;
   composeUp: typeof composeUp;
+  multiChainComposeUp: typeof multiChainComposeUp;
   ensureRuntimeArtifacts: typeof ensureRuntimeArtifacts;
   generateRuntime: typeof generateRuntime;
   loadState: typeof loadState;
@@ -1897,6 +1898,7 @@ type CoprocessorInstanceUpgradeOperations = {
 const coprocessorInstanceUpgradeOperations: CoprocessorInstanceUpgradeOperations = {
   assertThreshold: assertCoprocessorUpgradeThreshold,
   composeUp,
+  multiChainComposeUp,
   ensureRuntimeArtifacts,
   generateRuntime,
   loadState,
@@ -1993,7 +1995,11 @@ export const upgradeCoprocessorInstance = async (
     await operations.waitForContainer(service, "complete");
   }
   for (const component of targets.components) {
-    await operations.composeUp(component.component, component.runtimeServices, { noDeps: true, forceRecreate: true });
+    if (component.multiChain) {
+      await operations.multiChainComposeUp(component.component, component.runtimeServices, { forceRecreate: true });
+    } else {
+      await operations.composeUp(component.component, component.runtimeServices, { noDeps: true, forceRecreate: true });
+    }
     for (const service of component.runtimeServices) {
       await operations.waitForContainer(service, "running");
     }

@@ -152,12 +152,18 @@ export const coprocessorInstanceUpgradeTargets = (state: State, index: number) =
     components: [
       {
         component: "coprocessor",
+        // Has a checked-in template under docker-compose/, so it composes the ordinary way.
+        multiChain: false,
         runtimeServices: coprocessorRuntimeSuffixes(state).map(
           (service) => `${prefix}${service}${defaultChain?.suffix ?? ""}`,
         ),
       },
+      // Extra host chains have no `coprocessor-<chain>-docker-compose.yml` template — they exist
+      // only as generated overrides — so they must go through multiChainComposeUp, which composes
+      // the generated file alone. Boot does the same.
       ...extraChains.map((chain) => ({
         component: coprocessorHostKey(chain.key),
+        multiChain: true,
         runtimeServices: coprocessorListenerSuffixes(state).map((service) => `${prefix}${service}${chain.suffix}`),
       })),
     ],
