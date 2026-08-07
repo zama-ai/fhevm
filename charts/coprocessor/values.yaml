@@ -17,6 +17,10 @@
 # -----------------------------------------------------------------------------
 # Shared configuration across all coprocessor components
 commonConfig:
+  # Set only on production Blue before compressed material is published.
+  # GPU workers reject this safeguard because they require compressed material.
+  forceLegacyServerKey: false
+
   # Database connection components. Each field accepts either a literal `value` or a
   # `valueFrom` block (secretKeyRef or configMapKeyRef). Leave unset to inject nothing.
   databaseUser: {}
