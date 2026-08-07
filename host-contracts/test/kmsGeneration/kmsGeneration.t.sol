@@ -321,7 +321,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     /// @dev Run a full keygen cycle: keygen() -> prepKeygenResponse -> keygenResponse for one node
     function _runFullKeygenCycle() internal returns (uint256 prepKeygenId, uint256 keyId) {
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
 
         prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
         keyId = KEY_COUNTER_BASE + 1;
@@ -462,12 +462,12 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
     function test_completedKeyIdsExcludeAbortedAndExposePrepKeygenId() public {
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
         vm.prank(owner);
         kmsGeneration.abortKeygen(PREP_KEYGEN_COUNTER_BASE + 1);
 
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
         uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 2;
         uint256 keyId = KEY_COUNTER_BASE + 2;
         _doPrepKeygenResponse(prepKeygenId, kmsPk0, kmsTxSender0);
@@ -522,7 +522,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         vm.expectEmit(true, true, true, true, address(kmsGeneration));
         emit IKMSGeneration.PrepKeygenRequest(prepKeygenId, IKMSGeneration.ParamsType.Default, extraData);
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
 
         bytes32 prepDigest = _hashPrepKeygen(prepKeygenId, extraData);
         bytes memory prepSig = _computeSignature(kmsPk0, prepDigest);
@@ -575,12 +575,12 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
     function test_revertKeygenOngoing() public {
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
 
         uint256 expectedKeyId = KEY_COUNTER_BASE + 1;
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.KeygenOngoing.selector, expectedKeyId));
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
     }
 
     function test_revertCrsgenOngoing() public {
@@ -595,7 +595,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
     function test_revertKeygenResponseBeforePrepKeygenConsensus() public {
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
 
         vm.prank(kmsTxSender0);
         vm.expectRevert(IKMSGeneration.KeyManagementRequestPending.selector);
@@ -605,7 +605,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     function test_pendingKeygenCompletesAfterContextRotationUsingPinnedContext() public {
         bytes memory oldExtraData = _buildExtraData();
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
 
         uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
         uint256 keyId = KEY_COUNTER_BASE + 1;
@@ -630,7 +630,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     function test_pendingKeygenCompletesWhenTxSenderRotatedOutOfLiveContext() public {
         bytes memory oldExtraData = _buildExtraData();
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
 
         uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
 
@@ -669,7 +669,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
         bytes memory oldExtraData = _buildExtraData();
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
 
         uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
 
@@ -692,7 +692,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         _defineNewKmsContextAndEpoch(rotatedNodes, _defaultThresholds());
 
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
 
         uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
         uint256 keyId = KEY_COUNTER_BASE + 1;
@@ -752,7 +752,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         bytes memory oldExtraData = _buildExtraData();
 
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
         vm.prank(owner);
         kmsGeneration.abortKeygen(PREP_KEYGEN_COUNTER_BASE + 1);
 
@@ -761,7 +761,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         _activatePendingTwoNodeContext(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 2, kmsPk0, kmsPk1);
 
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
 
         uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 2;
         bytes32 replayDigest = _hashPrepKeygen(prepKeygenId, oldExtraData);
@@ -776,7 +776,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         bytes memory oldExtraData = _buildExtraData();
 
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
         vm.prank(owner);
         kmsGeneration.abortKeygen(PREP_KEYGEN_COUNTER_BASE + 1);
 
@@ -785,7 +785,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         _activatePendingTwoNodeContext(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 2, kmsPk0, kmsPk1);
 
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
 
         uint256 keyId = kmsGeneration.getKeyCounter();
         uint256 prepKeygenId = _prepKeygenIdForKeyId(keyId);
@@ -833,7 +833,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         vm.assume(caller != owner);
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, caller));
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
     }
 
     function testFuzz_revertCrsgenNotOwner(address caller) public {
@@ -846,7 +846,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     function testFuzz_revertPrepKeygenResponseNotTxSender(address caller) public {
         _assumeNotCurrentKmsTxSender(caller);
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
 
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.NotKmsTxSender.selector, caller));
@@ -856,7 +856,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     function testFuzz_revertKeygenResponseNotTxSender(address caller) public {
         _assumeNotCurrentKmsTxSender(caller);
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
 
         IKMSGeneration.KeyDigest[] memory digests = _mockKeyDigests();
         vm.prank(caller);
@@ -880,7 +880,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
     function test_revertDuplicatePrepKeygenSignature() public {
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
 
         uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
 
@@ -898,7 +898,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
     function test_revertDuplicateKeygenSignature() public {
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
 
         uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
         uint256 keyId = KEY_COUNTER_BASE + 1;
@@ -956,7 +956,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
     function test_revertKmsSignerDoesNotMatchTxSender() public {
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
 
         uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
         uint256 keyId = KEY_COUNTER_BASE + 1;
@@ -978,7 +978,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
     function test_revertNotKmsSigner() public {
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
 
         uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
         uint256 keyId = KEY_COUNTER_BASE + 1;
@@ -1000,7 +1000,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
     function test_revertKmsSignerDoesNotMatchTxSenderPrepKeygen() public {
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
 
         uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
         bytes memory extraData = _buildExtraData();
@@ -1035,7 +1035,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
     function test_revertEmptyKeyDigests() public {
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
 
         uint256 keyId = KEY_COUNTER_BASE + 1;
         IKMSGeneration.KeyDigest[] memory digests = new IKMSGeneration.KeyDigest[](0);
@@ -1051,7 +1051,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
     function test_abortKeygen() public {
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
 
         uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
         uint256 keyId = KEY_COUNTER_BASE + 1;
@@ -1066,7 +1066,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
     function test_abortKeygenAfterPrepConsensus() public {
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
 
         uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
         uint256 keyId = KEY_COUNTER_BASE + 1;
@@ -1082,12 +1082,12 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         assertTrue(kmsGeneration.isRequestDone(keyId));
 
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Test);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Test, 0);
     }
 
     function test_abortPendingKeygenAfterContextRotationAllowsNewKeygen() public {
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
 
         uint256 abortedPrepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
         uint256 abortedKeyId = KEY_COUNTER_BASE + 1;
@@ -1110,7 +1110,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         assertTrue(kmsGeneration.isRequestDone(abortedKeyId));
 
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Test);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Test, 0);
 
         uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 2;
         uint256 keyId = KEY_COUNTER_BASE + 2;
@@ -1151,7 +1151,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
     function test_revertAbortKeygenAlreadyDoneAfterAbort() public {
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
         uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
 
         vm.prank(owner);
@@ -1191,14 +1191,14 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
     function test_keygenAfterAbort() public {
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
 
         uint256 abortedPrepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
         vm.prank(owner);
         kmsGeneration.abortKeygen(abortedPrepKeygenId);
 
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Test);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Test, 0);
 
         uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 2;
         uint256 keyId = KEY_COUNTER_BASE + 2;
@@ -1212,7 +1212,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
     function test_revertGetAbortedKeyViews() public {
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
 
         uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
         uint256 keyId = KEY_COUNTER_BASE + 1;
@@ -1293,7 +1293,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
         // Start second keygen
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Test);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Test, 0);
 
         uint256 prepKeygenId2 = PREP_KEYGEN_COUNTER_BASE + 2;
         uint256 keyId2 = KEY_COUNTER_BASE + 2;
@@ -1369,13 +1369,15 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         assertEq(preservedDigests[0].digest, legacyDigests[0].digest);
 
         vm.prank(owner);
-        migrated.migrateToCompressedKeySet(keyId);
+        migrated.keygen(IKMSGeneration.ParamsType.Default, keyId);
         uint256 migrationPrepKeygenId = prepKeygenId + 1;
         uint256 migrationRequestId = keyId + 1;
         _completeMigration(migrated, scratchProxy, migrationPrepKeygenId, migrationRequestId, extraData);
 
         assertEq(migrated.getActiveKeyId(), keyId);
-        (, IKMSGeneration.KeyDigest[] memory publishedDigests) = migrated.getCompressedKeyMigrationMaterials(keyId);
+        (uint256 publishedMaterialId, , IKMSGeneration.KeyDigest[] memory publishedDigests) = migrated
+            .getCompressedKeyMigrationMaterials(keyId);
+        assertEq(publishedMaterialId, migrationRequestId);
         assertEq(publishedDigests.length, 2);
         assertEq(publishedDigests[1].digest, hex"c0ffee00");
     }
@@ -1388,7 +1390,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         _switchToMultiSignerContext();
 
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
         uint256 prepKeygenId = _prepKeygenIdForKeyId(kmsGeneration.getKeyCounter());
 
         // Responses 1-3 reach consensus (threshold = 3)
@@ -1398,7 +1400,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
         // 4th response should be silently ignored (no KeygenRequest event, no revert)
         vm.expectEmit(false, false, false, false, address(kmsGeneration), 0);
-        emit IKMSGeneration.KeygenRequest(0, 0, "");
+        emit IKMSGeneration.KeygenRequest(0, 0, 0, "");
         _doPrepKeygenResponse(prepKeygenId, kmsPk3, kmsTxSender3);
     }
 
@@ -1406,7 +1408,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         _switchToMultiSignerContext();
 
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
         uint256 keyId = kmsGeneration.getKeyCounter();
         uint256 prepKeygenId = _prepKeygenIdForKeyId(keyId);
 
@@ -1455,7 +1457,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
     function test_revertGetKeyInfoAborted() public {
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
         uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
         uint256 keyId = KEY_COUNTER_BASE + 1;
         vm.prank(owner);
@@ -1468,7 +1470,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
     function test_getKeyInfoHappyPathFields() public {
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Test);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Test, 0);
         uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
         uint256 keyId = KEY_COUNTER_BASE + 1;
         _doPrepKeygenResponse(prepKeygenId, kmsPk0, kmsTxSender0);
@@ -1493,7 +1495,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         (, uint256 keyId1) = _runFullKeygenCycle();
         // Second key.
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Test);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Test, 0);
         uint256 prepKeygenId2 = PREP_KEYGEN_COUNTER_BASE + 2;
         uint256 keyId2 = KEY_COUNTER_BASE + 2;
         _doPrepKeygenResponse(prepKeygenId2, kmsPk0, kmsTxSender0);
@@ -1525,7 +1527,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         IKMSGeneration.KeyDigest[] memory digests = _mockKeyDigests();
 
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
         uint256 keyId = kmsGeneration.getKeyCounter();
         uint256 prepKeygenId = _prepKeygenIdForKeyId(keyId);
 
@@ -1535,7 +1537,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
         // 3rd prepKeygen response triggers KeygenRequest event (consensus reached)
         vm.expectEmit(true, true, true, true, address(kmsGeneration));
-        emit IKMSGeneration.KeygenRequest(prepKeygenId, keyId, extraData);
+        emit IKMSGeneration.KeygenRequest(prepKeygenId, keyId, 0, extraData);
         _doPrepKeygenResponse(prepKeygenId, kmsPk2, kmsTxSender2);
 
         // keygen: first 2 don't trigger ActivateKey
@@ -1573,7 +1575,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     function test_compressedKeyMaterialAddedAbiIsFrozen() public pure {
         assertEq(
             IKMSGeneration.CompressedKeyMaterialAdded.selector,
-            bytes32(0x80ebc2a4e183000f6837fab1e36970e8bc4a1b19223054c32769db663a4ce346)
+            bytes32(0x860254c88644f7bc7c755dc1669a8befadf71acf7f2c20b8ac59866491543510)
         );
     }
 
@@ -1605,7 +1607,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     function _prepareMigrationResponseValidation() internal returns (uint256 prepKeygenId, uint256 requestId) {
         (, uint256 keyId) = _runFullKeygenCycle();
         vm.prank(owner);
-        kmsGeneration.migrateToCompressedKeySet(keyId);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, keyId);
         prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 2;
         requestId = KEY_COUNTER_BASE + 2;
         _doPrepKeygenResponse(prepKeygenId, kmsPk0, kmsTxSender0);
@@ -1628,7 +1630,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         uint256 keyId
     ) internal returns (uint256 migrationPrepId, uint256 migrationRequestId) {
         vm.prank(owner);
-        kmsGeneration.migrateToCompressedKeySet(keyId);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, keyId);
 
         migrationPrepId = kmsGeneration.getKeyCounter() - KEY_COUNTER_BASE + PREP_KEYGEN_COUNTER_BASE;
         migrationRequestId = kmsGeneration.getKeyCounter();
@@ -1643,11 +1645,11 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         uint256 completedBefore = kmsGeneration.getCompletedKeyIds().length;
 
         vm.prank(owner);
-        kmsGeneration.migrateToCompressedKeySet(keyId);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, keyId);
         uint256 migrationPrepId = PREP_KEYGEN_COUNTER_BASE + 2;
         uint256 migrationRequestId = KEY_COUNTER_BASE + 2;
 
-        // The prep consensus triggers the typed migration keygen request, not KeygenRequest.
+        // The prep consensus identifies the existing key in the ordinary KeygenRequest event.
         vm.recordLogs();
         _doPrepKeygenResponse(migrationPrepId, kmsPk0, kmsTxSender0);
         _doMigrationKeygenResponse(migrationPrepId, migrationRequestId, kmsPk0, kmsTxSender0);
@@ -1660,13 +1662,13 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
                 logs[i].topics[0] != IKMSGeneration.ActivateKey.selector,
                 "migration flow must never emit ActivateKey"
             );
-            if (logs[i].topics[0] == IKMSGeneration.KeyMigrationRequest.selector) {
-                (, uint256 requestId, uint256 emittedKeyId, ) = abi.decode(
+            if (logs[i].topics[0] == IKMSGeneration.KeygenRequest.selector) {
+                (, uint256 requestId, uint256 existingKeyId, ) = abi.decode(
                     logs[i].data,
                     (uint256, uint256, uint256, bytes)
                 );
                 assertEq(requestId, migrationRequestId);
-                assertEq(emittedKeyId, keyId);
+                assertEq(existingKeyId, keyId);
                 sawMigrationKeygenRequest = true;
             }
             if (logs[i].topics[0] == IKMSGeneration.KeygenResponse.selector) {
@@ -1679,6 +1681,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
             }
             if (logs[i].topics[0] == IKMSGeneration.CompressedKeyMaterialAdded.selector) {
                 assertEq(uint256(logs[i].topics[1]), keyId);
+                assertEq(uint256(logs[i].topics[2]), migrationRequestId);
                 sawCompressedKeyMaterialAdded = true;
             }
         }
@@ -1692,8 +1695,9 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         assertTrue(kmsGeneration.isRequestDone(migrationRequestId));
 
         // The compressed materials are published under the existing keyId.
-        (string[] memory urls, IKMSGeneration.KeyDigest[] memory digests) = kmsGeneration
+        (uint256 keyMaterialId, string[] memory urls, IKMSGeneration.KeyDigest[] memory digests) = kmsGeneration
             .getCompressedKeyMigrationMaterials(keyId);
+        assertEq(keyMaterialId, migrationRequestId);
         assertEq(urls.length, 1);
         assertEq(digests.length, 2);
         assertEq(uint256(digests[1].keyType), uint256(IKMSGeneration.KeyType.CompressedKeySet));
@@ -1745,14 +1749,14 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     function test_abortMigrationOnlyBeforeRequestEmission() public {
         (, uint256 keyId) = _runFullKeygenCycle();
         vm.prank(owner);
-        kmsGeneration.migrateToCompressedKeySet(keyId);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, keyId);
         uint256 migrationPrepId = PREP_KEYGEN_COUNTER_BASE + 2;
 
         vm.prank(owner);
         kmsGeneration.abortKeygen(migrationPrepId);
 
         vm.prank(owner);
-        kmsGeneration.migrateToCompressedKeySet(keyId);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, keyId);
         uint256 retryPrepId = PREP_KEYGEN_COUNTER_BASE + 3;
         _doPrepKeygenResponse(retryPrepId, kmsPk0, kmsTxSender0);
 
@@ -1765,16 +1769,16 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         // Never requested.
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.KeyNotGenerated.selector, KEY_COUNTER_BASE + 1));
-        kmsGeneration.migrateToCompressedKeySet(KEY_COUNTER_BASE + 1);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, KEY_COUNTER_BASE + 1);
 
         // Aborted key.
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
         vm.prank(owner);
         kmsGeneration.abortKeygen(PREP_KEYGEN_COUNTER_BASE + 1);
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.KeyAborted.selector, KEY_COUNTER_BASE + 1));
-        kmsGeneration.migrateToCompressedKeySet(KEY_COUNTER_BASE + 1);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, KEY_COUNTER_BASE + 1);
     }
 
     function test_revertSecondMigrationForSameKey() public {
@@ -1783,7 +1787,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.CompressedKeyMaterialsAlreadyAdded.selector, keyId));
-        kmsGeneration.migrateToCompressedKeySet(keyId);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, keyId);
     }
 
     function test_migrationAndKeygenDoNotInterleave() public {
@@ -1791,14 +1795,14 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
         // Migration pending blocks a new keygen (and a second migration).
         vm.prank(owner);
-        kmsGeneration.migrateToCompressedKeySet(keyId);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, keyId);
         uint256 migrationRequestId = KEY_COUNTER_BASE + 2;
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.KeygenOngoing.selector, migrationRequestId));
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.KeygenOngoing.selector, migrationRequestId));
-        kmsGeneration.migrateToCompressedKeySet(keyId);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, keyId);
     }
 
     function testFuzz_revertMigrationEntrypointsNotOwner(address caller) public {
@@ -1807,7 +1811,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
         vm.prank(caller);
         vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, caller));
-        kmsGeneration.migrateToCompressedKeySet(keyId);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, keyId);
     }
 
     function test_genericKeyGettersRejectMigrationRequestId() public {
@@ -1831,7 +1835,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.KeyNotGenerated.selector, migrationRequestId));
-        kmsGeneration.migrateToCompressedKeySet(migrationRequestId);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, migrationRequestId);
     }
 
     function test_genericKeyGettersRejectPrepKeygenId() public {
@@ -1850,7 +1854,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
         // Rotate: a second keygen makes keyId2 the active key.
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
         uint256 prepKeygenId2 = PREP_KEYGEN_COUNTER_BASE + 2;
         uint256 keyId2 = KEY_COUNTER_BASE + 2;
         _doPrepKeygenResponse(prepKeygenId2, kmsPk0, kmsTxSender0);
@@ -1860,6 +1864,21 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         // RFC-029 migrates the ACTIVE key only.
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.NotActiveKey.selector, keyId1));
-        kmsGeneration.migrateToCompressedKeySet(keyId1);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, keyId1);
+    }
+
+    function test_revertMigrationKeygenWithDifferentParams() public {
+        (, uint256 keyId) = _runFullKeygenCycle();
+
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IKMSGeneration.InvalidMigrationParamsType.selector,
+                keyId,
+                IKMSGeneration.ParamsType.Default,
+                IKMSGeneration.ParamsType.Test
+            )
+        );
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Test, keyId);
     }
 }

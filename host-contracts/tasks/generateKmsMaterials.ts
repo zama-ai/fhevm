@@ -5,12 +5,17 @@ import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
 task('task:triggerKeygen')
   .addParam('paramsType', 'The type of the parameters to use for the key generation.')
   .addOptionalParam(
+    'existingKeyId',
+    'Zero for a fresh key, or the active key whose compressed material should be produced.',
+    '0',
+  )
+  .addOptionalParam(
     'useInternalProxyAddress',
     'If proxy address from the /addresses directory should be used.',
     false,
     types.boolean,
   )
-  .setAction(async function ({ paramsType, useInternalProxyAddress }, hre) {
+  .setAction(async function ({ paramsType, existingKeyId, useInternalProxyAddress }, hre) {
     await hre.run('compile:specific', { contract: 'contracts' });
     console.log('Trigger key generation in KMSGeneration contract.');
 
@@ -27,37 +32,10 @@ task('task:triggerKeygen')
     const kmsGeneration = await hre.ethers.getContractAt('KMSGeneration', proxyAddress, deployer);
 
     // Request the key generation.
-    const keygenTx = await kmsGeneration.keygen(paramsType);
+    const keygenTx = await kmsGeneration.keygen(paramsType, existingKeyId);
     await keygenTx.wait();
 
     console.log('Keygen triggering done!');
-  });
-
-task('task:migrateToCompressedKeySet')
-  .addParam('keyId', 'The active key ID whose compressed material should be produced.')
-  .addOptionalParam(
-    'useInternalProxyAddress',
-    'If proxy address from the /addresses directory should be used.',
-    false,
-    types.boolean,
-  )
-  .setAction(async function ({ keyId, useInternalProxyAddress }, hre) {
-    await hre.run('compile:specific', { contract: 'contracts' });
-    console.log('Trigger compressed material production in KMSGeneration contract.');
-
-    const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
-    const deployer = new hre.ethers.Wallet(deployerPrivateKey).connect(hre.ethers.provider);
-
-    if (useInternalProxyAddress) {
-      loadHostAddresses();
-    }
-
-    const proxyAddress = getRequiredEnvVar('KMS_GENERATION_CONTRACT_ADDRESS');
-    const kmsGeneration = await hre.ethers.getContractAt('KMSGeneration', proxyAddress, deployer);
-    const migrationTx = await kmsGeneration.migrateToCompressedKeySet(keyId);
-    await migrationTx.wait();
-
-    console.log('Compressed material migration triggering done!');
   });
 
 task('task:triggerCrsgen')

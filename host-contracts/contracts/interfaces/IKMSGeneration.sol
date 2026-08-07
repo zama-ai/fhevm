@@ -68,19 +68,11 @@ interface IKMSGeneration {
     /**
      * @notice Emitted to trigger an FHE key generation.
      * @param prepKeygenId The ID of the preprocessing keygen request.
-     * @param keyId The ID of the key to generate.
+     * @param requestId The ID of the key generation request.
+     * @param existingKeyId Zero for a fresh key, or the existing key whose compressed material is requested.
      * @param extraData Additional context data.
      */
-    event KeygenRequest(uint256 prepKeygenId, uint256 keyId, bytes extraData);
-
-    /**
-     * @notice Emitted to produce compressed material for an existing key.
-     * @param prepKeygenId The preprocessing request ID.
-     * @param migrationRequestId The temporary KMS consensus request ID.
-     * @param keyId The durable key identity whose material is augmented.
-     * @param extraData Additional context data.
-     */
-    event KeyMigrationRequest(uint256 prepKeygenId, uint256 migrationRequestId, uint256 keyId, bytes extraData);
+    event KeygenRequest(uint256 prepKeygenId, uint256 requestId, uint256 existingKeyId, bytes extraData);
 
     /**
      * @notice Emitted when a KMS node has responded to a keygen request.
@@ -104,10 +96,16 @@ interface IKMSGeneration {
      * material for an existing key. Does not activate anything: the active key is unchanged
      * and worker activation is handled by the blue-green upgrade protocol.
      * @param keyId The ID of the existing key.
+     * @param keyMaterialId The KMS request and storage ID of the compressed material.
      * @param kmsNodeStorageUrls The KMS nodes' storage URLs that participated in the consensus.
      * @param keyDigests The digests of the compressed key material.
      */
-    event CompressedKeyMaterialAdded(uint256 indexed keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
+    event CompressedKeyMaterialAdded(
+        uint256 indexed keyId,
+        uint256 indexed keyMaterialId,
+        string[] kmsNodeStorageUrls,
+        KeyDigest[] keyDigests
+    );
 
     /**
      * @notice Emitted to trigger a CRS (Common Reference String) generation.
@@ -306,6 +304,14 @@ interface IKMSGeneration {
     error NotActiveKey(uint256 keyId);
 
     /**
+     * @notice Error thrown when a migration request uses parameters that differ from the existing key.
+     * @param keyId The existing key ID.
+     * @param expected The parameters used to generate the existing key.
+     * @param provided The parameters supplied for the migration request.
+     */
+    error InvalidMigrationParamsType(uint256 keyId, ParamsType expected, ParamsType provided);
+
+    /**
      * @notice Error thrown when a compressed-key materials response does not carry exactly one
      * non-empty CompressedKeySet-typed digest.
      * @param migrationRequestId The migration keygen request ID.
@@ -313,16 +319,11 @@ interface IKMSGeneration {
     error InvalidCompressedKeySetDigest(uint256 migrationRequestId);
 
     /**
-     * @notice Trigger an FHE key generation.
+     * @notice Trigger a fresh FHE key generation or produce compressed material for an existing key.
      * @param paramsType The type of FHE parameters to use.
+     * @param existingKeyId Zero for a fresh key, or the active key whose compressed material is requested.
      */
-    function keygen(ParamsType paramsType) external;
-
-    /**
-     * @notice Trigger compressed material production for an existing active key.
-     * @param keyId The durable key identity whose material is being augmented.
-     */
-    function migrateToCompressedKeySet(uint256 keyId) external;
+    function keygen(ParamsType paramsType, uint256 existingKeyId) external;
 
     /**
      * @notice Handle the response of a preprocessing keygen request.
@@ -341,14 +342,16 @@ interface IKMSGeneration {
 
     /**
      * @notice Get the compressed materials added by a completed migration.
-     * @dev This getter is only for material produced by `migrateToCompressedKeySet`.
+     * @dev This getter is only for material produced by `keygen` with a non-zero existing key ID.
      * Normal key generation continues to use `getKeyMaterials`.
      * @param keyId The migrated key ID.
-     * @return The migration materials (storage URLs, key digests).
+     * @return keyMaterialId The KMS request and storage ID of the compressed material.
+     * @return kmsNodeStorageUrls The storage URLs of the KMS nodes that reached consensus.
+     * @return keyDigests The digests of the compressed material.
      */
     function getCompressedKeyMigrationMaterials(
         uint256 keyId
-    ) external view returns (string[] memory, KeyDigest[] memory);
+    ) external view returns (uint256 keyMaterialId, string[] memory kmsNodeStorageUrls, KeyDigest[] memory keyDigests);
 
     /**
      * @notice Trigger a CRS generation.
