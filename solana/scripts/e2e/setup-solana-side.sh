@@ -47,8 +47,8 @@ SID_I64=-9223372036854763463
 # to the coprocessor via gRPC Yellowstone reconstruction. The narrow created-public lifecycle batch
 # remains enabled for its non-reconstructible handles. That needs the geyser plugin, so the host is a native
 # solana-test-validator (agave 4.1.2, multi-arch incl. Apple Silicon) loading the external
-# Yellowstone plugin via --geyser-plugin-config (RPC 8899 + gRPC 10000). It binds 0.0.0.0 so the
-# dockerized KMS worker reaches RPC over host.docker.internal:8899 — the rest of the fhevm-cli
+# Yellowstone plugin via --geyser-plugin-config (RPC 8899 + gRPC 10000). Its RPC listener binds
+# 0.0.0.0, so the dockerized KMS worker reaches it over host.docker.internal:8899 — the rest of the fhevm-cli
 # stack is unaffected. (surfpool was evaluated and rejected: its LiteSVM does not stream the
 # SlotHashes/Clock sysvar accounts over geyser, which reconstruction needs.)
 GRPC_URL="${GRPC_URL:-http://127.0.0.1:10000}"
@@ -106,8 +106,8 @@ mkdir -p "$HOME/.cache/solana"
 # runs on the host arch directly (multi-arch incl. Apple Silicon) and — unlike surfpool's LiteSVM
 # — streams the SlotHashes/Clock sysvar accounts the reconstruction needs per slot. The matching
 # plugin cdylib is resolved by geyser/build-yellowstone-plugin.sh (prebuilt x86 release in CI;
-# built from source on arm64). Bind 0.0.0.0 so the dockerized KMS worker reaches RPC over
-# host.docker.internal:8899. Local only — no mainnet exposure.
+# built from source on arm64). The RPC listener binds 0.0.0.0 on its own, so the dockerized KMS
+# worker reaches it over host.docker.internal:8899. Local only — no mainnet exposure.
 if [ -n "$DEMO_LIFECYCLE_DIR" ]; then
   if pgrep -f solana-test-validator >/dev/null; then
     echo "[setup] refusing to replace an unowned solana-test-validator in lifecycle mode" >&2
@@ -147,7 +147,14 @@ dump_validator_death() {
   tail -60 "$LEDGER/validator.log" 2>/dev/null || echo "(no ledger log written)"
 }
 
-nohup solana-test-validator --reset --rpc-port 8899 --bind-address 0.0.0.0 --ledger "$LEDGER" \
+# --bind-address must not be 0.0.0.0 on agave 4.x: TestValidator::start passes bind_ip_addr
+# straight through as the gossip advertised IP (test-validator/src/lib.rs:1045), discarding the
+# loopback fallback the CLI computed, and ContactInfo::set_gossip now rejects an unspecified
+# address — the validator panics in gossip before the geyser plugin is ever loaded. Nothing is
+# lost by dropping it: the RPC and pubsub listeners always bind 0.0.0.0 regardless of this flag
+# (test-validator/src/lib.rs:1110-1119), so the dockerized workers still reach
+# host.docker.internal:8899.
+nohup solana-test-validator --reset --rpc-port 8899 --bind-address 127.0.0.1 --ledger "$LEDGER" \
   --geyser-plugin-config "$GEYSER_CONFIG" </dev/null >"$VALIDATOR_LOG" 2>&1 &
 VALIDATOR_PID=$!
 [ -z "$DEMO_LIFECYCLE_DIR" ] || printf '%s\n' "$VALIDATOR_PID" > "$DEMO_LIFECYCLE_DIR/validator.pid"
