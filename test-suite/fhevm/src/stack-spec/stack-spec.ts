@@ -13,7 +13,7 @@ import type {
   VersionBundle,
 } from "../types";
 import { PreflightError } from "../errors";
-import { versionBeforeReleaseFamily } from "../compat/compat";
+import { replaceRegistrySourceTag, versionBeforeReleaseFamily } from "../compat/compat";
 import { SHA_REF, shortSha } from "../resolve/target";
 import {
   assertScenarioOverrideCompatibility,
@@ -70,7 +70,10 @@ export const resolveScenarioForOptions = async (
       const resolved = options.bcsTag
         ? {
             ...loaded,
-            bcs: { ...loaded.bcs, source: { mode: "registry" as const, tag: normalizeBcsTag(options.bcsTag) } },
+            bcs: {
+              ...loaded.bcs,
+              source: replaceRegistrySourceTag(loaded.bcs.source, normalizeBcsTag(options.bcsTag)),
+            },
           }
         : loaded;
       const source = resolved.bcs.source;

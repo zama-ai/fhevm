@@ -684,6 +684,9 @@ export const parseBlueGreenScenario = (text: string, sourceLabel = "scenario"): 
       `${sourceLabel}: gcs.stackVersion must be a semver-like string (e.g. "0.15.0"), got "${stackVersion}"`,
     );
   }
+  if (gcsObj.deferredStart !== undefined && typeof gcsObj.deferredStart !== "boolean") {
+    throw new Error(`${sourceLabel}: gcs.deferredStart must be a boolean`);
+  }
 
   const bcs = parsed.bcs;
   if (bcs !== undefined && (bcs === null || typeof bcs !== "object")) {
@@ -711,6 +714,7 @@ export const parseBlueGreenScenario = (text: string, sourceLabel = "scenario"): 
     gcs: {
       source: parseSource(gcsObj.source, `${sourceLabel}.gcs.source`),
       stackVersion,
+      deferredStart: gcsObj.deferredStart === true,
       env: { ...((gcsObj.env as Record<string, string> | undefined) ?? {}) },
       args: normalizeArgs(
         gcsObj.args as Record<string, unknown> | undefined,
@@ -734,6 +738,7 @@ export const resolveBlueGreenScenario = (
   const gcs = {
     source: normalizeSource(input.gcs.source ?? { mode: "local" as const }),
     stackVersion: input.gcs.stackVersion,
+    deferredStart: input.gcs.deferredStart ?? false,
     env: { ...(input.gcs.env ?? {}) },
     args: input.gcs.args ?? {},
   };

@@ -3,7 +3,12 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import YAML from "yaml";
 
-import { generateComposeOverrides, loadMergedComposeDoc, serviceNameList } from "./generate/compose";
+import {
+  blueGreenServiceNames,
+  generateComposeOverrides,
+  loadMergedComposeDoc,
+  serviceNameList,
+} from "./generate/compose";
 import { TEMPLATE_COMPOSE_DIR, composePath, envPath } from "./layout";
 import { presetBundle } from "./resolve/target";
 import {
@@ -414,6 +419,31 @@ gcs:
     });
   });
 
+  test("deferred Green is omitted from startup until explicitly requested", () => {
+    const deferredScenario = resolveBlueGreenScenario(
+      path.join("/tmp", "blue-green-deferred-test.yaml"),
+      parseBlueGreenScenario(`
+version: 1
+kind: blue-green
+gcs:
+  source: { mode: local }
+  stackVersion: "0.15.0"
+  deferredStart: true
+`),
+    );
+    const deferredState: State = { ...state, scenario: deferredScenario };
+
+    const initialServices = blueGreenServiceNames(deferredState, { includeMigration: true });
+    expect(initialServices.some((service) => service.includes("-gcs-"))).toBe(false);
+
+    const explicitGreenServices = blueGreenServiceNames(deferredState, {
+      includeMigration: false,
+      includeDeferredGreen: true,
+    });
+    expect(explicitGreenServices).toContain("coprocessor-gcs-host-listener");
+    expect(explicitGreenServices).toContain("coprocessor-gcs-upgrade-controller");
+  });
+
   test("multi-operator blue-green emits BCS + GCS fleets per operator with correct prefixes", async () => {
     const multiOpBlueGreen = resolveBlueGreenScenario(
       path.join("/tmp", "blue-green-2op.yaml"),
@@ -555,6 +585,38 @@ gcs:
       const gcsCommand = doc.services["coprocessor-gcs-sns-worker"]?.command ?? [];
       expect(gcsCommand).toContain("--bucket-name=coproc-0");
       expect(gcsCommand.filter((arg) => arg.startsWith("--bucket-name-"))).toEqual([]);
+    });
+  });
+
+  test("blue-green keeps the release command shape for a SHA-tagged BCS hotfix", async () => {
+    const hotfixScenario = resolveBlueGreenScenario(
+      path.join("/tmp", "blue-green-hotfix-bcs.yaml"),
+      parseBlueGreenScenario(`
+version: 1
+kind: blue-green
+bcs:
+  source:
+    mode: registry
+    tag: v0.14.0-10
+gcs:
+  source: { mode: local }
+  stackVersion: "0.15.0"
+`),
+    );
+    hotfixScenario.bcs.source = { mode: "registry", tag: "04fb072", compatTag: "v0.14.0-10" };
+    const bgState: State = { ...state, scenario: hotfixScenario };
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "BUCKET_NAME=coproc-0\n");
+      await generateComposeOverrides(bgState, stackSpecForState(bgState));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { command?: string[]; image?: string }>;
+      };
+      const bcs = doc.services["coprocessor-sns-worker"] ?? {};
+      expect(bcs.image).toEndWith(":04fb072");
+      expect(bcs.command).toContain("--bucket-name-ct128=coproc-0");
+      expect(bcs.command).toContain("--bucket-name-ct64=coproc-0");
+      expect(bcs.command).not.toContain("--bucket-name=coproc-0");
     });
   });
 });

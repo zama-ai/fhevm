@@ -9,7 +9,10 @@ import { renderKmsCoreConfig, renderRelayerConfig } from "./config";
 import {
   KMS_THRESHOLD_CONFIG_NAME,
   KMS_THRESHOLD_SPARE_CONFIG_NAME,
+  kmsRenderOptionsFor,
+  kmsThresholdGenKeysConfigName,
   renderThresholdCoreConfig,
+  renderThresholdGenKeysConfig,
   renderThresholdSpareConfig,
 } from "./kms-core";
 import { buildGatewayScSwapEnv, buildHostScSwapEnv, renderEnvMaps, type WalletMaterial } from "./env";
@@ -136,6 +139,13 @@ export const generateRuntime = async (state: State, plan: StackSpec) => {
       path.join(GENERATED_CONFIG_DIR, KMS_THRESHOLD_CONFIG_NAME),
       renderThresholdCoreConfig(thresholdTemplate, plan.kms),
     );
+    const renderOptions = kmsRenderOptionsFor(plan.versions.env.CORE_VERSION);
+    for (let partyId = 1; partyId <= plan.kms.parties; partyId += 1) {
+      await writeWritableFile(
+        path.join(GENERATED_CONFIG_DIR, kmsThresholdGenKeysConfigName(partyId)),
+        renderThresholdGenKeysConfig(partyId, renderOptions),
+      );
+    }
     // Spare cores (parties > committeeSize) mount a peers=None config so they boot idle and join a
     // committee dynamically via a context switch.
     if (plan.kms.parties > plan.kms.committeeSize) {
