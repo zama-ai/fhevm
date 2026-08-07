@@ -27,8 +27,6 @@ use crate::consumer::metrics::{
 use crate::database::ingest::{ingest_block_logs, BlockLogs, IngestOptions};
 use crate::database::tfhe_event_propagate::Database;
 use crate::health_check::HealthCheck;
-use crate::kms_generation::aws_s3::AwsS3Client;
-use crate::kms_generation::process_kms_generation_activations;
 
 use consumer::{
     AckDecision, BlockPayload, Broker, HandlerError, ListenerConsumer,
@@ -399,8 +397,6 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
 
     let last_known_drift = Arc::new(RwLock::new(STARTING_DRIFT));
     let chain_id_str = config.chain_id.to_string();
-    let processes_kms_generation = config.kms_generation_address.is_some();
-    let aws_s3_client = AwsS3Client {};
     let stats_task = tokio::spawn(run_consumer_stats_observer(
         db.clone(),
         chain_id_str.clone(),
@@ -497,15 +493,6 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
             {
                 Ok(_) => {
                     db.tick.update();
-
-                    if processes_kms_generation {
-                        let db_pool = db.pool.read().await.clone();
-                        tokio::spawn(async move {
-                            if let Err(err) = process_kms_generation_activations(db_pool, aws_s3_client).await {
-                                error!(error = %err, "Error processing KMSGeneration activations");
-                            }
-                        });
-                    }
 
                     inc_blocks_processed(&chain_id_str, 1);
                     Ok(AckDecision::Ack)

@@ -217,6 +217,7 @@ pub struct InfiniteLogIter {
     reorg_maximum_duration_in_blocks: u64, // in blocks
     block_history: BlockHistory,           // to detect reorgs
     catchup_finalization_in_blocks: u64,
+    requires_rpc_finality: bool,
     timeout_request_websocket: u64,
 }
 
@@ -295,6 +296,7 @@ impl InfiniteLogIter {
                 args.reorg_maximum_duration_in_blocks as usize,
             ),
             catchup_finalization_in_blocks: args.catchup_finalization_in_blocks,
+            requires_rpc_finality: !args.kms_generation_address.is_empty(),
             timeout_request_websocket: args.timeout_request_websocket,
         }
     }
@@ -500,16 +502,27 @@ impl InfiniteLogIter {
             info!("Catchup no next get_logs step");
             return;
         }
-        let finalized_block =
-            if let Some(current_block) = self.block_history.tip() {
-                current_block
+        let depth_bound = self
+            .block_history
+            .tip()
+            .map(|block| {
+                block
                     .number
                     .saturating_sub(self.catchup_finalization_in_blocks)
-            } else {
-                info!("Unknown top block, assuming full finalized catchup");
-                from_block + self.catchup_paging
-            };
-        if from_block >= finalized_block {
+            })
+            .unwrap_or(u64::MAX);
+        let finalized_block = if self.requires_rpc_finality {
+            match self.get_block_by_id(BlockId::finalized()).await {
+                Ok(block) => block.header.number.min(depth_bound),
+                Err(error) => {
+                    warn!(%error, "Cannot resolve finalized block, postponing catchup");
+                    return;
+                }
+            }
+        } else {
+            depth_bound
+        };
+        if from_block > finalized_block {
             // non finalized blocks are post-poned
             info!("Post-pone catchup");
             return;
@@ -1260,13 +1273,36 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
                     .max(log_iter.last_valid_block.unwrap_or(0)),
             );
             if !block_logs.catchup {
-                update_finalized_blocks(
-                    &mut db,
-                    &mut log_iter,
-                    block_logs.summary.number,
-                    args.catchup_finalization_in_blocks,
-                )
-                .await;
+                if kms_generation_address.is_some() {
+                    match log_iter.get_block_by_id(BlockId::finalized()).await {
+                        Ok(finalized) => {
+                            let finalization_bound = finalized
+                                .header
+                                .number
+                                .min(block_logs.summary.number.saturating_sub(
+                                    args.catchup_finalization_in_blocks,
+                                ));
+                            update_finalized_blocks(
+                                &mut db,
+                                &mut log_iter,
+                                finalization_bound,
+                                0,
+                            )
+                            .await;
+                        }
+                        Err(error) => {
+                            warn!(%error, "Cannot resolve finalized block, skipping finalization");
+                        }
+                    }
+                } else {
+                    update_finalized_blocks(
+                        &mut db,
+                        &mut log_iter,
+                        block_logs.summary.number,
+                        args.catchup_finalization_in_blocks,
+                    )
+                    .await;
+                }
             }
             if kms_generation_address.is_some() {
                 background_tasks.spawn(process_kms_generation_activations(
@@ -1333,6 +1369,7 @@ mod tests {
             reorg_maximum_duration_in_blocks: reorg_max,
             block_history: BlockHistory::new(reorg_max as usize),
             catchup_finalization_in_blocks: 20,
+            requires_rpc_finality: false,
             timeout_request_websocket: 15,
         }
     }

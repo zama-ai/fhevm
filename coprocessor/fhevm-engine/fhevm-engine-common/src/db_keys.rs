@@ -40,12 +40,7 @@ pub async fn is_server_key_material_available(
     let require_compressed = cfg!(feature = "gpu") && !force_legacy;
     let available = sqlx::query_scalar::<_, bool>(
         r#"
-        SELECT EXISTS (
-            SELECT 1
-            FROM keys
-            ORDER BY sequence_number DESC
-            LIMIT 1
-        ) AND COALESCE((
+        SELECT COALESCE((
             SELECT CASE
                 WHEN $1 THEN sks_key IS NOT NULL
                 WHEN $2 THEN compressed_xof_keyset IS NOT NULL
@@ -69,7 +64,6 @@ pub async fn is_server_key_material_available(
 ///
 /// Single query shape across CPU and GPU keeps sqlx-prepare cacheable
 /// without a CUDA toolchain.
-#[derive(sqlx::FromRow)]
 struct DbKeyRow {
     key_id: DbKeyId,
     sequence_number: i64,
@@ -147,19 +141,20 @@ impl DbKeyCache {
         }
 
         // Only fetch the heavy key blobs when the latest key is not already cached.
-        let row = sqlx::query_as::<_, DbKeyRow>(
-            "SELECT key_id, sequence_number, pks_key, \
-             CASE WHEN $2 THEN sks_key \
-                  ELSE COALESCE(compressed_xof_keyset, sks_key) \
-             END AS server_key_blob, \
-             CASE WHEN $2 THEN FALSE \
-                  ELSE compressed_xof_keyset IS NOT NULL \
-             END AS is_xof, \
-             cks_key \
-             FROM keys WHERE sequence_number = $1",
+        let row = sqlx::query_as!(
+            DbKeyRow,
+            r#"SELECT key_id, sequence_number, pks_key,
+               CASE WHEN $2 THEN sks_key
+                    ELSE COALESCE(compressed_xof_keyset, sks_key)
+               END AS "server_key_blob!",
+               CASE WHEN $2 THEN FALSE
+                    ELSE compressed_xof_keyset IS NOT NULL
+               END AS "is_xof!",
+               cks_key
+               FROM keys WHERE sequence_number = $1"#,
+            sequence_number,
+            self.force_legacy,
         )
-        .bind(sequence_number)
-        .bind(self.force_legacy)
         .fetch_optional(&mut *executor)
         .await?
         .ok_or_else(|| anyhow::anyhow!("Latest key disappeared from database"))?;
@@ -235,34 +230,36 @@ impl DbKeyCache {
         T: sqlx::PgExecutor<'a>,
     {
         let rows = if let Some(ref ids) = db_key_ids_to_query {
-            sqlx::query_as::<_, DbKeyRow>(
-                "SELECT key_id, sequence_number, pks_key, \
-                 CASE WHEN $2 THEN sks_key \
-                      ELSE COALESCE(compressed_xof_keyset, sks_key) \
-                 END AS server_key_blob, \
-                 CASE WHEN $2 THEN FALSE \
-                      ELSE compressed_xof_keyset IS NOT NULL \
-                 END AS is_xof, \
-                 cks_key \
-                 FROM keys WHERE key_id = ANY($1)",
+            sqlx::query_as!(
+                DbKeyRow,
+                r#"SELECT key_id, sequence_number, pks_key,
+                   CASE WHEN $2 THEN sks_key
+                        ELSE COALESCE(compressed_xof_keyset, sks_key)
+                   END AS "server_key_blob!",
+                   CASE WHEN $2 THEN FALSE
+                        ELSE compressed_xof_keyset IS NOT NULL
+                   END AS "is_xof!",
+                   cks_key
+                   FROM keys WHERE key_id = ANY($1)"#,
+                ids,
+                self.force_legacy,
             )
-            .bind(ids)
-            .bind(self.force_legacy)
             .fetch_all(conn)
             .await?
         } else {
-            sqlx::query_as::<_, DbKeyRow>(
-                "SELECT key_id, sequence_number, pks_key, \
-                 CASE WHEN $1 THEN sks_key \
-                      ELSE COALESCE(compressed_xof_keyset, sks_key) \
-                 END AS server_key_blob, \
-                 CASE WHEN $1 THEN FALSE \
-                      ELSE compressed_xof_keyset IS NOT NULL \
-                 END AS is_xof, \
-                 cks_key \
-                 FROM keys",
+            sqlx::query_as!(
+                DbKeyRow,
+                r#"SELECT key_id, sequence_number, pks_key,
+                   CASE WHEN $1 THEN sks_key
+                        ELSE COALESCE(compressed_xof_keyset, sks_key)
+                   END AS "server_key_blob!",
+                   CASE WHEN $1 THEN FALSE
+                        ELSE compressed_xof_keyset IS NOT NULL
+                   END AS "is_xof!",
+                   cks_key
+                   FROM keys"#,
+                self.force_legacy,
             )
-            .bind(self.force_legacy)
             .fetch_all(conn)
             .await?
         };
