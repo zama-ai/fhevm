@@ -28,8 +28,7 @@ use fhevm_gateway_bindings::decryption::{
 };
 use fhevm_host_bindings::{
     kms_generation::KMSGeneration::{
-        AbortCrsgen, AbortKeygen, CrsgenRequest, KeyMigrationRequest, KeygenRequest,
-        PrepKeygenRequest,
+        AbortCrsgen, AbortKeygen, CrsgenRequest, KeygenRequest, PrepKeygenRequest,
     },
     protocol_config::ProtocolConfig::{
         KmsContextDestroyed, KmsEpochDestroyed, NewKmsContext, NewKmsEpoch,
@@ -184,13 +183,13 @@ pub async fn mock_event_on_gw(
         }
         TestEventType::CompressedKeyMigrationKeygen => {
             let rand_key_id = rand_u256();
-            let event = KeyMigrationRequest {
-                keyId: rand_key_id,
+            let event = KeygenRequest {
+                existingKeyId: rand_key_id,
                 ..Default::default()
             };
             let tx = test_instance
                 .kms_generation_contract()
-                .migrateToCompressedKeySet(rand_key_id)
+                .keygen(ParamsTypeDb::Test as u8, rand_key_id)
                 .send()
                 .await?;
             (tx, event.into())
@@ -390,20 +389,15 @@ pub fn check_event_in_db(rows: &[PgRow], event: ProtocolEventKind) -> anyhow::Re
                 }
             }
         }
-        ProtocolEventKind::KeyMigration(e) => {
-            for r in rows {
-                if Some(e.keyId)
-                    == r.try_get::<Option<[u8; 32]>, _>("migration_key_id")?
-                        .map(U256::from_le_bytes)
-                {
-                    return Ok(());
-                }
-            }
-        }
         ProtocolEventKind::Keygen(e) => {
             for r in rows {
-                if e.prepKeygenId
-                    == U256::from_le_bytes(r.try_get::<[u8; 32], _>("prep_keygen_id")?)
+                if e.existingKeyId
+                    == r.try_get::<Option<[u8; 32]>, _>("existing_key_id")?
+                        .map(U256::from_le_bytes)
+                        .unwrap_or_default()
+                    && (e.prepKeygenId.is_zero()
+                        || e.prepKeygenId
+                            == U256::from_le_bytes(r.try_get::<[u8; 32], _>("prep_keygen_id")?))
                 {
                     return Ok(());
                 }

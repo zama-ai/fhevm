@@ -366,7 +366,6 @@ pub fn from_prep_keygen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     let kind = ProtocolEventKind::PrepKeygen(PrepKeygenRequest {
         prepKeygenId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?),
         paramsType: row.try_get::<ParamsTypeDb, _>("params_type")? as u8,
-        existingKeyId: U256::ZERO,
         extraData: row.try_get::<Vec<u8>, _>("extra_data")?.into(),
     });
     Ok(ProtocolEvent {
@@ -380,11 +379,15 @@ pub fn from_prep_keygen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
 }
 
 pub fn from_keygen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
+    let request_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("key_id")?);
+    let existing_key_id = row.try_get::<Option<[u8; 32]>, _>("existing_key_id")?;
+    let prep_keygen_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?);
+    let extra_data = row.try_get::<Vec<u8>, _>("extra_data")?.into();
     let kind = ProtocolEventKind::Keygen(KeygenRequest {
-        prepKeygenId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?),
-        requestId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("key_id")?),
-        existingKeyId: U256::ZERO,
-        extraData: row.try_get::<Vec<u8>, _>("extra_data")?.into(),
+        prepKeygenId: prep_keygen_id,
+        requestId: request_id,
+        existingKeyId: existing_key_id.map(U256::from_le_bytes).unwrap_or_default(),
+        extraData: extra_data,
     });
     Ok(ProtocolEvent {
         kind,

@@ -27,8 +27,7 @@ use fhevm_gateway_bindings::decryption::{
 };
 use fhevm_host_bindings::{
     kms_generation::KMSGeneration::{
-        AbortCrsgen, AbortKeygen, CrsgenRequest, KeyMigrationRequest, KeygenRequest,
-        PrepKeygenRequest,
+        AbortCrsgen, AbortKeygen, CrsgenRequest, KeygenRequest, PrepKeygenRequest,
     },
     protocol_config::{
         IProtocolConfig::KmsThresholds,
@@ -363,22 +362,22 @@ pub async fn insert_rand_keygen_request(
 pub async fn insert_rand_compressed_key_migration_request(
     db: &Pool<Postgres>,
     options: InsertRequestOptions,
-) -> anyhow::Result<KeyMigrationRequest> {
+) -> anyhow::Result<KeygenRequest> {
     let migration_request_id = options.id.unwrap_or_else(rand_u256);
-    let migration_key_id = rand_u256();
+    let existing_key_id = rand_u256();
     let prep_key_id = rand_u256();
     let status = options.status.unwrap_or(OperationStatus::Pending);
     let extra_data = options.build_extra_data();
 
     sqlx::query!(
         "INSERT INTO keygen_requests(
-            prep_keygen_id, key_id, migration_key_id, extra_data, created_at, otlp_context,
+            prep_keygen_id, key_id, existing_key_id, extra_data, created_at, otlp_context,
             already_sent, status
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING",
         prep_key_id.as_le_slice(),
         migration_request_id.as_le_slice(),
-        migration_key_id.as_le_slice(),
+        existing_key_id.as_le_slice(),
         extra_data.to_vec() as Vec<u8>,
         Utc::now(),
         bc2wrap::serialize(&PropagationContext::empty())?,
@@ -388,10 +387,10 @@ pub async fn insert_rand_compressed_key_migration_request(
     .execute(db)
     .await?;
 
-    Ok(KeyMigrationRequest {
+    Ok(KeygenRequest {
         prepKeygenId: prep_key_id,
-        migrationRequestId: migration_request_id,
-        keyId: migration_key_id,
+        requestId: migration_request_id,
+        existingKeyId: existing_key_id,
         extraData: extra_data.into(),
     })
 }

@@ -147,9 +147,7 @@ impl From<&ProtocolEventKind> for EventType {
                 Self::UserDecryptionRequest
             }
             ProtocolEventKind::PrepKeygen(_) => Self::PrepKeygenRequest,
-            ProtocolEventKind::Keygen(_) | ProtocolEventKind::KeyMigration(_) => {
-                Self::KeygenRequest
-            }
+            ProtocolEventKind::Keygen(_) => Self::KeygenRequest,
             ProtocolEventKind::Crsgen(_) => Self::CrsgenRequest,
             ProtocolEventKind::AbortKeygen(_) => Self::AbortKeygenRequest,
             ProtocolEventKind::AbortCrsgen(_) => Self::AbortCrsgenRequest,

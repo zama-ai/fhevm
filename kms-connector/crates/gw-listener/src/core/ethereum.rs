@@ -23,8 +23,8 @@ use connector_utils::{
 };
 use fhevm_host_bindings::{
     kms_generation::KMSGeneration::{
-        AbortCrsgen, AbortKeygen, CrsgenRequest, KMSGenerationEvents, KeyMigrationRequest,
-        KeygenRequest, PrepKeygenRequest,
+        AbortCrsgen, AbortKeygen, CrsgenRequest, KMSGenerationEvents, KeygenRequest,
+        PrepKeygenRequest,
     },
     protocol_config::ProtocolConfig::{
         self, KmsContextDestroyed, KmsEpochDestroyed, NewKmsContext, NewKmsEpoch,
@@ -40,10 +40,9 @@ use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// Ethereum-side events signatures polled by `EthereumListener`.
 /// Used to build the multi-address `eth_getLogs` filter.
-const ETHEREUM_EVENT_SIGNATURES: [B256; 10] = [
+const ETHEREUM_EVENT_SIGNATURES: [B256; 9] = [
     PrepKeygenRequest::SIGNATURE_HASH,
     KeygenRequest::SIGNATURE_HASH,
-    KeyMigrationRequest::SIGNATURE_HASH,
     CrsgenRequest::SIGNATURE_HASH,
     AbortKeygen::SIGNATURE_HASH,
     AbortCrsgen::SIGNATURE_HASH,

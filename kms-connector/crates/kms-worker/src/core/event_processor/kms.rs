@@ -5,7 +5,7 @@ use crate::core::{
 use alloy::primitives::U256;
 use connector_utils::types::{KmsGrpcRequest, extra_data::parse_extra_data, u256_to_request_id};
 use fhevm_host_bindings::kms_generation::KMSGeneration::{
-    CrsgenRequest, KeyMigrationRequest, KeygenRequest, PrepKeygenRequest,
+    CrsgenRequest, KeygenRequest, PrepKeygenRequest,
 };
 use kms_grpc::kms::v1::{
     CompressedKeyConfig, ComputeKeyType, CrsGenRequest, Eip712DomainMsg, KeyGenPreprocRequest,
@@ -77,6 +77,10 @@ where
             .await
             .map_err(RequestCheckError::record)?;
 
+        let existing_key_id = (!keygen_request.existingKeyId.is_zero())
+            .then(|| u256_to_request_id(keygen_request.existingKeyId));
+        let is_migration = existing_key_id.is_some();
+
         Ok(KmsGrpcRequest::Keygen(KeyGenRequest {
             request_id: Some(u256_to_request_id(keygen_request.requestId)),
             preproc_id: Some(u256_to_request_id(keygen_request.prepKeygenId)),
@@ -85,38 +89,17 @@ where
             epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
             context_id: parsed_extra_data.context_id.map(u256_to_request_id),
             extra_data: keygen_request.extraData.to_vec(),
-            // Explicitly request the compressed XOF keyset layout expected by GPU workers.
-            keyset_config: Some(COMPRESSED_XOF_KEY_SET_CONFIG),
-            keyset_added_info: None,
-        }))
-    }
-
-    pub async fn prepare_key_migration_request(
-        &self,
-        request: &KeyMigrationRequest,
-    ) -> Result<KmsGrpcRequest, ProcessingError> {
-        let parsed_extra_data =
-            parse_extra_data(&request.extraData).map_err(ProcessingError::Irrecoverable)?;
-        self.context_manager
-            .validate_context(&parsed_extra_data)
-            .await
-            .map_err(RequestCheckError::record)?;
-
-        Ok(KmsGrpcRequest::Keygen(KeyGenRequest {
-            request_id: Some(u256_to_request_id(request.migrationRequestId)),
-            preproc_id: Some(u256_to_request_id(request.prepKeygenId)),
-            domain: Some(self.domain.clone()),
-            params: None,
-            epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
-            context_id: parsed_extra_data.context_id.map(u256_to_request_id),
-            extra_data: request.extraData.to_vec(),
-            keyset_config: Some(COMPRESSED_MIGRATION_KEY_SET_CONFIG),
-            keyset_added_info: Some(KeySetAddedInfo {
+            keyset_config: Some(if is_migration {
+                COMPRESSED_MIGRATION_KEY_SET_CONFIG
+            } else {
+                COMPRESSED_XOF_KEY_SET_CONFIG
+            }),
+            keyset_added_info: existing_key_id.map(|existing_keyset_id| KeySetAddedInfo {
                 from_keyset_id_decompression_only: None,
                 to_keyset_id_decompression_only: None,
-                existing_keyset_id: Some(u256_to_request_id(request.keyId)),
+                existing_keyset_id: Some(existing_keyset_id),
                 use_existing_key_tag: true,
-                copy_compressed_key_to_original: true,
+                copy_compressed_key_to_original: false,
             }),
         }))
     }
