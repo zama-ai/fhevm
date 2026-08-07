@@ -22,4 +22,11 @@ contract TestInput is E2ECoprocessorConfig {
         FHE.allow(resUint64, msg.sender);
         FHE.makePubliclyDecryptable(resUint64);
     }
+
+    function add42ToStored64() public {
+        resUint64 = FHE.add(resUint64, FHE.asEuint64(42));
+        FHE.allowThis(resUint64);
+        FHE.allow(resUint64, msg.sender);
+        FHE.makePubliclyDecryptable(resUint64);
+    }
 }

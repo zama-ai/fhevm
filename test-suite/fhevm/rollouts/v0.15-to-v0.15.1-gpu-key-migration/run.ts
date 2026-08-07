@@ -8,6 +8,7 @@ import {
   DEFAULT_POSTGRES_USER,
   coprocessorDatabaseName,
   defaultHostChainKey,
+  TEST_SUITE_CONTAINER,
 } from "../../src/layout";
 import { kmsConnectorDbName, kmsConnectorPrefix, kmsPartyIds } from "../../src/kms-party";
 import { hostReachableRpcUrl } from "../../src/utils/fs";
@@ -28,6 +29,25 @@ const KEY_WORKERS = ["tfhe-worker", "zkproof-worker", "sns-worker"] as const;
 const BLUE_MIGRATION_SERVICES = ["host-listener", "host-listener-poller", "host-listener-consumer", ...KEY_WORKERS];
 
 const logPhase = (label: string) => console.log(`\n[GPU key migration] ${label}`);
+
+const runKeyContinuity = async (mode: "prepare" | "reuse", contract?: string) => {
+  const result = await run([
+    "docker",
+    "exec",
+    "-e",
+    `RFC029_KEY_CONTINUITY_MODE=${mode}`,
+    ...(contract ? ["-e", `RFC029_KEY_CONTINUITY_CONTRACT=${contract}`] : []),
+    TEST_SUITE_CONTAINER,
+    "npx",
+    "hardhat",
+    "run",
+    "--no-compile",
+    "scripts/rfc029-key-continuity.ts",
+    "--network",
+    "staging",
+  ]);
+  return result.stdout;
+};
 
 const sqlScalar = async (database: string, sql: string): Promise<string> => {
   const result = await run([
@@ -112,8 +132,8 @@ const connectorObservation = async (party: number): Promise<ConnectorObservation
     ),
     sqlScalar(
       database,
-      "SELECT EXISTS (SELECT 1 FROM information_schema.columns " +
-        "WHERE table_name='keygen_requests' AND column_name='existing_key_id')::int;",
+      "SELECT (COUNT(*) = 2)::int FROM information_schema.columns " +
+        "WHERE table_name IN ('prep_keygen_requests', 'keygen_requests') AND column_name='existing_key_id';",
     ),
     Promise.all(
       CONNECTOR_SERVICES.map((service) =>
@@ -176,9 +196,7 @@ const operatorMaterial = async (
        JOIN host_chain_blocks_valid b ON b.chain_id = e.chain_id AND b.block_hash = e.block_hash
       WHERE e.status = 'activated'
         AND b.block_status = 'finalized'
-        AND e.key_digest_public IS NULL
-        AND e.key_content_public IS NULL
-        AND e.key_content_sks_key IS NULL
+        AND e.key_material_id IS NOT NULL
         AND e.key_content_compressed_xof_keyset IS NOT NULL
         AND e.chain_id = ${BigInt(expectedChainId).toString()}
         AND e.key_id = decode('${expectedKeyId}', 'hex')
@@ -371,6 +389,11 @@ export default async function runMigration(ctx: RolloutRunContext) {
     }
   }
   await ctx.test("input-proof-compute-decrypt", { parallel: false });
+  const continuityOutput = await runKeyContinuity("prepare");
+  const continuityContract = continuityOutput.match(/RFC029_KEY_CONTINUITY_CONTRACT=(0x[0-9a-fA-F]{40})/)?.[1];
+  if (!continuityContract) {
+    throw new Error("pre-migration key continuity probe did not return its contract address");
+  }
   const preMigrationHandles = await Promise.all(
     Array.from({ length: OPERATOR_COUNT }, (_, operator) =>
       sqlScalar(
@@ -523,6 +546,7 @@ export default async function runMigration(ctx: RolloutRunContext) {
   await assertWorkerRepresentation("Green", "compressed-xof", greenStartedAt);
 
   logPhase("09 verify preserved history and post-cutover protocol paths");
+  await runKeyContinuity("reuse", continuityContract);
   for (let operator = 0; operator < OPERATOR_COUNT; operator += 1) {
     const handle = preMigrationHandles[operator]!;
     const present = await sqlScalar(
