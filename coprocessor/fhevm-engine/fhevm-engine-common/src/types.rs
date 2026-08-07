@@ -862,6 +862,12 @@ impl SupportedFheOperations {
         }
     }
 
+    /// Whether this op produces multiple output ciphertexts. The output count
+    /// comes from the event, not from the opcode.
+    pub fn is_multi_output(&self) -> bool {
+        false
+    }
+
     pub fn supports_bool_inputs(&self) -> bool {
         matches!(
             self,
@@ -993,6 +999,14 @@ pub const COMPUTED_HANDLE_INDEX_MARKER: u8 = 0xff;
 /// constant in `host-contracts/contracts/shared/Constants.sol`.
 pub const HANDLE_VERSION: u8 = 0;
 
+/// Technical bound only; each operation sets its own smaller cap.
+pub const MAX_MULTI_OUTPUT_ARITY: usize = u8::MAX as usize;
+
+/// Enforced at ingestion by the host-listener.
+pub fn is_valid_multi_output_arity(outputs: usize) -> bool {
+    outputs > 0 && outputs <= MAX_MULTI_OUTPUT_ARITY
+}
+
 pub fn get_ct_type(handle: &[u8]) -> Result<i16, FhevmError> {
     match handle.len() {
         HANDLE_LEN => Ok(handle[30] as i16),
@@ -1057,7 +1071,32 @@ pub type CoproSigner = std::sync::Arc<dyn Signer<Signature> + Send + Sync>;
 
 #[cfg(test)]
 mod tests {
-    use super::{FhevmError, SupportedFheCiphertexts, SupportedFheOperations};
+    use super::{
+        is_valid_multi_output_arity, FhevmError, SupportedFheCiphertexts, SupportedFheOperations,
+        MAX_MULTI_OUTPUT_ARITY,
+    };
+    use strum::IntoEnumIterator;
+
+    #[test]
+    fn multi_output_arity_bounds() {
+        assert!(!is_valid_multi_output_arity(0));
+        assert!(is_valid_multi_output_arity(1));
+        assert!(is_valid_multi_output_arity(MAX_MULTI_OUTPUT_ARITY));
+        assert!(!is_valid_multi_output_arity(MAX_MULTI_OUTPUT_ARITY + 1));
+    }
+
+    #[test]
+    fn max_multi_output_arity_fits_output_index_column() {
+        // output_index is SMALLINT
+        assert!(i16::try_from(MAX_MULTI_OUTPUT_ARITY).is_ok());
+    }
+
+    #[test]
+    fn no_operation_is_multi_output_yet() {
+        for op in SupportedFheOperations::iter() {
+            assert!(!op.is_multi_output(), "{op:?} is multi-output");
+        }
+    }
 
     #[test]
     fn compress_scalar_returns_error() {
