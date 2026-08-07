@@ -322,10 +322,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
             continue;
         }
         let latest = match client.latest_block_number().await {
-            Ok(block) => {
-                consecutive_rpc_failures = 0;
-                block
-            }
+            Ok(block) => block,
             Err(err) => {
                 handle_rpc_failure(
                     &mut consecutive_rpc_failures,
@@ -337,14 +334,34 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                 continue;
             }
         };
+        let safe_tip = if kms_generation_address.is_some() {
+            let finalized = match client.finalized_block_number().await {
+                Ok(block) => {
+                    consecutive_rpc_failures = 0;
+                    block
+                }
+                Err(err) => {
+                    handle_rpc_failure(
+                        &mut consecutive_rpc_failures,
+                        None,
+                        &err,
+                        "Failed to fetch finalized block after retries",
+                    )?;
+                    sleep(config.retry_interval).await;
+                    continue;
+                }
+            };
+            finalized.min(latest.saturating_sub(config.finality_lag))
+        } else {
+            consecutive_rpc_failures = 0;
+            latest.saturating_sub(config.finality_lag)
+        };
         blockchain_timeout_tick.update();
-
-        let safe_tip = latest.saturating_sub(config.finality_lag);
         let client_ref = &client;
         update_finalized_blocks_aux(
             &mut db,
-            latest,
-            config.finality_lag,
+            safe_tip,
+            0,
             |block_number| async move {
                 client_ref
                     .header_for_block(block_number)

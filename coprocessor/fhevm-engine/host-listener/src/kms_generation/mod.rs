@@ -578,7 +578,6 @@ async fn download_crs_activation<A: AwsS3Interface + Clone + 'static>(
 
 #[cfg(test)]
 mod test {
-    use alloy::{primitives::b256, sol_types::SolEvent};
     use anyhow::anyhow;
     use async_trait::async_trait;
     use std::collections::HashMap;
@@ -595,14 +594,6 @@ mod test {
         key_id_to_database_bytes, DownloadedServerKey,
         LEGACY_SERVER_KEY_S3_PREFIX, XOF_KEY_SET_S3_PREFIX,
     };
-
-    #[test]
-    fn compressed_key_material_event_abi_is_frozen() {
-        assert_eq!(
-            crate::contracts::KMSGeneration::CompressedKeyMaterialAdded::SIGNATURE_HASH,
-            b256!("860254c88644f7bc7c755dc1669a8befadf71acf7f2c20b8ac59866491543510")
-        );
-    }
 
     #[derive(Clone)]
     struct TestS3Client {

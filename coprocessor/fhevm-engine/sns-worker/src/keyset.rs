@@ -133,7 +133,6 @@ async fn fetch_keyset_by_id(
             } else {
                 "legacy"
             },
-        ?encoding,
         "Fetched server-key bytes"
     );
     if blob.is_empty() {
