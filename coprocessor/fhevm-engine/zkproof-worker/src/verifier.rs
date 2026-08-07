@@ -72,11 +72,20 @@ pub struct ZkProofService {
     // `conf.gcs_mode = false`) the watcher is never spawned and this value
     // stays at the sentinel for the lifetime of the process.
     gw_start_block_state: Arc<AtomicI64>,
+    force_legacy_server_key: bool,
 }
 impl HealthCheckService for ZkProofService {
     async fn health_check(&self) -> HealthStatus {
         let mut status = HealthStatus::default();
-        status.set_db_connected(&self.pool_mngr.pool()).await;
+        let pool = self.pool_mngr.pool();
+        status.set_db_connected(&pool).await;
+        let key_material_ready = fhevm_engine_common::db_keys::is_server_key_material_available(
+            &pool,
+            self.force_legacy_server_key,
+        )
+        .await
+        .unwrap_or(false);
+        status.set_custom_check("server_key_material", key_material_ready, true);
         status
     }
 
@@ -129,6 +138,14 @@ impl ZkProofService {
         };
 
         let gw_start_block_state = Arc::new(AtomicI64::new(GCS_NOT_ACTIVATED));
+        let force_legacy_server_key =
+            match fhevm_engine_common::db_keys::force_legacy_server_key_from_env() {
+                Ok(force_legacy) => force_legacy,
+                Err(error) => {
+                    error!(%error, "Invalid server-key safeguard");
+                    return None;
+                }
+            };
 
         if conf.gcs_mode {
             // Long-lived task that mirrors `upgrade_state.gw_start_block`
@@ -158,6 +175,7 @@ impl ZkProofService {
             conf,
             last_active_at: Arc::new(RwLock::new(SystemTime::UNIX_EPOCH)),
             gw_start_block_state,
+            force_legacy_server_key,
         })
     }
 
@@ -188,8 +206,8 @@ pub async fn execute_verify_proofs_loop(
     info!(gpu_enabled, conf = %conf, "Starting with config");
 
     // DB key cache is shared amongst all workers
-    let db_key_cache =
-        DbKeyCache::new(MAX_CACHED_KEYS).map_err(|err| ExecutionError::Other(err.into()))?;
+    let db_key_cache = DbKeyCache::new_from_env(MAX_CACHED_KEYS)
+        .map_err(|err| ExecutionError::Other(err.into()))?;
 
     let host_chain_cache = Arc::new(
         HostChainsCache::load(&pool_mngr.pool())
