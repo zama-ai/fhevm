@@ -17,11 +17,11 @@ contract KMSGenerationMock {
         Public
     }
 
-    event PrepKeygenRequest(uint256 prepKeygenId, ParamsType paramsType, bytes extraData);
+    event PrepKeygenRequest(uint256 prepKeygenId, ParamsType paramsType, uint256 existingKeyId, bytes extraData);
 
     event PrepKeygenResponse(uint256 prepKeygenId, bytes signature, address kmsTxSender);
 
-    event KeygenRequest(uint256 prepKeygenId, uint256 keyId, bytes extraData);
+    event KeygenRequest(uint256 prepKeygenId, uint256 requestId, uint256 existingKeyId, bytes extraData);
 
     event KeygenResponse(uint256 keyId, KeyDigest[] keyDigests, bytes signature, address kmsTxSender);
 
@@ -40,12 +40,14 @@ contract KMSGenerationMock {
     uint256 prepKeygenCounter = 3 << 248;
     uint256 keyCounter = 4 << 248;
     uint256 crsCounter = 5 << 248;
+    mapping(uint256 prepKeygenId => uint256 existingKeyId) existingKeyIdByPrepKeygenId;
 
-    function keygen(ParamsType paramsType) external {
+    function keygen(ParamsType paramsType, uint256 existingKeyId) external {
         prepKeygenCounter++;
         uint256 prepKeygenId = prepKeygenCounter;
+        existingKeyIdByPrepKeygenId[prepKeygenId] = existingKeyId;
 
-        emit PrepKeygenRequest(prepKeygenId, paramsType, "");
+        emit PrepKeygenRequest(prepKeygenId, paramsType, existingKeyId, "");
     }
 
     function prepKeygenResponse(uint256 prepKeygenId, bytes calldata signature) external {
@@ -55,7 +57,7 @@ contract KMSGenerationMock {
 
         emit PrepKeygenResponse(prepKeygenId, signature, kmsTxSender);
 
-        emit KeygenRequest(prepKeygenId, keyId, "");
+        emit KeygenRequest(prepKeygenId, keyId, existingKeyIdByPrepKeygenId[prepKeygenId], "");
     }
 
     function keygenResponse(uint256 keyId, KeyDigest[] calldata keyDigests, bytes calldata signature) external {
