@@ -306,11 +306,11 @@ interface IKMSGeneration {
     error NotActiveKey(uint256 keyId);
 
     /**
-     * @notice Error thrown when a compressed-key materials response carries no
-     * CompressedKeySet-typed digest.
+     * @notice Error thrown when a compressed-key materials response does not carry exactly one
+     * non-empty CompressedKeySet-typed digest.
      * @param migrationRequestId The migration keygen request ID.
      */
-    error MissingCompressedKeySetDigest(uint256 migrationRequestId);
+    error InvalidCompressedKeySetDigest(uint256 migrationRequestId);
 
     /**
      * @notice Trigger an FHE key generation.

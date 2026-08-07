@@ -28,6 +28,7 @@ interface IKMSGeneration {
     error CrsgenOngoing(uint256 crsId);
     error DeserializingExtraDataFail();
     error EmptyKeyDigests(uint256 keyId);
+    error InvalidCompressedKeySetDigest(uint256 migrationRequestId);
     error KeyAborted(uint256 keyId);
     error KeyManagementRequestPending();
     error KeyNotGenerated(uint256 keyId);
@@ -37,7 +38,6 @@ interface IKMSGeneration {
     error KmsAlreadySignedForKeygen(uint256 keyId, address kmsSigner);
     error KmsAlreadySignedForPrepKeygen(uint256 prepKeygenId, address kmsSigner);
     error KmsSignerDoesNotMatchTxSender(address signerAddress, address txSenderAddress);
-    error MissingCompressedKeySetDigest(uint256 migrationRequestId);
     error NotActiveKey(uint256 keyId);
     error NotKmsSigner(address signerAddress);
     error NotKmsTxSender(address txSenderAddress);
@@ -1012,6 +1012,17 @@ interface IKMSGeneration {
   },
   {
     "type": "error",
+    "name": "InvalidCompressedKeySetDigest",
+    "inputs": [
+      {
+        "name": "migrationRequestId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "KeyAborted",
     "inputs": [
       {
@@ -1120,17 +1131,6 @@ interface IKMSGeneration {
         "name": "txSenderAddress",
         "type": "address",
         "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "MissingCompressedKeySetDigest",
-    "inputs": [
-      {
-        "name": "migrationRequestId",
-        "type": "uint256",
-        "internalType": "uint256"
       }
     ]
   },
@@ -2980,6 +2980,93 @@ error EmptyKeyDigests(uint256 keyId);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `InvalidCompressedKeySetDigest(uint256)` and selector `0xd162cfb3`.
+```solidity
+error InvalidCompressedKeySetDigest(uint256 migrationRequestId);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct InvalidCompressedKeySetDigest {
+        #[allow(missing_docs)]
+        pub migrationRequestId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        #[allow(dead_code)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<InvalidCompressedKeySetDigest>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: InvalidCompressedKeySetDigest) -> Self {
+                (value.migrationRequestId,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for InvalidCompressedKeySetDigest {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    migrationRequestId: tuple.0,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for InvalidCompressedKeySetDigest {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "InvalidCompressedKeySetDigest(uint256)";
+            const SELECTOR: [u8; 4] = [209u8, 98u8, 207u8, 179u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.migrationRequestId),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `KeyAborted(uint256)` and selector `0x83f18335`.
 ```solidity
 error KeyAborted(uint256 keyId);
@@ -3763,93 +3850,6 @@ error KmsSignerDoesNotMatchTxSender(address signerAddress, address txSenderAddre
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.txSenderAddress,
                     ),
-                )
-            }
-            #[inline]
-            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `MissingCompressedKeySetDigest(uint256)` and selector `0x4ed36775`.
-```solidity
-error MissingCompressedKeySetDigest(uint256 migrationRequestId);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct MissingCompressedKeySetDigest {
-        #[allow(missing_docs)]
-        pub migrationRequestId: alloy::sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        #[allow(dead_code)]
-        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (
-            alloy::sol_types::private::primitives::aliases::U256,
-        );
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<MissingCompressedKeySetDigest>
-        for UnderlyingRustTuple<'_> {
-            fn from(value: MissingCompressedKeySetDigest) -> Self {
-                (value.migrationRequestId,)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for MissingCompressedKeySetDigest {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {
-                    migrationRequestId: tuple.0,
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for MissingCompressedKeySetDigest {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "MissingCompressedKeySetDigest(uint256)";
-            const SELECTOR: [u8; 4] = [78u8, 211u8, 103u8, 117u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.migrationRequestId),
                 )
             }
             #[inline]
@@ -10447,6 +10447,8 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
         #[allow(missing_docs)]
         EmptyKeyDigests(EmptyKeyDigests),
         #[allow(missing_docs)]
+        InvalidCompressedKeySetDigest(InvalidCompressedKeySetDigest),
+        #[allow(missing_docs)]
         KeyAborted(KeyAborted),
         #[allow(missing_docs)]
         KeyManagementRequestPending(KeyManagementRequestPending),
@@ -10464,8 +10466,6 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
         KmsAlreadySignedForPrepKeygen(KmsAlreadySignedForPrepKeygen),
         #[allow(missing_docs)]
         KmsSignerDoesNotMatchTxSender(KmsSignerDoesNotMatchTxSender),
-        #[allow(missing_docs)]
-        MissingCompressedKeySetDigest(MissingCompressedKeySetDigest),
         #[allow(missing_docs)]
         NotActiveKey(NotActiveKey),
         #[allow(missing_docs)]
@@ -10492,7 +10492,6 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
             [42u8, 124u8, 110u8, 246u8],
             [51u8, 202u8, 31u8, 227u8],
             [59u8, 133u8, 61u8, 168u8],
-            [78u8, 211u8, 103u8, 117u8],
             [111u8, 188u8, 221u8, 43u8],
             [131u8, 241u8, 131u8, 53u8],
             [132u8, 222u8, 19u8, 49u8],
@@ -10504,6 +10503,7 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
             [173u8, 250u8, 185u8, 4u8],
             [174u8, 232u8, 99u8, 35u8],
             [203u8, 233u8, 38u8, 86u8],
+            [209u8, 98u8, 207u8, 179u8],
             [213u8, 253u8, 60u8, 215u8],
             [218u8, 50u8, 208u8, 15u8],
             [223u8, 13u8, 181u8, 251u8],
@@ -10522,7 +10522,6 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
             ::core::stringify!(NotKmsSigner),
             ::core::stringify!(KmsAlreadySignedForPrepKeygen),
             ::core::stringify!(KeygenOngoing),
-            ::core::stringify!(MissingCompressedKeySetDigest),
             ::core::stringify!(KeyManagementRequestPending),
             ::core::stringify!(KeyAborted),
             ::core::stringify!(KeyNotGenerated),
@@ -10534,6 +10533,7 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
             ::core::stringify!(KeygenNotRequested),
             ::core::stringify!(NotKmsTxSender),
             ::core::stringify!(AbortCrsgenInvalidId),
+            ::core::stringify!(InvalidCompressedKeySetDigest),
             ::core::stringify!(CrsAborted),
             ::core::stringify!(CrsNotGenerated),
             ::core::stringify!(AbortCrsgenAlreadyDone),
@@ -10552,7 +10552,6 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
             <NotKmsSigner as alloy_sol_types::SolError>::SIGNATURE,
             <KmsAlreadySignedForPrepKeygen as alloy_sol_types::SolError>::SIGNATURE,
             <KeygenOngoing as alloy_sol_types::SolError>::SIGNATURE,
-            <MissingCompressedKeySetDigest as alloy_sol_types::SolError>::SIGNATURE,
             <KeyManagementRequestPending as alloy_sol_types::SolError>::SIGNATURE,
             <KeyAborted as alloy_sol_types::SolError>::SIGNATURE,
             <KeyNotGenerated as alloy_sol_types::SolError>::SIGNATURE,
@@ -10564,6 +10563,7 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
             <KeygenNotRequested as alloy_sol_types::SolError>::SIGNATURE,
             <NotKmsTxSender as alloy_sol_types::SolError>::SIGNATURE,
             <AbortCrsgenInvalidId as alloy_sol_types::SolError>::SIGNATURE,
+            <InvalidCompressedKeySetDigest as alloy_sol_types::SolError>::SIGNATURE,
             <CrsAborted as alloy_sol_types::SolError>::SIGNATURE,
             <CrsNotGenerated as alloy_sol_types::SolError>::SIGNATURE,
             <AbortCrsgenAlreadyDone as alloy_sol_types::SolError>::SIGNATURE,
@@ -10638,6 +10638,9 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 Self::EmptyKeyDigests(_) => {
                     <EmptyKeyDigests as alloy_sol_types::SolError>::SELECTOR
                 }
+                Self::InvalidCompressedKeySetDigest(_) => {
+                    <InvalidCompressedKeySetDigest as alloy_sol_types::SolError>::SELECTOR
+                }
                 Self::KeyAborted(_) => {
                     <KeyAborted as alloy_sol_types::SolError>::SELECTOR
                 }
@@ -10664,9 +10667,6 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 }
                 Self::KmsSignerDoesNotMatchTxSender(_) => {
                     <KmsSignerDoesNotMatchTxSender as alloy_sol_types::SolError>::SELECTOR
-                }
-                Self::MissingCompressedKeySetDigest(_) => {
-                    <MissingCompressedKeySetDigest as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::NotActiveKey(_) => {
                     <NotActiveKey as alloy_sol_types::SolError>::SELECTOR
@@ -10776,17 +10776,6 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                             .map(IKMSGenerationErrors::KeygenOngoing)
                     }
                     KeygenOngoing
-                },
-                {
-                    fn MissingCompressedKeySetDigest(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <MissingCompressedKeySetDigest as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IKMSGenerationErrors::MissingCompressedKeySetDigest)
-                    }
-                    MissingCompressedKeySetDigest
                 },
                 {
                     fn KeyManagementRequestPending(
@@ -10908,6 +10897,17 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                             .map(IKMSGenerationErrors::AbortCrsgenInvalidId)
                     }
                     AbortCrsgenInvalidId
+                },
+                {
+                    fn InvalidCompressedKeySetDigest(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
+                        <InvalidCompressedKeySetDigest as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IKMSGenerationErrors::InvalidCompressedKeySetDigest)
+                    }
+                    InvalidCompressedKeySetDigest
                 },
                 {
                     fn CrsAborted(
@@ -11091,17 +11091,6 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                     KeygenOngoing
                 },
                 {
-                    fn MissingCompressedKeySetDigest(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <MissingCompressedKeySetDigest as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationErrors::MissingCompressedKeySetDigest)
-                    }
-                    MissingCompressedKeySetDigest
-                },
-                {
                     fn KeyManagementRequestPending(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
@@ -11223,6 +11212,17 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                             .map(IKMSGenerationErrors::AbortCrsgenInvalidId)
                     }
                     AbortCrsgenInvalidId
+                },
+                {
+                    fn InvalidCompressedKeySetDigest(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
+                        <InvalidCompressedKeySetDigest as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IKMSGenerationErrors::InvalidCompressedKeySetDigest)
+                    }
+                    InvalidCompressedKeySetDigest
                 },
                 {
                     fn CrsAborted(
@@ -11382,6 +11382,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                         inner,
                     )
                 }
+                Self::InvalidCompressedKeySetDigest(inner) => {
+                    <InvalidCompressedKeySetDigest as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::KeyAborted(inner) => {
                     <KeyAborted as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
@@ -11420,11 +11425,6 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 }
                 Self::KmsSignerDoesNotMatchTxSender(inner) => {
                     <KmsSignerDoesNotMatchTxSender as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::MissingCompressedKeySetDigest(inner) => {
-                    <MissingCompressedKeySetDigest as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -11523,6 +11523,12 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                         out,
                     )
                 }
+                Self::InvalidCompressedKeySetDigest(inner) => {
+                    <InvalidCompressedKeySetDigest as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::KeyAborted(inner) => {
                     <KeyAborted as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
@@ -11570,12 +11576,6 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 }
                 Self::KmsSignerDoesNotMatchTxSender(inner) => {
                     <KmsSignerDoesNotMatchTxSender as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::MissingCompressedKeySetDigest(inner) => {
-                    <MissingCompressedKeySetDigest as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )

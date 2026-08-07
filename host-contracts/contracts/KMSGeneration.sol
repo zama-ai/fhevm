@@ -392,7 +392,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
 
         uint256 migrationKeyId = $.keyIdByMigrationRequestId[keyId];
         if (migrationKeyId != 0) {
-            _checkHasCompressedKeySetDigest(keyId, keyDigests);
+            _checkCompressedKeySetDigest(keyId, keyDigests);
         }
 
         (bytes memory extraData, uint256 contextId) = _loadExtraDataAndAuthorizeResponse(keyId);
@@ -792,18 +792,24 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     }
 
     /**
-     * @notice Reverts unless the digest set carries a CompressedKeySet-typed entry.
+     * @notice Reverts unless the digest set carries exactly one non-empty CompressedKeySet entry.
      */
-    function _checkHasCompressedKeySetDigest(
+    function _checkCompressedKeySetDigest(
         uint256 migrationRequestId,
         KeyDigest[] calldata keyDigests
     ) internal pure virtual {
+        bool foundCompressedKeySet;
         for (uint256 i = 0; i < keyDigests.length; i++) {
             if (keyDigests[i].keyType == KeyType.CompressedKeySet) {
-                return;
+                if (foundCompressedKeySet || keyDigests[i].digest.length == 0) {
+                    revert InvalidCompressedKeySetDigest(migrationRequestId);
+                }
+                foundCompressedKeySet = true;
             }
         }
-        revert MissingCompressedKeySetDigest(migrationRequestId);
+        if (!foundCompressedKeySet) {
+            revert InvalidCompressedKeySetDigest(migrationRequestId);
+        }
     }
 
     function _checkGeneratedKeyId(uint256 keyId) internal view virtual {

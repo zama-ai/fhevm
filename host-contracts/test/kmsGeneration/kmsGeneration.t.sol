@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
+import {EIP712Upgradeable} from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 import {Vm} from "forge-std/Test.sol";
 
 import {KMSGeneration} from "@fhevm-host-contracts/contracts/KMSGeneration.sol";
@@ -9,6 +10,7 @@ import {IKMSGeneration} from "@fhevm-host-contracts/contracts/interfaces/IKMSGen
 import {ProtocolConfig} from "@fhevm-host-contracts/contracts/ProtocolConfig.sol";
 import {IProtocolConfig} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfig.sol";
 import {KmsNode, KmsNodeParams, PcrValues} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
+import {EmptyUUPSProxy} from "@fhevm-host-contracts/contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {ACLOwnable} from "@fhevm-host-contracts/contracts/shared/ACLOwnable.sol";
 import {UUPSUpgradeableEmptyProxy} from "@fhevm-host-contracts/contracts/shared/UUPSUpgradeableEmptyProxy.sol";
 import {KMS_CONTEXT_COUNTER_BASE, EPOCH_COUNTER_BASE, PREP_KEYGEN_COUNTER_BASE, KEY_COUNTER_BASE, CRS_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
@@ -20,6 +22,68 @@ contract KMSGenerationHarness is KMSGeneration {
     function extractContextIdFromExtraData(bytes memory extraData) external view returns (uint256 contextId) {
         return _extractContextIdFromExtraData(extraData);
     }
+}
+
+contract KMSGenerationV2StateHarness is EIP712Upgradeable, UUPSUpgradeableEmptyProxy, ACLOwnable {
+    struct KMSGenerationV2Storage {
+        mapping(uint256 requestId => mapping(address kmsSigner => bool hasSigned)) kmsHasSignedForResponse;
+        mapping(uint256 requestId => bool hasConsensusAlreadyBeenReached) isRequestDone;
+        mapping(uint256 requestId => mapping(bytes32 digest => address[] kmsTxSenderAddresses)) consensusTxSenderAddresses;
+        mapping(uint256 requestId => bytes32 digest) consensusDigest;
+        uint256 prepKeygenCounter;
+        uint256 keyCounter;
+        mapping(uint256 id => uint256 pairedId) keygenIdPairs;
+        mapping(uint256 keyId => IKMSGeneration.KeyDigest[] keyDigests) keyDigests;
+        uint256 activeKeyId;
+        uint256 crsCounter;
+        mapping(uint256 crsId => uint256 maxBitLength) crsMaxBitLength;
+        mapping(uint256 crsId => bytes crsDigest) crsDigests;
+        uint256 activeCrsId;
+        mapping(uint256 requestId => IKMSGeneration.ParamsType paramsType) requestParamsType;
+        mapping(uint256 requestId => bytes extraData) requestExtraData;
+        uint256[] completedKeyIds;
+        uint256[] completedCrsIds;
+    }
+
+    bytes32 private constant KMS_GENERATION_STORAGE_LOCATION =
+        0x26fdaf8a2cb20d20b55e36218986905e534ee7a970dd2fa827946e4b7496db00;
+
+    function seedV2State(
+        uint256 prepKeygenId,
+        uint256 keyId,
+        IKMSGeneration.ParamsType paramsType,
+        bytes calldata extraData,
+        IKMSGeneration.KeyDigest[] calldata keyDigests_
+    ) external onlyFromEmptyProxy reinitializer(3) {
+        __EIP712_init("KMSGeneration", "1");
+
+        KMSGenerationV2Storage storage $ = _getKMSGenerationV2Storage();
+        $.prepKeygenCounter = prepKeygenId;
+        $.keyCounter = keyId;
+        $.crsCounter = CRS_COUNTER_BASE;
+        $.keygenIdPairs[prepKeygenId] = keyId;
+        $.keygenIdPairs[keyId] = prepKeygenId;
+        $.requestParamsType[prepKeygenId] = paramsType;
+        $.requestExtraData[prepKeygenId] = extraData;
+        $.requestExtraData[keyId] = extraData;
+        $.isRequestDone[prepKeygenId] = true;
+        $.isRequestDone[keyId] = true;
+        $.consensusDigest[prepKeygenId] = keccak256("prep-keygen-consensus");
+        $.consensusDigest[keyId] = keccak256("keygen-consensus");
+        $.activeKeyId = keyId;
+        $.completedKeyIds.push(keyId);
+        for (uint256 i = 0; i < keyDigests_.length; i++) {
+            $.keyDigests[keyId].push(keyDigests_[i]);
+        }
+    }
+
+    function _getKMSGenerationV2Storage() private pure returns (KMSGenerationV2Storage storage $) {
+        assembly {
+            $.slot := KMS_GENERATION_STORAGE_LOCATION
+        }
+    }
+
+    function _authorizeUpgrade(address) internal override onlyACLOwner {}
 }
 
 contract KMSGenerationTest is HostContractsDeployerTestUtils {
@@ -280,6 +344,25 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         assertFalse(kmsGeneration.isRequestDone(crsId));
         _doCrsgenResponse(crsId, kmsPk0, kmsTxSender0);
         assertTrue(kmsGeneration.isRequestDone(crsId));
+    }
+
+    function _completeMigration(
+        KMSGeneration target,
+        address verifier,
+        uint256 prepKeygenId,
+        uint256 requestId,
+        bytes memory extraData
+    ) internal {
+        bytes32 prepDigest = _hashPrepKeygen(verifier, prepKeygenId, extraData);
+        bytes memory prepSignature = _computeSignature(kmsPk0, prepDigest);
+        vm.prank(kmsTxSender0);
+        target.prepKeygenResponse(prepKeygenId, prepSignature);
+
+        IKMSGeneration.KeyDigest[] memory compressedDigests = _mockCompressedKeyDigests();
+        bytes32 migrationDigest = _hashKeygen(verifier, prepKeygenId, requestId, compressedDigests, extraData);
+        bytes memory migrationSignature = _computeSignature(kmsPk0, migrationDigest);
+        vm.prank(kmsTxSender0);
+        target.keygenResponse(requestId, compressedDigests, migrationSignature);
     }
 
     function _assumeNotCurrentKmsTxSender(address caller) internal view {
@@ -552,21 +635,21 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
 
         // Override both tx sender and signer fields: `_makeKmsNodeParams` reuses kmsTxSender0/1 by
-        // default, and we need a context fully disjoint from the original committee.
+        // default, and we need a context fully disjoint from the original committee {kmsPk0, kmsPk1}.
         KmsNodeParams[] memory rotatedNodes = _makeKmsNodeParams(2);
         rotatedNodes[0].txSenderAddress = address(0xB1);
-        rotatedNodes[0].signerAddress = kmsSigner1;
+        rotatedNodes[0].signerAddress = kmsSigner2;
         rotatedNodes[1].txSenderAddress = address(0xB2);
-        rotatedNodes[1].signerAddress = kmsSigner2;
+        rotatedNodes[1].signerAddress = kmsSigner3;
 
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(rotatedNodes, _defaultThresholds());
         _activatePendingDisjointTwoNodeContext(
             KMS_CONTEXT_COUNTER_BASE + 2,
             EPOCH_COUNTER_BASE + 2,
-            kmsPk1,
-            address(0xB1),
             kmsPk2,
+            address(0xB1),
+            kmsPk3,
             address(0xB2)
         );
 
@@ -1246,6 +1329,57 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         assertEq(kmsGeneration.getActiveCrsId(), 0);
     }
 
+    function test_upgradeFromPopulatedV2PreservesStateAndAllowsMigration() public {
+        address scratchProxy = address(0xCAFE);
+        address emptyImpl = address(new EmptyUUPSProxy());
+        deployCodeTo(
+            "fhevm-foundry/HostContractsDeployerTestUtils.sol:DeployableERC1967Proxy",
+            abi.encode(emptyImpl, abi.encodeCall(EmptyUUPSProxy.initialize, ())),
+            scratchProxy
+        );
+
+        uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
+        uint256 keyId = KEY_COUNTER_BASE + 1;
+        bytes memory extraData = _buildExtraData();
+        IKMSGeneration.KeyDigest[] memory legacyDigests = _mockKeyDigests();
+
+        address v2StateImpl = address(new KMSGenerationV2StateHarness());
+        vm.prank(owner);
+        EmptyUUPSProxy(scratchProxy).upgradeToAndCall(
+            v2StateImpl,
+            abi.encodeCall(
+                KMSGenerationV2StateHarness.seedV2State,
+                (prepKeygenId, keyId, IKMSGeneration.ParamsType.Default, extraData, legacyDigests)
+            )
+        );
+
+        address v3Impl = address(new KMSGeneration());
+        vm.prank(owner);
+        EmptyUUPSProxy(scratchProxy).upgradeToAndCall(v3Impl, abi.encodeCall(KMSGeneration.reinitializeV3, ()));
+        KMSGeneration migrated = KMSGeneration(scratchProxy);
+
+        assertEq(migrated.getVersion(), "KMSGeneration v0.3.0");
+        assertEq(migrated.getActiveKeyId(), keyId);
+        assertEq(migrated.getKeyCounter(), keyId);
+        assertEq(migrated.getCompletedKeyIds().length, 1);
+        assertEq(migrated.getCompletedKeyIds()[0], keyId);
+        assertEq(uint256(migrated.getKeyParamsType(keyId)), uint256(IKMSGeneration.ParamsType.Default));
+        (, IKMSGeneration.KeyDigest[] memory preservedDigests) = migrated.getKeyMaterials(keyId);
+        assertEq(preservedDigests.length, legacyDigests.length);
+        assertEq(preservedDigests[0].digest, legacyDigests[0].digest);
+
+        vm.prank(owner);
+        migrated.migrateToCompressedKeySet(keyId);
+        uint256 migrationPrepKeygenId = prepKeygenId + 1;
+        uint256 migrationRequestId = keyId + 1;
+        _completeMigration(migrated, scratchProxy, migrationPrepKeygenId, migrationRequestId, extraData);
+
+        assertEq(migrated.getActiveKeyId(), keyId);
+        (, IKMSGeneration.KeyDigest[] memory publishedDigests) = migrated.getCompressedKeyMigrationMaterials(keyId);
+        assertEq(publishedDigests.length, 2);
+        assertEq(publishedDigests[1].digest, hex"c0ffee00");
+    }
+
     // -----------------------------------------------------------------------
     // Multi-signer post-consensus ignore (4 nodes, kmsGen threshold 3)
     // -----------------------------------------------------------------------
@@ -1452,10 +1586,41 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         address sender
     ) internal {
         IKMSGeneration.KeyDigest[] memory digests = _mockCompressedKeyDigests();
+        _doMigrationKeygenResponse(prepKeygenId, migrationRequestId, digests, pk, sender);
+    }
+
+    function _doMigrationKeygenResponse(
+        uint256 prepKeygenId,
+        uint256 migrationRequestId,
+        IKMSGeneration.KeyDigest[] memory digests,
+        uint256 pk,
+        address sender
+    ) internal {
         bytes32 digest = _hashKeygen(prepKeygenId, migrationRequestId, digests, _buildExtraData());
         bytes memory sig = _computeSignature(pk, digest);
         vm.prank(sender);
         kmsGeneration.keygenResponse(migrationRequestId, digests, sig);
+    }
+
+    function _prepareMigrationResponseValidation() internal returns (uint256 prepKeygenId, uint256 requestId) {
+        (, uint256 keyId) = _runFullKeygenCycle();
+        vm.prank(owner);
+        kmsGeneration.migrateToCompressedKeySet(keyId);
+        prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 2;
+        requestId = KEY_COUNTER_BASE + 2;
+        _doPrepKeygenResponse(prepKeygenId, kmsPk0, kmsTxSender0);
+    }
+
+    function _expectInvalidMigrationKeygenResponse(
+        uint256 prepKeygenId,
+        uint256 requestId,
+        IKMSGeneration.KeyDigest[] memory digests
+    ) internal {
+        bytes32 digest = _hashKeygen(prepKeygenId, requestId, digests, _buildExtraData());
+        bytes memory signature = _computeSignature(kmsPk0, digest);
+        vm.prank(kmsTxSender0);
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.InvalidCompressedKeySetDigest.selector, requestId));
+        kmsGeneration.keygenResponse(requestId, digests, signature);
     }
 
     /// @dev Run a full migration cycle for an existing key; returns the migration request pair.
@@ -1548,23 +1713,33 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     }
 
     function test_revertMigrationKeygenResponseWithoutCompressedDigest() public {
-        (, uint256 keyId) = _runFullKeygenCycle();
-        vm.prank(owner);
-        kmsGeneration.migrateToCompressedKeySet(keyId);
-        uint256 migrationPrepId = PREP_KEYGEN_COUNTER_BASE + 2;
-        uint256 migrationRequestId = KEY_COUNTER_BASE + 2;
-        _doPrepKeygenResponse(migrationPrepId, kmsPk0, kmsTxSender0);
+        (uint256 migrationPrepId, uint256 migrationRequestId) = _prepareMigrationResponseValidation();
 
-        // A migration response without a CompressedKeySet digest is
-        // useless to coprocessors and must be rejected up front.
         IKMSGeneration.KeyDigest[] memory digests = _mockKeyDigests();
-        bytes32 digest = _hashKeygen(migrationPrepId, migrationRequestId, digests, _buildExtraData());
-        bytes memory sig = _computeSignature(kmsPk0, digest);
-        vm.prank(kmsTxSender0);
-        vm.expectRevert(
-            abi.encodeWithSelector(IKMSGeneration.MissingCompressedKeySetDigest.selector, migrationRequestId)
-        );
-        kmsGeneration.keygenResponse(migrationRequestId, digests, sig);
+        _expectInvalidMigrationKeygenResponse(migrationPrepId, migrationRequestId, digests);
+    }
+
+    function test_revertMigrationKeygenResponseWithEmptyCompressedDigest() public {
+        (uint256 migrationPrepId, uint256 migrationRequestId) = _prepareMigrationResponseValidation();
+
+        IKMSGeneration.KeyDigest[] memory digests = _mockCompressedKeyDigests();
+        digests[1].digest = "";
+        _expectInvalidMigrationKeygenResponse(migrationPrepId, migrationRequestId, digests);
+    }
+
+    function test_revertMigrationKeygenResponseWithDuplicateCompressedDigests() public {
+        (uint256 migrationPrepId, uint256 migrationRequestId) = _prepareMigrationResponseValidation();
+
+        IKMSGeneration.KeyDigest[] memory digests = new IKMSGeneration.KeyDigest[](2);
+        digests[0] = IKMSGeneration.KeyDigest({
+            keyType: IKMSGeneration.KeyType.CompressedKeySet,
+            digest: hex"c0ffee00"
+        });
+        digests[1] = IKMSGeneration.KeyDigest({
+            keyType: IKMSGeneration.KeyType.CompressedKeySet,
+            digest: hex"deadbeef"
+        });
+        _expectInvalidMigrationKeygenResponse(migrationPrepId, migrationRequestId, digests);
     }
 
     function test_abortMigrationOnlyBeforeRequestEmission() public {
