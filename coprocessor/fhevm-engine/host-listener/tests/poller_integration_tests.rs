@@ -152,7 +152,6 @@ async fn poller_catches_up_to_safe_tip(
             EventKind::Acl,
         ));
     }
-
     let latest_block = provider.get_block_number().await?;
     let finality_lag = 2u64;
     let safe_tip = latest_block.saturating_sub(finality_lag);

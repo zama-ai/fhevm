@@ -7,6 +7,9 @@ use std::{
 };
 
 use fhevm_engine_common::database::connect_options_for_database_url;
+use fhevm_engine_common::db_keys::{
+    force_legacy_server_key_from_env, is_server_key_material_available,
+};
 use fhevm_engine_common::healthz_server::{
     default_get_version, HealthCheckService, HealthStatus, Version,
 };
@@ -30,6 +33,7 @@ pub struct HealthCheck {
     /// the liveness probe and get the pod restarted, so the in-flight
     /// override is a bounded grace period, not an unconditional pass.
     max_batch_ttl: Duration,
+    force_legacy_server_key: bool,
 }
 
 #[derive(Debug)]
@@ -47,16 +51,20 @@ impl Drop for InFlightWorkGuard {
 }
 
 impl HealthCheck {
-    pub fn new(database_url: DatabaseURL, max_batch_ttl: Duration) -> Self {
+    pub fn new(
+        database_url: DatabaseURL,
+        max_batch_ttl: Duration,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         // A lazy pool is used to avoid blocking the main thread during initialization or bad database URL
-        Self {
+        Ok(Self {
             database_url,
             database_heartbeat: HeartBeat::new(),
             activity_heartbeat: HeartBeat::new(),
             in_flight_work: Arc::new(AtomicUsize::new(0)),
             work_started_at: Arc::new(Mutex::new(None)),
             max_batch_ttl,
-        }
+            force_legacy_server_key: force_legacy_server_key_from_env()?,
+        })
     }
 
     pub fn update_db_access(&self) {
@@ -122,6 +130,26 @@ impl HealthCheckService for HealthCheck {
                 }
             }
         };
+
+        let key_material_ready = match connect_options_for_database_url(&self.database_url).await {
+            Ok(connect_options) => {
+                match sqlx::postgres::PgPoolOptions::new()
+                    .acquire_timeout(Duration::from_secs(5))
+                    .max_connections(1)
+                    .connect_with(connect_options)
+                    .await
+                {
+                    Ok(pool) => {
+                        is_server_key_material_available(&pool, self.force_legacy_server_key)
+                            .await
+                            .unwrap_or(false)
+                    }
+                    Err(_) => false,
+                }
+            }
+            Err(_) => false,
+        };
+        status.set_custom_check("server_key_material", key_material_ready, true);
         status
     }
 
@@ -146,6 +174,7 @@ mod tests {
             in_flight_work: Arc::new(AtomicUsize::new(0)),
             work_started_at: Arc::new(Mutex::new(None)),
             max_batch_ttl: Duration::from_secs(300),
+            force_legacy_server_key: false,
         }
     }
 

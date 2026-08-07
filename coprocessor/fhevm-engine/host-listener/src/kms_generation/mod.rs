@@ -1,5 +1,5 @@
-use alloy::primitives::Uint;
 use alloy::rpc::types::Log;
+use alloy::{hex, primitives::Uint};
 use anyhow::anyhow;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::versioning::{
@@ -12,19 +12,25 @@ use crate::contracts::KMSGeneration::{self, KMSGenerationEvents};
 use crate::kms_generation::aws_s3::{download_key_from_s3, AwsS3Interface};
 use crate::kms_generation::database::{
     activate_ready_crs_activations, activate_ready_key_activations,
+    all_pending_compressed_key_materials_to_download,
     all_pending_crs_activations_to_download,
-    all_pending_key_activations_to_download, cancel_orphaned_crs_activations,
+    all_pending_key_activations_to_download, applied_compressed_key_materials,
+    apply_ready_compressed_key_materials, cancel_orphaned_crs_activations,
     cancel_orphaned_key_activations, count_crs_activation_remaining_pending,
-    count_key_activation_remaining_pending, insert_crs_activation_event,
-    insert_key_activation_event, mark_crs_activation_error,
-    mark_key_activation_error, set_ready_crs_activation,
-    set_ready_key_activation, PendingCrsActivation, PendingKeyActivation,
+    count_key_activation_remaining_pending,
+    insert_compressed_key_material_event, insert_crs_activation_event,
+    insert_key_activation_event, mark_compressed_key_material_error,
+    mark_crs_activation_error, mark_key_activation_error,
+    set_ready_compressed_key_material, set_ready_crs_activation,
+    set_ready_key_activation, PendingCompressedKeyMaterial,
+    PendingCrsActivation, PendingKeyActivation,
 };
 use crate::kms_generation::digest::{digest_crs, digest_key};
 use crate::kms_generation::metrics::{
     ACTIVATE_CRS_FAIL_COUNTER, ACTIVATE_CRS_SUCCESS_COUNTER,
     ACTIVATE_KEY_FAIL_COUNTER, ACTIVATE_KEY_SUCCESS_COUNTER,
     CRS_DIGEST_MISMATCH_COUNTER, KEY_DIGEST_MISMATCH_COUNTER,
+    MATERIAL_APPLIED_BLOCK_GAUGE,
 };
 use crate::kms_generation::sks_key::{
     prepare_legacy_server_key_for_db, prepare_xof_key_set_for_db,
@@ -138,6 +144,20 @@ pub async fn insert_kms_generation_events_tx(
                 )
                 .await?;
             }
+            KMSGeneration::KMSGenerationEvents::CompressedKeyMaterialAdded(
+                material,
+            ) => {
+                insert_compressed_key_material_event(
+                    tx,
+                    material,
+                    log,
+                    chain_id,
+                    block_hash,
+                    block_number,
+                )
+                .await
+                .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+            }
             _ => {
                 warn!(
                     ?log,
@@ -179,10 +199,31 @@ pub async fn process_kms_generation_activations<
     cancel_orphaned_key_activations(&mut tx).await?;
     cancel_orphaned_crs_activations(&mut tx).await?;
     activate_ready_key_activations(&mut tx).await?;
+    let applied_compressed_materials =
+        apply_ready_compressed_key_materials(&mut tx).await?;
     activate_ready_crs_activations(&mut tx).await?;
     tx.commit().await?;
+    for material in applied_compressed_key_materials(&db_pool).await? {
+        let chain_id = material.chain_id.to_string();
+        let key_id = hex::encode(material.key_id);
+        let key_digest = hex::encode(material.key_digest);
+        MATERIAL_APPLIED_BLOCK_GAUGE
+            .with_label_values(&[&chain_id, &key_id, &key_digest])
+            .set(material.block_number);
+    }
+    for material in applied_compressed_materials {
+        info!(
+            chain_id = material.chain_id,
+            block_hash = %hex::encode(&material.block_hash),
+            block_number = material.block_number,
+            transaction_hash = ?material.transaction_hash.as_deref().map(hex::encode),
+            key_id = %hex::encode(&material.key_id),
+            key_digest = %hex::encode(&material.key_digest),
+            "Compressed key material applied"
+        );
+    }
 
-    // second we download and check keys and preprocess in background in advance so it's ready when block is finalized
+    // second we download and check keys
     // rows are locked so there's no double work
     //
     // NOTE: this transaction stays open across the S3 key/CRS downloads below, so the shared
@@ -204,9 +245,14 @@ pub async fn process_kms_generation_activations<
     };
     let key_activations =
         all_pending_key_activations_to_download(&mut tx).await?;
+    let compressed_materials =
+        all_pending_compressed_key_materials_to_download(&mut tx).await?;
     let crs_activations =
         all_pending_crs_activations_to_download(&mut tx).await?;
-    if key_activations.is_empty() && crs_activations.is_empty() {
+    if key_activations.is_empty()
+        && compressed_materials.is_empty()
+        && crs_activations.is_empty()
+    {
         info!("No pending KMSGeneration activation to download");
         return Ok(0);
     }
@@ -221,6 +267,12 @@ pub async fn process_kms_generation_activations<
     // do all downloads
     download_and_store_key_activations(&mut tx, &s3_client, key_activations)
         .await?;
+    download_and_store_compressed_key_materials(
+        &mut tx,
+        &s3_client,
+        compressed_materials,
+    )
+    .await?;
     download_and_store_crs_activations(&mut tx, &s3_client, crs_activations)
         .await?;
     info!("Downloading succeeded for KMSGeneration and CRS");
@@ -252,6 +304,54 @@ async fn download_and_store_key_activations<
         }
     }
     Ok(())
+}
+
+async fn download_and_store_compressed_key_materials<
+    A: AwsS3Interface + Clone + 'static,
+>(
+    tx: &mut Transaction<'_, Postgres>,
+    s3_client: &A,
+    materials: Vec<PendingCompressedKeyMaterial>,
+) -> anyhow::Result<()> {
+    for material in materials {
+        if let Err(error) =
+            download_and_store_compressed_key_material(tx, s3_client, &material)
+                .await
+        {
+            error!(%error, key_id = ?material.key_id, "Failed to download compressed key material");
+            mark_compressed_key_material_error(
+                tx,
+                &error.to_string(),
+                &material,
+            )
+            .await;
+        }
+    }
+    Ok(())
+}
+
+async fn download_and_store_compressed_key_material<
+    A: AwsS3Interface + Clone + 'static,
+>(
+    tx: &mut Transaction<'_, Postgres>,
+    s3_client: &A,
+    material: &PendingCompressedKeyMaterial,
+) -> anyhow::Result<()> {
+    let key_material_id =
+        key_id_from_database_bytes(&material.key_material_id)?;
+    let path = format!(
+        "{}/{}",
+        XOF_KEY_SET_S3_PREFIX,
+        key_id_to_aws_key(key_material_id)
+    );
+    let bytes =
+        download_key_from_s3(s3_client, &material.storage_urls, path, 0)
+            .await?;
+    verify_server_key_digest(&bytes, &material.key_digest, &key_material_id)?;
+
+    // Reject malformed material before it can make a Green worker ready.
+    prepare_xof_key_set_for_db(&bytes)?;
+    set_ready_compressed_key_material(tx, material, &bytes).await
 }
 
 async fn download_and_store_crs_activations<
@@ -516,6 +616,7 @@ async fn download_crs_activation<A: AwsS3Interface + Clone + 'static>(
 
 #[cfg(test)]
 mod test {
+    use alloy::{primitives::b256, sol_types::SolEvent};
     use anyhow::anyhow;
     use async_trait::async_trait;
     use std::collections::HashMap;
@@ -532,6 +633,14 @@ mod test {
         key_id_to_database_bytes, DownloadedServerKey,
         LEGACY_SERVER_KEY_S3_PREFIX, XOF_KEY_SET_S3_PREFIX,
     };
+
+    #[test]
+    fn compressed_key_material_event_abi_is_frozen() {
+        assert_eq!(
+            crate::contracts::KMSGeneration::CompressedKeyMaterialAdded::SIGNATURE_HASH,
+            b256!("860254c88644f7bc7c755dc1669a8befadf71acf7f2c20b8ac59866491543510")
+        );
+    }
 
     #[derive(Clone)]
     struct TestS3Client {
