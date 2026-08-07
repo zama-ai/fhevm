@@ -175,10 +175,9 @@ describe("upgradeCoprocessorInstance", () => {
     });
   });
 
-  // 0.13 bundles carry no consensus-detector or upgrade-controller, so the rollout leaves those
-  // keys empty and the 0.14 lock is the first thing to name them. A lock that introduces a
-  // component must land it alongside the rest of the fleet rather than being read as a fleet
-  // split across two tags.
+  // A release that adds a coprocessor component leaves the running bundle with no key for it,
+  // so the lock that crosses into that release is the first thing to name it. Landing a new
+  // component has to read as the fleet moving to one tag, not as a fleet split across two.
   test("lands a component the running bundle does not have yet", async () => {
     await withTempStateDir(async (stateDir) => {
       const versions = presetBundle("latest-main", "abcdef0", "baseline.json");

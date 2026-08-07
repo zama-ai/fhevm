@@ -83,9 +83,11 @@ export const from = {
   COPROCESSOR_TFHE_WORKER_VERSION: fromTag,
   COPROCESSOR_ZKPROOF_WORKER_VERSION: fromTag,
   COPROCESSOR_SNS_WORKER_VERSION: fromTag,
-  // consensus-detector and upgrade-controller are 0.14-only services. Empty is meaningful
-  // rather than missing: compat reads an empty version as "this bundle predates the service"
-  // and generation drops it, which is what keeps the 0.13 fleet to the services it shipped.
+  // No released 0.14 ships consensus-detector or upgrade-controller: the crates first appear
+  // after v0.14.0-11, so neither end of this rollout runs them. They are listed rather than
+  // omitted because the surrounding stack resolves from main, where both are published, and a
+  // key this map does not mention is inherited from that snapshot. Empty means "not part of
+  // this release", and the lock writer drops it so the bundle simply has no such component.
   COPROCESSOR_CONSENSUS_DETECTOR_VERSION: "",
   COPROCESSOR_UPGRADE_CONTROLLER_VERSION: "",
   LISTENER_CORE_VERSION: fromTag,
@@ -115,9 +117,8 @@ export const to = {
   COPROCESSOR_TFHE_WORKER_VERSION: targetTag,
   COPROCESSOR_ZKPROOF_WORKER_VERSION: targetTag,
   COPROCESSOR_SNS_WORKER_VERSION: targetTag,
-  // Introduced by 0.14, so they arrive with the coprocessor fleet rather than at boot.
-  COPROCESSOR_CONSENSUS_DETECTOR_VERSION: targetTag,
-  COPROCESSOR_UPGRADE_CONTROLLER_VERSION: targetTag,
+  // consensus-detector and upgrade-controller stay unset here too — see `from`. The target end
+  // of this rollout is a released 0.14 tag, which has no such images to pull.
   LISTENER_CORE_VERSION: targetTag,
 } satisfies Env;
 
@@ -144,8 +145,6 @@ export const coprocessorKeys = [
   "COPROCESSOR_TFHE_WORKER_VERSION",
   "COPROCESSOR_ZKPROOF_WORKER_VERSION",
   "COPROCESSOR_SNS_WORKER_VERSION",
-  "COPROCESSOR_CONSENSUS_DETECTOR_VERSION",
-  "COPROCESSOR_UPGRADE_CONTROLLER_VERSION",
 ] as const satisfies readonly EnvKey[];
 // The client never moves, so there is no SDK version step. The final phase upgrades the host
 // ACL instead: that is what changes the protocol version @fhevm/sdk reads off chain.

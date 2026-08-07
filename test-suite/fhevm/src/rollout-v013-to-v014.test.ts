@@ -74,6 +74,18 @@ test("runs every phase on the in-repo @fhevm/sdk", () => {
   }
 });
 
+// No released 0.14 ships consensus-detector or upgrade-controller — the crates first appear
+// after v0.14.0-11 — so neither end of this rollout runs them and no phase may name a tag for
+// them. The surrounding stack resolves from main, where both are published, so a phase that
+// left either key out would inherit main's tag; the empty string is what keeps them off the
+// bundle, and a tag would be pulled and fail as an unknown manifest.
+test("never asks a released 0.14 for components it does not ship", () => {
+  for (const env of Object.values(phaseVersions)) {
+    expect(env.COPROCESSOR_CONSENSUS_DETECTOR_VERSION).toBe("");
+    expect(env.COPROCESSOR_UPGRADE_CONTROLLER_VERSION).toBe("");
+  }
+});
+
 test("moves the ACL strictly last, after every backend component is on target", () => {
   expect(phaseOrder[phaseOrder.length - 1]).toBe("protocol-flip");
   // The phase before it already has the whole backend at its target versions...
