@@ -221,7 +221,7 @@ export const waitForCoprocessorServices = async (state: State, skipMigration: bo
   for (let index = 0; index < count; index += 1) {
     const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
     await waitCoreFleet(prefix, true);
-    if (state.scenario.kind === "blue-green") {
+    if (state.scenario.kind === "blue-green" && !state.scenario.gcs.deferredStart) {
       await waitCoreFleet(`${prefix}gcs-`, false);
       await waitForContainer(`${prefix}gcs-upgrade-controller`, "running");
       await waitForContainer(`${prefix}gcs-consensus-detector`, "running");
@@ -487,21 +487,30 @@ export const waitForBootstrap = async (state: State, attempts = 120) => {
   throw new BootstrapTimeout(attempts * 2);
 };
 
+/** Waits for one party's kms-connector runtime services to become ready. */
+export const waitForKmsConnectorParty = async (
+  state: State,
+  party: number,
+  readiness: "running" | "healthy" = "running",
+) => {
+  const usesHostKmsGeneration = kmsConnectorUsesHostKmsGeneration(state);
+  const prefix = kmsConnectorPrefix(party);
+  await waitForContainer(`${prefix}-db-migration`, "complete");
+  await waitForContainer(`${prefix}-gw-listener`, readiness);
+  await waitForContainer(`${prefix}-kms-worker`, readiness);
+  await waitForContainer(`${prefix}-tx-sender`, readiness);
+  if (usesHostKmsGeneration) {
+    await waitForLog(`${prefix}-gw-listener`, KMS_CONNECTOR_DECRYPTION_READY);
+    await waitForLog(`${prefix}-gw-listener`, KMS_CONNECTOR_KMS_GENERATION_READY);
+  }
+};
+
 /** Waits for the kms-connector runtime services to become ready. */
 export const waitForKmsConnector = async (state: State) => {
-  const usesHostKmsGeneration = kmsConnectorUsesHostKmsGeneration(state);
   // Threshold runs one connector per party; every party must be ready or the
   // on-chain 2t+1 quorum can never be reached. Centralized = a single party.
   for (let party = 1; party <= kmsConnectorPartyCount(state); party += 1) {
-    const prefix = kmsConnectorPrefix(party);
-    await waitForContainer(`${prefix}-db-migration`, "complete");
-    await waitForContainer(`${prefix}-gw-listener`, "running");
-    await waitForContainer(`${prefix}-kms-worker`, "running");
-    await waitForContainer(`${prefix}-tx-sender`, "running");
-    if (usesHostKmsGeneration) {
-      await waitForLog(`${prefix}-gw-listener`, KMS_CONNECTOR_DECRYPTION_READY);
-      await waitForLog(`${prefix}-gw-listener`, KMS_CONNECTOR_KMS_GENERATION_READY);
-    }
+    await waitForKmsConnectorParty(state, party);
   }
 };
 

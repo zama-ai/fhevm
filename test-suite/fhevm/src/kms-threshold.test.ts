@@ -1,9 +1,14 @@
 import path from "node:path";
 import { describe, expect, test } from "bun:test";
+import YAML from "yaml";
 
 import { partyContainers, quorumPlan } from "./commands/kms-generation";
 import { resolveUpgradePlan } from "./flow/repair";
-import { upgradeThresholdKmsNode } from "./flow/up-flow";
+import {
+  assertKmsOperatorUpgradeQuorum,
+  upgradeThresholdKmsNode,
+  upgradeThresholdKmsOperator,
+} from "./flow/up-flow";
 import { buildKmsConnectorOverride } from "./generate/compose";
 import { buildGatewayScSwapEnv, buildHostScSwapEnv, renderEnvMaps } from "./generate/env";
 import {
@@ -12,7 +17,9 @@ import {
   THRESHOLD_PEERS_MARKER,
   buildKmsThresholdOverride,
   kmsRenderOptionsFor,
+  kmsThresholdGenKeysConfigName,
   renderThresholdCoreConfig,
+  renderThresholdGenKeysConfig,
   renderThresholdPeers,
   renderThresholdSpareConfig,
   thresholdCoreEnv,
@@ -173,6 +180,18 @@ describe("buildKmsThresholdOverride", () => {
     expect(entrypoint).toContain("if kms-gen-keys threshold --help");
     expect(entrypoint).toContain("--cmd signing-keys");
     expect(entrypoint).toContain("--num-parties 4");
+    expect(entrypoint).toContain(`--config-file config/${kmsThresholdGenKeysConfigName(4)}`);
+    const composeYaml = YAML.stringify(buildKmsThresholdOverride(fourParty, RENDER_OPTS));
+    expect(composeYaml).toContain("$$CMD");
+    expect(composeYaml).toContain("$$NP");
+  });
+
+  test("config-based keygen keeps each party's storage and identity separate", () => {
+    const config = renderThresholdGenKeysConfig(3, RENDER_OPTS);
+    expect(config).toContain('prefix = "PUB-p3"');
+    expect(config).toContain('prefix = "PRIV-p3"');
+    expect(config).toContain("my_id = 3");
+    expect(config).toContain('tls_subject = "kms-core-3"');
   });
 
   test("rejects a non-threshold topology", () => {
@@ -434,6 +453,7 @@ describe("resolveUpgradePlan (threshold guard)", () => {
   test("refuses to upgrade the single-core/connector KMS groups on a threshold-mode cluster", () => {
     expect(() => resolveUpgradePlan(thresholdState, "kms", { lockFile: true })).toThrow(/threshold-mode KMS/);
     expect(() => resolveUpgradePlan(thresholdState, "kms-core", { lockFile: true })).toThrow(/threshold-mode KMS/);
+    expect(() => resolveUpgradePlan(thresholdState, "kms-connector", { lockFile: true })).toThrow(/operator-paired/);
   });
 });
 
@@ -614,6 +634,164 @@ describe("upgradeThresholdKmsNode", () => {
       async composeUp() {},
       async waitForContainer() {},
     })).rejects.toThrow(/between 1 and 4/);
+    expect(touched).toBe(false);
+  });
+});
+
+describe("upgradeThresholdKmsOperator", () => {
+  test("keeps a reconstruction quorum ready and upgrades Core before its matching Connector", async () => {
+    await withTempStateDir(async (stateDir) => {
+      const versions = presetBundle("latest-main", "abcdef0", "baseline.json");
+      const state: State = {
+        target: "latest-main",
+        lockPath: "/tmp/baseline.json",
+        requiresGitHub: true,
+        versions,
+        overrides: [],
+        scenario: testDefaultScenario({
+          kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" },
+        }),
+        completedSteps: ["base"],
+        updatedAt: "2026-07-14T00:00:00.000Z",
+      };
+      const targetEnv = {
+        ...versions.env,
+        CORE_VERSION: "target-core",
+        CONNECTOR_DB_MIGRATION_VERSION: "target-connector",
+        CONNECTOR_GW_LISTENER_VERSION: "target-connector",
+        CONNECTOR_KMS_WORKER_VERSION: "target-connector",
+        CONNECTOR_TX_SENDER_VERSION: "target-connector",
+      };
+      const lockFile = path.join(stateDir, "target.json");
+      await writeJson(lockFile, { ...versions, lockName: "target.json", env: targetEnv });
+      const calls: string[] = [];
+      let persisted = state;
+
+      await upgradeThresholdKmsOperator(2, { lockFile, overrides: [{ group: "kms-connector" }] }, {
+        async loadState() {
+          return persisted;
+        },
+        async projectContainers() {
+          return ["kms-core"];
+        },
+        async ensureRuntimeArtifacts() {
+          calls.push("artifacts");
+        },
+        async assertQuorum(_state, operatorId) {
+          calls.push(`quorum:${operatorId}`);
+        },
+        async saveState(next) {
+          persisted = next;
+          calls.push("save");
+        },
+        async generateRuntime() {
+          calls.push("generate");
+        },
+        async maybeBuild(component) {
+          calls.push(`build:${component}`);
+        },
+        async stopContainers(containers) {
+          calls.push(`stop:${containers.join(",")}`);
+        },
+        async composeUp(component, services = [], options = {}) {
+          calls.push(`up:${component}:${services.join(",")}:${options.forceRecreate}`);
+        },
+        async waitForContainer(container, want) {
+          calls.push(`wait:${container}:${want}`);
+        },
+        async waitForKmsConnectorParty(_state, party, readiness) {
+          calls.push(`connector-ready:${party}:${readiness}`);
+        },
+        async postBootHealthGate(containers) {
+          calls.push(`health:${containers.join(",")}`);
+        },
+      });
+
+      expect(calls).toEqual([
+        "artifacts",
+        "quorum:2",
+        "save",
+        "generate",
+        "build:kms-connector",
+        "stop:kms-connector-2-gw-listener,kms-connector-2-kms-worker,kms-connector-2-tx-sender",
+        "up:core-threshold:kms-core-2:true",
+        "wait:kms-core-2:healthy",
+        "up:kms-connector:kms-connector-2-db-migration:true",
+        "wait:kms-connector-2-db-migration:complete",
+        "up:kms-connector:kms-connector-2-gw-listener,kms-connector-2-kms-worker,kms-connector-2-tx-sender:true",
+        "connector-ready:2:healthy",
+        "health:kms-connector-2-gw-listener,kms-connector-2-kms-worker,kms-connector-2-tx-sender",
+      ]);
+      expect(persisted.versions.env.CORE_VERSION).toBe(versions.env.CORE_VERSION);
+      expect(persisted.versions.env.CONNECTOR_KMS_WORKER_VERSION).toBe("target-connector");
+      expect(persisted.kmsCoreVersionByNodeId).toEqual({ 2: "target-core" });
+    });
+  });
+
+  test("blocks before shutdown when a remaining quorum operator is not ready", async () => {
+    const state = {
+      scenario: testDefaultScenario({
+        kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" },
+      }),
+    } as State;
+    await expect(
+      assertKmsOperatorUpgradeQuorum(state, 1, async (container) => [
+        {
+          State: {
+            Status: container === "kms-core-3" ? "exited" : "running",
+            Health: { Status: "healthy" },
+          },
+        },
+      ] as any),
+    ).rejects.toThrow("2 remaining operators are ready, but 3 are required; unavailable operators: 3");
+  });
+
+  test("allows a larger committee to proceed when the ready operators still meet reconstruction quorum", async () => {
+    const state = {
+      scenario: testDefaultScenario({
+        kms: { mode: "threshold", parties: 7, threshold: 2, committeeSize: 7, fheParams: "Test" },
+      }),
+    } as State;
+    await expect(
+      assertKmsOperatorUpgradeQuorum(state, 1, async (container) => [
+        {
+          State: {
+            Status: container === "kms-core-7" ? "exited" : "running",
+            Health: { Status: "healthy" },
+          },
+        },
+      ] as any),
+    ).resolves.toBeUndefined();
+  });
+
+  test("rejects spare topologies before changing runtime artifacts", async () => {
+    const state = {
+      scenario: testDefaultScenario({
+        kms: { mode: "threshold", parties: 5, threshold: 1, committeeSize: 4, fheParams: "Test" },
+      }),
+      completedSteps: ["base"],
+    } as State;
+    let touched = false;
+    await expect(upgradeThresholdKmsOperator(1, { lockFile: "unused" }, {
+      async loadState() {
+        return state;
+      },
+      async projectContainers() {
+        return ["kms-core"];
+      },
+      async ensureRuntimeArtifacts() {
+        touched = true;
+      },
+      async assertQuorum() {},
+      async saveState() {},
+      async generateRuntime() {},
+      async maybeBuild() {},
+      async stopContainers() {},
+      async composeUp() {},
+      async waitForContainer() {},
+      async waitForKmsConnectorParty() {},
+      async postBootHealthGate() {},
+    })).rejects.toThrow("does not support spare KMS parties");
     expect(touched).toBe(false);
   });
 });

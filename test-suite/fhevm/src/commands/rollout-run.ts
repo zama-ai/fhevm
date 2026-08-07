@@ -12,6 +12,8 @@ import {
   applyVersionLock as applyStackVersionLock,
   refreshDiscovery as refreshStackDiscovery,
   up,
+  startDeferredGreen as startStackDeferredGreen,
+  upgradeThresholdKmsOperator,
   upgradeThresholdKmsNode,
   upgradeRuntimeGroup as upgradeStackRuntimeGroup,
 } from "../flow/up-flow";
@@ -33,9 +35,13 @@ type RolloutUpOptions = {
 
 type RolloutRuntimeUpgradeOptions = {
   lockFile?: string;
+  bcsTag?: string;
 };
 type RolloutKmsNodeUpgradeOptions = {
   lockFile: string;
+};
+type RolloutKmsOperatorUpgradeOptions = RolloutKmsNodeUpgradeOptions & {
+  overrides?: LocalOverride[];
 };
 type RolloutVersionLockOptions = {
   allowedVersionKeys: string[];
@@ -77,9 +83,13 @@ export type RolloutRunContext = {
   up(options: RolloutUpOptions): Promise<void>;
   /** Sequentially applies one CORE_VERSION lock to exactly the listed serving KMS nodes. */
   upgradeKmsNodes(nodeIds: readonly number[], options: RolloutKmsNodeUpgradeOptions): Promise<void>;
+  /** Sequentially upgrades each listed serving KMS Core and its matching Connector as one operation. */
+  upgradeKmsOperators(operatorIds: readonly number[], options: RolloutKmsOperatorUpgradeOptions): Promise<void>;
   /** Runs a check with an exact reconstruction quorum that must include this KMS node. */
   withRequiredKmsNode(nodeId: number, task: () => Promise<void>): Promise<void>;
   upgradeRuntimeGroup(group: string, options?: RolloutRuntimeUpgradeOptions): Promise<void>;
+  /** Starts a Green fleet after prerequisite material has converged on Blue. */
+  startDeferredGreen(): Promise<void>;
   resolveVersionLock(name: string, options: RolloutLockOptions): Promise<string>;
   writeVersionLock(name: string, options: RolloutLockOptions): Promise<string>;
 };
@@ -90,6 +100,7 @@ type RolloutContextOperations = {
   previewBundle: typeof previewBundle;
   setRunning: typeof setRunning;
   upgradeThresholdKmsNode: typeof upgradeThresholdKmsNode;
+  upgradeThresholdKmsOperator: typeof upgradeThresholdKmsOperator;
   waitForPartiesRunning: typeof waitForPartiesRunning;
   waitForPartiesStopped: typeof waitForPartiesStopped;
 };
@@ -294,6 +305,56 @@ export const createRolloutContext = (
         });
       }
     },
+    async upgradeKmsOperators(operatorIds, options) {
+      const state = await loadState();
+      if (!state || state.scenario.kms.mode !== "threshold") {
+        throw new PreflightError("upgradeKmsOperators requires a running threshold KMS cluster");
+      }
+      if (operatorIds.length === 0) {
+        throw new PreflightError("upgradeKmsOperators requires at least one operator id");
+      }
+      const selected = new Set<number>();
+      for (const operatorId of operatorIds) {
+        if (!Number.isInteger(operatorId) || operatorId < 1 || operatorId > state.scenario.kms.committeeSize) {
+          throw new PreflightError(
+            `upgradeKmsOperators expects serving operator ids between 1 and ${state.scenario.kms.committeeSize}; received ${operatorId}`,
+          );
+        }
+        if (selected.has(operatorId)) {
+          throw new PreflightError(`upgradeKmsOperators received duplicate operator id ${operatorId}`);
+        }
+        selected.add(operatorId);
+      }
+      for (const operatorId of operatorIds) {
+        for (let attempt = 1; attempt <= 2; attempt += 1) {
+          try {
+            await (operationOverrides.upgradeThresholdKmsOperator ?? upgradeThresholdKmsOperator)(operatorId, options);
+          } catch (error) {
+            try {
+              await receipt.record("upgrade-kms-operator-failed", `KMS operator ${operatorId}`, {
+                details: { attempt, error: error instanceof Error ? error.message : String(error), operatorId },
+                docker: true,
+                lockFile: options.lockFile,
+              });
+            } catch (receiptError) {
+              throw new AggregateError(
+                [error, receiptError],
+                `KMS operator ${operatorId} upgrade failed and its required receipt snapshot also failed`,
+              );
+            }
+            if (attempt === 2) throw error;
+            console.log(`[rollout] retry KMS operator ${operatorId} after failed paired upgrade`);
+            continue;
+          }
+          await receipt.record("upgrade-kms-operator", `KMS operator ${operatorId}`, {
+            details: { attempt, operatorId },
+            docker: true,
+            lockFile: options.lockFile,
+          });
+          break;
+        }
+      }
+    },
     async withRequiredKmsNode(nodeId, task) {
       const state = await loadState();
       if (!state || state.scenario.kms.mode !== "threshold") {
@@ -363,6 +424,10 @@ export const createRolloutContext = (
     async upgradeRuntimeGroup(group, options = {}) {
       await upgradeStackRuntimeGroup(group, options);
       await receipt.record("upgrade-runtime", group, { lockFile: options.lockFile });
+    },
+    async startDeferredGreen() {
+      await startStackDeferredGreen();
+      await receipt.record("start-green", "started deferred Green fleet", { docker: true });
     },
     async resolveVersionLock(name, options) {
       const target = options.target ?? ROLLOUT_TARGET;
