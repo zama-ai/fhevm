@@ -1527,9 +1527,8 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         assertTrue(kmsGeneration.isRequestDone(migrationRequestId));
 
         // The compressed materials are published under the existing keyId.
-        (string[] memory urls, IKMSGeneration.KeyDigest[] memory digests) = kmsGeneration.getCompressedKeyMaterials(
-            keyId
-        );
+        (string[] memory urls, IKMSGeneration.KeyDigest[] memory digests) = kmsGeneration
+            .getCompressedKeyMigrationMaterials(keyId);
         assertEq(urls.length, 1);
         assertEq(digests.length, 2);
         assertEq(uint256(digests[1].keyType), uint256(IKMSGeneration.KeyType.CompressedKeySet));
@@ -1539,6 +1538,13 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         // another representation must never activate it implicitly.
         (, IKMSGeneration.KeyDigest[] memory originalDigests) = kmsGeneration.getKeyMaterials(keyId);
         assertEq(originalDigests[0].digest, _mockKeyDigests()[0].digest);
+    }
+
+    function test_revertCompressedKeyMigrationMaterialsWithoutMigration() public {
+        (, uint256 keyId) = _runFullKeygenCycle();
+
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.CompressedKeyMaterialsNotAdded.selector, keyId));
+        kmsGeneration.getCompressedKeyMigrationMaterials(keyId);
     }
 
     function test_revertMigrationKeygenResponseWithoutCompressedDigest() public {

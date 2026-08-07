@@ -464,9 +464,9 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     }
 
     /**
-     * @notice See {IKMSGeneration-getCompressedKeyMaterials}.
+     * @notice See {IKMSGeneration-getCompressedKeyMigrationMaterials}.
      */
-    function getCompressedKeyMaterials(
+    function getCompressedKeyMigrationMaterials(
         uint256 keyId
     ) external view virtual returns (string[] memory, KeyDigest[] memory) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();

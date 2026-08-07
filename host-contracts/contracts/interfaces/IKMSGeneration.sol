@@ -340,11 +340,15 @@ interface IKMSGeneration {
     function keygenResponse(uint256 keyId, KeyDigest[] calldata keyDigests, bytes calldata signature) external;
 
     /**
-     * @notice Get the compressed key materials published for a given key ID.
-     * @param keyId The ID of the key.
-     * @return The compressed key materials (storage URLs, key digests).
+     * @notice Get the compressed materials added by a completed migration.
+     * @dev This getter is only for material produced by `migrateToCompressedKeySet`.
+     * Normal key generation continues to use `getKeyMaterials`.
+     * @param keyId The migrated key ID.
+     * @return The migration materials (storage URLs, key digests).
      */
-    function getCompressedKeyMaterials(uint256 keyId) external view returns (string[] memory, KeyDigest[] memory);
+    function getCompressedKeyMigrationMaterials(
+        uint256 keyId
+    ) external view returns (string[] memory, KeyDigest[] memory);
 
     /**
      * @notice Trigger a CRS generation.
