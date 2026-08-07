@@ -56,8 +56,10 @@ const heavyPhaseProfiles: Record<RolloutPhase, string[]> = {
   kms: ["rollout-standard", "public-decryption"],
   // Runs once per coprocessor operator, at each consensus state the fleet passes through.
   coprocessor: ["rollout-standard", "random-subset"],
-  // The ACL moves last and alone, so this gate is the widest — and the only one that reaches
-  // /v3/user-decrypt, which is what unified-user-decryption exercises.
+  // The ACL moves last and alone, so this gate is the widest. It is also the first phase whose
+  // user decryptions go to /v3: the SDK routes every one of them there once the ACL resolves to
+  // protocol 0.14, so `rollout-standard` already crosses onto /v3 and the profiles below widen
+  // what is exercised over it rather than being the only way to reach it.
   "protocol-flip": [
     "rollout-standard",
     "unified-user-decryption",
@@ -73,7 +75,9 @@ const heavyPhaseProfiles: Record<RolloutPhase, string[]> = {
 };
 
 export const resolveRolloutTestMode = (value?: string): RolloutTestMode => {
-  const selected = value ?? "rollout-standard";
+  // Unset and empty mean the same thing. A workflow that forwards an omitted input hands this
+  // an empty string, and failing the run on that would be a needless way to lose an hour.
+  const selected = value?.trim() ? value.trim() : "rollout-standard";
   if (rolloutTestModes.includes(selected as RolloutTestMode)) {
     return selected as RolloutTestMode;
   }
@@ -185,6 +189,10 @@ const hostChainTargets = async (ctx: RolloutRunContext): Promise<HostChainTarget
   }));
 };
 
+/** Orders host chains canonical-first: it holds the context every other chain must match. */
+export const canonicalFirst = <T extends { isCanonical: boolean }>(targets: readonly T[]): T[] =>
+  [...targets].sort((a, b) => Number(b.isCanonical) - Number(a.isCanonical));
+
 /**
  * Moves every host chain's ProtocolConfig from v0.13 to v0.14, canonical chain first.
  *
@@ -201,10 +209,6 @@ const hostChainTargets = async (ctx: RolloutRunContext): Promise<HostChainTarget
  * ProtocolConfig, so that path reverts with `NotInitializingFromEmptyProxy()` (selector
  * 0x6f4f731f). Seeding from canonical is a boot concern; a rollout upgrades in place.
  */
-/** Orders host chains canonical-first: it holds the context every other chain must match. */
-export const canonicalFirst = <T extends { isCanonical: boolean }>(targets: readonly T[]): T[] =>
-  [...targets].sort((a, b) => Number(b.isCanonical) - Number(a.isCanonical));
-
 const migrateProtocolConfig = async (ctx: RolloutRunContext, targets: HostChainTarget[]) => {
   if (!targets.some((target) => target.isCanonical)) {
     throw new Error("v0.13-to-v0.14 could not resolve a canonical host chain");
@@ -263,8 +267,10 @@ export default async function run(ctx: RolloutRunContext) {
   await ctx.up({ lockFile: baselineLock, scenario, overrides: [{ group: "test-suite" }] });
   await testPhase(ctx, "baseline", testMode);
 
-  // The component order is the documented default:
-  // Gateway Contracts -> Host Contracts -> Relayer -> KMS -> Listener -> Coprocessors -> ACL.
+  // The component order follows the default recorded in the QA-owned "Compatibility for
+  // breaking changes between components" note (Gateway Contracts -> Host Contracts -> Relayer
+  // -> KMS -> Coprocessors -> SDK & Host Library), with the client step replaced by the ACL
+  // for the reason given at ACL_UPGRADE.
   logPhase("01 gateway contracts: upgrade the gateway chain first");
   await prepareContractMigrationSources(ctx, "gateway", gatewayContractsLock, gatewayContractKeys);
   for (const upgrade of GATEWAY_CONTRACT_UPGRADES) {
@@ -288,6 +294,15 @@ export default async function run(ctx: RolloutRunContext) {
   //
   // Holding the ACL back does not help here — this is the client's request shape following
   // host contract state, which changes independently of the ACL's protocol version.
+  //
+  // The two constraints are not equally general, and the difference matters when reading this
+  // phase as a rehearsal. The first is a property of the backend and holds for any client. The
+  // second is a property of the client population: it is @fhevm/sdk that reads context and
+  // epoch off chain and changes its request shape. The real 0.14 devnet upgrade held 0.14 host
+  // contracts against a 0.13 relayer for nine days without trouble, because its gates ran
+  // relayer-sdk 0.4.4, which has no such behaviour. This harness cannot run that client at all
+  // — see the key-material note in versions.ts — so it collapses a window the real upgrade
+  // occupied for days. That is a limit of the harness, not a claim about the protocol.
   logPhase("02 host contracts + relayer: they cross together, gated once at the end");
   await prepareContractMigrationSources(ctx, "host", hostContractsLock, hostContractKeys);
   const targets = await hostChainTargets(ctx);
@@ -299,8 +314,10 @@ export default async function run(ctx: RolloutRunContext) {
     }
   }
   await ctx.refreshDiscovery();
-  // No gate here: between these two lines the client is already emitting v2 extraData that the
-  // 0.13 relayer rejects. The relayer follows immediately, and the pair is gated once.
+  // The 03 lock is applied here rather than in a phase of its own, which is why the phase
+  // labels step from 02 to 04. No gate in between: from the line above until the line below the
+  // client is already emitting v2 extraData that the 0.13 relayer rejects, so the relayer
+  // follows immediately and the pair is gated once, together.
   await ctx.upgradeRuntimeGroup("relayer", { lockFile: relayerLock });
   await testPhase(ctx, "host-contracts-relayer", testMode);
 

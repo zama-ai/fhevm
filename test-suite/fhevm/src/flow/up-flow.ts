@@ -1831,8 +1831,9 @@ const COPROCESSOR_VERSION_KEYS = [
   "COPROCESSOR_TFHE_WORKER_VERSION",
   "COPROCESSOR_ZKPROOF_WORKER_VERSION",
   "COPROCESSOR_SNS_WORKER_VERSION",
-  // 0.14-only services. They are absent from 0.13 bundles, where the rollout leaves these keys
-  // empty and generation drops the services entirely.
+  // Optional components: a bundle that predates them carries no key at all, and generation
+  // drops the services entirely. Listed here so a lock that introduces one can land it with
+  // the rest of the fleet; the tag-unity check below only looks at the keys a lock moves.
   "COPROCESSOR_CONSENSUS_DETECTOR_VERSION",
   "COPROCESSOR_UPGRADE_CONTROLLER_VERSION",
 ] as const;

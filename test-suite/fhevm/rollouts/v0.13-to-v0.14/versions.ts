@@ -13,8 +13,9 @@ export const scenario = "two-of-three-multi-chain-threshold-kms";
 
 // fhevm monorepo tags: latest stable 0.13.x -> latest 0.14.0 pre-release.
 //
-// v0.13.2 is the latest *stable* 0.13.x — it is the release marked Latest on GitHub. v0.13.3
-// exists as a bare tag with published images but no release, so it is deliberately not used.
+// v0.13.2 is the newest 0.13.x on the remote and the release marked Latest on GitHub. Clones
+// made before 2026-08 may still hold a local v0.13.3 tag; it is not on origin (`git ls-remote
+// --tags origin` lists only v0.13.0, v0.13.1, v0.13.2), so nothing can be pulled from it.
 const fromTag = "v0.13.2";
 // The target is NOT uniform. fhevm only builds container images for the components a tag
 // actually touched, so a pre-release tag carries images for some components and not others.
@@ -91,10 +92,13 @@ export const from = {
   COPROCESSOR_CONSENSUS_DETECTOR_VERSION: "",
   COPROCESSOR_UPGRADE_CONTROLLER_VERSION: "",
   LISTENER_CORE_VERSION: fromTag,
-  // The harness image runs at its target tag from the first phase, so every phase is measured
-  // by the same e2e suite and only the client library underneath it moves. The 0.13 harness
-  // could not host this rollout anyway: at v0.13.2 test-suite/e2e depends solely on
-  // @fhevm/sdk and the runtime switch between the two clients does not exist yet.
+  // The harness never moves: it is pinned here for the lock's sake, but `run.ts` overrides the
+  // test-suite group to a local build, so what actually runs is this branch's e2e suite and
+  // this branch's @fhevm/sdk at every phase. That is deliberate — the client is the component
+  // whose behaviour decides this runbook's ordering, so it is built from the tree under test
+  // rather than taken from a published image. The 0.13 harness could not host this rollout
+  // anyway: at v0.13.2 test-suite/e2e depends solely on @fhevm/sdk and the runtime switch
+  // between the two client libraries does not exist yet.
   TEST_SUITE_VERSION: testSuiteTargetTag,
   RELAYER_SDK_VERSION: relayerSdkVersion,
 } satisfies Env;
@@ -146,9 +150,9 @@ export const coprocessorKeys = [
   "COPROCESSOR_ZKPROOF_WORKER_VERSION",
   "COPROCESSOR_SNS_WORKER_VERSION",
 ] as const satisfies readonly EnvKey[];
-// The client never moves, so there is no SDK version step. The final phase upgrades the host
-// ACL instead: that is what changes the protocol version @fhevm/sdk reads off chain.
-export const aclKeys = [] as const satisfies readonly EnvKey[];
+// There is deliberately no key group for the final phase. The client never moves, so no SDK
+// version step exists; what that phase changes is the host ACL, which is on-chain state rather
+// than an image tag, and that is what moves the protocol version @fhevm/sdk reads off chain.
 
 const withTargetVersions = (...keys: EnvKey[]): Env => ({
   ...from,

@@ -203,6 +203,9 @@ test("upgrades KMSGeneration on the canonical host chain only", () => {
 
 test("gates every phase on rollout-standard by default", () => {
   expect(resolveRolloutTestMode(undefined)).toBe("rollout-standard");
+  // A workflow forwarding an omitted input passes an empty string, which means the same thing.
+  expect(resolveRolloutTestMode("")).toBe("rollout-standard");
+  expect(resolveRolloutTestMode("  ")).toBe("rollout-standard");
   for (const phase of phaseOrder) {
     expect(rolloutPhaseTestProfiles(phase, "rollout-standard")).toEqual(["rollout-standard"]);
   }
@@ -213,8 +216,11 @@ test("covers multi-chain isolation in heavy mode wherever contracts moved", () =
   expect(rolloutPhaseTestProfiles("protocol-flip", "rollout-heavy")).toContain("multi-chain-isolation");
 });
 
-// /v3/user-decrypt is only reachable once the ACL reports 0.14, so the route is checked in the
-// protocol-flip phase and nowhere earlier — before it the client resolves 0.13 and asks for /v2.
+// /v3/user-decrypt is only reachable once the ACL reports 0.14, so the dedicated profile sits in
+// the protocol-flip phase and nowhere earlier — before it the client resolves 0.13 and asks for
+// /v2. It is not the only thing that reaches /v3: once the ACL has moved, the SDK routes every
+// user decryption there, so the standard gate crosses onto /v3 too. This pins where the profile
+// that exercises the route deliberately belongs.
 test("checks the v3 user-decryption route in the protocol-flip phase in heavy mode", () => {
   expect(rolloutPhaseTestProfiles("protocol-flip", "rollout-heavy")).toContain("unified-user-decryption");
   for (const phase of phaseOrder.filter((candidate) => candidate !== "protocol-flip")) {
