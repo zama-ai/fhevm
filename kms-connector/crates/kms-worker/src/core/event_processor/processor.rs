@@ -1,5 +1,5 @@
 use crate::core::event_processor::{
-    KmsClient, ProcessingError, RequestCheckError,
+    KmsClient, KmsPollTarget, ProcessingError, RequestCheckError,
     context::ContextManager,
     decryption::{DecryptionProcessor, UserDecryptionExtraData},
     kms::KMSGenerationProcessor,
@@ -8,8 +8,8 @@ use crate::core::event_processor::{
 use alloy::{primitives::B256, providers::Provider};
 use anyhow::anyhow;
 use connector_utils::types::{
-    KmsGrpcRequest, KmsGrpcResponse, KmsResponseKind, ProtocolEvent, ProtocolEventKind,
-    SendResponse, db::invalidate_kms_epoch, u256_to_request_id,
+    KmsGrpcRequest, KmsGrpcResponse, KmsResponseKind, KmsSendResponse, ProtocolEvent,
+    ProtocolEventKind, db::invalidate_kms_epoch, extra_data::parse_extra_data, u256_to_request_id,
 };
 use kms_grpc::kms::v1::{DestroyMpcContextRequest, DestroyMpcEpochRequest};
 use sqlx::{Pool, Postgres};
@@ -31,11 +31,14 @@ pub struct DbEventProcessor<GP: Provider, HP: Provider, C> {
     /// The GRPC client used to communicate with the KMS Core.
     kms_client: KmsClient,
 
+    /// The entity used to validate the KMS context referenced by a request.
+    context_manager: C,
+
     /// The entity used to process decryption requests.
-    decryption_processor: DecryptionProcessor<GP, HP, C>,
+    decryption_processor: DecryptionProcessor<GP, HP>,
 
     /// The entity used to process key management requests.
-    kms_generation_processor: KMSGenerationProcessor<C>,
+    kms_generation_processor: KMSGenerationProcessor,
 
     /// The entity used to build `ProtocolConfig` event requests (context/epoch lifecycle).
     protocol_config_processor: ProtocolConfigProcessor<HP>,
@@ -112,14 +115,16 @@ where
 impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventProcessor<GP, HP, C> {
     pub fn new(
         kms_client: KmsClient,
-        decryption_processor: DecryptionProcessor<GP, HP, C>,
-        kms_generation_processor: KMSGenerationProcessor<C>,
+        context_manager: C,
+        decryption_processor: DecryptionProcessor<GP, HP>,
+        kms_generation_processor: KMSGenerationProcessor,
         protocol_config_processor: ProtocolConfigProcessor<HP>,
         max_decryption_attempts: u16,
         db_pool: Pool<Postgres>,
     ) -> Self {
         Self {
             kms_client,
+            context_manager,
             decryption_processor,
             kms_generation_processor,
             protocol_config_processor,
@@ -128,19 +133,92 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
         }
     }
 
+    /// Checks the KMS context referenced by the request's `extra_data` is valid.
+    async fn check_context(&self, extra_data: &[u8]) -> Result<(), ProcessingError> {
+        let parsed_extra_data =
+            parse_extra_data(extra_data).map_err(ProcessingError::Irrecoverable)?;
+        self.context_manager
+            .validate_context(&parsed_extra_data)
+            .await
+            .map_err(RequestCheckError::record)
+    }
+
+    /// Checks the request associated to the received `event` is valid to process.
+    #[tracing::instrument(skip_all)]
+    async fn check_request(&self, event: &ProtocolEvent) -> Result<(), ProcessingError> {
+        match &event.kind {
+            ProtocolEventKind::PublicDecryption(req) => {
+                tokio::try_join!(
+                    biased;
+                    async {
+                        self.decryption_processor
+                            .check_ciphertexts_allowed_for_public_decryption(&req.ctHandles)
+                            .await
+                            .map_err(RequestCheckError::record)
+                    },
+                    self.check_context(&req.extraData),
+                )?;
+                Ok(())
+            }
+            ProtocolEventKind::UserDecryption(req) => {
+                let tx_hash = event.tx_hash.ok_or_else(|| {
+                    ProcessingError::Irrecoverable(anyhow!(
+                        "No `tx_hash` found for user decryption. Cannot perform ACL check."
+                    ))
+                })?;
+                tokio::try_join!(
+                    biased;
+                    async {
+                        let calldata = self.decryption_processor.fetch_calldata(tx_hash).await?;
+                        self.decryption_processor
+                            .check_ciphertexts_allowed_for_user_decryption(
+                                calldata,
+                                &req.ctHandles,
+                                req.userAddress,
+                            )
+                            .await
+                            .map_err(RequestCheckError::record)
+                    },
+                    self.check_context(&req.extraData),
+                )?;
+                Ok(())
+            }
+            ProtocolEventKind::UserDecryptionV2(req) => {
+                tokio::try_join!(
+                    biased;
+                    async {
+                        self.decryption_processor
+                            .check_user_decryption_request_v2(req)
+                            .await
+                            .map_err(RequestCheckError::record)
+                    },
+                    self.check_context(&req.payload.extraData),
+                )?;
+                Ok(())
+            }
+            ProtocolEventKind::PrepKeygen(req) => self.check_context(&req.extraData).await,
+            ProtocolEventKind::Keygen(req) => self.check_context(&req.extraData).await,
+            ProtocolEventKind::Crsgen(req) => self.check_context(&req.extraData).await,
+            // No live-state check applies to the remaining events. Note that the `NewKmsContext`
+            // anchor-hash verification stays in `prepare_grpc_request`: it validates immutable
+            // historical on-chain data, so re-running it on retries could not change its outcome.
+            ProtocolEventKind::AbortKeygen(_)
+            | ProtocolEventKind::AbortCrsgen(_)
+            | ProtocolEventKind::NewKmsContext(_)
+            | ProtocolEventKind::NewKmsEpoch(_)
+            | ProtocolEventKind::KmsContextDestroyed(_)
+            | ProtocolEventKind::KmsEpochDestroyed(_) => Ok(()),
+        }
+    }
+
     /// Prepares the GRPC request associated to the received `event`.
     #[tracing::instrument(skip_all)]
-    async fn prepare_request(
+    async fn prepare_grpc_request(
         &self,
-        event: &mut ProtocolEvent,
+        event: &ProtocolEvent,
     ) -> Result<KmsGrpcRequest, ProcessingError> {
         match &event.kind {
             ProtocolEventKind::PublicDecryption(req) => {
-                self.decryption_processor
-                    .check_ciphertexts_allowed_for_public_decryption(&req.ctHandles)
-                    .await
-                    .map_err(RequestCheckError::record)?;
-
                 self.decryption_processor
                     .prepare_decryption_request(
                         req.decryptionId,
@@ -151,23 +229,6 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                     .await
             }
             ProtocolEventKind::UserDecryption(req) => {
-                // No need to check decryption is done for user decrypt, as MPC parties don't
-                // communicate between each other for user decrypt
-
-                let tx_hash = event.tx_hash.ok_or_else(|| {
-                    ProcessingError::Irrecoverable(anyhow!(
-                        "No `tx_hash` found for user decryption. Cannot perform ACL check."
-                    ))
-                })?;
-                let calldata = self.decryption_processor.fetch_calldata(tx_hash).await?;
-                self.decryption_processor
-                    .check_ciphertexts_allowed_for_user_decryption(
-                        calldata,
-                        &req.ctHandles,
-                        req.userAddress,
-                    )
-                    .await
-                    .map_err(RequestCheckError::record)?;
                 self.decryption_processor
                     .prepare_decryption_request(
                         req.decryptionId,
@@ -181,12 +242,6 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                     .await
             }
             ProtocolEventKind::UserDecryptionV2(req) => {
-                // The RFC016 event carries the full payload, so unlike the legacy path we don't
-                // need to re-fetch the transaction calldata.
-                self.decryption_processor
-                    .check_user_decryption_request_v2(req)
-                    .await
-                    .map_err(RequestCheckError::record)?;
                 let payload = &req.payload;
                 let handles: Vec<B256> = req.handles.iter().map(|h| h.handle).collect();
                 self.decryption_processor
@@ -250,12 +305,16 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
         &mut self,
         event: &mut ProtocolEvent,
     ) -> Result<Option<KmsResponseKind>, ProcessingError> {
-        let request = self
-            .prepare_request(event)
+        self.check_request(event)
             .await
             .inspect_err(|_| event.error_counter += 1)?;
 
         if !event.already_sent {
+            let request = self
+                .prepare_grpc_request(event)
+                .await
+                .inspect_err(|_| event.error_counter += 1)?;
+
             let (error_count, result) = self.kms_client.send_request(&request).await;
             event.error_counter += error_count;
             let send_response = result?;
@@ -264,7 +323,7 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
             // Invalidate epochs associated to destroyed context returned by the KMS Core.
             // A failure must not prevent the event from completing, as retrying would result in an
             // `NotFound` from KMS Core with no epoch IDs.
-            if let SendResponse::DestroyedEpochs(epoch_ids) = send_response {
+            if let KmsSendResponse::DestroyedEpochs(epoch_ids) = send_response {
                 for epoch_id in epoch_ids {
                     if let Err(e) = invalidate_kms_epoch(&self.db_pool, epoch_id).await {
                         warn!("Failed to invalidate destroyed KMS epoch #{epoch_id}: {e}");
@@ -273,7 +332,10 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
             }
         }
 
-        let (error_count, grpc_result) = self.kms_client.poll_result(request).await;
+        let (error_count, grpc_result) = self
+            .kms_client
+            .poll_result(KmsPollTarget::from(&event.kind))
+            .await;
         event.error_counter += error_count;
         let grpc_response = grpc_result?;
 
