@@ -127,7 +127,9 @@ jobs:
           # Pin agave v4.1.2 (the Yellowstone geyser plugin's ABI is patch-coupled to it, so this
           # must match the `+solana.` suffix in solana/geyser/build-yellowstone-plugin.sh).
           retry curl -sSfL https://release.anza.xyz/v4.1.2/install -o /tmp/anza-install.sh
-          sh /tmp/anza-install.sh
+          # Retry the installer itself, not just the fetch of it: the script downloads the ~100MB
+          # release tarball from GitHub, which is the part that actually flakes.
+          retry sh /tmp/anza-install.sh
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
           # anchor-cli from the prebuilt release binary, NOT `cargo install --git`: the latter builds
           # avm+anchor from source and fetches dozens of crates from crates.io, which flaked (a
