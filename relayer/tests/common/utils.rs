@@ -2,7 +2,8 @@ use std::net::TcpListener;
 
 use anyhow::Context;
 use ethereum_rpc_mock::{
-    fhevm::FhevmMockWrapper, MockConfig, MockServer, MockServerHandle, Response, UsageLimit,
+    ct_attestation::CtAttestationMock, fhevm::FhevmMockWrapper, MockConfig, MockServer,
+    MockServerHandle, Response, UsageLimit,
 };
 use fhevm_relayer::config::settings::{HostChainConfig, Settings, StorageConfig};
 use fhevm_relayer::run_fhevm_relayer;
@@ -32,6 +33,10 @@ use super::test_schema::TestSchema;
 #[allow(dead_code)]
 pub struct TestSetup {
     pub fhevm_mock: FhevmMockWrapper,
+    /// Coprocessor buckets backing the off-chain readiness check. Arm the per-test outcome on
+    /// this (`serve_attestations`, `serve_nothing`, ...); the on-chain registry pointing at it is
+    /// wired once during setup.
+    pub ct_attestation: CtAttestationMock,
     pub host_server: MockServer,
     pub settings: Settings,
     pub http_port: u16,
@@ -144,6 +149,21 @@ impl TestSetup {
             "0xe61cff9c581c7c91aef682c2c10e8632864339ab"
                 .parse()
                 .expect("Invalid input verification address");
+        // Must match `gateway.contracts.gateway_config_address` in the test config: the relayer
+        // reads the Coprocessor registry from it while starting up.
+        let gateway_config_addr: alloy::primitives::Address =
+            "0x576Ea67208b146E63C5255d0f90104E25e3e04c7"
+                .parse()
+                .expect("Invalid gateway config address");
+
+        // Coprocessor buckets have to exist before the registry can point at them, and the
+        // registry has to answer before the relayer boots.
+        //
+        // Attested by default: an available ciphertext is the precondition of nearly every test,
+        // and readiness used to be armed implicitly by the decryption-response helpers. Tests
+        // that want another outcome re-arm the buckets themselves.
+        let ct_attestation = CtAttestationMock::start().await;
+        ct_attestation.serve_attestations().await;
 
         // Create and start Host chain mock server
         tracing::debug!("Creating Host chain MockServer on port {}", host_port);
@@ -171,7 +191,9 @@ impl TestSetup {
             gateway_server.clone(),
             decryption_addr,
             input_verification_addr,
+            gateway_config_addr,
         );
+        fhevm_wrapper.set_coprocessor_registry(&ct_attestation);
 
         // Start Gateway chain mock server
         let gateway_handle = gateway_server
@@ -279,7 +301,7 @@ impl TestSetup {
         let relayer_handle = tokio::spawn(async move {
             match run_fhevm_relayer(relayer_settings, relayer_token, Some(settings_tx)).await {
                 Ok(()) => tracing::debug!("Relayer service exited normally"),
-                Err(e) => tracing::error!("Relayer service error: {}", e),
+                Err(e) => tracing::error!("Relayer service error: {:#}", e),
             }
         });
 
@@ -315,6 +337,7 @@ impl TestSetup {
 
         Ok(TestSetup {
             fhevm_mock: fhevm_wrapper,
+            ct_attestation,
             host_server: host_server_clone,
             settings,
             http_port,

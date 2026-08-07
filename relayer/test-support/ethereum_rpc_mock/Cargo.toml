@@ -39,6 +39,13 @@ fhevm_gateway_bindings = { path = "../../../gateway-contracts/rust_bindings" }
 # JSON-RPC server - unique to mock
 jsonrpsee = { version = "0.26.0", features = ["server", "macros"] }
 
+# Coprocessor S3 attestation mock: the readiness check reads attestations from an
+# HTTP `HEAD` response header, which is a different protocol from this crate's
+# JSON-RPC surface, so it needs its own listener.
+wiremock = "0.6.5"
+ciphertext-attestation = { path = "../../../shared/ciphertext-attestation" }
+alloy-signer-local = { version = "2", default-features = false }
+
 [dev-dependencies]
 # Additional futures utilities for tests
 futures = "0.3.32"

@@ -15,7 +15,7 @@ services:
       timeout: 5s
       retries: 5
     ports:
-      - "5433:5432"
+      - "15433:5432"
     networks:
       - relayer-network
     volumes:

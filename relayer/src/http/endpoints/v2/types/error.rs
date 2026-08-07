@@ -43,6 +43,7 @@ pub enum V2ErrorLabel {
     InsufficientAllowance,
     GatewayNotReachable,
     ReadinessCheckTimedOut,
+    NoAttestationConsensus,
     ResponseTimedOut,
 }
 
@@ -317,6 +318,15 @@ impl V2ErrorResponseBody {
     pub fn readiness_check_timed_out(message: &str) -> Self {
         Self::Simple(V2ApiError {
             label: "readiness_check_timed_out".to_string(),
+            message: message.to_string(),
+        })
+    }
+
+    /// Terminal: the Coprocessors served attestations that disagree, so the request cannot become
+    /// ready by retrying — unlike [`Self::readiness_check_timed_out`].
+    pub fn no_attestation_consensus(message: &str) -> Self {
+        Self::Simple(V2ApiError {
+            label: "no_attestation_consensus".to_string(),
             message: message.to_string(),
         })
     }
@@ -850,6 +860,7 @@ mod tests {
             V2ErrorResponseBody::insufficient_allowance("m"),
             V2ErrorResponseBody::gateway_not_reachable("m"),
             V2ErrorResponseBody::readiness_check_timed_out("m"),
+            V2ErrorResponseBody::no_attestation_consensus("m"),
             V2ErrorResponseBody::response_timed_out("m"),
         ];
 

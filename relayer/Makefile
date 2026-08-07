@@ -22,7 +22,7 @@ endif
 
 MOCK_RPC_MANIFEST := test-support/ethereum_rpc_mock/Cargo.toml
 COMPOSE_FILE := dev/docker-compose.yaml
-DATABASE_URL := postgresql://postgres:postgres@localhost:5433/relayer_db
+DATABASE_URL := postgresql://postgres:postgres@localhost:15433/relayer_db
 
 # Docker image defaults (override on CLI: make docker-build TAG=v0.9.0-rc.1)
 DOCKER_REGISTRY ?= ghcr.io/zama-ai/console
@@ -282,7 +282,7 @@ _approve-payment: _check-cast
 ##@ Database
 # ---------------------------------------------------------------------------
 
-db-start: _check-docker ## Start local Postgres (port 5433)
+db-start: _check-docker ## Start local Postgres (port 15433)
 	@docker compose -f $(COMPOSE_FILE) up -d
 	@$(MAKE) _db-wait
 
