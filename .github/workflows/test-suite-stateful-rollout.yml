@@ -7,6 +7,14 @@ on:
         description: "Path relative to test-suite/fhevm (for example rollouts/v0.13.21-to-v0.13.22-kms-node-by-node/run.ts)"
         required: true
         type: string
+      test_profile:
+        description: "Per-phase gate width. rollout-heavy runs each phase's full checkpoint list and takes considerably longer."
+        required: false
+        default: rollout-standard
+        type: choice
+        options:
+          - rollout-standard
+          - rollout-heavy
 
 permissions: {}
 
@@ -21,10 +29,11 @@ jobs:
       contents: "read" # Required to checkout repository code.
       packages: "read" # Required when a runbook resolves GitHub package metadata.
     runs-on: large_ubuntu_32
-    timeout-minutes: 300
+    timeout-minutes: 360
     env:
       GH_TOKEN: ${{ github.token }}
       ROLLOUT_RUNBOOK: ${{ inputs.runbook }}
+      ROLLOUT_TEST_PROFILE: ${{ inputs.test_profile }}
     steps:
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -77,7 +86,9 @@ jobs:
 
       - name: Execute stateful rollout
         working-directory: test-suite/fhevm
-        timeout-minutes: 185
+        # Runbooks that upgrade participants one at a time run a gate per participant rather
+        # than per phase, which multiplies the number of e2e passes in a single run.
+        timeout-minutes: 270
         run: ./fhevm-cli rollout run "$ROLLOUT_RUNBOOK"
 
       - name: Show rollout receipt

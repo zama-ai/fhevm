@@ -234,6 +234,13 @@ export type State = {
   versions: VersionBundle;
   /** Per-node threshold KMS core versions while a rollout is intentionally mixed. */
   kmsCoreVersionByNodeId?: Record<string, string>;
+  /**
+   * Per-node threshold KMS connector versions, held in lockstep with
+   * `kmsCoreVersionByNodeId`. A connector only talks to its own core, and the two
+   * must cross a release boundary together, so a node-by-node rollout moves both
+   * for one party at a time and leaves the rest of the cluster untouched.
+   */
+  kmsConnectorVersionByNodeId?: Record<string, Record<string, string>>;
   overrides: LocalOverride[];
   scenario: ResolvedScenario;
   scenarioSourcePath?: string;

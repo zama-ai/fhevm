@@ -14,6 +14,7 @@ import {
   requiresMultichainAclAddress,
   requiresModernHostAddressArtifacts,
   supportsCanonicalProtocolConfigSeeding,
+  supportsConfidentialBridge,
   supportsHostListenerConsumer,
   validateBundleCompatibility,
 } from "../compat/compat";
@@ -101,7 +102,7 @@ import {
   writeJson,
 } from "../utils/fs";
 import { ensureDiscovery, createDiscovery, defaultEndpoints, discoverContracts, minioIp, validateDiscovery } from "./discovery";
-import { kmsConnectorEnvName, kmsCoreName } from "../kms-party";
+import { kmsConnectorEnvName, kmsConnectorPrefix, kmsCoreName } from "../kms-party";
 import { defaultHostChain, extraHostChains, hostChainsForState } from "./topology";
 import {
   kmsConnectorHealthContainers,
@@ -132,6 +133,7 @@ import {
   runtimeArtifactPaths,
 } from "./artifacts";
 import {
+  coprocessorInstanceUpgradeTargets,
   multiChainCoprocessorUpgradeTargets,
   resolveUpgradePlan,
   resumeRepairStep,
@@ -668,8 +670,9 @@ export const runStep = async (state: State, step: StepName) => {
       }
       // Multi-chain scenarios run the bridge-deploy step (deploys the LZ endpoint + upgrades the
       // bridge). Provision the empty bridge proxy here via PROVISION_BRIDGE_PROXY so the ACL bakes
-      // its deterministic address before that later upgrade.
-      const provisionBridgeProxy = hostChainsForState(state).length >= 2;
+      // its deterministic address before that later upgrade. Pre-v0.14 host contracts have no
+      // bridge at all, so neither the provisioning nor the later deploy applies to them.
+      const provisionBridgeProxy = hostChainsForState(state).length >= 2 && supportsConfidentialBridge(state);
       await stepComposeTask(
         "host-sc",
         state,
@@ -738,6 +741,12 @@ export const runStep = async (state: State, step: StepName) => {
       const chains = hostChainsForState(state);
       if (chains.length < 2) {
         console.log("[bridge-deploy] skipping: confidential bridge needs >= 2 host chains");
+        break;
+      }
+      if (!supportsConfidentialBridge(state)) {
+        console.log(
+          `[bridge-deploy] skipping: host contracts ${state.versions.env.HOST_VERSION ?? "(unset)"} predate the confidential bridge (< v0.14)`,
+        );
         break;
       }
       const discovery = await ensureDiscovery(state);
@@ -1658,6 +1667,15 @@ export const upgradeRuntimeGroup = async (groupValue: string | undefined, option
   }
 };
 
+const KMS_CONNECTOR_VERSION_KEYS = [
+  "CONNECTOR_DB_MIGRATION_VERSION",
+  "CONNECTOR_GW_LISTENER_VERSION",
+  "CONNECTOR_KMS_WORKER_VERSION",
+  "CONNECTOR_TX_SENDER_VERSION",
+] as const;
+const KMS_NODE_VERSION_KEYS = ["CORE_VERSION", ...KMS_CONNECTOR_VERSION_KEYS] as const;
+const KMS_CONNECTOR_RUNTIME_SUFFIXES = ["gw-listener", "kms-worker", "tx-sender"] as const;
+
 type ThresholdKmsNodeUpgradeOperations = {
   composeUp: typeof composeUp;
   ensureRuntimeArtifacts: typeof ensureRuntimeArtifacts;
@@ -1701,7 +1719,12 @@ export const upgradeThresholdKmsNode = async (
   }
 
   await operations.ensureRuntimeArtifacts(state, "upgrade");
-  const lockedState = (await applyRuntimeUpgradeLock(state, "kms-core", ["CORE_VERSION"], options.lockFile)).state;
+  // The "kms" key set, not just CORE_VERSION: a connector only ever talks to its own
+  // core, and across a release boundary the pair has to move together. Locks that
+  // carry only CORE_VERSION (the PRSS hotfix runbook) still work — buildLockedState
+  // moves whichever of the allowed keys the lock actually changes.
+  const locked = await applyRuntimeUpgradeLock(state, "kms", KMS_NODE_VERSION_KEYS, options.lockFile);
+  const lockedState = locked.state;
   await assertSchemaCompatibility(lockedState.versions, lockedState.overrides, lockedState.scenario, false);
 
   const targetVersion = lockedState.versions.env.CORE_VERSION;
@@ -1715,22 +1738,64 @@ export const upgradeThresholdKmsNode = async (
     }),
   );
   versionByNodeId[nodeId] = targetVersion;
-  const servingNodesAtTarget = Array.from(
-    { length: state.scenario.kms.committeeSize },
-    (_, index) => versionByNodeId[index + 1] === targetVersion,
+
+  // Same staircase for the connector keys this node serves behind — but only for the keys the
+  // lock actually moves. A lock that carries just CORE_VERSION (the PRSS hotfix bridge) must
+  // leave every connector exactly where it is, including this node's.
+  const changedKeys = new Set(locked.changedKeys);
+  const connectorTarget = Object.fromEntries(
+    KMS_CONNECTOR_VERSION_KEYS.filter((key) => changedKeys.has(key) && lockedState.versions.env[key]?.trim()).map(
+      (key) => [key, lockedState.versions.env[key] as string],
+    ),
+  );
+  const connectorByNodeId = Object.fromEntries(
+    Array.from({ length: state.scenario.kms.parties }, (_, index) => {
+      const id = index + 1;
+      const current = Object.fromEntries(
+        KMS_CONNECTOR_VERSION_KEYS.filter((key) => state.versions.env[key]?.trim()).map((key) => [
+          key,
+          state.kmsConnectorVersionByNodeId?.[id]?.[key] ?? (state.versions.env[key] as string),
+        ]),
+      );
+      return [id, id === nodeId ? { ...current, ...connectorTarget } : current];
+    }),
+  );
+
+  const nodeIsAtTarget = (id: number) =>
+    versionByNodeId[id] === targetVersion &&
+    Object.entries(connectorTarget).every(([key, version]) => connectorByNodeId[id]?.[key] === version);
+  const servingNodesAtTarget = Array.from({ length: state.scenario.kms.committeeSize }, (_, index) =>
+    nodeIsAtTarget(index + 1),
   ).every(Boolean);
+
   const globalVersion = servingNodesAtTarget ? targetVersion : state.versions.env.CORE_VERSION;
   const perNodeVersions = Object.fromEntries(
     Object.entries(versionByNodeId).filter(([, version]) => version !== globalVersion),
   );
+  // A node needs a per-node connector pin only where it differs from whatever the bundle says
+  // once this step lands. That keeps a core-only lock from recording redundant pins, and drops
+  // every pin again on the step that converges the cluster.
+  const globalConnector = servingNodesAtTarget ? lockedState.versions.env : state.versions.env;
+  const perNodeConnector = Object.fromEntries(
+    Object.entries(connectorByNodeId)
+      .map(([id, versions]) => [
+        id,
+        Object.fromEntries(Object.entries(versions).filter(([key, version]) => globalConnector[key] !== version)),
+      ])
+      .filter(([, versions]) => Object.keys(versions as Record<string, string>).length),
+  ) as State["kmsConnectorVersionByNodeId"];
+  const hasPerNodeConnector = Object.keys(perNodeConnector ?? {}).length > 0;
+
   const nextState: State = servingNodesAtTarget
     ? {
         ...lockedState,
         kmsCoreVersionByNodeId: Object.keys(perNodeVersions).length ? perNodeVersions : undefined,
+        kmsConnectorVersionByNodeId: hasPerNodeConnector ? perNodeConnector : undefined,
       }
     : {
         ...state,
         kmsCoreVersionByNodeId: perNodeVersions,
+        kmsConnectorVersionByNodeId: hasPerNodeConnector ? perNodeConnector : undefined,
         updatedAt: new Date().toISOString(),
       };
 
@@ -1741,6 +1806,231 @@ export const upgradeThresholdKmsNode = async (
   console.log(`[upgrade] KMS node ${nodeId} (${container})`);
   await operations.composeUp("core-threshold", [container], { noDeps: true, forceRecreate: true });
   await operations.waitForContainer(container, "healthy");
+
+  // Recreate this party's connector tier only once its core is serving again, so the
+  // connector never points at a core mid-restart. Migrations first, as elsewhere.
+  if (Object.keys(connectorTarget).length && state.scenario.kms.mode === "threshold") {
+    const prefix = `${kmsConnectorPrefix(nodeId)}-`;
+    const migration = `${prefix}db-migration`;
+    const runtime = KMS_CONNECTOR_RUNTIME_SUFFIXES.map((suffix) => `${prefix}${suffix}`);
+    console.log(`[upgrade] KMS connector ${nodeId} (${runtime.join(", ")})`);
+    await operations.composeUp("kms-connector", [migration], { noDeps: true, forceRecreate: true });
+    await operations.waitForContainer(migration, "complete");
+    await operations.composeUp("kms-connector", runtime, { noDeps: true, forceRecreate: true });
+    for (const service of runtime) {
+      await operations.waitForContainer(service, "running");
+    }
+  }
+};
+
+const COPROCESSOR_VERSION_KEYS = [
+  "COPROCESSOR_DB_MIGRATION_VERSION",
+  "COPROCESSOR_HOST_LISTENER_VERSION",
+  "COPROCESSOR_GW_LISTENER_VERSION",
+  "COPROCESSOR_TX_SENDER_VERSION",
+  "COPROCESSOR_TFHE_WORKER_VERSION",
+  "COPROCESSOR_ZKPROOF_WORKER_VERSION",
+  "COPROCESSOR_SNS_WORKER_VERSION",
+  // Optional components: a bundle that predates them carries no key at all, and generation
+  // drops the services entirely. Listed here so a lock that introduces one can land it with
+  // the rest of the fleet; the tag-unity check below only looks at the keys a lock moves.
+  "COPROCESSOR_CONSENSUS_DETECTOR_VERSION",
+  "COPROCESSOR_UPGRADE_CONTROLLER_VERSION",
+] as const;
+
+/**
+ * Refuses to take one coprocessor operator down unless the operators left running still
+ * satisfy the consensus threshold.
+ *
+ * Recreating an operator stops its containers, so an upgrade briefly removes it from the
+ * fleet. With 3 operators at threshold 2 that leaves exactly the threshold and no margin,
+ * and if a peer is already unhealthy the fleet silently stops reaching consensus for the
+ * width of the upgrade. Checking first turns that into a refusal with the reason, instead
+ * of a stalled rollout diagnosed from ciphertext drift much later.
+ */
+export const assertCoprocessorUpgradeThreshold = async (
+  state: State,
+  index: number,
+  inspect: typeof dockerInspect = dockerInspect,
+) => {
+  const { count, threshold } = topologyForState(state);
+  const remaining = Array.from({ length: count }, (_, position) => position).filter(
+    (candidate) => candidate !== index,
+  );
+  if (remaining.length < threshold) {
+    throw new PreflightError(
+      `coprocessor instance ${index} cannot be upgraded: only ${remaining.length} operators would remain, but the consensus threshold is ${threshold}`,
+    );
+  }
+  const unavailable: number[] = [];
+  for (const peer of remaining) {
+    const services = coprocessorInstanceUpgradeTargets(state, peer).components.flatMap(
+      (component) => component.runtimeServices,
+    );
+    let ready = true;
+    for (const container of services) {
+      const [details] = await inspect(container);
+      if (!details || details.State.Status !== "running") {
+        ready = false;
+        break;
+      }
+    }
+    if (!ready) {
+      unavailable.push(peer);
+    }
+  }
+  const ready = remaining.length - unavailable.length;
+  if (ready < threshold) {
+    throw new PreflightError(
+      `coprocessor instance ${index} cannot be upgraded: ${ready} remaining operators are ready, but the consensus threshold is ${threshold}; unavailable operators: ${unavailable.join(", ")}`,
+    );
+  }
+};
+
+type CoprocessorInstanceUpgradeOperations = {
+  assertThreshold: typeof assertCoprocessorUpgradeThreshold;
+  composeUp: typeof composeUp;
+  multiChainComposeUp: typeof multiChainComposeUp;
+  ensureRuntimeArtifacts: typeof ensureRuntimeArtifacts;
+  generateRuntime: typeof generateRuntime;
+  loadState: typeof loadState;
+  postBootHealthGate: typeof postBootHealthGate;
+  projectContainers: typeof projectContainers;
+  saveState: typeof saveState;
+  waitForContainer: typeof waitForContainer;
+};
+
+const coprocessorInstanceUpgradeOperations: CoprocessorInstanceUpgradeOperations = {
+  assertThreshold: assertCoprocessorUpgradeThreshold,
+  composeUp,
+  multiChainComposeUp,
+  ensureRuntimeArtifacts,
+  generateRuntime,
+  loadState,
+  postBootHealthGate,
+  projectContainers,
+  saveState,
+  waitForContainer,
+};
+
+/**
+ * Moves exactly one coprocessor operator to the tag in a lock file, leaving its peers
+ * on the version they are already running.
+ *
+ * This reuses the per-instance image pinning that blue-green already relies on
+ * (`source.mode: "registry"`), so a mixed fleet is an ordinary generated-compose state
+ * rather than a new mechanism. While the fleet is mixed the resolved bundle stays on
+ * the old versions — the pinned instances are the only ones ahead. Once the last
+ * instance crosses, the bundle lock itself is applied and every instance goes back to
+ * inheriting from it, which is also when services introduced by the new release first
+ * appear for the whole component.
+ */
+export const upgradeCoprocessorInstance = async (
+  index: number,
+  options: { lockFile: string },
+  operations: CoprocessorInstanceUpgradeOperations = coprocessorInstanceUpgradeOperations,
+) => {
+  const state = await operations.loadState();
+  if (!state || !(await operations.projectContainers()).length) {
+    throw new PreflightError("Stack is not running; start one with `fhevm-cli up` first");
+  }
+  const scenario = state.scenario;
+  if (scenario.kind !== "coprocessor-consensus" || !scenario.instances.length) {
+    throw new PreflightError("upgradeCoprocessorInstance requires a coprocessor-consensus scenario");
+  }
+  const instances = scenario.instances;
+  if (!Number.isInteger(index) || index < 0 || index >= instances.length) {
+    throw new PreflightError(
+      `upgradeCoprocessorInstance expects an instance index between 0 and ${instances.length - 1}; received ${index}`,
+    );
+  }
+  if (!state.completedSteps.includes("coprocessor")) {
+    throw new PreflightError("upgradeCoprocessorInstance requires a stack that has completed the coprocessor step");
+  }
+
+  await operations.ensureRuntimeArtifacts(state, "upgrade");
+  const locked = await applyRuntimeUpgradeLock(state, "coprocessor", COPROCESSOR_VERSION_KEYS, options.lockFile);
+  const lockedState = locked.state;
+  await assertSchemaCompatibility(lockedState.versions, lockedState.overrides, lockedState.scenario, false);
+
+  // One image tag per instance is all `source.mode: registry` can express, so a lock
+  // that splits the coprocessor fleet across several tags cannot be staged this way.
+  //
+  // Only the components the lock actually moves are checked. A lock that says nothing about a
+  // component leaves it wherever the bundle had it, which is not a split fleet — it is a lock
+  // written before that component existed.
+  const pinnedKeys = COPROCESSOR_VERSION_KEYS.filter((key) => locked.changedKeys.includes(key));
+  const checkedKeys = pinnedKeys.length ? pinnedKeys : COPROCESSOR_VERSION_KEYS;
+  const targetTags = new Set(checkedKeys.map((key) => lockedState.versions.env[key]).filter(Boolean));
+  if (targetTags.size !== 1) {
+    throw new PreflightError(
+      `upgradeCoprocessorInstance needs every ${"COPROCESSOR_*_VERSION"} in its lock file to share one tag; found ${
+        [...targetTags].join(", ") || "none"
+      }`,
+    );
+  }
+  const targetTag = [...targetTags][0] as string;
+
+  const nextInstances = instances.map((instance) =>
+    instance.index === index ? { ...instance, source: { mode: "registry" as const, tag: targetTag } } : instance,
+  );
+  const allAtTarget = nextInstances.every(
+    (instance) => instance.source.mode === "registry" && instance.source.tag === targetTag,
+  );
+
+  // Converged: land the bundle and hand every instance back to it.
+  const nextState: State = allAtTarget
+    ? {
+        ...lockedState,
+        scenario: {
+          ...scenario,
+          instances: instances.map((instance) => ({ ...instance, source: { mode: "inherit" as const } })),
+        },
+      }
+    : {
+        ...state,
+        scenario: { ...scenario, instances: nextInstances },
+        updatedAt: new Date().toISOString(),
+      };
+
+  // Checked before anything is written, so a refusal leaves the fleet exactly as it was.
+  await operations.assertThreshold(state, index);
+
+  await operations.saveState(nextState);
+  await operations.generateRuntime(nextState, stackSpecForState(nextState));
+
+  const targets = coprocessorInstanceUpgradeTargets(nextState, index);
+  console.log(`[upgrade] coprocessor instance ${index} -> ${targetTag}${allAtTarget ? " (fleet converged)" : ""}`);
+  for (const service of targets.migrationServices) {
+    await operations.composeUp("coprocessor", [service], { noDeps: true, forceRecreate: true });
+    await operations.waitForContainer(service, "complete");
+  }
+  for (const component of targets.components) {
+    if (component.multiChain) {
+      await operations.multiChainComposeUp(component.component, component.runtimeServices, { forceRecreate: true });
+    } else {
+      await operations.composeUp(component.component, component.runtimeServices, { noDeps: true, forceRecreate: true });
+    }
+    for (const service of component.runtimeServices) {
+      await operations.waitForContainer(service, "running");
+    }
+  }
+  // Running is not the same as serving. Gate on the same health check boot uses, so the next
+  // operator is not taken down while this one is still coming up.
+  await operations.postBootHealthGate(targets.components.flatMap((component) => component.runtimeServices));
+  if (allAtTarget) {
+    // The converged bundle can introduce services no instance was running yet
+    // (0.14 adds consensus-detector and upgrade-controller), so bring the whole
+    // component up once rather than only the instance that happened to cross last.
+    //
+    // The service list has to be explicit. An empty list means "every service in the merged
+    // compose files", and the checked-in template always declares consensus-detector and
+    // upgrade-controller even on bundles that predate them — the generated override simply
+    // omits them. Composing them anyway resolves their tag to the empty string and docker
+    // rejects `.../upgrade-controller:` as an invalid reference. serviceNameList returns only
+    // the services this state actually supports, which is what boot passes too.
+    await operations.composeUp("coprocessor", serviceNameList(nextState, "coprocessor"));
+  }
 };
 
 const RESUME_HINT_BLOCKERS = new Set([

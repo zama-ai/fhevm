@@ -458,6 +458,19 @@ export const supportsCanonicalProtocolConfigSeeding = (state: CompatState) =>
   effectiveCompatOverrides(state).some((override) => override.group === "host-contracts") ||
   !versionLt(state.versions.env.HOST_VERSION ?? "", [0, 13, 1], { unparsed: "modern" });
 
+/**
+ * Detects when host contracts ship the ConfidentialBridge and its LayerZero mock sources.
+ *
+ * The bridge landed in v0.14. `bridge-deploy` compiles `examples/bridge/mocks` inside the
+ * host-contracts image, so running it against a pre-0.14 image fails with
+ * `Invalid source path /app/examples/bridge/mocks`. Any multi-chain scenario booted on a
+ * 0.13 baseline (an N-1 -> N rollout) hits this, so the step is skipped rather than failing
+ * the boot. A local host-contracts override always builds modern sources.
+ */
+export const supportsConfidentialBridge = (state: CompatState) =>
+  effectiveCompatOverrides(state).some((override) => override.group === "host-contracts") ||
+  !versionBeforeReleaseFamily(state.versions.env.HOST_VERSION ?? "", [0, 14, 0], { unparsed: "modern" });
+
 type BundleIncompatibility = { severity: "error"; code: string; message: string };
 
 /** Detects whether the resolved bundle supports multi-chain listener/database topology. */

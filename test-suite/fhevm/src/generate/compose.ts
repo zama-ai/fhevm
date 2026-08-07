@@ -73,6 +73,15 @@ const rewriteImageTag = (image: unknown, tag: string) =>
 /** Retags an image reference with the default local build tag. */
 const retagLocal = (image: unknown, tag = LOCAL_BUILD_TAG) => rewriteImageTag(image, tag);
 
+/**
+ * Reads the version variable a template image is tagged with, e.g.
+ * `ghcr.io/.../gw-listener:${CONNECTOR_GW_LISTENER_VERSION}` -> `CONNECTOR_GW_LISTENER_VERSION`.
+ * Services pinned to a literal tag (postgres and friends) return undefined, which is
+ * what keeps per-node retagging away from them.
+ */
+const versionVariableOf = (image: unknown) =>
+  typeof image === "string" ? /:\$\{([A-Z0-9_]+)\}$/.exec(image)?.[1] : undefined;
+
 /** Keeps build metadata only for services that should be built locally. */
 const applyBuildPolicy = (service: Record<string, unknown>, isOverridden: boolean) => {
   if (isOverridden) {
@@ -617,13 +626,20 @@ export const buildKmsConnectorOverride = async (plan: StackSpec) => {
   for (let party = 1; party <= plan.kms.parties; party += 1) {
     const prefix = `${kmsConnectorPrefix(party)}-`;
     const envFileValue = envPath(kmsConnectorEnvName(party));
+    const partyVersions = plan.kmsConnectorVersionByNodeId?.[party];
     for (const [name, service] of Object.entries(doc.services)) {
       const suffix = name.replace(/^kms-connector-/, "");
       const serviceName = `${prefix}${suffix}`;
       const next = structuredClone(service);
       next.container_name = serviceName;
       next.env_file = [envFileValue];
+      const versionVariable = versionVariableOf(next.image);
       applyBuildPolicy(next, overridden.has(name));
+      // Pin this party alone to its own connector build while the cluster is mixed.
+      // A locally built service already carries the local tag and must keep it.
+      if (!overridden.has(name) && versionVariable && partyVersions?.[versionVariable]) {
+        next.image = rewriteImageTag(next.image, partyVersions[versionVariable]);
+      }
       if (party === 1 && overridden.has(name)) {
         const build = localBuildSpecFor("kms-connector", name);
         if (build) {

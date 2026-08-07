@@ -25,6 +25,8 @@ const UPGRADE_VERSION_KEYS: Record<UpgradeGroup, string[]> = {
     "COPROCESSOR_TFHE_WORKER_VERSION",
     "COPROCESSOR_ZKPROOF_WORKER_VERSION",
     "COPROCESSOR_SNS_WORKER_VERSION",
+    "COPROCESSOR_CONSENSUS_DETECTOR_VERSION",
+    "COPROCESSOR_UPGRADE_CONTROLLER_VERSION",
   ],
   "kms-connector": [
     "CONNECTOR_DB_MIGRATION_VERSION",
@@ -42,7 +44,15 @@ const UPGRADE_VERSION_KEYS: Record<UpgradeGroup, string[]> = {
   ],
   "listener-core": ["LISTENER_CORE_VERSION"],
   "relayer": ["RELAYER_VERSION", "RELAYER_MIGRATE_VERSION"],
-  "test-suite": ["TEST_SUITE_VERSION"],
+  // RELAYER_SDK_VERSION belongs to this group even though it is a build arg rather than an
+  // image tag: it selects which client library the e2e suite calls the relayer with (empty =
+  // the in-repo @fhevm/sdk, otherwise that exact @zama-fhe/relayer-sdk release). No checked-in
+  // runbook moves it yet — v0.13-to-v0.14 pins it empty for every phase, because no published
+  // relayer-sdk can read the key material a 0.13+ kms-core mints. It is lockable here so a
+  // rollout across a client boundary can gate that change like any other version. The upgrade
+  // path already rebuilds every locally overridden component image, which is what makes the
+  // changed build arg take effect.
+  "test-suite": ["TEST_SUITE_VERSION", "RELAYER_SDK_VERSION"],
 };
 const LISTENER_CORE_SERVICES = ["listener-redis", "listener-publisher-for-anvil"];
 type UpgradeComponentPlan = {
@@ -127,6 +137,41 @@ export const resumeRepairStep = (
   return (Object.entries(expected) as Array<[StepName, string[]]>).find(
     ([step, services]) => completed.has(step) && services.some((service) => !isRuntimeServiceHealthy(live.get(service))),
   )?.[0];
+};
+
+/** Names the compose prefix owning one coprocessor instance's services. */
+export const coprocessorInstancePrefix = (index: number) => (index === 0 ? "coprocessor-" : `coprocessor${index}-`);
+
+/**
+ * Resolves the compose components and services belonging to exactly one coprocessor
+ * instance, so a rollout can recreate a single operator without touching its peers.
+ * Extra host chains keep their listeners in their own compose component, so they are
+ * returned alongside the main one rather than folded into it.
+ */
+export const coprocessorInstanceUpgradeTargets = (state: State, index: number) => {
+  const prefix = coprocessorInstancePrefix(index);
+  const [defaultChain, ...extraChains] = hostChainsForState(state);
+  return {
+    migrationServices: [`${prefix}db-migration`],
+    components: [
+      {
+        component: "coprocessor",
+        // Has a checked-in template under docker-compose/, so it composes the ordinary way.
+        multiChain: false,
+        runtimeServices: coprocessorRuntimeSuffixes(state).map(
+          (service) => `${prefix}${service}${defaultChain?.suffix ?? ""}`,
+        ),
+      },
+      // Extra host chains have no `coprocessor-<chain>-docker-compose.yml` template — they exist
+      // only as generated overrides — so they must go through multiChainComposeUp, which composes
+      // the generated file alone. Boot does the same.
+      ...extraChains.map((chain) => ({
+        component: coprocessorHostKey(chain.key),
+        multiChain: true,
+        runtimeServices: coprocessorListenerSuffixes(state).map((service) => `${prefix}${service}${chain.suffix}`),
+      })),
+    ],
+  };
 };
 
 /** Resolves extra-chain coprocessor listener restart targets for in-place upgrades. */

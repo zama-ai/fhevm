@@ -195,10 +195,23 @@ The lock file replaces only the version resolution step — preflight, boot pipe
 Release rollouts are executable TypeScript runbooks under `rollouts/`. A runbook boots one baseline stack, performs each upgrade step in order, preserves chain/database/container state, and runs rollout-safe e2e coverage after each step:
 
 ```sh
-./fhevm-cli rollout run ./rollouts/v0.12-to-v0.13-protocol-upgrade/run.ts
+./fhevm-cli rollout run ./rollouts/v0.13-to-v0.14/run.ts
 ```
 
 Use `./fhevm-cli rollout receipt` to print the markdown receipt of the most recent rollout run.
+
+Checked-in runbooks:
+
+| Runbook                                                 | Scenario                   | What it rehearses                                                                                                                                               |
+| ------------------------------------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `rollouts/v0.12-to-v0.13-protocol-upgrade/run.ts`       | `two-of-three`             | v0.12.5 → v0.13, including the gateway→host KMS migration export.                                                                                               |
+| `rollouts/v0.13-to-v0.14/run.ts`                        | `two-of-three-multi-chain-threshold-kms` | v0.13.2 → v0.14 in the documented component order, on the in-repo `@fhevm/sdk` throughout, with the host ACL held back to the final phase so the client stays on `/v2` while each backend component crosses on its own: the mandatory kms-core PRSS bridge stop, KMS nodes upgraded one at a time with their own connectors, coprocessor operators one at a time, and the canonical ProtocolConfig mirror across two host chains. |
+| `rollouts/v0.13.21-to-v0.13.22-kms-node-by-node/run.ts` | `four-party-threshold-kms` | Node-by-node kms-core upgrade, forcing each upgraded node into the reconstruction quorum.                                                                       |
+
+Set `ROLLOUT_TEST_PROFILE=rollout-heavy` to widen the per-phase gate from `rollout-standard`
+to the phase's full checkpoint list. The `test-suite-stateful-rollout` workflow takes the same
+value as its `test_profile` input. Heavy mode multiplies the e2e passes in a run, so it needs
+the timeout headroom the workflow already allows rather than the time a standard run takes.
 
 Runbooks use the same primitives an operator needs during a release:
 
