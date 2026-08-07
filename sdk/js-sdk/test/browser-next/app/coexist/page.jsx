@@ -51,7 +51,12 @@ function buildChain(origin, cfg, relayerSlot) {
         acl: { address: cfg.contracts.acl },
         inputVerifier: { address: cfg.contracts.inputVerifier },
         kmsVerifier: { address: cfg.contracts.kmsVerifier },
-        protocolConfig: { address: cfg.contracts.protocolConfig },
+        // Absent on the legacy (v12) slot — ProtocolConfig doesn't exist on that
+        // deploy. Must be omitted entirely (not `{ address: undefined }`), so the
+        // SDK's frozen-context resolver skips the ProtocolConfig version read.
+        ...(cfg.contracts.protocolConfig === undefined
+          ? {}
+          : { protocolConfig: { address: cfg.contracts.protocolConfig } }),
       },
       relayerUrl: `${origin}/gw/${relayerSlot}/relayer`,
       gateway: {

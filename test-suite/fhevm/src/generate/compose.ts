@@ -157,9 +157,7 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
     "host-sc-epoch-rotation": buildSpec("../../..", "host-contracts/Dockerfile"),
   },
   "test-suite": {
-    "test-suite-e2e-debug": buildSpec("../../..", "test-suite/e2e/Dockerfile", {
-      args: { RELAYER_SDK_VERSION: "${RELAYER_SDK_VERSION}" },
-    }),
+    "test-suite-e2e-debug": buildSpec("../../..", "test-suite/e2e/Dockerfile"),
   },
 };
 const localBuildSpecFor = (component: string, service: string) => COMPONENT_BUILD_SPECS[component]?.[service];

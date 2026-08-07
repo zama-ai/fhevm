@@ -3,8 +3,6 @@ import type {
   GeneratePrivateKeyReturnType,
   GetPublicKeyParameters,
   GetPublicKeyReturnType,
-  HashTypedDataParameters,
-  HashTypedDataReturnType,
   MnemonicToAccountParameters,
   MnemonicToAccountReturnType,
   RecoverAddressParameters,
@@ -13,19 +11,19 @@ import type {
   SignReturnType,
 } from '../../core/modules/ethereum/types-ct.js';
 import type { BytesHex, ChecksummedAddress } from '../../core/types/primitives.js';
-import type { TypedDataField } from 'ethers';
 import {
+  call,
   decode,
   encode,
   encodePacked,
   getChainId,
+  hashTypedData,
   readContract,
   recoverTypedDataAddress,
   signTypedData,
 } from './ethereum.js';
-import { SigningKey, HDNodeWallet, Wallet, TypedDataEncoder } from 'ethers';
+import { SigningKey, HDNodeWallet, Wallet } from 'ethers';
 import { sign, recoverAddress } from '../../core/base/sign.js';
-import { asBytes32Hex } from '../../core/base/bytes.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -36,9 +34,11 @@ export const cleartextEthereumModule: CleartextEthereumModuleFactory = () => {
       encode,
       encodePacked,
       recoverTypedDataAddress,
+      hashTypedData,
       signTypedData,
       getChainId,
       readContract,
+      call,
       mnemonicToAccount: (parameters: MnemonicToAccountParameters): MnemonicToAccountReturnType => {
         const signer = HDNodeWallet.fromPhrase(parameters.mnemonic, undefined, parameters.path);
         return {
@@ -59,16 +59,6 @@ export const cleartextEthereumModule: CleartextEthereumModuleFactory = () => {
       recoverAddress: (parameters: RecoverAddressParameters): Promise<RecoverAddressReturnType> => {
         const recoveredAddress = recoverAddress(parameters);
         return Promise.resolve(recoveredAddress);
-      },
-      hashTypedData: (parameters: HashTypedDataParameters): HashTypedDataReturnType => {
-        const primaryTypeFields = parameters.types[parameters.primaryType];
-        if (primaryTypeFields === undefined) {
-          throw new Error(`Primary type "${parameters.primaryType}" not found in types`);
-        }
-        const typesToHash: Record<string, TypedDataField[]> = {
-          [parameters.primaryType]: [...primaryTypeFields],
-        };
-        return asBytes32Hex(TypedDataEncoder.hash(parameters.domain, typesToHash, parameters.message));
       },
     }),
   });

@@ -489,7 +489,7 @@ export function asClearValueType<etype extends FheType>(
     case 'euint32': {
       assertIsUintNumber(value, {
         ...options,
-        max: MAX_UINT_FOR_TYPE[fheTypeName],
+        max: MAX_UINT_FOR_TYPE[typeNameFromFheTypeName(fheTypeName)],
       });
       return value as ClearValueType<etype>;
     }
@@ -498,7 +498,7 @@ export function asClearValueType<etype extends FheType>(
     case 'euint256': {
       assertIsUintBigInt(value, {
         ...options,
-        max: MAX_UINT_FOR_TYPE[fheTypeName],
+        max: MAX_UINT_FOR_TYPE[typeNameFromFheTypeName(fheTypeName)],
       });
       return value as ClearValueType<etype>;
     }

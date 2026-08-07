@@ -9,9 +9,6 @@ import {
   relayerUrl,
   verifyingContractAddressDecryption,
 } from '../instance';
-import { Signers, getSigners, initSigners } from '../signers';
-import { FhevmInstances } from '../types';
-import { waitForBlock } from '../utils';
 import { isLiveNetwork } from '../network';
 import type { UnifiedConfig, UnifiedDecryptRequest } from '../sdk/unified/unifiedUserDecrypt';
 import {
@@ -24,6 +21,9 @@ import {
   requestUnifiedUserDecrypt,
   submitUnifiedRequest,
 } from '../sdk/unified/unifiedUserDecrypt';
+import { Signers, getSigners, initSigners } from '../signers';
+import { FhevmInstances } from '../types';
+import { waitForBlock } from '../utils';
 
 const DURATION_SECONDS = 7 * 24 * 60 * 60;
 const POSITIVE_TIMEOUT_MS = 3 * 60 * 1000;
@@ -129,10 +129,15 @@ describe('Unified user decryption', function () {
       durationSeconds: DURATION_SECONDS,
     };
     const startedAt = Date.now();
-    const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.alice }, {
-      waitForTerminal: true,
-      timeoutMs: POSITIVE_TIMEOUT_MS,
-    });
+    const { post, poll } = await requestUnifiedUserDecrypt(
+      cfg,
+      req,
+      { kind: 'eoa', signer: signers.alice },
+      {
+        waitForTerminal: true,
+        timeoutMs: POSITIVE_TIMEOUT_MS,
+      },
+    );
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
     expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
     // Decrypt the same handle through the public SDK (which builds the same
@@ -159,10 +164,15 @@ describe('Unified user decryption', function () {
       startTimestamp: backdatedStartTimestamp(),
       durationSeconds: DURATION_SECONDS,
     };
-    const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.alice }, {
-      waitForTerminal: true,
-      timeoutMs: POSITIVE_TIMEOUT_MS,
-    });
+    const { post, poll } = await requestUnifiedUserDecrypt(
+      cfg,
+      req,
+      { kind: 'eoa', signer: signers.alice },
+      {
+        waitForTerminal: true,
+        timeoutMs: POSITIVE_TIMEOUT_MS,
+      },
+    );
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
     expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
     const clear = await instances.alice.userDecryptSingleHandle({
@@ -188,10 +198,15 @@ describe('Unified user decryption', function () {
       startTimestamp: backdatedStartTimestamp(),
       durationSeconds: DURATION_SECONDS,
     };
-    const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.alice }, {
-      waitForTerminal: true,
-      timeoutMs: POSITIVE_TIMEOUT_MS,
-    });
+    const { post, poll } = await requestUnifiedUserDecrypt(
+      cfg,
+      req,
+      { kind: 'eoa', signer: signers.alice },
+      {
+        waitForTerminal: true,
+        timeoutMs: POSITIVE_TIMEOUT_MS,
+      },
+    );
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
     expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
     const clear = await instances.alice.userDecryptSingleHandle({
@@ -217,10 +232,15 @@ describe('Unified user decryption', function () {
       startTimestamp: backdatedStartTimestamp(),
       durationSeconds: DURATION_SECONDS,
     };
-    const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.bob }, {
-      waitForTerminal: true,
-      timeoutMs: POSITIVE_TIMEOUT_MS,
-    });
+    const { post, poll } = await requestUnifiedUserDecrypt(
+      cfg,
+      req,
+      { kind: 'eoa', signer: signers.bob },
+      {
+        waitForTerminal: true,
+        timeoutMs: POSITIVE_TIMEOUT_MS,
+      },
+    );
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
     expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
     const clear32 = await instances.bob.userDecryptSingleHandle({
@@ -285,10 +305,15 @@ describe('Unified user decryption', function () {
       startTimestamp: backdatedStartTimestamp(),
       durationSeconds: DURATION_SECONDS,
     };
-    const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.alice }, {
-      waitForTerminal: true,
-      timeoutMs: negativeWindowMs,
-    });
+    const { post, poll } = await requestUnifiedUserDecrypt(
+      cfg,
+      req,
+      { kind: 'eoa', signer: signers.alice },
+      {
+        waitForTerminal: true,
+        timeoutMs: negativeWindowMs,
+      },
+    );
     // Signature is valid, so the relayer accepts; the contract-allowance check
     // is enforced only by the KMS Connector, which rejects without responding —
     // the job stays queued.
@@ -307,10 +332,15 @@ describe('Unified user decryption', function () {
       startTimestamp: backdatedStartTimestamp(),
       durationSeconds: DURATION_SECONDS,
     };
-    const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.alice }, {
-      waitForTerminal: true,
-      timeoutMs: negativeWindowMs,
-    });
+    const { post, poll } = await requestUnifiedUserDecrypt(
+      cfg,
+      req,
+      { kind: 'eoa', signer: signers.alice },
+      {
+        waitForTerminal: true,
+        timeoutMs: negativeWindowMs,
+      },
+    );
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
     expectStuckAtKms(poll);
   });
@@ -326,10 +356,15 @@ describe('Unified user decryption', function () {
       startTimestamp: backdatedStartTimestamp(),
       durationSeconds: DURATION_SECONDS,
     };
-    const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.bob }, {
-      waitForTerminal: true,
-      timeoutMs: negativeWindowMs,
-    });
+    const { post, poll } = await requestUnifiedUserDecrypt(
+      cfg,
+      req,
+      { kind: 'eoa', signer: signers.bob },
+      {
+        waitForTerminal: true,
+        timeoutMs: negativeWindowMs,
+      },
+    );
     // bob's signature is valid, so the POST is accepted; the per-job host-ACL
     // check then fails (isAllowed(handle, bob) == false) and the job terminates
     // as failed with not_allowed_on_host_acl.
@@ -352,10 +387,15 @@ describe('Unified user decryption', function () {
       startTimestamp: backdatedStartTimestamp(),
       durationSeconds: DURATION_SECONDS,
     };
-    const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.bob }, {
-      waitForTerminal: true,
-      timeoutMs: negativeWindowMs,
-    });
+    const { post, poll } = await requestUnifiedUserDecrypt(
+      cfg,
+      req,
+      { kind: 'eoa', signer: signers.bob },
+      {
+        waitForTerminal: true,
+        timeoutMs: negativeWindowMs,
+      },
+    );
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
     expectRelayerAclRejection(poll, /ACL check failed/);
   });
@@ -378,10 +418,15 @@ describe('Unified user decryption', function () {
       startTimestamp: backdatedStartTimestamp(),
       durationSeconds: DURATION_SECONDS,
     };
-    const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.bob }, {
-      waitForTerminal: true,
-      timeoutMs: negativeWindowMs,
-    });
+    const { post, poll } = await requestUnifiedUserDecrypt(
+      cfg,
+      req,
+      { kind: 'eoa', signer: signers.bob },
+      {
+        waitForTerminal: true,
+        timeoutMs: negativeWindowMs,
+      },
+    );
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
     expectRelayerAclRejection(poll, /isAllowed/);
   });
@@ -404,6 +449,16 @@ describe('Unified user decryption', function () {
     let currentEpochId: bigint;
 
     const hex32 = (v: bigint) => v.toString(16).padStart(64, '0');
+
+    // KMS context/epoch ids are tagged in their high byte — [0x07 | 31 counter
+    // bytes] for context ids, [0x08 | 31 counter bytes] for epoch ids (see
+    // host-contracts/contracts/shared/Constants.sol). The relayer's extraData
+    // format validation now enforces this tag syntactically, so fabricated
+    // "unknown"/"inactive" ids used below must still carry the right tag to
+    // reach the KMS Connector's semantic checks instead of being bounced by
+    // the relayer's format check.
+    const KMS_CONTEXT_TAG = 0x07n << 248n;
+    const EPOCH_TAG = 0x08n << 248n;
 
     before(async function () {
       // Fresh re-encryption key: the relayer dedups requests on
@@ -436,10 +491,15 @@ describe('Unified user decryption', function () {
         durationSeconds: DURATION_SECONDS,
         extraData: '0x00',
       };
-      const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.alice }, {
-        waitForTerminal: true,
-        timeoutMs: POSITIVE_TIMEOUT_MS,
-      });
+      const { post, poll } = await requestUnifiedUserDecrypt(
+        cfg,
+        req,
+        { kind: 'eoa', signer: signers.alice },
+        {
+          waitForTerminal: true,
+          timeoutMs: POSITIVE_TIMEOUT_MS,
+        },
+      );
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
       expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
       const clear = await instances.alice.userDecryptSingleHandle({
@@ -466,10 +526,15 @@ describe('Unified user decryption', function () {
         durationSeconds: DURATION_SECONDS,
         extraData: `0x01${hex32(currentContextId)}`,
       };
-      const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.alice }, {
-        waitForTerminal: true,
-        timeoutMs: POSITIVE_TIMEOUT_MS,
-      });
+      const { post, poll } = await requestUnifiedUserDecrypt(
+        cfg,
+        req,
+        { kind: 'eoa', signer: signers.alice },
+        {
+          waitForTerminal: true,
+          timeoutMs: POSITIVE_TIMEOUT_MS,
+        },
+      );
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
       expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
       const clear = await instances.alice.userDecryptSingleHandle({
@@ -497,10 +562,15 @@ describe('Unified user decryption', function () {
         durationSeconds: DURATION_SECONDS,
         extraData: `0x02${hex32(currentContextId)}${hex32(currentEpochId)}`,
       };
-      const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.alice }, {
-        waitForTerminal: true,
-        timeoutMs: POSITIVE_TIMEOUT_MS,
-      });
+      const { post, poll } = await requestUnifiedUserDecrypt(
+        cfg,
+        req,
+        { kind: 'eoa', signer: signers.alice },
+        {
+          waitForTerminal: true,
+          timeoutMs: POSITIVE_TIMEOUT_MS,
+        },
+      );
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
       expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
       const clear = await instances.alice.userDecryptSingleHandle({
@@ -514,9 +584,9 @@ describe('Unified user decryption', function () {
     it('test unified user decrypt rejects extraData v2 with an inactive epochId (0)', async function () {
       this.timeout(negativeWindowMs + TIMEOUT_MARGIN_MS);
       // Empirical pin: epoch validation is LIVE on the unified path. A v2
-      // extraData with the correct contextId but epochId 0 (the js-sdk's
-      // pre-epoch default) is rejected by the connector:
-      // "Epoch #0 of context #... is not active on-chain".
+      // extraData with the correct contextId but epoch counter 0 (tagged, but
+      // never activated — the js-sdk's pre-epoch default) is rejected by the
+      // connector: "Epoch #0 of context #... is not active on-chain".
       const handle = await aliceContract.xUint64();
       const req: UnifiedDecryptRequest = {
         handles: [directHandle(handle, aliceContractAddress, signers.alice.address)],
@@ -525,12 +595,17 @@ describe('Unified user decryption', function () {
         publicKey: extraDataPublicKey,
         startTimestamp: backdatedStartTimestamp(),
         durationSeconds: DURATION_SECONDS,
-        extraData: `0x02${hex32(currentContextId)}${hex32(0n)}`,
+        extraData: `0x02${hex32(currentContextId)}${hex32(EPOCH_TAG)}`,
       };
-      const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.alice }, {
-        waitForTerminal: true,
-        timeoutMs: negativeWindowMs,
-      });
+      const { post, poll } = await requestUnifiedUserDecrypt(
+        cfg,
+        req,
+        { kind: 'eoa', signer: signers.alice },
+        {
+          waitForTerminal: true,
+          timeoutMs: negativeWindowMs,
+        },
+      );
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
       expectStuckAtKms(poll);
     });
@@ -551,12 +626,17 @@ describe('Unified user decryption', function () {
         publicKey: extraDataPublicKey,
         startTimestamp: backdatedStartTimestamp(),
         durationSeconds: DURATION_SECONDS,
-        extraData: `0x01${hex32(0xdeadbeefn)}`,
+        extraData: `0x01${hex32(KMS_CONTEXT_TAG | 0xdeadbeefn)}`,
       };
-      const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.alice }, {
-        waitForTerminal: true,
-        timeoutMs: negativeWindowMs,
-      });
+      const { post, poll } = await requestUnifiedUserDecrypt(
+        cfg,
+        req,
+        { kind: 'eoa', signer: signers.alice },
+        {
+          waitForTerminal: true,
+          timeoutMs: negativeWindowMs,
+        },
+      );
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
       // InvalidKmsContext(0xdeadbeef) — selector 0x77ddbe81.
       expectGatewayRevert(poll, /0x77ddbe81.*deadbeef/i);
@@ -654,10 +734,15 @@ describe('Unified user decryption', function () {
         startTimestamp: backdatedStartTimestamp(),
         durationSeconds: DURATION_SECONDS,
       };
-      const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.bob }, {
-        waitForTerminal: true,
-        timeoutMs: POSITIVE_TIMEOUT_MS,
-      });
+      const { post, poll } = await requestUnifiedUserDecrypt(
+        cfg,
+        req,
+        { kind: 'eoa', signer: signers.bob },
+        {
+          waitForTerminal: true,
+          timeoutMs: POSITIVE_TIMEOUT_MS,
+        },
+      );
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
       expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
       // Assert the known plaintexts of both legs through the public SDK: the
@@ -695,10 +780,15 @@ describe('Unified user decryption', function () {
         startTimestamp: backdatedStartTimestamp(),
         durationSeconds: DURATION_SECONDS,
       };
-      const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'erc1271', ownerSigner: signers.bob }, {
-        waitForTerminal: true,
-        timeoutMs: POSITIVE_TIMEOUT_MS,
-      });
+      const { post, poll } = await requestUnifiedUserDecrypt(
+        cfg,
+        req,
+        { kind: 'erc1271', ownerSigner: signers.bob },
+        {
+          waitForTerminal: true,
+          timeoutMs: POSITIVE_TIMEOUT_MS,
+        },
+      );
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
       expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
     });
@@ -717,10 +807,15 @@ describe('Unified user decryption', function () {
         startTimestamp: backdatedStartTimestamp(),
         durationSeconds: DURATION_SECONDS,
       };
-      const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.bob }, {
-        waitForTerminal: true,
-        timeoutMs: negativeWindowMs,
-      });
+      const { post, poll } = await requestUnifiedUserDecrypt(
+        cfg,
+        req,
+        { kind: 'eoa', signer: signers.bob },
+        {
+          waitForTerminal: true,
+          timeoutMs: negativeWindowMs,
+        },
+      );
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
       expectRelayerAclRejection(poll, /ACL check failed/);
     });
@@ -743,10 +838,15 @@ describe('Unified user decryption', function () {
         startTimestamp: backdatedStartTimestamp(),
         durationSeconds: DURATION_SECONDS,
       };
-      const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.dave }, {
-        waitForTerminal: true,
-        timeoutMs: negativeWindowMs,
-      });
+      const { post, poll } = await requestUnifiedUserDecrypt(
+        cfg,
+        req,
+        { kind: 'eoa', signer: signers.dave },
+        {
+          waitForTerminal: true,
+          timeoutMs: negativeWindowMs,
+        },
+      );
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
       expectRelayerAclRejection(poll, /ACL check failed/);
     });
@@ -780,10 +880,15 @@ describe('Unified user decryption', function () {
         startTimestamp: backdatedStartTimestamp(),
         durationSeconds: DURATION_SECONDS,
       };
-      const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.eve }, {
-        waitForTerminal: true,
-        timeoutMs: negativeWindowMs,
-      });
+      const { post, poll } = await requestUnifiedUserDecrypt(
+        cfg,
+        req,
+        { kind: 'eoa', signer: signers.eve },
+        {
+          waitForTerminal: true,
+          timeoutMs: negativeWindowMs,
+        },
+      );
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
       expectRelayerAclRejection(poll, /ACL check failed/);
     });

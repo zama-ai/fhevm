@@ -597,7 +597,12 @@ async function _initTfheModule(cfg: ResolvedTfheModuleConfig): Promise<TfheLibAp
   const input: TfheLibInitAsyncParameters = { module_or_path: wasmModule };
 
   // 2. Load and instantiate the TFHE WASM binary
-  await tfheLib.initAsync(input);
+  try {
+    await tfheLib.initAsync(input);
+  } catch (e) {
+    cfg.logger?.error?.(`Failed to instantiate tfhe WASM module (version=${cfg.version}).`, e);
+    throw e;
+  }
 
   // 3. Route WASM panics to console.error instead of silently aborting
   tfheLib.init_panic_hook();
@@ -605,7 +610,15 @@ async function _initTfheModule(cfg: ResolvedTfheModuleConfig): Promise<TfheLibAp
   // 4. Spawn Web Workers for parallel FHE operations (skipped when single-threaded)
   if (!cfg.singleThread) {
     cfg.logger?.debug?.(`initThreadPool(${cfg.numberOfThreads})`);
-    await tfheLib.initThreadPool(cfg.numberOfThreads);
+    try {
+      await tfheLib.initThreadPool(cfg.numberOfThreads);
+    } catch (e) {
+      cfg.logger?.error?.(
+        `Failed to initialize tfhe WASM thread pool (numberOfThreads=${cfg.numberOfThreads}, version=${cfg.version}).`,
+        e,
+      );
+      throw e;
+    }
   }
 
   const wasmInfo = tfheLib.getWasmInfo();
