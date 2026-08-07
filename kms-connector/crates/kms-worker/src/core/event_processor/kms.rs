@@ -77,7 +77,7 @@ where
             .map_err(RequestCheckError::record)?;
 
         Ok(KmsGrpcRequest::Keygen(KeyGenRequest {
-            request_id: Some(u256_to_request_id(keygen_request.keyId)),
+            request_id: Some(u256_to_request_id(keygen_request.requestId)),
             preproc_id: Some(u256_to_request_id(keygen_request.prepKeygenId)),
             domain: Some(self.domain.clone()),
             params: None,
