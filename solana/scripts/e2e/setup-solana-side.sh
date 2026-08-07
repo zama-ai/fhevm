@@ -154,7 +154,15 @@ dump_validator_death() {
 # lost by dropping it: the RPC and pubsub listeners always bind 0.0.0.0 regardless of this flag
 # (test-validator/src/lib.rs:1110-1119), so the dockerized workers still reach
 # host.docker.internal:8899.
+#
+# --deactivate-feature B8JJ… (disable_sbpf_v0_v1_v2_deployment): solana-test-validator activates
+# every feature it knows about at genesis, which here makes it STRICTER than the network we target.
+# That feature has no account on mainnet-beta at all, so mainnet still accepts sbpf v0/v1/v2
+# deployments, but a local validator with it on rejects ours with "Detected sbpf_version required
+# by the executable which are not enabled". Deactivating it matches mainnet. Drop this flag once
+# the programs are built as sbpf v3.
 nohup solana-test-validator --reset --rpc-port 8899 --bind-address 127.0.0.1 --ledger "$LEDGER" \
+  --deactivate-feature B8JJXCy5amZyWG9r7EnUYLwzXSXTxG7GZ1qZ1qggo83g \
   --geyser-plugin-config "$GEYSER_CONFIG" </dev/null >"$VALIDATOR_LOG" 2>&1 &
 VALIDATOR_PID=$!
 [ -z "$DEMO_LIFECYCLE_DIR" ] || printf '%s\n' "$VALIDATOR_PID" > "$DEMO_LIFECYCLE_DIR/validator.pid"
