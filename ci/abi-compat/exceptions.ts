@@ -25,7 +25,11 @@ export const ABI_COMPAT_EXCEPTIONS: Partial<Record<PackageName, Partial<Record<s
     ],
     // The 0.15 DAO-only key generation ABI is intentionally replaced before any 0.15 ceremony:
     // one request now covers both fresh generation and same-key compressed material production.
-    KMSGeneration: ["event KeygenRequest(uint256,uint256,bytes)", "function keygen(uint8)"],
+    KMSGeneration: [
+      "event PrepKeygenRequest(uint256,uint8,bytes)",
+      "event KeygenRequest(uint256,uint256,bytes)",
+      "function keygen(uint8)",
+    ],
   },
   "gateway-contracts": {
     // The NotCustodian{Signer,TxSender} selectors were inherited from the GatewayConfigChecks
