@@ -1,8 +1,5 @@
 use fhevm_engine_common::{
-    db_keys::{
-        read_compressed_xof_keyset_by_sequence_number_with_fallback, CompressedXofKeysetEncoding,
-        DbKeyId,
-    },
+    db_keys::{read_server_key_by_sequence_number, CompressedXofKeysetEncoding, DbKeyId},
     utils::safe_deserialize_sns_key,
 };
 use sqlx::PgPool;
@@ -80,12 +77,13 @@ async fn fetch_latest_key_id_gw(pool: &PgPool) -> Result<Option<(DbKeyId, i64)>,
 pub(crate) async fn fetch_latest_keyset(
     cache: &Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>>,
     pool: &PgPool,
+    force_legacy: bool,
 ) -> Result<Option<(DbKeyId, KeySet)>, ExecutionError> {
     let Some((key_id_gw, sequence_number)) = fetch_latest_key_id_gw(pool).await? else {
         return Ok(None);
     };
 
-    let keyset = fetch_keyset_by_id(cache, pool, &key_id_gw, sequence_number).await?;
+    let keyset = fetch_keyset_by_id(cache, pool, &key_id_gw, sequence_number, force_legacy).await?;
     Ok(keyset.map(|keys| (key_id_gw, keys)))
 }
 
@@ -94,6 +92,7 @@ async fn fetch_keyset_by_id(
     pool: &PgPool,
     key_id_gw: &DbKeyId,
     sequence_number: i64,
+    force_legacy: bool,
 ) -> Result<Option<KeySet>, ExecutionError> {
     {
         let mut cache = cache.write().await;
@@ -119,14 +118,21 @@ async fn fetch_keyset_by_id(
         sequence_number, "Cache miss"
     );
 
-    let (blob, encoding) = read_compressed_xof_keyset_by_sequence_number_with_fallback(
+    let (blob, encoding) = read_server_key_by_sequence_number(
         pool,
         sequence_number,
         SKS_KEY_WITH_NOISE_SQUASHING_SIZE,
+        force_legacy,
     )
     .await?;
     info!(
         bytes_len = blob.len(),
+        server_key_representation =
+            if matches!(encoding, CompressedXofKeysetEncoding::CompressedXof) {
+                "compressed-xof"
+            } else {
+                "legacy"
+            },
         ?encoding,
         "Fetched server-key bytes"
     );

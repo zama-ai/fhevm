@@ -69,7 +69,7 @@ pub async fn async_main(
 
     let database_url = resolve_database_url_from_option(args.database_url.clone())?;
 
-    let health_check = health_check::HealthCheck::new(database_url.clone());
+    let health_check = health_check::HealthCheck::new(database_url.clone())?;
 
     let mut set = JoinSet::new();
     let metrics_addr = args.metrics_addr.clone();

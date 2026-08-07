@@ -79,6 +79,7 @@ pub struct SwitchNSquashService {
     /// Shared blue-green stack mode. While `gcs_mode` is set the worker is the
     /// green stack in its dry-run window and suppresses S3 uploads + GC.
     mode: Arc<StackMode>,
+    force_legacy_server_key: bool,
 
     /// GCS dry-run pause flag, re-checked every iteration so a rollback re-pauses
     /// the loop. `GCS_NOT_ACTIVATED` parks; a real `start_block` runs.
@@ -112,6 +113,14 @@ impl HealthCheckService for SwitchNSquashService {
 
         status.set_custom_check("s3_buckets", is_s3_ready, true);
         status.set_custom_check("s3_connection", is_s3_connected, true);
+
+        let key_material_ready = fhevm_engine_common::db_keys::is_server_key_material_available(
+            &self.pool,
+            self.force_legacy_server_key,
+        )
+        .await
+        .unwrap_or(false);
+        status.set_custom_check("server_key_material", key_material_ready, true);
 
         status
     }
@@ -149,6 +158,8 @@ impl SwitchNSquashService {
         mode: Arc<StackMode>,
         start_block_state: Arc<AtomicI64>,
     ) -> Result<SwitchNSquashService, ExecutionError> {
+        let force_legacy_server_key =
+            fhevm_engine_common::db_keys::force_legacy_server_key_from_env()?;
         Ok(SwitchNSquashService {
             pool: pool_mngr.pool(),
             conf,
@@ -158,6 +169,7 @@ impl SwitchNSquashService {
             tx,
             events_tx,
             mode,
+            force_legacy_server_key,
             start_block_state,
         })
     }
@@ -174,6 +186,7 @@ impl SwitchNSquashService {
             let keys_cache = keys_cache.clone();
             let events_tx = self.events_tx.clone();
             let mode = self.mode.clone();
+            let force_legacy_server_key = self.force_legacy_server_key;
             let start_block_state = self.start_block_state.clone();
 
             async move {
@@ -186,6 +199,7 @@ impl SwitchNSquashService {
                     keys_cache,
                     events_tx,
                     mode,
+                    force_legacy_server_key,
                     start_block_state,
                 )
                 .await
@@ -201,8 +215,9 @@ impl SwitchNSquashService {
 async fn get_keyset(
     pool: PgPool,
     keys_cache: Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>>,
+    force_legacy: bool,
 ) -> Result<Option<(DbKeyId, KeySet)>, ExecutionError> {
-    fetch_latest_keyset(&keys_cache, &pool).await
+    fetch_latest_keyset(&keys_cache, &pool, force_legacy).await
 }
 
 /// Executes the worker logic for the SnS task.
@@ -216,12 +231,16 @@ pub(crate) async fn run_loop(
     keys_cache: Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>>,
     events_tx: InternalEvents,
     mode: Arc<StackMode>,
+    force_legacy_server_key: bool,
     start_block_state: Arc<AtomicI64>,
 ) -> Result<(), ExecutionError> {
     update_last_active(last_active_at.clone()).await;
 
     let mut listener = PgListener::connect_with(&pool).await?;
-    info!("Connected to PostgresDB");
+    info!(
+        force_legacy_server_key,
+        "Connected to PostgresDB with server-key safeguard"
+    );
 
     listener
         .listen_all(conf.db.listen_channels.iter().map(|v| v.as_str()))
@@ -246,7 +265,8 @@ pub(crate) async fn run_loop(
             continue;
         }
 
-        let latest_keys = get_keyset(pool.clone(), keys_cache.clone()).await?;
+        let latest_keys =
+            get_keyset(pool.clone(), keys_cache.clone(), force_legacy_server_key).await?;
         if let Some((key_id_gw, keyset)) = latest_keys {
             let key_changed = keys
                 .as_ref()
