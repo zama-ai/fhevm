@@ -34,9 +34,18 @@ export const testSuiteTargetTag = "v0.14.0-9";
 //
 // The 0.13.20 -> 0.13.22 -> 0.14.0-1 sequence is mandatory, not cosmetic. 0.14.0-1 always
 // applies the PRSS hotfix and 0.13.20 never does, so a cluster running both at once cannot
-// reconstruct shares — it fails user decryption with a Gao decoding error. 0.13.22 is the
-// only version that can serve alongside peers on either side of the hotfix, which makes it
-// the required bridge. Skipping it is what forced the devnet rollback.
+// reconstruct shares — it fails user decryption with a Gao decoding error. 0.13.22 is the only
+// version that *can* be made to serve peers on either side of the hotfix, which makes it the
+// required stop. Skipping it is what forced the devnet rollback.
+//
+// What this rollout does NOT model: the version alone is not the bridge. 0.13.22 enables the
+// hotfix once it sees a request id above `legacy_prss_mask_before_public_decrypt_id` /
+// `legacy_prss_mask_before_user_decrypt_id`, two kms-core config keys set to a future request
+// id and then crossed one way. Those keys have no representation anywhere in this repo, so the
+// harness runs 0.13.22 at its default config and swaps the tag. Devnet set both to "0" — hotfix
+// active immediately — and a mixed 0.13.20/0.13.22 cluster still failed Gao decoding, which is
+// why they had to rush every core across. Treat phase 04 here as "the bridge tag boots and
+// serves", not as evidence about mixed-cluster reconstruction.
 const coreFrom = "v0.13.20";
 const corePrssBridge = "v0.13.22";
 const coreTo = "v0.14.0-1";

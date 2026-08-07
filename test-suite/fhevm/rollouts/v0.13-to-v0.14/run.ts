@@ -297,12 +297,17 @@ export default async function run(ctx: RolloutRunContext) {
   //
   // The two constraints are not equally general, and the difference matters when reading this
   // phase as a rehearsal. The first is a property of the backend and holds for any client. The
-  // second is a property of the client population: it is @fhevm/sdk that reads context and
-  // epoch off chain and changes its request shape. The real 0.14 devnet upgrade held 0.14 host
-  // contracts against a 0.13 relayer for nine days without trouble, because its gates ran
-  // relayer-sdk 0.4.4, which has no such behaviour. This harness cannot run that client at all
-  // — see the key-material note in versions.ts — so it collapses a window the real upgrade
-  // occupied for days. That is a limit of the harness, not a claim about the protocol.
+  // second is a property of on-chain state: what the client sends follows the context and epoch
+  // ids it reads, so it depends on what the host contracts hold, not on which client is in use.
+  //
+  // The real 0.14 devnet upgrade held 0.14 host contracts against a 0.13 relayer for nine days
+  // without trouble, and its gates included @fhevm/sdk 0.13.2, which has this same extraData
+  // selection. So the nine days are not explained by the client: the likeliest reading is that
+  // the epoch id was still 0 there, which yields v1 extraData that a 0.13 relayer accepts,
+  // while this harness migrates ProtocolConfig from scratch and lands a non-zero epoch, which
+  // yields v2. That has not been confirmed against devnet state. Until it is, treat the fusion
+  // as required for a stack in this harness's state, and not as a claim that the real upgrade
+  // cannot separate these two steps — it demonstrably did.
   logPhase("02 host contracts + relayer: they cross together, gated once at the end");
   await prepareContractMigrationSources(ctx, "host", hostContractsLock, hostContractKeys);
   const targets = await hostChainTargets(ctx);
@@ -321,16 +326,17 @@ export default async function run(ctx: RolloutRunContext) {
   await ctx.upgradeRuntimeGroup("relayer", { lockFile: relayerLock });
   await testPhase(ctx, "host-contracts-relayer", testMode);
 
-  // Two KMS phases, not one. 0.13.22 is the only kms-core that serves peers on both sides of
-  // the PRSS hotfix, so it is a required stop between 0.13.20 and 0.14. The connector stays on
-  // 0.13 here — this lock carries CORE_VERSION alone — which is what proves the bridge version
-  // is a no-op for a pre-hotfix cluster before any 0.14 KMS code is introduced.
+  // Two KMS phases, not one. 0.13.22 is the required stop between 0.13.20 and 0.14, for the
+  // reason recorded against corePrssBridge in versions.ts. The connector stays on 0.13 here —
+  // this lock carries CORE_VERSION alone — so the phase shows the bridge tag boots and serves a
+  // cluster whose connectors have not moved, before any 0.14 KMS code is introduced.
   //
-  // Node by node, like everything else on this cluster: a threshold cluster has no whole-group
-  // kms-core upgrade, and a mixed 0.13.20/0.13.22 cluster is exactly the state the bridge
-  // version exists to make safe. The gate runs once the whole cluster is across, since the
-  // mixed-version reconstruction proof for this same hotfix already has its own runbook in
-  // rollouts/v0.13.21-to-v0.13.22-kms-node-by-node.
+  // It shows no more than that. The hotfix is switched by a request-id config this repo cannot
+  // express, so every node here runs 0.13.22 at its default setting, and the gate below runs
+  // only once the whole cluster is across. The mixed 0.13.20/0.13.22 window — the state that
+  // actually failed on devnet — is passed through unobserved. Nothing here proves a mixed
+  // cluster reconstructs; the node-by-node runbook next door covers 0.13.21 -> 0.13.22, which
+  // is a different transition from this one.
   logPhase("04 kms PRSS bridge: move kms-core 0.13.20 -> 0.13.22 node by node, connector untouched");
   for (const nodeId of await kmsNodeIds(ctx)) {
     await ctx.upgradeKmsNodes([nodeId], { lockFile: kmsPrssBridgeLock });
