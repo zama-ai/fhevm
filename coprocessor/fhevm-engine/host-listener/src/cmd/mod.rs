@@ -502,12 +502,10 @@ impl InfiniteLogIter {
         }
         let finalized_block =
             if let Some(current_block) = self.block_history.tip() {
-                // non finalized block will be post-poned until they are finalized
                 current_block
                     .number
                     .saturating_sub(self.catchup_finalization_in_blocks)
             } else {
-                // happen at service start, assuming everything is finalized
                 info!("Unknown top block, assuming full finalized catchup");
                 from_block + self.catchup_paging
             };
