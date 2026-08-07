@@ -84,14 +84,41 @@ const CANONICAL_SAFE_V1_4_1 = {
   factory: '0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67',
 } as const;
 
-/** True iff `address` already holds exactly the code `artifact` would deploy. */
+/** A canonical-code probe is one `eth_getCode`; retry once to ride out a rate-limit blip. */
+const PROBE_ATTEMPTS = 2;
+const PROBE_RETRY_DELAY_MS = 500;
+
+/**
+ * True iff `address` already holds exactly the code `artifact` would deploy.
+ *
+ * A failed probe is treated as "not canonical" rather than fatal, so a flaky
+ * endpoint degrades to deploying instead of failing the suite. It is retried
+ * once first, and reports why: on a live network the fallback costs a full
+ * ~7M gas infra deployment, which should never happen silently because a
+ * public RPC rate-limited a single `eth_getCode`.
+ */
 async function holdsArtifactCode(
   provider: Provider,
   address: string,
   artifact: { deployedBytecode: string },
 ): Promise<boolean> {
-  const code = await provider.getCode(address);
-  return code !== '0x' && keccak256(code) === keccak256(artifact.deployedBytecode);
+  const expected = keccak256(artifact.deployedBytecode);
+  for (let attempt = 1; attempt <= PROBE_ATTEMPTS; attempt += 1) {
+    try {
+      const code = await provider.getCode(address);
+      return code !== '0x' && keccak256(code) === expected;
+    } catch (error) {
+      if (attempt === PROBE_ATTEMPTS) {
+        console.warn(
+          `[safe] canonical-code probe failed for ${address} after ${attempt} attempts; ` +
+            `deploying Safe infrastructure instead: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        return false;
+      }
+      await new Promise((resolve) => setTimeout(resolve, PROBE_RETRY_DELAY_MS));
+    }
+  }
+  return false;
 }
 
 /**

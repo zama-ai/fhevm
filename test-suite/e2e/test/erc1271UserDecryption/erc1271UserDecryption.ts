@@ -641,9 +641,10 @@ describe('ERC-1271 user decryption', function () {
     const digest = computeUnifiedDigest(cfg, req);
     // Safe's eth_sign encoding: owners personal_sign the SafeMessage hash of
     // the digest and the part stores v+4 (31/32) as the type selector.
+    const { safe } = await safe2of3();
     const parts = sortSignatureParts([
-      await safeEthSignPart((await safe2of3()).safe, digest, signers.bob),
-      await safeEthSignPart((await safe2of3()).safe, digest, signers.carol),
+      await safeEthSignPart(safe, digest, signers.bob),
+      await safeEthSignPart(safe, digest, signers.carol),
     ]);
     const signature = concatSignatureParts(parts);
     const { post, poll } = await requestUnifiedUserDecrypt(
@@ -779,13 +780,14 @@ describe('ERC-1271 user decryption', function () {
     // verifies with on-chain ecrecover only — multisig ERC-1271 is v3-only by
     // design. Pin the v2 wire-level rejection as executable documentation.
     const req = await freshMultisigRequest(safe2of3);
+    const fixture = await safe2of3();
     const blob = (await multisigSignature(safe2of3, req, [signers.bob, signers.carol])).slice(2); // 260 hex chars
     const body = {
       handleContractPairs: [{ handle: req.handles[0].ctHandle, contractAddress: req.handles[0].contractAddress }],
       requestValidity: { startTimestamp: String(req.startTimestamp), durationDays: '7' },
       contractsChainId: String(chainIdFromHandle(req.handles[0].ctHandle)),
-      contractAddresses: [(await safe2of3()).holderAddress],
-      userAddress: (await safe2of3()).safe.address,
+      contractAddresses: [fixture.holderAddress],
+      userAddress: fixture.safe.address,
       signature: blob,
       publicKey: req.publicKey.replace(/^0x/, ''),
       extraData: '0x00',
