@@ -157,7 +157,7 @@ async fn poller_catches_up_to_safe_tip(
         url: http_url,
         acl_address: *acl_contract.address(),
         tfhe_address: *tfhe_contract.address(),
-        kms_generation_address: Some(*kms_generation_contract.address()),
+        kms_generation_address: None,
         protocol_config_address: Some(alloy::primitives::Address::ZERO),
         confidential_bridge_address: None,
         database_url: db_url.clone(),
