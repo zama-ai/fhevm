@@ -454,7 +454,7 @@ impl KmsClient {
         preproc_id: RequestId,
     ) -> (i16, Result<KmsGrpcResponse, ProcessingError>) {
         // Poll the shard that ran the keygen, thus using `preproc_id` in `choose_client`.
-        // The result itself is still fetched by `key_id.
+        // The result itself is still fetched by `key_id`.
         let inner_client = self.choose_client(preproc_id);
 
         let (error_count, grpc_result) = poll_for_result(
