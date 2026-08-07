@@ -137,6 +137,16 @@ else
   LEDGER="$ROOT/.solana-test-ledger"
   rm -rf "$LEDGER"
 fi
+# solana-test-validator prints only its startup banner to stdout; everything that explains a
+# failed start — geyser plugin load errors included — goes to <ledger>/validator.log. Dump both,
+# or a plugin that refuses to load looks like three lines of banner and no reason.
+dump_validator_death() {
+  echo "--- stdout ($VALIDATOR_LOG) ---"
+  tail -20 "$VALIDATOR_LOG" 2>/dev/null || echo "(no stdout captured)"
+  echo "--- ledger log ($LEDGER/validator.log) ---"
+  tail -60 "$LEDGER/validator.log" 2>/dev/null || echo "(no ledger log written)"
+}
+
 nohup solana-test-validator --reset --rpc-port 8899 --bind-address 0.0.0.0 --ledger "$LEDGER" \
   --geyser-plugin-config "$GEYSER_CONFIG" </dev/null >"$VALIDATOR_LOG" 2>&1 &
 VALIDATOR_PID=$!
@@ -145,10 +155,10 @@ until curl -s -m2 "$VALIDATOR_RPC" -X POST -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' 2>/dev/null | grep -q '"ok"'; do
   if [ -n "$DEMO_LIFECYCLE_DIR" ]; then
     kill -0 "$VALIDATOR_PID" 2>/dev/null \
-      || { echo "[setup] owned geyser validator died:" >&2; tail -20 "$VALIDATOR_LOG" >&2; exit 1; }
+      || { echo "[setup] owned geyser validator died:" >&2; dump_validator_death >&2; exit 1; }
   else
     pgrep -f solana-test-validator >/dev/null \
-      || { echo "[setup] geyser validator died:" >&2; tail -20 "$VALIDATOR_LOG" >&2; exit 1; }
+      || { echo "[setup] geyser validator died:" >&2; dump_validator_death >&2; exit 1; }
   fi
   sleep 1
 done

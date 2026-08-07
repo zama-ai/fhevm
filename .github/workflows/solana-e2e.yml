@@ -251,6 +251,11 @@ jobs:
           # Capture every lifecycle-owned native and container log before exact teardown.
           bun run demo logs --no-follow > /tmp/solana-e2e-logs/lifecycle.log 2>&1 || true
           cp /tmp/solana-*.log /tmp/solana-e2e-logs/ 2>/dev/null || true
+          # The validator's own log lives inside the ledger dir, not next to the other /tmp logs,
+          # and it is the only place a geyser plugin load failure is explained.
+          for v in /tmp/fhevm-demo-*/*.ledger/validator.log; do
+            [ -f "$v" ] && cp "$v" /tmp/solana-e2e-logs/validator-ledger.log
+          done 2>/dev/null || true
           docker ps -a > /tmp/solana-e2e-logs/docker-ps.txt 2>&1 || true
           # Dump every container's logs so a downstream failure (e.g. public-decrypt: relayer ->
           # gateway -> kms-connector -> kms-core) is diagnosable from the artifact.
