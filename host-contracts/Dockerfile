@@ -4,7 +4,13 @@ USER root
 
 RUN apk add --no-cache \
     bash \
+    curl \
+    git \
+    jq \
     kubectl \
+    gcompat \
+    libgcc \
+    libstdc++ \
     python3 \
     python3-dev \
     make \
@@ -13,6 +19,18 @@ RUN apk add --no-cache \
     nodejs-dev && \
     ln -sf /usr/bin/gcc /usr/bin/cc && \
     rm -rf /var/cache/apk/*
+
+# pnpm (used by host-contracts/lz-wiring/) and Foundry `cast` (used by
+# host-contracts/lz_wiring_from_eoa_owner.sh) — baked in so LayerZero
+# bridge wiring can run without any runtime installs.
+RUN npm install -g pnpm@9
+ENV FOUNDRY_DIR=/usr/local/foundry
+ENV PATH="${FOUNDRY_DIR}/bin:${PATH}"
+# `SHELL` is unset in Docker build env; foundryup's install script does
+# `case $SHELL in ... *) exit 1;;` when it can't pick a shell profile to
+# edit. Force bash so the installer completes 0.
+RUN SHELL=/bin/bash curl -fsSL https://foundry.paradigm.xyz | SHELL=/bin/bash bash && \
+    ${FOUNDRY_DIR}/bin/foundryup
 
 RUN mkdir -p /app && \
     chown -R fhevm:fhevm /app &&\
@@ -45,6 +63,8 @@ COPY --chown=fhevm:fhevm host-contracts/contracts ./contracts/
 COPY --chown=fhevm:fhevm host-contracts/tasks ./tasks/
 COPY --chown=fhevm:fhevm host-contracts/lib ./lib/
 COPY --chown=fhevm:fhevm host-contracts/examples/bridge/mocks ./examples/bridge/mocks/
+COPY --chown=fhevm:fhevm host-contracts/lz-wiring ./lz-wiring/
+COPY --chown=fhevm:fhevm host-contracts/lz_wiring_from_eoa_owner.sh ./lz_wiring_from_eoa_owner.sh
 
 RUN mkdir -p ./addresses && chown fhevm:fhevm ./addresses
 
