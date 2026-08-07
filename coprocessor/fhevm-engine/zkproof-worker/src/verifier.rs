@@ -393,10 +393,27 @@ async fn execute_verify_proof_routine(
     };
 
     if let Ok(row) = sqlx::query!(
-        "SELECT zk_proof_id, input, chain_id, contract_address, user_address, transaction_id, block_number
+        "SELECT zk_proof_id, input, chain_id, contract_address, user_address, transaction_id,
+                block_number, handles, verified_at
             FROM verify_proofs
             WHERE verified IS NULL
               AND chain_id = ANY($1::bigint[])
+              AND (
+                  verified_at IS NULL
+                  OR (
+                      handles IS NOT NULL
+                      AND verified_at > NOW() - INTERVAL '7 days'
+                      AND (
+                          last_retry_at IS NULL
+                          OR last_retry_at + make_interval(
+                              secs => LEAST(
+                                  86400,
+                                  60 * (1 << LEAST(GREATEST(retry_count - 1, 0), 11))
+                              )
+                          ) <= NOW()
+                      )
+                  )
+              )
             ORDER BY zk_proof_id ASC
             LIMIT 1 FOR UPDATE SKIP LOCKED",
         known_chain_ids,
@@ -406,6 +423,8 @@ async fn execute_verify_proof_routine(
     {
         let started_at = SystemTime::now();
         let request_id: i64 = row.zk_proof_id;
+        let is_replay = row.verified_at.is_some();
+
         let Some(input) = row.input else {
             // A NULL input can never verify; mark it failed and commit so the
             // malformed row isn't re-picked and crash-loops the worker.
@@ -414,7 +433,9 @@ async fn execute_verify_proof_routine(
                 request_id
             );
             sqlx::query(
-                "UPDATE verify_proofs SET verified = false, verified_at = NOW() WHERE zk_proof_id = $1",
+                "UPDATE verify_proofs
+                 SET handles = ''::BYTEA, verified = false, verified_at = NOW()
+                 WHERE zk_proof_id = $1",
             )
             .bind(request_id)
             .execute(&mut *txn)
@@ -438,10 +459,12 @@ async fn execute_verify_proof_routine(
         let user_address = row.user_address;
         let transaction_id: Option<Vec<u8>> = row.transaction_id;
         let block_number: Option<i64> = row.block_number;
+        let expected_handles = row.handles.unwrap_or_default();
 
         info!(
             message = "Process zk-verify request",
             request_id,
+            is_replay,
             %host_chain_id,
             user_address,
             contract_address,
@@ -450,8 +473,12 @@ async fn execute_verify_proof_routine(
 
         let acl_contract_address = host_chain.acl_contract_address.clone();
 
-        let verify_span =
-            tracing::info_span!("verify_task", request_id, txn_id = tracing::field::Empty);
+        let verify_span = tracing::info_span!(
+            "verify_task",
+            request_id,
+            is_replay,
+            txn_id = tracing::field::Empty
+        );
         fhevm_engine_common::telemetry::record_short_hex_if_some(
             &verify_span,
             "txn_id",
@@ -473,6 +500,7 @@ async fn execute_verify_proof_routine(
         let db_insert_span = tracing::info_span!(
             "db_insert",
             request_id,
+            is_replay,
             txn_id = tracing::field::Empty,
             valid = tracing::field::Empty,
             count = tracing::field::Empty
@@ -483,9 +511,11 @@ async fn execute_verify_proof_routine(
             transaction_id.as_deref(),
         );
 
+        let mut replayed_ciphertext_count = None;
         async {
             let mut verified = false;
             let mut handles_bytes = vec![];
+            let mut verification_error = None;
             match res.as_ref() {
                 Ok((cts, blob_hash)) => {
                     info!(
@@ -498,52 +528,113 @@ async fn execute_verify_proof_routine(
                         acc.extend_from_slice(ct.handle.as_ref());
                         acc
                     });
-                    verified = true;
-                    let count = cts.len();
-                    insert_ciphertexts(&mut txn, cts, blob_hash).await?;
-                    if let Some(bn) = block_number {
-                        insert_input_handles(&mut txn, cts, bn).await?;
-                    }
-                    tracing::Span::current().record("count", count);
+                    if is_replay && handles_bytes != expected_handles {
+                        error!(
+                            request_id,
+                            expected_handles = expected_handles.len() / 32,
+                            computed_handles = handles_bytes.len() / 32,
+                            "Replayed proof produced handles that differ from Gateway consensus"
+                        );
+                        verification_error =
+                            Some("Replayed proof handles differ from Gateway consensus".to_owned());
+                    } else {
+                        verified = true;
+                        let count = cts.len();
+                        insert_ciphertexts(&mut txn, cts, blob_hash).await?;
+                        if let Some(bn) = block_number {
+                            insert_input_handles(&mut txn, cts, bn).await?;
+                        }
+                        tracing::Span::current().record("count", count);
+                        if is_replay {
+                            replayed_ciphertext_count = Some(count);
+                        }
 
-                    info!(message = "Ciphertexts inserted", request_id, count);
+                        info!(message = "Ciphertexts inserted", request_id, count);
+                    }
                 }
                 Err(err) => {
-                    error!(
-                        message = "Failed to verify proof",
-                        request_id,
-                        err = err.to_string()
-                    );
+                    if is_replay {
+                        warn!(
+                            message = "Gateway-accepted proof replay failed; retained for retry",
+                            request_id,
+                            err = err.to_string()
+                        );
+                    } else {
+                        error!(
+                            message = "Failed to verify proof",
+                            request_id,
+                            err = err.to_string()
+                        );
+                    }
+                    verification_error = Some(err.to_string());
                 }
             }
 
             tracing::Span::current().record("valid", verified);
 
-            // Mark as verified=true/false and set handles, if computed
-            sqlx::query!(
-                "UPDATE verify_proofs SET handles = $1, verified = $2, verified_at = NOW()
-                WHERE zk_proof_id = $3",
-                handles_bytes,
-                verified,
-                request_id
-            )
-            .execute(&mut *txn)
-            .await?;
+            if is_replay {
+                if verified {
+                    sqlx::query!(
+                        "DELETE FROM verify_proofs WHERE zk_proof_id = $1",
+                        request_id,
+                    )
+                    .execute(&mut *txn)
+                    .await?;
+                } else {
+                    sqlx::query!(
+                        "UPDATE verify_proofs
+                         SET verified = NULL,
+                             retry_count = retry_count + 1,
+                             last_error = $2,
+                             last_retry_at = NOW()
+                         WHERE zk_proof_id = $1",
+                        request_id,
+                        verification_error,
+                    )
+                    .execute(&mut *txn)
+                    .await?;
+                }
+            } else {
+                // For local failures this stores an empty handle list. After the
+                // rejection is sent, transaction-sender clears it while waiting
+                // for the Gateway's final outcome.
+                sqlx::query!(
+                    "UPDATE verify_proofs
+                     SET handles = $1,
+                         verified = $2,
+                         verified_at = NOW()
+                     WHERE zk_proof_id = $3",
+                    handles_bytes,
+                    verified,
+                    request_id,
+                )
+                .execute(&mut *txn)
+                .await?;
+            }
 
             Ok::<_, ExecutionError>(())
         }
         .instrument(db_insert_span)
         .await?;
 
-        // Notify
-        sqlx::query!(
-            "SELECT pg_notify($1, '')",
-            conf.notify_database_channel.clone()
-        )
-        .execute(&mut *txn)
-        .await?;
+        if !is_replay {
+            sqlx::query!(
+                "SELECT pg_notify($1, '')",
+                conf.notify_database_channel.clone()
+            )
+            .execute(&mut *txn)
+            .await?;
+        }
 
         txn.commit().await?;
+
+        if let Some(count) = replayed_ciphertext_count {
+            info!(
+                request_id,
+                ciphertext_count = count,
+                "Gateway-accepted proof replay restored local ciphertexts"
+            );
+        }
 
         if res.is_ok() {
             let elapsed = started_at.elapsed().unwrap_or_default().as_secs_f64();
@@ -552,7 +643,7 @@ async fn execute_verify_proof_routine(
             }
         }
 
-        info!(message = "Completed", request_id);
+        info!(message = "Completed", request_id, is_replay);
     }
 
     Ok(())
@@ -806,7 +897,22 @@ async fn get_remaining_tasks(
             FROM verify_proofs
             WHERE verified IS NULL
               AND chain_id = ANY($1::bigint[])
-            ORDER BY zk_proof_id ASC
+              AND (
+                  verified_at IS NULL
+                  OR (
+                      handles IS NOT NULL
+                      AND verified_at > NOW() - INTERVAL '7 days'
+                      AND (
+                          last_retry_at IS NULL
+                          OR last_retry_at + make_interval(
+                              secs => LEAST(
+                                  86400,
+                                  60 * (1 << LEAST(GREATEST(retry_count - 1, 0), 11))
+                              )
+                          ) <= NOW()
+                      )
+                  )
+              )
             FOR UPDATE SKIP LOCKED
         ) AS unlocked_rows;
         ",
