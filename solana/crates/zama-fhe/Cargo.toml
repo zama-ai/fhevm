@@ -15,6 +15,6 @@ cpi = ["zama-host/cpi"]
 raised-heap = []
 
 [dependencies]
-anchor-lang = "1.0.2"
+anchor-lang = "1.1.2"
 zama-host = { path = "../../programs/zama-host", features = ["no-entrypoint"] }
 zama-solana-acl = { path = "../zama-solana-acl" }

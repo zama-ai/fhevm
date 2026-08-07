@@ -124,15 +124,18 @@ jobs:
           rustup target add wasm32-unknown-unknown
           # Retry the network fetches below: a CI run failed on a transient crates.io download.
           retry() { local n; for n in 1 2 3; do "$@" && return 0; echo "attempt $n failed; retrying in 5s" >&2; sleep 5; done; return 1; }
-          # Pin agave v2.1.21 (the Yellowstone geyser plugin's ABI is patch-coupled to it).
-          retry curl -sSfL https://release.anza.xyz/v2.1.21/install -o /tmp/anza-install.sh
-          sh /tmp/anza-install.sh
+          # Pin agave v4.1.2 (the Yellowstone geyser plugin's ABI is patch-coupled to it, so this
+          # must match the `+solana.` suffix in solana/geyser/build-yellowstone-plugin.sh).
+          retry curl -sSfL https://release.anza.xyz/v4.1.2/install -o /tmp/anza-install.sh
+          # Retry the installer itself, not just the fetch of it: the script downloads the ~100MB
+          # release tarball from GitHub, which is the part that actually flakes.
+          retry sh /tmp/anza-install.sh
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
           # anchor-cli from the prebuilt release binary, NOT `cargo install --git`: the latter builds
           # avm+anchor from source and fetches dozens of crates from crates.io, which flaked (a
           # `chrono` download failed). One retried binary download, no compilation, no crates.io.
           mkdir -p "$HOME/.cargo/bin"
-          retry curl -sSfL https://github.com/coral-xyz/anchor/releases/download/v1.0.2/anchor-1.0.2-x86_64-unknown-linux-gnu -o "$HOME/.cargo/bin/anchor"
+          retry curl -sSfL https://github.com/solana-foundation/anchor/releases/download/v1.1.2/anchor-1.1.2-x86_64-unknown-linux-gnu -o "$HOME/.cargo/bin/anchor"
           chmod +x "$HOME/.cargo/bin/anchor"
           anchor --version
 
@@ -250,6 +253,11 @@ jobs:
           # Capture every lifecycle-owned native and container log before exact teardown.
           bun run demo logs --no-follow > /tmp/solana-e2e-logs/lifecycle.log 2>&1 || true
           cp /tmp/solana-*.log /tmp/solana-e2e-logs/ 2>/dev/null || true
+          # The validator's own log lives inside the ledger dir, not next to the other /tmp logs,
+          # and it is the only place a geyser plugin load failure is explained.
+          for v in /tmp/fhevm-demo-*/*.ledger/validator.log; do
+            [ -f "$v" ] && cp "$v" /tmp/solana-e2e-logs/validator-ledger.log
+          done 2>/dev/null || true
           docker ps -a > /tmp/solana-e2e-logs/docker-ps.txt 2>&1 || true
           # Dump every container's logs so a downstream failure (e.g. public-decrypt: relayer ->
           # gateway -> kms-connector -> kms-core) is diagnosable from the artifact.

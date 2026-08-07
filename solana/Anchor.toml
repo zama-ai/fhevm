@@ -1,5 +1,5 @@
 [toolchain]
-anchor_version = "1.0.2"
+anchor_version = "1.1.2"
 
 [features]
 resolution = true
