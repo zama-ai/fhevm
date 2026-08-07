@@ -139,17 +139,31 @@ test("keeps every phase lock cumulative", () => {
 //  - Host contracts first: @fhevm/sdk derives its extraData format from host contract state,
 //    so once KMSVerifier and ProtocolConfig report a KMS context and epoch the client sends
 //    v2 extraData and the 0.13 relayer rejects user decryption with `validation_failed`.
-test("crosses the host contracts and the relayer in a single gated phase", () => {
-  expect(phaseOrder).toContain("host-contracts-relayer");
-  expect(phaseOrder).not.toContain("host-contracts");
-  expect(phaseOrder).not.toContain("relayer");
-  // The contract half still lands first inside the phase, so the relayer finds the
-  // ProtocolConfig call it boots on...
+// An operator lands a contract upgrade and a relayer deploy as separate actions, so the two
+// have to be separate phases with the degraded state between them observed rather than skipped.
+test("crosses the host contracts and the relayer as two phases with the window between them", () => {
+  const host = phaseOrder.indexOf("host-contracts");
+  const relayer = phaseOrder.indexOf("relayer");
+  expect(host).toBeGreaterThanOrEqual(0);
+  expect(relayer).toBe(host + 1);
+  expect(phaseOrder).not.toContain("host-contracts-relayer");
+  // The contracts land first, so the relayer finds the ProtocolConfig call it boots on...
   expect(phaseVersions.hostContracts.HOST_VERSION).toBe(to.HOST_VERSION);
   expect(phaseVersions.hostContracts.RELAYER_VERSION).toBe(from.RELAYER_VERSION);
-  // ...and the relayer lock follows immediately, with no gate observing the state between.
+  // ...and the relayer crosses only in the phase after it.
   expect(phaseVersions.relayer.HOST_VERSION).toBe(to.HOST_VERSION);
   expect(phaseVersions.relayer.RELAYER_VERSION).toBe(to.RELAYER_VERSION);
+});
+
+// Nothing in the window may decrypt: the client sends v2 extraData once the host contracts
+// report a context and epoch, and the 0.13 relayer rejects it.
+test("keeps decrypting profiles out of the host-contracts gate", () => {
+  for (const mode of ["rollout-standard", "rollout-heavy"] as const) {
+    const profiles = rolloutPhaseTestProfiles("host-contracts", mode);
+    expect(profiles).not.toContain("rollout-standard");
+    expect(profiles).not.toContain("user-decryption");
+    expect(profiles).not.toContain("public-decryption");
+  }
 });
 
 test("ends every phase on the target versions", () => {
@@ -206,13 +220,17 @@ test("gates every phase on rollout-standard by default", () => {
   // A workflow forwarding an omitted input passes an empty string, which means the same thing.
   expect(resolveRolloutTestMode("")).toBe("rollout-standard");
   expect(resolveRolloutTestMode("  ")).toBe("rollout-standard");
-  for (const phase of phaseOrder) {
+  // Every phase but the host-contracts window, which runs with the relayer a release behind and
+  // so cannot run the decrypting specs that set contains.
+  for (const phase of phaseOrder.filter((candidate) => candidate !== "host-contracts")) {
     expect(rolloutPhaseTestProfiles(phase, "rollout-standard")).toEqual(["rollout-standard"]);
   }
+  expect(rolloutPhaseTestProfiles("host-contracts", "rollout-standard")).toEqual(["input-proof"]);
 });
 
 test("covers multi-chain isolation in heavy mode wherever contracts moved", () => {
-  expect(rolloutPhaseTestProfiles("host-contracts-relayer", "rollout-heavy")).toContain("multi-chain-isolation");
+  expect(rolloutPhaseTestProfiles("host-contracts", "rollout-heavy")).toContain("multi-chain-isolation");
+  expect(rolloutPhaseTestProfiles("relayer", "rollout-heavy")).toContain("multi-chain-isolation");
   expect(rolloutPhaseTestProfiles("protocol-flip", "rollout-heavy")).toContain("multi-chain-isolation");
 });
 

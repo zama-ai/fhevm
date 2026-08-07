@@ -31,7 +31,8 @@ type RolloutTestMode = (typeof rolloutTestModes)[number];
 type RolloutPhase =
   | "baseline"
   | "gateway-contracts"
-  | "host-contracts-relayer"
+  | "host-contracts"
+  | "relayer"
   | "kms-prss-bridge"
   | "kms"
   | "coprocessor"
@@ -43,13 +44,9 @@ type RolloutPhase =
 const heavyPhaseProfiles: Record<RolloutPhase, string[]> = {
   baseline: ["rollout-standard", "multi-chain-isolation"],
   "gateway-contracts": ["rollout-standard"],
-  "host-contracts-relayer": [
-    "rollout-standard",
-    "multi-chain-isolation",
-    "hcu-block-cap",
-    "negative-acl",
-    "operators",
-  ],
+  // Nothing that decrypts: the relayer is still a release behind for the width of this phase.
+  "host-contracts": ["input-proof", "multi-chain-isolation"],
+  "relayer": ["rollout-standard", "multi-chain-isolation", "hcu-block-cap", "negative-acl", "operators"],
   "kms-prss-bridge": ["rollout-standard", "public-decryption"],
   // Runs once per KMS node, so it stays deliberately small: each step pins the reconstruction
   // quorum to the node that just moved, which is the property the step exists to prove.
@@ -84,8 +81,15 @@ export const resolveRolloutTestMode = (value?: string): RolloutTestMode => {
   throw new Error(`Unsupported ROLLOUT_TEST_PROFILE=${selected}; expected ${rolloutTestModes.join(" or ")}`);
 };
 
-export const rolloutPhaseTestProfiles = (phase: RolloutPhase, mode: RolloutTestMode) =>
-  mode === "rollout-heavy" ? heavyPhaseProfiles[phase] : ["rollout-standard"];
+// Phases whose standard gate is not the usual `rollout-standard` set. Only the host-contracts
+// window needs one: it runs with the relayer a release behind, so every decrypting spec in that
+// set would fail there, and what the window costs is asserted explicitly in the runbook instead.
+const standardPhaseProfiles: Partial<Record<RolloutPhase, readonly string[]>> = {
+  "host-contracts": ["input-proof"],
+};
+
+export const rolloutPhaseTestProfiles = (phase: RolloutPhase, mode: RolloutTestMode): readonly string[] =>
+  mode === "rollout-heavy" ? heavyPhaseProfiles[phase] : (standardPhaseProfiles[phase] ?? ["rollout-standard"]);
 
 const testPhase = async (ctx: RolloutRunContext, phase: RolloutPhase, mode: RolloutTestMode) => {
   const profiles = rolloutPhaseTestProfiles(phase, mode);
@@ -279,13 +283,13 @@ export default async function run(ctx: RolloutRunContext) {
   await ctx.refreshDiscovery();
   await testPhase(ctx, "gateway-contracts", testMode);
 
-  // Host contracts and the relayer cross together, with no gate between them. Neither order
-  // survives on its own, which was established one failure at a time:
+  // Host contracts cross first, then the relayer, and the stack is degraded in between. What
+  // the window costs was established one failure at a time:
   //
-  //  - Relayer first fails at boot. The 0.14 relayer initializes /v2/keyurl by calling
-  //    getCurrentKmsContextAndEpoch() on ProtocolConfig, which only exists from 0.14, so
-  //    against 0.13 contracts the call reverts with empty data and the relayer exits.
-  //  - Host contracts first fails at the gate, with the relayer rejecting user decryption as
+  //  - Relayer first is not an option at all. The 0.14 relayer initializes /v2/keyurl by
+  //    calling getCurrentKmsContextAndEpoch() on ProtocolConfig, which only exists from 0.14,
+  //    so against 0.13 contracts the call reverts with empty data and the relayer exits.
+  //  - Host contracts first costs user decryption, with the relayer rejecting it as
   //    `validation_failed ... extraData`. @fhevm/sdk derives the extraData format from host
   //    contract state, not from the protocol version: kmsSignersContextToExtraData emits v0
   //    when the KMS context id is 0, v1 when the epoch id is 0, and v2 otherwise. Upgrading
@@ -295,20 +299,26 @@ export default async function run(ctx: RolloutRunContext) {
   // Holding the ACL back does not help here — this is the client's request shape following
   // host contract state, which changes independently of the ACL's protocol version.
   //
-  // The two constraints are not equally general, and the difference matters when reading this
-  // phase as a rehearsal. The first is a property of the backend and holds for any client. The
-  // second is a property of on-chain state: what the client sends follows the context and epoch
-  // ids it reads, so it depends on what the host contracts hold, not on which client is in use.
+  // These are two phases, not one, because an operator cannot land them together. A contract
+  // upgrade is a transaction and a relayer upgrade is a deploy; they are separate actions, run
+  // by different people, minutes to days apart. The real 0.14 devnet upgrade held this exact
+  // intermediate state for nine days — host contracts on 14 July, relayer on 23 July — so a
+  // runbook that crosses it atomically rehearses something nobody can perform.
   //
-  // The real 0.14 devnet upgrade held 0.14 host contracts against a 0.13 relayer for nine days
-  // without trouble, and its gates included @fhevm/sdk 0.13.2, which has this same extraData
-  // selection. So the nine days are not explained by the client: the likeliest reading is that
-  // the epoch id was still 0 there, which yields v1 extraData that a 0.13 relayer accepts,
-  // while this harness migrates ProtocolConfig from scratch and lands a non-zero epoch, which
-  // yields v2. That has not been confirmed against devnet state. Until it is, treat the fusion
-  // as required for a stack in this harness's state, and not as a claim that the real upgrade
-  // cannot separate these two steps — it demonstrably did.
-  logPhase("02 host contracts + relayer: they cross together, gated once at the end");
+  // The order within the pair is forced. Relayer-first is not available: the 0.14 relayer gates
+  // its own startup on the first successful `/v2/keyurl` poll, that poll calls
+  // `getCurrentKmsContextAndEpoch()`, and against 0.13 contracts it exits rather than degrading
+  // (relayer/src/startup.rs:152, relayer/src/host/keyurl_poller.rs:307).
+  //
+  // So the window below is entered deliberately and measured rather than skipped. What it costs
+  // depends on on-chain state, not on which client is in use: devnet gated this same window on
+  // @fhevm/sdk 0.13.2, which has the same extraData selection, and passed — most likely because
+  // its epoch id was still 0, which yields v1 extraData a 0.13 relayer accepts, whereas this
+  // harness migrates ProtocolConfig from scratch and lands a non-zero epoch, which yields v2.
+  // That reading is unconfirmed against devnet state, which is exactly why the check below
+  // asserts the failure instead of assuming it: if user decryption ever survives this window,
+  // expectTestFailure raises, and the assumption gets revisited rather than quietly persisting.
+  logPhase("02 host contracts: upgrade every host chain, relayer still on 0.13");
   await prepareContractMigrationSources(ctx, "host", hostContractsLock, hostContractKeys);
   const targets = await hostChainTargets(ctx);
   await migrateProtocolConfig(ctx, targets);
@@ -319,12 +329,15 @@ export default async function run(ctx: RolloutRunContext) {
     }
   }
   await ctx.refreshDiscovery();
-  // The 03 lock is applied here rather than in a phase of its own, which is why the phase
-  // labels step from 02 to 04. No gate in between: from the line above until the line below the
-  // client is already emitting v2 extraData that the 0.13 relayer rejects, so the relayer
-  // follows immediately and the pair is gated once, together.
+  // What still works with the relayer a release behind...
+  await testPhase(ctx, "host-contracts", testMode);
+  // ...and what the window costs: the client now reads a real context and epoch, so it sends v2
+  // extraData, which the 0.13 relayer rejects.
+  await ctx.expectTestFailure("user-decryption", { errorIncludes: "extraData", parallel: false });
+
+  logPhase("03 relayer: close the window opened above");
   await ctx.upgradeRuntimeGroup("relayer", { lockFile: relayerLock });
-  await testPhase(ctx, "host-contracts-relayer", testMode);
+  await testPhase(ctx, "relayer", testMode);
 
   // Two KMS phases, not one. 0.13.22 is the required stop between 0.13.20 and 0.14, for the
   // reason recorded against corePrssBridge in versions.ts. The connector stays on 0.13 here —
@@ -385,7 +398,8 @@ export default async function run(ctx: RolloutRunContext) {
 export const phaseOrder = [
   "baseline",
   "gateway-contracts",
-  "host-contracts-relayer",
+  "host-contracts",
+  "relayer",
   "kms-prss-bridge",
   "kms",
   "coprocessor",
