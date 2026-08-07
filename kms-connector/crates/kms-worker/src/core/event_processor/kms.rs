@@ -9,7 +9,8 @@ use fhevm_host_bindings::kms_generation::KMSGeneration::{
 };
 use kms_grpc::kms::v1::{
     CompressedKeyConfig, ComputeKeyType, CrsGenRequest, Eip712DomainMsg, KeyGenPreprocRequest,
-    KeyGenRequest, KeyGenSecretKeyConfig, KeySetConfig, KeySetType, StandardKeySetConfig,
+    KeyGenRequest, KeyGenSecretKeyConfig, KeySetAddedInfo, KeySetConfig, KeySetType,
+    StandardKeySetConfig,
 };
 use tracing::error;
 
@@ -53,16 +54,23 @@ where
             .await
             .map_err(RequestCheckError::record)?;
 
-        Ok(KmsGrpcRequest::PrepKeygen(KeyGenPreprocRequest {
-            request_id: Some(u256_to_request_id(prep_keygen_request.prepKeygenId)),
-            domain: Some(self.domain.clone()),
-            params: prep_keygen_request.paramsType as i32,
-            epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
-            context_id: parsed_extra_data.context_id.map(u256_to_request_id),
-            extra_data: prep_keygen_request.extraData.to_vec(),
-            // Explicitly request the compressed XOF keyset layout expected by GPU workers.
-            keyset_config: Some(COMPRESSED_XOF_KEY_SET_CONFIG),
-        }))
+        let existing_key_id = (!prep_keygen_request.existingKeyId.is_zero())
+            .then(|| u256_to_request_id(prep_keygen_request.existingKeyId));
+        let routing_id = existing_key_id
+            .clone()
+            .unwrap_or_else(|| u256_to_request_id(prep_keygen_request.prepKeygenId));
+        Ok(KmsGrpcRequest::PrepKeygen {
+            request: KeyGenPreprocRequest {
+                request_id: Some(u256_to_request_id(prep_keygen_request.prepKeygenId)),
+                domain: Some(self.domain.clone()),
+                params: prep_keygen_request.paramsType as i32,
+                epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
+                context_id: parsed_extra_data.context_id.map(u256_to_request_id),
+                extra_data: prep_keygen_request.extraData.to_vec(),
+                keyset_config: Some(keyset_config(existing_key_id.is_some())),
+            },
+            routing_id,
+        })
     }
 
     pub async fn prepare_keygen_request(
@@ -76,6 +84,10 @@ where
             .await
             .map_err(RequestCheckError::record)?;
 
+        let existing_key_id = (!keygen_request.existingKeyId.is_zero())
+            .then(|| u256_to_request_id(keygen_request.existingKeyId));
+        let is_migration = existing_key_id.is_some();
+
         Ok(KmsGrpcRequest::Keygen(KeyGenRequest {
             request_id: Some(u256_to_request_id(keygen_request.requestId)),
             preproc_id: Some(u256_to_request_id(keygen_request.prepKeygenId)),
@@ -84,9 +96,14 @@ where
             epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
             context_id: parsed_extra_data.context_id.map(u256_to_request_id),
             extra_data: keygen_request.extraData.to_vec(),
-            // Explicitly request the compressed XOF keyset layout expected by GPU workers.
-            keyset_config: Some(COMPRESSED_XOF_KEY_SET_CONFIG),
-            keyset_added_info: None,
+            keyset_config: Some(keyset_config(is_migration)),
+            keyset_added_info: existing_key_id.map(|existing_keyset_id| KeySetAddedInfo {
+                from_keyset_id_decompression_only: None,
+                to_keyset_id_decompression_only: None,
+                existing_keyset_id: Some(existing_keyset_id),
+                use_existing_key_tag: true,
+                copy_compressed_key_to_original: false,
+            }),
         }))
     }
 
@@ -124,6 +141,15 @@ where
     }
 }
 
+const COMPRESSED_MIGRATION_KEY_SET_CONFIG: KeySetConfig = KeySetConfig {
+    keyset_type: KeySetType::Standard as i32,
+    standard_keyset_config: Some(StandardKeySetConfig {
+        compute_key_type: ComputeKeyType::Cpu as i32,
+        secret_key_config: KeyGenSecretKeyConfig::UseExisting as i32,
+        compressed_key_config: CompressedKeyConfig::CompressedAll as i32,
+    }),
+};
+
 const COMPRESSED_XOF_KEY_SET_CONFIG: KeySetConfig = KeySetConfig {
     keyset_type: KeySetType::Standard as i32,
     standard_keyset_config: Some(StandardKeySetConfig {
@@ -132,3 +158,44 @@ const COMPRESSED_XOF_KEY_SET_CONFIG: KeySetConfig = KeySetConfig {
         compressed_key_config: CompressedKeyConfig::CompressedAll as i32,
     }),
 };
+
+fn keyset_config(use_existing: bool) -> KeySetConfig {
+    if use_existing {
+        COMPRESSED_MIGRATION_KEY_SET_CONFIG
+    } else {
+        COMPRESSED_XOF_KEY_SET_CONFIG
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn migration_reuses_the_existing_secret_key() {
+        let config = keyset_config(true)
+            .standard_keyset_config
+            .expect("standard keyset config must be present");
+
+        assert_eq!(
+            config.secret_key_config,
+            KeyGenSecretKeyConfig::UseExisting as i32
+        );
+        assert_eq!(
+            config.compressed_key_config,
+            CompressedKeyConfig::CompressedAll as i32
+        );
+    }
+
+    #[test]
+    fn fresh_keygen_generates_a_new_secret_key() {
+        let config = keyset_config(false)
+            .standard_keyset_config
+            .expect("standard keyset config must be present");
+
+        assert_eq!(
+            config.secret_key_config,
+            KeyGenSecretKeyConfig::GenerateAll as i32
+        );
+    }
+}

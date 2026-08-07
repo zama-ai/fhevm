@@ -181,6 +181,19 @@ pub async fn mock_event_on_gw(
                 .await?;
             (tx, event.into())
         }
+        TestEventType::CompressedKeyMigrationKeygen => {
+            let rand_key_id = rand_u256();
+            let event = KeygenRequest {
+                existingKeyId: rand_key_id,
+                ..Default::default()
+            };
+            let tx = test_instance
+                .kms_generation_contract()
+                .keygen(ParamsTypeDb::Test as u8, rand_key_id)
+                .send()
+                .await?;
+            (tx, event.into())
+        }
         TestEventType::Crsgen => {
             let rand_max_bit_length = rand_u256();
             let event = CrsgenRequest {
@@ -307,7 +320,9 @@ pub async fn fetch_from_db(
             "SELECT * FROM user_decryption_requests"
         }
         TestEventType::PrepKeygen => "SELECT * FROM prep_keygen_requests",
-        TestEventType::Keygen => "SELECT * FROM keygen_requests",
+        TestEventType::Keygen | TestEventType::CompressedKeyMigrationKeygen => {
+            "SELECT * FROM keygen_requests"
+        }
         TestEventType::Crsgen => "SELECT * FROM crsgen_requests",
         TestEventType::AbortKeygen => "SELECT * FROM abort_keygen_requests",
         TestEventType::AbortCrsgen => "SELECT * FROM abort_crsgen_requests",
@@ -376,8 +391,13 @@ pub fn check_event_in_db(rows: &[PgRow], event: ProtocolEventKind) -> anyhow::Re
         }
         ProtocolEventKind::Keygen(e) => {
             for r in rows {
-                if e.prepKeygenId
-                    == U256::from_le_bytes(r.try_get::<[u8; 32], _>("prep_keygen_id")?)
+                if e.existingKeyId
+                    == r.try_get::<Option<[u8; 32]>, _>("existing_key_id")?
+                        .map(U256::from_le_bytes)
+                        .unwrap_or_default()
+                    && (e.prepKeygenId.is_zero()
+                        || e.prepKeygenId
+                            == U256::from_le_bytes(r.try_get::<[u8; 32], _>("prep_keygen_id")?))
                 {
                     return Ok(());
                 }
