@@ -374,7 +374,7 @@ gcs:
         bcsTag: "1a3646e",
       });
       if (resolved.kind === "blue-green") {
-        expect(resolved.bcs.source).toEqual({ mode: "registry", tag: "1a3646e" });
+        expect(resolved.bcs.source).toEqual({ mode: "registry", tag: "1a3646e", compatTag: "v0.14.0-7" });
       }
     });
 
@@ -385,7 +385,7 @@ gcs:
         bcsTag: "1a3646e87b1234567890abcdef1234567890abcd",
       });
       if (resolved.kind === "blue-green") {
-        expect(resolved.bcs.source).toEqual({ mode: "registry", tag: "1a3646e" });
+        expect(resolved.bcs.source).toEqual({ mode: "registry", tag: "1a3646e", compatTag: "v0.14.0-7" });
       }
     });
 
@@ -396,7 +396,7 @@ gcs:
         bcsTag: "1A3646E87b1234567890AbCdEf1234567890abcd",
       });
       if (resolved.kind === "blue-green") {
-        expect(resolved.bcs.source).toEqual({ mode: "registry", tag: "1a3646e" });
+        expect(resolved.bcs.source).toEqual({ mode: "registry", tag: "1a3646e", compatTag: "v0.14.0-7" });
       }
     });
 

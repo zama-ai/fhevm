@@ -36,7 +36,7 @@ export type OverrideGroup = (typeof OVERRIDE_GROUPS)[number];
 export type CoprocessorInstanceSource =
   | { mode: "inherit" }
   | { mode: "local" }
-  | { mode: "registry"; tag: string };
+  | { mode: "registry"; tag: string; compatTag?: string };
 
 export type CoprocessorScenarioInstance = {
   index: number;
@@ -139,6 +139,8 @@ export type BlueGreenScenario = {
   gcs: {
     source?: CoprocessorInstanceSource;
     stackVersion: string;
+    /** Generate Green services now, but do not start them until the rollout explicitly releases them. */
+    deferredStart?: boolean;
     env?: Record<string, string>;
     args?: Record<string, string[]>;
   };
@@ -164,7 +166,7 @@ export type ResolvedBlueGreenScenario = {
     threshold: number;
   };
   bcs: ResolvedBlueGreenScenarioFleet;
-  gcs: ResolvedBlueGreenScenarioFleet & { stackVersion: string };
+  gcs: ResolvedBlueGreenScenarioFleet & { stackVersion: string; deferredStart: boolean };
   kms: ResolvedKmsTopology;
 };
 
