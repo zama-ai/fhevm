@@ -144,6 +144,9 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
     }
 
     /// Checks the request associated to the received `event` is valid to process.
+    ///
+    /// Checks living here validate live state and are re-run on every processing attempt,
+    /// including poll-only retries of an already-sent request.
     #[tracing::instrument(skip_all)]
     async fn check_request(&self, event: &ProtocolEvent) -> Result<(), ProcessingError> {
         match &event.kind {
@@ -212,6 +215,11 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
     }
 
     /// Prepares the GRPC request associated to the received `event`.
+    ///
+    /// Checks performed during preparation (e.g. ciphertext attestation consensus) validate the
+    /// payload being sent, so running them is only meaningful at send time.
+    /// They are deliberately skipped when retrying an already-sent request: no new payload is
+    /// sent, and the KMS Core keeps working on the one verified here at send time.
     #[tracing::instrument(skip_all)]
     async fn prepare_grpc_request(
         &self,
