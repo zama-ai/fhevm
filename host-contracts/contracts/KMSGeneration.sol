@@ -395,7 +395,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     }
 
     /**
-     * @notice Records compressed material for an existing key without activating it.
+     * @notice Records compressed material for an existing key without changing the active key.
      */
     function _recordCompressedKeyConsensus(
         uint256 keyId,
@@ -407,7 +407,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         for (uint256 i = 0; i < keyDigests.length; i++) {
             $.keyDigests[keyMaterialId].push(keyDigests[i]);
         }
-        emit CompressedKeyMaterialAdded(keyId, keyMaterialId, consensusUrls, keyDigests);
+        emit ActivateKey(keyMaterialId, keyId, consensusUrls, keyDigests);
     }
 
     /**
@@ -427,7 +427,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         }
         $.activeKeyId = keyId;
         $.completedKeyIds.push(keyId);
-        emit ActivateKey(keyId, consensusUrls, keyDigests);
+        emit ActivateKey(keyId, 0, consensusUrls, keyDigests);
     }
 
     /**
