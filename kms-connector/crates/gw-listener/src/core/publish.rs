@@ -270,11 +270,12 @@ async fn publish_prep_keygen_request<'e>(
 ) -> anyhow::Result<PgQueryResult> {
     sqlx::query!(
         "INSERT INTO prep_keygen_requests(
-            prep_keygen_id, params_type, extra_data, tx_hash, created_at, otlp_context
+            prep_keygen_id, params_type, existing_key_id, extra_data, tx_hash, created_at, otlp_context
         )
-        VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
+        VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
         request.prepKeygenId.as_le_slice(),
         params_type as ParamsTypeDb,
+        request.existingKeyId.as_le_slice(),
         request.extraData.as_ref(),
         tx_hash.map(|h| h.to_vec()),
         created_at,
@@ -293,10 +294,11 @@ async fn publish_keygen_request<'e>(
     otlp_ctx: PropagationContext,
 ) -> anyhow::Result<PgQueryResult> {
     sqlx::query!(
-        "INSERT INTO keygen_requests(prep_keygen_id, key_id, extra_data, tx_hash, created_at, otlp_context)
-            VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
+        "INSERT INTO keygen_requests(prep_keygen_id, key_id, existing_key_id, extra_data, tx_hash, created_at, otlp_context)
+            VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
         request.prepKeygenId.as_le_slice(),
-        request.keyId.as_le_slice(),
+        request.requestId.as_le_slice(),
+        request.existingKeyId.as_le_slice(),
         request.extraData.as_ref(),
         tx_hash.map(|h| h.to_vec()),
         created_at,
