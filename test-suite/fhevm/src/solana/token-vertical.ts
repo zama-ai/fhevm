@@ -9,7 +9,7 @@
 
 import { getProgramDerivedAddress, type Address, type TransactionSigner } from "@solana/kit";
 
-import { associatedTokenAddress, requestHeapFrameInstruction } from "../../demo/tokenAccounts";
+import { associatedTokenAddress, requestHeapFrameInstruction } from "./spl";
 import {
   getConfidentialBurnInstructionAsync,
   getRedeemBurnedAmountInstructionAsync,
@@ -21,7 +21,9 @@ import {
   ZAMA_HOST_PROGRAM_ADDRESS,
 } from "./internal/generated/confidentialToken/programAddress.js";
 import type { CoprocessorInputAttestationArgs } from "./internal/generated/confidentialToken/types/index.js";
-import { claimCleartext, type PublicDecryptClaim } from "./public-decrypt";
+import { BRINGUP_KMS_CONTEXT_ID } from "./addresses";
+import { findKmsContextPda } from "./internal/generated/zamaHost/pdas/index.js";
+import { certificateCleartext, type PublicDecryptCertificate } from "./public-decrypt";
 import { hostConfigAddress, type SolanaProvisioningContext } from "./provision";
 
 type VaultModule = typeof import("@demo-dapp/vault/index.js");
@@ -33,17 +35,9 @@ let sdkVerifyModulePromise: Promise<SdkVerifyModule> | undefined;
 const sdkVerifyModule = (): Promise<SdkVerifyModule> =>
   (sdkVerifyModulePromise ??= import("@sdk-src/solana/actions/verifyPublicDecrypt.js"));
 
-/** The KMS context id `fhevm-cli up` provisions (`demo/seed.ts` BRINGUP_KMS_CONTEXT_ID). */
-export const BRINGUP_KMS_CONTEXT_ID = 1n;
-
 /** The zama-host KMS-context PDA for `contextId` (`["kms-context", u64-le id]`). */
 export const kmsContextAddress = async (contextId: bigint = BRINGUP_KMS_CONTEXT_ID): Promise<Address> => {
-  const idBytes = new Uint8Array(8);
-  new DataView(idBytes.buffer).setBigUint64(0, contextId, true);
-  const [kmsContext] = await getProgramDerivedAddress({
-    programAddress: ZAMA_HOST_PROGRAM_ADDRESS,
-    seeds: [new TextEncoder().encode("kms-context"), idBytes],
-  });
+  const [kmsContext] = await findKmsContextPda({ contextId });
   return kmsContext;
 };
 
@@ -132,13 +126,12 @@ export const redeemBurnedAmount = async (
     readonly owner: TransactionSigner;
     readonly mint: Address;
     readonly underlyingMint: Address;
-    readonly claim: PublicDecryptClaim;
-    readonly kmsContextId?: bigint;
+    readonly certificate: PublicDecryptCertificate;
   },
 ): Promise<void> => {
   const vault = await vaultModule();
   const { verifyPublicDecryptArgsFromClaim } = await sdkVerifyModule();
-  const args = verifyPublicDecryptArgsFromClaim(params.claim);
+  const args = verifyPublicDecryptArgsFromClaim(params.certificate);
   const target = await confidentialBurnTarget(params.mint, params.owner.address);
   const [vaultAuthority] = await findVaultAuthorityPda({ mint: params.mint });
   const instruction = await getRedeemBurnedAmountInstructionAsync({
@@ -150,11 +143,11 @@ export const redeemBurnedAmount = async (
     destinationUsdc: await associatedTokenAddress(params.owner.address, params.underlyingMint),
     burnedAmountValue: target.burnedAmount.encryptedValueAddress,
     hostConfig: await hostConfigAddress(),
-    kmsContext: await kmsContextAddress(params.kmsContextId),
+    kmsContext: await kmsContextAddress(),
     eventAuthority: await eventAuthority(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),
     program: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
     burnedHandle: args.handle,
-    cleartextAmount: claimCleartext(params.claim),
+    cleartextAmount: certificateCleartext(params.certificate),
     signatures: [...args.signatures],
     extraData: args.extraData,
     proof: { leafIndex: args.leafIndex, siblings: [...args.siblings] },
@@ -196,8 +189,7 @@ export const discloseBurnedAmount = async (
   params: {
     readonly owner: TransactionSigner;
     readonly mint: Address;
-    readonly claim: PublicDecryptClaim;
-    readonly kmsContextId?: bigint;
+    readonly certificate: PublicDecryptCertificate;
   },
 ): Promise<void> => {
   const vault = await vaultModule();
@@ -208,12 +200,10 @@ export const discloseBurnedAmount = async (
       tokenAccount: target.tokenAccount,
       kind: vault.DisclosedValueKind.BurnedAmount,
       encryptedValue: target.burnedAmount.encryptedValueAddress,
-      kmsContext: await kmsContextAddress(params.kmsContextId),
+      kmsContext: await kmsContextAddress(),
       hostConfig: await hostConfigAddress(),
     },
-    // Structurally the SDK's SolanaPublicDecryptCertificateClaim; the cast is the same seam the
-    // deposit-arc scenario uses at the vault boundary.
-    params.claim as never,
+    params.certificate,
   );
   await context.sendTransaction(params.owner, [instruction]);
 };

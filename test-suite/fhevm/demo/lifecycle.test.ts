@@ -5,6 +5,8 @@ import path from "node:path";
 
 import { centralizedKmsCorePlatform } from "../src/generate/compose";
 import { solanaProgramIdFromKeypairFile } from "../src/generate/solana";
+import { gatewayAddHostChainArgs } from "../src/solana/deploy";
+import { SOLANA_E2E_PROGRAMS, seedProgramKeypairs } from "../src/solana/validator";
 import { createDemoAuthorizationFile } from "./authorization";
 import {
   acceptableDockerContainerState,
@@ -86,14 +88,23 @@ describe("demo lifecycle collision policy", () => {
     );
     expect(demoDeploy).toContain('cp -f "$SOLANA/scripts/e2e/test-keypairs/$p-keypair.json"');
     expect(demoDeploy).not.toContain("cp -n");
-    // The e2e side (src/solana/validator.ts seedProgramKeypairs) copies with node's copyFile,
-    // which overwrites by default; a COPYFILE_EXCL flag would reintroduce the stale-identity bug.
-    const validator = await fs.readFile(
-      path.join(import.meta.dir, "../src/solana/validator.ts"),
-      "utf8",
-    );
-    expect(validator).toContain("copyFile(");
-    expect(validator).not.toContain("COPYFILE_EXCL");
+    // The e2e side, behaviorally: seed into a temp deploy dir that already holds a STALE keypair
+    // (another branch's program identity) and require the committed identity to overwrite it.
+    const deployDir = await fs.mkdtemp(path.join(os.tmpdir(), "seed-keypairs-"));
+    try {
+      await fs.writeFile(path.join(deployDir, "zama_host-keypair.json"), JSON.stringify(Array(64).fill(0)));
+      await seedProgramKeypairs(deployDir);
+      for (const program of SOLANA_E2E_PROGRAMS) {
+        const seeded = await fs.readFile(path.join(deployDir, `${program}-keypair.json`), "utf8");
+        const committed = await fs.readFile(
+          path.join(import.meta.dir, `../../../solana/scripts/e2e/test-keypairs/${program}-keypair.json`),
+          "utf8",
+        );
+        expect(seeded).toBe(committed);
+      }
+    } finally {
+      await fs.rm(deployDir, { recursive: true, force: true });
+    }
   });
 
   test("committed program keypairs match declared program identities", async () => {
@@ -487,17 +498,14 @@ describe("demo lifecycle collision policy", () => {
     expect(workspaceDockerfile).not.toContain("COPY .git");
   });
 
-  test("Solana setup keeps every lifecycle compose call on the per-boot project", async () => {
+  test("Solana setup keeps every lifecycle compose call on the per-boot project", () => {
     // src/solana/deploy.ts derives the compose project through lifecycleComposeProject (its own
-    // unit tests pin the validation); this pins that the registration passes the derived project,
-    // never a hardcoded one.
-    const deploy = await fs.readFile(
-      path.join(import.meta.dir, "../src/solana/deploy.ts"),
-      "utf8",
-    );
-    expect(deploy).toContain("lifecycleComposeProject(lifecycleDir)");
-    expect(deploy).toContain("parameters.composeProject");
-    expect(deploy).not.toMatch(/"-p",\s*\n?\s*"fhevm"/);
+    // unit tests pin the validation); this pins that the addHostChain compose invocation actually
+    // carries whatever project was derived, right after the -p flag.
+    const project = "fhevm-demo-01234567-89ab-4cde-8f01-23456789abcd";
+    const args = gatewayAddHostChainArgs(project);
+    expect(args[args.indexOf("-p") + 1]).toBe(project);
+    expect(args.at(-1)).toBe("gateway-sc-add-network");
   });
 
   test("doctor checks commands used by collision and Solana bootstrap paths", () => {

@@ -71,6 +71,7 @@ import {
 } from "@solana/kit";
 
 import { loadPersonas, until } from "../harness";
+import { withHostReachableFetch } from "../harness/solana/sdkEncrypt";
 import { depositRoots, type VaultDemoRoots } from "../../demo/config";
 import { readCurrentDemoAuthorization } from "../../demo/lifecycle";
 import { DEMO_KEYPAIRS, loadDemoEnv } from "../../demo/loadDemoEnv";
@@ -357,16 +358,10 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       const joinMint = config.mints.joinConfidential;
       const joinComputeSigner = await vault.computeSignerAddress(joinMint);
 
-      // The relayer's key-material URLs point at the docker-internal host `minio:9000`; rewrite to
-      // the host-published endpoint (same same-machine boundary as solana-two-holder-transfer.ts).
-      // Restored in the finally below so the patch cannot leak past the join phase: only the input
-      // proof's key-material fetch needs it — settle's certificate phase talks to the relayer's
+      // The MinIO fetch rewrite is scoped to the join phase only: just the input proof's
+      // key-material fetch needs it — settle's certificate phase talks to the relayer's
       // /v2/public-decrypt endpoint only (verified against actions/publicDecryptCertificate.ts).
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = ((url: string | URL | Request, options?: RequestInit) =>
-        originalFetch(typeof url === "string" ? url.replace("//minio:9000", "//127.0.0.1:9000") : url, options)) as typeof fetch;
-
-      try {
+      await withHostReachableFetch(async () => {
         // Step 6: build + submit the coprocessor input proof for the join amount. Binding tuple per
         // joinBatch's own checks: contract identity = the join mint's compute-signer PDA (NOT the
         // batcher), user identity = alice, value = euint64 amount, chain id + ACL program from the
@@ -425,9 +420,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
         );
         expect(batchAfterJoin.addresses.batch).toBe(batch);
         expect(batchAfterJoin.state.joinCount).toBe(batchBeforeJoin.state.joinCount + 1n);
-      } finally {
-        globalThis.fetch = originalFetch;
-      }
+      });
 
       // Step 9: wait until the batch is old enough to dispatch. dispatch.rs rejects with
       // BatchTooYoung until the current slot reaches openedSlot + minBatchAgeSlots (the seeder sets

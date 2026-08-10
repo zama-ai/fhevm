@@ -171,8 +171,10 @@ const targets = [
       // coprocessorInputAttestation backs confidential_burn's amount attestation;
       // mmrInclusionProof is redeem_burned_amount's `proof` argument.
       definedTypes: new Set(['coprocessorInputAttestation', 'mmrInclusionProof']),
-      // The PDA nodes the two generated builders default their accounts from.
-      pdas: new Set(['computeSigner', 'totalSupplyAuthority', 'tokenAccount', 'pendingBurn', 'vaultAuthority']),
+      // The PDA nodes the two generated builders default their accounts from. tokenAccount is
+      // deliberately absent: its seeds (owner, mint) cannot be defaulted, so the builders take
+      // the address as input and the helper would render dead.
+      pdas: new Set(['computeSigner', 'totalSupplyAuthority', 'pendingBurn', 'vaultAuthority']),
     },
     programAddress(program, anchorIdl) {
       const zamaHostProgramAddress = anchorIdl.instructions

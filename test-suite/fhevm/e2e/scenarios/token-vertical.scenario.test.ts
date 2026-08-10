@@ -50,6 +50,7 @@ import {
   redeemBurnedAmount,
   sealBurnedAmountHandle,
 } from "../../src/solana/token-vertical";
+import { submitUint64InputProof } from "../harness/solana/sdkEncrypt";
 import { verticalSetup } from "../harness/solana/vertical";
 
 // Provisioning (mint + wrap) + burn + SNS commit wait + KMS certificate + two consume sends.
@@ -63,25 +64,24 @@ const hexToBytes = (value: string): Uint8Array => Uint8Array.from(Buffer.from(va
 const asBytes32Hex = (value: Address): `0x${string}` =>
   `0x${Buffer.from(getAddressEncoder().encode(value)).toString("hex")}` as `0x${string}`;
 
-/** The SDK encrypt surface the burn attestation drives (untyped: runtime dynamic-import seam). */
-type SolanaSdkEncryptSurface = {
-  setFhevmRuntimeConfig(config: { auth: { type: "ApiKeyHeader"; value: string } }): void;
-  defineFhevmSolanaChain(definition: {
-    id: bigint;
-    fhevm: { relayerUrl: string; acl: { domainKeys: readonly `0x${string}`[] } };
-  }): unknown;
-  createFhevmEncryptClient(parameters: { chain: unknown; aclProgramAddress: `0x${string}` }): {
-    buildInputProof(parameters: {
-      contractAddress: `0x${string}`;
-      userAddress: `0x${string}`;
-      values: readonly { type: "uint64"; value: bigint }[];
-    }): Promise<unknown>;
-    submitInputProof(parameters: { inputProof: unknown }): Promise<{
-      handles: readonly { bytes32Hex: `0x${string}` }[];
-      signatures: readonly `0x${string}`[];
-      extraData: `0x${string}`;
-    }>;
-  };
+/**
+ * Flattens a kit SolanaError chain into searchable evidence: messages, preflight simulation logs
+ * (where anchor prints "Error Code: InvalidKmsContext"), and nested causes.
+ */
+const errorEvidence = (error: unknown): string => {
+  const parts: string[] = [];
+  for (let current = error, depth = 0; current && depth < 5; depth++) {
+    parts.push(String(current));
+    const context = (current as { context?: { logs?: readonly string[] } }).context;
+    if (context?.logs) parts.push(...context.logs);
+    parts.push(
+      JSON.stringify((current as { context?: unknown }).context ?? null, (_key, value: unknown) =>
+        typeof value === "bigint" ? value.toString() : value,
+      ),
+    );
+    current = (current as { cause?: unknown }).cause;
+  }
+  return parts.join("\n");
 };
 
 describe("solana confidential-token consume vertical", () => {
@@ -114,32 +114,15 @@ describe("solana confidential-token consume vertical", () => {
       // The burn amount is a coprocessor-attested external input bound to (user = owner,
       // contract = the mint's compute-signer PDA) — the token + host require
       // contract == compute_signer for transfer/burn amounts.
-      const sdkModuleName = "@fhevm/sdk/solana";
-      const solanaSdk = (await import(sdkModuleName)) as unknown as SolanaSdkEncryptSurface;
-      solanaSdk.setFhevmRuntimeConfig({
-        auth: { type: "ApiKeyHeader", value: process.env.ZAMA_FHEVM_API_KEY ?? "local" },
+      const submission = await submitUint64InputProof({
+        chainId: config.chainId,
+        relayerUrl: config.relayerUrl,
+        domainKey: asBytes32Hex(mint),
+        aclProgramAddress: env.aclProgram,
+        contractAddress: asBytes32Hex(computeSigner),
+        userAddress: walletHex,
+        value: BURN_AMOUNT,
       });
-      const chain = solanaSdk.defineFhevmSolanaChain({
-        id: config.chainId,
-        fhevm: { relayerUrl: config.relayerUrl, acl: { domainKeys: [asBytes32Hex(mint)] } },
-      });
-      const encryptClient = solanaSdk.createFhevmEncryptClient({ chain, aclProgramAddress: env.aclProgram });
-      // Same host-side seam as the deposit-arc join: the relayer's key-material URLs name the
-      // docker-internal `minio:9000`; rewrite to the host-published endpoint for the local prover.
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = ((url: string | URL | Request, options?: RequestInit) =>
-        originalFetch(typeof url === "string" ? url.replace("//minio:9000", "//127.0.0.1:9000") : url, options)) as typeof fetch;
-      let submission: Awaited<ReturnType<ReturnType<SolanaSdkEncryptSurface["createFhevmEncryptClient"]>["submitInputProof"]>>;
-      try {
-        const inputProof = await encryptClient.buildInputProof({
-          contractAddress: asBytes32Hex(computeSigner),
-          userAddress: walletHex,
-          values: [{ type: "uint64", value: BURN_AMOUNT }],
-        });
-        submission = await encryptClient.submitInputProof({ inputProof });
-      } finally {
-        globalThis.fetch = originalFetch;
-      }
       const amountHandle = hexToBytes(submission.handles[0].bytes32Hex);
       expect(amountHandle).toHaveLength(32);
 
@@ -168,7 +151,7 @@ describe("solana confidential-token consume vertical", () => {
       // ingestion, and the semantic endpoint resolves the decrypt to the EARLIEST leaf.
       await sealBurnedAmountHandle(context, { owner: wallet.signer, mint, handle: burnedHandle });
 
-      const { cleartext, claim } = await publicDecryptExpect(context, config, {
+      const { cleartext, certificate } = await publicDecryptExpect(context, config, {
         target: {
           encryptedValue: target.burnedAmount.encryptedValueAddress,
           encryptedValueId: target.burnedAmount.aclValueKey,
@@ -186,7 +169,7 @@ describe("solana confidential-token consume vertical", () => {
       const balanceBefore = BigInt(
         (await context.rpc.getTokenAccountBalance(ownerUnderlying, { commitment: "confirmed" }).send()).value.amount,
       );
-      await redeemBurnedAmount(context, { owner: wallet.signer, mint, underlyingMint, claim });
+      await redeemBurnedAmount(context, { owner: wallet.signer, mint, underlyingMint, certificate });
       const balanceAfter = BigInt(
         (await context.rpc.getTokenAccountBalance(ownerUnderlying, { commitment: "confirmed" }).send()).value.amount,
       );
@@ -194,17 +177,28 @@ describe("solana confidential-token consume vertical", () => {
 
       // Disclose: same verifier CPI, then the token-scoped cleartext event. Idempotent by design;
       // the burn already sealed the leaf, so the certificate's proof stays valid through both.
-      await discloseBurnedAmount(context, { owner: wallet.signer, mint, claim });
+      await discloseBurnedAmount(context, { owner: wallet.signer, mint, certificate });
 
       // Adversarial (adversarial-l4.sh [L4-b]): the same genuine certificate, but its extra_data
       // rewritten to name KMS context 2 (version byte 0x01 + 32-byte BE id) while the supplied
       // kms_context account is the live context 1. extract_kms_context_id(extra) = 2 does not
       // match the supplied account, so verify_public_decrypt fails closed on the context binding
-      // before ever weighing the (still valid) signatures and MMR proof.
-      const wrongContextClaim = { ...claim, extraData: `0x01${(2n).toString(16).padStart(64, "0")}` };
-      await expect(
-        discloseBurnedAmount(context, { owner: wallet.signer, mint, claim: wrongContextClaim }),
-      ).rejects.toThrow();
+      // before ever weighing the (still valid) signatures and MMR proof. Not just any rejection
+      // counts: the evidence must name InvalidKmsContext (zama-host anchor error 6064 = 0x17b0),
+      // or a blockhash expiry / client encode error would read as the attack being repelled.
+      const wrongContextCertificate = { ...certificate, extraData: `0x01${(2n).toString(16).padStart(64, "0")}` };
+      const rejection = await discloseBurnedAmount(context, {
+        owner: wallet.signer,
+        mint,
+        certificate: wrongContextCertificate,
+      }).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      if (rejection === undefined) {
+        throw new Error("SECURITY: context-mismatched certificate was disclosed on-chain");
+      }
+      expect(errorEvidence(rejection)).toMatch(/InvalidKmsContext|0x17b0|Custom":\s*6064/);
     },
     SCENARIO_TIMEOUT_MS,
   );

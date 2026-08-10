@@ -13,6 +13,13 @@ import { readEnvFile } from "../utils/fs";
 export const SOLANA_HOST_CHAIN_ID = 9223372036854788153n;
 export const SOLANA_HOST_CHAIN_ID_I64 = SOLANA_HOST_CHAIN_ID - (1n << 64n);
 
+/**
+ * The KMS context id every bring-up provisions (`deploy.ts` bootstrap and `fhevm-cli up`'s
+ * `demo/seed.ts` both define context 1) — the id the scenarios' consume steps and the demo
+ * preflight resolve the on-chain `KmsContext` PDA with.
+ */
+export const BRINGUP_KMS_CONTEXT_ID = 1n;
+
 // 4-byte EVM function selectors, pinned from the GatewayConfig ABI the retired bash resolved with
 // `cast call` — keccak-256("<signature>")[0..4]. Both getters take no arguments and return
 // `address[]`.

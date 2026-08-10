@@ -1,7 +1,8 @@
-// tokenAccounts — pure SPL/associated-token/system-program helpers shared by the live demo
-// entrypoints (seed, faucet) and the typed scenario provisioning (`src/solana/provision.ts`). No
-// top-level side effects, so this module is importable by offline tests (unlike `seed.ts` /
-// `faucet-server.ts`, which run `await main()` against a live validator on import).
+// spl — pure SPL/associated-token/system-program helpers shared by the typed scenario
+// provisioning (`./provision.ts`) and the live demo entrypoints (`demo/seed.ts`,
+// `demo/faucet-server.ts`). No top-level side effects, so this module is importable by offline
+// tests (unlike the demo entrypoints, which run `await main()` against a live validator on
+// import).
 //
 // The instructions are hand-built with `@solana/kit` primitives on purpose: the test-suite carries
 // no `@solana-program/token` dependency. Layouts cited inline:

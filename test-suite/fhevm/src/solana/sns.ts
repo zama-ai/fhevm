@@ -11,23 +11,18 @@ import { run } from "../utils/process";
 
 const BYTES32 = /^0x[0-9a-f]{64}$/i;
 
-export type SnsCommitOptions = {
-  /** Overall deadline. Default 2 minutes, matching the 40 x 3s loops it replaces. */
-  readonly timeoutMs?: number;
-  /** Delay between polls. Default 3s. */
-  readonly intervalMs?: number;
-  /** Database container name. Default the compose stack's coprocessor DB. */
-  readonly container?: string;
-};
+// The most generous budget the retired bash gave any commit: 40 x 6s for the burned handle, the
+// slowest case (five FHE steps in one instruction). The ordinary loops were 30 x 6s = 3 minutes;
+// one shared ceiling is simpler than per-call budgets and a fast commit returns early anyway.
+const SNS_COMMIT_TIMEOUT_MS = 240_000;
+const SNS_COMMIT_POLL_INTERVAL_MS = 3_000;
 
 /** Waits until the SNS worker has committed both ciphertext forms for `handle` (0x-hex, 32 bytes). */
-export const waitForSnsCommit = async (handle: string, options: SnsCommitOptions = {}): Promise<void> => {
+export const waitForSnsCommit = async (handle: string): Promise<void> => {
   if (!BYTES32.test(handle)) throw new Error(`invalid handle before ciphertext wait: ${handle}`);
-  const timeoutMs = options.timeoutMs ?? 120_000;
-  const intervalMs = options.intervalMs ?? 3_000;
-  const container = options.container ?? COPROCESSOR_DB_CONTAINER;
+  const container = COPROCESSOR_DB_CONTAINER;
   const hex = handle.slice(2);
-  const deadline = Date.now() + timeoutMs;
+  const deadline = Date.now() + SNS_COMMIT_TIMEOUT_MS;
   for (;;) {
     const result = await run(
       [
@@ -46,6 +41,6 @@ export const waitForSnsCommit = async (handle: string, options: SnsCommitOptions
     );
     if (result.code === 0 && result.stdout.trim() === "t") return;
     if (Date.now() >= deadline) throw new Error(`ciphertext materialization timed out for ${handle}`);
-    await Bun.sleep(intervalMs);
+    await Bun.sleep(SNS_COMMIT_POLL_INTERVAL_MS);
   }
 };

@@ -90,11 +90,15 @@ jobs:
               - .github/workflows/solana-tests.yml
               - solana/demo-dapp/**
               - sdk/js-sdk/**
-              # The confidential-token IDL the dapp's generated client is rendered from. The other
-              # two source IDLs (confidential_batcher, demo_vault) live under solana/demo-dapp/idl
-              # and are already matched above; this one is vendored with the listener, so without
-              # naming it a token IDL change would not run the codegen check that reads it.
+              # The source IDLs the generated clients are rendered from. The confidential_batcher
+              # and demo_vault IDLs live under solana/demo-dapp/idl and are already matched above;
+              # these two are vendored with the listener, so without naming them an IDL change
+              # would not run the codegen check that reads it. zama_host feeds the test-suite's
+              # generated bootstrap client, whose committed output is also matched so a hand edit
+              # to the generated tree runs the check too.
               - coprocessor/fhevm-engine/host-listener/idl/confidential_token.json
+              - coprocessor/fhevm-engine/host-listener/idl/zama_host.json
+              - test-suite/fhevm/src/solana/internal/generated/**
 
   # Pure grep/sed, no toolchain, half a minute: its own job so it runs for every tree it sweeps,
   # not only the ones that trigger the SBF builds. See fhevm-internal#1859 §7.

@@ -161,8 +161,7 @@ to `127.0.0.1:8899`):
 
 ```bash
 bash scripts/e2e/clean-e2e.sh              # bring up fhevm-cli + Solana side-stack
-bash scripts/e2e/full-vertical.sh          # compute -> public-decrypt -> user-decrypt
-bash scripts/e2e/adversarial-l4.sh         # negative: relayer-bypass + cert-reuse rejection
+cd ../test-suite/fhevm && bun run test:e2e # scenario suite: compute/decrypt, operators, token arc
 ```
 
 ## Integrating an app

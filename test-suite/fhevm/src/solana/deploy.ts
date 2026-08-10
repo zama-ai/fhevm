@@ -20,6 +20,7 @@ import { envPath, REPO_ROOT, STATE_DIR } from "../layout";
 import { readEnvFile } from "../utils/fs";
 import { run, runStreaming } from "../utils/process";
 import {
+  BRINGUP_KMS_CONTEXT_ID,
   readGatewayBootstrapInputs,
   SOLANA_HOST_CHAIN_ID,
   SOLANA_HOST_CHAIN_ID_I64,
@@ -41,9 +42,6 @@ import {
   startGeyserValidator,
   VALIDATOR_RPC_URL,
 } from "./validator";
-
-/** The KMS context id the bring-up defines and every consumer resolves (`demo/seed.ts`, scenarios). */
-export const BOOTSTRAP_KMS_CONTEXT_ID = 1n;
 
 export type KmsCertificateThresholds = {
   /** Matching signatures a certificate needs: 2t+1 of the registered signer set. */
@@ -72,7 +70,6 @@ export const kmsCertificateThresholds = (
 export type BootstrapZamaHostParams = {
   readonly payer: TransactionSigner;
   readonly gateway: GatewayBootstrapInputs;
-  readonly hostChainId?: bigint;
   /**
    * Input-attestation n-of-m. The PoC coprocessor emits a single attestation signature, so 1
    * keeps the live flow green while the full registered set is stored (EVM `InputVerifier`
@@ -81,7 +78,6 @@ export type BootstrapZamaHostParams = {
   readonly coprocessorThreshold?: number;
   /** KMS corruption threshold t; 0 is the centralized PoC default. */
   readonly kmsCorruptionThreshold?: number;
-  readonly kmsContextId?: bigint;
 };
 
 /**
@@ -105,7 +101,7 @@ export const bootstrapZamaHost = async (
       await getInitializeHostConfigInstructionAsync({
         payer: params.payer,
         admin: params.payer,
-        chainId: params.hostChainId ?? SOLANA_HOST_CHAIN_ID,
+        chainId: SOLANA_HOST_CHAIN_ID,
         gatewayChainId: params.gateway.gatewayChainId,
         inputVerificationContract: params.gateway.inputVerificationContract,
         coprocessorSigners: [...params.gateway.coprocessorSigners],
@@ -126,7 +122,7 @@ export const bootstrapZamaHost = async (
   await context.sendTransaction(params.payer, [
     await getDefineKmsContextInstructionAsync({
       admin: params.payer,
-      contextId: params.kmsContextId ?? BOOTSTRAP_KMS_CONTEXT_ID,
+      contextId: BRINGUP_KMS_CONTEXT_ID,
       signers: [...params.gateway.kmsSigners],
       thresholds: {
         publicDecryption: certificateThreshold,
@@ -147,7 +143,7 @@ export const bootstrapZamaHost = async (
 };
 
 /** Reads the standard 64-byte Solana CLI keypair file into a kit signer. */
-export const loadKeypairSigner = async (keypairPath: string): Promise<TransactionSigner> => {
+const loadKeypairSigner = async (keypairPath: string): Promise<TransactionSigner> => {
   const { createKeyPairSignerFromBytes } = await import("@solana/kit");
   const bytes = Uint8Array.from(JSON.parse(await Bun.file(keypairPath).text()) as number[]);
   return createKeyPairSignerFromBytes(bytes);
@@ -162,7 +158,7 @@ const ENGINE_DIR = path.join(REPO_ROOT, "coprocessor", "fhevm-engine");
  * batcher and the demo vault it never deploys. --use-rpc: deploy over RPC (8899) since the
  * container doesn't publish the TPU ports. Returns the deployed zama_host program id.
  */
-export const buildAndDeployPrograms = async (deployerKeypairPath: string): Promise<string> => {
+const buildAndDeployPrograms = async (deployerKeypairPath: string): Promise<string> => {
   console.log("    building zama_host + confidential_token");
   for (const program of SOLANA_E2E_PROGRAMS) {
     await runStreaming(["anchor", "build", "--ignore-keys", "--no-idl", "-p", program], { cwd: SOLANA_DIR });
@@ -190,7 +186,7 @@ export const buildAndDeployPrograms = async (deployerKeypairPath: string): Promi
 };
 
 /** The coprocessor DB URL from the generated env, repointed at the host-published port. */
-export const readCoprocessorDatabaseUrl = async (): Promise<string> => {
+const readCoprocessorDatabaseUrl = async (): Promise<string> => {
   const environment = await readEnvFile(envPath("coprocessor"));
   const url = environment.DATABASE_URL;
   if (!url) throw new Error("missing DATABASE_URL in the generated coprocessor env");
@@ -198,11 +194,41 @@ export const readCoprocessorDatabaseUrl = async (): Promise<string> => {
 };
 
 /**
+ * The gateway addHostChain compose invocation, as argv. Pure so the unit suite can pin the one
+ * lifecycle-critical property: every compose call runs under the per-boot `-p` project, never an
+ * ambient default.
+ */
+export const gatewayAddHostChainArgs = (composeProject: string): string[] => [
+  "docker",
+  "compose",
+  "-f",
+  path.join(REPO_ROOT, "test-suite", "fhevm", "docker-compose", "gateway-sc-docker-compose.yml"),
+  "-p",
+  composeProject,
+  "run",
+  "--rm",
+  "--no-deps",
+  "-e",
+  "NUM_HOST_CHAINS=1",
+  "-e",
+  `HOST_CHAIN_CHAIN_ID_0=${SOLANA_HOST_CHAIN_ID}`,
+  "-e",
+  "HOST_CHAIN_FHEVM_EXECUTOR_ADDRESS_0=0x0000000000000000000000000000000000000000",
+  "-e",
+  "HOST_CHAIN_ACL_ADDRESS_0=0x0000000000000000000000000000000000000000",
+  "-e",
+  "HOST_CHAIN_NAME_0=solana",
+  "-e",
+  "HOST_CHAIN_WEBSITE_0=https://zama.ai",
+  "gateway-sc-add-network",
+];
+
+/**
  * Registers the Solana host chain in the coprocessor DB (host_chains i64 + keyset mirror) and on
  * the gateway (GatewayConfig.addHostChain). Both depend on the freshly-deployed program id and
  * post-keygen state, which is why they live here and not in the fhevm-cli config generator.
  */
-export const registerSolanaHostChain = async (parameters: {
+const registerSolanaHostChain = async (parameters: {
   readonly zamaHostId: string;
   readonly composeProject: string;
 }): Promise<void> => {
@@ -253,36 +279,10 @@ export const registerSolanaHostChain = async (parameters: {
     .replace(/^.*:/, "");
   // The gateway persists across local-validator resets, so addHostChain reverts with the
   // "host chain already registered" custom error (0x96a56828) on re-runs; tolerate that.
-  const addHostChain = await run(
-    [
-      "docker",
-      "compose",
-      "-f",
-      path.join(REPO_ROOT, "test-suite", "fhevm", "docker-compose", "gateway-sc-docker-compose.yml"),
-      "-p",
-      parameters.composeProject,
-      "run",
-      "--rm",
-      "--no-deps",
-      "-e",
-      "NUM_HOST_CHAINS=1",
-      "-e",
-      `HOST_CHAIN_CHAIN_ID_0=${SOLANA_HOST_CHAIN_ID}`,
-      "-e",
-      "HOST_CHAIN_FHEVM_EXECUTOR_ADDRESS_0=0x0000000000000000000000000000000000000000",
-      "-e",
-      "HOST_CHAIN_ACL_ADDRESS_0=0x0000000000000000000000000000000000000000",
-      "-e",
-      "HOST_CHAIN_NAME_0=solana",
-      "-e",
-      "HOST_CHAIN_WEBSITE_0=https://zama.ai",
-      "gateway-sc-add-network",
-    ],
-    {
-      env: { GATEWAY_VERSION: gatewayVersion, FHEVM_STATE_DIR: STATE_DIR },
-      allowFailure: true,
-    },
-  );
+  const addHostChain = await run(gatewayAddHostChainArgs(parameters.composeProject), {
+    env: { GATEWAY_VERSION: gatewayVersion, FHEVM_STATE_DIR: STATE_DIR },
+    allowFailure: true,
+  });
   const output = `${addHostChain.stdout}\n${addHostChain.stderr}`;
   if (output.includes("0x96a56828")) {
     console.log("    Solana host chain already registered on the gateway — ok");
@@ -302,13 +302,13 @@ export const registerSolanaHostChain = async (parameters: {
  * transaction instructions; created-public lifecycle outputs retain a narrow CPI event.
  * Handle-derivation params are auto-detected from the on-chain HostConfig PDA at startup.
  */
-export const startHostListener = async (parameters: {
+const startHostListener = async (parameters: {
   readonly zamaHostId: string;
   readonly databaseUrl: string;
   readonly grpcUrl: string;
   readonly logDir: string;
   readonly lifecycleDir?: string;
-}): Promise<number> => {
+}): Promise<void> => {
   if (parameters.lifecycleDir) {
     if ((await run(["pgrep", "-f", "solana_host_listener"], { allowFailure: true })).code === 0) {
       throw new Error("refusing to replace an unowned solana_host_listener in lifecycle mode");
@@ -351,7 +351,6 @@ export const startHostListener = async (parameters: {
   if (parameters.lifecycleDir) {
     await Bun.write(path.join(parameters.lifecycleDir, "listener.pid"), `${listener.pid}\n`);
   }
-  return listener.pid;
 };
 
 const readIntegerEnv = (name: string, fallback: number): number => {
@@ -375,16 +374,33 @@ export const lifecycleComposeProject = (lifecycleDir: string | undefined): strin
   return project;
 };
 
+const evmHex = (bytes: Uint8Array): string => `0x${Buffer.from(bytes).toString("hex")}`;
+
 if (import.meta.main) {
   const lifecycleDir = process.env.DEMO_LIFECYCLE_DIR || undefined;
   const composeProject = lifecycleComposeProject(lifecycleDir);
   const logDir = process.env.SOLANA_LOG_DIR ?? "/tmp";
   // Deployer/fee-payer wallet: airdrop, program deploy, and the bootstrap all sign with it, and it
   // is passed explicitly everywhere so this setup never depends on or mutates the developer's
-  // global `solana config` (URL or keypair).
-  const deployerKeypairPath = process.env.DEPLOYER_KEYPAIR ?? `${process.env.HOME}/.config/solana/id.json`;
+  // global `solana config` (URL or keypair). Same override the demo deployer honours
+  // (deploy-demo-programs.sh).
+  const deployerKeypairPath =
+    process.env.SOLANA_DEPLOYER_KEYPAIR ?? `${process.env.HOME}/.config/solana/id.json`;
 
-  console.log("==> [1/4] fresh validator (Yellowstone geyser) + program deploy");
+  // The gateway reads come first: a missing .env.gateway or a down gateway RPC should fail here,
+  // not after the multi-minute program build. The resolved values go to the log — on a bootstrap
+  // failure or a wrong-signer-set incident this is the record of what was registered.
+  console.log("==> [1/5] gather live gateway inputs");
+  const gateway = await readGatewayBootstrapInputs({
+    gatewayRpcUrl: process.env.GW_RPC ?? "http://127.0.0.1:8546",
+  });
+  console.log(`    gateway_chain_id=${gateway.gatewayChainId}`);
+  console.log(`    input_verification=${evmHex(gateway.inputVerificationContract)}`);
+  console.log(`    decryption=${evmHex(gateway.decryptionContract)}`);
+  console.log(`    coprocessor_signers=${gateway.coprocessorSigners.map(evmHex).join(",")}`);
+  console.log(`    kms_signers=${gateway.kmsSigners.map(evmHex).join(",")}`);
+
+  console.log("==> [2/5] fresh validator (Yellowstone geyser) + program deploy");
   await seedProgramKeypairs();
   await ensureDeployerWallet(deployerKeypairPath);
   await startGeyserValidator({
@@ -396,11 +412,8 @@ if (import.meta.main) {
   await airdropDeployFees(deployerKeypairPath);
   const zamaHostId = await buildAndDeployPrograms(deployerKeypairPath);
 
-  console.log("==> [2/4] bootstrap zama-host (real gateway/ProtocolConfig values, mock/test OFF)");
+  console.log("==> [3/5] bootstrap zama-host (real gateway/ProtocolConfig values, mock/test OFF)");
   const payer = await loadKeypairSigner(deployerKeypairPath);
-  const gateway = await readGatewayBootstrapInputs({
-    gatewayRpcUrl: process.env.GW_RPC ?? "http://127.0.0.1:8546",
-  });
   const context = createProvisioningContext(VALIDATOR_RPC_URL, "ws://127.0.0.1:8900");
   await bootstrapZamaHost(context, {
     payer,
@@ -409,10 +422,10 @@ if (import.meta.main) {
     kmsCorruptionThreshold: readIntegerEnv("KMS_THRESHOLD", 0),
   });
 
-  console.log("==> [3/4] register Solana host chain (coprocessor DB + gateway)");
+  console.log("==> [4/5] register Solana host chain (coprocessor DB + gateway)");
   await registerSolanaHostChain({ zamaHostId, composeProject });
 
-  console.log("==> [4/4] run Solana host-listener");
+  console.log("==> [5/5] run Solana host-listener");
   await startHostListener({
     zamaHostId,
     databaseUrl: await readCoprocessorDatabaseUrl(),

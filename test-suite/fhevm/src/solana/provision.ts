@@ -5,7 +5,7 @@
 // `TOKEN_BALANCE_STATE` probe) plus the `spl-token`/`solana` CLI calls around them. Every step is
 // now a `@solana/kit` transaction built from the demo dapp's typed vault module — the same builders
 // `demo/seed.ts` live-verifies on every e2e run — and the shared hand-built SPL instructions in
-// `demo/tokenAccounts.ts`. Binding to explicit signers (instead of the ambient Solana CLI identity
+// `./spl.ts`. Binding to explicit signers (instead of the ambient Solana CLI identity
 // the live-client read from `$HOME`) is what lets the arc target any stack the harness injects.
 
 import { createHash } from "node:crypto";
@@ -45,7 +45,9 @@ import {
   initializeMint2Instruction,
   mintToInstruction,
   setComputeUnitLimitInstruction,
-} from "../../demo/tokenAccounts";
+} from "./spl";
+
+import { findHostConfigPda } from "./internal/generated/zamaHost/pdas/index.js";
 
 // The vault module and the SDK sources are loaded lazily, not statically. Their tsconfig-path
 // aliases resolve to real paths outside test-suite/fhevm, so their own dependencies (`@noble/*`,
@@ -88,11 +90,7 @@ const bytesEqual = (a: Uint8Array, b: Uint8Array): boolean =>
 
 /** The zama-host singleton `HostConfig` PDA (`[b"host-config"]`) every host-CPI instruction takes. */
 export const hostConfigAddress = async (): Promise<Address> => {
-  const vault = await vaultModule();
-  const [hostConfig] = await getProgramDerivedAddress({
-    programAddress: vault.ZAMA_HOST_PROGRAM_ADDRESS,
-    seeds: [new TextEncoder().encode("host-config")],
-  });
+  const [hostConfig] = await findHostConfigPda();
   return hostConfig;
 };
 
@@ -118,7 +116,12 @@ export type SolanaProvisioningContext = {
 };
 
 /** Binds RPC endpoints into the send/confirm/airdrop closures every provisioning step shares. */
-export const createProvisioningContext = (rpcUrl: string, wsUrl: string): SolanaProvisioningContext => {
+export const createProvisioningContext = (
+  rpcUrl: string,
+  wsUrl: string,
+  contextOptions: { readonly computeUnitLimit?: number } = {},
+): SolanaProvisioningContext => {
+  const computeUnitLimit = contextOptions.computeUnitLimit ?? PROVISIONING_COMPUTE_UNIT_LIMIT;
   const rpc = createSolanaRpc(rpcUrl);
   const rpcSubscriptions = createSolanaRpcSubscriptions(wsUrl);
   const sendAndConfirm = sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions });
@@ -129,7 +132,7 @@ export const createProvisioningContext = (rpcUrl: string, wsUrl: string): Solana
       const base = setTransactionMessageFeePayerSigner(payer, createTransactionMessage({ version: 0 }));
       const withLifetime = setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, base);
       const message = appendTransactionMessageInstructions(
-        [setComputeUnitLimitInstruction(PROVISIONING_COMPUTE_UNIT_LIMIT), ...instructions],
+        [setComputeUnitLimitInstruction(computeUnitLimit), ...instructions],
         withLifetime,
       );
       const signedTransaction = await signTransactionMessageWithSigners(message);

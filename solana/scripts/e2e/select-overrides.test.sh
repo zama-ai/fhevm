@@ -55,7 +55,15 @@ PINS_CONNECTOR="CONNECTOR_DB_MIGRATION_VERSION=$T CONNECTOR_GW_LISTENER_VERSION=
 
 # The proof service has no branch-published image, so it is always built from the checked-out source.
 check "solana scripts only -> proof service" \
-  $'solana/scripts/e2e/setup-solana-side.sh\nsolana/geyser/src/lib.rs\nsolana/docs/notes.md' \
+  $'solana/scripts/dead-surface-check.sh\nsolana/geyser/src/lib.rs\nsolana/docs/notes.md' \
+  "true" \
+  "solana-proof-service" \
+  "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
+
+# The TS framework (side-stack setup, scenario helpers, generated clients) runs from PR source;
+# it is a stack consumer, not an image input, so it must not force from-source image builds.
+check "test framework src only -> proof service" \
+  $'test-suite/fhevm/src/solana/deploy.ts\ntest-suite/fhevm/src/solana/internal/generated/zamaHost/index.ts' \
   "true" \
   "solana-proof-service" \
   "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
@@ -158,8 +166,8 @@ check "workflow change -> build all" \
   "$ALL" \
   ""
 
-check "test-suite/fhevm change -> build all" \
-  "test-suite/fhevm/src/generate/compose.ts" \
+check "test-suite/fhevm recipe change -> build all" \
+  "test-suite/fhevm/docker-compose/gateway-sc-docker-compose.yml" \
   "true" \
   "$ALL" \
   ""

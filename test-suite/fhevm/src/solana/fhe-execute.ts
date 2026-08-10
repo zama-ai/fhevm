@@ -134,7 +134,6 @@ export const persistentOutput = async (
     /** Index of the target's PDA in the transaction's remaining accounts. */
     readonly encryptedValueIndex: number;
     readonly subjects: readonly Address[];
-    readonly makePublic?: boolean;
   },
 ): Promise<FheExecuteOutputArgs> => {
   const vault = await vaultModule();
@@ -154,7 +153,9 @@ export const persistentOutput = async (
     outputLabelIndex: dictionary.intern(params.target.label),
     outputSubjectIndexes: Uint8Array.from(params.subjects.map((subject) => dictionary.internKey(subject))),
     previousState,
-    makePublic: params.makePublic ?? false,
+    // The scenarios release values for public decryption explicitly (allow_for_decryption after
+    // the SNS commit), never at creation time.
+    makePublic: false,
   };
 };
 

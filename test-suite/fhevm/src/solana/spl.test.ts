@@ -13,7 +13,7 @@ import {
   requestHeapFrameInstruction,
   setComputeUnitLimitInstruction,
   vaultAuthorityAddress,
-} from "./tokenAccounts";
+} from "./spl";
 
 const ASSOCIATED_TOKEN_PROGRAM_ADDRESS = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL" as Address;
 const SPL_TOKEN_PROGRAM_ADDRESS = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;

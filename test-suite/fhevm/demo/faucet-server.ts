@@ -5,7 +5,7 @@
 //
 // The SPL instructions are hand-built with `@solana/kit` primitives on purpose: the test-suite
 // carries no `@solana-program/token` dependency. The ATA derivation, `CreateIdempotent`, and
-// `MintTo` all come from `./tokenAccounts` (shared with the seed and the typed scenario
+// `MintTo` all come from `../src/solana/spl` (shared with the seed and the typed scenario
 // provisioning), which cites their layouts inline.
 //
 // This process holds a live validator connection and cannot be unit-tested offline; it is exercised
@@ -34,7 +34,7 @@ import { readDemoAllowedOriginFromEnv, readDemoAuthorizationFromEnv } from "./au
 import { readDemoConfig } from "./config";
 import { serveFaucet, type UsdcMinter } from "./faucet";
 import { DEMO_KEYPAIRS } from "./loadDemoEnv";
-import { associatedTokenAddress, createIdempotentAtaInstruction, mintToInstruction } from "./tokenAccounts";
+import { associatedTokenAddress, createIdempotentAtaInstruction, mintToInstruction } from "../src/solana/spl";
 
 /** Builds a `UsdcMinter` that mints mock USDC to a recipient's ATA on the live validator. */
 const buildUsdcMinter = async (options: {

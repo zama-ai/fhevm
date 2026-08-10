@@ -69,6 +69,9 @@ export const DEMO_REQUIRED_COMMANDS = [
   "bash",
   "bun",
   "cargo",
+  // cast: fhevm-cli's own up path still shells out to it (generate/index.ts key derivation,
+  // flow/readiness.ts + up-flow.ts balance checks) even though the Solana side-stack no longer does.
+  "cast",
   "cp",
   "curl",
   "dirname",

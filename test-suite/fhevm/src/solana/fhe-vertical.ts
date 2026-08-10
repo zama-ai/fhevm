@@ -22,7 +22,7 @@ import {
   sendFheExecute,
   type PersistentValueTarget,
 } from "./fhe-execute";
-import { claimCleartext, runSolanaPublicDecrypt, type PublicDecryptClaim } from "./public-decrypt";
+import { certificateCleartext, runSolanaPublicDecrypt, type PublicDecryptCertificate } from "./public-decrypt";
 import type { SolanaProvisioningContext } from "./provision";
 
 type VaultModule = typeof import("@demo-dapp/vault/index.js");
@@ -109,18 +109,18 @@ export const trivialEncryptPersistent = async (
   return { target, handle: await currentHandle(context, target.encryptedValue) };
 };
 
-/** A proven public decrypt: the interpreted cleartext plus the raw KMS certificate claim. */
+/** A proven public decrypt: the interpreted cleartext plus the raw KMS certificate. */
 export type PublicDecryptOutcome = {
   readonly cleartext: bigint;
-  /** The full certificate claim — what on-chain consume steps (redeem/disclose) verify. */
-  readonly claim: PublicDecryptClaim;
+  /** The full certificate — what on-chain consume steps (redeem/disclose) verify. */
+  readonly certificate: PublicDecryptCertificate;
 };
 
 /**
  * Proves `handle` decrypts publicly to the expected cleartext: live peaks/leaf-count from the
  * on-chain value, the inclusion proof from solana-proof-service (leaf resolved by the service,
  * cross-checked against the on-chain leaf count), then the KMS certificate through the SDK's
- * public-decrypt action. Returns the cleartext together with the certificate claim.
+ * public-decrypt action. Returns the cleartext together with the certificate.
  */
 export const publicDecryptExpect = async (
   context: SolanaProvisioningContext,
@@ -155,7 +155,7 @@ export const publicDecryptExpect = async (
     throw new Error(`public proof leaf index ${proof.proof.leafIndex} != expected ${params.expectedLeafIndex}`);
   }
 
-  const claim = await runSolanaPublicDecrypt({
+  const certificate = await runSolanaPublicDecrypt({
     PD_RELAYER_URL: config.relayerUrl,
     PD_CONTRACTS_CHAIN_ID: config.chainId.toString(),
     PD_HANDLE: hex(params.handle),
@@ -167,13 +167,13 @@ export const publicDecryptExpect = async (
     PD_MMR_LEAF_COUNT: state.leafCount.toString(),
     PD_MMR_PROOF_BYTES: hex(proof.mmrProofBytes),
   });
-  const cleartext = claimCleartext(claim);
+  const cleartext = certificateCleartext(certificate);
   if (typeof params.expect === "bigint") {
     if (cleartext !== params.expect) throw new Error(`public-decrypt cleartext ${cleartext} != ${params.expect}`);
   } else if (cleartext >= params.expect.lessThan) {
     throw new Error(`public-decrypt cleartext ${cleartext} not < ${params.expect.lessThan}`);
   }
-  return { cleartext, claim };
+  return { cleartext, certificate };
 };
 
 /**

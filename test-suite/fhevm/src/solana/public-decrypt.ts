@@ -1,3 +1,5 @@
+import type { SolanaPublicDecryptCertificateClaim } from '@sdk-src/solana/actions/publicDecryptCertificate.js';
+
 import { PreflightError } from '../errors';
 
 export const SOLANA_PUBLIC_DECRYPT_PROFILE = 'solana-public-decrypt';
@@ -15,21 +17,19 @@ type PublicDecryptRequest = {
   leafCount: bigint;
   mmrProofBytes: Uint8Array;
 };
-export type PublicDecryptClaim = {
-  handle: string;
-  abiEncodedCleartext: string;
-  signatures: readonly string[];
-  extraData: string;
-  /** The MMR public-leaf inclusion proof the certificate pinned — what on-chain consume steps re-verify. */
-  inclusionProof: { leafIndex: bigint; siblings: readonly Uint8Array[] };
-};
+/**
+ * The KMS public-decrypt certificate the SDK action returns — the glossary term is "certificate"
+ * (the SDK's type name keeps its historical "claim" suffix). Type-only import: the SDK workspace
+ * need not be materialized to run the offline suites.
+ */
+export type PublicDecryptCertificate = SolanaPublicDecryptCertificateClaim;
 /**
  * Interprets the certificate cleartext as a number. `abiEncodedCleartext` is UNPREFIXED ABI hex
  * (a 32-byte big-endian uint256), so it must be parsed as hex explicitly — `BigInt(...)` on the
  * raw string reads all-digit hex like "46" as decimal 46 instead of 0x46 = 70.
  */
-export const claimCleartext = (claim: Pick<PublicDecryptClaim, 'abiEncodedCleartext'>): bigint =>
-  BigInt(`0x${claim.abiEncodedCleartext.replace(/^0x/, '')}`);
+export const certificateCleartext = (certificate: Pick<PublicDecryptCertificate, 'abiEncodedCleartext'>): bigint =>
+  BigInt(`0x${certificate.abiEncodedCleartext.replace(/^0x/, '')}`);
 
 type PublicDecryptSdkInput = {
   chainId: bigint;
@@ -37,7 +37,7 @@ type PublicDecryptSdkInput = {
   apiKey: string;
   request: PublicDecryptRequest;
 };
-type PublicDecryptSdkCall = (input: PublicDecryptSdkInput) => Promise<PublicDecryptClaim>;
+type PublicDecryptSdkCall = (input: PublicDecryptSdkInput) => Promise<PublicDecryptCertificate>;
 
 export type PublicDecryptDependencies = { publicDecryptCertificate?: PublicDecryptSdkCall };
 
@@ -95,7 +95,7 @@ const runPublicSdkPublicDecrypt: PublicDecryptSdkCall = async (input) => {
 export const runSolanaPublicDecrypt = async (
   environment: Environment = process.env,
   dependencies: PublicDecryptDependencies = {},
-): Promise<PublicDecryptClaim> => {
+): Promise<PublicDecryptCertificate> => {
   const request: PublicDecryptRequest = {
     handle: bytes32Hex(environment, 'PD_HANDLE'),
     contextId: bytes32(environment, 'PD_CONTEXT_ID'),
@@ -107,7 +107,7 @@ export const runSolanaPublicDecrypt = async (
     mmrProofBytes: bytes(required(environment, 'PD_MMR_PROOF_BYTES'), 'PD_MMR_PROOF_BYTES'),
   };
   const call = dependencies.publicDecryptCertificate ?? runPublicSdkPublicDecrypt;
-  const claim = await call({
+  const certificate = await call({
     chainId: BigInt(required(environment, 'PD_CONTRACTS_CHAIN_ID')),
     relayerUrl: required(environment, 'PD_RELAYER_URL'),
     apiKey: environment.ZAMA_FHEVM_API_KEY ?? 'local',
@@ -117,11 +117,11 @@ export const runSolanaPublicDecrypt = async (
     `${JSON.stringify({
       status: 'succeeded',
       result: {
-        decryptedValue: claim.abiEncodedCleartext,
-        signatures: claim.signatures,
-        extraData: claim.extraData,
+        decryptedValue: certificate.abiEncodedCleartext,
+        signatures: certificate.signatures,
+        extraData: certificate.extraData,
       },
     })}\n`,
   );
-  return claim;
+  return certificate;
 };

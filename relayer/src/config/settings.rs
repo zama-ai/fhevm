@@ -1514,7 +1514,7 @@ mod tests {
     /// Settings::new (same code path as the real app).
     /// Smoke test: a QUOTED RFC-021 Solana host chain id (> `i64::MAX`) loads through the real
     /// `Settings::new` path to the exact u64. The `config` crate's numeric value is i64-backed, so
-    /// the id must be a quoted string (as setup-solana-side.sh writes it) to avoid a lossy f64
+    /// the id must be a quoted string (as the e2e side-stack setup writes it) to avoid a lossy f64
     /// coercion. NOTE: this does NOT reproduce the env-specific `host_chains` "untagged MapOrSeq"
     /// crash observed in the live stack after a config reconcile (not isolable in a unit test — it
     /// needs the full live env). The manual `Visitor` in `deserialize_vec_from_map_or_seq` removes
@@ -1524,7 +1524,7 @@ mod tests {
     #[serial] // avoid env var leakage from parallel tests
     fn test_settings_loads_solana_host_chain_id_above_i64_max() {
         const SOLANA_CHAIN_ID: u64 = (1u64 << 63) | 12345; // 9223372036854788153 > i64::MAX
-                                                           // Mirror the live config (setup-solana-side.sh writes the Solana host_chains entry with a
+                                                           // Mirror the live config (the e2e setup deploy.ts writes the Solana host_chains entry with a
                                                            // QUOTED chain_id, because the `config` crate's numeric value is i64-backed and a bare
                                                            // number above i64::MAX coerces to a lossy f64). Loading must succeed through the real
                                                            // Settings::new path; this regresses the untagged-enum crash the Visitor fix removed.

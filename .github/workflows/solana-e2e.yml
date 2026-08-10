@@ -60,8 +60,10 @@ jobs:
     runs-on: runs-on=${{ github.run_id }}/runner=32cpu-linux-x64/volume=160gb
     # The e2e lane's own history: median successful runs ~50-53 min, observed successful tail up
     # to 72 min (run 29830123609). The demo phase adds ~2 min on the already-built stack. The
-    # owned-boot status gate before reseed fails fast if an e2e phase degraded the stack.
-    timeout-minutes: 90
+    # owned-boot status gate before reseed fails fast if an e2e phase degraded the stack. 120
+    # rather than the bash-era 90: the token-vertical scenario (its own 20-min budget) landed
+    # after the 72-min tail was measured.
+    timeout-minutes: 120
     strategy:
       matrix:
         # Single-value matrix: only the Yellowstone reconstruction arm remains (the emit/RPC arm

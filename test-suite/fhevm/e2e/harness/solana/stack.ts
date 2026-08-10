@@ -7,14 +7,33 @@
 // stopping anything. A scenario that reaches its test body after `ensureUp` resolves can attribute
 // any later failure to the arc under test, not to a half-started stack.
 
-import { waitForSnsCommit, type SnsCommitOptions } from "../../../src/solana/sns";
+import { waitForSnsCommit } from "../../../src/solana/sns";
+import { run } from "../../../src/utils/process";
 import { until } from "../until";
 import type { TestEnv } from "../loadEnv";
+
+const PROOF_SERVICE_CONTAINER = "fhevm-solana-proof-service";
 
 export type SolanaStack = {
   readonly env: TestEnv;
   /** Waits until the SNS worker committed both ciphertext forms for `handle` (0x-hex, 32 bytes). */
-  waitForSnsCommit(handle: string, options?: SnsCommitOptions): Promise<void>;
+  waitForSnsCommit(handle: string): Promise<void>;
+  /**
+   * Restarts the solana-proof-service container and waits for readiness. The restart gate from
+   * the retired full-vertical.sh: a restarted service must replay the ledger exactly-inclusively
+   * (#1682/#3215) and hand out the same proofs it did before dying.
+   */
+  restartProofService(): Promise<void>;
+};
+
+const untilProofServiceReady = async (proofServiceUrl: string): Promise<void> => {
+  await until(
+    async () => {
+      const body = await (await fetch(`${proofServiceUrl}/health/readiness`)).text();
+      return /"ready"\s*:\s*true/.test(body);
+    },
+    { description: "solana-proof-service readiness", timeoutMs: 120_000 },
+  );
 };
 
 /**
@@ -41,12 +60,13 @@ export const ensureUp = async (env: TestEnv): Promise<SolanaStack> => {
     async () => (await fetch(`${env.relayerUrl}/liveness`)).ok,
     { description: "relayer liveness", timeoutMs: 60_000 },
   );
-  await until(
-    async () => {
-      const body = await (await fetch(`${env.proofServiceUrl}/health/readiness`)).text();
-      return /"ready"\s*:\s*true/.test(body);
+  await untilProofServiceReady(env.proofServiceUrl);
+  return {
+    env,
+    waitForSnsCommit,
+    async restartProofService() {
+      await run(["docker", "restart", PROOF_SERVICE_CONTAINER]);
+      await untilProofServiceReady(env.proofServiceUrl);
     },
-    { description: "solana-proof-service readiness", timeoutMs: 120_000 },
-  );
-  return { env, waitForSnsCommit };
+  };
 };

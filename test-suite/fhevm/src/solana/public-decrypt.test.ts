@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { claimCleartext, runSolanaPublicDecrypt, type PublicDecryptDependencies } from './public-decrypt';
+import { certificateCleartext, runSolanaPublicDecrypt, type PublicDecryptDependencies } from './public-decrypt';
 
 const hex32 = (byte: string) => `0x${byte.repeat(64)}`;
 const environment = (): Record<string, string> => ({
@@ -14,7 +14,7 @@ const environment = (): Record<string, string> => ({
   PD_MMR_LEAF_COUNT: '1',
   PD_MMR_PROOF_BYTES: '0x02000000000000000000000000',
 });
-const claim = {
+const certificate = {
   handle: hex32('1'),
   abiEncodedCleartext: '000000000000002a',
   signatures: ['ab'.repeat(65)],
@@ -28,7 +28,7 @@ describe('solana-public-decrypt', () => {
     const dependencies: PublicDecryptDependencies = {
       publicDecryptCertificate: async (input) => {
         received = input;
-        return claim;
+        return certificate;
       },
     };
     await runSolanaPublicDecrypt(environment(), dependencies);
@@ -53,16 +53,16 @@ describe('solana-public-decrypt', () => {
       const input: Record<string, string | undefined> = environment();
       delete input[name];
       await expect(
-        runSolanaPublicDecrypt(input, { publicDecryptCertificate: async () => claim }),
+        runSolanaPublicDecrypt(input, { publicDecryptCertificate: async () => certificate }),
       ).rejects.toThrow(`missing env ${name}`);
     }
   });
 
   test('interprets the certificate cleartext as unprefixed big-endian hex, never decimal', () => {
     // The relayer's ABI cleartext carries no 0x prefix; "46" is 70, not 46.
-    expect(claimCleartext({ abiEncodedCleartext: `${'0'.repeat(62)}46` })).toBe(70n);
-    expect(claimCleartext({ abiEncodedCleartext: `${'0'.repeat(62)}2a` })).toBe(42n);
-    expect(claimCleartext({ abiEncodedCleartext: `0x${'0'.repeat(62)}2a` })).toBe(42n);
+    expect(certificateCleartext({ abiEncodedCleartext: `${'0'.repeat(62)}46` })).toBe(70n);
+    expect(certificateCleartext({ abiEncodedCleartext: `${'0'.repeat(62)}2a` })).toBe(42n);
+    expect(certificateCleartext({ abiEncodedCleartext: `0x${'0'.repeat(62)}2a` })).toBe(42n);
   });
 
   test('preserves SDK terminal errors', async () => {

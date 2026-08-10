@@ -4,7 +4,7 @@
 # Usage (from repo root):
 #   bash solana/scripts/e2e/clean-e2e.sh
 #
-# When: before full-vertical / adversarial live runs; CI solana-e2e setup.
+# When: before running the live scenario suite (`bun run test:e2e`); CI solana-e2e setup.
 # Writes: local validator + Docker/fhevm-cli stack only (no checked-in goldens).
 #
 # Fully reproducible Solana e2e from a CLEAN fhevm-cli state (acceptance #2).

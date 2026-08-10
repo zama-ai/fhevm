@@ -22,6 +22,9 @@
 //        with the proof-service access proof (leaf resolved by the service, `verified: true` gated).
 //   [input-flow] decrypt(VerifiedInput(V) + ADD) == V + ADD -> in-process SDK input proof ->
 //        one Binary Add fhe_execute (attestation re-verified on-chain) -> public decrypt == V+ADD.
+//   [proof-service] restart gate (readiness -> docker restart -> post-restart exact-replay)
+//     -> `stack.restartProofService()` before the first arc, so every proof the suite consumes
+//        is served from a restarted, ledger-replayed service (#1682/#3215).
 //
 // Consciously dropped from the bash: the in-binary `zama_solana_acl::mmr_verify` pre-check of the
 // historical proof (the proof service's `verified: true` gate plus the decrypt itself failing on a
@@ -48,6 +51,7 @@ import {
 } from "../../src/solana/fhe-vertical";
 import { runSolanaCurrentUserDecrypt } from "../../src/solana/current-user-decrypt";
 import { solanaUserDecryptContext } from "../../src/solana/two-holder-transfer";
+import { submitUint64InputProof } from "../harness/solana/sdkEncrypt";
 import { verticalSetup } from "../harness/solana/vertical";
 
 // Each phase does its own compute + SNS commit wait (up to ~3min) + KMS round-trips.
@@ -56,37 +60,16 @@ const SCENARIO_TIMEOUT_MS = 15 * 60_000;
 const hex = (bytes: Uint8Array): string => `0x${Buffer.from(bytes).toString("hex")}`;
 const hexToBytes = (value: string): Uint8Array => Uint8Array.from(Buffer.from(value.replace(/^0x/, ""), "hex"));
 
-/** The SDK encrypt surface the input-flow phase drives (untyped: runtime dynamic-import seam). */
-type SolanaSdkEncryptSurface = {
-  setFhevmRuntimeConfig(config: { auth: { type: "ApiKeyHeader"; value: string } }): void;
-  defineFhevmSolanaChain(definition: {
-    id: bigint;
-    fhevm: { relayerUrl: string; acl: { domainKeys: readonly `0x${string}`[] } };
-  }): unknown;
-  createFhevmEncryptClient(parameters: { chain: unknown; aclProgramAddress: `0x${string}` }): {
-    buildInputProof(parameters: {
-      contractAddress: `0x${string}`;
-      userAddress: `0x${string}`;
-      values: readonly { type: "uint64"; value: bigint }[];
-    }): Promise<unknown>;
-    submitInputProof(parameters: { inputProof: unknown }): Promise<{
-      handles: readonly { bytes32Hex: `0x${string}` }[];
-      signatures: readonly `0x${string}`[];
-      extraData: `0x${string}`;
-    }>;
-  };
-};
-
-const loadSolanaSdkModule = async (): Promise<SolanaSdkEncryptSurface> => {
-  const solanaModule = "@fhevm/sdk/solana";
-  return (await import(solanaModule)) as unknown as SolanaSdkEncryptSurface;
-};
-
 describe("solana fhe_execute decrypt vertical", () => {
   test(
     "trivial-encrypt 42 -> allow -> public-decrypt == 42 -> pure-SDK user-decrypt == 42",
     async () => {
       const { stack, context, wallet, config, secretKey, walletHex } = await verticalSetup();
+
+      // Restart gate (full-vertical.sh "[proof-service] decisive vertical gates", #1682/#3215):
+      // bounce the proof service before any proof is consumed, so every inclusion proof this
+      // suite fetches is served from an exact-inclusive ledger replay, not warm process state.
+      await stack.restartProofService();
 
       const result = await trivialEncryptPersistent(context, {
         payer: wallet.signer,
@@ -162,29 +145,15 @@ describe("solana fhe_execute decrypt vertical", () => {
       // the deposit-arc scenario proved under bun). The wallet is both the attested user and the
       // attested contract identity: the attested contract IS the input's ACL domain, and the
       // persistent output below must bind exactly that domain (enforced on-chain).
-      const solanaSdk = await loadSolanaSdkModule();
-      solanaSdk.setFhevmRuntimeConfig({ auth: { type: "ApiKeyHeader", value: process.env.ZAMA_FHEVM_API_KEY ?? "local" } });
-      const chain = solanaSdk.defineFhevmSolanaChain({
-        id: config.chainId,
-        fhevm: { relayerUrl: config.relayerUrl, acl: { domainKeys: [walletHex] } },
+      const submission = await submitUint64InputProof({
+        chainId: config.chainId,
+        relayerUrl: config.relayerUrl,
+        domainKey: walletHex,
+        aclProgramAddress: env.aclProgram,
+        contractAddress: walletHex,
+        userAddress: walletHex,
+        value: INPUT_VALUE,
       });
-      const encryptClient = solanaSdk.createFhevmEncryptClient({ chain, aclProgramAddress: env.aclProgram });
-      // The relayer's key-material URLs point at the docker-internal host `minio:9000`; rewrite to
-      // the host-published endpoint for this host-side prover (same seam as the deposit-arc join).
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = ((url: string | URL | Request, options?: RequestInit) =>
-        originalFetch(typeof url === "string" ? url.replace("//minio:9000", "//127.0.0.1:9000") : url, options)) as typeof fetch;
-      let submission: Awaited<ReturnType<ReturnType<SolanaSdkEncryptSurface["createFhevmEncryptClient"]>["submitInputProof"]>>;
-      try {
-        const inputProof = await encryptClient.buildInputProof({
-          contractAddress: walletHex,
-          userAddress: walletHex,
-          values: [{ type: "uint64", value: INPUT_VALUE }],
-        });
-        submission = await encryptClient.submitInputProof({ inputProof });
-      } finally {
-        globalThis.fetch = originalFetch;
-      }
       const inputHandle = hexToBytes(submission.handles[0].bytes32Hex);
       expect(inputHandle).toHaveLength(32);
 
