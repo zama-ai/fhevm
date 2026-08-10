@@ -21,17 +21,7 @@
 //! deposit batcher (join = underlying, payout = shares) or a redeem batcher
 //! (join = shares, payout = underlying).
 
-mod support;
-
-// Deliberate `#[path]` include (not `support::cost_snapshot`): each Mollusk
-// binary compiles its own copy.
-#[path = "support/cost_snapshot.rs"]
-mod cost_snapshot;
-
-use anchor_lang::{
-    prelude::system_program, AccountDeserialize, AccountSerialize, AnchorDeserialize,
-    Discriminator, InstructionData, ToAccountMetas,
-};
+use anchor_lang::{prelude::system_program, AccountDeserialize};
 use anchor_spl::token::spl_token;
 use confidential_batcher as batcher;
 use confidential_token as token;
@@ -41,390 +31,87 @@ use mollusk_svm::{
     Mollusk,
 };
 use solana_sdk::{
-    account::Account, instruction::Instruction, program_error::ProgramError,
-    program_option::COption, program_pack::Pack, pubkey::Pubkey,
+    account::Account, instruction::Instruction, program_error::ProgramError, pubkey::Pubkey,
 };
 use std::collections::HashMap;
-use std::path::PathBuf;
-use support::cleartext_fhe_execute::{
-    evaluate as evaluate_cleartext, ClearInputs, TypedClearValue,
-};
-use support::kms_cert::{cleartext_u256, kms_signing_key, secp_evm_address, secp_sign};
 use zama_host as host;
+use zama_solana_test_kit::kms::{
+    amount_attestation_for, cleartext_u256, coprocessor_signing_key, kms_public_decrypt_cert_signed_by,
+    kms_signing_key, secp_evm_address,
+};
+use zama_solana_test_kit::oracle::CleartextLedger;
+use zama_solana_test_kit::snapshot as cost_snapshot;
+use zama_solana_test_kit::{
+    anchor_error_check, anchor_ix, encrypted_value_account, ensure_system_accounts,
+    event_authority, handle_for_chain, host_config_account, kms_context_account,
+    new_encrypted_value, read_account, read_encrypted_value, read_spl_amount, serialized_account,
+    spl_mint_account, spl_token_account, system_account, Ctx, HostConfigParams, BALANCE_FHE_TYPE,
+    DECIMALS, GATEWAY_CHAIN_ID,
+};
 
-const BALANCE_FHE_TYPE: u8 = 5;
-const GATEWAY_CHAIN_ID: u64 = 31337;
-const INPUT_VERIFICATION_CONTRACT: [u8; 20] = [0xCDu8; 20];
-const DECRYPTION_CONTRACT: [u8; 20] = [0xDEu8; 20];
 const KMS_CONTEXT_ID: u64 = 9;
-const DECIMALS: u8 = 6;
 /// Generous batch-authority funding for owner-charged rent (token-account and
 /// encrypted value account creation at open; the redeem marker and wrap growth at settle).
 const AUTHORITY_FUNDING: u64 = 100_000_000;
-
-type Ctx = mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>;
 
 // ---------------------------------------------------------------------------
 // Harness
 // ---------------------------------------------------------------------------
 
 fn mollusk() -> Mollusk {
-    let deploy_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../target/deploy");
-    unsafe {
-        std::env::set_var("SBF_OUT_DIR", deploy_dir);
-    }
-    let mut mollusk = Mollusk::new(&batcher::id(), "confidential_batcher");
+    let mut mollusk = zama_solana_test_kit::svm(&batcher::id(), "confidential_batcher");
     mollusk.add_program(&host::id(), "zama_host");
     mollusk.add_program(&token::id(), "confidential_token");
     mollusk.add_program(&vault::id(), "demo_vault");
     mollusk_svm_programs_token::token::add_program(&mut mollusk);
-    // fhe_execute derives handle entropy from the previous bank hash: run at a
-    // nonzero slot with a SlotHashes entry below it, like a real validator.
-    mollusk.sysvars.clock.slot = 100;
-    mollusk.sysvars.slot_hashes =
-        solana_sdk::slot_hashes::SlotHashes::new(&[(99, solana_sdk::hash::Hash::new_unique())]);
+    zama_solana_test_kit::set_previous_bank_hash_sysvars(&mut mollusk);
     // Batcher instructions chain a token execution and the batcher's own execution;
     // real transactions request the same higher limit.
     mollusk.compute_budget.compute_unit_limit = 1_400_000;
     mollusk
 }
 
-fn anchor_ix<A, D>(program_id: Pubkey, accounts: A, args: D) -> Instruction
-where
-    A: ToAccountMetas,
-    D: InstructionData,
-{
-    Instruction {
-        program_id,
-        accounts: accounts.to_account_metas(None),
-        data: args.data(),
-    }
-}
-
-fn serialized_account<T: AccountSerialize>(account: T) -> Vec<u8> {
-    let mut data = Vec::new();
-    account.try_serialize(&mut data).unwrap();
-    data
-}
-
-fn event_authority(program_id: Pubkey) -> Pubkey {
-    Pubkey::find_program_address(&[b"__event_authority"], &program_id).0
-}
-
-fn system_account(lamports: u64) -> Account {
-    Account {
-        lamports,
-        data: vec![],
-        owner: system_program::ID,
-        executable: false,
-        rent_epoch: 0,
-    }
-}
-
-fn handle_for_chain(seed: u8, fhe_type: u8) -> [u8; 32] {
-    let mut handle = [seed; 32];
-    handle[21] = 0;
-    handle[22..30].copy_from_slice(&host::SOLANA_POC_CHAIN_ID.to_be_bytes());
-    handle[30] = fhe_type;
-    handle[31] = host::HANDLE_VERSION;
-    handle
-}
-
 fn batcher_error(error: batcher::BatcherError) -> Check<'static> {
-    Check::err(ProgramError::Custom(
-        anchor_lang::error::ERROR_CODE_OFFSET + error as u32,
-    ))
+    anchor_error_check(error as u32)
 }
 
-fn decode_fhe_execute_args(data: &[u8]) -> Option<host::FheExecuteArgs> {
-    let payload = data.strip_prefix(host::instruction::FheExecute::DISCRIMINATOR)?;
-    host::FheExecuteArgs::deserialize(&mut &*payload).ok()
+/// The batcher suite's replay entry point: a batcher instruction issues several `fhe_execute`
+/// CPIs (a token CPI's execution plus the batcher's own), and the tests assert exactly how many.
+trait BatcherLedgerExt {
+    fn evaluate_fhe_cpis(&mut self, context: &Ctx, result: &InstructionResult) -> usize;
 }
 
-fn execution_step_output(step: &host::FheExecuteStep) -> &host::FheExecuteOutput {
-    match step {
-        host::FheExecuteStep::Binary { output, .. }
-        | host::FheExecuteStep::Ternary { output, .. }
-        | host::FheExecuteStep::TrivialEncrypt { output, .. }
-        | host::FheExecuteStep::Rand { output, .. }
-        | host::FheExecuteStep::Unary { output, .. }
-        | host::FheExecuteStep::RandBounded { output, .. }
-        | host::FheExecuteStep::Sum { output, .. }
-        | host::FheExecuteStep::IsIn { output, .. }
-        | host::FheExecuteStep::MulDiv { output, .. } => output,
-    }
-}
-
-/// Cleartext mirror of every encrypted handle the tests touch.
-#[derive(Default)]
-struct CleartextLedger {
-    values: ClearInputs,
-}
-
-impl CleartextLedger {
-    fn seed_amount(&mut self, handle: [u8; 32], value: u64) {
-        self.values
-            .insert(handle, TypedClearValue::from_u64(BALANCE_FHE_TYPE, value));
-    }
-
-    /// Replays every `fhe_execute` CPI a batcher instruction issued — in order,
-    /// so a later execution can consume an earlier execution's persisted outputs (the
-    /// join re-materialization reads the transfer's `transferred_amount`).
-    /// Each instruction writes any encrypted value account at most once, so binding results to
-    /// the end-of-instruction persisted handles is exact.
+impl BatcherLedgerExt for CleartextLedger {
     fn evaluate_fhe_cpis(&mut self, context: &Ctx, result: &InstructionResult) -> usize {
-        let message = result
-            .message
-            .as_ref()
-            .expect("Mollusk result must include its compiled message");
-        let execute_args = result
-            .inner_instructions
-            .iter()
-            .filter(|inner| {
-                message
-                    .account_keys()
-                    .get(inner.instruction.program_id_index as usize)
-                    .copied()
-                    == Some(host::id())
-            })
-            .filter_map(|inner| decode_fhe_execute_args(&inner.instruction.data))
-            .collect::<Vec<_>>();
+        let replay = self.replay_fhe_cpis(context, result);
         assert!(
-            !execute_args.is_empty(),
+            replay.executions > 0,
             "expected at least one fhe_execute CPI in this instruction"
         );
-
-        let mut executions = 0;
-        for args in &execute_args {
-            let outputs = evaluate_cleartext(args, &self.values)
-                .expect("every emitted FHE batch must be valid in cleartext");
-            for (step, value) in args.steps.iter().zip(outputs) {
-                let host::FheExecuteOutput::StoredValue {
-                    output_domain_index,
-                    output_account_index,
-                    output_label_index,
-                    ..
-                } = execution_step_output(step)
-                else {
-                    continue;
-                };
-                let encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
-                    args.dictionary_bytes(*output_domain_index)
-                        .expect("valid dictionary index"),
-                    args.dictionary_bytes(*output_account_index)
-                        .expect("valid dictionary index"),
-                    args.dictionary_bytes(*output_label_index)
-                        .expect("valid dictionary index"),
-                );
-                let address = host::encrypted_value_address(encrypted_value_id).0;
-                let persisted = read_encrypted_value(context, address);
-                self.values.insert(persisted.current_handle, value);
-            }
-            executions += 1;
-        }
-        executions
+        replay.executions
     }
-
-    fn u64_at(&self, context: &Ctx, encrypted_value: Pubkey) -> u64 {
-        let handle = read_encrypted_value(context, encrypted_value).current_handle;
-        let value = self
-            .values
-            .get(&handle)
-            .expect("missing cleartext value for persisted handle");
-        assert_eq!(value.fhe_type, BALANCE_FHE_TYPE);
-        assert_eq!(value.value[..24], [0; 24], "cleartext value exceeds u64");
-        u64::from_be_bytes(value.value[24..].try_into().unwrap())
-    }
-}
-
-fn read_encrypted_value(context: &Ctx, address: Pubkey) -> host::EncryptedValue {
-    let account = context
-        .account_store
-        .borrow()
-        .get(&address)
-        .expect("missing encrypted value account")
-        .clone();
-    host::EncryptedValue::try_deserialize(&mut account.data.as_slice())
-        .expect("valid EncryptedValue account")
 }
 
 fn read_batch(context: &Ctx, address: Pubkey) -> batcher::Batch {
-    let account = context
-        .account_store
-        .borrow()
-        .get(&address)
-        .expect("missing batch account")
-        .clone();
-    batcher::Batch::try_deserialize(&mut account.data.as_slice()).expect("valid batch account")
+    read_account(context, address)
 }
 
 fn read_join_record(context: &Ctx, address: Pubkey) -> batcher::JoinRecord {
-    let account = context
-        .account_store
-        .borrow()
-        .get(&address)
-        .expect("missing join record")
-        .clone();
-    batcher::JoinRecord::try_deserialize(&mut account.data.as_slice()).expect("valid join record")
-}
-
-fn read_spl_amount(context: &Ctx, address: Pubkey) -> u64 {
-    let account = context
-        .account_store
-        .borrow()
-        .get(&address)
-        .expect("missing spl token account")
-        .clone();
-    spl_token::state::Account::unpack(&account.data)
-        .expect("valid spl token account")
-        .amount
-}
-
-/// Inserts fresh, empty system accounts for addresses an instruction will
-/// create (Mollusk requires every referenced account to exist in the store).
-fn ensure_system_accounts(context: &Ctx, addresses: &[Pubkey]) {
-    let mut store = context.account_store.borrow_mut();
-    for address in addresses {
-        store.entry(*address).or_insert_with(|| system_account(0));
-    }
-}
-
-fn new_encrypted_value(
-    domain: Pubkey,
-    encrypted_value_account_authority: Pubkey,
-    encrypted_value_label: [u8; 32],
-    handle: [u8; 32],
-    subjects: &[Pubkey],
-) -> (Pubkey, host::EncryptedValue) {
-    let encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
-        domain.to_bytes(),
-        encrypted_value_account_authority.to_bytes(),
-        encrypted_value_label,
-    );
-    let (address, bump) = host::encrypted_value_address(encrypted_value_id);
-    let value = host::EncryptedValue {
-        domain,
-        encrypted_value_account_authority,
-        label: encrypted_value_label,
-        current_handle: handle,
-        subjects: subjects.to_vec(),
-        leaf_count: 0,
-        peaks: Vec::new(),
-        bump,
-    };
-    (address, value)
-}
-
-fn encrypted_value_account(value: &host::EncryptedValue) -> Account {
-    Account {
-        lamports: 10_000_000_000,
-        data: serialized_account(value.clone()),
-        owner: host::id(),
-        executable: false,
-        rent_epoch: 0,
-    }
-}
-
-fn spl_mint_account(mint_authority: Option<Pubkey>, supply: u64) -> Account {
-    let mut data = vec![0u8; spl_token::state::Mint::LEN];
-    spl_token::state::Mint::pack(
-        spl_token::state::Mint {
-            mint_authority: mint_authority.map(COption::Some).unwrap_or(COption::None),
-            supply,
-            decimals: DECIMALS,
-            is_initialized: true,
-            freeze_authority: COption::None,
-        },
-        &mut data,
-    )
-    .unwrap();
-    Account {
-        lamports: 1_000_000_000,
-        data,
-        owner: spl_token::id(),
-        executable: false,
-        rent_epoch: 0,
-    }
-}
-
-fn spl_token_account(mint: Pubkey, owner: Pubkey, amount: u64) -> Account {
-    let mut data = vec![0u8; spl_token::state::Account::LEN];
-    spl_token::state::Account::pack(
-        spl_token::state::Account {
-            mint,
-            owner,
-            amount,
-            delegate: COption::None,
-            state: spl_token::state::AccountState::Initialized,
-            is_native: COption::None,
-            delegated_amount: 0,
-            close_authority: COption::None,
-        },
-        &mut data,
-    )
-    .unwrap();
-    Account {
-        lamports: 1_000_000_000,
-        data,
-        owner: spl_token::id(),
-        executable: false,
-        rent_epoch: 0,
-    }
+    read_account(context, address)
 }
 
 // ---------------------------------------------------------------------------
 // Attestations and KMS certs
 // ---------------------------------------------------------------------------
 
-fn coprocessor_signing_key() -> k256::ecdsa::SigningKey {
-    k256::ecdsa::SigningKey::from_bytes(&[0x44u8; 32].into()).unwrap()
-}
-
-/// Coprocessor-signed `fromExternal` attestation over `amount_handle`, bound
-/// to (`user`, the join mint's compute-signer PDA).
-fn amount_attestation_for(
-    amount_handle: [u8; 32],
-    user: Pubkey,
-    contract: Pubkey,
-) -> host::CoprocessorInputAttestation {
-    let ct_handles = vec![amount_handle];
-    let contract_chain_id = host::SOLANA_POC_CHAIN_ID;
-    let extra_data = vec![0x00u8];
-    let digest = host::eip712::typed_data_digest(
-        &host::eip712::domain_separator(
-            b"InputVerification",
-            b"1",
-            GATEWAY_CHAIN_ID,
-            &INPUT_VERIFICATION_CONTRACT,
-        ),
-        &host::eip712::ciphertext_verification_struct_hash(
-            &ct_handles,
-            &user.to_bytes(),
-            &contract.to_bytes(),
-            contract_chain_id,
-            &extra_data,
-        ),
-    );
-    host::CoprocessorInputAttestation {
-        input_handle: amount_handle,
-        ct_handles,
-        handle_index: 0,
-        user_address: user.to_bytes(),
-        contract_address: contract.to_bytes(),
-        contract_chain_id,
-        extra_data,
-        signatures: vec![secp_sign(&coprocessor_signing_key(), &digest)],
-    }
-}
-
 /// KMS `PublicDecryptVerification` cert over the burned batch total.
 fn kms_public_decrypt_cert(handle: [u8; 32], cleartext_amount: u64) -> (Vec<[u8; 65]>, Vec<u8>) {
     let extra_data = vec![0x00u8];
-    let signatures = support::kms_cert::kms_public_decrypt_cert_signed_by(
+    let signatures = kms_public_decrypt_cert_signed_by(
         handle,
         cleartext_u256(cleartext_amount),
         GATEWAY_CHAIN_ID,
-        &DECRYPTION_CONTRACT,
+        &zama_solana_test_kit::DECRYPTION_CONTRACT,
         &extra_data,
         &[kms_signing_key()],
     );
@@ -817,55 +504,16 @@ impl BatcherFixture {
     }
 
     fn host_config_account(&self) -> Account {
-        let (_, bump) = host::host_config_address();
-        Account {
-            lamports: 1_000_000_000,
-            data: serialized_account(host::HostConfig {
-                admin: self.payer,
-                chain_id: host::SOLANA_POC_CHAIN_ID,
-                gateway_chain_id: GATEWAY_CHAIN_ID,
-                input_verification_contract: INPUT_VERIFICATION_CONTRACT,
-                coprocessor_signers: host::pack_coprocessor_signers(&[secp_evm_address(
-                    &coprocessor_signing_key(),
-                )]),
-                coprocessor_signer_count: 1,
-                coprocessor_threshold: 1,
-                decryption_contract: DECRYPTION_CONTRACT,
-                current_kms_context_id: KMS_CONTEXT_ID,
-                paused: false,
-                grant_deny_list_enabled: false,
-                max_hcu_per_tx: u64::MAX,
-                max_hcu_depth_per_tx: u64::MAX,
-                hcu_block_cap_per_app: u64::MAX,
-                updated_slot: 0,
-                bump,
-            }),
-            owner: host::id(),
-            executable: false,
-            rent_epoch: 0,
-        }
+        host_config_account(&HostConfigParams {
+            coprocessor_signers: vec![secp_evm_address(&coprocessor_signing_key())],
+            current_kms_context_id: KMS_CONTEXT_ID,
+            ..HostConfigParams::new(self.payer)
+        })
+        .1
     }
 
     fn kms_context_account(&self) -> Account {
-        let (_, bump) = host::kms_context_address(KMS_CONTEXT_ID);
-        Account {
-            lamports: 1_000_000_000,
-            data: serialized_account(host::KmsContext {
-                context_id: KMS_CONTEXT_ID,
-                signers: vec![secp_evm_address(&kms_signing_key())],
-                thresholds: host::KmsThresholds {
-                    public_decryption: 1,
-                    user_decryption: 1,
-                    kms_gen: 1,
-                    mpc: 1,
-                },
-                destroyed: false,
-                bump,
-            }),
-            owner: host::id(),
-            executable: false,
-            rent_epoch: 0,
-        }
+        kms_context_account(KMS_CONTEXT_ID, vec![secp_evm_address(&kms_signing_key())], 1).1
     }
 
     fn vault_account(&self) -> Account {

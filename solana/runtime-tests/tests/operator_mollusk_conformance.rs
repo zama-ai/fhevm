@@ -5,13 +5,9 @@
 //! contract stays in `operator_conformance`; this target covers only materially different host
 //! admission and result-binding shapes.
 
-mod support;
+use std::collections::HashMap;
 
-use std::{collections::HashMap, path::PathBuf, sync::Once};
-
-use anchor_lang::{
-    prelude::system_program, AccountDeserialize, AccountSerialize, InstructionData, ToAccountMetas,
-};
+use anchor_lang::{prelude::system_program, AccountDeserialize};
 use mollusk_svm::{result::Check, Mollusk};
 use solana_program::keccak::hashv as keccak_hashv;
 use solana_sdk::{
@@ -19,10 +15,15 @@ use solana_sdk::{
     instruction::{AccountMeta, Instruction},
     pubkey::Pubkey,
 };
-use support::cleartext_fhe_execute::{evaluate, ClearInputs, TypedClearValue};
 use zama_host::{
     self as host, FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand, FheExecuteOutput,
     FheExecuteStep, FheUnaryOpCode,
+};
+use zama_solana_test_kit::oracle::{evaluate, ClearInputs, TypedClearValue};
+use zama_solana_test_kit::{
+    anchor_error_check, anchor_ix, empty_system_account, encrypted_value_account, event_authority,
+    funded_system_account, handle_for_chain, host_config_account, new_encrypted_value,
+    system_program_account, HostConfigParams,
 };
 
 const PREVIOUS_BANK_HASH: [u8; 32] = [0x44; 32];
@@ -287,7 +288,8 @@ impl ExecutionFlow {
     fn new() -> Self {
         INTERNED_DICTIONARY.with(|dictionary| dictionary.borrow_mut().clear());
         let authority = Pubkey::new_unique();
-        let (host_config, host_config_account) = host_config_account(authority);
+        let (host_config, host_config_account) =
+            host_config_account(&HostConfigParams::new(authority));
         Self {
             authority,
             host_config,
@@ -309,7 +311,13 @@ impl ExecutionFlow {
         let handle = handle_for_chain(seed, fhe_type);
         self.cleartext
             .insert(handle, TypedClearValue::from_u64(fhe_type, plaintext));
-        let (address, value) = new_encrypted_value_account(self.authority, [seed; 32], handle);
+        let (address, value) = new_encrypted_value(
+            self.authority,
+            self.authority,
+            [seed; 32],
+            handle,
+            &[self.authority],
+        );
         let encrypted_value_index =
             u8::try_from(self.remaining.len()).expect("test accounts fit u8");
         self.remaining
@@ -482,13 +490,11 @@ fn step_output_mut(step: &mut FheExecuteStep) -> &mut FheExecuteOutput {
     }
 }
 
+/// Local on purpose (not [`zama_solana_test_kit::host_svm`]): the expected-handle math below
+/// hashes the previous bank hash and timestamp into the result, so both must be the fixed
+/// `PREVIOUS_BANK_HASH` / `UNIX_TIMESTAMP` rather than the kit's fresh values.
 fn mollusk() -> Mollusk {
-    static SET_SBF_OUT_DIR: Once = Once::new();
-    SET_SBF_OUT_DIR.call_once(|| {
-        let deploy_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../target/deploy");
-        unsafe { std::env::set_var("SBF_OUT_DIR", deploy_dir) };
-    });
-    let mut mollusk = Mollusk::new(&host::id(), "zama_host");
+    let mut mollusk = zama_solana_test_kit::svm(&host::id(), "zama_host");
     mollusk.sysvars.clock.slot = 100;
     mollusk.sysvars.clock.unix_timestamp = UNIX_TIMESTAMP;
     mollusk.sysvars.slot_hashes = solana_sdk::slot_hashes::SlotHashes::new(&[(
@@ -498,138 +504,8 @@ fn mollusk() -> Mollusk {
     mollusk
 }
 
-fn anchor_ix<A: ToAccountMetas, D: InstructionData>(
-    program_id: Pubkey,
-    accounts: A,
-    args: D,
-) -> Instruction {
-    Instruction {
-        program_id,
-        accounts: accounts.to_account_metas(None),
-        data: args.data(),
-    }
-}
-
-fn host_config_account(admin: Pubkey) -> (Pubkey, Account) {
-    let (address, bump) = host::host_config_address();
-    (
-        address,
-        Account {
-            lamports: 1_000_000_000,
-            data: serialized_account(host::HostConfig {
-                admin,
-                chain_id: host::SOLANA_POC_CHAIN_ID,
-                gateway_chain_id: 31337,
-                input_verification_contract: [0xcd; 20],
-                coprocessor_signers: host::pack_coprocessor_signers(&[[0x11; 20]]),
-                coprocessor_signer_count: 1,
-                coprocessor_threshold: 1,
-                decryption_contract: [0xde; 20],
-                current_kms_context_id: 0,
-                paused: false,
-                grant_deny_list_enabled: false,
-                max_hcu_per_tx: u64::MAX,
-                max_hcu_depth_per_tx: u64::MAX,
-                hcu_block_cap_per_app: u64::MAX,
-                updated_slot: 0,
-                bump,
-            }),
-            owner: host::id(),
-            executable: false,
-            rent_epoch: 0,
-        },
-    )
-}
-
-fn new_encrypted_value_account(
-    authority: Pubkey,
-    encrypted_value_label: [u8; 32],
-    handle: [u8; 32],
-) -> (Pubkey, host::EncryptedValue) {
-    let encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
-        authority.to_bytes(),
-        authority.to_bytes(),
-        encrypted_value_label,
-    );
-    let (address, bump) = host::encrypted_value_address(encrypted_value_id);
-    (
-        address,
-        host::EncryptedValue {
-            domain: authority,
-            encrypted_value_account_authority: authority,
-            label: encrypted_value_label,
-            current_handle: handle,
-            subjects: vec![authority],
-            leaf_count: 0,
-            peaks: vec![],
-            bump,
-        },
-    )
-}
-
-fn serialized_account<T: AccountSerialize>(value: T) -> Vec<u8> {
-    let mut data = Vec::new();
-    value.try_serialize(&mut data).unwrap();
-    data
-}
-
-fn encrypted_value_account(value: &host::EncryptedValue) -> Account {
-    Account {
-        lamports: 10_000_000_000,
-        data: serialized_account(value.clone()),
-        owner: host::id(),
-        executable: false,
-        rent_epoch: 0,
-    }
-}
-
-fn funded_system_account() -> Account {
-    Account {
-        lamports: 10_000_000_000,
-        data: vec![],
-        owner: system_program::ID,
-        executable: false,
-        rent_epoch: 0,
-    }
-}
-
-fn empty_system_account() -> Account {
-    Account {
-        lamports: 0,
-        data: vec![],
-        owner: system_program::ID,
-        executable: false,
-        rent_epoch: 0,
-    }
-}
-
-fn system_program_account() -> Account {
-    Account {
-        lamports: 1,
-        data: b"system_program".to_vec(),
-        owner: solana_sdk::native_loader::ID,
-        executable: true,
-        rent_epoch: 0,
-    }
-}
-
-fn event_authority(program_id: Pubkey) -> Pubkey {
-    Pubkey::find_program_address(&[b"__event_authority"], &program_id).0
-}
-
 fn custom_error(error: host::errors::ZamaHostError) -> Check<'static> {
-    Check::err(solana_sdk::program_error::ProgramError::Custom(
-        anchor_lang::error::ERROR_CODE_OFFSET + error as u32,
-    ))
-}
-
-fn handle_for_chain(seed: u8, fhe_type: u8) -> [u8; 32] {
-    let mut handle = [seed; 32];
-    handle[21] = 0;
-    handle[22..30].copy_from_slice(&host::SOLANA_POC_CHAIN_ID.to_be_bytes());
-    handle[30] = fhe_type;
-    handle[31] = host::HANDLE_VERSION;
-    handle
+    anchor_error_check(error as u32)
 }
 
 fn operand_handle(operand: &FheExecuteOperand) -> [u8; 32] {

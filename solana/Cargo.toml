@@ -11,6 +11,7 @@ members = [
     "programs/demo-vault",
     "programs/zama-host",
     "runtime-tests",
+    "test-kit",
 ]
 
 [workspace.package]

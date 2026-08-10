@@ -22,8 +22,7 @@
 //! these tests assert.
 
 use anchor_lang::{
-    prelude::system_program, AccountDeserialize, AccountSerialize, Discriminator, InstructionData,
-    ToAccountMetas,
+    prelude::system_program, AccountDeserialize, Discriminator, InstructionData, ToAccountMetas,
 };
 use mollusk_svm::{result::Check, Mollusk};
 use solana_sdk::{
@@ -33,6 +32,10 @@ use solana_sdk::{
 };
 use std::{ops::Range, path::PathBuf};
 use zama_host::{self as host, PermitInvalidation};
+use zama_solana_test_kit::{
+    empty_system_account, funded_system_account as funded_wallet,
+    serialized_account as serialized, system_program_account,
+};
 
 // The schema lives with the fixture rather than in this crate, because the KMS Connector
 // includes the same file from its own test target.
@@ -54,11 +57,7 @@ use fixture_schema::{
 /// The clock is the only ambient input this instruction has, so every test states it
 /// explicitly rather than inheriting a default.
 fn mollusk_at(unix_timestamp: i64) -> Mollusk {
-    let deploy_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../target/deploy");
-    unsafe {
-        std::env::set_var("SBF_OUT_DIR", deploy_dir);
-    }
-    let mut mollusk = Mollusk::new(&host::id(), "zama_host");
+    let mut mollusk = zama_solana_test_kit::svm(&host::id(), "zama_host");
     mollusk.sysvars.clock.slot = 100;
     mollusk.sysvars.clock.unix_timestamp = unix_timestamp;
     mollusk
@@ -69,11 +68,7 @@ where
     A: ToAccountMetas,
     D: InstructionData,
 {
-    Instruction {
-        program_id: host::id(),
-        accounts: accounts.to_account_metas(None),
-        data: args.data(),
-    }
+    zama_solana_test_kit::anchor_ix(host::id(), accounts, args)
 }
 
 fn revoke_ix(user: Pubkey, invalidation: Pubkey) -> Instruction {
@@ -85,42 +80,6 @@ fn revoke_ix(user: Pubkey, invalidation: Pubkey) -> Instruction {
         },
         host::instruction::RevokePermits {},
     )
-}
-
-fn funded_wallet() -> Account {
-    Account {
-        lamports: 10_000_000_000,
-        data: vec![],
-        owner: system_program::ID,
-        executable: false,
-        rent_epoch: 0,
-    }
-}
-
-fn empty_system_account() -> Account {
-    Account {
-        lamports: 0,
-        data: vec![],
-        owner: system_program::ID,
-        executable: false,
-        rent_epoch: 0,
-    }
-}
-
-fn system_program_account() -> Account {
-    Account {
-        lamports: 1,
-        data: b"system_program".to_vec(),
-        owner: solana_sdk::native_loader::ID,
-        executable: true,
-        rent_epoch: 0,
-    }
-}
-
-fn serialized<T: AccountSerialize>(account: T) -> Vec<u8> {
-    let mut data = Vec::new();
-    account.try_serialize(&mut data).unwrap();
-    data
 }
 
 /// An existing watermark account for `user`, already carrying `watermark`.

@@ -4,15 +4,10 @@
 //! those validators and the shared cleartext evaluator. Mollusk, real TFHE, and full-stack smoke
 //! are deliberately separate test tiers.
 
-#[path = "support/operator_contracts.rs"]
-mod operator_contracts;
-
-mod support;
-
 use std::collections::HashMap;
 
-use operator_contracts::{binary_contract_tests, composite_contract_tests, unary_contract_tests};
-use support::cleartext_fhe_execute::{evaluate, ClearInputs, TypedClearValue};
+use zama_solana_test_kit::oracle::{evaluate, ClearInputs, TypedClearValue};
+use zama_solana_test_kit::{binary_contract_tests, composite_contract_tests, unary_contract_tests};
 use zama_host::instructions::fhe_execute::assert_ternary_operand_types;
 use zama_host::{
     assert_binary_operand_types, assert_unary_operand_type, CoprocessorInputAttestation,

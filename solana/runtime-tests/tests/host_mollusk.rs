@@ -21,82 +21,36 @@
 //! rewrite (`AclPermission` overflow, `AclRecord` material sealing) with no
 //! surviving equivalent to port.
 
-// Deliberate `#[path]` include (not via `support/mod.rs`): keeps this binary
-// free of `support::cleartext_fhe_execute`, which only `token_mollusk` needs.
-#[path = "support/cost_snapshot.rs"]
-mod cost_snapshot;
-
-// Deliberate `#[path]` include (not via `support/mod.rs`, which this binary skips): shared
-// secp256k1/KMS-cert helpers used by the `verify_public_decrypt` tests below.
-#[path = "support/kms_cert.rs"]
-mod kms_cert;
-
 use anchor_lang::{
-    prelude::system_program, AccountDeserialize, AccountSerialize, AnchorDeserialize,
-    Discriminator, InstructionData, ToAccountMetas,
+    prelude::system_program, AccountDeserialize, AnchorDeserialize, Discriminator, InstructionData,
 };
-use mollusk_svm::{result::Check, Mollusk};
+use mollusk_svm::result::Check;
 use solana_sdk::{
     account::Account,
     instruction::{AccountMeta, Instruction},
     pubkey::Pubkey,
 };
-use std::{collections::HashMap, path::PathBuf};
+use std::collections::HashMap;
 use zama_host::{
-    self as host, DenySubjectRecord, EncryptedValue, FheBinaryOpCode, FheExecuteArgs,
-    FheExecuteOperand, FheExecuteOutput, FheExecuteStep, FheTernaryOpCode, HostConfig,
-    PreviousState,
+    self as host, EncryptedValue, FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand,
+    FheExecuteOutput, FheExecuteStep, FheTernaryOpCode, HostConfig, PreviousState,
+};
+use zama_solana_test_kit::kms as kms_cert;
+use zama_solana_test_kit::snapshot as cost_snapshot;
+use zama_solana_test_kit::{
+    anchor_ix, deny_subject_record_account, encrypted_value_account, event_authority,
+    funded_system_account, handle_for_chain, host_svm as mollusk,
+    host_svm_without_previous_bank_hash as mollusk_without_previous_bank_hash, label,
+    new_encrypted_value as new_encrypted_value_account,
+    read_encrypted_value as read_encrypted_value_from_context,
+    read_encrypted_value_from_result as read_encrypted_value, readonly, readonly_signer,
+    serialized_account, system_program_account, writable, HostConfigParams, DECRYPTION_CONTRACT,
+    GATEWAY_CHAIN_ID, INPUT_VERIFICATION_CONTRACT,
 };
 
 // ---------------------------------------------------------------------------
 // Harness
 // ---------------------------------------------------------------------------
-
-fn mollusk() -> Mollusk {
-    let deploy_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../target/deploy");
-    unsafe {
-        std::env::set_var("SBF_OUT_DIR", deploy_dir);
-    }
-    let mut mollusk = Mollusk::new(&host::id(), "zama_host");
-    // fhe_execute derives handle entropy from the previous bank hash: run at a
-    // nonzero slot with a SlotHashes entry below it, like a real validator.
-    mollusk.sysvars.clock.slot = 100;
-    mollusk.sysvars.slot_hashes =
-        solana_sdk::slot_hashes::SlotHashes::new(&[(99, solana_sdk::hash::Hash::new_unique())]);
-    mollusk
-}
-
-fn mollusk_without_previous_bank_hash() -> Mollusk {
-    let mut mollusk = mollusk();
-    mollusk.sysvars.slot_hashes = solana_sdk::slot_hashes::SlotHashes::default();
-    mollusk
-}
-
-fn anchor_ix<A, D>(program_id: Pubkey, accounts: A, args: D) -> Instruction
-where
-    A: ToAccountMetas,
-    D: InstructionData,
-{
-    Instruction {
-        program_id,
-        accounts: accounts.to_account_metas(None),
-        data: args.data(),
-    }
-}
-
-fn serialized_account<T: AccountSerialize>(account: T) -> Vec<u8> {
-    let mut data = Vec::new();
-    account.try_serialize(&mut data).unwrap();
-    data
-}
-
-fn label(name: &str) -> [u8; 32] {
-    let mut out = [0_u8; 32];
-    let bytes = name.as_bytes();
-    assert!(bytes.len() <= out.len());
-    out[..bytes.len()].copy_from_slice(bytes);
-    out
-}
 
 /// Builds the execution's interned 32-byte constant dictionary while fixtures assemble steps
 /// (fhevm-internal#1853 W7). Interning deduplicates: repeated constants share one entry.
@@ -125,51 +79,8 @@ impl ExecutionDictionary {
     }
 }
 
-fn handle_for_chain(seed: u8, fhe_type: u8) -> [u8; 32] {
-    let mut handle = [seed; 32];
-    handle[21] = 0;
-    handle[22..30].copy_from_slice(&host::SOLANA_POC_CHAIN_ID.to_be_bytes());
-    handle[30] = fhe_type;
-    handle[31] = host::HANDLE_VERSION;
-    handle
-}
-
-fn event_authority(program_id: Pubkey) -> Pubkey {
-    Pubkey::find_program_address(&[b"__event_authority"], &program_id).0
-}
-
-const GATEWAY_CHAIN_ID: u64 = 31337;
-const INPUT_VERIFICATION_CONTRACT: [u8; 20] = [0xCDu8; 20];
-const DECRYPTION_CONTRACT: [u8; 20] = [0xDEu8; 20];
-
-fn funded_system_account() -> Account {
-    Account {
-        lamports: 10_000_000_000,
-        data: vec![],
-        owner: system_program::ID,
-        executable: false,
-        rent_epoch: 0,
-    }
-}
-
-fn system_program_account() -> Account {
-    Account {
-        lamports: 1,
-        data: b"system_program".to_vec(),
-        owner: solana_sdk::native_loader::ID,
-        executable: true,
-        rent_epoch: 0,
-    }
-}
-
 fn empty_system_account() -> Account {
-    Account {
-        lamports: 0,
-        data: vec![],
-        owner: system_program::ID,
-        executable: false,
-        rent_epoch: 0,
-    }
+    zama_solana_test_kit::empty_system_account()
 }
 
 fn host_config_account_with_flags(
@@ -177,34 +88,11 @@ fn host_config_account_with_flags(
     paused: bool,
     grant_deny_list_enabled: bool,
 ) -> (Pubkey, Account) {
-    let (host_config, bump) = host::host_config_address();
-    (
-        host_config,
-        Account {
-            lamports: 1_000_000_000,
-            data: serialized_account(HostConfig {
-                admin,
-                chain_id: host::SOLANA_POC_CHAIN_ID,
-                gateway_chain_id: GATEWAY_CHAIN_ID,
-                input_verification_contract: INPUT_VERIFICATION_CONTRACT,
-                coprocessor_signers: host::pack_coprocessor_signers(&[[0x11u8; 20]]),
-                coprocessor_signer_count: 1,
-                coprocessor_threshold: 1,
-                decryption_contract: DECRYPTION_CONTRACT,
-                current_kms_context_id: 0,
-                paused,
-                grant_deny_list_enabled,
-                max_hcu_per_tx: u64::MAX,
-                max_hcu_depth_per_tx: u64::MAX,
-                hcu_block_cap_per_app: u64::MAX,
-                updated_slot: 0,
-                bump,
-            }),
-            owner: host::id(),
-            executable: false,
-            rent_epoch: 0,
-        },
-    )
+    zama_solana_test_kit::host_config_account(&HostConfigParams {
+        paused,
+        grant_deny_list_enabled,
+        ..HostConfigParams::new(admin)
+    })
 }
 
 fn host_config_account(admin: Pubkey) -> (Pubkey, Account) {
@@ -217,89 +105,6 @@ fn paused_host_config_account(admin: Pubkey) -> (Pubkey, Account) {
 
 fn deny_enabled_host_config_account(admin: Pubkey) -> (Pubkey, Account) {
     host_config_account_with_flags(admin, false, true)
-}
-
-fn deny_subject_record_account(subject: Pubkey, denied: bool) -> (Pubkey, Account) {
-    let (record, bump) = host::deny_subject_address(subject);
-    (
-        record,
-        Account {
-            lamports: 1_000_000_000,
-            data: serialized_account(DenySubjectRecord {
-                subject,
-                denied,
-                bump,
-            }),
-            owner: host::id(),
-            executable: false,
-            rent_epoch: 0,
-        },
-    )
-}
-
-/// Builds an `EncryptedValue` account (discriminator + body) for direct account-map seeding.
-fn encrypted_value_account(value: &EncryptedValue) -> Account {
-    Account {
-        lamports: 10_000_000_000,
-        data: serialized_account(value.clone()),
-        owner: host::id(),
-        executable: false,
-        rent_epoch: 0,
-    }
-}
-
-fn new_encrypted_value_account(
-    domain: Pubkey,
-    encrypted_value_account_authority: Pubkey,
-    encrypted_value_label: [u8; 32],
-    handle: [u8; 32],
-    subjects: &[Pubkey],
-) -> (Pubkey, EncryptedValue) {
-    let encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
-        domain.to_bytes(),
-        encrypted_value_account_authority.to_bytes(),
-        encrypted_value_label,
-    );
-    let (address, bump) = host::encrypted_value_address(encrypted_value_id);
-    let value = EncryptedValue {
-        domain,
-        encrypted_value_account_authority,
-        label: encrypted_value_label,
-        current_handle: handle,
-        subjects: subjects.to_vec(),
-        leaf_count: 0,
-        peaks: Vec::new(),
-        bump,
-    };
-    (address, value)
-}
-
-fn read_encrypted_value(
-    result: &mollusk_svm::result::InstructionResult,
-    address: Pubkey,
-) -> EncryptedValue {
-    let account = result
-        .resulting_accounts
-        .iter()
-        .find(|(key, _)| *key == address)
-        .map(|(_, account)| account)
-        .expect("encrypted value account present in result");
-    let mut data: &[u8] = &account.data;
-    EncryptedValue::try_deserialize(&mut data).expect("valid EncryptedValue account")
-}
-
-fn read_encrypted_value_from_context(
-    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
-    address: Pubkey,
-) -> EncryptedValue {
-    let account = context
-        .account_store
-        .borrow()
-        .get(&address)
-        .expect("encrypted value account present")
-        .clone();
-    let mut data: &[u8] = &account.data;
-    EncryptedValue::try_deserialize(&mut data).expect("valid EncryptedValue account")
 }
 
 fn update_with_fhe_execute(
@@ -626,17 +431,6 @@ fn fhe_execute_ix_with_deny_records(
     ix
 }
 
-fn writable(pubkey: Pubkey) -> AccountMeta {
-    AccountMeta::new(pubkey, false)
-}
-
-fn readonly(pubkey: Pubkey) -> AccountMeta {
-    AccountMeta::new_readonly(pubkey, false)
-}
-
-fn readonly_signer(pubkey: Pubkey) -> AccountMeta {
-    AccountMeta::new_readonly(pubkey, true)
-}
 
 #[test]
 fn mollusk_fhe_execute_fails_closed_without_previous_bank_hash() {
@@ -6023,7 +5817,7 @@ fn mollusk_verify_public_decrypt_rejects_historical_only_leaf() {
 }
 
 // ---------------------------------------------------------------------------
-// Cost snapshots (tests/support/cost_snapshot.rs). Dedicated tests so cost
+// Cost snapshots (zama-solana-test-kit::snapshot). Dedicated tests so cost
 // drift never fails a behavior test; regenerate with
 // `bash scripts/update-cost-snapshots.sh`.
 // ---------------------------------------------------------------------------

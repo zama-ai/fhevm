@@ -1,13 +1,29 @@
+//! The cleartext oracle: evaluates `fhe_execute` step programs without Solana or TFHE, and
+//! replays the `fhe_execute` CPIs an instruction issued so encrypted state can be asserted in
+//! cleartext.
+//!
+//! This is the same move the EVM test suite's mock tier makes — real cryptography is covered by
+//! the coprocessor's own tests and the live tier; here the signal is orchestration, accounting,
+//! and access control. Arithmetic follows the canonical host/worker width and type rules, and
+//! evaluation calls `zama-host`'s own validators, so the oracle cannot drift from the program's
+//! admission rules.
+
 use std::collections::HashMap;
 
+use mollusk_svm::result::InstructionResult;
 use num_bigint::BigUint;
 use rand::{rngs::StdRng, RngCore, SeedableRng};
+use solana_sdk::pubkey::Pubkey;
 use zama_host::{
     assert_binary_operand_types, assert_is_in_operand_types, assert_mul_div_operand_types,
     assert_sum_operand_types, assert_supported_fhe_type, assert_supported_rand_type,
     assert_unary_operand_type, assert_valid_bounded_rand_upper_bound, handle_fhe_type,
     FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand, FheExecuteStep, FheTernaryOpCode,
     FheUnaryOpCode,
+};
+
+use crate::{
+    decode_fhe_execute_args, execution_step_output, read_encrypted_value, Ctx, BALANCE_FHE_TYPE,
 };
 
 pub type Handle = [u8; 32];
@@ -29,9 +45,6 @@ impl TypedClearValue {
         }
     }
 
-    // Each integration-test target compiles this support module independently; only the
-    // high-width evaluator tests need the full-byte constructor.
-    #[allow(dead_code)]
     pub fn from_be_bytes(fhe_type: u8, value: [u8; 32]) -> Self {
         Self { fhe_type, value }
     }
@@ -477,4 +490,99 @@ fn random_biguint(random: &mut StdRng) -> BigUint {
     let mut bytes = [0; 32];
     random.fill_bytes(&mut bytes);
     BigUint::from_bytes_be(&bytes)
+}
+
+// ---------------------------------------------------------------------------
+// The cleartext ledger
+// ---------------------------------------------------------------------------
+
+/// What one instruction's `fhe_execute` replay covered.
+pub struct FheReplay {
+    /// Distinct `fhe_execute` CPIs decoded from the inner instructions.
+    pub executions: usize,
+    /// Persistent (`StoredValue`) outputs bound to their end-of-instruction handles.
+    pub persistent_outputs: usize,
+}
+
+/// Cleartext mirror of every encrypted handle the tests touch.
+#[derive(Default)]
+pub struct CleartextLedger {
+    pub values: ClearInputs,
+}
+
+impl CleartextLedger {
+    /// Seeds a `euint64` amount for `handle`.
+    pub fn seed_amount(&mut self, handle: [u8; 32], value: u64) {
+        self.values
+            .insert(handle, TypedClearValue::from_u64(BALANCE_FHE_TYPE, value));
+    }
+
+    /// Replays every `fhe_execute` CPI the instruction issued — in order, so a later execution
+    /// can consume an earlier execution's persisted outputs. Each instruction writes any
+    /// encrypted value account at most once, so binding results to the end-of-instruction
+    /// persisted handles is exact.
+    pub fn replay_fhe_cpis(&mut self, context: &Ctx, result: &InstructionResult) -> FheReplay {
+        let message = result
+            .message
+            .as_ref()
+            .expect("Mollusk result must include its compiled message");
+        let execute_args = result
+            .inner_instructions
+            .iter()
+            .filter(|inner| {
+                message
+                    .account_keys()
+                    .get(inner.instruction.program_id_index as usize)
+                    .copied()
+                    == Some(zama_host::id())
+            })
+            .filter_map(|inner| decode_fhe_execute_args(&inner.instruction.data))
+            .collect::<Vec<_>>();
+
+        let mut persistent_outputs = 0;
+        for args in &execute_args {
+            let outputs = evaluate(args, &self.values)
+                .expect("every emitted FHE batch must be valid in cleartext");
+            for (step, value) in args.steps.iter().zip(outputs) {
+                let zama_host::FheExecuteOutput::StoredValue {
+                    output_domain_index,
+                    output_account_index,
+                    output_label_index,
+                    ..
+                } = execution_step_output(step)
+                else {
+                    continue;
+                };
+                let encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
+                    args.dictionary_bytes(*output_domain_index)
+                        .expect("valid dictionary index"),
+                    args.dictionary_bytes(*output_account_index)
+                        .expect("valid dictionary index"),
+                    args.dictionary_bytes(*output_label_index)
+                        .expect("valid dictionary index"),
+                );
+                let address = zama_host::encrypted_value_address(encrypted_value_id).0;
+                let persisted = read_encrypted_value(context, address);
+                self.values.insert(persisted.current_handle, value);
+                persistent_outputs += 1;
+            }
+        }
+        FheReplay {
+            executions: execute_args.len(),
+            persistent_outputs,
+        }
+    }
+
+    /// The `u64` cleartext behind the current handle of the encrypted value account at
+    /// `encrypted_value`.
+    pub fn u64_at(&self, context: &Ctx, encrypted_value: Pubkey) -> u64 {
+        let handle = read_encrypted_value(context, encrypted_value).current_handle;
+        let value = self
+            .values
+            .get(&handle)
+            .expect("missing cleartext value for persisted handle");
+        assert_eq!(value.fhe_type, BALANCE_FHE_TYPE);
+        assert_eq!(value.value[..24], [0; 24], "cleartext value exceeds u64");
+        u64::from_be_bytes(value.value[24..].try_into().unwrap())
+    }
 }

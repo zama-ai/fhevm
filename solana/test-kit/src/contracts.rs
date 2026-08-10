@@ -1,9 +1,15 @@
 //! Explicit test-owned contract catalog for the shipped Solana `fhe_execute` surface.
 //!
 //! Accepted cases are explicit rather than generated from production predicates. The macros
-//! expand to ordinary named tests and can be reused by a later Mollusk target through the same
-//! runner signatures.
+//! expand to ordinary named tests in the crate that invokes them; that crate supplies the
+//! runner functions (`crate::run_binary` and friends), so the same catalog drives both the pure
+//! cleartext-evaluator suite and the Mollusk suite through their own runner signatures.
 
+/// Expands the binary-operator contract catalog against `crate::run_binary`.
+// `crate::` resolving to the invoking crate is the design here, not an accident: the catalog is
+// shared, the runners are not.
+#[allow(clippy::crate_in_macro_def)]
+#[macro_export]
 macro_rules! binary_contract_tests {
     () => {
         mod binary {
@@ -166,8 +172,9 @@ macro_rules! binary_contract_tests {
     };
 }
 
-pub(crate) use binary_contract_tests;
-
+/// Expands the unary-operator contract catalog against `crate::run_unary`.
+#[allow(clippy::crate_in_macro_def)]
+#[macro_export]
 macro_rules! unary_contract_tests {
     () => {
         mod unary {
@@ -248,8 +255,10 @@ macro_rules! unary_contract_tests {
     };
 }
 
-pub(crate) use unary_contract_tests;
-
+/// Expands the composite-step contract catalog (ternary, trivial encrypt, sum, is-in, mul-div,
+/// rand) against the invoking crate's `run_*` runners.
+#[allow(clippy::crate_in_macro_def)]
+#[macro_export]
 macro_rules! composite_contract_tests {
     () => {
         mod ternary {
@@ -389,5 +398,3 @@ macro_rules! composite_contract_tests {
         }
     };
 }
-
-pub(crate) use composite_contract_tests;

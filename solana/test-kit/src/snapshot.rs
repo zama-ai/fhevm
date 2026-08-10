@@ -3,7 +3,8 @@
 //! Records the Solana runtime cost of representative instruction profiles —
 //! compute units, unique account count, instruction-data size, and the count
 //! and total data size of the CPIs the instruction issues — and compares them
-//! against the committed snapshot under `cost-snapshots/`.
+//! against the committed snapshot under the calling test crate's
+//! `cost-snapshots/` directory.
 //! Drift in either direction fails the dedicated `cost_snapshot_*` tests:
 //! costlier is a regression, cheaper invalidates design assumptions derived
 //! from the old number (transaction packing, per-phase budgets), and both
@@ -42,7 +43,7 @@ use std::sync::Mutex;
 
 const UPDATE_ENV: &str = "ZAMA_UPDATE_COST_SNAPSHOT";
 
-/// Serializes read-modify-write cycles when several tests in this binary
+/// Serializes read-modify-write cycles when several tests in one binary
 /// update the same snapshot file. Distinct test binaries use distinct files.
 static SNAPSHOT_FILE_LOCK: Mutex<()> = Mutex::new(());
 
@@ -205,7 +206,13 @@ fn measure(instruction: &Instruction, result: &InstructionResult) -> Cost {
 }
 
 fn snapshot_path(snapshot: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    // The runtime env var, not the `env!` macro: this module used to compile inside each test
+    // binary, where compile-time CARGO_MANIFEST_DIR meant the test crate. Compiled into the kit,
+    // the macro would name the kit's own directory — the runtime variable still names the crate
+    // whose test target is running, which is where the committed snapshots live.
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
+        .expect("cost snapshots resolve against CARGO_MANIFEST_DIR; run tests through cargo");
+    PathBuf::from(manifest_dir)
         .join("cost-snapshots")
         .join(format!("{snapshot}.json"))
 }
