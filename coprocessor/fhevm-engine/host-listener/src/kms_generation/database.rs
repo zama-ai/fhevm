@@ -60,8 +60,41 @@ pub(crate) async fn insert_key_activation_event(
     chain_id: ChainId,
     block_hash: &[u8],
     block_number: u64,
-) -> Result<(), sqlx::Error> {
+) -> anyhow::Result<()> {
     let transaction_hash = log.transaction_hash.map(|txh| txh.to_vec());
+    if !activation.existingKeyId.is_zero() {
+        let digest = activation
+            .keyDigests
+            .iter()
+            .find(|digest| digest.keyType == 3)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "key activation event has no compressed-XOF digest"
+                )
+            })?;
+        sqlx::query(
+            r#"
+            INSERT INTO kms_key_activation_events (
+                chain_id, block_hash, block_number, transaction_hash,
+                key_id, key_material_id, key_digest_server, storage_urls
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            ON CONFLICT (chain_id, block_hash, key_id) DO NOTHING
+            "#,
+        )
+        .bind(chain_id.as_i64())
+        .bind(block_hash)
+        .bind(block_number as i64)
+        .bind(transaction_hash)
+        .bind(key_id_to_database_bytes(activation.existingKeyId))
+        .bind(key_id_to_database_bytes(activation.keyId))
+        .bind(digest.digest.as_ref())
+        .bind(activation.kmsNodeStorageUrls)
+        .execute(tx.deref_mut())
+        .await?;
+        return Ok(());
+    }
+
     let digest_server = activation
         .keyDigests
         .iter()
@@ -100,46 +133,6 @@ pub(crate) async fn insert_key_activation_event(
         digest_public,
         &urls
     )
-    .execute(tx.deref_mut())
-    .await?;
-    Ok(())
-}
-
-pub(crate) async fn insert_compressed_key_material_event(
-    tx: &mut Transaction<'_, Postgres>,
-    material: KMSGeneration::CompressedKeyMaterialAdded,
-    log: Log,
-    chain_id: ChainId,
-    block_hash: &[u8],
-    block_number: u64,
-) -> anyhow::Result<()> {
-    let digest = material
-        .keyDigests
-        .iter()
-        .find(|digest| digest.keyType == 3)
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "compressed key material event has no compressed-XOF digest"
-            )
-        })?;
-    sqlx::query(
-        r#"
-        INSERT INTO kms_key_activation_events (
-            chain_id, block_hash, block_number, transaction_hash,
-            key_id, key_material_id, key_digest_server, storage_urls
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        ON CONFLICT (chain_id, block_hash, key_id) DO NOTHING
-        "#,
-    )
-    .bind(chain_id.as_i64())
-    .bind(block_hash)
-    .bind(block_number as i64)
-    .bind(log.transaction_hash.map(|hash| hash.to_vec()))
-    .bind(key_id_to_database_bytes(material.keyId))
-    .bind(key_id_to_database_bytes(material.keyMaterialId))
-    .bind(digest.digest.as_ref())
-    .bind(material.kmsNodeStorageUrls)
     .execute(tx.deref_mut())
     .await?;
     Ok(())

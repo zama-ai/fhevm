@@ -20,7 +20,7 @@ contract KMSGenerationTest {
         bytes digest;
     }
 
-    event ActivateKey(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
+    event ActivateKey(uint256 keyId, uint256 existingKeyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
     event ActivateCrs(uint256 crsId, string[] kmsNodeStorageUrls, bytes crsDigest);
 
     function keygen_public_key() external {
@@ -33,7 +33,7 @@ contract KMSGenerationTest {
         KeyDigest[] memory digests = new KeyDigest[](1);
         // python: bytes([..]) hash for "key_bytes"
         digests[0] = KeyDigest({ keyType: KeyType.Public, digest: "]\xe8\xc3\xa0e\xd7H\xb7\xb7\xaf)\x1f\xc3\x0cR\x85\x00m\xaf\xbe\xad\x9e\xd5\x1e\xb7\xd4\xdd\xebN\xb2JV"});
-        emit ActivateKey(keyId, urls, digests);
+        emit ActivateKey(keyId, 0, urls, digests);
     }
 
     function keygen_server_key() external {
@@ -46,7 +46,7 @@ contract KMSGenerationTest {
         KeyDigest[] memory digests = new KeyDigest[](1);
         // python: bytes([..]) hash for "key_bytes"
         digests[0] = KeyDigest({ keyType: KeyType.Server, digest: "]\xe8\xc3\xa0e\xd7H\xb7\xb7\xaf)\x1f\xc3\x0cR\x85\x00m\xaf\xbe\xad\x9e\xd5\x1e\xb7\xd4\xdd\xebN\xb2JV"});
-        emit ActivateKey(keyId, urls, digests);
+        emit ActivateKey(keyId, 0, urls, digests);
     }
 
     function keygen(ParamsType /*paramsType*/) external {
@@ -60,7 +60,7 @@ contract KMSGenerationTest {
         // python: bytes([..]) hash for "key_bytes"
         digests[0] = KeyDigest({ keyType: KeyType.Public, digest: "]\xe8\xc3\xa0e\xd7H\xb7\xb7\xaf)\x1f\xc3\x0cR\x85\x00m\xaf\xbe\xad\x9e\xd5\x1e\xb7\xd4\xdd\xebN\xb2JV"});
         digests[1] = KeyDigest({ keyType: KeyType.Server, digest: "]\xe8\xc3\xa0e\xd7H\xb7\xb7\xaf)\x1f\xc3\x0cR\x85\x00m\xaf\xbe\xad\x9e\xd5\x1e\xb7\xd4\xdd\xebN\xb2JV"});
-        emit ActivateKey(keyId, urls, digests);
+        emit ActivateKey(keyId, 0, urls, digests);
     }
 
     function crsgen() external {
