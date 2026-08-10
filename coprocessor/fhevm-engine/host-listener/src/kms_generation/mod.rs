@@ -299,17 +299,13 @@ async fn download_and_store_compressed_key_material<
     s3_client: &A,
     material: &PendingCompressedKeyMaterial,
 ) -> anyhow::Result<()> {
-    let key_material_id =
-        key_id_from_database_bytes(&material.key_material_id)?;
-    let path = format!(
-        "{}/{}",
-        XOF_KEY_SET_S3_PREFIX,
-        key_id_to_aws_key(key_material_id)
-    );
+    let key_id = key_id_from_database_bytes(&material.key_id)?;
+    let path =
+        format!("{}/{}", XOF_KEY_SET_S3_PREFIX, key_id_to_aws_key(key_id));
     let bytes =
         download_key_from_s3(s3_client, &material.storage_urls, path, 0)
             .await?;
-    verify_server_key_digest(&bytes, &material.key_digest, &key_material_id)?;
+    verify_server_key_digest(&bytes, &material.key_digest, &key_id)?;
 
     // Reject malformed material before it can make a Green worker ready.
     prepare_xof_key_set_for_db(&bytes)?;
