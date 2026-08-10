@@ -217,7 +217,8 @@ pub struct InfiniteLogIter {
     reorg_maximum_duration_in_blocks: u64, // in blocks
     block_history: BlockHistory,           // to detect reorgs
     catchup_finalization_in_blocks: u64,
-    requires_rpc_finality: bool,
+    tracks_kms_generation: bool,
+    rpc_finalized_block: Option<i64>,
     timeout_request_websocket: u64,
 }
 
@@ -296,7 +297,8 @@ impl InfiniteLogIter {
                 args.reorg_maximum_duration_in_blocks as usize,
             ),
             catchup_finalization_in_blocks: args.catchup_finalization_in_blocks,
-            requires_rpc_finality: !args.kms_generation_address.is_empty(),
+            tracks_kms_generation: !args.kms_generation_address.is_empty(),
+            rpc_finalized_block: None,
             timeout_request_websocket: args.timeout_request_websocket,
         }
     }
@@ -502,7 +504,7 @@ impl InfiniteLogIter {
             info!("Catchup no next get_logs step");
             return;
         }
-        let depth_bound = self
+        let finalized_block = self
             .block_history
             .tip()
             .map(|block| {
@@ -511,17 +513,18 @@ impl InfiniteLogIter {
                     .saturating_sub(self.catchup_finalization_in_blocks)
             })
             .unwrap_or(u64::MAX);
-        let finalized_block = if self.requires_rpc_finality {
+        if self.tracks_kms_generation {
             match self.get_block_by_id(BlockId::finalized()).await {
-                Ok(block) => block.header.number.min(depth_bound),
+                Ok(block) => {
+                    self.rpc_finalized_block =
+                        i64::try_from(block.header.number).ok();
+                }
                 Err(error) => {
-                    warn!(%error, "Cannot resolve finalized block, postponing catchup");
-                    return;
+                    self.rpc_finalized_block = None;
+                    warn!(%error, "Cannot resolve finalized block, postponing compressed key migration");
                 }
             }
-        } else {
-            depth_bound
-        };
+        }
         if from_block > finalized_block {
             // non finalized blocks are post-poned
             info!("Post-pone catchup");
@@ -1276,38 +1279,28 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
                 if kms_generation_address.is_some() {
                     match log_iter.get_block_by_id(BlockId::finalized()).await {
                         Ok(finalized) => {
-                            let finalization_bound = finalized
-                                .header
-                                .number
-                                .min(block_logs.summary.number.saturating_sub(
-                                    args.catchup_finalization_in_blocks,
-                                ));
-                            update_finalized_blocks(
-                                &mut db,
-                                &mut log_iter,
-                                finalization_bound,
-                                0,
-                            )
-                            .await;
+                            log_iter.rpc_finalized_block =
+                                i64::try_from(finalized.header.number).ok();
                         }
                         Err(error) => {
-                            warn!(%error, "Cannot resolve finalized block, skipping finalization");
+                            log_iter.rpc_finalized_block = None;
+                            warn!(%error, "Cannot resolve finalized block, postponing compressed key migration");
                         }
                     }
-                } else {
-                    update_finalized_blocks(
-                        &mut db,
-                        &mut log_iter,
-                        block_logs.summary.number,
-                        args.catchup_finalization_in_blocks,
-                    )
-                    .await;
                 }
+                update_finalized_blocks(
+                    &mut db,
+                    &mut log_iter,
+                    block_logs.summary.number,
+                    args.catchup_finalization_in_blocks,
+                )
+                .await;
             }
             if kms_generation_address.is_some() {
                 background_tasks.spawn(process_kms_generation_activations(
                     db.pool.read().await.clone(),
                     aws_s3_client,
+                    log_iter.rpc_finalized_block,
                 ));
             }
         }
@@ -1369,7 +1362,8 @@ mod tests {
             reorg_maximum_duration_in_blocks: reorg_max,
             block_history: BlockHistory::new(reorg_max as usize),
             catchup_finalization_in_blocks: 20,
-            requires_rpc_finality: false,
+            tracks_kms_generation: false,
+            rpc_finalized_block: None,
             timeout_request_websocket: 15,
         }
     }

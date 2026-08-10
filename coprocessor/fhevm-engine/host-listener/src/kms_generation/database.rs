@@ -8,8 +8,8 @@ use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::db_keys::write_large_object_in_chunks_tx;
 
 use crate::contracts::KMSGeneration;
-use crate::kms_generation::key_id_to_database_bytes;
 use crate::kms_generation::sks_key::PreparedServerKey;
+use crate::kms_generation::{key_id_to_database_bytes, KeyType};
 
 const CHUNK_SIZE: usize = 128 * 1024 * 1024; // 128MB
 
@@ -66,7 +66,7 @@ pub(crate) async fn insert_key_activation_event(
         let digest = activation
             .keyDigests
             .iter()
-            .find(|digest| digest.keyType == 3)
+            .find(|digest| digest.keyType == KeyType::CompressedKeySet as u8)
             .ok_or_else(|| {
                 anyhow::anyhow!(
                     "key activation event has no compressed-XOF digest"
@@ -229,7 +229,11 @@ pub(crate) async fn cancel_orphaned_key_activations(
 
 pub(crate) async fn apply_ready_compressed_key_materials(
     tx: &mut Transaction<'_, Postgres>,
+    rpc_finalized_block: Option<i64>,
 ) -> anyhow::Result<Vec<PendingCompressedKeyMaterial>> {
+    let Some(rpc_finalized_block) = rpc_finalized_block else {
+        return Ok(Vec::new());
+    };
     let rows = sqlx::query_as::<_, PendingCompressedKeyMaterial>(
         r#"
         SELECT e.chain_id, e.block_hash, e.block_number, e.transaction_hash,
@@ -240,6 +244,7 @@ pub(crate) async fn apply_ready_compressed_key_materials(
           ON e.chain_id = b.chain_id AND e.block_hash = b.block_hash
         WHERE e.status = 'ready'
           AND b.block_status = 'finalized'
+          AND e.block_number <= $1
           AND e.key_material_id IS NOT NULL
           AND e.key_content_compressed_xof_keyset IS NOT NULL
           AND e.key_id = (
@@ -248,6 +253,7 @@ pub(crate) async fn apply_ready_compressed_key_materials(
         FOR UPDATE OF e SKIP LOCKED
         "#,
     )
+    .bind(rpc_finalized_block)
     .fetch_all(tx.deref_mut())
     .await?;
 
@@ -592,7 +598,11 @@ pub(crate) async fn all_pending_key_activations_to_download(
 
 pub(crate) async fn all_pending_compressed_key_materials_to_download(
     tx: &mut Transaction<'_, Postgres>,
+    rpc_finalized_block: Option<i64>,
 ) -> anyhow::Result<Vec<PendingCompressedKeyMaterial>> {
+    let Some(rpc_finalized_block) = rpc_finalized_block else {
+        return Ok(Vec::new());
+    };
     Ok(sqlx::query_as::<_, PendingCompressedKeyMaterial>(
         r#"
         SELECT e.chain_id, e.block_hash, e.block_number, e.transaction_hash,
@@ -602,6 +612,7 @@ pub(crate) async fn all_pending_compressed_key_materials_to_download(
           ON e.chain_id = b.chain_id AND e.block_hash = b.block_hash
         WHERE e.status = 'pending'
           AND b.block_status = 'finalized'
+          AND e.block_number <= $1
           AND e.key_digest_server IS NOT NULL
           AND e.key_material_id IS NOT NULL
           AND e.key_content_compressed_xof_keyset IS NULL
@@ -611,6 +622,7 @@ pub(crate) async fn all_pending_compressed_key_materials_to_download(
         FOR UPDATE OF e SKIP LOCKED
         "#,
     )
+    .bind(rpc_finalized_block)
     .fetch_all(tx.deref_mut())
     .await?)
 }
@@ -991,7 +1003,8 @@ mod tests {
         let ordinary = all_pending_key_activations_to_download(&mut tx).await?;
         assert!(ordinary.is_empty());
         let migration =
-            all_pending_compressed_key_materials_to_download(&mut tx).await?;
+            all_pending_compressed_key_materials_to_download(&mut tx, Some(10))
+                .await?;
         assert!(migration.is_empty());
         tx.rollback().await?;
         sqlx::query(
@@ -1003,18 +1016,43 @@ mod tests {
         .execute(&pool)
         .await?;
 
+        for rpc_finalized_block in [None, Some(9)] {
+            let mut tx = pool.begin().await?;
+            assert!(all_pending_compressed_key_materials_to_download(
+                &mut tx,
+                rpc_finalized_block,
+            )
+            .await?
+            .is_empty());
+            tx.rollback().await?;
+        }
+
         let mut tx = pool.begin().await?;
         let migration =
-            all_pending_compressed_key_materials_to_download(&mut tx).await?;
+            all_pending_compressed_key_materials_to_download(&mut tx, Some(10))
+                .await?;
         assert_eq!(migration.len(), 1);
         assert_eq!(migration[0].key_id, key_id);
         set_ready_compressed_key_material(&mut tx, &migration[0], &compressed)
             .await?;
         tx.commit().await?;
 
+        for rpc_finalized_block in [None, Some(9)] {
+            let mut tx = pool.begin().await?;
+            assert!(apply_ready_compressed_key_materials(
+                &mut tx,
+                rpc_finalized_block
+            )
+            .await?
+            .is_empty());
+            tx.rollback().await?;
+        }
+
         let mut tx = pool.begin().await?;
         assert_eq!(
-            apply_ready_compressed_key_materials(&mut tx).await?.len(),
+            apply_ready_compressed_key_materials(&mut tx, Some(10))
+                .await?
+                .len(),
             1
         );
         tx.commit().await?;
