@@ -10,6 +10,7 @@ import {
   createIdempotentAtaInstruction,
   initializeMint2Instruction,
   mintToInstruction,
+  requestHeapFrameInstruction,
   setComputeUnitLimitInstruction,
   vaultAuthorityAddress,
 } from "./tokenAccounts";
@@ -145,6 +146,15 @@ describe("hand-built System/SPL/ComputeBudget instruction layouts", () => {
     const data = instruction.data ?? new Uint8Array();
     expect(data[0]).toBe(2);
     expect(new DataView(data.buffer, data.byteOffset).getUint32(1, true)).toBe(1_400_000);
+    expect(instruction.accounts).toBeUndefined();
+  });
+
+  test("requestHeapFrameInstruction encodes tag 1 + u32-le bytes with no accounts", () => {
+    const instruction = requestHeapFrameInstruction(256 * 1024);
+    expect(instruction.programAddress).toBe("ComputeBudget111111111111111111111111111111" as Address);
+    const data = instruction.data ?? new Uint8Array();
+    expect(data[0]).toBe(1);
+    expect(new DataView(data.buffer, data.byteOffset).getUint32(1, true)).toBe(262_144);
     expect(instruction.accounts).toBeUndefined();
   });
 });
