@@ -315,6 +315,7 @@ pub async fn insert_rand_prep_keygen_request(
     Ok(PrepKeygenRequest {
         prepKeygenId: prep_keygen_request_id,
         paramsType: params_type as u8,
+        existingKeyId: U256::ZERO,
         extraData: extra_data.into(),
     })
 }
@@ -347,6 +348,7 @@ pub async fn insert_rand_keygen_request(
     Ok(KeygenRequest {
         prepKeygenId: prep_key_id,
         keyId: key_id,
+        existingKeyId: U256::ZERO,
         extraData: extra_data.into(),
     })
 }
