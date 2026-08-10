@@ -131,16 +131,16 @@ test("keeps every phase lock cumulative", () => {
   }
 });
 
-// Host contracts and the relayer cross in one phase, gated only once, because neither order
-// survives a gate between them:
+// An operator lands a contract upgrade and a relayer deploy as separate actions, minutes to days
+// apart, so these are two phases rather than one. The order within the pair is forced, not
+// chosen, and the intermediate state costs something either way:
 //
-//  - Relayer first: the 0.14 relayer boots by calling getCurrentKmsContextAndEpoch() on
-//    ProtocolConfig, which only exists from 0.14, so it exits against 0.13 contracts.
-//  - Host contracts first: @fhevm/sdk derives its extraData format from host contract state,
-//    so once KMSVerifier and ProtocolConfig report a KMS context and epoch the client sends
+//  - Relayer first is unavailable: the 0.14 relayer boots by calling getCurrentKmsContextAndEpoch()
+//    on ProtocolConfig, which only exists from 0.14, so it exits against 0.13 contracts.
+//  - Host contracts first opens a window: @fhevm/sdk derives its extraData format from host
+//    contract state, so once ProtocolConfig reports a non-zero context and epoch the client sends
 //    v2 extraData and the 0.13 relayer rejects user decryption with `validation_failed`.
-// An operator lands a contract upgrade and a relayer deploy as separate actions, so the two
-// have to be separate phases with the degraded state between them observed rather than skipped.
+// The window is therefore observed rather than skipped, and its cost asserted in run.ts.
 test("crosses the host contracts and the relayer as two phases with the window between them", () => {
   const host = phaseOrder.indexOf("host-contracts");
   const relayer = phaseOrder.indexOf("relayer");
@@ -170,12 +170,17 @@ test("ends every phase on the target versions", () => {
   expect(phaseVersions.protocolFlip).toEqual(to);
 });
 
-test("orders host contract upgrades so verification and limits land before the executor", () => {
+// The v0.14 devnet upgrade ran the host chain in this order on 14 July:
+// ProtocolConfig -> KMSGeneration -> KMSVerifier -> HCULimit -> FHEVMExecutor -> ACL.
+// ProtocolConfig is migrated separately, ahead of this list; the rest is matched here.
+test("orders host contract upgrades the way the v0.14 devnet upgrade ran them", () => {
   const position = (name: string) => hostContractUpgradeOrder.indexOf(name);
+  expect(hostContractUpgradeOrder).toEqual(["KMSGeneration", "KMSVerifier", "HCULimit", "FHEVMExecutor"]);
   expect(position("KMSVerifier")).toBeLessThan(position("FHEVMExecutor"));
   expect(position("HCULimit")).toBeLessThan(position("FHEVMExecutor"));
-  // The ACL is not upgraded in this phase at all — it moves alone in the last one, because it
-  // is what @fhevm/sdk reads to decide between /v2 and /v3.
+  // The one deviation from devnet: the ACL is not upgraded in this phase at all, it moves alone
+  // in the last one, because the client built from this tree reads it to pick /v2 or /v3. The
+  // published clients devnet ran do not, which is why devnet could move it here.
   expect(hostContractUpgradeOrder).not.toContain("ACL");
 });
 

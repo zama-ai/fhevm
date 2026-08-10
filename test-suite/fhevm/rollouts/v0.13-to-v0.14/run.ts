@@ -145,9 +145,10 @@ const GATEWAY_CONTRACT_UPGRADES = [{ task: "task:upgradeDecryption", name: "Decr
  * has no KMS_GENERATION_CONTRACT_ADDRESS. Upgrading it elsewhere fails resolving that address.
  */
 const HOST_CONTRACT_UPGRADES = [
-  // KMSVerifier first so it holds the new KMS context before any executor path runs.
-  { task: "task:upgradeKMSVerifier", name: "KMSVerifier", canonicalOnly: false },
+  // KMSGeneration before KMSVerifier, which is the order the v0.14 devnet upgrade ran on
+  // 14 July: ProtocolConfig -> KMSGeneration -> KMSVerifier -> HCULimit -> FHEVMExecutor.
   { task: "task:upgradeKMSGeneration", name: "KMSGeneration", canonicalOnly: true },
+  { task: "task:upgradeKMSVerifier", name: "KMSVerifier", canonicalOnly: false },
   // HCULimit before FHEVMExecutor: new executor ops call the new HCU checks.
   { task: "task:upgradeHCULimit", name: "HCULimit", canonicalOnly: false },
   { task: "task:upgradeFHEVMExecutor", name: "FHEVMExecutor", canonicalOnly: false },
@@ -156,12 +157,24 @@ const HOST_CONTRACT_UPGRADES = [
 /**
  * The ACL is deliberately not in the list above: it moves alone, in the last phase.
  *
- * @fhevm/sdk resolves the protocol version from the on-chain ACL version and switches to
- * /v3/user-decrypt from 0.14, and /v3 is only served once both the relayer and every KMS
- * connector are on 0.14. Every phase gate runs `user-decryption`, so upgrading the ACL here
- * would make the relayer, the connector and kms-core all load-bearing from this phase onward
- * and force them into a single step. Holding it back keeps the client on /v2 while each
- * backend component crosses on its own.
+ * This is a property of the client this harness runs, not of the release, and the difference
+ * matters when reading the phase order as a rehearsal. The v0.14 devnet upgrade put the ACL in
+ * its host-contracts step on 14 July, together with everything above, and left the relayer on
+ * 0.13 until 23 July and the KMS connectors until 27 July — an ordering this runbook could not
+ * survive but devnet did.
+ *
+ * The reason it worked there is that the published clients do not read the ACL. `@fhevm/sdk`
+ * 0.13.2 dispatches user decryption on a caller-supplied `parameters.version`, and
+ * `@zama-fhe/relayer-sdk` 0.4.4 has no /v3 route at all, so neither changes behaviour when the
+ * ACL reports 0.14. Only the 1.1.0-alpha line and current main resolve the protocol version
+ * from the on-chain ACL and hard-switch to /v3 — and the harness builds its client from this
+ * tree, so it behaves like those.
+ *
+ * Since /v3 is served only once the relayer and every KMS connector are on 0.14, and every gate
+ * runs `user-decryption`, upgrading the ACL in the host phase would make three components
+ * load-bearing at once and collapse the per-component phases into one step. Holding it back
+ * keeps this harness's client on /v2 while each backend component crosses alone. A deployment
+ * whose clients are all published releases does not need that constraint.
  */
 const ACL_UPGRADE = { task: "task:upgradeACL", name: "ACL", canonicalOnly: false } as const;
 
@@ -272,9 +285,10 @@ export default async function run(ctx: RolloutRunContext) {
   await testPhase(ctx, "baseline", testMode);
 
   // The component order follows the default recorded in the QA-owned "Compatibility for
-  // breaking changes between components" note (Gateway Contracts -> Host Contracts -> Relayer
-  // -> KMS -> Coprocessors -> SDK & Host Library), with the client step replaced by the ACL
-  // for the reason given at ACL_UPGRADE.
+  // breaking changes between components" note — Gateway Contracts -> Host Contracts -> Relayer
+  // -> KMS -> Coprocessors -> SDK & Host Library — up to one deliberate deviation: the ACL is
+  // pulled out of the host step and moved to the end, for the reason given at ACL_UPGRADE. The
+  // v0.14 devnet upgrade did not deviate; it upgraded the ACL with the other host contracts.
   logPhase("01 gateway contracts: upgrade the gateway chain first");
   await prepareContractMigrationSources(ctx, "gateway", gatewayContractsLock, gatewayContractKeys);
   for (const upgrade of GATEWAY_CONTRACT_UPGRADES) {
@@ -311,13 +325,15 @@ export default async function run(ctx: RolloutRunContext) {
   // (relayer/src/startup.rs:152, relayer/src/host/keyurl_poller.rs:307).
   //
   // So the window below is entered deliberately and measured rather than skipped. What it costs
-  // depends on on-chain state, not on which client is in use: devnet gated this same window on
-  // @fhevm/sdk 0.13.2, which has the same extraData selection, and passed — most likely because
-  // its epoch id was still 0, which yields v1 extraData a 0.13 relayer accepts, whereas this
-  // harness migrates ProtocolConfig from scratch and lands a non-zero epoch, which yields v2.
-  // That reading is unconfirmed against devnet state, which is exactly why the check below
-  // asserts the failure instead of assuming it: if user decryption ever survives this window,
-  // expectTestFailure raises, and the assumption gets revisited rather than quietly persisting.
+  // depends on on-chain state: the extraData version follows the KMS context and epoch ids the
+  // client reads, so a stack whose epoch id is still 0 sends v1, which a 0.13 relayer accepts,
+  // while this harness migrates ProtocolConfig from scratch, lands a non-zero epoch, and sends
+  // v2, which it does not. Devnet crossed its own nine days gated on relayer-sdk 0.4.4, and
+  // @fhevm/sdk 0.13.2 — which has this same extraData selection — arrived on 23 July, at the
+  // end of that window rather than across it, and was reported compatible with the state it
+  // found. Whether that means devnet's epoch was 0 has not been confirmed. Which is why the
+  // check below asserts the failure rather than assuming it: if user decryption ever survives
+  // this window, expectTestFailure raises and the assumption gets revisited.
   logPhase("02 host contracts: upgrade every host chain, relayer still on 0.13");
   await prepareContractMigrationSources(ctx, "host", hostContractsLock, hostContractKeys);
   const targets = await hostChainTargets(ctx);
@@ -380,8 +396,11 @@ export default async function run(ctx: RolloutRunContext) {
     await testPhase(ctx, "coprocessor", testMode);
   }
 
-  // Last, and alone. Everything behind it is already on 0.14, so this is the first point where
-  // the stack can serve /v3 — and upgrading the ACL is what tells the client to ask for it.
+  // Last, and alone, for the harness reason given at ACL_UPGRADE rather than a production one:
+  // this tree's client resolves the protocol version from the on-chain ACL, so moving the ACL is
+  // what makes it ask for /v3, and everything that has to answer /v3 is already on 0.14 by here.
+  // A deployment running published clients moves the ACL with the other host contracts, as the
+  // v0.14 devnet upgrade did.
   // No prepareContractMigrationSources here on purpose. The host phase already left the deploy
   // container with previous-contracts/ on 0.13 and contracts/ on 0.14, and no version has moved
   // since. Re-snapshotting now would capture the 0.14 sources as "previous" and upgrade the ACL

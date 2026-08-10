@@ -182,21 +182,23 @@ export type RolloutPhaseKey =
 /**
  * Every phase lock is cumulative: it carries all earlier phases' target versions.
  *
- * The order is the documented component order, and the host ACL moves last on purpose.
- * Two directional constraints make that ordering load-bearing rather than conventional:
+ * The order is the documented component order, with one deviation: the host ACL moves last.
+ * The two constraints behind that are of different kinds, and the difference matters when
+ * reading this list as a rehearsal.
  *
- *  - The 0.14 relayer cannot boot against 0.13 host contracts. It initializes `/v2/keyurl` by
- *    calling `getCurrentKmsContextAndEpoch()` on ProtocolConfig, which only exists from 0.14,
- *    so against 0.13 the call reverts with empty data and the relayer exits. Host contracts
- *    therefore have to land before the relayer.
- *  - The client follows the on-chain protocol version, so the ACL is what pulls the rest of
- *    the stack forward. @fhevm/sdk maps the ACL version to a protocol version and switches to
- *    /v3/user-decrypt from 0.14, and /v3 needs both the 0.14 relayer and the 0.14 KMS
- *    connector to be serving. Every gate runs `user-decryption`, so upgrading the ACL early
- *    would make the relayer and connector load-bearing from that moment and collapse the
- *    per-component phases into one step. Holding the ACL back keeps the client on /v2 while
- *    each backend component crosses on its own; the `protocolFlip` phase then upgrades the
- *    ACL against a stack that is already fully on 0.14, and the client follows it onto /v3.
+ *  - Directional, and true of any deployment. The 0.14 relayer cannot boot against 0.13 host
+ *    contracts. It initializes `/v2/keyurl` by calling `getCurrentKmsContextAndEpoch()` on
+ *    ProtocolConfig, which only exists from 0.14, so against 0.13 the call reverts with empty
+ *    data and the relayer exits. Host contracts have to land before the relayer.
+ *  - A property of the client this harness runs, not of the release. The harness builds
+ *    @fhevm/sdk from this tree, and that client resolves the protocol version from the on-chain
+ *    ACL and switches to /v3/user-decrypt from 0.14 — behaviour the published clients devnet
+ *    used do not have. /v3 needs both the 0.14 relayer and the 0.14 KMS connector serving, and
+ *    every gate runs `user-decryption`, so upgrading the ACL in the host phase would make three
+ *    components load-bearing at once and collapse the per-component phases into one step.
+ *    Holding the ACL back keeps this client on /v2 while each backend component crosses alone;
+ *    `protocolFlip` then moves the ACL against a stack already fully on 0.14. The v0.14 devnet
+ *    upgrade had no such constraint and moved the ACL with the other host contracts.
  */
 export const phaseVersions: Record<RolloutPhaseKey, Env> = {
   baseline: from,
