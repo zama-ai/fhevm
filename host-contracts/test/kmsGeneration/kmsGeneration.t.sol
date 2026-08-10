@@ -1631,7 +1631,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         _doMigrationKeygenResponse(migrationPrepId, migrationRequestId, kmsPk0, kmsTxSender0);
     }
 
-    function test_compressedKeyMigrationFullCycleDoesNotActivate() public {
+    function test_compressedKeyMigrationFullCycleKeepsActiveKey() public {
         (, uint256 keyId) = _runFullKeygenCycle();
         uint256 activeKeyIdBefore = kmsGeneration.getActiveKeyId();
         uint256 completedBefore = kmsGeneration.getCompletedKeyIds().length;
@@ -1665,7 +1665,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         emit IKMSGeneration.ActivateKey(migrationRequestId, keyId, urls, compressedDigests);
         _doMigrationKeygenResponse(migrationPrepId, migrationRequestId, kmsPk2, kmsTxSender2);
 
-        // Publication is not activation.
+        // Publication does not change the active key.
         assertEq(kmsGeneration.getActiveKeyId(), activeKeyIdBefore);
         assertEq(kmsGeneration.getCompletedKeyIds().length, completedBefore);
         assertTrue(kmsGeneration.isRequestDone(migrationRequestId));
