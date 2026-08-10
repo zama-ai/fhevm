@@ -119,6 +119,10 @@ describe("env", () => {
     );
     expect(rendered.componentEnvs["gateway-sc"].MPC_THRESHOLD).toBe("0");
     expect(rendered.componentEnvs["host-sc"].MPC_THRESHOLD).toBe("1");
+    // Centralized: no env override, so the config template defaults hold.
+    const relayer = rendered.componentEnvs["relayer"];
+    expect(relayer.APP_GATEWAY__CONTRACTS__USER_DECRYPT_SHARES_THRESHOLD).toBeUndefined();
+    expect(relayer.APP_GATEWAY__CONTRACTS__USER_DECRYPT_ADDITIONAL_SHARES).toBeUndefined();
   });
 
   test("projects threshold KMS node params into the host contract env", async () => {

@@ -312,6 +312,15 @@ const applyKmsThresholdGatewayEnv = async (
   gw.PUBLIC_DECRYPTION_THRESHOLD = reconstruct;
   gw.USER_DECRYPTION_THRESHOLD = reconstruct;
   gw.KMS_GENERATION_THRESHOLD = reconstruct;
+  // The relayer stops collecting shares at its own threshold, so it must match the
+  // 2t+1 the SDK needs to reconstruct. Applies to context 0 only; context-tagged
+  // requests resolve it from ProtocolConfig. Spares are `t` (committee 3t+1 minus
+  // quorum), which is also the most worth asking for: the wasm charges every share
+  // missing from 3t+1 against a fault budget of t, and rejects more than 3t+1.
+  const relayer = envs["relayer"];
+  relayer.APP_GATEWAY__CONTRACTS__USER_DECRYPT_SHARES_THRESHOLD = reconstruct;
+  relayer.APP_GATEWAY__CONTRACTS__USER_DECRYPT_ADDITIONAL_SHARES = String(threshold);
+  relayer.APP_GATEWAY__CONTRACTS__USER_DECRYPT_ADDITIONAL_SHARES_TIMEOUT_SECS = "5";
 
   applyProtocolConfigKmsGlobals(hostSc, plan);
 

@@ -538,8 +538,12 @@ pub struct RetrySettings {
 pub struct ContractConfig {
     pub decryption_address: String,
     pub input_verification_address: String,
-    /// Number of shares required for user decryption threshold consensus
+    /// Number of shares required for user decryption threshold consensus.
     pub user_decrypt_shares_threshold: u32,
+    /// Extra shares to wait for beyond the threshold before returning (0 = off).
+    pub user_decrypt_additional_shares: u32,
+    /// Max wait for the extra shares after threshold is reached, seconds (0 = off).
+    pub user_decrypt_additional_shares_timeout_secs: u32,
 }
 
 /// User-decryption signature check configuration.
@@ -976,6 +980,36 @@ mod tests {
 
         // Verify the value was parsed correctly (value from local.yaml.example)
         assert_eq!(settings.gateway.contracts.user_decrypt_shares_threshold, 9);
+        // Optimistic wait-window knobs (values from local.yaml.example)
+        assert_eq!(settings.gateway.contracts.user_decrypt_additional_shares, 2);
+        assert_eq!(
+            settings
+                .gateway
+                .contracts
+                .user_decrypt_additional_shares_timeout_secs,
+            5
+        );
+    }
+
+    #[test]
+    fn test_user_decrypt_additional_shares_is_required() {
+        // Removing the field must make config parsing fail (no serde default).
+        let config_path = ConfigBuilder::from_example()
+            .expect("Failed to load example config")
+            .remove_field("gateway.contracts.user_decrypt_additional_shares")
+            .to_temp_file()
+            .expect("Failed to create temp config file");
+
+        let config = Config::builder()
+            .add_source(File::from(config_path.as_path()).format(FileFormat::Yaml))
+            .build()
+            .expect("Failed to build config");
+
+        let result: Result<Settings, _> = config.try_deserialize();
+        assert!(
+            result.is_err(),
+            "Configuration parsing should fail when user_decrypt_additional_shares is missing"
+        );
     }
 
     #[test]

@@ -110,6 +110,9 @@ gateway:
     decryption_address: "0xF0bFB159C7381F7CB332586004d8247252C5b816"
     input_verification_address: "0x3b12Fc766Eb598b285998877e8E90F3e43a1F8d2"
     user_decrypt_shares_threshold: 1 # KMS centralized mode
+    # Optimistic wait window disabled: centralized KMS returns a single share.
+    user_decrypt_additional_shares: 0
+    user_decrypt_additional_shares_timeout_secs: 5
 log:
   format: "compact" # compact, pretty, or json
   show_file_line: true
@@ -134,6 +137,9 @@ http:
   metrics:
     histogram_buckets: [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 40]
   api_retry_after_seconds: 4
+  # Local stack only: exposes POST /admin/config so runtime knobs (share wait
+  # window, retry-after) can be changed without rebuilding the relayer image.
+  enable_admin_endpoint: true
   # Dynamic retry-after configuration for V2 handlers
   # Computes Retry-After based on queue size, drain rate, and processing stage
   retry_after:
