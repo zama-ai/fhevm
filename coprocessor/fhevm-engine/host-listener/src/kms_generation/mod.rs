@@ -161,6 +161,7 @@ pub async fn process_kms_generation_activations<
 >(
     db_pool: Pool<Postgres>,
     s3_client: A,
+    rpc_finalized_block: Option<i64>,
 ) -> anyhow::Result<u64> {
     // These write `kms_key_activation_events` / `kms_crs_activation_events`, which cutover
     // treats as duplicated-for-isolation, so the transaction has to be fenced: it takes the
@@ -186,7 +187,8 @@ pub async fn process_kms_generation_activations<
     cancel_orphaned_crs_activations(&mut tx).await?;
     activate_ready_key_activations(&mut tx).await?;
     let applied_compressed_materials =
-        apply_ready_compressed_key_materials(&mut tx).await?;
+        apply_ready_compressed_key_materials(&mut tx, rpc_finalized_block)
+            .await?;
     activate_ready_crs_activations(&mut tx).await?;
     tx.commit().await?;
     for material in applied_compressed_key_materials(&db_pool).await? {
@@ -232,7 +234,11 @@ pub async fn process_kms_generation_activations<
     let key_activations =
         all_pending_key_activations_to_download(&mut tx).await?;
     let compressed_materials =
-        all_pending_compressed_key_materials_to_download(&mut tx).await?;
+        all_pending_compressed_key_materials_to_download(
+            &mut tx,
+            rpc_finalized_block,
+        )
+        .await?;
     let crs_activations =
         all_pending_crs_activations_to_download(&mut tx).await?;
     if key_activations.is_empty()
