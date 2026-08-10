@@ -11,9 +11,6 @@ mod operators_from_events;
 mod random;
 mod revert_coprocessor_db_state;
 mod scheduling_bench;
-// solana_poc is solana_vertical's predecessor, kept until the worker-vertical CI job proves the
-// re-homed copy green (fhevm-internal#1876 retirement-ledger gate); it is deleted next.
-mod solana_poc;
 mod solana_vertical;
 mod test_cases;
 mod utils;
