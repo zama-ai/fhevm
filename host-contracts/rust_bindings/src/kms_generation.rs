@@ -975,8 +975,8 @@ interface KMSGeneration {
     event CrsgenResponse(uint256 crsId, bytes crsDigest, bytes signature, address kmsTxSender);
     event EIP712DomainChanged();
     event Initialized(uint64 version);
-    event KeygenRequest(uint256 prepKeygenId, uint256 requestId, uint256 existingKeyId, bytes extraData);
-    event KeygenResponse(uint256 requestId, IKMSGeneration.KeyDigest[] keyDigests, bytes signature, address kmsTxSender);
+    event KeygenRequest(uint256 prepKeygenId, uint256 keyId, uint256 existingKeyId, bytes extraData);
+    event KeygenResponse(uint256 keyId, IKMSGeneration.KeyDigest[] keyDigests, bytes signature, address kmsTxSender);
     event PrepKeygenRequest(uint256 prepKeygenId, IKMSGeneration.ParamsType paramsType, uint256 existingKeyId, bytes extraData);
     event PrepKeygenResponse(uint256 prepKeygenId, bytes signature, address kmsTxSender);
     event Upgraded(address indexed implementation);
@@ -1006,7 +1006,7 @@ interface KMSGeneration {
     function initializeFromEmptyProxy() external;
     function isRequestDone(uint256 requestId) external view returns (bool);
     function keygen(IKMSGeneration.ParamsType paramsType, uint256 existingKeyId) external;
-    function keygenResponse(uint256 requestId, IKMSGeneration.KeyDigest[] memory keyDigests, bytes memory signature) external;
+    function keygenResponse(uint256 keyId, IKMSGeneration.KeyDigest[] memory keyDigests, bytes memory signature) external;
     function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) external;
     function proxiableUUID() external view returns (bytes32);
     function reinitializeV3() external;
@@ -1496,7 +1496,7 @@ interface KMSGeneration {
     "name": "keygenResponse",
     "inputs": [
       {
-        "name": "requestId",
+        "name": "keyId",
         "type": "uint256",
         "internalType": "uint256"
       },
@@ -1805,7 +1805,7 @@ interface KMSGeneration {
         "internalType": "uint256"
       },
       {
-        "name": "requestId",
+        "name": "keyId",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -1830,7 +1830,7 @@ interface KMSGeneration {
     "name": "KeygenResponse",
     "inputs": [
       {
-        "name": "requestId",
+        "name": "keyId",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -6876,7 +6876,7 @@ event Initialized(uint64 version);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `KeygenRequest(uint256,uint256,uint256,bytes)` and selector `0x8d28adb643d77471a95f8affa05d1b0760ca85c697f7a8275d20b66da19af83f`.
 ```solidity
-event KeygenRequest(uint256 prepKeygenId, uint256 requestId, uint256 existingKeyId, bytes extraData);
+event KeygenRequest(uint256 prepKeygenId, uint256 keyId, uint256 existingKeyId, bytes extraData);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -6889,7 +6889,7 @@ event KeygenRequest(uint256 prepKeygenId, uint256 requestId, uint256 existingKey
         #[allow(missing_docs)]
         pub prepKeygenId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
-        pub requestId: alloy::sol_types::private::primitives::aliases::U256,
+        pub keyId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub existingKeyId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
@@ -6930,7 +6930,7 @@ event KeygenRequest(uint256 prepKeygenId, uint256 requestId, uint256 existingKey
             ) -> Self {
                 Self {
                     prepKeygenId: data.0,
-                    requestId: data.1,
+                    keyId: data.1,
                     existingKeyId: data.2,
                     extraData: data.3,
                 }
@@ -6958,7 +6958,7 @@ event KeygenRequest(uint256 prepKeygenId, uint256 requestId, uint256 existingKey
                     > as alloy_sol_types::SolType>::tokenize(&self.prepKeygenId),
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.requestId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.keyId),
                     <alloy::sol_types::sol_data::Uint<
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.existingKeyId),
@@ -7006,7 +7006,7 @@ event KeygenRequest(uint256 prepKeygenId, uint256 requestId, uint256 existingKey
     #[derive()]
     /**Event with signature `KeygenResponse(uint256,(uint8,bytes)[],bytes,address)` and selector `0x2afe64fb3afde8e2678aea84cf36223f330e2fb1286d37aed573ab9cd1db47c7`.
 ```solidity
-event KeygenResponse(uint256 requestId, IKMSGeneration.KeyDigest[] keyDigests, bytes signature, address kmsTxSender);
+event KeygenResponse(uint256 keyId, IKMSGeneration.KeyDigest[] keyDigests, bytes signature, address kmsTxSender);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -7017,7 +7017,7 @@ event KeygenResponse(uint256 requestId, IKMSGeneration.KeyDigest[] keyDigests, b
     #[derive(Clone)]
     pub struct KeygenResponse {
         #[allow(missing_docs)]
-        pub requestId: alloy::sol_types::private::primitives::aliases::U256,
+        pub keyId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub keyDigests: alloy::sol_types::private::Vec<
             <IKMSGeneration::KeyDigest as alloy::sol_types::SolType>::RustType,
@@ -7061,7 +7061,7 @@ event KeygenResponse(uint256 requestId, IKMSGeneration.KeyDigest[] keyDigests, b
                 data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 Self {
-                    requestId: data.0,
+                    keyId: data.0,
                     keyDigests: data.1,
                     signature: data.2,
                     kmsTxSender: data.3,
@@ -7087,7 +7087,7 @@ event KeygenResponse(uint256 requestId, IKMSGeneration.KeyDigest[] keyDigests, b
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.requestId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.keyId),
                     <alloy::sol_types::sol_data::Array<
                         IKMSGeneration::KeyDigest,
                     > as alloy_sol_types::SolType>::tokenize(&self.keyDigests),
@@ -11243,13 +11243,13 @@ function keygen(IKMSGeneration.ParamsType paramsType, uint256 existingKeyId) ext
     #[derive()]
     /**Function with signature `keygenResponse(uint256,(uint8,bytes)[],bytes)` and selector `0x4610ffe8`.
 ```solidity
-function keygenResponse(uint256 requestId, IKMSGeneration.KeyDigest[] memory keyDigests, bytes memory signature) external;
+function keygenResponse(uint256 keyId, IKMSGeneration.KeyDigest[] memory keyDigests, bytes memory signature) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct keygenResponseCall {
         #[allow(missing_docs)]
-        pub requestId: alloy::sol_types::private::primitives::aliases::U256,
+        pub keyId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub keyDigests: alloy::sol_types::private::Vec<
             <IKMSGeneration::KeyDigest as alloy::sol_types::SolType>::RustType,
@@ -11300,7 +11300,7 @@ function keygenResponse(uint256 requestId, IKMSGeneration.KeyDigest[] memory key
             #[doc(hidden)]
             impl ::core::convert::From<keygenResponseCall> for UnderlyingRustTuple<'_> {
                 fn from(value: keygenResponseCall) -> Self {
-                    (value.requestId, value.keyDigests, value.signature)
+                    (value.keyId, value.keyDigests, value.signature)
                 }
             }
             #[automatically_derived]
@@ -11308,7 +11308,7 @@ function keygenResponse(uint256 requestId, IKMSGeneration.KeyDigest[] memory key
             impl ::core::convert::From<UnderlyingRustTuple<'_>> for keygenResponseCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
-                        requestId: tuple.0,
+                        keyId: tuple.0,
                         keyDigests: tuple.1,
                         signature: tuple.2,
                     }
@@ -11384,7 +11384,7 @@ function keygenResponse(uint256 requestId, IKMSGeneration.KeyDigest[] memory key
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.requestId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.keyId),
                     <alloy::sol_types::sol_data::Array<
                         IKMSGeneration::KeyDigest,
                     > as alloy_sol_types::SolType>::tokenize(&self.keyDigests),
@@ -15763,7 +15763,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ///Creates a new call builder for the [`keygenResponse`] function.
         pub fn keygenResponse(
             &self,
-            requestId: alloy::sol_types::private::primitives::aliases::U256,
+            keyId: alloy::sol_types::private::primitives::aliases::U256,
             keyDigests: alloy::sol_types::private::Vec<
                 <IKMSGeneration::KeyDigest as alloy::sol_types::SolType>::RustType,
             >,
@@ -15771,7 +15771,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::SolCallBuilder<&P, keygenResponseCall, N> {
             self.call_builder(
                 &keygenResponseCall {
-                    requestId,
+                    keyId,
                     keyDigests,
                     signature,
                 },
