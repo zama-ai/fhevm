@@ -31,6 +31,7 @@ use solana_sdk::{
     pubkey::Pubkey,
 };
 use std::collections::HashMap;
+use zama_host::encode::ExecutionDictionary;
 use zama_host::{
     self as host, EncryptedValue, FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand,
     FheExecuteOutput, FheExecuteStep, FheTernaryOpCode, HostConfig, PreviousState,
@@ -49,33 +50,6 @@ use zama_solana_test_kit::{
 // ---------------------------------------------------------------------------
 // Harness
 // ---------------------------------------------------------------------------
-
-/// Builds the execution's interned 32-byte constant dictionary while fixtures assemble steps
-/// (fhevm-internal#1853 W7). Interning deduplicates: repeated constants share one entry.
-#[derive(Default)]
-struct ExecutionDictionary(Vec<[u8; 32]>);
-
-impl ExecutionDictionary {
-    fn intern(&mut self, bytes: [u8; 32]) -> u8 {
-        if let Some(index) = self.0.iter().position(|entry| *entry == bytes) {
-            return u8::try_from(index).expect("fixture dictionary fits u8");
-        }
-        let index = u8::try_from(self.0.len()).expect("fixture dictionary fits u8");
-        self.0.push(bytes);
-        index
-    }
-
-    fn intern_key(&mut self, key: Pubkey) -> u8 {
-        self.intern(key.to_bytes())
-    }
-
-    fn intern_subjects(&mut self, subjects: impl IntoIterator<Item = Pubkey>) -> Vec<u8> {
-        subjects
-            .into_iter()
-            .map(|subject| self.intern_key(subject))
-            .collect()
-    }
-}
 
 fn host_config_account_with_flags(
     admin: Pubkey,
@@ -130,7 +104,7 @@ fn update_with_fhe_execute(
     }];
     let args = FheExecuteArgs {
         account_count: 0,
-        dictionary: dictionary.0,
+        dictionary: dictionary.into_entries(),
         steps,
     };
     let ix = fhe_execute_ix(
@@ -191,7 +165,7 @@ fn expect_fhe_execute_update_error(
     }];
     let args = FheExecuteArgs {
         account_count: 0,
-        dictionary: dictionary.0,
+        dictionary: dictionary.into_entries(),
         steps,
     };
     let ix = fhe_execute_ix(
@@ -452,7 +426,7 @@ fn mollusk_fhe_execute_fails_closed_without_previous_bank_hash() {
     }];
     let args = FheExecuteArgs {
         account_count: 0,
-        dictionary: dictionary.0,
+        dictionary: dictionary.into_entries(),
         steps,
     };
     let ix = fhe_execute_ix(
@@ -1003,7 +977,7 @@ fn mollusk_fhe_execute_update_swaps_subjects_and_seals_the_outgoing_audience() {
     }];
     let args = FheExecuteArgs {
         account_count: 0,
-        dictionary: dictionary.0,
+        dictionary: dictionary.into_entries(),
         steps,
     };
     let ix = fhe_execute_ix(
@@ -1088,7 +1062,7 @@ fn mollusk_fhe_execute_update_shrinks_audience_and_seals_the_outgoing_set() {
     }];
     let args = FheExecuteArgs {
         account_count: 0,
-        dictionary: dictionary.0,
+        dictionary: dictionary.into_entries(),
         steps,
     };
     let ix = fhe_execute_ix(
@@ -1450,7 +1424,7 @@ fn mollusk_deny_list_blocks_grants_but_not_public_sealing_or_removal() {
     }];
     let args = FheExecuteArgs {
         account_count: 0,
-        dictionary: dictionary.0,
+        dictionary: dictionary.into_entries(),
         steps,
     };
     let execute_ix = fhe_execute_ix_with_deny(
@@ -1569,7 +1543,7 @@ fn mollusk_denied_subject_cannot_enter_via_allow_subjects_or_execution_create() 
     }];
     let args = FheExecuteArgs {
         account_count: 0,
-        dictionary: dictionary.0,
+        dictionary: dictionary.into_entries(),
         steps,
     };
     let execute_ix = fhe_execute_ix_with_deny_records(
@@ -1817,7 +1791,7 @@ fn mollusk_fhe_execute_rejects_denied_second_output_authority_in_multi_output_ba
     ];
     let args = FheExecuteArgs {
         account_count: 0,
-        dictionary: dictionary.0,
+        dictionary: dictionary.into_entries(),
         steps,
     };
     let ix = fhe_execute_ix_with_deny_records(
@@ -1921,7 +1895,7 @@ fn mollusk_paused_state_blocks_acl_update_and_execution_output() {
     }];
     let args = FheExecuteArgs {
         account_count: 0,
-        dictionary: dictionary.0,
+        dictionary: dictionary.into_entries(),
         steps,
     };
     let execute_ix = fhe_execute_ix(
@@ -2232,7 +2206,7 @@ fn mollusk_fhe_execute_creates_persistent_output_from_local_binary_add() {
     }];
     let args = FheExecuteArgs {
         account_count: 0,
-        dictionary: dictionary.0,
+        dictionary: dictionary.into_entries(),
         steps,
     };
 
@@ -2312,7 +2286,7 @@ fn mollusk_fhe_execute_updates_persistent_output_with_previous_state() {
     }];
     let args = FheExecuteArgs {
         account_count: 0,
-        dictionary: dictionary.0,
+        dictionary: dictionary.into_entries(),
         steps,
     };
 
@@ -2398,7 +2372,7 @@ fn created_public_batch(step_count: usize, created_public_steps: &[usize]) -> Cr
         host_config,
         FheExecuteArgs {
             account_count: 0,
-            dictionary: dictionary.0,
+            dictionary: dictionary.into_entries(),
             steps,
         },
         output_metas,
@@ -3840,7 +3814,7 @@ impl FheExecutionFixture {
         ];
         FheExecuteArgs {
             account_count: 3,
-            dictionary: dictionary.0,
+            dictionary: dictionary.into_entries(),
             steps,
         }
     }
@@ -3945,7 +3919,7 @@ impl FheExecutionFixture {
             host::instruction::FheExecute {
                 args: FheExecuteArgs {
                     account_count: 3,
-                    dictionary: dictionary.0,
+                    dictionary: dictionary.into_entries(),
                     steps,
                 },
             },
@@ -3987,7 +3961,7 @@ impl FheExecutionFixture {
             host::instruction::FheExecute {
                 args: FheExecuteArgs {
                     account_count: 2,
-                    dictionary: dictionary.0,
+                    dictionary: dictionary.into_entries(),
                     steps,
                 },
             },
@@ -4075,7 +4049,7 @@ impl FheExecutionFixture {
             host::instruction::FheExecute {
                 args: FheExecuteArgs {
                     account_count: 1,
-                    dictionary: dictionary.0,
+                    dictionary: dictionary.into_entries(),
                     steps,
                 },
             },
@@ -4153,7 +4127,7 @@ impl FheExecutionFixture {
             host::instruction::FheExecute {
                 args: FheExecuteArgs {
                     account_count: 3,
-                    dictionary: dictionary.0,
+                    dictionary: dictionary.into_entries(),
                     steps,
                 },
             },

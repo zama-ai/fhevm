@@ -19,6 +19,7 @@ use anchor_lang::solana_program::{pubkey::Pubkey, system_program};
 use anchor_lang::{AccountDeserialize, AnchorDeserialize, Discriminator};
 use serde::{Deserialize, Serialize};
 use solana_keypair::{read_keypair_file, Keypair};
+use zama_host::encode::ExecutionDictionary;
 
 const EVENT_AUTHORITY_SEED: &[u8] = b"__event_authority";
 const HISTORICAL_LABEL_MARKER: u8 = 3;
@@ -487,33 +488,6 @@ fn existing_value_account_state(
     }
 }
 
-/// Builds the execution's interned 32-byte constant dictionary while a flow assembles its steps.
-/// Interning deduplicates: repeated constants share one entry.
-#[derive(Default)]
-struct ExecutionDictionary(Vec<[u8; 32]>);
-
-impl ExecutionDictionary {
-    fn intern(&mut self, bytes: [u8; 32]) -> u8 {
-        if let Some(index) = self.0.iter().position(|entry| *entry == bytes) {
-            return u8::try_from(index).expect("execution dictionary fits u8");
-        }
-        let index = u8::try_from(self.0.len()).expect("execution dictionary fits u8");
-        self.0.push(bytes);
-        index
-    }
-
-    fn intern_key(&mut self, key: Pubkey) -> u8 {
-        self.intern(key.to_bytes())
-    }
-
-    fn intern_subjects(&mut self, subjects: impl IntoIterator<Item = Pubkey>) -> Vec<u8> {
-        subjects
-            .into_iter()
-            .map(|subject| self.intern_key(subject))
-            .collect()
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
 fn persistent_output(
     program: &Program<Rc<Keypair>>,
@@ -736,7 +710,7 @@ fn execute_trivial_encrypt_with_label(
     )?;
     let args = zama_host::FheExecuteArgs {
         account_count: 1,
-        dictionary: dictionary.0,
+        dictionary: dictionary.into_entries(),
         steps: vec![zama_host::FheExecuteStep::TrivialEncrypt {
             plaintext: target.plaintext,
             fhe_type,
@@ -1188,7 +1162,7 @@ fn fhe_execute_verified_input_add(
                 subjects,
             )?,
         }],
-        dictionary: dictionary.0,
+        dictionary: dictionary.into_entries(),
     };
 
     let input_hex: String = input_handle.iter().map(|b| format!("{b:02x}")).collect();
@@ -1851,7 +1825,7 @@ fn create_persistent_public_decrypt_operand(
                 subjects,
             )?,
         }],
-        dictionary: dictionary.0,
+        dictionary: dictionary.into_entries(),
     };
     host.request()
         .accounts(zama_host::accounts::FheExecute {
@@ -2011,7 +1985,7 @@ fn fhe_execute_binary(
         .args(zama_host::instruction::FheExecute {
             args: zama_host::FheExecuteArgs {
                 account_count: (operand_values.len() + 1) as u8,
-                dictionary: dictionary.0,
+                dictionary: dictionary.into_entries(),
                 steps,
             },
         })
@@ -2110,7 +2084,7 @@ fn fhe_execute_unary(
                 subjects,
             )?,
         }],
-        dictionary: dictionary.0,
+        dictionary: dictionary.into_entries(),
     };
 
     let sig = host
@@ -2257,7 +2231,7 @@ fn fhe_execute_ternary(
                 subjects,
             )?,
         }],
-        dictionary: dictionary.0,
+        dictionary: dictionary.into_entries(),
     };
 
     let sig = host
@@ -2350,7 +2324,7 @@ fn fhe_execute_rand_bounded(
                 subjects,
             )?,
         }],
-        dictionary: dictionary.0,
+        dictionary: dictionary.into_entries(),
     };
 
     let sig = host
@@ -2459,7 +2433,7 @@ fn fhe_execute_sum(
                 subjects,
             )?,
         }],
-        dictionary: dictionary.0,
+        dictionary: dictionary.into_entries(),
     };
 
     let sig = host
@@ -2589,7 +2563,7 @@ fn fhe_execute_is_in(
 
     let args = zama_host::FheExecuteArgs {
         account_count: (operand_values.len() + 1) as u8,
-        dictionary: dictionary.0,
+        dictionary: dictionary.into_entries(),
         steps,
     };
     let in_set = set_values.contains(&value);
@@ -2706,7 +2680,7 @@ fn fhe_execute_mul_div(
                 subjects,
             )?,
         }],
-        dictionary: dictionary.0,
+        dictionary: dictionary.into_entries(),
     };
 
     let expected = a * b / d;
