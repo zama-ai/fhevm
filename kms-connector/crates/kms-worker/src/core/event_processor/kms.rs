@@ -141,23 +141,14 @@ fn keyset_added_info(existing_key_id: U256) -> Option<KeySetAddedInfo> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use connector_utils::types::extra_data::ExtraData;
     use rstest::rstest;
-
-    struct MockContextManager;
-
-    impl ContextManager for MockContextManager {
-        async fn validate_context(&self, _extra_data: &ExtraData) -> Result<(), RequestCheckError> {
-            Ok(())
-        }
-    }
 
     #[rstest]
     #[case::fresh(U256::ZERO)]
     #[case::migration(U256::from(42))]
     #[tokio::test]
     async fn prepares_keygen_request(#[case] existing_key_id: U256) {
-        let processor = KMSGenerationProcessor::new(&Config::default(), MockContextManager);
+        let processor = KMSGenerationProcessor::new(&Config::default());
         let prep_keygen_id = U256::from(7);
         let key_id = U256::from(8);
         let is_migration = !existing_key_id.is_zero();
