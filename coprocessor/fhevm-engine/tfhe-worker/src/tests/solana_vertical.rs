@@ -63,13 +63,17 @@ async fn confidential_transfer_reconstructs_computes_and_decrypts(
     let mut fixture = token_fixture();
     let amount_handle = balance_handle(0x09);
 
+    // Account initialization trivially encrypts 0, and trivial-encrypt handles are derived
+    // from the computation alone, so both accounts start on one shared zero-balance handle.
+    // Seed it once (a second seed would overwrite the first); the value stands in for a
+    // balance both parties hold before the transfer.
+    assert_eq!(
+        fixture.alice_initial, fixture.bob_initial,
+        "token accounts must start on the shared trivial-encrypt-zero handle"
+    );
     seed_real_ciphertexts(
         &harness.pool,
-        &[
-            (fixture.alice_initial, 125),
-            (fixture.bob_initial, 20),
-            (amount_handle, 100),
-        ],
+        &[(fixture.alice_initial, 125), (amount_handle, 100)],
     )
     .await?;
 
@@ -136,8 +140,11 @@ async fn confidential_transfer_reconstructs_computes_and_decrypts(
         &[Handle::from(alice_handle), Handle::from(bob_handle)],
     )
     .await?;
+    // Both balances start at the seeded 125 and the transfer moves 100: the sender ends on
+    // 125 - 100 and the recipient on 125 + 100. Every step's output differs from every
+    // input, so a misresolved operand anywhere in the batch shows up here.
     assert_eq!(decrypted[0].value, "25");
-    assert_eq!(decrypted[1].value, "120");
+    assert_eq!(decrypted[1].value, "225");
     Ok(())
 }
 
