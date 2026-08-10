@@ -75,7 +75,7 @@ fn counter_initializes_to_zero_and_adds_increments() {
         assert_eq!(ledger.u64_at(&context, count_value), expected);
     };
 
-    // A mis-derived encrypted value account is rejected before any CPI runs.
+    // A wrongly derived encrypted value account is rejected before any CPI runs.
     let bogus_count_value = Pubkey::new_unique();
     ensure_system_accounts(&context, &[bogus_count_value]);
     context.process_and_validate_instruction(

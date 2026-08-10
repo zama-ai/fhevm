@@ -119,7 +119,7 @@ jobs:
       # DEAD_SURFACE_ONLY_CHECK narrows the script to a single check; the self-test sets it per
       # assertion. Cleared here so no repository variable, no earlier step writing GITHUB_ENV, and no
       # copy of this job in another workflow can leave the gate running one check out of seven. The
-      # script also rejects values it does not recognise, but an inherited "6" is a value it does.
+      # script also rejects values it does not recognize, but an inherited "6" is a value it does.
       - name: Check for dead surface and rejected vocabulary
         env:
           DEAD_SURFACE_ONLY_CHECK: ''
