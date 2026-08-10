@@ -14,8 +14,7 @@ use crate::kms_generation::database::{
     all_pending_key_activations_to_download, applied_compressed_key_materials,
     apply_ready_compressed_key_materials, cancel_orphaned_crs_activations,
     cancel_orphaned_key_activations, count_crs_activation_remaining_pending,
-    count_key_activation_remaining_pending,
-    insert_compressed_key_material_event, insert_crs_activation_event,
+    count_key_activation_remaining_pending, insert_crs_activation_event,
     insert_key_activation_event, mark_compressed_key_material_error,
     mark_crs_activation_error, mark_key_activation_error,
     set_ready_compressed_key_material, set_ready_crs_activation,
@@ -128,7 +127,8 @@ pub async fn insert_kms_generation_events_tx(
                     block_hash,
                     block_number,
                 )
-                .await?;
+                .await
+                .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
             }
             KMSGeneration::KMSGenerationEvents::ActivateCrs(activation) => {
                 insert_crs_activation_event(
@@ -140,20 +140,6 @@ pub async fn insert_kms_generation_events_tx(
                     block_number,
                 )
                 .await?;
-            }
-            KMSGeneration::KMSGenerationEvents::CompressedKeyMaterialAdded(
-                material,
-            ) => {
-                insert_compressed_key_material_event(
-                    tx,
-                    material,
-                    log,
-                    chain_id,
-                    block_hash,
-                    block_number,
-                )
-                .await
-                .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
             }
             _ => {
                 warn!(
