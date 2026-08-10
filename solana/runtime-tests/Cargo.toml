@@ -11,13 +11,18 @@ anchor-spl = { version = "1.1.2", default-features = false, features = ["associa
 confidential-batcher = { path = "../programs/confidential-batcher", features = ["no-entrypoint"] }
 confidential-token = { path = "../programs/confidential-token", features = ["no-entrypoint"] }
 demo-vault = { path = "../programs/demo-vault", features = ["no-entrypoint"] }
+dep-chain = { path = "../programs/dep-chain", features = ["no-entrypoint"] }
 encrypted-counter = { path = "../programs/encrypted-counter", features = ["no-entrypoint"] }
 # Held on the agave-4.0 line while the rest of the toolchain moved to agave 4.1. mollusk-svm 0.14.0
 # cannot resolve here: it needs solana-account >=4.3 (which has moved to wincode 0.6) and
 # solana-transaction-status-client-types (still on wincode 0.5), and the two cannot coexist — the
 # build fails in solana-instruction and solana-nonce. 0.13.4 requires the same
-# transaction-status-client-types range and hits the same wall. Retry once upstream lands on one
-# wincode line; until then this is the newest mollusk that builds against our graph.
+# transaction-status-client-types range and hits the same wall. 0.15.0 resolves the wincode split
+# but its agave crates trip E0658 (`maybe_uninit_write_slice`, unstable in the pinned rustc
+# 1.91.1) in solana-syscalls. The same wall blocks litesvm as the kit's second backend: every
+# published litesvm needs solana-program-runtime >=4.1, which cannot coexist with this mollusk's
+# =4.0.0-rc.0 pin in one lockfile. Retry both once upstream lands on one wincode line and the
+# toolchain moves past 1.91; until then this is the newest mollusk that builds against our graph.
 mollusk-svm = { version = "0.12.1-agave-4.0", features = ["inner-instructions", "precompiles"] }
 mollusk-svm-programs-token = { version = "0.12.1-agave-4.0", default-features = false, features = ["token", "token-2022"] }
 solana-program = "3.0.0"

@@ -61,6 +61,10 @@ DEMO_PROGRAMS = {
 # vendored copy lives inside the program directory so the specimen stays
 # self-contained for anyone copying it as a starting point.
 SPECIMEN_PROGRAMS = {
+    "dep_chain": {
+        "target_idl": "target/idl/dep_chain.json",
+        "vendored_idl": "programs/dep-chain/idl/dep_chain.json",
+    },
     "encrypted_counter": {
         "target_idl": "target/idl/encrypted_counter.json",
         "vendored_idl": "programs/encrypted-counter/idl/encrypted_counter.json",

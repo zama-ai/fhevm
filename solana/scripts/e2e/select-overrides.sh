@@ -108,9 +108,9 @@ groups_for_path() {
     gateway-contracts/*) echo "gateway-contracts coprocessor kms-connector relayer" ;;
     host-contracts/*) echo "host-contracts coprocessor kms-connector relayer" ;;
     shared/*) echo "coprocessor kms-connector relayer" ;;
-    # On-chain-only demo programs: no docker image compiles them (checked against the Cargo.tomls
-    # and Dockerfile COPY lines cited above).
-    solana/programs/demo-vault/*|solana/programs/confidential-deposit-app/*) echo "" ;;
+    # On-chain-only demo and specimen programs: no docker image compiles them (checked against
+    # the Cargo.tomls and Dockerfile COPY lines cited above).
+    solana/programs/demo-vault/*|solana/programs/confidential-deposit-app/*|solana/programs/encrypted-counter/*|solana/programs/dep-chain/*) echo "" ;;
     # The one solana crate the kms-connector images consume (kms-connector/crates/*/Dockerfile).
     solana/crates/zama-solana-acl/*) echo "coprocessor kms-connector relayer" ;;
     solana/programs/*|solana/crates/*|solana/Cargo.toml|solana/Cargo.lock) echo "coprocessor relayer" ;;

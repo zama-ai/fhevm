@@ -1212,6 +1212,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "dep-chain"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "zama-fhe",
+ "zama-host",
+]
+
+[[package]]
 name = "der"
 version = "0.7.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5005,6 +5014,7 @@ dependencies = [
  "confidential-batcher",
  "confidential-token",
  "demo-vault",
+ "dep-chain",
  "encrypted-counter",
  "k256",
  "mollusk-svm",

@@ -362,6 +362,7 @@ jobs:
                 {label: "confidential-token", paths: ["/programs/confidential-token/"]},
                 {label: "confidential-batcher", paths: ["/programs/confidential-batcher/"]},
                 {label: "demo-vault", paths: ["/programs/demo-vault/"]},
+                {label: "dep-chain", paths: ["/programs/dep-chain/"]},
                 {label: "encrypted-counter", paths: ["/programs/encrypted-counter/"]}
               ];
               def line_parts($report; $paths):
