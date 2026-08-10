@@ -1443,7 +1443,7 @@ mod fhe_execute_acl_tests {
         );
         let lifecycle_requirement = transaction_context_requirement(
             &config(),
-            &[make_public.clone()],
+            std::slice::from_ref(&make_public),
             false,
         );
         assert_eq!(

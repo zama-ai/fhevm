@@ -35,7 +35,6 @@ tfhe-versionable = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 tonic = { workspace = true }
-tonic-build = { workspace = true }
 humantime = { workspace = true }
 bytesize = { workspace = true }
 itertools = "0.13.0" # not in workspace

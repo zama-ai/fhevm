@@ -30,6 +30,11 @@ jobs:
             rust-files:
               - .github/workflows/coprocessor-cargo-clippy.yml
               - coprocessor/fhevm-engine/**
+              # host-listener's solana-reconstruct feature compiles these three as path
+              # dependencies, so editing them can break a clippy lane that no other filter watches.
+              - solana/programs/zama-host/**
+              - solana/crates/zama-solana-acl/**
+              - solana/crates/zama-solana-transaction/**
   cargo-clippy:
     name: coprocessor-cargo-clippy/cargo-clippy
     needs: check-changes
@@ -82,6 +87,11 @@ jobs:
         # For now, only specify the `bench latency throughput` features as the
         # other ones require specific dependencies (e.g. GPU, etc.).
         SQLX_OFFLINE=true cargo clippy -p host-listener --all-targets \
+          -- -D warnings
+        # The Solana ingestion path is feature-gated, so the line above never compiles it — the
+        # whole yellowstone client and its tests were going unlinted.
+        SQLX_OFFLINE=true cargo clippy -p host-listener \
+          --features solana-grpc,solana-reconstruct --all-targets \
           -- -D warnings
         SQLX_OFFLINE=true cargo clippy --all-targets --features "bench latency throughput" \
           -- -D warnings
