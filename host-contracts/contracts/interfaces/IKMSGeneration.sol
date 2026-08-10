@@ -68,20 +68,20 @@ interface IKMSGeneration {
     /**
      * @notice Emitted to trigger an FHE key generation.
      * @param prepKeygenId The ID of the preprocessing keygen request.
-     * @param requestId The ID of the key generation request.
+     * @param keyId The ID used for the key generation request.
      * @param existingKeyId Zero for a fresh key, or the existing key whose compressed material is requested.
      * @param extraData Additional context data.
      */
-    event KeygenRequest(uint256 prepKeygenId, uint256 requestId, uint256 existingKeyId, bytes extraData);
+    event KeygenRequest(uint256 prepKeygenId, uint256 keyId, uint256 existingKeyId, bytes extraData);
 
     /**
      * @notice Emitted when a KMS node has responded to a keygen request.
-     * @param requestId The key generation request ID.
+     * @param keyId The key generation request ID.
      * @param keyDigests The digests of the generated keys.
      * @param signature The signature of the KMS node that has responded.
      * @param kmsTxSender The transaction sender of the KMS node that has called the function.
      */
-    event KeygenResponse(uint256 requestId, KeyDigest[] keyDigests, bytes signature, address kmsTxSender);
+    event KeygenResponse(uint256 keyId, KeyDigest[] keyDigests, bytes signature, address kmsTxSender);
 
     /**
      * @notice Emitted when the key is activated.
@@ -334,11 +334,11 @@ interface IKMSGeneration {
 
     /**
      * @notice Handle the response of a fresh keygen or compressed-material migration request.
-     * @param requestId The fresh key ID or temporary migration request ID.
+     * @param keyId The fresh key ID or temporary migration material ID.
      * @param keyDigests The digests of the generated keys.
      * @param signature The signature of the KMS node that has responded.
      */
-    function keygenResponse(uint256 requestId, KeyDigest[] calldata keyDigests, bytes calldata signature) external;
+    function keygenResponse(uint256 keyId, KeyDigest[] calldata keyDigests, bytes calldata signature) external;
 
     /**
      * @notice Get the compressed materials added by a completed migration.
