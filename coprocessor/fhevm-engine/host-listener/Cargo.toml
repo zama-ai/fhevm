@@ -77,11 +77,14 @@ tonic = { workspace = true, optional = true }
 # solana-sdk 2.1.x and clash with the solana 3.0 crates above. We drive the tonic
 # GeyserClient directly (no yellowstone-grpc-client, which would re-enable convert).
 #
-# Still on the v5 tag while the plugin this talks to moved to v14.2.2+solana.4.1.0. Only the .proto
-# files matter here, and every change between the two tags is additive — new RPCs and messages, no
-# field removed or renumbered — so the wire contract holds and the reconstruct lane passes against
-# the v14 plugin. Bumping it is a coprocessor-workspace change (prost/tonic resolution) with no
-# behavioural payoff, so it is deliberately not bundled with the toolchain move.
+# Still on the v5 tag while the plugin this talks to moved to v14.2.2+solana.4.1.0. That is safe on
+# the wire: every .proto change between the two tags is additive — new RPCs and messages, nothing
+# removed or renumbered — and the reconstruct lane passes against the v14 plugin.
+#
+# Bumping it was tried and backed out. It needs two new `cuckoo_*` filter fields (trivial) and a
+# tonic upgrade across this whole workspace (not trivial): v14's proto crate is generated against a
+# newer tonic, so its `Body` is a different type from our tonic 0.12.3 and GeyserClient rejects our
+# Channel. Do it with a deliberate tonic bump, not as a side effect of a toolchain move.
 yellowstone-grpc-proto = { git = "https://github.com/rpcpool/yellowstone-grpc", tag = "v5.0.1+solana.2.1.21", default-features = false, features = ["tonic", "tonic-compression"], optional = true }
 
 # Phase 2 reconstruction (optional; enabled via the `solana-reconstruct` feature).
