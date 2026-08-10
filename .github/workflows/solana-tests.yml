@@ -11,10 +11,13 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
-  # Every Solana runtime in this repo sits on the agave 4.1 line: this toolchain, the
-  # solana-test-validator in solana-e2e.yml, the Yellowstone geyser plugin, and the in-process
-  # SVMs (mollusk-svm, litesvm). Bump them together or the tiers stop agreeing about compute
-  # costs and feature gates.
+  # This toolchain, the solana-test-validator in solana-e2e.yml, and the Yellowstone geyser plugin
+  # all sit on the agave 4.1 line and must be bumped together — they are one running system.
+  #
+  # The in-process SVMs are deliberately NOT on it: mollusk-svm is held at 0.12.1-agave-4.0 and
+  # litesvm at 0.11 (see the comment at solana/runtime-tests/Cargo.toml). Both need
+  # solana-account >= 4.3, which has moved to wincode 0.6 while anchor still pins the 3.x crates on
+  # wincode 0.5. They move when that upstream split resolves, not when this pin changes.
   ANCHOR_VERSION: "1.1.2"
   SOLANA_VERSION: "4.1.2"
 
@@ -277,12 +280,16 @@ jobs:
       # not have. Re-run the snapshot tests in record mode and hand back the JSON that
       # update-cost-snapshots.sh would have written.
       - name: Regenerate the cost snapshots after a test failure
+        id: regen-snapshots
         if: ${{ failure() && steps.workspace-tests.conclusion == 'failure' }}
         run: ZAMA_UPDATE_COST_SNAPSHOT=1 cargo test -p zama-solana-runtime-tests cost_snapshot_
         continue-on-error: true
 
+      # Only publish when regeneration actually succeeded. If the workspace failed to compile, the
+      # step above fails too and `continue-on-error` swallows it — uploading then would hand over a
+      # byte-identical copy of the committed JSON while implying it is the fix.
       - name: Upload the regenerated cost snapshots
-        if: ${{ failure() && steps.workspace-tests.conclusion == 'failure' }}
+        if: ${{ failure() && steps.regen-snapshots.outcome == 'success' }}
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
         with:
           name: solana-cost-snapshots

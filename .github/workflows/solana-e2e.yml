@@ -255,8 +255,12 @@ jobs:
           cp /tmp/solana-*.log /tmp/solana-e2e-logs/ 2>/dev/null || true
           # The validator's own log lives inside the ledger dir, not next to the other /tmp logs,
           # and it is the only place a geyser plugin load failure is explained.
+          # Name each copy after its ledger dir: a reseed can leave more than one ledger under
+          # /tmp/fhevm-demo-<uid>/, and a fixed destination would silently keep only the last.
           for v in /tmp/fhevm-demo-*/*.ledger/validator.log; do
-            [ -f "$v" ] && cp "$v" /tmp/solana-e2e-logs/validator-ledger.log
+            [ -f "$v" ] || continue
+            d="$(basename "$(dirname "$v")")"
+            cp "$v" "/tmp/solana-e2e-logs/validator-${d}.log"
           done 2>/dev/null || true
           docker ps -a > /tmp/solana-e2e-logs/docker-ps.txt 2>&1 || true
           # Dump every container's logs so a downstream failure (e.g. public-decrypt: relayer ->

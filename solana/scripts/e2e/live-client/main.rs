@@ -1,7 +1,7 @@
 //! Drives zama-host / confidential-token instructions against the LOCAL validator,
 //! building each from the program crates' own anchor-generated instruction/accounts
 //! types + pub PDA derivations (authoritative, not hand-replicated). Uses anchor-client
-//! so all solana types are version-coherent with anchor-lang 1.0.2.
+//! so all solana types are version-coherent with the workspace's anchor-lang.
 //!
 //! Live flow proven so far:
 //!   1. initialize_host_config  (host program executes real on-chain logic)

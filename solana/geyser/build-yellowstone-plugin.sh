@@ -2,9 +2,11 @@
 # Resolve the Yellowstone gRPC geyser plugin cdylib for the native solana-test-validator host,
 # multi-arch. The validator dlopen's this external plugin via `--geyser-plugin-config`.
 #
-# The geyser ABI is patch-coupled to the validator's Agave version, so the `+solana.<version>`
-# suffix on YELLOWSTONE_REF MUST match the agave version setup-solana-side.sh runs (currently
-# 4.1.2 — see the toolchain pins in solana-e2e.yml and solana-tests.yml).
+# The geyser plugin interface is a Rust trait with no stable ABI, so the `+solana.<version>` suffix
+# on YELLOWSTONE_REF must track the agave major.minor that setup-solana-side.sh runs — 4.1 today
+# (see the toolchain pins in solana-e2e.yml and solana-tests.yml). The patch versions need not
+# match, and here they do not: upstream's newest build is against 4.1.0 while we run 4.1.2, and
+# agave's geyser-plugin-interface is byte-identical between those two.
 # On x86_64 Linux (CI) we download the prebuilt release artifact; on every other host (native Apple
 # Silicon) we build from source. Upstream gates the Linux-only `affinity` crate off macOS itself as
 # of v14, so the local patch that used to do it is gone.
@@ -33,8 +35,14 @@ if [ "$os" = "Linux" ] && [ "$arch" = "x86_64" ]; then
   enc="${YELLOWSTONE_REF/+/%2B}"
   url="https://github.com/rpcpool/yellowstone-grpc/releases/download/$enc/$LIB_LINUX"
   log "downloading prebuilt $LIB_LINUX for $YELLOWSTONE_REF"
-  curl -fsSL -o "$OUT" "$url"
-  [ -s "$OUT" ] || { log "prebuilt .so download was empty"; rm -f "$OUT"; exit 1; }
+  # Stage then move: $OUT is the path the cache check above short-circuits on, so a download that
+  # dies mid-transfer must never leave a partial file there — every later run would report it as
+  # cached and the validator would fail to dlopen it with nothing to say why.
+  dl="$CACHE/.dl.$$.so"
+  trap 'rm -f "$dl"' EXIT
+  curl -fsSL -o "$dl" "$url"
+  [ -s "$dl" ] || { log "prebuilt .so download was empty"; exit 1; }
+  mv -f "$dl" "$OUT"
   log "downloaded: $OUT"; echo "$OUT"; exit 0
 fi
 
