@@ -13,8 +13,8 @@ name = "poc-live-client"
 path = "main.rs"
 
 [dependencies]
-anchor-lang = "1.0.2"
-anchor-client = "1.0.2"
+anchor-lang = "1.1.2"
+anchor-client = "1.1.2"
 borsh = "1"
 solana-keypair = "3.1.2"
 # Blocking HTTP client for solana-proof-service (`PROOF_SERVICE_URL` / MMR-proof endpoint).

@@ -46,9 +46,9 @@ SID_I64=-9223372036854763463
 # Yellowstone-first ingestion: disable optional host events and feed ordinary computation facts
 # to the coprocessor via gRPC Yellowstone reconstruction. The narrow created-public lifecycle batch
 # remains enabled for its non-reconstructible handles. That needs the geyser plugin, so the host is a native
-# solana-test-validator (agave 2.1.21, multi-arch incl. Apple Silicon) loading the external
-# Yellowstone plugin via --geyser-plugin-config (RPC 8899 + gRPC 10000). It binds 0.0.0.0 so the
-# dockerized KMS worker reaches RPC over host.docker.internal:8899 — the rest of the fhevm-cli
+# solana-test-validator (agave 4.1.2, multi-arch incl. Apple Silicon) loading the external
+# Yellowstone plugin via --geyser-plugin-config (RPC 8899 + gRPC 10000). Its RPC listener binds
+# 0.0.0.0, so the dockerized KMS worker reaches it over host.docker.internal:8899 — the rest of the fhevm-cli
 # stack is unaffected. (surfpool was evaluated and rejected: its LiteSVM does not stream the
 # SlotHashes/Clock sysvar accounts over geyser, which reconstruction needs.)
 GRPC_URL="${GRPC_URL:-http://127.0.0.1:10000}"
@@ -94,18 +94,20 @@ done
 # untouched; fresh CI runners have none (otherwise deploy fails with "No default signer found").
 mkdir -p "$(dirname "$DEPLOYER_KEYPAIR")"
 [ -f "$DEPLOYER_KEYPAIR" ] || solana-keygen new --no-bip39-passphrase --silent -o "$DEPLOYER_KEYPAIR"
-# cargo-build-sbf (agave 2.1.21, used by both `anchor build` and `cargo build-sbf` below) panics
-# with a NotFound error instead of creating its platform-tools cache on a fresh machine; pre-create
-# it so the SBF toolchain can self-provision. Harmless where it already exists (dev machines).
+# cargo-build-sbf (used by both `anchor build` and `cargo build-sbf` below) was observed on agave
+# 2.1.x to panic with a NotFound error instead of creating its platform-tools cache on a fresh
+# machine; pre-create it so the SBF toolchain can self-provision. Kept across the 4.1 bump because
+# it costs nothing and nobody has re-tested the fresh-machine path. Harmless where it already
+# exists (dev machines).
 mkdir -p "$HOME/.cache/solana"
 
-# Host = native solana-test-validator (agave 2.1.21, pinned in solana-e2e.yml) with the
+# Host = native solana-test-validator (agave 4.1.2, pinned in solana-e2e.yml) with the
 # Yellowstone geyser plugin (gRPC :10000) loaded via --geyser-plugin-config. The real validator
 # runs on the host arch directly (multi-arch incl. Apple Silicon) and — unlike surfpool's LiteSVM
 # — streams the SlotHashes/Clock sysvar accounts the reconstruction needs per slot. The matching
 # plugin cdylib is resolved by geyser/build-yellowstone-plugin.sh (prebuilt x86 release in CI;
-# built from source on arm64). Bind 0.0.0.0 so the dockerized KMS worker reaches RPC over
-# host.docker.internal:8899. Local only — no mainnet exposure.
+# built from source on arm64). The RPC listener binds 0.0.0.0 on its own, so the dockerized KMS
+# worker reaches it over host.docker.internal:8899. Local only — no mainnet exposure.
 if [ -n "$DEMO_LIFECYCLE_DIR" ]; then
   if pgrep -f solana-test-validator >/dev/null; then
     echo "[setup] refusing to replace an unowned solana-test-validator in lifecycle mode" >&2
@@ -135,7 +137,32 @@ else
   LEDGER="$ROOT/.solana-test-ledger"
   rm -rf "$LEDGER"
 fi
-nohup solana-test-validator --reset --rpc-port 8899 --bind-address 0.0.0.0 --ledger "$LEDGER" \
+# solana-test-validator prints only its startup banner to stdout; everything that explains a
+# failed start — geyser plugin load errors included — goes to <ledger>/validator.log. Dump both,
+# or a plugin that refuses to load looks like three lines of banner and no reason.
+dump_validator_death() {
+  echo "--- stdout ($VALIDATOR_LOG) ---"
+  tail -20 "$VALIDATOR_LOG" 2>/dev/null || echo "(no stdout captured)"
+  echo "--- ledger log ($LEDGER/validator.log) ---"
+  tail -60 "$LEDGER/validator.log" 2>/dev/null || echo "(no ledger log written)"
+}
+
+# --bind-address must not be 0.0.0.0 on agave 4.x: TestValidator::start passes bind_ip_addr
+# straight through as the gossip advertised IP (test-validator/src/lib.rs:1045), discarding the
+# loopback fallback the CLI computed, and ContactInfo::set_gossip now rejects an unspecified
+# address — the validator panics in gossip before the geyser plugin is ever loaded. Nothing is
+# lost by dropping it: the RPC and pubsub listeners always bind 0.0.0.0 regardless of this flag
+# (test-validator/src/lib.rs:1110-1119), so the dockerized workers still reach
+# host.docker.internal:8899.
+#
+# --deactivate-feature B8JJ… (disable_sbpf_v0_v1_v2_deployment): solana-test-validator activates
+# every feature it knows about at genesis, which here makes it STRICTER than the network we target.
+# That feature has no account on mainnet-beta at all, so mainnet still accepts sbpf v0/v1/v2
+# deployments, but a local validator with it on rejects ours with "Detected sbpf_version required
+# by the executable which are not enabled". Deactivating it matches mainnet. Drop this flag once
+# the programs are built as sbpf v3.
+nohup solana-test-validator --reset --rpc-port 8899 --bind-address 127.0.0.1 --ledger "$LEDGER" \
+  --deactivate-feature B8JJXCy5amZyWG9r7EnUYLwzXSXTxG7GZ1qZ1qggo83g \
   --geyser-plugin-config "$GEYSER_CONFIG" </dev/null >"$VALIDATOR_LOG" 2>&1 &
 VALIDATOR_PID=$!
 [ -z "$DEMO_LIFECYCLE_DIR" ] || printf '%s\n' "$VALIDATOR_PID" > "$DEMO_LIFECYCLE_DIR/validator.pid"
@@ -143,10 +170,10 @@ until curl -s -m2 "$VALIDATOR_RPC" -X POST -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' 2>/dev/null | grep -q '"ok"'; do
   if [ -n "$DEMO_LIFECYCLE_DIR" ]; then
     kill -0 "$VALIDATOR_PID" 2>/dev/null \
-      || { echo "[setup] owned geyser validator died:" >&2; tail -20 "$VALIDATOR_LOG" >&2; exit 1; }
+      || { echo "[setup] owned geyser validator died:" >&2; dump_validator_death >&2; exit 1; }
   else
     pgrep -f solana-test-validator >/dev/null \
-      || { echo "[setup] geyser validator died:" >&2; tail -20 "$VALIDATOR_LOG" >&2; exit 1; }
+      || { echo "[setup] geyser validator died:" >&2; dump_validator_death >&2; exit 1; }
   fi
   sleep 1
 done

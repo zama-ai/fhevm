@@ -18,5 +18,5 @@ no-log-ix-name = []
 idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
 
 [dependencies]
-anchor-lang = "1.0.2"
-anchor-spl = { version = "1.0.2", default-features = false, features = ["associated_token", "mint", "token", "token_2022", "token_2022_extensions"] }
+anchor-lang = "1.1.2"
+anchor-spl = { version = "1.1.2", default-features = false, features = ["associated_token", "mint", "token", "token_2022", "token_2022_extensions"] }

@@ -18,8 +18,8 @@ no-log-ix-name = []
 idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build", "zama-host/idl-build"]
 
 [dependencies]
-anchor-lang = "1.0.2"
-anchor-spl = { version = "1.0.2", default-features = false, features = ["associated_token", "token", "token_2022"] }
+anchor-lang = "1.1.2"
+anchor-spl = { version = "1.1.2", default-features = false, features = ["associated_token", "token", "token_2022"] }
 solana-instructions-sysvar = "3.0.1"
 solana-ed25519-instruction = { path = "../../crates/solana-ed25519-instruction" }
 solana-sha256-hasher = "3.1.0"

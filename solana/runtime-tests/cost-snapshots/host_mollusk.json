@@ -1,6 +1,6 @@
 {
   "fhe_execute/max_steps": {
-    "compute_units": 151223,
+    "compute_units": 151018,
     "unique_accounts": 9,
     "instruction_data_bytes": 449,
     "cpi_instructions": 3,
@@ -8,7 +8,7 @@
     "max_cpi_instruction_data_bytes": 36
   },
   "fhe_execute/three_steps": {
-    "compute_units": 42074,
+    "compute_units": 41927,
     "unique_accounts": 9,
     "instruction_data_bytes": 188,
     "cpi_instructions": 3,
