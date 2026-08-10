@@ -360,7 +360,7 @@ describe("rollout runbook", () => {
     });
   });
 
-  test("retries the same KMS operator and never advances after a permanent paired failure", async () => {
+  test("records one paired KMS operator failure and never advances", async () => {
     await withTempStateDir(async (stateDir) => {
       const versions = presetBundle("latest-main", "abcdef0", "baseline.json");
       await saveState({
@@ -394,11 +394,10 @@ describe("rollout runbook", () => {
       });
 
       await expect(context.upgradeKmsOperators([1, 2], { lockFile })).rejects.toThrow("pair readiness failed");
-      expect(calls).toEqual([1, 1]);
+      expect(calls).toEqual([1]);
       const entries = (await Bun.file(receiptJsonlPath()).text()).trim().split("\n").map((line) => JSON.parse(line));
-      expect(entries.map(({ kind, details }) => [kind, details.attempt, details.operatorId])).toEqual([
-        ["upgrade-kms-operator-failed", 1, 1],
-        ["upgrade-kms-operator-failed", 2, 1],
+      expect(entries.map(({ kind, details }) => [kind, details.operatorId])).toEqual([
+        ["upgrade-kms-operator-failed", 1],
       ]);
     });
   });

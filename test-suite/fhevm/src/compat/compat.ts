@@ -268,14 +268,15 @@ const parseCompatVersion = (version: string) => {
 export const replaceRegistrySourceTag = (
   source: CoprocessorInstanceSource,
   tag: string,
+  compatTag?: string,
 ): CoprocessorInstanceSource => {
   if (parseCompatVersion(tag)) {
     return { mode: "registry", tag };
   }
-  const compatTag = source.mode === "registry"
+  const effectiveCompatTag = compatTag ?? (source.mode === "registry"
     ? source.compatTag ?? (parseCompatVersion(source.tag) ? source.tag : undefined)
-    : undefined;
-  return { mode: "registry", tag, ...(compatTag ? { compatTag } : {}) };
+    : undefined);
+  return { mode: "registry", tag, ...(effectiveCompatTag ? { compatTag: effectiveCompatTag } : {}) };
 };
 
 const compatVersionGte = (

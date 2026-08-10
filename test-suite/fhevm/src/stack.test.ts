@@ -7,6 +7,7 @@ import {
   previewStateFromBundle,
   removeRuntimeUpgradeOverrides,
   resolveUpgradePlan,
+  startDeferredGreen,
 } from "./flow/up-flow";
 import { presetBundle } from "./resolve/target";
 import { testDefaultScenario } from "./test-fixtures";
@@ -242,5 +243,51 @@ describe("stack", () => {
         { lockFile: true },
       ),
     ).toThrow(/operator-paired rollout primitive/);
+  });
+
+  test("commits deferred Green state only after startup health succeeds", async () => {
+    const state: State = {
+      target: "latest-main",
+      lockPath: "/tmp/lock.json",
+      versions: presetBundle("latest-main", "abcdef0", "lock.json"),
+      overrides: [],
+      scenario: blueGreenScenario,
+      completedSteps: ["base", "coprocessor"],
+      updatedAt: "2026-07-14T00:00:00.000Z",
+    };
+    let saved: State | undefined;
+    let buildPersistedState = true;
+    const generatedDeferredStates: boolean[] = [];
+    let removedContainers: string[] = [];
+    const operations = {
+      async loadState() { return state; },
+      async generateRuntime(next: State) {
+        if (next.scenario.kind === "blue-green") {
+          generatedDeferredStates.push(next.scenario.gcs.deferredStart);
+        }
+      },
+      async maybeBuild(_component: string, _state: State, options?: { persistState?: boolean }) {
+        buildPersistedState = options?.persistState !== false;
+      },
+      async composeUp() {},
+      async waitForContainer() {},
+      async waitForCoprocessorServices() {},
+      async multiChainComposeUp() {},
+      async postBootHealthGate() { throw new Error("Green unhealthy"); },
+      async removeContainers(containers: string[]) { removedContainers = containers; },
+      async saveState(next: State) { saved = next; },
+    };
+
+    await expect(startDeferredGreen(operations)).rejects.toThrow("Green unhealthy");
+    expect(buildPersistedState).toBe(false);
+    expect(saved).toBeUndefined();
+    expect(generatedDeferredStates).toEqual([false, true]);
+    expect(removedContainers.length).toBeGreaterThan(0);
+
+    await startDeferredGreen({ ...operations, async postBootHealthGate() {} });
+    expect(saved?.scenario.kind).toBe("blue-green");
+    if (saved?.scenario.kind === "blue-green") {
+      expect(saved.scenario.gcs.deferredStart).toBe(false);
+    }
   });
 });

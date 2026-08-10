@@ -294,11 +294,15 @@ describe("threshold core config", () => {
 });
 
 describe("buildKmsConnectorOverride (--override kms-connector)", () => {
-  const thresholdSpec = (overrides: State["overrides"]) =>
+  const thresholdSpec = (
+    overrides: State["overrides"],
+    kmsConnectorDeploymentByNodeId?: State["kmsConnectorDeploymentByNodeId"],
+  ) =>
     stackSpecForState({
       target: "latest-main",
       requiresGitHub: true,
       versions: presetBundle("latest-main", "abcdef0", "latest-main.json"),
+      kmsConnectorDeploymentByNodeId,
       overrides,
       scenario: testDefaultScenario({ kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" } }),
     });
@@ -320,6 +324,22 @@ describe("buildKmsConnectorOverride (--override kms-connector)", () => {
     // Same image tag, no per-party rebuild: maybeBuild builds by base service name once.
     expect(clone.image).toBe(base.image);
     expect(clone.build).toBeUndefined();
+  });
+
+  test("a mixed rollout changes only the selected Connector party", async () => {
+    const targetVersions = {
+      CONNECTOR_DB_MIGRATION_VERSION: "target",
+      CONNECTOR_GW_LISTENER_VERSION: "target",
+      CONNECTOR_KMS_WORKER_VERSION: "target",
+      CONNECTOR_TX_SENDER_VERSION: "target",
+    };
+    const services = (await buildKmsConnectorOverride(thresholdSpec([], {
+      2: { locallyBuilt: true, versions: targetVersions },
+    }))).services;
+    expect(String(services["kms-connector-gw-listener"]?.image)).not.toContain("fhevm-local");
+    expect(String(services["kms-connector-2-gw-listener"]?.image)).toEndWith(":fhevm-local");
+    expect(services["kms-connector-2-gw-listener"]?.build).toBeDefined();
+    expect(String(services["kms-connector-3-gw-listener"]?.image)).not.toContain("fhevm-local");
   });
 });
 
@@ -700,7 +720,7 @@ describe("upgradeThresholdKmsOperator", () => {
           calls.push(`wait:${container}:${want}`);
         },
         async waitForKmsConnectorParty(_state, party, readiness) {
-          calls.push(`connector-ready:${party}:${readiness}`);
+          calls.push(`connector-ready:${party}:${readiness ?? "running"}`);
         },
         async postBootHealthGate(containers) {
           calls.push(`health:${containers.join(",")}`);
@@ -710,7 +730,6 @@ describe("upgradeThresholdKmsOperator", () => {
       expect(calls).toEqual([
         "artifacts",
         "quorum:2",
-        "save",
         "generate",
         "build:kms-connector",
         "stop:kms-connector-2-gw-listener,kms-connector-2-kms-worker,kms-connector-2-tx-sender",
@@ -719,12 +738,100 @@ describe("upgradeThresholdKmsOperator", () => {
         "up:kms-connector:kms-connector-2-db-migration:true",
         "wait:kms-connector-2-db-migration:complete",
         "up:kms-connector:kms-connector-2-gw-listener,kms-connector-2-kms-worker,kms-connector-2-tx-sender:true",
-        "connector-ready:2:healthy",
+        "connector-ready:2:running",
         "health:kms-connector-2-gw-listener,kms-connector-2-kms-worker,kms-connector-2-tx-sender",
+        "save",
       ]);
       expect(persisted.versions.env.CORE_VERSION).toBe(versions.env.CORE_VERSION);
-      expect(persisted.versions.env.CONNECTOR_KMS_WORKER_VERSION).toBe("target-connector");
+      expect(persisted.versions.env.CONNECTOR_KMS_WORKER_VERSION).toBe(versions.env.CONNECTOR_KMS_WORKER_VERSION);
       expect(persisted.kmsCoreVersionByNodeId).toEqual({ 2: "target-core" });
+      expect(persisted.kmsConnectorDeploymentByNodeId?.[2]).toEqual({
+        locallyBuilt: true,
+        versions: {
+          CONNECTOR_DB_MIGRATION_VERSION: "target-connector",
+          CONNECTOR_GW_LISTENER_VERSION: "target-connector",
+          CONNECTOR_KMS_WORKER_VERSION: "target-connector",
+          CONNECTOR_TX_SENDER_VERSION: "target-connector",
+        },
+      });
+    });
+  });
+
+  test("moves global Core and Connector versions only after every operator reaches the target", async () => {
+    await withTempStateDir(async (stateDir) => {
+      const versions = presetBundle("latest-main", "abcdef0", "baseline.json");
+      let persisted: State = {
+        target: "latest-main",
+        lockPath: "/tmp/baseline.json",
+        requiresGitHub: true,
+        versions,
+        overrides: [],
+        scenario: testDefaultScenario({
+          kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" },
+        }),
+        completedSteps: ["base"],
+        updatedAt: "2026-07-14T00:00:00.000Z",
+      };
+      const targetEnv = {
+        ...versions.env,
+        CORE_VERSION: "target-core",
+        CONNECTOR_DB_MIGRATION_VERSION: "target-connector",
+        CONNECTOR_GW_LISTENER_VERSION: "target-connector",
+        CONNECTOR_KMS_WORKER_VERSION: "target-connector",
+        CONNECTOR_TX_SENDER_VERSION: "target-connector",
+      };
+      let failHealth = false;
+      const lockFile = path.join(stateDir, "target.json");
+      await writeJson(lockFile, { ...versions, lockName: "target.json", env: targetEnv });
+      const operations = {
+        async loadState() { return persisted; },
+        async projectContainers() { return ["kms-core"]; },
+        async ensureRuntimeArtifacts() {},
+        async assertQuorum() {},
+        async saveState(next: State) { persisted = next; },
+        async generateRuntime() {},
+        async maybeBuild() {},
+        async stopContainers() {},
+        async composeUp() {},
+        async waitForContainer() {},
+        async waitForKmsConnectorParty() {},
+        async postBootHealthGate() {
+          if (failHealth) throw new Error("Connector unhealthy");
+        },
+      };
+
+      for (const operator of [1, 2, 3]) {
+        await upgradeThresholdKmsOperator(operator, {
+          lockFile,
+          overrides: [{ group: "kms-connector" }],
+        }, operations);
+        expect(persisted.versions.env.CORE_VERSION).toBe(versions.env.CORE_VERSION);
+        expect(persisted.versions.env.CONNECTOR_KMS_WORKER_VERSION).toBe(
+          versions.env.CONNECTOR_KMS_WORKER_VERSION,
+        );
+        expect(Object.keys(persisted.kmsConnectorDeploymentByNodeId ?? {})).toHaveLength(operator);
+      }
+
+      failHealth = true;
+      await expect(upgradeThresholdKmsOperator(4, {
+        lockFile,
+        overrides: [{ group: "kms-connector" }],
+      }, operations)).rejects.toThrow("Connector unhealthy");
+      expect(persisted.versions.env.CONNECTOR_KMS_WORKER_VERSION).toBe(
+        versions.env.CONNECTOR_KMS_WORKER_VERSION,
+      );
+      expect(Object.keys(persisted.kmsConnectorDeploymentByNodeId ?? {})).toHaveLength(3);
+
+      failHealth = false;
+      await upgradeThresholdKmsOperator(4, {
+        lockFile,
+        overrides: [{ group: "kms-connector" }],
+      }, operations);
+      expect(persisted.versions.env.CORE_VERSION).toBe("target-core");
+      expect(persisted.versions.env.CONNECTOR_KMS_WORKER_VERSION).toBe("target-connector");
+      expect(persisted.kmsCoreVersionByNodeId).toBeUndefined();
+      expect(persisted.kmsConnectorDeploymentByNodeId).toBeUndefined();
+      expect(persisted.overrides).toContainEqual({ group: "kms-connector" });
     });
   });
 
@@ -742,7 +849,7 @@ describe("upgradeThresholdKmsOperator", () => {
             Health: { Status: "healthy" },
           },
         },
-      ] as any),
+      ] as any, async () => {}),
     ).rejects.toThrow("2 remaining operators are ready, but 3 are required; unavailable operators: 3");
   });
 
@@ -760,8 +867,44 @@ describe("upgradeThresholdKmsOperator", () => {
             Health: { Status: "healthy" },
           },
         },
-      ] as any),
+      ] as any, async () => {}),
     ).resolves.toBeUndefined();
+  });
+
+  test("accepts running Connector services without Docker healthchecks", async () => {
+    const state = {
+      scenario: testDefaultScenario({
+        kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" },
+      }),
+    } as State;
+    await expect(
+      assertKmsOperatorUpgradeQuorum(state, 1, async (container) => [
+        {
+          State: {
+            Status: "running",
+            ...(container.startsWith("kms-core") ? { Health: { Status: "healthy" } } : {}),
+          },
+        },
+      ] as any, async () => {}),
+    ).resolves.toBeUndefined();
+  });
+
+  test("counts a running Connector as unavailable until its readiness signals are present", async () => {
+    const state = {
+      scenario: testDefaultScenario({
+        kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" },
+      }),
+    } as State;
+    await expect(
+      assertKmsOperatorUpgradeQuorum(
+        state,
+        1,
+        async () => [{ State: { Status: "running", Health: { Status: "healthy" } } }] as any,
+        async (_state, party) => {
+          if (party === 3) throw new Error("listener not ready");
+        },
+      ),
+    ).rejects.toThrow("2 remaining operators are ready, but 3 are required; unavailable operators: 3");
   });
 
   test("rejects spare topologies before changing runtime artifacts", async () => {

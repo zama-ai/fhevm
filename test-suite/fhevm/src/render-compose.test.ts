@@ -619,4 +619,35 @@ gcs:
       expect(bcs.command).not.toContain("--bucket-name=coproc-0");
     });
   });
+
+  test("blue-green uses v0.15 commands when a v0.14 BCS is upgraded to a v0.15 SHA", async () => {
+    const upgradedScenario = resolveBlueGreenScenario(
+      path.join("/tmp", "blue-green-upgraded-bcs.yaml"),
+      parseBlueGreenScenario(`
+version: 1
+kind: blue-green
+bcs:
+  source:
+    mode: registry
+    tag: v0.14.0-10
+gcs:
+  source: { mode: local }
+  stackVersion: "0.15.1"
+`),
+    );
+    upgradedScenario.bcs.source = { mode: "registry", tag: "15abcde", compatTag: "v0.15.0" };
+    const bgState: State = { ...state, scenario: upgradedScenario };
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "BUCKET_NAME=coproc-0\n");
+      await generateComposeOverrides(bgState, stackSpecForState(bgState));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { command?: string[]; image?: string }>;
+      };
+      const blue = doc.services["coprocessor-sns-worker"] ?? {};
+      expect(blue.image).toEndWith(":15abcde");
+      expect(blue.command).toContain("--bucket-name=coproc-0");
+      expect(blue.command?.filter((arg) => arg.startsWith("--bucket-name-"))).toEqual([]);
+    });
+  });
 });

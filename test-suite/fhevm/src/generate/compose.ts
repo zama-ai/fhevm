@@ -619,20 +619,29 @@ export const buildKmsConnectorOverride = async (plan: StackSpec) => {
   const doc = rewriteComposePaths(await loadComposeDoc("kms-connector"));
   const overridden = overriddenServicesForComponent(plan, "kms-connector");
   const services: Record<string, Record<string, unknown>> = {};
+  const buildOwners = new Set<string>();
   for (let party = 1; party <= plan.kms.parties; party += 1) {
     const prefix = `${kmsConnectorPrefix(party)}-`;
     const envFileValue = envPath(kmsConnectorEnvName(party));
+    const deployment = plan.kmsConnectorDeploymentByNodeId?.[party];
     for (const [name, service] of Object.entries(doc.services)) {
       const suffix = name.replace(/^kms-connector-/, "");
       const serviceName = `${prefix}${suffix}`;
       const next = structuredClone(service);
       next.container_name = serviceName;
       next.env_file = [envFileValue];
-      applyBuildPolicy(next, overridden.has(name));
-      if (party === 1 && overridden.has(name)) {
+      if (deployment && typeof next.image === "string") {
+        next.image = next.image.replace(/\$\{([^}]+)\}/g, (placeholder, key: string) =>
+          deployment.versions[key] ?? placeholder
+        );
+      }
+      const locallyBuilt = deployment ? deployment.locallyBuilt : overridden.has(name);
+      applyBuildPolicy(next, locallyBuilt);
+      if (locallyBuilt && !buildOwners.has(name)) {
         const build = localBuildSpecFor("kms-connector", name);
         if (build) {
           next.build = build;
+          buildOwners.add(name);
         }
       }
       if (next.depends_on && typeof next.depends_on === "object") {

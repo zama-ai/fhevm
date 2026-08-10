@@ -503,7 +503,11 @@ export default async function runMigration(ctx: RolloutRunContext) {
   }, 300);
 
   logPhase("04 upgrade the serving Blue fleet to 0.15 and pin it to legacy material");
-  await ctx.upgradeRuntimeGroup("coprocessor", { lockFile: blueLock, bcsTag: versions.blueTag });
+  await ctx.upgradeRuntimeGroup("coprocessor", {
+    lockFile: blueLock,
+    bcsTag: versions.blueTag,
+    bcsCompatTag: "v0.15.0",
+  });
   await assertBlueSafeguard();
   await assertBlueImageTag(versions.blueTag);
   await assertGreenAbsent();
