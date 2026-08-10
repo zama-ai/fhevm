@@ -240,9 +240,9 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
         // Check that the previous keygen request is done.
-        uint256 previousRequestId = $.keyCounter;
-        if (previousRequestId != KEY_COUNTER_BASE && !$.isRequestDone[previousRequestId]) {
-            revert KeygenOngoing(previousRequestId);
+        uint256 previousKeyId = $.keyCounter;
+        if (previousKeyId != KEY_COUNTER_BASE && !$.isRequestDone[previousKeyId]) {
+            revert KeygenOngoing(previousKeyId);
         }
 
         // Generate a globally unique prepKeygenId for the key generation preprocessing
@@ -251,29 +251,29 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         $.prepKeygenCounter++;
         uint256 prepKeygenId = $.prepKeygenCounter;
 
-        // Generate a globally unique requestId for the key generation.
-        // The counter is initialized at deployment such that requestId's first byte uniquely
+        // Generate a globally unique keyId for the key generation.
+        // The counter is initialized at deployment such that keyId's first byte uniquely
         // represents a keygen request, with format: [0000 0100 | counter_1..31]
         $.keyCounter++;
-        uint256 requestId = $.keyCounter;
+        uint256 keyId = $.keyCounter;
 
-        // Associate both the prepKeygenId and the requestId to each other in order to retrieve them later
+        // Associate both the prepKeygenId and the keyId to each other in order to retrieve them later
         // Since IDs are globally unique, the IDs can't overlap and the same mapping can be used
-        $.keygenIdPairs[prepKeygenId] = requestId;
-        $.keygenIdPairs[requestId] = prepKeygenId;
+        $.keygenIdPairs[prepKeygenId] = keyId;
+        $.keygenIdPairs[keyId] = prepKeygenId;
 
         // Store the FHE params type used by both request phases.
         $.requestParamsType[prepKeygenId] = paramsType;
 
         if (existingKeyId != 0) {
-            $.existingKeyIdByRequestId[requestId] = existingKeyId;
-            $.requestIdByExistingKeyId[existingKeyId] = requestId;
+            $.existingKeyIdByRequestId[keyId] = existingKeyId;
+            $.requestIdByExistingKeyId[existingKeyId] = keyId;
         }
 
         (uint256 contextId, uint256 epochId) = PROTOCOL_CONFIG.getCurrentKmsContextAndEpoch();
         bytes memory extraData = _encodeRequestExtraDataV2(contextId, epochId);
         $.requestExtraData[prepKeygenId] = extraData;
-        $.requestExtraData[requestId] = extraData;
+        $.requestExtraData[keyId] = extraData;
 
         emit PrepKeygenRequest(prepKeygenId, paramsType, existingKeyId, extraData);
     }
@@ -321,9 +321,9 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
             // Store the digest on which consensus was reached for the preprocessing keygen request
             $.consensusDigest[prepKeygenId] = digest;
 
-            // Get the requestId associated to the prepKeygenId.
-            uint256 requestId = $.keygenIdPairs[prepKeygenId];
-            emit KeygenRequest(prepKeygenId, requestId, $.existingKeyIdByRequestId[requestId], extraData);
+            // Get the keyId associated to the prepKeygenId.
+            uint256 keyId = $.keygenIdPairs[prepKeygenId];
+            emit KeygenRequest(prepKeygenId, keyId, $.existingKeyIdByRequestId[keyId], extraData);
         }
     }
 
@@ -549,17 +549,17 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
             revert AbortKeygenInvalidId(prepKeygenId);
         }
 
-        // The prep request reaches consensus before the paired request does.
-        // Keep abort available until the request lifecycle itself is done.
-        uint256 requestId = $.keygenIdPairs[prepKeygenId];
-        if ($.isRequestDone[requestId]) {
+        // The prep request reaches consensus before the paired keygen request does.
+        // Keep abort available until the keygen request itself is done.
+        uint256 keyId = $.keygenIdPairs[prepKeygenId];
+        if ($.isRequestDone[keyId]) {
             revert AbortKeygenAlreadyDone(prepKeygenId);
         }
 
         // Mark both request phases as done to unblock the next keygen.
         $.isRequestDone[prepKeygenId] = true;
-        if (requestId != 0) {
-            $.isRequestDone[requestId] = true;
+        if (keyId != 0) {
+            $.isRequestDone[keyId] = true;
         }
 
         emit AbortKeygen(prepKeygenId);
