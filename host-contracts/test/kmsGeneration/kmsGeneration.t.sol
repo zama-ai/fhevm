@@ -535,7 +535,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         vm.expectEmit(true, true, true, true, address(kmsGeneration));
         emit IKMSGeneration.KeygenResponse(keyId, digests, keySig, kmsTxSender0);
         vm.expectEmit(true, true, true, true, address(kmsGeneration));
-        emit IKMSGeneration.ActivateKey(keyId, _primaryStorageUrls(), digests);
+        emit IKMSGeneration.ActivateKey(keyId, 0, _primaryStorageUrls(), digests);
         vm.prank(kmsTxSender0);
         kmsGeneration.keygenResponse(keyId, digests, keySig);
     }
@@ -1423,7 +1423,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
         // 4th response should be silently ignored (no ActivateKey event, no revert)
         vm.expectEmit(false, false, false, false, address(kmsGeneration), 0);
-        emit IKMSGeneration.ActivateKey(0, new string[](0), new IKMSGeneration.KeyDigest[](0));
+        emit IKMSGeneration.ActivateKey(0, 0, new string[](0), new IKMSGeneration.KeyDigest[](0));
         _doKeygenResponse(prepKeygenId, keyId, kmsPk3, kmsTxSender3);
     }
 
@@ -1549,7 +1549,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         urls[1] = "https://s1.example.com";
         urls[2] = "https://s2.example.com";
         vm.expectEmit(true, true, true, true, address(kmsGeneration));
-        emit IKMSGeneration.ActivateKey(keyId, urls, digests);
+        emit IKMSGeneration.ActivateKey(keyId, 0, urls, digests);
         _doKeygenResponse(prepKeygenId, keyId, kmsPk2, kmsTxSender2);
 
         assertEq(kmsGeneration.getActiveKeyId(), keyId);
@@ -1662,7 +1662,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         urls[2] = "https://s2.example.com";
         IKMSGeneration.KeyDigest[] memory compressedDigests = _mockCompressedKeyDigests();
         vm.expectEmit(true, true, true, true, address(kmsGeneration));
-        emit IKMSGeneration.CompressedKeyMaterialAdded(keyId, migrationRequestId, urls, compressedDigests);
+        emit IKMSGeneration.ActivateKey(migrationRequestId, keyId, urls, compressedDigests);
         _doMigrationKeygenResponse(migrationPrepId, migrationRequestId, kmsPk2, kmsTxSender2);
 
         // Publication is not activation.

@@ -85,28 +85,13 @@ interface IKMSGeneration {
     event KeygenResponse(uint256 keyId, KeyDigest[] keyDigests, bytes signature, address kmsTxSender);
 
     /**
-     * @notice Emitted when the key is activated.
-     * @param keyId The ID of the activated key.
+     * @notice Emitted when fresh key material is activated or new material is added to an existing key.
+     * @param keyId The generated key ID for a fresh key, or the request and storage ID for added material.
+     * @param existingKeyId Zero for a fresh key, or the existing key receiving the added material.
      * @param kmsNodeStorageUrls The KMS nodes' storage URLs that participated in the consensus.
-     * @param keyDigests The digests of the generated keys.
+     * @param keyDigests The digests of the generated key material.
      */
-    event ActivateKey(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
-
-    /**
-     * @notice Emitted when KMS consensus is reached on the re-materialized compressed key
-     * material for an existing key. Does not activate anything: the active key is unchanged
-     * and worker activation is handled by the blue-green upgrade protocol.
-     * @param keyId The ID of the existing key.
-     * @param keyMaterialId The KMS request and storage ID of the compressed material.
-     * @param kmsNodeStorageUrls The KMS nodes' storage URLs that participated in the consensus.
-     * @param keyDigests The digests of the compressed key material.
-     */
-    event CompressedKeyMaterialAdded(
-        uint256 indexed keyId,
-        uint256 indexed keyMaterialId,
-        string[] kmsNodeStorageUrls,
-        KeyDigest[] keyDigests
-    );
+    event ActivateKey(uint256 keyId, uint256 existingKeyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
 
     /**
      * @notice Emitted to trigger a CRS (Common Reference String) generation.
