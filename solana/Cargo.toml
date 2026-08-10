@@ -9,6 +9,7 @@ members = [
     "programs/confidential-batcher",
     "programs/confidential-token",
     "programs/demo-vault",
+    "programs/encrypted-counter",
     "programs/zama-host",
     "runtime-tests",
     "test-kit",

@@ -1389,6 +1389,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "encrypted-counter"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "zama-fhe",
+ "zama-host",
+]
+
+[[package]]
 name = "enum-iterator"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4996,6 +5005,7 @@ dependencies = [
  "confidential-batcher",
  "confidential-token",
  "demo-vault",
+ "encrypted-counter",
  "k256",
  "mollusk-svm",
  "mollusk-svm-programs-token",

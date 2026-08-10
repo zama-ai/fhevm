@@ -9,6 +9,7 @@ skip-lint = false
 confidential_batcher = "Cr1Tyzov2Jq9AYVn5zLSLQdyd8CkZJLemHYkj6qDqFmG"
 confidential_token = "pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg"
 demo_vault = "6JJTCTipqMjhq5djroouMgi1XZ1Rtc3RMp483F8Bz8b9"
+encrypted_counter = "4tjvykteKMKDVmRGbfVSkANmBnm91NfD6DAaw6pykfF3"
 zama_host = "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
 
 [provider]
