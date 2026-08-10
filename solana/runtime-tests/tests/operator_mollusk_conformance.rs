@@ -638,7 +638,5 @@ fn finish_handle(mut handle: [u8; 32], fhe_type: u8) -> [u8; 32] {
 }
 
 fn be(value: u64) -> [u8; 32] {
-    let mut bytes = [0; 32];
-    bytes[24..].copy_from_slice(&value.to_be_bytes());
-    bytes
+    zama_solana_test_kit::u256_be(value)
 }

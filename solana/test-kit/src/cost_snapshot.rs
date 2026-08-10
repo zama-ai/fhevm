@@ -206,10 +206,9 @@ fn measure(instruction: &Instruction, result: &InstructionResult) -> Cost {
 }
 
 fn snapshot_path(snapshot: &str) -> PathBuf {
-    // The runtime env var, not the `env!` macro: this module used to compile inside each test
-    // binary, where compile-time CARGO_MANIFEST_DIR meant the test crate. Compiled into the kit,
-    // the macro would name the kit's own directory — the runtime variable still names the crate
-    // whose test target is running, which is where the committed snapshots live.
+    // Snapshots live in the consuming test crate, not in the kit. The `env!` macro would bake in
+    // the kit's own directory at compile time; the runtime variable names the crate whose test
+    // target is running, which is where the committed snapshots live.
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
         .expect("cost snapshots resolve against CARGO_MANIFEST_DIR; run tests through cargo");
     PathBuf::from(manifest_dir)

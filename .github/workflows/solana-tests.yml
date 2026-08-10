@@ -360,6 +360,7 @@ jobs:
           cargo llvm-cov \
             --workspace \
             --exclude zama-solana-runtime-tests \
+            --exclude zama-solana-test-kit \
             --json \
             --summary-only \
             --output-path /tmp/solana-native-coverage.json

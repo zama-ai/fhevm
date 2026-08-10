@@ -33,8 +33,8 @@ use solana_sdk::{
 use std::{ops::Range, path::PathBuf};
 use zama_host::{self as host, PermitInvalidation};
 use zama_solana_test_kit::{
-    empty_system_account, funded_system_account as funded_wallet,
-    serialized_account as serialized, system_program_account,
+    empty_system_account, funded_system_account as funded_wallet, serialized_account as serialized,
+    system_program_account,
 };
 
 // The schema lives with the fixture rather than in this crate, because the KMS Connector

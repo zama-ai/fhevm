@@ -37,11 +37,9 @@ pub struct TypedClearValue {
 
 impl TypedClearValue {
     pub fn from_u64(fhe_type: u8, value: u64) -> Self {
-        let mut bytes = [0; 32];
-        bytes[24..].copy_from_slice(&value.to_be_bytes());
         Self {
             fhe_type,
-            value: bytes,
+            value: crate::u256_be(value),
         }
     }
 

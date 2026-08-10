@@ -3056,16 +3056,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "solana-compute-budget-interface"
-version = "3.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8292c436b269ad23cecc8b24f7da3ab07ca111661e25e00ce0e1d22771951ab9"
-dependencies = [
- "solana-instruction",
- "solana-sdk-ids",
-]
-
-[[package]]
 name = "solana-cpi"
 version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5002,7 +4992,6 @@ version = "0.1.0"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
- "base64 0.22.1",
  "bincode",
  "confidential-batcher",
  "confidential-token",
@@ -5010,15 +4999,11 @@ dependencies = [
  "k256",
  "mollusk-svm",
  "mollusk-svm-programs-token",
- "num-bigint 0.4.6",
- "rand 0.9.4",
  "serde",
  "serde_json",
- "solana-compute-budget-interface",
  "solana-packet 3.0.0",
  "solana-program",
  "solana-sdk",
- "solana-sha256-hasher",
  "zama-host",
  "zama-solana-acl",
  "zama-solana-test-kit",

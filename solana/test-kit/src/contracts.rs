@@ -2,8 +2,13 @@
 //!
 //! Accepted cases are explicit rather than generated from production predicates. The macros
 //! expand to ordinary named tests in the crate that invokes them; that crate supplies the
-//! runner functions (`crate::run_binary` and friends), so the same catalog drives both the pure
-//! cleartext-evaluator suite and the Mollusk suite through their own runner signatures.
+//! runners, so the same catalog can drive different execution tiers (cleartext evaluator today,
+//! a compiled-program tier if one ever wants the full catalog) through their own signatures.
+//!
+//! The invoking crate must define, at its root: `run_binary`, `run_unary`, `run_ternary`,
+//! `run_trivial`, `run_sum`, `run_empty_sum`, `run_is_in`, `run_mul_div`, `run_rand`,
+//! `run_rand_bounded`, and `be(u64) -> [u8; 32]` — see `operator_conformance.rs` for the
+//! reference signatures.
 
 /// Expands the binary-operator contract catalog against `crate::run_binary`.
 // `crate::` resolving to the invoking crate is the design here, not an accident: the catalog is

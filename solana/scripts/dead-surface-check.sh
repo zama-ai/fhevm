@@ -78,6 +78,7 @@ RUST_ROOTS=(
   solana/programs
   solana/crates
   solana/runtime-tests
+  solana/test-kit
   solana/scripts/e2e/live-client
   solana-proof-service
   coprocessor/fhevm-engine/host-listener/src

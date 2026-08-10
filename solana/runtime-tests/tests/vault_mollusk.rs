@@ -25,7 +25,7 @@ use solana_sdk::{
     pubkey::Pubkey,
 };
 use std::collections::HashMap;
-use zama_solana_test_kit::snapshot as cost_snapshot;
+use zama_solana_test_kit::cost_snapshot;
 use zama_solana_test_kit::{
     anchor_error_check, read_account, read_mint_supply, read_spl_amount, spl_mint_account,
     spl_token_account, system_account, Ctx, DECIMALS,

@@ -10,7 +10,7 @@ use k256::ecdsa::SigningKey;
 use solana_sdk::pubkey::Pubkey;
 use zama_host as host;
 
-use crate::{GATEWAY_CHAIN_ID, INPUT_VERIFICATION_CONTRACT};
+use crate::{u256_be, DECRYPTION_CONTRACT, GATEWAY_CHAIN_ID, INPUT_VERIFICATION_CONTRACT};
 
 /// KMS signing key backing `PublicDecryptVerification` certs; its EVM address is the sole signer of
 /// the fixtures' pinned KMS context.
@@ -44,7 +44,7 @@ pub fn secp_evm_address(key: &SigningKey) -> [u8; 20] {
 }
 
 /// 65-byte `[r || s || v]` recoverable signature over an EIP-712 digest.
-pub fn secp_sign(key: &SigningKey, digest: &[u8; 32]) -> [u8; 65] {
+pub(crate) fn secp_sign(key: &SigningKey, digest: &[u8; 32]) -> [u8; 65] {
     let (signature, recovery_id) = key.sign_prehash_recoverable(digest).unwrap();
     let mut out = [0u8; 65];
     out[..64].copy_from_slice(&signature.to_bytes());
@@ -150,9 +150,29 @@ pub fn context_extra_data_v1(context_id: u64) -> Vec<u8> {
     extra_data
 }
 
-/// The 32-byte big-endian `uint256` encoding of a u64 cleartext (the KMS-signed decrypted result).
-pub fn cleartext_u256(value: u64) -> [u8; 32] {
-    let mut out = [0u8; 32];
-    out[24..].copy_from_slice(&value.to_be_bytes());
-    out
+/// A v0 KMS `PublicDecryptVerification` cert over a `u64` amount, bound to the fixtures' gateway
+/// and `Decryption` contract, signed by the default KMS key. Returns the `(signatures,
+/// extra_data)` pair the verifying instructions take; `extra_data == [0x00]` binds through the
+/// current context's signer set.
+pub fn amount_public_decrypt_cert(handle: [u8; 32], amount: u64) -> (Vec<[u8; 65]>, Vec<u8>) {
+    amount_public_decrypt_cert_signed_by(handle, amount, &[kms_signing_key()])
+}
+
+/// Like [`amount_public_decrypt_cert`], but with one signature per key in `keys` (t-of-n cert
+/// building — the carried payload scales with the threshold t, not the party count n).
+pub fn amount_public_decrypt_cert_signed_by(
+    handle: [u8; 32],
+    amount: u64,
+    keys: &[SigningKey],
+) -> (Vec<[u8; 65]>, Vec<u8>) {
+    let extra_data = vec![0x00u8];
+    let signatures = kms_public_decrypt_cert_signed_by(
+        handle,
+        u256_be(amount),
+        GATEWAY_CHAIN_ID,
+        &DECRYPTION_CONTRACT,
+        &extra_data,
+        keys,
+    );
+    (signatures, extra_data)
 }

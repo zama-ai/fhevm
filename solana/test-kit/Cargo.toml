@@ -8,8 +8,11 @@ description = "Shared Mollusk test fixtures for programs that build on zama-host
 
 [dependencies]
 anchor-lang = "1.1.2"
-anchor-spl = { version = "1.1.2", default-features = false, features = ["token"] }
+anchor-spl = { version = "1.1.2", default-features = false, features = ["token", "token_2022"] }
 k256 = { version = "0.13.4", features = ["ecdsa"] }
+# Held on the agave-4.0 line together with runtime-tests (which owns the full rationale in its
+# Cargo.toml): newer mollusk needs solana-account >=4.3, which conflicts with the rest of the
+# graph over the wincode 0.5/0.6 split. Bump both pins in lockstep.
 mollusk-svm = { version = "0.12.1-agave-4.0", features = ["inner-instructions", "precompiles"] }
 num-bigint = "0.4.6"
 rand = "0.9.4"

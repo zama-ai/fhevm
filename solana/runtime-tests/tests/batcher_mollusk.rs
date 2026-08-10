@@ -35,18 +35,16 @@ use solana_sdk::{
 };
 use std::collections::HashMap;
 use zama_host as host;
-use zama_solana_test_kit::kms::{
-    amount_attestation_for, cleartext_u256, coprocessor_signing_key, kms_public_decrypt_cert_signed_by,
-    kms_signing_key, secp_evm_address,
-};
 use zama_solana_test_kit::oracle::CleartextLedger;
-use zama_solana_test_kit::snapshot as cost_snapshot;
+use zama_solana_test_kit::signing::{
+    amount_attestation_for, amount_public_decrypt_cert, kms_signing_key, secp_evm_address,
+};
 use zama_solana_test_kit::{
-    anchor_error_check, anchor_ix, encrypted_value_account, ensure_system_accounts,
+    anchor_error_check, anchor_ix, cost_snapshot, encrypted_value_account, ensure_system_accounts,
     event_authority, handle_for_chain, host_config_account, kms_context_account,
     new_encrypted_value, read_account, read_encrypted_value, read_spl_amount, serialized_account,
     spl_mint_account, spl_token_account, system_account, Ctx, HostConfigParams, BALANCE_FHE_TYPE,
-    DECIMALS, GATEWAY_CHAIN_ID,
+    DECIMALS,
 };
 
 const KMS_CONTEXT_ID: u64 = 9;
@@ -98,24 +96,6 @@ fn read_batch(context: &Ctx, address: Pubkey) -> batcher::Batch {
 
 fn read_join_record(context: &Ctx, address: Pubkey) -> batcher::JoinRecord {
     read_account(context, address)
-}
-
-// ---------------------------------------------------------------------------
-// Attestations and KMS certs
-// ---------------------------------------------------------------------------
-
-/// KMS `PublicDecryptVerification` cert over the burned batch total.
-fn kms_public_decrypt_cert(handle: [u8; 32], cleartext_amount: u64) -> (Vec<[u8; 65]>, Vec<u8>) {
-    let extra_data = vec![0x00u8];
-    let signatures = kms_public_decrypt_cert_signed_by(
-        handle,
-        cleartext_u256(cleartext_amount),
-        GATEWAY_CHAIN_ID,
-        &zama_solana_test_kit::DECRYPTION_CONTRACT,
-        &extra_data,
-        &[kms_signing_key()],
-    );
-    (signatures, extra_data)
 }
 
 /// Public-decrypt inclusion proof for the batch's single-burn encrypted value account (the
@@ -505,7 +485,6 @@ impl BatcherFixture {
 
     fn host_config_account(&self) -> Account {
         host_config_account(&HostConfigParams {
-            coprocessor_signers: vec![secp_evm_address(&coprocessor_signing_key())],
             current_kms_context_id: KMS_CONTEXT_ID,
             ..HostConfigParams::new(self.payer)
         })
@@ -513,7 +492,12 @@ impl BatcherFixture {
     }
 
     fn kms_context_account(&self) -> Account {
-        kms_context_account(KMS_CONTEXT_ID, vec![secp_evm_address(&kms_signing_key())], 1).1
+        kms_context_account(
+            KMS_CONTEXT_ID,
+            vec![secp_evm_address(&kms_signing_key())],
+            1,
+        )
+        .1
     }
 
     fn vault_account(&self) -> Account {
@@ -1056,7 +1040,7 @@ fn run_settle(
     burned_handle: [u8; 32],
     total: u64,
 ) -> (Instruction, InstructionResult) {
-    let (signatures, extra_data) = kms_public_decrypt_cert(burned_handle, total);
+    let (signatures, extra_data) = amount_public_decrypt_cert(burned_handle, total);
     let proof = single_burn_public_decrypt_proof(keys.burned_amount_value, burned_handle);
     let pending_burn = keys.pending_burn(fixture.join_mint().mint);
     let ix = settle_ix(
@@ -2474,7 +2458,7 @@ fn mollusk_dust_total_settle_reverts_and_batch_stays_dispatched() {
     );
     let burned_handle = run_dispatch(&context, &fixture, &keys, &mut ledger);
 
-    let (signatures, extra_data) = kms_public_decrypt_cert(burned_handle, 100);
+    let (signatures, extra_data) = amount_public_decrypt_cert(burned_handle, 100);
     let proof = single_burn_public_decrypt_proof(keys.burned_amount_value, burned_handle);
     let pending_burn = keys.pending_burn(fixture.join_mint().mint);
     let ix = settle_ix(

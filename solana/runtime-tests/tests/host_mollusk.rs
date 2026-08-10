@@ -35,16 +35,14 @@ use zama_host::{
     self as host, EncryptedValue, FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand,
     FheExecuteOutput, FheExecuteStep, FheTernaryOpCode, HostConfig, PreviousState,
 };
-use zama_solana_test_kit::kms as kms_cert;
-use zama_solana_test_kit::snapshot as cost_snapshot;
 use zama_solana_test_kit::{
-    anchor_ix, deny_subject_record_account, encrypted_value_account, event_authority,
+    anchor_error_check, anchor_framework_error_check, anchor_ix, cost_snapshot,
+    deny_subject_record_account, empty_system_account, encrypted_value_account, event_authority,
     funded_system_account, handle_for_chain, host_svm as mollusk,
     host_svm_without_previous_bank_hash as mollusk_without_previous_bank_hash, label,
-    new_encrypted_value as new_encrypted_value_account,
-    read_encrypted_value as read_encrypted_value_from_context,
-    read_encrypted_value_from_result as read_encrypted_value, readonly, readonly_signer,
-    serialized_account, system_program_account, writable, HostConfigParams, DECRYPTION_CONTRACT,
+    new_encrypted_value as new_encrypted_value_account, read_encrypted_value,
+    read_encrypted_value_from_result, readonly, readonly_signer, serialized_account, signing,
+    system_account, system_program_account, writable, HostConfigParams, DECRYPTION_CONTRACT,
     GATEWAY_CHAIN_ID, INPUT_VERIFICATION_CONTRACT,
 };
 
@@ -77,10 +75,6 @@ impl ExecutionDictionary {
             .map(|subject| self.intern_key(subject))
             .collect()
     }
-}
-
-fn empty_system_account() -> Account {
-    zama_solana_test_kit::empty_system_account()
 }
 
 fn host_config_account_with_flags(
@@ -160,7 +154,7 @@ fn update_with_fhe_execute(
         (event_authority(host::id()), Account::default()),
     ];
     let result = mollusk().process_and_validate_instruction(&ix, &accounts, &[Check::success()]);
-    read_encrypted_value(&result, address)
+    read_encrypted_value_from_result(&result, address)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -224,9 +218,7 @@ fn expect_fhe_execute_update_error(
 }
 
 fn custom_error(error: host::errors::ZamaHostError) -> Check<'static> {
-    Check::err(solana_sdk::program_error::ProgramError::Custom(
-        anchor_lang::error::ERROR_CODE_OFFSET + error as u32,
-    ))
+    anchor_error_check(error as u32)
 }
 
 // ---------------------------------------------------------------------------
@@ -431,7 +423,6 @@ fn fhe_execute_ix_with_deny_records(
     ix
 }
 
-
 #[test]
 fn mollusk_fhe_execute_fails_closed_without_previous_bank_hash() {
     let authority = Pubkey::new_unique();
@@ -525,7 +516,7 @@ fn mollusk_allow_subjects_adds_new_subject_and_is_idempotent() {
         (host_config, host_config_account),
     ];
     let result = mollusk().process_and_validate_instruction(&ix, &accounts, &[Check::success()]);
-    let updated = read_encrypted_value(&result, address);
+    let updated = read_encrypted_value_from_result(&result, address);
     assert_eq!(updated.subjects, vec![owner, new_subject]);
     assert!(updated.has_subject(owner));
     assert!(updated.has_subject(new_subject));
@@ -639,7 +630,7 @@ fn mollusk_allow_subjects_rejects_ninth_distinct_subject() {
         context.process_and_validate_instruction(&allow_ix, &[Check::success()]);
     }
 
-    let capped = read_encrypted_value_from_context(&context, encrypted_value);
+    let capped = read_encrypted_value(&context, encrypted_value);
     assert_eq!(
         capped.subjects.len(),
         zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS
@@ -667,7 +658,7 @@ fn mollusk_allow_subjects_rejects_ninth_distinct_subject() {
         )],
     );
 
-    let after_reject = read_encrypted_value_from_context(&context, encrypted_value);
+    let after_reject = read_encrypted_value(&context, encrypted_value);
     assert_eq!(after_reject.subjects, capped.subjects);
     assert_eq!(after_reject.current_handle, capped.current_handle);
     assert_eq!(after_reject.leaf_count, capped.leaf_count);
@@ -702,7 +693,7 @@ fn mollusk_remove_subject_removes_current_member_and_blocks_future_authority() {
         (host_config, host_config_account.clone()),
     ];
     let result = mollusk().process_and_validate_instruction(&ix, &accounts, &[Check::success()]);
-    let updated = read_encrypted_value(&result, address);
+    let updated = read_encrypted_value_from_result(&result, address);
     assert_eq!(updated.subjects, vec![owner]);
     assert!(updated.has_subject(owner));
     assert!(!updated.has_subject(removed));
@@ -809,7 +800,7 @@ fn mollusk_removed_subject_gets_no_historical_leaf_when_later_updated() {
     ];
     let result0 =
         mollusk().process_and_validate_instruction(&remove_ix, &accounts0, &[Check::success()]);
-    let value_after_remove = read_encrypted_value(&result0, address);
+    let value_after_remove = read_encrypted_value_from_result(&result0, address);
     assert_eq!(value_after_remove.subjects, vec![owner]);
 
     let updated = update_with_fhe_execute(
@@ -901,7 +892,7 @@ fn mollusk_subject_retains_historical_access_sealed_before_removal() {
     ];
     let result1 =
         mollusk().process_and_validate_instruction(&remove_ix, &accounts1, &[Check::success()]);
-    let final_value = read_encrypted_value(&result1, address);
+    let final_value = read_encrypted_value_from_result(&result1, address);
     assert_eq!(final_value.subjects, vec![owner]);
     assert_eq!(final_value.leaf_count, 2);
 
@@ -1036,7 +1027,7 @@ fn mollusk_fhe_execute_update_swaps_subjects_and_seals_the_outgoing_audience() {
         (event_authority(host::id()), Account::default()),
     ];
     let result = mollusk().process_and_validate_instruction(&ix, &accounts, &[Check::success()]);
-    let updated = read_encrypted_value(&result, address);
+    let updated = read_encrypted_value_from_result(&result, address);
 
     // Historical leaves seal the OLD audience (subject_a, old_recipient) at the old handle.
     assert_eq!(updated.leaf_count, 2);
@@ -1121,7 +1112,7 @@ fn mollusk_fhe_execute_update_shrinks_audience_and_seals_the_outgoing_set() {
         (event_authority(host::id()), Account::default()),
     ];
     let result = mollusk().process_and_validate_instruction(&ix, &accounts, &[Check::success()]);
-    let updated = read_encrypted_value(&result, address);
+    let updated = read_encrypted_value_from_result(&result, address);
 
     assert_eq!(updated.leaf_count, 3);
     assert_eq!(updated.subjects, vec![subject_a, subject_b]);
@@ -1219,7 +1210,7 @@ fn mollusk_make_handle_public_appends_public_decrypt_leaf() {
         (host_config, host_config_account),
     ];
     let result = mollusk().process_and_validate_instruction(&ix, &accounts, &[Check::success()]);
-    let updated = read_encrypted_value(&result, address);
+    let updated = read_encrypted_value_from_result(&result, address);
     assert_eq!(updated.leaf_count, 1);
     let expected = zama_solana_acl::public_decrypt_leaf_commitment(address.to_bytes(), 0, handle);
     let mut expected_peaks = Vec::new();
@@ -1251,12 +1242,12 @@ fn mollusk_make_handle_public_twice_appends_an_equivalent_leaf() {
             (host_config, host_config_account.clone()),
         ]
     };
-    let sealed = read_encrypted_value(
+    let sealed = read_encrypted_value_from_result(
         &mollusk().process_and_validate_instruction(&ix, &accounts(&value), &[Check::success()]),
         address,
     );
     // Sealing an already-sealed handle is accepted rather than guarded — INVARIANTS #53.
-    let resealed = read_encrypted_value(
+    let resealed = read_encrypted_value_from_result(
         &mollusk().process_and_validate_instruction(&ix, &accounts(&sealed), &[Check::success()]),
         address,
     );
@@ -2144,7 +2135,7 @@ fn mollusk_public_decrypt_proof_has_no_roll_forward() {
         &accounts0,
         &[Check::success()],
     );
-    let value_public = read_encrypted_value(&result0, address);
+    let value_public = read_encrypted_value_from_result(&result0, address);
 
     let final_value = update_with_fhe_execute(
         authority,
@@ -2267,7 +2258,7 @@ fn mollusk_fhe_execute_creates_persistent_output_from_local_binary_add() {
         (output_address, empty_system_account()),
     ];
     let result = mollusk().process_and_validate_instruction(&ix, &accounts, &[Check::success()]);
-    let output = read_encrypted_value(&result, output_address);
+    let output = read_encrypted_value_from_result(&result, output_address);
     assert_eq!(output.subjects, vec![authority]);
     assert_eq!(output.leaf_count, 0);
 }
@@ -2342,7 +2333,7 @@ fn mollusk_fhe_execute_updates_persistent_output_with_previous_state() {
         (output_address, encrypted_value_account(&output_value)),
     ];
     let result = mollusk().process_and_validate_instruction(&ix, &accounts, &[Check::success()]);
-    let updated_output = read_encrypted_value(&result, output_address);
+    let updated_output = read_encrypted_value_from_result(&result, output_address);
     assert_ne!(updated_output.current_handle, output_handle);
     // Update appends one historical leaf for the sole USE subject.
     assert_eq!(updated_output.leaf_count, 1);
@@ -2505,7 +2496,7 @@ fn assert_created_public_batch(
         assert_eq!(record.encrypted_value, *encrypted_value);
         assert_eq!(
             record.output_handle,
-            read_encrypted_value(result, *encrypted_value).current_handle
+            read_encrypted_value_from_result(result, *encrypted_value).current_handle
         );
     }
 }
@@ -2637,20 +2628,8 @@ const FIXTURE_BATCH_HCU: u64 = 21_000 + 38_000 + 45_000; // 104_000
 /// Exact HCU cost of the fixture's transient-only execution: a single `Ge` at ebool.
 const TRANSIENT_BATCH_HCU: u64 = 21_000;
 
-fn system_account(lamports: u64) -> Account {
-    Account {
-        lamports,
-        data: vec![],
-        owner: system_program::ID,
-        executable: false,
-        rent_epoch: 0,
-    }
-}
-
 fn anchor_error(error: anchor_lang::error::ErrorCode) -> Check<'static> {
-    Check::err(solana_sdk::program_error::ProgramError::Custom(
-        error as u32,
-    ))
+    anchor_framework_error_check(error)
 }
 
 /// Like [`host_config_account`] but with the two per-execution HCU limits pre-set.
@@ -4213,7 +4192,7 @@ fn mollusk_fhe_execute_unrestricted_cap_none_none_succeeds() {
         &fixture.block_cap_instruction(None, None),
         &[Check::success()],
     );
-    read_encrypted_value_from_context(&fixture.context, fixture.output_value);
+    read_encrypted_value(&fixture.context, fixture.output_value);
     assert!(read_hcu_block_meter(&fixture.context, fixture.meter_pda()).is_none());
 }
 
@@ -4311,7 +4290,7 @@ fn mollusk_fhe_execute_ban_cap_zero_trusted_witness_bypasses() {
         &fixture.block_cap_instruction(None, Some(trust_pda)),
         &[Check::success()],
     );
-    read_encrypted_value_from_context(&fixture.context, fixture.output_value);
+    read_encrypted_value(&fixture.context, fixture.output_value);
 }
 
 #[test]
@@ -4341,7 +4320,7 @@ fn mollusk_fhe_execute_trusted_witness_bypasses_and_creates_no_meter() {
         &fixture.block_cap_instruction(None, Some(trust_pda)),
         &[Check::success()],
     );
-    read_encrypted_value_from_context(&fixture.context, fixture.output_value);
+    read_encrypted_value(&fixture.context, fixture.output_value);
     assert!(read_hcu_block_meter(&fixture.context, fixture.meter_pda()).is_none());
 }
 
@@ -4483,7 +4462,7 @@ fn mollusk_fhe_execute_prefunded_empty_meter_is_created_not_griefed() {
             >= anchor_lang::prelude::Rent::default()
                 .minimum_balance(8 + host::HcuBlockMeter::SPACE)
     );
-    read_encrypted_value_from_context(&fixture.context, fixture.output_value);
+    read_encrypted_value(&fixture.context, fixture.output_value);
 }
 
 #[test]
@@ -4526,7 +4505,7 @@ fn mollusk_fhe_execute_prefunded_output_acl_is_created_not_griefed() {
         &fixture.block_cap_instruction(None, None),
         &[Check::success()],
     );
-    read_encrypted_value_from_context(&fixture.context, fixture.output_value);
+    read_encrypted_value(&fixture.context, fixture.output_value);
 }
 
 #[test]
@@ -4587,7 +4566,7 @@ fn mollusk_fhe_execute_charge_accumulates_onto_prior_slot_usage() {
     let meter = read_hcu_block_meter(&fixture.context, meter_pda).expect("meter");
     assert_eq!(meter.used_hcu, 50_000 + FIXTURE_BATCH_HCU);
     assert_eq!(meter.last_seen_slot, slot);
-    read_encrypted_value_from_context(&fixture.context, fixture.output_value);
+    read_encrypted_value(&fixture.context, fixture.output_value);
 }
 
 #[test]
@@ -4653,7 +4632,7 @@ fn mollusk_fhe_execute_clean_first_call_lazy_creates_meter_at_batch_cost() {
         meter.last_seen_slot,
         fixture.context.mollusk.sysvars.clock.slot
     );
-    read_encrypted_value_from_context(&fixture.context, fixture.output_value);
+    read_encrypted_value(&fixture.context, fixture.output_value);
     // Metering keys on the compute_subject, never on encrypted_value_account_authority: the two identities
     // differ in this fixture and nothing accrued under the latter's key.
     assert_ne!(fixture.block_cap_app(), fixture.account);
@@ -4851,7 +4830,7 @@ fn mollusk_fhe_execute_finite_cap_allows_input_free_persistent_output_bootstrap(
     fixture
         .context
         .process_and_validate_instruction(&ix, &[Check::success()]);
-    read_encrypted_value_from_context(&fixture.context, output_value);
+    read_encrypted_value(&fixture.context, output_value);
     // The persistent execution WAS metered onto the compute subject (a single euint64 TrivialEncrypt).
     const TRIVIAL_ENCRYPT_EUINT64_HCU: u64 = 900;
     let meter = read_hcu_block_meter(&fixture.context, meter_pda).expect("meter created");
@@ -4903,7 +4882,7 @@ fn mollusk_fhe_execute_meter_accumulation_overflow_fails_closed() {
 const KMS_CONTEXT_ID: u64 = 1;
 
 fn kms_context_signers() -> Vec<[u8; 20]> {
-    vec![kms_cert::secp_evm_address(&kms_cert::kms_signing_key())]
+    vec![signing::secp_evm_address(&signing::kms_signing_key())]
 }
 
 /// Host config with an active KMS context id and the fixtures' gateway EIP-712 domain.
@@ -5033,7 +5012,7 @@ fn seal_public_leaf(
         (address, encrypted_value_account(&value)),
         (host_config, host_config_account.clone()),
     ];
-    let sealed = read_encrypted_value(
+    let sealed = read_encrypted_value_from_result(
         &mollusk().process_and_validate_instruction(&seal_ix, &seal_accounts, &[Check::success()]),
         address,
     );
@@ -5071,9 +5050,9 @@ fn mollusk_verify_public_decrypt_returns_handle_and_cleartext() {
         handle,
     );
 
-    let cleartext = kms_cert::cleartext_u256(4242);
+    let cleartext = zama_solana_test_kit::u256_be(4242);
     let extra_data = vec![0x00u8]; // v0: bind to the current context
-    let signatures = kms_cert::kms_public_decrypt_cert(
+    let signatures = signing::kms_public_decrypt_cert(
         handle,
         cleartext,
         GATEWAY_CHAIN_ID,
@@ -5106,7 +5085,7 @@ fn mollusk_verify_public_decrypt_returns_handle_and_cleartext() {
     );
     // return_data is exactly handle ++ cleartext ++ context_id, and nothing was written back.
     assert_eq!(result.return_data, expected);
-    let unchanged = read_encrypted_value(&result, address);
+    let unchanged = read_encrypted_value_from_result(&result, address);
     assert_eq!(unchanged.current_handle, sealed.current_handle);
     assert_eq!(unchanged.leaf_count, sealed.leaf_count);
     assert_eq!(unchanged.peaks, sealed.peaks);
@@ -5193,9 +5172,9 @@ fn mollusk_verify_public_decrypt_accepts_live_rotated_out_context() {
         rotate_to_next_context(admin, host_config, host_config_account);
     let (kms_context, kms_context_acct) = kms_context_account(KMS_CONTEXT_ID);
 
-    let cleartext = kms_cert::cleartext_u256(4242);
-    let extra_data = kms_cert::context_extra_data_v1(KMS_CONTEXT_ID); // commit the old context id
-    let signatures = kms_cert::kms_public_decrypt_cert(
+    let cleartext = zama_solana_test_kit::u256_be(4242);
+    let extra_data = signing::context_extra_data_v1(KMS_CONTEXT_ID); // commit the old context id
+    let signatures = signing::kms_public_decrypt_cert(
         handle,
         cleartext,
         GATEWAY_CHAIN_ID,
@@ -5282,9 +5261,9 @@ fn mollusk_verify_public_decrypt_rejects_after_destroy() {
         .map(|(_, account)| account.clone())
         .expect("destroyed kms context");
 
-    let cleartext = kms_cert::cleartext_u256(4242);
-    let extra_data = kms_cert::context_extra_data_v1(KMS_CONTEXT_ID);
-    let signatures = kms_cert::kms_public_decrypt_cert(
+    let cleartext = zama_solana_test_kit::u256_be(4242);
+    let extra_data = signing::context_extra_data_v1(KMS_CONTEXT_ID);
+    let signatures = signing::kms_public_decrypt_cert(
         handle,
         cleartext,
         GATEWAY_CHAIN_ID,
@@ -5332,9 +5311,9 @@ fn mollusk_verify_public_decrypt_rejects_destroyed_context() {
         handle,
     );
 
-    let cleartext = kms_cert::cleartext_u256(4242);
+    let cleartext = zama_solana_test_kit::u256_be(4242);
     let extra_data = vec![0x00u8];
-    let signatures = kms_cert::kms_public_decrypt_cert(
+    let signatures = signing::kms_public_decrypt_cert(
         handle,
         cleartext,
         GATEWAY_CHAIN_ID,
@@ -5386,9 +5365,9 @@ fn mollusk_verify_public_decrypt_rejects_context_account_mismatch() {
         rotate_to_next_context(admin, host_config, host_config_account);
 
     // Cert commits id 1, but we pass context 2's account.
-    let cleartext = kms_cert::cleartext_u256(4242);
-    let extra_data = kms_cert::context_extra_data_v1(KMS_CONTEXT_ID);
-    let signatures = kms_cert::kms_public_decrypt_cert(
+    let cleartext = zama_solana_test_kit::u256_be(4242);
+    let extra_data = signing::context_extra_data_v1(KMS_CONTEXT_ID);
+    let signatures = signing::kms_public_decrypt_cert(
         handle,
         cleartext,
         GATEWAY_CHAIN_ID,
@@ -5437,9 +5416,9 @@ fn mollusk_verify_public_decrypt_rejects_nonexistent_context_id() {
 
     let nonexistent_context_id = 99u64;
     let (nonexistent_kms_context, _) = host::kms_context_address(nonexistent_context_id);
-    let cleartext = kms_cert::cleartext_u256(4242);
-    let extra_data = kms_cert::context_extra_data_v1(nonexistent_context_id);
-    let signatures = kms_cert::kms_public_decrypt_cert(
+    let cleartext = zama_solana_test_kit::u256_be(4242);
+    let extra_data = signing::context_extra_data_v1(nonexistent_context_id);
+    let signatures = signing::kms_public_decrypt_cert(
         handle,
         cleartext,
         GATEWAY_CHAIN_ID,
@@ -5480,7 +5459,7 @@ fn mollusk_verify_public_decrypt_rejects_sub_threshold_signatures() {
     let (kms_context, kms_context_acct) = kms_context_account_with(
         KMS_CONTEXT_ID,
         vec![
-            kms_cert::secp_evm_address(&kms_cert::kms_signing_key()),
+            signing::secp_evm_address(&signing::kms_signing_key()),
             [0xABu8; 20],
         ],
         2,
@@ -5496,9 +5475,9 @@ fn mollusk_verify_public_decrypt_rejects_sub_threshold_signatures() {
         handle,
     );
 
-    let cleartext = kms_cert::cleartext_u256(4242);
+    let cleartext = zama_solana_test_kit::u256_be(4242);
     let extra_data = vec![0x00u8];
-    let signatures = kms_cert::kms_public_decrypt_cert(
+    let signatures = signing::kms_public_decrypt_cert(
         handle,
         cleartext,
         GATEWAY_CHAIN_ID,
@@ -5548,9 +5527,9 @@ fn mollusk_verify_public_decrypt_rejects_handle_proof_mismatch() {
     // A cert valid over a DIFFERENT handle, presented with the sealed handle's proof: the cert check
     // passes but the exact-handle inclusion proof does not authorize the unsealed handle.
     let other_handle = handle_for_chain(6, 5);
-    let cleartext = kms_cert::cleartext_u256(4242);
+    let cleartext = zama_solana_test_kit::u256_be(4242);
     let extra_data = vec![0x00u8];
-    let signatures = kms_cert::kms_public_decrypt_cert(
+    let signatures = signing::kms_public_decrypt_cert(
         other_handle,
         cleartext,
         GATEWAY_CHAIN_ID,
@@ -5599,9 +5578,9 @@ fn mollusk_verify_public_decrypt_rejects_non_canonical_kms_context() {
         handle,
     );
 
-    let cleartext = kms_cert::cleartext_u256(4242);
+    let cleartext = zama_solana_test_kit::u256_be(4242);
     let extra_data = vec![0x00u8];
-    let signatures = kms_cert::kms_public_decrypt_cert(
+    let signatures = signing::kms_public_decrypt_cert(
         handle,
         cleartext,
         GATEWAY_CHAIN_ID,
@@ -5686,9 +5665,9 @@ fn mollusk_verify_public_decrypt_survives_update_after_seal() {
         .unwrap(),
     );
 
-    let cleartext = kms_cert::cleartext_u256(4242);
+    let cleartext = zama_solana_test_kit::u256_be(4242);
     let extra_data = vec![0x00u8];
-    let signatures = kms_cert::kms_public_decrypt_cert(
+    let signatures = signing::kms_public_decrypt_cert(
         handle0,
         cleartext,
         GATEWAY_CHAIN_ID,
@@ -5783,9 +5762,9 @@ fn mollusk_verify_public_decrypt_rejects_historical_only_leaf() {
             .is_err()
     );
 
-    let cleartext = kms_cert::cleartext_u256(4242);
+    let cleartext = zama_solana_test_kit::u256_be(4242);
     let extra_data = vec![0x00u8];
-    let signatures = kms_cert::kms_public_decrypt_cert(
+    let signatures = signing::kms_public_decrypt_cert(
         handle0,
         cleartext,
         GATEWAY_CHAIN_ID,
@@ -5841,9 +5820,9 @@ fn cost_snapshot_verify_public_decrypt() {
         handle,
     );
 
-    let cleartext = kms_cert::cleartext_u256(4242);
+    let cleartext = zama_solana_test_kit::u256_be(4242);
     let extra_data = vec![0x00u8];
-    let signatures = kms_cert::kms_public_decrypt_cert(
+    let signatures = signing::kms_public_decrypt_cert(
         handle,
         cleartext,
         GATEWAY_CHAIN_ID,

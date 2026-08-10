@@ -21,9 +21,9 @@
 //! exercised directly here. Confidential burn, cancellation, and `wrap_usdc` are also covered with
 //! SPL Token and Token-2022 fixtures.
 //!
-//! Also dropped: the old file's event-shaped, `u128`-limited `support::fhe_runtime` simulator.
-//! The confidential-transfer test below instead evaluates the canonical `FheExecuteArgs` captured
-//! from the real token -> host CPI and binds those clear values to the handles emitted by the host.
+//! Encrypted state is asserted through the cleartext ledger: the confidential-transfer tests
+//! evaluate the canonical `FheExecuteArgs` captured from the real token -> host CPI and bind
+//! those clear values to the handles emitted by the host.
 
 use anchor_lang::{prelude::system_program, AccountDeserialize};
 use confidential_token as token;
@@ -39,18 +39,18 @@ use solana_sdk::{
 };
 use std::collections::HashMap;
 use zama_host as host;
-use zama_solana_test_kit::kms::{
-    amount_attestation_for, amount_attestation_signed_by, coprocessor_signing_key,
-    coprocessor_signing_key_n, secp_evm_address,
-};
 use zama_solana_test_kit::oracle::CleartextLedger;
-use zama_solana_test_kit::snapshot as cost_snapshot;
+use zama_solana_test_kit::signing::{
+    amount_attestation_for, amount_attestation_signed_by, amount_public_decrypt_cert,
+    amount_public_decrypt_cert_signed_by, coprocessor_signing_key, coprocessor_signing_key_n,
+    secp_evm_address,
+};
 use zama_solana_test_kit::{
-    account_is_system_owned_and_empty, anchor_error_check, anchor_framework_error_check,
-    anchor_ix, decode_anchor_event, deny_subject_record_account, encrypted_value_account,
+    account_is_system_owned_and_empty, anchor_error_check, anchor_framework_error_check, anchor_ix,
+    cost_snapshot, decode_anchor_event, deny_subject_record_account, encrypted_value_account,
     event_authority, handle_for_chain, new_encrypted_value, read_account, read_encrypted_value,
-    serialized_account, system_account, Ctx, HostConfigParams, BALANCE_FHE_TYPE,
-    DECRYPTION_CONTRACT, GATEWAY_CHAIN_ID,
+    read_spl_amount, serialized_account, spl_mint_account, spl_token_account, system_account,
+    u256_be, Ctx, HostConfigParams, BALANCE_FHE_TYPE, DECRYPTION_CONTRACT, GATEWAY_CHAIN_ID,
 };
 
 // ---------------------------------------------------------------------------
@@ -2223,33 +2223,7 @@ use anchor_spl::token::spl_token;
 use anchor_spl::token_2022::spl_token_2022;
 use solana_sdk::program_option::COption;
 
-use zama_solana_test_kit::kms::{cleartext_u256, kms_signing_key, kms_signing_key_n};
-
-/// Builds a KMS `PublicDecryptVerification` secp256k1 cert (`signatures`, `extra_data`)
-/// over `handle`/`cleartext_amount`, verified by the host `verify_public_decrypt` CPI.
-/// `extra_data == [0x00]` is a v0 cert that binds only through the current context's signer set.
-fn kms_public_decrypt_cert(handle: [u8; 32], cleartext_amount: u64) -> (Vec<[u8; 65]>, Vec<u8>) {
-    kms_public_decrypt_cert_signed_by(handle, cleartext_amount, &[kms_signing_key()])
-}
-
-/// Like `kms_public_decrypt_cert`, but produces one signature per key in `keys` (t-of-n cert
-/// building — the carried payload scales with the threshold t, not the party count n).
-fn kms_public_decrypt_cert_signed_by(
-    handle: [u8; 32],
-    cleartext_amount: u64,
-    keys: &[k256::ecdsa::SigningKey],
-) -> (Vec<[u8; 65]>, Vec<u8>) {
-    let extra_data = vec![0x00u8];
-    let signatures = zama_solana_test_kit::kms::kms_public_decrypt_cert_signed_by(
-        handle,
-        cleartext_u256(cleartext_amount),
-        GATEWAY_CHAIN_ID,
-        &DECRYPTION_CONTRACT,
-        &extra_data,
-        keys,
-    );
-    (signatures, extra_data)
-}
+use zama_solana_test_kit::signing::{kms_signing_key, kms_signing_key_n};
 
 /// A cert committing an explicit KMS context id via v1 `extra_data` (EVM `_extractContextId`
 /// parity), for the rotation-grace tests: a cert minted under an old-but-still-live context.
@@ -2258,10 +2232,10 @@ fn kms_public_decrypt_cert_for_context(
     cleartext_amount: u64,
     context_id: u64,
 ) -> (Vec<[u8; 65]>, Vec<u8>) {
-    let extra_data = zama_solana_test_kit::kms::context_extra_data_v1(context_id);
-    let signatures = zama_solana_test_kit::kms::kms_public_decrypt_cert_signed_by(
+    let extra_data = zama_solana_test_kit::signing::context_extra_data_v1(context_id);
+    let signatures = zama_solana_test_kit::signing::kms_public_decrypt_cert_signed_by(
         handle,
-        cleartext_u256(cleartext_amount),
+        u256_be(cleartext_amount),
         GATEWAY_CHAIN_ID,
         &DECRYPTION_CONTRACT,
         &extra_data,
@@ -2320,53 +2294,6 @@ fn kms_context_account_with_signers(
             bump,
         }),
         owner: host::id(),
-        executable: false,
-        rent_epoch: 0,
-    }
-}
-
-fn spl_mint_account(decimals: u8) -> Account {
-    let mut data = vec![0u8; spl_token::state::Mint::LEN];
-    spl_token::state::Mint::pack(
-        spl_token::state::Mint {
-            mint_authority: COption::None,
-            supply: 1_000_000,
-            decimals,
-            is_initialized: true,
-            freeze_authority: COption::None,
-        },
-        &mut data,
-    )
-    .unwrap();
-    Account {
-        lamports: 1_000_000_000,
-        data,
-        owner: spl_token::id(),
-        executable: false,
-        rent_epoch: 0,
-    }
-}
-
-fn spl_token_account(mint: Pubkey, owner: Pubkey, amount: u64) -> Account {
-    let mut data = vec![0u8; spl_token::state::Account::LEN];
-    spl_token::state::Account::pack(
-        spl_token::state::Account {
-            mint,
-            owner,
-            amount,
-            delegate: COption::None,
-            state: spl_token::state::AccountState::Initialized,
-            is_native: COption::None,
-            delegated_amount: 0,
-            close_authority: COption::None,
-        },
-        &mut data,
-    )
-    .unwrap();
-    Account {
-        lamports: 1_000_000_000,
-        data,
-        owner: spl_token::id(),
         executable: false,
         rent_epoch: 0,
     }
@@ -2530,29 +2457,6 @@ fn token_2022_cpi_guard_account(mint: Pubkey, owner: Pubkey, amount: u64) -> Acc
     }
 }
 
-fn read_spl_amount(
-    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
-    address: Pubkey,
-) -> u64 {
-    let account = context
-        .account_store
-        .borrow()
-        .get(&address)
-        .expect("missing spl token account")
-        .clone();
-    if account.owner == spl_token::id() {
-        spl_token::state::Account::unpack(&account.data)
-            .expect("valid classic token account")
-            .amount
-    } else {
-        use spl_token_2022::extension::StateWithExtensions;
-        StateWithExtensions::<spl_token_2022::state::Account>::unpack(&account.data)
-            .expect("valid Token-2022 account")
-            .base
-            .amount
-    }
-}
-
 /// Self-contained fixture for the burn/redeem/cancel vertical: one owner, one
 /// confidential mint with an SPL-backed vault, and one funded token account.
 struct BurnRedeemFixture {
@@ -2707,7 +2611,7 @@ impl BurnRedeemFixture {
             (
                 self.underlying_mint,
                 if self.token_program == spl_token::id() {
-                    spl_mint_account(6)
+                    spl_mint_account(None, 1_000_000)
                 } else {
                     token_2022_mint_account(6)
                 },
@@ -3178,7 +3082,7 @@ fn mollusk_redeem_current_pending_burn_then_rejects_double_settlement() {
 
     // redeem(H1) with the public-decrypt proof + certificate releases the current pending amount.
     let cleartext_amount = 500;
-    let (signatures, extra_data) = kms_public_decrypt_cert(burned_handle, cleartext_amount);
+    let (signatures, extra_data) = amount_public_decrypt_cert(burned_handle, cleartext_amount);
     let pending_burn = seed_pending_burn_in_context(&context, &fixture, burned_handle);
     context.process_and_validate_instruction(
         &redeem_burned_amount_ix(
@@ -3252,7 +3156,7 @@ fn mollusk_redeem_current_burn_with_token_2022() {
     );
     let context = burn_redeem_mollusk().with_context(accounts);
     let pending_burn = seed_pending_burn_in_context(&context, &fixture, burned_handle);
-    let (signatures, extra_data) = kms_public_decrypt_cert(burned_handle, 500);
+    let (signatures, extra_data) = amount_public_decrypt_cert(burned_handle, 500);
 
     context.process_and_validate_instruction(
         &redeem_burned_amount_ix(
@@ -3286,7 +3190,7 @@ fn mollusk_redeem_rejects_frozen_token_2022_destination() {
     );
     let context = burn_redeem_mollusk().with_context(accounts);
     let pending_burn = seed_pending_burn_in_context(&context, &fixture, burned_handle);
-    let (signatures, extra_data) = kms_public_decrypt_cert(burned_handle, 500);
+    let (signatures, extra_data) = amount_public_decrypt_cert(burned_handle, 500);
 
     context.process_and_validate_instruction(
         &redeem_burned_amount_ix(
@@ -3322,7 +3226,7 @@ fn mollusk_redeem_rejects_out_of_range_public_decrypt_leaf() {
     proof.leaf_index = 1; // Outside the one-leaf accumulator.
 
     let cleartext_amount = 500;
-    let (signatures, extra_data) = kms_public_decrypt_cert(first_handle, cleartext_amount);
+    let (signatures, extra_data) = amount_public_decrypt_cert(first_handle, cleartext_amount);
     let pending_burn = seed_pending_burn_in_context(&context, &fixture, first_handle);
     context.process_and_validate_instruction(
         &redeem_burned_amount_ix(
@@ -3448,7 +3352,7 @@ fn mollusk_redeem_rejects_destination_not_owned_by_signer() {
     let context = burn_redeem_mollusk().with_context(accounts);
 
     let cleartext_amount = 500;
-    let (signatures, extra_data) = kms_public_decrypt_cert(first_handle, cleartext_amount);
+    let (signatures, extra_data) = amount_public_decrypt_cert(first_handle, cleartext_amount);
     let pending_burn = seed_pending_burn_in_context(&context, &fixture, first_handle);
     context.process_and_validate_instruction(
         &redeem_burned_amount_ix(
@@ -3492,7 +3396,7 @@ fn mollusk_redeem_is_not_blocked_by_grant_deny_list() {
     let context = burn_redeem_mollusk().with_context(accounts);
 
     let cleartext_amount = 500;
-    let (signatures, extra_data) = kms_public_decrypt_cert(first_handle, cleartext_amount);
+    let (signatures, extra_data) = amount_public_decrypt_cert(first_handle, cleartext_amount);
     let pending_burn = seed_pending_burn_in_context(&context, &fixture, first_handle);
     context.process_and_validate_instruction(
         &redeem_burned_amount_ix(
@@ -3520,7 +3424,7 @@ fn mollusk_two_sequential_burns_each_redeemable_exactly_once() {
     // Execute a real first burn, then redeem its sole public leaf.
     let first_handle = run_burn(&context, &fixture, 41);
     let proof_h1 = single_burn_public_decrypt_proof(&fixture, first_handle);
-    let (sig_h1, extra_h1) = kms_public_decrypt_cert(first_handle, 300);
+    let (sig_h1, extra_h1) = amount_public_decrypt_cert(first_handle, 300);
     context.process_and_validate_instruction(
         &redeem_burned_amount_ix(
             &fixture,
@@ -3563,7 +3467,7 @@ fn mollusk_two_sequential_burns_each_redeemable_exactly_once() {
     assert_eq!(read_spl_amount(&context, fixture.destination_usdc), 300);
 
     // Redeem H2 from leaf 3, reusing the canonical pending account after H1 closed.
-    let (sig_h2, extra_h2) = kms_public_decrypt_cert(second_handle, 200);
+    let (sig_h2, extra_h2) = amount_public_decrypt_cert(second_handle, 200);
     context.process_and_validate_instruction(
         &redeem_burned_amount_ix(
             &fixture,
@@ -3621,7 +3525,7 @@ fn mollusk_redeem_rejected_when_host_paused() {
     accounts.insert(fixture.host_config, paused_redeem_host_config(&fixture));
     let context = burn_redeem_mollusk().with_context(accounts);
 
-    let (signatures, extra_data) = kms_public_decrypt_cert(first_handle, 500);
+    let (signatures, extra_data) = amount_public_decrypt_cert(first_handle, 500);
     let pending_burn = seed_pending_burn_in_context(&context, &fixture, first_handle);
     context.process_and_validate_instruction(
         &redeem_burned_amount_ix(
@@ -3655,7 +3559,7 @@ fn mollusk_redeem_rejects_wrong_value_account_label() {
     seed_single_burn_value_account(&fixture, &mut accounts, first_handle);
     let context = burn_redeem_mollusk().with_context(accounts);
 
-    let (signatures, extra_data) = kms_public_decrypt_cert(first_handle, 500);
+    let (signatures, extra_data) = amount_public_decrypt_cert(first_handle, 500);
     let pending_burn = seed_pending_burn_in_context(&context, &fixture, first_handle);
     // Substitute the balance encrypted value account (balance label) for the burned_amount encrypted value account.
     let mut ix = redeem_burned_amount_ix(
@@ -3784,7 +3688,7 @@ fn mollusk_cancel_pending_burn_restores_balance_and_supply() {
     // same burn after the pending account is gone.
     assert!(context.process_instruction(&cancel).raw_result.is_err());
     let burned_handle = read_encrypted_value(&context, fixture.burned_amount_value).current_handle;
-    let (signatures, extra_data) = kms_public_decrypt_cert(burned_handle, 250);
+    let (signatures, extra_data) = amount_public_decrypt_cert(burned_handle, 250);
     assert!(context
         .process_instruction(&redeem_burned_amount_ix(
             &fixture,
@@ -4251,7 +4155,7 @@ fn mollusk_wrap_usdc_rejects_wrong_underlying_mint() {
     let fixture = BurnRedeemFixture::new();
     let mut accounts = fixture.accounts(0);
     let other_mint = Pubkey::new_unique();
-    accounts.insert(other_mint, spl_mint_account(6));
+    accounts.insert(other_mint, spl_mint_account(None, 1_000_000));
     let other_user_usdc = Pubkey::new_unique();
     accounts.insert(
         other_user_usdc,
@@ -4633,13 +4537,13 @@ fn mollusk_disclose_secp_amount_happy_path() {
     let context = mollusk().with_context(accounts);
 
     let cleartext_amount = 500;
-    let (signatures, extra_data) = kms_public_decrypt_cert(pinned, cleartext_amount);
+    let (signatures, extra_data) = amount_public_decrypt_cert(pinned, cleartext_amount);
     let result = context.process_and_validate_instruction(
         &disclose_secp_ix(
             &fixture,
             fixture.amount_value,
             pinned,
-            cleartext_u256(cleartext_amount),
+            u256_be(cleartext_amount),
             signatures,
             extra_data,
             proof,
@@ -4676,7 +4580,7 @@ fn mollusk_disclose_secp_rejects_kind_label_mismatch() {
     let mut accounts = fixture.base();
     accounts.insert(fixture.amount_value, encrypted_value_account(&value));
     let context = mollusk().with_context(accounts);
-    let (signatures, extra_data) = kms_public_decrypt_cert(pinned, 500);
+    let (signatures, extra_data) = amount_public_decrypt_cert(pinned, 500);
 
     context.process_and_validate_instruction(
         &disclose_secp_ix_with_kind(
@@ -4684,7 +4588,7 @@ fn mollusk_disclose_secp_rejects_kind_label_mismatch() {
             fixture.amount_value,
             token::DisclosedValueKind::Balance,
             pinned,
-            cleartext_u256(500),
+            u256_be(500),
             signatures,
             extra_data,
             proof,
@@ -4714,13 +4618,13 @@ fn mollusk_disclose_secp_balance_happy_path() {
     let context = mollusk().with_context(accounts);
 
     let cleartext_amount = 700;
-    let (signatures, extra_data) = kms_public_decrypt_cert(pinned, cleartext_amount);
+    let (signatures, extra_data) = amount_public_decrypt_cert(pinned, cleartext_amount);
     let result = context.process_and_validate_instruction(
         &disclose_secp_ix(
             &fixture,
             fixture.balance_value,
             pinned,
-            cleartext_u256(cleartext_amount),
+            u256_be(cleartext_amount),
             signatures,
             extra_data,
             proof,
@@ -4764,7 +4668,7 @@ fn mollusk_disclose_secp_transferred_amount_happy_path() {
     accounts.insert(transferred_value, encrypted_value_account(&value));
     let context = mollusk().with_context(accounts);
     let cleartext_amount = 125;
-    let (signatures, extra_data) = kms_public_decrypt_cert(pinned, cleartext_amount);
+    let (signatures, extra_data) = amount_public_decrypt_cert(pinned, cleartext_amount);
 
     let result = context.process_and_validate_instruction(
         &disclose_secp_ix_with_kind(
@@ -4772,7 +4676,7 @@ fn mollusk_disclose_secp_transferred_amount_happy_path() {
             transferred_value,
             token::DisclosedValueKind::TransferredAmount,
             pinned,
-            cleartext_u256(cleartext_amount),
+            u256_be(cleartext_amount),
             signatures,
             extra_data,
             proof,
@@ -4812,14 +4716,14 @@ fn mollusk_disclose_secp_total_supply_requires_no_token_account() {
     accounts.insert(total_supply_value, encrypted_value_account(&value));
     let context = mollusk().with_context(accounts);
     let cleartext_amount = 10_000;
-    let (signatures, extra_data) = kms_public_decrypt_cert(pinned, cleartext_amount);
+    let (signatures, extra_data) = amount_public_decrypt_cert(pinned, cleartext_amount);
 
     let result = context.process_and_validate_instruction(
         &disclose_total_supply_ix(
             &fixture,
             total_supply_value,
             pinned,
-            cleartext_u256(cleartext_amount),
+            u256_be(cleartext_amount),
             signatures.clone(),
             extra_data.clone(),
             proof.clone(),
@@ -4845,7 +4749,7 @@ fn mollusk_disclose_secp_total_supply_requires_no_token_account() {
             total_supply_value,
             token::DisclosedValueKind::TotalSupply,
             pinned,
-            cleartext_u256(cleartext_amount),
+            u256_be(cleartext_amount),
             signatures,
             extra_data,
             proof,
@@ -4881,13 +4785,13 @@ fn mollusk_disclose_secp_after_an_update_consumes_with_public_proof() {
     let context = mollusk().with_context(accounts);
 
     let cleartext_amount = 500;
-    let (signatures, extra_data) = kms_public_decrypt_cert(pinned, cleartext_amount);
+    let (signatures, extra_data) = amount_public_decrypt_cert(pinned, cleartext_amount);
     let result = context.process_and_validate_instruction(
         &disclose_secp_ix(
             &fixture,
             fixture.amount_value,
             pinned,
-            cleartext_u256(cleartext_amount),
+            u256_be(cleartext_amount),
             signatures,
             extra_data,
             proof,
@@ -4931,12 +4835,12 @@ fn mollusk_disclose_secp_is_idempotent_no_replay_marker() {
     let context = mollusk().with_context(accounts);
 
     let cleartext_amount = 500;
-    let (signatures, extra_data) = kms_public_decrypt_cert(pinned, cleartext_amount);
+    let (signatures, extra_data) = amount_public_decrypt_cert(pinned, cleartext_amount);
     let ix = disclose_secp_ix(
         &fixture,
         fixture.amount_value,
         pinned,
-        cleartext_u256(cleartext_amount),
+        u256_be(cleartext_amount),
         signatures,
         extra_data,
         proof,
@@ -4971,13 +4875,13 @@ fn mollusk_disclose_secp_rejects_foreign_public_decrypt_proof() {
     let context = mollusk().with_context(accounts);
 
     let cleartext_amount = 500;
-    let (signatures, extra_data) = kms_public_decrypt_cert(pinned, cleartext_amount);
+    let (signatures, extra_data) = amount_public_decrypt_cert(pinned, cleartext_amount);
     context.process_and_validate_instruction(
         &disclose_secp_ix(
             &fixture,
             fixture.amount_value,
             pinned,
-            cleartext_u256(cleartext_amount),
+            u256_be(cleartext_amount),
             signatures,
             extra_data,
             proof,
@@ -5024,13 +4928,13 @@ fn mollusk_disclose_secp_rejects_foreign_mint_domain() {
     let context = mollusk().with_context(accounts);
 
     let cleartext_amount = 500;
-    let (signatures, extra_data) = kms_public_decrypt_cert(pinned, cleartext_amount);
+    let (signatures, extra_data) = amount_public_decrypt_cert(pinned, cleartext_amount);
     context.process_and_validate_instruction(
         &disclose_secp_ix(
             &fixture,
             foreign_value_addr,
             pinned,
-            cleartext_u256(cleartext_amount),
+            u256_be(cleartext_amount),
             signatures,
             extra_data,
             proof,
@@ -5064,7 +4968,7 @@ fn mollusk_disclose_secp_rejects_cleartext_wider_than_u64() {
     let mut wide = [0u8; 32];
     wide[8] = 1;
     let extra_data = vec![0x00u8];
-    let signatures = zama_solana_test_kit::kms::kms_public_decrypt_cert(
+    let signatures = zama_solana_test_kit::signing::kms_public_decrypt_cert(
         pinned,
         wide,
         GATEWAY_CHAIN_ID,
@@ -5829,13 +5733,13 @@ fn disclose_secp_seven_of_thirteen_verifies_and_bounds_compute() {
 
     let cleartext_amount = 500;
     let (signatures, extra_data) =
-        kms_public_decrypt_cert_signed_by(pinned, cleartext_amount, &keys[..7]);
+        amount_public_decrypt_cert_signed_by(pinned, cleartext_amount, &keys[..7]);
     let result = context.process_and_validate_instruction(
         &disclose_secp_ix(
             &fixture,
             fixture.amount_value,
             pinned,
-            cleartext_u256(cleartext_amount),
+            u256_be(cleartext_amount),
             signatures,
             extra_data,
             proof,
@@ -6135,7 +6039,7 @@ fn mollusk_burn_from_value_burned_handle_redeems() {
 
     // Redeem the burned handle with a real KMS cert + single-leaf public-decrypt inclusion proof.
     let cleartext_amount = 500;
-    let (signatures, extra_data) = kms_public_decrypt_cert(burned_handle, cleartext_amount);
+    let (signatures, extra_data) = amount_public_decrypt_cert(burned_handle, cleartext_amount);
     let proof = single_burn_public_decrypt_proof(&fixture, burned_handle);
     let pending_burn = token::pending_burn_address(fixture.mint, fixture.token_account).0;
     context.process_and_validate_instruction(

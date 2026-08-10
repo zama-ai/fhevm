@@ -1,9 +1,7 @@
 //! Shared Mollusk test fixtures for programs that build on `zama-host`.
 //!
-//! Extracted from the four runtime-test suites, which each carried a private copy of this
-//! vocabulary (`batcher_mollusk.rs` alone had 1,460 lines of it before its first test). The kit
-//! holds only what is program-agnostic or `zama-host`-generic: the Mollusk environment, Anchor
-//! instruction/account plumbing, the host's fixture accounts (`HostConfig`, `KmsContext`,
+//! The kit holds only what is program-agnostic or `zama-host`-generic: the Mollusk environment,
+//! Anchor instruction/account plumbing, the host's fixture accounts (`HostConfig`, `KmsContext`,
 //! `EncryptedValue`, deny records), the coprocessor/KMS signature minting, the cleartext oracle
 //! that replays `fhe_execute` CPIs, and the rolling cost snapshots. Program-specific fixtures
 //! (a token's mints, a batcher's batches) stay with their suites.
@@ -12,11 +10,11 @@
 //! its own programs on the `Mollusk` it gets from [`svm`], so a new consumer program can use the
 //! kit without pulling in every program in the workspace.
 
-pub mod kms;
+pub mod cost_snapshot;
 pub mod oracle;
-pub mod snapshot;
+pub mod signing;
 
-mod contracts;
+pub mod contracts;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -66,10 +64,17 @@ pub const DECIMALS: u8 = 6;
 /// Suites register further programs on the returned value and raise the compute budget where
 /// their instructions need it.
 pub fn svm(program_id: &Pubkey, program_name: &str) -> Mollusk {
-    let deploy_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../target/deploy");
-    unsafe {
-        std::env::set_var("SBF_OUT_DIR", deploy_dir);
-    }
+    // The kit sits directly under `solana/`, so `../target/deploy` from its manifest is the
+    // workspace deploy dir; moving the crate deeper would silently break this path.
+    static SET_SBF_OUT_DIR: std::sync::Once = std::sync::Once::new();
+    SET_SBF_OUT_DIR.call_once(|| {
+        let deploy_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../target/deploy");
+        // SAFETY: guarded by the Once, so no other thread can be mutating the environment
+        // through this path concurrently; test binaries have no other env writers.
+        unsafe {
+            std::env::set_var("SBF_OUT_DIR", deploy_dir);
+        }
+    });
     Mollusk::new(program_id, program_name)
 }
 
@@ -164,6 +169,14 @@ where
         .collect::<Vec<u8>>();
     let payload = data.strip_prefix(&event_prefix[..])?;
     T::deserialize(&mut &*payload).ok()
+}
+
+/// The 32-byte big-endian `uint256` encoding of a `u64` — scalar operands, plaintexts, and
+/// KMS-signed cleartexts all carry this shape on the wire.
+pub fn u256_be(value: u64) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    out[24..].copy_from_slice(&value.to_be_bytes());
+    out
 }
 
 /// A left-aligned 32-byte label from a short name.
@@ -305,13 +318,23 @@ pub fn read_encrypted_value_from_result(
     host::EncryptedValue::try_deserialize(&mut data).expect("valid EncryptedValue account")
 }
 
-/// Amount held by the SPL token account at `address`.
+/// Amount held by the token account at `address` — classic SPL Token or Token-2022, decided by
+/// the account's owner.
 pub fn read_spl_amount(context: &Ctx, address: Pubkey) -> u64 {
     let store = context.account_store.borrow();
     let account = store.get(&address).expect("missing spl token account");
-    spl_token::state::Account::unpack(&account.data)
-        .expect("valid spl token account")
-        .amount
+    if account.owner == spl_token::id() {
+        spl_token::state::Account::unpack(&account.data)
+            .expect("valid classic token account")
+            .amount
+    } else {
+        use anchor_spl::token_2022::spl_token_2022;
+        use spl_token_2022::extension::StateWithExtensions;
+        StateWithExtensions::<spl_token_2022::state::Account>::unpack(&account.data)
+            .expect("valid Token-2022 account")
+            .base
+            .amount
+    }
 }
 
 /// Supply of the SPL mint at `address`.
@@ -356,10 +379,15 @@ pub struct HostConfigParams {
 }
 
 impl HostConfigParams {
+    /// Defaults register [`signing::coprocessor_signing_key`]'s EVM address as the sole
+    /// coprocessor signer, so a config built from these params accepts attestations minted by
+    /// [`signing::amount_attestation_for`] without further setup.
     pub fn new(admin: Pubkey) -> Self {
         Self {
             admin,
-            coprocessor_signers: vec![[0x11u8; 20]],
+            coprocessor_signers: vec![signing::secp_evm_address(
+                &signing::coprocessor_signing_key(),
+            )],
             coprocessor_threshold: 1,
             current_kms_context_id: 0,
             paused: false,
@@ -495,13 +523,13 @@ pub fn encrypted_value_account(value: &host::EncryptedValue) -> Account {
 
 /// Decodes `FheExecuteArgs` out of raw `fhe_execute` instruction data, `None` for any other
 /// instruction.
-pub fn decode_fhe_execute_args(data: &[u8]) -> Option<host::FheExecuteArgs> {
+pub(crate) fn decode_fhe_execute_args(data: &[u8]) -> Option<host::FheExecuteArgs> {
     let payload = data.strip_prefix(host::instruction::FheExecute::DISCRIMINATOR)?;
     host::FheExecuteArgs::deserialize(&mut &*payload).ok()
 }
 
 /// The output descriptor of any execution step variant.
-pub fn execution_step_output(step: &host::FheExecuteStep) -> &host::FheExecuteOutput {
+pub(crate) fn execution_step_output(step: &host::FheExecuteStep) -> &host::FheExecuteOutput {
     match step {
         host::FheExecuteStep::Binary { output, .. }
         | host::FheExecuteStep::Ternary { output, .. }
