@@ -120,13 +120,23 @@ const targets = [
     // test-harness surfaces, not product ones (apps reach fhe_execute through their own programs'
     // CPIs), so they render into the test-suite instead of widening the SDK's tiny zama-host client
     // above. The FheExecute* type closure is kept as named types because the scenarios compose
-    // steps/outputs programmatically.
+    // steps/outputs programmatically. initializeHostConfig + defineKmsContext are the bring-up
+    // bootstrap pair (test-suite/fhevm/src/solana/deploy.ts) — the live-client's last
+    // production duty, now typed.
     idlPath: idlUrl('zama_host.json'),
     generatedPath: `${sdkRoot}/../../test-suite/fhevm/src/solana/internal/generated/zamaHost`,
     keep: {
-      instructions: new Set(['fheExecute', 'allowSubjects', 'makeHandlePublic']),
+      instructions: new Set([
+        'fheExecute',
+        'allowSubjects',
+        'makeHandlePublic',
+        'initializeHostConfig',
+        'defineKmsContext',
+      ]),
       // fheExecuteArgs itself is not a defined-type node: Codama inlines the single-arg struct
       // into the fheExecute instruction, so only the types its fields reference are kept here.
+      // InitializeHostConfigArgs gets the same inlining; KmsThresholds survives as a named type
+      // because define_kms_context takes it alongside other args.
       definedTypes: new Set([
         'coprocessorInputAttestation',
         'fheBinaryOpCode',
@@ -135,9 +145,10 @@ const targets = [
         'fheExecuteStep',
         'fheTernaryOpCode',
         'fheUnaryOpCode',
+        'kmsThresholds',
         'previousState',
       ]),
-      pdas: new Set(['hostConfig']),
+      pdas: new Set(['hostConfig', 'kmsContext']),
     },
     programAddress(program) {
       return (

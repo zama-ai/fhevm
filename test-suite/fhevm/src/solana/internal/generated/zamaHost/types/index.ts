@@ -13,4 +13,5 @@ export * from './fheExecuteOutput.js';
 export * from './fheExecuteStep.js';
 export * from './fheTernaryOpCode.js';
 export * from './fheUnaryOpCode.js';
+export * from './kmsThresholds.js';
 export * from './previousState.js';

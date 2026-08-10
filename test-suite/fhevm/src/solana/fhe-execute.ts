@@ -231,7 +231,7 @@ export const allowForPublicDecryption = async (
 };
 
 /** The zama-host program's Anchor event-authority PDA (`[b"__event_authority"]`). */
-const zamaEventAuthorityAddress = async (): Promise<Address> => {
+export const zamaEventAuthorityAddress = async (): Promise<Address> => {
   const [eventAuthority] = await getProgramDerivedAddress({
     programAddress: ZAMA_HOST_PROGRAM_ADDRESS,
     seeds: [new TextEncoder().encode("__event_authority")],
