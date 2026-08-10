@@ -382,7 +382,7 @@ if (import.meta.main) {
   const logDir = process.env.SOLANA_LOG_DIR ?? "/tmp";
   // Deployer/fee-payer wallet: airdrop, program deploy, and the bootstrap all sign with it, and it
   // is passed explicitly everywhere so this setup never depends on or mutates the developer's
-  // global `solana config` (URL or keypair). Same override the demo deployer honours
+  // global `solana config` (URL or keypair). Same override the demo deployer honors
   // (deploy-demo-programs.sh).
   const deployerKeypairPath =
     process.env.SOLANA_DEPLOYER_KEYPAIR ?? `${process.env.HOME}/.config/solana/id.json`;
