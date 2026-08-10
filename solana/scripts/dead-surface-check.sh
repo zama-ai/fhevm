@@ -79,7 +79,6 @@ RUST_ROOTS=(
   solana/crates
   solana/runtime-tests
   solana/test-kit
-  solana/scripts/e2e/live-client
   solana-proof-service
   coprocessor/fhevm-engine/host-listener/src
 )
@@ -132,7 +131,6 @@ FHE_ROOTS=(
   solana/crates
   solana/programs/zama-host
   solana/programs/confidential-token
-  solana/scripts/e2e/live-client
   solana/runtime-tests/tests/host_mollusk.rs
   solana/runtime-tests/tests/token_mollusk.rs
   solana/runtime-tests/tests/operator_conformance.rs
@@ -173,7 +171,6 @@ done
 SENTINEL_ROOTS=(
   solana/programs
   solana/crates
-  solana/scripts/e2e/live-client
   solana-proof-service
   sdk/js-sdk/src/solana
   solana/demo-dapp/src

@@ -319,12 +319,13 @@ trap - EXIT
 # instead. `--override solana-proof-service` rebuilds the standalone proof
 # image so a stale `:local` / `:fhevm-local` tag cannot outlive HEAD.
 
-# 3. Bring the Solana side-stack online against the freshly-deployed live backend.
-#    Reads gateway addresses + KMS/coprocessor signer set live, so it tracks the new signer.
-#    Deploys zama-host on the geyser-plugin validator; ordinary computation facts are ingested by
-#    reconstructing them from instruction data over Yellowstone, not from events.
-"$ROOT/solana/scripts/e2e/setup-solana-side.sh"
+# 3. Bring the Solana side-stack online against the freshly-deployed live backend
+#    (test-suite/fhevm/src/solana/deploy.ts): fresh geyser validator + program deploy, the typed
+#    zama-host bootstrap (reads gateway addresses + KMS/coprocessor signer set live, so it tracks
+#    the new signer), host-chain registration, and the host-listener. Ordinary computation facts
+#    are ingested by reconstructing them from instruction data over Yellowstone, not from events.
+( cd "$FHEVM" && bun run src/solana/deploy.ts )
 
-echo "[clean-e2e] stack ready. Drive the full vertical (input -> compute -> public/user-decrypt ->"
-echo "  input-flow -> consume), user-decrypt is now PURE-SDK (no kms checkout):"
-echo "    TE_VALUE=55 bash solana/scripts/e2e/full-vertical.sh"
+echo "[clean-e2e] stack ready. Run the typed scenario suite (compute -> public/user-decrypt ->"
+echo "  input-flow -> transfer -> consume), user-decrypt is PURE-SDK (no kms checkout):"
+echo "    cd test-suite/fhevm && bun run test:e2e"

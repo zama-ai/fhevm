@@ -1,5 +1,9 @@
 //! Off-chain `fhe_execute` encoding helpers for clients and tests. Never compiled into the SBF
 //! build — enable the `encode` feature to use it.
+//!
+//! Public API surface: off-chain callers assembling `fhe_execute` payloads — `runtime-tests`'
+//! Mollusk suites intern their step constants and subject lists through this one dictionary
+//! implementation instead of carrying copies.
 
 use anchor_lang::prelude::Pubkey;
 

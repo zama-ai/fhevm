@@ -3,7 +3,7 @@
 # multi-arch. The validator dlopen's this external plugin via `--geyser-plugin-config`.
 #
 # The geyser plugin interface is a Rust trait with no stable ABI, so the `+solana.<version>` suffix
-# on YELLOWSTONE_REF must track the agave major.minor that setup-solana-side.sh runs — 4.1 today
+# on YELLOWSTONE_REF must track the agave major.minor the side-stack setup runs — 4.1 today
 # (see the toolchain pins in solana-e2e.yml and solana-tests.yml). The patch versions need not
 # match, and here they do not: upstream's newest build is against 4.1.0 while we run 4.1.2, and
 # agave's geyser-plugin-interface is byte-identical between those two.

@@ -1,15 +1,19 @@
 name: solana-e2e
 
-# Brings up a fresh lifecycle-owned demo stack with the Solana host (`bun run demo up`) and drives the Solana
-# decrypt vertical (full-vertical.sh): input (ZK + on-chain secp256k1 bind) -> compute ->
-# public-decrypt -> PURE-SDK user-decrypt (no kms checkout) -> input-flow -> consume. The
-# user-decrypt de-signcryption runs entirely in @fhevm/sdk/solana, so no kms-core checkout.
+# Brings up a fresh lifecycle-owned demo stack with the Solana host (`bun run demo up`) and runs
+# the typed bun:test scenario suite (test-suite/fhevm/e2e/scenarios) against it: the decrypt
+# vertical (input ZK + on-chain secp256k1 bind -> compute -> public-decrypt -> PURE-SDK
+# user-decrypt, no kms checkout), the fhe_execute operator wiring, the confidential-transfer arc,
+# and the token consume arc (wrap -> burn -> seal -> certified decrypt -> redeem -> disclose) with
+# its adversarial context-mismatch tail. Every assertion is typed — the retired full-vertical.sh
+# label greps (and the checker that policed them) have no successor because the failure mode is
+# structurally gone.
 #
 # Ordinary computation ingestion is Yellowstone-first: the coprocessor is fed by gRPC off-chain
 # reconstruction. Created-public lifecycle outputs also emit their narrow CPI event because their
 # public-leaf append is not reconstructible from the computation alone. The single-value `reconstruct` matrix is
-# kept so the job/artifact names keep their `-reconstruct` suffix; setup-solana-side.sh no longer
-# keys off it.
+# kept so the job/artifact names keep their `-reconstruct` suffix; the side-stack setup
+# (test-suite/fhevm/src/solana/deploy.ts) no longer keys off it.
 #
 # The lifecycle bring-up also deploys and seeds the confidential-vault demo (#1760). After the e2e
 # phases, the same job refreshes that still-owned boot:
@@ -30,10 +34,6 @@ on:
       - elias/solana-proof-service-recovery
   workflow_dispatch:
     inputs:
-      te-value:
-        description: "Cleartext computed + decrypted by the vertical (fresh per run avoids PDA reuse)."
-        default: "55"
-        type: string
       deposit-amount:
         description: "USDC the deposit-arc persona wraps + joins with (fresh per run avoids PDA reuse)."
         default: "1000"
@@ -54,15 +54,14 @@ concurrency:
 
 jobs:
   solana-e2e:
-    name: solana-e2e/full-vertical${{ matrix.reconstruct && '-reconstruct' || '' }}
+    # Status-check consumers: this check was named solana-e2e/full-vertical-reconstruct until the
+    # bash vertical retired (fhevm-internal#1876).
+    name: solana-e2e/scenarios${{ matrix.reconstruct && '-reconstruct' || '' }}
     runs-on: runs-on=${{ github.run_id }}/runner=32cpu-linux-x64/volume=160gb
     # The e2e lane's own history: median successful runs ~50-53 min, observed successful tail up
-    # to 72 min (run 29830123609). The demo phase adds ~2 min on the already-built stack.
-    # TEMPORARY 120: the typed fhe-vertical/operators scenarios now cover the same decrypt arcs as
-    # full-vertical.sh, and until the bash vertical retires later in this refactor both run in one
-    # job. Drops back once full-vertical.sh is deleted. The owned-boot status gate before reseed
-    # fails fast if an e2e phase degraded the stack.
-    timeout-minutes: 120
+    # to 72 min (run 29830123609). The demo phase adds ~2 min on the already-built stack. The
+    # owned-boot status gate before reseed fails fast if an e2e phase degraded the stack.
+    timeout-minutes: 90
     strategy:
       matrix:
         # Single-value matrix: only the Yellowstone reconstruction arm remains (the emit/RPC arm
@@ -73,7 +72,6 @@ jobs:
       contents: "read" # checkout
       packages: "read" # pull repo-owned images from ghcr.io
     env:
-      TE_VALUE: ${{ inputs.te-value || '55' }}
       DEMO_DEPOSIT_AMOUNT: ${{ inputs.deposit-amount || '1000' }}
       # Opt-in permissive CORS for the demo dApp origin (relayer + proof service default OFF; only
       # demo mode sets these). Set at the job level so the relayer and proof-service containers come
@@ -99,14 +97,9 @@ jobs:
           # and whose branch-published images (:feature-solana-<sha>) it uses for untouched groups.
           fetch-depth: 2
 
-      # Seconds, and it guards the phase-to-phase plumbing of the two long scripts below: they read
-      # the live clients' stdout by grepping printed labels, so a renamed label aborts full-vertical.sh
-      # under `bash -e` with no message, ~45 minutes into this job. Fail here instead.
-      - name: Check the e2e scripts grep for labels the clients still print
-        run: python3 solana/scripts/check-e2e-greps.py
-
       - name: Setup Node
-        # full-vertical.sh runs the TypeScript @fhevm/sdk clients directly under Node.
+        # The lifecycle bring-up builds the SDK with npm and the runtime-dependency canary below
+        # imports it under Node.
         uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
         with:
           node-version: 24
@@ -195,9 +188,6 @@ jobs:
           node --input-type=module -e "await import('@fhevm/sdk/solana'); console.log('@fhevm/sdk/solana imports OK')"
           cd "$GITHUB_WORKSPACE/solana/demo-dapp"
           bun run build
-
-      - name: Drive the Solana decrypt vertical (full-vertical.sh)
-        run: bash solana/scripts/e2e/full-vertical.sh
 
       # The deposit-arc scenario drives the demo dapp's vault module from bun, and the vault reaches
       # into SDK *sources* (`@sdk-src`) for internals the published package deliberately does not

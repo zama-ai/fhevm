@@ -974,7 +974,7 @@ export const runStep = async (state: State, step: StepName) => {
       await waitForContainer("fhevm-relayer", "running");
       await waitForLog("fhevm-relayer", /All servers are ready and responding/);
       if (hostChainsForState(state).some((chain) => chain.type === "solana")) {
-        // Standalone MMR proof service (RFC-024). Yellowstone may not be up yet (setup-solana-side
+        // Standalone MMR proof service (RFC-024). Yellowstone may not be up yet (the side-stack setup
         // starts geyser after fhevm-cli up); ingest reconnects with backoff until it is.
         await stepComposeUp("solana-proof-service", state);
         await waitForContainer("fhevm-solana-proof-db", "healthy");

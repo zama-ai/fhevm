@@ -17,8 +17,8 @@ no-entrypoint = []
 # Off-chain instruction/event decoding for indexers (host-listener, proof
 # service). Never enabled for the SBF build.
 decode = []
-# Off-chain fhe_execute encoding for clients and tests (runtime-tests,
-# live-client). Never enabled for the SBF build.
+# Off-chain fhe_execute encoding for clients and tests (runtime-tests).
+# Never enabled for the SBF build.
 encode = []
 no-log-ix-name = []
 idl-build = ["anchor-lang/idl-build"]

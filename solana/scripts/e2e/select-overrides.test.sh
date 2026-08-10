@@ -55,7 +55,7 @@ PINS_CONNECTOR="CONNECTOR_DB_MIGRATION_VERSION=$T CONNECTOR_GW_LISTENER_VERSION=
 
 # The proof service has no branch-published image, so it is always built from the checked-out source.
 check "solana scripts only -> proof service" \
-  $'solana/scripts/e2e/full-vertical.sh\nsolana/geyser/src/lib.rs\nsolana/docs/notes.md' \
+  $'solana/scripts/e2e/setup-solana-side.sh\nsolana/geyser/src/lib.rs\nsolana/docs/notes.md' \
   "true" \
   "solana-proof-service" \
   "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"

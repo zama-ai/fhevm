@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { generateKeyPairSigner, type Instruction, type TransactionSigner } from "@solana/kit";
 
 import type { GatewayBootstrapInputs } from "./addresses";
-import { bootstrapZamaHost, kmsCertificateThresholds } from "./deploy";
+import { bootstrapZamaHost, kmsCertificateThresholds, lifecycleComposeProject } from "./deploy";
 import { getDefineKmsContextInstructionDataDecoder } from "./internal/generated/zamaHost/instructions/defineKmsContext";
 import { getInitializeHostConfigInstructionDataDecoder } from "./internal/generated/zamaHost/instructions/initializeHostConfig";
 import { ZAMA_HOST_PROGRAM_ADDRESS } from "./internal/generated/zamaHost/programAddress.js";
@@ -35,6 +35,38 @@ const fakeContext = (hostConfigExists: boolean) => {
   } as unknown as SolanaProvisioningContext;
   return { context, sent };
 };
+
+describe("lifecycleComposeProject", () => {
+  const originalProject = process.env.FHEVM_COMPOSE_PROJECT;
+  const restore = () => {
+    if (originalProject === undefined) delete process.env.FHEVM_COMPOSE_PROJECT;
+    else process.env.FHEVM_COMPOSE_PROJECT = originalProject;
+  };
+
+  test("standalone mode uses the default project without consulting the env", () => {
+    process.env.FHEVM_COMPOSE_PROJECT = "not-a-valid-project";
+    try {
+      expect(lifecycleComposeProject(undefined)).toBe("fhevm");
+    } finally {
+      restore();
+    }
+  });
+
+  test("lifecycle mode requires the per-boot project shape", () => {
+    try {
+      process.env.FHEVM_COMPOSE_PROJECT = "fhevm-demo-12345678-1234-4123-8123-123456789abc";
+      expect(lifecycleComposeProject("/tmp/fhevm-demo-1/x")).toBe(
+        "fhevm-demo-12345678-1234-4123-8123-123456789abc",
+      );
+      process.env.FHEVM_COMPOSE_PROJECT = "fhevm";
+      expect(() => lifecycleComposeProject("/tmp/fhevm-demo-1/x")).toThrow("invalid lifecycle Compose project");
+      delete process.env.FHEVM_COMPOSE_PROJECT;
+      expect(() => lifecycleComposeProject("/tmp/fhevm-demo-1/x")).toThrow("invalid lifecycle Compose project");
+    } finally {
+      restore();
+    }
+  });
+});
 
 describe("kmsCertificateThresholds", () => {
   test("derives 2t+1 and validates it against the registered signer count", () => {

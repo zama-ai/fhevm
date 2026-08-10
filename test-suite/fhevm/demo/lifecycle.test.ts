@@ -80,19 +80,20 @@ describe("demo lifecycle collision policy", () => {
   });
 
   test("deployment overwrites stale target program identities", async () => {
-    for (const script of [
-      "solana/scripts/e2e/setup-solana-side.sh",
-      "solana/scripts/demo/deploy-demo-programs.sh",
-    ]) {
-      const source = await fs.readFile(
-        path.join(import.meta.dir, "../../..", script),
-        "utf8",
-      );
-      expect(source).toContain(
-        'cp -f "$SOLANA/scripts/e2e/test-keypairs/$p-keypair.json"',
-      );
-      expect(source).not.toContain("cp -n");
-    }
+    const demoDeploy = await fs.readFile(
+      path.join(import.meta.dir, "../../../solana/scripts/demo/deploy-demo-programs.sh"),
+      "utf8",
+    );
+    expect(demoDeploy).toContain('cp -f "$SOLANA/scripts/e2e/test-keypairs/$p-keypair.json"');
+    expect(demoDeploy).not.toContain("cp -n");
+    // The e2e side (src/solana/validator.ts seedProgramKeypairs) copies with node's copyFile,
+    // which overwrites by default; a COPYFILE_EXCL flag would reintroduce the stale-identity bug.
+    const validator = await fs.readFile(
+      path.join(import.meta.dir, "../src/solana/validator.ts"),
+      "utf8",
+    );
+    expect(validator).toContain("copyFile(");
+    expect(validator).not.toContain("COPYFILE_EXCL");
   });
 
   test("committed program keypairs match declared program identities", async () => {
@@ -366,14 +367,6 @@ describe("demo lifecycle collision policy", () => {
     ) as {
       packages: Record<string, [string, { dependencies?: Record<string, string> }]>;
     };
-    const fullVertical = await fs.readFile(
-      path.join(import.meta.dir, "../../../solana/scripts/e2e/full-vertical.sh"),
-      "utf8",
-    );
-    const adversarial = await fs.readFile(
-      path.join(import.meta.dir, "../../../solana/scripts/e2e/adversarial-l4.sh"),
-      "utf8",
-    );
     const workflow = await fs.readFile(
       path.join(import.meta.dir, "../../../.github/workflows/solana-e2e.yml"),
       "utf8",
@@ -390,8 +383,6 @@ describe("demo lifecycle collision policy", () => {
       path.join(import.meta.dir, "../../../solana/scripts/e2e/clean-e2e.sh"),
       "utf8",
     );
-    expect(fullVertical.match(/\bnode solana-input\.ts/g)).toHaveLength(2);
-    expect(adversarial.match(/\bnode solana-input\.ts/g)).toHaveLength(1);
     // Every `@fhevm/sdk` subpath a runtime canary imports must exist in the SDK's exports map.
     // The guard this replaces counted canaries instead of validating them, so it stayed green
     // while the workflow imported `@fhevm/sdk/solana/vault` — a subpath deleted when the vault
@@ -424,8 +415,6 @@ describe("demo lifecycle collision policy", () => {
     expect(twoHolderTransfer).toContain('run(["bun", SDK_WORKER]');
     expect(demoViteConfig).toContain("preserveSymlinks: true");
     expect(demoViteConfig).toContain("noExternal: ['@fhevm/sdk']");
-    expect(fullVertical).not.toContain("--preserve-symlinks");
-    expect(adversarial).not.toContain("--preserve-symlinks");
     expect(workflow).not.toContain("--preserve-symlinks");
     expect(twoHolderTransfer).not.toContain("--preserve-symlinks");
     expect(consumerLock.packages["@fhevm/sdk"][1].dependencies).toEqual(sdkPackage.dependencies);
@@ -499,19 +488,16 @@ describe("demo lifecycle collision policy", () => {
   });
 
   test("Solana setup keeps every lifecycle compose call on the per-boot project", async () => {
-    const script = await fs.readFile(
-      path.join(
-        import.meta.dir,
-        "../../../solana/scripts/e2e/setup-solana-side.sh",
-      ),
+    // src/solana/deploy.ts derives the compose project through lifecycleComposeProject (its own
+    // unit tests pin the validation); this pins that the registration passes the derived project,
+    // never a hardcoded one.
+    const deploy = await fs.readFile(
+      path.join(import.meta.dir, "../src/solana/deploy.ts"),
       "utf8",
     );
-    expect(script).not.toMatch(/-p\s+fhevm(?:\s|\\)/);
-    expect(script).toContain(
-      ': "${FHEVM_COMPOSE_PROJECT:?lifecycle mode requires FHEVM_COMPOSE_PROJECT}"',
-    );
-    expect(script).toContain('COMPOSE_PROJECT="$FHEVM_COMPOSE_PROJECT"');
-    expect(script).toContain('-p "$COMPOSE_PROJECT" run');
+    expect(deploy).toContain("lifecycleComposeProject(lifecycleDir)");
+    expect(deploy).toContain("parameters.composeProject");
+    expect(deploy).not.toMatch(/"-p",\s*\n?\s*"fhevm"/);
   });
 
   test("doctor checks commands used by collision and Solana bootstrap paths", () => {
@@ -521,12 +507,11 @@ describe("demo lifecycle collision policy", () => {
         "dirname",
         "id",
         "lsof",
+        "pgrep",
+        "pkill",
         "python3",
-        "cut",
-        "seq",
         "solana-keygen",
         "solana-test-validator",
-        "tr",
       ]),
     );
   });
