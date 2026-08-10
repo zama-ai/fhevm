@@ -291,9 +291,6 @@ jobs:
     timeout-minutes: 90
     permissions:
       contents: "read" # checkout (incl. the LFS test keys the harness loads into Postgres)
-    env:
-      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
-      RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
     steps:
       - name: Checkout (with the LFS test keys)
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -348,6 +345,10 @@ jobs:
         working-directory: coprocessor/fhevm-engine
         env:
           SQLX_OFFLINE: "true"
+          # mold only for this native build — job-wide RUSTFLAGS leaked into the anchor/SBF
+          # build above, where rust-lld rejects `-fuse-ld=mold` (measured, not hypothetical).
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
+          RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
         # The trailing grep is the vacuous-filter guard (same lesson as solana-tests'
         # host-listener-reconstruct job): `cargo test` exits 0 when a renamed filter matches
         # nothing, so the job must fail unless exactly the one expected test ran and passed.
