@@ -29,8 +29,7 @@ RUN npm install -g pnpm@9
 # reproducible.
 ARG FOUNDRY_VERSION=v1.7.1
 RUN curl -fsSL "https://github.com/foundry-rs/foundry/releases/download/${FOUNDRY_VERSION}/foundry_${FOUNDRY_VERSION}_alpine_amd64.tar.gz" \
-      | tar -xz -C /usr/local/bin forge cast anvil chisel && \
-    chmod +x /usr/local/bin/{forge,cast,anvil,chisel}
+      | tar -xz -C /usr/local/bin forge cast anvil chisel
 
 RUN mkdir -p /app && \
     chown -R fhevm:fhevm /app &&\
