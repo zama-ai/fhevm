@@ -236,11 +236,7 @@ async fn insert_operation_in_db_and_get_id(
                 .await?
                 .prepKeygenId
         }
-        "KeygenRequest" => {
-            insert_rand_keygen_request(db, insert_option)
-                .await?
-                .requestId
-        }
+        "KeygenRequest" => insert_rand_keygen_request(db, insert_option).await?.keyId,
         "CrsgenRequest" => insert_rand_crsgen_request(db, insert_option).await?.crsId,
         "PrepKeygenResponse" => {
             insert_rand_prep_keygen_response(db, None, Some(status))

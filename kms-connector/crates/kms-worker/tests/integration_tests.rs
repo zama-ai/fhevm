@@ -220,7 +220,7 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
         ProtocolEventKind::PrepKeygen(r) => {
             (r.prepKeygenId, "KeyGenPreproc", "GetKeyGenPreprocResult")
         }
-        ProtocolEventKind::Keygen(r) => (r.requestId, "KeyGen", "GetKeyGenResult"),
+        ProtocolEventKind::Keygen(r) => (r.keyId, "KeyGen", "GetKeyGenResult"),
         ProtocolEventKind::Crsgen(r) => (r.crsId, "CrsGen", "GetCrsGenResult"),
         ProtocolEventKind::NewKmsContext(r) => (r.contextId, "NewMpcContext", "unreachable"),
         ProtocolEventKind::NewKmsEpoch(r) => (r.epochId, "NewMpcEpoch", "GetEpochResult"),
@@ -379,7 +379,7 @@ fn check_response_data(request: &ProtocolEventKind, response: KmsResponse) -> an
             ..Default::default()
         }),
         ProtocolEventKind::Keygen(r) => KmsGrpcResponse::Keygen(KeyGenResult {
-            request_id: Some(u256_to_request_id(r.requestId)),
+            request_id: Some(u256_to_request_id(r.keyId)),
             ..Default::default()
         }),
         ProtocolEventKind::Crsgen(r) => KmsGrpcResponse::Crsgen(CrsGenResult {

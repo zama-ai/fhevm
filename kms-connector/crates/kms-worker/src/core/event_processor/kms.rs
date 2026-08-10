@@ -59,7 +59,7 @@ impl KMSGenerationProcessor {
         let existing_key_id = keygen_request.existingKeyId;
 
         Ok(KmsGrpcRequest::Keygen(KeyGenRequest {
-            request_id: Some(u256_to_request_id(keygen_request.requestId)),
+            request_id: Some(u256_to_request_id(keygen_request.keyId)),
             preproc_id: Some(u256_to_request_id(keygen_request.prepKeygenId)),
             domain: Some(self.domain.clone()),
             params: None,
@@ -67,13 +67,7 @@ impl KMSGenerationProcessor {
             context_id: parsed_extra_data.context_id.map(u256_to_request_id),
             extra_data: keygen_request.extraData.to_vec(),
             keyset_config: Some(keyset_config(existing_key_id)),
-            keyset_added_info: (!existing_key_id.is_zero()).then(|| KeySetAddedInfo {
-                from_keyset_id_decompression_only: None,
-                to_keyset_id_decompression_only: None,
-                existing_keyset_id: Some(u256_to_request_id(existing_key_id)),
-                use_existing_key_tag: true,
-                copy_compressed_key_to_original: false,
-            }),
+            keyset_added_info: keyset_added_info(existing_key_id),
         }))
     }
 
@@ -133,6 +127,17 @@ fn keyset_config(existing_key_id: U256) -> KeySetConfig {
     }
 }
 
+fn keyset_added_info(existing_key_id: U256) -> Option<KeySetAddedInfo> {
+    // Fresh keygen has no source key. Migration reads the existing shares and preserves their tag.
+    (!existing_key_id.is_zero()).then(|| KeySetAddedInfo {
+        from_keyset_id_decompression_only: None,
+        to_keyset_id_decompression_only: None,
+        existing_keyset_id: Some(u256_to_request_id(existing_key_id)),
+        use_existing_key_tag: true,
+        copy_compressed_key_to_original: false,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -148,13 +153,14 @@ mod tests {
     }
 
     #[rstest]
-    #[case::fresh(U256::ZERO, false)]
-    #[case::migration(U256::from(42), true)]
+    #[case::fresh(U256::ZERO)]
+    #[case::migration(U256::from(42))]
     #[tokio::test]
-    async fn prepares_keygen_request(#[case] existing_key_id: U256, #[case] is_migration: bool) {
+    async fn prepares_keygen_request(#[case] existing_key_id: U256) {
         let processor = KMSGenerationProcessor::new(&Config::default(), MockContextManager);
         let prep_keygen_id = U256::from(7);
-        let request_id = U256::from(8);
+        let key_id = U256::from(8);
+        let is_migration = !existing_key_id.is_zero();
         let expected_config = if is_migration {
             COMPRESSED_MIGRATION_KEY_SET_CONFIG
         } else {
@@ -185,7 +191,7 @@ mod tests {
         let KmsGrpcRequest::Keygen(keygen_request) = processor
             .prepare_keygen_request(&KeygenRequest {
                 prepKeygenId: prep_keygen_id,
-                requestId: request_id,
+                keyId: key_id,
                 existingKeyId: existing_key_id,
                 extraData: Default::default(),
             })
@@ -194,10 +200,7 @@ mod tests {
         else {
             panic!("expected key generation request");
         };
-        assert_eq!(
-            keygen_request.request_id,
-            Some(u256_to_request_id(request_id))
-        );
+        assert_eq!(keygen_request.request_id, Some(u256_to_request_id(key_id)));
         assert_eq!(
             keygen_request.preproc_id,
             Some(u256_to_request_id(prep_keygen_id))

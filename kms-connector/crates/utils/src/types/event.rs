@@ -115,7 +115,7 @@ impl ProtocolEvent {
                 update_prep_keygen_status(db, e.prepKeygenId, status, already_sent).await
             }
             ProtocolEventKind::Keygen(e) => {
-                update_keygen_status(db, e.requestId, status, already_sent).await
+                update_keygen_status(db, e.keyId, status, already_sent).await
             }
             ProtocolEventKind::Crsgen(e) => {
                 update_crsgen_status(db, e.crsId, status, already_sent).await
@@ -723,7 +723,7 @@ impl Display for ProtocolEventKind {
                 write!(f, "PrepKeygenRequest #{:#066x}", e.prepKeygenId)
             }
             ProtocolEventKind::Keygen(e) => {
-                write!(f, "KeygenRequest #{:#066x}", e.requestId)
+                write!(f, "KeygenRequest #{:#066x}", e.keyId)
             }
             ProtocolEventKind::Crsgen(e) => {
                 write!(f, "CrsgenRequest #{:#066x}", e.crsId)
