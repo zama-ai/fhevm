@@ -21,7 +21,7 @@ import {
   ZAMA_HOST_PROGRAM_ADDRESS,
 } from "./internal/generated/confidentialToken/programAddress.js";
 import type { CoprocessorInputAttestationArgs } from "./internal/generated/confidentialToken/types/index.js";
-import type { PublicDecryptClaim } from "./public-decrypt";
+import { claimCleartext, type PublicDecryptClaim } from "./public-decrypt";
 import { hostConfigAddress, type SolanaProvisioningContext } from "./provision";
 
 type VaultModule = typeof import("@demo-dapp/vault/index.js");
@@ -154,7 +154,7 @@ export const redeemBurnedAmount = async (
     eventAuthority: await eventAuthority(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),
     program: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
     burnedHandle: args.handle,
-    cleartextAmount: BigInt(params.claim.abiEncodedCleartext),
+    cleartextAmount: claimCleartext(params.claim),
     signatures: [...args.signatures],
     extraData: args.extraData,
     proof: { leafIndex: args.leafIndex, siblings: [...args.siblings] },

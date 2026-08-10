@@ -22,7 +22,7 @@ import {
   sendFheExecute,
   type PersistentValueTarget,
 } from "./fhe-execute";
-import { runSolanaPublicDecrypt, type PublicDecryptClaim } from "./public-decrypt";
+import { claimCleartext, runSolanaPublicDecrypt, type PublicDecryptClaim } from "./public-decrypt";
 import type { SolanaProvisioningContext } from "./provision";
 
 type VaultModule = typeof import("@demo-dapp/vault/index.js");
@@ -167,7 +167,7 @@ export const publicDecryptExpect = async (
     PD_MMR_LEAF_COUNT: state.leafCount.toString(),
     PD_MMR_PROOF_BYTES: hex(proof.mmrProofBytes),
   });
-  const cleartext = BigInt(claim.abiEncodedCleartext);
+  const cleartext = claimCleartext(claim);
   if (typeof params.expect === "bigint") {
     if (cleartext !== params.expect) throw new Error(`public-decrypt cleartext ${cleartext} != ${params.expect}`);
   } else if (cleartext >= params.expect.lessThan) {

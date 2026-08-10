@@ -23,6 +23,14 @@ export type PublicDecryptClaim = {
   /** The MMR public-leaf inclusion proof the certificate pinned — what on-chain consume steps re-verify. */
   inclusionProof: { leafIndex: bigint; siblings: readonly Uint8Array[] };
 };
+/**
+ * Interprets the certificate cleartext as a number. `abiEncodedCleartext` is UNPREFIXED ABI hex
+ * (a 32-byte big-endian uint256), so it must be parsed as hex explicitly — `BigInt(...)` on the
+ * raw string reads all-digit hex like "46" as decimal 46 instead of 0x46 = 70.
+ */
+export const claimCleartext = (claim: Pick<PublicDecryptClaim, 'abiEncodedCleartext'>): bigint =>
+  BigInt(`0x${claim.abiEncodedCleartext.replace(/^0x/, '')}`);
+
 type PublicDecryptSdkInput = {
   chainId: bigint;
   relayerUrl: string;
