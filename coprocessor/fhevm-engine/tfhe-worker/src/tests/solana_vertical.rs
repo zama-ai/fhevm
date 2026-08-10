@@ -82,21 +82,26 @@ async fn confidential_transfer_reconstructs_computes_and_decrypts(
     let transferred_handle = current_handle(&fixture.svm, outputs.transferred);
 
     let events = reconstruct_transfer_events(&fixture, &meta, &account_keys);
+    // The transfer batch: ge -> debit sub -> select -> transferred sub -> sender re-encrypt
+    // (add 0, so the sender's handle rotates whether or not the debit succeeded) -> recipient
+    // add. The re-encrypt step landed in the fhe_eval cleanup (fhevm-internal#1853); the select
+    // result became transient then, so the persistent results are the last three.
     assert_eq!(
         events.len(),
-        5,
-        "token transfer must remain a five-step batch"
+        6,
+        "token transfer must remain a six-step batch"
     );
-    assert!(matches!(
-        &events[2],
-        SolanaHostRecord::FheTernaryOp(event) if event.result == alice_handle
-    ));
+    assert!(matches!(&events[2], SolanaHostRecord::FheTernaryOp(_)));
     assert!(matches!(
         &events[3],
         SolanaHostRecord::FheBinaryOp(event) if event.result == transferred_handle
     ));
     assert!(matches!(
         &events[4],
+        SolanaHostRecord::FheBinaryOp(event) if event.result == alice_handle
+    ));
+    assert!(matches!(
+        &events[5],
         SolanaHostRecord::FheBinaryOp(event) if event.result == bob_handle
     ));
 
@@ -123,7 +128,7 @@ async fn confidential_transfer_reconstructs_computes_and_decrypts(
     )
     .await?;
     db_tx.commit().await?;
-    assert_eq!(stats.tfhe_events, 5);
+    assert_eq!(stats.tfhe_events, 6);
 
     wait_until_computed(&harness.app).await?;
     let decrypted = decrypt_handles(
