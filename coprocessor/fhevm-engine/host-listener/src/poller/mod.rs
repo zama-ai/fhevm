@@ -334,27 +334,18 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                 continue;
             }
         };
-        let safe_tip = if kms_generation_address.is_some() {
-            let finalized = match client.finalized_block_number().await {
-                Ok(block) => {
-                    consecutive_rpc_failures = 0;
-                    block
-                }
+        consecutive_rpc_failures = 0;
+        let safe_tip = latest.saturating_sub(config.finality_lag);
+        let rpc_finalized_block = if kms_generation_address.is_some() {
+            match client.finalized_block_number().await {
+                Ok(block) => i64::try_from(block).ok(),
                 Err(err) => {
-                    handle_rpc_failure(
-                        &mut consecutive_rpc_failures,
-                        None,
-                        &err,
-                        "Failed to fetch finalized block after retries",
-                    )?;
-                    sleep(config.retry_interval).await;
-                    continue;
+                    warn!(%err, "Cannot resolve finalized block, postponing compressed key migration");
+                    None
                 }
-            };
-            finalized.min(latest.saturating_sub(config.finality_lag))
+            }
         } else {
-            consecutive_rpc_failures = 0;
-            latest.saturating_sub(config.finality_lag)
+            None
         };
         blockchain_timeout_tick.update();
         let client_ref = &client;
@@ -477,6 +468,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                     if let Err(err) = process_kms_generation_activations(
                         db_pool,
                         aws_s3_client,
+                        rpc_finalized_block,
                     )
                     .await
                     {
