@@ -96,10 +96,23 @@ export const hostConfigAddress = async (): Promise<Address> => {
   return hostConfig;
 };
 
+export type SendTransactionOptions = {
+  /**
+   * Skip the RPC preflight simulation. Raw `fhe_execute` sends need this: the result-handle
+   * entropy reads the SlotHashes sysvar via `sol_get_sysvar`, which real execution populates but
+   * preflight simulation may not (the retired live-client carried the same flag).
+   */
+  readonly skipPreflight?: boolean;
+};
+
 export type SolanaProvisioningContext = {
   readonly rpc: Rpc<SolanaRpcApi>;
   /** Signs `instructions` with `payer` plus any account-embedded signers, sends, and confirms. */
-  sendTransaction(payer: TransactionSigner, instructions: readonly Instruction[]): Promise<void>;
+  sendTransaction(
+    payer: TransactionSigner,
+    instructions: readonly Instruction[],
+    options?: SendTransactionOptions,
+  ): Promise<void>;
   /** Airdrops `sol` SOL to `recipient` and waits for the confirmation. Local validators only. */
   airdropSol(recipient: Address, sol: bigint): Promise<void>;
 };
@@ -111,7 +124,7 @@ export const createProvisioningContext = (rpcUrl: string, wsUrl: string): Solana
   const sendAndConfirm = sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions });
   return {
     rpc,
-    async sendTransaction(payer, instructions) {
+    async sendTransaction(payer, instructions, options = {}) {
       const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
       const base = setTransactionMessageFeePayerSigner(payer, createTransactionMessage({ version: 0 }));
       const withLifetime = setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, base);
@@ -121,7 +134,10 @@ export const createProvisioningContext = (rpcUrl: string, wsUrl: string): Solana
       );
       const signedTransaction = await signTransactionMessageWithSigners(message);
       assertIsTransactionWithBlockhashLifetime(signedTransaction);
-      await sendAndConfirm(signedTransaction, { commitment: "confirmed" });
+      await sendAndConfirm(signedTransaction, {
+        commitment: "confirmed",
+        ...(options.skipPreflight ? { skipPreflight: true } : {}),
+      });
     },
     async airdropSol(recipient, sol) {
       const signature = await rpc
@@ -270,6 +286,31 @@ export const wrapUnderlying = async (
   ]);
 };
 
+/**
+ * Reads `HostConfig.chain_id` from the on-chain singleton (discriminator-checked at its pinned
+ * layout offset) and asserts the Solana high bit — the chain-id fact every decrypt request and
+ * handle cross-check binds to.
+ */
+export const readHostChainId = async (context: SolanaProvisioningContext): Promise<bigint> => {
+  const vault = await vaultModule();
+  const configInfo = await fetchEncodedAccount(context.rpc, await hostConfigAddress(), { commitment: "confirmed" });
+  if (
+    !configInfo.exists ||
+    configInfo.programAddress !== vault.ZAMA_HOST_PROGRAM_ADDRESS ||
+    !bytesEqual(configInfo.data.subarray(0, 8), HOST_CONFIG_DISCRIMINATOR)
+  ) {
+    throw new Error("HostConfig account is missing or has the wrong owner or discriminator");
+  }
+  const chainId = new DataView(configInfo.data.buffer, configInfo.data.byteOffset).getBigUint64(
+    HOST_CONFIG_CHAIN_ID_OFFSET,
+    true,
+  );
+  if ((chainId & (1n << 63n)) === 0n) {
+    throw new Error("HostConfig chain id is missing the Solana high bit");
+  }
+  return chainId;
+};
+
 /** A holder's live confidential balance identity, as proven by `readTokenBalanceState`. */
 export type BalanceState = {
   version: 1;
@@ -337,19 +378,8 @@ export const readTokenBalanceState = async (
     throw new Error(`balance handle is not a euint64 handle (FHE type id ${handle.fheTypeId})`);
   }
 
-  const configInfo = await fetchEncodedAccount(context.rpc, await hostConfigAddress(), { commitment: "confirmed" });
-  if (
-    !configInfo.exists ||
-    configInfo.programAddress !== vault.ZAMA_HOST_PROGRAM_ADDRESS ||
-    !bytesEqual(configInfo.data.subarray(0, 8), HOST_CONFIG_DISCRIMINATOR)
-  ) {
-    throw new Error("HostConfig account is missing or has the wrong owner or discriminator");
-  }
-  const chainId = new DataView(configInfo.data.buffer, configInfo.data.byteOffset).getBigUint64(
-    HOST_CONFIG_CHAIN_ID_OFFSET,
-    true,
-  );
-  if ((chainId & (1n << 63n)) === 0n || handle.chainId !== chainId) {
+  const chainId = await readHostChainId(context);
+  if (handle.chainId !== chainId) {
     throw new Error("balance handle chain id does not match the Solana HostConfig");
   }
 

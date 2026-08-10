@@ -57,10 +57,12 @@ jobs:
     name: solana-e2e/full-vertical${{ matrix.reconstruct && '-reconstruct' || '' }}
     runs-on: runs-on=${{ github.run_id }}/runner=32cpu-linux-x64/volume=160gb
     # The e2e lane's own history: median successful runs ~50-53 min, observed successful tail up
-    # to 72 min (run 29830123609). The demo phase adds ~2 min on the already-built stack. 90
-    # covers the observed tail plus the demo phase without letting a hung run hold the runner for
-    # two hours. The owned-boot status gate before reseed fails fast if an e2e phase degraded the stack.
-    timeout-minutes: 90
+    # to 72 min (run 29830123609). The demo phase adds ~2 min on the already-built stack.
+    # TEMPORARY 120: the typed fhe-vertical/operators scenarios now cover the same decrypt arcs as
+    # full-vertical.sh, and until the bash vertical retires later in this refactor both run in one
+    # job. Drops back once full-vertical.sh is deleted. The owned-boot status gate before reseed
+    # fails fast if an e2e phase degraded the stack.
+    timeout-minutes: 120
     strategy:
       matrix:
         # Single-value matrix: only the Yellowstone reconstruction arm remains (the emit/RPC arm
