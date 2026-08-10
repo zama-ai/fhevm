@@ -375,7 +375,7 @@ pub async fn update_last_block_polled<'e>(
     last_block_polled: Option<u64>,
 ) -> anyhow::Result<()> {
     let chain_name = chain.as_str();
-    info!(
+    debug!(
         last_block_polled,
         "Updating last block polled in DB for chain {chain_name}"
     );
@@ -390,7 +390,7 @@ pub async fn update_last_block_polled<'e>(
     .await?;
 
     if query_result.rows_affected() > 0 {
-        info!(
+        debug!(
             last_block_polled,
             "Last block polled updated for chain {chain_name}"
         );
