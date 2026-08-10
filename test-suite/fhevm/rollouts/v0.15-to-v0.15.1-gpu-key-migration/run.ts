@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import path from "node:path";
 
 import type { RolloutRunContext } from "../../src/commands/rollout-run";
@@ -8,9 +9,15 @@ import {
   DEFAULT_POSTGRES_USER,
   coprocessorDatabaseName,
   defaultHostChainKey,
+  MINIO_EXTERNAL_URL,
   TEST_SUITE_CONTAINER,
 } from "../../src/layout";
-import { kmsConnectorDbName, kmsConnectorPrefix, kmsPartyIds } from "../../src/kms-party";
+import {
+  kmsConnectorDbName,
+  kmsConnectorPrefix,
+  kmsPartyIds,
+  kmsPublicPrefix,
+} from "../../src/kms-party";
 import { hostReachableRpcUrl } from "../../src/utils/fs";
 import { run, runStreaming } from "../../src/utils/process";
 import {
@@ -175,6 +182,24 @@ const assertKmsCoreVersions = async (parties: readonly number[], expectedVersion
     }
   }
 };
+
+const kmsPublicMaterialDigests = async (
+  type: "ServerKey" | "CompressedXofKeySet",
+  keyId: string,
+) =>
+  Promise.all(
+    kmsPartyIds(CONNECTOR_PARTIES).map(async (party) => {
+      const response = await fetch(
+        `${MINIO_EXTERNAL_URL}/kms-public/${kmsPublicPrefix(party)}/${type}/${keyId}`,
+      );
+      if (!response.ok) {
+        throw new Error(
+          `KMS operator ${party} does not serve ${type}/${keyId}: HTTP ${response.status}`,
+        );
+      }
+      return createHash("sha256").update(Buffer.from(await response.arrayBuffer())).digest("hex");
+    }),
+  );
 
 const operatorMaterial = async (
   operator: number,
@@ -490,12 +515,30 @@ export default async function runMigration(ctx: RolloutRunContext) {
     "SELECT encode(key_id, 'hex') FROM keys ORDER BY sequence_number DESC LIMIT 1;",
   );
   const keyId = BigInt(`0x${keyIdHex}`).toString();
+  const legacyKmsDigests = await kmsPublicMaterialDigests("ServerKey", keyIdHex);
   const migrationRequestBoundary = await currentHostBlock();
   await ctx.runHostContractTask(
     `npx hardhat task:triggerKeygen --params-type 0 --existing-key-id ${keyId} --use-internal-proxy-address true`,
   );
 
-  logPhase("06 wait until every Blue operator has applied identical material");
+  logPhase("06 wait until KMS and every Blue operator expose identical material");
+  await waitUntil(
+    "every KMS operator serves both representations under the original key ID",
+    async () => {
+      try {
+        const [legacy, compressed] = await Promise.all([
+          kmsPublicMaterialDigests("ServerKey", keyIdHex),
+          kmsPublicMaterialDigests("CompressedXofKeySet", keyIdHex),
+        ]);
+        return (
+          legacy.every((digest, index) => digest === legacyKmsDigests[index]) &&
+          new Set(compressed).size === 1
+        );
+      } catch {
+        return false;
+      }
+    },
+  );
   let materialRows: OperatorMaterial[] = [];
   await waitUntil("all operators applied identical compressed material", async () => {
     const rows = await Promise.all(
