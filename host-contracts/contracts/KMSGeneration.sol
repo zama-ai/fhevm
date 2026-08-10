@@ -330,70 +330,66 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     /**
      * @notice See {IKMSGeneration-keygenResponse}.
      */
-    function keygenResponse(
-        uint256 requestId,
-        KeyDigest[] calldata keyDigests,
-        bytes calldata signature
-    ) external virtual {
+    function keygenResponse(uint256 keyId, KeyDigest[] calldata keyDigests, bytes calldata signature) external virtual {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
-        // Make sure the requestId corresponds to a generated keygen request.
-        if (requestId > $.keyCounter || requestId <= KEY_COUNTER_BASE) {
-            revert KeygenNotRequested(requestId);
+        // Make sure the keyId corresponds to a generated keygen request.
+        if (keyId > $.keyCounter || keyId <= KEY_COUNTER_BASE) {
+            revert KeygenNotRequested(keyId);
         }
 
         // Make sure the keygen response contains at least one key digest as keygen flow will always
         // generate at least one key
         if (keyDigests.length == 0) {
-            revert EmptyKeyDigests(requestId);
+            revert EmptyKeyDigests(keyId);
         }
 
-        uint256 migrationKeyId = $.existingKeyIdByRequestId[requestId];
+        uint256 migrationKeyId = $.existingKeyIdByRequestId[keyId];
         if (migrationKeyId != 0) {
-            _checkCompressedKeySetDigest(requestId, keyDigests);
+            _checkCompressedKeySetDigest(keyId, keyDigests);
         }
 
-        (bytes memory extraData, uint256 contextId) = _loadExtraDataAndAuthorizeResponse(requestId);
+        (bytes memory extraData, uint256 contextId) = _loadExtraDataAndAuthorizeResponse(keyId);
 
-        uint256 prepKeygenId = $.keygenIdPairs[requestId];
+        uint256 prepKeygenId = $.keygenIdPairs[keyId];
         if (!$.isRequestDone[prepKeygenId]) {
             revert KeyManagementRequestPending();
         }
 
         // Compute the digest of the KeygenVerification struct.
-        bytes32 digest = _hashKeygenVerification(prepKeygenId, requestId, keyDigests, extraData);
+        bytes32 digest = _hashKeygenVerification(prepKeygenId, keyId, keyDigests, extraData);
 
         // Recover the signer address from the signature and check that it is a KMS node.
         address kmsSigner = _validateEIP712Signature(contextId, digest, signature);
 
         // Check that the signer has not already signed for this key generation response
-        if ($.kmsHasSignedForResponse[requestId][kmsSigner]) {
-            revert KmsAlreadySignedForKeygen(requestId, kmsSigner);
+        if ($.kmsHasSignedForResponse[keyId][kmsSigner]) {
+            revert KmsAlreadySignedForKeygen(keyId, kmsSigner);
         }
 
-        $.kmsHasSignedForResponse[requestId][kmsSigner] = true;
+        $.kmsHasSignedForResponse[keyId][kmsSigner] = true;
 
         // Store the KMS transaction sender address for the keygen response
         // A "late" valid KMS transaction sender address or storage URL will still be added in the list
-        address[] storage consensusTxSenders = $.consensusTxSenderAddresses[requestId][digest];
+        address[] storage consensusTxSenders = $.consensusTxSenderAddresses[keyId][digest];
         consensusTxSenders.push(msg.sender);
 
         // Emit the event at each call for monitoring purposes.
-        emit KeygenResponse(requestId, keyDigests, signature, msg.sender);
+        emit KeygenResponse(keyId, keyDigests, signature, msg.sender);
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
-        if (!$.isRequestDone[requestId] && _isKmsConsensusReachedForContext(contextId, consensusTxSenders.length)) {
-            $.isRequestDone[requestId] = true;
+        if (!$.isRequestDone[keyId] && _isKmsConsensusReachedForContext(contextId, consensusTxSenders.length)) {
+            $.isRequestDone[keyId] = true;
 
             // Store the digest on which consensus was reached for the keygen request
-            $.consensusDigest[requestId] = digest;
+            $.consensusDigest[keyId] = digest;
 
             string[] memory consensusUrls = _buildConsensusStorageUrls(contextId, consensusTxSenders);
             if (migrationKeyId == 0) {
-                _recordKeygenConsensus(requestId, keyDigests, consensusUrls);
+                _recordKeygenConsensus(keyId, keyDigests, consensusUrls);
             } else {
-                _recordCompressedKeyConsensus(migrationKeyId, requestId, keyDigests, consensusUrls);
+                _recordCompressedKeyConsensus(migrationKeyId, keyId, keyDigests, consensusUrls);
             }
         }
     }
