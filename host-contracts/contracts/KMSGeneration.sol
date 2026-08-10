@@ -386,48 +386,27 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
             $.consensusDigest[keyId] = digest;
 
             string[] memory consensusUrls = _buildConsensusStorageUrls(contextId, consensusTxSenders);
-            if (migrationKeyId == 0) {
-                _recordKeygenConsensus(keyId, keyDigests, consensusUrls);
-            } else {
-                _recordCompressedKeyConsensus(migrationKeyId, keyId, keyDigests, consensusUrls);
-            }
+            _recordKeygenConsensus(keyId, migrationKeyId, keyDigests, consensusUrls);
         }
     }
 
-    /**
-     * @notice Records compressed material for an existing key without changing the active key.
-     */
-    function _recordCompressedKeyConsensus(
-        uint256 keyId,
-        uint256 keyMaterialId,
-        KeyDigest[] calldata keyDigests,
-        string[] memory consensusUrls
-    ) internal virtual {
-        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
-        for (uint256 i = 0; i < keyDigests.length; i++) {
-            $.keyDigests[keyMaterialId].push(keyDigests[i]);
-        }
-        emit ActivateKey(keyMaterialId, keyId, consensusUrls, keyDigests);
-    }
-
-    /**
-     * @notice Records the outcome of a fresh keygen consensus.
-     */
     function _recordKeygenConsensus(
         uint256 keyId,
+        uint256 existingKeyId,
         KeyDigest[] calldata keyDigests,
         string[] memory consensusUrls
     ) internal virtual {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
         // Copy each calldata struct to storage, as copying calldata array of structs
-        // to storage is not yet supported. We do not need to clean
-        // `$.keyDigests[keyId]` first as this should only happen once per keyId.
+        // to storage is not yet supported. This only happens once per keyId.
         for (uint256 i = 0; i < keyDigests.length; i++) {
             $.keyDigests[keyId].push(keyDigests[i]);
         }
-        $.activeKeyId = keyId;
-        $.completedKeyIds.push(keyId);
-        emit ActivateKey(keyId, 0, consensusUrls, keyDigests);
+        if (existingKeyId == 0) {
+            $.activeKeyId = keyId;
+            $.completedKeyIds.push(keyId);
+        }
+        emit ActivateKey(keyId, existingKeyId, consensusUrls, keyDigests);
     }
 
     /**
