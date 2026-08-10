@@ -333,7 +333,7 @@ pub(crate) async fn count_failed_old_format_handles(pool: &PgPool) -> Result<i64
     Ok(count)
 }
 
-async fn fetch_old_format_handles(
+pub(crate) async fn fetch_old_format_handles(
     config: &S3MigrationConfig,
     pool: &PgPool,
     focus_on_retry: bool,
@@ -362,6 +362,7 @@ async fn fetch_old_format_handles(
            )
          ORDER BY s3_migration_failure_count, handle
          LIMIT $4
+         FOR UPDATE SKIP LOCKED
         "#,
         CLEAN_OLD_S3_FORMAT_VERSION,
         focus_on_retry,
@@ -437,12 +438,13 @@ async fn record_migration_failure(
     Ok(())
 }
 
-async fn migrate_handle_0_to_1(
+pub(crate) async fn migrate_handle_0_to_1(
     config: &S3MigrationConfig,
     pool: &PgPool,
     client: &Client,
     handle: &[u8],
 ) -> Result<bool, ExecutionError> {
+    let mut transaction = pool.begin().await?;
     let row = sqlx::query!(
         r#"
         SELECT handle,
@@ -455,14 +457,16 @@ async fn migrate_handle_0_to_1(
          WHERE handle = $1
            AND s3_format_version = $2
            AND (ciphertext IS NOT NULL OR ciphertext128 IS NOT NULL)
+         FOR UPDATE SKIP LOCKED
         "#,
         handle,
         CLEAN_OLD_S3_FORMAT_VERSION,
     )
-    .fetch_optional(pool)
+    .fetch_optional(&mut *transaction)
     .await?;
 
     let Some(row) = row else {
+        transaction.commit().await?;
         return Ok(false);
     };
 
@@ -504,10 +508,11 @@ async fn migrate_handle_0_to_1(
         material.row_ct64_digest.as_deref(),
         material.row_ct128_digest.as_deref(),
     )
-    .execute(pool)
+    .execute(&mut *transaction)
     .await?;
 
     if update_result.rows_affected() == 0 {
+        transaction.commit().await?;
         info!(
             handle = to_hex(&material.handle),
             "Ciphertext handle was already migrated or changed while S3 migration was running"
@@ -522,6 +527,8 @@ async fn migrate_handle_0_to_1(
             update_result.rows_affected()
         )));
     }
+
+    transaction.commit().await?;
 
     info!(
         handle = to_hex(&material.handle),
