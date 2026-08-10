@@ -57,9 +57,9 @@ DEMO_PROGRAMS = {
 }
 
 # Specimen consumer programs that exist for the test framework: nothing off-chain
-# mirrors their layouts either, so like the demo programs they are IDL-only, but their
-# vendored copies live inside the program directory because their consumer is the test
-# suite, not the demo dapp.
+# mirrors their layouts either, so like the demo programs they are IDL-only. The
+# vendored copy lives inside the program directory so the specimen stays
+# self-contained for anyone copying it as a starting point.
 SPECIMEN_PROGRAMS = {
     "encrypted_counter": {
         "target_idl": "target/idl/encrypted_counter.json",

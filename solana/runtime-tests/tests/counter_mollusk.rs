@@ -10,13 +10,13 @@ use zama_host as host;
 use zama_solana_test_kit as kit;
 use zama_solana_test_kit::oracle::CleartextLedger;
 use zama_solana_test_kit::{
-    anchor_ix, ensure_system_accounts, event_authority, host_config_account, system_account,
-    HostConfigParams,
+    anchor_error_check, anchor_ix, ensure_system_accounts, event_authority, host_config_account,
+    system_account, HostConfigParams,
 };
 
 #[test]
 fn counter_initializes_to_zero_and_adds_increments() {
-    // The fixture: everything standing this consumer up against a real zama-host costs.
+    // The fixture: what it costs to stand this consumer up against a real zama-host.
     let owner = Pubkey::new_unique();
     let counter = counter::counter_address(owner).0;
     let counter_authority = counter::counter_authority_address(counter).0;
@@ -25,8 +25,6 @@ fn counter_initializes_to_zero_and_adds_increments() {
     let mut mollusk = kit::svm(&counter::id(), "encrypted_counter");
     mollusk.add_program(&host::id(), "zama_host");
     kit::set_previous_bank_hash_sysvars(&mut mollusk);
-    // App CPI plus the host execution; real transactions request the same higher limit.
-    mollusk.compute_budget.compute_unit_limit = 1_400_000;
     let context = mollusk.with_context(HashMap::from([
         (owner, system_account(50_000_000_000)),
         (host_config, host_config_data),
@@ -35,20 +33,22 @@ fn counter_initializes_to_zero_and_adds_increments() {
     ensure_system_accounts(&context, &[counter, counter_authority, count_value]);
     let mut ledger = CleartextLedger::default();
 
-    let initialize = anchor_ix(
-        counter::id(),
-        counter::accounts::Initialize {
-            owner,
-            counter,
-            counter_authority,
-            count_value,
-            host_config,
-            zama_event_authority: event_authority(host::id()),
-            zama_program: host::id(),
-            system_program: anchor_lang::system_program::ID,
-        },
-        counter::instruction::Initialize {},
-    );
+    let initialize = |count_value: Pubkey| {
+        anchor_ix(
+            counter::id(),
+            counter::accounts::Initialize {
+                owner,
+                counter,
+                counter_authority,
+                count_value,
+                host_config,
+                zama_event_authority: event_authority(host::id()),
+                zama_program: host::id(),
+                system_program: anchor_lang::system_program::ID,
+            },
+            counter::instruction::Initialize {},
+        )
+    };
     let increment = |amount: u64| {
         anchor_ix(
             counter::id(),
@@ -75,7 +75,17 @@ fn counter_initializes_to_zero_and_adds_increments() {
         assert_eq!(ledger.u64_at(&context, count_value), expected);
     };
 
-    assert_count(&mut ledger, &initialize, 0);
+    // A mis-derived encrypted value account is rejected before any CPI runs.
+    let bogus_count_value = Pubkey::new_unique();
+    ensure_system_accounts(&context, &[bogus_count_value]);
+    context.process_and_validate_instruction(
+        &initialize(bogus_count_value),
+        &[anchor_error_check(
+            counter::CounterError::CountValueInvalid as u32,
+        )],
+    );
+
+    assert_count(&mut ledger, &initialize(count_value), 0);
     assert_count(&mut ledger, &increment(5), 5);
     assert_count(&mut ledger, &increment(37), 42);
 }

@@ -386,7 +386,8 @@ jobs:
                 {label: "zama-host", paths: ["/programs/zama-host/"]},
                 {label: "confidential-token", paths: ["/programs/confidential-token/"]},
                 {label: "confidential-batcher", paths: ["/programs/confidential-batcher/"]},
-                {label: "demo-vault", paths: ["/programs/demo-vault/"]}
+                {label: "demo-vault", paths: ["/programs/demo-vault/"]},
+                {label: "encrypted-counter", paths: ["/programs/encrypted-counter/"]}
               ];
               def line_parts($report; $paths):
                 [$report.data[0].files[]

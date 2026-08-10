@@ -86,6 +86,10 @@
         },
         {
           "name": "count_value",
+          "docs": [
+            "Stable count encrypted value account; read for the current handle and replaced by this",
+            "execution."
+          ],
           "writable": true
         },
         {
@@ -240,19 +244,119 @@
   "types": [
     {
       "name": "Counter",
+      "docs": [
+        "One owner's counter. The owner is bound by the PDA seeds; the stored bumps let instructions",
+        "skip the bump search."
+      ],
       "type": {
         "kind": "struct",
         "fields": [
           {
-            "name": "owner",
-            "type": "pubkey"
-          },
-          {
-            "name": "count_value",
-            "type": "pubkey"
+            "name": "bump",
+            "type": "u8"
           },
           {
             "name": "authority_bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EncryptedValue",
+      "docs": [
+        "Canonical ACL + history state for one encrypted value account.",
+        "",
+        "PDA: `[ENCRYPTED_VALUE_SEED, encrypted_value_id]` where `encrypted_value_id =",
+        "zama_solana_acl::derive_encrypted_value_id(domain, encrypted_value_account_authority, label)`.",
+        "The account name must stay exactly `EncryptedValue` — Anchor derives the",
+        "discriminator from the type name, and it must match",
+        "`zama_solana_acl::encrypted_value_discriminator()`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "domain",
+            "docs": [
+              "App-level ACL domain, such as a confidential token mint."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "encrypted_value_account_authority",
+            "docs": [
+              "The account that controls this encrypted value: it must sign to create it, update its",
+              "handle, or replace its subject list — including out-of-band `allow_subjects` /",
+              "`remove_subject` (decrypt subjects are not co-admins). Enforced by address rather than by",
+              "comparing this field — the signer must equal the authority declared in the execution",
+              "(`assert_output_acl_metadata`) and the account written to must be the PDA rederived from",
+              "that declared triple, which is what ties the signer to the stored value on update. For a",
+              "token balance this is the token account itself."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "label",
+            "docs": [
+              "The encrypted value label: the third component of the encrypted value ID, naming which",
+              "encrypted value of the authority this is."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "current_handle",
+            "docs": [
+              "Current encrypted value identifier (the live handle)."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "subjects",
+            "docs": [
+              "Current persistent subjects. Membership grants decrypt/compute; subject-list mutation",
+              "requires `encrypted_value_account_authority` (INVARIANT #11)."
+            ],
+            "type": {
+              "vec": "pubkey"
+            }
+          },
+          {
+            "name": "leaf_count",
+            "docs": [
+              "Number of MMR leaves appended; `0` means no history."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "peaks",
+            "docs": [
+              "MMR peaks, oldest mountain first (`popcount(leaf_count)` entries)."
+            ],
+            "type": {
+              "vec": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            }
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump."
+            ],
             "type": "u8"
           }
         ]

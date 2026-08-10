@@ -98,12 +98,16 @@ programs/confidential-batcher   App program (DD-042): aggregates encrypted depos
                                 reveals only the KMS-certified batch total to the demo vault, pays
                                 each user an encrypted proportional cut.
 programs/demo-vault             Minimal public share-mint vault the batcher fronts; plain SPL.
+programs/encrypted-counter      Specimen app program: the smallest complete zama-host consumer,
+                                written to be copied as the starting point for a new app.
 crates/zama-fhe                 Program-facing SDK: typed execution builder (`FheExecution`), `Encrypted<T>`, account
                                 resolution for fhe_execute.
 crates/zama-solana-acl          The shared ACL crate: account layout, decode, MMR verification,
                                 authorization functions. Compiled into the program AND the KMS
                                 connector, so both sides run identical code.
 crates/solana-ed25519-instruction  Ed25519 instruction-sysvar helpers.
+test-kit                        The fixture library every Rust test imports: Mollusk boot,
+                                account fixtures, mock KMS signing, the cleartext oracle.
 runtime-tests                   Fast evaluator contracts plus real-SBF Mollusk suites
                                 (docs/TESTING.md explains what each layer proves).
 demo-dapp                       The confidential vault demo frontend.
