@@ -44,6 +44,14 @@ The fhevm Gateway has a single KMS, which must be constituted of at least 1 node
 
 Currently, they are set at deployment and it is currently _not_ possible to add or remove a KMS node to the fhevm Gateway later on.
 
+### KMS Context
+
+A **KMS context** groups a set of KMS nodes with their associated FHE key material under a monotonically-increasing numeric identifier (`kmsContextId`). The context ID is stored in `GatewayConfig` and emitted in on-chain events so that all protocol participants can unambiguously identify which key generation round a given decryption belongs to.
+
+> ⚠️ **Breaking change in v0.12.0**: The `UpdateKmsNodes` event has been renamed to `UpdateKmsContext` and now carries an indexed `newContextId` field. The `InitializeGatewayConfig` event also gains an indexed `kmsContextId` field. Any off-chain indexer or listener that filters on these events must be updated.
+
+The initial context ID is set via the `KMS_CONTEXT_ID` environment variable at deployment (see [Environment variables](../deployment/env_variables.md#kms-context-id)). Context IDs must be strictly increasing; attempting to register a context with an ID ≤ the current one reverts with `KmsContextAlreadyRegistered`. A null (zero) context ID always reverts with `InvalidNullKmsContextId`.
+
 ### KMS thresholds
 
 #### MPC threshold
