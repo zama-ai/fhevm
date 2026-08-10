@@ -14,10 +14,10 @@
 //        proof-service inclusion proof + KMS certificate through the SDK public-decrypt action).
 //   [user-decrypt] pure-SDK cleartext == VALUE -> `runSolanaCurrentUserDecrypt` (ML-KEM keygen,
 //        v3 ed25519 request, in-SDK de-signcryption) with UD_EXPECTED = VALUE.
-//   [historical-user-decrypt] H_OLD2 == H_OLD and aclValueKey unchanged across rotation
-//     -> typed equality: the rotated value account keeps its encrypted value id, and the decrypt
-//        targets the ORIGINAL handle object (no stdout re-extraction to disagree with itself);
-//        the scenario asserts the rotation really produced a different current handle.
+//   [historical-user-decrypt] H_OLD2 == H_OLD and aclValueKey unchanged across the update
+//     -> typed equality: the updated encrypted value account keeps its encrypted value id, and the
+//        decrypt targets the ORIGINAL handle object (no stdout re-extraction to disagree with
+//        itself); the scenario asserts the update really produced a different current handle.
 //   [historical-user-decrypt] old-handle decrypt == old cleartext -> `historicalUserDecryptExpect`
 //        with the proof-service access proof (leaf resolved by the service, `verified: true` gated).
 //   [input-flow] decrypt(VerifiedInput(V) + ADD) == V + ADD -> in-process SDK input proof ->
@@ -93,7 +93,7 @@ describe("solana fhe_execute decrypt vertical", () => {
         value: 42n,
         label: paddedLabel("vertical-trivial"),
       });
-      const cleartext = await releaseAndExpect(context, config, stack, {
+      const { cleartext } = await releaseAndExpect(context, config, stack, {
         payer: wallet.signer,
         result,
         expect: 42n,
@@ -118,20 +118,20 @@ describe("solana fhe_execute decrypt vertical", () => {
   );
 
   test(
-    "historical decrypt: rotate the value, then user-decrypt the OLD handle via a live MMR access proof",
+    "historical decrypt: update the value, then user-decrypt the OLD handle via a live MMR access proof",
     async () => {
       const { stack, context, wallet, config, secretKey, walletHex } = await verticalSetup();
       const label = paddedLabel("vertical-historical");
 
       const original = await trivialEncryptPersistent(context, { payer: wallet.signer, value: 42n, label });
-      // The old handle must be SNS-committed before the rotation buries it.
+      // The old handle must be SNS-committed before the update buries it.
       await stack.waitForSnsCommit(hex(original.handle));
 
-      const rotated = await trivialEncryptPersistent(context, { payer: wallet.signer, value: 7n, label });
-      // The rotation really replaced the current handle, and the value account kept its identity
-      // (the bash asserted `aclValueKey` stable across the update).
-      expect(hex(rotated.handle)).not.toBe(hex(original.handle));
-      expect(hex(rotated.target.encryptedValueId)).toBe(hex(original.target.encryptedValueId));
+      const updated = await trivialEncryptPersistent(context, { payer: wallet.signer, value: 7n, label });
+      // The update really replaced the current handle, and the encrypted value account kept its
+      // identity (the bash asserted `aclValueKey` stable across the update).
+      expect(hex(updated.handle)).not.toBe(hex(original.handle));
+      expect(hex(updated.target.encryptedValueId)).toBe(hex(original.target.encryptedValueId));
 
       const proof = await fetchHistoricalAccessProof(config, {
         encryptedValue: original.target.encryptedValue,
@@ -228,7 +228,7 @@ describe("solana fhe_execute decrypt vertical", () => {
       });
 
       const handle = await currentHandle(context, target.encryptedValue);
-      const cleartext = await releaseAndExpect(context, config, stack, {
+      const { cleartext } = await releaseAndExpect(context, config, stack, {
         payer: wallet.signer,
         result: { target, handle },
         expect: INPUT_VALUE + ADDEND,

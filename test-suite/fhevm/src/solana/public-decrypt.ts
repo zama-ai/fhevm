@@ -15,11 +15,13 @@ type PublicDecryptRequest = {
   leafCount: bigint;
   mmrProofBytes: Uint8Array;
 };
-type PublicDecryptClaim = {
+export type PublicDecryptClaim = {
   handle: string;
   abiEncodedCleartext: string;
   signatures: readonly string[];
   extraData: string;
+  /** The MMR public-leaf inclusion proof the certificate pinned — what on-chain consume steps re-verify. */
+  inclusionProof: { leafIndex: bigint; siblings: readonly Uint8Array[] };
 };
 type PublicDecryptSdkInput = {
   chainId: bigint;

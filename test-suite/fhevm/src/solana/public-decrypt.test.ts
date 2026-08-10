@@ -19,6 +19,7 @@ const claim = {
   abiEncodedCleartext: '000000000000002a',
   signatures: ['ab'.repeat(65)],
   extraData: '0x03',
+  inclusionProof: { leafIndex: 0n, siblings: [] },
 };
 
 describe('solana-public-decrypt', () => {

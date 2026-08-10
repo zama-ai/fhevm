@@ -22,7 +22,7 @@ import {
   sendFheExecute,
   type PersistentValueTarget,
 } from "./fhe-execute";
-import { runSolanaPublicDecrypt } from "./public-decrypt";
+import { runSolanaPublicDecrypt, type PublicDecryptClaim } from "./public-decrypt";
 import type { SolanaProvisioningContext } from "./provision";
 
 type VaultModule = typeof import("@demo-dapp/vault/index.js");
@@ -74,7 +74,7 @@ export const currentHandle = async (
 
 /**
  * One single-step `fhe_execute` TrivialEncrypt bound to a persistent scenario-owned value
- * (create or rotate — `persistentOutput` reads the previous state). The wallet is domain,
+ * (create or update — `persistentOutput` reads the previous state). The wallet is domain,
  * account authority, and sole ACL subject, mirroring the live-client's wallet-driven phases.
  */
 export const trivialEncryptPersistent = async (
@@ -109,11 +109,18 @@ export const trivialEncryptPersistent = async (
   return { target, handle: await currentHandle(context, target.encryptedValue) };
 };
 
+/** A proven public decrypt: the interpreted cleartext plus the raw KMS certificate claim. */
+export type PublicDecryptOutcome = {
+  readonly cleartext: bigint;
+  /** The full certificate claim — what on-chain consume steps (redeem/disclose) verify. */
+  readonly claim: PublicDecryptClaim;
+};
+
 /**
  * Proves `handle` decrypts publicly to the expected cleartext: live peaks/leaf-count from the
  * on-chain value, the inclusion proof from solana-proof-service (leaf resolved by the service,
  * cross-checked against the on-chain leaf count), then the KMS certificate through the SDK's
- * public-decrypt action. Returns the decrypted cleartext.
+ * public-decrypt action. Returns the cleartext together with the certificate claim.
  */
 export const publicDecryptExpect = async (
   context: SolanaProvisioningContext,
@@ -126,7 +133,7 @@ export const publicDecryptExpect = async (
     readonly expectedLeafCount?: bigint;
     readonly expectedLeafIndex?: bigint;
   },
-): Promise<bigint> => {
+): Promise<PublicDecryptOutcome> => {
   const vault = await vaultModule();
   const state = await vault.getEncryptedValueState(context.rpc, params.target.encryptedValue, {
     commitment: "confirmed",
@@ -166,7 +173,7 @@ export const publicDecryptExpect = async (
   } else if (cleartext >= params.expect.lessThan) {
     throw new Error(`public-decrypt cleartext ${cleartext} not < ${params.expect.lessThan}`);
   }
-  return cleartext;
+  return { cleartext, claim };
 };
 
 /**
@@ -183,7 +190,7 @@ export const releaseAndExpect = async (
     readonly result: PersistentHandle;
     readonly expect: bigint | { readonly lessThan: bigint };
   },
-): Promise<bigint> => {
+): Promise<PublicDecryptOutcome> => {
   await allowForPublicDecryption(context, {
     payer: params.payer,
     encryptedValue: params.result.target.encryptedValue,
@@ -253,7 +260,7 @@ export const fetchHistoricalAccessProof = async (
 };
 
 /**
- * Runs the pure-SDK HISTORICAL user-decrypt of an old (rotated-away) handle through the existing
+ * Runs the pure-SDK HISTORICAL user-decrypt of an old (updated-away) handle through the existing
  * worker (`solana-userdecrypt-historical.ts`): ML-KEM keygen, the v3 ed25519 request with the
  * historical MMR proof, and in-SDK de-signcryption. The worker asserts the cleartext equals
  * `expected` and exits non-zero otherwise.

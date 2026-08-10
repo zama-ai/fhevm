@@ -104,16 +104,18 @@ const runOperatorStep = async (
 };
 
 /** The release tail every row shares: allow + seal, SNS commit wait, public-decrypt comparison. */
-const decryptRow = (
+const decryptRow = async (
   setup: VerticalTestSetup,
   result: PersistentHandle,
   expected: bigint | { readonly lessThan: bigint },
-): Promise<bigint> =>
-  releaseAndExpect(setup.context, setup.config, setup.stack, {
+): Promise<bigint> => {
+  const outcome = await releaseAndExpect(setup.context, setup.config, setup.stack, {
     payer: setup.wallet.signer,
     result,
     expect: expected,
   });
+  return outcome.cleartext;
+};
 
 describe("solana fhe_execute operator wiring", () => {
   test(
