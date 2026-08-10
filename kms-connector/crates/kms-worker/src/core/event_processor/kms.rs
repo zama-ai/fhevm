@@ -134,7 +134,7 @@ fn keyset_added_info(existing_key_id: U256) -> Option<KeySetAddedInfo> {
         to_keyset_id_decompression_only: None,
         existing_keyset_id: Some(u256_to_request_id(existing_key_id)),
         use_existing_key_tag: true,
-        copy_compressed_key_to_original: false,
+        copy_compressed_key_to_original: true,
     })
 }
 
@@ -171,7 +171,7 @@ mod tests {
             to_keyset_id_decompression_only: None,
             existing_keyset_id: Some(u256_to_request_id(existing_key_id)),
             use_existing_key_tag: true,
-            copy_compressed_key_to_original: false,
+            copy_compressed_key_to_original: true,
         });
 
         let KmsGrpcRequest::PrepKeygen(prep_request) = processor
