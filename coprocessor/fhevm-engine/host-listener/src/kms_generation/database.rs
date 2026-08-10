@@ -32,7 +32,6 @@ pub(crate) struct PendingCompressedKeyMaterial {
     pub block_number: i64,
     pub transaction_hash: Option<Vec<u8>>,
     pub key_id: Vec<u8>,
-    pub key_material_id: Vec<u8>,
     pub key_digest: Vec<u8>,
     pub storage_urls: Vec<String>,
 }
@@ -604,7 +603,7 @@ pub(crate) async fn all_pending_compressed_key_materials_to_download(
     Ok(sqlx::query_as::<_, PendingCompressedKeyMaterial>(
         r#"
         SELECT e.chain_id, e.block_hash, e.block_number, e.transaction_hash,
-               e.key_id, e.key_material_id, e.key_digest_server AS key_digest, e.storage_urls
+               e.key_id, e.key_digest_server AS key_digest, e.storage_urls
         FROM kms_key_activation_events AS e
         INNER JOIN host_chain_blocks_valid AS b
           ON e.chain_id = b.chain_id AND e.block_hash = b.block_hash
@@ -1016,7 +1015,6 @@ mod tests {
             all_pending_compressed_key_materials_to_download(&mut tx).await?;
         assert_eq!(migration.len(), 1);
         assert_eq!(migration[0].key_id, key_id);
-        assert_eq!(migration[0].key_material_id, key_material_id);
         set_ready_compressed_key_material(&mut tx, &migration[0], &compressed)
             .await?;
         tx.commit().await?;
