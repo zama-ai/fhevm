@@ -12,6 +12,6 @@ pub use context::{ContextManager, DbContextManager};
 pub use decryption::DecryptionProcessor;
 pub use error::{ProcessingError, RequestCheckError, RequestCheckKind};
 pub use kms::KMSGenerationProcessor;
-pub use kms_client::KmsClient;
+pub use kms_client::{KmsClient, KmsPollTarget};
 pub use processor::{DbEventProcessor, EventProcessor};
 pub use protocol_config::{ProtocolConfigProcessor, compute_anchor_event_hash};
