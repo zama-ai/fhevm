@@ -25,26 +25,19 @@ contract KMSGenerationMock {
 
     event KeygenRequest(uint256 prepKeygenId, uint256 requestId, uint256 existingKeyId, bytes extraData);
 
-    event KeygenResponse(uint256 keyId, KeyDigest[] keyDigests, bytes signature, address kmsTxSender);
+    event KeygenResponse(uint256 requestId, KeyDigest[] keyDigests, bytes signature, address kmsTxSender);
 
     event ActivateKey(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
 
-    event CompressedKeyMaterialAdded(
-        uint256 indexed keyId,
-        uint256 indexed keyMaterialId,
-        string[] kmsNodeStorageUrls,
-        KeyDigest[] keyDigests
-    );
-
     event CrsgenRequest(uint256 crsId, uint256 maxBitLength, ParamsType paramsType, bytes extraData);
-
-    event AbortKeygen(uint256 prepKeygenId);
-
-    event AbortCrsgen(uint256 crsId);
 
     event CrsgenResponse(uint256 crsId, bytes crsDigest, bytes signature, address kmsTxSender);
 
     event ActivateCrs(uint256 crsId, string[] kmsNodeStorageUrls, bytes crsDigest);
+
+    event AbortKeygen(uint256 prepKeygenId);
+
+    event AbortCrsgen(uint256 crsId);
 
     uint256 prepKeygenCounter = 3 << 248;
     uint256 keyCounter = 4 << 248;
@@ -61,7 +54,6 @@ contract KMSGenerationMock {
         existingKeyIdByRequestId[requestId] = existingKeyId;
 
         emit PrepKeygenRequest(prepKeygenId, paramsType, existingKeyId, "");
-        emit KeygenRequest(prepKeygenId, requestId, existingKeyId, "");
     }
 
     function prepKeygenResponse(uint256 prepKeygenId, bytes calldata signature) external {
@@ -77,16 +69,13 @@ contract KMSGenerationMock {
         emit KeygenRequest(prepKeygenId, requestId, existingKeyIdByRequestId[requestId], "");
     }
 
-    function keygenResponse(uint256 keyId, KeyDigest[] calldata keyDigests, bytes calldata signature) external {
+    function keygenResponse(uint256 requestId, KeyDigest[] calldata keyDigests, bytes calldata signature) external {
         address kmsTxSender;
         string[] memory kmsNodeStorageUrls = new string[](1);
 
-        emit KeygenResponse(keyId, keyDigests, signature, kmsTxSender);
-        uint256 migrationKeyId = existingKeyIdByRequestId[keyId];
-        if (migrationKeyId == 0) {
-            emit ActivateKey(keyId, kmsNodeStorageUrls, keyDigests);
-        } else {
-            emit CompressedKeyMaterialAdded(migrationKeyId, keyId, kmsNodeStorageUrls, keyDigests);
+        emit KeygenResponse(requestId, keyDigests, signature, kmsTxSender);
+        if (existingKeyIdByRequestId[requestId] == 0) {
+            emit ActivateKey(requestId, kmsNodeStorageUrls, keyDigests);
         }
     }
 

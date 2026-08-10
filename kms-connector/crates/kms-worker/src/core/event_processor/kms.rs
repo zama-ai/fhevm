@@ -45,7 +45,7 @@ impl KMSGenerationProcessor {
             epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
             context_id: parsed_extra_data.context_id.map(u256_to_request_id),
             extra_data: prep_keygen_request.extraData.to_vec(),
-            keyset_config: Some(keyset_config(!prep_keygen_request.existingKeyId.is_zero())),
+            keyset_config: Some(keyset_config(prep_keygen_request.existingKeyId)),
         }))
     }
 
@@ -56,9 +56,7 @@ impl KMSGenerationProcessor {
         let parsed_extra_data =
             parse_extra_data(&keygen_request.extraData).map_err(ProcessingError::Irrecoverable)?;
 
-        let existing_key_id = (!keygen_request.existingKeyId.is_zero())
-            .then(|| u256_to_request_id(keygen_request.existingKeyId));
-        let is_migration = existing_key_id.is_some();
+        let existing_key_id = keygen_request.existingKeyId;
 
         Ok(KmsGrpcRequest::Keygen(KeyGenRequest {
             request_id: Some(u256_to_request_id(keygen_request.requestId)),
@@ -68,11 +66,11 @@ impl KMSGenerationProcessor {
             epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
             context_id: parsed_extra_data.context_id.map(u256_to_request_id),
             extra_data: keygen_request.extraData.to_vec(),
-            keyset_config: Some(keyset_config(is_migration)),
-            keyset_added_info: existing_key_id.map(|existing_keyset_id| KeySetAddedInfo {
+            keyset_config: Some(keyset_config(existing_key_id)),
+            keyset_added_info: (!existing_key_id.is_zero()).then(|| KeySetAddedInfo {
                 from_keyset_id_decompression_only: None,
                 to_keyset_id_decompression_only: None,
-                existing_keyset_id: Some(existing_keyset_id),
+                existing_keyset_id: Some(u256_to_request_id(existing_key_id)),
                 use_existing_key_tag: true,
                 copy_compressed_key_to_original: false,
             }),
@@ -127,10 +125,84 @@ const COMPRESSED_XOF_KEY_SET_CONFIG: KeySetConfig = KeySetConfig {
     }),
 };
 
-fn keyset_config(use_existing: bool) -> KeySetConfig {
-    if use_existing {
-        COMPRESSED_MIGRATION_KEY_SET_CONFIG
-    } else {
+fn keyset_config(existing_key_id: U256) -> KeySetConfig {
+    if existing_key_id.is_zero() {
         COMPRESSED_XOF_KEY_SET_CONFIG
+    } else {
+        COMPRESSED_MIGRATION_KEY_SET_CONFIG
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use connector_utils::types::extra_data::ExtraData;
+
+    struct MockContextManager;
+
+    impl ContextManager for MockContextManager {
+        async fn validate_context(&self, _extra_data: &ExtraData) -> Result<(), RequestCheckError> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn prepares_compressed_key_migration() {
+        let processor = KMSGenerationProcessor::new(&Config::default(), MockContextManager);
+        let prep_keygen_id = U256::from(7);
+        let request_id = U256::from(8);
+        let existing_key_id = U256::from(42);
+
+        let KmsGrpcRequest::PrepKeygen(prep_request) = processor
+            .prepare_prep_keygen_request(&PrepKeygenRequest {
+                prepKeygenId: prep_keygen_id,
+                paramsType: 0,
+                existingKeyId: existing_key_id,
+                extraData: Default::default(),
+            })
+            .await
+            .unwrap()
+        else {
+            panic!("expected preprocessing request");
+        };
+        assert_eq!(
+            prep_request.keyset_config,
+            Some(COMPRESSED_MIGRATION_KEY_SET_CONFIG)
+        );
+
+        let KmsGrpcRequest::Keygen(keygen_request) = processor
+            .prepare_keygen_request(&KeygenRequest {
+                prepKeygenId: prep_keygen_id,
+                requestId: request_id,
+                existingKeyId: existing_key_id,
+                extraData: Default::default(),
+            })
+            .await
+            .unwrap()
+        else {
+            panic!("expected key generation request");
+        };
+        assert_eq!(
+            keygen_request.request_id,
+            Some(u256_to_request_id(request_id))
+        );
+        assert_eq!(
+            keygen_request.preproc_id,
+            Some(u256_to_request_id(prep_keygen_id))
+        );
+        assert_eq!(
+            keygen_request.keyset_config,
+            Some(COMPRESSED_MIGRATION_KEY_SET_CONFIG)
+        );
+        assert_eq!(
+            keygen_request.keyset_added_info,
+            Some(KeySetAddedInfo {
+                from_keyset_id_decompression_only: None,
+                to_keyset_id_decompression_only: None,
+                existing_keyset_id: Some(u256_to_request_id(existing_key_id)),
+                use_existing_key_tag: true,
+                copy_compressed_key_to_original: false,
+            })
+        );
     }
 }
