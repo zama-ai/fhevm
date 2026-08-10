@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use alloy::signers::local::PrivateKeySigner;
+use aws_config::BehaviorVersion;
 use aws_sdk_s3::primitives::ByteStream;
 use ciphertext_attestation::{s3_ct128_key, s3_ct64_key};
 use fhevm_engine_common::types::CoproSigner;
@@ -14,7 +15,9 @@ use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    s3_migration::{run_startup_migrations, S3MigrationConfig},
+    s3_migration::{
+        fetch_old_format_handles, migrate_handle_0_to_1, run_startup_migrations, S3MigrationConfig,
+    },
     Ciphertext128Format, Config, S3MigrationMode, S3_FORMAT_VERSION_V0, S3_FORMAT_VERSION_V1,
 };
 
@@ -862,6 +865,210 @@ async fn run_direct_migration(env: &DirectMigrationEnv) -> Result<(), crate::Exe
     };
 
     run_startup_migrations(&config, &env.token, &env.pool, &env.s3_client).await
+}
+
+#[tokio::test]
+#[serial(db)]
+#[cfg(not(feature = "gpu"))]
+async fn test_migration_listing_and_handle_skip_locked_work() {
+    let db_instance = setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
+    let mut conf = build_test_config(db_instance.db_url.clone(), true);
+    conf.s3_migration = S3MigrationMode::BeforeAndQuit;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(conf.db.max_connections)
+        .acquire_timeout(conf.db.timeout)
+        .connect(conf.db.url.as_str())
+        .await
+        .expect("connect test db");
+    let signer: CoproSigner = Arc::new(PrivateKeySigner::random());
+    let sdk_config = aws_config::defaults(BehaviorVersion::latest())
+        .no_credentials()
+        .region(aws_sdk_s3::config::Region::new("us-east-1"))
+        .load()
+        .await;
+    let s3_client = aws_sdk_s3::Client::new(&sdk_config);
+
+    let handle = vec![0x42; 32];
+    let ct64_digest = vec![0x24; 32];
+    insert_legacy_ct64_digest_row(&pool, &handle, &ct64_digest).await;
+    let available_handle = vec![0x43; 32];
+    insert_legacy_ct64_digest_row(&pool, &available_handle, &ct64_digest).await;
+
+    let mut blocking_transaction = pool.begin().await.expect("begin blocking transaction");
+    sqlx::query(
+        r#"
+        SELECT handle
+          FROM ciphertext_digest
+         WHERE handle = $1
+         FOR UPDATE
+        "#,
+    )
+    .bind(&handle)
+    .fetch_one(&mut *blocking_transaction)
+    .await
+    .expect("lock legacy ciphertext handle");
+
+    let config = S3MigrationConfig {
+        batch_size: conf.s3_migration_max_concurrent_handles.into(),
+        signer,
+        s3: conf.s3.clone(),
+        mode: conf.s3_migration,
+        sleep_duration: conf.s3_migration_sleep_duration,
+        max_retries: conf.s3_migration_max_retries,
+    };
+    let listed_handles = fetch_old_format_handles(&config, &pool, false)
+        .await
+        .expect("list unlocked migration work");
+    assert_eq!(listed_handles, vec![available_handle]);
+
+    let migrated = timeout(
+        Duration::from_secs(1),
+        migrate_handle_0_to_1(&config, &pool, &s3_client, &handle),
+    )
+    .await
+    .expect("locked handle should be skipped without waiting")
+    .expect("lock contention is not a migration error");
+
+    assert!(!migrated);
+    blocking_transaction
+        .rollback()
+        .await
+        .expect("release blocking lock");
+}
+
+#[tokio::test]
+#[serial(db)]
+#[cfg(not(feature = "gpu"))]
+async fn test_two_migration_workers_share_initial_batch_then_diverge() {
+    const WORKER_BATCH_SIZE: u32 = 16;
+    const WORKER_COUNT: u32 = 2;
+    const BATCH_COUNT: u32 = 3;
+
+    let db_instance = setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
+    let mut conf = build_test_config(db_instance.db_url.clone(), true);
+    conf.s3_migration = S3MigrationMode::BeforeAndQuit;
+    conf.s3_migration_max_concurrent_handles = WORKER_BATCH_SIZE;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(WORKER_BATCH_SIZE * WORKER_COUNT + 2)
+        .acquire_timeout(conf.db.timeout)
+        .connect(conf.db.url.as_str())
+        .await
+        .expect("connect test db");
+
+    let ct64_digest = vec![0x24; 32];
+    for index in 0..WORKER_BATCH_SIZE * BATCH_COUNT {
+        let mut handle = vec![0_u8; 32];
+        handle[31] = index as u8;
+        insert_legacy_ct64_digest_row(&pool, &handle, &ct64_digest).await;
+    }
+
+    let config = S3MigrationConfig {
+        batch_size: WORKER_BATCH_SIZE.into(),
+        signer: Arc::new(PrivateKeySigner::random()),
+        s3: conf.s3.clone(),
+        mode: conf.s3_migration,
+        sleep_duration: conf.s3_migration_sleep_duration,
+        max_retries: conf.s3_migration_max_retries,
+    };
+
+    let worker_one_handles = fetch_old_format_handles(&config, &pool, false)
+        .await
+        .expect("list first worker batch");
+    assert_eq!(worker_one_handles.len(), WORKER_BATCH_SIZE as usize);
+
+    let worker_two_handles = fetch_old_format_handles(&config, &pool, false)
+        .await
+        .expect("list second worker batch");
+    assert_eq!(worker_two_handles, worker_one_handles);
+
+    let mut worker_one_completed = 0;
+    let mut worker_two_completed = 0;
+    for (index, handle) in worker_one_handles.iter().enumerate() {
+        // Alternate which worker reaches the per-handle lock first. The other
+        // worker must skip that handle instead of waiting or migrating it too.
+        let winning_transaction = try_lock_migration_handle(&pool, handle)
+            .await
+            .expect("first worker to a handle owns it");
+        assert!(try_lock_migration_handle(&pool, handle).await.is_none());
+
+        complete_locked_migration(winning_transaction, handle).await;
+        if index % WORKER_COUNT as usize == 0 {
+            worker_one_completed += 1;
+        } else {
+            worker_two_completed += 1;
+        }
+    }
+    assert_eq!(worker_one_completed, WORKER_BATCH_SIZE / WORKER_COUNT);
+    assert_eq!(worker_two_completed, WORKER_BATCH_SIZE / WORKER_COUNT);
+
+    let worker_one_next_handles = fetch_old_format_handles(&config, &pool, false)
+        .await
+        .expect("list first worker's next batch");
+    assert_eq!(worker_one_next_handles.len(), WORKER_BATCH_SIZE as usize);
+
+    let active_handle = &worker_one_next_handles[0];
+    let active_transaction = try_lock_migration_handle(&pool, active_handle)
+        .await
+        .expect("first worker owns its next in-progress handle");
+
+    let worker_two_next_handles = fetch_old_format_handles(&config, &pool, false)
+        .await
+        .expect("list second worker's next batch");
+    assert_eq!(worker_two_next_handles.len(), WORKER_BATCH_SIZE as usize);
+    assert!(!worker_two_next_handles.contains(active_handle));
+    assert_ne!(worker_two_next_handles, worker_one_next_handles);
+
+    active_transaction
+        .rollback()
+        .await
+        .expect("release in-progress worker lock");
+}
+
+async fn try_lock_migration_handle<'a>(
+    pool: &'a sqlx::PgPool,
+    handle: &[u8],
+) -> Option<sqlx::Transaction<'a, sqlx::Postgres>> {
+    let mut transaction = pool.begin().await.expect("begin worker transaction");
+    let locked_handle = sqlx::query_scalar::<_, Vec<u8>>(
+        r#"
+        SELECT handle
+          FROM ciphertext_digest
+         WHERE handle = $1
+         FOR UPDATE SKIP LOCKED
+        "#,
+    )
+    .bind(handle)
+    .fetch_optional(&mut *transaction)
+    .await
+    .expect("try to lock worker migration handle");
+
+    locked_handle.map(|_| transaction)
+}
+
+async fn complete_locked_migration(
+    mut transaction: sqlx::Transaction<'_, sqlx::Postgres>,
+    handle: &[u8],
+) {
+    sqlx::query(
+        r#"
+        UPDATE ciphertext_digest
+           SET s3_format_version = $1
+         WHERE handle = $2
+        "#,
+    )
+    .bind(S3_FORMAT_VERSION_V1)
+    .bind(handle)
+    .execute(&mut *transaction)
+    .await
+    .expect("complete owned migration handle");
+    transaction
+        .commit()
+        .await
+        .expect("commit owned migration handle");
 }
 
 async fn insert_legacy_ct64_digest_row(pool: &sqlx::PgPool, handle: &[u8], ct64_digest: &[u8]) {
