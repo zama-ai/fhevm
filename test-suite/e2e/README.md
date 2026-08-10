@@ -12,6 +12,31 @@ npx hardhat node
 npx hardhat ignition deploy ./ignition/modules/Lock.ts
 ```
 
+## Switching the `@fhevm/sdk` source
+
+`test-suite/e2e` depends on a registry-pinned version of `@fhevm/sdk` by
+default. To run tests against your local `sdk/js-sdk` source instead, build,
+pack, and install it in place (without touching `package.json`/
+`package-lock.json`):
+
+```shell
+cd test-suite/e2e
+npm run sdk:local
+```
+
+Set `SDK_BUILD_PROFILE=dev` before `npm run sdk:local` for a faster,
+unminified build while iterating. Re-run it after every change to
+`sdk/js-sdk` source — the install is a one-off pack, not a live link.
+
+To switch back to the pinned registry version (the one in `package.json`):
+
+```shell
+npm run sdk:registry
+```
+
+Both commands wrap `scripts/install-sdk.sh` (`local`/`registry` modes) — see
+its header comment for details.
+
 ## Unified user-decryption suites
 
 E2E coverage for ERC-1271 smart-account signature verification and the unified
