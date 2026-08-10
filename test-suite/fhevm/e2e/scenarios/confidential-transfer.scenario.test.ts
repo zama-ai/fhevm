@@ -16,8 +16,8 @@
 //     - Bob   final balance   == 400    (userDecrypt of Bob's rotated handle)
 // Every assertion is a live SDK current user-decrypt of a real on-chain balance — nothing is
 // hard-coded, so the phase cannot pass on a trivial value. Provisioning (confidential mint, wrap,
-// balance-state reads) still goes through the Rust live-client: those are SDK gaps (see the PR
-// report), not part of this phase's assertions.
+// balance-state reads) is fully typed too (`src/solana/provision.ts` over the demo dapp's vault
+// module) — no Rust live-client, no ambient Solana CLI identity.
 
 import { describe, test } from "bun:test";
 
@@ -26,7 +26,8 @@ import {
   runSolanaTwoHolderTransfer,
   solanaUserDecryptContext,
 } from "../../src/solana/two-holder-transfer";
-import { loadEnv, loadPersonas, until } from "../harness";
+import { loadEnv, loadPersonas } from "../harness";
+import { ensureUp } from "../harness/solana/stack";
 
 // A live stack takes minutes: SNS-commit waits alone poll up to ~2min per handle, times four.
 const SCENARIO_TIMEOUT_MS = 15 * 60_000;
@@ -38,20 +39,9 @@ describe("solana confidential-transfer scenario", () => {
       const env = loadEnv();
       const personas = await loadPersonas(env);
 
-      // Precondition (the suite may run right after a relayer/proof-service (re)start): gate on both
-      // health endpoints before submitting. The relayer exposes GET /liveness (relayer's own
-      // http/server.rs); a 200 means it is up.
-      await until(
-        async () => (await fetch(`${env.relayerUrl}/liveness`)).ok,
-        { description: "relayer liveness", timeoutMs: 60_000 },
-      );
-      await until(
-        async () => {
-          const body = await (await fetch(`${env.proofServiceUrl}/health/readiness`)).text();
-          return /"ready"\s*:\s*true/.test(body);
-        },
-        { description: "solana-proof-service readiness", timeoutMs: 120_000 },
-      );
+      // Precondition (the suite may run right after a relayer/proof-service (re)start): gate on
+      // the stack's health before submitting.
+      await ensureUp(env);
 
       // The transfer arc pays its own tx fees from the deployer wallet; top it up where a faucet
       // exists (local). This genuinely exercises the faucet capability + persona funding.

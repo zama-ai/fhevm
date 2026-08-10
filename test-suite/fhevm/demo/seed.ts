@@ -14,7 +14,7 @@
 //   0. verify the bring-up's kms-context account exists on-chain — the seeder never creates it, it
 //      only fails loudly (with remediation) when the host bring-up did not provision it.
 //   1. create the mock-USDC SPL mint (6 decimals, the committed mint-authority as mint authority so
-//      `demo:faucet` can later drip it) — hand-built SPL like `faucet-server.ts`.
+//      `demo:faucet` can later drip it) — hand-built SPL instructions from `./tokenAccounts`.
 //   2. `initialize_vault` (demo_vault): creates the vault, its share mint (payout underlying) and the
 //      program-owned underlying token account.
 //   3. `initialize_mint` ×2 (confidential_token): cUSDC wrapping mock USDC, cShares wrapping the share
@@ -33,7 +33,6 @@
 import fs from "node:fs/promises";
 
 import {
-  AccountRole,
   appendTransactionMessageInstructions,
   assertIsTransactionWithBlockhashLifetime,
   createKeyPairSignerFromBytes,
@@ -49,7 +48,6 @@ import {
   setTransactionMessageFeePayerSigner,
   setTransactionMessageLifetimeUsingBlockhash,
   signTransactionMessageWithSigners,
-  type AccountMeta,
   type Address,
   type Instruction,
   type TransactionSigner,
@@ -57,7 +55,14 @@ import {
 
 import { resolveEnv } from "../e2e/harness/loadEnv";
 import { until } from "../e2e/harness/until";
-import { buildVaultUnderlyingEscrowAtaInstruction } from "./tokenAccounts";
+import {
+  SPL_MINT_ACCOUNT_SPACE,
+  SPL_TOKEN_PROGRAM_ADDRESS,
+  buildVaultUnderlyingEscrowAtaInstruction,
+  createAccountInstruction,
+  initializeMint2Instruction,
+  setComputeUnitLimitInstruction,
+} from "./tokenAccounts";
 import { DEMO_KEYPAIRS } from "./loadDemoEnv";
 import {
   resolveDemoConfigPath,
@@ -67,13 +72,7 @@ import {
 } from "./config";
 import * as vault from "@demo-dapp/vault/index.js";
 
-// Well-known program ids (the same literals `faucet-server.ts` and the SDK's `derive.ts` use).
-const SPL_TOKEN_PROGRAM_ADDRESS = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
-const SYSTEM_PROGRAM_ADDRESS = "11111111111111111111111111111111" as Address;
-const COMPUTE_BUDGET_PROGRAM_ADDRESS = "ComputeBudget111111111111111111111111111111" as Address;
-
 const MOCK_USDC_DECIMALS = 6;
-const SPL_MINT_ACCOUNT_SPACE = 82n; // SPL Token `Mint` account length.
 // The confidential-token instructions emit FHE-handle CPIs; the default 200k CU limit is too low, so
 // every provisioning transaction requests the same generous ceiling the SDK's live actions use.
 const PROVISIONING_COMPUTE_UNIT_LIMIT = 800_000;
@@ -86,65 +85,6 @@ const BATCH_AUTHORITY_FUNDING_LAMPORTS = 100_000_000n;
 const BRINGUP_KMS_CONTEXT_ID = 1n;
 const addressEncoder = getAddressEncoder();
 const encodeAddress = (value: Address): Uint8Array => new Uint8Array(addressEncoder.encode(value));
-
-/**
- * A signer account meta: the `signer` field rides along at runtime so `signTransactionMessageWithSigners`
- * produces the signature, while the meta stays typed as a plain `AccountMeta` (same shape the demo
- * dapp's address-lookup-table builder uses). Used for the hand-built SPL `CreateAccount`, whose keypair
- * must sign its own creation.
- */
-const signerMeta = (signer: TransactionSigner, role: AccountRole): AccountMeta =>
-  ({ address: signer.address, role, signer }) as unknown as AccountMeta;
-
-/** ComputeBudget `SetComputeUnitLimit` (tag 2): raises the per-tx CU ceiling for the FHE-heavy CPIs. */
-const setComputeUnitLimitInstruction = (units: number): Instruction => {
-  const data = new Uint8Array(5);
-  data[0] = 2;
-  new DataView(data.buffer).setUint32(1, units, true);
-  return { programAddress: COMPUTE_BUDGET_PROGRAM_ADDRESS, data };
-};
-
-/** SystemProgram `CreateAccount` (tag 0), signed by both the payer and the new account's keypair. */
-const createAccountInstruction = (parameters: {
-  readonly payer: TransactionSigner;
-  readonly newAccount: TransactionSigner;
-  readonly lamports: bigint;
-  readonly space: bigint;
-  readonly owner: Address;
-}): Instruction => {
-  const data = new Uint8Array(4 + 8 + 8 + 32);
-  const view = new DataView(data.buffer);
-  view.setUint32(0, 0, true); // instruction index 0 = CreateAccount
-  view.setBigUint64(4, parameters.lamports, true);
-  view.setBigUint64(12, parameters.space, true);
-  data.set(encodeAddress(parameters.owner), 20);
-  return {
-    programAddress: SYSTEM_PROGRAM_ADDRESS,
-    accounts: [
-      signerMeta(parameters.payer, AccountRole.WRITABLE_SIGNER),
-      signerMeta(parameters.newAccount, AccountRole.WRITABLE_SIGNER),
-    ],
-    data,
-  };
-};
-
-/** SPL Token `InitializeMint2` (tag 20): sets decimals + mint authority, no freeze authority. */
-const initializeMint2Instruction = (parameters: {
-  readonly mint: Address;
-  readonly decimals: number;
-  readonly mintAuthority: Address;
-}): Instruction => {
-  const data = new Uint8Array(1 + 1 + 32 + 1);
-  data[0] = 20;
-  data[1] = parameters.decimals;
-  data.set(encodeAddress(parameters.mintAuthority), 2);
-  data[34] = 0; // freeze authority COption::None
-  return {
-    programAddress: SPL_TOKEN_PROGRAM_ADDRESS,
-    accounts: [{ address: parameters.mint, role: AccountRole.WRITABLE }],
-    data,
-  };
-};
 
 /** Loads a 64-byte Solana keypair file into a kit `TransactionSigner`. */
 const loadSigner = async (keypairPath: string): Promise<TransactionSigner> => {

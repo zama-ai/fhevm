@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-  parseBalanceState,
   parseTransferWorkerResult,
   runSolanaTwoHolderTransfer,
   solanaUserDecryptContext,
@@ -92,20 +91,6 @@ describe("solana-two-holder-transfer", () => {
     };
     await expect(runSolanaTwoHolderTransfer(dependencies)).rejects.toThrow("did not rotate both current balance handles");
     expect(cleaned).toBe(true);
-  });
-
-  test("strictly validates versioned balance probe identity and high-bit chain id", () => {
-    const state = balance(alice.owner, "1");
-    expect(parseBalanceState(`${JSON.stringify(state)}\n`, scenario.mint, alice.owner)).toEqual(state);
-    expect(() => parseBalanceState(JSON.stringify({ ...state, version: 2 }), scenario.mint, alice.owner)).toThrow(
-      "identity or version mismatch",
-    );
-    expect(() => parseBalanceState(JSON.stringify({ ...state, chainId: "12345" }), scenario.mint, alice.owner)).toThrow(
-      "invalid Solana chainId",
-    );
-    expect(() => parseBalanceState(JSON.stringify({ ...state, extra: true }), scenario.mint, alice.owner)).toThrow(
-      "identity or version mismatch",
-    );
   });
 
   test("encodes a decimal user-decrypt context as bytes32", () => {
