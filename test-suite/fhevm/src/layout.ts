@@ -284,6 +284,10 @@ export const TEST_GREP: Record<string, string> = {
   "input-proof-compute-decrypt": "test add 42 to uint64 input and decrypt",
   "priority-coprocessor": "test priority coprocessor input flow",
   "user-decryption": "test user decrypt",
+  "spare-share-tolerance": "User decryption spare-share tolerance",
+  // Requires a deliberately degraded cluster (stop one KMS core first); skips
+  // itself, loudly, when every party is still answering.
+  "spare-share-tolerance-kms-down": "User decryption with a KMS party down",
   "delegated-user-decryption": "test delegated user decrypt",
   "erc1271-user-decryption": "ERC-1271 user decryption",
   "unified-user-decryption": "Unified user decryption",
