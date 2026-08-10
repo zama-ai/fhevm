@@ -10,6 +10,7 @@ import {
   verifyingContractAddressDecryption,
 } from '../instance';
 import { isLiveNetwork } from '../network';
+import { FhevmSdk } from '../sdk/fhevm-sdk/sdk';
 import type { UnifiedConfig, UnifiedDecryptRequest } from '../sdk/unified/unifiedUserDecrypt';
 import {
   backdatedStartTimestamp,
@@ -157,8 +158,11 @@ describe('Unified user decryption', function () {
     );
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
     expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
-    // Decrypt the same handle through the public SDK (which builds the same
-    // unified envelope on protocol >= 0.14) and assert the known plaintext.
+    // Assert the ciphertext really decrypts to the known plaintext. NOTE the
+    // route: this helper uses the SDK's LEGACY permit (relayer `/v2`), so it
+    // proves the value, NOT that the unified envelope works through the SDK —
+    // the v3 envelope is asserted by the `succeeded` poll above, and end to end
+    // through the public SDK by the dedicated unified-SDK test below.
     const clear = await instances.alice.userDecryptSingleHandle({
       handle,
       contractAddress: aliceContractAddress,
@@ -168,6 +172,32 @@ describe('Unified user decryption', function () {
     // Calibrate the async-negative observation window to this stack's latency.
     const elapsedMs = Date.now() - startedAt;
     negativeWindowMs = Math.min(Math.max(NEGATIVE_WINDOW_FLOOR_MS, 3 * elapsedMs), NEGATIVE_WINDOW_CAP_MS);
+  });
+
+  it('test unified user decrypt decrypts through the public SDK unified permit path (v3)', async function () {
+    this.timeout(POSITIVE_TIMEOUT_MS + TIMEOUT_MARGIN_MS);
+    // The gap this closes: every other plaintext assertion in this suite goes
+    // through the SDK's LEGACY permit (`/v2`), so none of them proves the v3
+    // envelope is usable through the public SDK — only that the raw envelope is
+    // accepted by the relayer. This drives `signUnifiedDecryptionPermit`, the
+    // path a real 0.14 dapp takes.
+    const sdk = instances.alice;
+    if (!(sdk instanceof FhevmSdk)) {
+      // Legacy @zama-fhe/relayer-sdk adapter: no unified permit to exercise.
+      this.skip();
+    }
+    const handle = await aliceContract.xUint64();
+    const clear = await sdk.userDecryptSingleHandleUnified({
+      handle,
+      contractAddress: aliceContractAddress,
+      signer: signers.alice,
+    });
+    if (clear === undefined) {
+      // Relayer does not advertise the v3 route on this deployment; the raw
+      // envelope tests above already fail loudly if it should have been there.
+      this.skip();
+    }
+    expect(clear).to.equal(18446744073709551600n);
   });
 
   it('test unified user decrypt app-bounded mode (allowedContracts=[app]) succeeds', async function () {

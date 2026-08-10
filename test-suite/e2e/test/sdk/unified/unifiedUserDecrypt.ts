@@ -357,6 +357,10 @@ export async function submitUnifiedRequest(
   const envelope = buildEnvelope(req, signature);
 
   const url = `${relayerBaseUrl(cfg.relayerUrl)}/v3/user-decrypt`;
+  // Log the route we drive. The SDK client logs its own (legacy `/v2`) calls,
+  // so without this a reader sees only `/v2` in the output and cannot tell
+  // which component issued what.
+  console.log(`[unified] POST ${url}`);
   const resp = await fetch(url, {
     method: 'POST',
     headers: httpHeaders(cfg, true),
