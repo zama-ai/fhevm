@@ -470,7 +470,28 @@ export function isSignatureRejection(post: PostResult): boolean {
  * negatives whose cause is a per-handle ownership/delegation ACL failure —
  * pinning the reason so the test cannot pass on an unintended failure.
  */
+/**
+ * Fail with the ACTUAL cause when an async negative never reached a verdict.
+ *
+ * `expected 'pending' to equal 'failed'` reads like a wrong-outcome bug when it
+ * is really a "no outcome yet": the job was still queued when the budget ran
+ * out. Naming that distinction saves the next reader the round trip, and points
+ * at the two things that actually produce it.
+ */
+function assertReachedTerminalState(poll: PollResult | undefined): void {
+  if (poll?.status === 'pending') {
+    expect.fail(
+      `the job never reached a terminal state within the poll budget (last status: queued/pending). ` +
+        `No verdict was produced — this is NOT a wrong verdict. Given a budget comfortably above the ` +
+        `observed positive latency, suspect the components before the test: the request may have been ` +
+        `accepted on-chain instead of rejected, leaving it to stall downstream. ` +
+        `Raw: ${JSON.stringify(poll?.raw)}`,
+    );
+  }
+}
+
 export function expectRelayerAclRejection(poll: PollResult | undefined, messagePattern?: RegExp): void {
+  assertReachedTerminalState(poll);
   expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('failed');
   expect(poll?.errorLabel, JSON.stringify(poll?.raw)).to.equal('not_allowed_on_host_acl');
   if (messagePattern) {
@@ -499,6 +520,7 @@ export function expectStuckAtKms(poll: PollResult | undefined): void {
  * unrelated simulation failure.
  */
 export function expectGatewayRevert(poll: PollResult | undefined, messagePattern: RegExp): void {
+  assertReachedTerminalState(poll);
   expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('failed');
   const message = ((poll?.raw as { error?: { message?: string } })?.error?.message ?? '') as string;
   expect(message, JSON.stringify(poll?.raw)).to.match(messagePattern);

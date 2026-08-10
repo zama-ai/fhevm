@@ -37,6 +37,23 @@ const TIMEOUT_MARGIN_MS = 60 * 1000;
 // cannot false-pass a negative that would have succeeded a moment later.
 const NEGATIVE_WINDOW_FLOOR_MS = 60 * 1000;
 const NEGATIVE_WINDOW_CAP_MS = 4 * 60 * 1000;
+// Budget for negatives that must reach a TERMINAL verdict (relayer-`failed`).
+// These are NOT observation windows: `expectStuckAtKms` asserts that nothing
+// happens, so burning its window IS the assertion and calibrating it to the
+// positive latency is right.
+//
+// A terminal verdict is not all one thing, and the difference decides the
+// budget. An ACL rejection is decided inline, before the request is queued, so
+// it lands in ~2s on any network. A Gateway revert is not: the request is
+// pushed to the transaction throttler
+// (relayer/src/gateway/user_decrypt_handler.rs `send_to_gateway`) and the
+// verdict only exists once the tx processor's submit attempt fails and
+// dispatches InternalFailure
+// (relayer/src/gateway/arbitrum/transaction/tx_processor.rs). That is queue-
+// and chain-bound, so it deserves the budget a positive gets rather than an
+// observation window. Polling returns the moment the job goes terminal, so
+// this costs nothing on a fast stack — the same test takes ~2s locally.
+const TERMINAL_NEGATIVE_TIMEOUT_MS = POSITIVE_TIMEOUT_MS;
 const SLOW_TEST_TIMEOUT_MS = 10 * 60 * 1000;
 // Blocks to wait after an on-chain ACL delegation before the KMS Connector's
 // host-chain reads observe it (same wait the delegated-user-decryption suite uses).
@@ -346,7 +363,7 @@ describe('Unified user decryption', function () {
   });
 
   it('test unified user decrypt rejects a spoofed ownerAddress (handle not owned by userAddress)', async function () {
-    this.timeout(negativeWindowMs + TIMEOUT_MARGIN_MS);
+    this.timeout(TERMINAL_NEGATIVE_TIMEOUT_MS + TIMEOUT_MARGIN_MS);
     const handle = await aliceContract.xUint64(); // owned by alice, not bob
     const req: UnifiedDecryptRequest = {
       handles: [directHandle(handle, aliceContractAddress, signers.bob.address)],
@@ -362,7 +379,7 @@ describe('Unified user decryption', function () {
       { kind: 'eoa', signer: signers.bob },
       {
         waitForTerminal: true,
-        timeoutMs: negativeWindowMs,
+        timeoutMs: TERMINAL_NEGATIVE_TIMEOUT_MS,
       },
     );
     // bob's signature is valid, so the POST is accepted; the per-job host-ACL
@@ -373,7 +390,7 @@ describe('Unified user decryption', function () {
   });
 
   it('test unified user decrypt rejects a delegated handle entry when no delegation exists', async function () {
-    this.timeout(negativeWindowMs + TIMEOUT_MARGIN_MS);
+    this.timeout(TERMINAL_NEGATIVE_TIMEOUT_MS + TIMEOUT_MARGIN_MS);
     // ownerAddress = alice != userAddress = bob triggers the delegated branch:
     // isHandleDelegatedForUserDecryption(alice, bob, contract, handle). No
     // delegation alice -> bob exists, so the ACL check fails (the "ownerAddress
@@ -393,7 +410,7 @@ describe('Unified user decryption', function () {
       { kind: 'eoa', signer: signers.bob },
       {
         waitForTerminal: true,
-        timeoutMs: negativeWindowMs,
+        timeoutMs: TERMINAL_NEGATIVE_TIMEOUT_MS,
       },
     );
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
@@ -401,7 +418,7 @@ describe('Unified user decryption', function () {
   });
 
   it('test unified user decrypt rejects a batch containing one bad handle', async function () {
-    this.timeout(negativeWindowMs + TIMEOUT_MARGIN_MS);
+    this.timeout(TERMINAL_NEGATIVE_TIMEOUT_MS + TIMEOUT_MARGIN_MS);
     // One legitimate bob-owned handle plus one alice-owned handle claimed as
     // bob's: authorization is all-or-nothing per request, so a single bad
     // handle rejects the whole batch — the good handle is not decrypted.
@@ -424,7 +441,7 @@ describe('Unified user decryption', function () {
       { kind: 'eoa', signer: signers.bob },
       {
         waitForTerminal: true,
-        timeoutMs: negativeWindowMs,
+        timeoutMs: TERMINAL_NEGATIVE_TIMEOUT_MS,
       },
     );
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
@@ -611,7 +628,7 @@ describe('Unified user decryption', function () {
     });
 
     it('test unified user decrypt rejects extraData with an unknown contextId', async function () {
-      this.timeout(negativeWindowMs + TIMEOUT_MARGIN_MS);
+      this.timeout(TERMINAL_NEGATIVE_TIMEOUT_MS + TIMEOUT_MARGIN_MS);
       // Versioned extraData is NOT decorative: the Gateway validates the
       // embedded contextId at request time, before the decryption fee is
       // collected (matching the legacy request paths). A fabricated id passes
@@ -634,7 +651,7 @@ describe('Unified user decryption', function () {
         { kind: 'eoa', signer: signers.alice },
         {
           waitForTerminal: true,
-          timeoutMs: negativeWindowMs,
+          timeoutMs: TERMINAL_NEGATIVE_TIMEOUT_MS,
         },
       );
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
@@ -794,7 +811,7 @@ describe('Unified user decryption', function () {
     });
 
     it('test unified user decrypt rejects a delegated handle with a fabricated contractAddress', async function () {
-      this.timeout(negativeWindowMs + TIMEOUT_MARGIN_MS);
+      this.timeout(TERMINAL_NEGATIVE_TIMEOUT_MS + TIMEOUT_MARGIN_MS);
       // The delegation smartWallet -> bob exists via tokenAddress only.
       // Substituting a different contractAddress in the (unsigned) HandleEntry
       // must fail isHandleDelegatedForUserDecryption — delegation is
@@ -813,7 +830,7 @@ describe('Unified user decryption', function () {
         { kind: 'eoa', signer: signers.bob },
         {
           waitForTerminal: true,
-          timeoutMs: negativeWindowMs,
+          timeoutMs: TERMINAL_NEGATIVE_TIMEOUT_MS,
         },
       );
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
@@ -844,7 +861,7 @@ describe('Unified user decryption', function () {
         { kind: 'eoa', signer: signers.dave },
         {
           waitForTerminal: true,
-          timeoutMs: negativeWindowMs,
+          timeoutMs: TERMINAL_NEGATIVE_TIMEOUT_MS,
         },
       );
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
@@ -886,7 +903,7 @@ describe('Unified user decryption', function () {
         { kind: 'eoa', signer: signers.eve },
         {
           waitForTerminal: true,
-          timeoutMs: negativeWindowMs,
+          timeoutMs: TERMINAL_NEGATIVE_TIMEOUT_MS,
         },
       );
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
