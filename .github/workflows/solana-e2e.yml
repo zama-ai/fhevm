@@ -281,8 +281,8 @@ jobs:
   # a LiteSVM confidential transfer through off-chain reconstruction into the REAL TFHE worker
   # against a disposable migrated Postgres (testcontainers), then decrypts the computed
   # ciphertexts. The scenario job above proves the same arc on the live stack; only this test pins
-  # the reconstruct-to-worker seam against real ciphertexts with no stack in between. It was born
-  # as solana_poc.rs, #[ignore]d and manual-only — this job is what finally runs it on every PR.
+  # the reconstruct-to-worker seam against real ciphertexts with no stack in between. It started
+  # life as solana_poc.rs, #[ignore]d and manual-only — this job is what finally runs it on every PR.
   worker-vertical:
     name: solana-e2e/worker-vertical
     runs-on: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/volume=80gb
