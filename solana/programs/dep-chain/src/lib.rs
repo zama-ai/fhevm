@@ -1,13 +1,20 @@
 //! Specimen `zama-host` consumer: one encrypted u64 whose updates are LONG dependent step chains.
 //!
 //! Where `encrypted-counter` is the smallest complete consumer, this program is the load-smoke
-//! shape — the Solana analog of the EVM suite's `SlowLaneContention.sol`. Every `extend` packs up
-//! to the host's 32-step ceiling into ONE `fhe_execute`, each step's operand being the previous
-//! step's transient result, so the coprocessor cannot parallelize any of it: the whole chain sits
-//! in the slow lane and must be computed strictly in order before the tail handle becomes
-//! decryptable. Its Mollusk test (`runtime-tests/tests/dep_chain_mollusk.rs`) proves the kit's
-//! cleartext oracle replays a full-depth chain; the live load-smoke scenario drives the same
-//! dependent-step shape through the typed `fhe_execute` client against the running coprocessor.
+//! shape — the Solana analog of the EVM suite's `SlowLaneContention.sol`. Every `extend` packs a
+//! dependent chain into ONE `fhe_execute`, each step's operand being the previous step's transient
+//! result, so the coprocessor cannot parallelize any of it: the whole chain sits in the slow lane
+//! and must be computed strictly in order before the tail handle becomes decryptable. Its Mollusk
+//! test (`runtime-tests/tests/dep_chain_mollusk.rs`) proves the kit's cleartext oracle replays a
+//! chain at this program's full depth; the live load-smoke scenario drives the same dependent-step
+//! shape through the typed `fhe_execute` client against the running coprocessor.
+//!
+//! Two different ceilings meet here, deliberately. A CPI-composing program builds its execution on
+//! Anchor's default 32 KB bump heap, so `zama_fhe` caps it at `MAX_ON_CHAIN_EXECUTION_STEPS` (16)
+//! — that is this program's depth, and the deepest chain any app program can compose without
+//! installing its own allocator. The host's own `MAX_FHE_EXECUTION_STEPS` (32) is only reachable
+//! by off-chain builders; the load-smoke scenario exercises that full depth through the raw typed
+//! client, and `host_mollusk` proves the host processes it under SBF.
 //!
 //! Executions assume `grant_deny_list_enabled = false` and no binding HCU cap: `hcu_block_meter`
 //! and `hcu_trusted_app_record` are hardcoded `None` (the PoC host fixtures never enable them),
@@ -35,9 +42,14 @@ use zama_host::program::ZamaHost;
 
 declare_id!("7Sz3qA6Wm84uWjfiFJR4ww1Trx7DZ4MMb4iB4sn5vqaV");
 
-/// The host's per-execution step ceiling (`zama_host::MAX_FHE_EXECUTION_STEPS`), which is also
-/// the deepest chain one `extend` can carry.
-pub const MAX_CHAIN_LINKS: u8 = 32;
+/// The deepest chain one `extend` can carry: `zama_fhe::MAX_ON_CHAIN_EXECUTION_STEPS`, the step
+/// ceiling the builder enforces for a program composing its execution on Anchor's default heap
+/// (the host's own 32-step ceiling is off-chain-builder territory — see the module docs).
+pub const MAX_CHAIN_LINKS: u8 = 16;
+
+/// `extend` promises exactly the builder's ceiling; if the builder's budget moves, this program's
+/// contract (and its error message) must move with it consciously.
+const _: () = assert!(MAX_CHAIN_LINKS as usize == zama_fhe::MAX_ON_CHAIN_EXECUTION_STEPS);
 
 #[program]
 pub mod dep_chain {

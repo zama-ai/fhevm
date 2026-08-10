@@ -10,9 +10,11 @@
 // intermediate link is dropped (the tail cleartext is exact), or if the SNS commit of a
 // 32-deep handle outlives the shared 240s materialization budget.
 //
-// The Mollusk twin (`runtime-tests/tests/dep_chain_mollusk.rs`) proves the same shape in-process
-// through the specimen program's CPI; this scenario drives it through the raw typed client so the
-// live lane needs no extra program deployment.
+// The Mollusk twin (`runtime-tests/tests/dep_chain_mollusk.rs`) proves the same dependent shape
+// in-process through the specimen program's CPI at the on-chain builder's 16-step ceiling
+// (`zama_fhe::MAX_ON_CHAIN_EXECUTION_STEPS`, Anchor's default-heap budget); this scenario builds
+// the execution OFF-chain through the raw typed client, which is what makes the host's full
+// 32-step ceiling reachable — and means the live lane needs no extra program deployment.
 
 import { describe, expect, test } from "bun:test";
 

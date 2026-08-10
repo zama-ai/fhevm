@@ -1,7 +1,10 @@
 //! Mollusk test for the `dep-chain` specimen — the load-smoke shape: one `fhe_execute` carrying
-//! the host's full 32-step ceiling as a strictly DEPENDENT add chain (each step's operand is the
-//! previous step's transient result), proving the kit's cleartext oracle replays transient
-//! intermediates and that a full-depth chain fits one instruction's compute budget.
+//! the on-chain builder's full 16-step ceiling (`zama_fhe::MAX_ON_CHAIN_EXECUTION_STEPS` — the
+//! deepest chain a CPI-composing program can build on Anchor's default heap) as a strictly
+//! DEPENDENT add chain (each step's operand is the previous step's transient result), proving the
+//! kit's cleartext oracle replays transient intermediates and that a full-depth chain fits one
+//! instruction's compute budget. The host's own 32-step ceiling is exercised by `host_mollusk`'s
+//! MAX_FHE_EXECUTION_STEPS executions and, live, by the load-smoke scenario's raw typed client.
 
 use dep_chain as chain_program;
 use mollusk_svm::result::Check;
@@ -76,11 +79,11 @@ fn full_depth_dependent_chain_computes_in_one_execution() {
     };
 
     assert_tail(&mut ledger, &initialize(), 0);
-    // The full-depth chain: 32 dependent adds in one execution — the host's step ceiling.
-    assert_tail(&mut ledger, &extend(chain_program::MAX_CHAIN_LINKS, 1), 32);
+    // The full-depth chain: 16 dependent adds in one execution — the on-chain builder's ceiling.
+    assert_tail(&mut ledger, &extend(chain_program::MAX_CHAIN_LINKS, 1), 16);
     // A short chain over the persisted tail; and the single-link degenerate form persists directly.
-    assert_tail(&mut ledger, &extend(4, 2), 40);
-    assert_tail(&mut ledger, &extend(1, 2), 42);
+    assert_tail(&mut ledger, &extend(4, 2), 24);
+    assert_tail(&mut ledger, &extend(1, 2), 26);
 
     // Chain-length bounds fail closed before any CPI runs.
     context.process_and_validate_instruction(
@@ -90,7 +93,7 @@ fn full_depth_dependent_chain_computes_in_one_execution() {
         )],
     );
     context.process_and_validate_instruction(
-        &extend(33, 1),
+        &extend(chain_program::MAX_CHAIN_LINKS + 1, 1),
         &[anchor_error_check(
             chain_program::DepChainError::InvalidChainLength as u32,
         )],

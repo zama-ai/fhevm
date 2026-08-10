@@ -250,7 +250,7 @@
     {
       "code": 6002,
       "name": "InvalidChainLength",
-      "msg": "chain length must be between 1 and 32 steps"
+      "msg": "chain length must be between 1 and 16 steps"
     }
   ],
   "types": [
