@@ -171,6 +171,9 @@
   "overrides": {
     "webpack": {
       "@types/eslint-scope": "3.7.6"
+    },
+    "estimo": {
+      "nanoid": "^5.1.16"
     }
   },
   "engines": {
