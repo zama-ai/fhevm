@@ -6,12 +6,18 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-anchor-lang = "1.0.2"
-anchor-spl = { version = "1.0.2", default-features = false, features = ["associated_token", "token", "token_2022"] }
+anchor-lang = "1.1.2"
+anchor-spl = { version = "1.1.2", default-features = false, features = ["associated_token", "token", "token_2022"] }
 base64 = "0.22.1"
 confidential-batcher = { path = "../programs/confidential-batcher", features = ["no-entrypoint"] }
 confidential-token = { path = "../programs/confidential-token", features = ["no-entrypoint"] }
 demo-vault = { path = "../programs/demo-vault", features = ["no-entrypoint"] }
+# Held on the agave-4.0 line while the rest of the toolchain moved to agave 4.1. mollusk-svm 0.14.0
+# cannot resolve here: it needs solana-account >=4.3 (which has moved to wincode 0.6) and
+# solana-transaction-status-client-types (still on wincode 0.5), and the two cannot coexist — the
+# build fails in solana-instruction and solana-nonce. 0.13.4 requires the same
+# transaction-status-client-types range and hits the same wall. Retry once upstream lands on one
+# wincode line; until then this is the newest mollusk that builds against our graph.
 mollusk-svm = { version = "0.12.1-agave-4.0", features = ["inner-instructions", "precompiles"] }
 mollusk-svm-programs-token = { version = "0.12.1-agave-4.0", default-features = false, features = ["token", "token-2022"] }
 solana-program = "3.0.0"

@@ -76,6 +76,18 @@ tonic = { workspace = true, optional = true }
 # default-features=false drops the `convert` feature, which would otherwise pull
 # solana-sdk 2.1.x and clash with the solana 3.0 crates above. We drive the tonic
 # GeyserClient directly (no yellowstone-grpc-client, which would re-enable convert).
+#
+# Still on the v5 tag while the plugin this talks to moved to v14.2.2+solana.4.1.0. That is safe on
+# the wire: every .proto change between the two tags is additive — new RPCs and messages, nothing
+# removed or renumbered — and the reconstruct lane passes against the v14 plugin.
+#
+# This skew is temporary and should not outlive the next couple of PRs. Bumping the tag here was
+# tried and backed out: it needs two new `cuckoo_*` filter fields (trivial) and tonic 0.12.3 -> 0.14
+# across this workspace (not trivial). v14's proto crate is generated against tonic 0.14, whose
+# `Body` is a different type from ours, so GeyserClient rejects our Channel; 0.14 also split prost
+# codegen into tonic-prost/tonic-prost-build, and tonic is a workspace dep shared by
+# fhevm-engine-common, sns-worker and stress-test-generator. Sequence: land the tonic upgrade on its
+# own, then bump this tag so client and plugin match again.
 yellowstone-grpc-proto = { git = "https://github.com/rpcpool/yellowstone-grpc", tag = "v5.0.1+solana.2.1.21", default-features = false, features = ["tonic", "tonic-compression"], optional = true }
 
 # Phase 2 reconstruction (optional; enabled via the `solana-reconstruct` feature).
