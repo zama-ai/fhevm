@@ -229,6 +229,11 @@ export type BuiltImage = {
   instanceIndex?: number;
 };
 
+export type KmsConnectorPartyDeployment = {
+  locallyBuilt: boolean;
+  versions: Record<string, string>;
+};
+
 export type State = {
   target: VersionTarget;
   lockPath: string;
@@ -236,6 +241,8 @@ export type State = {
   versions: VersionBundle;
   /** Per-node threshold KMS core versions while a rollout is intentionally mixed. */
   kmsCoreVersionByNodeId?: Record<string, string>;
+  /** Per-party Connector deployment while a threshold KMS rollout is intentionally mixed. */
+  kmsConnectorDeploymentByNodeId?: Record<string, KmsConnectorPartyDeployment>;
   overrides: LocalOverride[];
   scenario: ResolvedScenario;
   scenarioSourcePath?: string;

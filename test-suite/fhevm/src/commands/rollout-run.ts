@@ -36,6 +36,7 @@ type RolloutUpOptions = {
 type RolloutRuntimeUpgradeOptions = {
   lockFile?: string;
   bcsTag?: string;
+  bcsCompatTag?: string;
 };
 type RolloutKmsNodeUpgradeOptions = {
   lockFile: string;
@@ -326,33 +327,28 @@ export const createRolloutContext = (
         selected.add(operatorId);
       }
       for (const operatorId of operatorIds) {
-        for (let attempt = 1; attempt <= 2; attempt += 1) {
+        try {
+          await (operationOverrides.upgradeThresholdKmsOperator ?? upgradeThresholdKmsOperator)(operatorId, options);
+        } catch (error) {
           try {
-            await (operationOverrides.upgradeThresholdKmsOperator ?? upgradeThresholdKmsOperator)(operatorId, options);
-          } catch (error) {
-            try {
-              await receipt.record("upgrade-kms-operator-failed", `KMS operator ${operatorId}`, {
-                details: { attempt, error: error instanceof Error ? error.message : String(error), operatorId },
-                docker: true,
-                lockFile: options.lockFile,
-              });
-            } catch (receiptError) {
-              throw new AggregateError(
-                [error, receiptError],
-                `KMS operator ${operatorId} upgrade failed and its required receipt snapshot also failed`,
-              );
-            }
-            if (attempt === 2) throw error;
-            console.log(`[rollout] retry KMS operator ${operatorId} after failed paired upgrade`);
-            continue;
+            await receipt.record("upgrade-kms-operator-failed", `KMS operator ${operatorId}`, {
+              details: { error: error instanceof Error ? error.message : String(error), operatorId },
+              docker: true,
+              lockFile: options.lockFile,
+            });
+          } catch (receiptError) {
+            throw new AggregateError(
+              [error, receiptError],
+              `KMS operator ${operatorId} upgrade failed and its required receipt snapshot also failed`,
+            );
           }
-          await receipt.record("upgrade-kms-operator", `KMS operator ${operatorId}`, {
-            details: { attempt, operatorId },
-            docker: true,
-            lockFile: options.lockFile,
-          });
-          break;
+          throw error;
         }
+        await receipt.record("upgrade-kms-operator", `KMS operator ${operatorId}`, {
+          details: { operatorId },
+          docker: true,
+          lockFile: options.lockFile,
+        });
       }
     },
     async withRequiredKmsNode(nodeId, task) {

@@ -1477,6 +1477,8 @@ type UpgradeOptions = {
   lockFile?: string;
   /** Blue-Green only: replace the registry tag used by the running Blue fleet. */
   bcsTag?: string;
+  /** Release family used to shape commands when bcsTag is an exact image SHA. */
+  bcsCompatTag?: string;
 };
 
 export const changedVersionKeys = (current: VersionBundle, next: VersionBundle) =>
@@ -1686,7 +1688,7 @@ export const upgradeRuntimeGroup = async (groupValue: string | undefined, option
         ...nextState.scenario,
         bcs: {
           ...nextState.scenario.bcs,
-          source: replaceRegistrySourceTag(nextState.scenario.bcs.source, options.bcsTag),
+          source: replaceRegistrySourceTag(nextState.scenario.bcs.source, options.bcsTag, options.bcsCompatTag),
         },
       },
     };
@@ -1719,9 +1721,42 @@ export const upgradeRuntimeGroup = async (groupValue: string | undefined, option
   }
 };
 
+type DeferredGreenOperations = {
+  composeUp: typeof composeUp;
+  generateRuntime: typeof generateRuntime;
+  loadState: typeof loadState;
+  maybeBuild: typeof maybeBuild;
+  multiChainComposeUp: typeof multiChainComposeUp;
+  postBootHealthGate: typeof postBootHealthGate;
+  removeContainers(containers: string[]): Promise<void>;
+  saveState: typeof saveState;
+  waitForContainer: typeof waitForContainer;
+  waitForCoprocessorServices: typeof waitForCoprocessorServices;
+};
+
+const deferredGreenOperations: DeferredGreenOperations = {
+  composeUp,
+  generateRuntime,
+  loadState,
+  maybeBuild,
+  multiChainComposeUp,
+  postBootHealthGate,
+  async removeContainers(containers) {
+    for (const container of containers) {
+      const result = await run(["docker", "rm", "-fv", container], { allowFailure: true });
+      if (result.code !== 0 && !result.stderr.includes("No such container")) {
+        throw new PreflightError(result.stderr.trim() || `failed to remove ${container}`);
+      }
+    }
+  },
+  saveState,
+  waitForContainer,
+  waitForCoprocessorServices,
+};
+
 /** Builds and starts a Green fleet that was intentionally absent during prerequisite migration. */
-export const startDeferredGreen = async () => {
-  const state = await loadState();
+export const startDeferredGreen = async (operations: DeferredGreenOperations = deferredGreenOperations) => {
+  const state = await operations.loadState();
   if (!state || state.scenario.kind !== "blue-green" || !state.scenario.gcs.deferredStart) {
     throw new PreflightError("startDeferredGreen requires a running Blue-Green scenario with gcs.deferredStart=true");
   }
@@ -1733,38 +1768,48 @@ export const startDeferredGreen = async () => {
       gcs: { ...state.scenario.gcs, deferredStart: false },
     },
   };
-  await saveState(nextState);
-  await generateRuntime(nextState, stackSpecForState(nextState));
-  await maybeBuild("coprocessor", nextState, { force: true });
-
   const migrationServices = Array.from(
     { length: topologyForState(nextState).count },
     (_, index) => toServiceName("db-migration", index),
   );
-  await composeUp("coprocessor", migrationServices, { forceRecreate: true });
-  for (const service of migrationServices) {
-    await waitForContainer(service, "complete");
-  }
-
   const greenServices = blueGreenServiceNames(nextState, {
     includeMigration: false,
     includeDeferredGreen: true,
   }).filter((service) => service.includes("-gcs-"));
-  await composeUp("coprocessor", greenServices, { noDeps: true });
-  await waitForCoprocessorServices(nextState, true);
-
-  const extraGreenListeners: string[] = [];
-  for (const chain of extraHostChains(nextState)) {
-    const services = listenerContainersForChain(nextState, chain.key).map((service) =>
+  const extraGreenByChain = extraHostChains(nextState).map((chain) => ({
+    chain,
+    services: listenerContainersForChain(nextState, chain.key).map((service) =>
       service.replace(/^(coprocessor\d*)-/, "$1-gcs-"),
-    );
-    await multiChainComposeUp(coprocessorHostKey(chain.key), services);
-    for (const service of services) {
-      await waitForContainer(service, "running");
+    ),
+  }));
+  const extraGreenListeners = extraGreenByChain.flatMap(({ services }) => services);
+
+  try {
+    await operations.generateRuntime(nextState, stackSpecForState(nextState));
+    await operations.maybeBuild("coprocessor", nextState, { force: true, persistState: false });
+    await operations.composeUp("coprocessor", migrationServices, { forceRecreate: true });
+    for (const service of migrationServices) {
+      await operations.waitForContainer(service, "complete");
     }
-    extraGreenListeners.push(...services);
+    await operations.composeUp("coprocessor", greenServices, { noDeps: true });
+    await operations.waitForCoprocessorServices(nextState, true);
+    for (const { chain, services } of extraGreenByChain) {
+      await operations.multiChainComposeUp(coprocessorHostKey(chain.key), services);
+      for (const service of services) {
+        await operations.waitForContainer(service, "running");
+      }
+    }
+    await operations.postBootHealthGate([...greenServices, ...extraGreenListeners]);
+    await operations.saveState(nextState);
+  } catch (error) {
+    try {
+      await operations.removeContainers([...greenServices, ...extraGreenListeners]);
+      await operations.generateRuntime(state, stackSpecForState(state));
+    } catch (rollbackError) {
+      throw new AggregateError([error, rollbackError], "Green startup failed and rollback was incomplete");
+    }
+    throw error;
   }
-  await postBootHealthGate([...greenServices, ...extraGreenListeners]);
 };
 
 type ThresholdKmsNodeUpgradeOperations = {
@@ -1785,6 +1830,21 @@ const KMS_OPERATOR_VERSION_KEYS = [
   "CONNECTOR_TX_SENDER_VERSION",
 ] as const;
 
+const KMS_CONNECTOR_VERSION_KEYS = KMS_OPERATOR_VERSION_KEYS.slice(1);
+
+const connectorVersions = (env: Record<string, string>) =>
+  Object.fromEntries(KMS_CONNECTOR_VERSION_KEYS.map((key) => [key, env[key]!])) as Record<string, string>;
+
+const connectorDeploymentMatches = (
+  left: { locallyBuilt: boolean; versions: Record<string, string> },
+  right: { locallyBuilt: boolean; versions: Record<string, string> },
+) =>
+  left.locallyBuilt === right.locallyBuilt &&
+  KMS_CONNECTOR_VERSION_KEYS.every((key) => left.versions[key] === right.versions[key]);
+
+const hasFullConnectorOverride = (overrides: LocalOverride[]) =>
+  overrides.some((override) => override.group === "kms-connector" && !override.services?.length);
+
 const kmsOperatorConnectorServices = (operatorId: number) => {
   const prefix = kmsConnectorPrefix(operatorId);
   return {
@@ -1798,6 +1858,7 @@ export const assertKmsOperatorUpgradeQuorum = async (
   state: State,
   operatorId: number,
   inspect: typeof dockerInspect = dockerInspect,
+  connectorReady: typeof waitForKmsConnectorParty = waitForKmsConnectorParty,
 ) => {
   const remaining = Array.from(
     { length: state.scenario.kms.committeeSize },
@@ -1816,9 +1877,22 @@ export const assertKmsOperatorUpgradeQuorum = async (
     let ready = true;
     for (const container of [core, ...connector]) {
       const [details] = await inspect(container);
-      if (!details || details.State.Status !== "running" || details.State.Health?.Status !== "healthy") {
+      if (
+        !details ||
+        details.State.Status !== "running" ||
+        (container === core
+          ? details.State.Health?.Status !== "healthy"
+          : details.State.Health !== undefined && details.State.Health.Status !== "healthy")
+      ) {
         ready = false;
         break;
+      }
+    }
+    if (ready) {
+      try {
+        await connectorReady(state, party);
+      } catch {
+        ready = false;
       }
     }
     if (!ready) unavailable.push(party);
@@ -1948,9 +2022,7 @@ export const upgradeThresholdKmsOperator = async (
     throw new PreflightError("upgradeKmsOperator requires a threshold-mode KMS cluster");
   }
   if (state.scenario.kms.parties !== state.scenario.kms.committeeSize) {
-    throw new PreflightError(
-      "upgradeKmsOperator does not support spare KMS parties; per-party Connector version state is required first",
-    );
+    throw new PreflightError("upgradeKmsOperator does not support spare KMS parties");
   }
   if (!Number.isInteger(operatorId) || operatorId < 1 || operatorId > state.scenario.kms.committeeSize) {
     throw new PreflightError(
@@ -1959,6 +2031,13 @@ export const upgradeThresholdKmsOperator = async (
   }
   if (!state.completedSteps.includes("base")) {
     throw new PreflightError("upgradeKmsOperator requires a stack that has completed the base step");
+  }
+  if (
+    options.overrides?.some(
+      (override) => override.group !== "kms-connector" || Boolean(override.services?.length),
+    )
+  ) {
+    throw new PreflightError("upgradeKmsOperator accepts only a full kms-connector override");
   }
 
   await operations.ensureRuntimeArtifacts(state, "upgrade");
@@ -1974,6 +2053,16 @@ export const upgradeThresholdKmsOperator = async (
   const targetVersion = lockedState.versions.env.CORE_VERSION;
   if (!targetVersion?.trim()) {
     throw new PreflightError("upgradeKmsOperators requires CORE_VERSION in its lock file");
+  }
+  const targetConnector = {
+    locallyBuilt: hasFullConnectorOverride(lockedState.overrides),
+    versions: connectorVersions(lockedState.versions.env),
+  };
+  const missingConnectorVersion = KMS_CONNECTOR_VERSION_KEYS.find(
+    (key) => !targetConnector.versions[key]?.trim(),
+  );
+  if (missingConnectorVersion) {
+    throw new PreflightError(`upgradeKmsOperators requires ${missingConnectorVersion} in its lock file`);
   }
 
   const versionByNodeId = Object.fromEntries(
@@ -1991,20 +2080,46 @@ export const upgradeThresholdKmsOperator = async (
   const perNodeVersions = Object.fromEntries(
     Object.entries(versionByNodeId).filter(([, version]) => version !== globalVersion),
   );
+  const currentConnector = {
+    locallyBuilt: hasFullConnectorOverride(state.overrides),
+    versions: connectorVersions(state.versions.env),
+  };
+  const connectorByNodeId = Object.fromEntries(
+    Array.from({ length: state.scenario.kms.parties }, (_, index) => {
+      const id = index + 1;
+      return [id, state.kmsConnectorDeploymentByNodeId?.[id] ?? currentConnector];
+    }),
+  );
+  connectorByNodeId[operatorId] = targetConnector;
+  const connectorsAtTarget = Array.from(
+    { length: state.scenario.kms.committeeSize },
+    (_, index) => connectorDeploymentMatches(connectorByNodeId[index + 1]!, targetConnector),
+  ).every(Boolean);
+  const globalConnector = connectorsAtTarget ? targetConnector : currentConnector;
+  const perNodeConnectors = Object.fromEntries(
+    Object.entries(connectorByNodeId).filter(([, deployment]) =>
+      !connectorDeploymentMatches(deployment, globalConnector)
+    ),
+  );
   const nextState: State = {
     ...lockedState,
+    overrides: connectorsAtTarget ? lockedState.overrides : state.overrides,
     versions: {
       ...lockedState.versions,
-      env: { ...lockedState.versions.env, CORE_VERSION: globalVersion },
+      env: {
+        ...lockedState.versions.env,
+        ...globalConnector.versions,
+        CORE_VERSION: globalVersion,
+      },
     },
     kmsCoreVersionByNodeId: Object.keys(perNodeVersions).length ? perNodeVersions : undefined,
+    kmsConnectorDeploymentByNodeId: Object.keys(perNodeConnectors).length ? perNodeConnectors : undefined,
   };
   await assertSchemaCompatibility(nextState.versions, nextState.overrides, nextState.scenario, false);
   await operations.assertQuorum(state, operatorId);
 
-  await operations.saveState(nextState);
   await operations.generateRuntime(nextState, stackSpecForState(nextState));
-  await operations.maybeBuild("kms-connector", nextState);
+  await operations.maybeBuild("kms-connector", nextState, { persistState: false });
 
   const core = kmsCoreName(operatorId);
   const connector = kmsOperatorConnectorServices(operatorId);
@@ -2015,8 +2130,9 @@ export const upgradeThresholdKmsOperator = async (
   await operations.composeUp("kms-connector", [connector.migration], { noDeps: true, forceRecreate: true });
   await operations.waitForContainer(connector.migration, "complete");
   await operations.composeUp("kms-connector", connector.runtime, { noDeps: true, forceRecreate: true });
-  await operations.waitForKmsConnectorParty(nextState, operatorId, "healthy");
+  await operations.waitForKmsConnectorParty(nextState, operatorId);
   await operations.postBootHealthGate(connector.runtime);
+  await operations.saveState(nextState);
 };
 
 const RESUME_HINT_BLOCKERS = new Set([

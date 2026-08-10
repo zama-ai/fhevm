@@ -15,8 +15,6 @@ export const connectorVersionKeys = [
   "CONNECTOR_TX_SENDER_VERSION",
 ] as const;
 
-export const kmsOperatorVersionKeys = ["CORE_VERSION", ...connectorVersionKeys] as const;
-
 export const coprocessorVersionKeys = [
   "COPROCESSOR_DB_MIGRATION_VERSION",
   "COPROCESSOR_HOST_LISTENER_VERSION",
