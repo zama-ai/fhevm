@@ -89,7 +89,7 @@ scDeploy:
       echo "Waiting for KMS keygen ceremony to reach on-chain consensus..."
       node -e "
       const { ethers } = require('ethers');
-      const ABI = ['event ActivateKey(uint256 keyId, string[] kmsNodeStorageUrls, tuple(uint8 keyType, bytes digest)[] keyDigests)'];
+      const ABI = ['event ActivateKey(uint256 keyId, uint256 existingKeyId, string[] kmsNodeStorageUrls, tuple(uint8 keyType, bytes digest)[] keyDigests)'];
       async function waitForEvent(contract, eventName, timeoutMs) {
         const deadline = Date.now() + timeoutMs;
         while (Date.now() < deadline) {
