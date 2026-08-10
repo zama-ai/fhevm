@@ -4,6 +4,7 @@ import type { SignedDecryptionPermit } from '../../types/signedDecryptionPermit.
 import type { NativeSigner } from '../../modules/ethereum/types.js';
 import type { TransportKeyPair } from '../decrypt/index.js';
 import { signDecryptionPermit as signDecryptionPermit_ } from '../../kms/SignedDecryptionPermit-p.js';
+import { initPublicAction } from '../../runtime/CoreFhevm-p.js';
 
 export type SignDecryptionPermitParameters = {
   readonly contractAddresses: readonly string[];
@@ -20,5 +21,6 @@ export async function signDecryptionPermit(
   fhevm: Fhevm<FhevmChain>,
   parameters: SignDecryptionPermitParameters,
 ): Promise<SignedDecryptionPermit> {
-  return signDecryptionPermit_(fhevm, parameters);
+  const fhevmContext = await initPublicAction(fhevm);
+  return signDecryptionPermit_(fhevm, { ...parameters, fhevmContext });
 }

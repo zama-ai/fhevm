@@ -10,9 +10,7 @@ export interface ChainContracts {
   rand: ethers.Contract;
 }
 
-export async function deployChainFixture(
-  deployer: ethers.Signer,
-): Promise<ChainContracts> {
+export async function deployChainFixture(deployer: ethers.Signer): Promise<ChainContracts> {
   const erc20 = await deployContract('EncryptedERC20', deployer, 'Token', 'TKN');
   const erc20Address = await erc20.getAddress();
 

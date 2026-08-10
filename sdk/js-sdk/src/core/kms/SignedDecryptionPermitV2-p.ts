@@ -1,19 +1,18 @@
 import type { SignedDecryptionPermit, SignedDecryptionPermitV2 } from '../types/signedDecryptionPermit.js';
 import type { KmsUserDecryptEip712V2 } from '../types/kms.js';
-import type { Bytes65Hex, BytesHex, ChecksummedAddress, Uint8Number } from '../types/primitives.js';
-import type { FhevmChain } from '../types/fhevmChain.js';
-import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
+import type { BytesHex, ChecksummedAddress, Uint8Number } from '../types/primitives.js';
 import type { KmsSignDecryptionPermitContext, KmsSignDecryptionPermitParameters } from './SignedDecryptionPermit-p.js';
 import type { KmsExtraData } from '../types/kms-p.js';
+import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { assertRecordNonNullableProperty } from '../base/record.js';
-import { assertRecordBytes65HexProperty } from '../base/bytes.js';
+import { assertRecordBytesHexProperty } from '../base/bytes.js';
 import { addressToChecksummedAddress, assertIsAddress, assertRecordAddressProperty } from '../base/address.js';
 import { assertRecordStringProperty } from '../base/string.js';
 import { assertIsTransportKeyPair, type TransportKeyPair } from './TransportKeyPair-p.js';
 import { readCurrentKmsSignersContext } from '../host-contracts/readKmsSignersContext-p.js';
 import { kmsSignersContextToExtraData } from '../host-contracts/KmsSignersContext-p.js';
 import { assertIsKmsUserDecryptEip712V2, createKmsUserDecryptEip712V2 } from './createKmsUserDecryptEip712V2.js';
-import { verifyKmsUserDecryptEip712V2 } from '../utils-p/decrypt/verifyKmsUserDecryptEip712V2.js';
+import { verifyErc1271UserDecrypt } from '../utils-p/decrypt/verifyErc1271UserDecrypt-p.js';
 import { assert } from '../base/errors/InternalError.js';
 import { EXTRA_DATA_V2 } from './kmsExtraData-p.js';
 import { assertIsUintNumber } from '../base/uint.js';
@@ -29,7 +28,7 @@ const MAX_USER_DECRYPT_CONTRACT_ADDRESSES = 10 as Uint8Number;
 
 class SignedDecryptionPermitV2Impl implements SignedDecryptionPermitV2 {
   readonly #eip712: KmsUserDecryptEip712V2;
-  readonly #signature: Bytes65Hex;
+  readonly #signature: BytesHex;
   readonly #signerAddress: ChecksummedAddress;
   readonly #delegatorAddress: ChecksummedAddress | undefined;
 
@@ -37,7 +36,7 @@ class SignedDecryptionPermitV2Impl implements SignedDecryptionPermitV2 {
     privateToken: symbol,
     parameters: {
       readonly eip712: KmsUserDecryptEip712V2;
-      readonly signature: Bytes65Hex;
+      readonly signature: BytesHex;
       readonly signerAddress: ChecksummedAddress;
       readonly delegatorAddress?: ChecksummedAddress | undefined;
     },
@@ -55,7 +54,7 @@ class SignedDecryptionPermitV2Impl implements SignedDecryptionPermitV2 {
     return this.#eip712;
   }
 
-  public get signature(): Bytes65Hex {
+  public get signature(): BytesHex {
     return this.#signature;
   }
 
@@ -92,6 +91,44 @@ Object.freeze(SignedDecryptionPermitV2Impl.prototype);
 
 export function isSignedDecryptionPermitV2(value: unknown): value is SignedDecryptionPermitV2 {
   return value instanceof SignedDecryptionPermitV2Impl;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// _createSignedDecryptionPermitV2
+////////////////////////////////////////////////////////////////////////////////
+
+async function _createSignedDecryptionPermitV2(
+  context: KmsSignDecryptionPermitContext,
+  parameters: {
+    readonly signerAddress: ChecksummedAddress;
+    readonly eip712: KmsUserDecryptEip712V2;
+    readonly signature: BytesHex;
+    readonly delegatorAddress?: ChecksummedAddress | undefined;
+  },
+): Promise<SignedDecryptionPermitV2> {
+  const { eip712, signature } = parameters;
+
+  // Enforced here (the choke point shared by signDecryptionPermitV2 and
+  // parseSignedDecryptionPermitV2). The message field is a validated uint256
+  // string, so `BigInt` is safe; a uint can only be non-positive when it is 0.
+  if (BigInt(eip712.message.durationSeconds) <= 0n) {
+    throw new RangeError(`durationSeconds must be positive, got ${eip712.message.durationSeconds}`);
+  }
+
+  if (eip712.message.allowedContracts.length > MAX_USER_DECRYPT_CONTRACT_ADDRESSES) {
+    throw Error(`allowedContracts max length of ${MAX_USER_DECRYPT_CONTRACT_ADDRESSES} exceeded`);
+  }
+
+  // Precautionary local check against `eip712.message.userAddress`; auto-detects
+  // EOA vs ERC-1271 (a normal EOA permit stays on the no-RPC fast path). The KMS
+  // remains authoritative — see `verifyErc1271UserDecrypt` for the full contract.
+  await verifyErc1271UserDecrypt(context, {
+    userAddress: eip712.message.userAddress,
+    eip712,
+    signature,
+  });
+
+  return new SignedDecryptionPermitV2Impl(PRIVATE_TOKEN, parameters);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -139,16 +176,24 @@ export async function signDecryptionPermitV2(
 
 export async function parseSignedDecryptionPermitV2(
   context: KmsSignDecryptionPermitContext,
-  transportKeyPair: TransportKeyPair,
-  permit: unknown,
+  parameters: {
+    readonly transportKeyPair: TransportKeyPair;
+    readonly permit: unknown;
+    readonly fhevmContext: FhevmClientFrozenContext;
+  },
 ): Promise<SignedDecryptionPermitV2> {
+  const { transportKeyPair, permit } = parameters;
   assertIsTransportKeyPair(transportKeyPair, {});
 
   const permitName = 'permit-v2';
   const options = {};
 
   assertRecordNonNullableProperty(permit, 'eip712', permitName, options);
-  assertRecordBytes65HexProperty(permit, 'signature', permitName, options);
+
+  // Accept a variable-length signature: a 65-byte EOA signature, a concatenated
+  // multisig ERC-1271 blob, or the empty `0x` pre-approved-hash flow. The verify
+  // step below auto-detects EOA vs ERC-1271 against `eip712.message.userAddress`.
+  assertRecordBytesHexProperty(permit, 'signature', permitName, options);
   assertRecordAddressProperty(permit, 'signerAddress', permitName, options);
 
   const eip712 = permit.eip712;
@@ -170,7 +215,11 @@ export async function parseSignedDecryptionPermitV2(
     );
   }
 
-  return await _createSignedDecryptionPermitV2(context, { signature: permit.signature, eip712, signerAddress });
+  return await _createSignedDecryptionPermitV2(context, {
+    signature: permit.signature,
+    eip712,
+    signerAddress,
+  });
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -191,6 +240,7 @@ export async function createUnsignedDecryptionPermitEip712V2(
     signerAddress: signerAddressArg,
     transportKeyPair,
     delegatorAddress: delegatorAddressArg,
+    fhevmContext,
   } = parameters;
 
   assertIsUintNumber(durationSecondsParam, { subject: 'durationSeconds' });
@@ -229,14 +279,15 @@ export async function createUnsignedDecryptionPermitEip712V2(
   const kmsSignersContext = await readCurrentKmsSignersContext(context, {
     kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
     protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
+    fhevmContext,
   });
 
-  const extraData: KmsExtraData = kmsSignersContextToExtraData(kmsSignersContext);
+  const kmsContextExtraData: KmsExtraData = kmsSignersContextToExtraData(kmsSignersContext);
 
   // A unified (v2) permit requires protocol v14+ extraData (context id + epoch id).
   assert(
-    extraData.version >= EXTRA_DATA_V2,
-    `createUnsignedDecryptionPermitEip712V2 error: Invalid extraData version extraData=${extraData.toBytesHex()}`,
+    kmsContextExtraData.ge(EXTRA_DATA_V2),
+    `createUnsignedDecryptionPermitEip712V2 error: Invalid extraData version extraData=${kmsContextExtraData.bytesHex}`,
   );
 
   // RFC-016: round startTimestamp down to the nearest minute. This absorbs small clock skew
@@ -251,7 +302,7 @@ export async function createUnsignedDecryptionPermitEip712V2(
     allowedContracts: contractAddresses, // [] = permissive, [...] = specific
     durationSeconds,
     startTimestamp: roundedStartTimestamp,
-    extraData,
+    extraData: kmsContextExtraData,
     publicKey: transportKeyPair.publicKey,
   };
 
@@ -260,37 +311,6 @@ export async function createUnsignedDecryptionPermitEip712V2(
   // no need to validate as it has already been validated
 
   return eip712;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// _createSignedDecryptionPermitV2
-////////////////////////////////////////////////////////////////////////////////
-
-async function _createSignedDecryptionPermitV2(
-  context: { readonly chain: FhevmChain; readonly runtime: FhevmRuntime },
-  parameters: {
-    readonly signerAddress: ChecksummedAddress;
-    readonly eip712: KmsUserDecryptEip712V2;
-    readonly signature: Bytes65Hex;
-    readonly delegatorAddress?: ChecksummedAddress | undefined;
-  },
-): Promise<SignedDecryptionPermitV2> {
-  const { signerAddress, eip712, signature } = parameters;
-
-  // Enforced here (the choke point shared by signDecryptionPermitV2 and
-  // parseSignedDecryptionPermitV2). The message field is a validated uint256
-  // string, so `BigInt` is safe; a uint can only be non-positive when it is 0.
-  if (BigInt(eip712.message.durationSeconds) <= 0n) {
-    throw new RangeError(`durationSeconds must be positive, got ${eip712.message.durationSeconds}`);
-  }
-
-  if (eip712.message.allowedContracts.length > MAX_USER_DECRYPT_CONTRACT_ADDRESSES) {
-    throw Error(`allowedContracts max length of ${MAX_USER_DECRYPT_CONTRACT_ADDRESSES} exceeded`);
-  }
-
-  await verifyKmsUserDecryptEip712V2(context, { signer: signerAddress, message: eip712.message, signature });
-
-  return new SignedDecryptionPermitV2Impl(PRIVATE_TOKEN, parameters);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

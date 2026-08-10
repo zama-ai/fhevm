@@ -36,9 +36,38 @@ export {
   fetchEncryptedValues,
 } from './fetchEncryptedValues.js';
 
-// v13: Only the Legacy version is exported
+// V1 permit (protocol v13 and below) — kept for chains/relayers not yet on v14.
 export {
   type CreateUnsignedLegacyDecryptionPermitEip712Parameters,
   type CreateUnsignedLegacyDecryptionPermitEip712ReturnType,
   createUnsignedLegacyDecryptionPermitEip712,
 } from './createUnsignedLegacyDecryptionPermitEip712.js';
+
+export {
+  type CanUseUnifiedDecryptionPermitParameters,
+  type CanUseUnifiedDecryptionPermitReturnType,
+  canUseUnifiedDecryptionPermit,
+} from './canUseUnifiedDecryptionPermit.js';
+
+// V1 permit (protocol v13 and below) — kept for chains/relayers not yet on v14.
+export {
+  type SignLegacyDecryptionPermitParameters,
+  type SignLegacyDecryptionPermitReturnType,
+  signLegacyDecryptionPermit,
+} from './signLegacyDecryptionPermit.js';
+
+// V2 permit (protocol v14 and above) — requires an SDK on protocol API v0.14.0+
+// and a chain whose KMSVerifier/ProtocolConfig support the unified extraData v2.
+export {
+  type CreateUnsignedUnifiedDecryptionPermitEip712Parameters,
+  type CreateUnsignedUnifiedDecryptionPermitEip712ReturnType,
+  createUnsignedUnifiedDecryptionPermitEip712,
+} from './createUnsignedUnifiedDecryptionPermitEip712.js';
+
+// V2 permit (protocol v14 and above) — requires an SDK on protocol API v0.14.0+
+// and a chain whose KMSVerifier/ProtocolConfig support the unified extraData v2.
+export {
+  type SignUnifiedDecryptionPermitParameters,
+  type SignUnifiedDecryptionPermitReturnType,
+  signUnifiedDecryptionPermit,
+} from './signUnifiedDecryptionPermit.js';

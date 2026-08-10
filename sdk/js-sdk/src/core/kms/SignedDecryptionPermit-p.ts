@@ -5,20 +5,15 @@ import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
 import type { NativeSigner } from '../modules/ethereum/types.js';
 import type { TransportKeyPair } from './TransportKeyPair-p.js';
+import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
-import { getResolvedProtocolVersion } from '../runtime/CoreFhevm-p.js';
-import { isSemverStrictlyBefore } from '../base/semver.js';
 import {
   isSignedDecryptionPermitV1,
   parseSignedDecryptionPermitV1,
   signDecryptionPermitV1,
 } from './SignedDecryptionPermitV1-p.js';
-import {
-  isSignedDecryptionPermitV2,
-  parseSignedDecryptionPermitV2,
-  signDecryptionPermitV2,
-} from './SignedDecryptionPermitV2-p.js';
-import { isRecordUintNumberProperty } from '../base/uint.js';
+import { isSignedDecryptionPermitV2, parseSignedDecryptionPermitV2 } from './SignedDecryptionPermitV2-p.js';
+import { isRecordUintNumberProperty, isUintNumber } from '../base/uint.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -136,6 +131,7 @@ export type KmsSignDecryptionPermitParameters = {
   readonly signer: NativeSigner;
   readonly delegatorAddress?: string | undefined;
   readonly transportKeyPair: TransportKeyPair;
+  readonly fhevmContext: FhevmClientFrozenContext;
 };
 
 /**
@@ -156,18 +152,11 @@ export async function signDecryptionPermit(
   context: KmsSignDecryptionPermitContext,
   parameters: KmsSignDecryptionPermitParameters,
 ): Promise<SignedDecryptionPermit> {
-  const protocolVersion = getResolvedProtocolVersion(context);
-  if (protocolVersion === undefined) {
-    throw new Error(
-      'Unable to resolve protocol version from context, ensure proper initialization of the FhevmRuntime and FhevmChain.',
-    );
-  }
-
-  if (isSemverStrictlyBefore(protocolVersion.version, '0.14.0')) {
-    return await signDecryptionPermitV1(context, parameters);
-  }
-
-  return await signDecryptionPermitV2(context, parameters);
+  // `signDecryptionPermit` (the public action wrapping this) is deprecated in
+  // favor of `signLegacyDecryptionPermit`/`signUnifiedDecryptionPermit`, but we
+  // deliberately keep it pinned to V1 here for good compatibility with callers
+  // that haven't migrated yet.
+  return await signDecryptionPermitV1(context, parameters);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -225,24 +214,32 @@ function _normalizeSerializedPermitDomainChainId(permit: unknown): unknown {
 
 export async function parseSignedDecryptionPermit(
   context: KmsSignDecryptionPermitContext,
-  transportKeyPair: TransportKeyPair,
-  permit: unknown,
+  parameters: {
+    readonly transportKeyPair: TransportKeyPair;
+    readonly permit: unknown;
+    readonly fhevmContext: FhevmClientFrozenContext;
+  },
 ): Promise<SignedDecryptionPermit> {
+  const { transportKeyPair, permit, fhevmContext } = parameters;
   // Accept permits revived from a JSON string (chainId serialized as a string).
   const sanitizedPermit = _normalizeSerializedPermitDomainChainId(permit);
 
   const hasVersion = isRecordUintNumberProperty(sanitizedPermit, 'version');
 
   // if no version, interpret as permit v1
-  const version: number = hasVersion ? sanitizedPermit.version : 1;
+  const sanitizedVersion: number = hasVersion ? sanitizedPermit.version : 1;
+
+  // check valid version number
+  if (!isUintNumber(sanitizedVersion) || sanitizedVersion > 2 || sanitizedVersion === 0) {
+    throw new Error(`Unsupported permit version: ${sanitizedVersion}. Supported versions are 1 and 2.`);
+  }
+
+  // version is 1 or 2
+  const version: 1 | 2 = sanitizedVersion as 1 | 2;
 
   if (version === 1) {
-    return await parseSignedDecryptionPermitV1(context, transportKeyPair, sanitizedPermit);
+    return await parseSignedDecryptionPermitV1(context, { transportKeyPair, permit: sanitizedPermit, fhevmContext });
   }
 
-  if (version === 2) {
-    return await parseSignedDecryptionPermitV2(context, transportKeyPair, sanitizedPermit);
-  }
-
-  throw new Error(`Unsupported permit version: ${version}. Supported versions are 1 and 2.`);
+  return await parseSignedDecryptionPermitV2(context, { transportKeyPair, permit: sanitizedPermit, fhevmContext });
 }

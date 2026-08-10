@@ -69,6 +69,27 @@ export function isCleartext(chainName: FheTestChainName) {
 }
 
 /**
+ * Real, remotely-deployed networks (as opposed to the local docker-compose chains).
+ *
+ * Their contracts/relayer roll out independently of this repo, so a nominal protocol version in
+ * `PROTOCOL_VERSION_BY_CHAIN` can lag (or a relayer feature can lag its own chain's protocol) —
+ * unlike `localstack*`, where `protocolEraOf` statically guarantees the deployed version. Suites
+ * gated on this should still runtime-probe the actual capability (see
+ * `checkRelayerSupportsUnifiedPermit` in the unified-permit test suites) rather than trust a static
+ * version check, so this list can safely include chains not on the latest protocol yet — an
+ * unsupported chain just resolves the probe to `false` and skips.
+ */
+export function isRealDeployedChain(chainName: FheTestChainName): boolean {
+  return (
+    chainName === 'sepolia' ||
+    chainName === 'testnet' ||
+    chainName === 'mainnet' ||
+    chainName === 'devnet' ||
+    chainName === 'polygon_devnet'
+  );
+}
+
+/**
  * Protocol era (the minor version of the protocol: 11, 12, 13, 14) a test
  * chain runs on, derived from its name. Used to gate migration tests that only
  * make sense on chains at or above a given protocol version.
@@ -105,7 +126,7 @@ const PROTOCOL_VERSION_BY_CHAIN: Readonly<Record<FheTestChainName, ProtocolVersi
   localstack_v12: '0.12.0',
   localstack_v13: '0.13.0',
   localstack_v14: '0.14.0',
-  devnet: '0.13.0',
+  devnet: '0.14.0',
   polygon_devnet: '0.13.0',
   ingen_trex_cleartext: '0.12.0',
   hoodi_cleartext: '0.11.0',
@@ -166,14 +187,34 @@ export function getFheEncryptionKeyTfheVersion(chainName: FheTestChainName): str
 // createLogger
 // ---------------------------------------------------------------------------
 
-export function createLogger(log: (msg: string) => void): Logger {
+/** Formats a `Date` as `YYYY-MM-DD HH:mm:ss.SSS` in local time. */
+function formatLogTimestamp(date: Date): string {
+  const pad = (n: number, len = 2): string => String(n).padStart(len, '0');
+  const datePart = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  const timePart = `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${pad(date.getMilliseconds(), 3)}`;
+  return `${datePart} ${timePart}`;
+}
+
+const ANSI_GRAY = '\x1b[90m';
+const ANSI_YELLOW = '\x1b[33m';
+const ANSI_RED = '\x1b[31m';
+const ANSI_RESET = '\x1b[0m';
+
+export function createLogger(log: (msg: string) => void, chainName?: string): Logger {
+  // Prefix every line with the chain under test so interleaved multi-chain /
+  // multi-suite output stays attributable. Defaults to the CHAIN env var
+  // (e.g. `[testnet]`); pass `config.chainName` for exact per-config tagging.
+  const chain = chainName ?? process.env.CHAIN ?? 'sepolia';
   return {
-    debug: (message: string) => log(`[debug] ${message}`),
-    warn: (message: string) => log(`[warn] ${message}`),
+    debug: (message: string) =>
+      log(`${ANSI_GRAY}${formatLogTimestamp(new Date())} DBG [${chain}] ${message}${ANSI_RESET}`),
+    warn: (message: string) =>
+      log(`${ANSI_YELLOW}${formatLogTimestamp(new Date())} WRN [${chain}] ${message}${ANSI_RESET}`),
     error: (message: string, cause: unknown) => {
-      log(`[error] ${message}`);
+      const timestamp = formatLogTimestamp(new Date());
+      log(`${ANSI_RED}${timestamp} ERR [${chain}] ${message}${ANSI_RESET}`);
       if (cause !== undefined) {
-        log(`[error] ${String(cause)}`);
+        log(`${ANSI_RED}${timestamp} ERR [${chain}] ${String(cause)}${ANSI_RESET}`);
       }
     },
   };
@@ -298,12 +339,18 @@ function isLocalAnvilChain(chainName: FheTestChainName): boolean {
   return isLocalCleartextChain(chainName) || chainName.startsWith('localstack');
 }
 
+// `cast` talks to a local Anvil node and should always respond in well under this; capped so a
+// stalled RPC call (or a `cast send` stuck waiting on a receipt) fails fast instead of hanging the
+// whole test run silently.
+const FOUNDRY_CAST_TIMEOUT_MS = 30_000;
+
 function tryFoundryCast(args: readonly string[]): string | undefined {
   try {
     return execFileSync('cast', [...args], {
       encoding: 'utf-8',
       env: foundryCastEnv(),
       stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: FOUNDRY_CAST_TIMEOUT_MS,
     }).trim();
   } catch {
     return undefined;
@@ -316,9 +363,10 @@ function foundryCast(args: readonly string[], errorMessage: string): string {
       encoding: 'utf-8',
       env: foundryCastEnv(),
       stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: FOUNDRY_CAST_TIMEOUT_MS,
     }).trim();
   } catch (error) {
-    const maybeExecError = error as { stderr?: unknown; message?: unknown };
+    const maybeExecError = error as { stderr?: unknown; message?: unknown; signal?: unknown };
     const stderr =
       typeof maybeExecError.stderr === 'string'
         ? maybeExecError.stderr.trim()
@@ -326,7 +374,10 @@ function foundryCast(args: readonly string[], errorMessage: string): string {
           ? maybeExecError.stderr.toString('utf-8').trim()
           : '';
     const message = typeof maybeExecError.message === 'string' ? maybeExecError.message : '';
-    const details = stderr || message;
+    const timedOut = maybeExecError.signal === 'SIGTERM' && !stderr;
+    const details = timedOut
+      ? `\`cast ${args.join(' ')}\` did not respond within ${FOUNDRY_CAST_TIMEOUT_MS}ms (killed).`
+      : stderr || message;
     throw new Error(details ? `${errorMessage}\n${details}` : errorMessage);
   }
 }
@@ -528,7 +579,7 @@ function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
     localstack_v14,
     localcleartext_legacy,
     localcleartext,
-    localcleartext_v12: localcleartext,
+    localcleartext_v12: localcleartext_legacy,
     localcleartext_v13: localcleartext,
     polygon_devnet,
     ingen_trex_cleartext,

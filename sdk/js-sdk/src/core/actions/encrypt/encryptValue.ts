@@ -9,7 +9,7 @@ import { toArray } from '../../base/object.js';
 import { createTypedValue } from '../../base/typedValue.js';
 import { encrypt as encrypt_ } from '../../coprocessor/encrypt.js';
 import { resolveRawValueTypeName } from '../../handle/FheType.js';
-import { asFhevmWithTfheVersion } from '../../runtime/CoreFhevm-p.js';
+import { initPublicAction } from '../../runtime/CoreFhevm-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -41,12 +41,13 @@ export async function encryptValue(
   assertIsAddress(contractAddress, {});
   assertIsAddress(userAddress, {});
 
-  const f = asFhevmWithTfheVersion(fhevm);
+  const fhevmContext = await initPublicAction(fhevm);
 
-  const result = await encrypt_(f, {
+  const result = await encrypt_(fhevm, {
     contractAddress: addressToChecksummedAddress(contractAddress),
     userAddress: addressToChecksummedAddress(userAddress),
     values,
+    fhevmContext,
     options,
   });
 

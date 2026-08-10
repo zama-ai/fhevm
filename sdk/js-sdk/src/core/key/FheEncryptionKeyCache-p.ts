@@ -314,6 +314,12 @@ export class FheEncryptionKeyCache {
         if (this.#cache.get(relayerUrl) === entry) {
           this.#cache.delete(relayerUrl);
         }
+        entry.owner
+          .deref()
+          ?.config.logger?.error?.(
+            `FheEncryptionKeyCache: ${resolvedKind === 'bytes' ? 'fetch' : 'conversion to wasm'} failed for relayerUrl="${relayerUrl}". Evicting cache entry; the next call will re-fetch.`,
+            err,
+          );
         throw err;
       },
     );

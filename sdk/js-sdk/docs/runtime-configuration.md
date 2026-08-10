@@ -157,20 +157,20 @@ the embedded base64 copy for that file.
 ## Pinning module versions
 
 By default the SDK uses the latest bundled WASM versions (TFHE `1.6.2`, TKMS
-`0.13.20-0`). To pin explicit versions — for reproducible builds or
+`0.14.0-1`). To pin explicit versions — for reproducible builds or
 compatibility with a specific protocol deployment — set `moduleVersions`:
 
 ```ts
 setFhevmRuntimeConfig({
   moduleVersions: {
     tfhe: '1.6.2', // encryption WASM
-    kms: '0.13.20-0', // decryption WASM
+    kms: '0.14.0-1', // decryption WASM
     checkCompatibility: 'throw', // 'throw' | 'warn' | 'off'
   },
 });
 ```
 
-Bundled versions: TFHE `'1.5.3'` or `'1.6.2'`; TKMS `'0.13.10'` or `'0.13.20-0'`.
+Bundled versions: TFHE `'1.5.3'` or `'1.6.2'`; TKMS `'0.13.10'`, `'0.13.20-0'`, or `'0.14.0-1'`.
 `checkCompatibility` decides what happens when a pinned version doesn't match the
 chain's protocol — throw, warn, or ignore. It has no effect under `'auto'`.
 
