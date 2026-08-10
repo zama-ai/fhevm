@@ -48,8 +48,7 @@ interface IKMSGeneration {
     event AbortCrsgen(uint256 crsId);
     event AbortKeygen(uint256 prepKeygenId);
     event ActivateCrs(uint256 crsId, string[] kmsNodeStorageUrls, bytes crsDigest);
-    event ActivateKey(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
-    event CompressedKeyMaterialAdded(uint256 indexed keyId, uint256 indexed keyMaterialId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
+    event ActivateKey(uint256 keyId, uint256 existingKeyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
     event CrsgenRequest(uint256 crsId, uint256 maxBitLength, ParamsType paramsType, bytes extraData);
     event CrsgenResponse(uint256 crsId, bytes crsDigest, bytes signature, address kmsTxSender);
     event KeygenRequest(uint256 prepKeygenId, uint256 keyId, uint256 existingKeyId, bytes extraData);
@@ -606,46 +605,9 @@ interface IKMSGeneration {
         "internalType": "uint256"
       },
       {
-        "name": "kmsNodeStorageUrls",
-        "type": "string[]",
-        "indexed": false,
-        "internalType": "string[]"
-      },
-      {
-        "name": "keyDigests",
-        "type": "tuple[]",
-        "indexed": false,
-        "internalType": "struct IKMSGeneration.KeyDigest[]",
-        "components": [
-          {
-            "name": "keyType",
-            "type": "uint8",
-            "internalType": "enum IKMSGeneration.KeyType"
-          },
-          {
-            "name": "digest",
-            "type": "bytes",
-            "internalType": "bytes"
-          }
-        ]
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "CompressedKeyMaterialAdded",
-    "inputs": [
-      {
-        "name": "keyId",
+        "name": "existingKeyId",
         "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "keyMaterialId",
-        "type": "uint256",
-        "indexed": true,
+        "indexed": false,
         "internalType": "uint256"
       },
       {
@@ -4714,9 +4676,9 @@ event ActivateCrs(uint256 crsId, string[] kmsNodeStorageUrls, bytes crsDigest);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `ActivateKey(uint256,string[],(uint8,bytes)[])` and selector `0xeb85c26dbcad46b80a68a0f24cce7c2c90f0a1faded84184138839fc9e80a25b`.
+    /**Event with signature `ActivateKey(uint256,uint256,string[],(uint8,bytes)[])` and selector `0xc37881e4a7d79b8812b377afdf38225df503d9f7ae7fa51527836d61f9d1bf69`.
 ```solidity
-event ActivateKey(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
+event ActivateKey(uint256 keyId, uint256 existingKeyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -4728,6 +4690,8 @@ event ActivateKey(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDig
     pub struct ActivateKey {
         #[allow(missing_docs)]
         pub keyId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub existingKeyId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub kmsNodeStorageUrls: alloy::sol_types::private::Vec<
             alloy::sol_types::private::String,
@@ -4749,6 +4713,7 @@ event ActivateKey(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDig
         impl alloy_sol_types::SolEvent for ActivateKey {
             type DataTuple<'a> = (
                 alloy::sol_types::sol_data::Uint<256>,
+                alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::String>,
                 alloy::sol_types::sol_data::Array<KeyDigest>,
             );
@@ -4756,12 +4721,11 @@ event ActivateKey(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDig
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            const SIGNATURE: &'static str = "ActivateKey(uint256,string[],(uint8,bytes)[])";
+            const SIGNATURE: &'static str = "ActivateKey(uint256,uint256,string[],(uint8,bytes)[])";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                235u8, 133u8, 194u8, 109u8, 188u8, 173u8, 70u8, 184u8, 10u8, 104u8,
-                160u8, 242u8, 76u8, 206u8, 124u8, 44u8, 144u8, 240u8, 161u8, 250u8,
-                222u8, 216u8, 65u8, 132u8, 19u8, 136u8, 57u8, 252u8, 158u8, 128u8, 162u8,
-                91u8,
+                195u8, 120u8, 129u8, 228u8, 167u8, 215u8, 155u8, 136u8, 18u8, 179u8,
+                119u8, 175u8, 223u8, 56u8, 34u8, 93u8, 245u8, 3u8, 217u8, 247u8, 174u8,
+                127u8, 165u8, 21u8, 39u8, 131u8, 109u8, 97u8, 249u8, 209u8, 191u8, 105u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -4772,8 +4736,9 @@ event ActivateKey(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDig
             ) -> Self {
                 Self {
                     keyId: data.0,
-                    kmsNodeStorageUrls: data.1,
-                    keyDigests: data.2,
+                    existingKeyId: data.1,
+                    kmsNodeStorageUrls: data.2,
+                    keyDigests: data.3,
                 }
             }
             #[inline]
@@ -4797,6 +4762,9 @@ event ActivateKey(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDig
                     <alloy::sol_types::sol_data::Uint<
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.keyId),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.existingKeyId),
                     <alloy::sol_types::sol_data::Array<
                         alloy::sol_types::sol_data::String,
                     > as alloy_sol_types::SolType>::tokenize(&self.kmsNodeStorageUrls),
@@ -4836,148 +4804,6 @@ event ActivateKey(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDig
         impl From<&ActivateKey> for alloy_sol_types::private::LogData {
             #[inline]
             fn from(this: &ActivateKey) -> alloy_sol_types::private::LogData {
-                alloy_sol_types::SolEvent::encode_log_data(this)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `CompressedKeyMaterialAdded(uint256,uint256,string[],(uint8,bytes)[])` and selector `0x860254c88644f7bc7c755dc1669a8befadf71acf7f2c20b8ac59866491543510`.
-```solidity
-event CompressedKeyMaterialAdded(uint256 indexed keyId, uint256 indexed keyMaterialId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
-```*/
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    #[derive(Clone)]
-    pub struct CompressedKeyMaterialAdded {
-        #[allow(missing_docs)]
-        pub keyId: alloy::sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub keyMaterialId: alloy::sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub kmsNodeStorageUrls: alloy::sol_types::private::Vec<
-            alloy::sol_types::private::String,
-        >,
-        #[allow(missing_docs)]
-        pub keyDigests: alloy::sol_types::private::Vec<
-            <KeyDigest as alloy::sol_types::SolType>::RustType,
-        >,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[automatically_derived]
-        impl alloy_sol_types::SolEvent for CompressedKeyMaterialAdded {
-            type DataTuple<'a> = (
-                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::String>,
-                alloy::sol_types::sol_data::Array<KeyDigest>,
-            );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type TopicList = (
-                alloy_sol_types::sol_data::FixedBytes<32>,
-                alloy::sol_types::sol_data::Uint<256>,
-                alloy::sol_types::sol_data::Uint<256>,
-            );
-            const SIGNATURE: &'static str = "CompressedKeyMaterialAdded(uint256,uint256,string[],(uint8,bytes)[])";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                134u8, 2u8, 84u8, 200u8, 134u8, 68u8, 247u8, 188u8, 124u8, 117u8, 93u8,
-                193u8, 102u8, 154u8, 139u8, 239u8, 173u8, 247u8, 26u8, 207u8, 127u8,
-                44u8, 32u8, 184u8, 172u8, 89u8, 134u8, 100u8, 145u8, 84u8, 53u8, 16u8,
-            ]);
-            const ANONYMOUS: bool = false;
-            #[allow(unused_variables)]
-            #[inline]
-            fn new(
-                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
-                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                Self {
-                    keyId: topics.1,
-                    keyMaterialId: topics.2,
-                    kmsNodeStorageUrls: data.0,
-                    keyDigests: data.1,
-                }
-            }
-            #[inline]
-            fn check_signature(
-                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
-            ) -> alloy_sol_types::Result<()> {
-                if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
-                }
-                Ok(())
-            }
-            #[inline]
-            fn tokenize_body(&self) -> Self::DataToken<'_> {
-                (
-                    <alloy::sol_types::sol_data::Array<
-                        alloy::sol_types::sol_data::String,
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsNodeStorageUrls),
-                    <alloy::sol_types::sol_data::Array<
-                        KeyDigest,
-                    > as alloy_sol_types::SolType>::tokenize(&self.keyDigests),
-                )
-            }
-            #[inline]
-            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
-                (
-                    Self::SIGNATURE_HASH.into(),
-                    self.keyId.clone(),
-                    self.keyMaterialId.clone(),
-                )
-            }
-            #[inline]
-            fn encode_topics_raw(
-                &self,
-                out: &mut [alloy_sol_types::abi::token::WordToken],
-            ) -> alloy_sol_types::Result<()> {
-                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
-                    return Err(alloy_sol_types::Error::Overrun);
-                }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
-                out[1usize] = <alloy::sol_types::sol_data::Uint<
-                    256,
-                > as alloy_sol_types::EventTopic>::encode_topic(&self.keyId);
-                out[2usize] = <alloy::sol_types::sol_data::Uint<
-                    256,
-                > as alloy_sol_types::EventTopic>::encode_topic(&self.keyMaterialId);
-                Ok(())
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::private::IntoLogData for CompressedKeyMaterialAdded {
-            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
-                From::from(self)
-            }
-            fn into_log_data(self) -> alloy_sol_types::private::LogData {
-                From::from(&self)
-            }
-        }
-        #[automatically_derived]
-        impl From<&CompressedKeyMaterialAdded> for alloy_sol_types::private::LogData {
-            #[inline]
-            fn from(
-                this: &CompressedKeyMaterialAdded,
-            ) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
         }
@@ -11503,8 +11329,6 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
         #[allow(missing_docs)]
         ActivateKey(ActivateKey),
         #[allow(missing_docs)]
-        CompressedKeyMaterialAdded(CompressedKeyMaterialAdded),
-        #[allow(missing_docs)]
         CrsgenRequest(CrsgenRequest),
         #[allow(missing_docs)]
         CrsgenResponse(CrsgenResponse),
@@ -11561,11 +11385,6 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 133u8, 128u8, 188u8, 245u8, 210u8, 171u8, 115u8, 169u8, 103u8, 135u8,
             ],
             [
-                134u8, 2u8, 84u8, 200u8, 134u8, 68u8, 247u8, 188u8, 124u8, 117u8, 93u8,
-                193u8, 102u8, 154u8, 139u8, 239u8, 173u8, 247u8, 26u8, 207u8, 127u8,
-                44u8, 32u8, 184u8, 172u8, 89u8, 134u8, 100u8, 145u8, 84u8, 53u8, 16u8,
-            ],
-            [
                 140u8, 240u8, 21u8, 19u8, 147u8, 248u8, 79u8, 214u8, 148u8, 197u8, 227u8,
                 21u8, 203u8, 116u8, 204u8, 5u8, 178u8, 71u8, 222u8, 10u8, 69u8, 79u8,
                 217u8, 233u8, 18u8, 156u8, 102u8, 30u8, 253u8, 249u8, 64u8, 29u8,
@@ -11576,10 +11395,9 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 168u8, 39u8, 93u8, 32u8, 182u8, 109u8, 161u8, 154u8, 248u8, 63u8,
             ],
             [
-                235u8, 133u8, 194u8, 109u8, 188u8, 173u8, 70u8, 184u8, 10u8, 104u8,
-                160u8, 242u8, 76u8, 206u8, 124u8, 44u8, 144u8, 240u8, 161u8, 250u8,
-                222u8, 216u8, 65u8, 132u8, 19u8, 136u8, 57u8, 252u8, 158u8, 128u8, 162u8,
-                91u8,
+                195u8, 120u8, 129u8, 228u8, 167u8, 215u8, 155u8, 136u8, 18u8, 179u8,
+                119u8, 175u8, 223u8, 56u8, 34u8, 93u8, 245u8, 3u8, 217u8, 247u8, 174u8,
+                127u8, 165u8, 21u8, 39u8, 131u8, 109u8, 97u8, 249u8, 209u8, 191u8, 105u8,
             ],
         ];
         /// The names of the variants in the same order as `SELECTORS`.
@@ -11591,7 +11409,6 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
             ::core::stringify!(PrepKeygenResponse),
             ::core::stringify!(CrsgenResponse),
             ::core::stringify!(PrepKeygenRequest),
-            ::core::stringify!(CompressedKeyMaterialAdded),
             ::core::stringify!(CrsgenRequest),
             ::core::stringify!(KeygenRequest),
             ::core::stringify!(ActivateKey),
@@ -11605,7 +11422,6 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
             <PrepKeygenResponse as alloy_sol_types::SolEvent>::SIGNATURE,
             <CrsgenResponse as alloy_sol_types::SolEvent>::SIGNATURE,
             <PrepKeygenRequest as alloy_sol_types::SolEvent>::SIGNATURE,
-            <CompressedKeyMaterialAdded as alloy_sol_types::SolEvent>::SIGNATURE,
             <CrsgenRequest as alloy_sol_types::SolEvent>::SIGNATURE,
             <KeygenRequest as alloy_sol_types::SolEvent>::SIGNATURE,
             <ActivateKey as alloy_sol_types::SolEvent>::SIGNATURE,
@@ -11634,7 +11450,7 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for IKMSGenerationEvents {
         const NAME: &'static str = "IKMSGenerationEvents";
-        const COUNT: usize = 11usize;
+        const COUNT: usize = 10usize;
         fn decode_raw_log(
             topics: &[alloy_sol_types::Word],
             data: &[u8],
@@ -11667,15 +11483,6 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                             data,
                         )
                         .map(Self::ActivateKey)
-                }
-                Some(
-                    <CompressedKeyMaterialAdded as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
-                ) => {
-                    <CompressedKeyMaterialAdded as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
-                        .map(Self::CompressedKeyMaterialAdded)
                 }
                 Some(<CrsgenRequest as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
                     <CrsgenRequest as alloy_sol_types::SolEvent>::decode_raw_log(
@@ -11753,9 +11560,6 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 Self::ActivateKey(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
-                Self::CompressedKeyMaterialAdded(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
                 Self::CrsgenRequest(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
@@ -11788,9 +11592,6 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::ActivateKey(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::CompressedKeyMaterialAdded(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::CrsgenRequest(inner) => {
@@ -12196,12 +11997,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ///Creates a new event filter for the [`ActivateKey`] event.
         pub fn ActivateKey_filter(&self) -> alloy_contract::Event<&P, ActivateKey, N> {
             self.event_filter::<ActivateKey>()
-        }
-        ///Creates a new event filter for the [`CompressedKeyMaterialAdded`] event.
-        pub fn CompressedKeyMaterialAdded_filter(
-            &self,
-        ) -> alloy_contract::Event<&P, CompressedKeyMaterialAdded, N> {
-            self.event_filter::<CompressedKeyMaterialAdded>()
         }
         ///Creates a new event filter for the [`CrsgenRequest`] event.
         pub fn CrsgenRequest_filter(
