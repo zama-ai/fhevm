@@ -26,7 +26,7 @@ import {
   envPath,
   hostChainNames,
   hostChainRuntimes,
-  isExternalNode,
+  runsInCompose,
 } from "../layout";
 import { kmsConnectorEnvName, kmsConnectorPrefix } from "../kms-party";
 import { type StackSpec, topologyForState } from "../stack-spec/stack-spec";
@@ -824,7 +824,7 @@ export const generateComposeOverrides = async (_state: State, plan: StackSpec) =
   }
   // Externally-provisioned hosts (e.g. the Solana host-native validator) get no node/sc/coprocessor
   // compose from fhevm-cli — only their relayer + kms-connector config (generate/config.ts, env.ts).
-  const extraChains = chains.filter((chain) => !chain.isDefault && !isExternalNode(chain));
+  const extraChains = chains.filter((chain) => !chain.isDefault && runsInCompose(chain));
   const extraChainFileNames: string[] = [];
   for (const chain of extraChains) {
     const { node, sc, copro } = chain;

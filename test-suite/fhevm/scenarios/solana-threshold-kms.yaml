@@ -36,7 +36,7 @@ hostChains:
     rpcPort: 8545
   - key: solana
     type: solana
-    nodeProvisioning: external # host-native solana-test-validator; fhevm-cli owns only its config
+    nodeProvisioning: host-process # fhevm-cli runs the solana-test-validator and deploys the programs
     chainId: "9223372036854788153"
     rpcPort: 8899
 topology:

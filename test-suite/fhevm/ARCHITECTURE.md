@@ -37,7 +37,8 @@ flowchart TD
   F8 --> F9["12. kms-connector"]
   F9 --> F10["13. bootstrap"]
   F10 --> F11["14. relayer"]
-  F11 --> F12["15. test-suite"]
+  F11 --> F12["15. host-process: nodes fhevm-cli runs outside compose (Solana validator + deploy)"]
+  F12 --> F13["16. test-suite"]
 
   G["Local overrides (group or runtime service)"] --> C2
   H["Scenario-driven topology (host chains + coprocessor instances)"] --> C2

@@ -295,7 +295,7 @@ PY
 # 2. Clean rebuild of the whole EVM stack with the Solana code baked in from bootstrap.
 #    The `solana` scenario declares the RFC-021 Solana host alongside the default EVM host, so
 #    fhevm-cli generates the Solana relayer + kms-connector config and boots solana-proof-service
-#    (the solana-side bring-up below no longer patches those — single config writer).
+#    (the Solana host-process step does not patch those — single config writer).
 #    `--override solana-proof-service` rebuilds the standalone proof image from this worktree so a
 #    stale `solana-proof-service:local` / `:fhevm-local` image cannot outlive HEAD.
 #    SOLANA_E2E_SCENARIO selects the fhevm-cli scenario. Default `solana` (centralized KMS).
@@ -319,12 +319,11 @@ trap - EXIT
 # instead. `--override solana-proof-service` rebuilds the standalone proof
 # image so a stale `:local` / `:fhevm-local` tag cannot outlive HEAD.
 
-# 3. Bring the Solana side-stack online against the freshly-deployed live backend
-#    (test-suite/fhevm/src/solana/deploy.ts): fresh geyser validator + program deploy, the typed
-#    zama-host bootstrap (reads gateway addresses + KMS/coprocessor signer set live, so it tracks
-#    the new signer), host-chain registration, and the host-listener. Ordinary computation facts
-#    are ingested by reconstructing them from instruction data over Yellowstone, not from events.
-( cd "$FHEVM" && bun run src/solana/deploy.ts )
+# 3. The Solana side-stack (fresh geyser validator + program deploy, the typed zama-host bootstrap,
+#    host-chain registration, the host-listener) is no longer a separate call: the `solana` scenario
+#    resolves its host chain to `nodeProvisioning: host-process`, so the `up` above ran it as the
+#    `host-process` pipeline step. `bun run src/solana/deploy.ts` still provisions the same thing
+#    standalone when a node needs rebuilding without a full stack cycle.
 
 echo "[clean-e2e] stack ready. Run the typed scenario suite (compute -> public/user-decrypt ->"
 echo "  input-flow -> transfer -> consume), user-decrypt is PURE-SDK (no kms checkout):"

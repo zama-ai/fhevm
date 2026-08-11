@@ -373,7 +373,18 @@ export const lifecycleComposeProject = (lifecycleDir: string | undefined): strin
 
 const evmHex = (bytes: Uint8Array): string => `0x${Buffer.from(bytes).toString("hex")}`;
 
-if (import.meta.main) {
+/**
+ * Brings the Solana host node online against an already-running fhevm stack: fresh geyser
+ * validator, program deploy, zama-host bootstrap from live gateway values, host-chain
+ * registration, and the host-listener.
+ *
+ * Every input falls back to the same environment variable the standalone script read, so calling
+ * this from `fhevm-cli up` and running `bun run src/solana/deploy.ts` provision identically.
+ *
+ * The validator and host-listener are detached (`unref`, own log descriptors), so this returns
+ * once they are up rather than waiting on them.
+ */
+export const provisionSolanaHostNode = async (): Promise<{ zamaHostId: string }> => {
   const lifecycleDir = process.env.DEMO_LIFECYCLE_DIR || undefined;
   const composeProject = lifecycleComposeProject(lifecycleDir);
   const logDir = process.env.SOLANA_LOG_DIR ?? "/tmp";
@@ -434,6 +445,11 @@ if (import.meta.main) {
   console.log(
     `==> Solana side-stack ready. zama_host=${zamaHostId} host_chain_id=${SOLANA_HOST_CHAIN_ID} (i64 ${SOLANA_HOST_CHAIN_ID_I64})`,
   );
+  return { zamaHostId };
+};
+
+if (import.meta.main) {
+  await provisionSolanaHostNode();
   // The validator and host-listener are detached children; exit explicitly instead of waiting on
   // anything they hold open.
   process.exit(0);

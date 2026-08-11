@@ -15,6 +15,7 @@ export const STEP_NAMES = [
   "kms-connector",
   "bootstrap",
   "relayer",
+  "host-process",
   "test-suite",
 ] as const;
 
@@ -31,7 +32,7 @@ export const OVERRIDE_GROUPS = [
 ] as const;
 
 export const HOST_CHAIN_TYPES = ["evm", "solana"] as const;
-export const HOST_CHAIN_NODE_PROVISIONING = ["container", "external"] as const;
+export const HOST_CHAIN_NODE_PROVISIONING = ["container", "host-process", "external"] as const;
 
 export type StepName = (typeof STEP_NAMES)[number];
 export type VersionTarget = (typeof TARGETS)[number];
@@ -39,9 +40,15 @@ export type OverrideGroup = (typeof OVERRIDE_GROUPS)[number];
 /** The kind of host chain. `evm` is the default; `solana` is the RFC-021 Solana host. */
 export type HostChainType = (typeof HOST_CHAIN_TYPES)[number];
 /**
- * How the host node is provisioned. `container` = fhevm-cli runs it (and deploys + registers it);
- * `external` = an outside process owns the node + deploy + registration (the Solana host-native
- * validator). (A future `host` value could run a fhevm-cli-managed host process.)
+ * How the host node is provisioned.
+ *
+ * - `container` — fhevm-cli runs the node as a compose service, then deploys and registers it.
+ * - `host-process` — fhevm-cli runs the node as a process on this machine (a Solana validator
+ *   cannot be a compose service here: it needs the geyser plugin loaded from the worktree), then
+ *   deploys the programs and registers the chain. Compose never sees the node, but fhevm-cli still
+ *   owns its whole lifecycle.
+ * - `external` — something outside fhevm-cli owns the node, the deploy, and the registration.
+ *   fhevm-cli only writes config pointing at it.
  */
 export type HostChainNodeProvisioning = (typeof HOST_CHAIN_NODE_PROVISIONING)[number];
 
@@ -70,9 +77,10 @@ export type HostChainScenario = {
    */
   type?: HostChainType;
   /**
-   * Who provisions the host node. Omitted defaults by `type`: `evm` ⇒ `container` (fhevm-cli runs
-   * the node + deploy + registration), `solana` ⇒ `external` (the host-native validator and the
-   * solana-side bring-up own them). Set explicitly to override.
+   * Who provisions the host node. Omitted defaults by `type`: `evm` ⇒ `container`, `solana` ⇒
+   * `host-process`. In both defaults fhevm-cli owns the node, deploy, and registration — they
+   * differ only in whether compose runs it. Set explicitly to override, e.g. `external` to point
+   * at a validator something else already runs.
    */
   nodeProvisioning?: HostChainNodeProvisioning;
 };

@@ -207,6 +207,8 @@ export const COMPONENT_BY_STEP: Record<StepName, string[]> = {
   "kms-connector": ["kms-connector"],
   "bootstrap": ["gateway-sc", "host-sc"],
   "relayer": ["relayer", "solana-proof-service"],
+  // No compose components by design: this step runs host-process nodes outside compose.
+  "host-process": [],
   "test-suite": ["test-suite"],
 };
 
@@ -497,17 +499,26 @@ export const hostChainNames = (key: string, defaultKey = DEFAULT_HOST_CHAIN_KEY)
 });
 /**
  * Resolves how a host node is provisioned. Explicit `nodeProvisioning` wins; otherwise defaults by
- * kind: solana ⇒ external (host-native validator + solana-side bring-up own node/deploy/register),
- * evm ⇒ container (fhevm-cli runs them).
+ * kind: solana ⇒ host-process (fhevm-cli runs the validator and deploys the programs itself),
+ * evm ⇒ container (fhevm-cli runs them as compose services).
  */
 export const resolveNodeProvisioning = (
   chain: Pick<HostChainScenario, "type" | "nodeProvisioning">,
 ): HostChainNodeProvisioning =>
-  chain.nodeProvisioning ?? ((chain.type ?? "evm") === "solana" ? "external" : "container");
+  chain.nodeProvisioning ?? ((chain.type ?? "evm") === "solana" ? "host-process" : "container");
 
-/** True when the host node is provisioned outside fhevm-cli (no node/sc/coprocessor compose). */
-export const isExternalNode = (chain: Pick<HostChainScenario, "type" | "nodeProvisioning">): boolean =>
-  resolveNodeProvisioning(chain) === "external";
+/**
+ * True when compose owns the node — so it gets a node/sc/coprocessor service, a port to wait on,
+ * and contract artifacts. Both `host-process` and `external` nodes live outside compose; they
+ * differ in who runs them, which is {@link isCliManagedHostProcess}, not this.
+ */
+export const runsInCompose = (chain: Pick<HostChainScenario, "type" | "nodeProvisioning">): boolean =>
+  resolveNodeProvisioning(chain) === "container";
+
+/** True when fhevm-cli runs this node as a host process it owns (start, deploy, register). */
+export const isCliManagedHostProcess = (
+  chain: Pick<HostChainScenario, "type" | "nodeProvisioning">,
+): boolean => resolveNodeProvisioning(chain) === "host-process";
 
 export type HostChainRuntime = HostChainScenario & {
   /** Resolved host-chain kind: defaults to `evm` when the scenario omits `type`. */
