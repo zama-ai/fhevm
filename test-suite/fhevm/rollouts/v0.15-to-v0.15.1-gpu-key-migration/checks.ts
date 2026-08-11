@@ -66,8 +66,8 @@ export type OperatorMaterial = {
   chainId: string;
   compressed: boolean;
   digest: string;
+  existingKeyId: string;
   keyId: string;
-  materialId: string;
   legacy: boolean;
   operator: number;
   storedMatchesVerified: boolean;
@@ -87,7 +87,7 @@ export const assertOperatorMaterialAgreement = (rows: readonly OperatorMaterial[
     }
   }
   const identities = new Set(
-    rows.map((row) => `${row.chainId}:${row.blockNumber}:${row.keyId}:${row.materialId}:${row.digest}`),
+    rows.map((row) => `${row.chainId}:${row.blockNumber}:${row.keyId}:${row.existingKeyId}:${row.digest}`),
   );
   if (identities.size !== 1) {
     throw new Error("material gate blocked: applied material differs across operators");
