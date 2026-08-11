@@ -20,8 +20,8 @@ const material = (overrides: Partial<OperatorMaterial> = {}): OperatorMaterial =
   chainId: "12345",
   compressed: true,
   digest: "aa",
-  keyId: "01",
-  materialId: "02",
+  existingKeyId: "01",
+  keyId: "02",
   legacy: true,
   operator: 0,
   status: "activated",
@@ -132,7 +132,7 @@ describe("RFC 029 rollout gates", () => {
     expect(() =>
       assertOperatorMaterialAgreement([
         material(),
-        material({ materialId: "03", operator: 1 }),
+        material({ keyId: "03", operator: 1 }),
       ]),
     ).toThrow("applied material differs across operators");
     expect(() =>

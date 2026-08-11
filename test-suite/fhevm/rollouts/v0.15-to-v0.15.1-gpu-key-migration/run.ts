@@ -211,34 +211,34 @@ const operatorMaterial = async (
   const value = await sqlScalar(
     database,
     `SELECT e.chain_id || '|' || e.block_number || '|' ||
-            encode(e.key_id, 'hex') || '|' || encode(e.key_material_id, 'hex') || '|' ||
+            encode(e.key_id, 'hex') || '|' || encode(e.existing_key_id, 'hex') || '|' ||
             encode(e.key_digest_server, 'hex') || '|' ||
             e.status || '|' || (k.sks_key IS NOT NULL)::int || '|' ||
             (k.compressed_xof_keyset IS NOT NULL)::int || '|' ||
             (k.compressed_xof_keyset = e.key_content_compressed_xof_keyset)::int
        FROM kms_key_activation_events e
-       JOIN keys k ON k.key_id = e.key_id
+       JOIN keys k ON k.key_id = e.existing_key_id
        JOIN host_chain_blocks_valid b ON b.chain_id = e.chain_id AND b.block_hash = e.block_hash
       WHERE e.status = 'activated'
         AND b.block_status = 'finalized'
-        AND e.key_material_id IS NOT NULL
+        AND e.existing_key_id IS NOT NULL
         AND e.key_content_compressed_xof_keyset IS NOT NULL
         AND e.chain_id = ${BigInt(expectedChainId).toString()}
-        AND e.key_id = decode('${expectedKeyId}', 'hex')
+        AND e.existing_key_id = decode('${expectedKeyId}', 'hex')
         AND e.block_number > ${afterBlock}
       ORDER BY e.block_number DESC
       LIMIT 1;`,
   );
   if (!value) return undefined;
-  const [chainId, blockNumber, keyId, materialId, digest, status, legacy, compressed, storedMatchesVerified] =
+  const [chainId, blockNumber, keyId, existingKeyId, digest, status, legacy, compressed, storedMatchesVerified] =
     value.split("|");
   return {
     blockNumber: Number(blockNumber),
     chainId: chainId ?? "",
     compressed: compressed === "1",
     digest: digest ?? "",
+    existingKeyId: existingKeyId ?? "",
     keyId: keyId ?? "",
-    materialId: materialId ?? "",
     legacy: legacy === "1",
     operator,
     storedMatchesVerified: storedMatchesVerified === "1",
