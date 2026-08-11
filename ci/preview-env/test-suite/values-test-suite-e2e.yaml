@@ -144,4 +144,4 @@ env:
   - name: PROTOCOL_PAYMENT_ADDRESS
     valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: protocol_payment.address, optional: true}}
   - name: ZAMA_OFT_ADDRESS
-    valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: zama_oft.address, optional: true}}
+    valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: mocked_zama_oft.address, optional: true}}
