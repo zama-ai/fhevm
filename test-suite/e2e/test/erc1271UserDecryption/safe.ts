@@ -9,8 +9,7 @@
 // Safe — interactions go through `ethers.Contract` with the shipped ABIs.
 //
 // What the pipeline sees is unchanged — an opaque `isValidSignature(digest,
-// blob)` STATICCALL — but unlike the retired `ERC1271MultisigWallet` mock, a
-// real Safe:
+// blob)` STATICCALL. What a real Safe does behind it:
 //   - verifies signatures over the SafeMessage EIP-712 RE-HASH of the digest
 //     (`getMessageHash(digest)`, domain `{chainId, verifyingContract: proxy}`
 //     with NO name/version), never over the raw digest — every signing helper
@@ -346,8 +345,8 @@ export function safeApprovedHashPart(ownerAddress: string): SignaturePart {
 
 /**
  * Record the on-chain approval backing a `safeApprovedHashPart`: the owner
- * calls `approveHash` with the SafeMessage hash of `digest` — NOT the raw
- * digest, which is what the retired mock approved.
+ * calls `approveHash` with the SafeMessage hash of `digest`, not the raw
+ * digest: `checkSignatures` only ever sees the wrapped hash.
  */
 export async function approveSafeHash(safe: SafeAccount, owner: Signer, digest: string): Promise<void> {
   await (await (safe.safe.connect(owner) as Contract).approveHash(safeMessageHashOf(safe, digest))).wait();

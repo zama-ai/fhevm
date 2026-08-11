@@ -1,4 +1,5 @@
 import { expect } from 'chai';
+import { hexlify, randomBytes } from 'ethers';
 import { ethers } from 'hardhat';
 
 import { ERC1271OwnerWallet, EncryptedERC20, SmartWalletWithDelegation, UserDecrypt } from '../../types';
@@ -507,6 +508,17 @@ describe('Unified user decryption', function () {
     const KMS_CONTEXT_TAG = 0x07n << 248n;
     const EPOCH_TAG = 0x08n << 248n;
 
+    /**
+     * A context id that cannot exist, generated FRESH PER RUN.
+     *
+     * A fixed literal would assume nothing ever registered it — true on a
+     * devnet redeployed every boot, unverifiable on a long-lived shared
+     * environment. Drawing 16 random bytes inside the tag's counter space makes
+     * a collision impossible in practice, so a failure of the test below can
+     * never be explained away by "something registered that id earlier".
+     */
+    const unknownContextId = KMS_CONTEXT_TAG | (BigInt(hexlify(randomBytes(16))) || 1n);
+
     before(async function () {
       // Fresh re-encryption key: the relayer dedups requests on
       // (handles, userAddress, allowedContracts, publicKey, extraData) — a
@@ -665,6 +677,40 @@ describe('Unified user decryption', function () {
       // the relayer's format check (and the signature covers it), but the
       // request transaction reverts with InvalidKmsContext during the
       // relayer's simulation — no request is opened and no fee is charged.
+      // PRECONDITION: prove the Gateway itself considers this context invalid
+      // BEFORE we assert it rejects the request. Without this, a stuck request
+      // is ambiguous — "the Gateway failed to validate" and "the Gateway was
+      // right and our id happened to exist here" look identical from the
+      // client. Asserting it up front turns the later failure into a specific
+      // claim: the Gateway HAD the information to reject and did not.
+      //
+      // The current context is queried first as a positive control: a wrong
+      // address or a mismatched ABI would return false for everything and let
+      // the real check pass vacuously.
+      const gatewayRpcUrl = process.env.GATEWAY_RPC_URL;
+      const gatewayConfigAddress = process.env.GATEWAY_CONFIG_ADDRESS;
+      if (gatewayRpcUrl && gatewayConfigAddress) {
+        const gatewayConfig = new ethers.Contract(
+          gatewayConfigAddress,
+          ['function isValidKmsContext(uint256) view returns (bool)'],
+          new ethers.JsonRpcProvider(gatewayRpcUrl),
+        );
+        expect(
+          await gatewayConfig.isValidKmsContext(currentContextId),
+          `gateway probe is not trustworthy: the CURRENT context ${currentContextId} reads as invalid at ` +
+            `${gatewayConfigAddress}. Check GATEWAY_CONFIG_ADDRESS/GATEWAY_RPC_URL before reading the next assert.`,
+        ).to.equal(true);
+        expect(
+          await gatewayConfig.isValidKmsContext(unknownContextId),
+          `the fabricated context ${unknownContextId} exists on this gateway, so this test's premise does ` +
+            `not hold here. It is drawn from 16 random bytes per run, so this should be impossible.`,
+        ).to.equal(false);
+      }
+
+      // Print the id: it is random per run, so without this a failure cannot be
+      // correlated with on-chain state afterwards.
+      console.log(`[unified] fabricated unknown contextId: ${hex32(unknownContextId)}`);
+
       const handle = await aliceContract.xUint64();
       const req: UnifiedDecryptRequest = {
         handles: [directHandle(handle, aliceContractAddress, signers.alice.address)],
@@ -673,7 +719,7 @@ describe('Unified user decryption', function () {
         publicKey: extraDataPublicKey,
         startTimestamp: backdatedStartTimestamp(),
         durationSeconds: DURATION_SECONDS,
-        extraData: `0x01${hex32(KMS_CONTEXT_TAG | 0xdeadbeefn)}`,
+        extraData: `0x01${hex32(unknownContextId)}`,
       };
       const { post, poll } = await requestUnifiedUserDecrypt(
         cfg,
@@ -685,8 +731,9 @@ describe('Unified user decryption', function () {
         },
       );
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-      // InvalidKmsContext(0xdeadbeef) — selector 0x77ddbe81.
-      expectGatewayRevert(poll, /0x77ddbe81.*deadbeef/i);
+      // InvalidKmsContext(<unknownContextId>) — selector 0x77ddbe81. The id is
+      // random per run, so this cannot pass or fail because of leftover state.
+      expectGatewayRevert(poll, /0x77ddbe81/i);
     });
 
     it('test unified user decrypt rejects a malformed extraData version', async function () {

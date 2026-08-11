@@ -120,7 +120,7 @@ describe('ERC-1271 user decryption', function () {
   }
 
   before(async function () {
-    // Only the four mock wallets deploy here now; the Safe matrix is lazy.
+    // Only the four mock wallets deploy here; the Safe matrix is lazy.
     this.timeout(LIVE_NETWORK ? 10 * 60 * 1000 : 180_000);
     // 5, not 3: the multisig tests use dave (owner) and eve (non-owner), and
     // sibling suites that touch dave/eve all pass 5. The count only limits
@@ -423,9 +423,9 @@ describe('ERC-1271 user decryption', function () {
   // 65-byte {r,s,v} owner parts sorted strictly ascending by signer address.
   // The blob is longer than a single ECDSA signature, so `ecrecover` on it is
   // impossible — every layer must forward it opaquely to the Safe's
-  // `isValidSignature`. Unlike the retired mock, a real Safe REVERTS on a bad
-  // blob (GS020/GS025/GS026) instead of returning a non-magic value; either
-  // way the relayer's pre-check rejects synchronously (400), and the KMS
+  // `isValidSignature`. A real Safe REVERTS on a bad blob (GS020/GS025/GS026)
+  // rather than returning a non-magic value; either way the relayer's
+  // pre-check rejects synchronously (400), and the KMS
   // Connector runs the same shared verifier again before the KMS produces
   // shares. Owners sign the SafeMessage EIP-712 wrap of the unified digest,
   // never the digest itself (see ./safe.ts).

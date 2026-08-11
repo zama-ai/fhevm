@@ -475,22 +475,16 @@ export function isSignatureRejection(post: PostResult): boolean {
  * pinning the reason so the test cannot pass on an unintended failure.
  */
 /**
- * Fail with the ACTUAL cause when an async negative never reached a verdict.
+ * Distinguish "no verdict yet" from "wrong verdict".
  *
- * `expected 'pending' to equal 'failed'` reads like a wrong-outcome bug when it
- * is really a "no outcome yet": the job was still queued when the budget ran
- * out. Naming that distinction saves the next reader the round trip, and points
- * at the two things that actually produce it.
+ * Bare `expected 'pending' to equal 'failed'` reads as a wrong outcome when the
+ * job simply never went terminal — a request accepted on-chain instead of
+ * rejected stays non-terminal until the relayer's own `user_decrypt_timeout`
+ * (30m default) reaps it, far beyond any budget here.
  */
 function assertReachedTerminalState(poll: PollResult | undefined): void {
   if (poll?.status === 'pending') {
-    expect.fail(
-      `the job never reached a terminal state within the poll budget (last status: queued/pending). ` +
-        `No verdict was produced — this is NOT a wrong verdict. Given a budget comfortably above the ` +
-        `observed positive latency, suspect the components before the test: the request may have been ` +
-        `accepted on-chain instead of rejected, leaving it to stall downstream. ` +
-        `Raw: ${JSON.stringify(poll?.raw)}`,
-    );
+    expect.fail(`no verdict within the poll budget — the job never went terminal. Raw: ${JSON.stringify(poll?.raw)}`);
   }
 }
 
