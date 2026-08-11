@@ -33,6 +33,7 @@ export async function fetchPublicDecrypt(
     url,
     payload: p,
     options,
+    logger: relayerClient.runtime.config.logger,
   });
 
   const result = (await request.run()) as FetchPublicDecryptResult;
