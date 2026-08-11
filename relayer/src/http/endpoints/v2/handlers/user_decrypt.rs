@@ -21,7 +21,10 @@ use crate::http::utils::BounceChecker;
 use crate::http::{parse_and_validate, AppResponse};
 use crate::logging::UserDecryptStep;
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
-use crate::metrics::{observe_raw_eta_seconds, HttpApiVersion, RetryAfterRequestType};
+use crate::metrics::{
+    increment_request_cache, observe_raw_eta_seconds, observe_spare_shares, HttpApiVersion,
+    RequestCacheResult, RetryAfterRequestType,
+};
 use crate::orchestrator::{ContentHasher, Orchestrator};
 use crate::readiness::throttler::{DelegatedUserDecryptReadinessTask, UserDecryptReadinessTask};
 use crate::store::sql::models::{
@@ -43,7 +46,7 @@ use axum::{
 };
 use chrono::Utc;
 use std::sync::Arc;
-use tracing::{error, info, instrument, span, Level};
+use tracing::{error, info, instrument, span, warn, Level};
 use uuid::Uuid;
 
 pub type UserDecryptResponse = AppResponse<UserDecryptPostResponseJson>;
@@ -297,6 +300,7 @@ impl UserDecryptHandler {
 
         // Only dispatch event for new requests (deduplication)
         if matches!(insert_result, UserDecryptInsertResult::Inserted { .. }) {
+            increment_request_cache(RetryAfterRequestType::UserDecrypt, RequestCacheResult::Miss);
             let request_data = UserDecryptEventData::ReqRcvdFromUser {
                 decrypt_request: user_decrypt_request,
             };
@@ -319,6 +323,7 @@ impl UserDecryptHandler {
                 "Dispatched event to orchestrator"
             );
         } else {
+            increment_request_cache(RetryAfterRequestType::UserDecrypt, RequestCacheResult::Hit);
             info!(
                 step = %UserDecryptStep::DedupHit,
                 req_id = %request_id,
@@ -525,6 +530,7 @@ impl UserDecryptHandler {
 
         // Only dispatch event for new requests (deduplication)
         if matches!(insert_result, UserDecryptInsertResult::Inserted { .. }) {
+            increment_request_cache(RetryAfterRequestType::UserDecrypt, RequestCacheResult::Miss);
             let request_data = DelegatedUserDecryptEventData::ReqRcvdFromUser {
                 decrypt_request: delegated_user_decrypt_request,
             };
@@ -550,6 +556,7 @@ impl UserDecryptHandler {
                 "Dispatched DelegatedUserDecrypt event to orchestrator"
             );
         } else {
+            increment_request_cache(RetryAfterRequestType::UserDecrypt, RequestCacheResult::Hit);
             info!(
                 step = %UserDecryptStep::DedupHit,
                 req_id = %request_id,
@@ -699,6 +706,32 @@ impl UserDecryptHandler {
                                 match UserDecryptResponseJson::try_from(response_model) {
                                     Ok(api_response) => {
                                         let status_code = StatusCode::OK;
+
+                                        // Spare shares are the client's fault
+                                        // tolerance: reconstruction needs the
+                                        // threshold in *valid* shares, so
+                                        // anything beyond it is what a
+                                        // corrupted share can be dropped from.
+                                        // Recorded on the terminal 200 only:
+                                        // the GET is polled, so recording on
+                                        // the 202 holds would measure polling
+                                        // frequency instead of tolerance.
+                                        let spare_shares =
+                                            collected.saturating_sub(required_threshold as usize);
+                                        observe_spare_shares(
+                                            RetryAfterRequestType::UserDecrypt,
+                                            spare_shares,
+                                        );
+                                        if spare_shares == 0 && additional > 0 {
+                                            warn!(
+                                                request_id = %request_id,
+                                                ext_job_id = %job_id,
+                                                collected,
+                                                required_threshold,
+                                                elapsed_secs,
+                                                "Returned no spare shares despite waiting; the client cannot tolerate a corrupted share"
+                                            );
+                                        }
 
                                         info!(
                                             request_id = %request_id,
