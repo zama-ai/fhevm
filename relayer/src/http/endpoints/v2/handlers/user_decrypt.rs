@@ -28,7 +28,8 @@ use crate::metrics::{
 use crate::orchestrator::{ContentHasher, Orchestrator};
 use crate::readiness::throttler::{DelegatedUserDecryptReadinessTask, UserDecryptReadinessTask};
 use crate::store::sql::models::{
-    req_status_enum_model::ReqStatus, user_decrypt_req_model::UserDecryptReqData,
+    req_status_enum_model::ReqStatus,
+    user_decrypt_req_model::{UserDecryptReqData, UserDecryptResponseModel},
 };
 use crate::store::sql::repositories::user_decrypt_repo::{
     UserDecryptInsertResult, UserDecryptRepository,
@@ -38,7 +39,7 @@ use axum::{
     body::Bytes as AxumBytes,
     extract::{FromRequest, Path},
     http::Request,
-    response::IntoResponse,
+    response::{IntoResponse, Response},
 };
 use axum::{
     http::{header, StatusCode},
@@ -632,6 +633,137 @@ impl UserDecryptHandler {
             .into_response()
     }
 
+    /// Respond to a GET on a completed request.
+    ///
+    /// Holds with 202 while the optimistic wait window can still yield spare
+    /// shares, then returns every share collected.
+    async fn respond_completed(
+        &self,
+        job_id: Uuid,
+        request_id: Uuid,
+        response_model: UserDecryptResponseModel,
+    ) -> Response {
+        // Use resolved_threshold from DB if available, fall back to static config.
+        // DB stores i64 (BIGINT); convert to u32 at the repo boundary.
+        let required_threshold = response_model
+            .resolved_threshold
+            .and_then(|v| u32::try_from(v).ok())
+            .unwrap_or(self.user_decrypt_shares_threshold);
+        let collected = response_model.shares.len();
+
+        if collected < required_threshold as usize {
+            error!(
+                "Request marked as completed but insufficient shares: got {}, needed {}",
+                collected, required_threshold
+            );
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(UserDecryptStatusResponseJson {
+                    status: ApiResponseStatus::Failed,
+                    request_id: request_id.to_string(),
+                    result: None,
+                    error: Some(V2ErrorResponseBody::internal_server_error(
+                        "Internal error: completed request has insufficient shares",
+                    )),
+                }),
+            )
+                .into_response();
+        }
+
+        let window = self.user_decrypt_wait_state.window().await;
+        // `updated_at` is stamped by the write that completes the row at threshold.
+        // The ThresholdReached consensus write can restamp it once, but the contract
+        // emits both from a single call, so the window start only ever shifts by
+        // milliseconds.
+        let elapsed_secs = (Utc::now() - response_model.updated_at).num_seconds();
+
+        if !is_ready(
+            collected,
+            required_threshold as usize,
+            window.additional_shares,
+            elapsed_secs,
+            window.timeout_secs,
+        ) {
+            let retry_after = (i64::from(window.timeout_secs) - elapsed_secs).max(1);
+            info!(
+                request_id = %request_id,
+                http_status = StatusCode::ACCEPTED.as_u16(),
+                ext_job_id = %job_id,
+                collected,
+                required_threshold,
+                "Awaiting additional user-decryption shares"
+            );
+            return (
+                StatusCode::ACCEPTED,
+                [(header::RETRY_AFTER, retry_after.to_string())],
+                Json(UserDecryptStatusResponseJson {
+                    status: ApiResponseStatus::Queued,
+                    request_id: request_id.to_string(),
+                    result: None,
+                    error: None,
+                }),
+            )
+                .into_response();
+        }
+
+        let api_response = match UserDecryptResponseJson::try_from(response_model) {
+            Ok(api_response) => api_response,
+            Err(e) => {
+                error!(
+                    request_id = %request_id,
+                    ext_job_id = %job_id,
+                    error = %e,
+                    "Response conversion failed"
+                );
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(UserDecryptStatusResponseJson {
+                        status: ApiResponseStatus::Failed,
+                        request_id: request_id.to_string(),
+                        result: None,
+                        error: Some(V2ErrorResponseBody::internal_server_error(
+                            "Internal server error",
+                        )),
+                    }),
+                )
+                    .into_response();
+            }
+        };
+
+        let spare_shares = collected.saturating_sub(required_threshold as usize);
+        observe_spare_shares(RetryAfterRequestType::UserDecrypt, spare_shares);
+        if spare_shares == 0 && window.additional_shares > 0 {
+            warn!(
+                request_id = %request_id,
+                ext_job_id = %job_id,
+                collected,
+                required_threshold,
+                elapsed_secs,
+                "Returned no spare shares despite waiting; the client cannot tolerate a corrupted share"
+            );
+        }
+
+        let status_code = StatusCode::OK;
+        info!(
+            request_id = %request_id,
+            http_status = status_code.as_u16(),
+            ext_job_id = %job_id,
+            returned_shares = collected,
+            "HTTP response"
+        );
+
+        (
+            status_code,
+            Json(UserDecryptStatusResponseJson {
+                status: ApiResponseStatus::Succeeded,
+                request_id: request_id.to_string(),
+                result: Some(api_response),
+                error: None,
+            }),
+        )
+            .into_response()
+    }
+
     #[instrument(name = "handle-user-decrypt-get", skip_all, fields(job_id))]
     pub async fn handle_get(&self, job_id: Uuid) -> impl IntoResponse {
         // Generate a new request_id for this HTTP request
@@ -651,133 +783,8 @@ impl UserDecryptHandler {
             Ok(Some(response_model)) => {
                 match response_model.req_status {
                     ReqStatus::Completed => {
-                        // Use resolved_threshold from DB if available, fall back to static config.
-                        // DB stores i64 (BIGINT); convert to u32 at the repo boundary.
-                        let required_threshold = response_model
-                            .resolved_threshold
-                            .and_then(|v| u32::try_from(v).ok())
-                            .unwrap_or(self.user_decrypt_shares_threshold);
-                        if response_model.shares.len() >= required_threshold as usize {
-                            let collected = response_model.shares.len();
-                            let window = self.user_decrypt_wait_state.window().await;
-                            // `updated_at` is stamped by the write that completes the row at
-                            // threshold. The ThresholdReached consensus write can restamp it
-                            // once, but the contract emits both from a single call, so the
-                            // window start only ever shifts by milliseconds.
-                            let elapsed_secs =
-                                (Utc::now() - response_model.updated_at).num_seconds();
-
-                            if !is_ready(
-                                collected,
-                                required_threshold as usize,
-                                window.additional_shares,
-                                elapsed_secs,
-                                window.timeout_secs,
-                            ) {
-                                let retry_after =
-                                    (i64::from(window.timeout_secs) - elapsed_secs).max(1);
-                                info!(
-                                    request_id = %request_id,
-                                    http_status = StatusCode::ACCEPTED.as_u16(),
-                                    ext_job_id = %job_id,
-                                    collected,
-                                    required_threshold,
-                                    "Awaiting additional user-decryption shares"
-                                );
-                                (
-                                    StatusCode::ACCEPTED,
-                                    [(header::RETRY_AFTER, retry_after.to_string())],
-                                    Json(UserDecryptStatusResponseJson {
-                                        status: ApiResponseStatus::Queued,
-                                        request_id: request_id.to_string(),
-                                        result: None,
-                                        error: None,
-                                    }),
-                                )
-                                    .into_response()
-                            } else {
-                                match UserDecryptResponseJson::try_from(response_model) {
-                                    Ok(api_response) => {
-                                        let status_code = StatusCode::OK;
-
-                                        let spare_shares =
-                                            collected.saturating_sub(required_threshold as usize);
-                                        observe_spare_shares(
-                                            RetryAfterRequestType::UserDecrypt,
-                                            spare_shares,
-                                        );
-                                        if spare_shares == 0 && window.additional_shares > 0 {
-                                            warn!(
-                                                request_id = %request_id,
-                                                ext_job_id = %job_id,
-                                                collected,
-                                                required_threshold,
-                                                elapsed_secs,
-                                                "Returned no spare shares despite waiting; the client cannot tolerate a corrupted share"
-                                            );
-                                        }
-
-                                        info!(
-                                            request_id = %request_id,
-                                            http_status = status_code.as_u16(),
-                                            ext_job_id = %job_id,
-                                            returned_shares = collected,
-                                            "HTTP response"
-                                        );
-
-                                        (
-                                            status_code,
-                                            Json(UserDecryptStatusResponseJson {
-                                                status: ApiResponseStatus::Succeeded,
-                                                request_id: request_id.to_string(),
-                                                result: Some(api_response),
-                                                error: None,
-                                            }),
-                                        )
-                                            .into_response()
-                                    }
-                                    Err(e) => {
-                                        error!(
-                                            request_id = %request_id,
-                                            ext_job_id = %job_id,
-                                            error = %e,
-                                            "Response conversion failed"
-                                        );
-                                        (
-                                            StatusCode::INTERNAL_SERVER_ERROR,
-                                            Json(UserDecryptStatusResponseJson {
-                                                status: ApiResponseStatus::Failed,
-                                                request_id: request_id.to_string(),
-                                                result: None,
-                                                error: Some(
-                                                    V2ErrorResponseBody::internal_server_error(
-                                                        "Internal server error",
-                                                    ),
-                                                ),
-                                            }),
-                                        )
-                                            .into_response()
-                                    }
-                                }
-                            }
-                        } else {
-                            error!(
-                                "Request marked as completed but insufficient shares: got {}, needed {}",
-                                response_model.shares.len(), required_threshold
-                            );
-                            (
-                                StatusCode::INTERNAL_SERVER_ERROR,
-                                Json(UserDecryptStatusResponseJson {
-                                    status: ApiResponseStatus::Failed,
-                                    request_id: request_id.to_string(),
-                                    result: None,
-                                    error: Some(V2ErrorResponseBody::internal_server_error(
-                                        "Internal error: completed request has insufficient shares",
-                                    )),
-                                }),
-                            )
-                                .into_response()
-                        }
+                        self.respond_completed(job_id, request_id, response_model)
+                            .await
                     }
                     ReqStatus::TimedOut => {
                         let error_msg = match response_model.err_reason {
