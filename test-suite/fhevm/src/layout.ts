@@ -5,7 +5,6 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 
 import type {
-  HostChainNodeProvisioning,
   HostChainScenario,
   HostChainType,
   OverrideGroup,
@@ -498,33 +497,22 @@ export const hostChainNames = (key: string, defaultKey = DEFAULT_HOST_CHAIN_KEY)
   suffix: hostChainSuffix(key, defaultKey),
 });
 /**
- * Resolves how a host node is provisioned. Explicit `nodeProvisioning` wins; otherwise defaults by
- * kind: solana ⇒ host-process (fhevm-cli runs the validator and deploys the programs itself),
- * evm ⇒ container (fhevm-cli runs them as compose services).
- */
-export const resolveNodeProvisioning = (
-  chain: Pick<HostChainScenario, "type" | "nodeProvisioning">,
-): HostChainNodeProvisioning =>
-  chain.nodeProvisioning ?? ((chain.type ?? "evm") === "solana" ? "host-process" : "container");
-
-/**
  * True when compose owns the node — so it gets a node/sc/coprocessor service, a port to wait on,
- * and contract artifacts. Both `host-process` and `external` nodes live outside compose; they
- * differ in who runs them, which is {@link isCliManagedHostProcess}, not this.
+ * contract artifacts, and seeding.
+ *
+ * fhevm-cli owns every node's lifecycle; this is only about *how* it runs one. A Solana host is
+ * always a native `solana-test-validator` process (it loads the geyser plugin from the worktree,
+ * and a host-native validator is the ecosystem norm on macOS), so compose never runs it and the
+ * `host-process` step does. That follows from the chain kind, so it is derived from `type` rather
+ * than configured: a scenario cannot put a Solana node in compose, and saying otherwise would not
+ * make it work.
  */
-export const runsInCompose = (chain: Pick<HostChainScenario, "type" | "nodeProvisioning">): boolean =>
-  resolveNodeProvisioning(chain) === "container";
-
-/** True when fhevm-cli runs this node as a host process it owns (start, deploy, register). */
-export const isCliManagedHostProcess = (
-  chain: Pick<HostChainScenario, "type" | "nodeProvisioning">,
-): boolean => resolveNodeProvisioning(chain) === "host-process";
+export const runsInCompose = (chain: Pick<HostChainScenario, "type">): boolean =>
+  (chain.type ?? "evm") !== "solana";
 
 export type HostChainRuntime = HostChainScenario & {
   /** Resolved host-chain kind: defaults to `evm` when the scenario omits `type`. */
   type: HostChainType;
-  /** Resolved node provisioning: see {@link resolveNodeProvisioning}. */
-  nodeProvisioning: HostChainNodeProvisioning;
   index: number;
   isDefault: boolean;
   suffix: string;
@@ -541,7 +529,6 @@ export const hostChainRuntime = (
 ): HostChainRuntime => ({
   ...chain,
   type: chain.type ?? "evm",
-  nodeProvisioning: resolveNodeProvisioning(chain),
   index,
   isDefault: chain.key === defaultKey,
   ...hostChainNames(chain.key, defaultKey),

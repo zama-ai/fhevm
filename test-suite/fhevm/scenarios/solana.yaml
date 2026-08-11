@@ -12,7 +12,6 @@ hostChains:
     rpcPort: 8545
   - key: solana
     type: solana
-    nodeProvisioning: host-process # fhevm-cli runs the solana-test-validator and deploys the programs
     chainId: "9223372036854788153"
     rpcPort: 8899
 topology:

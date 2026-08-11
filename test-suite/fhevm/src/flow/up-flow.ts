@@ -70,7 +70,6 @@ import {
   envPath,
   gatewayAddressesPath,
   hostChainAddressesPath,
-  isCliManagedHostProcess,
   runsInCompose,
   realLzEndpointFor,
 } from "../layout";
@@ -985,14 +984,9 @@ export const runStep = async (state: State, step: StepName) => {
       }
       break;
     case "host-process": {
-      // Nodes fhevm-cli runs itself but outside compose. Imported lazily so an EVM-only `up` never
-      // loads the Solana client stack.
-      for (const chain of hostChainsForState(state).filter(isCliManagedHostProcess)) {
-        if (chain.type !== "solana") {
-          throw new Error(
-            `host-process provisioning is implemented for solana host chains only; ${chain.key} is ${chain.type}`,
-          );
-        }
+      // Nodes fhevm-cli runs itself but outside compose — today, Solana hosts. Imported lazily so
+      // an EVM-only `up` never loads the Solana client stack.
+      for (const chain of hostChainsForState(state).filter((c) => !runsInCompose(c))) {
         const { provisionSolanaHostNode } = await import("../solana/deploy");
         const { zamaHostId } = await provisionSolanaHostNode();
         console.log(`  ${chain.key}: zama_host=${zamaHostId}`);
