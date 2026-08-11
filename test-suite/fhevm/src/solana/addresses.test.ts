@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import {
-  decodeEvmAddressArray,
   evmAddressBytes,
   readGatewayBootstrapInputs,
   SOLANA_HOST_CHAIN_ID,
@@ -40,25 +39,6 @@ describe("evmAddressBytes", () => {
   });
 });
 
-describe("decodeEvmAddressArray", () => {
-  test("decodes the standard head-offset + length + words layout", () => {
-    const decoded = decodeEvmAddressArray(addressArrayReturnData([ADDRESS_A, ADDRESS_B]));
-    expect(decoded).toHaveLength(2);
-    expect(Buffer.from(decoded[0]).toString("hex")).toBe(ADDRESS_A.slice(2));
-    expect(Buffer.from(decoded[1]).toString("hex")).toBe(ADDRESS_B.slice(2));
-  });
-
-  test("decodes an empty set", () => {
-    expect(decodeEvmAddressArray(addressArrayReturnData([]))).toHaveLength(0);
-  });
-
-  test("rejects truncated return data and non-address words", () => {
-    expect(() => decodeEvmAddressArray(`0x${word("0x20")}${word("0x2")}${word(ADDRESS_A)}`)).toThrow("truncated");
-    const notPadded = `0x${word("0x20")}${word("0x1")}${"ff".repeat(32)}`;
-    expect(() => decodeEvmAddressArray(notPadded)).toThrow("left-padded");
-  });
-});
-
 describe("readGatewayBootstrapInputs", () => {
   const originalFetch = globalThis.fetch;
   afterEach(() => {
@@ -83,15 +63,18 @@ describe("readGatewayBootstrapInputs", () => {
     const calls: { method: string; data?: string }[] = [];
     globalThis.fetch = (async (_url: string | URL | Request, options?: RequestInit) => {
       const request = JSON.parse(String(options?.body)) as {
+        id: number;
         method: string;
         params: [{ data?: string }?];
       };
-      calls.push({ method: request.method, data: request.params[0]?.data });
+      calls.push({ method: request.method, data: request.params?.[0]?.data });
+      // 0x9164d0ae / 0x7eaac8f2 are viem's derived selectors for getCoprocessorSigners() /
+      // getKmsSigners() — the same ones the retired bash pinned for `cast call`.
       const result =
         request.method === "eth_chainId"
           ? "0xd903"
-          : addressArrayReturnData(request.params[0]?.data === "0x9164d0ae" ? [ADDRESS_A] : [ADDRESS_A, ADDRESS_B]);
-      return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result }));
+          : addressArrayReturnData(request.params?.[0]?.data === "0x9164d0ae" ? [ADDRESS_A] : [ADDRESS_A, ADDRESS_B]);
+      return new Response(JSON.stringify({ jsonrpc: "2.0", id: request.id, result }));
     }) as typeof fetch;
 
     const inputs = await readGatewayBootstrapInputs({ gatewayRpcUrl: "http://127.0.0.1:8546", addressesPath });

@@ -25,15 +25,7 @@ import { BRINGUP_KMS_CONTEXT_ID } from "./addresses";
 import { findKmsContextPda } from "./internal/generated/zamaHost/pdas/index.js";
 import { certificateCleartext, type PublicDecryptCertificate } from "./public-decrypt";
 import { hostConfigAddress, type SolanaProvisioningContext } from "./provision";
-
-type VaultModule = typeof import("@demo-dapp/vault/index.js");
-let vaultModulePromise: Promise<VaultModule> | undefined;
-const vaultModule = (): Promise<VaultModule> => (vaultModulePromise ??= import("@demo-dapp/vault/index.js"));
-
-type SdkVerifyModule = typeof import("@sdk-src/solana/actions/verifyPublicDecrypt.js");
-let sdkVerifyModulePromise: Promise<SdkVerifyModule> | undefined;
-const sdkVerifyModule = (): Promise<SdkVerifyModule> =>
-  (sdkVerifyModulePromise ??= import("@sdk-src/solana/actions/verifyPublicDecrypt.js"));
+import { vaultModule, sdkVerifyModule } from "./lazy-modules";
 
 /** The zama-host KMS-context PDA for `contextId` (`["kms-context", u64-le id]`). */
 export const kmsContextAddress = async (contextId: bigint = BRINGUP_KMS_CONTEXT_ID): Promise<Address> => {

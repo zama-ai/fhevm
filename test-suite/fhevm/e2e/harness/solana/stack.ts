@@ -9,7 +9,7 @@
 
 import { waitForSnsCommit } from "../../../src/solana/sns";
 import { run } from "../../../src/utils/process";
-import { until } from "../until";
+import { until } from "../../../src/utils/until";
 import type { TestEnv } from "../loadEnv";
 
 const PROOF_SERVICE_CONTAINER = "fhevm-solana-proof-service";
@@ -29,8 +29,8 @@ export type SolanaStack = {
 const untilProofServiceReady = async (proofServiceUrl: string): Promise<void> => {
   await until(
     async () => {
-      const body = await (await fetch(`${proofServiceUrl}/health/readiness`)).text();
-      return /"ready"\s*:\s*true/.test(body);
+      const body = (await (await fetch(`${proofServiceUrl}/health/readiness`)).json()) as { ready?: boolean };
+      return body.ready === true;
     },
     { description: "solana-proof-service readiness", timeoutMs: 120_000 },
   );
@@ -52,7 +52,9 @@ export const ensureUp = async (env: TestEnv): Promise<SolanaStack> => {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getHealth" }),
       });
-      return response.ok && /"ok"/.test(await response.text());
+      if (!response.ok) return false;
+      const body = (await response.json()) as { result?: string };
+      return body.result === "ok";
     },
     { description: "validator RPC health", timeoutMs: 60_000 },
   );

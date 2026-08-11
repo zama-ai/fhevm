@@ -100,6 +100,8 @@ programs/confidential-batcher   App program (DD-042): aggregates encrypted depos
 programs/demo-vault             Minimal public share-mint vault the batcher fronts; plain SPL.
 programs/encrypted-counter      Specimen app program: the smallest complete zama-host consumer,
                                 written to be copied as the starting point for a new app.
+programs/dep-chain              Specimen app program: the load shape — packs a full-depth
+                                dependent FHE chain into a single fhe_execute.
 crates/zama-fhe                 Program-facing SDK: typed execution builder (`FheExecution`), `Encrypted<T>`, account
                                 resolution for fhe_execute.
 crates/zama-solana-acl          The shared ACL crate: account layout, decode, MMR verification,

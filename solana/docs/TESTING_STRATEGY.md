@@ -50,7 +50,8 @@ all fail closed (see the `*_rejects_*` mollusk tests).
 6. **ABI / IDL golden** (`scripts/check-zama-host-idl.sh`, `execution_contracts.rs`): vendored IDLs and the
    Borsh golden manifest must match the freshly-built Anchor IDLs; EVENT_VERSION consistency across
    zama-host / confidential-token / host-listener is asserted (a mismatch would silently drop events).
-7. **End-to-end** (`.github/workflows/solana-e2e.yml`, `full-vertical.sh`): the Yellowstone-only
+7. **End-to-end** (`.github/workflows/solana-e2e.yml`, the bun:test scenario suite under
+   `test-suite/fhevm/e2e/scenarios/`): the Yellowstone-only
    path feeds ordinary computation facts through Yellowstone gRPC reconstruction while retaining only
    the narrow produced-public lifecycle execution required by solana-proof-service
    reconstruction. It drives the **decrypt vertical** against a local validator + full coprocessor/KMS

@@ -8,6 +8,7 @@
 
 import { COPROCESSOR_DB_CONTAINER } from "../layout";
 import { run } from "../utils/process";
+import { until } from "../utils/until";
 
 const BYTES32 = /^0x[0-9a-f]{64}$/i;
 
@@ -22,25 +23,29 @@ export const waitForSnsCommit = async (handle: string): Promise<void> => {
   if (!BYTES32.test(handle)) throw new Error(`invalid handle before ciphertext wait: ${handle}`);
   const container = COPROCESSOR_DB_CONTAINER;
   const hex = handle.slice(2);
-  const deadline = Date.now() + SNS_COMMIT_TIMEOUT_MS;
-  for (;;) {
-    const result = await run(
-      [
-        "docker",
-        "exec",
-        container,
-        "psql",
-        "-U",
-        "postgres",
-        "-d",
-        "coprocessor",
-        "-tAc",
-        `SELECT ciphertext IS NOT NULL AND ciphertext128 IS NOT NULL FROM ciphertext_digest WHERE handle=decode('${hex}','hex')`,
-      ],
-      { allowFailure: true },
-    );
-    if (result.code === 0 && result.stdout.trim() === "t") return;
-    if (Date.now() >= deadline) throw new Error(`ciphertext materialization timed out for ${handle}`);
-    await Bun.sleep(SNS_COMMIT_POLL_INTERVAL_MS);
-  }
+  await until(
+    async () => {
+      const result = await run(
+        [
+          "docker",
+          "exec",
+          container,
+          "psql",
+          "-U",
+          "postgres",
+          "-d",
+          "coprocessor",
+          "-tAc",
+          `SELECT ciphertext IS NOT NULL AND ciphertext128 IS NOT NULL FROM ciphertext_digest WHERE handle=decode('${hex}','hex')`,
+        ],
+        { allowFailure: true },
+      );
+      return result.code === 0 && result.stdout.trim() === "t";
+    },
+    {
+      timeoutMs: SNS_COMMIT_TIMEOUT_MS,
+      intervalMs: SNS_COMMIT_POLL_INTERVAL_MS,
+      description: `ciphertext materialization for ${handle}`,
+    },
+  );
 };

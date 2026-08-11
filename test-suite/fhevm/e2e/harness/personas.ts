@@ -9,7 +9,7 @@ import fs from "node:fs/promises";
 import { address, createKeyPairSignerFromBytes, createSolanaRpc, lamports } from "@solana/kit";
 
 import type { TestEnv } from "./loadEnv";
-import { until } from "./until";
+import { until } from "../../src/utils/until";
 
 const LAMPORTS_PER_SOL = 1_000_000_000n;
 

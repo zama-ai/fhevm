@@ -28,7 +28,7 @@ import {
   sendFheExecute,
   type FheExecuteStepArgs,
 } from "../../src/solana/fhe-execute";
-import { currentHandle, paddedLabel, releaseAndExpect, trivialEncryptPersistent } from "../../src/solana/fhe-vertical";
+import { currentHandle, paddedLabel, releaseAndDecrypt, trivialEncryptPersistent } from "../../src/solana/fhe-vertical";
 import { verticalSetup } from "../harness/solana/vertical";
 
 // One 32-step execution + a concurrent single-step release tail, each waiting on its own SNS
@@ -93,18 +93,17 @@ describe("solana dependency-chain load smoke", () => {
       });
 
       const [chainOutcome, bystanderOutcome] = await Promise.all([
-        releaseAndExpect(context, config, stack, {
+        releaseAndDecrypt(context, config, stack, {
           payer: wallet.signer,
           result: { target, handle: chainHandle },
-          expect: SEED + BigInt(CHAIN_STEPS - 1) * STEP,
         }),
-        releaseAndExpect(context, config, stack, {
+        releaseAndDecrypt(context, config, stack, {
           payer: wallet.signer,
           result: bystander,
-          expect: 7n,
         }),
       ]);
-      expect(chainOutcome.cleartext).toBe(36n);
+      // 5 + 31 * 1 = 36: the seed plus one increment per chained step.
+      expect(chainOutcome.cleartext).toBe(SEED + BigInt(CHAIN_STEPS - 1) * STEP);
       expect(bystanderOutcome.cleartext).toBe(7n);
     },
     SCENARIO_TIMEOUT_MS,

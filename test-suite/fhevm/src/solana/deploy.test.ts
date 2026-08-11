@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { generateKeyPairSigner, type Instruction, type TransactionSigner } from "@solana/kit";
 
 import type { GatewayBootstrapInputs } from "./addresses";
-import { bootstrapZamaHost, kmsCertificateThresholds, lifecycleComposeProject } from "./deploy";
+import { bootstrapZamaHost, kmsCertificateThreshold, lifecycleComposeProject } from "./deploy";
 import { getDefineKmsContextInstructionDataDecoder } from "./internal/generated/zamaHost/instructions/defineKmsContext";
 import { getInitializeHostConfigInstructionDataDecoder } from "./internal/generated/zamaHost/instructions/initializeHostConfig";
 import { ZAMA_HOST_PROGRAM_ADDRESS } from "./internal/generated/zamaHost/programAddress.js";
@@ -68,11 +68,11 @@ describe("lifecycleComposeProject", () => {
   });
 });
 
-describe("kmsCertificateThresholds", () => {
+describe("kmsCertificateThreshold", () => {
   test("derives 2t+1 and validates it against the registered signer count", () => {
-    expect(kmsCertificateThresholds(0, 1).certificateThreshold).toBe(1);
-    expect(kmsCertificateThresholds(1, 4).certificateThreshold).toBe(3);
-    expect(() => kmsCertificateThresholds(1, 2)).toThrow("2t+1=3");
+    expect(kmsCertificateThreshold(0, 1)).toBe(1);
+    expect(kmsCertificateThreshold(1, 4)).toBe(3);
+    expect(() => kmsCertificateThreshold(1, 2)).toThrow("2t+1=3");
   });
 });
 

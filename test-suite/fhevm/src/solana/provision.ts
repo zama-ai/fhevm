@@ -48,27 +48,10 @@ import {
 } from "./spl";
 
 import { findHostConfigPda } from "./internal/generated/zamaHost/pdas/index.js";
+import { vaultModule, sdkHandleModule, sdkProofModule } from "./lazy-modules";
 
-// The vault module and the SDK sources are loaded lazily, not statically. Their tsconfig-path
-// aliases resolve to real paths outside test-suite/fhevm, so their own dependencies (`@noble/*`,
-// …) only resolve where the SDK's dependency graph is installed — the solana-e2e workflow does
-// that with `npm ci --workspace=@fhevm/sdk…` right before the scenario suite. This module,
-// however, is also loaded by the OFFLINE `bun test src` run (through `two-holder-transfer.ts`,
-// whose orchestration test injects fake dependencies), where that graph does not exist; the lazy
-// seam keeps merely importing this file dependency-free, the same reason
-// `deposit-arc.scenario.test.ts` reaches the SDK through a dynamic import.
-type VaultModule = typeof import("@demo-dapp/vault/index.js");
-let vaultModulePromise: Promise<VaultModule> | undefined;
-const vaultModule = (): Promise<VaultModule> => (vaultModulePromise ??= import("@demo-dapp/vault/index.js"));
-
-type SdkProofModule = typeof import("@sdk-src/solana/proof.js");
-let sdkProofModulePromise: Promise<SdkProofModule> | undefined;
-const sdkProofModule = (): Promise<SdkProofModule> => (sdkProofModulePromise ??= import("@sdk-src/solana/proof.js"));
-
-type SdkHandleModule = typeof import("@sdk-src/core/handle/FhevmHandle.js");
-let sdkHandleModulePromise: Promise<SdkHandleModule> | undefined;
-const sdkHandleModule = (): Promise<SdkHandleModule> =>
-  (sdkHandleModulePromise ??= import("@sdk-src/core/handle/FhevmHandle.js"));
+// The vault/SDK loaders live in lazy-modules.ts — see there for why they must stay dynamic
+// imports (the offline `bun test src` run has no SDK dependency graph to resolve).
 
 // Every provisioning transaction requests the validator's per-transaction CU ceiling: wrap_usdc
 // runs several FHE steps in one instruction and needs ~1.4M CU (the same limit the retired
@@ -338,8 +321,9 @@ export type BalanceState = {
  *   the canonical encrypted value ID — which pins the balance label;
  * - the ACL subjects are exactly [owner, mint compute signer];
  * - the current handle is a version-0 euint64 handle (all-zero rejected: type 0 is not euint64);
- * - the handle's embedded chain id has the Solana high bit and matches the on-chain
- *   `HostConfig.chain_id` (discriminator-checked read at its pinned layout offset).
+ * - the handle's embedded chain id matches the on-chain `HostConfig.chain_id`, read through
+ *   `readHostChainId` — which itself checks the account discriminator, the pinned layout offset,
+ *   and the Solana high bit.
  * The retired Rust probe additionally re-read all three accounts in one `getMultipleAccounts` to
  * guard against the token account's balance pointer moving between reads; here every address is
  * derived client-side rather than followed from a pointer, so there is no indirection to race —

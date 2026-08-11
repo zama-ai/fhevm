@@ -12,12 +12,13 @@
 
 import path from "node:path";
 
-import { fetchEncodedAccount, type TransactionSigner } from "@solana/kit";
+import { createKeyPairSignerFromBytes, fetchEncodedAccount, type TransactionSigner } from "@solana/kit";
 
 import { closeSync, openSync } from "node:fs";
 
 import { envPath, REPO_ROOT, STATE_DIR } from "../layout";
 import { readEnvFile } from "../utils/fs";
+import { until } from "../utils/until";
 import { run, runStreaming } from "../utils/process";
 import {
   BRINGUP_KMS_CONTEXT_ID,
@@ -41,22 +42,16 @@ import {
   SOLANA_E2E_PROGRAMS,
   startGeyserValidator,
   VALIDATOR_RPC_URL,
+  VALIDATOR_WS_URL,
 } from "./validator";
 
-export type KmsCertificateThresholds = {
-  /** Matching signatures a certificate needs: 2t+1 of the registered signer set. */
-  readonly certificateThreshold: number;
-};
-
 /**
- * Derives the on-chain certificate threshold from the KMS corruption threshold t. A centralized
- * KMS (t=0) signs with one key; a threshold-mode KMS needs 2t+1 matching signatures, and KMS core
- * requires parties == 3t+1 (see scenarios/four-party-threshold-kms.yaml).
+ * Derives the on-chain certificate threshold (matching signatures a certificate needs) from the
+ * KMS corruption threshold t. A centralized KMS (t=0) signs with one key; a threshold-mode KMS
+ * needs 2t+1 matching signatures, and KMS core requires parties == 3t+1 (see
+ * scenarios/four-party-threshold-kms.yaml).
  */
-export const kmsCertificateThresholds = (
-  kmsCorruptionThreshold: number,
-  registeredSignerCount: number,
-): KmsCertificateThresholds => {
+export const kmsCertificateThreshold = (kmsCorruptionThreshold: number, registeredSignerCount: number): number => {
   const certificateThreshold = 2 * kmsCorruptionThreshold + 1;
   if (certificateThreshold > registeredSignerCount) {
     throw new Error(
@@ -64,7 +59,7 @@ export const kmsCertificateThresholds = (
         `signatures but only ${registeredSignerCount} KMS signers are registered on the gateway`,
     );
   }
-  return { certificateThreshold };
+  return certificateThreshold;
 };
 
 export type BootstrapZamaHostParams = {
@@ -115,10 +110,7 @@ export const bootstrapZamaHost = async (
   }
 
   const kmsCorruptionThreshold = params.kmsCorruptionThreshold ?? 0;
-  const { certificateThreshold } = kmsCertificateThresholds(
-    kmsCorruptionThreshold,
-    params.gateway.kmsSigners.length,
-  );
+  const certificateThreshold = kmsCertificateThreshold(kmsCorruptionThreshold, params.gateway.kmsSigners.length);
   await context.sendTransaction(params.payer, [
     await getDefineKmsContextInstructionAsync({
       admin: params.payer,
@@ -144,7 +136,6 @@ export const bootstrapZamaHost = async (
 
 /** Reads the standard 64-byte Solana CLI keypair file into a kit signer. */
 const loadKeypairSigner = async (keypairPath: string): Promise<TransactionSigner> => {
-  const { createKeyPairSignerFromBytes } = await import("@solana/kit");
   const bytes = Uint8Array.from(JSON.parse(await Bun.file(keypairPath).text()) as number[]);
   return createKeyPairSignerFromBytes(bytes);
 };
@@ -263,14 +254,16 @@ const registerSolanaHostChain = async (parameters: {
   // HostChainsCache), so it must be restarted to pick up the freshly-registered Solana host —
   // mirroring fhevm-cli's own registerExtraChainInCoprocessor (insert row + restart).
   await run(["docker", "restart", "coprocessor-zkproof-worker"]);
-  for (let attempt = 0; attempt < 30; attempt += 1) {
-    const running = await run(
-      ["docker", "inspect", "-f", "{{.State.Running}}", "coprocessor-zkproof-worker"],
-      { allowFailure: true },
-    );
-    if (running.stdout.trim() === "true") break;
-    await Bun.sleep(1_000);
-  }
+  await until(
+    async () => {
+      const running = await run(
+        ["docker", "inspect", "-f", "{{.State.Running}}", "coprocessor-zkproof-worker"],
+        { allowFailure: true },
+      );
+      return running.stdout.trim() === "true";
+    },
+    { timeoutMs: 30_000, intervalMs: 1_000, description: "zkproof-worker restart" },
+  );
 
   const gatewayVersion = (
     await run(["docker", "inspect", "gateway-sc-add-network", "--format", "{{.Config.Image}}"])
@@ -414,7 +407,7 @@ if (import.meta.main) {
 
   console.log("==> [3/5] bootstrap zama-host (real gateway/ProtocolConfig values, mock/test OFF)");
   const payer = await loadKeypairSigner(deployerKeypairPath);
-  const context = createProvisioningContext(VALIDATOR_RPC_URL, "ws://127.0.0.1:8900");
+  const context = createProvisioningContext(VALIDATOR_RPC_URL, VALIDATOR_WS_URL);
   await bootstrapZamaHost(context, {
     payer,
     gateway,

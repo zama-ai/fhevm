@@ -28,6 +28,7 @@ import {
 import { ZAMA_HOST_PROGRAM_ADDRESS } from "./internal/generated/zamaHost/programAddress.js";
 import type { FheExecuteOutputArgs, FheExecuteStepArgs } from "./internal/generated/zamaHost/types/index.js";
 import { hostConfigAddress, type SolanaProvisioningContext } from "./provision";
+import { vaultModule, sdkProofModule } from "./lazy-modules";
 
 // The scenarios compose steps from the generated op-code enums; re-exported here so they never
 // reach into the generated tree directly.
@@ -37,17 +38,6 @@ export {
   FheUnaryOpCode,
 } from "./internal/generated/zamaHost/types/index.js";
 export type { FheExecuteOutputArgs, FheExecuteStepArgs } from "./internal/generated/zamaHost/types/index.js";
-
-// Lazily loaded for the same reason as in `provision.ts`: the vault module and SDK sources
-// resolve to real paths outside test-suite/fhevm, whose dependency graph only exists where the
-// e2e workflow installs it — and this module is reachable from the offline `bun test src` run.
-type VaultModule = typeof import("@demo-dapp/vault/index.js");
-let vaultModulePromise: Promise<VaultModule> | undefined;
-const vaultModule = (): Promise<VaultModule> => (vaultModulePromise ??= import("@demo-dapp/vault/index.js"));
-
-type SdkProofModule = typeof import("@sdk-src/solana/proof.js");
-let sdkProofModulePromise: Promise<SdkProofModule> | undefined;
-const sdkProofModule = (): Promise<SdkProofModule> => (sdkProofModulePromise ??= import("@sdk-src/solana/proof.js"));
 
 /** FHE type bytes the scenarios use (the on-handle type tags; euint64 is the workhorse). */
 export const FHE_TYPE = { ebool: 0, euint8: 2, euint16: 3, euint64: 5 } as const;
@@ -81,10 +71,6 @@ export class ExecutionDictionary {
 
   internKey(key: Address): number {
     return this.intern(addressBytes(key));
-  }
-
-  internScalar(value: bigint): number {
-    return this.intern(scalarBytes(value));
   }
 
   intoEntries(): Uint8Array[] {
@@ -164,7 +150,7 @@ export type RemainingEncryptedValue = { readonly address: Address; readonly writ
 
 /**
  * Sends one composed `fhe_execute` signed by `payer` as all three wallet roles (payer, compute
- * subject, default output authority) — the wallet-driven harness shape the live-client used.
+ * subject, default output authority) — one wallet plays every role, which only a harness may do.
  * `remainingAccounts` are the `EncryptedValue` PDAs the steps index into, in declaration order.
  * Preflight is skipped: the result-handle entropy reads the SlotHashes sysvar via
  * `sol_get_sysvar`, which real execution populates but preflight simulation does not.

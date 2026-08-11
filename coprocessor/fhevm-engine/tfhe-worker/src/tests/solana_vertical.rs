@@ -95,14 +95,21 @@ async fn confidential_transfer_reconstructs_computes_and_decrypts(
         6,
         "token transfer must remain a six-step batch"
     );
-    assert!(matches!(&events[2], SolanaHostRecord::FheTernaryOp(_)));
+    // The select result is transient (no on-chain account carries it), so pin it by dataflow:
+    // both the transferred-amount sub and the sender re-encrypt must consume it.
+    let select_result = match &events[2] {
+        SolanaHostRecord::FheTernaryOp(event) => event.result,
+        other => panic!("step 2 must be the transfer's select, got {other:?}"),
+    };
     assert!(matches!(
         &events[3],
-        SolanaHostRecord::FheBinaryOp(event) if event.result == transferred_handle
+        SolanaHostRecord::FheBinaryOp(event)
+            if event.result == transferred_handle && event.rhs == select_result
     ));
     assert!(matches!(
         &events[4],
-        SolanaHostRecord::FheBinaryOp(event) if event.result == alice_handle
+        SolanaHostRecord::FheBinaryOp(event)
+            if event.result == alice_handle && event.lhs == select_result
     ));
     assert!(matches!(
         &events[5],

@@ -12,10 +12,10 @@
 //     current handle is read from chain, not from a log line.
 //   burned-handle SNS poll (docker psql loop) -> `stack.waitForSnsCommit`.
 //   "OK make_handle_public" grep -> `sealBurnedAmountHandle` throws on failure.
-//   leaf_count=2 / leaf_index=0 proof assertions -> `publicDecryptExpect` expectedLeafCount /
+//   leaf_count=2 / leaf_index=0 proof assertions -> `certifiedPublicDecrypt` expectedLeafCount /
 //     expectedLeafIndex: the created-public lifecycle leaf (index 0) plus the explicit re-seal
 //     (index 1) prove lifecycle-batch ingestion; the semantic endpoint resolves to the EARLIEST.
-//   cleartext == burn amount -> `publicDecryptExpect(..., expect: BURN_AMOUNT)`.
+//   cleartext == burn amount -> the certified decrypt's cleartext == BURN_AMOUNT.
 //   "OK redeem_burned_amount" grep -> `redeemBurnedAmount` throws on failure, PLUS a stronger
 //     assertion the bash never made: the owner's underlying token balance grows by exactly the
 //     certified cleartext.
@@ -33,9 +33,9 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { getAddressEncoder, type Address } from "@solana/kit";
+import { getAddressEncoder, isSolanaError, SOLANA_ERROR__INSTRUCTION_ERROR__CUSTOM, type Address } from "@solana/kit";
 
-import { currentHandle, publicDecryptExpect } from "../../src/solana/fhe-vertical";
+import { certifiedPublicDecrypt, currentHandle } from "../../src/solana/fhe-vertical";
 import {
   createConfidentialMint,
   createSplMint,
@@ -65,23 +65,15 @@ const asBytes32Hex = (value: Address): `0x${string}` =>
   `0x${Buffer.from(getAddressEncoder().encode(value)).toString("hex")}` as `0x${string}`;
 
 /**
- * Flattens a kit SolanaError chain into searchable evidence: messages, preflight simulation logs
- * (where anchor prints "Error Code: InvalidKmsContext"), and nested causes.
+ * Walks a kit SolanaError cause chain (preflight failure -> transaction error -> instruction
+ * error) to the custom program error code, if one is there.
  */
-const errorEvidence = (error: unknown): string => {
-  const parts: string[] = [];
-  for (let current = error, depth = 0; current && depth < 5; depth++) {
-    parts.push(String(current));
-    const context = (current as { context?: { logs?: readonly string[] } }).context;
-    if (context?.logs) parts.push(...context.logs);
-    parts.push(
-      JSON.stringify((current as { context?: unknown }).context ?? null, (_key, value: unknown) =>
-        typeof value === "bigint" ? value.toString() : value,
-      ),
-    );
+const customProgramErrorCode = (error: unknown): number | undefined => {
+  for (let current = error, depth = 0; current && depth < 8; depth++) {
+    if (isSolanaError(current, SOLANA_ERROR__INSTRUCTION_ERROR__CUSTOM)) return Number(current.context.code);
     current = (current as { cause?: unknown }).cause;
   }
-  return parts.join("\n");
+  return undefined;
 };
 
 describe("solana confidential-token consume vertical", () => {
@@ -151,13 +143,12 @@ describe("solana confidential-token consume vertical", () => {
       // ingestion, and the semantic endpoint resolves the decrypt to the EARLIEST leaf.
       await sealBurnedAmountHandle(context, { owner: wallet.signer, mint, handle: burnedHandle });
 
-      const { cleartext, certificate } = await publicDecryptExpect(context, config, {
+      const { cleartext, certificate } = await certifiedPublicDecrypt(context, config, {
         target: {
           encryptedValue: target.burnedAmount.encryptedValueAddress,
           encryptedValueId: target.burnedAmount.aclValueKey,
         },
         handle: burnedHandle,
-        expect: BURN_AMOUNT,
         expectedLeafCount: 2n,
         expectedLeafIndex: 0n,
       });
@@ -198,7 +189,9 @@ describe("solana confidential-token consume vertical", () => {
       if (rejection === undefined) {
         throw new Error("SECURITY: context-mismatched certificate was disclosed on-chain");
       }
-      expect(errorEvidence(rejection)).toMatch(/InvalidKmsContext|0x17b0|Custom":\s*6064/);
+      // zama-host InvalidKmsContext is anchor error 6064 (0x17b0) — pinning the code proves the
+      // context binding (not some unrelated failure) repelled the certificate.
+      expect(customProgramErrorCode(rejection)).toBe(6064);
     },
     SCENARIO_TIMEOUT_MS,
   );

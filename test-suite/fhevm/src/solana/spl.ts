@@ -74,7 +74,7 @@ export const createIdempotentAtaInstruction = (params: {
  * dapp's address-lookup-table builder uses). Used for the hand-built System `CreateAccount`, whose
  * keypair must sign its own creation.
  */
-export const signerMeta = (signer: TransactionSigner, role: AccountRole): AccountMeta =>
+const signerMeta = (signer: TransactionSigner, role: AccountRole): AccountMeta =>
   ({ address: signer.address, role, signer }) as unknown as AccountMeta;
 
 /** System `CreateAccount` (tag 0), signed by both the payer and the new account's keypair. */

@@ -37,7 +37,8 @@ afterthought.
 
 ## Mollusk runtime coverage
 
-The `operator_mollusk_conformance`, `host_mollusk`, `token_mollusk`, and specimen
+The `operator_mollusk_conformance`, `host_mollusk`, `token_mollusk`, `batcher_mollusk`,
+`vault_mollusk`, `permit_invalidation_mollusk`, and specimen
 (`counter_mollusk`, `dep_chain_mollusk`) suites execute real SBF under Mollusk, booted and
 asserted through the shared `zama-solana-test-kit` crate. Mollusk surfaces resulting **account state**, **inner instructions (CPIs)**, and **return
 data**, which are the stable artifacts these suites assert on. Plain `emit!` program-data logs are
@@ -64,6 +65,9 @@ cargo test -p zama-solana-runtime-tests --test operator_mollusk_conformance
 cargo test -p zama-solana-runtime-tests --test operator_mollusk_conformance encrypted_scalar_add_executes_then_reads_cleartext_outcome -- --exact
 cargo test -p zama-solana-runtime-tests --test host_mollusk -- --nocapture
 cargo test -p zama-solana-runtime-tests --test token_mollusk -- --nocapture
+cargo test -p zama-solana-runtime-tests --test batcher_mollusk -- --nocapture
+cargo test -p zama-solana-runtime-tests --test vault_mollusk -- --nocapture
+cargo test -p zama-solana-runtime-tests --test permit_invalidation_mollusk -- --nocapture
 
 # The specimen consumers: encrypted-counter is the kit-onboarding proof (~20 lines of
 # fixture, ~30 per assertion); dep-chain is the load shape (full-depth dependent chains
@@ -183,10 +187,11 @@ The harness (`e2e/harness/`):
 - `personas` → named actors backed by on-disk keypairs, with a capability-gated `fund()` (local
   airdrop).
 - `until(condition, { timeoutMs, intervalMs })` → a generic readiness-polling helper.
-- `harness/solana/stack.ts` → the running stack as an object: container/URL readiness,
-  `restartProofService()` (the #1682/#3215 ledger-replay gate), teardown ownership.
-- `harness/solana/vertical.ts` → `verticalSetup()`: one memoized provisioning context, wallet, and
-  host config for the whole suite.
+- `harness/solana/stack.ts` → the running stack as an object: container/URL readiness and
+  `restartProofService()` (the #1682/#3215 ledger-replay gate). It owns readiness, not lifecycle —
+  `bun run demo up`/`down` start and stop the stack.
+- `harness/solana/vertical.ts` → `verticalSetup()`: a fresh provisioning context, funded wallet,
+  and host-config read per call — one wallet per scenario keeps them fully isolated.
 - `harness/solana/sdkEncrypt.ts` → the SDK encrypt+input-proof seam shared by every scenario that
   submits an encrypted input.
 

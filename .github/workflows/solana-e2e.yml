@@ -287,7 +287,7 @@ jobs:
     name: solana-e2e/worker-vertical
     runs-on: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/volume=80gb
     # Cold-cache ceiling: the tfhe-worker build dominates; the SBF builds and the test itself
-    # (five real euint64 ops) are minutes.
+    # (six real euint64 ops) are minutes.
     timeout-minutes: 90
     permissions:
       contents: "read" # checkout (incl. the LFS test keys the harness loads into Postgres)

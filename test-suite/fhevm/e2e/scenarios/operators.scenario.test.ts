@@ -38,7 +38,7 @@ import {
   type FheExecuteOutputArgs,
   type FheExecuteStepArgs,
 } from "../../src/solana/fhe-execute";
-import { currentHandle, paddedLabel, releaseAndExpect, trivialEncryptPersistent, type PersistentHandle } from "../../src/solana/fhe-vertical";
+import { currentHandle, paddedLabel, releaseAndDecrypt, trivialEncryptPersistent, type PersistentHandle } from "../../src/solana/fhe-vertical";
 import { verticalSetup, type VerticalTestSetup } from "../harness/solana/vertical";
 
 // Each row runs 1-4 operand executions + the operator execution + SNS commit wait + KMS decrypt.
@@ -103,16 +103,11 @@ const runOperatorStep = async (
   return { target, handle: await currentHandle(context, target.encryptedValue) };
 };
 
-/** The release tail every row shares: allow + seal, SNS commit wait, public-decrypt comparison. */
-const decryptRow = async (
-  setup: VerticalTestSetup,
-  result: PersistentHandle,
-  expected: bigint | { readonly lessThan: bigint },
-): Promise<bigint> => {
-  const outcome = await releaseAndExpect(setup.context, setup.config, setup.stack, {
+/** The release tail every row shares: allow + seal, SNS commit wait, certified public decrypt. */
+const decryptRow = async (setup: VerticalTestSetup, result: PersistentHandle): Promise<bigint> => {
+  const outcome = await releaseAndDecrypt(setup.context, setup.config, setup.stack, {
     payer: setup.wallet.signer,
     result,
-    expect: expected,
   });
   return outcome.cleartext;
 };
@@ -138,7 +133,7 @@ describe("solana fhe_execute operator wiring", () => {
           output,
         }),
       });
-      expect(await decryptRow(setup, result, 70n)).toBe(70n);
+      expect(await decryptRow(setup, result)).toBe(70n);
     },
     ROW_TIMEOUT_MS,
   );
@@ -160,7 +155,7 @@ describe("solana fhe_execute operator wiring", () => {
           output,
         }),
       });
-      expect(await decryptRow(setup, result, 42n)).toBe(42n);
+      expect(await decryptRow(setup, result)).toBe(42n);
     },
     ROW_TIMEOUT_MS,
   );
@@ -181,7 +176,7 @@ describe("solana fhe_execute operator wiring", () => {
           output,
         }),
       });
-      expect(await decryptRow(setup, result, 42n)).toBe(42n);
+      expect(await decryptRow(setup, result)).toBe(42n);
     },
     ROW_TIMEOUT_MS,
   );
@@ -208,7 +203,7 @@ describe("solana fhe_execute operator wiring", () => {
           output,
         }),
       });
-      expect(await decryptRow(setup, result, 42n)).toBe(42n);
+      expect(await decryptRow(setup, result)).toBe(42n);
     },
     ROW_TIMEOUT_MS,
   );
@@ -227,7 +222,7 @@ describe("solana fhe_execute operator wiring", () => {
           output,
         }),
       });
-      const cleartext = await decryptRow(setup, result, { lessThan: 128n });
+      const cleartext = await decryptRow(setup, result);
       expect(cleartext).toBeLessThan(128n);
     },
     ROW_TIMEOUT_MS,
@@ -251,7 +246,7 @@ describe("solana fhe_execute operator wiring", () => {
           output,
         }),
       });
-      expect(await decryptRow(setup, result, 30n)).toBe(30n);
+      expect(await decryptRow(setup, result)).toBe(30n);
     },
     ROW_TIMEOUT_MS,
   );
@@ -277,7 +272,7 @@ describe("solana fhe_execute operator wiring", () => {
           output,
         }),
       });
-      expect(await decryptRow(setup, result, 1n)).toBe(1n);
+      expect(await decryptRow(setup, result)).toBe(1n);
     },
     ROW_TIMEOUT_MS,
   );
@@ -299,7 +294,7 @@ describe("solana fhe_execute operator wiring", () => {
           output,
         }),
       });
-      expect(await decryptRow(setup, result, 14n)).toBe(14n);
+      expect(await decryptRow(setup, result)).toBe(14n);
     },
     ROW_TIMEOUT_MS,
   );

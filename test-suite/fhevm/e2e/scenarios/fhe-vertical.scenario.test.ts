@@ -7,10 +7,10 @@
 // Assertion map — bash phase -> this scenario:
 //   [compute] "result handle" + "allow_for_decryption" greps
 //     -> typed returns: `trivialEncryptPersistent` yields the on-chain current handle;
-//        `allowForPublicDecryption` (inside `releaseAndExpect`) throws if either release
+//        `allowForPublicDecryption` (inside `releaseAndDecrypt`) throws if either release
 //        instruction fails.
 //   [compute] SNS commit poll -> `stack.waitForSnsCommit(handle)`.
-//   [public-decrypt] cleartext == VALUE -> `releaseAndExpect(..., expect: VALUE)` (live peaks +
+//   [public-decrypt] cleartext == VALUE -> `releaseAndDecrypt` cleartext asserted here (live peaks +
 //        proof-service inclusion proof + KMS certificate through the SDK public-decrypt action).
 //   [user-decrypt] pure-SDK cleartext == VALUE -> `runSolanaCurrentUserDecrypt` (ML-KEM keygen,
 //        v3 ed25519 request, in-SDK de-signcryption) with UD_EXPECTED = VALUE.
@@ -46,7 +46,7 @@ import {
   fetchHistoricalAccessProof,
   historicalUserDecryptExpect,
   paddedLabel,
-  releaseAndExpect,
+  releaseAndDecrypt,
   trivialEncryptPersistent,
 } from "../../src/solana/fhe-vertical";
 import { runSolanaCurrentUserDecrypt } from "../../src/solana/current-user-decrypt";
@@ -76,10 +76,9 @@ describe("solana fhe_execute decrypt vertical", () => {
         value: 42n,
         label: paddedLabel("vertical-trivial"),
       });
-      const { cleartext } = await releaseAndExpect(context, config, stack, {
+      const { cleartext } = await releaseAndDecrypt(context, config, stack, {
         payer: wallet.signer,
         result,
-        expect: 42n,
       });
       expect(cleartext).toBe(42n);
 
@@ -197,10 +196,9 @@ describe("solana fhe_execute decrypt vertical", () => {
       });
 
       const handle = await currentHandle(context, target.encryptedValue);
-      const { cleartext } = await releaseAndExpect(context, config, stack, {
+      const { cleartext } = await releaseAndDecrypt(context, config, stack, {
         payer: wallet.signer,
         result: { target, handle },
-        expect: INPUT_VALUE + ADDEND,
       });
       expect(cleartext).toBe(INPUT_VALUE + ADDEND);
     },

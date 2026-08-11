@@ -31,7 +31,7 @@ export type SolanaInputProofSubmission = {
   extraData: `0x${string}`;
 };
 
-export const loadSolanaSdkEncrypt = async (): Promise<SolanaSdkEncryptSurface> => {
+const loadSolanaSdkEncrypt = async (): Promise<SolanaSdkEncryptSurface> => {
   const solanaModule = "@fhevm/sdk/solana";
   return (await import(solanaModule)) as unknown as SolanaSdkEncryptSurface;
 };

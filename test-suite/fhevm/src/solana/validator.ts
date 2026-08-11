@@ -17,6 +17,7 @@ import { REPO_ROOT } from "../layout";
 import { run } from "../utils/process";
 
 export const VALIDATOR_RPC_URL = "http://127.0.0.1:8899";
+export const VALIDATOR_WS_URL = "ws://127.0.0.1:8900";
 /** The two PoC programs the side-stack deploys, in deploy order. */
 export const SOLANA_E2E_PROGRAMS = ["zama_host", "confidential_token"] as const;
 
@@ -186,7 +187,10 @@ export const startGeyserValidator = async (options: ValidatorStartOptions): Prom
         body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getHealth" }),
         signal: AbortSignal.timeout(2_000),
       });
-      if (response.ok && /"ok"/.test(await response.text())) break;
+      if (response.ok) {
+        const body = (await response.json()) as { result?: string };
+        if (body.result === "ok") break;
+      }
     } catch {
       // Not up yet; fall through to the liveness check below.
     }

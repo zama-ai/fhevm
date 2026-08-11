@@ -24,10 +24,7 @@ import {
 } from "./fhe-execute";
 import { certificateCleartext, runSolanaPublicDecrypt, type PublicDecryptCertificate } from "./public-decrypt";
 import type { SolanaProvisioningContext } from "./provision";
-
-type VaultModule = typeof import("@demo-dapp/vault/index.js");
-let vaultModulePromise: Promise<VaultModule> | undefined;
-const vaultModule = (): Promise<VaultModule> => (vaultModulePromise ??= import("@demo-dapp/vault/index.js"));
+import { vaultModule } from "./lazy-modules";
 
 const HISTORICAL_USER_DECRYPT_WORKER = path.join(REPO_ROOT, "test-suite/fhevm/solana-userdecrypt-historical.ts");
 const WORKER_DIR = path.join(REPO_ROOT, "test-suite/fhevm");
@@ -117,19 +114,18 @@ export type PublicDecryptOutcome = {
 };
 
 /**
- * Proves `handle` decrypts publicly to the expected cleartext: live peaks/leaf-count from the
- * on-chain value, the inclusion proof from solana-proof-service (leaf resolved by the service,
- * cross-checked against the on-chain leaf count), then the KMS certificate through the SDK's
- * public-decrypt action. Returns the cleartext together with the certificate.
+ * Runs the certified public decrypt of `handle`: live peaks/leaf-count from the on-chain value,
+ * the inclusion proof from solana-proof-service (leaf resolved by the service, cross-checked
+ * against the on-chain leaf count), then the KMS certificate through the SDK's public-decrypt
+ * action. Returns the cleartext together with the certificate; asserting the value is the
+ * scenario's job.
  */
-export const publicDecryptExpect = async (
+export const certifiedPublicDecrypt = async (
   context: SolanaProvisioningContext,
   config: FheVerticalConfig,
   params: {
     readonly target: Pick<PersistentValueTarget, "encryptedValue" | "encryptedValueId">;
     readonly handle: Uint8Array;
-    /** Exact expected cleartext, or an exclusive upper bound for random outputs. */
-    readonly expect: bigint | { readonly lessThan: bigint };
     readonly expectedLeafCount?: bigint;
     readonly expectedLeafIndex?: bigint;
   },
@@ -167,28 +163,21 @@ export const publicDecryptExpect = async (
     PD_MMR_LEAF_COUNT: state.leafCount.toString(),
     PD_MMR_PROOF_BYTES: hex(proof.mmrProofBytes),
   });
-  const cleartext = certificateCleartext(certificate);
-  if (typeof params.expect === "bigint") {
-    if (cleartext !== params.expect) throw new Error(`public-decrypt cleartext ${cleartext} != ${params.expect}`);
-  } else if (cleartext >= params.expect.lessThan) {
-    throw new Error(`public-decrypt cleartext ${cleartext} not < ${params.expect.lessThan}`);
-  }
-  return { cleartext, certificate };
+  return { cleartext: certificateCleartext(certificate), certificate };
 };
 
 /**
- * Standard "release and prove" tail: allow_subjects + make_handle_public on the value, wait for
- * the SNS ciphertext commit, then public-decrypt and compare. The shape every operator row and
+ * Standard release-and-decrypt tail: allow_subjects + make_handle_public on the value, wait for
+ * the SNS ciphertext commit, then the certified public decrypt. The shape every operator row and
  * both compute phases share.
  */
-export const releaseAndExpect = async (
+export const releaseAndDecrypt = async (
   context: SolanaProvisioningContext,
   config: FheVerticalConfig,
   stack: { waitForSnsCommit(handle: string): Promise<void> },
   params: {
     readonly payer: TransactionSigner;
     readonly result: PersistentHandle;
-    readonly expect: bigint | { readonly lessThan: bigint };
   },
 ): Promise<PublicDecryptOutcome> => {
   await allowForPublicDecryption(context, {
@@ -196,10 +185,9 @@ export const releaseAndExpect = async (
     encryptedValue: params.result.target.encryptedValue,
   });
   await stack.waitForSnsCommit(hex(params.result.handle));
-  return publicDecryptExpect(context, config, {
+  return certifiedPublicDecrypt(context, config, {
     target: params.result.target,
     handle: params.result.handle,
-    expect: params.expect,
   });
 };
 
@@ -284,6 +272,11 @@ export const historicalUserDecryptExpect = async (
   const state = await vault.getEncryptedValueState(context.rpc, params.target.encryptedValue, {
     commitment: "confirmed",
   });
+  if (params.proof.leafCount !== state.leafCount) {
+    throw new Error(
+      `access-proof leaf count ${params.proof.leafCount} does not match the on-chain leaf count ${state.leafCount}`,
+    );
+  }
   const userDecryptContextIdHex = `0x${BigInt(config.userDecryptContextId).toString(16).padStart(64, "0")}`;
   await run(["bun", "run", HISTORICAL_USER_DECRYPT_WORKER], {
     cwd: WORKER_DIR,

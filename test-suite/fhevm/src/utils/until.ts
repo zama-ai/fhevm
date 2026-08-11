@@ -1,8 +1,9 @@
-// until — a generic polling helper for the Solana e2e scenario layer.
+// until — the test-suite's one generic polling helper.
 //
 // Zero protocol knowledge: it only repeats a caller-supplied async probe until it yields a truthy
-// value or a deadline passes. Scenarios use it to gate on stack readiness (relayer accepting POSTs,
-// proof-service reporting ready) instead of hand-rolling sleep loops.
+// value or a deadline passes. Scenarios gate on stack readiness with it (relayer accepting POSTs,
+// proof-service reporting ready), and the side-stack setup uses it for its own waits (SNS commit,
+// container restarts) instead of hand-rolling sleep loops.
 
 export type UntilOptions = {
   /** Overall deadline. Default 120s — long enough for a freshly (re)started relayer/proof-service. */

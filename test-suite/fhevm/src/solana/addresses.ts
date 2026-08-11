@@ -5,6 +5,8 @@
 // call`) with the same reads done in-process, so the bootstrap tracks whatever signer the running
 // stack actually generated — no hardcoded values.
 
+import { createPublicClient, http, parseAbi } from "viem";
+
 import { gatewayAddressesPath } from "../layout";
 import { readEnvFile } from "../utils/fs";
 
@@ -20,11 +22,12 @@ export const SOLANA_HOST_CHAIN_ID_I64 = SOLANA_HOST_CHAIN_ID - (1n << 64n);
  */
 export const BRINGUP_KMS_CONTEXT_ID = 1n;
 
-// 4-byte EVM function selectors, pinned from the GatewayConfig ABI the retired bash resolved with
-// `cast call` — keccak-256("<signature>")[0..4]. Both getters take no arguments and return
-// `address[]`.
-const GET_COPROCESSOR_SIGNERS_CALLDATA = "0x9164d0ae"; // getCoprocessorSigners()
-const GET_KMS_SIGNERS_CALLDATA = "0x7eaac8f2"; // getKmsSigners()
+// The two GatewayConfig getters the bootstrap needs; viem derives the selectors and decodes the
+// `address[]` returns from these signatures.
+const GATEWAY_CONFIG_ABI = parseAbi([
+  "function getCoprocessorSigners() view returns (address[])",
+  "function getKmsSigners() view returns (address[])",
+]);
 
 export type GatewayBootstrapInputs = {
   readonly gatewayChainId: bigint;
@@ -48,43 +51,6 @@ export const evmAddressBytes = (address: string): Uint8Array => {
 };
 
 /**
- * Decodes an ABI-encoded `address[]` return value (head offset word, length word, then one
- * left-padded 32-byte word per address) into raw 20-byte entries.
- */
-export const decodeEvmAddressArray = (returnData: string): readonly Uint8Array[] => {
-  const hex = returnData.replace(/^0x/, "");
-  const word = (index: number): string => {
-    const start = index * 64;
-    const value = hex.slice(start, start + 64);
-    if (value.length !== 64) throw new Error(`address[] return data truncated at word ${index}`);
-    return value;
-  };
-  const offsetWords = Number(BigInt(`0x${word(0)}`)) / 32;
-  const length = Number(BigInt(`0x${word(offsetWords)}`));
-  return Array.from({ length }, (_, index) => {
-    const entry = word(offsetWords + 1 + index);
-    if (!/^0{24}/.test(entry)) throw new Error(`address[] entry ${index} is not a left-padded address`);
-    return evmAddressBytes(entry.slice(24));
-  });
-};
-
-const gatewayRpcRequest = async (rpcUrl: string, method: string, params: readonly unknown[]): Promise<string> => {
-  const response = await fetch(rpcUrl, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-  });
-  const body = (await response.json()) as { result?: string; error?: { message?: string } };
-  if (typeof body.result !== "string") {
-    throw new Error(`${method} against ${rpcUrl} failed: ${body.error?.message ?? "no result"}`);
-  }
-  return body.result;
-};
-
-const gatewayAddressArrayCall = async (rpcUrl: string, contract: string, calldata: string) =>
-  decodeEvmAddressArray(await gatewayRpcRequest(rpcUrl, "eth_call", [{ to: contract, data: calldata }, "latest"]));
-
-/**
  * Reads the gateway inputs the zama-host bootstrap needs: contract addresses from the fhevm-cli
  * address artifact (`.fhevm/runtime/addresses/gateway/.env.gateway`), signer sets and chain id
  * live from the gateway RPC.
@@ -100,17 +66,18 @@ export const readGatewayBootstrapInputs = async (parameters: {
     if (!value) throw new Error(`missing ${name} in the gateway address artifact`);
     return value;
   };
-  const gatewayConfig = required("GATEWAY_CONFIG_ADDRESS");
-  const [gatewayChainIdHex, coprocessorSigners, kmsSigners] = await Promise.all([
-    gatewayRpcRequest(parameters.gatewayRpcUrl, "eth_chainId", []),
-    gatewayAddressArrayCall(parameters.gatewayRpcUrl, gatewayConfig, GET_COPROCESSOR_SIGNERS_CALLDATA),
-    gatewayAddressArrayCall(parameters.gatewayRpcUrl, gatewayConfig, GET_KMS_SIGNERS_CALLDATA),
+  const gatewayConfig = required("GATEWAY_CONFIG_ADDRESS") as `0x${string}`;
+  const client = createPublicClient({ transport: http(parameters.gatewayRpcUrl) });
+  const [gatewayChainId, coprocessorSigners, kmsSigners] = await Promise.all([
+    client.getChainId(),
+    client.readContract({ address: gatewayConfig, abi: GATEWAY_CONFIG_ABI, functionName: "getCoprocessorSigners" }),
+    client.readContract({ address: gatewayConfig, abi: GATEWAY_CONFIG_ABI, functionName: "getKmsSigners" }),
   ]);
   return {
-    gatewayChainId: BigInt(gatewayChainIdHex),
+    gatewayChainId: BigInt(gatewayChainId),
     inputVerificationContract: evmAddressBytes(required("INPUT_VERIFICATION_ADDRESS")),
     decryptionContract: evmAddressBytes(required("DECRYPTION_ADDRESS")),
-    coprocessorSigners,
-    kmsSigners,
+    coprocessorSigners: coprocessorSigners.map(evmAddressBytes),
+    kmsSigners: kmsSigners.map(evmAddressBytes),
   };
 };
