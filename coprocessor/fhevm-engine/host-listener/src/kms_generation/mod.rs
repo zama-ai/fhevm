@@ -206,6 +206,7 @@ pub async fn process_kms_generation_activations<
             block_number = material.block_number,
             transaction_hash = ?material.transaction_hash.as_deref().map(hex::encode),
             key_id = %hex::encode(&material.key_id),
+            existing_key_id = %hex::encode(&material.existing_key_id),
             key_digest = %hex::encode(&material.key_digest),
             "Compressed key material applied"
         );
@@ -310,7 +311,7 @@ async fn download_and_store_compressed_key_materials<
             download_and_store_compressed_key_material(tx, s3_client, &material)
                 .await
         {
-            error!(%error, key_id = ?material.key_id, "Failed to download compressed key material");
+            error!(%error, key_id = ?material.key_id, existing_key_id = ?material.existing_key_id, "Failed to download compressed key material");
             mark_compressed_key_material_error(
                 tx,
                 &error.to_string(),
@@ -329,7 +330,7 @@ async fn download_and_store_compressed_key_material<
     s3_client: &A,
     material: &PendingCompressedKeyMaterial,
 ) -> anyhow::Result<()> {
-    let key_id = key_id_from_database_bytes(&material.key_id)?;
+    let key_id = key_id_from_database_bytes(&material.existing_key_id)?;
     let path =
         format!("{}/{}", XOF_KEY_SET_S3_PREFIX, key_id_to_aws_key(key_id));
     let bytes =
