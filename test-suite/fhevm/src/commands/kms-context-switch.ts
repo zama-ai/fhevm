@@ -20,9 +20,8 @@
  *   4. Recovery + abort (same-committee clusters only) — a further context switch after the destroy
  *      must still reshare and activate (a destroyed context must not strand the next switch); and a
  *      same-context epoch rotation stalled with a node down stays Pending, so a second lifecycle op reverts
- *      `KmsLifecycleOperationInFlight`, `destroyKmsEpoch` aborts the Pending epoch, and — after a
- *      core restart to clear the aborted reshare's stale session (a temporary workaround) — a fresh
- *      rotation recovers.
+ *      `KmsLifecycleOperationInFlight`, `destroyKmsEpoch` aborts the Pending epoch, and a fresh
+ *      rotation then recovers.
  *
  * Activation is not automatic: the KMS cores must reshare and the connectors must submit
  * `confirmKmsContextCreation` / `confirmEpochActivation` for `getCurrentKmsContextAndEpoch` to
@@ -44,7 +43,7 @@ import { castBool, castCall, resolveKmsGenerationTarget, waitForContainer } from
 import { stepComposeTask } from "../flow/runtime-compose";
 import { columnQuery, pollConnectors } from "../kms-connector-db";
 import { castSend, eventTopicWord, expectRevert, keccakTopic, loadHostOwner, type Owner } from "../kms-onchain";
-import { kmsCoreName, kmsTxSenderName, reconstructionThreshold } from "../kms-party";
+import { kmsTxSenderName, reconstructionThreshold } from "../kms-party";
 import type { State } from "../types";
 import {
   type DecryptionRunner,
@@ -58,8 +57,6 @@ import {
 /** Generous bound: a 4-party reshare + per-party on-chain confirmations. */
 const ACTIVATION_TIMEOUT_MS = 600_000;
 const ACTIVATION_POLL_MS = 5_000;
-/** After restarting the cores to clear a stale reshare session, let the connectors reconnect their gRPC channels. */
-const CORE_RECONNECT_GRACE_MS = 45_000;
 
 export type ContextAndEpoch = { contextId: bigint; epochId: bigint };
 
@@ -520,18 +517,7 @@ const abortStuckRotation = async (
     await waitForPartiesRunning([stalledParty]);
   }
 
-  // Recovery. Temporary workaround: destroying the Pending epoch frees its material on the cores but
-  // not the reshare's in-memory networking session, so re-rotating the same context collides with
-  // that stale session until the cores restart. Restart them to clear it. Drop this once the core
-  // drops the session on epoch destroy; the re-rotation should then activate on its own.
-  const coreContainers = Array.from({ length: parties }, (_, i) => kmsCoreName(i + 1));
-  console.log(`[kms-context-switch] restarting cores ${coreContainers.join(", ")} to clear the aborted reshare's stale session…`);
-  await setRunning(coreContainers, "stop");
-  await waitForContainersStopped(coreContainers);
-  await setRunning(coreContainers, "start");
-  for (const core of coreContainers) await waitForContainer(core, "healthy");
-  await Bun.sleep(CORE_RECONNECT_GRACE_MS);
-
+  // Recovery: with the stalled node back and no in-flight op, a fresh rotation reshares and activates.
   console.log("[kms-context-switch] recovery: broadcasting defineNewEpochForCurrentKmsContext after the abort…");
   await castSend(rpcUrl, configAddress, owner, "defineNewEpochForCurrentKmsContext()");
   const recovered = await waitForActivation(

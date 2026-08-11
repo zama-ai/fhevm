@@ -11,8 +11,8 @@ import { COPROCESSOR_DB_CONTAINER, DEFAULT_POSTGRES_PASSWORD, DEFAULT_POSTGRES_U
 import { run } from "./utils/process";
 
 /** Default bound for the connector to ingest an event, forward it to KMS Core, and settle. */
-export const CONNECTOR_SETTLE_TIMEOUT_MS = 240_000;
-export const CONNECTOR_POLL_MS = 2_000;
+const CONNECTOR_SETTLE_TIMEOUT_MS = 240_000;
+const CONNECTOR_POLL_MS = 2_000;
 
 const connectorDbRuntime = () => ({
   container: process.env.POSTGRES_CONTAINER ?? COPROCESSOR_DB_CONTAINER,
@@ -21,7 +21,7 @@ const connectorDbRuntime = () => ({
 });
 
 /** Runs a scalar query against one party's kms-connector database. */
-export const connectorQuery = async (dbName: string, sql: string) => {
+const connectorQuery = async (dbName: string, sql: string) => {
   const db = connectorDbRuntime();
   const result = await run([
     "docker", "exec", "-e", `PGPASSWORD=${db.password}`, db.container,
@@ -31,7 +31,7 @@ export const connectorQuery = async (dbName: string, sql: string) => {
 };
 
 /** A bytea literal for a U256 id in the little-endian form the connector stores. */
-export const byteaLiteral = (id: bigint) => `decode('${uint256LeHex(id)}','hex')`;
+const byteaLiteral = (id: bigint) => `decode('${uint256LeHex(id)}','hex')`;
 
 /** A column's value as text, or 'missing' when the row does not exist. Booleans read as 't'/'f'. */
 export const columnQuery = (table: string, idColumn: string, column: string, id: bigint) =>
