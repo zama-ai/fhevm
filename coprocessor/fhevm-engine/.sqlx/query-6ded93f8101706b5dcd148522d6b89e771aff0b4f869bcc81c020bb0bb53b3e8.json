@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT\n            chain_id,\n            block_hash,\n            key_id,\n            key_digest_server,\n            key_digest_public,\n            key_content_sks_key IS NOT NULL AS has_server_key,\n            key_content_public IS NOT NULL AS has_public_key,\n            storage_urls\n        FROM kms_key_activation_events\n        WHERE\n            status = 'pending'\n            AND key_material_id IS NULL\n            AND (\n                key_content_sks_key IS NULL AND key_digest_server IS NOT NULL\n                OR key_content_public IS NULL AND key_digest_public IS NOT NULL\n            )\n        FOR UPDATE SKIP LOCKED\n        ",
+  "query": "\n        SELECT\n            chain_id,\n            block_hash,\n            key_id,\n            key_digest_server,\n            key_digest_public,\n            key_content_sks_key IS NOT NULL AS has_server_key,\n            key_content_public IS NOT NULL AS has_public_key,\n            storage_urls\n        FROM kms_key_activation_events\n        WHERE\n            status = 'pending'\n            AND existing_key_id IS NULL\n            AND (\n                key_content_sks_key IS NULL AND key_digest_server IS NOT NULL\n                OR key_content_public IS NULL AND key_digest_public IS NOT NULL\n            )\n        FOR UPDATE SKIP LOCKED\n        ",
   "describe": {
     "columns": [
       {
@@ -58,5 +58,5 @@
       false
     ]
   },
-  "hash": "852819ed635afc690e5da6d095ff7b1a99c4f504f918bda5966809c2d6e55a38"
+  "hash": "6ded93f8101706b5dcd148522d6b89e771aff0b4f869bcc81c020bb0bb53b3e8"
 }
