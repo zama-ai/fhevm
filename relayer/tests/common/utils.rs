@@ -571,6 +571,47 @@ pub fn create_timeout_test_config(
     Ok(temp_config_path)
 }
 
+/// Create a config file with custom optimistic user-decryption wait-window settings.
+///
+/// The shared test config pins `user_decrypt_additional_shares: 0`, which turns the
+/// window off for every other test. Tests that exercise the window override the two
+/// knobs here instead of moving that global default. The share threshold is left at
+/// the configured value (9), so the emitted share count is what varies.
+#[allow(dead_code)]
+pub fn create_user_decrypt_wait_config(
+    temp_dir: &TempDir,
+    additional_shares: u32,
+    additional_shares_timeout_secs: u32,
+) -> anyhow::Result<std::path::PathBuf> {
+    let temp_config_path = temp_dir.path().join("user_decrypt_wait.yaml");
+
+    // Read the default config
+    let config_content = std::fs::read_to_string("tests/relayer-test-config.yaml")
+        .context("Failed to read default config")?;
+
+    // Parse YAML as a generic value
+    let mut config: serde_yaml::Value =
+        serde_yaml::from_str(&config_content).context("Failed to parse YAML config")?;
+
+    // Override the optimistic wait window
+    if let Some(gateway) = config.get_mut("gateway") {
+        if let Some(contracts) = gateway.get_mut("contracts") {
+            contracts["user_decrypt_additional_shares"] =
+                serde_yaml::Value::Number(serde_yaml::Number::from(additional_shares));
+            contracts["user_decrypt_additional_shares_timeout_secs"] =
+                serde_yaml::Value::Number(serde_yaml::Number::from(additional_shares_timeout_secs));
+        }
+    }
+
+    // Serialize back to YAML and write to temp file
+    let modified_content =
+        serde_yaml::to_string(&config).context("Failed to serialize modified config")?;
+
+    std::fs::write(&temp_config_path, modified_content).context("Failed to write temp config")?;
+
+    Ok(temp_config_path)
+}
+
 /// Get a free port by binding to port 0
 /// This is needed for mock servers that don't support dynamic port allocation yet
 #[allow(dead_code)]
