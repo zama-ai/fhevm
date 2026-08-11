@@ -32,6 +32,7 @@ pub(crate) struct PendingCompressedKeyMaterial {
     pub block_number: i64,
     pub transaction_hash: Option<Vec<u8>>,
     pub key_id: Vec<u8>,
+    pub existing_key_id: Vec<u8>,
     pub key_digest: Vec<u8>,
     pub storage_urls: Vec<String>,
 }
@@ -76,7 +77,7 @@ pub(crate) async fn insert_key_activation_event(
             r#"
             INSERT INTO kms_key_activation_events (
                 chain_id, block_hash, block_number, transaction_hash,
-                key_id, key_material_id, key_digest_server, storage_urls
+                key_id, existing_key_id, key_digest_server, storage_urls
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             ON CONFLICT (chain_id, block_hash, key_id) DO NOTHING
@@ -86,8 +87,8 @@ pub(crate) async fn insert_key_activation_event(
         .bind(block_hash)
         .bind(block_number as i64)
         .bind(transaction_hash)
-        .bind(key_id_to_database_bytes(activation.existingKeyId))
         .bind(key_id_to_database_bytes(activation.keyId))
+        .bind(key_id_to_database_bytes(activation.existingKeyId))
         .bind(digest.digest.as_ref())
         .bind(activation.kmsNodeStorageUrls)
         .execute(tx.deref_mut())
@@ -237,7 +238,7 @@ pub(crate) async fn apply_ready_compressed_key_materials(
     let rows = sqlx::query_as::<_, PendingCompressedKeyMaterial>(
         r#"
         SELECT e.chain_id, e.block_hash, e.block_number, e.transaction_hash,
-               e.key_id, e.key_material_id, e.key_digest_server AS key_digest,
+               e.key_id, e.existing_key_id, e.key_digest_server AS key_digest,
                e.storage_urls
         FROM kms_key_activation_events AS e
         INNER JOIN host_chain_blocks_valid AS b
@@ -245,9 +246,9 @@ pub(crate) async fn apply_ready_compressed_key_materials(
         WHERE e.status = 'ready'
           AND b.block_status = 'finalized'
           AND e.block_number <= $1
-          AND e.key_material_id IS NOT NULL
+          AND e.existing_key_id IS NOT NULL
           AND e.key_content_compressed_xof_keyset IS NOT NULL
-          AND e.key_id = (
+          AND e.existing_key_id = (
               SELECT key_id FROM keys ORDER BY sequence_number DESC LIMIT 1
           )
         FOR UPDATE OF e SKIP LOCKED
@@ -267,7 +268,7 @@ pub(crate) async fn apply_ready_compressed_key_materials(
               AND keys.sequence_number = (
                   SELECT MAX(sequence_number) FROM keys
               )
-              AND keys.key_id = e.key_id
+              AND keys.key_id = e.existing_key_id
               AND e.key_content_compressed_xof_keyset IS NOT NULL
             "#,
         )
@@ -279,7 +280,7 @@ pub(crate) async fn apply_ready_compressed_key_materials(
         if updated.rows_affected() == 0 {
             anyhow::bail!(
                 "compressed key material references unknown key_id {:?}",
-                row.key_id
+                row.existing_key_id
             );
         }
 
@@ -304,11 +305,11 @@ pub(crate) async fn applied_compressed_key_materials(
 ) -> anyhow::Result<Vec<AppliedCompressedKeyMaterial>> {
     Ok(sqlx::query_as(
         r#"
-        SELECT e.chain_id, e.block_number, e.key_id,
+        SELECT e.chain_id, e.block_number, e.existing_key_id AS key_id,
                e.key_digest_server AS key_digest
         FROM kms_key_activation_events AS e
         WHERE e.status = 'activated'
-          AND e.key_material_id IS NOT NULL
+          AND e.existing_key_id IS NOT NULL
           AND e.key_content_compressed_xof_keyset IS NOT NULL
         "#,
     )
@@ -559,7 +560,7 @@ pub(crate) async fn all_pending_key_activations_to_download(
         FROM kms_key_activation_events
         WHERE
             status = 'pending'
-            AND key_material_id IS NULL
+            AND existing_key_id IS NULL
             AND (
                 key_content_sks_key IS NULL AND key_digest_server IS NOT NULL
                 OR key_content_public IS NULL AND key_digest_public IS NOT NULL
@@ -606,7 +607,8 @@ pub(crate) async fn all_pending_compressed_key_materials_to_download(
     Ok(sqlx::query_as::<_, PendingCompressedKeyMaterial>(
         r#"
         SELECT e.chain_id, e.block_hash, e.block_number, e.transaction_hash,
-               e.key_id, e.key_digest_server AS key_digest, e.storage_urls
+               e.key_id, e.existing_key_id, e.key_digest_server AS key_digest,
+               e.storage_urls
         FROM kms_key_activation_events AS e
         INNER JOIN host_chain_blocks_valid AS b
           ON e.chain_id = b.chain_id AND e.block_hash = b.block_hash
@@ -614,9 +616,9 @@ pub(crate) async fn all_pending_compressed_key_materials_to_download(
           AND b.block_status = 'finalized'
           AND e.block_number <= $1
           AND e.key_digest_server IS NOT NULL
-          AND e.key_material_id IS NOT NULL
+          AND e.existing_key_id IS NOT NULL
           AND e.key_content_compressed_xof_keyset IS NULL
-          AND e.key_id = (
+          AND e.existing_key_id = (
               SELECT key_id FROM keys ORDER BY sequence_number DESC LIMIT 1
           )
         FOR UPDATE OF e SKIP LOCKED
@@ -960,7 +962,7 @@ mod tests {
         let original_block = vec![1_u8; 32];
         let migration_block = vec![2_u8; 32];
         let key_id = vec![3_u8; 32];
-        let key_material_id = vec![4_u8; 32];
+        let migration_request_id = vec![4_u8; 32];
         let legacy_public = b"legacy-public".to_vec();
         let legacy_server = b"legacy-server".to_vec();
         let compressed = b"compressed-xof".to_vec();
@@ -988,14 +990,14 @@ mod tests {
         sqlx::query(
             "INSERT INTO kms_key_activation_events
              (chain_id, block_hash, block_number, transaction_hash,
-              key_id, key_material_id, key_digest_server, storage_urls)
+              key_id, existing_key_id, key_digest_server, storage_urls)
              VALUES ($1, $2, 10, $3, $4, $5, $6, ARRAY[]::TEXT[])",
         )
         .bind(chain_id)
         .bind(&migration_block)
         .bind(vec![9_u8; 32])
+        .bind(&migration_request_id)
         .bind(&key_id)
-        .bind(&key_material_id)
         .bind(vec![11_u8; 32])
         .execute(&pool)
         .await?;
@@ -1032,7 +1034,8 @@ mod tests {
             all_pending_compressed_key_materials_to_download(&mut tx, Some(10))
                 .await?;
         assert_eq!(migration.len(), 1);
-        assert_eq!(migration[0].key_id, key_id);
+        assert_eq!(migration[0].key_id, migration_request_id);
+        assert_eq!(migration[0].existing_key_id, key_id);
         set_ready_compressed_key_material(&mut tx, &migration[0], &compressed)
             .await?;
         tx.commit().await?;
@@ -1072,7 +1075,7 @@ mod tests {
         let status = sqlx::query_scalar::<_, String>(
             "SELECT status FROM kms_key_activation_events WHERE key_id = $1",
         )
-        .bind(&key_id)
+        .bind(&migration_request_id)
         .fetch_one(&pool)
         .await?;
         assert_eq!(status, "activated");
