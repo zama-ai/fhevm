@@ -41,11 +41,10 @@ use zama_solana_test_kit::signing::{
 };
 use zama_solana_test_kit::{
     anchor_error_check, anchor_ix, coprocessor_signer_address, cost_snapshot,
-    encrypted_value_account, ensure_system_accounts,
-    event_authority, handle_for_chain, host_config_account, kms_context_account,
-    new_encrypted_value, read_account, read_encrypted_value, read_spl_amount, serialized_account,
-    spl_mint_account, spl_token_account, system_account, Ctx, HostConfigParams, BALANCE_FHE_TYPE,
-    DECIMALS,
+    encrypted_value_account, ensure_system_accounts, event_authority, handle_for_chain,
+    host_config_account, kms_context_account, new_encrypted_value, read_account,
+    read_encrypted_value, read_spl_amount, serialized_account, spl_mint_account, spl_token_account,
+    system_account, Ctx, HostConfigParams, BALANCE_FHE_TYPE, DECIMALS,
 };
 
 const KMS_CONTEXT_ID: u64 = 9;

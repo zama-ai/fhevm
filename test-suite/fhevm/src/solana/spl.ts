@@ -150,7 +150,7 @@ export const setComputeUnitLimitInstruction = (units: number): Instruction => {
 
 // No `RequestHeapFrame` helper: the request is granted and then ignored. Anchor's entrypoint
 // installs an allocator hard-wired to `solana_program_entrypoint::HEAP_LENGTH` (32 KB) unless the
-// program declares `custom-heap`, and none of ours do — so a larger frame is never used, and
+// program declares `custom-heap`, and none of ours do — so a larger heap frame is never used, and
 // lifting the real ceiling needs a program that owns its allocator (fhevm-internal#1872).
 
 /** The confidential_token `vault_authority` PDA for a confidential `mint` ([b"vault-authority", mint]). */
