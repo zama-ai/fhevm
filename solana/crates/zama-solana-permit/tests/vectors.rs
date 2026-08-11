@@ -22,10 +22,11 @@
 //!   dropping a class during a regeneration fails the suite instead of silently
 //!   shrinking coverage.
 //!
-//! What the vectors do *not* pin: the chain-id derivation, which is still an open
-//! protocol question. The records carry a genesis hash and a chain id derived from it
-//! by a stand-in derivation, clearly labeled. When the derivation is settled the set
-//! is regenerated; the byte freeze happens then, not now.
+//! The chain-id derivation is settled (`zama-solana-chain-id-v1`) and these records
+//! carry ids derived by it — see `chain_id_derivation.rs` for the rule and its parity
+//! with the public cluster registry. With the derivation settled and the transport
+//! key in its canonical container representation, this set is byte-frozen: a
+//! regeneration that changes any committed byte is a protocol change, not a refresh.
 
 mod common;
 
@@ -662,7 +663,28 @@ fn build_vector_file() -> PermitVectorFile {
         "transport key truncated by one byte",
         "truncated-mlkem-512",
         PermitWireFields {
-            transport_key: transport_key_bytes_of_len(799),
+            transport_key: transport_key_bytes_of_len(868),
+            ..reference_wire()
+        },
+        base_signature,
+        None,
+    );
+
+    builder.reject(
+        "transport-key-bare-of-the-accepted-variant",
+        "The bare 800-byte ML-KEM-512 encapsulation key: the representation this \
+         permit once accepted, and byte-for-byte the payload of the accepted \
+         safe-serialized container. The accepted length declares the representation \
+         as well as the variant, so the old wire form is refused rather than read as \
+         a shorter container.",
+        rule::TRANSPORT_KEY_LENGTH,
+        REFERENCE,
+        "transport key replaced with the bare encapsulation key",
+        "bare-mlkem-512-800",
+        PermitWireFields {
+            // The genuine bare key, not filler: the KMS linker vector set carries the
+            // same bytes under the same name, and a shared name must mean shared bytes.
+            transport_key: reference_bare_transport_key(),
             ..reference_wire()
         },
         base_signature,
@@ -718,11 +740,12 @@ fn build_vector_file() -> PermitVectorFile {
             chain_id_decimal: CHAIN_ID.to_string(),
             chain_id_hex: format!("{CHAIN_ID:#018x}"),
             chain_id_be_bytes: to_hex(&CHAIN_ID.to_be_bytes()),
-            chain_id_derivation: "Stand-in derivation for these fixtures: the host-kind \
-                                  high bit set over the leading 63 bits of the genesis \
-                                  hash. The real derivation is an open protocol question; \
-                                  these vectors pin a fixed test chain id and will be \
-                                  regenerated when it is settled."
+            chain_id_derivation: "zama-solana-chain-id-v1: digest = SHA-256(ASCII(\
+                                  \"zama-solana-chain-id-v1\") || genesis_hash); chain_id \
+                                  = 0x8000000000000000 | (be_u64(digest[0..8]) & \
+                                  0x7fffffffffffffff). Applied once per cluster at \
+                                  deployment; running components read the id from \
+                                  configuration and check only the chain-kind bit."
                 .to_string(),
         },
         transport_keys: builder.transport_keys,

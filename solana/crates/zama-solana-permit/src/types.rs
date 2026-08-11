@@ -13,10 +13,20 @@ use crate::error::PermitError;
 
 /// Every permit identity is exactly this many bytes.
 pub const IDENTITY_LEN: usize = 32;
-/// The single accepted transport-key length: the ML-KEM-512 public key size. The
-/// permit carries no variant field, so this length is what fixes the variant —
-/// notably, a well-formed 1568-byte ML-KEM-1024 key is rejected.
-pub const TRANSPORT_KEY_LEN: usize = 800;
+/// The single accepted transport-key length: the tfhe safe-serialized
+/// `UnifiedPublicEncKey::MlKem512` container — 800 bytes of encapsulation key inside
+/// 69 bytes of serialization header. One representation travels the whole chain: it is
+/// what the SDK's `ml_kem_pke_pk_to_u8vec` produces, what the wallet's signed text
+/// fingerprints, and what the KMS links verbatim, so the signed and the linked object
+/// can never diverge. The permit carries no variant or representation field, so this
+/// length declares both — the bare 800-byte encapsulation key (the representation this
+/// permit once accepted) and the larger ML-KEM-1024 variant in either shape are all
+/// rejected by width alone. The constant depends on tfhe's serialization header (type
+/// name + versions); a header change shifts it, and the shared normative vectors are
+/// the detector for that drift. A planned KMS migration toward carrying a 32-byte key
+/// digest in permits and linkers (full key only for the encryption itself) would
+/// change this length again — it is a wire representation, not protocol essence.
+pub const TRANSPORT_KEY_LEN: usize = 869;
 /// Upper bound on the signed ACL-domain list. The empty list is also valid and
 /// means permissive.
 pub const MAX_ACL_DOMAIN_KEYS: usize = 10;
@@ -72,8 +82,8 @@ impl TransportKey {
     }
 }
 
-// A transport key is 800 bytes of key material; printing it in a panic message is
-// noise, so the debug form is elided rather than derived.
+// A transport key is 869 bytes of serialized key material; printing it in a panic
+// message is noise, so the debug form is elided rather than derived.
 impl core::fmt::Debug for TransportKey {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str("TransportKey(..)")

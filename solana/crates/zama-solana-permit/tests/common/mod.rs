@@ -35,11 +35,29 @@ pub const USER_PUBKEY_HEX: &str =
 /// The deployed host program id.
 pub const VERIFYING_PROGRAM_ID_HEX: &str =
     "4cd3022dff504a675caf2d9b4f4014d0b3dc3ea17ffb97ba355cec5a933a30ee";
-/// Fixture cluster genesis hash the test chain id stands in for.
+/// Fixture cluster genesis hash the test chain id is derived from.
 pub const GENESIS_HASH_HEX: &str =
     "4539cf79f66704d313b4047b712d24ee29653cdf7484b18bc05992c01c105576";
-/// Fixture chain id. Carries the host-kind high bit, as every Solana chain id does.
-pub const CHAIN_ID: u64 = 14_211_618_221_876_249_811;
+/// Fixture chain id: `derive_chain_id` applied to [`GENESIS_HASH_HEX`], written out as a
+/// literal so a drifting derivation surfaces here instead of silently rewriting every
+/// golden. The tie is asserted in `chain_id_derivation.rs`.
+pub const CHAIN_ID: u64 = 10_037_641_751_006_774_702;
+
+/// The settled chain-id derivation, `zama-solana-chain-id-v1`:
+/// `0x8000000000000000 | (be_u64(SHA-256(tag ‖ genesis_hash)[0..8]) & 0x7fff…)`.
+///
+/// A deployment-time rule: no running component recomputes it — production reads the
+/// chain id from configuration and checks only the chain-kind bit. It lives here, in
+/// test code, because the fixture generator is the one place that plays the deployer.
+pub fn derive_chain_id(genesis_hash: &[u8; 32]) -> u64 {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(b"zama-solana-chain-id-v1");
+    hasher.update(genesis_hash);
+    let digest = hasher.finalize();
+    let leading = u64::from_be_bytes(digest[..8].try_into().expect("eight digest bytes"));
+    0x8000_0000_0000_0000 | (leading & 0x7fff_ffff_ffff_ffff)
+}
 /// Fixture KMS context id.
 pub const KMS_CONTEXT_ID_HEX: &str =
     "bb801121e2ea198af189c9331dfc57f675802c35206f96a5964deeac39f79d18";
@@ -64,29 +82,29 @@ pub const DURATION_SECONDS: u64 = 604_800;
 
 /// Digest of the reference permit's envelope.
 pub const REFERENCE_ENVELOPE_DIGEST_HEX: &str =
-    "99bcd546be31c2117edb220e774445e8be8b703d2775f7ecd8d61f5c9df3ffbd";
+    "110049ad6aec706218ea59c4234642a394c15a1be630edb3efff36fbd718464e";
 /// Signature over the reference envelope, from the independent implementation.
 pub const REFERENCE_SIGNATURE_HEX: &str = concat!(
-    "54b0152c5cbe46a22b4809c11eb182010f823e01d72c7de3339a3a54084dec83",
-    "72be3226419be2efc8aeac7d9261a6311dbd78d64813b5755f1b986f51102a02"
+    "69259422cd12d75a04e39f6dbbce1f07bd45b0657df3cd7c41881dc387b13ec8",
+    "87a106646a50ff9c709544f50c3bb2e8e896e5d25bb8b205c00392458e3d7207"
 );
 /// The same signature with its scalar replaced by `S + L`: a second encoding of the
 /// same signature, which a lax verifier accepts and a strict one rejects.
 pub const NON_CANONICAL_SIGNATURE_HEX: &str = concat!(
-    "54b0152c5cbe46a22b4809c11eb182010f823e01d72c7de3339a3a54084dec83",
-    "5f9228835bfef4479f4ba420715b85461dbd78d64813b5755f1b986f51102a12"
+    "69259422cd12d75a04e39f6dbbce1f07bd45b0657df3cd7c41881dc387b13ec8",
+    "7475fcc084b311f546323c98eb3491fde896e5d25bb8b205c00392458e3d7217"
 );
 /// Digest of the permissive permit's envelope.
 pub const PERMISSIVE_ENVELOPE_DIGEST_HEX: &str =
-    "2bb9f88cd9c893326b161132beee5e33681af8049b68a277b2d280362bf55520";
+    "e105f269f644f20c7025bb436b1cfea038f00c76bb215eec6ea25bccc44e96a2";
 /// Signature over the permissive permit's envelope.
 pub const PERMISSIVE_SIGNATURE_HEX: &str = concat!(
-    "7c5d4e82d082b40b39f1cf8dde64d01e8f8a95b1da2c58a243d488b05da939db",
-    "4953349eb211fb107bb8171e32f2c76b0abcb55c89f18e76b25b9cfc6510790e"
+    "15b15779298fceec4cd4bf7201b6871cd03046968014853b471858cdc604360d",
+    "821986ad98c846f22af1b9d34f5816a26fcf70961e2bfdd49b94690527dd5d0e"
 );
 /// Fingerprint of the reference transport key, computed outside this crate.
 pub const REFERENCE_FINGERPRINT_HEX: &str =
-    "1bbd1b9dc7c8ad93c69f431d2bdfe49c448cf6c5c25c08c2ad5b9c2dd93d83f8";
+    "b1316d23732ff02dbdd55a3f375199bccdcad68b9f90d4eb5d1140bdcd01eb07";
 
 /// A y-coordinate encoding that is not a point on the curve.
 pub const NOT_A_CURVE_POINT_HEX: &str =
@@ -152,9 +170,10 @@ pub fn bytes32(hex: &str) -> [u8; 32] {
     out
 }
 
-/// Deterministic 800-byte transport key expanded from a label. The bytes are filler
-/// — the protocol never interprets them — but they are reproducible in any language,
-/// which matters because four other implementations consume the same fixture.
+/// Deterministic transport key of the accepted length, expanded from a label. The
+/// bytes are filler — the protocol never interprets them — but they are reproducible
+/// in any language, which matters because four other implementations consume the same
+/// fixture.
 pub fn transport_key_bytes(label: &[u8]) -> Vec<u8> {
     use sha3::{
         digest::{ExtendableOutput, Update, XofReader},
@@ -168,13 +187,53 @@ pub fn transport_key_bytes(label: &[u8]) -> Vec<u8> {
     out
 }
 
-/// The reference transport key: a genuinely generated ML-KEM-512 encapsulation key, so
-/// a KMS implementation can decode the fixture as the key it claims to be. The permit
-/// layer itself never interprets the bytes. Generated by FIPS 203
+/// The reference transport key: a genuinely generated ML-KEM-512 encapsulation key in
+/// its tfhe safe-serialized `UnifiedPublicEncKey::MlKem512` container — the one
+/// representation the whole chain carries, signs and links. The permit layer itself
+/// never interprets the bytes. The underlying key is generated by FIPS 203
 /// ML-KEM-512.KeyGen_internal(d, z) with
 /// d = SHAKE256("zama-solana-permit-reference-transport-key/d", 32) and
-/// z = SHAKE256("zama-solana-permit-reference-transport-key/z", 32).
+/// z = SHAKE256("zama-solana-permit-reference-transport-key/z", 32);
+/// the container bytes are copied verbatim from the KMS linker vector set's
+/// `reference-mlkem-512` entry, so the two halves of the specification's fixture set
+/// bind byte-identical objects. The bare 800-byte encapsulation key survives in that
+/// set only as a negative (`bare-mlkem-512-800`): request validation rejects its width.
 pub const REFERENCE_TRANSPORT_KEY_HEX: &str = concat!(
+    "0300000000000000302e35000000000300000000000000302e31130000000000",
+    "0000556e69666965645075626c6963456e634b65790000000000000000200300",
+    "000000000050813ec9f7b53c004191429786739a5660a2a05451c5431c081574",
+    "5c43956f175449da6cd4702335acaa51064f761508cb262b0457561086a28ee5",
+    "acd3ecbe7be095d554b34b61bde9744a7cc67f1189a2714180cf0c4475548813",
+    "a970e26011a0c0bf28e56b5a16608ff2c7103583f95240a7a18bc37aaace2120",
+    "9bea85b50c2ecbb08a6921b0d5909bd71c40461b099dd79b56d972e75b6c502b",
+    "42075ab2dcc26f85b34a4ef34060452b440173fbb95082d2acc42565b4e9a954",
+    "63b9c39ab14714b33349245447b25a42035d64a7371959bac5831f94b3bdc309",
+    "5e31769d211f9b17b4966ba00cd68bfab42693205c7e349e08527bc5e982256b",
+    "9d7e57ce59cb706b160519b1a7c473918e754540dc1c5b14707f6002c7aa7d87",
+    "c300ead080296683a5c30a73e74b7107087f5760c90350b125bb9e5530af1409",
+    "f5900b396116d37306c391a5b7137e1d7720ca58a41af79f9065b1bc01c5fe31",
+    "cba5ea55b682b537b36cce9b23e5826d2fca0abe86b44ec639f5832d5f7b2278",
+    "a4685e4249faa8441b31198f5566f3599fa3675e97aa40cf62a25d3715d5656a",
+    "a3647641016bcd329717667f1a090dd5f94873c558366614f39a3e93b14f3886",
+    "6812616e3b83189e17cc26526a96106696b6548cbaa8a4f222ee31ac72e16a50",
+    "77c699fb1a3fe68673a8293a21c0e34ccb42e32249f22d3924974dc92f25d60c",
+    "37424110892d5e1217a03c15efe4ad49248fe2776b2b65b71f140c7e0ba53c6b",
+    "4c09992e17799a5ee65247f428b20739a92898eff5acd455c52d02285bcccd82",
+    "0767ddf38e4a6026f32802bc9b6fba6b077becc1b5e23653607c592c3a86d56b",
+    "f103c3d64b01fc7aba912138a8000a872b3af36c8346069fb2756e0ee41e9b03",
+    "33bb9994b6cb4e6d1a190df45bc3369fa2f12ad63b8376952335b159b696ba5e",
+    "c6771903c55361649428b856195dd37a1fbad85d5b9054e0e70250c8a590028e",
+    "4bc1385864549be00d96a642ce4b0a88f7b447e627a4702bb4278c4d09812f24",
+    "293a129f56c96a83faa779504c165c97eec81d535a0458904a73905404b16db9",
+    "f5bd23f420cca76e5b13555b19f7e2d43cde771f93dcda9d280f2967e16a9c1f",
+    "7db8cc2d48",
+);
+
+/// The bare 800-byte encapsulation key inside [`REFERENCE_TRANSPORT_KEY_HEX`]'s
+/// container — the representation this permit once accepted. Kept as a fixture for
+/// exactly one purpose: the negative record showing that the old wire form is
+/// refused. Byte-identical to the KMS linker vector set's `bare-mlkem-512-800`.
+pub const REFERENCE_BARE_KEY_HEX: &str = concat!(
     "27b792b8740145b905d2b19f3575cb5cc27746ec1869b89a80217182c06d9e66",
     "877492ac1a515d31e275244712769b10fde778e1e9b6ff9c1fbeec2f51b63377",
     "e621ce408035fc9c7fb6a4846c12ab82b3fe75cc91544a5ea511aed07712f602",
@@ -202,10 +261,23 @@ pub const REFERENCE_TRANSPORT_KEY_HEX: &str = concat!(
     "8bfdd3c82d8e64cf6d91e5b1815df57d2791eb20bc6c0bc208eb7db167f454e0",
 );
 
+/// The bare encapsulation key, as bytes.
+pub fn reference_bare_transport_key() -> Vec<u8> {
+    let hex = REFERENCE_BARE_KEY_HEX;
+    assert_eq!(hex.len(), 800 * 2, "expected 800 bare key bytes");
+    (0..hex.len() / 2)
+        .map(|index| u8::from_str_radix(&hex[index * 2..index * 2 + 2], 16).expect("hex fixture"))
+        .collect()
+}
+
 /// The fixture transport key.
 pub fn reference_transport_key() -> Vec<u8> {
     let hex = REFERENCE_TRANSPORT_KEY_HEX;
-    assert_eq!(hex.len(), TRANSPORT_KEY_LEN * 2, "expected 800 key bytes");
+    assert_eq!(
+        hex.len(),
+        TRANSPORT_KEY_LEN * 2,
+        "expected 869 container bytes"
+    );
     (0..hex.len() / 2)
         .map(|index| u8::from_str_radix(&hex[index * 2..index * 2 + 2], 16).expect("hex fixture"))
         .collect()

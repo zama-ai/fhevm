@@ -152,7 +152,7 @@ fn signature_over_text_with_a_substituted_value_is_rejected() {
     let canonical = render_canonical_text(&fields);
 
     let substitutions = [
-        ("Chain id: 14211618221876249811", "Chain id: 1"),
+        ("Chain id: 10037641751006774702", "Chain id: 1"),
         (
             "Valid from: 2026-01-01T01:03:00Z for 604800 seconds",
             "Valid from: 2026-01-01T01:03:00Z for 31536000 seconds",
