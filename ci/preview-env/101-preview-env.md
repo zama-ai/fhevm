@@ -60,6 +60,9 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
   commit's.
 - `automated_tests` — auto-run the e2e DAG and write the report to the run
   summary.
+- `observability` — also deploy an in-namespace Prometheus + Grafana + Jaeger
+  stack and switch on OTLP tracing in components supporting it (off by
+  default; see [Observe your environment](#observe-your-environment)).
 - `namespace_suffix` — fixed suffix for the namespace (e.g. a ticket id);
   empty ⇒ this run's id (always unique).
 
@@ -125,6 +128,22 @@ gh run list --workflow=preview-env-deploy.yml --branch=<your-branch> --limit 5
 ```bash
 tailscale configure kubeconfig tailscale-operator-zws-dev.diplodocus-boa.ts.net
 kubectl get pods -n <namespace>          # e.g. fhevm-ci-alice-1234
+```
+
+## Observe your environment
+
+Deploy with the `observability` dispatch input set to `true` (off by default,
+manual runs only for now) to get an in-namespace **Prometheus + Grafana +
+Jaeger** stack: Prometheus auto-scrapes every instrumented service in the
+namespace, Jaeger collects OTLP traces, and Grafana is the UI over both.
+Details and design notes: [`README.md`](./README.md#observability-opt-in-observability-dispatch-input).
+
+With Tailscale up (same prerequisites as connecting):
+
+```bash
+kubectl port-forward -n <namespace> svc/grafana 3000:3000     # http://localhost:3000
+kubectl port-forward -n <namespace> svc/prometheus 9090:9090  # http://localhost:9090 (raw PromQL)
+kubectl port-forward -n <namespace> svc/jaeger 16686:16686    # http://localhost:16686 (Jaeger UI)
 ```
 
 ## See test results

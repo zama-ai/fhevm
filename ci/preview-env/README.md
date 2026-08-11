@@ -60,6 +60,10 @@ ci/preview-env/
 │   ├── values-kms-connector-e2e.yaml       # kms-connector overlay
 │   ├── values-kms-connector-polygon-e2e.yaml # additive overlay: adds the Polygon host chain to hostChains (deploy_polygon)
 │   └── values-postgres-connector-e2e.yaml  # `common` chart overlay: in-cluster Postgres, dedicated to kms-connector
+├── observability/
+│   ├── values-prometheus-e2e.yaml # `common` chart overlay (raw objects): in-namespace Prometheus, endpoints-SD scraping
+│   ├── values-jaeger-e2e.yaml     # `common` chart overlay: Jaeger all-in-one, OTLP trace collector
+│   └── values-grafana-e2e.yaml    # `common` chart overlay: Grafana UI over both
 ├── relayer/
 │   ├── values-relayer-e2e.yaml          # `common` chart overlay, relayer server
 │   ├── values-relayer-migrate-e2e.yaml  # `common` chart overlay, relayer DB migration Job
@@ -147,6 +151,33 @@ Caveats if you ever do want the live path against anvil:
   against the node's `eth_chainId`. So it is not a rename: the host anvil would have
   to run with `--chain-id 1337`, which cascades into re-wiring the host chain id
   (`12345` → `1337`) across the coprocessor / gateway / host values.
+
+## Observability (opt-in: `observability` dispatch input)
+
+`preview-env-deploy.yml` takes an `observability` input (default `false`,
+dispatch-only for now) that deploys a self-contained, namespaced observability
+stack alongside the env — three more `common`-chart releases (`prometheus`,
+`jaeger`, `grafana`, all official public images), torn down with the namespace
+like everything else:
+
+- **Prometheus** scrapes every Service in the namespace exposing a named
+  `metrics` or `monitoring` port via Kubernetes endpoints service discovery.
+  No static target list, no ServiceMonitors (no dependency on cluster-wide
+  prometheus-operator CRDs), and the per-party fan-out
+  (`nb_coprocessor`/`nb_kms_core`) is followed automatically. Metric history
+  sits on a 10Gi PVC (7d retention) so a pod reschedule mid-bench doesn't wipe
+  it. Its manifests ship as raw `additionalResources` objects (the
+  endpoints-SD ServiceAccount/Role/RoleBinding wiring needs that — see
+  `observability/values-prometheus-e2e.yaml`'s header).
+- **Jaeger all-in-one** (v2, in-memory) is the OTLP collector.
+- **Grafana** (anonymous admin — throwaway namespace, Tailscale-only) is the
+  UI over both, with Prometheus + Jaeger datasources provisioned. No
+  dashboards are provisioned yet; UI-created ones die with the pod, so export
+  what you want to keep.
+
+Access is `kubectl port-forward` from the dev laptop (Tailscale up, namespace
+admin via `coprocessor-dev-access`/`kms-dev-access`) — see
+[`101-preview-env.md`](./101-preview-env.md#observe-your-environment).
 
 ## Multi-coprocessor (`nb_coprocessor`) and shared Redis
 
