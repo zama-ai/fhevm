@@ -10,6 +10,15 @@ import path from "node:path";
 
 import { getAddressEncoder, type Address, type TransactionSigner } from "@solana/kit";
 
+import {
+  hexToBytes as proofHexToBytes,
+  verifyHistoricalAccessProof,
+  verifyPublicDecryptProof,
+  MAX_MMR_SIBLINGS,
+  MMR_PROOF_MODE_HISTORICAL,
+  type MmrProof,
+} from "@sdk-src/solana/proof.js";
+
 import { REPO_ROOT } from "../layout";
 import { run } from "../utils/process";
 import {
@@ -32,7 +41,8 @@ const WORKER_DIR = path.join(REPO_ROOT, "test-suite/fhevm");
 const hex = (bytes: Uint8Array): string => `0x${Buffer.from(bytes).toString("hex")}`;
 const hexCsv = (values: readonly Uint8Array[]): string => values.map(hex).join(",");
 const addressEncoder = getAddressEncoder();
-const addressHex = (value: Address): string => hex(new Uint8Array(addressEncoder.encode(value)));
+const addressBytes = (value: Address): Uint8Array => new Uint8Array(addressEncoder.encode(value));
+const addressHex = (value: Address): string => hex(addressBytes(value));
 
 /** The environment facts every vertical decrypt binds to. */
 export type FheVerticalConfig = {
@@ -150,6 +160,23 @@ export const certifiedPublicDecrypt = async (
   if (params.expectedLeafIndex !== undefined && proof.proof.leafIndex !== params.expectedLeafIndex) {
     throw new Error(`public proof leaf index ${proof.proof.leafIndex} != expected ${params.expectedLeafIndex}`);
   }
+  // Client-side verification against the LIVE peaks, the twin of the historical check below and of
+  // what the retired Rust client did before the gateway ever saw the request. Matching leaf counts
+  // only prove the service read the same account; this proves the leaf is actually in the tree.
+  if (
+    !verifyPublicDecryptProof(
+      addressBytes(params.target.encryptedValue),
+      state.peaks,
+      state.leafCount,
+      params.handle,
+      proof.proof,
+    )
+  ) {
+    throw new Error(
+      `public-decrypt proof for handle ${hex(params.handle)} does not verify against the on-chain peaks ` +
+        `(leaf index ${proof.proof.leafIndex}, leaf count ${state.leafCount})`,
+    );
+  }
 
   const certificate = await runSolanaPublicDecrypt({
     PD_RELAYER_URL: config.relayerUrl,
@@ -201,6 +228,76 @@ export type HistoricalAccessProof = {
 };
 
 /**
+ * The proof-service wire shape for the semantic access-proof endpoint. Parsed in exactly one place
+ * ({@link parseHistoricalAccessProof}); everything downstream consumes the normalized result.
+ */
+type AccessProofWire = {
+  readonly mmr_proof: { readonly leaf_index: number; readonly siblings: readonly string[] } | null;
+  readonly leaf_count: number;
+  readonly verified: boolean;
+  readonly status?: string;
+};
+
+/** `0x01 || Borsh(MmrProof)` — the historical-mode twin of the vault client's `0x02` encoder. */
+const encodeHistoricalTransportBlob = (proof: MmrProof): Uint8Array => {
+  const out = new Uint8Array(1 + 8 + 4 + proof.siblings.length * 32);
+  const view = new DataView(out.buffer);
+  out[0] = MMR_PROOF_MODE_HISTORICAL;
+  view.setBigUint64(1, proof.leafIndex, true);
+  view.setUint32(9, proof.siblings.length, true);
+  proof.siblings.forEach((sibling, i) => out.set(sibling, 13 + i * 32));
+  return out;
+};
+
+/**
+ * Normalizes a success response, enforcing what the vault's public-proof client enforces:
+ * `verified: true`, 32-byte siblings, and the sibling cap the on-chain verifier rejects past.
+ */
+export const parseHistoricalAccessProof = (body: unknown): HistoricalAccessProof => {
+  if (typeof body !== "object" || body === null || !("mmr_proof" in body)) {
+    throw new Error("proof-service response is not an MMR-proof envelope");
+  }
+  const wire = body as AccessProofWire;
+  if (!wire.verified || wire.mmr_proof === null) {
+    throw new Error(`proof-service returned an unverified access proof (status "${wire.status ?? "?"}")`);
+  }
+  const siblings = wire.mmr_proof.siblings.map((sibling) => {
+    const bytes = proofHexToBytes(sibling);
+    if (bytes.length !== 32) throw new Error(`access-proof sibling must be 32 bytes, got ${bytes.length}`);
+    return bytes;
+  });
+  if (siblings.length > MAX_MMR_SIBLINGS) {
+    throw new Error(`access-proof carries ${siblings.length} siblings, exceeding the cap of ${MAX_MMR_SIBLINGS}`);
+  }
+  // leafIndex is the service's resolved OUTPUT — the client never supplies one.
+  const proof: MmrProof = { leafIndex: BigInt(wire.mmr_proof.leaf_index), siblings };
+  return {
+    leafIndex: proof.leafIndex,
+    siblings,
+    leafCount: BigInt(wire.leaf_count),
+    mmrProofBytes: encodeHistoricalTransportBlob(proof),
+  };
+};
+
+/**
+ * Only `lagging` means "retry later" — the store catching up to the chain. Every other status
+ * (`leaf_not_found`, a corrupt cache, an integrity failure, any 4xx) is terminal: retrying one of
+ * those would bury a real integrity failure under a retry loop and report it as a timeout.
+ */
+export const isLaggingAccessProof = (body: unknown): boolean =>
+  typeof body === "object" && body !== null && (body as { status?: string }).status === "lagging";
+
+/** Per-request cap: a service that accepts the connection but never answers must not hang the poll. */
+const ACCESS_PROOF_REQUEST_TIMEOUT_MS = 10_000;
+/**
+ * Bounded `lagging` retry budget. The retired Rust live-client tolerated ~28s (15 attempts, 2s
+ * apart). The poll here is twice as fast so a recovering service is picked up sooner, and the
+ * count is raised to match so the tolerance for a genuinely lagging service is unchanged.
+ */
+const ACCESS_PROOF_MAX_RETRIES = 28;
+const ACCESS_PROOF_RETRY_DELAY_MS = 1_000;
+
+/**
  * Fetches the historical-access inclusion proof for `(encryptedValue, oldHandle, subject)` from
  * solana-proof-service. The service resolves the leaf semantically — the client supplies no leaf
  * index — and only `verified: true` responses are accepted; `503 lagging` is retried bounded,
@@ -214,36 +311,20 @@ export const fetchHistoricalAccessProof = async (
   const url =
     `${base}/internal/solana/access-proof?encrypted_value=${params.encryptedValue}` +
     `&handle=${Buffer.from(params.oldHandle).toString("hex")}&subject=${params.subject}`;
-  const maxRetries = 10;
   for (let attempt = 0; ; attempt++) {
-    const response = await fetch(url, { headers: { accept: "application/json" } });
-    const body = (await response.json().catch(() => null)) as {
-      mmr_proof: { leaf_index: number; siblings: string[] } | null;
-      leaf_count: number;
-      verified: boolean;
-      status?: string;
-    } | null;
-    if (response.ok && body?.verified && body.mmr_proof) {
-      const siblings = body.mmr_proof.siblings.map((sibling) => {
-        const bytes = Uint8Array.from(Buffer.from(sibling.replace(/^0x/, ""), "hex"));
-        if (bytes.length !== 32) throw new Error("access-proof sibling must be 32 bytes");
-        return bytes;
-      });
-      const leafIndex = BigInt(body.mmr_proof.leaf_index);
-      // 0x01 (historical mode) || borsh(MmrProof{leaf_index: u64-le, siblings: Vec<[u8;32]>}).
-      const blob = new Uint8Array(1 + 8 + 4 + siblings.length * 32);
-      const view = new DataView(blob.buffer);
-      blob[0] = 0x01;
-      view.setBigUint64(1, leafIndex, true);
-      view.setUint32(9, siblings.length, true);
-      siblings.forEach((sibling, i) => blob.set(sibling, 13 + i * 32));
-      return { leafIndex, siblings, leafCount: BigInt(body.leaf_count), mmrProofBytes: blob };
-    }
-    if (response.status === 503 && body?.status === "lagging" && attempt < maxRetries) {
-      await Bun.sleep(1000);
+    const response = await fetch(url, {
+      method: "GET",
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(ACCESS_PROOF_REQUEST_TIMEOUT_MS),
+    });
+    const body: unknown = await response.json().catch(() => null);
+    if (response.ok) return parseHistoricalAccessProof(body);
+    if (response.status === 503 && isLaggingAccessProof(body) && attempt < ACCESS_PROOF_MAX_RETRIES) {
+      await Bun.sleep(ACCESS_PROOF_RETRY_DELAY_MS);
       continue;
     }
-    throw new Error(`access-proof request failed (HTTP ${response.status}, status "${body?.status ?? "?"}")`);
+    const status = (body as { status?: string } | null)?.status;
+    throw new Error(`access-proof request failed (HTTP ${response.status}, status "${status ?? "?"}")`);
   }
 };
 
@@ -275,6 +356,25 @@ export const historicalUserDecryptExpect = async (
   if (params.proof.leafCount !== state.leafCount) {
     throw new Error(
       `access-proof leaf count ${params.proof.leafCount} does not match the on-chain leaf count ${state.leafCount}`,
+    );
+  }
+  // Client-side cryptographic verification against the LIVE peaks, restoring what the retired Rust
+  // live-client did: recompute the historical-access leaf commitment and fold the sibling path.
+  // The gateway verifies this again, so coverage does not hang on it — DIAGNOSIS does. Without it a
+  // service that resolves a wrong-but-self-consistent leaf index fails much later as a generic KMS
+  // decrypt rejection, with nothing pointing at the proof.
+  const proofVerifies = verifyHistoricalAccessProof(
+    addressBytes(params.target.encryptedValue),
+    state.peaks,
+    state.leafCount,
+    params.oldHandle,
+    addressBytes(params.subject),
+    { leafIndex: params.proof.leafIndex, siblings: params.proof.siblings },
+  );
+  if (!proofVerifies) {
+    throw new Error(
+      `access proof for handle ${hex(params.oldHandle)} does not verify against the on-chain peaks ` +
+        `(leaf index ${params.proof.leafIndex}, leaf count ${state.leafCount})`,
     );
   }
   const userDecryptContextIdHex = `0x${BigInt(config.userDecryptContextId).toString(16).padStart(64, "0")}`;

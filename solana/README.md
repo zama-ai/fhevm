@@ -113,8 +113,9 @@ test-kit                        The fixture library every Rust test imports: Mol
 runtime-tests                   Fast evaluator contracts plus real-SBF Mollusk suites
                                 (docs/TESTING.md explains what each layer proves).
 demo-dapp                       The confidential vault demo frontend.
-scripts/                        Workspace tooling (scripts/README.md) and live e2e scripts
-                                (scripts/e2e) against a local validator + fhevm-cli stack.
+scripts/                        Workspace tooling (scripts/README.md). scripts/e2e is stack
+                                BRING-UP only (clean-e2e.sh, select-overrides.sh) — the e2e
+                                assertions themselves live in test-suite/fhevm/e2e.
 geyser                          Yellowstone plugin build helpers for the event stream.
 ```
 
@@ -131,6 +132,11 @@ relayer/                                 HTTP relayer: v3 typed Solana requests,
                                          validation, fee handling.
 kms-connector/                           Per-party decrypt authorization (imports zama_solana_acl).
 sdk/js-sdk/src/solana                    Client SDK: encrypt, user/public decrypt, proofs.
+test-suite/fhevm/src/solana              The typed Solana side-stack: validator + program deploy,
+                                         the zama-host bootstrap, and the provisioning/arc helpers
+                                         the scenarios are built from.
+test-suite/fhevm/e2e                     The live scenario suite (bun:test) and its harness —
+                                         the layer that replaced the retired bash e2e scripts.
 test-suite/fhevm/demo                    Demo seeding and orchestration.
 ```
 

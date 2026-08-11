@@ -148,13 +148,10 @@ export const setComputeUnitLimitInstruction = (units: number): Instruction => {
   return { programAddress: COMPUTE_BUDGET_PROGRAM_ADDRESS, data };
 };
 
-/** ComputeBudget `RequestHeapFrame` (tag 1): grows the tx heap for multi-step FHE instructions. */
-export const requestHeapFrameInstruction = (bytes: number): Instruction => {
-  const data = new Uint8Array(5);
-  data[0] = 1;
-  new DataView(data.buffer).setUint32(1, bytes, true);
-  return { programAddress: COMPUTE_BUDGET_PROGRAM_ADDRESS, data };
-};
+// No `RequestHeapFrame` helper: the request is granted and then ignored. Anchor's entrypoint
+// installs an allocator hard-wired to `solana_program_entrypoint::HEAP_LENGTH` (32 KB) unless the
+// program declares `custom-heap`, and none of ours do — so a larger frame is never used, and
+// lifting the real ceiling needs a program that owns its allocator (fhevm-internal#1872).
 
 /** The confidential_token `vault_authority` PDA for a confidential `mint` ([b"vault-authority", mint]). */
 export const vaultAuthorityAddress = async (tokenProgram: Address, confidentialMint: Address): Promise<Address> => {

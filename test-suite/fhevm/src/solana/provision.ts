@@ -8,7 +8,6 @@
 // `./spl.ts`. Binding to explicit signers (instead of the ambient Solana CLI identity
 // the live-client read from `$HOME`) is what lets the arc target any stack the harness injects.
 
-import { createHash } from "node:crypto";
 
 import {
   appendTransactionMessageInstructions,
@@ -36,6 +35,11 @@ import {
 import type { Bytes32Hex } from "@sdk-src/core/types/primitives.js";
 
 import {
+  decodeHostConfig,
+  HOST_CONFIG_DISCRIMINATOR,
+} from "./internal/generated/zamaHost/accounts/index.js";
+
+import {
   SPL_MINT_ACCOUNT_SPACE,
   SPL_TOKEN_PROGRAM_ADDRESS,
   associatedTokenAddress,
@@ -59,11 +63,6 @@ import { vaultModule, sdkHandleModule, sdkProofModule } from "./lazy-modules";
 const PROVISIONING_COMPUTE_UNIT_LIMIT = 1_400_000;
 const LAMPORTS_PER_SOL = 1_000_000_000n;
 const EUINT64_FHE_TYPE_ID = 5;
-// Anchor account discriminator + layout anchors for the zama-host `HostConfig` singleton
-// (`solana/programs/zama-host/src/state/host_config.rs`): `chain_id` is the u64 right after the
-// 32-byte `admin` pubkey. The discriminator check keeps a layout drift from being read as garbage.
-const HOST_CONFIG_DISCRIMINATOR = createHash("sha256").update("account:HostConfig").digest().subarray(0, 8);
-const HOST_CONFIG_CHAIN_ID_OFFSET = 8 + 32;
 
 const addressEncoder = getAddressEncoder();
 const encodeAddress = (value: Address): Uint8Array => new Uint8Array(addressEncoder.encode(value));
@@ -283,18 +282,17 @@ export const readHostChainId = async (context: SolanaProvisioningContext): Promi
   if (
     !configInfo.exists ||
     configInfo.programAddress !== vault.ZAMA_HOST_PROGRAM_ADDRESS ||
-    !bytesEqual(configInfo.data.subarray(0, 8), HOST_CONFIG_DISCRIMINATOR)
+    !bytesEqual(configInfo.data.subarray(0, 8), new Uint8Array(HOST_CONFIG_DISCRIMINATOR))
   ) {
     throw new Error("HostConfig account is missing or has the wrong owner or discriminator");
   }
-  const chainId = new DataView(configInfo.data.buffer, configInfo.data.byteOffset).getBigUint64(
-    HOST_CONFIG_CHAIN_ID_OFFSET,
-    true,
-  );
-  if ((chainId & (1n << 63n)) === 0n) {
+  // Decoded by the generated Codama client, so the field layout tracks the committed IDL instead
+  // of a hand-maintained byte offset. The discriminator constant is generated from it too.
+  const { data: config } = decodeHostConfig(configInfo);
+  if ((config.chainId & (1n << 63n)) === 0n) {
     throw new Error("HostConfig chain id is missing the Solana high bit");
   }
-  return chainId;
+  return config.chainId;
 };
 
 /** A holder's live confidential balance identity, as proven by `readTokenBalanceState`. */

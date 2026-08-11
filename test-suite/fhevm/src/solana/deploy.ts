@@ -308,7 +308,11 @@ const startHostListener = async (parameters: {
     }
   } else {
     await run(["pkill", "-f", "solana_host_listener"], { allowFailure: true });
-    await Bun.sleep(1_000);
+    // Poll it gone rather than sleeping a flat second: the next step binds the same resources.
+    await until(
+      async () => (await run(["pgrep", "-f", "solana_host_listener"], { allowFailure: true })).code !== 0,
+      { description: "previous solana_host_listener to exit", timeoutMs: 15_000, intervalMs: 100 },
+    );
   }
   const buildLog = "/tmp/solana-host-listener-build.log";
   const build = await run(

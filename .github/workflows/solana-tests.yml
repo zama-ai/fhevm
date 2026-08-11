@@ -104,6 +104,13 @@ jobs:
             test-suite-fhevm:
               - .github/workflows/solana-tests.yml
               - test-suite/fhevm/**
+              # The job's `tsc` resolves through the `@sdk-src/*` and `@demo-dapp/*` path aliases
+              # into these two trees, so a change confined to either one can break this typecheck.
+              # Without them the break surfaces ~40 min into the e2e job (bun strips types rather
+              # than checking them), or not at all on a PR targeting main. Retiring the aliases is
+              # tracked in fhevm-internal#1878; until then the filter has to name what tsc reads.
+              - sdk/js-sdk/**
+              - solana/demo-dapp/**
             # The committed byte-layout vectors and both halves of what the SDK must agree on
             # with the kms-connector. js-sdk-tests.yml runs the vitest suite only on PRs against
             # main/devex, so without this filter a Solana-side divergence in the user-decrypt

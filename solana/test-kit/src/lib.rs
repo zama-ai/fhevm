@@ -378,16 +378,26 @@ pub struct HostConfigParams {
     pub grant_deny_list_enabled: bool,
 }
 
+/// The fixture's default coprocessor signer: a dead address no test key can produce. A config
+/// built from the defaults therefore rejects every `fromExternal` attestation until a suite opts
+/// in via [`coprocessor_signer_address`], which keeps that trust visible at the call site instead
+/// of inherited silently from the kit.
+pub const UNTRUSTED_COPROCESSOR_SIGNER: [u8; 20] = [0x11; 20];
+
+/// EVM address of [`signing::coprocessor_signing_key`] — the signer set a suite registers when it
+/// mints attestations with [`signing::amount_attestation_for`].
+pub fn coprocessor_signer_address() -> [u8; 20] {
+    signing::secp_evm_address(&signing::coprocessor_signing_key())
+}
+
 impl HostConfigParams {
-    /// Defaults register [`signing::coprocessor_signing_key`]'s EVM address as the sole
-    /// coprocessor signer, so a config built from these params accepts attestations minted by
-    /// [`signing::amount_attestation_for`] without further setup.
+    /// Defaults register [`UNTRUSTED_COPROCESSOR_SIGNER`], so a suite that mints attestations with
+    /// [`signing::amount_attestation_for`] has to register [`coprocessor_signer_address`]
+    /// explicitly. Suites that never exercise `fromExternal` inherit a config that trusts nobody.
     pub fn new(admin: Pubkey) -> Self {
         Self {
             admin,
-            coprocessor_signers: vec![signing::secp_evm_address(
-                &signing::coprocessor_signing_key(),
-            )],
+            coprocessor_signers: vec![UNTRUSTED_COPROCESSOR_SIGNER],
             coprocessor_threshold: 1,
             current_kms_context_id: 0,
             paused: false,

@@ -9,7 +9,7 @@
 
 import { getProgramDerivedAddress, type Address, type TransactionSigner } from "@solana/kit";
 
-import { associatedTokenAddress, requestHeapFrameInstruction } from "./spl";
+import { associatedTokenAddress } from "./spl";
 import {
   getConfidentialBurnInstructionAsync,
   getRedeemBurnedAmountInstructionAsync,
@@ -101,7 +101,7 @@ export const confidentialBurn = async (
     program: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
     amountAttestation: params.amountAttestation,
   });
-  await context.sendTransaction(params.owner, [requestHeapFrameInstruction(256 * 1024), instruction], {
+  await context.sendTransaction(params.owner, [instruction], {
     skipPreflight: true,
   });
 };

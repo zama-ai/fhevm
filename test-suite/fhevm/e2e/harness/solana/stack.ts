@@ -13,6 +13,11 @@ import { until } from "../../../src/utils/until";
 import type { TestEnv } from "../loadEnv";
 
 const PROOF_SERVICE_CONTAINER = "fhevm-solana-proof-service";
+// Per-attempt request cap, carried over from the `curl -m2`/`-m3` the bash probes used. Without it
+// a service that accepts the TCP connection but never answers hangs inside `fetch`, so `until()`
+// never gets to re-evaluate its deadline and the scenario dies on bun's test timeout instead of
+// naming the probe that stalled.
+const PROBE_TIMEOUT_MS = 3_000;
 
 export type SolanaStack = {
   readonly env: TestEnv;
@@ -29,7 +34,10 @@ export type SolanaStack = {
 const untilProofServiceReady = async (proofServiceUrl: string): Promise<void> => {
   await until(
     async () => {
-      const body = (await (await fetch(`${proofServiceUrl}/health/readiness`)).json()) as { ready?: boolean };
+      const response = await fetch(`${proofServiceUrl}/health/readiness`, {
+        signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+      });
+      const body = (await response.json()) as { ready?: boolean };
       return body.ready === true;
     },
     { description: "solana-proof-service readiness", timeoutMs: 120_000 },
@@ -51,6 +59,7 @@ export const ensureUp = async (env: TestEnv): Promise<SolanaStack> => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getHealth" }),
+        signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
       });
       if (!response.ok) return false;
       const body = (await response.json()) as { result?: string };
@@ -59,13 +68,15 @@ export const ensureUp = async (env: TestEnv): Promise<SolanaStack> => {
     { description: "validator RPC health", timeoutMs: 60_000 },
   );
   await until(
-    async () => (await fetch(`${env.relayerUrl}/liveness`)).ok,
+    async () => (await fetch(`${env.relayerUrl}/liveness`, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) })).ok,
     { description: "relayer liveness", timeoutMs: 60_000 },
   );
   await untilProofServiceReady(env.proofServiceUrl);
   return {
     env,
-    waitForSnsCommit,
+    // Bound to the environment's container so the `COPROCESSOR_DB_CONTAINER` override reaches the
+    // probe; unbound, setting it silently sent every wait at the hardcoded default.
+    waitForSnsCommit: (handle: string) => waitForSnsCommit(handle, env.coprocessorDbContainer),
     async restartProofService() {
       await run(["docker", "restart", PROOF_SERVICE_CONTAINER]);
       await untilProofServiceReady(env.proofServiceUrl);

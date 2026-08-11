@@ -15,6 +15,7 @@ import path from "node:path";
 
 import { REPO_ROOT } from "../layout";
 import { run } from "../utils/process";
+import { until } from "../utils/until";
 
 export const VALIDATOR_RPC_URL = "http://127.0.0.1:8899";
 export const VALIDATOR_WS_URL = "ws://127.0.0.1:8900";
@@ -81,9 +82,16 @@ const isOwnedDirectory = async (directory: string, uid: number): Promise<boolean
 const processMatching = async (pattern: string): Promise<boolean> =>
   (await run(["pgrep", "-f", pattern], { allowFailure: true })).code === 0;
 
+// Poll for the process to actually be gone instead of sleeping a fixed budget: it is normally gone
+// in well under a second, and a stubborn one still gets a full window rather than a fixed 2s that
+// is simultaneously too long and too short.
 const killMatching = async (pattern: string): Promise<void> => {
   await run(["pkill", "-f", pattern], { allowFailure: true });
-  await Bun.sleep(2_000);
+  await until(async () => !(await processMatching(pattern)), {
+    description: `no process matching "${pattern}"`,
+    timeoutMs: 15_000,
+    intervalMs: 100,
+  });
 };
 
 export type ValidatorStartOptions = {

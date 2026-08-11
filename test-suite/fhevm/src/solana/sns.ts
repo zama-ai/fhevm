@@ -16,12 +16,20 @@ const BYTES32 = /^0x[0-9a-f]{64}$/i;
 // slowest case (five FHE steps in one instruction). The ordinary loops were 30 x 6s = 3 minutes;
 // one shared ceiling is simpler than per-call budgets and a fast commit returns early anyway.
 const SNS_COMMIT_TIMEOUT_MS = 240_000;
-const SNS_COMMIT_POLL_INTERVAL_MS = 3_000;
+// A commit usually lands well inside one interval, and the probe is a local `docker exec` — poll
+// at 1s so a fast commit is noticed promptly rather than sitting out the rest of a 3s tick.
+const SNS_COMMIT_POLL_INTERVAL_MS = 1_000;
 
-/** Waits until the SNS worker has committed both ciphertext forms for `handle` (0x-hex, 32 bytes). */
-export const waitForSnsCommit = async (handle: string): Promise<void> => {
+/**
+ * Waits until the SNS worker has committed both ciphertext forms for `handle` (0x-hex, 32 bytes).
+ * `container` defaults to the layout constant; the scenarios pass `env.coprocessorDbContainer` so
+ * the documented `COPROCESSOR_DB_CONTAINER` override actually reaches this probe.
+ */
+export const waitForSnsCommit = async (
+  handle: string,
+  container: string = COPROCESSOR_DB_CONTAINER,
+): Promise<void> => {
   if (!BYTES32.test(handle)) throw new Error(`invalid handle before ciphertext wait: ${handle}`);
-  const container = COPROCESSOR_DB_CONTAINER;
   const hex = handle.slice(2);
   await until(
     async () => {

@@ -38,7 +38,7 @@ afterthought.
 ## Mollusk runtime coverage
 
 The `operator_mollusk_conformance`, `host_mollusk`, `token_mollusk`, `batcher_mollusk`,
-`vault_mollusk`, `permit_invalidation_mollusk`, and specimen
+`vault_mollusk`, `permit_invalidation_mollusk`, `disclose_packet_fit`, and specimen
 (`counter_mollusk`, `dep_chain_mollusk`) suites execute real SBF under Mollusk, booted and
 asserted through the shared `zama-solana-test-kit` crate. Mollusk surfaces resulting **account state**, **inner instructions (CPIs)**, and **return
 data**, which are the stable artifacts these suites assert on. Plain `emit!` program-data logs are
@@ -68,6 +68,8 @@ cargo test -p zama-solana-runtime-tests --test token_mollusk -- --nocapture
 cargo test -p zama-solana-runtime-tests --test batcher_mollusk -- --nocapture
 cargo test -p zama-solana-runtime-tests --test vault_mollusk -- --nocapture
 cargo test -p zama-solana-runtime-tests --test permit_invalidation_mollusk -- --nocapture
+# Disclosure packet sizing: the largest disclose payload still fits its transport budget.
+cargo test -p zama-solana-runtime-tests --test disclose_packet_fit -- --nocapture
 
 # The specimen consumers: encrypted-counter is the kit-onboarding proof (~20 lines of
 # fixture, ~30 per assertion); dep-chain is the load shape (full-depth dependent chains
@@ -207,7 +209,11 @@ replaced a bash phase:
   decrypt of both rotated balances.
 - `token-vertical` — the consume arc: wrap → attested burn → seal → certified public decrypt →
   redeem (SPL balance-delta asserted) → disclose, plus the adversarial context-mismatch tail
-  pinned to `InvalidKmsContext`.
+  pinned to `InvalidKmsContext`. That tail is the L4-b attack. Its sibling **L4-a** (a forged
+  KMS signature over a well-formed certificate) is exercised in the **kms repo's live harness**,
+  not here: it needs a KMS that will sign attacker-chosen material, which this stack's KMS will
+  not do. Cross-repo coverage with no pointer is how coverage quietly stops running, so if you
+  are auditing the adversarial surface, look there for L4-a rather than concluding it is absent.
 - `load-smoke` — the dep-chain shape live: one 32-step strictly dependent execution with an
   unrelated release alongside.
 - `deposit-arc` — the confidential-vault demo arc; gated behind `RUN_DEMO_SCENARIOS` and run by
@@ -219,7 +225,8 @@ Run it locally against a stack that is already up (do **not** re-run the bring-u
 # from repo root, after `bun run demo up` has left the stack up
 cd test-suite/fhevm
 bun run test:e2e            # the scenario suite (needs the live stack)
-bun run test:e2e:harness    # the harness unit tests (until / loadEnv — no stack needed)
+bun run test:e2e:harness    # the harness unit tests (loadEnv / personas — no stack needed)
+bun test src/utils          # the shared utilities, including until()'s timeout contract
 ```
 
 ## Traps & gotchas (read before you lose an afternoon)

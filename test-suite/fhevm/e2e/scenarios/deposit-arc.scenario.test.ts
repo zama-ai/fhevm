@@ -187,6 +187,9 @@ const asBytes32BigEndian = (decimal: string): Uint8Array => {
 // it the test runs unconditionally, so a missing config still fails the acceptance gate loudly.
 const runsDemoScenarios = process.env.RUN_DEMO_SCENARIOS === "1";
 
+/** Written by the arc on success; `demo:smoke` requires it back so a skipped suite cannot pass. */
+export const DEMO_SMOKE_MARKER = "/tmp/fhevm-demo-smoke-ran";
+
 describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
   test(
     "deposit arc (full arc): alice funds, initializes her confidential accounts, wraps mock USDC, and joins the pending deposit batch with a coprocessor-attested amount; the keeper dispatches the aged batch and settles it with the KMS burn certificate; alice claims her payout and user-decrypts the exact amount",
@@ -625,6 +628,13 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // right number end to end.
       expect(clearValues.length).toBe(1);
       expect(BigInt(clearValues[0].value)).toBe(batchAfterSettle.state.payoutReceived);
+
+      // Proof-of-run for the `demo:smoke` gate. `bun test` exits 0 when every matched test is
+      // SKIPPED (measured: `0 pass, 1 skip`, exit 0), so renaming RUN_DEMO_SCENARIOS on either
+      // side of the gate above would silently retire this whole arc with CI still green. The
+      // script deletes this marker, runs the suite, and then requires it back; nothing but this
+      // arc completing can produce it.
+      await Bun.write(DEMO_SMOKE_MARKER, new Date().toISOString());
     },
     SCENARIO_TIMEOUT_MS,
   );

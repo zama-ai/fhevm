@@ -108,6 +108,20 @@ check "confidential-deposit-app change -> proof service" \
   "solana-proof-service" \
   "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
 
+# The two specimen programs share the on-chain-only bucket. This test file is the only thing
+# guarding that rule, so each arm of it needs a case of its own.
+check "encrypted-counter specimen change -> proof service" \
+  "solana/programs/encrypted-counter/src/lib.rs" \
+  "true" \
+  "solana-proof-service" \
+  "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
+
+check "dep-chain specimen change -> proof service" \
+  "solana/programs/dep-chain/src/lib.rs" \
+  "true" \
+  "solana-proof-service" \
+  "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
+
 check "coprocessor change -> coprocessor only" \
   "coprocessor/fhevm-engine/tfhe-worker/src/main.rs" \
   "true" \
@@ -151,6 +165,21 @@ check "demo script change -> proof service" \
   "true" \
   "solana-proof-service" \
   "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
+
+# src/ is the fhevm-cli + Solana side-stack framework: it runs from PR source too, and is matched
+# before the `test-suite/fhevm/*` build-recipe rule that would otherwise rebuild everything.
+check "test-suite framework change -> proof service" \
+  "test-suite/fhevm/src/solana/deploy.ts" \
+  "true" \
+  "solana-proof-service" \
+  "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
+
+# ...but a change to the package manifest IS a build-recipe change: it must still rebuild all.
+check "test-suite package.json change -> everything" \
+  "test-suite/fhevm/package.json" \
+  "true" \
+  "gateway-contracts host-contracts coprocessor relayer solana-proof-service kms-connector" \
+  ""
 
 # The SDK-plus-scenario PR shape that used to pay for a full workspace rebuild.
 check "sdk + scenario change -> proof service" \

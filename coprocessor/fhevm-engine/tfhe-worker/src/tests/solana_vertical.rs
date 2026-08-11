@@ -4,6 +4,11 @@
 //! cleartexts without a deployed stack. CI runs it in solana-e2e's `worker-vertical` job; the
 //! scenario suite covers the same arc live, but only this test pins the reconstruct-to-worker
 //! seam against real ciphertexts.
+//!
+//! What it deliberately does not cross: the geyser/gRPC transport. Records are decoded straight
+//! out of LiteSVM's transaction metadata instead of arriving over Yellowstone, and the block
+//! metadata is supplied by the fixture because LiteSVM computes no bank hash. Everything from
+//! `reconstruct_fhe_execute_records` inward is the production path; the wire above it is not.
 
 use std::path::PathBuf;
 
@@ -37,11 +42,11 @@ use solana_sdk::{
     transaction::VersionedTransaction,
 };
 use tfhe::prelude::FheTryEncrypt;
-use time::{Date, Month, PrimitiveDateTime, Time};
+use time::{OffsetDateTime, PrimitiveDateTime};
 use zama_host::{EncryptedValue, HostConfig};
 
 use crate::tests::{
-    event_helpers::{decrypt_handles, setup_event_harness, wait_until_computed},
+    event_helpers::{decrypt_handles, setup_event_harness, wait_until_computed, EventHarness},
     utils::latest_db_key,
 };
 
@@ -51,7 +56,24 @@ use zama_host as host;
 const BALANCE_FHE_TYPE: u8 = 5;
 const SECP_GATEWAY_CHAIN_ID: u64 = 31337;
 const INPUT_VERIFICATION_CONTRACT: [u8; 20] = [0xCD; 20];
+/// The parent slot's bank hash: seeded into `SlotHashes`, consumed by the reconstructor as the
+/// previous bank hash, and carried as the parent hash of the block the transfers land in.
 const PREVIOUS_BANK_HASH: [u8; 32] = [0x42; 32];
+/// LiteSVM computes no bank hash, so the fixture supplies the current slot's. Deliberately
+/// distinct from `PREVIOUS_BANK_HASH` so a parent/child mix-up cannot pass unnoticed.
+const CURRENT_BANK_HASH: [u8; 32] = [0x43; 32];
+/// Slot and wall-clock the fixture pins its `Clock` to. The block metadata handed to the listener
+/// is read back off that sysvar rather than invented next to it.
+const FIXTURE_SLOT: u64 = 100;
+/// 2026-05-11T00:00:00Z.
+const FIXTURE_UNIX_TIMESTAMP: i64 = 1_778_457_600;
+/// Balance both token accounts share before the diverging transfer.
+const OPENING_BALANCE: u8 = 125;
+/// First transfer. It exists only to leave the two accounts on different handles holding
+/// different values, so the asserted transfer can detect a swapped balance operand.
+const DIVERGE_AMOUNT: u8 = 20;
+/// Second transfer — the one this test asserts on.
+const TRANSFER_AMOUNT: u8 = 40;
 type SeededCiphertext = ([u8; 32], i16, Vec<u8>);
 
 #[tokio::test]
@@ -61,40 +83,55 @@ async fn confidential_transfer_reconstructs_computes_and_decrypts(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let harness = setup_event_harness().await?;
     let mut fixture = token_fixture();
-    let amount_handle = balance_handle(0x09);
+    let diverge_handle = balance_handle(0x09);
+    let amount_handle = balance_handle(0x0A);
 
-    // Account initialization trivially encrypts 0, and trivial-encrypt handles are derived
-    // from the computation alone, so both accounts start on one shared zero-balance handle.
-    // Seed it once (a second seed would overwrite the first); the value stands in for a
-    // balance both parties hold before the transfer.
+    // Account initialization trivially encrypts 0, and trivial-encrypt handles are derived from
+    // the computation alone, so both accounts start on ONE shared zero-balance handle — seeding it
+    // twice would only overwrite the first value. That sharing is also why this test transfers
+    // twice: while both balances resolve to the same handle over the same ciphertext, swapping the
+    // debit's operand from the sender to the recipient yields identical results and nothing
+    // downstream can see it. The first transfer moves `DIVERGE_AMOUNT` so the two accounts hold
+    // different handles over different values before the transfer that is actually asserted on.
     assert_eq!(
         fixture.alice_initial, fixture.bob_initial,
         "token accounts must start on the shared trivial-encrypt-zero handle"
     );
     seed_real_ciphertexts(
         &harness.pool,
-        &[(fixture.alice_initial, 125), (amount_handle, 100)],
+        &[
+            (fixture.alice_initial, OPENING_BALANCE),
+            (diverge_handle, DIVERGE_AMOUNT),
+            (amount_handle, TRANSFER_AMOUNT),
+        ],
     )
     .await?;
 
     let outputs = transfer_output_accounts(&fixture);
-    let transfer = transfer_ix(&fixture, outputs, amount_handle);
-    let (meta, account_keys, signature) =
-        send_with_meta(&mut fixture.svm, &fixture.alice, transfer);
-    let alice_handle = current_handle(&fixture.svm, outputs.alice);
-    let bob_handle = current_handle(&fixture.svm, outputs.bob);
-    let transferred_handle = current_handle(&fixture.svm, outputs.transferred);
+    let diverged = run_transfer(&harness, &mut fixture, outputs, diverge_handle).await?;
+    assert_ne!(
+        diverged.alice_handle, diverged.bob_handle,
+        "the diverging transfer must leave the balances on different handles"
+    );
 
-    let events = reconstruct_transfer_events(&fixture, &meta, &account_keys);
+    let transfer = run_transfer(&harness, &mut fixture, outputs, amount_handle).await?;
     // The transfer batch: ge -> debit sub -> select -> transferred sub -> sender re-encrypt
     // (add 0, so the sender's handle rotates whether or not the debit succeeded) -> recipient
     // add. The re-encrypt step landed in the fhe_eval cleanup (fhevm-internal#1853); the select
     // result became transient then, so the persistent results are the last three.
+    let events = &transfer.events;
     assert_eq!(
         events.len(),
         6,
         "token transfer must remain a six-step batch"
     );
+    // The debit reads the SENDER's balance. Both operands are real, distinct handles by this
+    // point, so this is the assertion the shared-handle opening state made impossible.
+    assert!(matches!(
+        &events[1],
+        SolanaHostRecord::FheBinaryOp(event)
+            if event.lhs == diverged.alice_handle && event.rhs == amount_handle
+    ));
     // The select result is transient (no on-chain account carries it), so pin it by dataflow:
     // both the transferred-amount sub and the sender re-encrypt must consume it.
     let select_result = match &events[2] {
@@ -104,27 +141,60 @@ async fn confidential_transfer_reconstructs_computes_and_decrypts(
     assert!(matches!(
         &events[3],
         SolanaHostRecord::FheBinaryOp(event)
-            if event.result == transferred_handle && event.rhs == select_result
+            if event.result == transfer.transferred_handle && event.rhs == select_result
     ));
     assert!(matches!(
         &events[4],
         SolanaHostRecord::FheBinaryOp(event)
-            if event.result == alice_handle && event.lhs == select_result
+            if event.result == transfer.alice_handle && event.lhs == select_result
     ));
     assert!(matches!(
         &events[5],
-        SolanaHostRecord::FheBinaryOp(event) if event.result == bob_handle
+        SolanaHostRecord::FheBinaryOp(event)
+            if event.result == transfer.bob_handle && event.lhs == diverged.bob_handle
     ));
 
-    let block = SolanaBlockMeta {
-        block_number: 1,
-        block_hash: [1; 32],
-        parent_hash: [0; 32],
-        block_timestamp: PrimitiveDateTime::new(
-            Date::from_calendar_date(2026, Month::May, 11)?,
-            Time::MIDNIGHT,
-        ),
+    let decrypted = decrypt_handles(
+        &harness.pool,
+        &[
+            Handle::from(diverged.alice_handle),
+            Handle::from(diverged.bob_handle),
+            Handle::from(transfer.alice_handle),
+            Handle::from(transfer.bob_handle),
+        ],
+    )
+    .await?;
+    // Opening balance 125, shared. The first transfer moves 20 (sender 105, recipient 145); the
+    // second moves 40 (sender 65, recipient 185). The second transfer reads two different handles
+    // over two different values, so swapping its balance operands changes these numbers — the
+    // property a single transfer out of the shared opening state could not give us. What value
+    // alone still cannot pin: a successful transfer's `transferred` output always equals its
+    // amount input, so that step is pinned by dataflow above rather than by arithmetic here.
+    assert_eq!(decrypted[0].value, "105");
+    assert_eq!(decrypted[1].value, "145");
+    assert_eq!(decrypted[2].value, "65");
+    assert_eq!(decrypted[3].value, "185");
+    Ok(())
+}
+
+/// One confidential transfer end to end: sent through LiteSVM, reconstructed off-chain, landed in
+/// the listener database, and computed by the worker before returning.
+async fn run_transfer(
+    harness: &EventHarness,
+    fixture: &mut TokenFixture,
+    outputs: TransferOutputAccounts,
+    amount_handle: [u8; 32],
+) -> Result<TransferOutcome, Box<dyn std::error::Error>> {
+    let transfer = transfer_ix(fixture, outputs, amount_handle);
+    let (meta, account_keys, signature) =
+        send_with_meta(&mut fixture.svm, &fixture.alice, transfer);
+    let outcome = TransferOutcome {
+        alice_handle: current_handle(&fixture.svm, outputs.alice),
+        bob_handle: current_handle(&fixture.svm, outputs.bob),
+        transferred_handle: current_handle(&fixture.svm, outputs.transferred),
+        events: reconstruct_transfer_events(fixture, &meta, &account_keys),
     };
+
     let mut db_tx = harness
         .listener_db
         .new_transaction()
@@ -133,26 +203,38 @@ async fn confidential_transfer_reconstructs_computes_and_decrypts(
     let stats = insert_solana_records(
         &harness.listener_db,
         &mut db_tx,
-        events,
+        outcome.events.clone(),
         solana_transaction_id(signature.as_ref()),
-        block,
+        block_meta(&fixture.svm)?,
     )
     .await?;
     db_tx.commit().await?;
     assert_eq!(stats.tfhe_events, 6);
 
     wait_until_computed(&harness.app).await?;
-    let decrypted = decrypt_handles(
-        &harness.pool,
-        &[Handle::from(alice_handle), Handle::from(bob_handle)],
-    )
-    .await?;
-    // Both balances start at the seeded 125 and the transfer moves 100: the sender ends on
-    // 125 - 100 and the recipient on 125 + 100. Every step's output differs from every
-    // input, so a misresolved operand anywhere in the batch shows up here.
-    assert_eq!(decrypted[0].value, "25");
-    assert_eq!(decrypted[1].value, "225");
-    Ok(())
+    Ok(outcome)
+}
+
+/// Block metadata for the fixture's transfers, read back off the SVM clock so it cannot contradict
+/// the state the programs themselves observed. The listener schedules the dependence chain from
+/// `block_timestamp` and establishes reorg identity from the hash pair, so incoherent values here
+/// would exercise that machinery on a block no validator could produce.
+fn block_meta(svm: &LiteSVM) -> Result<SolanaBlockMeta, Box<dyn std::error::Error>> {
+    let clock = svm.get_sysvar::<Clock>();
+    let timestamp = OffsetDateTime::from_unix_timestamp(clock.unix_timestamp)?;
+    Ok(SolanaBlockMeta {
+        block_number: clock.slot,
+        block_hash: CURRENT_BANK_HASH,
+        parent_hash: PREVIOUS_BANK_HASH,
+        block_timestamp: PrimitiveDateTime::new(timestamp.date(), timestamp.time()),
+    })
+}
+
+struct TransferOutcome {
+    events: Vec<SolanaHostRecord>,
+    alice_handle: [u8; 32],
+    bob_handle: [u8; 32],
+    transferred_handle: [u8; 32],
 }
 
 fn reconstruct_transfer_events(
@@ -272,10 +354,11 @@ fn token_fixture() -> TokenFixture {
 
     let mut svm = LiteSVM::new();
     let mut clock = svm.get_sysvar::<Clock>();
-    clock.slot = 100;
+    clock.slot = FIXTURE_SLOT;
+    clock.unix_timestamp = FIXTURE_UNIX_TIMESTAMP;
     svm.set_sysvar(&clock);
     svm.set_sysvar(&SlotHashes::new(&[(
-        99,
+        FIXTURE_SLOT - 1,
         Hash::new_from_array(PREVIOUS_BANK_HASH),
     )]));
     svm.add_program_from_file(host_program_id, &host_program_path)

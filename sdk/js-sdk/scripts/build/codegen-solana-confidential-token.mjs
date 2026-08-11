@@ -148,6 +148,10 @@ const targets = [
         'kmsThresholds',
         'previousState',
       ]),
+      // The HostConfig singleton is read back live (chain-id cross-check in
+      // test-suite/fhevm/src/solana/provision.ts). Keeping the account node gives that read a
+      // generated decoder instead of a hand-written discriminator + field offset.
+      accounts: new Set(['hostConfig']),
       pdas: new Set(['hostConfig', 'kmsContext']),
     },
     programAddress(program) {

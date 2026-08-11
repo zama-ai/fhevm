@@ -40,7 +40,8 @@ use zama_solana_test_kit::signing::{
     amount_attestation_for, amount_public_decrypt_cert, kms_signing_key, secp_evm_address,
 };
 use zama_solana_test_kit::{
-    anchor_error_check, anchor_ix, cost_snapshot, encrypted_value_account, ensure_system_accounts,
+    anchor_error_check, anchor_ix, coprocessor_signer_address, cost_snapshot,
+    encrypted_value_account, ensure_system_accounts,
     event_authority, handle_for_chain, host_config_account, kms_context_account,
     new_encrypted_value, read_account, read_encrypted_value, read_spl_amount, serialized_account,
     spl_mint_account, spl_token_account, system_account, Ctx, HostConfigParams, BALANCE_FHE_TYPE,
@@ -486,6 +487,9 @@ impl BatcherFixture {
     fn host_config_account(&self) -> Account {
         host_config_account(&HostConfigParams {
             current_kms_context_id: KMS_CONTEXT_ID,
+            // This suite mints `fromExternal` attestations, so it registers the kit's signing key
+            // explicitly; the default signer set trusts nobody.
+            coprocessor_signers: vec![coprocessor_signer_address()],
             ..HostConfigParams::new(self.payer)
         })
         .1
