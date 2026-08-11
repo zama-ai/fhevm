@@ -705,6 +705,14 @@ describe('Unified user decryption', function () {
           `the fabricated context ${unknownContextId} exists on this gateway, so this test's premise does ` +
             `not hold here. It is drawn from 16 random bytes per run, so this should be impossible.`,
         ).to.equal(false);
+        console.log(
+          `[unified] gateway confirms the fabricated context is invalid (checked at ${gatewayConfigAddress})`,
+        );
+      } else {
+        console.log(
+          '[unified] SKIPPED the gateway precondition: GATEWAY_RPC_URL/GATEWAY_CONFIG_ADDRESS unset. ' +
+            'A failure below cannot distinguish "gateway did not validate" from "the id exists here".',
+        );
       }
 
       // Print the id: it is random per run, so without this a failure cannot be
