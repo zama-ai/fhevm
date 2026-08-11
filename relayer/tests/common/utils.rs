@@ -5,6 +5,7 @@ use ethereum_rpc_mock::{
     fhevm::FhevmMockWrapper, MockConfig, MockServer, MockServerHandle, Response, UsageLimit,
 };
 use fhevm_relayer::config::settings::{HostChainConfig, Settings, StorageConfig};
+use fhevm_relayer::http::endpoints::v2::types::user_decrypt::UserDecryptStatusResponseJson;
 use fhevm_relayer::run_fhevm_relayer;
 use fhevm_relayer::store::sql::client::PgClient;
 use fhevm_relayer::tracing::init_tracing_once;
@@ -679,6 +680,71 @@ pub async fn request_cache_total(metrics_endpoint: &str, req_type: &str, result:
         &text,
         &format!(r#"relayer_request_cache_total{{req_type="{req_type}",result="{result}"}}"#),
     )
+}
+
+/// Send one user-decrypt GET and return (status, retry_after_present, body).
+///
+/// Takes the fully-formed URL so the direct and delegated suites share one body;
+/// each keeps a thin wrapper that supplies its own endpoint.
+#[allow(dead_code)]
+pub async fn user_decrypt_get_status(
+    get_url: &str,
+) -> (reqwest::StatusCode, bool, UserDecryptStatusResponseJson) {
+    let response = reqwest::Client::new()
+        .get(get_url)
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .expect("Failed to send GET request");
+
+    let status = response.status();
+    let retry_after_present = response.headers().contains_key("retry-after");
+    let body: UserDecryptStatusResponseJson =
+        response.json().await.expect("Failed to parse GET response");
+    (status, retry_after_present, body)
+}
+
+/// Poll a user-decrypt GET until it leaves 202, or panic at `budget`.
+///
+/// Wider budget than the per-suite `poll_until_terminal`, for requests that only
+/// complete once the optimistic wait window has expired.
+#[allow(dead_code)]
+pub async fn poll_user_decrypt_until_terminal_within(
+    get_url: &str,
+    budget: std::time::Duration,
+) -> (reqwest::StatusCode, UserDecryptStatusResponseJson) {
+    let deadline = std::time::Instant::now() + budget;
+    while std::time::Instant::now() < deadline {
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        let (status, _, body) = user_decrypt_get_status(get_url).await;
+        if status != reqwest::StatusCode::ACCEPTED {
+            return (status, body);
+        }
+    }
+    panic!("Request did not reach terminal state in time");
+}
+
+/// Assert a succeeded body carries exactly `expected` shares, ordered by share index.
+///
+/// The mock stamps the share index into the first byte of each share payload,
+/// so the ordering guarantee of the response is directly observable.
+#[allow(dead_code)]
+pub fn assert_shares_ordered_by_index(body: &UserDecryptStatusResponseJson, expected: usize) {
+    let result = body
+        .result
+        .as_ref()
+        .expect("Succeeded response should carry a result");
+    assert_eq!(
+        result.result.len(),
+        expected,
+        "Response should carry every collected share"
+    );
+    for (index, item) in result.result.iter().enumerate() {
+        assert_eq!(
+            item.payload[0], index as u8,
+            "Shares should be ordered by share index"
+        );
+    }
 }
 
 /// Get a free port by binding to port 0

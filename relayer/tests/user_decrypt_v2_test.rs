@@ -248,24 +248,20 @@ mod helpers {
         submit_request(setup, &payload).await
     }
 
+    /// Shared with the delegated suite; both bodies live in `common::utils`.
+    pub use crate::common::utils::assert_shares_ordered_by_index;
+
     /// Poll GET until terminal state within `budget`, return (status, body)
-    ///
-    /// Wider budget than `poll_until_terminal`, for requests that only complete once
-    /// the wait window has expired.
     pub async fn poll_until_terminal_within(
         setup: &TestSetup,
         job_id: &str,
         budget: std::time::Duration,
     ) -> (reqwest::StatusCode, UserDecryptStatusResponseJson) {
-        let deadline = std::time::Instant::now() + budget;
-        while std::time::Instant::now() < deadline {
-            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-            let (status, _, body) = get_status(setup, job_id).await;
-            if status != reqwest::StatusCode::ACCEPTED {
-                return (status, body);
-            }
-        }
-        panic!("Request did not reach terminal state in time");
+        crate::common::utils::poll_user_decrypt_until_terminal_within(
+            &v2_user_decrypt_get_url(setup, job_id),
+            budget,
+        )
+        .await
     }
 
     /// Send a single GET and return (status, retry_after_present, body)
@@ -273,40 +269,7 @@ mod helpers {
         setup: &TestSetup,
         job_id: &str,
     ) -> (reqwest::StatusCode, bool, UserDecryptStatusResponseJson) {
-        let response = reqwest::Client::new()
-            .get(v2_user_decrypt_get_url(setup, job_id))
-            .timeout(std::time::Duration::from_secs(10))
-            .send()
-            .await
-            .expect("Failed to send GET request");
-
-        let status = response.status();
-        let retry_after_present = response.headers().contains_key("retry-after");
-        let body: UserDecryptStatusResponseJson =
-            response.json().await.expect("Failed to parse GET response");
-        (status, retry_after_present, body)
-    }
-
-    /// Assert a succeeded body carries exactly `expected` shares, ordered by share index.
-    ///
-    /// The mock stamps the share index into the first byte of each share payload,
-    /// so the ordering guarantee of the response is directly observable.
-    pub fn assert_shares_ordered_by_index(body: &UserDecryptStatusResponseJson, expected: usize) {
-        let result = body
-            .result
-            .as_ref()
-            .expect("Succeeded response should carry a result");
-        assert_eq!(
-            result.result.len(),
-            expected,
-            "Response should carry every collected share"
-        );
-        for (index, item) in result.result.iter().enumerate() {
-            assert_eq!(
-                item.payload[0], index as u8,
-                "Shares should be ordered by share index"
-            );
-        }
+        crate::common::utils::user_decrypt_get_status(&v2_user_decrypt_get_url(setup, job_id)).await
     }
 
     /// Poll GET endpoint until terminal state, return (status, body)
