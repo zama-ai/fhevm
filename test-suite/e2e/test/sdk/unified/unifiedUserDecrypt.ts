@@ -357,6 +357,10 @@ export async function submitUnifiedRequest(
   const envelope = buildEnvelope(req, signature);
 
   const url = `${relayerBaseUrl(cfg.relayerUrl)}/v3/user-decrypt`;
+  // Log the route we drive. The SDK client logs its own (legacy `/v2`) calls,
+  // so without this a reader sees only `/v2` in the output and cannot tell
+  // which component issued what.
+  console.log(`[unified] POST ${url}`);
   const resp = await fetch(url, {
     method: 'POST',
     headers: httpHeaders(cfg, true),
@@ -470,7 +474,22 @@ export function isSignatureRejection(post: PostResult): boolean {
  * negatives whose cause is a per-handle ownership/delegation ACL failure —
  * pinning the reason so the test cannot pass on an unintended failure.
  */
+/**
+ * Distinguish "no verdict yet" from "wrong verdict".
+ *
+ * Bare `expected 'pending' to equal 'failed'` reads as a wrong outcome when the
+ * job simply never went terminal — a request accepted on-chain instead of
+ * rejected stays non-terminal until the relayer's own `user_decrypt_timeout`
+ * (30m default) reaps it, far beyond any budget here.
+ */
+function assertReachedTerminalState(poll: PollResult | undefined): void {
+  if (poll?.status === 'pending') {
+    expect.fail(`no verdict within the poll budget — the job never went terminal. Raw: ${JSON.stringify(poll?.raw)}`);
+  }
+}
+
 export function expectRelayerAclRejection(poll: PollResult | undefined, messagePattern?: RegExp): void {
+  assertReachedTerminalState(poll);
   expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('failed');
   expect(poll?.errorLabel, JSON.stringify(poll?.raw)).to.equal('not_allowed_on_host_acl');
   if (messagePattern) {
@@ -499,6 +518,7 @@ export function expectStuckAtKms(poll: PollResult | undefined): void {
  * unrelated simulation failure.
  */
 export function expectGatewayRevert(poll: PollResult | undefined, messagePattern: RegExp): void {
+  assertReachedTerminalState(poll);
   expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('failed');
   const message = ((poll?.raw as { error?: { message?: string } })?.error?.message ?? '') as string;
   expect(message, JSON.stringify(poll?.raw)).to.match(messagePattern);

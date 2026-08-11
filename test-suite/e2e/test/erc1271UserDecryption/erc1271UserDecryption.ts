@@ -10,6 +10,7 @@ import {
   UserDecrypt,
 } from '../../types';
 import { createInstances, relayerApiKey, relayerUrl, verifyingContractAddressDecryption } from '../instance';
+import { isLiveNetwork } from '../network';
 import type { UnifiedConfig, UnifiedDecryptRequest } from '../sdk/unified/unifiedUserDecrypt';
 import {
   backdatedStartTimestamp,
@@ -32,7 +33,7 @@ import {
   buildSafeNestedMultisigSignature,
   collectSafeOwnerParts,
   deploySafeAccount,
-  deploySafeInfra,
+  resolveSafeInfra,
   safeApprovedHashPart,
   safeEthSignPart,
 } from './safe';
@@ -44,8 +45,24 @@ const KNOWN_VALUE = 123456789n;
 const DURATION_SECONDS = 7 * 24 * 60 * 60;
 // Generous window for a full user-decrypt round trip through the KMS.
 const POSITIVE_TIMEOUT_MS = 3 * 60 * 1000;
+
+/**
+ * On a local devnet a deployment lands in the next instant block; on a live
+ * network every fixture costs real block time (~12s on Sepolia) and real gas.
+ * Fixtures are provisioned LAZILY (see `lazy` below), so this budget is the
+ * per-test allowance for whatever that test's first use has to deploy, not a
+ * whole-suite up-front cost.
+ */
+const LIVE_NETWORK = isLiveNetwork();
+const FIXTURE_BUDGET_MS = LIVE_NETWORK ? 5 * 60 * 1000 : 30 * 1000;
 // Mocha timeout margin on top of the poll window (pre-poll on-chain reads + POST).
-const TIMEOUT_MARGIN_MS = 60 * 1000;
+const TIMEOUT_MARGIN_MS = 60 * 1000 + FIXTURE_BUDGET_MS;
+
+/** Deploy-on-first-use, then reuse: a `--grep`ped run only pays for the fixtures it touches. */
+const lazy = <T>(create: () => Promise<T>): (() => Promise<T>) => {
+  let pending: Promise<T> | undefined;
+  return () => (pending ??= create());
+};
 
 /**
  * ERC-1271 support for smart-account signature verification.
@@ -60,6 +77,10 @@ const TIMEOUT_MARGIN_MS = 60 * 1000;
  * the EOA fast-path positive does assert it.
  */
 describe('ERC-1271 user decryption', function () {
+  // Every test can be the one that provisions its fixture, so the suite-wide
+  // default has to cover a deployment; positives raise it further below.
+  this.timeout(TIMEOUT_MARGIN_MS);
+
   let signers: Signers;
   let instances: FhevmInstances;
   let cfg: UnifiedConfig;
@@ -73,16 +94,18 @@ describe('ERC-1271 user decryption', function () {
   let approveWalletAddress: string;
   let rejectWallet: ERC1271RejectWallet;
   let rejectWalletAddress: string;
-  let safe2of3: SafeFixture;
-  let safe3of3: SafeFixture;
-  let safe1of1: SafeFixture;
-  let safeNoHandler: SafeFixture;
+  // Safe fixtures are lazy thunks, not values: nothing below is deployed until
+  // a test awaits it, and each deploys at most once per run.
+  let safe2of3: () => Promise<SafeFixture>;
+  let safe3of3: () => Promise<SafeFixture>;
+  let safe1of1: () => Promise<SafeFixture>;
+  let safeNoHandler: () => Promise<SafeFixture>;
   // Nested v=0 contract-signature fixtures: outer 2-of-3 Safes whose first
   // owner is itself a Safe (1-of-1 dave, and 2-of-3 bob/dave/eve).
-  let innerSafe1of1: SafeAccount;
-  let innerSafe2of3: SafeAccount;
-  let nestedOuter1of1: SafeFixture;
-  let nestedOuter2of3: SafeFixture;
+  let innerSafe1of1: () => Promise<SafeAccount>;
+  let innerSafe2of3: () => Promise<SafeAccount>;
+  let nestedOuter1of1: () => Promise<SafeFixture>;
+  let nestedOuter2of3: () => Promise<SafeFixture>;
 
   /**
    * A real Safe holds no encrypted state (and has no FHE coprocessor config),
@@ -97,7 +120,8 @@ describe('ERC-1271 user decryption', function () {
   }
 
   before(async function () {
-    this.timeout(180_000);
+    // Only the four mock wallets deploy here; the Safe matrix is lazy.
+    this.timeout(LIVE_NETWORK ? 10 * 60 * 1000 : 180_000);
     // 5, not 3: the multisig tests use dave (owner) and eve (non-owner), and
     // sibling suites that touch dave/eve all pass 5. The count only limits
     // funding under HARDHAT_PARALLEL (signers.ts funds all 5 otherwise), and
@@ -139,43 +163,54 @@ describe('ERC-1271 user decryption', function () {
     rejectWalletAddress = await rejectWallet.getAddress();
     await (await rejectWallet.connect(signers.alice).initValue(KNOWN_VALUE)).wait();
 
-    // Real Safe v1.4.1 multisig wallets, deployed from the canonical prebuilt
-    // artifacts (singleton + fallback handler + proxy factory, then one proxy
-    // per threshold). Owners bob/carol/dave only ever sign SafeMessage typed
+    // Real Safe v1.4.1 multisig wallets, from the canonical prebuilt artifacts
+    // (singleton + fallback handler + proxy factory, then one proxy per
+    // configuration). Owners bob/carol/dave only ever sign SafeMessage typed
     // data offline — they pay no gas (except the approveHash positive, where
     // bob sends the approval tx).
-    const infra = await deploySafeInfra(signers.alice);
+    //
+    // Everything here is wired as a lazy thunk: the full matrix is ~23
+    // transactions, which is free against instant local blocks but minutes of
+    // real block time on a live network. Deferring means a run only pays for
+    // the fixtures its selected tests actually reach.
     const multisigOwners = [signers.bob.address, signers.carol.address, signers.dave.address];
-    const holderFactory = await ethers.getContractFactory('EncryptedValueHolder');
+    const infra = lazy(() => resolveSafeInfra(signers.alice));
     const deploySafeFixture = async (
       owners: readonly string[],
       threshold: number,
       opts?: { readonly fallbackHandler?: string },
     ): Promise<SafeFixture> => {
-      const safe = await deploySafeAccount(infra, signers.alice, owners, threshold, opts);
+      const safe = await deploySafeAccount(await infra(), signers.alice, owners, threshold, opts);
+      const holderFactory = await ethers.getContractFactory('EncryptedValueHolder');
       const holder = await holderFactory.connect(signers.alice).deploy();
       await holder.waitForDeployment();
       const holderAddress = await holder.getAddress();
       await (await holder.connect(signers.alice).initValueFor(KNOWN_VALUE, safe.address)).wait();
       return { safe, holder, holderAddress };
     };
-    safe2of3 = await deploySafeFixture(multisigOwners, 2);
-    safe3of3 = await deploySafeFixture(multisigOwners, 3);
-    safe1of1 = await deploySafeFixture([signers.dave.address], 1);
+    safe2of3 = lazy(() => deploySafeFixture(multisigOwners, 2));
+    safe3of3 = lazy(() => deploySafeFixture(multisigOwners, 3));
+    safe1of1 = lazy(() => deploySafeFixture([signers.dave.address], 1));
     // A Safe set up WITHOUT the fallback handler: it has code, but no
     // `isValidSignature` to dispatch to (see ./safe.ts).
-    safeNoHandler = await deploySafeFixture(multisigOwners, 2, { fallbackHandler: ethers.ZeroAddress });
+    safeNoHandler = lazy(() => deploySafeFixture(multisigOwners, 2, { fallbackHandler: ethers.ZeroAddress }));
 
     // Inner Safes acting as CONTRACT owners of outer Safes (v=0 parts).
-    innerSafe1of1 = await deploySafeAccount(infra, signers.alice, [signers.dave.address], 1);
-    innerSafe2of3 = await deploySafeAccount(
-      infra,
-      signers.alice,
-      [signers.bob.address, signers.dave.address, signers.eve.address],
-      2,
+    innerSafe1of1 = lazy(async () => deploySafeAccount(await infra(), signers.alice, [signers.dave.address], 1));
+    innerSafe2of3 = lazy(async () =>
+      deploySafeAccount(
+        await infra(),
+        signers.alice,
+        [signers.bob.address, signers.dave.address, signers.eve.address],
+        2,
+      ),
     );
-    nestedOuter1of1 = await deploySafeFixture([innerSafe1of1.address, signers.bob.address, signers.carol.address], 2);
-    nestedOuter2of3 = await deploySafeFixture([innerSafe2of3.address, signers.bob.address, signers.carol.address], 2);
+    nestedOuter1of1 = lazy(async () =>
+      deploySafeFixture([(await innerSafe1of1()).address, signers.bob.address, signers.carol.address], 2),
+    );
+    nestedOuter2of3 = lazy(async () =>
+      deploySafeFixture([(await innerSafe2of3()).address, signers.bob.address, signers.carol.address], 2),
+    );
 
     publicKey = (await instances.alice.generateKeypair()).publicKey;
   });
@@ -388,9 +423,9 @@ describe('ERC-1271 user decryption', function () {
   // 65-byte {r,s,v} owner parts sorted strictly ascending by signer address.
   // The blob is longer than a single ECDSA signature, so `ecrecover` on it is
   // impossible — every layer must forward it opaquely to the Safe's
-  // `isValidSignature`. Unlike the retired mock, a real Safe REVERTS on a bad
-  // blob (GS020/GS025/GS026) instead of returning a non-magic value; either
-  // way the relayer's pre-check rejects synchronously (400), and the KMS
+  // `isValidSignature`. A real Safe REVERTS on a bad blob (GS020/GS025/GS026)
+  // rather than returning a non-magic value; either way the relayer's
+  // pre-check rejects synchronously (400), and the KMS
   // Connector runs the same shared verifier again before the KMS produces
   // shares. Owners sign the SafeMessage EIP-712 wrap of the unified digest,
   // never the digest itself (see ./safe.ts).
@@ -405,7 +440,8 @@ describe('ERC-1271 user decryption', function () {
    * The handle lives on the fixture's holder contract; the Safe is only the
    * `userAddress` (a real Safe cannot hold encrypted state itself).
    */
-  async function freshMultisigRequest(fixture: SafeFixture): Promise<UnifiedDecryptRequest> {
+  async function freshMultisigRequest(provision: () => Promise<SafeFixture>): Promise<UnifiedDecryptRequest> {
+    const fixture = await provision();
     const handle = await fixture.holder.value();
     const freshKey = (await instances.alice.generateKeypair()).publicKey;
     return {
@@ -420,11 +456,12 @@ describe('ERC-1271 user decryption', function () {
 
   /** Safe-multisig blob over the unified EIP-712 digest of `req`. */
   async function multisigSignature(
-    fixture: SafeFixture,
+    provision: () => Promise<SafeFixture>,
     req: UnifiedDecryptRequest,
     owners: readonly Signer[],
     opts?: { readonly order?: 'ascending' | 'descending'; readonly trailingHex?: string },
   ): Promise<string> {
+    const fixture = await provision();
     return buildSafeMultisigSignature(fixture.safe, computeUnifiedDigest(cfg, req), owners, opts);
   }
 
@@ -569,8 +606,9 @@ describe('ERC-1271 user decryption', function () {
     // targets the SafeMessage hash of the digest, not the digest itself);
     // carol signs normally. The blob mixes a v=1 part (r = bob's address)
     // with a plain ECDSA part — a realistic Safe part-type combination.
-    await approveSafeHash(safe2of3.safe, signers.bob, digest);
-    const [carolPart] = await collectSafeOwnerParts(safe2of3.safe, digest, [signers.carol]);
+    const fixture = await safe2of3();
+    await approveSafeHash(fixture.safe, signers.bob, digest);
+    const [carolPart] = await collectSafeOwnerParts(fixture.safe, digest, [signers.carol]);
     const signature = concatSignatureParts(sortSignatureParts([safeApprovedHashPart(signers.bob.address), carolPart]));
     const { post, poll } = await requestUnifiedUserDecrypt(
       cfg,
@@ -591,7 +629,7 @@ describe('ERC-1271 user decryption', function () {
     // RAW digest; only a real Safe pins the SafeMessage-hash rule.) Note the
     // v=1 part carries no signature at all — nothing here is forgeable, which
     // is exactly why the on-chain approval must be the thing that gates it.
-    const [carolPart] = await collectSafeOwnerParts(safe2of3.safe, digest, [signers.carol]);
+    const [carolPart] = await collectSafeOwnerParts((await safe2of3()).safe, digest, [signers.carol]);
     const signature = concatSignatureParts(sortSignatureParts([safeApprovedHashPart(signers.bob.address), carolPart]));
     const { post } = await submitUnifiedRequest(cfg, req, { kind: 'raw', signature });
     expect(isSignatureRejection(post), JSON.stringify(post.raw)).to.equal(true);
@@ -603,9 +641,10 @@ describe('ERC-1271 user decryption', function () {
     const digest = computeUnifiedDigest(cfg, req);
     // Safe's eth_sign encoding: owners personal_sign the SafeMessage hash of
     // the digest and the part stores v+4 (31/32) as the type selector.
+    const { safe } = await safe2of3();
     const parts = sortSignatureParts([
-      await safeEthSignPart(safe2of3.safe, digest, signers.bob),
-      await safeEthSignPart(safe2of3.safe, digest, signers.carol),
+      await safeEthSignPart(safe, digest, signers.bob),
+      await safeEthSignPart(safe, digest, signers.carol),
     ]);
     const signature = concatSignatureParts(parts);
     const { post, poll } = await requestUnifiedUserDecrypt(
@@ -627,9 +666,9 @@ describe('ERC-1271 user decryption', function () {
     // plain ECDSA part. 227 bytes: 130 static + 32-byte length + 65 inner.
     // Measured ~83k gas incl. intrinsic vs the 100k erc1271_gas_limit.
     const signature = await buildSafeNestedMultisigSignature(
-      nestedOuter1of1.safe,
+      (await nestedOuter1of1()).safe,
       digest,
-      { safe: innerSafe1of1, owners: [signers.dave] },
+      { safe: await innerSafe1of1(), owners: [signers.dave] },
       [signers.bob],
     );
     expect(signature.length).to.equal(2 + 227 * 2);
@@ -659,9 +698,9 @@ describe('ERC-1271 user decryption', function () {
     // (relayer/src/host/signature_prechecker.rs:130-157), while the connector
     // treats the same class as recoverable and retries until it gives up.
     const signature = await buildSafeNestedMultisigSignature(
-      nestedOuter2of3.safe,
+      (await nestedOuter2of3()).safe,
       digest,
-      { safe: innerSafe2of3, owners: [signers.bob, signers.dave] },
+      { safe: await innerSafe2of3(), owners: [signers.bob, signers.dave] },
       [signers.bob],
     );
     expect(signature.length).to.equal(2 + 292 * 2);
@@ -682,9 +721,9 @@ describe('ERC-1271 user decryption', function () {
     // the nested isValidSignature reverts (inner GS026), which bubbles up
     // through the outer checkSignatures.
     const signature = await buildSafeNestedMultisigSignature(
-      nestedOuter1of1.safe,
+      (await nestedOuter1of1()).safe,
       digest,
-      { safe: innerSafe1of1, owners: [signers.eve] },
+      { safe: await innerSafe1of1(), owners: [signers.eve] },
       [signers.bob],
     );
     const { post } = await submitUnifiedRequest(cfg, req, { kind: 'raw', signature });
@@ -697,9 +736,9 @@ describe('ERC-1271 user decryption', function () {
     // Offset 65 points INSIDE the 130-byte static section — Safe's dynamic
     // bounds checks (GS021) revert before any nested call happens.
     const signature = await buildSafeNestedMultisigSignature(
-      nestedOuter1of1.safe,
+      (await nestedOuter1of1()).safe,
       digest,
-      { safe: innerSafe1of1, owners: [signers.dave] },
+      { safe: await innerSafe1of1(), owners: [signers.dave] },
       [signers.bob],
       { dynamicOffsetOverride: 65 },
     );
@@ -720,7 +759,7 @@ describe('ERC-1271 user decryption', function () {
   it('test erc1271 user decrypt multisig rejects a 3-part blob with one out-of-place part', async function () {
     const req = await freshMultisigRequest(safe3of3);
     const sorted = sortSignatureParts(
-      await collectSafeOwnerParts(safe3of3.safe, computeUnifiedDigest(cfg, req), [
+      await collectSafeOwnerParts((await safe3of3()).safe, computeUnifiedDigest(cfg, req), [
         signers.bob,
         signers.carol,
         signers.dave,
@@ -741,13 +780,14 @@ describe('ERC-1271 user decryption', function () {
     // verifies with on-chain ecrecover only — multisig ERC-1271 is v3-only by
     // design. Pin the v2 wire-level rejection as executable documentation.
     const req = await freshMultisigRequest(safe2of3);
+    const fixture = await safe2of3();
     const blob = (await multisigSignature(safe2of3, req, [signers.bob, signers.carol])).slice(2); // 260 hex chars
     const body = {
       handleContractPairs: [{ handle: req.handles[0].ctHandle, contractAddress: req.handles[0].contractAddress }],
       requestValidity: { startTimestamp: String(req.startTimestamp), durationDays: '7' },
       contractsChainId: String(chainIdFromHandle(req.handles[0].ctHandle)),
-      contractAddresses: [safe2of3.holderAddress],
-      userAddress: safe2of3.safe.address,
+      contractAddresses: [fixture.holderAddress],
+      userAddress: fixture.safe.address,
       signature: blob,
       publicKey: req.publicKey.replace(/^0x/, ''),
       extraData: '0x00',
