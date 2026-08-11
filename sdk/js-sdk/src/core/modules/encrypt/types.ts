@@ -139,7 +139,7 @@ export type BuildWithProofPackedParameters = {
   readonly metaData: Uint8Array;
   readonly extraData: BytesHex;
   readonly tfheVersion: TfheVersion;
-  readonly seed?: Uint8Array;
+  readonly seed?: Uint8Array | undefined;
 };
 
 export type BuildWithProofPackedReturnType = {

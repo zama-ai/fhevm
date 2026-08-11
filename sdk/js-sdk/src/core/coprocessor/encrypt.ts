@@ -22,6 +22,7 @@ type Parameters = {
   readonly userAddress: ChecksummedAddress;
   readonly values: readonly TypedValue[];
   readonly options?: RelayerInputProofOptions | undefined;
+  readonly seed?: Uint8Array | undefined;
 };
 
 type ReturnType = {
