@@ -83,6 +83,26 @@ where
         Ok(())
     }
 
+    async fn retain_rejected_proof(&self, zk_proof_id: i64) -> anyhow::Result<()> {
+        let Some(mut tx) = begin_live_write(&self.db_pool).await? else {
+            return Ok(());
+        };
+        debug!(
+            zk_proof_id,
+            "Retaining rejected proof until Gateway finalization"
+        );
+        sqlx::query!(
+            "UPDATE verify_proofs
+             SET handles = NULL
+             WHERE zk_proof_id = $1 AND verified = FALSE",
+            zk_proof_id
+        )
+        .execute(tx.as_mut())
+        .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
     async fn update_retry_count_by_proof_id(
         &self,
         zk_proof_id: i64,
@@ -121,7 +141,9 @@ where
             "Removing proofs with retry count >= max_retries"
         );
         sqlx::query!(
-            "DELETE FROM verify_proofs WHERE retry_count >= $1",
+            "DELETE FROM verify_proofs
+             WHERE retry_count >= $1
+               AND verified = TRUE",
             self.conf.verify_proof_resp_max_retries as i64
         )
         .execute(tx.as_mut())
@@ -134,6 +156,7 @@ where
     async fn process_proof(
         &self,
         txn_request: (i64, impl Into<TransactionRequest>),
+        locally_verified: bool,
         current_retry_count: i32,
         src_transaction_id: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
@@ -160,22 +183,38 @@ where
                         payload.as_decoded_interface_error::<InputVerificationErrors>()
                     })
                 {
-                    warn!(
-                        zk_proof_id = txn_request.0,
-                        "Coprocessor has already verified the proof, removing from DB"
-                    );
-                    self.remove_proof_by_id(txn_request.0).await?;
+                    if locally_verified {
+                        warn!(
+                            zk_proof_id = txn_request.0,
+                            "Coprocessor has already verified the proof, removing from DB"
+                        );
+                        self.remove_proof_by_id(txn_request.0).await?;
+                    } else {
+                        warn!(
+                            zk_proof_id = txn_request.0,
+                            "Coprocessor previously verified a locally unavailable proof; retaining it until Gateway finalization"
+                        );
+                        self.retain_rejected_proof(txn_request.0).await?;
+                    }
                     return Ok(());
                 } else if let Some(InputVerificationErrors::CoprocessorAlreadyRejected(_)) =
                     e.as_error_resp().and_then(|payload| {
                         payload.as_decoded_interface_error::<InputVerificationErrors>()
                     })
                 {
-                    warn!(
-                        zk_proof_id = txn_request.0,
-                        "Coprocessor has already rejected the proof, removing from DB"
-                    );
-                    self.remove_proof_by_id(txn_request.0).await?;
+                    if locally_verified {
+                        warn!(
+                            zk_proof_id = txn_request.0,
+                            "Coprocessor previously rejected a proof now marked verified; removing inconsistent row"
+                        );
+                        self.remove_proof_by_id(txn_request.0).await?;
+                    } else {
+                        warn!(
+                            zk_proof_id = txn_request.0,
+                            "Coprocessor has already rejected the proof; retaining it until Gateway finalization"
+                        );
+                        self.retain_rejected_proof(txn_request.0).await?;
+                    }
                     return Ok(());
                 } else if let Some(InputVerificationErrors::VerifyProofNotRequested(_)) =
                     e.as_error_resp().and_then(|payload| {
@@ -227,7 +266,11 @@ where
                 transaction_hash = %receipt.transaction_hash,
                 "Transaction succeeded"
             );
-            self.remove_proof_by_id(txn_request.0).await?;
+            if locally_verified {
+                self.remove_proof_by_id(txn_request.0).await?;
+            } else {
+                self.retain_rejected_proof(txn_request.0).await?;
+            }
             VERIFY_PROOF_SUCCESS_COUNTER.inc();
 
             telemetry::try_end_zkproof_transaction(
@@ -304,7 +347,8 @@ where
         let rows = sqlx::query!(
             "SELECT zk_proof_id, chain_id, contract_address, user_address, handles, verified, retry_count, extra_data, transaction_id
              FROM verify_proofs
-             WHERE verified IS NOT NULL AND retry_count < $1
+             WHERE (verified = TRUE OR (verified = FALSE AND handles IS NOT NULL))
+               AND retry_count < $1
              ORDER BY zk_proof_id
              LIMIT $2",
             self.conf.verify_proof_resp_max_retries as i64,
@@ -432,7 +476,12 @@ where
             let src_transaction_id = transaction_id;
             join_set.spawn(async move {
                 self_clone
-                    .process_proof(txn_request, row.retry_count, src_transaction_id)
+                    .process_proof(
+                        txn_request,
+                        row.verified.expect("selected proof has a local result"),
+                        row.retry_count,
+                        src_transaction_id,
+                    )
                     .await
             });
         }

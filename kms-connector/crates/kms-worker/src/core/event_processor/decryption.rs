@@ -2,7 +2,7 @@ use crate::core::{
     config::Config,
     event_processor::{
         CiphertextManager, ProcessingError, RequestCheckError, RequestCheckKind,
-        ciphertext::VerifiedCiphertexts, context::ContextManager,
+        ciphertext::VerifiedCiphertexts,
     },
 };
 use alloy::{
@@ -34,12 +34,9 @@ use user_decryption_signature::{compute_user_decrypt_digest, verify_signature};
 
 #[derive(Clone)]
 /// The struct responsible of processing incoming decryption requests.
-pub struct DecryptionProcessor<GP: Provider, HP: Provider, C> {
+pub struct DecryptionProcessor<GP: Provider, HP: Provider> {
     /// The EIP712 domain of the `Decryption` contract.
     domain: Eip712DomainMsg,
-
-    /// The entity used to validate KMS context.
-    context_manager: C,
 
     /// The instance of the `Decryption` contract used to check decryption were not already done.
     decryption_contract: DecryptionInstance<GP>,
@@ -54,15 +51,13 @@ pub struct DecryptionProcessor<GP: Provider, HP: Provider, C> {
     erc1271_gas_limit: u64,
 }
 
-impl<GP, HP, C> DecryptionProcessor<GP, HP, C>
+impl<GP, HP> DecryptionProcessor<GP, HP>
 where
     GP: Provider + Clone + 'static,
     HP: Provider,
-    C: ContextManager,
 {
     pub fn new(
         config: &Config,
-        context_manager: C,
         gateway_provider: GP,
         acl_contracts: HashMap<u64, ACLInstance<HP>>,
         ciphertext_manager: CiphertextManager<GP>,
@@ -79,7 +74,6 @@ where
 
         Self {
             domain,
-            context_manager,
             decryption_contract,
             acl_contracts,
             ciphertext_manager,
@@ -559,10 +553,6 @@ where
 
         let parsed_extra_data =
             parse_extra_data(extra_data).map_err(ProcessingError::Irrecoverable)?;
-        self.context_manager
-            .validate_context(&parsed_extra_data)
-            .await
-            .map_err(RequestCheckError::record)?;
 
         let VerifiedCiphertexts {
             ciphertexts,
@@ -666,9 +656,8 @@ mod tests {
         signers::{SignerSync, local::PrivateKeySigner},
         sol_types::SolValue,
     };
-    use connector_utils::{
-        tests::rand::{rand_address, rand_digest, rand_handle, rand_public_key, rand_u256},
-        types::extra_data::ExtraData,
+    use connector_utils::tests::rand::{
+        rand_address, rand_digest, rand_handle, rand_public_key, rand_u256,
     };
     use fhevm_gateway_bindings::decryption::{
         Decryption::CtHandleContractPair,
@@ -686,19 +675,10 @@ mod tests {
         Irrecoverable,
     }
 
-    struct MockContextManager;
-
-    impl ContextManager for MockContextManager {
-        async fn validate_context(&self, _extra_data: &ExtraData) -> Result<(), RequestCheckError> {
-            Ok(())
-        }
-    }
-
     fn setup_test_processor(
         asserter: Asserter,
         handle: B256,
-    ) -> DecryptionProcessor<impl Provider + Clone + use<>, impl Provider + use<>, MockContextManager>
-    {
+    ) -> DecryptionProcessor<impl Provider + Clone + use<>, impl Provider + use<>> {
         setup_test_processor_with_config(asserter, handle, Config::default())
     }
 
@@ -706,8 +686,7 @@ mod tests {
         asserter: Asserter,
         handle: B256,
         config: Config,
-    ) -> DecryptionProcessor<impl Provider + Clone + use<>, impl Provider + use<>, MockContextManager>
-    {
+    ) -> DecryptionProcessor<impl Provider + Clone + use<>, impl Provider + use<>> {
         let mock_provider = ProviderBuilder::new()
             .disable_recommended_fillers()
             .connect_mocked_client(asserter);
@@ -717,13 +696,7 @@ mod tests {
             ACL::new(Address::default(), mock_provider.clone()),
         )]);
         let ciphertext_manager = CiphertextManager::for_test(mock_provider.clone());
-        DecryptionProcessor::new(
-            &config,
-            MockContextManager,
-            mock_provider,
-            acl_contracts,
-            ciphertext_manager,
-        )
+        DecryptionProcessor::new(&config, mock_provider, acl_contracts, ciphertext_manager)
     }
 
     #[test]

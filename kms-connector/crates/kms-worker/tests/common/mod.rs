@@ -60,15 +60,15 @@ where
     let context_manager = DbContextManager::new(db.clone(), &config, provider.clone());
     let decryption_processor = DecryptionProcessor::new(
         &config,
-        context_manager.clone(),
         provider.clone(),
         acl_contracts_mock,
         ciphertext_manager,
     );
-    let kms_generation_processor = KMSGenerationProcessor::new(&config, context_manager);
+    let kms_generation_processor = KMSGenerationProcessor::new(&config);
     let protocol_config_processor = ProtocolConfigProcessor::new(&config, provider.clone());
     let event_processor = DbEventProcessor::new(
         kms_client.clone(),
+        context_manager,
         decryption_processor,
         kms_generation_processor,
         protocol_config_processor,
