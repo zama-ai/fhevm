@@ -10,8 +10,9 @@ driven by `test-suite/fhevm` (`fhevm-cli`). Mirrors the layout and conventions o
 [`zama-ai/kms/ci/scripts`](https://github.com/zama-ai/kms/tree/main/ci/scripts).
 
 Every PR that carries the `pr-preview-e2e` label gets a per-PR namespace
-(`fhevm-ci-<actor>-<pr>`) on the real `zws-dev` Tailscale cluster — real published OCI charts,
-a Crossplane-provisioned S3 bucket (`coprocessor-infra/`), in-cluster Postgres (official
+(`fhevm-ci-<actor>-<pr>`) on the real `zws-dev` Tailscale cluster — this repo's real
+production charts (installed straight from the branch checkout, so a PR's chart changes
+deploy as-is), a Crossplane-provisioned S3 bucket (`coprocessor-infra/`), in-cluster Postgres (official
 `postgres:17-alpine` image via the generic `common` chart, one dedicated instance each for
 coprocessor, listener, kms-connector, and relayer/relayer-migrate — see `coprocessor-infra/values-postgres-
 coprocessor-e2e.yaml`'s header for why this isn't RDS, or Bitnami's postgresql chart), and a
@@ -61,8 +62,12 @@ ci/preview-env/
 ```
 
 Every file here is a **values overlay for a chart**. `anvil-node`/`contracts`/`coprocessor`/
-`kms-connector` target the real, published production charts directly via
-`oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/*` refs (see `preview-env-deploy.yml`).
+`kms-connector`/`listener` target the real production charts in `../../charts/`, installed
+straight from the workflow's branch checkout — a PR's chart changes deploy without waiting
+for a publish, and the overlays can never drift ahead of the charts they configure. A
+`*_chart_version` dispatch override swaps one in-repo chart for its published
+`oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/*` release instead (see
+`preview-env-deploy.yml`'s "Resolve chart sources" step).
 `relayer`/`test-suite`/the three `values-postgres-*-e2e.yaml` files all target the generic
 `oci://hub.zama.org/ghcr/zama-zws/helm-charts/common` chart (the same one `zama-zws/gitops`'s
 `fhevm-dev` environment uses for `relayer`/`test-suite`), not a fhevm-specific chart - there's
@@ -190,12 +195,12 @@ self-contained `hostListener`. Per party `i`:
   blocks in order as they are mined — deployed after keygen it anchors past them and has
   to grind the whole finalization backlog back down first.
 
-> This producer path is newer to the preview than the old DB-only `hostListener`. Three
+> This producer path is newer to the preview than the old DB-only `hostListener`. Two
 > things to validate on the first real multi-run (adjust the preview-env values, not the
-> charts): the `listener-core` image tag (`LISTENER_VERSION`) must be broker-payload
-> compatible with `COPROCESSOR_VERSION`'s `host_listener_consumer`; anvil must serve the
-> `block_receipts` RPC (`eth_getBlockReceipts`); and the broker topic keying (chain id
-> `12345`) must match the consumer's `--chain-id`.
+> charts): anvil must serve the `block_receipts` RPC (`eth_getBlockReceipts`), and the
+> broker topic keying (chain id `12345`) must match the consumer's `--chain-id`. (The
+> `listener-core` image resolves from the same commit as the coprocessor consumer, so
+> broker-payload compatibility holds by construction.)
 
 > Resource caveat: each coprocessor party's `tfhe`/`sns` workers request substantial
 > CPU/memory on the `coprocessor` nodepool, so `nb_coprocessor` > 1 multiplies the
