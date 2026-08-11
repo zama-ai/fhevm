@@ -108,7 +108,7 @@ async fn test_before_and_quit_returns_s3_migration_error() {
         failure
             .s3_migration_last_error
             .as_deref()
-            .is_some_and(|err| err.contains("missing ct64 object")),
+            .is_some_and(|err| err.contains("no valid ct64 source available")),
         "unexpected recorded migration error: {:?}",
         failure.s3_migration_last_error,
     );
@@ -418,7 +418,7 @@ async fn test_before_and_quit_records_corrupted_ct64_object_error() {
         err.to_string().contains("after reaching max retry count 1"),
         "unexpected migration error: {err}"
     );
-    assert_recorded_failure(&env.pool, &handle, 1, "missing ct64 object").await;
+    assert_recorded_failure(&env.pool, &handle, 1, "no valid ct64 source available").await;
     assert_object_missing(
         &env.s3_client,
         &env.conf.s3.bucket_ct64,
@@ -471,7 +471,7 @@ async fn test_before_and_quit_records_corrupted_ct128_object_error() {
         err.to_string().contains("after reaching max retry count 1"),
         "unexpected migration error: {err}"
     );
-    assert_recorded_failure(&env.pool, &handle, 1, "missing ct128 object").await;
+    assert_recorded_failure(&env.pool, &handle, 1, "no valid ct128 source available").await;
     assert_object_missing(
         &env.s3_client,
         &env.conf.s3.bucket_ct128,
@@ -751,12 +751,12 @@ async fn test_before_and_quit_records_missing_ct128_object_error() {
         .await
         .expect("before-and-quit migration should finish");
 
-    let err = run_result.expect_err("missing ct128 object should fail migration");
+    let err = run_result.expect_err("no valid ct128 source should fail migration");
     assert!(
         err.to_string().contains("after reaching max retry count 1"),
         "unexpected migration error: {err}"
     );
-    assert_recorded_failure(&env.pool, &handle, 1, "missing ct128 object").await;
+    assert_recorded_failure(&env.pool, &handle, 1, "no valid ct128 source available").await;
 }
 
 #[tokio::test]
