@@ -1,18 +1,12 @@
-//! POST request-deduplication metrics.
-//!
-//! Every v2 POST handler inserts first and dispatches an orchestrator event
-//! only when the insert was new; a repeated request is served from the row
-//! that already exists. This counter splits those two branches so the dedup
-//! hit rate is observable — a sudden collapse in hits means clients stopped
-//! reusing request identifiers, and a sudden spike means they are retrying.
+//! POST request-deduplication metrics: every v2 POST handler dispatches an
+//! orchestrator event only when its insert was new, and this counter splits
+//! those two branches so the dedup hit rate is observable.
 
 use prometheus::{register_counter_vec_with_registry, CounterVec, Opts, Registry};
 use std::sync::OnceLock;
 
-// The request-type label reuses `RetryAfterRequestType` as-is rather than
-// promoting it to a shared type in `metrics/mod.rs`, to keep this diff
-// minimal. Direct and delegated user-decryption are counted together, since
-// the delegated handler forwards to the same insert path.
+// Direct and delegated user-decryption count together: the delegated handler
+// forwards to the same insert path.
 use crate::metrics::RetryAfterRequestType;
 
 /// Outcome of the deduplication check on a POST request.

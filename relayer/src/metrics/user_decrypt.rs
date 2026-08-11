@@ -1,10 +1,9 @@
 //! User-decryption spare-share metrics.
 //!
-//! Reconstruction needs `2t+1` *valid* shares, so a client only survives a
-//! corrupted share when the relayer returned more than the threshold: its
-//! fault tolerance is exactly `served - threshold`. This histogram records
-//! that spare count, making a cluster that has silently stopped delivering
-//! spares visible before a corrupted share turns into a failed decryption.
+//! Reconstruction needs `2t+1` *valid* shares, so a client's fault tolerance is
+//! exactly `served - threshold`. Recording that spare count makes a cluster that
+//! has silently stopped delivering spares visible before a corrupted share turns
+//! into a failed decryption.
 
 use prometheus::{register_histogram_vec_with_registry, HistogramOpts, HistogramVec, Registry};
 use std::sync::OnceLock;

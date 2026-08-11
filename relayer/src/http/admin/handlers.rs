@@ -242,7 +242,6 @@ pub async fn update_config(
             }
         }
     } else if param.is_user_decrypt_wait_param() {
-        // Route to UserDecryptWaitState
         let Some(state) = wait_state else {
             return (
                 StatusCode::BAD_REQUEST,
@@ -483,15 +482,15 @@ pub async fn get_config(
         );
     }
 
-    // Add optimistic user-decrypt wait-window values if available
     if let Some(state) = wait_state {
+        let window = state.window().await;
         values.insert(
             ConfigParam::UserDecryptAdditionalShares.to_string(),
-            ConfigValue::U32(state.additional_shares().await),
+            ConfigValue::U32(window.additional_shares),
         );
         values.insert(
             ConfigParam::UserDecryptAdditionalSharesTimeoutSecs.to_string(),
-            ConfigValue::U32(state.additional_shares_timeout_secs().await),
+            ConfigValue::U32(window.timeout_secs),
         );
     }
 

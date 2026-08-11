@@ -658,30 +658,24 @@ impl UserDecryptHandler {
                             .and_then(|v| u32::try_from(v).ok())
                             .unwrap_or(self.user_decrypt_shares_threshold);
                         if response_model.shares.len() >= required_threshold as usize {
-                            // Optimistic wait window: once reconstructable, keep reporting
-                            // in-progress until enough extra shares arrive or the wait since
-                            // threshold elapses, so the client has spares for a bad share.
                             let collected = response_model.shares.len();
-                            let additional = self.user_decrypt_wait_state.additional_shares().await;
-                            let timeout_secs = self
-                                .user_decrypt_wait_state
-                                .additional_shares_timeout_secs()
-                                .await;
-                            // updated_at is stamped when the request reached threshold, by the
-                            // write that completes the row. The ThresholdReached consensus write
-                            // can restamp it once, but the contract emits both from a single
-                            // call, so that only ever shifts the window start by milliseconds.
+                            let window = self.user_decrypt_wait_state.window().await;
+                            // `updated_at` is stamped by the write that completes the row at
+                            // threshold. The ThresholdReached consensus write can restamp it
+                            // once, but the contract emits both from a single call, so the
+                            // window start only ever shifts by milliseconds.
                             let elapsed_secs =
                                 (Utc::now() - response_model.updated_at).num_seconds();
 
                             if !is_ready(
                                 collected,
                                 required_threshold as usize,
-                                additional,
+                                window.additional_shares,
                                 elapsed_secs,
-                                timeout_secs,
+                                window.timeout_secs,
                             ) {
-                                let retry_after = (i64::from(timeout_secs) - elapsed_secs).max(1);
+                                let retry_after =
+                                    (i64::from(window.timeout_secs) - elapsed_secs).max(1);
                                 info!(
                                     request_id = %request_id,
                                     http_status = StatusCode::ACCEPTED.as_u16(),
@@ -702,27 +696,17 @@ impl UserDecryptHandler {
                                 )
                                     .into_response()
                             } else {
-                                // Convert from database model to API response
                                 match UserDecryptResponseJson::try_from(response_model) {
                                     Ok(api_response) => {
                                         let status_code = StatusCode::OK;
 
-                                        // Spare shares are the client's fault
-                                        // tolerance: reconstruction needs the
-                                        // threshold in *valid* shares, so
-                                        // anything beyond it is what a
-                                        // corrupted share can be dropped from.
-                                        // Recorded on the terminal 200 only:
-                                        // the GET is polled, so recording on
-                                        // the 202 holds would measure polling
-                                        // frequency instead of tolerance.
                                         let spare_shares =
                                             collected.saturating_sub(required_threshold as usize);
                                         observe_spare_shares(
                                             RetryAfterRequestType::UserDecrypt,
                                             spare_shares,
                                         );
-                                        if spare_shares == 0 && additional > 0 {
+                                        if spare_shares == 0 && window.additional_shares > 0 {
                                             warn!(
                                                 request_id = %request_id,
                                                 ext_job_id = %job_id,

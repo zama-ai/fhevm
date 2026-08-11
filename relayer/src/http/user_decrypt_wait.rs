@@ -1,46 +1,45 @@
-//! Runtime state for the optimistic user-decryption wait window.
-//!
-//! Returning only `threshold` shares leaves the client no spare to fall back on
-//! when one is corrupted. Once a request is reconstructable, we can wait briefly
-//! for extra shares so the client has spares. The wait is bounded by two knobs,
-//! seeded from config and adjustable at runtime via the admin API; whichever is
-//! met first ends the wait, and either set to 0 disables it.
+//! Runtime state for the optimistic user-decryption wait window: how many extra
+//! shares to wait for past the threshold, and for how long. Seeded from config,
+//! adjustable at runtime via the admin API.
 
 use tokio::sync::RwLock;
 
 use crate::config::settings::ContractConfig;
 
-/// Runtime state for the optimistic user-decryption wait window.
+/// The two wait-window knobs, read and written as a unit.
+#[derive(Debug, Clone, Copy)]
+pub struct WaitWindow {
+    pub additional_shares: u32,
+    pub timeout_secs: u32,
+}
+
 #[derive(Debug)]
 pub struct UserDecryptWaitState {
-    additional_shares: RwLock<u32>,
-    additional_shares_timeout_secs: RwLock<u32>,
+    window: RwLock<WaitWindow>,
 }
 
 impl UserDecryptWaitState {
     pub fn new(config: &ContractConfig) -> Self {
         Self {
-            additional_shares: RwLock::new(config.user_decrypt_additional_shares),
-            additional_shares_timeout_secs: RwLock::new(
-                config.user_decrypt_additional_shares_timeout_secs,
-            ),
+            window: RwLock::new(WaitWindow {
+                additional_shares: config.user_decrypt_additional_shares,
+                timeout_secs: config.user_decrypt_additional_shares_timeout_secs,
+            }),
         }
     }
 
-    pub async fn additional_shares(&self) -> u32 {
-        *self.additional_shares.read().await
-    }
-
-    pub async fn additional_shares_timeout_secs(&self) -> u32 {
-        *self.additional_shares_timeout_secs.read().await
+    /// Both knobs under one lock acquisition, so a concurrent admin update
+    /// cannot be observed half-applied.
+    pub async fn window(&self) -> WaitWindow {
+        *self.window.read().await
     }
 
     pub async fn set_additional_shares(&self, val: u32) {
-        *self.additional_shares.write().await = val;
+        self.window.write().await.additional_shares = val;
     }
 
     pub async fn set_additional_shares_timeout_secs(&self, val: u32) {
-        *self.additional_shares_timeout_secs.write().await = val;
+        self.window.write().await.timeout_secs = val;
     }
 }
 

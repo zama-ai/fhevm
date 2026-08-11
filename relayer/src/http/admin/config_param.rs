@@ -78,8 +78,7 @@ impl ConfigParam {
             // Safety margin: 0.0 to 1.0
             RetryAfterSafetyMargin => ParamConstraints::F32 { min: 0.0, max: 1.0 },
 
-            // Optimistic user-decryption wait window.
-            // Both allow 0 (feature off / runtime kill-switch).
+            // Optimistic user-decryption wait window
             UserDecryptAdditionalShares => ParamConstraints::U32 { min: 0, max: 100 },
             UserDecryptAdditionalSharesTimeoutSecs => ParamConstraints::U32 { min: 0, max: 3600 },
         }
@@ -363,7 +362,6 @@ mod tests {
     fn test_config_param_is_user_decrypt_wait_param() {
         assert!(ConfigParam::UserDecryptAdditionalShares.is_user_decrypt_wait_param());
         assert!(ConfigParam::UserDecryptAdditionalSharesTimeoutSecs.is_user_decrypt_wait_param());
-        // Not classified as TPS or retry-after (keeps admin routing legible).
         assert!(!ConfigParam::UserDecryptAdditionalShares.is_tps_param());
         assert!(!ConfigParam::UserDecryptAdditionalShares.is_retry_after_param());
         assert!(!ConfigParam::RetryAfterMinSeconds.is_user_decrypt_wait_param());

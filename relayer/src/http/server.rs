@@ -163,9 +163,7 @@ pub async fn run_http_server(
         .merge(openapi_middleware());
 
     // Admin endpoints configuration
-    // When enabled, each backing store is passed as Some: registry (for TPS),
-    // retry-after state and the user-decrypt wait state
-    // When disabled, all are None so the handlers return 403
+    // Each backing store is Some only when enabled; all None makes handlers 403.
     let admin_enabled = config.enable_admin_endpoint;
     if admin_enabled {
         info!("Admin endpoints enabled at /admin/config");
