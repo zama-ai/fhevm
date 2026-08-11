@@ -16,6 +16,7 @@ use crate::core::event::{
 use crate::core::job_id::JobId;
 use crate::host::HostChainIdChecker;
 use crate::http::retry_after::{DecryptQueueInfo, RequestStateInfo, RetryAfterState};
+use crate::http::user_decrypt_wait::{is_ready, UserDecryptWaitState};
 use crate::http::utils::BounceChecker;
 use crate::http::{parse_and_validate, AppResponse};
 use crate::logging::UserDecryptStep;
@@ -40,6 +41,7 @@ use axum::{
     http::{header, StatusCode},
     Json,
 };
+use chrono::Utc;
 use std::sync::Arc;
 use tracing::{error, info, instrument, span, Level};
 use uuid::Uuid;
@@ -54,6 +56,7 @@ pub struct UserDecryptHandler {
     user_decrypt_queue_checker: BounceChecker<UserDecryptReadinessTask>,
     delegated_queue_checker: BounceChecker<DelegatedUserDecryptReadinessTask>,
     retry_after_state: Arc<RetryAfterState>,
+    user_decrypt_wait_state: Arc<UserDecryptWaitState>,
     host_chain_id_checker: Arc<HostChainIdChecker>,
 }
 
@@ -67,6 +70,7 @@ impl UserDecryptHandler {
         user_decrypt_queue_checker: BounceChecker<UserDecryptReadinessTask>,
         delegated_queue_checker: BounceChecker<DelegatedUserDecryptReadinessTask>,
         retry_after_state: Arc<RetryAfterState>,
+        user_decrypt_wait_state: Arc<UserDecryptWaitState>,
         host_chain_id_checker: Arc<HostChainIdChecker>,
     ) -> Self {
         Self {
@@ -77,6 +81,7 @@ impl UserDecryptHandler {
             user_decrypt_queue_checker,
             delegated_queue_checker,
             retry_after_state,
+            user_decrypt_wait_state,
             host_chain_id_checker,
         }
     }
@@ -631,10 +636,9 @@ impl UserDecryptHandler {
         );
 
         // Check SQL for current status using job_id (which is the external_reference_id in DB)
-        let fallback_threshold = self.user_decrypt_shares_threshold; // u32
         match self
             .user_decrypt_repo
-            .find_req_and_shares_by_ext_job_id(job_id, fallback_threshold)
+            .find_req_and_shares_by_ext_job_id(job_id)
             .await
         {
             Ok(Some(response_model)) => {
@@ -647,50 +651,96 @@ impl UserDecryptHandler {
                             .and_then(|v| u32::try_from(v).ok())
                             .unwrap_or(self.user_decrypt_shares_threshold);
                         if response_model.shares.len() >= required_threshold as usize {
-                            // Convert from database model to API response
-                            match UserDecryptResponseJson::try_from(response_model) {
-                                Ok(api_response) => {
-                                    let status_code = StatusCode::OK;
+                            // Optimistic wait window: once reconstructable, keep reporting
+                            // in-progress until enough extra shares arrive or the wait since
+                            // threshold elapses, so the client has spares for a bad share.
+                            let collected = response_model.shares.len();
+                            let additional = self.user_decrypt_wait_state.additional_shares().await;
+                            let timeout_secs = self
+                                .user_decrypt_wait_state
+                                .additional_shares_timeout_secs()
+                                .await;
+                            // updated_at is stamped when the request reached threshold, by the
+                            // write that completes the row. The ThresholdReached consensus write
+                            // can restamp it once, but the contract emits both from a single
+                            // call, so that only ever shifts the window start by milliseconds.
+                            let elapsed_secs =
+                                (Utc::now() - response_model.updated_at).num_seconds();
 
-                                    info!(
-                                        request_id = %request_id,
-                                        http_status = status_code.as_u16(),
-                                        ext_job_id = %job_id,
-                                        "HTTP response"
-                                    );
+                            if !is_ready(
+                                collected,
+                                required_threshold as usize,
+                                additional,
+                                elapsed_secs,
+                                timeout_secs,
+                            ) {
+                                let retry_after = (i64::from(timeout_secs) - elapsed_secs).max(1);
+                                info!(
+                                    request_id = %request_id,
+                                    http_status = StatusCode::ACCEPTED.as_u16(),
+                                    ext_job_id = %job_id,
+                                    collected,
+                                    required_threshold,
+                                    "Awaiting additional user-decryption shares"
+                                );
+                                (
+                                    StatusCode::ACCEPTED,
+                                    [(header::RETRY_AFTER, retry_after.to_string())],
+                                    Json(UserDecryptStatusResponseJson {
+                                        status: ApiResponseStatus::Queued,
+                                        request_id: request_id.to_string(),
+                                        result: None,
+                                        error: None,
+                                    }),
+                                )
+                                    .into_response()
+                            } else {
+                                // Convert from database model to API response
+                                match UserDecryptResponseJson::try_from(response_model) {
+                                    Ok(api_response) => {
+                                        let status_code = StatusCode::OK;
 
-                                    (
-                                        status_code,
-                                        Json(UserDecryptStatusResponseJson {
-                                            status: ApiResponseStatus::Succeeded,
-                                            request_id: request_id.to_string(), // Per-request UUID
-                                            result: Some(api_response),
-                                            error: None,
-                                        }),
-                                    )
-                                        .into_response()
-                                }
-                                Err(e) => {
-                                    error!(
-                                        request_id = %request_id,
-                                        ext_job_id = %job_id,
-                                        error = %e,
-                                        "Response conversion failed"
-                                    );
-                                    (
-                                        StatusCode::INTERNAL_SERVER_ERROR,
-                                        Json(UserDecryptStatusResponseJson {
-                                            status: ApiResponseStatus::Failed,
-                                            request_id: request_id.to_string(),
-                                            result: None,
-                                            error: Some(
-                                                V2ErrorResponseBody::internal_server_error(
-                                                    "Internal server error",
+                                        info!(
+                                            request_id = %request_id,
+                                            http_status = status_code.as_u16(),
+                                            ext_job_id = %job_id,
+                                            returned_shares = collected,
+                                            "HTTP response"
+                                        );
+
+                                        (
+                                            status_code,
+                                            Json(UserDecryptStatusResponseJson {
+                                                status: ApiResponseStatus::Succeeded,
+                                                request_id: request_id.to_string(),
+                                                result: Some(api_response),
+                                                error: None,
+                                            }),
+                                        )
+                                            .into_response()
+                                    }
+                                    Err(e) => {
+                                        error!(
+                                            request_id = %request_id,
+                                            ext_job_id = %job_id,
+                                            error = %e,
+                                            "Response conversion failed"
+                                        );
+                                        (
+                                            StatusCode::INTERNAL_SERVER_ERROR,
+                                            Json(UserDecryptStatusResponseJson {
+                                                status: ApiResponseStatus::Failed,
+                                                request_id: request_id.to_string(),
+                                                result: None,
+                                                error: Some(
+                                                    V2ErrorResponseBody::internal_server_error(
+                                                        "Internal server error",
+                                                    ),
                                                 ),
-                                            ),
-                                        }),
-                                    )
-                                        .into_response()
+                                            }),
+                                        )
+                                            .into_response()
+                                    }
                                 }
                             }
                         } else {
@@ -896,6 +946,11 @@ pub async fn user_decrypt_post_v2(
 }
 
 /// Check user decryption status.
+///
+/// Once the threshold is reached the relayer may keep returning 202 briefly
+/// while it waits for a few extra shares (optimistic wait window). The
+/// succeeded result therefore contains at least `threshold` shares and may
+/// contain more, ordered by share index.
 #[utoipa::path(
     get,
     path = "/v2/user-decrypt/{job_id}",
@@ -943,6 +998,11 @@ pub async fn delegated_user_decrypt_post_v2(
 }
 
 /// Check delegated user decryption status.
+///
+/// Once the threshold is reached the relayer may keep returning 202 briefly
+/// while it waits for a few extra shares (optimistic wait window). The
+/// succeeded result therefore contains at least `threshold` shares and may
+/// contain more, ordered by share index.
 #[utoipa::path(
     get,
     path = "/v2/delegated-user-decrypt/{job_id}",

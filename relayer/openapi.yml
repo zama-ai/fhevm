@@ -465,6 +465,11 @@ paths:
       tags:
       - User Decrypt
       summary: Check user decryption status.
+      description: |-
+        Once the threshold is reached the relayer may keep returning 202 briefly
+        while it waits for a few extra shares (optimistic wait window). The
+        succeeded result therefore contains at least `threshold` shares and may
+        contain more, ordered by share index.
       operationId: user_decrypt_get_v2
       parameters:
       - name: job_id
@@ -707,6 +712,11 @@ paths:
       tags:
       - Delegated User Decrypt
       summary: Check delegated user decryption status.
+      description: |-
+        Once the threshold is reached the relayer may keep returning 202 briefly
+        while it waits for a few extra shares (optimistic wait window). The
+        succeeded result therefore contains at least `threshold` shares and may
+        contain more, ordered by share index.
       operationId: delegated_user_decrypt_get_v2
       parameters:
       - name: job_id
