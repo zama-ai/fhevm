@@ -3,9 +3,12 @@
 # RUST_IMAGE_VERSION is injected by CI from rust-toolchain.toml (see listener-docker-build.yml).
 # The default below is the fallback for local docker-compose builds, which do NOT inject it.
 ARG RUST_IMAGE_VERSION=1.97.1
+# Registry/repo of the Rust builder base. Defaults to the published golden image; override
+# it to build against a locally-built base (the published one is amd64-only).
+ARG RUST_BUILDER_IMAGE=ghcr.io/zama-ai/fhevm/gci/rust-glibc
 
 # ── Builder (golden rust-glibc image ships the pinned toolchain + build deps) ──
-FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS builder
+FROM ${RUST_BUILDER_IMAGE}:${RUST_IMAGE_VERSION} AS builder
 
 # Build as root; the golden image already provides the toolchain, build deps
 # (openssl-dev, gcc, build-base, ...) and the unprivileged fhevm user.

@@ -1,5 +1,8 @@
 # RUST_IMAGE_VERSION is injected by CI from rust-toolchain.toml (see coprocessor-docker-build.yml)
 ARG RUST_IMAGE_VERSION
+# Registry/repo of the Rust builder base. Defaults to the published golden image; override
+# it to build against a locally-built base (the published one is amd64-only).
+ARG RUST_BUILDER_IMAGE=ghcr.io/zama-ai/fhevm/gci/rust-glibc
 
 # Stage 0: Build contracts
 FROM ghcr.io/zama-ai/fhevm/gci/nodejs:22.14.0-alpine3.21 AS contract_builder
@@ -22,7 +25,7 @@ RUN cp .env.example .env \
     && npx hardhat compile
 
 # Stage 1: Build Stress-Tool
-FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS builder
+FROM ${RUST_BUILDER_IMAGE}:${RUST_IMAGE_VERSION} AS builder
 
 ARG CARGO_PROFILE=release
 

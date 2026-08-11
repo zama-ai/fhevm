@@ -4,7 +4,7 @@ import path from "node:path";
 import YAML from "yaml";
 
 import { generateComposeOverrides, loadMergedComposeDoc, serviceNameList } from "./generate/compose";
-import { TEMPLATE_COMPOSE_DIR, composePath, envPath } from "./layout";
+import { REPO_ROOT, TEMPLATE_COMPOSE_DIR, composePath, envPath } from "./layout";
 import { presetBundle } from "./resolve/target";
 import {
   parseBlueGreenScenario,
@@ -166,6 +166,43 @@ describe("render-compose", () => {
       expect(doc.services["listener-publisher-for-anvil"]?.build).toBeTruthy();
       expect(doc.services["listener-redis"]).toBeUndefined();
     });
+  });
+
+  // Every Dockerfile that builds FROM the golden Rust base must resolve the image through
+  // ${RUST_BUILDER_IMAGE}, declared in global scope. An ARG declared after any FROM is stage-scoped
+  // and expands to empty inside a FROM, producing `FROM :1.97.1` — so scope is the thing to pin.
+  test("every Rust builder FROM is parameterized, with the ARG in global scope", async () => {
+    const files = (await Array.fromAsync(new Bun.Glob("**/Dockerfile*").scan({ cwd: REPO_ROOT })))
+      .filter((f) => !f.includes("node_modules") && !f.includes(".claude/"))
+      .map((f) => path.join(REPO_ROOT, f));
+    let checked = 0;
+    for (const file of files) {
+      const lines = (await Bun.file(file).text()).split("\n");
+      if (!lines.some((line) => line.includes("gci/rust-glibc"))) continue;
+      checked += 1;
+      const firstFrom = lines.findIndex((line) => line.trimStart().startsWith("FROM "));
+      const declared = lines.findIndex((line) => /^\s*ARG\s+RUST_BUILDER_IMAGE=/.test(line));
+      expect(`${file}: declares ARG RUST_BUILDER_IMAGE`).toBe(declared >= 0 ? `${file}: declares ARG RUST_BUILDER_IMAGE` : file);
+      expect(declared).toBeLessThan(firstFrom);
+      for (const line of lines) {
+        if (line.trimStart().startsWith("FROM ") && line.includes("gci/rust-glibc")) {
+          throw new Error(`${file}: FROM still hardcodes the builder registry: ${line.trim()}`);
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(15);
+  });
+
+  // Any build spec that pins the toolchain version must also pin where the base comes from;
+  // otherwise the Dockerfile default silently wins, which is right on amd64 and wrong on arm64 —
+  // a failure that never surfaces in CI, since every CI runner is linux-x64.
+  test("no Rust build spec pins the version without the builder image", async () => {
+    const source = await Bun.file(path.join(import.meta.dir, "generate", "compose.ts")).text();
+    const pins = source.match(/args: \{[^}]*RUST_IMAGE_VERSION[^}]*\}/g) ?? [];
+    expect(pins.length).toBeGreaterThan(0);
+    for (const pin of pins) {
+      expect(pin).toContain("RUST_BUILDER_IMAGE");
+    }
   });
 
   test("renders multi-instance coprocessor overrides with local poller siblings", async () => {

@@ -1,7 +1,10 @@
 # Stage 1: Build DB Migration
 # RUST_IMAGE_VERSION is injected by CI from rust-toolchain.toml (see coprocessor-docker-build.yml)
 ARG RUST_IMAGE_VERSION
-FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS builder
+# Registry/repo of the Rust builder base. Defaults to the published golden image; override
+# it to build against a locally-built base (the published one is amd64-only).
+ARG RUST_BUILDER_IMAGE=ghcr.io/zama-ai/fhevm/gci/rust-glibc
+FROM ${RUST_BUILDER_IMAGE}:${RUST_IMAGE_VERSION} AS builder
 
 ARG SCCACHE_BUCKET
 ARG SCCACHE_REGION=eu-west-3

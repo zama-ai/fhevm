@@ -2,9 +2,12 @@
 # RUST_IMAGE_VERSION is intentionally left without a default so the Rust toolchain
 # version has a single source of truth: relayer/rust-toolchain.toml.
 ARG RUST_IMAGE_VERSION
+# Registry/repo of the Rust builder base. Defaults to the published golden image; override
+# it to build against a locally-built base (the published one is amd64-only).
+ARG RUST_BUILDER_IMAGE=ghcr.io/zama-ai/fhevm/gci/rust-glibc
 ARG APP_NAME=fhevm-relayer
 
-FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS build
+FROM ${RUST_BUILDER_IMAGE}:${RUST_IMAGE_VERSION} AS build
 ARG APP_NAME
 WORKDIR /app
 USER root

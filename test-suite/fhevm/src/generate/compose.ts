@@ -112,10 +112,16 @@ const COPROCESSOR_RUST_IMAGE_VERSION = rustImageVersion("coprocessor/fhevm-engin
 const KMS_CONNECTOR_RUST_IMAGE_VERSION = rustImageVersion("kms-connector/rust-toolchain.toml");
 const RELAYER_RUST_IMAGE_VERSION = rustImageVersion("relayer/rust-toolchain.toml");
 
+// Registry/repo of the Rust builder base every component Dockerfile builds FROM. The published
+// golden image is amd64-only (ci-templates' common-docker.yml has a linux/amd64-only build matrix
+// and no arm runner input), so an arm64 host builds that base locally and points the builds at it
+// instead of retagging someone else's image name.
+const RUST_BUILDER_IMAGE = process.env.RUST_BUILDER_IMAGE ?? "ghcr.io/zama-ai/fhevm/gci/rust-glibc";
+
 const coprocessorBuildSpec = (target: string) =>
   buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
     target,
-    args: { RUST_IMAGE_VERSION: COPROCESSOR_RUST_IMAGE_VERSION },
+    args: { RUST_IMAGE_VERSION: COPROCESSOR_RUST_IMAGE_VERSION, RUST_BUILDER_IMAGE },
   });
 
 const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknown>>> = {
@@ -134,19 +140,19 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
   },
   "kms-connector": {
     "kms-connector-db-migration": buildSpec("../../..", "kms-connector/connector-db/Dockerfile", {
-      args: { RUST_IMAGE_VERSION: KMS_CONNECTOR_RUST_IMAGE_VERSION },
+      args: { RUST_IMAGE_VERSION: KMS_CONNECTOR_RUST_IMAGE_VERSION, RUST_BUILDER_IMAGE },
     }),
     "kms-connector-gw-listener": buildSpec("../../..", "kms-connector/Dockerfile.workspace", {
       target: "gw-listener",
-      args: { RUST_IMAGE_VERSION: KMS_CONNECTOR_RUST_IMAGE_VERSION },
+      args: { RUST_IMAGE_VERSION: KMS_CONNECTOR_RUST_IMAGE_VERSION, RUST_BUILDER_IMAGE },
     }),
     "kms-connector-kms-worker": buildSpec("../../..", "kms-connector/Dockerfile.workspace", {
       target: "kms-worker",
-      args: { RUST_IMAGE_VERSION: KMS_CONNECTOR_RUST_IMAGE_VERSION },
+      args: { RUST_IMAGE_VERSION: KMS_CONNECTOR_RUST_IMAGE_VERSION, RUST_BUILDER_IMAGE },
     }),
     "kms-connector-tx-sender": buildSpec("../../..", "kms-connector/Dockerfile.workspace", {
       target: "tx-sender",
-      args: { RUST_IMAGE_VERSION: KMS_CONNECTOR_RUST_IMAGE_VERSION },
+      args: { RUST_IMAGE_VERSION: KMS_CONNECTOR_RUST_IMAGE_VERSION, RUST_BUILDER_IMAGE },
     }),
   },
   "listener-core": {
@@ -154,10 +160,10 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
   },
   relayer: {
     "relayer-db-migration": buildSpec("../../..", "relayer/docker/relayer-migrate/Dockerfile", {
-      args: { RUST_IMAGE_VERSION: RELAYER_RUST_IMAGE_VERSION },
+      args: { RUST_IMAGE_VERSION: RELAYER_RUST_IMAGE_VERSION, RUST_BUILDER_IMAGE },
     }),
     relayer: buildSpec("../../..", "relayer/docker/relayer/Dockerfile", {
-      args: { RUST_IMAGE_VERSION: RELAYER_RUST_IMAGE_VERSION },
+      args: { RUST_IMAGE_VERSION: RELAYER_RUST_IMAGE_VERSION, RUST_BUILDER_IMAGE },
     }),
   },
   "gateway-mocked-payment": {
