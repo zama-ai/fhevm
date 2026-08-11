@@ -29,6 +29,7 @@ use arbitrum::{
     ArbitrumListener, PollingListener,
 };
 use std::{str::FromStr, sync::Arc};
+use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
 /// Initialize all gateway components including handlers and listeners.
@@ -37,6 +38,7 @@ pub async fn initialize_gateway(
     settings: &Settings,
     repositories: Arc<Repositories>,
     gateway_throttlers: GatewayThrottlers,
+    shutdown_token: CancellationToken,
 ) -> anyhow::Result<()> {
     info!("Initializing gateway components");
 
@@ -86,7 +88,8 @@ pub async fn initialize_gateway(
             .retry
             .clone(),
     )?;
-    let readiness_checker = Arc::new(ReadinessChecker::new(host_acl_checker, &settings.gateway)?);
+    let readiness_checker =
+        Arc::new(ReadinessChecker::new(host_acl_checker, &settings.gateway, shutdown_token).await?);
 
     let threshold_resolver = Arc::new(
         ThresholdResolver::new(

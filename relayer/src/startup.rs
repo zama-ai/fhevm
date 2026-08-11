@@ -96,6 +96,7 @@ pub async fn run_fhevm_relayer(
         &settings,
         repositories.clone(),
         gateway_throttlers,
+        shutdown_token.clone(),
     )
     .await
     .context("Failed to initialize gateway")?;

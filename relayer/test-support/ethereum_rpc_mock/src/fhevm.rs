@@ -5,10 +5,9 @@ use crate::{
 };
 use alloy::primitives::{Address, Bytes, B256, U256};
 use alloy::primitives::{Log, LogData};
-use alloy::sol_types::{SolCall, SolEvent};
+use alloy::sol_types::{SolCall, SolEvent, SolValue};
 use rand::{Rng, RngExt};
 use std::{
-    str::FromStr,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
@@ -19,7 +18,10 @@ use tracing::{debug, info};
 
 // Re-export FHEVM bindings for convenience
 pub use fhevm_gateway_bindings::decryption::Decryption;
+pub use fhevm_gateway_bindings::gateway_config::GatewayConfig;
 pub use fhevm_gateway_bindings::input_verification::InputVerification;
+
+use crate::ct_attestation::CtAttestationMock;
 
 /// Selects which user-decryption gateway overload the mock should match
 /// when registering a success pattern. `Direct` / `Delegated` are the
@@ -57,6 +59,15 @@ const MOCK_PUBLIC_KEY_SIZE: usize = 32;
 const MOCK_SIGNATURE_SIZE: usize = 65;
 
 // Mock data generation helpers
+
+/// Wrap ABI-encoded return data as a successful `eth_call` response.
+fn success_bytes(data: Vec<u8>) -> Response {
+    Response::Success {
+        hash: None,
+        data: crate::mock_server::ResponseData::Bytes(Bytes::from(data)),
+        scheduled_transactions: Vec::new(),
+    }
+}
 
 /// Generate a random hash for transaction IDs
 fn random_hash() -> B256 {
@@ -167,6 +178,7 @@ pub struct FhevmMockWrapper {
     next_zk_proof_id: Arc<AtomicU64>,
     pub decryption_contract: Address,
     pub input_proof_contract: Address,
+    pub gateway_config_contract: Address,
 }
 
 impl FhevmMockWrapper {
@@ -175,6 +187,7 @@ impl FhevmMockWrapper {
         json_rpc_server: MockServer,
         decryption_contract: Address,
         input_proof_contract: Address,
+        gateway_config_contract: Address,
     ) -> Self {
         info!(
             decryption_contract = %decryption_contract,
@@ -207,6 +220,7 @@ impl FhevmMockWrapper {
             ),
             decryption_contract,
             input_proof_contract,
+            gateway_config_contract,
         }
     }
 
@@ -218,42 +232,85 @@ impl FhevmMockWrapper {
         self.next_zk_proof_id.fetch_add(1, Ordering::SeqCst)
     }
 
-    /// Configure readiness checks to return false (simulating not ready state)
-    pub fn set_readiness_failure(&self) {
-        debug!("Configuring readiness checks to return false");
-        self.register_readiness_patterns(false);
-    }
-
-    /// Configure readiness checks to return true (simulating ready state)
-    pub fn set_readiness_success(&self) {
-        debug!("Configuring readiness checks to return true");
-        self.register_readiness_patterns(true);
-    }
-
-    /// Configure readiness checks to return a JSON-RPC error (simulating node unavailable / contract error).
-    /// This causes `ReadinessCheckError::ContractError` after max retries, dispatching `ReadinessCheckFailed`.
-    pub fn set_readiness_contract_error(&self) {
-        debug!("Configuring readiness checks to return RPC error");
-
-        let error_response = Response::Error("RPC error: node unavailable".to_string());
-
-        // Register public decryption readiness check error
-        self.json_rpc_server.on_call(
-            matches_contract_and_selector_for_call(
-                self.decryption_contract,
-                Decryption::isPublicDecryptionReadyCall::SELECTOR,
-            ),
-            error_response.clone(),
-            UsageLimit::Unlimited,
+    /// Serve the `GatewayConfig` registry views the off-chain readiness check reads: the
+    /// tx-sender list, the per-Coprocessor signer↔bucket binding and the majority threshold.
+    ///
+    /// The bucket URLs come from the [`CtAttestationMock`]'s live listeners, so the relayer
+    /// resolves real origins off-chain and probes them over HTTP.
+    pub fn set_coprocessor_registry(&self, attestation_mock: &CtAttestationMock) {
+        let coprocessors = attestation_mock.coprocessors().to_vec();
+        let threshold = attestation_mock.majority_threshold();
+        debug!(
+            coprocessors = coprocessors.len(),
+            threshold, "Registering GatewayConfig Coprocessor registry"
         );
 
-        // Register user decryption readiness check error
-        self.json_rpc_server.on_call(
+        let tx_senders: Vec<Address> = coprocessors.iter().map(|c| c.tx_sender).collect();
+        self.on_gateway_config_view(
+            GatewayConfig::getCoprocessorTxSendersCall::SELECTOR,
+            tx_senders.abi_encode(),
+        );
+
+        self.on_gateway_config_view(
+            GatewayConfig::getCoprocessorMajorityThresholdCall::SELECTOR,
+            U256::from(threshold).abi_encode(),
+        );
+
+        // `getCoprocessor` is per-tx-sender, so the response has to depend on the calldata.
+        let gateway_config_contract = self.gateway_config_contract;
+        self.json_rpc_server.on_call_dynamic(
             matches_contract_and_selector_for_call(
-                self.decryption_contract,
-                Decryption::isUserDecryptionReady_1Call::SELECTOR,
+                gateway_config_contract,
+                GatewayConfig::getCoprocessorCall::SELECTOR,
             ),
-            error_response,
+            move |params: &mock_server::CallParams| -> Response {
+                let decoded = GatewayConfig::getCoprocessorCall::abi_decode_raw(&params.input[4..])
+                    .expect("calldata: failed to decode getCoprocessorCall");
+                let Some(coprocessor) = coprocessors
+                    .iter()
+                    .find(|c| c.tx_sender == decoded.coprocessorTxSenderAddress)
+                else {
+                    return Response::Error(format!(
+                        "getCoprocessor: {} is not a registered tx sender",
+                        decoded.coprocessorTxSenderAddress
+                    ));
+                };
+                success_bytes(
+                    GatewayConfig::Coprocessor {
+                        txSenderAddress: coprocessor.tx_sender,
+                        signerAddress: coprocessor.signer,
+                        s3BucketUrl: coprocessor.s3_bucket_url.clone(),
+                    }
+                    .abi_encode(),
+                )
+            },
+            UsageLimit::Unlimited,
+        );
+    }
+
+    /// Configure the `GatewayConfig` registry views to return a JSON-RPC error, simulating a
+    /// gateway read node that is unavailable while the registry snapshot is refreshed.
+    pub fn set_coprocessor_registry_error(&self) {
+        debug!("Configuring GatewayConfig registry views to return RPC error");
+
+        for selector in [
+            GatewayConfig::getCoprocessorTxSendersCall::SELECTOR,
+            GatewayConfig::getCoprocessorMajorityThresholdCall::SELECTOR,
+            GatewayConfig::getCoprocessorCall::SELECTOR,
+        ] {
+            self.json_rpc_server.on_call(
+                matches_contract_and_selector_for_call(self.gateway_config_contract, selector),
+                Response::Error("RPC error: node unavailable".to_string()),
+                UsageLimit::Unlimited,
+            );
+        }
+    }
+
+    /// Register a static ABI-encoded return for one `GatewayConfig` view function.
+    fn on_gateway_config_view(&self, selector: [u8; 4], return_data: Vec<u8>) {
+        self.json_rpc_server.on_call(
+            matches_contract_and_selector_for_call(self.gateway_config_contract, selector),
+            success_bytes(return_data),
             UsageLimit::Unlimited,
         );
     }
@@ -288,63 +345,6 @@ impl FhevmMockWrapper {
                 UsageLimit::Once,
             );
         }
-    }
-
-    /// Configure readiness checks to fail `n` times (Once each), then succeed (Unlimited).
-    /// Useful for holding multiple requests in the readiness retry loop so they all
-    /// pass readiness at roughly the same time on the next retry cycle.
-    pub fn set_readiness_success_after_n_failures(&self, n: usize) {
-        debug!(
-            n,
-            "Configuring readiness checks: {} failures then success", n
-        );
-
-        // Register n Once(false) patterns — consumed one per eth_call
-        for _ in 0..n {
-            self.register_readiness_patterns_with_limit(false, UsageLimit::Once);
-        }
-        // Then Unlimited(true) — all subsequent calls succeed
-        self.register_readiness_patterns_with_limit(true, UsageLimit::Unlimited);
-    }
-
-    /// Register readiness check patterns directly with the mock server
-    fn register_readiness_patterns(&self, ready: bool) {
-        self.register_readiness_patterns_with_limit(ready, UsageLimit::Unlimited);
-    }
-
-    /// Register readiness check patterns with a specific usage limit
-    fn register_readiness_patterns_with_limit(&self, ready: bool, usage_limit: UsageLimit) {
-        let response_value = if ready {
-            "0x0000000000000000000000000000000000000000000000000000000000000001"
-        } else {
-            "0x0000000000000000000000000000000000000000000000000000000000000000"
-        };
-
-        let readiness_response = Response::Success {
-            hash: None,
-            data: crate::mock_server::ResponseData::Bytes(Bytes::from_str(response_value).unwrap()),
-            scheduled_transactions: Vec::new(),
-        };
-
-        // Register public decryption readiness check
-        self.json_rpc_server.on_call(
-            matches_contract_and_selector_for_call(
-                self.decryption_contract,
-                Decryption::isPublicDecryptionReadyCall::SELECTOR,
-            ),
-            readiness_response.clone(),
-            usage_limit,
-        );
-
-        // Register user decryption readiness check
-        self.json_rpc_server.on_call(
-            matches_contract_and_selector_for_call(
-                self.decryption_contract,
-                Decryption::isUserDecryptionReady_1Call::SELECTOR,
-            ),
-            readiness_response,
-            usage_limit,
-        );
     }
 
     // Generic setup methods to eliminate duplication
@@ -430,8 +430,8 @@ impl FhevmMockWrapper {
         targets: Vec<mock_server::SubscriptionTarget>,
         usage_limit: UsageLimit,
     ) {
-        // Set up readiness check patterns to return true (ready)
-        self.set_readiness_success();
+        // Readiness is no longer a gateway-chain call: it is Coprocessor attestation
+        // consensus, armed independently via `CtAttestationMock`.
 
         let id = self.next_decryption_id();
         debug!(
@@ -593,8 +593,7 @@ impl FhevmMockWrapper {
             scheduled_transactions: vec![scheduled_tx],
         };
 
-        // Set up default readiness patterns (ready state)
-        self.register_readiness_patterns(true);
+        // Readiness is Coprocessor attestation consensus now, armed via `CtAttestationMock`.
 
         // Register pattern that returns immediate response with scheduled transaction.
         // Predicate also asserts that the calldata's handles and address-of-interest
@@ -632,8 +631,8 @@ impl FhevmMockWrapper {
         values: Vec<u64>,
         target: mock_server::SubscriptionTarget,
     ) {
-        // Set up readiness check patterns to return true (ready)
-        self.set_readiness_success();
+        // Readiness is no longer a gateway-chain call: it is Coprocessor attestation
+        // consensus, armed independently via `CtAttestationMock`.
 
         // Register the transaction pattern with Once limit for redundancy tests
         // (each pattern registration in a loop should be consumed once)
@@ -774,7 +773,6 @@ impl FhevmMockWrapper {
     /// Emits the request event but NO response event, causing the relayer to timeout
     pub fn on_public_decrypt_request_only(&self, handles: Vec<B256>) {
         // Set up readiness check to return true (ready)
-        self.set_readiness_success();
 
         let id = self.next_decryption_id();
         let request_log = build_public_decrypt_request(self.decryption_contract, id, handles);
@@ -803,7 +801,6 @@ impl FhevmMockWrapper {
         handles: Vec<B256>,
         user: Address,
     ) {
-        self.set_readiness_success();
         let id = self.next_decryption_id();
         let request_log =
             build_legacy_user_decrypt_request(self.decryption_contract, id, user, handles);
@@ -1271,8 +1268,10 @@ mod tests {
         let server = MockServer::new(MockConfig::new());
         let decryption_addr = Address::repeat_byte(1);
         let input_addr = Address::repeat_byte(2);
+        let gateway_config_addr = Address::repeat_byte(3);
 
-        let wrapper = FhevmMockWrapper::new(server, decryption_addr, input_addr);
+        let wrapper =
+            FhevmMockWrapper::new(server, decryption_addr, input_addr, gateway_config_addr);
 
         assert_eq!(
             wrapper.decryption_contract, decryption_addr,
