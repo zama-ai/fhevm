@@ -1,6 +1,4 @@
-use prometheus::{
-    register_int_counter, register_int_gauge_vec, IntCounter, IntGaugeVec,
-};
+use prometheus::{register_int_counter, IntCounter};
 use std::sync::LazyLock;
 
 pub(crate) static ACTIVATE_CRS_SUCCESS_COUNTER: LazyLock<IntCounter> =
@@ -62,16 +60,6 @@ pub(crate) static KMS_EVENT_DECODE_FAIL_COUNTER: LazyLock<IntCounter> =
         register_int_counter!(
             "coprocessor_host_listener_kms_event_decode_fail_counter",
             "Number of KMSGeneration logs that failed ABI decoding in host listener"
-        )
-        .unwrap()
-    });
-
-pub(crate) static MATERIAL_APPLIED_BLOCK_GAUGE: LazyLock<IntGaugeVec> =
-    LazyLock::new(|| {
-        register_int_gauge_vec!(
-            "coprocessor_host_listener_compressed_key_material_applied_block",
-            "Finalized block of the latest compressed key material record applied by the host listener",
-            &["chain_id", "key_id", "key_digest"]
         )
         .unwrap()
     });

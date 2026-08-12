@@ -33,32 +33,6 @@ pub fn force_legacy_server_key_from_env() -> anyhow::Result<bool> {
     Ok(force_legacy)
 }
 
-pub async fn is_server_key_material_available(
-    pool: &PgPool,
-    force_legacy: bool,
-) -> anyhow::Result<bool> {
-    let require_compressed = cfg!(feature = "gpu") && !force_legacy;
-    let available = sqlx::query_scalar::<_, bool>(
-        r#"
-        SELECT COALESCE((
-            SELECT CASE
-                WHEN $1 THEN sks_key IS NOT NULL
-                WHEN $2 THEN compressed_xof_keyset IS NOT NULL
-                ELSE compressed_xof_keyset IS NOT NULL OR sks_key IS NOT NULL
-            END
-            FROM keys
-            ORDER BY sequence_number DESC
-            LIMIT 1
-        ), FALSE)
-        "#,
-    )
-    .bind(force_legacy)
-    .bind(require_compressed)
-    .fetch_one(pool)
-    .await?;
-    Ok(available)
-}
-
 /// Single row shape for both CPU and GPU builds. A forced worker selects only
 /// legacy material. An unforced worker preserves compressed-first behavior.
 ///
