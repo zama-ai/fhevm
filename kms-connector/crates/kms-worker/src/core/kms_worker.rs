@@ -5,7 +5,8 @@ use crate::{
         event_picker::{DbEventPicker, EventPicker},
         event_processor::{
             CiphertextManager, DbContextManager, DbEventProcessor, DecryptionProcessor,
-            EventProcessor, KMSGenerationProcessor, KmsClient, ProtocolConfigProcessor,
+            EventProcessor, HostRpcClient, KMSGenerationProcessor, KmsClient,
+            ProtocolConfigProcessor,
         },
         kms_response_publisher::DbKmsResponsePublisher,
     },
@@ -132,7 +133,7 @@ impl
         let ethereum_provider =
             connect_to_rpc_node(config.ethereum_url.clone(), config.ethereum_chain_id).await?;
 
-        let mut acl_contracts = HashMap::new();
+        let mut host_clients = HashMap::new();
         for host_chain in &config.host_chains {
             let provider = connect_to_rpc_node_with_bounds(
                 host_chain.url.clone(),
@@ -143,7 +144,8 @@ impl
             .await?;
             let acl_contract = ACL::new(host_chain.acl_address, provider);
             let host_chain_id = host_chain.chain_id;
-            if acl_contracts.insert(host_chain_id, acl_contract).is_some() {
+            let host_client = HostRpcClient::new(host_chain_id, acl_contract);
+            if host_clients.insert(host_chain_id, host_client).is_some() {
                 return Err(anyhow!(
                     "Duplicate host chain in config for chain ID {host_chain_id}"
                 ));
@@ -162,7 +164,7 @@ impl
         let decryption_processor = DecryptionProcessor::new(
             &config,
             gateway_provider.clone(),
-            acl_contracts,
+            host_clients,
             ciphertext_manager,
         );
         let kms_generation_processor = KMSGenerationProcessor::new(&config);
