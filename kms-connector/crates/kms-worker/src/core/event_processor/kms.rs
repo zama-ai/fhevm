@@ -128,7 +128,6 @@ fn keyset_config(existing_key_id: U256) -> KeySetConfig {
 }
 
 fn keyset_added_info(existing_key_id: U256) -> Option<KeySetAddedInfo> {
-    // Fresh keygen has no source key. Migration reads the existing shares and preserves their tag.
     (!existing_key_id.is_zero()).then(|| KeySetAddedInfo {
         from_keyset_id_decompression_only: None,
         to_keyset_id_decompression_only: None,
