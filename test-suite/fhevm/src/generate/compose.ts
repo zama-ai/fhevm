@@ -1,6 +1,7 @@
 /**
  * Generates compose overrides for local builds, scenario instances, and compatibility-adjusted service commands.
  */
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -112,40 +113,82 @@ const COPROCESSOR_RUST_IMAGE_VERSION = rustImageVersion("coprocessor/fhevm-engin
 const KMS_CONNECTOR_RUST_IMAGE_VERSION = rustImageVersion("kms-connector/rust-toolchain.toml");
 const RELAYER_RUST_IMAGE_VERSION = rustImageVersion("relayer/rust-toolchain.toml");
 
-const coprocessorBuildSpec = (target: string) =>
+/**
+ * Local connector images expose this revision from their health endpoint. It
+ * also provides the git-version fallback for linked-worktree Docker contexts,
+ * whose `.git` pointer cannot be resolved inside the builder container.
+ */
+export const localSourceRevision = () => {
+  try {
+    return execFileSync("git", ["describe", "--always", "--exclude", "*"], { cwd: REPO_ROOT, encoding: "utf8" }).trim() || "unknown";
+  } catch {
+    return "unknown";
+  }
+};
+const LOCAL_SOURCE_REVISION = localSourceRevision();
+
+// The locally bundled sqlx binary requires GLIBC_2.39. Trixie currently
+// provides glibc 2.41, whereas Bookworm's 2.36 fails before migrations start.
+// These Dockerfile stages add ca-certificates too: Debian slim has no system
+// root bundle and reqwest otherwise rejects every HTTPS connection at startup.
+const PUBLIC_E2E_COPROCESSOR_RUNTIME_BASE_IMAGE = "e2e-public-runtime";
+const PUBLIC_E2E_COPROCESSOR_DB_MIGRATION_RUNTIME_BASE_IMAGE = "e2e-public-db-migration-runtime";
+const PUBLIC_E2E_KMS_CONNECTOR_RUNTIME_BASE_IMAGE = "e2e-public-runtime";
+
+// This map is deliberately separate from COMPONENT_BUILD_SPECS: the public
+// runtime-base override is a persisted property of an E2E plan, not an ambient
+// Docker/Compose setting.  That keeps the production defaults in the
+// Dockerfile untouched and lets a resumed E2E run rebuild the same images.
+const COPROCESSOR_BUILD_TARGETS: Record<string, string> = {
+  "coprocessor-db-migration": "db-migration",
+  "coprocessor-host-listener": "host-listener",
+  "coprocessor-host-listener-poller": "host-listener",
+  "coprocessor-host-listener-consumer": "host-listener",
+  "coprocessor-gw-listener": "gw-listener",
+  "coprocessor-tfhe-worker": "tfhe-worker",
+  "coprocessor-zkproof-worker": "zkproof-worker",
+  "coprocessor-sns-worker": "sns-worker",
+  "coprocessor-transaction-sender": "transaction-sender",
+  "coprocessor-consensus-detector": "consensus-detector",
+  "coprocessor-upgrade-controller": "upgrade-controller",
+};
+
+const coprocessorBuildSpec = (target: string, e2ePublicRuntime = false) =>
   buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
     target,
-    args: { RUST_IMAGE_VERSION: COPROCESSOR_RUST_IMAGE_VERSION },
+    args: {
+      RUST_IMAGE_VERSION: COPROCESSOR_RUST_IMAGE_VERSION,
+      ...(e2ePublicRuntime
+        ? {
+            COPROCESSOR_RUNTIME_BASE_IMAGE: PUBLIC_E2E_COPROCESSOR_RUNTIME_BASE_IMAGE,
+            COPROCESSOR_DB_MIGRATION_RUNTIME_BASE_IMAGE: PUBLIC_E2E_COPROCESSOR_DB_MIGRATION_RUNTIME_BASE_IMAGE,
+          }
+        : {}),
+    },
   });
 
+// The connector DB migration has its own Dockerfile and does not use the
+// connector workspace runtime base. Only the three long-lived connector
+// services receive the E2E-only public-runtime switch.
+const kmsConnectorBuildSpec = (target: string, e2ePublicRuntime = false) =>
+  buildSpec("../../..", "kms-connector/Dockerfile.workspace", {
+    target,
+    args: {
+      RUST_IMAGE_VERSION: KMS_CONNECTOR_RUST_IMAGE_VERSION,
+      BUILD_ID: LOCAL_SOURCE_REVISION,
+      ...(e2ePublicRuntime ? { KMS_CONNECTOR_RUNTIME_BASE_IMAGE: PUBLIC_E2E_KMS_CONNECTOR_RUNTIME_BASE_IMAGE } : {}),
+    },
+  });
+
+const KMS_CONNECTOR_RUNTIME_BUILD_TARGETS: Record<string, string> = {
+  "kms-connector-gw-listener": "gw-listener",
+  "kms-connector-kms-worker": "kms-worker",
+  "kms-connector-tx-sender": "tx-sender",
+};
+
 const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknown>>> = {
-  coprocessor: {
-    "coprocessor-db-migration": coprocessorBuildSpec("db-migration"),
-    "coprocessor-host-listener": coprocessorBuildSpec("host-listener"),
-    "coprocessor-host-listener-poller": coprocessorBuildSpec("host-listener"),
-    "coprocessor-host-listener-consumer": coprocessorBuildSpec("host-listener"),
-    "coprocessor-gw-listener": coprocessorBuildSpec("gw-listener"),
-    "coprocessor-tfhe-worker": coprocessorBuildSpec("tfhe-worker"),
-    "coprocessor-zkproof-worker": coprocessorBuildSpec("zkproof-worker"),
-    "coprocessor-sns-worker": coprocessorBuildSpec("sns-worker"),
-    "coprocessor-transaction-sender": coprocessorBuildSpec("transaction-sender"),
-    "coprocessor-consensus-detector": coprocessorBuildSpec("consensus-detector"),
-    "coprocessor-upgrade-controller": coprocessorBuildSpec("upgrade-controller"),
-  },
   "kms-connector": {
     "kms-connector-db-migration": buildSpec("../../..", "kms-connector/connector-db/Dockerfile", {
-      args: { RUST_IMAGE_VERSION: KMS_CONNECTOR_RUST_IMAGE_VERSION },
-    }),
-    "kms-connector-gw-listener": buildSpec("../../..", "kms-connector/Dockerfile.workspace", {
-      target: "gw-listener",
-      args: { RUST_IMAGE_VERSION: KMS_CONNECTOR_RUST_IMAGE_VERSION },
-    }),
-    "kms-connector-kms-worker": buildSpec("../../..", "kms-connector/Dockerfile.workspace", {
-      target: "kms-worker",
-      args: { RUST_IMAGE_VERSION: KMS_CONNECTOR_RUST_IMAGE_VERSION },
-    }),
-    "kms-connector-tx-sender": buildSpec("../../..", "kms-connector/Dockerfile.workspace", {
-      target: "tx-sender",
       args: { RUST_IMAGE_VERSION: KMS_CONNECTOR_RUST_IMAGE_VERSION },
     }),
   },
@@ -188,7 +231,21 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
     }),
   },
 };
-const localBuildSpecFor = (component: string, service: string) => COMPONENT_BUILD_SPECS[component]?.[service];
+const localBuildSpecFor = (
+  component: string,
+  service: string,
+  e2ePublicRuntime = false,
+): Record<string, unknown> | undefined => {
+  if (component === "coprocessor") {
+    const target = COPROCESSOR_BUILD_TARGETS[service];
+    return target ? coprocessorBuildSpec(target, e2ePublicRuntime) : undefined;
+  }
+  if (component === "kms-connector") {
+    const target = KMS_CONNECTOR_RUNTIME_BUILD_TARGETS[service];
+    return target ? kmsConnectorBuildSpec(target, e2ePublicRuntime) : COMPONENT_BUILD_SPECS[component]?.[service];
+  }
+  return COMPONENT_BUILD_SPECS[component]?.[service];
+};
 const CANONICAL_HOST_ONLY_SERVICES = new Set([
   "host-sc-trigger-keygen",
   "host-sc-trigger-crsgen",
@@ -436,10 +493,11 @@ const applyCoprocessorSource = (
   serviceName: string,
   instance: ResolvedCoprocessorScenarioInstance,
   locallyBuilt: boolean,
+  e2ePublicRuntime: boolean,
 ) => {
   if (locallyBuilt) {
     service.image = retagLocal(service.image, localInstanceTag(instance.index));
-    service.build = localBuildSpecFor("coprocessor", serviceName);
+    service.build = localBuildSpecFor("coprocessor", serviceName, e2ePublicRuntime);
     return;
   }
   if (instance.source.mode === "registry") {
@@ -466,6 +524,7 @@ const argPolicyForInstance = (
 
 // Green-side services omitted from BCS so it matches the previous-release shape.
 const GCS_ONLY_SERVICES = new Set([...GCS_ONLY_SUFFIXES].map((suffix) => `coprocessor-${suffix}`));
+
 
 /** Builds the generated coprocessor compose override across all scenario instances. */
 const buildCoprocessorOverride = async (plan: StackSpec) => {
@@ -521,7 +580,7 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
         locallyBuilt ? {} : argPolicy.coprocessorDropFlags,
       );
       adjusted.container_name = serviceName;
-      applyCoprocessorSource(adjusted, name, instance, locallyBuilt);
+      applyCoprocessorSource(adjusted, name, instance, locallyBuilt, plan.e2ePublicRuntime);
       if (instance.index > 0 && adjusted.depends_on && typeof adjusted.depends_on === "object") {
         adjusted.depends_on = rewriteCoprocessorDependsOn(
           adjusted.depends_on as Record<string, unknown>,
@@ -557,7 +616,7 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
         }
         const suffix = baseName.replace(/^coprocessor-/, "");
         const serviceName = `${gcsPrefix}${suffix}`;
-        const buildSpec = localBuildSpecFor("coprocessor", baseName);
+        const buildSpec = localBuildSpecFor("coprocessor", baseName, plan.e2ePublicRuntime);
         // A service with a build spec runs the locally built binary, which speaks
         // the working tree's flag contract. Shimming it to any older contract
         // would feed it flags it does not accept — same guard as the BCS loop.
@@ -625,7 +684,7 @@ export const buildKmsConnectorOverride = async (plan: StackSpec) => {
       next.env_file = [envFileValue];
       applyBuildPolicy(next, overridden.has(name));
       if (party === 1 && overridden.has(name)) {
-        const build = localBuildSpecFor("kms-connector", name);
+        const build = localBuildSpecFor("kms-connector", name, plan.e2ePublicRuntime);
         if (build) {
           next.build = build;
         }
@@ -671,9 +730,17 @@ const buildComposeOverride = async (component: string, plan: StackSpec) => {
     }
     const next = structuredClone(service);
     applyBuildPolicy(next, true);
-    const build = localBuildSpecFor(component, name);
+    const build = localBuildSpecFor(component, name, plan.e2ePublicRuntime);
     if (build) {
       next.build = build;
+    }
+    // The generated file is layered over the static test-suite compose file.
+    // Keep the socket group in the static file only: Docker Compose appends
+    // `group_add` values from both files, and an identical Docker GID makes
+    // the merged configuration invalid.  The local override changes only the
+    // image/build source, so it must not repeat this inherited runtime field.
+    if (component === "test-suite") {
+      delete next.group_add;
     }
     services[name] = next;
   }
@@ -788,7 +855,7 @@ const buildExtraCoprocessorListenerOverride = async (
       );
       adjusted.container_name = cloneName;
       // Extra chains keep their env canonical id (default chain), so they don't decode proposals.
-      applyCoprocessorSource(adjusted, baseName, instance, locallyBuilt);
+      applyCoprocessorSource(adjusted, baseName, instance, locallyBuilt, plan.e2ePublicRuntime);
       delete adjusted.depends_on;
       services[cloneName] = adjusted;
     }
@@ -817,7 +884,7 @@ const buildExtraCoprocessorListenerOverride = async (
         // GCS is always local-built and retagged to its stack version, so — as in
         // buildCoprocessorOverride — a built service speaks the working tree's
         // flag contract and must not be shimmed to an older one.
-        const buildSpec = localBuildSpecFor("coprocessor", baseName);
+        const buildSpec = localBuildSpecFor("coprocessor", baseName, plan.e2ePublicRuntime);
         const adjusted = applyInstanceAdjustments(
           baseName,
           baseService,

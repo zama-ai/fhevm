@@ -8,6 +8,8 @@ use tokio_util::sync::CancellationToken;
 use std::sync::{Once, OnceLock};
 use tokio::task::JoinSet;
 
+#[cfg(feature = "bench")]
+pub mod benchmark_exact_tuples;
 pub mod bridge;
 pub mod daemon_cli;
 pub mod dependence_chain;
@@ -23,6 +25,16 @@ pub fn start_runtime(
     args: daemon_cli::Args,
     close_recv: Option<tokio::sync::watch::Receiver<bool>>,
 ) {
+    start_runtime_with_readiness(args, close_recv, None);
+}
+
+/// Starts the worker with an optional in-process readiness hook used by the
+/// benchmark harness. Production callers retain the no-op default above.
+pub fn start_runtime_with_readiness(
+    args: daemon_cli::Args,
+    close_recv: Option<tokio::sync::watch::Receiver<bool>>,
+    readiness: Option<tokio::sync::oneshot::Sender<Result<(), String>>>,
+) {
     tokio::runtime::Builder::new_multi_thread()
         .worker_threads(args.tokio_threads)
         // not using tokio main to specify max blocking threads
@@ -33,7 +45,7 @@ pub fn start_runtime(
         .block_on(async {
             if let Some(mut close_recv) = close_recv {
                 tokio::select! {
-                    main = async_main(args) => {
+                    main = async_main_with_readiness(args, readiness) => {
                         if let Err(e) = main {
                             error!(target: "main_wchannel", { error = e }, "Runtime error");
                         }
@@ -42,7 +54,7 @@ pub fn start_runtime(
                         info!(target: "main_wchannel", "Service stopped voluntarily");
                     }
                 }
-            } else if let Err(e) = async_main(args).await {
+            } else if let Err(e) = async_main_with_readiness(args, readiness).await {
                 error!(target: "main", { error = e }, "Runtime error");
             }
         })
@@ -54,6 +66,13 @@ static OTEL_GUARD: OnceLock<Option<telemetry::TracerProviderGuard>> = OnceLock::
 
 pub async fn async_main(
     args: daemon_cli::Args,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async_main_with_readiness(args, None).await
+}
+
+async fn async_main_with_readiness(
+    args: daemon_cli::Args,
+    readiness: Option<tokio::sync::oneshot::Sender<Result<(), String>>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     TRACING_INIT.call_once(|| {
         let otel_guard = telemetry::init_tracing_otel_with_logs_only_fallback(
@@ -112,9 +131,10 @@ pub async fn async_main(
         let gpu_enabled = fhevm_engine_common::utils::log_backend();
         info!(target: "async_main", gpu_enabled,  "Initializing background worker");
 
-        set.spawn(tfhe_worker::run_tfhe_worker(
+        set.spawn(tfhe_worker::run_tfhe_worker_with_readiness(
             args.clone(),
             health_check.clone(),
+            readiness,
         ));
 
         set.spawn(bridge::run_confidential_bridge(

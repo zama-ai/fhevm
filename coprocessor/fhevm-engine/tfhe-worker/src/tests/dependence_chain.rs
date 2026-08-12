@@ -541,3 +541,66 @@ async fn setup() -> TestInstance {
 
     test_instance
 }
+
+/// A chain gated on several parents released in ONE batch must receive one
+/// decrement per parent. The naive row-match decremented such a chain once
+/// per batch, leaving dependency_count > 0 forever (braid-shaped joins
+/// deadlocked when both parents completed together).
+#[tokio::test]
+#[serial(db)]
+async fn test_batched_release_decrements_per_parent() {
+    let instance = setup().await;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(instance.db_url())
+        .await
+        .expect("Failed to connect to the database");
+
+    let child = b"child-chain-0000".to_vec();
+    sqlx::query!(
+        r#"
+        INSERT INTO dependence_chain (dependence_chain_id, status, last_updated_at, block_timestamp, block_height, dependency_count)
+        VALUES ($1, 'updated', NOW(), NOW(), 3, 2)
+        "#,
+        child,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    for (i, parent) in [b"parent-chain-aaa".to_vec(), b"parent-chain-bbb".to_vec()]
+        .into_iter()
+        .enumerate()
+    {
+        sqlx::query!(
+            r#"
+            INSERT INTO dependence_chain (dependence_chain_id, status, last_updated_at, block_timestamp, block_height, dependency_count, dependents)
+            VALUES ($1, 'updated', NOW() - INTERVAL '1 minute', NOW(), $2, 0, $3)
+            "#,
+            parent,
+            i as i64,
+            &[child.clone()],
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+
+    let mut mgr =
+        LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None);
+    let locks = mgr.acquire_next_locks(10).await.unwrap();
+    let acquired: Vec<_> = locks.iter().filter_map(|(id, _)| id.clone()).collect();
+    assert_eq!(acquired.len(), 2, "both parents acquired in one batch");
+    mgr.release_current_lock(true, None).await.unwrap();
+
+    let count: i32 = sqlx::query_scalar!(
+        r#"SELECT dependency_count AS "count!" FROM dependence_chain WHERE dependence_chain_id = $1"#,
+        child,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        count, 0,
+        "one decrement per released parent, not one per batch"
+    );
+}

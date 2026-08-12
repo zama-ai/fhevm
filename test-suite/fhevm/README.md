@@ -398,6 +398,60 @@ For `test-suite`, this is the explicit path that makes local e2e test edits take
 ./fhevm-cli up --target latest-main --scenario two-of-two --build
 ```
 
+### Public runtime bases for a local E2E run
+
+The production Dockerfile defaults to the certified `cgr.dev/zama.ai` runtime
+images. If that private registry is unavailable on a development host, an
+explicit local-only switch rebuilds the coprocessor targets on public
+`debian:trixie-slim` (and the migration target on `postgres:17-trixie`). The
+Trixie base is required because the bundled migration `sqlx` requires
+`GLIBC_2.39`; the E2E-only Dockerfile stages also install `ca-certificates` so
+Rust HTTPS clients can load system roots:
+
+```sh
+./fhevm-cli up --lock-file ../../.fhevm/state/locks/sha-72af12a.json \
+  --scenario scenarios/three-of-three.yaml \
+  --override coprocessor --override test-suite --e2e-public-runtime
+```
+
+This option affects only locally built coprocessor and KMS connector runtime
+images (not the connector DB migration) and is persisted in the generated E2E
+state, so a later `./fhevm-cli up --resume` uses the same bases. It is not a
+production or certification build mode.
+
+Add `--override kms-connector` when the E2E stack also needs the connector from
+the current checkout. Its three runtime services then use the same public
+Debian fallback; the connector DB migration keeps its normal Dockerfile and
+base image.
+
+### Adopt the public KMS connector runtime on an existing E2E stack
+
+If a running local E2E stack was already booted with local `coprocessor` and
+`test-suite` overrides, and only the connector needs to move from its published
+image to this checkout, use the following explicit recovery command from
+`test-suite/fhevm`:
+
+```sh
+./fhevm-cli upgrade kms-connector --adopt-local-override --e2e-public-runtime
+```
+
+This is intentionally narrower than `up --resume`: it fails unless the
+persisted stack has completed the KMS connector step and has active local
+coprocessor and test-suite overrides. It persists a runtime-only
+`kms-connector` override, regenerates compose with the public Debian E2E base,
+builds and force-recreates only `gw-listener`, `kms-worker`, and `tx-sender`
+(for every threshold party when applicable), and waits for connector readiness.
+It never starts the connector DB migration and uses Compose `--no-deps`, so it
+does not reset or recreate Postgres, MinIO, KMS core, generated keys, contract
+discovery, or cached proofs. It is local E2E recovery only, not a production or
+certification operation. The persisted `--e2e-public-runtime` policy also
+applies to a later explicit local coprocessor rebuild, but this command does
+not build or recreate any coprocessor service. If Docker or the host fails
+mid-replacement, the persisted state records a pending adoption; retry the same
+command (or run `./fhevm-cli up --resume` with no `--from-step`) and the CLI
+will repeat only this runtime-only replacement rather than invoking the normal
+KMS connector migration step.
+
 ### Override specific runtime services
 
 Runtime override groups also support per-service filtering:

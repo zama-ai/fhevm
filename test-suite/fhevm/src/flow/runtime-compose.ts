@@ -146,6 +146,22 @@ export const composeDown = async (component: string) => {
   }
 };
 
+/**
+ * Stops selected services without removing their volumes. Used when an E2E
+ * runtime configuration changes but its database/key material must survive the
+ * replay.
+ */
+export const composeStop = async (component: string, services: string[]) => {
+  if (!services.length) {
+    return;
+  }
+  try {
+    await runStreaming([...dockerArgs(component), "stop", ...services], { env: await composeEnv(component) });
+  } catch (error) {
+    throw new ContainerStartError(component, error instanceof Error ? error.message : String(error));
+  }
+};
+
 /** Removes lingering compose-owned containers, volumes, or networks. */
 export const removeProjectResources = async (kind: "container" | "volume" | "network", format: string) => {
   const listed = await run(

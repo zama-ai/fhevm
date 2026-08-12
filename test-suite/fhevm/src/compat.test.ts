@@ -6,6 +6,7 @@ import {
   MODERN_RELAYER_IMAGE_REPOSITORY,
   MODERN_RELAYER_MIGRATE_IMAGE_REPOSITORY,
   bootstrapUsesHostKmsGeneration,
+  assertSupportedBundleScenario,
   compatArgPolicyForPinnedTag,
   compatPolicyForState,
   coprocessorUsesHostKmsGeneration,
@@ -25,6 +26,29 @@ import {
 import { testDefaultScenario } from "./test-fixtures";
 
 describe("compat", () => {
+  test("requires a full local coprocessor build for multi-node consensus topologies", () => {
+    const scenario = testDefaultScenario({ topology: { count: 3, threshold: 3 } });
+    const versions = {
+      target: "latest-main" as const,
+      lockName: "latest-main.json",
+      env: {} as Record<string, string>,
+      sources: [],
+    };
+    expect(() => assertSupportedBundleScenario({ versions, overrides: [], scenario })).toThrow(
+      "require a full local coprocessor build",
+    );
+    expect(() =>
+      assertSupportedBundleScenario({ versions, overrides: [{ group: "coprocessor" }], scenario }),
+    ).not.toThrow();
+    expect(() =>
+      assertSupportedBundleScenario({
+        versions,
+        overrides: [{ group: "coprocessor", services: ["coprocessor-host-listener"] }],
+        scenario,
+      }),
+    ).toThrow("require a full local coprocessor build");
+  });
+
   test("flags relayer v1 vs test-suite v2 incompatibility", () => {
     const issues = validateBundleCompatibility({
       versions: {

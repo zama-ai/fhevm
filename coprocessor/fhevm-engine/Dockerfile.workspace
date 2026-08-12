@@ -32,6 +32,36 @@
 # hardcoded default.
 ARG RUST_IMAGE_VERSION=1.97.1
 
+# Production images intentionally default to the certified Chainguard/Zama
+# bases.  Local E2E runs may override these two arguments with public Debian
+# images when the private registry is unavailable.  Keeping the switch as a
+# build argument rather than changing a stage's default is important: CI and
+# production builds continue to resolve exactly the same hardened bases.
+ARG COPROCESSOR_RUNTIME_BASE_IMAGE=cgr.dev/zama.ai/glibc-dynamic:15.2.0
+ARG COPROCESSOR_DB_MIGRATION_RUNTIME_BASE_IMAGE=cgr.dev/zama.ai/postgres:17
+
+# The public Debian fallback is intentionally a separate E2E-only stage.  The
+# slim image contains the required glibc but no system root bundle, and reqwest
+# therefore panics before a listener can make an HTTPS request.  Local E2E
+# compose selects this stage explicitly; production targets still inherit the
+# certified image arguments above unchanged.
+FROM debian:trixie-slim AS e2e-public-runtime
+
+RUN apt-get update \
+    && apt-get install --no-install-recommends --yes ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# db-migration also makes outbound TLS requests in local E2E runs.  Keep its
+# public fallback separate because it needs postgres client tooling in addition
+# to the same system root bundle.
+FROM postgres:17-trixie AS e2e-public-db-migration-runtime
+
+USER root
+
+RUN apt-get update \
+    && apt-get install --no-install-recommends --yes ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 # =============================================================================
 # Stage 0: Build Solidity contracts (required for host-listener, gw-listener)
 # =============================================================================
@@ -192,7 +222,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
 # =============================================================================
 # Stage 2a: tfhe-worker runtime
 # =============================================================================
-FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS tfhe-worker
+FROM ${COPROCESSOR_RUNTIME_BASE_IMAGE} AS tfhe-worker
 
 COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/passwd /etc/passwd
@@ -205,7 +235,7 @@ CMD ["/usr/local/bin/tfhe_worker"]
 # =============================================================================
 # Stage 2b: host-listener runtime (includes both host_listener and host_listener_poller)
 # =============================================================================
-FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS host-listener
+FROM ${COPROCESSOR_RUNTIME_BASE_IMAGE} AS host-listener
 
 COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/passwd /etc/passwd
@@ -220,7 +250,7 @@ USER fhevm:fhevm
 # =============================================================================
 # Stage 2c: gw-listener runtime
 # =============================================================================
-FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS gw-listener
+FROM ${COPROCESSOR_RUNTIME_BASE_IMAGE} AS gw-listener
 
 COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/passwd /etc/passwd
@@ -233,7 +263,7 @@ CMD ["/usr/local/bin/gw_listener"]
 # =============================================================================
 # Stage 2d: sns-worker runtime
 # =============================================================================
-FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS sns-worker
+FROM ${COPROCESSOR_RUNTIME_BASE_IMAGE} AS sns-worker
 
 COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/passwd /etc/passwd
@@ -246,7 +276,7 @@ CMD ["/usr/local/bin/sns_worker"]
 # =============================================================================
 # Stage 2e: transaction-sender runtime
 # =============================================================================
-FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS transaction-sender
+FROM ${COPROCESSOR_RUNTIME_BASE_IMAGE} AS transaction-sender
 
 COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/passwd /etc/passwd
@@ -259,7 +289,7 @@ CMD ["/usr/local/bin/transaction_sender"]
 # =============================================================================
 # Stage 2f: zkproof-worker runtime
 # =============================================================================
-FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS zkproof-worker
+FROM ${COPROCESSOR_RUNTIME_BASE_IMAGE} AS zkproof-worker
 
 COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/passwd /etc/passwd
@@ -272,7 +302,7 @@ CMD ["/usr/local/bin/zkproof_worker"]
 # =============================================================================
 # Stage 2g: consensus-detector runtime
 # =============================================================================
-FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS consensus-detector
+FROM ${COPROCESSOR_RUNTIME_BASE_IMAGE} AS consensus-detector
 
 COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/passwd /etc/passwd
@@ -285,7 +315,7 @@ CMD ["/usr/local/bin/consensus-detector"]
 # =============================================================================
 # Stage 2h: upgrade-controller runtime
 # =============================================================================
-FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS upgrade-controller
+FROM ${COPROCESSOR_RUNTIME_BASE_IMAGE} AS upgrade-controller
 
 COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/passwd /etc/passwd
@@ -298,7 +328,7 @@ CMD ["/usr/local/bin/upgrade-controller"]
 # =============================================================================
 # Stage 2i: db-migration runtime (special: Postgres-based image)
 # =============================================================================
-FROM cgr.dev/zama.ai/postgres:17 AS db-migration
+FROM ${COPROCESSOR_DB_MIGRATION_RUNTIME_BASE_IMAGE} AS db-migration
 
 # Copy sqlx-cli from sqlx_builder
 COPY --from=sqlx_builder /usr/local/cargo/bin/sqlx /usr/local/bin/sqlx

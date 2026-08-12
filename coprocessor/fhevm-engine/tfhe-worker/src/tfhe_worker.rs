@@ -14,7 +14,11 @@ use fhevm_engine_common::{tfhe_ops::current_ciphertext_version, types::Supported
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use prometheus::{register_histogram, register_int_counter, Histogram, IntCounter};
-use scheduler::dfg::types::{CompressedCiphertext, DFGTxInput, SchedulerError};
+#[cfg(feature = "gpu")]
+use scheduler::dfg::scheduler::GpuExecutionLimiter;
+#[cfg(not(feature = "gpu"))]
+use scheduler::dfg::types::CompressedCiphertext;
+use scheduler::dfg::types::{DFGTxInput, SchedulerError};
 use scheduler::dfg::{build_component_nodes, ComponentNode, DFComponentGraph, DFGOp};
 use scheduler::dfg::{scheduler::Scheduler, types::DFGTaskInput};
 use sqlx::types::Uuid;
@@ -27,6 +31,28 @@ use time::PrimitiveDateTime;
 use tracing::{debug, error, info, warn, Instrument};
 
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
+
+#[cfg(feature = "gpu")]
+fn is_retryable_gpu_reservation_error(error: &FhevmError) -> bool {
+    matches!(
+        error,
+        FhevmError::GpuMemoryReservationError(
+            fhevm_engine_common::gpu_memory::GpuMemoryReservationError::TimedOut { .. }
+                | fhevm_engine_common::gpu_memory::GpuMemoryReservationError::Cancelled { .. }
+        )
+    )
+}
+
+#[derive(sqlx::FromRow)]
+struct WorkItem {
+    output_handle: Vec<u8>,
+    dependencies: Vec<Vec<u8>>,
+    fhe_operation: i16,
+    is_scalar: bool,
+    is_allowed: bool,
+    transaction_id: Vec<u8>,
+    schedule_order: PrimitiveDateTime,
+}
 
 lazy_static! {
     pub static ref TIMING: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -72,6 +98,14 @@ pub async fn run_tfhe_worker(
     args: crate::daemon_cli::Args,
     health_check: crate::health_check::HealthCheck,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    run_tfhe_worker_with_readiness(args, health_check, None).await
+}
+
+pub async fn run_tfhe_worker_with_readiness(
+    args: crate::daemon_cli::Args,
+    health_check: crate::health_check::HealthCheck,
+    readiness: Option<tokio::sync::oneshot::Sender<Result<(), String>>>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Determine worker ID to use for the lifetime of this process
     // In case of a failure in tfhe_worker_cycle, the same id must be reused to quickly unlock any held locks
     let worker_id = args.worker_id.unwrap_or(Uuid::new_v4());
@@ -114,6 +148,7 @@ pub async fn run_tfhe_worker(
         });
     }
 
+    let mut readiness = readiness;
     loop {
         // here we log the errors and make sure we retry
         if let Err(cycle_error) = tfhe_worker_cycle(
@@ -122,6 +157,7 @@ pub async fn run_tfhe_worker(
             gcs_mode,
             start_block_state.clone(),
             health_check.clone(),
+            &mut readiness,
         )
         .await
         {
@@ -143,6 +179,7 @@ async fn tfhe_worker_cycle(
     gcs_mode: bool,
     start_block_state: Arc<AtomicI64>,
     health_check: crate::health_check::HealthCheck,
+    readiness: &mut Option<tokio::sync::oneshot::Sender<Result<(), String>>>,
 ) -> Result<(), CoprocessorError> {
     let db_url = resolve_database_url_from_option(args.database_url.clone())
         .map_err(|e| CoprocessorError::Other(e.into()))?;
@@ -183,6 +220,12 @@ async fn tfhe_worker_cycle(
             .fetch_latest_from_pool(&pool)
             .await
             .map_err(|e| CoprocessorError::Other(e.into()))?;
+    }
+    if let Some(readiness) = readiness.take() {
+        // The listener, DCID-acquisition state, and benchmark key cache are
+        // installed. This is an in-process readiness point, not merely an
+        // observation of an arbitrary database session.
+        let _ = readiness.send(Ok(()));
     }
     let mut immediately_poll_more_work = false;
     let mut no_progress_cycles = 0;
@@ -325,6 +368,8 @@ async fn tfhe_worker_cycle(
             &mut trx,
             &dcid_mngr,
             gcs_mode,
+            std::time::Duration::from_millis(args.gpu_memory_reservation_timeout_ms),
+            args.gpu_streams_per_device,
         )
         .instrument(loop_span.clone())
         .await?;
@@ -520,18 +565,54 @@ async fn query_for_work<'a>(
         dependence_chain_id = tracing::field::Empty
     );
     // Lock dependence chain
-    let (dependence_chain_id, locking_reason) = async {
+    let (dependence_chain_ids, locking_reasons) = async {
         let result = match deps_chain_mngr.extend_or_release_current_lock(true).await? {
             // If there is a current lock, we extend it and use its dependence_chain_id
-            Some((id, reason)) => (Some(id), reason),
+            Some((_id, reason)) => {
+                let mut ids = deps_chain_mngr.get_current_lock_ids();
+                let mut reasons = vec![reason];
+                // A held set must not starve newly-ready chains: without this,
+                // chains becoming ready while a long batch is in flight wait
+                // for the ENTIRE current set to drain before their first
+                // acquisition, serializing independent work behind it.
+                if args.dcid_batch_execution {
+                    let headroom = args.dependence_chains_per_batch - ids.len() as i32;
+                    if headroom > 0 {
+                        for (id, joined_reason) in deps_chain_mngr
+                            .acquire_next_locks(headroom)
+                            .await?
+                            .into_iter()
+                        {
+                            if let Some(id) = id {
+                                ids.push(id);
+                                reasons.push(joined_reason);
+                            }
+                        }
+                    }
+                }
+                (ids, reasons)
+            }
             None => {
                 if *no_progress_cycles
                     < args.dcid_ignore_dependency_count_threshold * args.dcid_max_no_progress_cycles
                 {
-                    deps_chain_mngr.acquire_next_lock().await?
+                    if args.dcid_batch_execution {
+                        deps_chain_mngr
+                            .acquire_next_locks(args.dependence_chains_per_batch)
+                            .await?
+                            .into_iter()
+                            .filter_map(|(id, reason)| id.map(|id| (id, reason)))
+                            .unzip()
+                    } else {
+                        let (id, reason) = deps_chain_mngr.acquire_next_lock().await?;
+                        id.map(|id| (vec![id], vec![reason]))
+                            .unwrap_or_else(|| (vec![], vec![]))
+                    }
                 } else {
                     *no_progress_cycles = 0;
-                    deps_chain_mngr.acquire_early_lock().await?
+                    let (id, reason) = deps_chain_mngr.acquire_early_lock().await?;
+                    id.map(|id| (vec![id], vec![reason]))
+                        .unwrap_or_else(|| (vec![], vec![]))
                 }
             }
         };
@@ -539,7 +620,7 @@ async fn query_for_work<'a>(
     }
     .instrument(s_dcid.clone())
     .await?;
-    if deps_chain_mngr.enabled() && dependence_chain_id.is_none() {
+    if deps_chain_mngr.enabled() && dependence_chain_ids.is_empty() {
         // No dependence chain to lock, so no work to do
         health_check.update_db_access();
         health_check.update_activity();
@@ -549,8 +630,8 @@ async fn query_for_work<'a>(
     s_dcid.record(
         "dependence_chain_id",
         tracing::field::display(
-            dependence_chain_id
-                .as_ref()
+            dependence_chain_ids
+                .first()
                 .map(hex::encode)
                 .unwrap_or_else(|| "none".to_string()),
         ),
@@ -561,7 +642,12 @@ async fn query_for_work<'a>(
     // Schema isolation: BCS connects with `search_path = public`, GCS with
     // `search_path = gcs,public`. Unqualified `computations` therefore
     // resolves to the stack's own schema. No table-name swaps needed in code.
-    let the_work = query!(
+    // With locking disabled, retain the historical all-ready-DCID query. A
+    // batch-enabled worker instead binds all of its fenced DCIDs.
+    let dcid_filter = deps_chain_mngr
+        .enabled()
+        .then(|| dependence_chain_ids.clone());
+    let the_work = sqlx::query_as::<_, WorkItem>(
         "
 -- Acquire all computations from a transaction set
 SELECT
@@ -570,7 +656,6 @@ SELECT
   c.fhe_operation,
   c.is_scalar,
   c.is_allowed,
-  c.dependence_chain_id,
   c.transaction_id,
   c.schedule_order
 FROM computations c
@@ -583,15 +668,15 @@ WHERE c.transaction_id IN (
       WHERE is_completed = FALSE
         AND is_error = FALSE
         AND is_allowed = TRUE
-        AND ($1::bytea IS NULL OR dependence_chain_id = $1)
+        AND ($1::bytea[] IS NULL OR dependence_chain_id = ANY($1))
       ORDER BY schedule_order ASC
       LIMIT $2
     ) as c_schedule_order
   )
         ",
-        dependence_chain_id,
-        transaction_batch_size as i32,
     )
+    .bind(dcid_filter.as_deref())
+    .bind(transaction_batch_size)
     .fetch_all(trx.as_mut())
     .instrument(s_work.clone())
     .await
@@ -604,15 +689,14 @@ WHERE c.transaction_id IN (
     s_work.record("count", the_work.len());
     health_check.update_db_access();
     if the_work.is_empty() {
-        if let Some(dependence_chain_id) = &dependence_chain_id {
-            info!(target: "tfhe_worker", dcid = %hex::encode(dependence_chain_id), locking = ?locking_reason, "No work items found to process");
+        if !dependence_chain_ids.is_empty() {
+            info!(target: "tfhe_worker", dcid_count = dependence_chain_ids.len(), locking_count = locking_reasons.len(), "No work items found to process");
         }
         health_check.update_activity();
         return Ok((vec![], PrimitiveDateTime::MAX, false));
     }
     WORK_ITEMS_FOUND_COUNTER.inc_by(the_work.len() as u64);
-    info!(target: "tfhe_worker", { count = the_work.len(), dcid = ?dependence_chain_id.as_ref().map(hex::encode),
-				    locking = ?locking_reason }, "Processing work items");
+    info!(target: "tfhe_worker", count = the_work.len(), dcid_count = dependence_chain_ids.len(), locking_count = locking_reasons.len(), "Processing work items");
     let s_prep = tracing::info_span!("prepare_dataflow_graphs", work_items = the_work.len());
     let (transactions, earliest_schedule_order) = async {
         let mut earliest_schedule_order = the_work.first().unwrap().schedule_order;
@@ -683,6 +767,7 @@ WHERE c.transaction_id IN (
 }
 
 #[tracing::instrument(name = "build_and_execute", skip_all)]
+#[allow(clippy::too_many_arguments)]
 async fn build_transaction_graph_and_execute<'a>(
     txs: &mut Vec<ComponentNode>,
     db_key_cache: DbKeyCache,
@@ -690,6 +775,8 @@ async fn build_transaction_graph_and_execute<'a>(
     trx: &mut sqlx::Transaction<'a, Postgres>,
     dcid_mngr: &dependence_chain::LockMngr,
     gcs_mode: bool,
+    gpu_reservation_timeout: std::time::Duration,
+    gpu_streams_per_device: usize,
 ) -> Result<DFComponentGraph, CoprocessorError> {
     let mut tx_graph = DFComponentGraph::default();
     if txs.is_empty() {
@@ -709,9 +796,10 @@ async fn build_transaction_graph_and_execute<'a>(
     if cts_to_query.len() != fetched_handles.len() {
         if let Some(dcid_lock) = dcid_mngr.get_current_lock() {
             warn!(target: "tfhe_worker", { missing_inputs = ?(cts_to_query.len() - fetched_handles.len()), dcid = %hex::encode(dcid_lock.dependence_chain_id) },
-	      "some inputs are missing to execute the dependence chain");
+	  "some inputs are missing to execute the dependence chain");
         }
     }
+    #[cfg(not(feature = "gpu"))]
     for (handle, (ct_type, mut ct)) in ciphertext_map.into_iter() {
         tx_graph
             .add_input(
@@ -725,6 +813,106 @@ async fn build_transaction_graph_and_execute<'a>(
                 )),
             )
             .map_err(|e| CoprocessorError::Other(e.into()))?;
+    }
+    // GPU boundary ciphertexts are independent. Materialize them in bounded
+    // device-affine lanes instead of serializing every decompression on the
+    // partition threads. The injected values are the DECOMPRESSED CANONICAL
+    // FORM of the persisted bytes — exactly what each consumer would
+    // reconstruct itself — so byte-determinism is unaffected; sharing one
+    // decompression per boundary is a pure win when several transactions
+    // consume the same handle. The scheduler fetches the same cached key
+    // again for execution, preserving the existing key lifecycle.
+    #[cfg(feature = "gpu")]
+    {
+        let gpu_sks_for_materialize = match db_key_cache.fetch_latest(trx.as_mut()).await {
+            Ok(keys) => keys.gpu_sks,
+            Err(err) => {
+                let cerr: CoprocessorError = match err.downcast::<sqlx::Error>() {
+                    Ok(sqlx_err) => sqlx_err.into(),
+                    Err(other) => CoprocessorError::MissingKeys {
+                        reason: other.to_string(),
+                    },
+                };
+                error!(target: "tfhe_worker", { error = %cerr }, "failed to fetch latest key for GPU boundary materialization");
+                telemetry::set_current_span_error(&cerr);
+                WORKER_ERRORS_COUNTER.inc();
+                return Err(cerr);
+            }
+        };
+        if gpu_sks_for_materialize.is_empty() {
+            return Err(CoprocessorError::Other(
+                std::io::Error::other("no GPU server keys available").into(),
+            ));
+        }
+        let lane_count = ciphertext_map
+            .len()
+            .min(gpu_sks_for_materialize.len() * gpu_streams_per_device);
+        let coordinator_key = gpu_sks_for_materialize[0].clone();
+        let cancellation = tokio_util::sync::CancellationToken::new();
+        let materialized = tokio::task::spawn_blocking(move || {
+            if lane_count == 0 {
+                return Ok::<Vec<(Handle, DFGTxInput)>, Box<dyn std::error::Error + Send + Sync>>(
+                    Vec::new(),
+                );
+            }
+            let mut lanes: Vec<Vec<_>> = (0..lane_count).map(|_| Vec::new()).collect();
+            for (index, ciphertext) in ciphertext_map.into_iter().enumerate() {
+                lanes[index % lane_count].push(ciphertext);
+            }
+            std::thread::scope(|scope| {
+                let mut workers = Vec::with_capacity(lane_count);
+                for (lane_index, lane) in lanes.into_iter().enumerate() {
+                    let gpu_idx = lane_index % gpu_sks_for_materialize.len();
+                    let sks = gpu_sks_for_materialize[gpu_idx].clone();
+                    let cancellation = cancellation.clone();
+                    workers.push(scope.spawn(
+                        move || -> Result<_, Box<dyn std::error::Error + Send + Sync>> {
+                            tfhe::set_server_key(sks);
+                            let mut result = Vec::with_capacity(lane.len());
+                            for (handle, (ct_type, ct)) in lane {
+                                result.push((
+                                    handle,
+                                    DFGTxInput::Value((
+                                        SupportedFheCiphertexts::decompress(
+                                            ct_type,
+                                            &ct,
+                                            gpu_idx,
+                                            &cancellation,
+                                            gpu_reservation_timeout,
+                                        )?,
+                                        true,
+                                    )),
+                                ));
+                            }
+                            Ok(result)
+                        },
+                    ));
+                }
+                let mut result = Vec::new();
+                for worker in workers {
+                    result.extend(worker.join().map_err(|_| {
+                        Box::<dyn std::error::Error + Send + Sync>::from(std::io::Error::other(
+                            "GPU boundary materialization worker panicked",
+                        ))
+                    })??);
+                }
+                Ok(result)
+            })
+        })
+        .await
+        .map_err(|e| CoprocessorError::Other(e.into()))?
+        .map_err(CoprocessorError::Other)?;
+        // The lanes ran on blocking CUDA threads; this async coordinator may
+        // be on a thread with no thread-local CUDA key. `add_input` clones
+        // GPU ciphertexts while routing the same boundary to every consumer,
+        // so install a key before that clone boundary. The scheduler later
+        // moves each operation-local clone to its selected execution device.
+        tfhe::set_server_key(coordinator_key);
+        for (handle, input) in materialized {
+            tx_graph
+                .add_input(&handle, &input)
+                .map_err(|e| CoprocessorError::Other(e.into()))?;
+        }
     }
     // Resolve deferred cross-transaction dependences: edges whose
     // handle was fetched from DB are dropped (data already available),
@@ -755,6 +943,35 @@ async fn build_transaction_graph_and_execute<'a>(
             }
         };
 
+        // Bound concurrent GPU partitions to the configured stream capacity.
+        // The limiter is process-wide and sized once from the visible device
+        // count; the blocking tasks release their permits themselves.
+        #[cfg(feature = "gpu")]
+        let gpu_execution_limiter = {
+            type LimiterKey = (usize, usize);
+            static LIMITERS: std::sync::LazyLock<
+                std::sync::Mutex<std::collections::HashMap<LimiterKey, GpuExecutionLimiter>>,
+            > = std::sync::LazyLock::new(
+                || std::sync::Mutex::new(std::collections::HashMap::new()),
+            );
+            let key = (keys.gpu_sks.len(), gpu_streams_per_device);
+            let mut limiters = LIMITERS.lock().map_err(|_| {
+                CoprocessorError::Other(
+                    std::io::Error::other("GPU limiter registry poisoned").into(),
+                )
+            })?;
+            if let Some(limiter) = limiters.get(&key) {
+                limiter.clone()
+            } else {
+                let limiter = GpuExecutionLimiter::new(key.0, key.1)
+                    .map_err(|e| CoprocessorError::Other(e.into()))?;
+                limiters.insert(key, limiter.clone());
+                limiter
+            }
+        };
+        #[cfg(not(feature = "gpu"))]
+        let _ = gpu_streams_per_device;
+
         // Schedule computations in parallel as dependences allow
         tfhe::set_server_key(keys.sks.clone());
         let mut sched = Scheduler::new(
@@ -764,7 +981,14 @@ async fn build_transaction_graph_and_execute<'a>(
             keys.pks.clone(),
             #[cfg(feature = "gpu")]
             keys.gpu_sks.clone(),
+            #[cfg(feature = "gpu")]
+            gpu_execution_limiter,
             health_check.activity_heartbeat.clone(),
+            // The worker has no per-batch cancellation; the token exists so a
+            // GPU memory reservation wait can be interrupted when one is
+            // introduced, and reservation waits stay bounded by the timeout.
+            tokio_util::sync::CancellationToken::new(),
+            gpu_reservation_timeout,
         );
         sched
             .schedule()
@@ -807,6 +1031,19 @@ async fn upload_transaction_graph_results<'a>(
                 WORK_ITEMS_PROCESSED_COUNTER.inc();
             }
             Err(mut err) => {
+                #[cfg(feature = "gpu")]
+                if matches!(
+                    err.downcast_ref::<FhevmError>(),
+                    Some(error) if is_retryable_gpu_reservation_error(error)
+                ) {
+                    warn!(
+                        target: "tfhe_worker",
+                        error = %err,
+                        output_handle = %format!("0x{}", hex::encode(&result.handle)),
+                        "transient GPU memory reservation failure; leaving computation pending for retry"
+                    );
+                    continue;
+                }
                 let cerr: Box<dyn std::error::Error + Send + Sync> =
                     if let Some(fhevm_error) = err.downcast_mut::<FhevmError>() {
                         let mut swap_val = FhevmError::BadInputs;
@@ -920,6 +1157,43 @@ async fn upload_transaction_graph_results<'a>(
         res |= comp_updated > 0;
     }
     Ok(res)
+}
+
+#[cfg(all(test, feature = "gpu"))]
+mod gpu_reservation_error_tests {
+    use super::*;
+    use fhevm_engine_common::gpu_memory::GpuMemoryReservationError;
+
+    #[test]
+    fn timeout_and_cancellation_are_retryable() {
+        for reservation_error in [
+            GpuMemoryReservationError::TimedOut {
+                gpu_idx: 0,
+                amount: 1,
+                waited_ms: 10,
+            },
+            GpuMemoryReservationError::Cancelled {
+                gpu_idx: 0,
+                amount: 1,
+            },
+        ] {
+            assert!(is_retryable_gpu_reservation_error(
+                &FhevmError::GpuMemoryReservationError(reservation_error)
+            ));
+        }
+    }
+
+    #[test]
+    fn invariant_failures_are_not_retryable() {
+        for reservation_error in [
+            GpuMemoryReservationError::UnknownDevice { gpu_idx: 7 },
+            GpuMemoryReservationError::AccountingOverflow { gpu_idx: 0 },
+        ] {
+            assert!(!is_retryable_gpu_reservation_error(
+                &FhevmError::GpuMemoryReservationError(reservation_error)
+            ));
+        }
+    }
 }
 
 #[tracing::instrument(skip_all)]

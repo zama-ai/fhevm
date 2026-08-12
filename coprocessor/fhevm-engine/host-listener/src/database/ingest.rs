@@ -465,6 +465,7 @@ pub async fn ingest_block_logs(
     let chains = dependence_chains(
         &mut tfhe_event_log,
         &db.dependence_chain,
+        &db.consumed_boundaries,
         options.dependence_by_connexity,
         options.dependence_cross_block,
     )

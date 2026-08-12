@@ -5,7 +5,7 @@ import fs from "node:fs/promises";
 
 import { STATE_FILE } from "../layout";
 import { DEFAULT_KMS_TOPOLOGY } from "../scenario/resolve";
-import type { Discovery, State, StepName } from "../types";
+import { type Discovery, type State, type StepName } from "../types";
 import { exists, readJson, writeJson } from "../utils/fs";
 
 /** Back-fills fields absent from states written by older CLI versions, so resume/teardown
