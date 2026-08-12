@@ -319,6 +319,30 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         acl.allow(handle, account);
     }
 
+    /// @dev Handles the test minted through the executor in the current
+    ///      test, mirroring the executor's transaction-scoped minted record.
+    mapping(bytes32 handle => bool) internal testMinted;
+
+    /// @dev Mirrors FHEVMExecutor._oneOperandBoundaryBit.
+    function _boundaryBit(bytes32 handle) internal view returns (uint256 bit) {
+        return testMinted[handle] ? 0 : 1;
+    }
+
+    /// @dev Mirrors the nary boundary-bits accumulation in FHEVMExecutor._naryOp.
+    function _sumBoundaryBits(bytes32[] memory values) internal view returns (uint256 boundaryBits) {
+        for (uint256 i = 0; i < values.length; i++) {
+            if (i < 256) boundaryBits |= _boundaryBit(values[i]) << i;
+        }
+    }
+
+    /// @dev Mirrors the value+set boundary-bits accumulation in FHEVMExecutor._naryOp.
+    function _isInBoundaryBits(bytes32 value, bytes32[] memory values) internal view returns (uint256 boundaryBits) {
+        boundaryBits = _boundaryBit(value);
+        for (uint256 i = 0; i < values.length; i++) {
+            if (i < 255) boundaryBits |= _boundaryBit(values[i]) << (i + 1);
+        }
+    }
+
     function _isTypeSupported(FheType fheType, uint256 supportedTypes) internal pure returns (bool) {
         if ((1 << uint8(fheType)) & supportedTypes == 0) {
             return false;
@@ -337,6 +361,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
                 COMPUTATION_DOMAIN_SEPARATOR,
                 op,
                 handle,
+                _boundaryBit(handle),
                 acl,
                 block.chainid,
                 blockhash(block.number - 1),
@@ -361,6 +386,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
                 lhs,
                 rhs,
                 scalar,
+                _boundaryBit(lhs) | (scalar == 0x00 ? _boundaryBit(rhs) << 1 : 0),
                 acl,
                 block.chainid,
                 blockhash(block.number - 1),
@@ -385,6 +411,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
                 lhs,
                 rhs,
                 scalar,
+                _boundaryBit(lhs),
                 acl,
                 block.chainid,
                 blockhash(block.number - 1),
@@ -408,6 +435,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
                 lhs,
                 middle,
                 rhs,
+                _boundaryBit(lhs) | (_boundaryBit(middle) << 1) | (_boundaryBit(rhs) << 2),
                 acl,
                 block.chainid,
                 blockhash(block.number - 1),
@@ -425,6 +453,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
                 set.length,
                 value,
                 set,
+                _isInBoundaryBits(value, set),
                 acl,
                 block.chainid,
                 blockhash(block.number - 1),
@@ -444,6 +473,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
                 FHEVMExecutor.Operators.fheSum,
                 values.length,
                 values,
+                _sumBoundaryBits(values),
                 acl,
                 block.chainid,
                 blockhash(block.number - 1),
@@ -1235,6 +1265,54 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         }
     }
 
+    /// @dev A handle minted by the executor earlier in the SAME transaction
+    ///      folds a zero boundary bit into its consumers' preimages; a
+    ///      fabricated (never-minted) operand folds one. Pins the transient
+    ///      minted record end to end through a mint-then-consume chain.
+    function test_MintedOperandFoldsZeroBoundaryBit() public {
+        address sender = address(123);
+        vm.startPrank(sender);
+        bytes32 minted = fhevmExecutor.trivialEncrypt(uint256(7), FheType.Uint64);
+        testMinted[minted] = true;
+
+        bytes32 expectedResult = keccak256(
+            abi.encodePacked(
+                COMPUTATION_DOMAIN_SEPARATOR,
+                FHEVMExecutor.Operators.cast,
+                minted,
+                FheType.Uint32,
+                _boundaryBit(minted),
+                acl,
+                block.chainid,
+                blockhash(block.number - 1),
+                block.timestamp
+            )
+        );
+        expectedResult = _appendMetadataToPrehandle(FheType.Uint32, expectedResult, block.chainid, HANDLE_VERSION);
+        assertEq(fhevmExecutor.cast(minted, FheType.Uint32), expectedResult);
+
+        // A never-minted operand of the same op folds a set bit instead.
+        bytes32 boundary = _generateMockHandle(FheType.Uint64);
+        _approveHandleInACL(boundary, sender);
+        bytes32 expectedBoundary = keccak256(
+            abi.encodePacked(
+                COMPUTATION_DOMAIN_SEPARATOR,
+                FHEVMExecutor.Operators.cast,
+                boundary,
+                FheType.Uint32,
+                _boundaryBit(boundary),
+                acl,
+                block.chainid,
+                blockhash(block.number - 1),
+                block.timestamp
+            )
+        );
+        expectedBoundary = _appendMetadataToPrehandle(FheType.Uint32, expectedBoundary, block.chainid, HANDLE_VERSION);
+        assertEq(fhevmExecutor.cast(boundary, FheType.Uint32), expectedBoundary);
+        assertTrue(expectedResult != expectedBoundary);
+        vm.stopPrank();
+    }
+
     function test_TrivialEncryptSupportedTypesWorkAsExpected(uint256 pt, uint8 fheType) public {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesTrivialEncrypt));
@@ -1281,6 +1359,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
                 FHEVMExecutor.Operators.cast,
                 handle,
                 FheType(fheOutputType),
+                _boundaryBit(handle),
                 acl,
                 block.chainid,
                 blockhash(block.number - 1),
@@ -2229,6 +2308,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
                 factor2,
                 divisor,
                 scalarByte,
+                _boundaryBit(factor1) |
+                    (scalarByte == FHE_MUL_DIV_FACTOR2_ENCRYPTED ? _boundaryBit(factor2) << 1 : 0),
                 acl,
                 block.chainid,
                 blockhash(block.number - 1),
