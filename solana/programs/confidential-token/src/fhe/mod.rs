@@ -247,20 +247,42 @@ impl OutputAuthoritySigner {
         Self::TotalSupply { mint, bump }
     }
 
-    fn seed_bytes(&self) -> Vec<Vec<u8>> {
+    /// Signer seeds borrowed straight from the stored key material; assembling
+    /// them allocates nothing on the never-freeing program heap.
+    fn seeds(&self) -> OutputAuthoritySeeds<'_> {
         match self {
-            Self::TokenAccount { mint, owner, bump } => vec![
-                b"token-account".to_vec(),
-                mint.to_bytes().to_vec(),
-                owner.to_bytes().to_vec(),
-                vec![*bump],
-            ],
-            Self::TotalSupply { mint, bump } => vec![
-                b"total-supply".to_vec(),
-                mint.to_bytes().to_vec(),
-                vec![*bump],
-            ],
+            Self::TokenAccount { mint, owner, bump } => OutputAuthoritySeeds {
+                seeds: [
+                    b"token-account",
+                    mint.as_ref(),
+                    owner.as_ref(),
+                    std::slice::from_ref(bump),
+                ],
+                len: 4,
+            },
+            Self::TotalSupply { mint, bump } => OutputAuthoritySeeds {
+                seeds: [
+                    b"total-supply",
+                    mint.as_ref(),
+                    std::slice::from_ref(bump),
+                    &[],
+                ],
+                len: 3,
+            },
         }
+    }
+}
+
+/// Seed slices for one output authority. The array is sized for the widest
+/// signer variant; `len` says how many slots the variant fills.
+struct OutputAuthoritySeeds<'a> {
+    seeds: [&'a [u8]; 4],
+    len: usize,
+}
+
+impl<'a> OutputAuthoritySeeds<'a> {
+    fn as_slice(&self) -> &[&'a [u8]] {
+        &self.seeds[..self.len]
     }
 }
 
@@ -444,13 +466,8 @@ pub(crate) fn execute<'info>(request: Execute<'_, 'info>) -> Result<()> {
         .context
         .compute_authority
         .signer_seeds(&compute_bump);
-    let encrypted_value_account_authority_seed_bytes =
-        encrypted_value_account_authority.signer.seed_bytes();
-    let encrypted_value_account_authority_seeds: Vec<&[u8]> =
-        encrypted_value_account_authority_seed_bytes
-            .iter()
-            .map(Vec::as_slice)
-            .collect();
+    let encrypted_value_account_authority_seeds =
+        encrypted_value_account_authority.signer.seeds();
     let mut additional_authorities = Vec::new();
     for authority in request.execution.additional_output_authorities() {
         if authority == encrypted_value_account_authority.key() {
@@ -476,19 +493,15 @@ pub(crate) fn execute<'info>(request: Execute<'_, 'info>) -> Result<()> {
             Ok(resolved)
         })
         .collect::<Result<Vec<_>>>()?;
-    let extra_output_authority_seed_bytes: Vec<Vec<Vec<u8>>> = extra_output_authorities
+    let extra_output_authority_seeds: Vec<OutputAuthoritySeeds> = extra_output_authorities
         .iter()
-        .map(|authority| authority.signer.seed_bytes())
-        .collect();
-    let extra_output_authority_seeds: Vec<Vec<&[u8]>> = extra_output_authority_seed_bytes
-        .iter()
-        .map(|seed_bytes| seed_bytes.iter().map(Vec::as_slice).collect())
+        .map(|authority| authority.signer.seeds())
         .collect();
 
-    let mut signer_seed_vec: Vec<&[&[u8]]> = vec![compute_signer_seeds.as_slice()];
-    if !encrypted_value_account_authority_seeds.is_empty() {
-        signer_seed_vec.push(encrypted_value_account_authority_seeds.as_slice());
-    }
+    let mut signer_seed_vec: Vec<&[&[u8]]> =
+        Vec::with_capacity(2 + extra_output_authority_seeds.len());
+    signer_seed_vec.push(compute_signer_seeds.as_slice());
+    signer_seed_vec.push(encrypted_value_account_authority_seeds.as_slice());
     for seeds in &extra_output_authority_seeds {
         signer_seed_vec.push(seeds.as_slice());
     }

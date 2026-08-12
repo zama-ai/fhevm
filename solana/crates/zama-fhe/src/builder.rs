@@ -6,15 +6,17 @@
 //! use. The host-side cost table and the operand validation are what keep it honest.
 //!
 //! Building on-chain: lowering interns into the builder's own tables and never copies them, so a
-//! step costs a few hundred heap bytes. The SBF entrypoint's allocator is a fixed 32 KB bump
-//! region that is never freed, and the instruction pays out of it twice — once building, once
-//! serializing the packet in `FheExecution::invoke` — so the budget belongs to the pair: 16 steps
-//! that each write a persistent output, far past anything in this repo (the largest is five). 28
-//! still fits with ~6 KB to spare, but nothing is guaranteed there for account resolution, and a
-//! full `MAX_FHE_EXECUTION_STEPS` execution has to be built off-chain (DD-046: the heap is fixed).
-//! `heap_budget.rs` measures all of it, and [`MAX_ON_CHAIN_EXECUTION_STEPS`] enforces it: a program that
-//! keeps adding steps past the budget is told so, instead of being aborted by the allocator with no
-//! error of its own.
+//! step costs a few hundred heap bytes, and the tables reserve their per-execution bound up front
+//! so growth never strands outgrown buffers on the never-freeing bump region (DD-046: the heap is
+//! fixed at 32 KB). The instruction pays out of that region twice — once building, once
+//! serializing the packet in `FheExecution::invoke`. Measured in `heap_budget.rs`: at the
+//! documented budget of 16 steps the pair requests ~14.5 KB, and even a full
+//! `MAX_FHE_EXECUTION_STEPS` execution where every step writes a persistent output requests
+//! ~24.6 KB — but the ~8 KB that leaves is exactly the reserve for what the measurement cannot
+//! count (account resolution, Anchor's own account deserialization), so the documented budget
+//! keeps its margin. [`MAX_ON_CHAIN_EXECUTION_STEPS`] enforces it: a program that keeps adding
+//! steps past the budget is told so, instead of being aborted by the allocator with no error of
+//! its own.
 
 use crate::types::{binary_rhs_operand, BinaryRhs, FheBitwise, FheEq, FheNeg, FheNot, FheShift};
 use crate::validate::handle_fhe_type;
@@ -187,14 +189,17 @@ impl<'id> FheExecutionBuilder<'id> {
     pub(crate) fn new(
         encrypted_value_account_authority: ExecutionEncryptedValueAccountAuthority,
     ) -> Self {
+        // Growth by doubling strands every outgrown buffer on the entrypoint's never-freeing
+        // bump heap, so the step-bounded tables reserve their per-execution bound up front.
+        // `verified_inputs` stays empty: most executions carry no attestations.
         Self {
             identity: std::marker::PhantomData,
             encrypted_value_account_authority,
-            steps: Vec::new(),
-            produced_types: Vec::new(),
-            persistent_producers: Vec::new(),
-            remaining_accounts: Vec::new(),
-            dictionary: Vec::new(),
+            steps: Vec::with_capacity(step_limit()),
+            produced_types: Vec::with_capacity(step_limit()),
+            persistent_producers: Vec::with_capacity(step_limit()),
+            remaining_accounts: Vec::with_capacity(step_limit()),
+            dictionary: Vec::with_capacity(2 * step_limit()),
             verified_inputs: Vec::new(),
         }
     }

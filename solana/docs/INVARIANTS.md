@@ -343,27 +343,29 @@ not when the threat model changes.
     fills the table and compresses against it, so provisioned and consumed
     membership cannot diverge (`solana/demo-dapp/src/vault`).
 54. **[HOLDS]** Lowering an execution never copies the builder's intern tables,
-    but a step still costs about a kilobyte of heap. What has to fit the
-    entrypoint's fixed 32 KB bump heap is the whole instruction, not just the
-    build: the region is never freed, and after the build the CPI helper stamps
-    the account count into `FheExecuteArgs` in place and borsh-serializes the
-    packet once into a right-sized buffer. Measured for steps that each write a
-    persistent output:
-    - **16 steps** — 15,424 bytes (14,446 building, 978 for the packet). This
+    and the tables reserve their per-execution bound up front, so growth never
+    strands outgrown buffers on the never-freeing bump region. What has to fit
+    the entrypoint's fixed 32 KB bump heap is the whole instruction, not just
+    the build: after the build the CPI helper stamps the account count into
+    `FheExecuteArgs` in place and borsh-serializes the packet once into a
+    right-sized buffer. Measured for steps that each write a persistent output
+    (host-side, where the reservation is the full 32-step one — an upper bound
+    on the on-chain build):
+    - **16 steps** — 14,536 bytes (13,558 building, 978 for the packet). This
       is the documented budget.
-    - **24 steps** — 24,952 bytes.
-    - **28 steps** — 26,484 bytes: fits.
-    - **32 steps** (the largest execution the host accepts) — 33,392 bytes, over
-      by ~600, so it has to be built off-chain (DD-046: the heap is fixed).
+    - **24 steps** — 17,888 bytes.
+    - **32 steps** (the largest execution the host accepts) — ~24.6 KB: fits,
+      with ~8 KB of slack.
 
     Account resolution and Anchor's own account deserialization sit on top of
-    those figures, which is why the budget is 16 and not 28. The SDK enforces that budget on-chain
+    those figures — roughly the ~8 KB the 32-step maximum leaves — which is why
+    the budget is 16 and not 32. The SDK enforces that budget on-chain
     (`MAX_ON_CHAIN_EXECUTION_STEPS`) so a program past it gets
     `TooManyStepsForDefaultHeap` instead of an allocator abort with no error of
     its own. Two of these figures are asserted by
     `solana/crates/zama-fhe/src/heap_budget.rs`, and they are the two that matter:
-    16 steps fit the region with the reserve, and the 32-step maximum does not fit
-    at all. The rest of the table is measurement, printed by that file's
+    16 steps fit the region with the reserve, and the 32-step maximum fits the
+    raw region. The rest of the table is measurement, printed by that file's
     `print_measurement_table` (`#[ignore]`d — run it with `--ignored --nocapture`),
     so read the intermediate rows as the last measurement rather than as a bound.
 

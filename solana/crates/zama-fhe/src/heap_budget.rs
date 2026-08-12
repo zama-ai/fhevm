@@ -22,7 +22,10 @@
 //! Counted on the host rather than under SBF because no program in this repo builds an execution anywhere
 //! near the cap on-chain (the largest is five steps), so an SBF harness would need a fixture program
 //! written only for this measurement, while the quantity that regresses — bytes requested per step —
-//! is the same in both places.
+//! is the same in both places. One asymmetry from that choice: `step_limit()` resolves to
+//! `MAX_FHE_EXECUTION_STEPS` here, so the builder's up-front table reservation is the full-range one,
+//! while on-chain today it reserves for `MAX_ON_CHAIN_EXECUTION_STEPS` — half as much. These numbers
+//! are therefore upper bounds on what an on-chain build actually requests.
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
@@ -80,9 +83,10 @@ static ALLOCATOR: CountingAllocator = CountingAllocator;
 const DEFAULT_HEAP_BYTES: usize = 32 * 1024;
 
 /// The ceiling the builder enforces on-chain — measured here, so the number a program is stopped at
-/// is the number this test proves fits. At 16 steps the instruction requests 15,424 bytes. The
-/// hard ceiling is 28 (26,484 bytes) and 32 is over (33,392 bytes), but a ceiling at the edge
-/// leaves nothing for the costs below, so it is not a number to build a program on. For scale, the
+/// is the number this test proves fits. At 16 steps the instruction requests ~14.5 KB. Since the
+/// builder started reserving its tables up front (no doubling strands), even the full 32-step
+/// maximum requests only ~24.6 KB and fits the raw region — but its ~8 KB of slack is exactly the
+/// uncounted reserve below, so the edge is not a number to build a program on. For scale, the
 /// clone-per-step rollback this replaced asked for 270 KB across a full execution and exhausted the heap
 /// at the 10th step of the build alone. `print_measurement_table` re-derives all of these.
 const RELIABLE_STEPS: usize = MAX_ON_CHAIN_EXECUTION_STEPS;
@@ -181,12 +185,14 @@ fn the_largest_legal_batch_stays_within_the_regression_budget() {
         "a full {MAX_FHE_EXECUTION_STEPS}-step execution requested {total} bytes ({build_bytes} building, \
          {packet_bytes} for the packet), over the {BUDGET_BYTES}-byte budget"
     );
-    // The point of the documented limit: the maximum execution does not fit the default heap at all, so
-    // a program near the cap has to raise it or build the execution off-chain.
+    // Since the builder started reserving its tables up front, the full-size execution fits the
+    // raw region (~24.6 KB of 32 KB) — its slack is roughly the uncounted reserve, which is why the
+    // documented budget stays at `RELIABLE_STEPS`. This pins the direction of that claim: builder
+    // docs and INVARIANTS #54 say the maximum fits, and if it stops fitting they are wrong again.
     assert!(
-        total > DEFAULT_HEAP_BYTES,
-        "the full-size execution now fits the default heap ({total} bytes) — the builder docs and \
-         INVARIANTS #54 tell app programs it does not, and that is the claim to update"
+        total <= DEFAULT_HEAP_BYTES,
+        "the full-size execution no longer fits the default heap ({total} bytes) — the builder \
+         docs and INVARIANTS #54 tell app programs it fits, and that is the claim to update"
     );
 }
 
