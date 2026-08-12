@@ -1570,12 +1570,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     }
 
     /// @dev Hash + sign + prank + call keygenResponse with compressed digests.
-    function _doCompressedKeygenResponse(
-        uint256 prepKeygenId,
-        uint256 keyId,
-        uint256 pk,
-        address sender
-    ) internal {
+    function _doCompressedKeygenResponse(uint256 prepKeygenId, uint256 keyId, uint256 pk, address sender) internal {
         IKMSGeneration.KeyDigest[] memory digests = _mockCompressedKeyDigests();
         _doCompressedKeygenResponse(prepKeygenId, keyId, digests, pk, sender);
     }
