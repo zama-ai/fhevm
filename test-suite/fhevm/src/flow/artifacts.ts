@@ -19,7 +19,7 @@ import {
   composePath,
   hostChainAddressesPath,
   hostChainAddressesSolidityPath,
-  runsInCompose,
+  isEvmHost,
 } from "../layout";
 import type { State, StepName } from "../types";
 import { exists, readEnvFile } from "../utils/fs";
@@ -120,7 +120,7 @@ export const multiChainComposeEntries = (state: Pick<State, "scenario">): Array<
   const entries: Array<[string, StepName]> = [];
   // Externally-provisioned hosts (Solana) have no fhevm-cli node/sc/coprocessor compose, so there
   // is nothing to bring up or tear down here.
-  for (const chain of extraHostChains(state).filter((c) => runsInCompose(c))) {
+  for (const chain of extraHostChains(state).filter((c) => isEvmHost(c))) {
     const { node, sc, copro } = chain;
     entries.push([node, "base"]);
     entries.push([sc, "host-deploy"]);

@@ -19,7 +19,7 @@ import {
   POSTGRES_HOST,
   coprocessorDatabaseName,
   hostChainRuntimes,
-  runsInCompose,
+  isEvmHost,
   realLzEndpointFor,
 } from "../layout";
 import { kmsConnectorDbName, kmsConnectorEnvName, kmsCoreName, kmsMpcPort, kmsPublicPrefix, kmsServicePort, reconstructionThreshold } from "../kms-party";
@@ -570,7 +570,7 @@ export const renderEnvMaps = async (
   // Externally-provisioned hosts (Solana) are seeded by their own bring-up — which maps the
   // RFC-021 u64 chain id to the signed i64 the `bigint` column requires and mirrors the keyset
   // (only available post-keygen) — so they're excluded here; indices stay contiguous (0..N-1).
-  const seedHostChains = chains.filter((chain) => runsInCompose(chain));
+  const seedHostChains = chains.filter((chain) => isEvmHost(chain));
   envs["coprocessor"].HOST_CHAINS_COUNT = String(seedHostChains.length);
   seedHostChains.forEach((chain, chainIndex) => {
     const hostAddresses = state.discovery?.hosts[chain.key] ?? {};
@@ -610,7 +610,7 @@ export const renderEnvMaps = async (
   // gateway-sc indexed vars for fhevm-cli-provisioned hosts. Externally-provisioned hosts (Solana)
   // are registered on the gateway by their own bring-up (addHostChain), so they're excluded here;
   // indices stay contiguous (0..N-1) as the gateway task expects.
-  const gatewayHostChains = chains.filter((chain) => runsInCompose(chain));
+  const gatewayHostChains = chains.filter((chain) => isEvmHost(chain));
   envs["gateway-sc"].NUM_HOST_CHAINS = String(gatewayHostChains.length);
   gatewayHostChains.forEach((chain, chainIndex) => {
     const hostAddresses = state.discovery?.hosts[chain.key] ?? {};
@@ -626,7 +626,7 @@ export const renderEnvMaps = async (
 
   // Non-default fhevm-cli-provisioned chain infrastructure: host-node, host-sc, coprocessor, and
   // test-suite env files. Externally-provisioned hosts (Solana) get none of these.
-  for (const chain of chains.filter((item) => !item.isDefault && runsInCompose(item))) {
+  for (const chain of chains.filter((item) => !item.isDefault && isEvmHost(item))) {
     const chainIndex = chain.index;
     const hostHttp = `http://${chain.node}:${chain.rpcPort}`;
     const hostWs = `ws://${chain.node}:${chain.rpcPort}`;

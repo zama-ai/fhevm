@@ -497,18 +497,13 @@ export const hostChainNames = (key: string, defaultKey = DEFAULT_HOST_CHAIN_KEY)
   suffix: hostChainSuffix(key, defaultKey),
 });
 /**
- * True when compose owns the node — so it gets a node/sc/coprocessor service, a port to wait on,
- * contract artifacts, and seeding.
- *
- * fhevm-cli owns every node's lifecycle; this is only about *how* it runs one. A Solana host is
- * always a native `solana-test-validator` process (it loads the geyser plugin from the worktree,
- * and a host-native validator is the ecosystem norm on macOS), so compose never runs it and the
- * `host-process` step does. That follows from the chain kind, so it is derived from `type` rather
- * than configured: a scenario cannot put a Solana node in compose, and saying otherwise would not
- * make it work.
+ * True for an EVM host chain — the only kind with the Solidity pipeline. Gates everything that
+ * pipeline produces: a node/sc/coprocessor compose service, a port to wait on, deployed contract
+ * artifacts, and seeding. A Solana host has none of them; `fhevm-cli` runs its validator itself in
+ * the `host-process` step.
  */
-export const runsInCompose = (chain: Pick<HostChainScenario, "type">): boolean =>
-  (chain.type ?? "evm") !== "solana";
+export const isEvmHost = (chain: Pick<HostChainScenario, "type">): boolean =>
+  (chain.type ?? "evm") === "evm";
 
 export type HostChainRuntime = HostChainScenario & {
   /** Resolved host-chain kind: defaults to `evm` when the scenario omits `type`. */

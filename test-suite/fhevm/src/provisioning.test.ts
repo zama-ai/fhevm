@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import path from "node:path";
 import YAML from "yaml";
 
-import { COMPONENT_BY_STEP, runsInCompose } from "./layout";
+import { COMPONENT_BY_STEP, isEvmHost } from "./layout";
 import { STEP_NAMES } from "./types";
 
 const scenario = async (name: string) => {
@@ -12,14 +12,14 @@ const scenario = async (name: string) => {
   };
 };
 
-describe("which nodes compose runs", () => {
-  // fhevm-cli owns every node's lifecycle; this only says how it runs one. A Solana host is always
-  // a native solana-test-validator, so the answer follows from the chain kind and is derived rather
-  // than configured.
-  test("every host runs in compose except Solana", () => {
-    expect(runsInCompose({ type: "evm" })).toBe(true);
-    expect(runsInCompose({})).toBe(true);
-    expect(runsInCompose({ type: "solana" })).toBe(false);
+describe("which hosts carry the EVM contract pipeline", () => {
+  // What this gates is the Solidity machinery — compose services, contract artifacts, seeding —
+  // not how a node is launched. Both are one boolean today only because every EVM host runs in
+  // compose and the sole non-EVM host does not; keep them distinguishable in the reading.
+  test("EVM hosts do, including when the scenario omits the type", () => {
+    expect(isEvmHost({ type: "evm" })).toBe(true);
+    expect(isEvmHost({})).toBe(true);
+    expect(isEvmHost({ type: "solana" })).toBe(false);
   });
 });
 
@@ -31,7 +31,7 @@ describe("the host-process pipeline step", () => {
     expect(STEP_NAMES.indexOf("host-process")).toBeLessThan(STEP_NAMES.indexOf("test-suite"));
   });
 
-  test("declares no compose components, because it runs nodes outside compose", () => {
+  test("declares no compose components, because fhevm-cli spawns these nodes itself", () => {
     expect(COMPONENT_BY_STEP["host-process"]).toEqual([]);
   });
 
@@ -43,18 +43,18 @@ describe("the host-process pipeline step", () => {
 });
 
 describe("the shipped Solana scenarios", () => {
-  // Pins the #1879 retirement: the step picks its work by finding host chains compose does not run,
-  // so a Solana host in these scenarios is what makes `up` provision the validator at all. If the
-  // `type: solana` entry goes away, clean-e2e.sh's dropped step 3 silently stops happening.
-  test.each(["solana", "solana-threshold-kms"])("%s declares a Solana host outside compose", async (name) => {
+  // Pins the #1879 retirement: the step picks its work by chain kind, so a `type: solana` host in
+  // these scenarios is what makes `up` provision the validator at all. If that entry goes away,
+  // clean-e2e.sh's dropped step 3 silently stops happening.
+  test.each(["solana", "solana-threshold-kms"])("%s declares a Solana host", async (name) => {
     const solana = (await scenario(name)).hostChains.find((chain) => chain.type === "solana");
     expect(solana).toBeDefined();
-    expect(runsInCompose({ type: "solana" })).toBe(false);
+    expect(isEvmHost({ type: "solana" })).toBe(false);
   });
 
-  test("solana keeps its EVM host in compose", async () => {
+  test("solana keeps an EVM host alongside it", async () => {
     const evm = (await scenario("solana")).hostChains.find((chain) => chain.type === undefined);
     expect(evm).toBeDefined();
-    expect(runsInCompose(evm as { type?: undefined })).toBe(true);
+    expect(isEvmHost(evm as { type?: undefined })).toBe(true);
   });
 });
