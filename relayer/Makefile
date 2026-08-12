@@ -376,24 +376,12 @@ test-build: ## Build all test binaries (no Postgres needed — uses sqlx offline
 	@echo "Building all test binaries..."
 	@$(CARGO_TEST) --lib --no-run
 	@$(CARGO_TEST) --manifest-path $(MOCK_RPC_MANIFEST) --no-run
-	@$(CARGO_TEST) --features integration-tests --test input_proof_v2_test --no-run
-	@$(CARGO_TEST) --features integration-tests --test public_decrypt_v2_test --no-run
-	@$(CARGO_TEST) --features integration-tests --test user_decrypt_v2_test --no-run
-	@$(CARGO_TEST) --features integration-tests --test delegated_user_decrypt_v2_test --no-run
-	@$(CARGO_TEST) --features integration-tests --test user_decrypt_v3_test --no-run
-	@$(CARGO_TEST) --features integration-tests --test health_tests --no-run
-	@$(CARGO_TEST) --features integration-tests --test keyurl_test --no-run
+	@$(CARGO_TEST) --features integration-tests --test '*' --no-run
 
 test-run: _check-postgres ## Run pre-built test binaries
 	@echo "Running pre-built test binaries..."
 	@$(CARGO_TEST) --manifest-path $(MOCK_RPC_MANIFEST) -- --test-threads=1
-	@$(CARGO_TEST) --features integration-tests --test input_proof_v2_test -- --test-threads=1
-	@$(CARGO_TEST) --features integration-tests --test public_decrypt_v2_test -- --test-threads=1
-	@$(CARGO_TEST) --features integration-tests --test user_decrypt_v2_test -- --test-threads=1
-	@$(CARGO_TEST) --features integration-tests --test delegated_user_decrypt_v2_test -- --test-threads=1
-	@$(CARGO_TEST) --features integration-tests --test user_decrypt_v3_test -- --test-threads=1
-	@$(CARGO_TEST) --features integration-tests --test health_tests -- --test-threads=1
-	@$(CARGO_TEST) --features integration-tests --test keyurl_test -- --test-threads=1
+	@$(CARGO_TEST) --features integration-tests --test '*' -- --test-threads=1
 
 test-long-running: _check-postgres ## Run long-running redundancy tests (requires --features long-running-tests)
 	@echo "Running long-running redundancy tests..."
