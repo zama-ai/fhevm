@@ -176,7 +176,7 @@ impl CiphertextChecker {
                     );
                     return Err(ReadinessCheckError::NoAttestationConsensus(e.to_string()));
                 }
-                Err(e) => {
+                Err(e @ ConsensusCheckError::Starved { .. }) => {
                     info!(int_job_id = %job_id, "Ciphertext not attested yet: {e}");
 
                     attempts += 1;
@@ -203,27 +203,44 @@ impl CiphertextChecker {
         }
     }
 
-    /// Evaluates consensus for every handle once, stopping at the first handle that fails.
+    /// Evaluates consensus for every handle once. A request is only as ready as its least-ready
+    /// handle, so any handle without consensus fails the whole request.
     ///
-    /// Handles are checked sequentially: a request is only as ready as its least-ready handle, and
-    /// each handle already fans out concurrently across every Coprocessor bucket.
+    /// A failing handle does not end the round, because the *kind* of failure decides
+    /// retriable-vs-terminal and a `Split` has to win wherever it sits in the list. Stopping at the
+    /// first `Starved` would hide a split handle behind a retry budget that can never satisfy it,
+    /// and would make the user-facing verdict depend on the order the handles happen to arrive in —
+    /// the same request reported as a 503 timeout or a 500 no-consensus depending on position. A
+    /// `Split` is returned as soon as it is seen: it is terminal, so there is nothing left to learn.
+    ///
+    /// Handles are checked sequentially; each one already fans out concurrently across every
+    /// Coprocessor bucket.
     async fn check_handles_once(
         &self,
         handles: &[FixedBytes<32>],
     ) -> Result<(), ConsensusCheckError> {
         let snapshot = self.registry.snapshot();
+        let mut retriable: Option<ConsensusCheckError> = None;
 
         for handle in handles {
-            fetch_attestations_and_check_consensus(
+            match fetch_attestations_and_check_consensus(
                 &self.http_client,
                 *handle,
                 &snapshot,
                 self.head_timeout,
                 COPROCESSOR_CONTEXT_ID_V1,
             )
-            .await?;
+            .await
+            {
+                Ok(_) => (),
+                Err(e @ ConsensusCheckError::Split { .. }) => return Err(e),
+                Err(e @ ConsensusCheckError::Starved { .. }) => retriable = retriable.or(Some(e)),
+            }
         }
 
-        Ok(())
+        match retriable {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
     }
 }
