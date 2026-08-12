@@ -398,37 +398,17 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         string[] memory consensusUrls
     ) internal virtual {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
-        // Copy each calldata struct to storage, as copying calldata array of structs
-        // to storage is not yet supported. This only happens once per keyId.
+        uint256 storedKeyId = existingKeyId == 0 ? keyId : existingKeyId;
         for (uint256 i = 0; i < keyDigests.length; i++) {
-            $.keyDigests[keyId].push(keyDigests[i]);
+            if (existingKeyId == 0 || keyDigests[i].keyType == KeyType.CompressedKeySet) {
+                $.keyDigests[storedKeyId].push(keyDigests[i]);
+            }
         }
         if (existingKeyId == 0) {
             $.activeKeyId = keyId;
             $.completedKeyIds.push(keyId);
         }
         emit ActivateKey(keyId, existingKeyId, consensusUrls, keyDigests);
-    }
-
-    /**
-     * @notice See {IKMSGeneration-getCompressedKeyMigrationMaterials}.
-     */
-    function getCompressedKeyMigrationMaterials(
-        uint256 existingKeyId
-    ) external view virtual returns (uint256, string[] memory, KeyDigest[] memory) {
-        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
-
-        uint256 keyId = $.requestIdByExistingKeyId[existingKeyId];
-        if (keyId == 0 || $.consensusDigest[keyId] == bytes32(0)) {
-            revert CompressedKeyMaterialsNotAdded(existingKeyId);
-        }
-
-        bytes32 digest = $.consensusDigest[keyId];
-        address[] memory consensusTxSenders = $.consensusTxSenderAddresses[keyId][digest];
-        uint256 contextId = _extractContextIdFromExtraData($.requestExtraData[keyId]);
-        string[] memory consensusUrls = _buildConsensusStorageUrls(contextId, consensusTxSenders);
-
-        return (keyId, consensusUrls, $.keyDigests[keyId]);
     }
 
     /**
@@ -673,9 +653,13 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
 
         _checkGeneratedKeyId(keyId);
 
-        bytes32 digest = $.consensusDigest[keyId];
-        address[] memory consensusTxSenders = $.consensusTxSenderAddresses[keyId][digest];
-        uint256 contextId = _extractContextIdFromExtraData($.requestExtraData[keyId]);
+        uint256 materialRequestId = $.requestIdByExistingKeyId[keyId];
+        if (materialRequestId == 0 || $.consensusDigest[materialRequestId] == bytes32(0)) {
+            materialRequestId = keyId;
+        }
+        bytes32 digest = $.consensusDigest[materialRequestId];
+        address[] memory consensusTxSenders = $.consensusTxSenderAddresses[materialRequestId][digest];
+        uint256 contextId = _extractContextIdFromExtraData($.requestExtraData[materialRequestId]);
         string[] memory consensusUrls = _buildConsensusStorageUrls(contextId, consensusTxSenders);
 
         return (consensusUrls, $.keyDigests[keyId]);
@@ -784,6 +768,12 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         ParamsType existingParamsType = $.requestParamsType[$.keygenIdPairs[existingKeyId]];
         if (paramsType != existingParamsType) {
             revert InvalidMigrationParamsType(existingKeyId, existingParamsType, paramsType);
+        }
+
+        for (uint256 i = 0; i < $.keyDigests[existingKeyId].length; i++) {
+            if ($.keyDigests[existingKeyId][i].keyType == KeyType.CompressedKeySet) {
+                revert CompressedKeyMaterialsAlreadyAdded(existingKeyId);
+            }
         }
 
         uint256 previousRequestId = $.requestIdByExistingKeyId[existingKeyId];
