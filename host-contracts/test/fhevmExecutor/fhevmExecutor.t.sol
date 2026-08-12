@@ -6,7 +6,6 @@ import {UnsafeUpgrades} from "@openzeppelin/foundry-upgrades/src/Upgrades.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
-import {FHEVMExecutor} from "../../contracts/FHEVMExecutor.sol";
 import {FHEEvents} from "../../contracts/FHEEvents.sol";
 import {FHEVMExecutor} from "../../contracts/FHEVMExecutor.sol";
 import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
@@ -223,6 +222,18 @@ contract MockInputVerifier {
 /// It includes a fallback function not to revert.
 contract MockHCULimit {
     fallback() external payable {}
+}
+
+/// @dev Mints through the executor and then reverts the enclosing call frame.
+/// EIP-1153 requires the executor's transient minted marker to be journaled
+/// with this revert even though the nested executor call itself succeeded.
+contract RevertingMintCaller {
+    error RevertAfterMint(bytes32 handle);
+
+    function mintAndRevert(FHEVMExecutor executor, uint256 value, FheType fheType) external {
+        bytes32 handle = executor.trivialEncrypt(value, fheType);
+        revert RevertAfterMint(handle);
+    }
 }
 
 contract FHEVMExecutorTest is SupportedTypesConstants, Test {
@@ -1311,6 +1322,54 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         assertEq(fhevmExecutor.cast(boundary, FheType.Uint32), expectedBoundary);
         assertTrue(expectedResult != expectedBoundary);
         vm.stopPrank();
+    }
+
+    function test_RevertedSubcallRollsBackMintedOperandMarker() public {
+        uint256 value = 7;
+        FheType mintedType = FheType.Uint64;
+        RevertingMintCaller caller = new RevertingMintCaller();
+
+        bytes32 revertedMint = keccak256(
+            abi.encodePacked(
+                COMPUTATION_DOMAIN_SEPARATOR,
+                FHEVMExecutor.Operators.trivialEncrypt,
+                value,
+                mintedType,
+                acl,
+                block.chainid,
+                blockhash(block.number - 1),
+                block.timestamp
+            )
+        );
+        revertedMint = _appendMetadataToPrehandle(mintedType, revertedMint, block.chainid, HANDLE_VERSION);
+
+        vm.expectRevert(abi.encodeWithSelector(RevertingMintCaller.RevertAfterMint.selector, revertedMint));
+        caller.mintAndRevert(fhevmExecutor, value, mintedType);
+
+        address sender = address(123);
+        _approveHandleInACL(revertedMint, sender);
+        bytes32 expectedBoundaryResult = keccak256(
+            abi.encodePacked(
+                COMPUTATION_DOMAIN_SEPARATOR,
+                FHEVMExecutor.Operators.cast,
+                revertedMint,
+                FheType.Uint32,
+                uint256(1),
+                acl,
+                block.chainid,
+                blockhash(block.number - 1),
+                block.timestamp
+            )
+        );
+        expectedBoundaryResult = _appendMetadataToPrehandle(
+            FheType.Uint32,
+            expectedBoundaryResult,
+            block.chainid,
+            HANDLE_VERSION
+        );
+
+        vm.prank(sender);
+        assertEq(fhevmExecutor.cast(revertedMint, FheType.Uint32), expectedBoundaryResult);
     }
 
     function test_TrivialEncryptSupportedTypesWorkAsExpected(uint256 pt, uint8 fheType) public {

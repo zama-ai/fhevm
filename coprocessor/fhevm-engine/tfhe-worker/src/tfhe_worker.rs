@@ -695,6 +695,7 @@ async fn build_transaction_graph_and_execute<'a>(
     if txs.is_empty() {
         return Ok(tx_graph);
     }
+    let _in_flight_work = health_check.begin_work();
     if let Err(e) = tx_graph.build(txs) {
         // If we had an error while building the graph, we don't
         // execute anything and return to allow any set results

@@ -1,4 +1,10 @@
-use std::time::Duration;
+use std::{
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 use fhevm_engine_common::database::connect_options_for_database_url;
 use fhevm_engine_common::healthz_server::{
@@ -15,6 +21,18 @@ pub struct HealthCheck {
     pub database_url: DatabaseURL,
     pub database_heartbeat: HeartBeat,
     pub activity_heartbeat: HeartBeat,
+    in_flight_work: Arc<AtomicUsize>,
+}
+
+#[derive(Debug)]
+pub struct InFlightWorkGuard {
+    in_flight_work: Arc<AtomicUsize>,
+}
+
+impl Drop for InFlightWorkGuard {
+    fn drop(&mut self) {
+        self.in_flight_work.fetch_sub(1, Ordering::AcqRel);
+    }
 }
 
 impl HealthCheck {
@@ -24,6 +42,7 @@ impl HealthCheck {
             database_url,
             database_heartbeat: HeartBeat::new(),
             activity_heartbeat: HeartBeat::new(),
+            in_flight_work: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -33,6 +52,16 @@ impl HealthCheck {
 
     pub fn update_activity(&self) {
         self.activity_heartbeat.update();
+    }
+
+    /// Keeps liveness positive while a worker batch is actively executing.
+    /// Whole transactions can legitimately run longer than the heartbeat
+    /// freshness window, so completion-only heartbeats are insufficient.
+    pub fn begin_work(&self) -> InFlightWorkGuard {
+        self.in_flight_work.fetch_add(1, Ordering::AcqRel);
+        InFlightWorkGuard {
+            in_flight_work: Arc::clone(&self.in_flight_work),
+        }
     }
 }
 
@@ -67,10 +96,37 @@ impl HealthCheckService for HealthCheck {
     }
 
     async fn is_alive(&self) -> bool {
-        self.activity_heartbeat.is_recent(&ACTIVITY_FRESHNESS)
+        self.in_flight_work.load(Ordering::Acquire) > 0
+            || self.activity_heartbeat.is_recent(&ACTIVITY_FRESHNESS)
     }
 
     fn get_version(&self) -> Version {
         default_get_version()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn stale_health_check() -> HealthCheck {
+        HealthCheck {
+            database_url: DatabaseURL::default(),
+            database_heartbeat: HeartBeat::with_elapsed_secs(30),
+            activity_heartbeat: HeartBeat::with_elapsed_secs(30),
+            in_flight_work: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    #[tokio::test]
+    async fn in_flight_work_keeps_worker_alive_until_guard_drops() {
+        let health_check = stale_health_check();
+        assert!(!health_check.is_alive().await);
+
+        let guard = health_check.begin_work();
+        assert!(health_check.is_alive().await);
+
+        drop(guard);
+        assert!(!health_check.is_alive().await);
     }
 }
