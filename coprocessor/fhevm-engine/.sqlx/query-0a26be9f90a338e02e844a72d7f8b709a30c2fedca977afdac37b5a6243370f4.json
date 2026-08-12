@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT COUNT(*) AS \"count!\"\n        FROM computations_branch\n        WHERE host_chain_id = $1 AND producer_block_hash = $2\n        ",
+  "query": "\n        SELECT COUNT(*) AS \"count!\"\n        FROM computations\n        WHERE host_chain_id = $1 AND output_handle = ANY($2::bytea[])\n        ",
   "describe": {
     "columns": [
       {
@@ -12,12 +12,12 @@
     "parameters": {
       "Left": [
         "Int8",
-        "Bytea"
+        "ByteaArray"
       ]
     },
     "nullable": [
       null
     ]
   },
-  "hash": "c04b866feb9b85106d62e8ef543526c3893fc260d8dc68e5231636a88f7beb17"
+  "hash": "0a26be9f90a338e02e844a72d7f8b709a30c2fedca977afdac37b5a6243370f4"
 }
