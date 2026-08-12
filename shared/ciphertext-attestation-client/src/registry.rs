@@ -94,7 +94,7 @@ impl CoprocessorRegistrySnapshot {
             get_copro_tx_senders.call(),
             get_copro_threshold.call()
         )
-        .map_err(|e| RegistryError::Transient(e.into()))?;
+        .map_err(|e| RegistryError::Transient(anyhow::anyhow!("{}", redact_rpc_url(e))))?;
 
         // A zero or oversized threshold can never come from a healthy `GatewayConfig`: treat it
         // as critical so the caller refuses to run.
@@ -152,7 +152,39 @@ impl CoprocessorRegistrySnapshot {
             }
         }
 
+        // Registered Coprocessors without a bucket URL were dropped above, but the threshold comes
+        // from chain and is validated there only against the number of *registered* Coprocessors.
+        // If more were dropped than the margin allows, no round can ever reach threshold: every
+        // request is rejected until the registration is completed. That fails closed, which is
+        // right, but the retriable verdict it produces is indistinguishable from "attestations not
+        // uploaded yet" — so say plainly what is wrong, on every load, rather than leaving an
+        // operator to infer it from a timeout. Not `Critical`: crash-looping the caller over
+        // persistent on-chain state would be worse than serving a loud, retriable failure.
+        if coprocessors.len() < threshold.get() {
+            error!(
+                reachable = coprocessors.len(),
+                threshold = threshold.get(),
+                "Fewer Coprocessors have a registered S3 bucket URL than the on-chain majority \
+                 threshold requires: attestation consensus is unreachable and every decryption \
+                 request will be refused until the missing bucket URLs are registered"
+            );
+        }
+
         Ok(Self::new(coprocessors, threshold))
+    }
+}
+
+/// Stringifies an RPC error, stripping the ` for url (…)` suffix that `reqwest::Error::Display`
+/// appends.
+///
+/// Gateway RPC endpoints can carry embedded API keys, so the URL must never reach a log line or an
+/// error surfaced to a caller. Applied at every point an RPC error becomes a [`RegistryError`], so
+/// consumers get a redacted message without having to remember to redact it themselves.
+fn redact_rpc_url(err: impl std::fmt::Display) -> String {
+    let msg = err.to_string();
+    match msg.find(" for url (") {
+        Some(at) => msg[..at].to_owned(),
+        None => msg,
     }
 }
 
@@ -164,7 +196,11 @@ async fn get_copro_entry<P: Provider<N>, N: Network>(
     contract: &GatewayConfigInstance<P, N>,
     copro_tx_sender_addr: Address,
 ) -> anyhow::Result<Option<CoprocessorEntry>> {
-    let copro = contract.getCoprocessor(copro_tx_sender_addr).call().await?;
+    let copro = contract
+        .getCoprocessor(copro_tx_sender_addr)
+        .call()
+        .await
+        .map_err(|e| anyhow::anyhow!("{}", redact_rpc_url(e)))?;
     if copro.s3BucketUrl.is_empty() {
         warn!("No S3 bucket URL registered for Coprocessor {copro_tx_sender_addr}, skipping it");
         return Ok(None);
@@ -271,6 +307,22 @@ mod tests {
     /// Distinct, deterministic addresses for test fixtures (no external `rand` dependency).
     fn addr(byte: u8) -> Address {
         Address::repeat_byte(byte)
+    }
+
+    #[test]
+    fn redact_rpc_url_strips_the_endpoint_and_keeps_the_reason() {
+        assert_eq!(
+            redact_rpc_url("error sending request for url (https://rpc.example/v1/SECRET_KEY)"),
+            "error sending request"
+        );
+    }
+
+    #[test]
+    fn redact_rpc_url_passes_through_messages_without_a_url() {
+        assert_eq!(
+            redact_rpc_url("server returned an error"),
+            "server returned an error"
+        );
     }
 
     fn mocked_contract(asserter: &Asserter) -> GatewayConfigInstance<impl Provider + Clone> {
