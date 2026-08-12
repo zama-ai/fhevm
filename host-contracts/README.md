@@ -130,8 +130,7 @@ Ethereum rotation to every replica, in order, is the operator's responsibility.
 The Ethereum `ProtocolConfig` is the source of truth for protocol state, so **new** host chains
 seed their replica from it.
 
-The flow is artifact-centric — the same three steps in every environment, only the signer of
-step 3 changes:
+The flow is artifact-centric — the same three steps in every environment:
 
 **1. Export** the canonical KMS context to a reviewable JSON artifact (works from a clean
 checkout; needs only RPC access):
@@ -145,23 +144,20 @@ npx hardhat task:exportCanonicalProtocolConfig \
 
 The artifact holds a single `export` object. That object is the snapshot as a flat `KEY=value` map,
 with bigints serialized as decimal strings. Each key becomes an environment variable that the apply
-tasks in step 3 read.
+task in step 3 reads.
 
 **2. Review.** All reads happen at one block, so reviewers (e.g. DAO signers) reproduce the
 artifact byte-for-byte — even after a later `defineNewKmsContextAndEpoch` rotation — by re-running the
 export with `--block-number <N>` from the artifact and diffing the output.
 
-**3. Apply** the reviewed artifact to the local `ProtocolConfig` proxy. Both environments run the
-same prepare step — deploy the implementation and build the
-`upgradeToAndCall(initializeFromCanonical(contextId, epochId, …))` payload, landing the
-replica on canonical's active context and epoch instead of fresh local counters. They differ only in
-who executes that payload: the devnet task sends it immediately with the deployer key, so **what runs
-on devnet is byte-identical to what the DAO signs**.
+**3. Apply** the reviewed artifact to the local `ProtocolConfig` proxy. `initializeFromCanonical`
+only runs against a still-empty proxy (`onlyFromEmptyProxy`), so onboarding a new host chain is
+always deployer-executed, with the deployer key that just deployed the empty proxies.
 
-Both apply tasks read their configuration from environment variables. They take no command-line flags
+The apply task reads its configuration from environment variables. It takes no command-line flags
 for the canonical state. A deployment platform injects the values into the deploy container.
 
-The table lists the `export` keys from step 1. The tasks reject a bad value before they deploy anything, so a
+The table lists the `export` keys from step 1. The task rejects a bad value before it deploys anything, so a
 misconfigured environment leaves the proxy untouched.
 
 | Variable                            | Type           | Meaning                                                |
@@ -176,29 +172,23 @@ misconfigured environment leaves the proxy untouched.
 | `CANONICAL_KMS_THRESHOLDS`          | JSON object    | The four thresholds, each a decimal string.            |
 
 The context id, epoch id, node set and thresholds become the `initializeFromCanonical` calldata, so
-the tasks check them in full. The chain id and block number are provenance, and the tasks parse them
-as decimal strings. The block hash and the address are provenance that the tasks only check for
-presence, then print.
-
-| Environment       | Task                                            | Signer                                              |
-| ----------------- | ----------------------------------------------- | --------------------------------------------------- |
-| devnet / local    | `task:deployProtocolConfigFromCanonical`        | `DEPLOYER_PRIVATE_KEY`                              |
-| testnet / mainnet | `task:prepareDeployProtocolConfigFromCanonical` | DAO executes the printed `upgradeToAndCall` payload |
+the task checks them in full. The chain id and block number are provenance, and the task parses them
+as decimal strings. The block hash and the address are provenance that the task only checks for
+presence, then prints.
 
 ```bash
-# devnet: direct upgrade with the deployer key
 npx hardhat task:deployProtocolConfigFromCanonical
-
-# testnet/mainnet: deploy the implementation and print the DAO payload, without touching the proxy
-npx hardhat task:prepareDeployProtocolConfigFromCanonical
 ```
 
-Only step 1 talks to the canonical chain. The tasks check what the environment gives them, and no more.
-They do not prove the values match the reviewed artifact. The deployment platform
-owns that binding. Both apply tasks print `decodedArgs`, the context id, epoch id, node set and
-thresholds the payload encodes. They also print the chain id, block number, block hash and canonical
+Only step 1 talks to the canonical chain. The task checks what the environment gives it, and no more.
+It does not prove the values match the reviewed artifact. The deployment platform
+owns that binding. The apply task prints `decodedArgs`, the context id, epoch id, node set and
+thresholds the payload encodes. It also prints the chain id, block number, block hash and canonical
 `ProtocolConfig` address. An operator compares every provenance value against the artifact. The
 printed node set carries placeholder MPC fields, so the operator compares it field by field.
+
+Ownership of the resulting proxy moves to the DAO afterwards, through
+`task:transferHostOwnership` / `task:acceptHostOwnership`.
 
 When deploying a full non-canonical host stack, `task:deployAllHostContracts
 --protocol-config-source canonical` runs the mirror in sequence with the other host contracts, with
