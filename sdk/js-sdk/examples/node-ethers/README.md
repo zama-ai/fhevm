@@ -26,7 +26,8 @@ npx tsx ./test-run.ts
 
 ## Notes
 
+- Await **`client.ready`** (an alias for `client.init()`) once after creating the client. It resolves the protocol versions and loads the WASM; `encryptValues`, `generateTransportKeyPair`, and `decryptValue` throw if it hasn't run. (`decryptPublicValues` is the exception — it works without it.)
 - The **E2E transport key pair** is generated locally and never leaves the client. Only the corresponding public key is shared (embedded in the EIP-712 permit).
-- The **EIP-712 permit** is reusable within its validity window (`durationDays`). You can decrypt multiple batches of encrypted values without re-signing.
+- The **EIP-712 permit** is reusable within its validity window (`durationSeconds`). You can decrypt multiple batches of encrypted values without re-signing.
 - The **Zama Protocol** processes decryption requests and returns encrypted shares that only the holder of the transport key pair can decrypt.
 - **ACL permissions** are checked on-chain before decryption. If `FHE.allow()` was not called for the user + encrypted value pair, decryption will fail.

@@ -1,5 +1,67 @@
 # Release Notes
 
+## v1.2.1 (2026-07-29)
+
+### For SDK users
+
+#### Added
+
+- **Protocol `0.14.0` support: KMS WASM bumped to `0.14.0-1`.** The default bundled TKMS module
+  moves from `0.13.20-0` to `0.14.0-1` (TFHE stays at `1.6.2`), and the auto-resolution table now
+  maps `protocol >= 0.14.0` to `kms 0.14.0-1` instead of falling through to the `0.13.x` canonical
+  version. Older KMS builds (`0.13.10`, `0.13.20-0`) remain accepted as explicit
+  `moduleVersions.kms` overrides under a `0.14.0` protocol context. See
+  [Version compatibility](compatibility.md) for the full `(protocol, PubKey/CRS, TFHE, KMS)`
+  matrix.
+
+## v1.2.0-alpha.1 (2026-07-08)
+
+### For SDK users
+
+#### Added
+
+- **Cleartext client support for `forge-fhevm` v1 (legacy) deployments.** The cleartext client
+  (`createFhevmCleartextClient`/`createFhevmCleartextBaseClient` and friends) now works against
+  local `forge-fhevm` v1 stacks in addition to the current cleartext host-contract set. It
+  detects a v1 deployment by its well-known single KMS signer address and, when detected,
+  reconstructs public-decrypt, user-decrypt, and input-proof/coprocessor-signature results
+  off-chain (reading raw plaintexts from `CleartextFHEVMExecutor.plaintexts` and recomputing the
+  EIP-712 digests locally) instead of relying on the `Cleartext*KMSVerifier`/`CleartextInputVerifier`
+  views that a plain `forge-fhevm` deployment doesn't expose. See the new
+  `test/scripts/HOWTO_RUN_FORGE_FHEVM_V1.md` for how to set up a local `forge-fhevm` v1 stack for
+  testing.
+
+#### Fixed
+
+- **`euint32`/`euint256` clear values weren't validated against their correct upper bound.**
+  `asClearValueType()` looked up the max-value table with the FHE type name (`'euint32'`,
+  `'euint256'`) instead of the corresponding clear value-type name (`'uint32'`, `'uint256'`), so
+  the lookup missed and no upper-bound check was applied for those two types. This affected the
+  clear value returned by `decryptValue()`/`decryptValues()`.
+
+### Internal
+
+- Refactored KMS `extraData` encode/decode/validation (`fromKmsExtraData`, `toKmsExtraData`,
+  `assertIsKmsExtraData`) from free functions in `kmsExtraData.ts` into a validated
+  `KmsExtraDataImpl` class in `kmsExtraData-p.ts`, with matching updates across
+  `KmsSignersContext-p.ts`, `readKmsSignersContext-p.ts`, `KmsSigncryptedShares-p.ts`,
+  `SignedDecryptionPermitV1-p.ts`/`V2-p.ts`, `PublicDecryptionProof-p.ts`, and the
+  `createKmsUserDecryptEip712*`/`createKmsDelegatedUserDecryptEip712V1` helpers, plus new unit
+  tests (`kmsExtraData-p.test.ts`).
+- Pinned a specific `fhevm` repo version for running localstack tests below protocol v0.14, and
+  added a large batch of unit/fheTest coverage: `errors/utils.test.ts`, `object.test.ts`,
+  `trustedValue.test.ts`, `ClearValue.test.ts`, `FhevmHandle.test.ts`, ethers/viem
+  `clientDecrypt` cleartext tests, and fheTest coverage for `decryptValuesFromPairs` /
+  `canDecryptValue(s)` / `canDecryptValuesFromPairs`.
+- Fixed the cleartext ethers/viem runtimes (`getCleartextEthersRuntime`/`getCleartextViemRuntime`)
+  re-creating the ethereum/relayer modules on every call even when a cached runtime already
+  existed.
+- README: fixed documentation link and package-name references (points at
+  `github.com/zama-ai/fhevm` instead of the old `relayer-sdk` repo, `@fhevm/sdk` instead of
+  `@zama-fhe/relayer-sdk`).
+
+---
+
 ## v1.1.0-alpha.7 (2026-07-03)
 
 ### For SDK users
@@ -63,10 +125,6 @@ imports any of these directly, switch to the higher-level actions listed:
 - Relayer error responses now recognize additional labels that previously fell through as
   unrecognized errors: `not_allowed_on_host_acl` (400), and `insufficient_balance` /
   `insufficient_allowance` (503).
-
-> **Note:** `docs/decryption.md`, `docs/migration.md`, `docs/getting-started.md`, and
-> `docs/api-reference.md` still show the old `durationDays` / `SignedSelfDecryptionPermit` /
-> `SignedDelegatedDecryptionPermit` API and need to be updated separately.
 
 ### Internal
 

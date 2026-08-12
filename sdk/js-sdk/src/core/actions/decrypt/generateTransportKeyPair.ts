@@ -5,17 +5,17 @@ import {
   generateTransportKeyPair as generateTransportKeyPair_,
   type TransportKeyPair,
 } from '../../kms/TransportKeyPair-p.js';
-import { asFhevmWithTkmsVersion } from '../../runtime/CoreFhevm-p.js';
+import { initPublicAction } from '../../runtime/CoreFhevm-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export type GenerateTransportKeyPairReturnType = TransportKeyPair;
+export type GenerateTransportKeyPairReturnType = TransportKeyPair & { readonly tkmsVersion: string };
 
 export async function generateTransportKeyPair(
   fhevm: Fhevm<FhevmChain, WithDecrypt>,
 ): Promise<GenerateTransportKeyPairReturnType> {
-  const f = asFhevmWithTkmsVersion(fhevm);
-  return await generateTransportKeyPair_(f);
+  const fhevmContext = await initPublicAction(fhevm);
+  return await generateTransportKeyPair_(fhevm, { fhevmContext });
 }
 
 ////////////////////////////////////////////////////////////////////////////////

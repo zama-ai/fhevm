@@ -52,7 +52,7 @@ export function defineClientDecryptTransportKeyPairTests(parameters: {
       await client.ready;
 
       const keyPair = await client.generateTransportKeyPair();
-      const serialized = serializeTransportKeyPair(client, {
+      const serialized = await serializeTransportKeyPair(client, {
         transportKeyPair: keyPair,
       });
 
@@ -79,7 +79,7 @@ export function defineClientDecryptTransportKeyPairTests(parameters: {
       const original = await client.generateTransportKeyPair();
 
       // Serialize to hex
-      const serialized = serializeTransportKeyPair(client, {
+      const serialized = await serializeTransportKeyPair(client, {
         transportKeyPair: original,
       });
 
@@ -88,7 +88,7 @@ export function defineClientDecryptTransportKeyPairTests(parameters: {
       expect(parsed).toBeDefined();
 
       // Serialize again and compare — should be identical
-      const reSerialized = serializeTransportKeyPair(client, {
+      const reSerialized = await serializeTransportKeyPair(client, {
         transportKeyPair: parsed,
       });
       expect(reSerialized.publicKey).toBe(serialized.publicKey);
