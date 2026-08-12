@@ -281,18 +281,19 @@ export async function buildWithProofPacked(
       }
     }
 
-    tfheProvenCompactCiphertextList = parameters.seed === undefined
-      ? fheCompactCiphertextListBuilderWasm.build_with_proof_packed(
-          compactPkeCrsWasm,
-          metaData,
-          tfheLib.ZkComputeLoad.Verify,
-        )
-      : fheCompactCiphertextListBuilderWasm.build_with_proof_packed_seeded(
-          compactPkeCrsWasm,
-          metaData,
-          tfheLib.ZkComputeLoad.Verify,
-          parameters.seed,
-        );
+    tfheProvenCompactCiphertextList =
+      parameters.seed === undefined
+        ? fheCompactCiphertextListBuilderWasm.build_with_proof_packed(
+            compactPkeCrsWasm,
+            metaData,
+            tfheLib.ZkComputeLoad.Verify,
+          )
+        : fheCompactCiphertextListBuilderWasm.build_with_proof_packed_seeded(
+            compactPkeCrsWasm,
+            metaData,
+            tfheLib.ZkComputeLoad.Verify,
+            parameters.seed,
+          );
 
     ciphertextWithZKProofBytes = tfheProvenCompactCiphertextList.safe_serialize(SERIALIZED_SIZE_LIMIT_CIPHERTEXT);
 

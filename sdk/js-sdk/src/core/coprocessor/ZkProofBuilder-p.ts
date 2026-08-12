@@ -286,7 +286,6 @@ export async function createZkProof(
     readonly userAddress: ChecksummedAddress;
     readonly extraData: BytesHex;
     readonly seed?: Uint8Array | undefined;
-
   },
 ): Promise<ZkProof> {
   const { contractAddress, userAddress, values, extraData, seed } = parameters;
