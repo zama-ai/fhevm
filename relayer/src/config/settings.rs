@@ -292,6 +292,13 @@ pub struct GwCiphertextCheckConfig {
     pub retry: RetrySettings,
     /// Per-bucket S3 attestation `HEAD` request timeout, in milliseconds.
     pub head_timeout_ms: u64,
+    /// Overall budget for one request's readiness check: every handle, every retry.
+    ///
+    /// `retry.max_attempts * retry.retry_interval_ms` bounds only the *sleeping* between attempts.
+    /// Since the check moved off-chain an attempt is no longer a single fast `eth_call` — it is a
+    /// bucket fan-out that can wait out `head_timeout_ms` per unresponsive Coprocessor — so the
+    /// wall clock needs its own bound. Whichever of the two limits is reached first ends the check.
+    pub request_timeout_ms: u64,
     /// Coprocessor registry snapshot refresh interval, in milliseconds.
     pub registry_refresh_ms: u64,
 }
@@ -302,6 +309,19 @@ impl GwCiphertextCheckConfig {
             return Err(AppConfigError::Config(
                 "gw_ciphertext_check.head_timeout_ms must be greater than 0".to_string(),
             ));
+        }
+        if self.request_timeout_ms == 0 {
+            return Err(AppConfigError::Config(
+                "gw_ciphertext_check.request_timeout_ms must be greater than 0".to_string(),
+            ));
+        }
+        // A budget below one probe's timeout can expire before any bucket has had the chance to
+        // answer, so every request would fail closed on the clock rather than on the attestations.
+        if self.request_timeout_ms < self.head_timeout_ms {
+            return Err(AppConfigError::Config(format!(
+                "gw_ciphertext_check.request_timeout_ms ({}) must be at least head_timeout_ms ({})",
+                self.request_timeout_ms, self.head_timeout_ms
+            )));
         }
         if self.registry_refresh_ms == 0 {
             return Err(AppConfigError::Config(
@@ -1057,6 +1077,13 @@ mod tests {
     }
 
     #[test]
+    fn test_gw_ciphertext_check_request_timeout_is_required() {
+        assert_field_is_required(
+            "gateway.readiness_checker.gw_ciphertext_check.request_timeout_ms",
+        );
+    }
+
+    #[test]
     fn test_gw_ciphertext_check_rejects_zero_timeouts() {
         let mut ct_check = GwCiphertextCheckConfig {
             retry: RetrySettings {
@@ -1064,15 +1091,39 @@ mod tests {
                 retry_interval_ms: 100,
             },
             head_timeout_ms: 0,
+            request_timeout_ms: 240_000,
             registry_refresh_ms: 60_000,
         };
         assert!(ct_check.validate().is_err());
 
         ct_check.head_timeout_ms = 5_000;
+        ct_check.request_timeout_ms = 0;
+        assert!(ct_check.validate().is_err());
+
+        ct_check.request_timeout_ms = 240_000;
         ct_check.registry_refresh_ms = 0;
         assert!(ct_check.validate().is_err());
 
         ct_check.registry_refresh_ms = 60_000;
+        assert!(ct_check.validate().is_ok());
+    }
+
+    #[test]
+    fn test_gw_ciphertext_check_rejects_budget_below_one_probe() {
+        // A request budget under a single bucket's HEAD timeout expires before any Coprocessor can
+        // answer, so every request would fail on the clock rather than on the attestations.
+        let mut ct_check = GwCiphertextCheckConfig {
+            retry: RetrySettings {
+                max_attempts: 3,
+                retry_interval_ms: 100,
+            },
+            head_timeout_ms: 5_000,
+            request_timeout_ms: 4_999,
+            registry_refresh_ms: 60_000,
+        };
+        assert!(ct_check.validate().is_err());
+
+        ct_check.request_timeout_ms = 5_000;
         assert!(ct_check.validate().is_ok());
     }
 
@@ -1560,9 +1611,10 @@ mod tests {
             "0x1C5d0A5B44e0B3D1A3d1c05A0f5aC2C2b64f1d3C"
         );
 
-        // gw_ciphertext_check: YAML has 5000/60000, env has 7000/90000
+        // gw_ciphertext_check: YAML has 5000/240000/60000, env has 7000/300000/90000
         let ct_check = &settings.gateway.readiness_checker.gw_ciphertext_check;
         assert_eq!(ct_check.head_timeout_ms, 7000);
+        assert_eq!(ct_check.request_timeout_ms, 300000);
         assert_eq!(ct_check.registry_refresh_ms, 90000);
 
         // copro_kms_backoff_intervals: env overrides to different values

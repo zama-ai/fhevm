@@ -24,6 +24,7 @@ use ciphertext_attestation_client::{
     fetch_attestations_and_check_consensus, ConsensusCheckError, CoprocessorRegistry,
     COPROCESSOR_CONTEXT_ID_V1,
 };
+use futures::stream::{self, StreamExt};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -32,12 +33,21 @@ use tracing::{error, info, warn};
 
 use crate::readiness::ReadinessStep;
 
+/// Handles probed concurrently within one attempt.
+///
+/// Each handle already fans out one `HEAD` per Coprocessor bucket, so requests in flight peak at
+/// this many times the registry size. Bounded rather than unbounded so a request naming a large
+/// handle set cannot spike that product, and fixed rather than configurable to keep the
+/// `gw_ciphertext_check` subtree to the knobs an operator actually tunes.
+const MAX_CONCURRENT_HANDLES: usize = 8;
+
 /// Checks that every handle has Coprocessor attestation consensus.
 pub struct CiphertextChecker {
     retry_config: RetrySettings,
     registry: CoprocessorRegistry<Arc<Provider>, AnyNetwork>,
     http_client: Client,
     head_timeout: Duration,
+    request_timeout: Duration,
 }
 
 impl CiphertextChecker {
@@ -78,6 +88,7 @@ impl CiphertextChecker {
             registry,
             http_client: Client::new(),
             head_timeout: Duration::from_millis(check_config.head_timeout_ms),
+            request_timeout: Duration::from_millis(check_config.request_timeout_ms),
         })
     }
 
@@ -149,14 +160,46 @@ impl CiphertextChecker {
         result
     }
 
-    /// Retries the whole handle set while attestations are starved, and gives up immediately once
-    /// the Coprocessors have split.
+    /// Retries the whole handle set while attestations are starved, under an overall wall-clock
+    /// budget, and gives up immediately once the Coprocessors have split.
     ///
-    /// Coprocessors upload attestations asynchronously, so a first-attempt `Starved` is the
-    /// normal case and worth retrying. `Split` is different in kind: every registered Coprocessor
-    /// has already answered and their signers disagree, so re-reading the same objects cannot
-    /// change that verdict.
+    /// Two independent limits, whichever is reached first: `retry.max_attempts` bounds how many
+    /// times the handle set is re-probed, and `request_timeout_ms` bounds how long that may take in
+    /// total. The attempt count alone is not a time bound — an attempt waits out `head_timeout` per
+    /// unresponsive bucket, so a hanging Coprocessor would otherwise stretch the nominal budget by
+    /// an order of magnitude while holding a readiness throttler permit the whole time.
     async fn check_handles_with_retry(
+        &self,
+        job_id: &JobId,
+        handles: &[FixedBytes<32>],
+    ) -> Result<(), ReadinessCheckError> {
+        match tokio::time::timeout(
+            self.request_timeout,
+            self.retry_while_starved(job_id, handles),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_elapsed) => {
+                // Same verdict as exhausting the attempts — retriable, `readiness_check_timed_out`
+                // — but a distinct log line, because the remedy differs: attempts exhausted means
+                // the attestations are late, whereas the budget expiring means the probes
+                // themselves are slow and a bucket is likely unresponsive.
+                warn!(
+                    step = %ReadinessStep::Failed,
+                    int_job_id = %job_id,
+                    request_timeout_ms = self.request_timeout.as_millis(),
+                    handles = handles.len(),
+                    "Ciphertext attestation check exceeded its overall request budget"
+                );
+                Err(ReadinessCheckError::GwTimeout)
+            }
+        }
+    }
+
+    /// Re-probes the handle set until it succeeds, splits, or runs out of attempts. Bounded in time
+    /// only by its caller — see [`Self::check_handles_with_retry`].
+    async fn retry_while_starved(
         &self,
         job_id: &JobId,
         handles: &[FixedBytes<32>],
@@ -207,39 +250,58 @@ impl CiphertextChecker {
     /// handle, so any handle without consensus fails the whole request.
     ///
     /// A failing handle does not end the round, because the *kind* of failure decides
-    /// retriable-vs-terminal and a `Split` has to win wherever it sits in the list. Stopping at the
-    /// first `Starved` would hide a split handle behind a retry budget that can never satisfy it,
-    /// and would make the user-facing verdict depend on the order the handles happen to arrive in —
-    /// the same request reported as a 503 timeout or a 500 no-consensus depending on position. A
-    /// `Split` is returned as soon as it is seen: it is terminal, so there is nothing left to learn.
+    /// retriable-vs-terminal and a `Split` has to win wherever it sits in the set. Reporting the
+    /// first failure seen would hide a split handle behind a retry budget that can never satisfy it,
+    /// and would make the user-facing verdict depend on which handle happened to fail first — the
+    /// same request reported as a 503 timeout or a 500 no-consensus depending on position or timing.
+    /// A `Split` short-circuits the round: it is terminal, so there is nothing left to learn.
     ///
-    /// Handles are checked sequentially; each one already fans out concurrently across every
-    /// Coprocessor bucket.
+    /// Handles are probed concurrently, up to [`MAX_CONCURRENT_HANDLES`] at a time, so an attempt
+    /// costs about one `head_timeout` rather than one per handle. The reported `Starved` is the one
+    /// belonging to the lowest-indexed failing handle, so the message does not vary with the order
+    /// replies happen to arrive in.
     async fn check_handles_once(
         &self,
         handles: &[FixedBytes<32>],
     ) -> Result<(), ConsensusCheckError> {
         let snapshot = self.registry.snapshot();
-        let mut retriable: Option<ConsensusCheckError> = None;
 
-        for handle in handles {
-            match fetch_attestations_and_check_consensus(
-                &self.http_client,
-                *handle,
-                &snapshot,
-                self.head_timeout,
-                COPROCESSOR_CONTEXT_ID_V1,
-            )
-            .await
-            {
+        // Handles are copied out of the slice rather than borrowed: a borrow taken from the
+        // iterator would tie the closure to one anonymous lifetime, and the resulting future is
+        // not general enough for the `run_consumer` callers to hold across an await.
+        let mut verdicts = stream::iter(handles.iter().copied().enumerate())
+            .map(|(index, handle)| {
+                let snapshot = snapshot.clone();
+                async move {
+                    let outcome = fetch_attestations_and_check_consensus(
+                        &self.http_client,
+                        handle,
+                        &snapshot,
+                        self.head_timeout,
+                        COPROCESSOR_CONTEXT_ID_V1,
+                    )
+                    .await;
+                    (index, outcome)
+                }
+            })
+            .buffer_unordered(MAX_CONCURRENT_HANDLES);
+
+        let mut first_starved: Option<(usize, ConsensusCheckError)> = None;
+
+        while let Some((index, outcome)) = verdicts.next().await {
+            match outcome {
                 Ok(_) => (),
                 Err(e @ ConsensusCheckError::Split { .. }) => return Err(e),
-                Err(e @ ConsensusCheckError::Starved { .. }) => retriable = retriable.or(Some(e)),
+                Err(e @ ConsensusCheckError::Starved { .. }) => {
+                    if first_starved.as_ref().is_none_or(|(at, _)| index < *at) {
+                        first_starved = Some((index, e));
+                    }
+                }
             }
         }
 
-        match retriable {
-            Some(e) => Err(e),
+        match first_starved {
+            Some((_, e)) => Err(e),
             None => Ok(()),
         }
     }
