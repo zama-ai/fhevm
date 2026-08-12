@@ -21,7 +21,6 @@ interface IKMSGeneration {
     error AbortKeygenAlreadyDone(uint256 prepKeygenId);
     error AbortKeygenInvalidId(uint256 prepKeygenId);
     error CompressedKeyMaterialsAlreadyAdded(uint256 keyId);
-    error CompressedKeyMaterialsNotAdded(uint256 keyId);
     error CrsAborted(uint256 crsId);
     error CrsNotGenerated(uint256 crsId);
     error CrsgenNotRequested(uint256 crsId);
@@ -64,7 +63,6 @@ interface IKMSGeneration {
     function getActiveKeyId() external view returns (uint256);
     function getCompletedCrsIds() external view returns (uint256[] memory);
     function getCompletedKeyIds() external view returns (uint256[] memory);
-    function getCompressedKeyMigrationMaterials(uint256 existingKeyId) external view returns (uint256 keyId, string[] memory kmsNodeStorageUrls, KeyDigest[] memory keyDigests);
     function getConsensusTxSenders(uint256 requestId) external view returns (address[] memory);
     function getCrsCounter() external view returns (uint256);
     function getCrsMaterials(uint256 crsId) external view returns (string[] memory, bytes memory);
@@ -199,47 +197,6 @@ interface IKMSGeneration {
         "name": "",
         "type": "uint256[]",
         "internalType": "uint256[]"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "getCompressedKeyMigrationMaterials",
-    "inputs": [
-      {
-        "name": "existingKeyId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "keyId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "kmsNodeStorageUrls",
-        "type": "string[]",
-        "internalType": "string[]"
-      },
-      {
-        "name": "keyDigests",
-        "type": "tuple[]",
-        "internalType": "struct IKMSGeneration.KeyDigest[]",
-        "components": [
-          {
-            "name": "keyType",
-            "type": "uint8",
-            "internalType": "enum IKMSGeneration.KeyType"
-          },
-          {
-            "name": "digest",
-            "type": "bytes",
-            "internalType": "bytes"
-          }
-        ]
       }
     ],
     "stateMutability": "view"
@@ -876,17 +833,6 @@ interface IKMSGeneration {
   {
     "type": "error",
     "name": "CompressedKeyMaterialsAlreadyAdded",
-    "inputs": [
-      {
-        "name": "keyId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "CompressedKeyMaterialsNotAdded",
     "inputs": [
       {
         "name": "keyId",
@@ -2345,91 +2291,6 @@ error CompressedKeyMaterialsAlreadyAdded(uint256 keyId);
             > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "CompressedKeyMaterialsAlreadyAdded(uint256)";
             const SELECTOR: [u8; 4] = [136u8, 199u8, 112u8, 244u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.keyId),
-                )
-            }
-            #[inline]
-            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `CompressedKeyMaterialsNotAdded(uint256)` and selector `0xf916ee42`.
-```solidity
-error CompressedKeyMaterialsNotAdded(uint256 keyId);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct CompressedKeyMaterialsNotAdded {
-        #[allow(missing_docs)]
-        pub keyId: alloy::sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        #[allow(dead_code)]
-        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (
-            alloy::sol_types::private::primitives::aliases::U256,
-        );
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<CompressedKeyMaterialsNotAdded>
-        for UnderlyingRustTuple<'_> {
-            fn from(value: CompressedKeyMaterialsNotAdded) -> Self {
-                (value.keyId,)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for CompressedKeyMaterialsNotAdded {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { keyId: tuple.0 }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for CompressedKeyMaterialsNotAdded {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "CompressedKeyMaterialsNotAdded(uint256)";
-            const SELECTOR: [u8; 4] = [249u8, 22u8, 238u8, 66u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -6821,199 +6682,6 @@ function getCompletedKeyIds() external view returns (uint256[] memory);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `getCompressedKeyMigrationMaterials(uint256)` and selector `0xa8442262`.
-```solidity
-function getCompressedKeyMigrationMaterials(uint256 existingKeyId) external view returns (uint256 keyId, string[] memory kmsNodeStorageUrls, KeyDigest[] memory keyDigests);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getCompressedKeyMigrationMaterialsCall {
-        #[allow(missing_docs)]
-        pub existingKeyId: alloy::sol_types::private::primitives::aliases::U256,
-    }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`getCompressedKeyMigrationMaterials(uint256)`](getCompressedKeyMigrationMaterialsCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getCompressedKeyMigrationMaterialsReturn {
-        #[allow(missing_docs)]
-        pub keyId: alloy::sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub kmsNodeStorageUrls: alloy::sol_types::private::Vec<
-            alloy::sol_types::private::String,
-        >,
-        #[allow(missing_docs)]
-        pub keyDigests: alloy::sol_types::private::Vec<
-            <KeyDigest as alloy::sol_types::SolType>::RustType,
-        >,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::primitives::aliases::U256,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getCompressedKeyMigrationMaterialsCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: getCompressedKeyMigrationMaterialsCall) -> Self {
-                    (value.existingKeyId,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getCompressedKeyMigrationMaterialsCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { existingKeyId: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy::sol_types::sol_data::Uint<256>,
-                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::String>,
-                alloy::sol_types::sol_data::Array<KeyDigest>,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::primitives::aliases::U256,
-                alloy::sol_types::private::Vec<alloy::sol_types::private::String>,
-                alloy::sol_types::private::Vec<
-                    <KeyDigest as alloy::sol_types::SolType>::RustType,
-                >,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getCompressedKeyMigrationMaterialsReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: getCompressedKeyMigrationMaterialsReturn) -> Self {
-                    (value.keyId, value.kmsNodeStorageUrls, value.keyDigests)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getCompressedKeyMigrationMaterialsReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        keyId: tuple.0,
-                        kmsNodeStorageUrls: tuple.1,
-                        keyDigests: tuple.2,
-                    }
-                }
-            }
-        }
-        impl getCompressedKeyMigrationMaterialsReturn {
-            fn _tokenize(
-                &self,
-            ) -> <getCompressedKeyMigrationMaterialsCall as alloy_sol_types::SolCall>::ReturnToken<
-                '_,
-            > {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.keyId),
-                    <alloy::sol_types::sol_data::Array<
-                        alloy::sol_types::sol_data::String,
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsNodeStorageUrls),
-                    <alloy::sol_types::sol_data::Array<
-                        KeyDigest,
-                    > as alloy_sol_types::SolType>::tokenize(&self.keyDigests),
-                )
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for getCompressedKeyMigrationMaterialsCall {
-            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = getCompressedKeyMigrationMaterialsReturn;
-            type ReturnTuple<'a> = (
-                alloy::sol_types::sol_data::Uint<256>,
-                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::String>,
-                alloy::sol_types::sol_data::Array<KeyDigest>,
-            );
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "getCompressedKeyMigrationMaterials(uint256)";
-            const SELECTOR: [u8; 4] = [168u8, 68u8, 34u8, 98u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.existingKeyId),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                getCompressedKeyMigrationMaterialsReturn::_tokenize(ret)
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getConsensusTxSenders(uint256)` and selector `0x16c713d9`.
 ```solidity
 function getConsensusTxSenders(uint256 requestId) external view returns (address[] memory);
@@ -9100,8 +8768,6 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
         #[allow(missing_docs)]
         getCompletedKeyIds(getCompletedKeyIdsCall),
         #[allow(missing_docs)]
-        getCompressedKeyMigrationMaterials(getCompressedKeyMigrationMaterialsCall),
-        #[allow(missing_docs)]
         getConsensusTxSenders(getConsensusTxSendersCall),
         #[allow(missing_docs)]
         getCrsCounter(getCrsCounterCall),
@@ -9150,7 +8816,6 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
             [98u8, 148u8, 244u8, 98u8],
             [98u8, 151u8, 135u8, 135u8],
             [147u8, 102u8, 8u8, 174u8],
-            [168u8, 68u8, 34u8, 98u8],
             [186u8, 255u8, 33u8, 30u8],
             [194u8, 193u8, 250u8, 238u8],
             [197u8, 91u8, 135u8, 36u8],
@@ -9175,7 +8840,6 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
             ::core::stringify!(getKeyInfo),
             ::core::stringify!(crsgenResponse),
             ::core::stringify!(getKeyMaterials),
-            ::core::stringify!(getCompressedKeyMigrationMaterials),
             ::core::stringify!(getActiveCrsId),
             ::core::stringify!(abortKeygen),
             ::core::stringify!(getCrsMaterials),
@@ -9200,7 +8864,6 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
             <getKeyInfoCall as alloy_sol_types::SolCall>::SIGNATURE,
             <crsgenResponseCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getKeyMaterialsCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <getCompressedKeyMigrationMaterialsCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getActiveCrsIdCall as alloy_sol_types::SolCall>::SIGNATURE,
             <abortKeygenCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getCrsMaterialsCall as alloy_sol_types::SolCall>::SIGNATURE,
@@ -9234,7 +8897,7 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
     impl alloy_sol_types::SolInterface for IKMSGenerationCalls {
         const NAME: &'static str = "IKMSGenerationCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 22usize;
+        const COUNT: usize = 21usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -9261,9 +8924,6 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 }
                 Self::getCompletedKeyIds(_) => {
                     <getCompletedKeyIdsCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::getCompressedKeyMigrationMaterials(_) => {
-                    <getCompressedKeyMigrationMaterialsCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::getConsensusTxSenders(_) => {
                     <getConsensusTxSendersCall as alloy_sol_types::SolCall>::SELECTOR
@@ -9474,17 +9134,6 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                             .map(IKMSGenerationCalls::getKeyMaterials)
                     }
                     getKeyMaterials
-                },
-                {
-                    fn getCompressedKeyMigrationMaterials(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <getCompressedKeyMigrationMaterialsCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IKMSGenerationCalls::getCompressedKeyMigrationMaterials)
-                    }
-                    getCompressedKeyMigrationMaterials
                 },
                 {
                     fn getActiveCrsId(
@@ -9736,17 +9385,6 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                     getKeyMaterials
                 },
                 {
-                    fn getCompressedKeyMigrationMaterials(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <getCompressedKeyMigrationMaterialsCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationCalls::getCompressedKeyMigrationMaterials)
-                    }
-                    getCompressedKeyMigrationMaterials
-                },
-                {
                     fn getActiveCrsId(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
@@ -9877,11 +9515,6 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                         inner,
                     )
                 }
-                Self::getCompressedKeyMigrationMaterials(inner) => {
-                    <getCompressedKeyMigrationMaterialsCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::getConsensusTxSenders(inner) => {
                     <getConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
@@ -9994,12 +9627,6 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                         out,
                     )
                 }
-                Self::getCompressedKeyMigrationMaterials(inner) => {
-                    <getCompressedKeyMigrationMaterialsCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
                 Self::getConsensusTxSenders(inner) => {
                     <getConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
@@ -10094,8 +9721,6 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
         #[allow(missing_docs)]
         CompressedKeyMaterialsAlreadyAdded(CompressedKeyMaterialsAlreadyAdded),
         #[allow(missing_docs)]
-        CompressedKeyMaterialsNotAdded(CompressedKeyMaterialsNotAdded),
-        #[allow(missing_docs)]
         CrsAborted(CrsAborted),
         #[allow(missing_docs)]
         CrsNotGenerated(CrsNotGenerated),
@@ -10173,7 +9798,6 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
             [223u8, 13u8, 181u8, 251u8],
             [230u8, 249u8, 8u8, 59u8],
             [232u8, 78u8, 1u8, 181u8],
-            [249u8, 22u8, 238u8, 66u8],
             [252u8, 242u8, 219u8, 122u8],
             [252u8, 245u8, 166u8, 233u8],
         ];
@@ -10204,7 +9828,6 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
             ::core::stringify!(AbortCrsgenAlreadyDone),
             ::core::stringify!(EmptyKeyDigests),
             ::core::stringify!(NotActiveKey),
-            ::core::stringify!(CompressedKeyMaterialsNotAdded),
             ::core::stringify!(AbortKeygenInvalidId),
             ::core::stringify!(KmsAlreadySignedForCrsgen),
         ];
@@ -10235,7 +9858,6 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
             <AbortCrsgenAlreadyDone as alloy_sol_types::SolError>::SIGNATURE,
             <EmptyKeyDigests as alloy_sol_types::SolError>::SIGNATURE,
             <NotActiveKey as alloy_sol_types::SolError>::SIGNATURE,
-            <CompressedKeyMaterialsNotAdded as alloy_sol_types::SolError>::SIGNATURE,
             <AbortKeygenInvalidId as alloy_sol_types::SolError>::SIGNATURE,
             <KmsAlreadySignedForCrsgen as alloy_sol_types::SolError>::SIGNATURE,
         ];
@@ -10264,7 +9886,7 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
     impl alloy_sol_types::SolInterface for IKMSGenerationErrors {
         const NAME: &'static str = "IKMSGenerationErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 28usize;
+        const COUNT: usize = 27usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -10282,9 +9904,6 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 }
                 Self::CompressedKeyMaterialsAlreadyAdded(_) => {
                     <CompressedKeyMaterialsAlreadyAdded as alloy_sol_types::SolError>::SELECTOR
-                }
-                Self::CompressedKeyMaterialsNotAdded(_) => {
-                    <CompressedKeyMaterialsNotAdded as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::CrsAborted(_) => {
                     <CrsAborted as alloy_sol_types::SolError>::SELECTOR
@@ -10641,17 +10260,6 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                     NotActiveKey
                 },
                 {
-                    fn CompressedKeyMaterialsNotAdded(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <CompressedKeyMaterialsNotAdded as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IKMSGenerationErrors::CompressedKeyMaterialsNotAdded)
-                    }
-                    CompressedKeyMaterialsNotAdded
-                },
-                {
                     fn AbortKeygenInvalidId(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
@@ -10971,17 +10579,6 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                     NotActiveKey
                 },
                 {
-                    fn CompressedKeyMaterialsNotAdded(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
-                        <CompressedKeyMaterialsNotAdded as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKMSGenerationErrors::CompressedKeyMaterialsNotAdded)
-                    }
-                    CompressedKeyMaterialsNotAdded
-                },
-                {
                     fn AbortKeygenInvalidId(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
@@ -11039,11 +10636,6 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 }
                 Self::CompressedKeyMaterialsAlreadyAdded(inner) => {
                     <CompressedKeyMaterialsAlreadyAdded as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::CompressedKeyMaterialsNotAdded(inner) => {
-                    <CompressedKeyMaterialsNotAdded as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -11176,12 +10768,6 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 }
                 Self::CompressedKeyMaterialsAlreadyAdded(inner) => {
                     <CompressedKeyMaterialsAlreadyAdded as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::CompressedKeyMaterialsNotAdded(inner) => {
-                    <CompressedKeyMaterialsNotAdded as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -11837,21 +11423,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
         ) -> alloy_contract::SolCallBuilder<&P, getCompletedKeyIdsCall, N> {
             self.call_builder(&getCompletedKeyIdsCall)
-        }
-        ///Creates a new call builder for the [`getCompressedKeyMigrationMaterials`] function.
-        pub fn getCompressedKeyMigrationMaterials(
-            &self,
-            existingKeyId: alloy::sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<
-            &P,
-            getCompressedKeyMigrationMaterialsCall,
-            N,
-        > {
-            self.call_builder(
-                &getCompressedKeyMigrationMaterialsCall {
-                    existingKeyId,
-                },
-            )
         }
         ///Creates a new call builder for the [`getConsensusTxSenders`] function.
         pub fn getConsensusTxSenders(
