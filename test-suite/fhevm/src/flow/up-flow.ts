@@ -70,7 +70,7 @@ import {
   envPath,
   gatewayAddressesPath,
   hostChainAddressesPath,
-  isExternalNode,
+  isEvmHost,
   realLzEndpointFor,
 } from "../layout";
 import type {
@@ -191,9 +191,10 @@ const SCHEMA_GUARDS = {
 
 const SCHEMA_GUARD_TARGETS = new Set<VersionBundle["target"]>(["latest-supported", "latest-main", "sha"]);
 export const preflightPorts = (state: Pick<State, "scenario">) =>
-  // Externally-provisioned hosts (Solana host-native validator) bind their own port outside
-  // fhevm-cli, so that port being "in use" is expected, not a conflict — exclude it.
-  [...new Set([...PORTS, ...state.scenario.hostChains.filter((c) => !isExternalNode(c)).map((c) => c.rpcPort)])];
+  // Nodes outside compose (the Solana validator) bind their own port. fhevm-cli only starts that
+  // one much later, in `host-process`, and a leftover validator still holding the port is a
+  // condition that step resolves — so it is not a preflight conflict. Exclude it.
+  [...new Set([...PORTS, ...state.scenario.hostChains.filter((c) => isEvmHost(c)).map((c) => c.rpcPort)])];
 
 /** Throws if Docker memory is below the scenario minimum: 16 GB standard, 32 GB for multi-chain + multi-coprocessor.
  *  Uses a 1 GB slack to account for VM overhead. */
@@ -631,9 +632,9 @@ export const runStep = async (state: State, step: StepName) => {
         };
       }
       await generateRuntime(state, stackSpecForState(state));
-      // Solana hosts are externally provisioned (host-native validator + solana-side bring-up);
-      // fhevm-cli neither starts their node nor probes it.
-      for (const chain of extraHostChains(state).filter((c) => !isExternalNode(c))) {
+      // Only compose nodes come up here. The Solana validator is started later, by `host-process`,
+      // because its bootstrap reads gateway addresses and the signer set that do not exist yet.
+      for (const chain of extraHostChains(state).filter((c) => isEvmHost(c))) {
         await multiChainComposeUp(chain.node);
         await waitForRpc(`http://localhost:${chain.rpcPort}`, chain.type);
       }
@@ -692,10 +693,10 @@ export const runStep = async (state: State, step: StepName) => {
       // Production topology: non-canonical chains seed ProtocolConfig from the canonical chain
       // (export → mirror), not "fresh" from env. The canonical address only exists after the
       // canonical deploy above, so the placeholder env var is patched here, per chain, before
-      // its deploy container starts. Solana hosts deploy their programs host-side (solana-side
-      // bring-up), not via host-sc.
+      // its deploy container starts. Solana hosts deploy their programs in the `host-process`
+      // step, not via host-sc.
       const canonicalSeedingArgs = await canonicalProtocolConfigSeedingArgs(state);
-      for (const chain of extraHostChains(state).filter((c) => !isExternalNode(c))) {
+      for (const chain of extraHostChains(state).filter((c) => isEvmHost(c))) {
         const scKey = chain.sc;
         if (canonicalSeedingArgs || provisionBridgeProxy) {
           const scEnvPath = envPath(scKey);
@@ -855,8 +856,8 @@ export const runStep = async (state: State, step: StepName) => {
         await applyLegacyHostChainSeedShim(state);
       }
       await postBootHealthGate(coprocessorHealthContainers(state));
-      // Solana hosts register + start their listeners via the solana-side bring-up, not here.
-      for (const chain of extraHostChains(state).filter((c) => !isExternalNode(c))) {
+      // Solana hosts register + start their listeners in the `host-process` step, not here.
+      for (const chain of extraHostChains(state).filter((c) => isEvmHost(c))) {
         const suffix = chain.suffix;
         await timed(`[multi-chain] register ${chain.key} in coprocessor DBs`, () =>
           registerExtraChainInCoprocessor(state, chain),
@@ -974,14 +975,24 @@ export const runStep = async (state: State, step: StepName) => {
       await waitForContainer("fhevm-relayer", "running");
       await waitForLog("fhevm-relayer", /All servers are ready and responding/);
       if (hostChainsForState(state).some((chain) => chain.type === "solana")) {
-        // Standalone MMR proof service (RFC-024). Yellowstone may not be up yet (the side-stack setup
-        // starts geyser after fhevm-cli up); ingest reconnects with backoff until it is.
+        // Standalone MMR proof service (RFC-024). Yellowstone is not up yet — the validator starts
+        // in the later `host-process` step; ingest reconnects with backoff until it is.
         await stepComposeUp("solana-proof-service", state);
         await waitForContainer("fhevm-solana-proof-db", "healthy");
         await waitForContainer("fhevm-solana-proof-service", "running");
         await waitForLog("fhevm-solana-proof-service", /HTTP listening/);
       }
       break;
+    case "host-process": {
+      // The nodes fhevm-cli spawns itself rather than handing to compose. Imported lazily so an
+      // EVM-only `up` never loads the Solana client stack.
+      for (const chain of hostChainsForState(state).filter((c) => c.type === "solana")) {
+        const { provisionSolanaHostNode } = await import("../solana/deploy");
+        const { zamaHostId } = await provisionSolanaHostNode();
+        console.log(`  ${chain.key}: zama_host=${zamaHostId}`);
+      }
+      break;
+    }
     case "test-suite":
       await stepComposeUp("test-suite", state);
       await waitForTestSuite();

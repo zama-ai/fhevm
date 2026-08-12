@@ -5,7 +5,6 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 
 import type {
-  HostChainNodeProvisioning,
   HostChainScenario,
   HostChainType,
   OverrideGroup,
@@ -207,6 +206,8 @@ export const COMPONENT_BY_STEP: Record<StepName, string[]> = {
   "kms-connector": ["kms-connector"],
   "bootstrap": ["gateway-sc", "host-sc"],
   "relayer": ["relayer", "solana-proof-service"],
+  // No compose components by design: this step runs host-process nodes outside compose.
+  "host-process": [],
   "test-suite": ["test-suite"],
 };
 
@@ -496,24 +497,17 @@ export const hostChainNames = (key: string, defaultKey = DEFAULT_HOST_CHAIN_KEY)
   suffix: hostChainSuffix(key, defaultKey),
 });
 /**
- * Resolves how a host node is provisioned. Explicit `nodeProvisioning` wins; otherwise defaults by
- * kind: solana ⇒ external (host-native validator + solana-side bring-up own node/deploy/register),
- * evm ⇒ container (fhevm-cli runs them).
+ * True for an EVM host chain — the only kind with the Solidity pipeline. Gates everything that
+ * pipeline produces: a node/sc/coprocessor compose service, a port to wait on, deployed contract
+ * artifacts, and seeding. A Solana host has none of them; `fhevm-cli` runs its validator itself in
+ * the `host-process` step.
  */
-export const resolveNodeProvisioning = (
-  chain: Pick<HostChainScenario, "type" | "nodeProvisioning">,
-): HostChainNodeProvisioning =>
-  chain.nodeProvisioning ?? ((chain.type ?? "evm") === "solana" ? "external" : "container");
-
-/** True when the host node is provisioned outside fhevm-cli (no node/sc/coprocessor compose). */
-export const isExternalNode = (chain: Pick<HostChainScenario, "type" | "nodeProvisioning">): boolean =>
-  resolveNodeProvisioning(chain) === "external";
+export const isEvmHost = (chain: Pick<HostChainScenario, "type">): boolean =>
+  (chain.type ?? "evm") === "evm";
 
 export type HostChainRuntime = HostChainScenario & {
   /** Resolved host-chain kind: defaults to `evm` when the scenario omits `type`. */
   type: HostChainType;
-  /** Resolved node provisioning: see {@link resolveNodeProvisioning}. */
-  nodeProvisioning: HostChainNodeProvisioning;
   index: number;
   isDefault: boolean;
   suffix: string;
@@ -530,7 +524,6 @@ export const hostChainRuntime = (
 ): HostChainRuntime => ({
   ...chain,
   type: chain.type ?? "evm",
-  nodeProvisioning: resolveNodeProvisioning(chain),
   index,
   isDefault: chain.key === defaultKey,
   ...hostChainNames(chain.key, defaultKey),
