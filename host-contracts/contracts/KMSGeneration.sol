@@ -142,7 +142,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         /// @notice Bidirectional mapping between preprocessing and keygen request IDs
         mapping(uint256 id => uint256 pairedId) keygenIdPairs;
         /// @notice The digests produced by a keygen request
-        mapping(uint256 requestId => KeyDigest[] keyDigests) keyDigests;
+        mapping(uint256 keyId => KeyDigest[] keyDigests) keyDigests;
         /// @notice The ID of the currently active key
         uint256 activeKeyId;
         // ----------------------------------------------------------------------------------------------
@@ -241,6 +241,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
 
         // Check that the previous keygen request is done.
         uint256 previousKeyId = $.keyCounter;
+        // The first keygen request has no predecessor.
         if (previousKeyId != KEY_COUNTER_BASE && !$.isRequestDone[previousKeyId]) {
             revert KeygenOngoing(previousKeyId);
         }
@@ -262,7 +263,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         $.keygenIdPairs[prepKeygenId] = keyId;
         $.keygenIdPairs[keyId] = prepKeygenId;
 
-        // Store the FHE params type used by both request phases.
+        // Store the FHE params type used by both request phases, prepKeygen and keygen.
         $.requestParamsType[prepKeygenId] = paramsType;
 
         if (existingKeyId != 0) {
@@ -344,8 +345,8 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
             revert EmptyKeyDigests(keyId);
         }
 
-        uint256 migrationKeyId = $.existingKeyIdByRequestId[keyId];
-        if (migrationKeyId != 0) {
+        uint256 existingKeyId = $.existingKeyIdByRequestId[keyId];
+        if (existingKeyId != 0) {
             _checkCompressedKeySetDigest(keyId, keyDigests);
         }
 
@@ -386,7 +387,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
             $.consensusDigest[keyId] = digest;
 
             string[] memory consensusUrls = _buildConsensusStorageUrls(contextId, consensusTxSenders);
-            _recordKeygenConsensus(keyId, migrationKeyId, keyDigests, consensusUrls);
+            _recordKeygenConsensus(keyId, existingKeyId, keyDigests, consensusUrls);
         }
     }
 
@@ -413,21 +414,21 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
      * @notice See {IKMSGeneration-getCompressedKeyMigrationMaterials}.
      */
     function getCompressedKeyMigrationMaterials(
-        uint256 keyId
+        uint256 existingKeyId
     ) external view virtual returns (uint256, string[] memory, KeyDigest[] memory) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
-        uint256 migrationRequestId = $.requestIdByExistingKeyId[keyId];
-        if (migrationRequestId == 0 || $.consensusDigest[migrationRequestId] == bytes32(0)) {
-            revert CompressedKeyMaterialsNotAdded(keyId);
+        uint256 keyId = $.requestIdByExistingKeyId[existingKeyId];
+        if (keyId == 0 || $.consensusDigest[keyId] == bytes32(0)) {
+            revert CompressedKeyMaterialsNotAdded(existingKeyId);
         }
 
-        bytes32 digest = $.consensusDigest[migrationRequestId];
-        address[] memory consensusTxSenders = $.consensusTxSenderAddresses[migrationRequestId][digest];
-        uint256 contextId = _extractContextIdFromExtraData($.requestExtraData[migrationRequestId]);
+        bytes32 digest = $.consensusDigest[keyId];
+        address[] memory consensusTxSenders = $.consensusTxSenderAddresses[keyId][digest];
+        uint256 contextId = _extractContextIdFromExtraData($.requestExtraData[keyId]);
         string[] memory consensusUrls = _buildConsensusStorageUrls(contextId, consensusTxSenders);
 
-        return (migrationRequestId, consensusUrls, $.keyDigests[migrationRequestId]);
+        return (keyId, consensusUrls, $.keyDigests[keyId]);
     }
 
     /**
@@ -535,7 +536,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
             revert AbortKeygenAlreadyDone(prepKeygenId);
         }
 
-        // Mark both request phases as done to unblock the next keygen.
+        // Mark both request phases, prepKeygen and keygen, as done to unblock the next keygen.
         $.isRequestDone[prepKeygenId] = true;
         if (keyId != 0) {
             $.isRequestDone[keyId] = true;

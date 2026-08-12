@@ -64,7 +64,7 @@ interface IKMSGeneration {
     function getActiveKeyId() external view returns (uint256);
     function getCompletedCrsIds() external view returns (uint256[] memory);
     function getCompletedKeyIds() external view returns (uint256[] memory);
-    function getCompressedKeyMigrationMaterials(uint256 keyId) external view returns (uint256 keyMaterialId, string[] memory kmsNodeStorageUrls, KeyDigest[] memory keyDigests);
+    function getCompressedKeyMigrationMaterials(uint256 existingKeyId) external view returns (uint256 keyId, string[] memory kmsNodeStorageUrls, KeyDigest[] memory keyDigests);
     function getConsensusTxSenders(uint256 requestId) external view returns (address[] memory);
     function getCrsCounter() external view returns (uint256);
     function getCrsMaterials(uint256 crsId) external view returns (string[] memory, bytes memory);
@@ -208,14 +208,14 @@ interface IKMSGeneration {
     "name": "getCompressedKeyMigrationMaterials",
     "inputs": [
       {
-        "name": "keyId",
+        "name": "existingKeyId",
         "type": "uint256",
         "internalType": "uint256"
       }
     ],
     "outputs": [
       {
-        "name": "keyMaterialId",
+        "name": "keyId",
         "type": "uint256",
         "internalType": "uint256"
       },
@@ -6823,13 +6823,13 @@ function getCompletedKeyIds() external view returns (uint256[] memory);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getCompressedKeyMigrationMaterials(uint256)` and selector `0xa8442262`.
 ```solidity
-function getCompressedKeyMigrationMaterials(uint256 keyId) external view returns (uint256 keyMaterialId, string[] memory kmsNodeStorageUrls, KeyDigest[] memory keyDigests);
+function getCompressedKeyMigrationMaterials(uint256 existingKeyId) external view returns (uint256 keyId, string[] memory kmsNodeStorageUrls, KeyDigest[] memory keyDigests);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getCompressedKeyMigrationMaterialsCall {
         #[allow(missing_docs)]
-        pub keyId: alloy::sol_types::private::primitives::aliases::U256,
+        pub existingKeyId: alloy::sol_types::private::primitives::aliases::U256,
     }
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
@@ -6838,7 +6838,7 @@ function getCompressedKeyMigrationMaterials(uint256 keyId) external view returns
     #[derive(Clone)]
     pub struct getCompressedKeyMigrationMaterialsReturn {
         #[allow(missing_docs)]
-        pub keyMaterialId: alloy::sol_types::private::primitives::aliases::U256,
+        pub keyId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub kmsNodeStorageUrls: alloy::sol_types::private::Vec<
             alloy::sol_types::private::String,
@@ -6880,7 +6880,7 @@ function getCompressedKeyMigrationMaterials(uint256 keyId) external view returns
             impl ::core::convert::From<getCompressedKeyMigrationMaterialsCall>
             for UnderlyingRustTuple<'_> {
                 fn from(value: getCompressedKeyMigrationMaterialsCall) -> Self {
-                    (value.keyId,)
+                    (value.existingKeyId,)
                 }
             }
             #[automatically_derived]
@@ -6888,7 +6888,7 @@ function getCompressedKeyMigrationMaterials(uint256 keyId) external view returns
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
             for getCompressedKeyMigrationMaterialsCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { keyId: tuple.0 }
+                    Self { existingKeyId: tuple.0 }
                 }
             }
         }
@@ -6924,7 +6924,7 @@ function getCompressedKeyMigrationMaterials(uint256 keyId) external view returns
             impl ::core::convert::From<getCompressedKeyMigrationMaterialsReturn>
             for UnderlyingRustTuple<'_> {
                 fn from(value: getCompressedKeyMigrationMaterialsReturn) -> Self {
-                    (value.keyMaterialId, value.kmsNodeStorageUrls, value.keyDigests)
+                    (value.keyId, value.kmsNodeStorageUrls, value.keyDigests)
                 }
             }
             #[automatically_derived]
@@ -6933,7 +6933,7 @@ function getCompressedKeyMigrationMaterials(uint256 keyId) external view returns
             for getCompressedKeyMigrationMaterialsReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
-                        keyMaterialId: tuple.0,
+                        keyId: tuple.0,
                         kmsNodeStorageUrls: tuple.1,
                         keyDigests: tuple.2,
                     }
@@ -6949,7 +6949,7 @@ function getCompressedKeyMigrationMaterials(uint256 keyId) external view returns
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.keyMaterialId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.keyId),
                     <alloy::sol_types::sol_data::Array<
                         alloy::sol_types::sol_data::String,
                     > as alloy_sol_types::SolType>::tokenize(&self.kmsNodeStorageUrls),
@@ -6987,7 +6987,7 @@ function getCompressedKeyMigrationMaterials(uint256 keyId) external view returns
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.keyId),
+                    > as alloy_sol_types::SolType>::tokenize(&self.existingKeyId),
                 )
             }
             #[inline]
@@ -11841,7 +11841,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ///Creates a new call builder for the [`getCompressedKeyMigrationMaterials`] function.
         pub fn getCompressedKeyMigrationMaterials(
             &self,
-            keyId: alloy::sol_types::private::primitives::aliases::U256,
+            existingKeyId: alloy::sol_types::private::primitives::aliases::U256,
         ) -> alloy_contract::SolCallBuilder<
             &P,
             getCompressedKeyMigrationMaterialsCall,
@@ -11849,7 +11849,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         > {
             self.call_builder(
                 &getCompressedKeyMigrationMaterialsCall {
-                    keyId,
+                    existingKeyId,
                 },
             )
         }
