@@ -1,164 +1,182 @@
 # Clients
 
-A **client** is your main interface to the SDK. You create one, and it gives you methods like `encrypt()`, `publicDecrypt()`, and `decrypt()`. Each client is bound to a specific chain and provider.
+A client is the object you call to encrypt and decrypt. It binds a
+[chain definition](chains.md) to a read connection and lazily loads the
+WebAssembly cryptography it needs.
 
-The SDK offers three client types so you only load the WASM modules you actually need.
+Every client comes from one of two adapter entry points — `@fhevm/sdk/ethers` or
+`@fhevm/sdk/viem`. The API is identical across both; only the native connection
+object differs (`provider` for ethers, `publicClient` for viem).
 
-## Which client should I use?
+## Choosing a client
 
-| If you need to...                           | Use this                     | WASM loaded                 |
-| ------------------------------------------- | ---------------------------- | --------------------------- |
-| Encrypt **and** decrypt                     | `createFhevmClient()`        | TFHE (~5MB) + TKMS (~600KB) |
-| Only encrypt (e.g., a form submission page) | `createFhevmEncryptClient()` | TFHE (~5MB) only            |
-| Only decrypt (e.g., a results page)         | `createFhevmDecryptClient()` | TKMS (~600KB) only          |
+Four factories exist. They differ only in **which WASM modules they load** and
+therefore **which methods they expose**. Pick the narrowest one your page needs —
+a page that only reads public values should never download the 4.9 MB encryption
+module.
 
-**Why does this matter?** WASM modules are large. If your page only decrypts results, there's no reason to download the 5MB encryption module. Using the right client type makes your app load faster.
+| Factory                      | Encrypts | Decrypts | WASM loaded              |
+| ---------------------------- | :------: | :------: | ----------------------- |
+| `createFhevmClient`          |    ✅    |    ✅    | TFHE (~4.9 MB) + TKMS (~600 KB) |
+| `createFhevmEncryptClient`   |    ✅    |    —     | TFHE (~4.9 MB)          |
+| `createFhevmDecryptClient`   |    —     |    ✅    | TKMS (~600 KB)          |
+| `createFhevmBaseClient`      |    —     |    —     | None                    |
 
-Methods that don't belong to your client type are **compile-time errors** — TypeScript catches them before your code runs.
+"Decrypts" above covers **private** decryption (`decryptValue`). Reading
+**public** values (`decryptPublicValue`) and signing permits are available on
+_every_ client, including the base client — they need no cryptography WASM. See
+[Decryption](decryption.md) for the distinction.
 
 ## Creating a client
 
-All client factories take the same parameters: a `chain` definition and a `provider` (your Ethereum connection).
-
-### Full client
-
-Use when your page needs both encryption and decryption.
-
-**With viem:**
+{% tabs %}
+{% tab title="ethers.js" %}
 
 ```ts
-import { setFhevmRuntimeConfig, createFhevmClient } from '@fhevm/sdk/viem';
+import { createFhevmClient } from '@fhevm/sdk/ethers';
+import { sepolia } from '@fhevm/sdk/chains';
+import { ethers } from 'ethers';
+
+const provider = new ethers.JsonRpcProvider('https://ethereum-sepolia-rpc.publicnode.com');
+
+const client = createFhevmClient({ chain: sepolia, provider });
+```
+
+The `provider` is any ethers [`ContractRunner`](https://docs.ethers.org/v6/api/contract/#ContractRunner) —
+a `JsonRpcProvider`, `BrowserProvider`, or a connected `Wallet`/`Signer`. The
+client only reads through it; it never sends transactions on your behalf.
+
+{% endtab %}
+{% tab title="viem" %}
+
+```ts
+import { createFhevmClient } from '@fhevm/sdk/viem';
 import { sepolia } from '@fhevm/sdk/chains';
 import { createPublicClient, http } from 'viem';
 import { sepolia as viemSepolia } from 'viem/chains';
 
-// Configure once at app startup
-setFhevmRuntimeConfig({ numberOfThreads: 4 });
-
-// Create your provider
-const provider = createPublicClient({
+const publicClient = createPublicClient({
   chain: viemSepolia,
   transport: http('https://ethereum-sepolia-rpc.publicnode.com'),
 });
 
-// Create the FHEVM client
-const client = createFhevmClient({ chain: sepolia, provider });
+const client = createFhevmClient({ chain: sepolia, publicClient });
 ```
 
-**With ethers.js:**
+The `publicClient` is a viem [`PublicClient`](https://viem.sh/docs/clients/public).
+The client only reads through it.
+
+{% endtab %}
+{% endtabs %}
+
+Note the two `sepolia` imports in the viem example: `@fhevm/sdk/chains` supplies
+the **FHEVM** chain definition (contract addresses, Relayer URL), while
+`viem/chains` supplies viem's own transport chain. They are different objects and
+both are needed.
+
+## Signing is per-call, not per-client
+
+Neither factory takes a `signer` or `walletClient`. A client is read-only. When
+an operation needs a signature — only [`signDecryptionPermit`](decryption.md)
+does — you pass the signer to that method:
 
 ```ts
-import { setFhevmRuntimeConfig, createFhevmClient } from '@fhevm/sdk/ethers';
-import { sepolia } from '@fhevm/sdk/chains';
-import { ethers } from 'ethers';
-
-setFhevmRuntimeConfig({ numberOfThreads: 4 });
-
-const provider = new ethers.JsonRpcProvider('https://ethereum-sepolia-rpc.publicnode.com');
-const client = createFhevmClient({ chain: sepolia, provider });
+await client.signDecryptionPermit({
+  /* … */
+  signerAddress: await signer.getAddress(),
+  signer, // ethers Signer, or a viem Account / WalletClient
+});
 ```
 
-### Encrypt-only client
+This keeps encryption and public reads completely wallet-free.
 
-Use when you only need to submit encrypted data — no decryption needed on this page.
+## Options
+
+Each factory accepts an optional `options` object:
 
 ```ts
-import { createFhevmEncryptClient } from "@fhevm/sdk/viem"; // or "@fhevm/sdk/ethers"
+const client = createFhevmClient({
+  chain: sepolia,
+  provider,
+  options: {
+    batchRpcCalls: true, // batch the client's on-chain reads into multicalls
+  },
+});
+```
+
+| Option            | Type                    | Applies to        | Purpose                                                            |
+| ----------------- | ----------------------- | ----------------- | ----------------------------------------------------------------- |
+| `batchRpcCalls`   | `boolean`               | all clients       | Coalesce the client's contract reads into batched RPC calls.      |
+| `fheEncryptionKey`| `FheEncryptionKeyBytes` | encrypt / full    | Provide a pre-fetched FHE public key to skip the network fetch.   |
+| `moduleVersions`  | `FhevmModuleVersions`   | varies by client  | Pin specific TFHE/TKMS WASM versions instead of the defaults.     |
+
+Module version pinning and the encryption-key cache are covered in
+[Runtime configuration](runtime-configuration.md).
+
+## Loading and lifecycle
+
+Constructing a client is instant and does no I/O. Before you encrypt or decrypt,
+await `client.ready` (or `client.init()`) once — it resolves the protocol
+versions and downloads and compiles the WASM the client needs. `encryptValues`,
+`decryptValue`, and `generateTransportKeyPair` require this and throw if it hasn't
+happened; `decryptPublicValues` is the exception — it resolves what it needs from
+the Relayer and works without a prior `init()`.
+
+Await it at a moment you control — a splash screen, a route transition:
+
+```ts
+const client = createFhevmClient({ chain: sepolia, provider });
+await client.ready; // resolves versions, downloads + compiles WASM, once
+```
+
+Every client exposes a small set of lifecycle members:
+
+| Member            | Type               | Description                                                     |
+| ----------------- | ------------------ | -------------------------------------------------------------- |
+| `init()`          | `() => Promise<void>` | Preload and compile the client's WASM modules.              |
+| `ready`           | `Promise<void>`    | Resolves once the client is ready to use.                      |
+| `uid`             | `string`           | Stable identifier for this client instance.                    |
+| `chain`           | `FhevmChain`       | The chain definition the client was created with.              |
+| `protocolVersion` | resolution object  | The resolved FHEVM protocol version for the chain.             |
+| `extend(actions)` | function           | Attach additional action methods (advanced / internal).        |
+
+Calling `init()` twice is safe — module initialization is cached per WASM
+version. A given WASM version is owned by a single client instance; creating a
+second client that tries to load the _same_ version throws. In practice, create
+one client per page and reuse it.
+
+{% hint style="info" %}
+Constructing a client costs no download. Await `client.ready` once — at a moment you control, such as a splash screen or route transition — to resolve versions and compile WASM before you encrypt or decrypt.
+{% endhint %}
+
+## Encrypt-only and decrypt-only in practice
+
+A common pattern splits a dApp by route. A "submit" page that only encrypts:
+
+```ts
+import { createFhevmEncryptClient } from '@fhevm/sdk/ethers';
 
 const client = createFhevmEncryptClient({ chain: sepolia, provider });
-
-await client.encrypt({ ... });           // works
-await client.decrypt({ ... });           // compile-time error
+// exposes encryptValue / encryptValues (+ public-decrypt + permit helpers)
 ```
 
-### Decrypt-only client
-
-Use when you only need to read encrypted results — no new encryption needed.
+A "results" page that only reads back private values:
 
 ```ts
-import { createFhevmDecryptClient } from "@fhevm/sdk/viem"; // or "@fhevm/sdk/ethers"
+import { createFhevmDecryptClient } from '@fhevm/sdk/ethers';
 
 const client = createFhevmDecryptClient({ chain: sepolia, provider });
-
-await client.publicDecrypt({ ... });     // works
-await client.decrypt({ ... });           // works
-await client.encrypt({ ... });           // compile-time error
+// exposes decryptValue / decryptValues / generateTransportKeyPair (+ public-decrypt + permit helpers)
 ```
 
-## When does WASM load?
+Each downloads only the WASM it needs. See [Encryption](encryption.md) and
+[Decryption](decryption.md) for the method details.
 
-WASM modules load **lazily** — not when you create the client, but the first time you call an action that needs them:
+## Related
 
-- First `encrypt()` call → loads TFHE WASM (~5MB) + fetches the network's public key (~50MB)
-- First `decrypt()` call → loads TKMS WASM (~600KB)
-
-If you want to load WASM eagerly (for example, behind a loading spinner at app startup), call:
-
-```ts
-await client.init();
-// or equivalently:
-await client.ready;
+- [Encryption](encryption.md) — encrypt values and build input proofs.
+- [Decryption](decryption.md) — private decryption, public values, delegation.
+- [Runtime configuration](runtime-configuration.md) — threads, WASM loading, version pinning.
+- [API reference](api-reference.md) — full factory and method signatures.
 ```
 
-## Available methods
-
-### `FhevmClient` (full client)
-
-Has all base, encrypt, and decrypt methods.
-
-### Base methods (all client types)
-
-| Method                                | Sync/Async | What it does                                 |
-| ------------------------------------- | ---------- | -------------------------------------------- |
-| `publicDecrypt(params)`               | async      | Decrypt publicly readable encrypted values   |
-| `signDecryptionPermit(params)`        | async      | Create and sign a decrypt permit in one step |
-| `parseTransportKeyPair(params)`       | async      | Restore a key pair from serialized bytes     |
-| `serializeTransportKeyPair(params)`   | sync       | Serialize a key pair for storage             |
-| `fetchFheEncryptionKeyBytes(params?)` | async      | Fetch the network's public encryption key    |
-| `init()`                              | async      | Eagerly load WASM modules                    |
-| `ready`                               | Promise    | Resolves when WASM modules are loaded        |
-
-### Encrypt methods (`FhevmClient`, `FhevmEncryptClient`)
-
-| Method            | Sync/Async | What it does                                           |
-| ----------------- | ---------- | ------------------------------------------------------ |
-| `encrypt(params)` | async      | Encrypt values and get encrypted handles + input proof |
-
-### Decrypt methods (`FhevmClient`, `FhevmDecryptClient`)
-
-| Method                                     | Sync/Async | What it does                                                          |
-| ------------------------------------------ | ---------- | --------------------------------------------------------------------- |
-| `decrypt(params)`                          | async      | Decrypt private encrypted values with a signed permit                 |
-| `createUserDecryptEIP712(params)`          | async      | Build EIP-712 typed data for a decrypt permit (lower-level)           |
-| `createDelegatedUserDecryptEIP712(params)` | async      | Build EIP-712 typed data for a delegated decrypt permit (lower-level) |
-| `publicDecrypt(params)`                    | async      | Decrypt publicly readable encrypted values                            |
-| `generateTransportKeyPair()`               | async      | Generate a new E2E transport key pair for decryption                  |
-
-## Client properties
-
-Every client exposes these read-only properties:
-
-| Property  | Type           | What it is                                   |
-| --------- | -------------- | -------------------------------------------- |
-| `chain`   | `FhevmChain`   | The chain definition this client is bound to |
-| `runtime` | `FhevmRuntime` | The runtime with its loaded modules          |
-| `uid`     | `string`       | A unique ID for this client instance         |
-
-## Standalone functions vs. client methods
-
-Every action is available in two forms:
-
-```ts
-import { encrypt } from "@fhevm/sdk/actions/encrypt";
-import { publicDecrypt } from "@fhevm/sdk/actions/base";
-
-// As a standalone function — pass the client as the first argument
-const result = await encrypt(client, { ... });
-const proof = await publicDecrypt(client, { encryptedValues: [...] });
-
-// As a client method — the client is implicit
-const result = await client.encrypt({ ... });
-const proof = await client.publicDecrypt({ encryptedValues: [...] });
-```
-
-Both are equivalent. Standalone functions are **tree-shakable** — bundlers can eliminate unused functions from your bundle. Client methods are more convenient for everyday use.

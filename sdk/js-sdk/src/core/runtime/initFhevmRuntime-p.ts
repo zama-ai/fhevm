@@ -7,7 +7,7 @@ export async function initFhevmRuntime(runtime: FhevmRuntime, ownerToken: symbol
   verifyFhevmRuntime(runtime, ownerToken);
   const fullRuntime = runtime.extend(decryptModule).extend(encryptModule);
   await Promise.all([
-    fullRuntime.decrypt.initTkmsModule({ tkmsVersion: '0.13.20-0' }),
+    fullRuntime.decrypt.initTkmsModule({ tkmsVersion: '0.14.0-1' }),
     fullRuntime.encrypt.initTfheModule({ tfheVersion: '1.6.2' }),
   ]);
 }

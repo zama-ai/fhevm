@@ -1,313 +1,162 @@
 # Types
 
-This page documents the TypeScript types used throughout the SDK. You'll encounter these types in function parameters, return values, and when working with encrypted values.
+The SDK's type system distinguishes two things developers routinely conflate:
+plaintext values you provide, and the encrypted handles that reference them
+on-chain. This page is the reference for both.
 
-## FHE types
+The public types are exported from `@fhevm/sdk/types`. The complete set lives
+under the core package and is documented in the [API reference](api-reference.md);
+this page covers the ones you touch daily.
 
-Every encrypted value in FHEVM has a **type** that determines what operations you can perform on it and how many bits it uses. The SDK uses a strongly-typed system to represent these.
+```ts
+import type { TypedValue, EncryptedValue, EncryptedValueLike, Eip712Like } from '@fhevm/sdk/types';
+import { asEncryptedValue, isEncryptedValue } from '@fhevm/sdk/types';
+```
 
-### `FheType`
+## Value types vs. FHE types
 
-The `FheType` union represents all supported FHE encrypted types:
+Two parallel vocabularies describe the same data at different stages:
+
+- **Value-type names** — `'bool'`, `'uint8'`, …, `'uint256'`, `'address'`. These
+  are Solidity's plaintext names. You use them when **encrypting** (the `type`
+  field) and receive them back when **decrypting** (`TypedValue.type`).
+- **Fully Homomorphic Encryption (FHE) type names** — `'ebool'`, `'euint8'`, …, `'euint256'`, `'eaddress'`.
+  These name the encrypted form on-chain. They appear in the branded handle
+  aliases (`Euint32`, `Ebool`, …).
+
+| Value type  | FHE type    | Decrypted JS value |
+| ----------- | ----------- | ------------------ |
+| `bool`      | `ebool`     | `boolean`          |
+| `uint8`     | `euint8`    | `number`           |
+| `uint16`    | `euint16`   | `number`           |
+| `uint32`    | `euint32`   | `number`           |
+| `uint64`    | `euint64`   | `bigint`           |
+| `uint128`   | `euint128`  | `bigint`           |
+| `uint256`   | `euint256`  | `bigint`           |
+| `address`   | `eaddress`  | checksummed string |
+
+There is no `uint160` (an encrypted address is `eaddress`), no encrypted `bytes`
+type, and `euint4` has been removed.
 
 ```ts
 type FheType = 'ebool' | 'euint8' | 'euint16' | 'euint32' | 'euint64' | 'euint128' | 'euint256' | 'eaddress';
 ```
 
-### `FheTypeId`
+## `TypedValue` — the plaintext shape
 
-Numeric identifiers used on-chain. You rarely need these directly — the SDK handles the conversion — but they appear in handle bytes and on-chain contract calls:
-
-| FheType    | FheTypeId | Encrypted Bits | Solidity Primitive |
-| ---------- | --------- | -------------- | ------------------ |
-| `ebool`    | 0         | 2              | `bool`             |
-| `euint8`   | 2         | 8              | `uint256`          |
-| `euint16`  | 3         | 16             | `uint256`          |
-| `euint32`  | 4         | 32             | `uint256`          |
-| `euint64`  | 5         | 64             | `uint256`          |
-| `euint128` | 6         | 128            | `uint256`          |
-| `eaddress` | 7         | 160            | `address`          |
-| `euint256` | 8         | 256            | `uint256`          |
-
-> Note: `euint4` (id: 1) has been deprecated and is omitted.
-
-## Encrypted value references
-
-### `EncryptedValue`
-
-A 32-byte opaque reference to an encrypted value on-chain (called a "handle" in FHE.sol / FHEVM whitepaper terminology). When you read an encrypted value from a contract, you get an `EncryptedValue`. It encodes metadata in its bytes — you can inspect the type, chain ID, and other properties without making an RPC call.
-
-There are two subtypes:
-
-- `ComputedEncryptedValue` — verified on-chain, the result of an FHE operation
-- `ExternalEncryptedValue` — unverified encrypted input, returned from `encrypt()`
-
-Both share a common set of properties:
+`TypedValue` is a discriminated union of `{ type, value }`. It is both the input
+you encrypt and the output you get back from decryption:
 
 ```ts
-// Common properties on all EncryptedValue variants
-readonly bytes32Hex: Bytes32Hex;        // "0x..." (66 chars)
-readonly bytes32: Bytes32;              // Uint8Array (32 bytes)
-readonly chainId: Uint64BigInt;         // Chain the value belongs to
-readonly fheTypeId: FheTypeId;          // Numeric type ID
-readonly fheType: FheType;              // Type name ("euint32", etc.)
-readonly version: Uint8Number;          // Handle version
-readonly index: Uint8Number | undefined; // Index within proof (external values)
-readonly encryptionBits: EncryptionBits; // Number of encrypted bits
-readonly isComputed: boolean;           // On-chain computed vs. external
-readonly isExternal: boolean;           // From input proof
+type TypedValue =
+  | { readonly type: 'bool'; readonly value: boolean }
+  | { readonly type: 'uint8'; readonly value: number }
+  | { readonly type: 'uint16'; readonly value: number }
+  | { readonly type: 'uint32'; readonly value: number }
+  | { readonly type: 'uint64'; readonly value: bigint }
+  | { readonly type: 'uint128'; readonly value: bigint }
+  | { readonly type: 'uint256'; readonly value: bigint }
+  | { readonly type: 'address'; readonly value: string };
 ```
 
-A `Handle<T>` alias is available for developers familiar with FHE.sol terminology.
-
-### Typed encrypted values
-
-Type-specific aliases for compile-time safety. Use these when you know the FHE type at compile time:
+Because it is discriminated on `type`, narrowing gives you the right value type:
 
 ```ts
-type Ebool = EncryptedValue<'ebool'>;
-type Euint8 = EncryptedValue<'euint8'>;
-type Euint16 = EncryptedValue<'euint16'>;
-type Euint32 = EncryptedValue<'euint32'>;
-type Euint64 = EncryptedValue<'euint64'>;
-type Euint128 = EncryptedValue<'euint128'>;
-type Euint256 = EncryptedValue<'euint256'>;
-type Eaddress = EncryptedValue<'eaddress'>;
+const d = await client.decryptValue({ /* … */ });
+
+if (d.type === 'bool') {
+  d.value; // boolean
+} else if (d.type === 'address') {
+  d.value; // string
+} else {
+  d.value; // number | bigint
+}
 ```
 
-### `ExternalEncryptedValue`
+When **encrypting**, the input is slightly looser than `TypedValue` — a `uint32`
+accepts a `number` _or_ a `bigint`, and `bool` accepts `boolean`, `number`, or
+`bigint`. The SDK validates and normalizes it. When **decrypting**, you always
+get the strict `TypedValue` form above.
 
-An encrypted value returned from `encrypt()` — always has an `index` and `isExternal: true`:
+## `EncryptedValue` — the handle
+
+An `EncryptedValue` is a `bytes32` handle: an opaque, deterministic reference to
+a ciphertext held by the coprocessors. It is what your contract stores and
+returns, not the ciphertext itself.
 
 ```ts
-type ExternalEncryptedValue<T extends FheType = FheType>;
+type EncryptedValue = /* branded bytes32 hex */;
 ```
 
-Typed variants: `ExternalEbool`, `ExternalEuint8`, `ExternalEuint16`, `ExternalEuint32`, `ExternalEuint64`, `ExternalEuint128`, `ExternalEuint256`, `ExternalEaddress`.
+Branded per-type aliases match the Solidity names and carry the FHE type at the
+type level: `Ebool`, `Euint8`, `Euint16`, `Euint32`, `Euint64`, `Euint128`,
+`Euint256`, `Eaddress`.
+
+There are two lifecycle stages of an encrypted value, which share the same
+`bytes32` bits but differ in trust:
+
+- **External** — freshly produced by `encryptValue` / `encryptValues`, not yet
+  verified on-chain. Aliases: `ExternalEbool`, `ExternalEuint8`, … These are what
+  you pass to a contract alongside an `inputProof`.
+- **Computed / verified** — the on-chain result of FHE operations, already
+  trusted. These are what you read back and decrypt.
 
 ### `EncryptedValueLike`
 
-Accepted input formats for encrypted value parameters:
+Methods that accept a handle take the permissive `EncryptedValueLike`, so you can
+pass whatever form you have:
 
 ```ts
-type EncryptedValueLike = Uint8Array | string | { readonly bytes32Hex: string } | EncryptedValue;
+type EncryptedValueLike = Uint8Array | string | { readonly bytes32Hex: string };
 ```
 
-## Clear values (decrypted)
-
-### `ClearValue`
-
-Pairs an encrypted value with its decrypted plaintext. Uses a discriminated union on `fheType`:
+Use the helpers to validate or coerce:
 
 ```ts
-type ClearValueOfType<T extends FheType> = {
-  readonly value: ClearValueType<T>;
-  readonly encryptedValue: EncryptedValue<T>;
-  readonly fheType: T;
-  readonly valueType: ClearValueTypeName<T>;
-};
+import { asEncryptedValue, isEncryptedValue } from '@fhevm/sdk/types';
+
+isEncryptedValue(x); // type guard → x is EncryptedValue
+asEncryptedValue(x); // coerce to EncryptedValue, or throw
 ```
 
-**Value type mapping:**
+## `TransportKeyPair`
 
-| FheType    | Decrypted Value Type | JS Representation       |
-| ---------- | -------------------- | ----------------------- |
-| `ebool`    | `boolean`            | `true` / `false`        |
-| `euint8`   | `Uint8Number`        | `number` (0-255)        |
-| `euint16`  | `Uint16Number`       | `number` (0-65535)      |
-| `euint32`  | `Uint32Number`       | `number` (0-4294967295) |
-| `euint64`  | `Uint64BigInt`       | `bigint`                |
-| `euint128` | `Uint128BigInt`      | `bigint`                |
-| `euint256` | `Uint256BigInt`      | `bigint`                |
-| `eaddress` | `ChecksummedAddress` | `string`                |
-
-Type-specific aliases:
-
-```ts
-type ClearBool = ClearValue<'ebool'>;
-type ClearUint8 = ClearValue<'euint8'>;
-type ClearUint16 = ClearValue<'euint16'>;
-type ClearUint32 = ClearValue<'euint32'>;
-type ClearUint64 = ClearValue<'euint64'>;
-type ClearUint128 = ClearValue<'euint128'>;
-type ClearUint256 = ClearValue<'euint256'>;
-type ClearAddress = ClearValue<'eaddress'>;
-```
-
-## Typed values (encryption input)
-
-### `TypedValueLike`
-
-Input format for encryption:
-
-```ts
-type TypedValueLike = {
-  readonly value: ValueLikeMap[T]; // Flexible input (number | bigint for uints)
-  readonly type: T; // "bool" | "uint8" | ... | "address"
-};
-```
-
-Note: the type names use Solidity conventions (`"uint32"`, `"bool"`, `"address"`) not FHE conventions (`"euint32"`, `"ebool"`).
-
-```ts
-// Examples
-{ type: "bool", value: true }
-{ type: "uint32", value: 42 }
-{ type: "uint64", value: 123n }
-{ type: "uint256", value: 999999999999999999n }
-{ type: "address", value: "0xAbCdEf..." }
-```
-
-### `TypedValue`
-
-Validated/normalized version of `TypedValueLike`:
-
-```ts
-type TypedValue = {
-  readonly value: ValueTypeMap[T]; // Exact type (Uint32Number, Uint64BigInt, etc.)
-  readonly type: T;
-};
-```
-
-## Primitive types
-
-### Branded number types
-
-The SDK uses branded types (via `unique symbol` intersections) for type-safe numeric values:
-
-```ts
-// Number-based (safe for JS number precision)
-type Uint8Number = number & UnsignedInt & Bits8;
-type Uint16Number = number & UnsignedInt & Bits16;
-type Uint32Number = number & UnsignedInt & Bits32;
-
-// BigInt-based (required for larger values)
-type Uint64BigInt = bigint & UnsignedInt & Bits64;
-type Uint128BigInt = bigint & UnsignedInt & Bits128;
-type Uint160BigInt = bigint & UnsignedInt & Bits160;
-type Uint256BigInt = bigint & UnsignedInt & Bits256;
-```
-
-### Address types
-
-```ts
-type Address = Bytes20Hex & AddressString; // Any valid address
-type ChecksummedAddress = Address & ChecksummedAddressString; // EIP-55 checksummed
-```
-
-Validate addresses:
-
-```ts
-import { assertIsChecksummedAddress } from '@fhevm/sdk/ethers';
-
-assertIsChecksummedAddress('0xAbCdEf...', {}); // Throws if not valid checksummed
-```
-
-### Hex string types
-
-```ts
-type Hex0x = `0x${string}` & Hex0xString; // Any 0x-prefixed hex
-type BytesHex = Hex0x & EvenLen; // Even-length 0x hex (bytes)
-
-// Fixed-length variants
-type Bytes1Hex = BytesHex & ByteLen1; // 0x + 2 chars
-type Bytes8Hex = BytesHex & ByteLen8; // 0x + 16 chars
-type Bytes20Hex = BytesHex & ByteLen20; // 0x + 40 chars (address size)
-type Bytes32Hex = BytesHex & ByteLen32; // 0x + 64 chars (handle size)
-type Bytes65Hex = BytesHex & ByteLen65; // 0x + 130 chars (signature size)
-```
-
-### Byte array types
-
-```ts
-type Bytes = Uint8Array;
-type Bytes1 = Bytes & ByteLen1;
-type Bytes32 = Bytes & ByteLen32;
-type Bytes65 = Bytes & ByteLen65;
-// ... etc.
-```
-
-## Proof types
-
-### `ZkProof`
-
-Zero-knowledge proof of correct encryption, produced by TFHE WASM:
-
-```ts
-type ZkProof; // Opaque — passed to fetchVerifiedInputProof
-```
-
-### `InputProof` / `VerifiedInputProof`
-
-```ts
-type VerifiedInputProof = {
-  readonly bytesHex: BytesHex;
-  readonly coprocessorSignatures: readonly Bytes65Hex[];
-  readonly inputHandles: readonly InputHandle[];
-  readonly extraData: BytesHex;
-  readonly verified: true;
-  readonly signedHandleAccess: {
-    readonly contractAddress: ChecksummedAddress;
-    readonly userAddress: ChecksummedAddress;
-  };
-};
-```
-
-### `PublicDecryptionProof`
-
-```ts
-type PublicDecryptionProof = {
-  readonly orderedClearValues: readonly ClearValue[];
-  readonly decryptionProof: BytesHex;
-  readonly orderedAbiEncodedClearValues: BytesHex;
-  readonly extraData: BytesHex;
-};
-```
-
-## Permit types
-
-### `SignedSelfDecryptionPermit` / `SignedDelegatedDecryptionPermit`
-
-Signed permits returned by `signDecryptionPermit()`. These bundle the EIP-712 typed data, the signature, and the signer address into a reusable object.
-
-- `SignedSelfDecryptionPermit` — for decrypting your own values
-- `SignedDelegatedDecryptionPermit` — for decrypting on behalf of another user (has `onBehalfOf` field)
-- `SignedDecryptionPermit` — union of both
-
-### `KmsUserDecryptEIP712`
-
-The EIP-712 typed data structure for decrypt permits (lower-level, used by `createKmsUserDecryptEIP712`):
-
-```ts
-type KmsUserDecryptEIP712 = {
-  readonly domain: KmsEIP712Domain;
-  readonly types: KmsUserDecryptEIP712Types;
-  readonly message: KmsUserDecryptEIP712Message;
-  readonly primaryType: 'UserDecryptRequestVerification';
-};
-
-type KmsEIP712Domain = {
-  readonly name: 'Decryption';
-  readonly version: '1';
-  readonly chainId: Uint64BigInt;
-  readonly verifyingContract: ChecksummedAddress;
-};
-```
-
-### `KmsDelegatedUserDecryptEIP712`
-
-Extends the decrypt permit EIP-712 with a `delegatedAccount` field for decrypting on behalf of another user.
-
-## E2E transport key pair
-
-### `TransportKeyPair`
-
-An opaque key pair object for end-to-end encrypted communication with the Zama Protocol. The private key is never directly accessible — this prevents accidental exposure.
+The key pair generated for private decryption. It is opaque — the private key is
+held internally and is never exposed on the object:
 
 ```ts
 type TransportKeyPair = {
-  readonly publicKey: BytesHex;
+  readonly publicKey: BytesHex; // safe to share; bound into the permit
+  readonly tkmsVersion: TkmsVersion;
 };
 ```
 
-Create with `generateTransportKeyPair()`, serialize with `serializeTransportKeyPair()`, restore with `parseTransportKeyPair()`.
+`serializeTransportKeyPair` produces `{ publicKey, privateKey }` for storage
+(treat it as a secret); `parseTransportKeyPair` restores it. See
+[Decryption → Persisting a session](decryption.md#persisting-a-session).
+
+## `SignedDecryptionPermit`
+
+The EIP-712 permit produced by `signDecryptionPermit`. It is a union over the
+protocol version, but every variant shares this surface:
+
+```ts
+type SignedDecryptionPermit = {
+  readonly signature: BytesHex;
+  readonly signerAddress: string; // checksummed
+  readonly encryptedDataOwnerAddress: string; // whose values it decrypts
+  readonly transportPublicKey: BytesHex;
+  readonly isDelegated: boolean; // true for delegated permits
+  assertNotExpired(): void; // throws if past its window
+  // …plus version-specific `eip712` typed data
+};
+```
+
+## Related
+
+- [Encryption](encryption.md) — how the value types are used as input.
+- [Decryption](decryption.md) — where `TypedValue`, `TransportKeyPair`, and permits come together.
+- [API reference](api-reference.md) — the complete exported type list.
+- [Glossary](GLOSSARY.md) — canonical naming across the SDK and protocol.
+```
+
