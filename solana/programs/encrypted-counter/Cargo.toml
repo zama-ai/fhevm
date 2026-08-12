@@ -1,0 +1,23 @@
+[package]
+name = "encrypted-counter"
+version = "0.1.0"
+description = "Specimen zama-host consumer: one encrypted u64 counter per owner"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "encrypted_counter"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "zama-host/idl-build"]
+
+[dependencies]
+anchor-lang = "1.1.2"
+zama-fhe = { path = "../../crates/zama-fhe", features = ["cpi"] }
+zama-host = { path = "../zama-host", features = ["cpi"] }

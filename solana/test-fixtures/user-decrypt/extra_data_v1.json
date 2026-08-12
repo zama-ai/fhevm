@@ -1,0 +1,56 @@
+{
+  "schema": "zama-solana-user-decrypt-extra-data/v1",
+  "description": "Literal byte vectors for the Solana user-decrypt extraData blob — the hand-mirrored codec in kms-connector/crates/utils/src/types/solana_extra_data.rs (encode_solana_extra_data_context_only / encode_solana_extra_data_mmr_proof / parse_solana_mmr_proof_extra_data, Rust) and sdk/js-sdk/src/core/coprocessor/SolanaUserDecrypt-p.ts (buildSolanaUserDecryptContextExtraData / buildSolanaUserDecryptMmrProofExtraData, TypeScript). Encoders on both sides must produce blob_hex from input; the strict Rust parser must round-trip every record and reject every malformed entry. All hex is lowercase and unprefixed; proof_slot is a decimal string. Hand-committed literals, deliberately few — the layouts are versioned (v0x01 context-only, v0x03 MMR-proof tail) and change only with a new version byte.",
+  "records": [
+    {
+      "name": "context-only-v1",
+      "description": "v0x01: version byte then the 32-byte context id, nothing else.",
+      "input": {
+        "context_id_hex": "0707070707070707070707070707070707070707070707070707070707070707"
+      },
+      "blob_hex": "010707070707070707070707070707070707070707070707070707070707070707"
+    },
+    {
+      "name": "mmr-proof-v3",
+      "description": "v0x03: version, context id, acl_value_key, proof_slot 42 (8 bytes BE), 3-byte length prefix (4 bytes BE), proof bytes verbatim.",
+      "input": {
+        "context_id_hex": "0707070707070707070707070707070707070707070707070707070707070707",
+        "acl_value_key_hex": "0909090909090909090909090909090909090909090909090909090909090909",
+        "proof_slot": "42",
+        "mmr_proof_hex": "010203"
+      },
+      "blob_hex": "0307070707070707070707070707070707070707070707070707070707070707070909090909090909090909090909090909090909090909090909090909090909000000000000002a00000003010203"
+    },
+    {
+      "name": "current-acl-empty-proof-v3",
+      "description": "v0x03 with slot 0 and an empty proof: a current-ACL decrypt that names an encrypted value account still uses the proof-tail version so the acl_value_key survives the wire.",
+      "input": {
+        "context_id_hex": "0707070707070707070707070707070707070707070707070707070707070707",
+        "acl_value_key_hex": "0909090909090909090909090909090909090909090909090909090909090909",
+        "proof_slot": "0",
+        "mmr_proof_hex": ""
+      },
+      "blob_hex": "0307070707070707070707070707070707070707070707070707070707070707070909090909090909090909090909090909090909090909090909090909090909000000000000000000000000"
+    }
+  ],
+  "malformed": [
+    {
+      "name": "trailing-byte",
+      "derived_from": "mmr-proof-v3",
+      "mutation": "one extra 0x00 byte appended after the proof — the length prefix no longer covers the body exactly",
+      "blob_hex": "0307070707070707070707070707070707070707070707070707070707070707070909090909090909090909090909090909090909090909090909090909090909000000000000002a0000000301020300"
+    },
+    {
+      "name": "truncated-proof",
+      "derived_from": "mmr-proof-v3",
+      "mutation": "last proof byte removed — the body is one byte shorter than the length prefix claims",
+      "blob_hex": "0307070707070707070707070707070707070707070707070707070707070707070909090909090909090909090909090909090909090909090909090909090909000000000000002a000000030102"
+    },
+    {
+      "name": "context-only-to-strict-parser",
+      "derived_from": "context-only-v1",
+      "mutation": "none — a well-formed v0x01 blob fed to the strict v0x03 parser must be rejected, not defaulted",
+      "blob_hex": "010707070707070707070707070707070707070707070707070707070707070707"
+    }
+  ]
+}

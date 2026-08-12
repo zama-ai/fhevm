@@ -31,4 +31,5 @@ The two demo programs deploy from committed program keypairs alongside the other
 
 `deploy-demo-programs.sh` seeds `target/deploy/` from there so `anchor build --ignore-keys` +
 `solana program deploy` produce programs at exactly the `declare_id!` ids the SDK/config expect —
-the same pattern `setup-solana-side.sh` uses for `zama_host` / `confidential_token`.
+the same pattern the e2e side-stack setup (`test-suite/fhevm/src/solana/validator.ts`
+`seedProgramKeypairs`) uses for `zama_host` / `confidential_token`.

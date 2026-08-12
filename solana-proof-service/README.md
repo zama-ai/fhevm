@@ -193,7 +193,7 @@ docker build -f solana-proof-service/Dockerfile -t solana-proof-service:local .
 
 Solana vertical: `fhevm-cli up --scenario solana` starts compose service
 `solana-proof-service` on `:8088`. Point clients at `PROOF_SERVICE_URL=http://127.0.0.1:8088`.
-Full e2e: `NO_DNA=1 bash solana/scripts/e2e/clean-e2e.sh` then `TE_VALUE=55 bash solana/scripts/e2e/full-vertical.sh`.
+Full e2e: `NO_DNA=1 bash solana/scripts/e2e/clean-e2e.sh` then `cd test-suite/fhevm && bun run test:e2e`.
 
 ## Develop
 

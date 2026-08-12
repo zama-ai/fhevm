@@ -106,6 +106,10 @@ export {
 // confidential-token encrypted-value-account derivations stay internal because every action derives them itself.
 export { computeSignerAddress } from './internal/tokenValueAccount.js';
 export { confidentialBalanceValueAccount } from './internal/tokenValueAccount.js';
+// The canonical `EncryptedValue` PDA for an arbitrary `(domain, account, label)` triple. Exported
+// for the e2e scenarios' raw fhe_execute driver, which binds persistent outputs to scenario-owned
+// values rather than the token/batcher-shaped ones above.
+export { encryptedValueAddress } from './internal/batcherPdas.js';
 export {
   ADDRESS_LOOKUP_TABLE_PROGRAM_ADDRESS,
   LOOKUP_TABLE_DEACTIVATION_COOLDOWN_SLOTS,

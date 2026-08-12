@@ -4,10 +4,9 @@
 // recipient's associated token account (creating that ATA idempotently first).
 //
 // The SPL instructions are hand-built with `@solana/kit` primitives on purpose: the test-suite
-// carries no `@solana-program/token` dependency. The ATA derivation + `CreateIdempotent` are shared
-// with the seed via `./tokenAccounts`; only `MintTo` is faucet-local. Layouts cited inline:
-//   - SPL Token `MintTo` (tag 7): data = [7, amount:u64-le]; accounts [mint(w), destination(w), authority(s)].
-//     https://github.com/solana-program/token — processor `Instruction::MintTo`.
+// carries no `@solana-program/token` dependency. The ATA derivation, `CreateIdempotent`, and
+// `MintTo` all come from `../src/solana/spl` (shared with the seed and the typed scenario
+// provisioning), which cites their layouts inline.
 //
 // This process holds a live validator connection and cannot be unit-tested offline; it is exercised
 // only by the `solana-e2e` workflow's demo phase (per-PR and manual dispatch), which starts it and funds the
@@ -16,7 +15,6 @@
 import fs from "node:fs/promises";
 
 import {
-  AccountRole,
   address,
   appendTransactionMessageInstructions,
   assertIsTransactionWithBlockhashLifetime,
@@ -30,39 +28,13 @@ import {
   setTransactionMessageLifetimeUsingBlockhash,
   signTransactionMessageWithSigners,
   type Address,
-  type Instruction,
-  type TransactionSigner,
 } from "@solana/kit";
 
 import { readDemoAllowedOriginFromEnv, readDemoAuthorizationFromEnv } from "./authorization";
 import { readDemoConfig } from "./config";
 import { serveFaucet, type UsdcMinter } from "./faucet";
 import { DEMO_KEYPAIRS } from "./loadDemoEnv";
-import { associatedTokenAddress, createIdempotentAtaInstruction } from "./tokenAccounts";
-
-// Mock USDC is minted on the classic token program.
-const SPL_TOKEN_PROGRAM_ADDRESS = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
-
-/** SPL Token `MintTo` (tag 7): mints `baseUnits` to `destination`, signed by the mint authority. */
-const mintToInstruction = (params: {
-  readonly mint: Address;
-  readonly destination: Address;
-  readonly authority: TransactionSigner;
-  readonly baseUnits: bigint;
-}): Instruction => {
-  const data = new Uint8Array(9);
-  data[0] = 7;
-  new DataView(data.buffer).setBigUint64(1, params.baseUnits, true);
-  return {
-    programAddress: SPL_TOKEN_PROGRAM_ADDRESS,
-    accounts: [
-      { address: params.mint, role: AccountRole.WRITABLE },
-      { address: params.destination, role: AccountRole.WRITABLE },
-      { address: params.authority.address, role: AccountRole.READONLY_SIGNER },
-    ],
-    data,
-  };
-};
+import { associatedTokenAddress, createIdempotentAtaInstruction, mintToInstruction } from "../src/solana/spl";
 
 /** Builds a `UsdcMinter` that mints mock USDC to a recipient's ATA on the live validator. */
 const buildUsdcMinter = async (options: {

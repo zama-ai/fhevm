@@ -55,7 +55,15 @@ PINS_CONNECTOR="CONNECTOR_DB_MIGRATION_VERSION=$T CONNECTOR_GW_LISTENER_VERSION=
 
 # The proof service has no branch-published image, so it is always built from the checked-out source.
 check "solana scripts only -> proof service" \
-  $'solana/scripts/e2e/full-vertical.sh\nsolana/geyser/src/lib.rs\nsolana/docs/notes.md' \
+  $'solana/scripts/dead-surface-check.sh\nsolana/geyser/src/lib.rs\nsolana/docs/notes.md' \
+  "true" \
+  "solana-proof-service" \
+  "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
+
+# The TS framework (side-stack setup, scenario helpers, generated clients) runs from PR source;
+# it is a stack consumer, not an image input, so it must not force from-source image builds.
+check "test framework src only -> proof service" \
+  $'test-suite/fhevm/src/solana/deploy.ts\ntest-suite/fhevm/src/solana/internal/generated/zamaHost/index.ts' \
   "true" \
   "solana-proof-service" \
   "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
@@ -96,6 +104,20 @@ check "demo-vault change -> proof service" \
 
 check "confidential-deposit-app change -> proof service" \
   "solana/programs/confidential-deposit-app/src/lib.rs" \
+  "true" \
+  "solana-proof-service" \
+  "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
+
+# The two specimen programs share the on-chain-only bucket. This test file is the only thing
+# guarding that rule, so each arm of it needs a case of its own.
+check "encrypted-counter specimen change -> proof service" \
+  "solana/programs/encrypted-counter/src/lib.rs" \
+  "true" \
+  "solana-proof-service" \
+  "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
+
+check "dep-chain specimen change -> proof service" \
+  "solana/programs/dep-chain/src/lib.rs" \
   "true" \
   "solana-proof-service" \
   "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
@@ -144,6 +166,21 @@ check "demo script change -> proof service" \
   "solana-proof-service" \
   "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
 
+# src/ is the fhevm-cli + Solana side-stack framework: it runs from PR source too, and is matched
+# before the `test-suite/fhevm/*` build-recipe rule that would otherwise rebuild everything.
+check "test-suite framework change -> proof service" \
+  "test-suite/fhevm/src/solana/deploy.ts" \
+  "true" \
+  "solana-proof-service" \
+  "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
+
+# ...but a change to the package manifest IS a build-recipe change: it must still rebuild all.
+check "test-suite package.json change -> everything" \
+  "test-suite/fhevm/package.json" \
+  "true" \
+  "gateway-contracts host-contracts coprocessor relayer solana-proof-service kms-connector" \
+  ""
+
 # The SDK-plus-scenario PR shape that used to pay for a full workspace rebuild.
 check "sdk + scenario change -> proof service" \
   $'sdk/js-sdk/src/solana/index.ts\ntest-suite/fhevm/e2e/scenarios/deposit-arc.scenario.test.ts' \
@@ -158,8 +195,8 @@ check "workflow change -> build all" \
   "$ALL" \
   ""
 
-check "test-suite/fhevm change -> build all" \
-  "test-suite/fhevm/src/generate/compose.ts" \
+check "test-suite/fhevm recipe change -> build all" \
+  "test-suite/fhevm/docker-compose/gateway-sc-docker-compose.yml" \
   "true" \
   "$ALL" \
   ""

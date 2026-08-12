@@ -32,10 +32,11 @@ jobs:
     outputs:
       changes-solana: ${{ steps.filter.outputs.solana }}
       changes-demo-dapp: ${{ steps.filter.outputs.demo-dapp }}
+      changes-test-suite-fhevm: ${{ steps.filter.outputs.test-suite-fhevm }}
+      changes-sdk-solana-vectors: ${{ steps.filter.outputs.sdk-solana-vectors }}
       changes-host-listener: ${{ steps.filter.outputs.host-listener }}
       changes-dead-surface-check: ${{ steps.filter.outputs.dead-surface-check }}
       changes-dead-surface: ${{ steps.filter.outputs.dead-surface }}
-      changes-e2e-greps-check: ${{ steps.filter.outputs.e2e-greps-check }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -66,8 +67,6 @@ jobs:
               - coprocessor/fhevm-engine/rust-toolchain.toml
             dead-surface-check:
               - solana/scripts/dead-surface-check.sh
-            e2e-greps-check:
-              - solana/scripts/check-e2e-greps.py
             # Every tree dead-surface-check.sh sweeps. The check used to run only inside
             # build-and-test, which is gated on `solana`, so an edit to the proof service, the
             # listener, the kms-connector, the SDK, or the test suite could introduce a retired name
@@ -93,11 +92,34 @@ jobs:
               - .github/workflows/solana-tests.yml
               - solana/demo-dapp/**
               - sdk/js-sdk/**
-              # The confidential-token IDL the dapp's generated client is rendered from. The other
-              # two source IDLs (confidential_batcher, demo_vault) live under solana/demo-dapp/idl
-              # and are already matched above; this one is vendored with the listener, so without
-              # naming it a token IDL change would not run the codegen check that reads it.
+              # The source IDLs the generated clients are rendered from. The confidential_batcher
+              # and demo_vault IDLs live under solana/demo-dapp/idl and are already matched above;
+              # these two are vendored with the listener, so without naming them an IDL change
+              # would not run the codegen check that reads it. zama_host feeds the test-suite's
+              # generated bootstrap client, whose committed output is also matched so a hand edit
+              # to the generated tree runs the check too.
               - coprocessor/fhevm-engine/host-listener/idl/confidential_token.json
+              - coprocessor/fhevm-engine/host-listener/idl/zama_host.json
+              - test-suite/fhevm/src/solana/internal/generated/**
+            test-suite-fhevm:
+              - .github/workflows/solana-tests.yml
+              - test-suite/fhevm/**
+              # The job's `tsc` resolves through the `@sdk-src/*` and `@demo-dapp/*` path aliases
+              # into these two trees, so a change confined to either one can break this typecheck.
+              # Without them the break surfaces ~40 min into the e2e job (bun strips types rather
+              # than checking them), or not at all on a PR targeting main. Retiring the aliases is
+              # tracked in fhevm-internal#1878; until then the filter has to name what tsc reads.
+              - sdk/js-sdk/**
+              - solana/demo-dapp/**
+            # The committed byte-layout vectors and both halves of what the SDK must agree on
+            # with the kms-connector. js-sdk-tests.yml runs the vitest suite only on PRs against
+            # main/devex, so without this filter a Solana-side divergence in the user-decrypt
+            # signing message or extraData codecs would surface only at merge-to-main.
+            sdk-solana-vectors:
+              - .github/workflows/solana-tests.yml
+              - sdk/js-sdk/src/solana/**
+              - sdk/js-sdk/src/core/coprocessor/**
+              - solana/test-fixtures/user-decrypt/**
 
   # Pure grep/sed, no toolchain, half a minute: its own job so it runs for every tree it sweeps,
   # not only the ones that trigger the SBF builds. See fhevm-internal#1859 §7.
@@ -119,7 +141,7 @@ jobs:
       # DEAD_SURFACE_ONLY_CHECK narrows the script to a single check; the self-test sets it per
       # assertion. Cleared here so no repository variable, no earlier step writing GITHUB_ENV, and no
       # copy of this job in another workflow can leave the gate running one check out of seven. The
-      # script also rejects values it does not recognise, but an inherited "6" is a value it does.
+      # script also rejects values it does not recognize, but an inherited "6" is a value it does.
       - name: Check for dead surface and rejected vocabulary
         env:
           DEAD_SURFACE_ONLY_CHECK: ''
@@ -134,17 +156,6 @@ jobs:
         env:
           DEAD_SURFACE_ONLY_CHECK: ''
         run: bash scripts/dead-surface-check.sh --self-test
-
-      # The same class of miss the sweeps above cannot see: the e2e scripts couple to the live
-      # clients through printed labels, which no alias sweep can enumerate. solana-e2e runs this
-      # too, but only for the trees that trigger it — here it also covers, say, a listener-only PR
-      # that renames a label the scripts read.
-      - name: Check the e2e scripts grep for labels the clients still print
-        run: python3 scripts/check-e2e-greps.py
-
-      - name: Self-test the e2e grep check
-        if: ${{ needs.check-changes.outputs.changes-e2e-greps-check == 'true' }}
-        run: python3 scripts/check-e2e-greps.py --self-test
 
       # PendingBurn is derived by handwritten Rust and TypeScript code. A rename on only one side
       # leaves unit tests green until a live transaction fails with ConstraintSeeds.
@@ -203,6 +214,80 @@ jobs:
           bun run check
           bun run lint
           bun run test
+
+  # The test-suite/fhevm typecheck and offline unit suite otherwise run only in
+  # test-suite-e2e-tests.yml, whose job is gated on the `e2e` PR label — so on an ordinary PR
+  # nothing ran tsc or the offline assertions (SPL instruction layouts, gateway-read decoding,
+  # lifecycle validation). bun strips types at runtime, so the live scenario lane cannot catch a
+  # type error on a branch it does not execute.
+  test-suite-fhevm:
+    name: solana-tests/test-suite-fhevm
+    needs: check-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.check-changes.outputs.changes-test-suite-fhevm == 'true' }}
+    permissions:
+      contents: 'read'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+
+      - name: Setup Node
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2.1.3
+
+      # tsc follows the `@sdk-src`/`@demo-dapp` path aliases into the SDK and dapp sources, so
+      # both of their own dependency graphs must exist for their types to resolve.
+      - name: Install the SDK's own dependency graph (tsc resolves SDK sources)
+        run: npm ci --workspace=@fhevm/sdk-dev --workspace=@fhevm/sdk --include-workspace-root=false
+
+      - name: Install the demo-dapp's frozen dependency graph (tsc resolves the vault module)
+        working-directory: solana/demo-dapp
+        run: bun install --frozen-lockfile
+
+      - name: Install the test-suite's frozen dependency graph
+        working-directory: test-suite/fhevm
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck and run the offline unit suites
+        working-directory: test-suite/fhevm
+        run: |
+          bun run check
+          bun test src
+          bun run test:e2e:harness
+
+  # The TS half of the committed user-decrypt byte vectors (solana/test-fixtures/user-decrypt/).
+  # The Rust half runs in kms-connector-tests on every PR; the vitest consumer lives behind
+  # js-sdk-tests.yml's main/devex branch trigger, so this job is what runs it on Solana PRs.
+  sdk-solana-vectors:
+    name: solana-tests/sdk-solana-vectors
+    needs: check-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.check-changes.outputs.changes-sdk-solana-vectors == 'true' }}
+    permissions:
+      contents: 'read'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+
+      - name: Setup Node
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24
+
+      - name: Install the SDK's dependency graph
+        run: npm ci --workspace=@fhevm/sdk-dev --workspace=@fhevm/sdk --include-workspace-root=false
+
+      # Scoped to the Solana agreement surface on purpose: the full src vitest suite belongs to
+      # js-sdk-tests.yml and carries EVM-side tests this workflow has no business gating on.
+      - name: Run the Solana user-decrypt unit tests (incl. the committed byte vectors)
+        working-directory: sdk/js-sdk
+        run: npx vitest run --config src/vitest.config.ts src/core/coprocessor/SolanaUserDecrypt src/solana
 
   build-and-test:
     name: solana-tests/build-and-test
@@ -305,21 +390,6 @@ jobs:
       - name: Run Clippy on the zama-host decode feature
         run: cargo clippy -p zama-host --features decode --all-targets -- -D warnings
 
-      # `scripts/e2e/live-client/Cargo.toml` ends with a bare `[workspace]`, so this crate is its
-      # own workspace root and `cargo test --workspace` above never compiles it. Nothing in CI did:
-      # its only build was inside `setup-solana-side.sh` during solana-e2e, so a rename that broke it
-      # surfaced ~45 minutes in, at "[3/5] bootstrap", and only on PRs that run the vertical at all.
-      # That is exactly how it shipped broken. Half a minute here instead.
-      - name: Check the e2e live client (its own workspace)
-        working-directory: solana/scripts/e2e/live-client
-        run: cargo check --all-targets
-
-      # Same blind spot, one step over: `cargo fmt --check` above runs in `solana/` and stops at that
-      # workspace boundary, so this crate's formatting was checked by nothing and had drifted.
-      - name: Check the e2e live client's formatting
-        working-directory: solana/scripts/e2e/live-client
-        run: cargo fmt --check
-
   native-coverage:
     name: solana-tests/native-coverage
     needs: check-changes
@@ -360,6 +430,7 @@ jobs:
           cargo llvm-cov \
             --workspace \
             --exclude zama-solana-runtime-tests \
+            --exclude zama-solana-test-kit \
             --json \
             --summary-only \
             --output-path /tmp/solana-native-coverage.json
@@ -385,7 +456,9 @@ jobs:
                 {label: "zama-host", paths: ["/programs/zama-host/"]},
                 {label: "confidential-token", paths: ["/programs/confidential-token/"]},
                 {label: "confidential-batcher", paths: ["/programs/confidential-batcher/"]},
-                {label: "demo-vault", paths: ["/programs/demo-vault/"]}
+                {label: "demo-vault", paths: ["/programs/demo-vault/"]},
+                {label: "dep-chain", paths: ["/programs/dep-chain/"]},
+                {label: "encrypted-counter", paths: ["/programs/encrypted-counter/"]}
               ];
               def line_parts($report; $paths):
                 [$report.data[0].files[]

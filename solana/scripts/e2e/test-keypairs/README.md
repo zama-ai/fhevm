@@ -8,7 +8,8 @@ Solana equivalent of Anvil's well-known dev accounts. They are **safe to commit*
   programs **on a fresh local `solana-test-validator`**.
 - They hold **no funds** and are **never deployed to any public cluster** (devnet/testnet/
   mainnet). The PoC validator is reset (`--reset`) on every run and bound to localhost.
-- Committing them makes the e2e self-reproducible: `setup-solana-side.sh` seeds
+- Committing them makes the e2e self-reproducible: the side-stack setup
+  (`test-suite/fhevm/src/solana/validator.ts`) seeds
   `target/deploy/` from here so `cargo build-sbf` + `solana program deploy` produce programs
   at exactly the `declare_id!` IDs the harness/SDK expect.
 

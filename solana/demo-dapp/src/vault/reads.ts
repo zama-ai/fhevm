@@ -1,6 +1,7 @@
 import {
   fetchEncodedAccount,
   fixDecoderSize,
+  getAddressDecoder,
   getArrayDecoder,
   getBytesDecoder,
   getStructDecoder,
@@ -93,8 +94,10 @@ export async function getBatchByIndex(
  *     `#[derive(BorshDeserialize)]` field order in `solana/crates/zama-solana-acl/src/lib.rs`:
  *       [8-byte discriminator][domain: 32][encryptedValueAccountAuthority: 32][label: 32]
  *       [currentHandle: 32][subjects: Vec<Pubkey>][leafCount: u64][peaks: Vec<32>][bump: u8]
- *     The discriminator is sliced off before this decoder runs; `subjects` is decoded and discarded
- *     (the settle phases never read it — only its length matters, to advance the cursor).
+ *     The discriminator is sliced off before this decoder runs. The settle phases only consume
+ *     `currentHandle`/`leafCount`/`peaks`; the identity fields (`domain`, authority, `label`,
+ *     `subjects`) are returned too so live balance-state probes can assert the account body matches
+ *     its canonical derivation.
  *
  * (c) FRAGILITY — each `subjects` element is decoded as a bare 32-byte pubkey. If the on-chain
  *     subject entry ever grows past a bare pubkey, its element size stops being 32 and THIS
@@ -127,7 +130,15 @@ export async function getEncryptedValueState(
   rpc: SolanaRpc,
   address: Address,
   config?: FetchAccountConfig,
-): Promise<{ currentHandle: Bytes32; leafCount: bigint; peaks: Uint8Array[] }> {
+): Promise<{
+  domain: Address;
+  encryptedValueAccountAuthority: Address;
+  label: Uint8Array;
+  currentHandle: Bytes32;
+  subjects: Address[];
+  leafCount: bigint;
+  peaks: Uint8Array[];
+}> {
   const account = await fetchEncodedAccount(rpc, address, config);
   if (!account.exists) throw new Error(`EncryptedValue account ${address} does not exist`);
   const body = account.data.slice(ENCRYPTED_VALUE_DISCRIMINATOR_SIZE);
@@ -150,8 +161,13 @@ export async function getEncryptedValueState(
         `from this decoder. Re-check the crate's EncryptedValue struct and update reads.ts.`,
     );
   }
+  const addressDecoder = getAddressDecoder();
   return {
+    domain: addressDecoder.decode(decoded.domain),
+    encryptedValueAccountAuthority: addressDecoder.decode(decoded.encryptedValueAccountAuthority),
+    label: new Uint8Array(decoded.label),
     currentHandle: new Uint8Array(decoded.currentHandle) as Bytes32,
+    subjects: decoded.subjects.map((subject) => addressDecoder.decode(subject)),
     leafCount: decoded.leafCount,
     peaks: decoded.peaks.map((peak) => new Uint8Array(peak)),
   };

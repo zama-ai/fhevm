@@ -78,7 +78,7 @@ RUST_ROOTS=(
   solana/programs
   solana/crates
   solana/runtime-tests
-  solana/scripts/e2e/live-client
+  solana/test-kit
   solana-proof-service
   coprocessor/fhevm-engine/host-listener/src
 )
@@ -95,7 +95,8 @@ TS_ROOTS=(
 )
 
 # Shell and workflow files the workstream owns. `fhe_eval` survived in a solana-tests.yml comment
-# and `supersede` in full-vertical.sh precisely because the sweep never looked here.
+# and `supersede` in the since-retired full-vertical.sh precisely because the sweep never looked
+# here.
 SCRIPT_ROOTS=(
   solana/scripts
   solana/docs
@@ -131,7 +132,6 @@ FHE_ROOTS=(
   solana/crates
   solana/programs/zama-host
   solana/programs/confidential-token
-  solana/scripts/e2e/live-client
   solana/runtime-tests/tests/host_mollusk.rs
   solana/runtime-tests/tests/token_mollusk.rs
   solana/runtime-tests/tests/operator_conformance.rs
@@ -172,7 +172,6 @@ done
 SENTINEL_ROOTS=(
   solana/programs
   solana/crates
-  solana/scripts/e2e/live-client
   solana-proof-service
   sdk/js-sdk/src/solana
   solana/demo-dapp/src
@@ -565,7 +564,7 @@ if run_check 3; then
   # panel — the film sense of the word, with its own CSS classes. Surfaced only once `.tsx` joined the
   # sweep. It is the same kind of unrelated meaning as the stack frame above, not a sequence of steps.
   check_alias 'frame — one fhe_execute invocation is an execution' all \
-    'stack frame|instruction frame|enclosing frame|execution frame|cpi frame|frame it belongs to|older `execute_frame`|framework|heap frame|heap-frame|ArchitectureFrame|architecture-frame|frame-(heading|label|statement|separator)|frameNumber|\bframed\b|frames\.(map|length)|frame\.(diagram|title)' \
+    'stack frame|instruction frame|enclosing frame|execution frame|cpi frame|frame it belongs to|older `execute_frame`|framework|heap frame|heap-frame|HeapFrame|ArchitectureFrame|architecture-frame|frame-(heading|label|statement|separator)|frameNumber|\bframed\b|frames\.(map|length)|frame\.(diagram|title)' \
     -E '\bframes?\b|execute_frame|_frame\b|frame_|Frame[A-Z]'
   # One fhe_execute invocation is an `execution`, never a batch: its steps are dependent, each reading
   # what the one before it produced, which is the opposite of what a batch means. Swept in FHE scope

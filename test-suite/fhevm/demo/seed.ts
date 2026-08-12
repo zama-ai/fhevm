@@ -14,7 +14,7 @@
 //   0. verify the bring-up's kms-context account exists on-chain — the seeder never creates it, it
 //      only fails loudly (with remediation) when the host bring-up did not provision it.
 //   1. create the mock-USDC SPL mint (6 decimals, the committed mint-authority as mint authority so
-//      `demo:faucet` can later drip it) — hand-built SPL like `faucet-server.ts`.
+//      `demo:faucet` can later drip it) — hand-built SPL instructions from `../src/solana/spl`.
 //   2. `initialize_vault` (demo_vault): creates the vault, its share mint (payout underlying) and the
 //      program-owned underlying token account.
 //   3. `initialize_mint` ×2 (confidential_token): cUSDC wrapping mock USDC, cShares wrapping the share
@@ -33,31 +33,26 @@
 import fs from "node:fs/promises";
 
 import {
-  AccountRole,
-  appendTransactionMessageInstructions,
-  assertIsTransactionWithBlockhashLifetime,
   createKeyPairSignerFromBytes,
-  createSolanaRpc,
-  createSolanaRpcSubscriptions,
-  createTransactionMessage,
   generateKeyPairSigner,
   getAddressEncoder,
   getProgramDerivedAddress,
-  getSignatureFromTransaction,
-  lamports,
-  sendAndConfirmTransactionFactory,
-  setTransactionMessageFeePayerSigner,
-  setTransactionMessageLifetimeUsingBlockhash,
-  signTransactionMessageWithSigners,
-  type AccountMeta,
   type Address,
   type Instruction,
   type TransactionSigner,
 } from "@solana/kit";
 
 import { resolveEnv } from "../e2e/harness/loadEnv";
-import { until } from "../e2e/harness/until";
-import { buildVaultUnderlyingEscrowAtaInstruction } from "./tokenAccounts";
+import { BRINGUP_KMS_CONTEXT_ID } from "../src/solana/addresses";
+import { createProvisioningContext, hostConfigAddress } from "../src/solana/provision";
+import {
+  SPL_MINT_ACCOUNT_SPACE,
+  SPL_TOKEN_PROGRAM_ADDRESS,
+  buildVaultUnderlyingEscrowAtaInstruction,
+  createAccountInstruction,
+  initializeMint2Instruction,
+} from "../src/solana/spl";
+import { kmsContextAddress } from "../src/solana/token-vertical";
 import { DEMO_KEYPAIRS } from "./loadDemoEnv";
 import {
   resolveDemoConfigPath,
@@ -67,84 +62,16 @@ import {
 } from "./config";
 import * as vault from "@demo-dapp/vault/index.js";
 
-// Well-known program ids (the same literals `faucet-server.ts` and the SDK's `derive.ts` use).
-const SPL_TOKEN_PROGRAM_ADDRESS = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
-const SYSTEM_PROGRAM_ADDRESS = "11111111111111111111111111111111" as Address;
-const COMPUTE_BUDGET_PROGRAM_ADDRESS = "ComputeBudget111111111111111111111111111111" as Address;
-
 const MOCK_USDC_DECIMALS = 6;
-const SPL_MINT_ACCOUNT_SPACE = 82n; // SPL Token `Mint` account length.
 // The confidential-token instructions emit FHE-handle CPIs; the default 200k CU limit is too low, so
 // every provisioning transaction requests the same generous ceiling the SDK's live actions use.
-const PROVISIONING_COMPUTE_UNIT_LIMIT = 800_000;
+const SEED_COMPUTE_UNIT_LIMIT = 800_000;
 // ~10s live window before a batch may dispatch, at ~400ms/slot on the local validator.
 const DEMO_MIN_BATCH_AGE_SLOTS = 25n;
 // Lamports the batch authority is funded with (from the payer) to cover its owner-charged rent.
 const BATCH_AUTHORITY_FUNDING_LAMPORTS = 100_000_000n;
-// Host KMS-context id used at bring-up (context 1). The demo runs against this single context; the
-// gateway/user-decrypt context id is a separate value carried in `userDecryptContextId`.
-const BRINGUP_KMS_CONTEXT_ID = 1n;
 const addressEncoder = getAddressEncoder();
 const encodeAddress = (value: Address): Uint8Array => new Uint8Array(addressEncoder.encode(value));
-
-/**
- * A signer account meta: the `signer` field rides along at runtime so `signTransactionMessageWithSigners`
- * produces the signature, while the meta stays typed as a plain `AccountMeta` (same shape the demo
- * dapp's address-lookup-table builder uses). Used for the hand-built SPL `CreateAccount`, whose keypair
- * must sign its own creation.
- */
-const signerMeta = (signer: TransactionSigner, role: AccountRole): AccountMeta =>
-  ({ address: signer.address, role, signer }) as unknown as AccountMeta;
-
-/** ComputeBudget `SetComputeUnitLimit` (tag 2): raises the per-tx CU ceiling for the FHE-heavy CPIs. */
-const setComputeUnitLimitInstruction = (units: number): Instruction => {
-  const data = new Uint8Array(5);
-  data[0] = 2;
-  new DataView(data.buffer).setUint32(1, units, true);
-  return { programAddress: COMPUTE_BUDGET_PROGRAM_ADDRESS, data };
-};
-
-/** SystemProgram `CreateAccount` (tag 0), signed by both the payer and the new account's keypair. */
-const createAccountInstruction = (parameters: {
-  readonly payer: TransactionSigner;
-  readonly newAccount: TransactionSigner;
-  readonly lamports: bigint;
-  readonly space: bigint;
-  readonly owner: Address;
-}): Instruction => {
-  const data = new Uint8Array(4 + 8 + 8 + 32);
-  const view = new DataView(data.buffer);
-  view.setUint32(0, 0, true); // instruction index 0 = CreateAccount
-  view.setBigUint64(4, parameters.lamports, true);
-  view.setBigUint64(12, parameters.space, true);
-  data.set(encodeAddress(parameters.owner), 20);
-  return {
-    programAddress: SYSTEM_PROGRAM_ADDRESS,
-    accounts: [
-      signerMeta(parameters.payer, AccountRole.WRITABLE_SIGNER),
-      signerMeta(parameters.newAccount, AccountRole.WRITABLE_SIGNER),
-    ],
-    data,
-  };
-};
-
-/** SPL Token `InitializeMint2` (tag 20): sets decimals + mint authority, no freeze authority. */
-const initializeMint2Instruction = (parameters: {
-  readonly mint: Address;
-  readonly decimals: number;
-  readonly mintAuthority: Address;
-}): Instruction => {
-  const data = new Uint8Array(1 + 1 + 32 + 1);
-  data[0] = 20;
-  data[1] = parameters.decimals;
-  data.set(encodeAddress(parameters.mintAuthority), 2);
-  data[34] = 0; // freeze authority COption::None
-  return {
-    programAddress: SPL_TOKEN_PROGRAM_ADDRESS,
-    accounts: [{ address: parameters.mint, role: AccountRole.WRITABLE }],
-    data,
-  };
-};
 
 /** Loads a 64-byte Solana keypair file into a kit `TransactionSigner`. */
 const loadSigner = async (keypairPath: string): Promise<TransactionSigner> => {
@@ -152,7 +79,6 @@ const loadSigner = async (keypairPath: string): Promise<TransactionSigner> => {
   return createKeyPairSignerFromBytes(bytes);
 };
 
-const LAMPORTS_PER_SOL = 1_000_000_000n;
 
 const main = async (): Promise<void> => {
   const env = resolveEnv();
@@ -164,40 +90,14 @@ const main = async (): Promise<void> => {
   // of the file is the honest signal that no usable stack was seeded.
   await fs.rm(configPath, { force: true });
 
-  const rpc = createSolanaRpc(env.rpcUrl);
-  const rpcSubscriptions = createSolanaRpcSubscriptions(env.wsUrl);
-  const sendAndConfirm = sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions });
-
-  /** Signs `instructions` with `payer` (fee payer) plus any account-embedded signers, then confirms. */
-  const send = async (payer: TransactionSigner, instructions: readonly Instruction[]): Promise<void> => {
-    const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
-    const base = setTransactionMessageFeePayerSigner(payer, createTransactionMessage({ version: 0 }));
-    const withLifetime = setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, base);
-    const message = appendTransactionMessageInstructions(
-      [setComputeUnitLimitInstruction(PROVISIONING_COMPUTE_UNIT_LIMIT), ...instructions],
-      withLifetime,
-    );
-    const signedTransaction = await signTransactionMessageWithSigners(message);
-    assertIsTransactionWithBlockhashLifetime(signedTransaction);
-    await sendAndConfirm(signedTransaction, { commitment: "confirmed" });
-    void getSignatureFromTransaction(signedTransaction);
-  };
-
-  const airdrop = async (recipient: Address, sol: bigint): Promise<void> => {
-    const signature = await rpc
-      .requestAirdrop(recipient, lamports(sol * LAMPORTS_PER_SOL), { commitment: "confirmed" })
-      .send();
-    await until(
-      async () => {
-        const { value } = await rpc.getSignatureStatuses([signature]).send();
-        const status = value[0];
-        if (status?.err) throw new Error(`airdrop failed: ${JSON.stringify(status.err)}`);
-        const level = status?.confirmationStatus;
-        return level === "confirmed" || level === "finalized";
-      },
-      { description: `airdrop to ${recipient}`, timeoutMs: 30_000 },
-    );
-  };
+  // The shared provisioning send/confirm/airdrop closures, at the seeder's own CU ceiling.
+  const provisioning = createProvisioningContext(env.rpcUrl, env.wsUrl, {
+    computeUnitLimit: SEED_COMPUTE_UNIT_LIMIT,
+  });
+  const { rpc } = provisioning;
+  const send = (payer: TransactionSigner, instructions: readonly Instruction[]): Promise<void> =>
+    provisioning.sendTransaction(payer, instructions);
+  const airdrop = provisioning.airdropSol;
 
   // Actors. The deployer drives provisioning; the keeper pays confidential-mint account rent and
   // is the wrapper authority used by settlement/cancellation. The separate mock-USDC mint
@@ -226,16 +126,8 @@ const main = async (): Promise<void> => {
   const redeemBatcher = await generateKeyPairSigner();
 
   // Deterministic host roots: the singleton host config and the bring-up KMS context PDA.
-  const [hostConfig] = await getProgramDerivedAddress({
-    programAddress: vault.ZAMA_HOST_PROGRAM_ADDRESS,
-    seeds: [new TextEncoder().encode("host-config")],
-  });
-  const kmsContextId = new Uint8Array(8);
-  new DataView(kmsContextId.buffer).setBigUint64(0, BRINGUP_KMS_CONTEXT_ID, true);
-  const [kmsContext] = await getProgramDerivedAddress({
-    programAddress: vault.ZAMA_HOST_PROGRAM_ADDRESS,
-    seeds: [new TextEncoder().encode("kms-context"), kmsContextId],
-  });
+  const hostConfig = await hostConfigAddress();
+  const kmsContext = await kmsContextAddress();
   // The kms-context account is provisioned by the HOST BRING-UP, not by this seeder — the seeder
   // must never create it (it has neither the authority nor the key material to). But the smoke's
   // settle phase consumes it on-chain, so a missing account is a bring-up failure this seed can catch

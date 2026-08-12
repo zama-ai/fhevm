@@ -36,8 +36,10 @@ all fail closed (see the `*_rejects_*` mollusk tests).
    disclosure tests. The token and batcher Mollusk suites explicitly set `compute_unit_limit = 1_400_000`;
    the host suite uses Mollusk's default per-instruction budget (stricter than 1.4M). In all cases,
    every passing test is an implicit CU-fits assertion at the configured budget.
-3. **Handle-derivation / lifecycle transport** (`zama-host` lib unit): the maximum 16-record execution's
-    exact 1,077-byte CPI envelope and signer/readonly event-authority metadata, plus handle-derivation
+3. **Handle-derivation / lifecycle transport** (`zama-host` lib unit): the maximum
+    `MAX_FHE_EXECUTION_STEPS`-record execution's exact CPI envelope — 32 records, 2,133 bytes
+    (21 bytes of framing + 66 per record), asserted against DD-038's 10,240-byte limit in
+    `event_transport.rs` — and signer/readonly event-authority metadata, plus handle-derivation
     determinism.
 4. **Off-chain reconstruction — host-listener** (`coprocessor/fhevm-engine/host-listener`, feature
     `solana-grpc`, which includes reconstruction): reconstructs MMR leaves from instruction data +
@@ -50,7 +52,8 @@ all fail closed (see the `*_rejects_*` mollusk tests).
 6. **ABI / IDL golden** (`scripts/check-zama-host-idl.sh`, `execution_contracts.rs`): vendored IDLs and the
    Borsh golden manifest must match the freshly-built Anchor IDLs; EVENT_VERSION consistency across
    zama-host / confidential-token / host-listener is asserted (a mismatch would silently drop events).
-7. **End-to-end** (`.github/workflows/solana-e2e.yml`, `full-vertical.sh`): the Yellowstone-only
+7. **End-to-end** (`.github/workflows/solana-e2e.yml`, the bun:test scenario suite under
+   `test-suite/fhevm/e2e/scenarios/`): the Yellowstone-only
    path feeds ordinary computation facts through Yellowstone gRPC reconstruction while retaining only
    the narrow produced-public lifecycle execution required by solana-proof-service
    reconstruction. It drives the **decrypt vertical** against a local validator + full coprocessor/KMS
@@ -96,7 +99,8 @@ re-verifying the proof against live chain state.
   so passing = fits) and bounded by the liveness audit's op-count analysis (≤80 SHA-256/update,
   leaf-count-independent). An explicit `compute_units_consumed` assertion per hot instruction would turn
   the estimate into a measured, regression-guarded number.
-- **Cross-language Rust↔TS vectors.** No TS harness exists yet; a shared fixture set (leaf commitments,
-  handle derivation, MMR proofs) checked against a TS reimplementation would guard the SDK/relayer
-  language boundary. Tracked as a follow-up.
 - **litesvm gate** (zama-ai/fhevm#3045): a lighter-weight in-process runtime alongside Mollusk.
+  Blocked on two dependency walls, both recorded in `solana/runtime-tests/Cargo.toml`: litesvm
+  pulls `solana-program-runtime >= 4.1` where this workspace is pinned to `=4.0.0-rc.0`, and
+  mollusk 0.15.0 does not build on rustc 1.91.1 (E0658). Neither is worked around by test code —
+  whoever picks the issue up starts from those two, not from scratch.

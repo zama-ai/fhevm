@@ -4,26 +4,11 @@
 //! Validity is irrelevant here: only bincode-serialized legacy transaction length vs
 //! `PACKET_DATA_SIZE` is asserted.
 
-use anchor_lang::{prelude::Pubkey, InstructionData, ToAccountMetas};
+use anchor_lang::prelude::Pubkey;
 use confidential_token as token;
-use solana_sdk::{instruction::Instruction, message::Message, transaction::Transaction};
+use solana_sdk::{message::Message, transaction::Transaction};
 use zama_host as host;
-
-fn anchor_ix<A, D>(program_id: Pubkey, accounts: A, args: D) -> Instruction
-where
-    A: ToAccountMetas,
-    D: InstructionData,
-{
-    Instruction {
-        program_id,
-        accounts: accounts.to_account_metas(None),
-        data: args.data(),
-    }
-}
-
-fn event_authority(program_id: Pubkey) -> Pubkey {
-    Pubkey::find_program_address(&[b"__event_authority"], &program_id).0
-}
+use zama_solana_test_kit::{anchor_ix, event_authority};
 
 /// Builds a `disclose_secp` transaction carrying `sig_count` signatures and an MMR proof of
 /// `sibling_count` siblings over the real account layout, and returns its bincode-serialized wire
