@@ -7,15 +7,10 @@ use std::{
 };
 
 use fhevm_engine_common::database::connect_options_for_database_url;
-use fhevm_engine_common::db_keys::{
-    force_legacy_server_key_from_env, is_server_key_material_available,
-};
 use fhevm_engine_common::healthz_server::{
     default_get_version, HealthCheckService, HealthStatus, Version,
 };
 use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
-use sqlx::PgPool;
-use tokio::sync::OnceCell;
 
 const ACTIVITY_FRESHNESS: Duration = Duration::from_secs(10); // Not alive if tick is older
 const CONNECTED_TICK_FRESHNESS: Duration = Duration::from_secs(5); // Need to check connection if tick is older
@@ -35,8 +30,6 @@ pub struct HealthCheck {
     /// the liveness probe and get the pod restarted, so the in-flight
     /// override is a bounded grace period, not an unconditional pass.
     max_batch_ttl: Duration,
-    database_pool: Arc<OnceCell<PgPool>>,
-    force_legacy_server_key: bool,
 }
 
 #[derive(Debug)]
@@ -54,21 +47,16 @@ impl Drop for InFlightWorkGuard {
 }
 
 impl HealthCheck {
-    pub fn new(
-        database_url: DatabaseURL,
-        max_batch_ttl: Duration,
-    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+    pub fn new(database_url: DatabaseURL, max_batch_ttl: Duration) -> Self {
         // A lazy pool is used to avoid blocking the main thread during initialization or bad database URL
-        Ok(Self {
+        Self {
             database_url,
             database_heartbeat: HeartBeat::new(),
             activity_heartbeat: HeartBeat::new(),
             in_flight_work: Arc::new(AtomicUsize::new(0)),
             work_started_at: Arc::new(Mutex::new(None)),
             max_batch_ttl,
-            database_pool: Arc::new(OnceCell::new()),
-            force_legacy_server_key: force_legacy_server_key_from_env()?,
-        })
+        }
     }
 
     pub fn update_db_access(&self) {
@@ -113,36 +101,27 @@ impl HealthCheckService for HealthCheck {
         // service inner loop
         let check_alive = self.is_alive().await;
         status.set_custom_check("alive", check_alive, false);
-        let pool = self
-            .database_pool
-            .get_or_try_init(|| async {
-                let connect_options = connect_options_for_database_url(&self.database_url)
-                    .await
-                    .map_err(|_| ())?;
-                sqlx::postgres::PgPoolOptions::new()
-                    .acquire_timeout(Duration::from_secs(5))
-                    .max_connections(1)
-                    .connect_with(connect_options)
-                    .await
-                    .map_err(|_| ())
-            })
-            .await
-            .ok();
         if self.database_heartbeat.is_recent(&CONNECTED_TICK_FRESHNESS) {
             status.set_custom_check("database", true, true);
-        } else if let Some(pool) = pool {
-            status.set_db_connected(pool).await;
         } else {
-            status.set_custom_check("database", false, true);
-        }
-
-        let key_material_ready = match pool {
-            Some(pool) => is_server_key_material_available(pool, self.force_legacy_server_key)
-                .await
-                .unwrap_or(false),
-            None => false,
+            match connect_options_for_database_url(&self.database_url).await {
+                Ok(connect_options) => {
+                    let pool = sqlx::postgres::PgPoolOptions::new()
+                        .acquire_timeout(Duration::from_secs(5))
+                        .max_connections(1)
+                        .connect_with(connect_options)
+                        .await;
+                    if let Ok(pool) = pool {
+                        status.set_db_connected(&pool).await;
+                    } else {
+                        status.set_custom_check("database", false, true);
+                    }
+                }
+                Err(_) => {
+                    status.set_custom_check("database", false, true);
+                }
+            }
         };
-        status.set_custom_check("server_key_material", key_material_ready, true);
         status
     }
 
@@ -167,8 +146,6 @@ mod tests {
             in_flight_work: Arc::new(AtomicUsize::new(0)),
             work_started_at: Arc::new(Mutex::new(None)),
             max_batch_ttl: Duration::from_secs(300),
-            database_pool: Arc::new(OnceCell::new()),
-            force_legacy_server_key: false,
         }
     }
 

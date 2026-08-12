@@ -1,7 +1,7 @@
 use std::ops::DerefMut;
 
 use alloy::rpc::types::Log;
-use sqlx::{Pool, Postgres, Transaction};
+use sqlx::{Postgres, Transaction};
 use tracing::{error, info};
 
 use fhevm_engine_common::chain_id::ChainId;
@@ -37,14 +37,6 @@ pub(crate) struct PendingCompressedKeyMaterial {
     pub storage_urls: Vec<String>,
 }
 
-#[derive(Debug, sqlx::FromRow)]
-pub(crate) struct AppliedCompressedKeyMaterial {
-    pub chain_id: i64,
-    pub block_number: i64,
-    pub key_id: Vec<u8>,
-    pub key_digest: Vec<u8>,
-}
-
 #[derive(Debug, Clone)]
 pub(crate) struct PendingCrsActivation {
     pub chain_id: ChainId,
@@ -63,53 +55,45 @@ pub(crate) async fn insert_key_activation_event(
     block_number: u64,
 ) -> anyhow::Result<()> {
     let transaction_hash = log.transaction_hash.map(|txh| txh.to_vec());
-    if !activation.existingKeyId.is_zero() {
-        let digest = activation
+    let existing_key_id = (!activation.existingKeyId.is_zero())
+        .then(|| key_id_to_database_bytes(activation.existingKeyId));
+    let digest_server = if existing_key_id.is_some() {
+        Some(
+            activation
+                .keyDigests
+                .iter()
+                .find(|digest| {
+                    digest.keyType == KeyType::CompressedKeySet as u8
+                })
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "key activation event has no compressed-XOF digest"
+                    )
+                })?
+                .digest
+                .to_vec(),
+        )
+    } else {
+        activation
             .keyDigests
             .iter()
-            .find(|digest| digest.keyType == KeyType::CompressedKeySet as u8)
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "key activation event has no compressed-XOF digest"
-                )
-            })?;
-        sqlx::query(
-            r#"
-            INSERT INTO kms_key_activation_events (
-                chain_id, block_hash, block_number, transaction_hash,
-                key_id, existing_key_id, key_digest_server, storage_urls
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-            ON CONFLICT (chain_id, block_hash, key_id) DO NOTHING
-            "#,
-        )
-        .bind(chain_id.as_i64())
-        .bind(block_hash)
-        .bind(block_number as i64)
-        .bind(transaction_hash)
-        .bind(key_id_to_database_bytes(activation.keyId))
-        .bind(key_id_to_database_bytes(activation.existingKeyId))
-        .bind(digest.digest.as_ref())
-        .bind(activation.kmsNodeStorageUrls)
-        .execute(tx.deref_mut())
-        .await?;
-        return Ok(());
-    }
+            .find(|digest| {
+                digest.keyType == KeyType::ServerKey as u8
+                    || digest.keyType == KeyType::CompressedKeySet as u8
+            })
+            .map(|digest| digest.digest.to_vec())
+    };
+    let digest_public = if existing_key_id.is_none() {
+        activation
+            .keyDigests
+            .iter()
+            .find(|digest| digest.keyType == KeyType::PublicKey as u8)
+            .map(|digest| digest.digest.to_vec())
+    } else {
+        None
+    };
 
-    let digest_server = activation
-        .keyDigests
-        .iter()
-        .filter(|d| d.keyType == 0 || d.keyType == 3)
-        .map(|d| d.digest.to_vec())
-        .next();
-    let digest_public = activation
-        .keyDigests
-        .iter()
-        .filter(|d| d.keyType == 1)
-        .map(|d| d.digest.to_vec())
-        .next();
-    let urls = activation.kmsNodeStorageUrls.clone();
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO kms_key_activation_events (
             chain_id,
@@ -117,23 +101,25 @@ pub(crate) async fn insert_key_activation_event(
             block_number,
             transaction_hash,
             key_id,
+            existing_key_id,
             key_digest_server,
             key_digest_public,
             storage_urls
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         ON CONFLICT (chain_id, block_hash, key_id)
         DO NOTHING
         "#,
-        chain_id.as_i64(),
-        block_hash,
-        block_number as i64,
-        transaction_hash,
-        &key_id_to_database_bytes(activation.keyId),
-        digest_server,
-        digest_public,
-        &urls
     )
+    .bind(chain_id.as_i64())
+    .bind(block_hash)
+    .bind(block_number as i64)
+    .bind(transaction_hash)
+    .bind(key_id_to_database_bytes(activation.keyId))
+    .bind(existing_key_id)
+    .bind(digest_server)
+    .bind(digest_public)
+    .bind(activation.kmsNodeStorageUrls)
     .execute(tx.deref_mut())
     .await?;
     Ok(())
@@ -248,9 +234,6 @@ pub(crate) async fn apply_ready_compressed_key_materials(
           AND e.block_number <= $1
           AND e.existing_key_id IS NOT NULL
           AND e.key_content_compressed_xof_keyset IS NOT NULL
-          AND e.existing_key_id = (
-              SELECT key_id FROM keys ORDER BY sequence_number DESC LIMIT 1
-          )
         FOR UPDATE OF e SKIP LOCKED
         "#,
     )
@@ -265,9 +248,6 @@ pub(crate) async fn apply_ready_compressed_key_materials(
             SET compressed_xof_keyset = e.key_content_compressed_xof_keyset
             FROM kms_key_activation_events AS e
             WHERE e.chain_id = $1 AND e.block_hash = $2 AND e.key_id = $3
-              AND keys.sequence_number = (
-                  SELECT MAX(sequence_number) FROM keys
-              )
               AND keys.key_id = e.existing_key_id
               AND e.key_content_compressed_xof_keyset IS NOT NULL
             "#,
@@ -298,23 +278,6 @@ pub(crate) async fn apply_ready_compressed_key_materials(
         .await?;
     }
     Ok(rows)
-}
-
-pub(crate) async fn applied_compressed_key_materials(
-    db_pool: &Pool<Postgres>,
-) -> anyhow::Result<Vec<AppliedCompressedKeyMaterial>> {
-    Ok(sqlx::query_as(
-        r#"
-        SELECT e.chain_id, e.block_number, e.existing_key_id AS key_id,
-               e.key_digest_server AS key_digest
-        FROM kms_key_activation_events AS e
-        WHERE e.status = 'activated'
-          AND e.existing_key_id IS NOT NULL
-          AND e.key_content_compressed_xof_keyset IS NOT NULL
-        "#,
-    )
-    .fetch_all(db_pool)
-    .await?)
 }
 
 pub(crate) async fn cancel_orphaned_crs_activations(
@@ -618,9 +581,6 @@ pub(crate) async fn all_pending_compressed_key_materials_to_download(
           AND e.key_digest_server IS NOT NULL
           AND e.existing_key_id IS NOT NULL
           AND e.key_content_compressed_xof_keyset IS NULL
-          AND e.existing_key_id = (
-              SELECT key_id FROM keys ORDER BY sequence_number DESC LIMIT 1
-          )
         FOR UPDATE OF e SKIP LOCKED
         "#,
     )
@@ -987,20 +947,34 @@ mod tests {
         .bind(&migration_block)
         .execute(&pool)
         .await?;
-        sqlx::query(
-            "INSERT INTO kms_key_activation_events
-             (chain_id, block_hash, block_number, transaction_hash,
-              key_id, existing_key_id, key_digest_server, storage_urls)
-             VALUES ($1, $2, 10, $3, $4, $5, $6, ARRAY[]::TEXT[])",
+        let activation = KMSGeneration::ActivateKey {
+            keyId: alloy::primitives::U256::from_be_slice(
+                &migration_request_id,
+            ),
+            existingKeyId: alloy::primitives::U256::from_be_slice(&key_id),
+            kmsNodeStorageUrls: Vec::new(),
+            keyDigests: vec![
+                crate::contracts::kms_generation::IKMSGeneration::KeyDigest {
+                    keyType: KeyType::CompressedKeySet as u8,
+                    digest: vec![11_u8; 32].into(),
+                },
+            ],
+        };
+        let mut tx = pool.begin().await?;
+        let log = Log {
+            transaction_hash: Some(alloy::primitives::B256::repeat_byte(9)),
+            ..Default::default()
+        };
+        insert_key_activation_event(
+            &mut tx,
+            activation,
+            log,
+            ChainId::try_from(chain_id as u64)?,
+            &migration_block,
+            10,
         )
-        .bind(chain_id)
-        .bind(&migration_block)
-        .bind(vec![9_u8; 32])
-        .bind(&migration_request_id)
-        .bind(&key_id)
-        .bind(vec![11_u8; 32])
-        .execute(&pool)
         .await?;
+        tx.commit().await?;
         let mut tx = pool.begin().await?;
         let ordinary = all_pending_key_activations_to_download(&mut tx).await?;
         assert!(ordinary.is_empty());
@@ -1079,12 +1053,6 @@ mod tests {
         .fetch_one(&pool)
         .await?;
         assert_eq!(status, "activated");
-        let applied = applied_compressed_key_materials(&pool).await?;
-        assert_eq!(applied.len(), 1);
-        assert_eq!(applied[0].chain_id, chain_id);
-        assert_eq!(applied[0].block_number, 10);
-        assert_eq!(applied[0].key_id, key_id);
-        assert_eq!(applied[0].key_digest, vec![11_u8; 32]);
         Ok(())
     }
 }

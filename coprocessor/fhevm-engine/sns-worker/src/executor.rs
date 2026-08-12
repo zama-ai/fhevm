@@ -114,14 +114,6 @@ impl HealthCheckService for SwitchNSquashService {
         status.set_custom_check("s3_buckets", is_s3_ready, true);
         status.set_custom_check("s3_connection", is_s3_connected, true);
 
-        let key_material_ready = fhevm_engine_common::db_keys::is_server_key_material_available(
-            &self.pool,
-            self.force_legacy_server_key,
-        )
-        .await
-        .unwrap_or(false);
-        status.set_custom_check("server_key_material", key_material_ready, true);
-
         status
     }
 
