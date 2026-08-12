@@ -148,14 +148,19 @@ impl FheExecution {
     #[cfg(feature = "cpi")]
     /// Invokes `zama-host::fhe_execute` for this execution with accounts already
     /// resolved by [`FheExecution::resolve_accounts`].
+    ///
+    /// Consumes the execution: the final account count is stamped into the args in place and the
+    /// packet serialized once — an execution is a single-use request, and keeping it borrowable
+    /// here would force a deep copy of every step and dictionary entry on the never-freeing
+    /// program heap just to set one byte.
     pub fn invoke<'a, 'info>(
-        &self,
+        mut self,
         accounts: ExecutionCpiAccounts<'a, 'info>,
         resolved_accounts: &ResolvedExecutionAccounts<'info>,
         signer_seeds: &[&[&[u8]]],
     ) -> anchor_lang::prelude::Result<()> {
         crate::cpi::invoke_execution_signed_resolved(
-            self,
+            &mut self,
             accounts,
             resolved_accounts,
             signer_seeds,
@@ -208,5 +213,71 @@ pub(crate) fn fhe_execute_step_output(step: &FheExecuteStep) -> &FheExecuteOutpu
         | FheExecuteStep::Sum { output, .. }
         | FheExecuteStep::IsIn { output, .. }
         | FheExecuteStep::MulDiv { output, .. } => output,
+    }
+}
+
+/// The `fhe_execute` instruction packet, serialized once into a right-sized buffer.
+///
+/// The generated `zama_host::instruction::FheExecute` wrapper takes the args by value, which
+/// would force a deep copy of every step and dictionary entry; writing the discriminator and then
+/// borsh-serializing the borrowed args produces byte-identical data (asserted below). The
+/// counting pre-pass matters as much as the avoided copy: a packet-sized `Vec` growing by
+/// doubling abandons roughly another packet of bytes on the never-freeing program heap.
+pub(crate) fn fhe_execute_instruction_data(args: &FheExecuteArgs) -> Vec<u8> {
+    use anchor_lang::{AnchorSerialize, Discriminator};
+
+    struct CountingWriter(usize);
+    impl std::io::Write for CountingWriter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0 += buf.len();
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    let mut counter = CountingWriter(0);
+    args.serialize(&mut counter)
+        .expect("counting borsh writer cannot fail");
+    let discriminator = zama_host::instruction::FheExecute::DISCRIMINATOR;
+    let mut data = Vec::with_capacity(discriminator.len() + counter.0);
+    data.extend_from_slice(discriminator);
+    args.serialize(&mut data)
+        .expect("borsh serialization into a Vec cannot fail");
+    data
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use anchor_lang::InstructionData as _;
+
+    /// Pins [`fhe_execute_instruction_data`] to the derived encoder: byte-for-byte what
+    /// `zama_host::instruction::FheExecute { args }.data()` produces, without the copy.
+    #[test]
+    fn hand_assembled_packet_matches_the_generated_wrapper() {
+        let args = FheExecuteArgs {
+            account_count: 3,
+            dictionary: vec![[7u8; 32]],
+            steps: vec![
+                FheExecuteStep::TrivialEncrypt {
+                    plaintext: [1u8; 32],
+                    fhe_type: 5,
+                    output: FheExecuteOutput::Transient,
+                },
+                FheExecuteStep::Binary {
+                    op: zama_host::FheBinaryOpCode::Add,
+                    lhs: zama_host::FheExecuteOperand::EarlierStep { producer_index: 0 },
+                    rhs: zama_host::FheExecuteOperand::Scalar { value_index: 0 },
+                    output_fhe_type: 5,
+                    output: FheExecuteOutput::Transient,
+                },
+            ],
+        };
+        assert_eq!(
+            fhe_execute_instruction_data(&args),
+            zama_host::instruction::FheExecute { args }.data(),
+        );
     }
 }

@@ -7,7 +7,7 @@ use anchor_lang::{
         instruction::{AccountMeta, Instruction},
         program::invoke_signed,
     },
-    InstructionData, Key, ToAccountInfos, ToAccountMetas,
+    Key, ToAccountInfos, ToAccountMetas,
 };
 
 #[cfg(feature = "cpi")]
@@ -53,7 +53,7 @@ impl<'info> ExecutionAccountResolver<'info> for ResolvedExecutionAccounts<'info>
 /// App-facing surface: [`FheExecution::invoke`].
 #[cfg(feature = "cpi")]
 pub(crate) fn invoke_execution_signed_resolved<'a, 'info>(
-    execution: &FheExecution,
+    execution: &mut FheExecution,
     accounts: ExecutionCpiAccounts<'a, 'info>,
     resolved_accounts: &ResolvedExecutionAccounts<'info>,
     signer_seeds: &[&[&[u8]]],
@@ -63,7 +63,7 @@ pub(crate) fn invoke_execution_signed_resolved<'a, 'info>(
 
 #[cfg(feature = "cpi")]
 fn invoke_execution_signed_with_resolver<'a, 'info, R>(
-    execution: &FheExecution,
+    execution: &mut FheExecution,
     accounts: ExecutionCpiAccounts<'a, 'info>,
     resolver: &R,
     signer_seeds: &[&[&[u8]]],
@@ -108,16 +108,16 @@ where
     }
 
     // The execution self-describes its `remaining_accounts` length (DD-033). Deny-record
-    // witnesses are appended per transaction, so the final count is only known here.
-    let mut args = execution.args.clone();
-    args.account_count =
+    // witnesses are appended per transaction, so the final count is only known here — stamped in
+    // place: `invoke` consumed the execution, so nothing can observe the mutation.
+    execution.args.account_count =
         u8::try_from(execution.remaining_accounts.len() + deny_subject_records.len())
             .map_err(|_| anchor_lang::error::ErrorCode::AccountNotEnoughKeys)?;
 
     let instruction = Instruction {
         program_id: fixed_accounts.program.key(),
         accounts: account_metas,
-        data: zama_host::instruction::FheExecute { args }.data(),
+        data: crate::execution::fhe_execute_instruction_data(&execution.args),
     };
 
     invoke_signed(&instruction, &account_infos, signer_seeds)?;

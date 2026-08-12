@@ -343,20 +343,21 @@ not when the threat model changes.
     fills the table and compresses against it, so provisioned and consumed
     membership cannot diverge (`solana/demo-dapp/src/vault`).
 54. **[HOLDS]** Lowering an execution never copies the builder's intern tables,
-    but a step still costs about a kilobyte of heap. What has to fit Anchor's
-    32 KB default bump heap is the whole instruction, not just the build: the
-    region is never freed, and after the build the CPI helper deep-clones
-    `FheExecuteArgs` and borsh-serializes the packet. Measured for steps that
-    each write a persistent output:
-    - **16 steps** — 19,454 bytes (14,446 building, 5,008 for the packet). This
+    but a step still costs about a kilobyte of heap. What has to fit the
+    entrypoint's fixed 32 KB bump heap is the whole instruction, not just the
+    build: the region is never freed, and after the build the CPI helper stamps
+    the account count into `FheExecuteArgs` in place and borsh-serializes the
+    packet once into a right-sized buffer. Measured for steps that each write a
+    persistent output:
+    - **16 steps** — 15,424 bytes (14,446 building, 978 for the packet). This
       is the documented budget.
-    - **24 steps** — 32,158 bytes, which clears the region by only 610 bytes.
-    - **28 steps** — 34,254 bytes: does not fit.
-    - **32 steps** (the largest execution the host accepts) — 41,726 bytes, so it
-      has to be built off-chain (DD-046: the heap is fixed).
+    - **24 steps** — 24,952 bytes.
+    - **28 steps** — 26,484 bytes: fits.
+    - **32 steps** (the largest execution the host accepts) — 33,392 bytes, over
+      by ~600, so it has to be built off-chain (DD-046: the heap is fixed).
 
     Account resolution and Anchor's own account deserialization sit on top of
-    those figures, which is why the budget is 16 and not 24. The SDK enforces that budget on-chain
+    those figures, which is why the budget is 16 and not 28. The SDK enforces that budget on-chain
     (`MAX_ON_CHAIN_EXECUTION_STEPS`) so a program past it gets
     `TooManyStepsForDefaultHeap` instead of an allocator abort with no error of
     its own. Two of these figures are asserted by

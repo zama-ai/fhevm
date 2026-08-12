@@ -7,8 +7,8 @@
 //! anything back:
 //!
 //! 1. **Building** the execution — lowering interns into the builder's own tables.
-//! 2. **Invoking** it — `invoke_execution_signed_resolved` deep-clones `FheExecuteArgs` to stamp the
-//!    final account count, then borsh-serializes the whole packet as the instruction data.
+//! 2. **Invoking** it — `invoke_execution_signed_resolved` stamps the final account count into the
+//!    args in place and serializes the whole packet once, into a right-sized buffer.
 //!
 //! Measuring only the build is how the first version of this test reported a budget the runtime does
 //! not have: at 24 steps the build alone fits comfortably and the packet that follows it does not.
@@ -28,7 +28,6 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
 use anchor_lang::prelude::Pubkey;
-use anchor_lang::InstructionData as _;
 
 use zama_host::MAX_FHE_EXECUTION_STEPS;
 
@@ -81,9 +80,9 @@ static ALLOCATOR: CountingAllocator = CountingAllocator;
 const DEFAULT_HEAP_BYTES: usize = 32 * 1024;
 
 /// The ceiling the builder enforces on-chain — measured here, so the number a program is stopped at
-/// is the number this test proves fits. At 16 steps the instruction requests 19,454 bytes. The hard
-/// ceiling is 24 (32,158 bytes, clearing the region by 610 bytes) and 28 is over, but 24 leaves
-/// nothing for the costs below, so it is not a number to build a program on. For scale, the
+/// is the number this test proves fits. At 16 steps the instruction requests 15,424 bytes. The
+/// hard ceiling is 28 (26,484 bytes) and 32 is over (33,392 bytes), but a ceiling at the edge
+/// leaves nothing for the costs below, so it is not a number to build a program on. For scale, the
 /// clone-per-step rollback this replaced asked for 270 KB across a full execution and exhausted the heap
 /// at the 10th step of the build alone. `print_measurement_table` re-derives all of these.
 const RELIABLE_STEPS: usize = MAX_ON_CHAIN_EXECUTION_STEPS;
@@ -128,7 +127,7 @@ fn measure(steps: usize) -> (usize, usize) {
     let subjects: Vec<Vec<Pubkey>> = (0..steps).map(|_| vec![authority]).collect();
 
     let before_build = counted_bytes();
-    let execution = FheExecution::build(
+    let mut execution = FheExecution::build(
         ExecutionEncryptedValueAccountAuthority::new(authority),
         |builder| {
             // The first step reads the persistent input; every later step chains on the previous step's
@@ -147,12 +146,12 @@ fn measure(steps: usize) -> (usize, usize) {
     .expect("execution builds");
     let build_bytes = counted_bytes() - before_build;
 
-    // Exactly what `invoke_execution_signed_resolved` does with the built execution: clone the args to stamp
-    // the final account count, then serialize the packet.
+    // Exactly what `invoke_execution_signed_resolved` does with the built execution: stamp the
+    // final account count in place and serialize the packet once into a right-sized buffer.
     let before_packet = counted_bytes();
-    let mut args = execution.args.clone();
-    args.account_count = u8::try_from(execution.remaining_accounts.len()).expect("account count");
-    let data = zama_host::instruction::FheExecute { args }.data();
+    execution.args.account_count =
+        u8::try_from(execution.remaining_accounts.len()).expect("account count");
+    let data = crate::execution::fhe_execute_instruction_data(&execution.args);
     let packet_bytes = counted_bytes() - before_packet;
     assert!(!data.is_empty(), "the packet is what gets submitted");
 

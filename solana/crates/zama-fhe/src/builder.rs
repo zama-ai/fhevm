@@ -9,9 +9,9 @@
 //! step costs a few hundred heap bytes. The SBF entrypoint's allocator is a fixed 32 KB bump
 //! region that is never freed, and the instruction pays out of it twice — once building, once
 //! serializing the packet in `FheExecution::invoke` — so the budget belongs to the pair: 16 steps
-//! that each write a persistent output, far past anything in this repo (the largest is five). 24
-//! still fits with 610 bytes to spare, but nothing is left there for account resolution, and an
-//! execution near `MAX_FHE_EXECUTION_STEPS` has to be built off-chain (DD-046: the heap is fixed).
+//! that each write a persistent output, far past anything in this repo (the largest is five). 28
+//! still fits with ~6 KB to spare, but nothing is guaranteed there for account resolution, and a
+//! full `MAX_FHE_EXECUTION_STEPS` execution has to be built off-chain (DD-046: the heap is fixed).
 //! `heap_budget.rs` measures all of it, and [`MAX_ON_CHAIN_EXECUTION_STEPS`] enforces it: a program that
 //! keeps adding steps past the budget is told so, instead of being aborted by the allocator with no
 //! error of its own.
