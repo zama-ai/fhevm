@@ -341,43 +341,44 @@ describe("demo lifecycle collision policy", () => {
     expect(rootPackage.scripts["demo:stop"]).toBe("bun run demo down");
   });
 
-  test("fresh bring-up materializes the built SDK before runtime canaries", async () => {
+  test("fresh bring-up builds the symlinked SDK before runtime canaries", async () => {
     const script = await fs.readFile(
       path.join(import.meta.dir, "../../../solana/scripts/e2e/clean-e2e.sh"),
       "utf8",
     );
+    // The SDK's runtime dependencies resolve from the repository-root workspace graph (the
+    // consumers reach the SDK through a postinstall-created symlink), so the root install must
+    // precede the canaries, and the ESM build must precede them because the symlink serves
+    // built output.
     const install = script.indexOf(
       "npm ci --workspace=@fhevm/sdk-dev --workspace=@fhevm/sdk --include-workspace-root=false",
     );
     const build = script.indexOf("npm run clean && npm run build:esm && npm run build:types");
-    const refresh = script.indexOf("bun install --force --frozen-lockfile");
-    const materialize = script.indexOf('solana/scripts/e2e/materialize-test-sdk.sh');
+    const consumerInstall = script.indexOf("bun install --frozen-lockfile");
     const canary = script.indexOf('node --input-type=module -e "await import(\'@fhevm/sdk/solana\')"');
     const bunCanary = script.indexOf('bun -e "await import(\'@fhevm/sdk/solana\')"');
     expect(install).toBeGreaterThan(-1);
-    expect(build).toBeGreaterThan(-1);
     expect(build).toBeGreaterThan(install);
-    expect(refresh).toBeGreaterThan(build);
-    expect(materialize).toBeGreaterThan(refresh);
-    expect(canary).toBeGreaterThan(materialize);
-    expect(bunCanary).toBeGreaterThan(materialize);
-    expect(script).toContain('[ ! -L "$FHEVM/node_modules/@fhevm/sdk/_esm/solana/index.js" ]');
+    expect(consumerInstall).toBeGreaterThan(build);
+    expect(canary).toBeGreaterThan(consumerInstall);
+    expect(bunCanary).toBeGreaterThan(consumerInstall);
+    // A stale-snapshot regression guard: the dependency must stay a symlink, and nothing may
+    // reintroduce the copy-refresh dance (`--force` reinstalls, materialize-test-sdk.sh).
+    expect(script).toContain('[ -L "$FHEVM/node_modules/@fhevm/sdk" ]');
+    expect(script).not.toContain("materialize-test-sdk");
+    expect(script).not.toContain("bun install --force");
   });
 
-  test("local SDK consumers own the materialized package dependency graph", async () => {
+  test("local SDK consumers reach the linked SDK only through exported subpaths", async () => {
     const sdkPackage = JSON.parse(
       await fs.readFile(path.join(import.meta.dir, "../../../sdk/js-sdk/src/package.json"), "utf8"),
-    ) as { dependencies: Record<string, string>; exports: Record<string, unknown> };
-    const consumerLock = Bun.JSONC.parse(
-      await fs.readFile(path.join(import.meta.dir, "../bun.lock"), "utf8"),
-    ) as {
-      packages: Record<string, [string, { dependencies?: Record<string, string> }]>;
-    };
-    const demoDappLock = Bun.JSONC.parse(
-      await fs.readFile(path.join(import.meta.dir, "../../../solana/demo-dapp/bun.lock"), "utf8"),
-    ) as {
-      packages: Record<string, [string, { dependencies?: Record<string, string> }]>;
-    };
+    ) as { exports: Record<string, unknown> };
+    const consumerPackage = JSON.parse(
+      await fs.readFile(path.join(import.meta.dir, "../package.json"), "utf8"),
+    ) as { dependencies: Record<string, string>; scripts: Record<string, string> };
+    const demoDappPackage = JSON.parse(
+      await fs.readFile(path.join(import.meta.dir, "../../../solana/demo-dapp/package.json"), "utf8"),
+    ) as { dependencies: Record<string, string>; scripts: Record<string, string> };
     const workflow = await fs.readFile(
       path.join(import.meta.dir, "../../../.github/workflows/solana-e2e.yml"),
       "utf8",
@@ -424,12 +425,23 @@ describe("demo lifecycle collision policy", () => {
     // bun, not node: the SDK worker imports the demo dapp's vault module (TS sources resolved
     // through tsconfig paths), which node's type-stripping cannot resolve.
     expect(twoHolderTransfer).toContain('run(["bun", SDK_WORKER]');
-    expect(demoViteConfig).toContain("preserveSymlinks: true");
     expect(demoViteConfig).toContain("noExternal: ['@fhevm/sdk']");
     expect(workflow).not.toContain("--preserve-symlinks");
     expect(twoHolderTransfer).not.toContain("--preserve-symlinks");
-    expect(consumerLock.packages["@fhevm/sdk"][1].dependencies).toEqual(sdkPackage.dependencies);
-    expect(demoDappLock.packages["@fhevm/sdk"][1].dependencies).toEqual(sdkPackage.dependencies);
+    // Both consumers must reach the SDK through a symlink into its live source tree: bun installs
+    // a `file:` dependency as a snapshot copy that goes stale on every SDK rebuild, so each
+    // consumer's postinstall replaces the copy with the symlink. (bun's `link:` protocol names a
+    // machine-global `bun link` registration, not a relative path, so the symlink cannot be
+    // declared in the dependency spec itself.) Resolution must then follow the symlink to its
+    // real path so the SDK's runtime dependencies come from the repository-root workspace graph —
+    // which is why the vite config must not turn on `preserveSymlinks`.
+    const swapSnapshotForSymlink =
+      "rm -rf node_modules/@fhevm/sdk && ln -s ../../../../sdk/js-sdk/src node_modules/@fhevm/sdk";
+    for (const consumer of [consumerPackage, demoDappPackage]) {
+      expect(consumer.dependencies["@fhevm/sdk"]).toBe("file:../../sdk/js-sdk/src");
+      expect(consumer.scripts.postinstall).toBe(swapSnapshotForSymlink);
+    }
+    expect(demoViteConfig).not.toContain("preserveSymlinks");
   });
 
   test("arm64 source builds use the canonical native Rust builder", async () => {
