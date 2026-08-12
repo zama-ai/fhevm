@@ -60,7 +60,7 @@ compact-hex = []
 stack-version-override = []
 
 [build-dependencies]
-tonic-build = { workspace = true }
+tonic-prost-build = { workspace = true }
 
 [[bin]]
 name = "generate-keys"

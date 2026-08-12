@@ -13,6 +13,13 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 cd "$ROOT"
+
+# The goldens this writes are compared byte for byte against a fresh `anchor build` in CI, so
+# minting them under a different Anchor than CI runs produces a diff that looks like a real
+# IDL change and fails the next unrelated PR. Keep in lockstep with solana-tests.yml.
+EXPECTED_SOLANA="${EXPECTED_SOLANA:-4.1.2}"
+. "$ROOT/scripts/lib/require-pinned-toolchain.sh"
+
 NO_DNA=1 anchor build --ignore-keys
 # Writes every vendored IDL, including the demo and specimen programs whose copies
 # live with their consumers. The list they come from is check_solana_abi.py's, the
