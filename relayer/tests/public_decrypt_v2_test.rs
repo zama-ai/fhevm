@@ -718,6 +718,57 @@ async fn test_readiness_timeout_returns_503_with_correct_label() {
     setup.shutdown().await;
 }
 
+/// The overall request budget, not the retry counter, is what ends a check against unresponsive
+/// buckets.
+///
+/// Every bucket accepts the connection and then stalls, so each attempt costs a full
+/// `head_timeout` instead of returning fast the way a 404 does. The retry counter is set high
+/// enough (100 × 50ms) that exhausting it would take far longer than the 200ms budget, so a 503
+/// here can only have come from the budget expiring. Without that budget this shape of failure is
+/// what stretches a nominal four-minute retry policy into tens of minutes while holding a
+/// readiness throttler permit throughout.
+#[tokio::test]
+async fn test_stalled_buckets_are_bounded_by_the_request_budget() {
+    let setup = TestSetup::new_with_short_request_budget()
+        .await
+        .expect("Failed to create test setup");
+
+    setup
+        .ct_attestation
+        .serve_stalled(std::time::Duration::from_secs(30))
+        .await;
+
+    let payload = helpers::create_public_decrypt_payload();
+    let started = std::time::Instant::now();
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+    let elapsed = started.elapsed();
+
+    assert_eq!(
+        status,
+        reqwest::StatusCode::SERVICE_UNAVAILABLE,
+        "A stalled fan-out must fail closed and stay retriable"
+    );
+    assert_eq!(body.status, ApiResponseStatus::Failed);
+    assert!(body.result.is_none());
+
+    let error = body.error.as_ref().expect("Error should be present");
+    assert_eq!(
+        error.label(),
+        "readiness_check_timed_out",
+        "The budget expiring reuses the existing timeout label, not a new one"
+    );
+
+    // 100 attempts × 50ms of sleeping alone is 5s before any probing is counted, so finishing well
+    // inside that is what distinguishes the budget from the retry counter.
+    assert!(
+        elapsed < std::time::Duration::from_secs(5),
+        "Expected the request budget to end the check early, took {elapsed:?}"
+    );
+
+    setup.shutdown().await;
+}
+
 /// Test that malformed JSON returns V2 error format with status and request_id
 #[tokio::test]
 async fn test_v2_post_malformed_json_has_status_and_request_id() {
