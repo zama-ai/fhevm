@@ -6,12 +6,12 @@
 //! use. The host-side cost table and the operand validation are what keep it honest.
 //!
 //! Building on-chain: lowering interns into the builder's own tables and never copies them, so a
-//! step costs a few hundred heap bytes. Anchor's default allocator is a 32 KB bump region that is
-//! never freed, and the instruction pays out of it twice — once building, once serializing the
-//! packet in `FheExecution::invoke` — so the budget belongs to the pair: 16 steps that each write a
-//! persistent output, far past anything in this repo (the largest is five). 24 still fits with 610
-//! bytes to spare, but nothing is left there for account resolution, and an execution near
-//! `MAX_FHE_EXECUTION_STEPS` has to be built off-chain or by a program bringing its own allocator.
+//! step costs a few hundred heap bytes. The SBF entrypoint's allocator is a fixed 32 KB bump
+//! region that is never freed, and the instruction pays out of it twice — once building, once
+//! serializing the packet in `FheExecution::invoke` — so the budget belongs to the pair: 16 steps
+//! that each write a persistent output, far past anything in this repo (the largest is five). 24
+//! still fits with 610 bytes to spare, but nothing is left there for account resolution, and an
+//! execution near `MAX_FHE_EXECUTION_STEPS` has to be built off-chain (DD-046: the heap is fixed).
 //! `heap_budget.rs` measures all of it, and [`MAX_ON_CHAIN_EXECUTION_STEPS`] enforces it: a program that
 //! keeps adding steps past the budget is told so, instead of being aborted by the allocator with no
 //! error of its own.
@@ -95,9 +95,9 @@ impl StepLowering<'_> {
     }
 }
 
-/// Steps a program can build *and* invoke inside Anchor's default 32 KB bump heap, measured in
-/// `heap_budget.rs`. The host itself accepts up to `MAX_FHE_EXECUTION_STEPS`; this is the smaller limit
-/// the runtime imposes on a program that has not raised its heap.
+/// Steps a program can build *and* invoke inside the SBF entrypoint's fixed 32 KB bump heap,
+/// measured in `heap_budget.rs`. The host itself accepts up to `MAX_FHE_EXECUTION_STEPS`; this is
+/// the smaller limit the runtime imposes on the program composing the execution.
 pub const MAX_ON_CHAIN_EXECUTION_STEPS: usize = 16;
 
 /// The ceiling only means something while it is stricter than the host's.
@@ -106,8 +106,9 @@ const _: () = assert!(MAX_ON_CHAIN_EXECUTION_STEPS < MAX_FHE_EXECUTION_STEPS);
 /// The step ceiling in force for this build of the crate.
 ///
 /// Only a program running under SBF pays the 32 KB budget, so off-chain builders — clients, tests,
-/// the e2e live client — keep the host's full `MAX_FHE_EXECUTION_STEPS`. A program that installs its own
-/// allocator opts back out with the `raised-heap` feature.
+/// the e2e live client — keep the host's full `MAX_FHE_EXECUTION_STEPS`. The heap is fixed: no
+/// program in this repo installs an allocator, and a larger heap frame is structurally unusable
+/// (DD-046).
 ///
 /// The `cfg` itself is not exercised by a host test: proving the on-chain branch would need an SBF
 /// fixture program built only to overflow it, which is the same reason `heap_budget.rs` counts bytes
@@ -115,7 +116,7 @@ const _: () = assert!(MAX_ON_CHAIN_EXECUTION_STEPS < MAX_FHE_EXECUTION_STEPS);
 /// is the same one `zama_solana_acl::sha256` uses to select the on-chain hasher, and the cost
 /// snapshots would show it immediately if that stopped resolving under SBF.
 pub(crate) const fn step_limit() -> usize {
-    if cfg!(all(target_os = "solana", not(feature = "raised-heap"))) {
+    if cfg!(target_os = "solana") {
         MAX_ON_CHAIN_EXECUTION_STEPS
     } else {
         MAX_FHE_EXECUTION_STEPS
@@ -127,7 +128,7 @@ impl<'id> FheExecutionBuilder<'id> {
     /// through this: lowering interns into the builder's own tables and, when any part of the step
     /// fails, [`StepTables::rollback`] undoes what it wrote, so a failed step leaves the builder
     /// exactly as it was. The tables are never copied per step — an app program builds its execution on
-    /// Anchor's default 32 KB bump heap, which is never freed, so a clone-and-swap rollback would
+    /// the entrypoint's fixed 32 KB bump heap, which is never freed, so a clone-and-swap rollback would
     /// make the heap cost of an execution grow with the square of its step count.
     ///
     /// Ordering dependency inside a step: `operand()` reads `persistent_producers`, which still

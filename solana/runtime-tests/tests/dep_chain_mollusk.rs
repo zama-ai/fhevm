@@ -1,6 +1,6 @@
 //! Mollusk test for the `dep-chain` specimen — the load-smoke shape: one `fhe_execute` carrying
 //! the on-chain builder's full 16-step ceiling (`zama_fhe::MAX_ON_CHAIN_EXECUTION_STEPS` — the
-//! deepest chain a CPI-composing program can build on Anchor's default heap) as a strictly
+//! deepest chain a CPI-composing program can build on the fixed 32 KB program heap) as a strictly
 //! DEPENDENT add chain (each step's operand is the previous step's transient result), proving the
 //! kit's cleartext oracle replays transient intermediates and that a full-depth chain fits one
 //! instruction's compute budget. The host's own 32-step ceiling is exercised by `host_mollusk`'s

@@ -353,12 +353,11 @@ not when the threat model changes.
     - **24 steps** — 32,158 bytes, which clears the region by only 610 bytes.
     - **28 steps** — 34,254 bytes: does not fit.
     - **32 steps** (the largest execution the host accepts) — 41,726 bytes, so it
-      has to be built off-chain, or by a program that installs its own allocator.
+      has to be built off-chain (DD-046: the heap is fixed).
 
     Account resolution and Anchor's own account deserialization sit on top of
     those figures, which is why the budget is 16 and not 24. The SDK enforces that budget on-chain
-    (`MAX_ON_CHAIN_EXECUTION_STEPS`, lifted by the `raised-heap` feature for a program
-    that installs its own allocator) so a program past it gets
+    (`MAX_ON_CHAIN_EXECUTION_STEPS`) so a program past it gets
     `TooManyStepsForDefaultHeap` instead of an allocator abort with no error of
     its own. Two of these figures are asserted by
     `solana/crates/zama-fhe/src/heap_budget.rs`, and they are the two that matter:

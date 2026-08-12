@@ -1,8 +1,9 @@
 //! Heap budget for one on-chain `fhe_execute` instruction.
 //!
-//! An app program pays for its execution on Anchor's default allocator: a bump allocator over a fixed
-//! 32 KB region that never frees, so what decides whether an instruction fits is the *total* number
-//! of bytes it requests, not its peak live set. Two phases share that one region and neither gives
+//! An app program pays for its execution on the SBF entrypoint's default allocator
+//! (`solana-program-entrypoint`, not Anchor): a bump allocator over a fixed 32 KB region that
+//! never frees, so what decides whether an instruction fits is the *total* number of bytes it
+//! requests, not its peak live set. Two phases share that one region and neither gives
 //! anything back:
 //!
 //! 1. **Building** the execution — lowering interns into the builder's own tables.
@@ -76,7 +77,7 @@ unsafe impl GlobalAlloc for CountingAllocator {
 #[global_allocator]
 static ALLOCATOR: CountingAllocator = CountingAllocator;
 
-/// The region Anchor's default bump allocator serves one instruction from.
+/// The region the entrypoint's default bump allocator serves one instruction from.
 const DEFAULT_HEAP_BYTES: usize = 32 * 1024;
 
 /// The ceiling the builder enforces on-chain — measured here, so the number a program is stopped at

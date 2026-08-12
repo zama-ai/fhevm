@@ -16,7 +16,7 @@ use crate::{FheExecutionBuildError, Result};
 /// Lowering only ever appends to the three tables, with one exception: an account that is already
 /// interned is widened in place (`ExecutionAccountMeta::promote`). So an undo is the recorded lengths
 /// plus one small record per promotion — no table is copied, which is what keeps an execution built
-/// on-chain inside Anchor's default 32 KB bump heap.
+/// on-chain inside the SBF entrypoint's fixed 32 KB bump heap.
 pub(crate) struct StepTables<'b> {
     remaining_accounts: &'b mut Vec<ExecutionAccountMeta>,
     dictionary: &'b mut Vec<[u8; 32]>,

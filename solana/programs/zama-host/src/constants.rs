@@ -38,10 +38,11 @@ pub const WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY_BYTES: [u8; 32] = [0xff; 32
 /// envelope headroom — asserted by `mollusk_fhe_execute_max_op_transaction_fits_packet`) and ~150k CU
 /// (under the 200k default budget, so no compute-budget instruction is required). 48 ops would
 /// exceed the default CU budget and leave <5% packet headroom for realistic account envelopes.
-/// The heap-heaviest legal execution shape (all steps created-public persistent creates) fits 20 creates
-/// on the 32KB bump heap — a hard boundary, since the Anchor default allocator serves a fixed
-/// 32KB region even when a larger heap execution is requested; such executions revert cleanly beyond it
-/// (measured; pinned by `mollusk_fhe_execute_created_public_heap_boundary`). Wire
+/// Capacity below this cap is shape-dependent: the all-created-public shape executes at most 20
+/// creates in one instruction, bounded first by the transaction's 64-entry instruction trace
+/// (each created output issues ~3 CPIs) and only past that by the fixed 32 KB heap, which no
+/// compute-budget request can raise (DD-046); executions beyond a wall revert cleanly (measured;
+/// pinned per shape by the `fhe_execute_boundary/*` snapshot entries). Wire
 /// indices (`producer_index`, dictionary and account indices) are `u8`, bounding any future raise
 /// at 256.
 pub const MAX_FHE_EXECUTION_STEPS: usize = 32;

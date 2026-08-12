@@ -82,11 +82,11 @@ pub enum FheExecutionBuildError {
     PersistentOperandWrittenEarlier,
     /// More steps were added than the host accepts (`MAX_FHE_EXECUTION_STEPS`).
     TooManySteps,
-    /// More steps were added than a program can build and invoke on Anchor's default 32 KB heap
-    /// (`MAX_ON_CHAIN_EXECUTION_STEPS`). Only ever returned on-chain: the build and the packet come out of
-    /// one bump region that is never freed, so past this count the allocator aborts the instruction
-    /// with no error of its own. Build such an execution off-chain, or install a larger heap and enable
-    /// the crate's `raised-heap` feature.
+    /// More steps were added than a program can build and invoke on the SBF entrypoint's fixed
+    /// 32 KB heap (`MAX_ON_CHAIN_EXECUTION_STEPS`). Only ever returned on-chain: the build and the packet
+    /// come out of one bump region that is never freed, so past this count the allocator aborts the
+    /// instruction with no error of its own. Build such an execution off-chain — the heap cannot be
+    /// raised (DD-046).
     TooManyStepsForDefaultHeap,
     /// `finish` was called with no steps; the host rejects empty executions.
     EmptySteps,

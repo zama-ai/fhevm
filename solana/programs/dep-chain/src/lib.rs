@@ -10,9 +10,9 @@
 //! shape through the typed `fhe_execute` client against the running coprocessor.
 //!
 //! Two different ceilings meet here, deliberately. A CPI-composing program builds its execution on
-//! Anchor's default 32 KB bump heap, so `zama_fhe` caps it at `MAX_ON_CHAIN_EXECUTION_STEPS` (16)
-//! — that is this program's depth, and the deepest chain any app program can compose without
-//! installing its own allocator. The host's own `MAX_FHE_EXECUTION_STEPS` (32) is only reachable
+//! the SBF entrypoint's fixed 32 KB bump heap, so `zama_fhe` caps it at `MAX_ON_CHAIN_EXECUTION_STEPS`
+//! (16) — that is this program's depth, and the deepest chain any app program can compose
+//! (DD-046: the heap is fixed). The host's own `MAX_FHE_EXECUTION_STEPS` (32) is only reachable
 //! by off-chain builders; the load-smoke scenario exercises that full depth through the raw typed
 //! client, and `host_mollusk` proves the host processes it under SBF.
 //!
@@ -43,8 +43,8 @@ use zama_host::program::ZamaHost;
 declare_id!("7Sz3qA6Wm84uWjfiFJR4ww1Trx7DZ4MMb4iB4sn5vqaV");
 
 /// The deepest chain one `extend` can carry: `zama_fhe::MAX_ON_CHAIN_EXECUTION_STEPS`, the step
-/// ceiling the builder enforces for a program composing its execution on Anchor's default heap
-/// (the host's own 32-step ceiling is off-chain-builder territory — see the module docs).
+/// ceiling the builder enforces for a program composing its execution on the fixed 32 KB program
+/// heap (the host's own 32-step ceiling is off-chain-builder territory — see the module docs).
 pub const MAX_CHAIN_LINKS: u8 = 16;
 
 /// `extend` promises exactly the builder's ceiling; if the builder's budget moves, this program's

@@ -2112,3 +2112,39 @@ Disclosure names a token state kind and validates its entire binding before emit
 canonical encrypted value account, encrypted value account authority, encrypted value label, and
 handle proof. Domain-only validation was rejected because two fields within the same mint would remain
 interchangeable in downstream events.
+
+## DD-046: The Program Heap Is Fixed At 32 KB — No Custom Allocator (`raised-heap` deleted)
+
+Status: adopted for the proof of concept (fhevm-internal#1872)
+
+No program in this repo installs a custom allocator. Every program keeps the default allocator
+`solana-program-entrypoint` compiles in — a bump allocator over a fixed 32 KB region, never freed —
+so `ComputeBudgetInstruction::RequestHeapFrame` is inert for us: the runtime grants the larger
+frame and the allocator, whose length is a compile-time constant, cannot spend it. The heap is
+also strictly per invocation: each top-level instruction and each CPI frame gets its own fresh
+32 KB region (verified in `solana-program-runtime`'s `create_vm!`, which borrows a zeroed buffer
+and installs a fresh bump allocator per invocation), so the app's heap and the host's heap in one
+CPI are independent and neither can donate capacity to the other.
+
+Why not ship an allocator:
+
+1. The guild precedent (Pinocchio, 2026-06-25): a low-level win bought with permanent complexity
+   is not worth it while the executor "doesn't do much compute at all" — stay on the framework
+   default for the PoC, revisit only with benchmarks. No benchmark showing a real app blocked on
+   heap after the fhevm-internal#1872 copy reductions exists.
+2. The current failure modes are good: a typed `TooManyStepsForDefaultHeap` before the CPI
+   app-side, a clean revert committing nothing host-side. The forward-growing custom-allocator
+   pattern degrades past the mapped region into a VM access violation instead of a clean error,
+   and the granted heap size is not discoverable at runtime (no syscall), so a program can never
+   verify it got the frame it requested.
+3. Heap is not the axis that bites. The `fhe_execute_boundary/*` snapshot entries show the walls
+   per execution shape: the all-created-public shape is stopped by the transaction's 64-entry
+   instruction trace before it ever reaches the heap, and storage rent and compute dominate cost.
+
+The `raised-heap` Cargo feature was half a mechanism — it lifted the SDK's on-chain step ceiling
+back to the host's maximum but shipped no allocator, so a program enabling it would keep the 32 KB
+allocator and land in exactly the silent abort the ceiling exists to prevent. Nothing ever enabled
+it. Deleted.
+
+Reopening condition: a benchmark showing a real application blocked by the measured shape
+boundaries after the copy-reduction work (argument clone, decode-once, packet pre-sizing) landed.
