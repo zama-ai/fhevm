@@ -20,6 +20,14 @@ pub(super) struct ExecutionAccountTable<'a, 'info> {
     /// close to the 32KB heap ceiling. (For the same reason the table caches
     /// no derived PDAs: the single walk derives each output PDA exactly once.)
     persistent_outputs_claimed: Vec<Pubkey>,
+    /// Decode-once cache for canonical `EncryptedValue`s, parallel to `accounts`.
+    /// Each decode allocates the full subject and peak vectors on the never-freeing
+    /// bump heap, and one execution reads the same account from up to three places
+    /// (anchor collection, operand admission, the output write). Boxed so an empty
+    /// slot costs a pointer, not the ~200-byte struct: an unboxed
+    /// `Vec<Option<EncryptedValue>>` sized to the account list measurably lowered
+    /// the all-created-public heap boundary, which never decodes at all.
+    decoded_encrypted_values: Vec<Option<Box<EncryptedValue>>>,
 }
 
 /// Result of deriving a persistent output's canonical address: the PDA, its bump,
@@ -49,7 +57,40 @@ impl<'a, 'info> ExecutionAccountTable<'a, 'info> {
             accounts,
             used: vec![false; accounts.len()],
             persistent_outputs_claimed: Vec::with_capacity(MAX_FHE_EXECUTION_STEPS),
+            decoded_encrypted_values: (0..accounts.len()).map(|_| None).collect(),
         })
+    }
+
+    /// Decode-once, validate-once read of a canonical `EncryptedValue`: the first read decodes
+    /// through `read_canonical_encrypted_value`, later reads reuse it. Safe against staleness
+    /// because within one execution every read of an account precedes its single write (the
+    /// one-write claim plus the read-after-write operand rejection), and the write path goes
+    /// through [`Self::take_canonical_encrypted_value`], which empties the slot.
+    pub(super) fn canonical_encrypted_value(&mut self, index: u16) -> Result<&EncryptedValue> {
+        let account = self.account(index)?;
+        let slot = self
+            .decoded_encrypted_values
+            .get_mut(index as usize)
+            .ok_or_else(|| error!(ZamaHostError::InvalidFheExecuteAccount))?;
+        if slot.is_none() {
+            *slot = Some(Box::new(read_canonical_encrypted_value(account)?));
+        }
+        Ok(slot.as_deref().expect("slot was just filled"))
+    }
+
+    /// The write path's decode: takes the cached value (or decodes when nothing read the account
+    /// earlier), transferring ownership to the caller who will mutate and rewrite it. Taking
+    /// doubles as cache invalidation — after the write, a fresh read would decode the new state.
+    pub(super) fn take_canonical_encrypted_value(&mut self, index: u16) -> Result<EncryptedValue> {
+        let account = self.account(index)?;
+        match self
+            .decoded_encrypted_values
+            .get_mut(index as usize)
+            .and_then(Option::take)
+        {
+            Some(value) => Ok(*value),
+            None => read_canonical_encrypted_value(account),
+        }
     }
 
     pub(super) fn account(&self, index: u16) -> Result<&'a AccountInfo<'info>> {

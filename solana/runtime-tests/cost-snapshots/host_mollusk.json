@@ -80,9 +80,9 @@
     "fhe_execute_boundary/all_created_public": {
       "max_ok": 20,
       "first_fail": 21,
-      "limited_by": "instruction_trace",
+      "limited_by": "heap",
       "cost_at_max_ok": {
-        "compute_units": 289917,
+        "compute_units": 290146,
         "unique_accounts": 25,
         "instruction_data_bytes": 1629,
         "cpi_instructions": 61,
@@ -95,7 +95,7 @@
       "first_fail": 16,
       "limited_by": "heap",
       "cost_at_max_ok": {
-        "compute_units": 472009,
+        "compute_units": 472004,
         "unique_accounts": 5,
         "instruction_data_bytes": 14404,
         "cpi_instructions": 0,
@@ -108,7 +108,7 @@
       "first_fail": 33,
       "limited_by": "MAX_FHE_EXECUTION_STEPS",
       "cost_at_max_ok": {
-        "compute_units": 67974,
+        "compute_units": 68066,
         "unique_accounts": 7,
         "instruction_data_bytes": 414,
         "cpi_instructions": 3,
@@ -117,13 +117,13 @@
       }
     },
     "fhe_execute_boundary/mature_updates": {
-      "max_ok": 3,
-      "first_fail": 4,
+      "max_ok": 4,
+      "first_fail": 5,
       "limited_by": "heap",
       "cost_at_max_ok": {
-        "compute_units": 106094,
-        "unique_accounts": 8,
-        "instruction_data_bytes": 1439,
+        "compute_units": 105501,
+        "unique_accounts": 9,
+        "instruction_data_bytes": 1817,
         "cpi_instructions": 0,
         "total_cpi_instruction_data_bytes": 0,
         "max_cpi_instruction_data_bytes": 0
@@ -134,7 +134,7 @@
       "first_fail": 33,
       "limited_by": "MAX_FHE_EXECUTION_STEPS",
       "cost_at_max_ok": {
-        "compute_units": 160092,
+        "compute_units": 160189,
         "unique_accounts": 13,
         "instruction_data_bytes": 1521,
         "cpi_instructions": 25,
@@ -145,7 +145,7 @@
   },
   "measurements": {
     "fhe_execute/max_steps": {
-      "compute_units": 151018,
+      "compute_units": 79569,
       "unique_accounts": 9,
       "instruction_data_bytes": 449,
       "cpi_instructions": 3,
@@ -153,7 +153,7 @@
       "max_cpi_instruction_data_bytes": 36
     },
     "fhe_execute/three_steps": {
-      "compute_units": 41927,
+      "compute_units": 32683,
       "unique_accounts": 9,
       "instruction_data_bytes": 188,
       "cpi_instructions": 3,
