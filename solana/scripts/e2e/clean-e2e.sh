@@ -250,15 +250,17 @@ if [ "${SOLANA_E2E_LIBRARY_ONLY:-0}" = "1" ]; then
   return 0 2>/dev/null || exit 0
 fi
 
-# The local clients and demo import the public `@fhevm/sdk/solana` package exports. Install the SDK
-# build workspace, then generate the ESM and declaration trees before refreshing the file-linked
-# consumer. Runtime dependencies remain owned by each consumer's frozen graph.
+# The local clients and demo import the public `@fhevm/sdk/solana` package exports. Each
+# consumer's postinstall replaces bun's `file:` snapshot with a symlink to the live source tree,
+# so `node_modules/@fhevm/sdk` always serves the current build: install the SDK build workspace
+# (the root graph its runtime dependencies resolve from), then generate the ESM and declaration
+# trees the symlink serves. Rebuilds are visible to consumers immediately — nothing re-copies a
+# snapshot.
 ( cd "$ROOT" && npm ci --workspace=@fhevm/sdk-dev --workspace=@fhevm/sdk --include-workspace-root=false )
 ( cd "$ROOT/sdk/js-sdk" && npm run clean && npm run build:esm && npm run build:types )
-( cd "$FHEVM" && bun install --force --frozen-lockfile )
-"$ROOT/solana/scripts/e2e/materialize-test-sdk.sh"
-[ ! -L "$FHEVM/node_modules/@fhevm/sdk/_esm/solana/index.js" ]
-# Prove both runtimes resolve SDK dependencies from the consumer's frozen graph.
+( cd "$FHEVM" && bun install --frozen-lockfile )
+[ -L "$FHEVM/node_modules/@fhevm/sdk" ]
+# Prove both runtimes resolve the SDK and its dependencies through the symlink.
 ( cd "$FHEVM" && node --input-type=module -e "await import('@fhevm/sdk/solana')" )
 ( cd "$FHEVM" && bun -e "await import('@fhevm/sdk/solana')" )
 

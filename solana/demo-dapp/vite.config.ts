@@ -6,8 +6,10 @@ import { demoServerPlugin } from './demoServerPlugin';
 
 export default defineConfig(({ mode }) => ({
   resolve: {
-    // Bun links local package files; keep the consumer path so SDK dependencies resolve from this lockfile.
-    preserveSymlinks: true,
+    // `node_modules/@fhevm/sdk` is a symlink into the SDK source tree (this package's postinstall
+    // swaps bun's `file:` snapshot for it). Default symlink resolution follows it to the real
+    // path, so the SDK's own runtime dependencies resolve from the SDK's location (the
+    // repository-root workspace graph) rather than this lockfile.
     alias: {
       // The vault module (src/vault) reaches into the built SDK for internals the published
       // package does not export (fhevm-internal#1859 §6d). Resolving inside node_modules keeps
@@ -31,8 +33,8 @@ export default defineConfig(({ mode }) => ({
     },
   },
   ssr: {
-    // Operator routes load the local SDK through Vite. Bundle it so its runtime dependencies
-    // resolve from this app's frozen graph instead of the file-linked SDK source directory.
+    // Operator routes load the local SDK through Vite. Bundle it so it goes through the same
+    // resolution and transforms as the rest of the app instead of being required as an external.
     noExternal: ['@fhevm/sdk'],
   },
   // Vitest needs only transforms; omitting the development server plugin keeps tests independent
