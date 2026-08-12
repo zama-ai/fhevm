@@ -93,6 +93,8 @@ gateway:
         retry_interval_ms: 2000
       # Per-bucket S3 attestation HEAD request timeout.
       head_timeout_ms: 5000
+      # Overall budget for one request's readiness check: all handles, all retries.
+      request_timeout_ms: 100000
       # Coprocessor registry snapshot refresh interval.
       registry_refresh_ms: 60000
     public_decrypt:
