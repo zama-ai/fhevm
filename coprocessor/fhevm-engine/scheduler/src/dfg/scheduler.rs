@@ -274,6 +274,15 @@ fn re_randomise_operation_inputs(
 }
 
 type ComponentSet = Vec<(DFGraph, HashMap<Handle, Option<DFGTxInput>>, Handle, usize)>;
+/// Executes a partition of whole transactions in topological order.
+///
+/// The transaction is the materialization boundary. Every value produced in
+/// this transaction is forwarded raw to its same-transaction consumers,
+/// including values which are also compressed for persistence. Values which
+/// enter from another transaction are reconstructed from their canonical
+/// persisted representation. The consuming handle commits to that origin, so
+/// the raw and canonical forms cannot alias even when they represent the same
+/// plaintext operation.
 fn execute_partition(
     transactions: ComponentSet,
     task_id: NodeIndex,
@@ -352,35 +361,79 @@ fn execute_partition(
             };
             let result = try_execute_node(node, nidx.index(), tx_inputs, gpu_idx, &tid, &cpk);
             match result {
-                Ok(result) => {
-                    let nidx = NodeIndex::new(result.0);
-                    if result.1.is_ok() {
-                        for edge in edges.edges_directed(nidx, Direction::Outgoing) {
-                            let child_index = edge.target();
-                            let Some(child_node) = dfg.graph.node_weight_mut(child_index) else {
-                                error!(target: "scheduler", {index = ?child_index.index() }, "Wrong dataflow graph index");
-                                continue;
-                            };
-                            // Update input of consumers
-                            if let Ok(ref res) = result.1 {
-                                child_node.inputs[*edge.weight() as usize] =
-                                    DFGTaskInput::Compressed(res.clone());
-                            }
-                        }
-                    }
-                    // Update partition's outputs (allowed handles only)
-                    let Some(node) = dfg.graph.node_weight_mut(nidx) else {
+                Ok((node_index, op_result)) => {
+                    let nidx = NodeIndex::new(node_index);
+                    let Some(node) = dfg.graph.node_weight(nidx) else {
                         error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
                         continue;
                     };
-                    res.insert(
-                        node.result_handle.clone(),
-                        result.1.map(|v| TaskResult {
-                            compressed_ct: v,
-                            is_allowed: node.is_allowed,
-                            transaction_id: tid.clone(),
-                        }),
-                    );
+                    let handle = node.result_handle.clone();
+                    let is_allowed = node.is_allowed;
+                    let opcode = node.opcode;
+                    match op_result {
+                        Ok(working) => {
+                            // Each consumer's representation of this output
+                            // is pinned on chain: the executor folded a
+                            // boundary bit per operand into the consuming
+                            // handle, zero for operands minted in the
+                            // consuming transaction. Every in-graph edge here
+                            // is by definition that case, so all of them
+                            // forward the raw working value — no
+                            // compress/decompress round-trip for
+                            // same-transaction consumers, and no byte-equality
+                            // obligation against differently-sourced aliases,
+                            // which now mint different handles.
+                            //
+                            // An output is compressed iff it is allowed:
+                            // persistence needs the bytes, and any
+                            // cross-transaction consumer must have been
+                            // granted a persistent allowance first (transient
+                            // allowances are transaction-scoped), so
+                            // cross-transaction consumers need no separate
+                            // tracking.
+                            let forwarded = if is_allowed {
+                                match compress_output(&working, &tid, opcode) {
+                                    Ok(compressed_ct) => {
+                                        res.insert(
+                                            handle,
+                                            Ok(TaskResult {
+                                                compressed_ct,
+                                                is_allowed,
+                                                transaction_id: tid.clone(),
+                                            }),
+                                        );
+                                        Some(working)
+                                    }
+                                    Err(e) => {
+                                        // The block fails on this allowed
+                                        // handle anyway; forward nothing so
+                                        // downstream ops fail as missing
+                                        // inputs instead of computing results
+                                        // destined to be discarded.
+                                        res.insert(handle, Err(e));
+                                        None
+                                    }
+                                }
+                            } else {
+                                Some(working)
+                            };
+                            if let Some(forwarded) = forwarded {
+                                for edge in edges.edges_directed(nidx, Direction::Outgoing) {
+                                    let child_index = edge.target();
+                                    let Some(child_node) = dfg.graph.node_weight_mut(child_index)
+                                    else {
+                                        error!(target: "scheduler", {index = ?child_index.index() }, "Wrong dataflow graph index");
+                                        continue;
+                                    };
+                                    child_node.inputs[*edge.weight() as usize] =
+                                        DFGTaskInput::Value(forwarded.clone());
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            res.insert(handle, Err(e));
+                        }
+                    }
                 }
                 Err(e) => {
                     let Some(node) = dfg.graph.node_weight(*nidx) else {
@@ -414,11 +467,11 @@ fn try_execute_node(
     let mut cts = Vec::with_capacity(node.inputs.len());
     for i in std::mem::take(&mut node.inputs) {
         match i {
+            // Scalars, or raw working values forwarded from a producer in
+            // the SAME transaction (the materialization boundary). A raw
+            // value crossing a transaction boundary is flagged where
+            // transaction-level inputs are resolved (check_ready_inputs).
             DFGTaskInput::Value(v) => {
-                if !matches!(v, SupportedFheCiphertexts::Scalar(_)) {
-                    error!(target: "scheduler", { handle = ?hex::encode(&node.result_handle) },
-			   "Consensus risk: non-scalar uncompressed ciphertext");
-                }
                 cts.push(v);
             }
             DFGTaskInput::Compressed(cct) => {
@@ -492,7 +545,35 @@ fn try_execute_node(
     }
 }
 
-type OpResult = Result<CompressedCiphertext>;
+type OpResult = Result<SupportedFheCiphertexts>;
+
+/// Materializes an operation output that leaves its transaction: allowed
+/// handles (persisted) and inputs of other transactions both read this
+/// canonical compressed form — as do the producer's own same-transaction
+/// consumers, so an aliased producer elsewhere converges byte-identically.
+fn compress_output(
+    working: &SupportedFheCiphertexts,
+    transaction_id: &Handle,
+    operation: i32,
+) -> Result<CompressedCiphertext> {
+    let _guard = tracing::info_span!(
+        "compress_ciphertext",
+        txn_id = %telemetry::short_hex_id(transaction_id),
+        ct_type = working.type_name(),
+        operation = FheOperation::try_from(operation)
+            .map(|op| op.as_str_name())
+            .unwrap_or("unknown"),
+        compressed_size = tracing::field::Empty,
+    )
+    .entered();
+    let ct_type = working.type_num();
+    let ct_bytes = working.compress().inspect_err(|error| {
+        telemetry::set_current_span_error(error);
+    })?;
+    tracing::Span::current().record("compressed_size", ct_bytes.len() as i64);
+    Ok(CompressedCiphertext { ct_type, ct_bytes })
+}
+
 fn run_computation(
     operation: i32,
     inputs: Vec<SupportedFheCiphertexts>,
@@ -504,33 +585,10 @@ fn run_computation(
     let txn_id_short = telemetry::short_hex_id(transaction_id);
     let op = FheOperation::try_from(operation);
     match op {
-        Ok(FheOperation::FheGetCiphertext) => {
-            // Compression span (no FHE here)
-            let _guard = tracing::info_span!(
-                "compress_ciphertext",
-                txn_id = %txn_id_short,
-                ct_type = inputs[0].type_name(),
-                operation = "FheGetCiphertext",
-                compressed_size = tracing::field::Empty,
-            )
-            .entered();
-
-            let ct_type = inputs[0].type_num();
-            let compressed = inputs[0].compress();
-            match compressed {
-                Ok(ct_bytes) => {
-                    tracing::Span::current().record("compressed_size", ct_bytes.len() as i64);
-                    (
-                        graph_node_index,
-                        Ok(CompressedCiphertext { ct_type, ct_bytes }),
-                    )
-                }
-                Err(error) => {
-                    telemetry::set_current_span_error(&error);
-                    (graph_node_index, Err(error.into()))
-                }
-            }
-        }
+        Ok(FheOperation::FheGetCiphertext) => match inputs.into_iter().next() {
+            Some(ct) => (graph_node_index, Ok(ct)),
+            None => (graph_node_index, Err(SchedulerError::MissingInputs.into())),
+        },
         Ok(fhe_op) => {
             let op_name = fhe_op.as_str_name();
 
@@ -550,33 +608,7 @@ fn run_computation(
             let result = perform_fhe_operation(operation as i16, &inputs, gpu_idx, output_type);
 
             match result {
-                Ok(result) => {
-                    // Compression span
-                    let _guard = tracing::info_span!(
-                        "compress_ciphertext",
-                        txn_id = %txn_id_short,
-                        ct_type = result.type_name(),
-                        operation = op_name,
-                        compressed_size = tracing::field::Empty,
-                    )
-                    .entered();
-                    let ct_type = result.type_num();
-                    let compressed = result.compress();
-                    match compressed {
-                        Ok(ct_bytes) => {
-                            tracing::Span::current()
-                                .record("compressed_size", ct_bytes.len() as i64);
-                            (
-                                graph_node_index,
-                                Ok(CompressedCiphertext { ct_type, ct_bytes }),
-                            )
-                        }
-                        Err(error) => {
-                            telemetry::set_current_span_error(&error);
-                            (graph_node_index, Err(error.into()))
-                        }
-                    }
-                }
+                Ok(result) => (graph_node_index, Ok(result)),
                 Err(e) => {
                     telemetry::set_current_span_error(&e);
                     (graph_node_index, Err(e.into()))

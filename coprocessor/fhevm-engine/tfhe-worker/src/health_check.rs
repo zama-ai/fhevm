@@ -1,4 +1,10 @@
-use std::time::Duration;
+use std::{
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex,
+    },
+    time::{Duration, Instant},
+};
 
 use fhevm_engine_common::database::connect_options_for_database_url;
 use fhevm_engine_common::healthz_server::{
@@ -15,6 +21,42 @@ pub struct HealthCheck {
     pub database_url: DatabaseURL,
     pub database_heartbeat: HeartBeat,
     pub activity_heartbeat: HeartBeat,
+    in_flight_work: Arc<AtomicUsize>,
+    /// Start of the oldest batch currently in flight; `None` when idle.
+    work_started_at: Arc<Mutex<Option<Instant>>>,
+    /// Liveness override budget for one in-flight batch. A batch older than
+    /// this stops keeping the pod alive: a genuinely wedged execution
+    /// (deadlock or runaway loop inside FHE compute) must eventually fail
+    /// the liveness probe and get the pod restarted, so the in-flight
+    /// override is a bounded grace period, not an unconditional pass.
+    max_batch_ttl: Duration,
+}
+
+#[derive(Debug)]
+pub struct InFlightWorkGuard {
+    in_flight_work: Arc<AtomicUsize>,
+    work_started_at: Arc<Mutex<Option<Instant>>>,
+}
+
+impl Drop for InFlightWorkGuard {
+    fn drop(&mut self) {
+        if self.in_flight_work.fetch_sub(1, Ordering::AcqRel) == 1 {
+            *self.work_started_at.lock().expect("poisoned work clock") = None;
+        }
+    }
+}
+
+/// Default for `max_batch_ttl`; override with
+/// `TFHE_WORKER_MAX_BATCH_TTL_SECS`. Must exceed the worst legitimate
+/// single-batch wall time.
+const DEFAULT_MAX_BATCH_TTL: Duration = Duration::from_secs(300);
+
+fn max_batch_ttl_from_env() -> Duration {
+    std::env::var("TFHE_WORKER_MAX_BATCH_TTL_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .map(Duration::from_secs)
+        .unwrap_or(DEFAULT_MAX_BATCH_TTL)
 }
 
 impl HealthCheck {
@@ -24,6 +66,9 @@ impl HealthCheck {
             database_url,
             database_heartbeat: HeartBeat::new(),
             activity_heartbeat: HeartBeat::new(),
+            in_flight_work: Arc::new(AtomicUsize::new(0)),
+            work_started_at: Arc::new(Mutex::new(None)),
+            max_batch_ttl: max_batch_ttl_from_env(),
         }
     }
 
@@ -33,6 +78,33 @@ impl HealthCheck {
 
     pub fn update_activity(&self) {
         self.activity_heartbeat.update();
+    }
+
+    /// Keeps liveness positive while a worker batch is actively executing.
+    /// Whole transactions can legitimately run longer than the heartbeat
+    /// freshness window, so completion-only heartbeats are insufficient.
+    pub fn begin_work(&self) -> InFlightWorkGuard {
+        if self.in_flight_work.fetch_add(1, Ordering::AcqRel) == 0 {
+            *self.work_started_at.lock().expect("poisoned work clock") = Some(Instant::now());
+        }
+        InFlightWorkGuard {
+            in_flight_work: Arc::clone(&self.in_flight_work),
+            work_started_at: Arc::clone(&self.work_started_at),
+        }
+    }
+
+    /// True while a batch is in flight and still within its TTL.
+    fn in_flight_within_ttl(&self) -> bool {
+        self.in_flight_work.load(Ordering::Acquire) > 0
+            && self
+                .work_started_at
+                .lock()
+                .expect("poisoned work clock")
+                .map(|started| started.elapsed() < self.max_batch_ttl)
+                // The counter is incremented before the clock is stamped, so a
+                // reader can observe (count > 0, clock None) for an instant;
+                // treat that as fresh rather than expired.
+                .unwrap_or(true)
     }
 }
 
@@ -67,10 +139,56 @@ impl HealthCheckService for HealthCheck {
     }
 
     async fn is_alive(&self) -> bool {
-        self.activity_heartbeat.is_recent(&ACTIVITY_FRESHNESS)
+        self.in_flight_within_ttl() || self.activity_heartbeat.is_recent(&ACTIVITY_FRESHNESS)
     }
 
     fn get_version(&self) -> Version {
         default_get_version()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn stale_health_check() -> HealthCheck {
+        HealthCheck {
+            database_url: DatabaseURL::default(),
+            database_heartbeat: HeartBeat::with_elapsed_secs(30),
+            activity_heartbeat: HeartBeat::with_elapsed_secs(30),
+            in_flight_work: Arc::new(AtomicUsize::new(0)),
+            work_started_at: Arc::new(Mutex::new(None)),
+            max_batch_ttl: DEFAULT_MAX_BATCH_TTL,
+        }
+    }
+
+    #[tokio::test]
+    async fn in_flight_work_keeps_worker_alive_until_guard_drops() {
+        let health_check = stale_health_check();
+        assert!(!health_check.is_alive().await);
+
+        let guard = health_check.begin_work();
+        assert!(health_check.is_alive().await);
+
+        drop(guard);
+        assert!(!health_check.is_alive().await);
+    }
+
+    #[tokio::test]
+    async fn in_flight_work_stops_keeping_worker_alive_past_ttl() {
+        let mut health_check = stale_health_check();
+        health_check.max_batch_ttl = Duration::ZERO;
+
+        let _guard = health_check.begin_work();
+        assert!(!health_check.is_alive().await);
+    }
+
+    #[tokio::test]
+    async fn batch_clock_resets_between_batches() {
+        let health_check = stale_health_check();
+        drop(health_check.begin_work());
+        // A fresh batch gets a fresh TTL window even after an earlier one.
+        let _guard = health_check.begin_work();
+        assert!(health_check.is_alive().await);
     }
 }

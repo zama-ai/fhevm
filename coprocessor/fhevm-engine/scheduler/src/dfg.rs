@@ -20,7 +20,7 @@ use daggy::{
     },
     Dag, NodeIndex,
 };
-use fhevm_engine_common::types::{Handle, SupportedFheOperations};
+use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts, SupportedFheOperations};
 
 pub struct ExecNode {
     df_nodes: Vec<NodeIndex>,
@@ -199,23 +199,27 @@ pub fn build_component_nodes(
         .into_iter()
         .map(|i| (operations[i].output_handle.clone(), transaction_id.clone()))
         .collect();
-    // Partition the graph and extract sequential components
-    let mut execution_graph: Dag<ExecNode, ()> = Dag::default();
-    partition_preserving_parallelism(&graph, &mut execution_graph)?;
-    for idx in 0..execution_graph.node_count() {
-        let index = NodeIndex::new(idx);
-        let node = execution_graph
-            .node_weight_mut(index)
-            .ok_or(SchedulerError::DataflowGraphError)?;
-        let mut component = ComponentNode::default();
-        let mut component_ops = vec![];
-        for i in node.df_nodes.iter() {
-            let op_node = graph
-                .node_weight(*i)
-                .ok_or(SchedulerError::DataflowGraphError)?;
-            component_ops.push(std::mem::take(&mut operations[op_node.1]));
+    // The transaction is the materialization boundary: all remaining
+    // operations execute as one unit so intra-transaction intermediates are
+    // forwarded in memory and never pay a compress/decompress round-trip.
+    // The consuming handle's boundary bit pins that choice on chain, so an
+    // operand minted in the consuming transaction is always read raw, while
+    // values crossing a transaction boundary are read in their canonical
+    // compressed form.
+    let mut kept: Vec<usize> = graph
+        .node_references()
+        .map(|(_, op_node)| op_node.1)
+        .collect();
+    // Deterministic op order (original list is sorted by output handle);
+    // execution order is derived from the dependence edges by toposort.
+    kept.sort_unstable();
+    if !kept.is_empty() {
+        let mut component_ops = Vec::with_capacity(kept.len());
+        for i in kept {
+            component_ops.push(std::mem::take(&mut operations[i]));
         }
-        component.build(component_ops, transaction_id, idx)?;
+        let mut component = ComponentNode::default();
+        component.build(component_ops, transaction_id, 0)?;
         components.push(component);
     }
     Ok((components, unneeded))
@@ -636,7 +640,19 @@ impl OpNode {
                 DFGTaskInput::Value(_) | DFGTaskInput::Compressed(_) => continue,
                 DFGTaskInput::Dependence(d) => {
                     let resolved = match ct_map.get(d) {
-                        Some(Some(DFGTxInput::Value((val, _)))) => DFGTaskInput::Value(val.clone()),
+                        Some(Some(DFGTxInput::Value((val, _)))) => {
+                            // A transaction-level input is a value that
+                            // crossed the transaction boundary, and the
+                            // canonical cross-transaction representation is
+                            // the persisted compressed form. A raw ciphertext
+                            // here would make the consumer's bytes depend on
+                            // which node/pass produced it.
+                            if !matches!(val, SupportedFheCiphertexts::Scalar(_)) {
+                                error!(target: "scheduler", { handle = ?hex::encode(&self.result_handle) },
+                                       "Consensus risk: non-scalar raw ciphertext crossing a transaction boundary");
+                            }
+                            DFGTaskInput::Value(val.clone())
+                        }
                         Some(Some(DFGTxInput::Compressed((cct, _)))) => {
                             DFGTaskInput::Compressed(cct.clone())
                         }
@@ -808,4 +824,80 @@ pub fn partition_components<TNode, TEdge>(
     // components within the DFG, there are no dependences (edges) to
     // add to the execution graph.
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn handle(byte: u8) -> Handle {
+        vec![byte; 32]
+    }
+
+    fn op(output: u8, input: DFGTaskInput, is_allowed: bool) -> DFGOp {
+        DFGOp {
+            output_handle: handle(output),
+            fhe_op: SupportedFheOperations::FheNot,
+            inputs: vec![input],
+            is_allowed,
+        }
+    }
+
+    /// The transaction is the materialization boundary: a fan-out graph that
+    /// partitioning would previously split into several execution segments
+    /// (with compressed hand-offs between them) must build as a single
+    /// ComponentNode so every intra-transaction edge stays an in-memory
+    /// forward of the raw working value.
+    #[test]
+    fn transaction_builds_as_a_single_execution_unit() {
+        let boundary = handle(0xA0);
+        let operations = vec![
+            // X = f(boundary); Y = f(X); Z = f(X) — a fan-out at X.
+            op(0x01, DFGTaskInput::Dependence(boundary.clone()), false),
+            op(0x02, DFGTaskInput::Dependence(handle(0x01)), true),
+            op(0x03, DFGTaskInput::Dependence(handle(0x01)), true),
+        ];
+        let (components, unneeded) =
+            build_component_nodes(operations, &handle(0x11)).expect("valid transaction graph");
+        assert!(unneeded.is_empty());
+        assert_eq!(
+            components.len(),
+            1,
+            "all of a transaction's operations must execute as one unit"
+        );
+        let component = &components[0];
+        assert_eq!(component.results.len(), 3);
+        assert_eq!(component.intermediate_handles, vec![handle(0x01)]);
+        // Only the true cross-transaction boundary is exposed as an input;
+        // the intra-transaction handles are resolved as graph edges.
+        assert_eq!(component.inputs.len(), 1);
+        assert!(component.inputs.contains_key(&boundary));
+        assert_eq!(component.graph.graph.edge_count(), 2);
+    }
+
+    /// Pruning of operations that no allowed output depends on is unchanged.
+    #[test]
+    fn unneeded_operations_are_still_pruned() {
+        let operations = vec![
+            op(0x01, DFGTaskInput::Dependence(handle(0xA0)), true),
+            // A dangling non-allowed op nothing depends on.
+            op(0x02, DFGTaskInput::Dependence(handle(0xA1)), false),
+        ];
+        let transaction_id = handle(0x11);
+        let (components, unneeded) =
+            build_component_nodes(operations, &transaction_id).expect("valid transaction graph");
+        assert_eq!(unneeded, vec![(handle(0x02), transaction_id)]);
+        assert_eq!(components.len(), 1);
+        assert_eq!(components[0].results, vec![handle(0x01)]);
+    }
+
+    /// A transaction whose operations are all pruned yields no execution unit.
+    #[test]
+    fn fully_pruned_transaction_yields_no_component() {
+        let operations = vec![op(0x01, DFGTaskInput::Dependence(handle(0xA0)), false)];
+        let (components, unneeded) =
+            build_component_nodes(operations, &handle(0x11)).expect("valid transaction graph");
+        assert!(components.is_empty());
+        assert_eq!(unneeded.len(), 1);
+    }
 }
