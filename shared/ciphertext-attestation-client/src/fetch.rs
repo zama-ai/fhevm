@@ -19,8 +19,8 @@ use tracing::warn;
 /// The two variants call for opposite responses, which is why they are distinguished here rather
 /// than collapsed into one opaque error: [`Self::Starved`] is the expected early state, since
 /// Coprocessors publish attestations asynchronously, so it is worth retrying. [`Self::Split`]
-/// means every registered Coprocessor answered validly and the signers still did not agree on the
-/// same material — retrying re-reads the same disagreement.
+/// means the signers that answered disagree and no vote still to come could break the tie —
+/// retrying re-reads the same disagreement.
 #[derive(Debug, thiserror::Error)]
 pub enum ConsensusCheckError {
     /// Too few usable replies for this round to reach the threshold. Retriable: attestations are
@@ -28,8 +28,8 @@ pub enum ConsensusCheckError {
     #[error("only {valid} valid attestation(s), need {required}")]
     Starved { valid: usize, required: usize },
 
-    /// Every registered Coprocessor answered validly and still no group reached the threshold.
-    /// Terminal: re-reading the same objects returns the same disagreement.
+    /// The signers that answered disagree, and even every Coprocessor yet to vote joining the
+    /// largest group would fall short of the threshold. Terminal: cast votes do not change.
     #[error("{valid} valid attestation(s), but no group of {largest} reached the threshold")]
     Split { valid: usize, largest: usize },
 }

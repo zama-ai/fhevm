@@ -73,8 +73,8 @@ pub enum ValidationError {
 /// The caller is expected not to produce duplicates — one bucket maps to one registered signer,
 /// so one event per bucket is one event per signer, and `GatewayConfig` enforces signer uniqueness
 /// on-chain. That expectation is nonetheless enforced here rather than assumed: participation is
-/// tracked as a set of distinct signers, so a repeated vote cannot inflate the round towards the
-/// full participation that [`ConsensusStatus::Split`] requires.
+/// tracked as a set of distinct signers, so a repeated vote can neither inflate a group towards
+/// the threshold nor shrink the count of Coprocessors still able to vote.
 pub struct ConsensusTracker {
     coprocessor_count: usize,
     threshold: NonZeroUsize,
@@ -148,28 +148,31 @@ impl ConsensusTracker {
         if largest + pending >= self.threshold.get() {
             return ConsensusStatus::Pending;
         }
-        // The round can no longer reach threshold. Terminal only when disagreement is *proven*,
-        // which takes all three of: no failures, every registered Coprocessor voted, and at
-        // least two distinct groups to disagree with each other.
+        // The round is lost. Terminal only when retrying is provably pointless, which takes both:
         //
-        // Each conjunct rules out a round that merely looks decided. Without full participation
-        // the verdict would depend on reply arrival order — the same round is retriable if a
-        // failure lands early and terminal if it lands last. Without more than one group, a
-        // threshold that exceeds the number of reachable Coprocessors (registered Coprocessors
-        // with no bucket URL are dropped from the snapshot, while the threshold comes from chain)
-        // would report unanimously agreeing Coprocessors as disagreeing, and reject every
-        // request until an operator noticed.
-        if self.failures == 0 && votes == self.coprocessor_count && self.groups.len() > 1 {
+        // 1. The Coprocessors that answered disagree. Without this, a threshold exceeding the
+        //    reachable registry (Coprocessors with no bucket URL are dropped from the snapshot
+        //    while the threshold comes from chain) would read unanimous agreement as
+        //    disagreement, rejecting every request until an operator noticed.
+        // 2. No future round can seat a threshold-sized group: cast votes are immutable, so the
+        //    best a retry can do is every Coprocessor that has not voted joining the leading
+        //    group. `missing` covers failures and outstanding replies alike, taken from the voter
+        //    set so an over-reported failure cannot shrink it.
+        //
+        // Both are monotone — a further event can only shrink `largest + missing` or grow
+        // `groups` — so a mid-round verdict cannot be contradicted by the replies still to come.
+        let missing = self.coprocessor_count.saturating_sub(votes);
+        if self.groups.len() > 1 && largest + missing < self.threshold.get() {
             return ConsensusStatus::Split {
                 valid: votes,
                 largest,
             };
         }
-        // Anything else is an unresolved gap, not a disagreement. A round lost to failures says
-        // nothing about agreement — attestations are published asynchronously, so the
-        // overwhelmingly common cause is "not uploaded yet", which the caller's retry budget
-        // handles. Never collapse this into `Split`: that would turn a retriable gap into a false
-        // terminal verdict, which is exactly the misclassification this tracker exists to fix.
+        // Anything else is an unresolved gap, not a dead end: the Coprocessors that have not
+        // voted could still tip the leading group over. Attestations are published
+        // asynchronously, so the common cause is "not uploaded yet", which the caller's retry
+        // budget handles. Collapsing this into `Split` is the misclassification this tracker
+        // exists to fix.
         ConsensusStatus::Starved {
             valid: votes,
             required: self.threshold.get(),
@@ -184,14 +187,16 @@ pub enum ConsensusStatus {
     Reached(Consensus),
     /// Outstanding replies could still tip an undersized group over threshold.
     Pending,
-    /// The round cannot reach threshold, but at least one Coprocessor produced no usable signal
-    /// rather than actively disagreeing. Retriable: a re-poll may turn a failure into a vote.
+    /// The round cannot reach threshold, but a later one still could: either the Coprocessors
+    /// that answered all agree and are merely too few, or enough have yet to answer that they
+    /// could still tip the leading group over. Retriable.
     Starved { valid: usize, required: usize },
-    /// Every registered Coprocessor answered validly, they did not all agree, and still no group
-    /// reached the threshold. Terminal: re-reading the same objects returns the same disagreement.
+    /// The Coprocessors that answered disagree, and even if every Coprocessor that has not voted
+    /// joined the largest group it would still fall short of the threshold. Terminal: votes
+    /// already cast are immutable, so every future round replays this same dead end.
     ///
-    /// A round that merely failed to reach threshold is [`Self::Starved`], not this — see
-    /// [`ConsensusTracker::status`] for why each condition is required.
+    /// A round that is merely short of the threshold is [`Self::Starved`], not this — see
+    /// [`ConsensusTracker::status`] for why both conditions are required.
     Split { valid: usize, largest: usize },
 }
 
@@ -284,9 +289,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn split_only_at_full_valid_participation() {
-        // 2 Coprocessors, threshold 2: both answer validly but disagree. Full participation,
-        // zero failures, no group reaches threshold — disagreement is proven.
+    async fn split_when_every_coprocessor_answered_and_disagreed() {
+        // 2 Coprocessors, threshold 2: both answer validly but disagree. Nobody left to vote.
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random();
         let mut tracker = ConsensusTracker::new(2, nz(2));
@@ -358,11 +362,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn disagreement_without_full_participation_is_starved_not_split() {
-        // 5 Coprocessors, threshold 3: four disagree and the fifth has not answered. The round is
-        // already unwinnable, but participation is incomplete — calling this Split would make the
-        // verdict depend on arrival order (terminal if the fifth reply lands last, retriable if
-        // it lands first).
+    async fn disagreement_is_terminal_before_the_last_reply_arrives() {
+        // 5 Coprocessors, threshold 3: four disagree four ways, the fifth has not answered.
+        // Whatever it says builds a group of at most 2, so no future round reaches 3.
         let signers: Vec<PrivateKeySigner> = (0..4).map(|_| PrivateKeySigner::random()).collect();
         let mut tracker = ConsensusTracker::new(5, nz(3));
 
@@ -373,9 +375,51 @@ mod tests {
         }
 
         match status {
-            ConsensusStatus::Starved { valid, required } => {
+            ConsensusStatus::Split { valid, largest } => {
                 assert_eq!(valid, 4);
-                assert_eq!(required, 3);
+                assert_eq!(largest, 1);
+            }
+            other => panic!("expected Split, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn disagreement_with_a_failure_is_terminal_when_unwinnable() {
+        // 3 Coprocessors, threshold 3: two disagree, the third failed. A retry turning that
+        // failure into a vote still only builds a group of 2 — terminal despite the failure.
+        let s1 = PrivateKeySigner::random();
+        let s2 = PrivateKeySigner::random();
+        let mut tracker = ConsensusTracker::new(3, nz(3));
+
+        tracker.add_vote(vote_from(&s1).await);
+        tracker.add_vote(dissenting_vote_from(&s2, B256::repeat_byte(0xDD)).await);
+        let status = tracker.record_failure();
+
+        match status {
+            ConsensusStatus::Split { valid, largest } => {
+                assert_eq!(valid, 2);
+                assert_eq!(largest, 1);
+            }
+            other => panic!("expected Split, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn disagreement_with_a_failure_stays_starved_when_a_returning_vote_can_win() {
+        // The other side of that frontier: same shape, threshold 2. A retry where the third
+        // answers with the first signer's material seats a group of 2 and wins.
+        let s1 = PrivateKeySigner::random();
+        let s2 = PrivateKeySigner::random();
+        let mut tracker = ConsensusTracker::new(3, nz(2));
+
+        tracker.add_vote(vote_from(&s1).await);
+        tracker.add_vote(dissenting_vote_from(&s2, B256::repeat_byte(0xDD)).await);
+        let status = tracker.record_failure();
+
+        match status {
+            ConsensusStatus::Starved { valid, required } => {
+                assert_eq!(valid, 2);
+                assert_eq!(required, 2);
             }
             other => panic!("expected Starved, got {other:?}"),
         }
@@ -415,10 +459,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn repeated_vote_from_one_signer_cannot_fake_full_participation() {
-        // 3 Coprocessors, threshold 3. One signer's vote is replayed and a second signer
-        // disagrees, so a naive vote counter would see 3 "votes", zero failures and two groups —
-        // full participation and a terminal Split — while the third Coprocessor is still silent.
+    async fn repeated_vote_from_one_signer_counts_once() {
+        // 3 Coprocessors, threshold 3. One signer's vote is replayed and a second disagrees: a
+        // naive counter would see 3 votes and one group of 2. The verdict is terminal either way
+        // here, but only a set keeps `valid` and `largest` honest — and a counter that inflated
+        // a group to the threshold would fail open.
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random();
         let mut tracker = ConsensusTracker::new(3, nz(3));
@@ -429,18 +474,17 @@ mod tests {
         let status = tracker.add_vote(dissenting_vote_from(&s2, B256::repeat_byte(0xDD)).await);
 
         match status {
-            ConsensusStatus::Starved { valid, required } => {
+            ConsensusStatus::Split { valid, largest } => {
                 assert_eq!(valid, 2, "the replayed vote must not count twice");
-                assert_eq!(required, 3);
+                assert_eq!(largest, 1);
             }
-            other => panic!("expected Starved, got {other:?}"),
+            other => panic!("expected Split, got {other:?}"),
         }
     }
 
     #[tokio::test]
-    async fn split_at_full_participation_with_more_than_two_coprocessors() {
-        // 4 Coprocessors, threshold 3, split 2–2: every Coprocessor answered validly, no group
-        // reaches 3, and the disagreement is real. Terminal.
+    async fn split_with_more_than_two_coprocessors() {
+        // 4 Coprocessors, threshold 3, split 2–2: everyone answered, no group reaches 3.
         let signers: Vec<PrivateKeySigner> = (0..4).map(|_| PrivateKeySigner::random()).collect();
         let mut tracker = ConsensusTracker::new(4, nz(3));
 
