@@ -504,15 +504,17 @@ impl InfiniteLogIter {
             info!("Catchup no next get_logs step");
             return;
         }
-        let finalized_block = self
-            .block_history
-            .tip()
-            .map(|block| {
-                block
+        let finalized_block =
+            if let Some(current_block) = self.block_history.tip() {
+                // non finalized block will be post-poned until they are finalized
+                current_block
                     .number
                     .saturating_sub(self.catchup_finalization_in_blocks)
-            })
-            .unwrap_or(u64::MAX);
+            } else {
+                // happen at service start, assuming everything is finalized
+                info!("Unknown top block, assuming full finalized catchup");
+                from_block + self.catchup_paging
+            };
         if self.tracks_kms_generation {
             match self.get_block_by_id(BlockId::finalized()).await {
                 Ok(block) => {
@@ -525,7 +527,7 @@ impl InfiniteLogIter {
                 }
             }
         }
-        if from_block > finalized_block {
+        if from_block >= finalized_block {
             // non finalized blocks are post-poned
             info!("Post-pone catchup");
             return;

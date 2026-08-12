@@ -351,8 +351,8 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         let client_ref = &client;
         update_finalized_blocks_aux(
             &mut db,
-            safe_tip,
-            0,
+            latest,
+            config.finality_lag,
             |block_number| async move {
                 client_ref
                     .header_for_block(block_number)

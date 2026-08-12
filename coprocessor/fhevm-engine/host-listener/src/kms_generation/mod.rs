@@ -14,7 +14,7 @@ use crate::kms_generation::database::{
     activate_ready_crs_activations, activate_ready_key_activations,
     all_pending_compressed_key_materials_to_download,
     all_pending_crs_activations_to_download,
-    all_pending_key_activations_to_download, applied_compressed_key_materials,
+    all_pending_key_activations_to_download,
     apply_ready_compressed_key_materials, cancel_orphaned_crs_activations,
     cancel_orphaned_key_activations, count_crs_activation_remaining_pending,
     count_key_activation_remaining_pending, insert_crs_activation_event,
@@ -29,7 +29,6 @@ use crate::kms_generation::metrics::{
     ACTIVATE_CRS_FAIL_COUNTER, ACTIVATE_CRS_SUCCESS_COUNTER,
     ACTIVATE_KEY_FAIL_COUNTER, ACTIVATE_KEY_SUCCESS_COUNTER,
     CRS_DIGEST_MISMATCH_COUNTER, KEY_DIGEST_MISMATCH_COUNTER,
-    MATERIAL_APPLIED_BLOCK_GAUGE,
 };
 use crate::kms_generation::sks_key::{
     prepare_legacy_server_key_for_db, prepare_xof_key_set_for_db,
@@ -189,14 +188,6 @@ pub async fn process_kms_generation_activations<
             .await?;
     activate_ready_crs_activations(&mut tx).await?;
     tx.commit().await?;
-    for material in applied_compressed_key_materials(&db_pool).await? {
-        let chain_id = material.chain_id.to_string();
-        let key_id = hex::encode(material.key_id);
-        let key_digest = hex::encode(material.key_digest);
-        MATERIAL_APPLIED_BLOCK_GAUGE
-            .with_label_values(&[&chain_id, &key_id, &key_digest])
-            .set(material.block_number);
-    }
     for material in applied_compressed_materials {
         info!(
             chain_id = material.chain_id,
@@ -328,6 +319,17 @@ async fn download_and_store_compressed_key_material<
     s3_client: &A,
     material: &PendingCompressedKeyMaterial,
 ) -> anyhow::Result<()> {
+    let bytes = download_compressed_key_material(s3_client, material).await?;
+
+    // Reject malformed material before staging it as ready.
+    prepare_xof_key_set_for_db(&bytes)?;
+    set_ready_compressed_key_material(tx, material, &bytes).await
+}
+
+async fn download_compressed_key_material<A: AwsS3Interface>(
+    s3_client: &A,
+    material: &PendingCompressedKeyMaterial,
+) -> anyhow::Result<Vec<u8>> {
     let key_id = key_id_from_database_bytes(&material.existing_key_id)?;
     let path =
         format!("{}/{}", XOF_KEY_SET_S3_PREFIX, key_id_to_aws_key(key_id));
@@ -335,10 +337,7 @@ async fn download_and_store_compressed_key_material<
         download_key_from_s3(s3_client, &material.storage_urls, path, 0)
             .await?;
     verify_server_key_digest(&bytes, &material.key_digest, &key_id)?;
-
-    // Reject malformed material before it can make a Green worker ready.
-    prepare_xof_key_set_for_db(&bytes)?;
-    set_ready_compressed_key_material(tx, material, &bytes).await
+    Ok(bytes.to_vec())
 }
 
 async fn download_and_store_crs_activations<
@@ -610,12 +609,15 @@ mod test {
     use tokio::time::Duration;
     use tokio_util::bytes::Bytes as TokioBytes;
 
-    use crate::kms_generation::database::PendingKeyActivation;
+    use crate::kms_generation::database::{
+        PendingCompressedKeyMaterial, PendingKeyActivation,
+    };
     use fhevm_engine_common::chain_id::ChainId;
 
     use super::aws_s3::AwsS3Interface;
     use super::{
-        digest_key, download_server_key_for_activation, key_id_to_aws_key,
+        digest_key, download_compressed_key_material,
+        download_server_key_for_activation, key_id_to_aws_key,
         key_id_to_database_bytes, DownloadedServerKey,
         LEGACY_SERVER_KEY_S3_PREFIX, XOF_KEY_SET_S3_PREFIX,
     };
@@ -691,6 +693,52 @@ mod test {
                 "https://bucket.s3.eu-west-1.amazonaws.com/".to_owned()
             ],
         }
+    }
+
+    #[tokio::test]
+    async fn migrated_material_uses_the_existing_key_id() {
+        let request_id = alloy::primitives::U256::from(31);
+        let existing_key_id = alloy::primitives::U256::from(32);
+        let bytes = TokioBytes::from_static(b"compressed-xof-key");
+        let path = format!(
+            "{}/{}",
+            XOF_KEY_SET_S3_PREFIX,
+            key_id_to_aws_key(existing_key_id)
+        );
+        let client = TestS3Client {
+            responses: Arc::new(HashMap::from([(
+                path,
+                TestS3Response {
+                    delay: Duration::ZERO,
+                    result: TestS3Result::Ok(bytes.clone()),
+                },
+            )])),
+        };
+        let mut material = PendingCompressedKeyMaterial {
+            chain_id: 12345,
+            block_hash: vec![1; 32],
+            block_number: 10,
+            transaction_hash: None,
+            key_id: key_id_to_database_bytes(request_id).to_vec(),
+            existing_key_id: key_id_to_database_bytes(existing_key_id).to_vec(),
+            key_digest: digest_key(&bytes).to_vec(),
+            storage_urls: vec![
+                "https://bucket.s3.eu-west-1.amazonaws.com/".to_owned()
+            ],
+        };
+
+        assert_eq!(
+            download_compressed_key_material(&client, &material)
+                .await
+                .expect("material should be downloaded using existing_key_id"),
+            bytes
+        );
+
+        material.key_digest = vec![0; 32];
+        let error = download_compressed_key_material(&client, &material)
+            .await
+            .expect_err("digest mismatch must fail");
+        assert!(error.to_string().contains("Invalid Key digest"));
     }
 
     #[tokio::test]

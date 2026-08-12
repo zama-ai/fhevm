@@ -17,6 +17,13 @@ use test_harness::instance::ImportMode;
 mod common;
 use common::{allowed_request, trivial_encrypt_request, RawLog};
 
+sol!(
+    #[sol(rpc)]
+    #[derive(Debug, serde::Serialize, serde::Deserialize)]
+    KMSGenerationTest,
+    "artifacts/KMSGenerationTest.sol/KMSGenerationTest.json"
+);
+
 #[tokio::test]
 #[serial(db)]
 async fn poller_state_round_trip() -> Result<(), Box<dyn std::error::Error>> {
@@ -138,6 +145,7 @@ async fn poller_catches_up_to_safe_tip(
             EventKind::Acl,
         ));
     }
+
     let latest_block = provider.get_block_number().await?;
     let finality_lag = 2u64;
     let safe_tip = latest_block.saturating_sub(finality_lag);
@@ -157,7 +165,7 @@ async fn poller_catches_up_to_safe_tip(
         url: http_url,
         acl_address: *acl_contract.address(),
         tfhe_address: *tfhe_contract.address(),
-        kms_generation_address: None,
+        kms_generation_address: Some(*kms_generation_contract.address()),
         protocol_config_address: Some(alloy::primitives::Address::ZERO),
         confidential_bridge_address: None,
         database_url: db_url.clone(),
