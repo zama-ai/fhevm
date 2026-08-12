@@ -17,8 +17,10 @@
 //!
 //! Two smaller costs sit on top of the number this produces: `resolve_accounts`'s meta and info
 //! vectors, and Anchor's own deserialization of the instruction's accounts before any of this
-//! runs. They are why the fit asserted here keeps its ~8 KB of slack, and the at-cap dep-chain
-//! specimen (`runtime-tests/tests/dep_chain_mollusk.rs`) is what exercises them for real under SBF.
+//! runs. They are why the fit asserted here keeps its ~8.5 KB of slack. The at-cap dep-chain
+//! specimen (`runtime-tests/tests/dep_chain_mollusk.rs`) exercises them for real under SBF at
+//! full depth; for the persistent-heavy axis no SBF proof at 32 is possible or needed, because
+//! the measured shape is not host-executable — see the fit test below.
 //!
 //! Counted on the host rather than under SBF because the quantity that regresses — bytes requested
 //! per step — is the same in both places, and here it can be attributed to a phase.
@@ -157,10 +159,15 @@ fn the_largest_legal_execution_fits_the_default_heap() {
     );
     // The claim the single step ceiling rests on: since the builder reserves its tables up front
     // (no doubling strands) and the invoke path stopped cloning, a full-size execution requests
-    // ~24.6 KB of the 32 KB region. The ~8 KB left is what this measurement cannot count — account
-    // resolution and Anchor's own account deserialization — which the at-cap specimen exercises
-    // for real under SBF. If this fails, either win the bytes back or reintroduce a smaller
-    // on-chain budget (builder docs and INVARIANTS #54 are the claims to update with it).
+    // ~24.3 KB of the 32 KB region. The ~8.5 KB left is what this measurement cannot count —
+    // account resolution and Anchor's own account deserialization. The measured shape is
+    // deliberately unreachable: the host stops every-step-persistent executions at 21 steps on
+    // the transaction's non-extendable instruction trace (`fhe_execute_boundary/
+    // all_private_creates`), so a real at-cap build is chain-shaped — proven under SBF with its
+    // uncounted costs by the at-cap dep-chain specimen — and every reachable persistent-heavy
+    // build sits far below this byte count. If this fails, either win the bytes back or
+    // reintroduce a smaller on-chain budget (builder docs and INVARIANTS #54 are the claims to
+    // update with it).
     assert!(
         total <= DEFAULT_HEAP_BYTES,
         "the full-size execution no longer fits the default heap ({total} bytes)"

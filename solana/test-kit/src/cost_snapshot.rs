@@ -206,10 +206,20 @@ pub fn assert_ceilings_snapshot(snapshot: &str, ceilings: &BTreeMap<String, Ceil
         match ceilings.get(name) {
             None => failures.push(format!("ceiling {name:?} was removed")),
             Some(declared) if declared != expected => {
-                failures.push(format!(
-                    "ceiling {name:?} changed: value {} -> {}, extendable {} -> {}",
-                    expected.value, declared.value, expected.extendable, declared.extendable
-                ));
+                let mut changes = Vec::new();
+                if declared.value != expected.value {
+                    changes.push(format!("value {} -> {}", expected.value, declared.value));
+                }
+                if declared.extendable != expected.extendable {
+                    changes.push(format!(
+                        "extendable {} -> {}",
+                        expected.extendable, declared.extendable
+                    ));
+                }
+                if declared.note != expected.note {
+                    changes.push(format!("note {:?} -> {:?}", expected.note, declared.note));
+                }
+                failures.push(format!("ceiling {name:?} changed: {}", changes.join(", ")));
             }
             Some(_) => {}
         }

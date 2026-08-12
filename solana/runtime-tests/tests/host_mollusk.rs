@@ -2324,16 +2324,18 @@ struct CreatedPublicBatch {
 }
 
 fn created_public_batch(step_count: usize, created_public_steps: &[usize]) -> CreatedPublicBatch {
-    created_public_batch_for_authority(step_count, created_public_steps, Pubkey::new_unique())
+    persistent_creates_batch(step_count, created_public_steps, Pubkey::new_unique(), true)
 }
 
-/// [`created_public_batch`] with a caller-fixed authority, for boundary sweeps recorded in the
+/// [`created_public_batch`] with a caller-fixed authority (for boundary sweeps recorded in the
 /// cost snapshot: PDA bump searches are part of measured compute, so recorded profiles need
-/// stable keys.
-fn created_public_batch_for_authority(
+/// stable keys) and a caller-chosen `make_public` — `false` gives the plain persistent create,
+/// the shape `zama-fhe`'s `heap_budget.rs` measures on the app side.
+fn persistent_creates_batch(
     step_count: usize,
     created_public_steps: &[usize],
     authority: Pubkey,
+    make_public: bool,
 ) -> CreatedPublicBatch {
     let (host_config, host_config_account) = host_config_account(authority);
     let mut output_metas = Vec::new();
@@ -2363,7 +2365,7 @@ fn created_public_batch_for_authority(
                 output_label_index: dictionary.intern(output_label),
                 output_subject_indexes: dictionary.intern_subjects([authority]),
                 previous_state: None,
-                make_public: true,
+                make_public,
             }
         } else {
             FheExecuteOutput::Transient
@@ -2518,12 +2520,13 @@ fn mollusk_fhe_execute_batches_multiple_created_public_outputs_in_step_order() {
     assert_created_public_batch(&result, &execution.outputs);
 }
 
-/// The measured maximum of all-created-public creates that execute in one instruction. Long
-/// attributed to the 32KB bump heap; the boundary sweep above shows the wall that actually binds
-/// first is the transaction's 64-entry instruction trace (each created output issues ~3 CPIs) —
-/// the heap abort for this shape only appears past it, near 28 creates. The generated
-/// `fhe_execute_boundary/all_created_public` snapshot entry carries the authoritative number and
-/// its wall; this constant tracks it for the two behavior tests below.
+/// The measured maximum of all-created-public creates that execute in one instruction. The 32 KB
+/// heap and the transaction's 64-entry instruction trace (each created output issues ~3 CPIs)
+/// coincide within one step of this wall — before the decode-once cache the trace bound 21 first,
+/// after it the heap does — so neither raising the heap nor trimming CPIs would move the number
+/// by more than a step. The generated `fhe_execute_boundary/all_created_public` snapshot entry
+/// carries the authoritative number and its wall; this constant tracks it for the two behavior
+/// tests below.
 const MAX_CREATED_PUBLIC_CREATES_ON_DEFAULT_HEAP: usize = 20;
 
 #[test]
@@ -2568,9 +2571,11 @@ fn mollusk_fhe_execute_created_public_heap_boundary() {
 // capacity is established by probing. Each probe names the wall it hit
 // (`failure_axis`), because a sweep that only checks pass/fail converges on
 // whichever wall comes first and then gets attributed to whatever wall the
-// author expected: that is exactly how the all-created-public boundary at 20
-// was mislabeled a heap ceiling when the binding wall is the transaction's
-// 64-entry instruction trace (each created output issues ~3 CPIs).
+// author expected: the all-created-public boundary at 20 was long asserted to
+// be a heap ceiling on no evidence — the first sweep showed the transaction's
+// 64-entry instruction trace binding first (each created output issues ~3
+// CPIs), and after the decode-once cache the two walls trade places within
+// one step of each other. Only the recorded `limited_by` keeps that straight.
 //
 // One shape is not enough. Heap and trace consumption per step differ by
 // multiples across step shapes — a 32-step transient chain executes while 21
@@ -2581,8 +2586,13 @@ fn mollusk_fhe_execute_created_public_heap_boundary() {
 // ===========================================================================
 
 /// Names the wall a failing probe hit, so a boundary sweep can never silently converge on the
-/// wrong limit. `heap` is the SBF abort (`ProgramFailedToComplete`), which also covers panics —
-/// a probe asserting `heap` must therefore use a shape known to be panic-free at smaller sizes.
+/// wrong limit. `heap` is the SBF abort (`ProgramFailedToComplete`), which also covers panics:
+/// Mollusk's `InstructionResult` carries no program logs, so the allocator's "memory allocation
+/// failed" line cannot be read back here to separate them. A probe asserting `heap` must
+/// therefore use a shape known to be panic-free at smaller sizes — which the sweep's monotonic
+/// prefix requirement enforces in practice, since a panicking fixture fails at every size, not
+/// past a boundary. Program errors (`other:*`) are never a capacity wall; `sweep_step_boundary`
+/// panics on them instead of recording them.
 fn failure_axis(result: &mollusk_svm::result::InstructionResult) -> String {
     use solana_sdk::instruction::InstructionError;
     match &result.raw_result {
@@ -2632,6 +2642,11 @@ fn sweep_step_boundary(min_steps: usize, build: impl Fn(usize) -> ProbeCase) -> 
         let case = build(steps);
         let result = mollusk().process_instruction(&case.instruction, &case.accounts);
         let axis = failure_axis(&result);
+        assert!(
+            !axis.starts_with("other:"),
+            "probe at {steps} steps failed on a program error, not a capacity wall: {axis} — \
+             fix the fixture instead of recording a boundary"
+        );
         if axis == "none" {
             if let Some((failed_steps, failed_axis)) = &first_failure {
                 panic!(
@@ -2902,14 +2917,22 @@ fn attestation_per_step_case(steps: usize, authority: Pubkey) -> ProbeCase {
 
 fn all_created_public_case(steps: usize, authority: Pubkey) -> ProbeCase {
     let all: Vec<usize> = (0..steps).collect();
-    created_public_batch_for_authority(steps, &all, authority).into()
+    persistent_creates_batch(steps, &all, authority, true).into()
+}
+
+/// Every step writes a plain persistent create (no `make_public`) — the exact shape
+/// `zama-fhe`'s `heap_budget.rs` measures on the app side, so its host-side wall is on record
+/// next to the app-side byte count that motivates the single step ceiling.
+fn all_private_creates_case(steps: usize, authority: Pubkey) -> ProbeCase {
+    let all: Vec<usize> = (0..steps).collect();
+    persistent_creates_batch(steps, &all, authority, false).into()
 }
 
 /// Every fourth step persists a created-public output, the rest stay transient — a mid-weight
 /// composite between the chain and all-created-public extremes.
 fn mixed_chain_creates_case(steps: usize, authority: Pubkey) -> ProbeCase {
     let creates: Vec<usize> = (0..steps).step_by(4).collect();
-    created_public_batch_for_authority(steps, &creates, authority).into()
+    persistent_creates_batch(steps, &creates, authority, true).into()
 }
 
 #[test]
@@ -2918,6 +2941,14 @@ fn cost_snapshot_boundary_all_created_public() {
         all_created_public_case(steps, Pubkey::new_from_array([0x31; 32]))
     });
     assert_swept_boundary("fhe_execute_boundary/all_created_public", &sweep);
+}
+
+#[test]
+fn cost_snapshot_boundary_all_private_creates() {
+    let sweep = sweep_step_boundary(1, |steps| {
+        all_private_creates_case(steps, Pubkey::new_from_array([0x36; 32]))
+    });
+    assert_swept_boundary("fhe_execute_boundary/all_private_creates", &sweep);
 }
 
 #[test]
@@ -3003,9 +3034,10 @@ fn cost_snapshot_solana_ceilings() {
             ceiling(
                 64,
                 false,
-                "every instruction executed in a transaction, top-level plus each CPI; the wall \
-                 the all-created-public shape hits first (each created output issues ~3 CPIs), \
-                 and it is shared with the app's own CPIs in the same transaction",
+                "every instruction executed in a transaction, top-level plus each CPI; sits \
+                 within one step of the all-created-public shape's heap wall (each created \
+                 output issues ~3 CPIs), and it is shared with the app's own CPIs in the same \
+                 transaction",
             ),
         ),
         (
@@ -3069,14 +3101,22 @@ fn cost_snapshot_solana_ceilings() {
     cost_snapshot::assert_ceilings_snapshot("host_mollusk", &ceilings);
 }
 
+/// One row of the printed matrix: shape name, its minimum legal step count, and its case builder.
+type ProbeShape = (&'static str, usize, Box<dyn Fn(usize) -> ProbeCase>);
+
 #[test]
 #[ignore = "full boundary curves, run explicitly with --nocapture"]
 fn print_boundary_matrix() {
-    let shapes: Vec<(&str, usize, Box<dyn Fn(usize) -> ProbeCase>)> = vec![
+    let shapes: Vec<ProbeShape> = vec![
         (
             "all_created_public",
             1,
             Box::new(|steps| all_created_public_case(steps, Pubkey::new_from_array([0x31; 32]))),
+        ),
+        (
+            "all_private_creates",
+            1,
+            Box::new(|steps| all_private_creates_case(steps, Pubkey::new_from_array([0x36; 32]))),
         ),
         (
             "dependent_chain",

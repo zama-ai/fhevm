@@ -348,23 +348,27 @@ not when the threat model changes.
     the entrypoint's fixed 32 KB bump heap is the whole instruction, not just
     the build: after the build the CPI helper stamps the account count into
     `FheExecuteArgs` in place and borsh-serializes the packet once into a
-    right-sized buffer. Measured for steps that each write a persistent output
-    (host-side, where the reservation is the full 32-step one — an upper bound
-    on the on-chain build):
-    - **16 steps** — 14,536 bytes (13,558 building, 978 for the packet). This
-      is the documented budget.
+    right-sized buffer. The reservation is a fixed cost of roughly 10 KB paid
+    by every build regardless of size — the price of the maximum fitting — so
+    a small execution requests more than it strictly uses, with the whole
+    region still far away. Measured for steps that each write a persistent
+    output:
+    - **16 steps** — 14,536 bytes (13,558 building, 978 for the packet).
     - **24 steps** — 17,888 bytes.
-    - **32 steps** (the largest execution the host accepts) — ~24.6 KB: fits,
-      with ~8 KB of slack.
+    - **32 steps** (the largest execution the host accepts) — 24,280 bytes:
+      fits, with ~8.5 KB of slack.
 
     Account resolution and Anchor's own account deserialization sit on top of
-    those figures — roughly the ~8 KB the 32-step maximum leaves. There is one
-    step ceiling, the host's `MAX_FHE_EXECUTION_STEPS`, on-chain and off: the
-    separate on-chain constant was deleted because the maximum is measured to
-    fit, byte-counted by `solana/crates/zama-fhe/src/heap_budget.rs` (whose
+    those figures — roughly the ~8.5 KB the 32-step maximum leaves. There is
+    one step ceiling, the host's `MAX_FHE_EXECUTION_STEPS`, on-chain and off:
+    the separate on-chain constant was deleted because the maximum is measured
+    to fit, byte-counted by `solana/crates/zama-fhe/src/heap_budget.rs` (whose
     regression test fails if the fit is lost) and proven under SBF by the
     at-cap dep-chain specimen, whose Mollusk test extends a 32-link chain built
-    entirely on-chain. The rest of the table is measurement, printed by that
+    entirely on-chain. The measured worst shape is itself unreachable: the host
+    stops every-step-persistent executions at 21 steps on the non-extendable
+    instruction trace (`fhe_execute_boundary/all_private_creates`), so the fit
+    is asserted for a build strictly heavier than anything an app can execute. The rest of the table is measurement, printed by that
     file's `print_measurement_table` (`#[ignore]`d — run it with
     `--ignored --nocapture`), so read the intermediate rows as the last
     measurement rather than as a bound.

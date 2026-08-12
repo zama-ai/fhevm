@@ -39,10 +39,11 @@ pub const WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY_BYTES: [u8; 32] = [0xff; 32
 /// (under the 200k default budget, so no compute-budget instruction is required). 48 ops would
 /// exceed the default CU budget and leave <5% packet headroom for realistic account envelopes.
 /// Capacity below this cap is shape-dependent: the all-created-public shape executes at most 20
-/// creates in one instruction, bounded first by the transaction's 64-entry instruction trace
-/// (each created output issues ~3 CPIs) and only past that by the fixed 32 KB heap, which no
-/// compute-budget request can raise (DD-046); executions beyond a wall revert cleanly (measured;
-/// pinned per shape by the `fhe_execute_boundary/*` snapshot entries). Wire
+/// creates in one instruction, stopped by the fixed 32 KB heap at 21 — which no compute-budget
+/// request can raise (DD-046) — with the transaction's non-extendable 64-entry instruction trace
+/// (each created output issues ~3 CPIs) within one step of the same wall; executions beyond a
+/// wall revert cleanly (measured; pinned per shape by the `fhe_execute_boundary/*` snapshot
+/// entries, whose `limited_by` field names the binding axis). Wire
 /// indices (`producer_index`, dictionary and account indices) are `u8`, bounding any future raise
 /// at 256.
 pub const MAX_FHE_EXECUTION_STEPS: usize = 32;

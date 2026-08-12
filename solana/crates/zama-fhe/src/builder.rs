@@ -12,11 +12,13 @@
 //! serializing the packet in `FheExecution::invoke`. The one step ceiling is the host's
 //! `MAX_FHE_EXECUTION_STEPS`; there is no separate on-chain ceiling because the maximum is
 //! measured to fit: `heap_budget.rs` puts a full execution where every step writes a persistent
-//! output at ~24.6 KB build+packet, with the remaining ~8 KB covering what that measurement
-//! cannot count (account resolution, Anchor's own account deserialization). A program at the cap
-//! is near that margin, so a heap-heavy app instruction should stay below it — the measured table
-//! in `heap_budget.rs` is the guidance, and its regression test fails if the maximum stops
-//! fitting.
+//! output at 24,280 bytes build+packet, with the remaining ~8.5 KB covering what that measurement
+//! cannot count (account resolution, Anchor's own account deserialization). The reservation is a
+//! fixed ~10 KB paid by every build regardless of its size — that is the price of the maximum
+//! fitting, and a small execution requests roughly that plus a few hundred bytes per step. A
+//! program at the cap is near the margin, so a heap-heavy app instruction should stay below it —
+//! the measured table in `heap_budget.rs` is the guidance, and its regression test fails if the
+//! maximum stops fitting.
 
 use crate::types::{binary_rhs_operand, BinaryRhs, FheBitwise, FheEq, FheNeg, FheNot, FheShift};
 use crate::validate::handle_fhe_type;

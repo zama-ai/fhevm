@@ -223,6 +223,9 @@ pub(crate) fn fhe_execute_step_output(step: &FheExecuteStep) -> &FheExecuteOutpu
 /// borsh-serializing the borrowed args produces byte-identical data (asserted below). The
 /// counting pre-pass matters as much as the avoided copy: a packet-sized `Vec` growing by
 /// doubling abandons roughly another packet of bytes on the never-freeing program heap.
+// Gated with its callers (the CPI path and the heap-budget tests) so a per-crate build
+// without `cpi` does not report it dead.
+#[cfg(any(feature = "cpi", test))]
 pub(crate) fn fhe_execute_instruction_data(args: &FheExecuteArgs) -> Vec<u8> {
     use anchor_lang::{AnchorSerialize, Discriminator};
 

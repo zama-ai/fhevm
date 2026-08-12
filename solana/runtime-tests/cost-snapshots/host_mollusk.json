@@ -33,7 +33,7 @@
     "solana/instruction_trace_length": {
       "value": 64,
       "extendable": false,
-      "note": "every instruction executed in a transaction, top-level plus each CPI; the wall the all-created-public shape hits first (each created output issues ~3 CPIs), and it is shared with the app's own CPIs in the same transaction"
+      "note": "every instruction executed in a transaction, top-level plus each CPI; sits within one step of the all-created-public shape's heap wall (each created output issues ~3 CPIs), and it is shared with the app's own CPIs in the same transaction"
     },
     "solana/return_data_bytes": {
       "value": 1024,
@@ -88,6 +88,19 @@
         "cpi_instructions": 61,
         "total_cpi_instruction_data_bytes": 2541,
         "max_cpi_instruction_data_bytes": 1341
+      }
+    },
+    "fhe_execute_boundary/all_private_creates": {
+      "max_ok": 21,
+      "first_fail": 22,
+      "limited_by": "instruction_trace",
+      "cost_at_max_ok": {
+        "compute_units": 263574,
+        "unique_accounts": 26,
+        "instruction_data_bytes": 1708,
+        "cpi_instructions": 63,
+        "total_cpi_instruction_data_bytes": 1260,
+        "max_cpi_instruction_data_bytes": 36
       }
     },
     "fhe_execute_boundary/attestation_per_step": {

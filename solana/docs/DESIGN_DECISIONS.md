@@ -1518,8 +1518,8 @@ This narrow batch exists because block-entropy output handles are absent from in
 At the maximum `MAX_FHE_EXECUTION_STEPS` batch (32), the records serialize to one 2,133-byte CPI
 instruction — far below the 10,240-byte CPI instruction-data cap — avoiding the old
 one-CPI-per-step heap growth. (Execution, not the batch, bounds the all-created-public batch shape:
-the fixed 32KB Anchor bump heap fits 20 persistent creates per batch, measured and pinned by
-`mollusk_fhe_execute_created_public_heap_boundary`.) The event is unconditional, as every event this program
+the host's fixed 32 KB `solana-program-entrypoint` bump heap fits 20 persistent creates per batch,
+measured and pinned by the `fhe_execute_boundary/all_created_public` snapshot entry.) The event is unconditional, as every event this program
 emits now is (DD-044). Consumers must still validate the host program, its canonical
 event-authority PDA, transaction success, record ordering, and one-to-one agreement with persistent
 `make_public` outputs; the event grants no authority by itself.
@@ -2139,9 +2139,12 @@ Why not ship an allocator:
    pattern degrades past the mapped region into a VM access violation instead of a clean error,
    and the granted heap size is not discoverable at runtime (no syscall), so a program can never
    verify it got the frame it requested.
-3. Heap is not the axis that bites. The `fhe_execute_boundary/*` snapshot entries show the walls
-   per execution shape: the all-created-public shape is stopped by the transaction's 64-entry
-   instruction trace before it ever reaches the heap, and storage rent and compute dominate cost.
+3. A bigger heap would buy almost nothing. The `fhe_execute_boundary/*` snapshot entries show the
+   walls per execution shape: chain-shaped executions reach the host's step cap without touching
+   the heap, and for the all-created-public shape the heap wall (21 steps) and the transaction's
+   non-extendable 64-entry instruction trace (~21, at ~3 CPIs per created output) sit within one
+   step of each other — an allocator spending a raised frame would gain that shape at most one
+   step before the trace stops it anyway. Storage rent and compute dominate cost.
 
 The `raised-heap` Cargo feature was half a mechanism — it lifted the SDK's on-chain step ceiling
 back to the host's maximum but shipped no allocator, so a program enabling it would keep the 32 KB
