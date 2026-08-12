@@ -41,8 +41,8 @@ use tokio_util::sync::CancellationToken;
 
 /// Test setup with two gateway mocks - one broken, one working
 struct RecoveryTestSetup {
-    /// Kept stuck on purpose: its silence about response events is what strands a request at the
-    /// status under test.
+    /// Serves only the registry views; the broken gateway is otherwise driven through the shared
+    /// attestation buckets, and emits no response events.
     broken_gateway: GatewayMock,
     working_gateway: GatewayMock,
     host: HostMock,
@@ -85,9 +85,9 @@ impl RecoveryTestSetup {
 
         Ok(Self {
             broken_gateway,
-            ct_attestation,
             working_gateway,
             host,
+            ct_attestation,
             test_schema,
             http_port: None,
             cancellation_token: CancellationToken::new(),

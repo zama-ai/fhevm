@@ -93,7 +93,8 @@ impl HostMock {
     }
 }
 
-/// Gateway-chain mock server with the FHEVM patterns wired.
+/// Gateway-chain mock server with the FHEVM patterns wired and the Coprocessor registry pointed
+/// at the test's attestation buckets.
 ///
 /// Held by the test setup: dropping it shuts the listener down.
 #[allow(dead_code)]
@@ -121,8 +122,7 @@ impl GatewayMock {
             Address::from_str(TEST_DECRYPTION_ADDRESS).expect("Invalid decryption address"),
             Address::from_str(TEST_INPUT_VERIFICATION_ADDRESS)
                 .expect("Invalid input verification address"),
-            Address::from_str(TEST_GATEWAY_CONFIG_ADDRESS)
-                .expect("Invalid gateway config address"),
+            Address::from_str(TEST_GATEWAY_CONFIG_ADDRESS).expect("Invalid gateway config address"),
         );
         fhevm.set_coprocessor_registry(ct_attestation);
 
