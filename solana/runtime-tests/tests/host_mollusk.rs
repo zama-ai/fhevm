@@ -30,7 +30,7 @@ use solana_sdk::{
     instruction::{AccountMeta, Instruction},
     pubkey::Pubkey,
 };
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use zama_host::encode::ExecutionDictionary;
 use zama_host::{
     self as host, EncryptedValue, FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand,
@@ -43,8 +43,8 @@ use zama_solana_test_kit::{
     host_svm_without_previous_bank_hash as mollusk_without_previous_bank_hash, label,
     new_encrypted_value as new_encrypted_value_account, read_encrypted_value,
     read_encrypted_value_from_result, readonly, readonly_signer, serialized_account, signing,
-    system_account, system_program_account, writable, HostConfigParams, DECRYPTION_CONTRACT,
-    GATEWAY_CHAIN_ID, INPUT_VERIFICATION_CONTRACT,
+    system_account, system_program_account, u256_be, writable, HostConfigParams,
+    DECRYPTION_CONTRACT, GATEWAY_CHAIN_ID, INPUT_VERIFICATION_CONTRACT,
 };
 
 // ---------------------------------------------------------------------------
@@ -2324,7 +2324,17 @@ struct CreatedPublicBatch {
 }
 
 fn created_public_batch(step_count: usize, created_public_steps: &[usize]) -> CreatedPublicBatch {
-    let authority = Pubkey::new_unique();
+    created_public_batch_for_authority(step_count, created_public_steps, Pubkey::new_unique())
+}
+
+/// [`created_public_batch`] with a caller-fixed authority, for boundary sweeps recorded in the
+/// cost snapshot: PDA bump searches are part of measured compute, so recorded profiles need
+/// stable keys.
+fn created_public_batch_for_authority(
+    step_count: usize,
+    created_public_steps: &[usize],
+    authority: Pubkey,
+) -> CreatedPublicBatch {
     let (host_config, host_config_account) = host_config_account(authority);
     let mut output_metas = Vec::new();
     let mut output_accounts = Vec::new();
@@ -2508,10 +2518,12 @@ fn mollusk_fhe_execute_batches_multiple_created_public_outputs_in_step_order() {
     assert_created_public_batch(&result, &execution.outputs);
 }
 
-/// The measured heap budget for the heap-heaviest legal execution shape: all steps created-public
-/// persistent creates. The Anchor default bump allocator serves a fixed 32KB region (never freed,
-/// and NOT extended by a compute-budget heap-execution request), and 20 creates is the measured
-/// maximum that executes within it (fhevm-internal#1853 W8).
+/// The measured maximum of all-created-public creates that execute in one instruction. Long
+/// attributed to the 32KB bump heap; the boundary sweep above shows the wall that actually binds
+/// first is the transaction's 64-entry instruction trace (each created output issues ~3 CPIs) —
+/// the heap abort for this shape only appears past it, near 28 creates. The generated
+/// `fhe_execute_boundary/all_created_public` snapshot entry carries the authoritative number and
+/// its wall; this constant tracks it for the two behavior tests below.
 const MAX_CREATED_PUBLIC_CREATES_ON_DEFAULT_HEAP: usize = 20;
 
 #[test]
@@ -2545,6 +2557,560 @@ fn mollusk_fhe_execute_created_public_heap_boundary() {
     for (_, output) in &failing.outputs {
         let account = result.get_account(output).unwrap();
         assert_eq!(account.owner, system_program::ID, "no output may commit");
+    }
+}
+
+// ===========================================================================
+// Capacity boundary matrix (fhevm-internal#1872).
+//
+// Every runtime wall here — heap, compute units, instruction trace — is
+// invisible per run: there is no "heap used" number, only "did it abort", so
+// capacity is established by probing. Each probe names the wall it hit
+// (`failure_axis`), because a sweep that only checks pass/fail converges on
+// whichever wall comes first and then gets attributed to whatever wall the
+// author expected: that is exactly how the all-created-public boundary at 20
+// was mislabeled a heap ceiling when the binding wall is the transaction's
+// 64-entry instruction trace (each created output issues ~3 CPIs).
+//
+// One shape is not enough. Heap and trace consumption per step differ by
+// multiples across step shapes — a 32-step transient chain executes while 21
+// created-public creates do not — so the sweep runs a matrix of worst-case
+// shapes and the recorded boundary carries the wall it hit and the cost of the
+// largest passing run. `cost_snapshot::assert_boundary_snapshot` pins all of
+// it, so a boundary that moves (or changes walls) arrives as a reviewed diff.
+// ===========================================================================
+
+/// Names the wall a failing probe hit, so a boundary sweep can never silently converge on the
+/// wrong limit. `heap` is the SBF abort (`ProgramFailedToComplete`), which also covers panics —
+/// a probe asserting `heap` must therefore use a shape known to be panic-free at smaller sizes.
+fn failure_axis(result: &mollusk_svm::result::InstructionResult) -> String {
+    use solana_sdk::instruction::InstructionError;
+    match &result.raw_result {
+        Ok(()) => "none".to_string(),
+        Err(InstructionError::ProgramFailedToComplete) => "heap".to_string(),
+        Err(InstructionError::ComputationalBudgetExceeded) => "compute_units".to_string(),
+        Err(InstructionError::MaxInstructionTraceLengthExceeded) => {
+            "instruction_trace".to_string()
+        }
+        Err(other) => format!("other:{other:?}"),
+    }
+}
+
+/// One probe of a boundary sweep: a complete instruction plus the accounts it runs against.
+struct ProbeCase {
+    instruction: Instruction,
+    accounts: Vec<(Pubkey, Account)>,
+}
+
+impl From<CreatedPublicBatch> for ProbeCase {
+    fn from(batch: CreatedPublicBatch) -> Self {
+        ProbeCase {
+            instruction: batch.instruction,
+            accounts: batch.accounts,
+        }
+    }
+}
+
+/// The result of sweeping one shape: the largest passing step count, the first failing one, the
+/// wall that failure hit, and the passing run's evidence for the snapshot.
+struct SweptBoundary {
+    max_ok: usize,
+    first_fail: usize,
+    limited_by: String,
+    instruction_at_max_ok: Instruction,
+    result_at_max_ok: mollusk_svm::result::InstructionResult,
+}
+
+/// Sweeps a shape from `min_steps` to the host's step cap. The sweep is linear rather than a
+/// binary search so it can assert the boundary premise itself: success must be a prefix of the
+/// range. A success after a failure would mean step count is not what governs this shape, and a
+/// recorded boundary would be meaningless.
+fn sweep_step_boundary(min_steps: usize, build: impl Fn(usize) -> ProbeCase) -> SweptBoundary {
+    let mut last_ok: Option<(usize, Instruction, mollusk_svm::result::InstructionResult)> = None;
+    let mut first_failure: Option<(usize, String)> = None;
+    for steps in min_steps..=host::MAX_FHE_EXECUTION_STEPS {
+        let case = build(steps);
+        let result = mollusk().process_instruction(&case.instruction, &case.accounts);
+        let axis = failure_axis(&result);
+        if axis == "none" {
+            if let Some((failed_steps, failed_axis)) = &first_failure {
+                panic!(
+                    "non-monotonic boundary: {steps} steps succeeded after {failed_steps} \
+                     failed on {failed_axis}; step count does not govern this shape"
+                );
+            }
+            last_ok = Some((steps, case.instruction, result));
+        } else if first_failure.is_none() {
+            first_failure = Some((steps, axis));
+        }
+    }
+    let (max_ok, instruction_at_max_ok, result_at_max_ok) =
+        last_ok.expect("the smallest probe of the sweep must pass");
+    let (first_fail, limited_by) = first_failure.unwrap_or((
+        // Every legal size passes: the policy cap is the wall, and no runtime wall was
+        // observed below it.
+        host::MAX_FHE_EXECUTION_STEPS + 1,
+        "MAX_FHE_EXECUTION_STEPS".to_string(),
+    ));
+    SweptBoundary {
+        max_ok,
+        first_fail,
+        limited_by,
+        instruction_at_max_ok,
+        result_at_max_ok,
+    }
+}
+
+fn assert_swept_boundary(profile: &str, sweep: &SweptBoundary) {
+    cost_snapshot::assert_boundary_snapshot(
+        "host_mollusk",
+        profile,
+        &cost_snapshot::Boundary {
+            max_ok: sweep.max_ok as u64,
+            first_fail: sweep.first_fail as u64,
+            limited_by: sweep.limited_by.clone(),
+        },
+        &sweep.instruction_at_max_ok,
+        &sweep.result_at_max_ok,
+    );
+}
+
+/// A dependent transient chain closing in one persistent create: every step adds a scalar to the
+/// previous step's transient result. This is the transient-heavy shape `dep-chain` and the
+/// load-smoke scenario drive, and the lightest per-step shape in the matrix.
+fn dependent_chain_case(steps: usize, authority: Pubkey) -> ProbeCase {
+    assert!(steps >= 2, "the chain shape needs a first read and a final persist");
+    let (host_config, host_config_account) = host_config_account(authority);
+    let balance_handle = handle_for_chain(0x61, 5);
+    let (balance_address, balance_value) = new_encrypted_value_account(
+        authority,
+        authority,
+        label("boundary-chain-balance"),
+        balance_handle,
+        &[authority],
+    );
+    let output_label = label("boundary-chain-output");
+    let output_id = zama_solana_acl::derive_encrypted_value_id(
+        authority.to_bytes(),
+        authority.to_bytes(),
+        output_label,
+    );
+    let output_address = host::encrypted_value_address(output_id).0;
+
+    let mut dictionary = ExecutionDictionary::default();
+    let one = dictionary.intern(u256_be(1));
+    let balance_handle_index = dictionary.intern(balance_handle);
+    let mut chain = Vec::with_capacity(steps);
+    chain.push(FheExecuteStep::Binary {
+        op: FheBinaryOpCode::Add,
+        lhs: FheExecuteOperand::StoredValue {
+            handle_index: balance_handle_index,
+            encrypted_value_index: 0,
+        },
+        rhs: FheExecuteOperand::Scalar { value_index: one },
+        output_fhe_type: 5,
+        output: FheExecuteOutput::Transient,
+    });
+    for index in 1..steps {
+        let output = if index == steps - 1 {
+            FheExecuteOutput::StoredValue {
+                output_encrypted_value_index: 1,
+                output_authority_index: None,
+                output_domain_index: dictionary.intern_key(authority),
+                output_account_index: dictionary.intern_key(authority),
+                output_label_index: dictionary.intern(output_label),
+                output_subject_indexes: dictionary.intern_subjects([authority]),
+                previous_state: None,
+                make_public: false,
+            }
+        } else {
+            FheExecuteOutput::Transient
+        };
+        chain.push(FheExecuteStep::Binary {
+            op: FheBinaryOpCode::Add,
+            lhs: FheExecuteOperand::EarlierStep {
+                producer_index: (index - 1) as u8,
+            },
+            rhs: FheExecuteOperand::Scalar { value_index: one },
+            output_fhe_type: 5,
+            output,
+        });
+    }
+    let instruction = fhe_execute_ix(
+        authority,
+        authority,
+        authority,
+        host_config,
+        FheExecuteArgs {
+            account_count: 0,
+            dictionary: dictionary.into_entries(),
+            steps: chain,
+        },
+        vec![readonly(balance_address), writable(output_address)],
+    );
+    ProbeCase {
+        instruction,
+        accounts: vec![
+            (system_program::ID, system_program_account()),
+            (authority, funded_system_account()),
+            (host_config, host_config_account),
+            (event_authority(host::id()), Account::default()),
+            (balance_address, encrypted_value_account(&balance_value)),
+            (output_address, empty_system_account()),
+        ],
+    }
+}
+
+/// Every step updates its own mature `EncryptedValue`: the full subject list and a peak set near
+/// `MAX_MMR_PEAKS`, so each account decode allocates the most the layout allows. The leaf count
+/// has eight trailing zero bits so the eight seal-appends per account stay cheap — the shape
+/// stresses decode allocation, not MMR merge hashing.
+fn mature_updates_case(steps: usize, authority: Pubkey) -> ProbeCase {
+    let (host_config, host_config_account) = host_config_account(authority);
+    let subjects: Vec<Pubkey> = (1..=zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS as u8)
+        .map(|index| Pubkey::new_from_array([0x70 + index; 32]))
+        .collect();
+    // 55 one-bits (peaks), 8 trailing zeros (cheap appends).
+    let leaf_count: u64 = 0x7FFF_FFFF_FFFF_FF00;
+    let peaks: Vec<[u8; 32]> = (0..leaf_count.count_ones())
+        .map(|peak| [peak as u8 + 1; 32])
+        .collect();
+
+    let mut dictionary = ExecutionDictionary::default();
+    let domain_index = dictionary.intern_key(authority);
+    let account_index = dictionary.intern_key(authority);
+    let subject_indexes = dictionary.intern_subjects(subjects.iter().copied());
+    let mut update_steps = Vec::with_capacity(steps);
+    let mut metas = Vec::with_capacity(steps);
+    let mut accounts = vec![
+        (system_program::ID, system_program_account()),
+        (authority, funded_system_account()),
+        (host_config, host_config_account),
+        (event_authority(host::id()), Account::default()),
+    ];
+    for step_index in 0..steps {
+        let value_label = label(&format!("boundary-mature-{step_index}"));
+        let handle = handle_for_chain(0x80 + step_index as u8, 5);
+        let (address, mut value) =
+            new_encrypted_value_account(authority, authority, value_label, handle, &subjects);
+        value.leaf_count = leaf_count;
+        value.peaks = peaks.clone();
+        metas.push(writable(address));
+        accounts.push((address, encrypted_value_account(&value)));
+        update_steps.push(FheExecuteStep::TrivialEncrypt {
+            plaintext: [step_index as u8 + 1; 32],
+            fhe_type: 5,
+            output: FheExecuteOutput::StoredValue {
+                output_encrypted_value_index: step_index as u8,
+                output_authority_index: None,
+                output_domain_index: domain_index,
+                output_account_index: account_index,
+                output_label_index: dictionary.intern(value_label),
+                output_subject_indexes: subject_indexes.clone(),
+                previous_state: Some(PreviousState {
+                    handle,
+                    subjects: subjects.clone(),
+                }),
+                make_public: false,
+            },
+        });
+    }
+    let instruction = fhe_execute_ix(
+        authority,
+        authority,
+        authority,
+        host_config,
+        FheExecuteArgs {
+            account_count: 0,
+            dictionary: dictionary.into_entries(),
+            steps: update_steps,
+        },
+        metas,
+    );
+    ProbeCase {
+        instruction,
+        accounts,
+    }
+}
+
+/// Every step consumes its own maximum-size verified input: an inline attestation covering
+/// `MAX_INPUT_ATTESTATION_HANDLES` handles with `MAX_INPUT_ATTESTATION_EXTRA_DATA` bytes of extra
+/// data, signed at the fixture threshold of one. Each attestation is decoded and re-verified
+/// (one secp256k1 recovery per signature) in-execution.
+fn attestation_per_step_case(steps: usize, authority: Pubkey) -> ProbeCase {
+    let signer_key = signing::coprocessor_signing_key();
+    let (host_config, host_config_account) =
+        zama_solana_test_kit::host_config_account(&HostConfigParams {
+            coprocessor_signers: vec![signing::secp_evm_address(&signer_key)],
+            coprocessor_threshold: 1,
+            ..HostConfigParams::new(authority)
+        });
+    let mut dictionary = ExecutionDictionary::default();
+    let one = dictionary.intern(u256_be(1));
+    let attestation_steps = (0..steps)
+        .map(|step_index| {
+            let ct_handles: Vec<[u8; 32]> = (0..host::MAX_INPUT_ATTESTATION_HANDLES)
+                .map(|position| {
+                    let mut handle = handle_for_chain(0x90 + step_index as u8, 5);
+                    // The host requires each covered handle to carry its own position.
+                    handle[21] = position as u8;
+                    handle
+                })
+                .collect();
+            let attestation = signing::attestation_signed_by(
+                ct_handles[0],
+                ct_handles,
+                0,
+                authority,
+                authority,
+                vec![0xAB; host::MAX_INPUT_ATTESTATION_EXTRA_DATA],
+                std::slice::from_ref(&signer_key),
+            );
+            FheExecuteStep::Binary {
+                op: FheBinaryOpCode::Add,
+                lhs: FheExecuteOperand::VerifiedInput {
+                    attestation: Box::new(attestation),
+                },
+                rhs: FheExecuteOperand::Scalar { value_index: one },
+                output_fhe_type: 5,
+                output: FheExecuteOutput::Transient,
+            }
+        })
+        .collect();
+    let instruction = fhe_execute_ix(
+        authority,
+        authority,
+        authority,
+        host_config,
+        FheExecuteArgs {
+            account_count: 0,
+            dictionary: dictionary.into_entries(),
+            steps: attestation_steps,
+        },
+        Vec::new(),
+    );
+    ProbeCase {
+        instruction,
+        accounts: vec![
+            (system_program::ID, system_program_account()),
+            (authority, funded_system_account()),
+            (host_config, host_config_account),
+            (event_authority(host::id()), Account::default()),
+        ],
+    }
+}
+
+fn all_created_public_case(steps: usize, authority: Pubkey) -> ProbeCase {
+    let all: Vec<usize> = (0..steps).collect();
+    created_public_batch_for_authority(steps, &all, authority).into()
+}
+
+/// Every fourth step persists a created-public output, the rest stay transient — a mid-weight
+/// composite between the chain and all-created-public extremes.
+fn mixed_chain_creates_case(steps: usize, authority: Pubkey) -> ProbeCase {
+    let creates: Vec<usize> = (0..steps).step_by(4).collect();
+    created_public_batch_for_authority(steps, &creates, authority).into()
+}
+
+#[test]
+fn cost_snapshot_boundary_all_created_public() {
+    let sweep = sweep_step_boundary(1, |steps| {
+        all_created_public_case(steps, Pubkey::new_from_array([0x31; 32]))
+    });
+    assert_swept_boundary("fhe_execute_boundary/all_created_public", &sweep);
+}
+
+#[test]
+fn cost_snapshot_boundary_dependent_chain() {
+    let sweep = sweep_step_boundary(2, |steps| {
+        dependent_chain_case(steps, Pubkey::new_from_array([0x32; 32]))
+    });
+    assert_swept_boundary("fhe_execute_boundary/dependent_chain", &sweep);
+}
+
+#[test]
+fn cost_snapshot_boundary_mature_updates() {
+    let sweep = sweep_step_boundary(1, |steps| {
+        mature_updates_case(steps, Pubkey::new_from_array([0x33; 32]))
+    });
+    assert_swept_boundary("fhe_execute_boundary/mature_updates", &sweep);
+}
+
+#[test]
+fn cost_snapshot_boundary_attestation_per_step() {
+    let sweep = sweep_step_boundary(1, |steps| {
+        attestation_per_step_case(steps, Pubkey::new_from_array([0x34; 32]))
+    });
+    assert_swept_boundary("fhe_execute_boundary/attestation_per_step", &sweep);
+}
+
+#[test]
+fn cost_snapshot_boundary_mixed_chain_creates() {
+    let sweep = sweep_step_boundary(1, |steps| {
+        mixed_chain_creates_case(steps, Pubkey::new_from_array([0x35; 32]))
+    });
+    assert_swept_boundary("fhe_execute_boundary/mixed_chain_creates", &sweep);
+}
+
+/// The limits every measurement in this file runs against, as data: what each is, whether a
+/// transaction can push it, and how. Solana values are runtime facts of the pinned toolchain;
+/// zama values are this repo's policy, asserted from the constants so the snapshot cannot drift
+/// from the code.
+#[test]
+fn cost_snapshot_solana_ceilings() {
+    let ceiling = |value: u64, extendable: bool, note: &str| cost_snapshot::Ceiling {
+        value,
+        extendable,
+        note: note.to_string(),
+    };
+    let ceilings = BTreeMap::from([
+        (
+            "solana/heap_frame_bytes".to_string(),
+            ceiling(
+                32 * 1024,
+                false,
+                "fixed-length bump allocator installed by solana-program-entrypoint; every \
+                 invocation (each top-level instruction and each CPI frame) gets a fresh region. \
+                 RequestHeapFrame grants up to 256 KiB per frame, but the default allocator's \
+                 length is a compile-time constant, so the grant is unusable without a custom \
+                 allocator (fhevm-internal#1872: we do not ship one)",
+            ),
+        ),
+        (
+            "solana/compute_units_per_instruction_default".to_string(),
+            ceiling(
+                200_000,
+                true,
+                "SetComputeUnitLimit raises it toward the transaction cap; the priority fee is \
+                 charged on the requested limit, not on usage",
+            ),
+        ),
+        (
+            "solana/compute_units_per_transaction_max".to_string(),
+            ceiling(1_400_000, false, "hard runtime cap; no instruction raises it"),
+        ),
+        (
+            "solana/transaction_bytes".to_string(),
+            ceiling(
+                1_232,
+                false,
+                "IPv6-MTU packet limit; address lookup tables compress account keys, not \
+                 instruction data",
+            ),
+        ),
+        (
+            "solana/instruction_trace_length".to_string(),
+            ceiling(
+                64,
+                false,
+                "every instruction executed in a transaction, top-level plus each CPI; the wall \
+                 the all-created-public shape hits first (each created output issues ~3 CPIs), \
+                 and it is shared with the app's own CPIs in the same transaction",
+            ),
+        ),
+        (
+            "solana/cpi_instruction_data_bytes".to_string(),
+            ceiling(10_240, false, "per CPI call"),
+        ),
+        (
+            "solana/cpi_call_depth".to_string(),
+            ceiling(5, false, "maximum invoke nesting"),
+        ),
+        (
+            "solana/stack_frame_bytes".to_string(),
+            ceiling(4_096, false, "per function frame"),
+        ),
+        (
+            "solana/return_data_bytes".to_string(),
+            ceiling(1_024, false, "per set_return_data"),
+        ),
+        (
+            "zama/max_fhe_execution_steps".to_string(),
+            ceiling(
+                host::MAX_FHE_EXECUTION_STEPS as u64,
+                true,
+                "policy cap owned by this repo; raising it is a code change plus a re-run of \
+                 the boundary sweeps above (fhevm-internal#1872)",
+            ),
+        ),
+        (
+            "zama/max_input_attestation_handles".to_string(),
+            ceiling(
+                host::MAX_INPUT_ATTESTATION_HANDLES as u64,
+                true,
+                "policy: covered handles per inline attestation",
+            ),
+        ),
+        (
+            "zama/max_input_attestation_extra_data_bytes".to_string(),
+            ceiling(
+                host::MAX_INPUT_ATTESTATION_EXTRA_DATA as u64,
+                true,
+                "policy: extra-data bytes per inline attestation",
+            ),
+        ),
+        (
+            "zama/max_mmr_peaks".to_string(),
+            ceiling(
+                zama_solana_acl::MAX_MMR_PEAKS as u64,
+                false,
+                "structural: a u64 leaf count can never hold more than 64 peaks",
+            ),
+        ),
+        (
+            "zama/max_encrypted_value_subjects".to_string(),
+            ceiling(
+                zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS as u64,
+                true,
+                "policy: subjects per encrypted value",
+            ),
+        ),
+    ]);
+    cost_snapshot::assert_ceilings_snapshot("host_mollusk", &ceilings);
+}
+
+#[test]
+#[ignore = "full boundary curves, run explicitly with --nocapture"]
+fn print_boundary_matrix() {
+    let shapes: Vec<(&str, usize, Box<dyn Fn(usize) -> ProbeCase>)> = vec![
+        (
+            "all_created_public",
+            1,
+            Box::new(|steps| all_created_public_case(steps, Pubkey::new_from_array([0x31; 32]))),
+        ),
+        (
+            "dependent_chain",
+            2,
+            Box::new(|steps| dependent_chain_case(steps, Pubkey::new_from_array([0x32; 32]))),
+        ),
+        (
+            "mature_updates",
+            1,
+            Box::new(|steps| mature_updates_case(steps, Pubkey::new_from_array([0x33; 32]))),
+        ),
+        (
+            "attestation_per_step",
+            1,
+            Box::new(|steps| attestation_per_step_case(steps, Pubkey::new_from_array([0x34; 32]))),
+        ),
+        (
+            "mixed_chain_creates",
+            1,
+            Box::new(|steps| mixed_chain_creates_case(steps, Pubkey::new_from_array([0x35; 32]))),
+        ),
+    ];
+    for (name, min_steps, build) in shapes {
+        for steps in min_steps..=host::MAX_FHE_EXECUTION_STEPS {
+            let case = build(steps);
+            let result = mollusk().process_instruction(&case.instruction, &case.accounts);
+            println!(
+                "{name:22} steps={steps:2} cu={:7} ix_bytes={:5} cpis={:2} axis={}",
+                result.compute_units_consumed,
+                case.instruction.data.len(),
+                result.inner_instructions.len(),
+                failure_axis(&result),
+            );
+        }
     }
 }
 

@@ -73,9 +73,37 @@ pub fn amount_attestation_signed_by(
     contract: Pubkey,
     keys: &[SigningKey],
 ) -> host::CoprocessorInputAttestation {
-    let ct_handles = vec![amount_handle];
+    attestation_signed_by(
+        amount_handle,
+        vec![amount_handle],
+        0,
+        user,
+        contract,
+        vec![0x00u8],
+        keys,
+    )
+}
+
+/// The general attestation mint behind [`amount_attestation_signed_by`]: caller-chosen covered
+/// handle set, `extra_data`, and signer set, with the EIP-712 digest computed over exactly what is
+/// carried. Boundary probes use it to build attestations at the host's size caps
+/// (`MAX_INPUT_ATTESTATION_HANDLES` covered handles, `MAX_INPUT_ATTESTATION_EXTRA_DATA` bytes of
+/// extra data); `ct_handles[handle_index]` must be `input_handle`.
+pub fn attestation_signed_by(
+    input_handle: [u8; 32],
+    ct_handles: Vec<[u8; 32]>,
+    handle_index: u8,
+    user: Pubkey,
+    contract: Pubkey,
+    extra_data: Vec<u8>,
+    keys: &[SigningKey],
+) -> host::CoprocessorInputAttestation {
+    assert_eq!(
+        ct_handles.get(usize::from(handle_index)),
+        Some(&input_handle),
+        "the attested input handle must sit at handle_index within ct_handles"
+    );
     let contract_chain_id = host::SOLANA_POC_CHAIN_ID;
-    let extra_data = vec![0x00u8];
     let digest = host::eip712::typed_data_digest(
         &host::eip712::domain_separator(
             b"InputVerification",
@@ -92,9 +120,9 @@ pub fn amount_attestation_signed_by(
         ),
     );
     host::CoprocessorInputAttestation {
-        input_handle: amount_handle,
+        input_handle,
         ct_handles,
-        handle_index: 0,
+        handle_index,
         user_address: user.to_bytes(),
         contract_address: contract.to_bytes(),
         contract_chain_id,

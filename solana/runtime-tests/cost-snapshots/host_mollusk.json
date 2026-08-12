@@ -1,26 +1,172 @@
 {
-  "fhe_execute/max_steps": {
-    "compute_units": 151018,
-    "unique_accounts": 9,
-    "instruction_data_bytes": 449,
-    "cpi_instructions": 3,
-    "total_cpi_instruction_data_bytes": 60,
-    "max_cpi_instruction_data_bytes": 36
+  "toolchain": {
+    "anchor": "anchor-cli 1.1.2",
+    "rustc": "rustc 1.91.1 (ed61e7d7e 2025-11-07)",
+    "solana": "solana-cli 4.1.2 (src:182084b8; feat:c763ae0a, client:Agave)"
   },
-  "fhe_execute/three_steps": {
-    "compute_units": 41927,
-    "unique_accounts": 9,
-    "instruction_data_bytes": 188,
-    "cpi_instructions": 3,
-    "total_cpi_instruction_data_bytes": 60,
-    "max_cpi_instruction_data_bytes": 36
+  "ceilings": {
+    "solana/compute_units_per_instruction_default": {
+      "value": 200000,
+      "extendable": true,
+      "note": "SetComputeUnitLimit raises it toward the transaction cap; the priority fee is charged on the requested limit, not on usage"
+    },
+    "solana/compute_units_per_transaction_max": {
+      "value": 1400000,
+      "extendable": false,
+      "note": "hard runtime cap; no instruction raises it"
+    },
+    "solana/cpi_call_depth": {
+      "value": 5,
+      "extendable": false,
+      "note": "maximum invoke nesting"
+    },
+    "solana/cpi_instruction_data_bytes": {
+      "value": 10240,
+      "extendable": false,
+      "note": "per CPI call"
+    },
+    "solana/heap_frame_bytes": {
+      "value": 32768,
+      "extendable": false,
+      "note": "fixed-length bump allocator installed by solana-program-entrypoint; every invocation (each top-level instruction and each CPI frame) gets a fresh region. RequestHeapFrame grants up to 256 KiB per frame, but the default allocator's length is a compile-time constant, so the grant is unusable without a custom allocator (fhevm-internal#1872: we do not ship one)"
+    },
+    "solana/instruction_trace_length": {
+      "value": 64,
+      "extendable": false,
+      "note": "every instruction executed in a transaction, top-level plus each CPI; the wall the all-created-public shape hits first (each created output issues ~3 CPIs), and it is shared with the app's own CPIs in the same transaction"
+    },
+    "solana/return_data_bytes": {
+      "value": 1024,
+      "extendable": false,
+      "note": "per set_return_data"
+    },
+    "solana/stack_frame_bytes": {
+      "value": 4096,
+      "extendable": false,
+      "note": "per function frame"
+    },
+    "solana/transaction_bytes": {
+      "value": 1232,
+      "extendable": false,
+      "note": "IPv6-MTU packet limit; address lookup tables compress account keys, not instruction data"
+    },
+    "zama/max_encrypted_value_subjects": {
+      "value": 8,
+      "extendable": true,
+      "note": "policy: subjects per encrypted value"
+    },
+    "zama/max_fhe_execution_steps": {
+      "value": 32,
+      "extendable": true,
+      "note": "policy cap owned by this repo; raising it is a code change plus a re-run of the boundary sweeps above (fhevm-internal#1872)"
+    },
+    "zama/max_input_attestation_extra_data_bytes": {
+      "value": 256,
+      "extendable": true,
+      "note": "policy: extra-data bytes per inline attestation"
+    },
+    "zama/max_input_attestation_handles": {
+      "value": 16,
+      "extendable": true,
+      "note": "policy: covered handles per inline attestation"
+    },
+    "zama/max_mmr_peaks": {
+      "value": 64,
+      "extendable": false,
+      "note": "structural: a u64 leaf count can never hold more than 64 peaks"
+    }
   },
-  "verify_public_decrypt/happy": {
-    "compute_units": 40875,
-    "unique_accounts": 4,
-    "instruction_data_bytes": 158,
-    "cpi_instructions": 0,
-    "total_cpi_instruction_data_bytes": 0,
-    "max_cpi_instruction_data_bytes": 0
+  "boundaries": {
+    "fhe_execute_boundary/all_created_public": {
+      "max_ok": 20,
+      "first_fail": 21,
+      "limited_by": "instruction_trace",
+      "cost_at_max_ok": {
+        "compute_units": 289917,
+        "unique_accounts": 25,
+        "instruction_data_bytes": 1629,
+        "cpi_instructions": 61,
+        "total_cpi_instruction_data_bytes": 2541,
+        "max_cpi_instruction_data_bytes": 1341
+      }
+    },
+    "fhe_execute_boundary/attestation_per_step": {
+      "max_ok": 15,
+      "first_fail": 16,
+      "limited_by": "heap",
+      "cost_at_max_ok": {
+        "compute_units": 472009,
+        "unique_accounts": 5,
+        "instruction_data_bytes": 14404,
+        "cpi_instructions": 0,
+        "total_cpi_instruction_data_bytes": 0,
+        "max_cpi_instruction_data_bytes": 0
+      }
+    },
+    "fhe_execute_boundary/dependent_chain": {
+      "max_ok": 32,
+      "first_fail": 33,
+      "limited_by": "MAX_FHE_EXECUTION_STEPS",
+      "cost_at_max_ok": {
+        "compute_units": 67974,
+        "unique_accounts": 7,
+        "instruction_data_bytes": 414,
+        "cpi_instructions": 3,
+        "total_cpi_instruction_data_bytes": 60,
+        "max_cpi_instruction_data_bytes": 36
+      }
+    },
+    "fhe_execute_boundary/mature_updates": {
+      "max_ok": 3,
+      "first_fail": 4,
+      "limited_by": "heap",
+      "cost_at_max_ok": {
+        "compute_units": 106094,
+        "unique_accounts": 8,
+        "instruction_data_bytes": 1439,
+        "cpi_instructions": 0,
+        "total_cpi_instruction_data_bytes": 0,
+        "max_cpi_instruction_data_bytes": 0
+      }
+    },
+    "fhe_execute_boundary/mixed_chain_creates": {
+      "max_ok": 32,
+      "first_fail": 33,
+      "limited_by": "MAX_FHE_EXECUTION_STEPS",
+      "cost_at_max_ok": {
+        "compute_units": 160092,
+        "unique_accounts": 13,
+        "instruction_data_bytes": 1521,
+        "cpi_instructions": 25,
+        "total_cpi_instruction_data_bytes": 1029,
+        "max_cpi_instruction_data_bytes": 549
+      }
+    }
+  },
+  "measurements": {
+    "fhe_execute/max_steps": {
+      "compute_units": 151018,
+      "unique_accounts": 9,
+      "instruction_data_bytes": 449,
+      "cpi_instructions": 3,
+      "total_cpi_instruction_data_bytes": 60,
+      "max_cpi_instruction_data_bytes": 36
+    },
+    "fhe_execute/three_steps": {
+      "compute_units": 41927,
+      "unique_accounts": 9,
+      "instruction_data_bytes": 188,
+      "cpi_instructions": 3,
+      "total_cpi_instruction_data_bytes": 60,
+      "max_cpi_instruction_data_bytes": 36
+    },
+    "verify_public_decrypt/happy": {
+      "compute_units": 40875,
+      "unique_accounts": 4,
+      "instruction_data_bytes": 158,
+      "cpi_instructions": 0,
+      "total_cpi_instruction_data_bytes": 0,
+      "max_cpi_instruction_data_bytes": 0
+    }
   }
 }
