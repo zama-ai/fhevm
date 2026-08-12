@@ -86,7 +86,7 @@ interface IKMSGeneration {
 
     /**
      * @notice Emitted when fresh key material is activated or new material is added to an existing key.
-     * @param keyId The generated key ID for a fresh key, or the request and storage ID for added material.
+     * @param keyId The generated key ID for a fresh key, or the request ID for added material.
      * @param existingKeyId Zero for a fresh key, or the existing key receiving the added material.
      * @param kmsNodeStorageUrls The KMS nodes' storage URLs that participated in the consensus.
      * @param keyDigests The digests of the generated key material.
@@ -278,12 +278,6 @@ interface IKMSGeneration {
     error CompressedKeyMaterialsAlreadyAdded(uint256 keyId);
 
     /**
-     * @notice Error thrown when compressed key materials do not exist (yet) for the key.
-     * @param keyId The ID of the key.
-     */
-    error CompressedKeyMaterialsNotAdded(uint256 keyId);
-
-    /**
      * @notice Error thrown when the migrated key is not the active key.
      * @param keyId The ID of the key.
      */
@@ -325,19 +319,6 @@ interface IKMSGeneration {
      * @param signature The signature of the KMS node that has responded.
      */
     function keygenResponse(uint256 keyId, KeyDigest[] calldata keyDigests, bytes calldata signature) external;
-
-    /**
-     * @notice Get the compressed materials added by a completed migration.
-     * @dev This getter is only for material produced by `keygen` with a non-zero existing key ID.
-     * Normal key generation continues to use `getKeyMaterials`.
-     * @param existingKeyId The migrated key ID.
-     * @return keyId The key-generation request ID signed by KMS.
-     * @return kmsNodeStorageUrls The storage URLs of the KMS nodes that reached consensus.
-     * @return keyDigests The digests of the compressed material.
-     */
-    function getCompressedKeyMigrationMaterials(
-        uint256 existingKeyId
-    ) external view returns (uint256 keyId, string[] memory kmsNodeStorageUrls, KeyDigest[] memory keyDigests);
 
     /**
      * @notice Trigger a CRS generation.
@@ -437,7 +418,7 @@ interface IKMSGeneration {
     function getCompletedCrsIds() external view returns (uint256[] memory);
 
     /**
-     * @notice Get the key materials for a given key ID.
+     * @notice Get all materials available for a given key ID.
      * @param keyId The ID of the key.
      * @return The key materials (storage URLs, key digests).
      */
