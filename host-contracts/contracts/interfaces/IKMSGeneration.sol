@@ -77,7 +77,7 @@ interface IKMSGeneration {
 
     /**
      * @notice Emitted when a KMS node has responded to a keygen request.
-     * @param keyId The key generation request ID.
+     * @param keyId The generated key ID for fresh generation, or temporary request ID for migration.
      * @param keyDigests The digests of the generated keys.
      * @param signature The signature of the KMS node that has responded.
      * @param kmsTxSender The transaction sender of the KMS node that has called the function.
@@ -330,14 +330,14 @@ interface IKMSGeneration {
      * @notice Get the compressed materials added by a completed migration.
      * @dev This getter is only for material produced by `keygen` with a non-zero existing key ID.
      * Normal key generation continues to use `getKeyMaterials`.
-     * @param keyId The migrated key ID.
-     * @return keyMaterialId The KMS request and storage ID of the compressed material.
+     * @param existingKeyId The migrated key ID.
+     * @return keyId The key-generation request ID signed by KMS.
      * @return kmsNodeStorageUrls The storage URLs of the KMS nodes that reached consensus.
      * @return keyDigests The digests of the compressed material.
      */
     function getCompressedKeyMigrationMaterials(
-        uint256 keyId
-    ) external view returns (uint256 keyMaterialId, string[] memory kmsNodeStorageUrls, KeyDigest[] memory keyDigests);
+        uint256 existingKeyId
+    ) external view returns (uint256 keyId, string[] memory kmsNodeStorageUrls, KeyDigest[] memory keyDigests);
 
     /**
      * @notice Trigger a CRS generation.

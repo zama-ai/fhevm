@@ -1374,9 +1374,9 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         _completeMigration(migrated, scratchProxy, migrationPrepKeygenId, migrationRequestId, extraData);
 
         assertEq(migrated.getActiveKeyId(), keyId);
-        (uint256 publishedMaterialId, , IKMSGeneration.KeyDigest[] memory publishedDigests) = migrated
+        (uint256 returnedKeyId, , IKMSGeneration.KeyDigest[] memory publishedDigests) = migrated
             .getCompressedKeyMigrationMaterials(keyId);
-        assertEq(publishedMaterialId, migrationRequestId);
+        assertEq(returnedKeyId, migrationRequestId);
         assertEq(publishedDigests.length, 2);
         assertEq(publishedDigests[1].digest, hex"c0ffee00");
     }
@@ -1671,9 +1671,9 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         assertTrue(kmsGeneration.isRequestDone(migrationRequestId));
 
         // The compressed materials are published under the existing keyId.
-        (uint256 keyMaterialId, string[] memory materialUrls, IKMSGeneration.KeyDigest[] memory digests) = kmsGeneration
+        (uint256 returnedKeyId, string[] memory materialUrls, IKMSGeneration.KeyDigest[] memory digests) = kmsGeneration
             .getCompressedKeyMigrationMaterials(keyId);
-        assertEq(keyMaterialId, migrationRequestId);
+        assertEq(returnedKeyId, migrationRequestId);
         assertEq(materialUrls.length, 3);
         assertEq(digests.length, 2);
         assertEq(uint256(digests[1].keyType), uint256(IKMSGeneration.KeyType.CompressedKeySet));
@@ -1754,8 +1754,8 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         _doMigrationKeygenResponse(retryPrepId, retryRequestId, kmsPk1, kmsTxSender1);
         _doMigrationKeygenResponse(retryPrepId, retryRequestId, kmsPk2, kmsTxSender2);
 
-        (uint256 keyMaterialId, , ) = kmsGeneration.getCompressedKeyMigrationMaterials(keyId);
-        assertEq(keyMaterialId, retryRequestId);
+        (uint256 returnedKeyId, , ) = kmsGeneration.getCompressedKeyMigrationMaterials(keyId);
+        assertEq(returnedKeyId, retryRequestId);
     }
 
     function test_revertMigrationKeygenForUngeneratedOrAbortedKey() public {
