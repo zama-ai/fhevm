@@ -72,6 +72,37 @@ SPECIMEN_PROGRAMS = {
 }
 
 
+# Every generated IDL records the version of the Anchor IDL format it was written in.
+# `anchor build` takes that from anchor-lang-idl-spec, so an Anchor upgrade can move it
+# without a line of program source changing.
+#
+# Comparing the committed copy against the build output cannot catch that by itself: a bump
+# appears on both sides at once the moment anyone runs sync-zama-host-idl.sh, and lands
+# looking like an ordinary regeneration. Pinning the version here forces it to be changed
+# deliberately, so that everything reading these files — the host-listener decoders, the KMS
+# layout mirrors, the dapp's Codama codegen — is checked against the new shape first.
+EXPECTED_IDL_SPEC = "0.1.0"
+
+
+def idl_spec_errors(root: pathlib.Path, which: str) -> list[str]:
+    """Check the IDL format version of every IDL, on whichever side `which` names."""
+    errors = []
+    for program, spec in vendored_idls().items():
+        path = (root / spec[which]).resolve()
+        if not path.exists():
+            # Absent files are reported by the caller, which knows why it wanted this one.
+            continue
+        found = load_json(path).get("metadata", {}).get("spec")
+        if found != EXPECTED_IDL_SPEC:
+            errors.append(
+                f"{program}: {path} is IDL spec {found!r}, expected "
+                f"{EXPECTED_IDL_SPEC!r}. An Anchor upgrade changed the IDL format. "
+                "Check the readers of these IDLs against the new shape, then update "
+                "EXPECTED_IDL_SPEC in this script."
+            )
+    return errors
+
+
 def vendored_idls() -> dict[str, dict[str, Any]]:
     """Every IDL whose committed copy must equal the build output.
 
@@ -162,6 +193,14 @@ def main() -> int:
     ).resolve()
 
     if args.write:
+        # Before copying anything: a sync is the one moment an IDL format bump can pass
+        # through unnoticed, and refusing it here leaves the tree untouched rather than
+        # half-updated.
+        spec_errors = idl_spec_errors(root, "target_idl")
+        if spec_errors:
+            for error in spec_errors:
+                print(f"error: {error}", file=sys.stderr)
+            return 1
         for spec in vendored_idls().values():
             shutil.copyfile(
                 root / spec["target_idl"],
@@ -177,7 +216,7 @@ def main() -> int:
         print(f"wrote {manifest_path}")
         return 0
 
-    errors: list[str] = []
+    errors: list[str] = idl_spec_errors(root, "vendored_idl")
     for program, spec in vendored_idls().items():
         target = root / spec["target_idl"]
         vendored = (root / spec["vendored_idl"]).resolve()

@@ -327,6 +327,11 @@ pub(super) fn build_subscribe_request(
             include_transactions: Some(true),
             include_accounts: Some(false),
             include_entries: Some(false),
+            // A cuckoo filter is the plugin's compact stand-in for a very long account list: the
+            // client ships a probabilistic membership set instead of the addresses themselves and
+            // accepts false positives in exchange. We subscribe to exactly one program, so the
+            // explicit list above is both smaller and exact.
+            cuckoo_account_include: None,
         },
     );
     let accounts = HashMap::from([(
@@ -339,6 +344,8 @@ pub(super) fn build_subscribe_request(
             owner: vec![],
             filters: vec![],
             nonempty_txn_signature: None,
+            // Two fixed sysvar addresses — same reasoning as cuckoo_account_include above.
+            cuckoo_accounts_filter: None,
         },
     )]);
     SubscribeRequest {
