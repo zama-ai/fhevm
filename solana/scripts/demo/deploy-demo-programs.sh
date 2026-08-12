@@ -2,7 +2,7 @@
 # deploy-demo-programs.sh — build + deploy the two confidential-vault demo programs (#1760).
 #
 # Zero-logic glue over `anchor build` + `solana program deploy`, mirroring
-# setup-solana-side.sh's zama_host/confidential_token deploy exactly (explicit -k, --program-id from
+# the e2e side's zama_host/confidential_token deploy exactly (explicit -k, --program-id from
 # committed keypairs; --use-rpc). These two programs are deployed by NOTHING in the e2e vertical;
 # the demo is their only deployer. Run AFTER clean-e2e.sh has the validator + stack up.
 #
@@ -18,7 +18,7 @@ DEPLOYER_KEYPAIR="${SOLANA_DEPLOYER_KEYPAIR:-$HOME/.config/solana/id.json}"
 echo "==> [demo-deploy] build + deploy demo_vault, confidential_batcher"
 mkdir -p "$SOLANA/target/deploy"
 # Seed the committed program keypairs so the built program ids match each declare_id!. Always
-# overwrite target artifacts left by older branches, as setup-solana-side.sh does for host programs.
+# overwrite target artifacts left by older branches, as src/solana/validator.ts does for host programs.
 for p in demo_vault confidential_batcher; do
   cp -f "$SOLANA/scripts/e2e/test-keypairs/$p-keypair.json" "$SOLANA/target/deploy/$p-keypair.json"
 done

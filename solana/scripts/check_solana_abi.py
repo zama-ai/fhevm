@@ -56,6 +56,21 @@ DEMO_PROGRAMS = {
     },
 }
 
+# Specimen consumer programs that exist for the test framework: nothing off-chain
+# mirrors their layouts either, so like the demo programs they are IDL-only. The
+# vendored copy lives inside the program directory so the specimen stays
+# self-contained for anyone copying it as a starting point.
+SPECIMEN_PROGRAMS = {
+    "dep_chain": {
+        "target_idl": "target/idl/dep_chain.json",
+        "vendored_idl": "programs/dep-chain/idl/dep_chain.json",
+    },
+    "encrypted_counter": {
+        "target_idl": "target/idl/encrypted_counter.json",
+        "vendored_idl": "programs/encrypted-counter/idl/encrypted_counter.json",
+    },
+}
+
 
 def vendored_idls() -> dict[str, dict[str, Any]]:
     """Every IDL whose committed copy must equal the build output.
@@ -65,7 +80,7 @@ def vendored_idls() -> dict[str, dict[str, Any]]:
     separate lists is what left the demo programs' IDLs copied by sync-zama-host-idl.sh
     and compared by nothing.
     """
-    return {**PROGRAMS, **DEMO_PROGRAMS}
+    return {**PROGRAMS, **DEMO_PROGRAMS, **SPECIMEN_PROGRAMS}
 
 
 PINNED_SCHEMAS = [

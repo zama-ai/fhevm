@@ -71,6 +71,7 @@ import {
 } from "@solana/kit";
 
 import { loadPersonas, until } from "../harness";
+import { withHostReachableFetch } from "../harness/solana/sdkEncrypt";
 import { depositRoots, type VaultDemoRoots } from "../../demo/config";
 import { readCurrentDemoAuthorization } from "../../demo/lifecycle";
 import { DEMO_KEYPAIRS, loadDemoEnv } from "../../demo/loadDemoEnv";
@@ -185,6 +186,9 @@ const asBytes32BigEndian = (decimal: string): Uint8Array => {
 // seeded demo-config cannot exist there. The `demo:smoke` script sets RUN_DEMO_SCENARIOS=1; under
 // it the test runs unconditionally, so a missing config still fails the acceptance gate loudly.
 const runsDemoScenarios = process.env.RUN_DEMO_SCENARIOS === "1";
+
+/** Written by the arc on success; `demo:smoke` requires it back so a skipped suite cannot pass. */
+export const DEMO_SMOKE_MARKER = "/tmp/fhevm-demo-smoke-ran";
 
 describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
   test(
@@ -357,16 +361,10 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       const joinMint = config.mints.joinConfidential;
       const joinComputeSigner = await vault.computeSignerAddress(joinMint);
 
-      // The relayer's key-material URLs point at the docker-internal host `minio:9000`; rewrite to
-      // the host-published endpoint (same same-machine boundary as solana-two-holder-transfer.ts).
-      // Restored in the finally below so the patch cannot leak past the join phase: only the input
-      // proof's key-material fetch needs it — settle's certificate phase talks to the relayer's
+      // The MinIO fetch rewrite is scoped to the join phase only: just the input proof's
+      // key-material fetch needs it — settle's certificate phase talks to the relayer's
       // /v2/public-decrypt endpoint only (verified against actions/publicDecryptCertificate.ts).
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = ((url: string | URL | Request, options?: RequestInit) =>
-        originalFetch(typeof url === "string" ? url.replace("//minio:9000", "//127.0.0.1:9000") : url, options)) as typeof fetch;
-
-      try {
+      await withHostReachableFetch(async () => {
         // Step 6: build + submit the coprocessor input proof for the join amount. Binding tuple per
         // joinBatch's own checks: contract identity = the join mint's compute-signer PDA (NOT the
         // batcher), user identity = alice, value = euint64 amount, chain id + ACL program from the
@@ -425,9 +423,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
         );
         expect(batchAfterJoin.addresses.batch).toBe(batch);
         expect(batchAfterJoin.state.joinCount).toBe(batchBeforeJoin.state.joinCount + 1n);
-      } finally {
-        globalThis.fetch = originalFetch;
-      }
+      });
 
       // Step 9: wait until the batch is old enough to dispatch. dispatch.rs rejects with
       // BatchTooYoung until the current slot reaches openedSlot + minBatchAgeSlots (the seeder sets
@@ -632,6 +628,13 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // right number end to end.
       expect(clearValues.length).toBe(1);
       expect(BigInt(clearValues[0].value)).toBe(batchAfterSettle.state.payoutReceived);
+
+      // Proof-of-run for the `demo:smoke` gate. `bun test` exits 0 when every matched test is
+      // SKIPPED (measured: `0 pass, 1 skip`, exit 0), so renaming RUN_DEMO_SCENARIOS on either
+      // side of the gate above would silently retire this whole arc with CI still green. The
+      // script deletes this marker, runs the suite, and then requires it back; nothing but this
+      // arc completing can produce it.
+      await Bun.write(DEMO_SMOKE_MARKER, new Date().toISOString());
     },
     SCENARIO_TIMEOUT_MS,
   );

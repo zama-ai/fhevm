@@ -13,15 +13,7 @@
 //! asserted in the deposit/withdraw math both here and in the program's own unit
 //! tests.
 
-// Deliberate `#[path]` include (not `mod support;`): pull in only the shared
-// cost-snapshot helper, not the FHE support modules that `support/mod.rs`
-// declares (this vault has no host/FHE dependency).
-#[path = "support/cost_snapshot.rs"]
-mod cost_snapshot;
-
-use anchor_lang::{
-    prelude::system_program, AccountDeserialize, AccountSerialize, InstructionData, ToAccountMetas,
-};
+use anchor_lang::{prelude::system_program, AccountSerialize, InstructionData, ToAccountMetas};
 use anchor_spl::token::spl_token;
 use demo_vault as vault;
 use mollusk_svm::{
@@ -29,24 +21,24 @@ use mollusk_svm::{
     Mollusk,
 };
 use solana_sdk::{
-    account::Account, instruction::Instruction, program_error::ProgramError,
-    program_option::COption, program_pack::Pack, pubkey::Pubkey,
+    account::Account, instruction::Instruction, program_option::COption, program_pack::Pack,
+    pubkey::Pubkey,
 };
 use std::collections::HashMap;
-use std::path::PathBuf;
-
-const DECIMALS: u8 = 6;
+use zama_solana_test_kit::cost_snapshot;
+use zama_solana_test_kit::{
+    anchor_error_check, read_account, read_mint_supply, read_spl_amount, spl_mint_account,
+    spl_token_account, system_account, Ctx, DECIMALS,
+};
 
 // ---------------------------------------------------------------------------
 // Harness
 // ---------------------------------------------------------------------------
 
 fn mollusk() -> Mollusk {
-    let deploy_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../target/deploy");
-    unsafe {
-        std::env::set_var("SBF_OUT_DIR", deploy_dir);
-    }
-    let mut mollusk = Mollusk::new(&vault::id(), "demo_vault");
+    // No previous-bank-hash sysvars: the vault is standalone plain-SPL code with no host/FHE
+    // involvement.
+    let mut mollusk = zama_solana_test_kit::svm(&vault::id(), "demo_vault");
     mollusk_svm_programs_token::token::add_program(&mut mollusk);
     // A deposit/withdraw issues two token CPIs; give it headroom over the 200k default.
     mollusk.compute_budget.compute_unit_limit = 400_000;
@@ -58,105 +50,15 @@ where
     A: ToAccountMetas,
     D: InstructionData,
 {
-    Instruction {
-        program_id: vault::id(),
-        accounts: accounts.to_account_metas(None),
-        data: args.data(),
-    }
+    zama_solana_test_kit::anchor_ix(vault::id(), accounts, args)
 }
 
 fn vault_error(error: vault::DemoVaultError) -> Check<'static> {
-    Check::err(ProgramError::Custom(
-        anchor_lang::error::ERROR_CODE_OFFSET + error as u32,
-    ))
+    anchor_error_check(error as u32)
 }
 
-fn system_account(lamports: u64) -> Account {
-    Account {
-        lamports,
-        data: vec![],
-        owner: system_program::ID,
-        executable: false,
-        rent_epoch: 0,
-    }
-}
-
-fn spl_mint_account(mint_authority: Option<Pubkey>, supply: u64) -> Account {
-    let mut data = vec![0u8; spl_token::state::Mint::LEN];
-    spl_token::state::Mint::pack(
-        spl_token::state::Mint {
-            mint_authority: mint_authority.map(COption::Some).unwrap_or(COption::None),
-            supply,
-            decimals: DECIMALS,
-            is_initialized: true,
-            freeze_authority: COption::None,
-        },
-        &mut data,
-    )
-    .unwrap();
-    Account {
-        lamports: 1_000_000_000,
-        data,
-        owner: spl_token::id(),
-        executable: false,
-        rent_epoch: 0,
-    }
-}
-
-fn spl_token_account(mint: Pubkey, owner: Pubkey, amount: u64) -> Account {
-    let mut data = vec![0u8; spl_token::state::Account::LEN];
-    spl_token::state::Account::pack(
-        spl_token::state::Account {
-            mint,
-            owner,
-            amount,
-            delegate: COption::None,
-            state: spl_token::state::AccountState::Initialized,
-            is_native: COption::None,
-            delegated_amount: 0,
-            close_authority: COption::None,
-        },
-        &mut data,
-    )
-    .unwrap();
-    Account {
-        lamports: 1_000_000_000,
-        data,
-        owner: spl_token::id(),
-        executable: false,
-        rent_epoch: 0,
-    }
-}
-
-fn read_spl_amount(
-    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
-    address: Pubkey,
-) -> u64 {
-    let store = context.account_store.borrow();
-    let account = store.get(&address).expect("missing spl token account");
-    spl_token::state::Account::unpack(&account.data)
-        .expect("valid spl token account")
-        .amount
-}
-
-fn read_mint_supply(
-    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
-    address: Pubkey,
-) -> u64 {
-    let store = context.account_store.borrow();
-    let account = store.get(&address).expect("missing spl mint");
-    spl_token::state::Mint::unpack(&account.data)
-        .expect("valid spl mint")
-        .supply
-}
-
-fn read_vault(
-    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
-    address: Pubkey,
-) -> vault::Vault {
-    let store = context.account_store.borrow();
-    let account = store.get(&address).expect("missing vault");
-    vault::Vault::try_deserialize(&mut account.data.as_slice()).expect("valid vault")
+fn read_vault(context: &Ctx, address: Pubkey) -> vault::Vault {
+    read_account(context, address)
 }
 
 // ---------------------------------------------------------------------------

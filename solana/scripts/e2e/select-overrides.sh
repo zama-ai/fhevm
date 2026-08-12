@@ -92,10 +92,11 @@ images_for() {
 groups_for_path() {
   local path="$1"
   case "$path" in
-    # Stack consumers, not build inputs: e2e tests and demo scripts run from PR source against
-    # the already-built stack (no Dockerfile copies these trees), so they never change image
-    # contents. Matched before the test-suite/fhevm/* recipe rule below.
-    test-suite/fhevm/e2e/*|test-suite/fhevm/demo/*) echo "" ;;
+    # Stack consumers, not build inputs: e2e tests, demo scripts, and the src/ framework (fhevm-cli
+    # + the Solana side-stack setup) run from PR source against the already-built stack (no
+    # Dockerfile copies these trees), so they never change image contents. Matched before the
+    # test-suite/fhevm/* recipe rule below.
+    test-suite/fhevm/e2e/*|test-suite/fhevm/demo/*|test-suite/fhevm/src/*) echo "" ;;
     # Build-recipe changes: rebuild everything (a stale published image could mask the change).
     solana/scripts/e2e/select-overrides.sh|solana/scripts/e2e/clean-e2e.sh|.github/workflows/solana-e2e.yml|.github/workflows/solana-images-publish.yml|test-suite/fhevm/*|package.json|package-lock.json)
       echo "all" ;;
@@ -107,9 +108,9 @@ groups_for_path() {
     gateway-contracts/*) echo "gateway-contracts coprocessor kms-connector relayer" ;;
     host-contracts/*) echo "host-contracts coprocessor kms-connector relayer" ;;
     shared/*) echo "coprocessor kms-connector relayer" ;;
-    # On-chain-only demo programs: no docker image compiles them (checked against the Cargo.tomls
-    # and Dockerfile COPY lines cited above).
-    solana/programs/demo-vault/*|solana/programs/confidential-deposit-app/*) echo "" ;;
+    # On-chain-only demo and specimen programs: no docker image compiles them (checked against
+    # the Cargo.tomls and Dockerfile COPY lines cited above).
+    solana/programs/demo-vault/*|solana/programs/confidential-deposit-app/*|solana/programs/encrypted-counter/*|solana/programs/dep-chain/*) echo "" ;;
     # The one solana crate the kms-connector images consume (kms-connector/crates/*/Dockerfile).
     solana/crates/zama-solana-acl/*) echo "coprocessor kms-connector relayer" ;;
     solana/programs/*|solana/crates/*|solana/Cargo.toml|solana/Cargo.lock) echo "coprocessor relayer" ;;

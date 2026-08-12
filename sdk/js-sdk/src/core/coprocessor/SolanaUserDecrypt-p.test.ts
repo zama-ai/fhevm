@@ -1,10 +1,14 @@
+import { readFileSync } from 'node:fs';
+
 import { describe, it, expect } from 'vitest';
 
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { keccak_256 } from '@noble/hashes/sha3.js';
 
-import { bytesToHex } from '../base/bytes.js';
+import { bytesToHex, hexToBytes } from '../base/bytes.js';
 import {
+  buildSolanaUserDecryptContextExtraData,
+  buildSolanaUserDecryptMmrProofExtraData,
   buildSolanaUserDecryptRequest,
   solanaUserDecryptClientId,
   solanaUserDecryptSigningMessage,
@@ -78,6 +82,89 @@ describe('SolanaUserDecrypt byte-parity with Rust source of truth', () => {
 
   it.each(mutations)('binds the %s', (_name, mutated) => {
     expect(bytesToHex(solanaUserDecryptSigningMessage(mutated))).not.toBe(RUST_PREIMAGE);
+  });
+});
+
+// The committed cross-implementation byte vectors, shared with the Rust mirror's consumer
+// (kms-connector/crates/utils/tests/solana_user_decrypt_byte_vectors.rs). The `malformed`
+// entries of the extra-data file are decoder rejections and the decoder is Rust-only, so
+// only the encode records run here.
+const VECTOR_DIR = new URL('../../../../../solana/test-fixtures/user-decrypt/', import.meta.url);
+const readVectors = <T>(name: string): T => JSON.parse(readFileSync(new URL(name, VECTOR_DIR), 'utf8')) as T;
+const unhex = (hex: string): Uint8Array => hexToBytes(`0x${hex}`);
+
+interface SigningMessageVectors {
+  schema: string;
+  records: ReadonlyArray<{
+    name: string;
+    input: {
+      contracts_chain_id: string;
+      public_key_hex: string;
+      handles_hex: readonly string[];
+      identity_hex: string;
+      context_id_hex: string;
+      nonce_hex: string;
+      allowed_acl_domain_keys_hex: readonly string[];
+      start_timestamp: string;
+      duration_seconds: string;
+      acl_value_key_hex: string;
+      proof_slot: string;
+      mmr_proof_hex: string;
+    };
+    expected: { message_utf8: string };
+  }>;
+}
+
+interface ExtraDataVectors {
+  schema: string;
+  records: ReadonlyArray<{
+    name: string;
+    input: { context_id_hex: string; acl_value_key_hex?: string; proof_slot?: string; mmr_proof_hex?: string };
+    blob_hex: string;
+  }>;
+}
+
+describe('committed byte vectors (solana/test-fixtures/user-decrypt)', () => {
+  const signing = readVectors<SigningMessageVectors>('signing_message_v1.json');
+  const extraData = readVectors<ExtraDataVectors>('extra_data_v1.json');
+
+  it('recognizes the fixture schemas', () => {
+    expect(signing.schema).toBe('zama-solana-user-decrypt-signing-message/v1');
+    expect(extraData.schema).toBe('zama-solana-user-decrypt-extra-data/v1');
+    expect(signing.records.length).toBeGreaterThan(0);
+    expect(extraData.records.length).toBeGreaterThan(0);
+  });
+
+  it.each(signing.records.map((r) => [r.name, r] as const))('signing message: %s', (_name, record) => {
+    const message = solanaUserDecryptSigningMessage({
+      contractsChainId: BigInt(record.input.contracts_chain_id),
+      publicKey: unhex(record.input.public_key_hex),
+      handles: record.input.handles_hex.map(unhex),
+      identity: unhex(record.input.identity_hex),
+      contextId: unhex(record.input.context_id_hex),
+      nonce: unhex(record.input.nonce_hex),
+      allowedAclDomainKeys: record.input.allowed_acl_domain_keys_hex.map(unhex),
+      startTimestamp: BigInt(record.input.start_timestamp),
+      durationSeconds: BigInt(record.input.duration_seconds),
+      aclValueKey: unhex(record.input.acl_value_key_hex),
+      proofSlot: BigInt(record.input.proof_slot),
+      mmrProofBytes: unhex(record.input.mmr_proof_hex),
+    });
+    expect(new TextDecoder().decode(message)).toBe(record.expected.message_utf8);
+  });
+
+  it.each(extraData.records.map((r) => [r.name, r] as const))('extraData blob: %s', (_name, record) => {
+    const contextId = unhex(record.input.context_id_hex);
+    const blob =
+      record.input.acl_value_key_hex === undefined
+        ? buildSolanaUserDecryptContextExtraData(contextId)
+        : buildSolanaUserDecryptMmrProofExtraData(
+            contextId,
+            unhex(record.input.acl_value_key_hex),
+            BigInt(record.input.proof_slot ?? '0'),
+            unhex(record.input.mmr_proof_hex ?? ''),
+          );
+    expect(bytesToHex(blob)).toBe(`0x${record.blob_hex}`);
   });
 });
 

@@ -6,10 +6,11 @@
 //
 // Source for NOW: the local clean-e2e stack. Every value below is exactly what the current e2e
 // runtime provides, traced to where it lands:
-//   - urls/ids: `solana/scripts/e2e/full-vertical.sh` (RPC/GW_RPC/relayer/proof-service, SID, ACL,
-//     CTX) and `test-suite/fhevm/src/solana/two-holder-transfer.ts` (RPC/WS/relayer/ACL constants).
+//   - urls/ids: the clean-e2e bring-up (validator RPC/WS, relayer, solana-proof-service, the
+//     RFC-021 host chain id, ACL program, KMS context ids) and
+//     `test-suite/fhevm/src/solana/two-holder-transfer.ts` (RPC/WS/relayer/ACL constants).
 //   - coprocessor DB container: `test-suite/fhevm/src/layout.ts` (COPROCESSOR_DB_CONTAINER).
-//   - deployer keypair: `~/.config/solana/id.json`, the wallet full-vertical.sh derives USER from.
+//   - deployer keypair: `~/.config/solana/id.json`, the wallet the side-stack setup deploys with.
 //   - gateway addresses (optional, for future phases): generated at `fhevm-cli up` time into
 //     `.fhevm/runtime/addresses/gateway/.env.gateway`.
 // Env vars override any field so a run can point at a non-default local stack.

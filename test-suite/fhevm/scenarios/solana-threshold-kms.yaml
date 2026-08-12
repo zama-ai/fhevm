@@ -20,7 +20,7 @@ description: >-
        centralized name; parties 2..N are `kms-core-2`..`kms-core-N`.
     2. secure keygen completes and reaches activeKeyId.
     3. the on-chain KmsContext carries 4 signers with cert thresholds 2t+1 = 3
-       (the live-client derives these from KMS_THRESHOLD).
+       (the side-stack bootstrap, src/solana/deploy.ts, derives these from KMS_THRESHOLD).
     4. user-decrypt then FAILS client-side in kms `process_user_decryption_resp_solana`
        (`stored_server_addrs.len() != 1`), because that path is a copy of the centralized
        flow with no Shamir reconstruction. That failure is the point of the experiment: it

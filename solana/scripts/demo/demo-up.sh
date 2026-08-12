@@ -7,7 +7,7 @@
 #   2. deploy the two demo programs (deploy-demo-programs.sh).
 #   3. seed mints/vault/batchers/personas + write the demo-config JSON (bun demo:seed).
 #   4. print the config path, faucet command, and status/log hints. NO teardown here — the stack is
-#      meant to stay up for the dApp (#1761) / rehearsal (#1762). `full-vertical.sh` is NEVER run.
+#      meant to stay up for the dApp (#1761) / rehearsal (#1762). The e2e scenario suite is NEVER run here.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"

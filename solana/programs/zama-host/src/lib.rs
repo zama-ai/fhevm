@@ -21,6 +21,8 @@ pub mod constants;
 pub mod decode;
 /// EIP-712 v4 verification of EVM-signed KMS / coprocessor certificates.
 pub mod eip712;
+#[cfg(feature = "encode")]
+pub mod encode;
 /// Program-specific errors returned by ZamaHost instructions.
 pub mod errors;
 /// The one event-CPI emitter; every event this program emits goes through it.

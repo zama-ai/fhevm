@@ -12,5 +12,5 @@ export { loadEnv, resolveEnv } from "./loadEnv";
 export type { TestEnv, Capabilities } from "./loadEnv";
 export { loadPersonas } from "./personas";
 export type { Persona, Personas } from "./personas";
-export { until } from "./until";
-export type { UntilOptions } from "./until";
+export { until } from "../../src/utils/until";
+export type { UntilOptions } from "../../src/utils/until";

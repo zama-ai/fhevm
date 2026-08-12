@@ -251,7 +251,7 @@ const applyDiscoveryEnv = (
   envs["test-suite"].BRIDGE_REAL_LZ = chains.some((chain) => realLzEndpointFor(chain.key)) ? "true" : "";
 };
 
-/** Yellowstone gRPC port published by the host-native geyser plugin (setup-solana-side). */
+/** Yellowstone gRPC port published by the host-native geyser plugin (src/solana/validator.ts). */
 const SOLANA_YELLOWSTONE_GRPC_PORT = 10000;
 
 /**

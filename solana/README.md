@@ -98,17 +98,24 @@ programs/confidential-batcher   App program (DD-042): aggregates encrypted depos
                                 reveals only the KMS-certified batch total to the demo vault, pays
                                 each user an encrypted proportional cut.
 programs/demo-vault             Minimal public share-mint vault the batcher fronts; plain SPL.
+programs/encrypted-counter      Specimen app program: the smallest complete zama-host consumer,
+                                written to be copied as the starting point for a new app.
+programs/dep-chain              Specimen app program: the load shape — packs a full-depth
+                                dependent FHE chain into a single fhe_execute.
 crates/zama-fhe                 Program-facing SDK: typed execution builder (`FheExecution`), `Encrypted<T>`, account
                                 resolution for fhe_execute.
 crates/zama-solana-acl          The shared ACL crate: account layout, decode, MMR verification,
                                 authorization functions. Compiled into the program AND the KMS
                                 connector, so both sides run identical code.
 crates/solana-ed25519-instruction  Ed25519 instruction-sysvar helpers.
+test-kit                        The fixture library every Rust test imports: Mollusk boot,
+                                account fixtures, mock KMS signing, the cleartext oracle.
 runtime-tests                   Fast evaluator contracts plus real-SBF Mollusk suites
                                 (docs/TESTING.md explains what each layer proves).
 demo-dapp                       The confidential vault demo frontend.
-scripts/                        Workspace tooling (scripts/README.md) and live e2e scripts
-                                (scripts/e2e) against a local validator + fhevm-cli stack.
+scripts/                        Workspace tooling (scripts/README.md). scripts/e2e is stack
+                                BRING-UP only (clean-e2e.sh, select-overrides.sh) — the e2e
+                                assertions themselves live in test-suite/fhevm/e2e.
 geyser                          Yellowstone plugin build helpers for the event stream.
 ```
 
@@ -125,6 +132,11 @@ relayer/                                 HTTP relayer: v3 typed Solana requests,
                                          validation, fee handling.
 kms-connector/                           Per-party decrypt authorization (imports zama_solana_acl).
 sdk/js-sdk/src/solana                    Client SDK: encrypt, user/public decrypt, proofs.
+test-suite/fhevm/src/solana              The typed Solana side-stack: validator + program deploy,
+                                         the zama-host bootstrap, and the provisioning/arc helpers
+                                         the scenarios are built from.
+test-suite/fhevm/e2e                     The live scenario suite (bun:test) and its harness —
+                                         the layer that replaced the retired bash e2e scripts.
 test-suite/fhevm/demo                    Demo seeding and orchestration.
 ```
 
@@ -157,8 +169,7 @@ to `127.0.0.1:8899`):
 
 ```bash
 bash scripts/e2e/clean-e2e.sh              # bring up fhevm-cli + Solana side-stack
-bash scripts/e2e/full-vertical.sh          # compute -> public-decrypt -> user-decrypt
-bash scripts/e2e/adversarial-l4.sh         # negative: relayer-bypass + cert-reuse rejection
+cd ../test-suite/fhevm && bun run test:e2e # scenario suite: compute/decrypt, operators, token arc
 ```
 
 ## Integrating an app

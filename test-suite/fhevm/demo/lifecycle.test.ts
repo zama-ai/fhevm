@@ -5,6 +5,8 @@ import path from "node:path";
 
 import { centralizedKmsCorePlatform } from "../src/generate/compose";
 import { solanaProgramIdFromKeypairFile } from "../src/generate/solana";
+import { gatewayAddHostChainArgs } from "../src/solana/deploy";
+import { SOLANA_E2E_PROGRAMS, seedProgramKeypairs } from "../src/solana/validator";
 import { createDemoAuthorizationFile } from "./authorization";
 import {
   acceptableDockerContainerState,
@@ -80,18 +82,28 @@ describe("demo lifecycle collision policy", () => {
   });
 
   test("deployment overwrites stale target program identities", async () => {
-    for (const script of [
-      "solana/scripts/e2e/setup-solana-side.sh",
-      "solana/scripts/demo/deploy-demo-programs.sh",
-    ]) {
-      const source = await fs.readFile(
-        path.join(import.meta.dir, "../../..", script),
-        "utf8",
-      );
-      expect(source).toContain(
-        'cp -f "$SOLANA/scripts/e2e/test-keypairs/$p-keypair.json"',
-      );
-      expect(source).not.toContain("cp -n");
+    const demoDeploy = await fs.readFile(
+      path.join(import.meta.dir, "../../../solana/scripts/demo/deploy-demo-programs.sh"),
+      "utf8",
+    );
+    expect(demoDeploy).toContain('cp -f "$SOLANA/scripts/e2e/test-keypairs/$p-keypair.json"');
+    expect(demoDeploy).not.toContain("cp -n");
+    // The e2e side, behaviorally: seed into a temp deploy dir that already holds a STALE keypair
+    // (another branch's program identity) and require the committed identity to overwrite it.
+    const deployDir = await fs.mkdtemp(path.join(os.tmpdir(), "seed-keypairs-"));
+    try {
+      await fs.writeFile(path.join(deployDir, "zama_host-keypair.json"), JSON.stringify(Array(64).fill(0)));
+      await seedProgramKeypairs(deployDir);
+      for (const program of SOLANA_E2E_PROGRAMS) {
+        const seeded = await fs.readFile(path.join(deployDir, `${program}-keypair.json`), "utf8");
+        const committed = await fs.readFile(
+          path.join(import.meta.dir, `../../../solana/scripts/e2e/test-keypairs/${program}-keypair.json`),
+          "utf8",
+        );
+        expect(seeded).toBe(committed);
+      }
+    } finally {
+      await fs.rm(deployDir, { recursive: true, force: true });
     }
   });
 
@@ -366,14 +378,6 @@ describe("demo lifecycle collision policy", () => {
     ) as {
       packages: Record<string, [string, { dependencies?: Record<string, string> }]>;
     };
-    const fullVertical = await fs.readFile(
-      path.join(import.meta.dir, "../../../solana/scripts/e2e/full-vertical.sh"),
-      "utf8",
-    );
-    const adversarial = await fs.readFile(
-      path.join(import.meta.dir, "../../../solana/scripts/e2e/adversarial-l4.sh"),
-      "utf8",
-    );
     const workflow = await fs.readFile(
       path.join(import.meta.dir, "../../../.github/workflows/solana-e2e.yml"),
       "utf8",
@@ -390,8 +394,6 @@ describe("demo lifecycle collision policy", () => {
       path.join(import.meta.dir, "../../../solana/scripts/e2e/clean-e2e.sh"),
       "utf8",
     );
-    expect(fullVertical.match(/\bnode solana-input\.ts/g)).toHaveLength(2);
-    expect(adversarial.match(/\bnode solana-input\.ts/g)).toHaveLength(1);
     // Every `@fhevm/sdk` subpath a runtime canary imports must exist in the SDK's exports map.
     // The guard this replaces counted canaries instead of validating them, so it stayed green
     // while the workflow imported `@fhevm/sdk/solana/vault` — a subpath deleted when the vault
@@ -424,8 +426,6 @@ describe("demo lifecycle collision policy", () => {
     expect(twoHolderTransfer).toContain('run(["bun", SDK_WORKER]');
     expect(demoViteConfig).toContain("preserveSymlinks: true");
     expect(demoViteConfig).toContain("noExternal: ['@fhevm/sdk']");
-    expect(fullVertical).not.toContain("--preserve-symlinks");
-    expect(adversarial).not.toContain("--preserve-symlinks");
     expect(workflow).not.toContain("--preserve-symlinks");
     expect(twoHolderTransfer).not.toContain("--preserve-symlinks");
     expect(consumerLock.packages["@fhevm/sdk"][1].dependencies).toEqual(sdkPackage.dependencies);
@@ -498,20 +498,14 @@ describe("demo lifecycle collision policy", () => {
     expect(workspaceDockerfile).not.toContain("COPY .git");
   });
 
-  test("Solana setup keeps every lifecycle compose call on the per-boot project", async () => {
-    const script = await fs.readFile(
-      path.join(
-        import.meta.dir,
-        "../../../solana/scripts/e2e/setup-solana-side.sh",
-      ),
-      "utf8",
-    );
-    expect(script).not.toMatch(/-p\s+fhevm(?:\s|\\)/);
-    expect(script).toContain(
-      ': "${FHEVM_COMPOSE_PROJECT:?lifecycle mode requires FHEVM_COMPOSE_PROJECT}"',
-    );
-    expect(script).toContain('COMPOSE_PROJECT="$FHEVM_COMPOSE_PROJECT"');
-    expect(script).toContain('-p "$COMPOSE_PROJECT" run');
+  test("Solana setup keeps every lifecycle compose call on the per-boot project", () => {
+    // src/solana/deploy.ts derives the compose project through lifecycleComposeProject (its own
+    // unit tests pin the validation); this pins that the addHostChain compose invocation actually
+    // carries whatever project was derived, right after the -p flag.
+    const project = "fhevm-demo-01234567-89ab-4cde-8f01-23456789abcd";
+    const args = gatewayAddHostChainArgs(project);
+    expect(args[args.indexOf("-p") + 1]).toBe(project);
+    expect(args.at(-1)).toBe("gateway-sc-add-network");
   });
 
   test("doctor checks commands used by collision and Solana bootstrap paths", () => {
@@ -521,12 +515,11 @@ describe("demo lifecycle collision policy", () => {
         "dirname",
         "id",
         "lsof",
+        "pgrep",
+        "pkill",
         "python3",
-        "cut",
-        "seq",
         "solana-keygen",
         "solana-test-validator",
-        "tr",
       ]),
     );
   });

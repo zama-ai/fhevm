@@ -105,7 +105,7 @@ The PoC can keep Anchor CPI events for tests and local listener compatibility, b
 transport should use a Yellowstone/Geyser transaction and account stream with explicit commitment,
 reconnect, replay, and account-witness verification policy.
 
-The current PoC listener is built from source by `solana/scripts/e2e/setup-solana-side.sh`; the shared
+The current PoC listener is built from source by the side-stack setup (`test-suite/fhevm/src/solana/deploy.ts`); the shared
 host-listener container remains EVM-only and intentionally does not package the feature-gated Solana
 binary. A production Solana image and deployment topology remain packaging work, not an implicit
 fallback to the deleted RPC listener.
@@ -1304,8 +1304,8 @@ signed user-decrypt requests.
 Consequences:
 
 The relayer no longer mounts the internal Solana proof endpoints and has no leaf/checkpoint/proof DB. Solana
-user-decrypt still does **not** call the proof service in-process — clients (e2e live-client /
-test-suite vertical) fetch proofs via `PROOF_SERVICE_URL` before submitting to `/v3/user-decrypt`.
+user-decrypt still does **not** call the proof service in-process — clients (the test-suite
+scenario suite) fetch proofs via `PROOF_SERVICE_URL` before submitting to `/v3/user-decrypt`.
 That optional in-process integration remains a known product gap.
 
 ## DD-036: Burn-Redemption Consume Authorizes By MMR Public-Decrypt Proof, Not Live Handle
@@ -2048,9 +2048,10 @@ of an upstream wire format.
 
 Consequences:
 
-The `--no-default-features` build in `setup-solana-side.sh` is gone, since zama-host has no features
-left to vary. Callers of the eleven instructions pass two more accounts: the Mollusk fixtures and the
-e2e live client are updated here, and there are no TypeScript callers. `dead-surface-check.sh`'s
+The `--no-default-features` build in the (since retired) `setup-solana-side.sh` is gone, since
+zama-host has no features left to vary. Callers of the eleven instructions pass two more accounts:
+the Mollusk fixtures and the (since retired) e2e live client were updated here, and there were no
+TypeScript callers yet. `dead-surface-check.sh`'s
 never-emitted-event check learned the shared emitter, without which it would have reported all eight
 surviving events as dead.
 
