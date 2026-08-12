@@ -130,8 +130,7 @@ Ethereum rotation to every replica, in order, is the operator's responsibility.
 The Ethereum `ProtocolConfig` is the source of truth for protocol state, so **new** host chains
 seed their replica from it.
 
-The flow is artifact-centric — the same three steps in every environment, only the signer of
-step 3 changes:
+The flow is artifact-centric — the same three steps in every environment:
 
 **1. Export** the canonical KMS context to a reviewable JSON artifact (works from a clean
 checkout; needs only RPC access):
@@ -151,30 +150,21 @@ four thresholds (bigints serialized as strings).
 artifact byte-for-byte — even after a later `defineNewKmsContextAndEpoch` rotation — by re-running the
 export with `--block-number <N>` from the artifact and diffing the output.
 
-**3. Apply** the reviewed artifact to the local `ProtocolConfig` proxy. Both environments run the
-same prepare step — deploy the implementation and build the
-`upgradeToAndCall(initializeFromCanonical(contextId, epochId, …))` payload, landing the
-replica on canonical's active context and epoch instead of fresh local counters. They differ only in
-who executes that payload: the devnet task sends it immediately with the deployer key, so **what runs
-on devnet is byte-identical to what the DAO signs**.
-
-| Environment       | Task                                                                       | Signer                                              |
-| ----------------- | -------------------------------------------------------------------------- | --------------------------------------------------- |
-| devnet / local    | `task:deployProtocolConfigFromCanonical --snapshot <artifact.json>`        | `DEPLOYER_PRIVATE_KEY`                              |
-| testnet / mainnet | `task:prepareDeployProtocolConfigFromCanonical --snapshot <artifact.json>` | DAO executes the printed `upgradeToAndCall` payload |
+**3. Apply** the reviewed artifact to the local `ProtocolConfig` proxy. `initializeFromCanonical`
+only runs against a still-empty proxy (`onlyFromEmptyProxy`), so onboarding a new host chain is
+always deployer-executed, with the deployer key that just deployed the empty proxies:
 
 ```bash
-# devnet: direct upgrade with the deployer key
 npx hardhat task:deployProtocolConfigFromCanonical --snapshot canonical-protocol-config-snapshot.json
-
-# testnet/mainnet: deploy the implementation and print the DAO payload, without touching the proxy
-npx hardhat task:prepareDeployProtocolConfigFromCanonical --snapshot canonical-protocol-config-snapshot.json
 ```
 
-For quick devnet iteration, `task:deployProtocolConfigFromCanonical` also accepts
-`--canonical-rpc-url` + `--canonical-protocol-config-address` instead of `--snapshot` to read
+`task:deployProtocolConfigFromCanonical` also accepts `--canonical-rpc-url` +
+`--canonical-protocol-config-address` instead of `--snapshot`, for quick iteration by reading
 canonical live at deploy time — but then what is deployed is whatever canonical holds at that
-moment, not a reviewed artifact. The DAO path is artifact-only by design.
+moment, not a reviewed artifact.
+
+Ownership of the resulting proxy moves to the DAO afterwards, through
+`task:transferHostOwnership` / `task:acceptHostOwnership`.
 
 When deploying a full non-canonical host stack, `task:deployAllHostContracts
 --protocol-config-source canonical --canonical-rpc-url … --canonical-protocol-config-address …`
