@@ -1,0 +1,28 @@
+version: 1
+kind: coprocessor-consensus
+name: Three Of Five Multi Chain Threshold KMS
+description: >
+  5 coprocessors with threshold 3 across two host chains, plus a real 4-party
+  threshold-mode KMS cluster (t=1) running SECURE keygen with Test FHE parameters.
+  Mirrors the testnet Phase 3 fleet, which is what makes it worth its cost: at
+  3-of-5 the consensus arithmetic differs from 2-of-3 in a way that matters to a
+  staggered upgrade. Two operators can hold a minority opinion without stalling
+  the protocol, so a version-mixed fleet has a state where a wrong answer is
+  outvoted rather than merely absent. 5 is also the ceiling the wallet layout
+  allows (MAX_COPROCESSOR_INSTANCES). Two host chains keep the canonical /
+  non-canonical split covered. Secure keygen is ~360s for 4 parties (measured).
+hostChains:
+  - key: host
+    chainId: "12345"
+    rpcPort: 8545
+  - key: chain-b
+    chainId: "67890"
+    rpcPort: 8547
+topology:
+  count: 5
+  threshold: 3
+kms:
+  mode: threshold
+  parties: 4 # MPC nodes; KMS core requires parties == 3*threshold + 1
+  threshold: 1 # t (reconstruction needs 2t+1 = 3 matching responses)
+  fheParams: Test # Test only for now; Default deferred to a follow-up PR

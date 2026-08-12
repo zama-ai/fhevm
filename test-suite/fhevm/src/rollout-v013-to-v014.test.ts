@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 
+import { loadCoprocessorScenario, resolveScenarioFile, resolveScenarioReference } from "./scenario/resolve";
 import {
   canonicalFirst,
   gatewayContractUpgradeOrder,
@@ -21,11 +22,13 @@ import {
   to,
 } from "../rollouts/v0.13-to-v0.14/versions";
 
-test("rehearses the upgrade on a multi-chain topology with consensus-capable coprocessors", () => {
-  // The canonical ProtocolConfig mirror needs a second host chain to mirror onto, the
-  // drift/consensus checks need 3 coprocessors at threshold 2, and upgrading participants one
-  // at a time needs a real 4-party threshold KMS cluster.
-  expect(scenario).toBe("two-of-three-multi-chain-threshold-kms");
+test("rehearses the upgrade on the fleet shape testnet actually runs", () => {
+  // The canonical ProtocolConfig mirror needs a second host chain to mirror onto, and upgrading
+  // participants one at a time needs a real 4-party threshold KMS cluster. The coprocessor count
+  // is not free choice: testnet Phase 3 is 3-of-5, and the drift question this rollout answers is
+  // about that arithmetic specifically — at 3-of-5 a minority can be outvoted rather than merely
+  // absent, which is the state where divergence hides behind a passing gate.
+  expect(scenario).toBe("three-of-five-multi-chain-threshold-kms");
 });
 
 test("keeps the kms-core PRSS bridge as a mandatory stop between 0.13.20 and 0.14", () => {
@@ -253,4 +256,26 @@ test("checks the v3 user-decryption route in the protocol-flip phase in heavy mo
 
 test("rejects unsupported rollout test modes", () => {
   expect(() => resolveRolloutTestMode("standard")).toThrow("Unsupported ROLLOUT_TEST_PROFILE=standard");
+});
+
+// The scenario is loaded by name at boot, hours into a CI run. Resolving it here turns a typo or
+// a schema slip into a failing unit test instead of a wasted rollout.
+test("resolves the 3-of-5 scenario the runbook names, with the testnet Phase 3 arithmetic", async () => {
+  const parsed = await loadCoprocessorScenario(scenario);
+  // Resolve through the same path boot uses, so defaults and derived fields are the real ones.
+  const resolved = resolveScenarioFile(await resolveScenarioReference(scenario), parsed);
+  expect(resolved.topology.count).toBe(5);
+  expect(resolved.topology.threshold).toBe(3);
+  // Threshold strictly below count is what creates an outvoted minority — the state where a
+  // divergent operator does not stall consensus and so cannot be seen by a passing gate.
+  expect(resolved.topology.threshold).toBeLessThan(resolved.topology.count);
+  expect(resolved.hostChains.map((chain) => chain.key)).toEqual(["host", "chain-b"]);
+  expect(resolved.kms.mode).toBe("threshold");
+  // 4 parties at t=1 is the smallest real threshold cluster (parties == 3t + 1), and it is what
+  // gives the KMS staircase four distinct one-node-at-a-time steps.
+  expect(resolved.kms.parties).toBe(4);
+  expect(resolved.kms.threshold).toBe(1);
+  expect(resolved.kms.committeeSize).toBe(4);
+  // One instance per operator, so the staircase has five distinct steps to walk.
+  expect(resolved.instances).toHaveLength(5);
 });

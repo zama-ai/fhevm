@@ -9,7 +9,12 @@ type Env = Record<string, string>;
 // one at a time: each KMS node crosses with its own connector, and 3 coprocessors at
 // threshold 2 make the consensus states observable as instances cross (below threshold, at
 // threshold, all upgraded).
-export const scenario = "two-of-three-multi-chain-threshold-kms";
+// 3-of-5, matching the testnet Phase 3 fleet. The staircase this runbook walks is only as
+// convincing as the consensus arithmetic underneath it, and 2-of-3 has a different one: there,
+// a single dissenting operator is exactly the tolerance, so the fleet has no state where a
+// minority is outvoted rather than merely missing. 5 operators cost roughly two more upgrade
+// steps and the boot time that comes with them.
+export const scenario = "three-of-five-multi-chain-threshold-kms";
 
 // fhevm monorepo tags: latest stable 0.13.x -> latest 0.14.0 pre-release.
 //

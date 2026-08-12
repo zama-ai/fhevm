@@ -4,6 +4,7 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { formatDriftScan, scanForDrift } from "../drift";
 import { CommandError, PreflightError } from "../errors";
 import { runContractTask, snapshotContractSources } from "../flow/contracts";
 import { waitForTestSuite } from "../flow/readiness";
@@ -69,6 +70,14 @@ type RolloutLockOptions = {
 export type RolloutRunContext = {
   applyVersionLock(label: string, options: RolloutVersionLockOptions): Promise<void>;
   expectTestFailure(profile: string, options: RolloutExpectedTestFailureOptions): Promise<void>;
+  /**
+   * Reads every gateway listener's log for drift warnings emitted since `since` and raises if
+   * any appear. Purely passive: nothing is injected, so a clean scan is evidence that the fleet
+   * agreed on its own, and a dirty one is real divergence rather than a planted fault.
+   */
+  observeDrift(label: string, since: string): Promise<void>;
+  /** Timestamp to hand a later `observeDrift` call, in the format `docker logs --since` takes. */
+  driftMark(): string;
   readState(): Promise<State>;
   refreshDiscovery(): Promise<void>;
   runGatewayContractTask(command: string, options?: RolloutContractTaskOptions): Promise<void>;
@@ -254,6 +263,30 @@ export const createRolloutContext = (
     async snapshotContracts(surface) {
       await snapshotContractSources(surface);
       await receipt.record("snapshot-contracts", surface);
+    },
+    driftMark() {
+      return new Date().toISOString();
+    },
+    async observeDrift(label, since) {
+      const result = await scanForDrift(since);
+      const summary = formatDriftScan(label, result);
+      console.log(`[drift] ${summary}`);
+      await receipt.record("drift-scan", summary, {
+        details: {
+          containers: [...result.containers],
+          observations: result.observations.map((entry) => ({
+            container: entry.container,
+            kind: entry.kind,
+            handle: entry.handle ?? null,
+          })),
+        },
+      });
+      if (result.observations.length > 0) {
+        for (const entry of result.observations) {
+          console.log(`[drift] ${entry.container} ${entry.kind}: ${entry.line}`);
+        }
+        throw new PreflightError(summary);
+      }
     },
     stateDir() {
       return STATE_DIR;

@@ -91,12 +91,24 @@ const standardPhaseProfiles: Partial<Record<RolloutPhase, readonly string[]>> = 
 export const rolloutPhaseTestProfiles = (phase: RolloutPhase, mode: RolloutTestMode): readonly string[] =>
   mode === "rollout-heavy" ? heavyPhaseProfiles[phase] : (standardPhaseProfiles[phase] ?? ["rollout-standard"]);
 
-const testPhase = async (ctx: RolloutRunContext, phase: RolloutPhase, mode: RolloutTestMode) => {
+/**
+ * Runs a phase's gates, then reads the gateway listeners for drift the gates provoked.
+ *
+ * The scan is passive and covers only this phase's own traffic. That is the whole point: a
+ * version-mixed fleet either agrees on the ciphertexts it just produced or it does not, and
+ * consensus alone will not tell us which. At threshold 3 of 5, two operators can disagree and
+ * still be outvoted, so every gate passes while the fleet is quietly divergent. The listener
+ * warning is the only signal that distinguishes those two worlds, and nothing else in the
+ * rollout reads it.
+ */
+const testPhase = async (ctx: RolloutRunContext, phase: RolloutPhase, mode: RolloutTestMode, label: string = phase) => {
   const profiles = rolloutPhaseTestProfiles(phase, mode);
   console.log(`[rollout] ${phase} tests (${mode}): ${profiles.join(", ")}`);
+  const mark = ctx.driftMark();
   for (const profile of profiles) {
     await ctx.test(profile, { parallel: false });
   }
+  await ctx.observeDrift(label, mark);
 };
 
 /**
@@ -390,10 +402,13 @@ export default async function run(ctx: RolloutRunContext) {
   // One operator at a time. With 3 coprocessors at threshold 2 the fleet is gated at each
   // consensus state it passes through: one upgraded (below threshold), two (threshold reached),
   // three (all upgraded, and where the bundle lock itself lands).
+  // Each step leaves the fleet at a different mix, and each is scanned separately so a warning
+  // names the mix that produced it rather than the staircase as a whole.
   logPhase("07 coprocessor: upgrade operators one by one");
-  for (const index of await coprocessorInstanceIndexes(ctx)) {
+  const coprocessorIndexes = await coprocessorInstanceIndexes(ctx);
+  for (const [step, index] of coprocessorIndexes.entries()) {
     await ctx.upgradeCoprocessorInstances([index], { lockFile: coprocessorLock });
-    await testPhase(ctx, "coprocessor", testMode);
+    await testPhase(ctx, "coprocessor", testMode, `coprocessor ${step + 1}/${coprocessorIndexes.length} on 0.14`);
   }
 
   // Last, and alone, for the harness reason given at ACL_UPGRADE rather than a production one:
