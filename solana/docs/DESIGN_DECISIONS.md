@@ -2132,8 +2132,10 @@ Why not ship an allocator:
    is not worth it while the executor "doesn't do much compute at all" — stay on the framework
    default for the PoC, revisit only with benchmarks. No benchmark showing a real app blocked on
    heap after the fhevm-internal#1872 copy reductions exists.
-2. The current failure modes are good: a typed `TooManyStepsForDefaultHeap` before the CPI
-   app-side, a clean revert committing nothing host-side. The forward-growing custom-allocator
+2. The current failure modes are good: a typed `TooManySteps` at the host's one cap app-side —
+   a cap measured to fit the default heap end to end (`heap_budget.rs` counts the bytes, the
+   at-cap dep-chain specimen proves it under SBF) — and a clean revert committing nothing
+   host-side. The forward-growing custom-allocator
    pattern degrades past the mapped region into a VM access violation instead of a clean error,
    and the granted heap size is not discoverable at runtime (no syscall), so a program can never
    verify it got the frame it requested.

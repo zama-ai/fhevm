@@ -1,10 +1,11 @@
-//! Mollusk test for the `dep-chain` specimen — the load-smoke shape: one `fhe_execute` carrying
-//! the on-chain builder's full 16-step ceiling (`zama_fhe::MAX_ON_CHAIN_EXECUTION_STEPS` — the
-//! deepest chain a CPI-composing program can build on the fixed 32 KB program heap) as a strictly
-//! DEPENDENT add chain (each step's operand is the previous step's transient result), proving the
-//! kit's cleartext oracle replays transient intermediates and that a full-depth chain fits one
-//! instruction's compute budget. The host's own 32-step ceiling is exercised by `host_mollusk`'s
-//! MAX_FHE_EXECUTION_STEPS executions and, live, by the load-smoke scenario's raw typed client.
+//! Mollusk test for the `dep-chain` specimen — the load-smoke shape AND the at-cap heap proof:
+//! one `fhe_execute` carrying the host's full `MAX_FHE_EXECUTION_STEPS` ceiling as a strictly
+//! DEPENDENT add chain (each step's operand is the previous step's transient result). Extending at
+//! full depth builds and invokes a maximum execution inside the specimen program, so this test is
+//! what verifies under SBF that an at-cap on-chain build — tables, packet, account resolution,
+//! Anchor deserialization — fits the fixed 32 KB program heap that `heap_budget.rs` counts
+//! host-side. It also proves the kit's cleartext oracle replays transient intermediates and that a
+//! full-depth chain fits one instruction's compute budget.
 
 use dep_chain as chain_program;
 use mollusk_svm::result::Check;
@@ -79,11 +80,12 @@ fn full_depth_dependent_chain_computes_in_one_execution() {
     };
 
     assert_tail(&mut ledger, &initialize(), 0);
-    // The full-depth chain: 16 dependent adds in one execution — the on-chain builder's ceiling.
-    assert_tail(&mut ledger, &extend(chain_program::MAX_CHAIN_LINKS, 1), 16);
+    // The full-depth chain: 32 dependent adds in one execution — the host's cap, built on-chain,
+    // which is the at-cap heap proof described in the module docs.
+    assert_tail(&mut ledger, &extend(chain_program::MAX_CHAIN_LINKS, 1), 32);
     // A short chain over the persisted tail; and the single-link degenerate form persists directly.
-    assert_tail(&mut ledger, &extend(4, 2), 24);
-    assert_tail(&mut ledger, &extend(1, 2), 26);
+    assert_tail(&mut ledger, &extend(4, 2), 40);
+    assert_tail(&mut ledger, &extend(1, 2), 42);
 
     // Chain-length bounds fail closed before any CPI runs.
     context.process_and_validate_instruction(

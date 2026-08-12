@@ -15,17 +15,13 @@
 //! Both phases are counted here, with a global allocator that models a never-freeing bump region —
 //! every request tallied, every deallocation ignored.
 //!
-//! Two smaller costs sit on top of the number this produces, which is why the documented budget
-//! keeps margin: `resolve_accounts`'s meta and info vectors, and Anchor's own deserialization of the
-//! instruction's accounts before any of this runs.
+//! Two smaller costs sit on top of the number this produces: `resolve_accounts`'s meta and info
+//! vectors, and Anchor's own deserialization of the instruction's accounts before any of this
+//! runs. They are why the fit asserted here keeps its ~8 KB of slack, and the at-cap dep-chain
+//! specimen (`runtime-tests/tests/dep_chain_mollusk.rs`) is what exercises them for real under SBF.
 //!
-//! Counted on the host rather than under SBF because no program in this repo builds an execution anywhere
-//! near the cap on-chain (the largest is five steps), so an SBF harness would need a fixture program
-//! written only for this measurement, while the quantity that regresses — bytes requested per step —
-//! is the same in both places. One asymmetry from that choice: `step_limit()` resolves to
-//! `MAX_FHE_EXECUTION_STEPS` here, so the builder's up-front table reservation is the full-range one,
-//! while on-chain today it reserves for `MAX_ON_CHAIN_EXECUTION_STEPS` — half as much. These numbers
-//! are therefore upper bounds on what an on-chain build actually requests.
+//! Counted on the host rather than under SBF because the quantity that regresses — bytes requested
+//! per step — is the same in both places, and here it can be attributed to a phase.
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
@@ -37,7 +33,7 @@ use zama_host::MAX_FHE_EXECUTION_STEPS;
 use crate::{
     Domain, Encrypted, EncryptedValueId, EncryptedValueLabel,
     ExecutionEncryptedValueAccountAuthority, FheExecution, Output, PersistentOutput, Scalar, Uint,
-    Uint64Handle, MAX_ON_CHAIN_EXECUTION_STEPS,
+    Uint64Handle,
 };
 
 thread_local! {
@@ -82,22 +78,10 @@ static ALLOCATOR: CountingAllocator = CountingAllocator;
 /// The region the entrypoint's default bump allocator serves one instruction from.
 const DEFAULT_HEAP_BYTES: usize = 32 * 1024;
 
-/// The ceiling the builder enforces on-chain — measured here, so the number a program is stopped at
-/// is the number this test proves fits. At 16 steps the instruction requests ~14.5 KB. Since the
-/// builder started reserving its tables up front (no doubling strands), even the full 32-step
-/// maximum requests only ~24.6 KB and fits the raw region — but its ~8 KB of slack is exactly the
-/// uncounted reserve below, so the edge is not a number to build a program on. For scale, the
-/// clone-per-step rollback this replaced asked for 270 KB across a full execution and exhausted the heap
-/// at the 10th step of the build alone. `print_measurement_table` re-derives all of these.
-const RELIABLE_STEPS: usize = MAX_ON_CHAIN_EXECUTION_STEPS;
-
-/// Headroom left for what this test cannot count: `resolve_accounts`'s meta and info vectors, and
-/// Anchor's deserialization of the instruction's own accounts, which for an execution this size means 30+
-/// dynamic accounts. An estimate, deliberately generous — the point of a documented step budget is
-/// that a program at the limit still has somewhere to put them.
-const UNCOUNTED_RESERVE_BYTES: usize = 8 * 1024;
-
-/// A regression ceiling on a full-size execution's build plus packet, for the same reason.
+/// A regression ceiling on a full-size execution's build plus packet, far above the measured
+/// number so it only trips on a structural regression (a reintroduced per-step copy), not noise.
+/// For scale, the clone-per-step rollback this replaced asked for 270 KB across a full execution
+/// and exhausted the heap at the 10th step of the build alone.
 const BUDGET_BYTES: usize = 64 * 1024;
 
 fn balance_handle(tag: u8) -> [u8; 32] {
@@ -163,36 +147,23 @@ fn measure(steps: usize) -> (usize, usize) {
 }
 
 #[test]
-fn building_and_invoking_a_batch_fits_the_default_heap_up_to_the_documented_step_count() {
-    let (build_bytes, packet_bytes) = measure(RELIABLE_STEPS);
-    let total = build_bytes + packet_bytes;
-    let budget = DEFAULT_HEAP_BYTES - UNCOUNTED_RESERVE_BYTES;
-    assert!(
-        total <= budget,
-        "a {RELIABLE_STEPS}-step execution requested {total} bytes ({build_bytes} building, \
-         {packet_bytes} for the packet), over the {budget}-byte share of Anchor's \
-         {DEFAULT_HEAP_BYTES}-byte default heap this test is allowed to spend — the step count app \
-         programs are told to expect no longer holds"
-    );
-}
-
-#[test]
-fn the_largest_legal_batch_stays_within_the_regression_budget() {
+fn the_largest_legal_execution_fits_the_default_heap() {
     let (build_bytes, packet_bytes) = measure(MAX_FHE_EXECUTION_STEPS);
     let total = build_bytes + packet_bytes;
     assert!(
         total < BUDGET_BYTES,
         "a full {MAX_FHE_EXECUTION_STEPS}-step execution requested {total} bytes ({build_bytes} building, \
-         {packet_bytes} for the packet), over the {BUDGET_BYTES}-byte budget"
+         {packet_bytes} for the packet), over the {BUDGET_BYTES}-byte budget — a per-step copy is back"
     );
-    // Since the builder started reserving its tables up front, the full-size execution fits the
-    // raw region (~24.6 KB of 32 KB) — its slack is roughly the uncounted reserve, which is why the
-    // documented budget stays at `RELIABLE_STEPS`. This pins the direction of that claim: builder
-    // docs and INVARIANTS #54 say the maximum fits, and if it stops fitting they are wrong again.
+    // The claim the single step ceiling rests on: since the builder reserves its tables up front
+    // (no doubling strands) and the invoke path stopped cloning, a full-size execution requests
+    // ~24.6 KB of the 32 KB region. The ~8 KB left is what this measurement cannot count — account
+    // resolution and Anchor's own account deserialization — which the at-cap specimen exercises
+    // for real under SBF. If this fails, either win the bytes back or reintroduce a smaller
+    // on-chain budget (builder docs and INVARIANTS #54 are the claims to update with it).
     assert!(
         total <= DEFAULT_HEAP_BYTES,
-        "the full-size execution no longer fits the default heap ({total} bytes) — the builder \
-         docs and INVARIANTS #54 tell app programs it fits, and that is the claim to update"
+        "the full-size execution no longer fits the default heap ({total} bytes)"
     );
 }
 

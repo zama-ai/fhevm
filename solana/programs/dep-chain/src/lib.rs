@@ -9,12 +9,12 @@
 //! chain at this program's full depth; the live load-smoke scenario drives the same dependent-step
 //! shape through the typed `fhe_execute` client against the running coprocessor.
 //!
-//! Two different ceilings meet here, deliberately. A CPI-composing program builds its execution on
-//! the SBF entrypoint's fixed 32 KB bump heap, so `zama_fhe` caps it at `MAX_ON_CHAIN_EXECUTION_STEPS`
-//! (16) — that is this program's depth, and the deepest chain any app program can compose
-//! (DD-046: the heap is fixed). The host's own `MAX_FHE_EXECUTION_STEPS` (32) is only reachable
-//! by off-chain builders; the load-smoke scenario exercises that full depth through the raw typed
-//! client, and `host_mollusk` proves the host processes it under SBF.
+//! This program's depth is the host's one step ceiling, `MAX_FHE_EXECUTION_STEPS` (32), which
+//! makes it the at-cap specimen: a CPI-composing program builds its execution on the SBF
+//! entrypoint's fixed 32 KB bump heap (DD-046: the heap is fixed and cannot be raised), and its
+//! Mollusk test extending at full depth is what proves a maximum execution — build, packet,
+//! account resolution and Anchor's own deserialization — actually fits that heap under SBF, on
+//! top of `zama-fhe`'s host-side byte count in `heap_budget.rs`.
 //!
 //! Executions assume `grant_deny_list_enabled = false` and no binding HCU cap: `hcu_block_meter`
 //! and `hcu_trusted_app_record` are hardcoded `None` (the PoC host fixtures never enable them),
@@ -42,14 +42,14 @@ use zama_host::program::ZamaHost;
 
 declare_id!("7Sz3qA6Wm84uWjfiFJR4ww1Trx7DZ4MMb4iB4sn5vqaV");
 
-/// The deepest chain one `extend` can carry: `zama_fhe::MAX_ON_CHAIN_EXECUTION_STEPS`, the step
-/// ceiling the builder enforces for a program composing its execution on the fixed 32 KB program
-/// heap (the host's own 32-step ceiling is off-chain-builder territory — see the module docs).
-pub const MAX_CHAIN_LINKS: u8 = 16;
+/// The deepest chain one `extend` can carry: the host's `MAX_FHE_EXECUTION_STEPS`, the one step
+/// ceiling for executions built on-chain and off (see the module docs — extending at this depth
+/// is what verifies the maximum execution fits the fixed program heap).
+pub const MAX_CHAIN_LINKS: u8 = 32;
 
-/// `extend` promises exactly the builder's ceiling; if the builder's budget moves, this program's
+/// `extend` promises exactly the host's ceiling; if the host's cap moves, this program's
 /// contract (and its error message) must move with it consciously.
-const _: () = assert!(MAX_CHAIN_LINKS as usize == zama_fhe::MAX_ON_CHAIN_EXECUTION_STEPS);
+const _: () = assert!(MAX_CHAIN_LINKS as usize == zama_host::MAX_FHE_EXECUTION_STEPS);
 
 #[program]
 pub mod dep_chain {

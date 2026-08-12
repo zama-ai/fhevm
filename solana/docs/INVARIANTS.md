@@ -358,16 +358,16 @@ not when the threat model changes.
       with ~8 KB of slack.
 
     Account resolution and Anchor's own account deserialization sit on top of
-    those figures — roughly the ~8 KB the 32-step maximum leaves — which is why
-    the budget is 16 and not 32. The SDK enforces that budget on-chain
-    (`MAX_ON_CHAIN_EXECUTION_STEPS`) so a program past it gets
-    `TooManyStepsForDefaultHeap` instead of an allocator abort with no error of
-    its own. Two of these figures are asserted by
-    `solana/crates/zama-fhe/src/heap_budget.rs`, and they are the two that matter:
-    16 steps fit the region with the reserve, and the 32-step maximum fits the
-    raw region. The rest of the table is measurement, printed by that file's
-    `print_measurement_table` (`#[ignore]`d — run it with `--ignored --nocapture`),
-    so read the intermediate rows as the last measurement rather than as a bound.
+    those figures — roughly the ~8 KB the 32-step maximum leaves. There is one
+    step ceiling, the host's `MAX_FHE_EXECUTION_STEPS`, on-chain and off: the
+    separate on-chain constant was deleted because the maximum is measured to
+    fit, byte-counted by `solana/crates/zama-fhe/src/heap_budget.rs` (whose
+    regression test fails if the fit is lost) and proven under SBF by the
+    at-cap dep-chain specimen, whose Mollusk test extends a 32-link chain built
+    entirely on-chain. The rest of the table is measurement, printed by that
+    file's `print_measurement_table` (`#[ignore]`d — run it with
+    `--ignored --nocapture`), so read the intermediate rows as the last
+    measurement rather than as a bound.
 
 ## I. Roadmap
 

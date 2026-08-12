@@ -9,14 +9,14 @@
 //! step costs a few hundred heap bytes, and the tables reserve their per-execution bound up front
 //! so growth never strands outgrown buffers on the never-freeing bump region (DD-046: the heap is
 //! fixed at 32 KB). The instruction pays out of that region twice — once building, once
-//! serializing the packet in `FheExecution::invoke`. Measured in `heap_budget.rs`: at the
-//! documented budget of 16 steps the pair requests ~14.5 KB, and even a full
-//! `MAX_FHE_EXECUTION_STEPS` execution where every step writes a persistent output requests
-//! ~24.6 KB — but the ~8 KB that leaves is exactly the reserve for what the measurement cannot
-//! count (account resolution, Anchor's own account deserialization), so the documented budget
-//! keeps its margin. [`MAX_ON_CHAIN_EXECUTION_STEPS`] enforces it: a program that keeps adding
-//! steps past the budget is told so, instead of being aborted by the allocator with no error of
-//! its own.
+//! serializing the packet in `FheExecution::invoke`. The one step ceiling is the host's
+//! `MAX_FHE_EXECUTION_STEPS`; there is no separate on-chain ceiling because the maximum is
+//! measured to fit: `heap_budget.rs` puts a full execution where every step writes a persistent
+//! output at ~24.6 KB build+packet, with the remaining ~8 KB covering what that measurement
+//! cannot count (account resolution, Anchor's own account deserialization). A program at the cap
+//! is near that margin, so a heap-heavy app instruction should stay below it — the measured table
+//! in `heap_budget.rs` is the guidance, and its regression test fails if the maximum stops
+//! fitting.
 
 use crate::types::{binary_rhs_operand, BinaryRhs, FheBitwise, FheEq, FheNeg, FheNot, FheShift};
 use crate::validate::handle_fhe_type;
@@ -97,34 +97,6 @@ impl StepLowering<'_> {
     }
 }
 
-/// Steps a program can build *and* invoke inside the SBF entrypoint's fixed 32 KB bump heap,
-/// measured in `heap_budget.rs`. The host itself accepts up to `MAX_FHE_EXECUTION_STEPS`; this is
-/// the smaller limit the runtime imposes on the program composing the execution.
-pub const MAX_ON_CHAIN_EXECUTION_STEPS: usize = 16;
-
-/// The ceiling only means something while it is stricter than the host's.
-const _: () = assert!(MAX_ON_CHAIN_EXECUTION_STEPS < MAX_FHE_EXECUTION_STEPS);
-
-/// The step ceiling in force for this build of the crate.
-///
-/// Only a program running under SBF pays the 32 KB budget, so off-chain builders — clients, tests,
-/// the e2e live client — keep the host's full `MAX_FHE_EXECUTION_STEPS`. The heap is fixed: no
-/// program in this repo installs an allocator, and a larger heap frame is structurally unusable
-/// (DD-046).
-///
-/// The `cfg` itself is not exercised by a host test: proving the on-chain branch would need an SBF
-/// fixture program built only to overflow it, which is the same reason `heap_budget.rs` counts bytes
-/// on the host. What is tested is the limit this returns and the rejection it drives. The predicate
-/// is the same one `zama_solana_acl::sha256` uses to select the on-chain hasher, and the cost
-/// snapshots would show it immediately if that stopped resolving under SBF.
-pub(crate) const fn step_limit() -> usize {
-    if cfg!(target_os = "solana") {
-        MAX_ON_CHAIN_EXECUTION_STEPS
-    } else {
-        MAX_FHE_EXECUTION_STEPS
-    }
-}
-
 impl<'id> FheExecutionBuilder<'id> {
     /// The single mutation path for appending a step. Every op method validates first, then lowers
     /// through this: lowering interns into the builder's own tables and, when any part of the step
@@ -142,14 +114,10 @@ impl<'id> FheExecutionBuilder<'id> {
         produced_type: u8,
         lower: impl FnOnce(&mut StepLowering<'_>) -> Result<FheExecuteStep>,
     ) -> Result<u8> {
-        // Checked before the step interns anything: past the limit the allocator, not this crate,
-        // would be what ends the instruction.
-        if self.steps.len() >= step_limit() {
-            return Err(if step_limit() == MAX_FHE_EXECUTION_STEPS {
-                FheExecutionBuildError::TooManySteps
-            } else {
-                FheExecutionBuildError::TooManyStepsForDefaultHeap
-            });
+        // Checked before the step interns anything, so a build stopped here leaves the tables
+        // exactly at the host's cap.
+        if self.steps.len() >= MAX_FHE_EXECUTION_STEPS {
+            return Err(FheExecutionBuildError::TooManySteps);
         }
         let op_index =
             u8::try_from(self.steps.len()).map_err(|_| FheExecutionBuildError::TooManySteps)?;
@@ -195,11 +163,11 @@ impl<'id> FheExecutionBuilder<'id> {
         Self {
             identity: std::marker::PhantomData,
             encrypted_value_account_authority,
-            steps: Vec::with_capacity(step_limit()),
-            produced_types: Vec::with_capacity(step_limit()),
-            persistent_producers: Vec::with_capacity(step_limit()),
-            remaining_accounts: Vec::with_capacity(step_limit()),
-            dictionary: Vec::with_capacity(2 * step_limit()),
+            steps: Vec::with_capacity(MAX_FHE_EXECUTION_STEPS),
+            produced_types: Vec::with_capacity(MAX_FHE_EXECUTION_STEPS),
+            persistent_producers: Vec::with_capacity(MAX_FHE_EXECUTION_STEPS),
+            remaining_accounts: Vec::with_capacity(MAX_FHE_EXECUTION_STEPS),
+            dictionary: Vec::with_capacity(2 * MAX_FHE_EXECUTION_STEPS),
             verified_inputs: Vec::new(),
         }
     }

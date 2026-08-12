@@ -48,7 +48,7 @@ pub use acl::{
     BoundedU64UpperBound, Domain, EncryptedValueId, EncryptedValueLabel, Output, PersistentOutput,
     PersistentOutputBinding,
 };
-pub use builder::{FheExecutionBuilder, MAX_ON_CHAIN_EXECUTION_STEPS};
+pub use builder::FheExecutionBuilder;
 #[cfg(feature = "cpi")]
 pub use cpi::ExecutionCpiAccounts;
 pub use execution::FheExecution;
@@ -80,14 +80,11 @@ pub enum FheExecutionBuildError {
     /// Use the producer returned by that step for the new value, or consume the
     /// old persistent value before writing the account.
     PersistentOperandWrittenEarlier,
-    /// More steps were added than the host accepts (`MAX_FHE_EXECUTION_STEPS`).
+    /// More steps were added than the host accepts (`MAX_FHE_EXECUTION_STEPS`) — the one step
+    /// ceiling, on-chain and off. A full-size execution is measured to fit the SBF entrypoint's
+    /// fixed 32 KB heap (`heap_budget.rs`), but with little margin: a heap-heavy app instruction
+    /// should stay below the cap, and the heap cannot be raised (DD-046).
     TooManySteps,
-    /// More steps were added than a program can build and invoke on the SBF entrypoint's fixed
-    /// 32 KB heap (`MAX_ON_CHAIN_EXECUTION_STEPS`). Only ever returned on-chain: the build and the packet
-    /// come out of one bump region that is never freed, so past this count the allocator aborts the
-    /// instruction with no error of its own. Build such an execution off-chain — the heap cannot be
-    /// raised (DD-046).
-    TooManyStepsForDefaultHeap,
     /// `finish` was called with no steps; the host rejects empty executions.
     EmptySteps,
     /// `finish` was called on an execution with a rand step but no persistent output;

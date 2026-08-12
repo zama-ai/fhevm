@@ -1503,19 +1503,6 @@ fn finish_rejects_empty_steps() {
     ));
 }
 
-/// Off-chain the builder keeps the host's own ceiling: a client, a test, or the e2e live client can
-/// build any execution the host would accept, because none of them runs on Anchor's 32 KB heap. What
-/// the on-chain ceiling is worth is measured in `heap_budget.rs`, which derives its step count from
-/// `MAX_ON_CHAIN_EXECUTION_STEPS` so the enforced number and the measured one cannot drift apart.
-#[test]
-fn off_chain_builds_keep_the_host_step_ceiling() {
-    assert_eq!(
-        crate::builder::step_limit(),
-        MAX_FHE_EXECUTION_STEPS,
-        "a host-side build pays no bump-heap budget, so it should not inherit the on-chain ceiling"
-    );
-}
-
 #[test]
 fn rejects_more_than_max_ops() {
     let primary_authority = Pubkey::new_unique();
