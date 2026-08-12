@@ -97,6 +97,10 @@ jobs:
         relayer:
           - .github/workflows/relayer-docker-build.yml
           - relayer/**
+          # Path dependencies bind-mounted into the build, so a change to either
+          # produces a different image.
+          - shared/ciphertext-attestation/**
+          - shared/ciphertext-attestation-client/**
 
   ########################################################################
   #                        BUILD DECISIONS                               #

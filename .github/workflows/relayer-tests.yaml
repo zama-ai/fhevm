@@ -32,6 +32,10 @@ jobs:
             rust-files:
               - .github/workflows/relayer-tests.yaml
               - relayer/**
+              # The off-chain readiness verdict (retriable vs terminal) lives in these crates,
+              # so a change confined to them still has to run the relayer's own suites.
+              - shared/ciphertext-attestation/**
+              - shared/ciphertext-attestation-client/**
 
   unit-test:
     name: relayer-test/unit-test (bpr)
