@@ -18,7 +18,7 @@ cd "$ROOT"
 # minting them under a different Anchor than CI runs produces a diff that looks like a real
 # IDL change and fails the next unrelated PR. Keep in lockstep with solana-tests.yml.
 EXPECTED_SOLANA="${EXPECTED_SOLANA:-4.1.2}"
-. "$(dirname "${BASH_SOURCE[0]}")/lib/require-pinned-toolchain.sh"
+. "$ROOT/scripts/lib/require-pinned-toolchain.sh"
 
 NO_DNA=1 anchor build --ignore-keys
 # Writes all four vendored IDLs, including the two demo-only programs whose copies live

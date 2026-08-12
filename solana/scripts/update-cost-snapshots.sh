@@ -45,7 +45,7 @@ done
 
 # Keep in lockstep with .github/workflows/solana-tests.yml SOLANA_VERSION.
 EXPECTED_SOLANA="${EXPECTED_SOLANA:-4.1.2}"
-. "$(dirname "${BASH_SOURCE[0]}")/lib/require-pinned-toolchain.sh"
+. "$ROOT/scripts/lib/require-pinned-toolchain.sh"
 
 if [[ "$CLEAN" -eq 1 ]]; then
   echo "cargo clean (use --no-clean to skip after a trusted rebuild)"

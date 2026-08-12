@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # require-pinned-toolchain.sh — assert the local Solana and Anchor CLIs are the ones CI pins.
 #
-# Source it from a script whose working directory is solana/; it does not run on its own:
-#   . "$(dirname "${BASH_SOURCE[0]}")/lib/require-pinned-toolchain.sh"
+# Source it from a script whose working directory is solana/; it does not run on its own.
+# Anchor the path on the caller's absolute ROOT, not on ${BASH_SOURCE[0]}: callers resolve
+# ROOT and then cd into it, which leaves a relative BASH_SOURCE pointing at the old cwd.
+#   . "$ROOT/scripts/lib/require-pinned-toolchain.sh"
 #
 # For the scripts that regenerate committed build output — cost snapshots, IDL and ABI
 # goldens. Those files are only comparable with the ones they replace if the same compiler
