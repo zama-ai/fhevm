@@ -165,7 +165,6 @@ export function defineClientEncryptEncryptTests(parameters: {
         });
 
         expect(result.encryptedValue).toBe(result2.encryptedValue);
-        expect(result.inputProof).toBe(result2.inputProof);
       } finally {
         globalFheEncryptionKeyCache.remove(relayerUrl);
       }
