@@ -33,7 +33,7 @@ function resolveProtocolConfigAddress(useInternalProxyAddress: boolean): string 
   return address && address.trim() !== '' ? address : undefined;
 }
 
-function requireProtocolConfigAddress(useInternalProxyAddress: boolean): string {
+export function requireProtocolConfigAddress(useInternalProxyAddress: boolean): string {
   const address = resolveProtocolConfigAddress(useInternalProxyAddress);
   if (!address) {
     throw new Error(
@@ -91,7 +91,7 @@ export function encodeDestroyKmsEpoch(iface: Interface, epochId: bigint): Encode
 
 // Broadcasts the byte-identical payload the DAO would sign, using the deployer key. On devnet / the
 // test-suite the deployer is the ACL owner, so the call is authorized; this is the no-DAO path.
-async function broadcast(hre: HardhatRuntimeEnvironment, target: string, calldata: string): Promise<string> {
+export async function broadcast(hre: HardhatRuntimeEnvironment, target: string, calldata: string): Promise<string> {
   const deployer = new hre.ethers.Wallet(getRequiredEnvVar('DEPLOYER_PRIVATE_KEY')).connect(hre.ethers.provider);
   const tx = await deployer.sendTransaction({ to: target, data: calldata });
   await tx.wait();
