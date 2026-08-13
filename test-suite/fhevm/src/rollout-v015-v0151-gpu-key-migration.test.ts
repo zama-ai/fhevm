@@ -6,14 +6,17 @@ import {
   assertLocalConnectorUpgrade,
   assertOperatorMaterialAgreement,
 } from "../rollouts/v0.15-to-v0.15.1-gpu-key-migration/checks";
-import { migrationScenario } from "../rollouts/v0.15-to-v0.15.1-gpu-key-migration/run";
+import {
+  adoptionScenario,
+  migrationScenario,
+} from "../rollouts/v0.15-to-v0.15.1-gpu-key-migration/run";
 import {
   connectorVersionKeys,
   coprocessorVersionKeys,
   migrationPhaseVersions,
   migrationVersions,
 } from "../rollouts/v0.15-to-v0.15.1-gpu-key-migration/versions";
-import { parseBlueGreenScenario } from "./scenario/resolve";
+import { parseBlueGreenScenario, parseCoprocessorScenario } from "./scenario/resolve";
 
 const material = (overrides: Partial<OperatorMaterial> = {}): OperatorMaterial => ({
   blockNumber: 10,
@@ -44,8 +47,20 @@ describe("RFC 029 rollout gates", () => {
     expect(versions.baseline.GATEWAY_VERSION).toBe("v0.14.0-10");
   });
 
+  test("forces the 0.15 migration workers to stay on legacy material", () => {
+    const scenario = parseCoprocessorScenario(migrationScenario(), "generated RFC 029 migration scenario");
+    expect(scenario.instances).toHaveLength(2);
+    expect(
+      scenario.instances?.every((instance) => instance.env?.FORCE_LEGACY_SERVER_KEY === "true"),
+    ).toBe(true);
+    expect(scenario.kms).toEqual({ mode: "threshold", parties: 4, threshold: 1, fheParams: "Test" });
+  });
+
   test("forces Blue to legacy and leaves the safeguard off Green", () => {
-    const scenario = parseBlueGreenScenario(migrationScenario("v0.14.0-10"), "generated RFC 029 scenario");
+    const scenario = parseBlueGreenScenario(
+      adoptionScenario("v0.14.0-10"),
+      "generated RFC 029 adoption scenario",
+    );
     expect(scenario.bcs?.env?.FORCE_LEGACY_SERVER_KEY).toBe("true");
     expect(scenario.gcs.env?.FORCE_LEGACY_SERVER_KEY).toBeUndefined();
     expect(scenario.gcs.deferredStart).toBe(true);
