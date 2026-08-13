@@ -2132,10 +2132,13 @@ Why not ship an allocator:
    is not worth it while the executor "doesn't do much compute at all" — stay on the framework
    default for the PoC, revisit only with benchmarks. No benchmark showing a real app blocked on
    heap after the fhevm-internal#1872 copy reductions exists.
-2. The current failure modes are good: a typed `TooManySteps` at the host's one cap app-side —
-   a cap measured to fit the default heap end to end (`heap_budget.rs` counts the bytes, the
-   at-cap dep-chain specimen proves it under SBF) — and a clean revert committing nothing
-   host-side. The forward-growing custom-allocator
+2. The current failure modes are good: every ceiling the app can hit at build time is a typed
+   error — `TooManySteps` at the host's one step cap, `ExceedsInstructionTraceLimit` where a
+   created output's CPIs could no longer fit any transaction, `ExceedsCpiInstructionDataLimit`
+   where the packet outgrows what a CPI may carry, and `ExceedsBuildHeapBudget` where the
+   builder's own byte tally (proven equal to a counting allocator across the shape frontier in
+   `heap_budget.rs`) says the build cannot survive the fixed region — plus a clean revert
+   committing nothing host-side. The forward-growing custom-allocator
    pattern degrades past the mapped region into a VM access violation instead of a clean error,
    and the granted heap size is not discoverable at runtime (no syscall), so a program can never
    verify it got the frame it requested.
@@ -2144,7 +2147,11 @@ Why not ship an allocator:
    the heap, and for the all-created-public shape the heap wall (21 steps) and the transaction's
    non-extendable 64-entry instruction trace (~21, at ~3 CPIs per created output) sit within one
    step of each other — an allocator spending a raised frame would gain that shape at most one
-   step before the trace stops it anyway. Storage rent and compute dominate cost.
+   step before the trace stops it anyway. The one axis a raised frame would genuinely extend —
+   persistent updates of MMR-mature values, whose decode cost grows with on-chain state
+   (`mature_updates_peaks_8/32/55`: 11, 6, 4 steps) — is bounded by history the app accumulated
+   itself, not by anything a transaction can request more of. Storage rent and compute dominate
+   cost.
 
 The `raised-heap` Cargo feature was half a mechanism — it lifted the SDK's on-chain step ceiling
 back to the host's maximum but shipped no allocator, so a program enabling it would keep the 32 KB
