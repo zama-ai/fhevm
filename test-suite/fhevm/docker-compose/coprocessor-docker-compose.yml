@@ -118,6 +118,8 @@ services:
     image: ghcr.io/zama-ai/fhevm/coprocessor/tfhe-worker:${COPROCESSOR_TFHE_WORKER_VERSION}
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
+    environment:
+      FORCE_LEGACY_SERVER_KEY: "false"
     command:
       - tfhe_worker
       - --run-bg-worker
@@ -137,6 +139,8 @@ services:
     image: ghcr.io/zama-ai/fhevm/coprocessor/zkproof-worker:${COPROCESSOR_ZKPROOF_WORKER_VERSION}
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
+    environment:
+      FORCE_LEGACY_SERVER_KEY: "false"
     command:
       - zkproof_worker
       - --database-url=${DATABASE_URL}
@@ -154,6 +158,8 @@ services:
     image: ghcr.io/zama-ai/fhevm/coprocessor/sns-worker:${COPROCESSOR_SNS_WORKER_VERSION}
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
+    environment:
+      FORCE_LEGACY_SERVER_KEY: "false"
     command:
       - sns_worker
       - --database-url=${DATABASE_URL}
