@@ -88,8 +88,8 @@ jobs:
     steps:
       - name: Install git LFS
         run: |
-          sudo apt-get update
-          sudo apt-get install -y git-lfs
+          sudo apt-get -o DPkg::Lock::Timeout=600 update
+          sudo apt-get -o DPkg::Lock::Timeout=600 install -y git-lfs
           git lfs install
 
       - name: Checkout fhevm
@@ -115,20 +115,20 @@ jobs:
 
       - name: Install cargo dependencies
         run: |
-          sudo apt-get update
+          sudo apt-get -o DPkg::Lock::Timeout=600 update
           # No cmake here: the GPU setup step installed a CMake newer than the
           # distro package, which tfhe-cuda-backend requires, and apt would
           # overwrite it with the older one.
-          sudo apt-get install -y protobuf-compiler pkg-config libssl-dev \
+          sudo apt-get -o DPkg::Lock::Timeout=600 install -y protobuf-compiler pkg-config libssl-dev \
                                   libclang-dev acl
           if ! command -v docker >/dev/null 2>&1; then
-            sudo apt-get install -y docker.io
+            sudo apt-get -o DPkg::Lock::Timeout=600 install -y docker.io
           fi
           if ! docker compose version >/dev/null 2>&1; then
             if dpkg-query --show --showformat='${Status}' containerd.io 2>/dev/null | grep -q "ok installed"; then
-              sudo apt-get install -y docker-compose-plugin
+              sudo apt-get -o DPkg::Lock::Timeout=600 install -y docker-compose-plugin
             else
-              sudo apt-get install -y docker-compose-v2
+              sudo apt-get -o DPkg::Lock::Timeout=600 install -y docker-compose-v2
             fi
           fi
           sudo systemctl start docker

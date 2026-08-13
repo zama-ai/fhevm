@@ -29,22 +29,17 @@ runs:
         sudo bash "${CMAKE_SCRIPT}" \
           --skip-license --prefix=/usr/ --exclude-subdir
 
-        # An image that never shipped unattended-upgrades makes the implied stop
-        # fail; the purge below is already tolerant of it being absent.
-        sudo systemctl mask --now unattended-upgrades || true
+        # Reset the package lists so apt-get update cannot trip over stale
+        # metadata baked into the image.
         sudo apt-get clean
         sudo rm -rf /var/lib/apt/lists/*
-        # The package lists were just wiped, so apt cannot even resolve the name
-        # on an image where unattended-upgrades is not installed. Gate on the
-        # dpkg database rather than ignoring every failure: a purge that fails
-        # because unattended-upgrades holds the dpkg lock must still fail here,
-        # since that is the race the purge exists to end.
-        if dpkg-query --show unattended-upgrades >/dev/null 2>&1; then
-          sudo apt-get purge -y unattended-upgrades
-        fi
 
-        sudo apt update
-        sudo apt install -y cmake-format libclang-dev
+        # Wait for the dpkg lock rather than failing on it: a freshly booted
+        # image is still running its apt-daily timers. The wait covers every
+        # lock holder, which masking and purging unattended-upgrades did not —
+        # it left apt-daily itself running.
+        sudo apt-get -o DPkg::Lock::Timeout=600 update
+        sudo apt-get -o DPkg::Lock::Timeout=600 install -y cmake-format libclang-dev
       env:
         CMAKE_VERSION: 3.29.6
         CMAKE_SCRIPT_SHA: 6e4fada5cba3472ae503a11232b6580786802f0879cead2741672bf65d97488a
@@ -54,7 +49,7 @@ runs:
       env:
         GCC_VERSION: ${{ inputs.gcc-version }}
       run: |
-        sudo apt-get install -y gcc-"${GCC_VERSION}" g++-"${GCC_VERSION}"
+        sudo apt-get -o DPkg::Lock::Timeout=600 install -y gcc-"${GCC_VERSION}" g++-"${GCC_VERSION}"
         command -v gcc-"${GCC_VERSION}"
         command -v g++-"${GCC_VERSION}"
 
@@ -90,22 +85,17 @@ runs:
         echo "${CUDA_KEYRING_SHA}  ${CUDA_KEYRING}" | sha256sum --check
         sudo dpkg -i "${CUDA_KEYRING}"
 
-        # An image that never shipped unattended-upgrades makes the implied stop
-        # fail; the purge below is already tolerant of it being absent.
-        sudo systemctl mask --now unattended-upgrades || true
+        # Reset the package lists so apt-get update cannot trip over stale
+        # metadata baked into the image.
         sudo apt-get clean
         sudo rm -rf /var/lib/apt/lists/*
-        # The package lists were just wiped, so apt cannot even resolve the name
-        # on an image where unattended-upgrades is not installed. Gate on the
-        # dpkg database rather than ignoring every failure: a purge that fails
-        # because unattended-upgrades holds the dpkg lock must still fail here,
-        # since that is the race the purge exists to end.
-        if dpkg-query --show unattended-upgrades >/dev/null 2>&1; then
-          sudo apt-get purge -y unattended-upgrades
-        fi
 
-        sudo apt update
-        sudo apt -y install cuda-toolkit-"${TOOLKIT_VERSION}"
+        # Wait for the dpkg lock rather than failing on it: a freshly booted
+        # image is still running its apt-daily timers. The wait covers every
+        # lock holder, which masking and purging unattended-upgrades did not —
+        # it left apt-daily itself running.
+        sudo apt-get -o DPkg::Lock::Timeout=600 update
+        sudo apt-get -o DPkg::Lock::Timeout=600 install -y cuda-toolkit-"${TOOLKIT_VERSION}"
 
     - name: Export CUDA variables
       shell: bash

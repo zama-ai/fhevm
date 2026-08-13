@@ -140,13 +140,10 @@ jobs:
     steps:
       - name: Install git LFS
         run: |
-          # Wait for apt locks to be released (e.g., unattended-upgrades may hold the lock on fresh instances)
-          while sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
-            echo "Waiting for apt lock to be released..."
-            sleep 5
-          done
-          sudo apt-get update
-          sudo apt-get install -y git-lfs
+          # A fresh instance is still running its apt-daily timers, so wait for
+          # the dpkg lock through apt itself rather than polling for it here.
+          sudo apt-get -o DPkg::Lock::Timeout=600 update
+          sudo apt-get -o DPkg::Lock::Timeout=600 install -y git-lfs
           git lfs install
 
       - name: Checkout fhevm-backend
@@ -181,20 +178,20 @@ jobs:
 
       - name: Install cargo dependencies
         run: |
-          sudo apt-get update
+          sudo apt-get -o DPkg::Lock::Timeout=600 update
           # No cmake here: the GPU setup step installed a CMake newer than the
           # distro package, which tfhe-cuda-backend requires, and apt would
           # overwrite it with the older one.
-          sudo apt-get install -y protobuf-compiler pkg-config libssl-dev \
+          sudo apt-get -o DPkg::Lock::Timeout=600 install -y protobuf-compiler pkg-config libssl-dev \
                                   libclang-dev acl
           if ! command -v docker >/dev/null 2>&1; then
-            sudo apt-get install -y docker.io
+            sudo apt-get -o DPkg::Lock::Timeout=600 install -y docker.io
           fi
           if ! docker compose version >/dev/null 2>&1; then
             if dpkg-query --show --showformat='${Status}' containerd.io 2>/dev/null | grep -q "ok installed"; then
-              sudo apt-get install -y docker-compose-plugin
+              sudo apt-get -o DPkg::Lock::Timeout=600 install -y docker-compose-plugin
             else
-              sudo apt-get install -y docker-compose-v2
+              sudo apt-get -o DPkg::Lock::Timeout=600 install -y docker-compose-v2
             fi
           fi
           sudo systemctl start docker
@@ -269,6 +266,17 @@ jobs:
           BENCHMARK_TYPE: ${{ inputs.benchmark_type }}
           OPTIMIZATION_TARGET: ${{ inputs.optimization_target }}
 
+      # The cargo cache restores "target", which holds CRITERION_HOME. Drop any
+      # artifact an earlier attempt on this commit left there: it would carry a
+      # matching revision, so the parse step would accept it and publish the
+      # earlier attempt's numbers. This runs even when an earlier step failed,
+      # because the parse step does too.
+      - name: Drop stale one-shot artifacts
+        if: ${{ !cancelled() && inputs.benchmarks == 'main_block_one_shot' }}
+        run: rm -rf "${CRITERION_HOME}/benchmark-runs"
+        env:
+          CRITERION_HOME: ${{ github.workspace }}/coprocessor/fhevm-engine/target/criterion
+
       # The reportable one-shot suite measures each canonical workload once
       # instead of sampling through Criterion, so it runs its own Make target and
       # writes JSON artifacts under "${CRITERION_HOME}/benchmark-runs". The
@@ -281,11 +289,6 @@ jobs:
             export BENCH_ONE_SHOT_SCENARIOS="${ONE_SHOT_SCENARIOS}"
           fi
           make print_bench_one_shot_scenarios
-          # The cargo cache restores "target", which holds CRITERION_HOME. Drop
-          # any artifact an earlier attempt on this commit left there: it would
-          # carry a matching revision, so a scenario that fails in this attempt
-          # would silently report the earlier attempt's numbers.
-          rm -rf "${CRITERION_HOME}/benchmark-runs"
           BENCH_ONE_SHOT_RECREATE_DB=1 OPTIMIZATION_TARGET="${OPTIMIZATION_TARGET}" \
             FHEVM_DF_SCHEDULE="${SCHEDULING_POLICY}" \
             make -e benchmark_erc20_main_block_one_shot_suite_gpu
