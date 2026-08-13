@@ -2,6 +2,9 @@ use alloy::primitives::Uint;
 use alloy::rpc::types::Log;
 use anyhow::anyhow;
 use fhevm_engine_common::chain_id::ChainId;
+use fhevm_engine_common::versioning::{
+    begin_write_guarded, GcsRollbackPolicy, WriteGuard,
+};
 use sqlx::{Pool, Postgres, Transaction};
 use tracing::{error, info, warn};
 
@@ -153,8 +156,26 @@ pub async fn process_kms_generation_activations<
     db_pool: Pool<Postgres>,
     s3_client: A,
 ) -> anyhow::Result<u64> {
-    //first we handle every thing that is ready to be cancelled or activated
-    let mut tx = db_pool.begin().await?;
+    // These write `kms_key_activation_events` / `kms_crs_activation_events`, which cutover
+    // treats as duplicated-for-isolation, so the transaction has to be fenced: it takes the
+    // shared cutover lock and refuses to run on a retired stack. `gcs_mode` is `false`
+    // because with `Continue` it cannot change the outcome — a green binary is newer than the
+    // live version, so the retirement check passes trivially.
+    let mut tx = match begin_write_guarded(
+        &db_pool,
+        false,
+        GcsRollbackPolicy::Continue,
+    )
+    .await?
+    {
+        WriteGuard::Proceed(tx) => tx,
+        WriteGuard::Stop | WriteGuard::Skip => {
+            info!(
+                    "Cutover completed — skipping KMSGeneration activations on retired stack"
+                );
+            return Ok(0);
+        }
+    };
     cancel_orphaned_key_activations(&mut tx).await?;
     cancel_orphaned_crs_activations(&mut tx).await?;
     activate_ready_key_activations(&mut tx).await?;
@@ -163,7 +184,24 @@ pub async fn process_kms_generation_activations<
 
     // second we download and check keys and preprocess in background in advance so it's ready when block is finalized
     // rows are locked so there's no double work
-    let mut tx = db_pool.begin().await?;
+    //
+    // NOTE: this transaction stays open across the S3 key/CRS downloads below, so the shared
+    // cutover lock is held for as long as those take. `execute_cutover` takes the same lock
+    // exclusively and every guarded write in the fleet queues behind it, so a slow download
+    // delays cutover.
+    let mut tx = match begin_write_guarded(
+        &db_pool,
+        false,
+        GcsRollbackPolicy::Continue,
+    )
+    .await?
+    {
+        WriteGuard::Proceed(tx) => tx,
+        WriteGuard::Stop | WriteGuard::Skip => {
+            info!("Cutover completed — skipping KMSGeneration downloads on retired stack");
+            return Ok(0);
+        }
+    };
     let key_activations =
         all_pending_key_activations_to_download(&mut tx).await?;
     let crs_activations =

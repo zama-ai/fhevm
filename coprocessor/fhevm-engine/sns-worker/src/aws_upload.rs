@@ -22,6 +22,7 @@ use fhevm_engine_common::pg_pool::{is_fatal_connection_error, PostgresPoolManage
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::CoproSigner;
 use fhevm_engine_common::utils::to_hex;
+use fhevm_engine_common::versioning::{begin_write_guarded, GcsRollbackPolicy, WriteGuard};
 use futures::future::join_all;
 use opentelemetry::trace::{Status, TraceContextExt};
 use sha2::Sha256;
@@ -124,7 +125,31 @@ async fn run_uploader_loop(
                     continue;
                 }
 
-                let mut trx = fhevm_engine_common::versioning::begin_guarded_pool(&pool).await?;
+                // This is a write transaction (it enqueues the upload task and records the
+                // digests), so it must take the shared cutover lock, not just the BEGIN-time
+                // retirement check that `begin_guarded_pool` does. Without the lock a stale
+                // write could commit after cutover retired this stack, and the lock order
+                // here (digest rows, then the mirror trigger's stripe lock) is the reverse of
+                // cutover's, which could deadlock.
+                //
+                // NOTE: the transaction stays open across the S3 upload, so the shared lock
+                // is held for a network round trip and cutover waits on it.
+                let mut trx =
+                    match begin_write_guarded(&pool, false, GcsRollbackPolicy::Continue).await? {
+                        WriteGuard::Proceed(trx) => trx,
+                        WriteGuard::Stop | WriteGuard::Skip => {
+                            info!(
+                                "Cutover completed — draining in-flight uploads, then stopping \
+                                 the uploader"
+                            );
+                            while let Some(joined) = ongoing_upload_tasks.join_next().await {
+                                if let Err(err) = propagate_joined_upload_error(joined) {
+                                    error!(error = %err, "Upload task failed while stopping");
+                                }
+                            }
+                            return Ok(());
+                        }
+                    };
 
                 // Normal jobs defer their enqueue into the spawned task: the
                 // provenance witness takes FOR KEY SHARE on the pbs row,

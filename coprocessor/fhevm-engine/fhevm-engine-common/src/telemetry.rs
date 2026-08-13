@@ -373,7 +373,24 @@ impl TransactionMetrics {
             return Ok(None);
         }
 
-        let mut trx = pool.begin().await?;
+        // Writes `transactions.completed_at`, which cutover treats as
+        // duplicated-for-isolation, so the transaction is fenced like every other write:
+        // shared cutover lock, and no writes from a retired stack. `gcs_mode` is `false`
+        // because with `Continue` it cannot change the outcome — a green binary is newer than
+        // the live version, so the retirement check passes trivially.
+        //
+        // A blocked guard is not an error here: this is latency bookkeeping, so it returns
+        // "no measurement" rather than failing the caller.
+        let Some(mut trx) = crate::versioning::begin_write_guarded(
+            pool,
+            false,
+            crate::versioning::GcsRollbackPolicy::Continue,
+        )
+        .await?
+        .into_tx() else {
+            debug!("Cutover completed — skipping transaction latency write on retired stack");
+            return Ok(None);
+        };
 
         // Lock the row to prevent duplicated histogram.observe calls
         let existing = sqlx::query!(
