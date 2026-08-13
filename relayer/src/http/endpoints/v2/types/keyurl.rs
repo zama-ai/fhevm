@@ -33,8 +33,8 @@ pub struct FheKeyInfo {
 #[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct KeyData {
-    /// On-chain key/CRS identifier, as a decimal string.
-    #[schema(example = "3")]
+    /// On-chain key/CRS identifier, as a `0x`-prefixed 32-byte big-endian hex string.
+    #[schema(example = "0x0400000000000000000000000000000000000000000000000000000000000003")]
     pub data_id: String,
     /// Storage URLs for the key/CRS material.
     pub urls: Vec<String>,
