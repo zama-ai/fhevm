@@ -76,8 +76,6 @@ library ZamaConfig {
 
     /// @dev chainid == 1
     function _getEthereumConfig() private pure returns (CoprocessorConfig memory) {
-        // The addresses below are placeholders and should be replaced with actual addresses
-        // once deployed on the Ethereum mainnet.
         return
             CoprocessorConfig({
                 ACLAddress: 0xcA2E8f1F656CD25C01F05d0b243Ab1ecd4a8ffb6,
