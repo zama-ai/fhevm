@@ -1,5 +1,5 @@
 use fhevm_engine_common::{
-    db_keys::{read_server_key_by_sequence_number, CompressedXofKeysetEncoding, DbKeyId},
+    db_keys::{read_compressed_server_key_by_sequence_number, DbKeyId},
     utils::safe_deserialize_sns_key,
 };
 use sqlx::PgPool;
@@ -11,38 +11,15 @@ use tracing::info;
 use crate::{ExecutionError, KeySet};
 
 #[cfg(not(feature = "gpu"))]
-fn decode_server_key(
-    blob: &[u8],
-    encoding: CompressedXofKeysetEncoding,
-) -> Result<tfhe::ServerKey, ExecutionError> {
-    match encoding {
-        CompressedXofKeysetEncoding::CompressedXof => {
-            let kxs: CompressedXofKeySet = safe_deserialize_sns_key(blob)?;
-            info!("Decompressing CompressedXofKeySet to ServerKey");
-            let (_public_key, server_key) = kxs.decompress()?.into_raw_parts();
-            Ok(server_key)
-        }
-        CompressedXofKeysetEncoding::Legacy => Ok(safe_deserialize_sns_key(blob)?),
-    }
+fn decode_server_key(blob: &[u8]) -> Result<tfhe::ServerKey, ExecutionError> {
+    let kxs: CompressedXofKeySet = safe_deserialize_sns_key(blob)?;
+    info!("Decompressing CompressedXofKeySet to ServerKey");
+    let (_public_key, server_key) = kxs.decompress()?.into_raw_parts();
+    Ok(server_key)
 }
 
-// GPU requires a CudaServerKey. The XOF ingest path lands a
-// CompressedXofKeySet in compressed_xof_keyset; the legacy fallback
-// path lands a plain ServerKey in sns_pk which the GPU path cannot
-// consume.
 #[cfg(feature = "gpu")]
-fn decode_server_key(
-    blob: &[u8],
-    encoding: CompressedXofKeysetEncoding,
-) -> Result<tfhe::CudaServerKey, ExecutionError> {
-    if encoding == CompressedXofKeysetEncoding::Legacy {
-        return Err(anyhow::anyhow!(
-            "GPU coprocessor cannot read a legacy ServerKey-format key (compressed_xof_keyset is NULL); \
-             rotate kms-core to publish CompressedXofKeySet so the host-listener can ingest it into the compressed column"
-        )
-        .into());
-    }
-
+fn decode_server_key(blob: &[u8]) -> Result<tfhe::CudaServerKey, ExecutionError> {
     let kxs: CompressedXofKeySet = safe_deserialize_sns_key(blob).map_err(|err| {
         anyhow::anyhow!(
             "failed to deserialize CompressedXofKeySet from compressed_xof_keyset: {err}"
@@ -53,10 +30,6 @@ fn decode_server_key(
     info!("Decompressed compressed_xof_keyset to CudaServerKey");
     Ok(server_key)
 }
-
-/// Receive-buffer hint for a legacy plain-ServerKey sns_pk LOB. Sized
-/// for the production NS-enabled key (decompressed).
-const SKS_KEY_WITH_NOISE_SQUASHING_SIZE: usize = 1_150 * 1_000_000; // ~1.1 GB
 
 async fn fetch_latest_key_id_gw(pool: &PgPool) -> Result<Option<(DbKeyId, i64)>, ExecutionError> {
     let record = sqlx::query!(
@@ -77,13 +50,12 @@ async fn fetch_latest_key_id_gw(pool: &PgPool) -> Result<Option<(DbKeyId, i64)>,
 pub(crate) async fn fetch_latest_keyset(
     cache: &Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>>,
     pool: &PgPool,
-    force_legacy: bool,
 ) -> Result<Option<(DbKeyId, KeySet)>, ExecutionError> {
     let Some((key_id_gw, sequence_number)) = fetch_latest_key_id_gw(pool).await? else {
         return Ok(None);
     };
 
-    let keyset = fetch_keyset_by_id(cache, pool, &key_id_gw, sequence_number, force_legacy).await?;
+    let keyset = fetch_keyset_by_id(cache, pool, &key_id_gw, sequence_number).await?;
     Ok(keyset.map(|keys| (key_id_gw, keys)))
 }
 
@@ -92,7 +64,6 @@ async fn fetch_keyset_by_id(
     pool: &PgPool,
     key_id_gw: &DbKeyId,
     sequence_number: i64,
-    force_legacy: bool,
 ) -> Result<Option<KeySet>, ExecutionError> {
     {
         let mut cache = cache.write().await;
@@ -118,28 +89,17 @@ async fn fetch_keyset_by_id(
         sequence_number, "Cache miss"
     );
 
-    let (blob, encoding) = read_server_key_by_sequence_number(
-        pool,
-        sequence_number,
-        SKS_KEY_WITH_NOISE_SQUASHING_SIZE,
-        force_legacy,
-    )
-    .await?;
+    let blob = read_compressed_server_key_by_sequence_number(pool, sequence_number).await?;
     info!(
         bytes_len = blob.len(),
-        server_key_representation =
-            if matches!(encoding, CompressedXofKeysetEncoding::CompressedXof) {
-                "compressed-xof"
-            } else {
-                "legacy"
-            },
+        server_key_representation = "compressed-xof",
         "Fetched server-key bytes"
     );
     if blob.is_empty() {
         return Ok(None);
     }
 
-    let server_key = decode_server_key(&blob, encoding)?;
+    let server_key = decode_server_key(&blob)?;
 
     // Optionally retrieve the ClientKey for testing purposes
     let client_key = fetch_client_key_by_sequence_number(pool, sequence_number).await?;
