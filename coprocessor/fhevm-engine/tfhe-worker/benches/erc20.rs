@@ -922,6 +922,7 @@ async fn run_main_block_one_shot() -> Result<(), Box<dyn std::error::Error>> {
         "work_items_batch_size": utils::benchmark_work_items_batch_size(EnvConfig::new().batch_size)?,
         "dependence_chains_per_batch": utils::benchmark_dependence_chains_per_batch(2000)?,
         "dcid_batch_execution": utils::benchmark_dcid_batch_execution()?,
+        "dcid_adaptive_batch_execution": utils::benchmark_dcid_adaptive_batch_execution()?,
     });
     let mut app = setup_test_app().await?;
     let result: Result<MainBlockOneShotOutcome, Box<dyn std::error::Error>> = async {

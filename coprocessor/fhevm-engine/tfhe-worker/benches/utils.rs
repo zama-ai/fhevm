@@ -133,6 +133,7 @@ async fn start_coprocessor(
         work_items_batch_size: benchmark_work_items_batch_size(ecfg.batch_size)?,
         dependence_chains_per_batch: benchmark_dependence_chains_per_batch(2000)?,
         dcid_batch_execution: benchmark_dcid_batch_execution()?,
+        dcid_adaptive_batch_execution: benchmark_dcid_adaptive_batch_execution()?,
         key_cache_size: 4,
         coprocessor_fhe_threads: 64,
         gpu_streams_per_device: benchmark_gpu_streams_per_device()?,
@@ -215,6 +216,28 @@ pub fn benchmark_dcid_batch_execution() -> Result<bool, Box<dyn std::error::Erro
         }
     }
     Ok(true)
+}
+
+pub fn benchmark_dcid_adaptive_batch_execution() -> Result<bool, Box<dyn std::error::Error>> {
+    // Same precedence as the batch-execution setting: the production variable
+    // wins, with a benchmark-only fallback. Defaults to the production default
+    // so a reportable run measures the shipped configuration unless a run
+    // deliberately asks for the adaptive window.
+    for variable in [
+        "FHEVM_DCID_ADAPTIVE_BATCH_EXECUTION",
+        "FHEVM_BENCH_DCID_ADAPTIVE_BATCH_EXECUTION",
+    ] {
+        match std::env::var(variable) {
+            Ok(value) => {
+                return value
+                    .parse::<bool>()
+                    .map_err(|error| format!("parse {variable}={value:?}: {error}").into());
+            }
+            Err(std::env::VarError::NotPresent) => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(false)
 }
 
 fn benchmark_positive_i32(variable: &str, default: i32) -> Result<i32, Box<dyn std::error::Error>> {
