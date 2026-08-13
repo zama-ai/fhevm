@@ -130,8 +130,7 @@ Ethereum rotation to every replica, in order, is the operator's responsibility.
 The Ethereum `ProtocolConfig` is the source of truth for protocol state, so **new** host chains
 seed their replica from it.
 
-The flow is artifact-centric — the same three steps in every environment, only the signer of
-step 3 changes:
+The flow is artifact-centric — the same three steps in every environment:
 
 **1. Export** the canonical KMS context to a reviewable JSON artifact (works from a clean
 checkout; needs only RPC access):

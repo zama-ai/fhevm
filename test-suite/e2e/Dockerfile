@@ -1,9 +1,7 @@
 ARG NODE_VERSION=22.22.2-alpine3.22
-ARG RELAYER_SDK_VERSION=""
 
 # --- Builder Stage ---
 FROM node:${NODE_VERSION} AS builder
-ARG RELAYER_SDK_VERSION=""
 
 WORKDIR /app
 
@@ -28,28 +26,14 @@ COPY test-suite/e2e/package.json ./test-suite/e2e/
 COPY sdk/js-sdk/package.json ./sdk/js-sdk/
 COPY sdk/js-sdk/src/package.json ./sdk/js-sdk/src/
 
+# Install dependencies
+RUN npm ci && \
+    npm prune
+
+# Copy sources after deps are cached
 COPY library-solidity ./library-solidity
 COPY test-suite/e2e ./test-suite/e2e
 COPY sdk/js-sdk ./sdk/js-sdk
-
-# Install dependencies. Normal builds stay locked; rollout hotswap builds replace
-# the e2e workspace SDK, then verify what Node resolves before producing the image.
-# The uninstall is required: installing over the existing dependency leaves the
-# lockfile's version in place. RELAYER_SDK_VERSION must be an exact version, since
-# the check below compares it to what Node resolves.
-RUN if [ -n "$RELAYER_SDK_VERSION" ]; then \
-      npm uninstall -w test-suite/e2e "@zama-fhe/relayer-sdk" && \
-      npm install -w test-suite/e2e --save-exact "@zama-fhe/relayer-sdk@${RELAYER_SDK_VERSION}" && \
-      npm prune && \
-      installed_sdk_version="$(cd test-suite/e2e && node -p "require('@zama-fhe/relayer-sdk/package.json').version")" && \
-      if [ "$installed_sdk_version" != "$RELAYER_SDK_VERSION" ]; then \
-        echo "requested @zama-fhe/relayer-sdk@${RELAYER_SDK_VERSION} but Node resolves ${installed_sdk_version}" >&2; \
-        exit 1; \
-      fi; \
-    else \
-      npm ci && \
-      npm prune; \
-    fi
 
 # Compile js-sdk
 WORKDIR /app/sdk/js-sdk
@@ -64,13 +48,6 @@ RUN npx hardhat compile
 
 # --- Runtime Stage ---
 FROM node:${NODE_VERSION} AS prod
-ARG RELAYER_SDK_VERSION=""
-
-# Propagate the build ARG into the container's runtime env. instance.ts gates
-# on this:
-#   process.env.RELAYER_SDK_VERSION === ""   → use @fhevm/sdk (default)
-#   process.env.RELAYER_SDK_VERSION === "x"  → use @zama-fhe/relayer-sdk@x
-ENV RELAYER_SDK_VERSION=${RELAYER_SDK_VERSION}
 
 COPY --from=builder /lib/ /lib/
 COPY --from=builder /bin/ /bin/

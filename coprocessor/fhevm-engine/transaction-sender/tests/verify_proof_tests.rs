@@ -475,17 +475,16 @@ async fn reject_proof_response_success(#[case] signer_type: SignerType) -> anyho
 
     assert_eq!(event.0.zkProofId, expected_proof_id);
 
-    // Make sure the proof is removed from the database.
+    // Make sure the rejected proof is retained until Gateway finalization.
     loop {
-        let rows = sqlx::query!(
-            "SELECT *
-             FROM verify_proofs
-             WHERE zk_proof_id = $1",
-            proof_id as i64,
+        let rows = sqlx::query_as::<_, (Option<bool>, Option<Vec<u8>>)>(
+            "SELECT verified, handles FROM verify_proofs WHERE zk_proof_id = $1",
         )
+        .bind(proof_id as i64)
         .fetch_all(&env.db_pool)
         .await?;
-        if rows.is_empty() {
+        assert_eq!(rows.len(), 1);
+        if rows[0].0 == Some(false) && rows[0].1.is_none() {
             break;
         }
         sleep(Duration::from_millis(500)).await;
@@ -880,17 +879,16 @@ async fn reject_proof_response_reversal_already_rejected(
     .execute(&env.db_pool)
     .await?;
 
-    // Make sure the proof is removed from the database.
+    // Make sure the rejected proof is retained until Gateway finalization.
     loop {
-        let rows = sqlx::query!(
-            "SELECT *
-             FROM verify_proofs
-             WHERE zk_proof_id = $1",
-            proof_id as i64,
+        let rows = sqlx::query_as::<_, (Option<bool>, Option<Vec<u8>>)>(
+            "SELECT verified, handles FROM verify_proofs WHERE zk_proof_id = $1",
         )
+        .bind(proof_id as i64)
         .fetch_all(&env.db_pool)
         .await?;
-        if rows.is_empty() {
+        assert_eq!(rows.len(), 1);
+        if rows[0].0 == Some(false) && rows[0].1.is_none() {
             break;
         }
         sleep(Duration::from_millis(500)).await;

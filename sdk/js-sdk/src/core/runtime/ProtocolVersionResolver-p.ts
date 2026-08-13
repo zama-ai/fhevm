@@ -23,12 +23,20 @@ export type ResolveProtocolContextParameters = ResolveProtocolVersionParameters;
 export async function resolveProtocolContext(
   parameters: ResolveProtocolContextParameters,
 ): Promise<FhevmProtocolContext> {
-  const aclAddress = addressToChecksummedAddress(asAddress(parameters.chain.fhevm.contracts.acl.address));
-  const aclVersion = await getHostContractVersion(parameters, { address: aclAddress });
+  try {
+    const aclAddress = addressToChecksummedAddress(asAddress(parameters.chain.fhevm.contracts.acl.address));
+    const aclVersion = await getHostContractVersion(parameters, { address: aclAddress });
 
-  assertIsHostContractVersionOf(aclVersion, 'ACL');
+    assertIsHostContractVersionOf(aclVersion, 'ACL');
 
-  return protocolContextFromAclVersion(parameters.chain, aclVersion);
+    return protocolContextFromAclVersion(parameters.chain, aclVersion);
+  } catch (e) {
+    parameters.runtime.config.logger?.error?.(
+      `Failed to resolve protocol context for chain ${parameters.chain.id} (ACL address=${parameters.chain.fhevm.contracts.acl.address}).`,
+      e,
+    );
+    throw e;
+  }
 }
 
 export async function resolveProtocolVersion(

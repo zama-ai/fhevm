@@ -211,7 +211,7 @@ contract FHETest {
     // optimizing away the computation (e.g. detecting a ^ a = 0).
     function _zeroEuint8() internal returns (euint8) {
         euint8 r = FHE.randEuint8();
-        euint8 zeroOrOne = FHE.shr(r, 1);
+        euint8 zeroOrOne = FHE.shr(r, 7);
         euint8 a = FHE.shr(FHE.shr(r, zeroOrOne), zeroOrOne);
         euint8 b = FHE.shr(r, FHE.add(zeroOrOne, zeroOrOne));
         return FHE.xor(a, b);

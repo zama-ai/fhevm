@@ -1,117 +1,154 @@
 # Security model
 
-This page explains the security guarantees of FHEVM and how the SDK fits into the picture. Understanding this model helps you make informed decisions about what data to encrypt and how to handle decryption.
+This page explains the security guarantees of FHEVM and how the SDK fits into
+the picture. Understanding this model helps you decide what to encrypt and how to
+handle decryption.
 
 ## The big picture
 
-In FHEVM, **encrypted data is processed without ever being decrypted**. Your smart contract adds, compares, and transforms encrypted values — and the plaintext is never visible to the blockchain, validators, or anyone observing the chain.
+In FHEVM, **encrypted data is processed without ever being decrypted**. Your smart
+contract adds, compares, and transforms encrypted values, and the plaintext is
+never visible to the blockchain, validators, or anyone observing the chain.
 
-There are three entities involved:
+Three entities are involved:
 
 | Entity                                         | What it sees                                            | What it can do                                        |
 | ---------------------------------------------- | ------------------------------------------------------- | ----------------------------------------------------- |
 | **Blockchain** (validators, explorers)         | Encrypted values only                                   | Execute FHE operations on ciphertexts                 |
-| **Zama Protocol** (distributed infrastructure) | Nothing until decryption is requested                   | Produce decryption shares on authorized request       |
-| **User** (your app, browser)                   | Plaintext before encryption, plaintext after decryption | Encrypt values, request decryption with signed permit |
+| **Zama Protocol** (distributed infrastructure) | Nothing until decryption is requested                   | Produce decryption shares on an authorized request    |
+| **User** (your app, browser)                   | Plaintext before encryption, plaintext after decryption | Encrypt values, request decryption with a signed permit |
 
 ## Who can decrypt what
 
-Decryption is controlled by two mechanisms:
+Decryption is controlled by two mechanisms working together.
 
 ### 1. The ACL contract (on-chain)
 
-The **Access Control List (ACL)** is a smart contract that tracks permissions. Every encrypted value has a list of addresses that are allowed to interact with it.
-
-Your smart contract grants permissions using `FHE.allow()`:
+The **Access Control List (ACL)** is a smart contract that tracks permissions.
+Every encrypted value has a list of addresses allowed to interact with it. Your
+Solidity contract grants permissions explicitly:
 
 ```solidity
 // In your Solidity contract:
-FHE.allow(encryptedBalance, msg.sender);         // user can decrypt their own balance
-FHE.allowForDecryption(encryptedResult);          // anyone can read this value (public)
+FHE.allow(encryptedBalance, msg.sender);      // this user can decrypt their own balance
+FHE.makePubliclyDecryptable(encryptedResult); // anyone can read this value (public)
 ```
 
-The SDK checks ACL permissions before every decryption request. If the user or contract isn't in the ACL, the request fails before leaving your browser.
+The SDK checks ACL permissions as part of every decryption request. If the user or
+contract is not authorized, the request fails.
 
 ### 2. The EIP-712 permit (off-chain)
 
 For private decryption, the user must also sign an EIP-712 permit that specifies:
 
-- Which contracts they're authorizing decryption for
-- A time window (start timestamp + duration in days)
-- The public key the Zama Protocol should use to encrypt the response
+- which contracts they are authorizing decryption for,
+- a time window (a start timestamp plus a duration in **seconds**), and
+- the transport public key the Zama Protocol should use to encrypt the response.
 
-This means even if the ACL grants permission, the user must explicitly opt in to each decryption by signing with their wallet. No one can decrypt a user's data without their wallet signature.
+So even when the ACL grants permission, the user must explicitly opt in to each
+decryption by signing with their wallet. No one can decrypt a user's data without
+their wallet signature.
 
 ## How decryption works
 
-The Zama Protocol uses a **distributed key management** system — no single server holds the full decryption key.
+The Zama Protocol uses a **distributed key management** system — no single server
+holds the full decryption key. When you request decryption:
 
-When you request decryption:
+1. The SDK sends the request (with the signed permit) to the Zama Protocol.
+2. Multiple independent nodes each produce a **decryption share** — a partial
+   decryption encrypted with your transport public key.
+3. The shares are sent back to your application.
+4. The SDK reconstructs the plaintext locally using your transport private key
+   (TKMS WASM).
 
-1. The SDK sends the request (with the signed permit) to the Zama Protocol
-2. Multiple independent nodes each produce a **decryption share** — a partial decryption encrypted with your public key
-3. The shares are sent back to your browser
-4. The SDK reconstructs the plaintext locally using your private key (TKMS WASM)
-
-**No server ever sees the plaintext.** Each node only sees its own partial share, and the shares are encrypted for your specific public key. The reconstruction happens entirely in your browser.
+**No server ever sees the plaintext.** Each node only sees its own partial share,
+and the shares are encrypted for your specific public key. Reconstruction happens
+entirely on your device.
 
 ## What the SDK protects
 
-The SDK is designed to prevent accidental exposure of sensitive material:
+The SDK is designed to prevent accidental exposure of sensitive material.
 
 ### Transport keys are opaque
 
-When you call `generateTransportKeyPair()`, the returned object wraps the private key in a way that prevents accidental logging or serialization:
+When you call `generateTransportKeyPair()`, the returned object wraps the private
+key so it cannot be accidentally logged or serialized:
 
 ```ts
-const keypair = await client.generateTransportKeyPair();
-console.log(keypair); // Does NOT print the private key
+const transportKeyPair = await client.generateTransportKeyPair();
+console.log(transportKeyPair); // does NOT print the private key
 ```
 
-The raw private key is stored in a private field (`#field`) and can only be accessed through the SDK's internal symbol-based access control. You can get the **public** key via `keypair.publicKey`, but the private key is never exposed to your application code.
+The raw private key lives in an ES private field and is only reachable through the
+SDK's internal, symbol-guarded access. You can read the **public** key via
+`transportKeyPair.publicKey`, but the private key is never exposed to application
+code.
 
 ### The provider is sealed
 
-The ethers/viem provider you pass to `createFhevmClient()` is sealed inside an opaque `TrustedClient` wrapper. The core SDK logic can use it for RPC calls (reading contracts, checking ACL permissions) but cannot extract the underlying provider object. This prevents the core layer from accidentally depending on ethers-specific or viem-specific APIs.
+The ethers or viem connection you pass to `createFhevmClient()` is sealed inside an
+opaque wrapper. The SDK unwraps it internally (through symbol-guarded access) for
+RPC calls — reading contracts and checking ACL permissions — but application code
+cannot reach the underlying object off the client. This also keeps the core layer
+from depending on ethers- or viem-specific APIs.
 
 ### Chain definitions are frozen
 
-Chain objects (`mainnet`, `sepolia`, or your custom chains) are deep-frozen with `Object.freeze()` after creation. This prevents accidental or malicious mutation of contract addresses at runtime.
+Chain objects (`mainnet`, `sepolia`, or your custom chains) are deep-frozen after
+creation, preventing accidental or malicious mutation of contract addresses at
+runtime.
 
 ### Error messages exclude sensitive data
 
-SDK error messages never include private keys, signatures, or raw encrypted data. They include enough context to debug (contract addresses, error codes) without leaking sensitive information.
+SDK errors never include private keys, signatures, or raw encrypted data. They
+carry enough context to debug (contract addresses, error codes) without leaking
+sensitive information.
 
 ## What you should protect
 
-The SDK handles internal security, but your application has its own responsibilities:
+The SDK handles its internal security; your application has its own
+responsibilities.
+
+{% hint style="warning" %}
+After decryption, plaintext values live in your application's memory. Treat them as
+sensitive — the guarantees below are yours to uphold, not the SDK's.
+{% endhint %}
 
 ### Never log decryption results
 
-After calling `decrypt()`, the plaintext values are in your application's memory. Don't send them to analytics, error tracking, or console logs unless you intend to make them public.
+After calling `decryptValue()` or `decryptPublicValues()`, the plaintext is in your
+app's memory. Don't send it to analytics, error tracking, or console logs unless you
+intend to make it public.
 
 ### Store transport keys securely
 
-If you persist key pairs across sessions (via `parseTransportKeyPair`), store the serialized bytes securely:
+If you persist a key pair across sessions with `serializeTransportKeyPair()` /
+`parseTransportKeyPair()`, store the serialized bytes carefully:
 
-```ts
-// Acceptable: encrypted localStorage, secure enclave, browser credential store
-// Risky: plain localStorage (accessible to any JS on the domain)
-// Never: URL parameters, cookies, unencrypted server-side storage
-```
+- **Acceptable:** encrypted storage, a secure enclave, or the browser credential store.
+- **Risky:** plain `localStorage`, which is readable by any script on the domain.
+- **Never:** URL parameters, cookies, or unencrypted server-side storage.
 
 ### Validate contract addresses
 
-When passing `contractAddress` to `encrypt()` or `encryptedValues` to `decrypt()`, make sure these addresses are correct. Encrypting for the wrong contract means the data is bound to that contract's ACL — there's no way to "re-target" it after encryption.
+When passing `contractAddress` to `encryptValues()` or an encrypted value to
+`decryptValue()`, make sure the address is correct. Encrypting for the wrong
+contract binds the data to that contract's ACL — there is no way to re-target it
+after encryption.
 
-### Permit scope should be minimal
+### Keep permit scope minimal
 
-When creating EIP-712 permits, scope them as tightly as possible:
+When signing EIP-712 permits, scope them as tightly as possible:
 
-- Include only the contracts that actually need decryption
-- Use short durations when possible
-- Generate a fresh key pair per session rather than reusing across sessions
+- include only the contracts that actually need decryption,
+- use short `durationSeconds` windows, and
+- generate a fresh key pair per session rather than reusing one across sessions.
 
-## For more examples
+## Related
 
-For complete working applications that demonstrate these security patterns in practice, see the [FHEVM dApps repository](https://github.com/zama-ai/dapps).
+- [Decryption](decryption.md) — permits, transport key pairs, and the decryption flow.
+- [Architecture](architecture.md) — how opacity and sealing are implemented internally.
+- [Chains](chains.md) — the ACL and verifier contract addresses per chain.
+
+For complete working applications that demonstrate these patterns, see the
+[FHEVM dApps repository](https://github.com/zama-ai/dapps).

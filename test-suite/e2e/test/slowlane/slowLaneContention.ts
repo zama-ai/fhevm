@@ -24,11 +24,7 @@ describe('Slow lane deterministic contention', function () {
       userAddress: this.signer.address,
     });
 
-    const heavyTx = await this.contract.runAddChain(
-      heavyEncryptedInput.handles[0],
-      heavyEncryptedInput.inputProof,
-      8,
-    );
+    const heavyTx = await this.contract.runAddChain(heavyEncryptedInput.handles[0], heavyEncryptedInput.inputProof, 8);
     const heavyReceipt = await heavyTx.wait();
     expect(heavyReceipt?.status).to.eq(1);
 
@@ -38,11 +34,7 @@ describe('Slow lane deterministic contention', function () {
       userAddress: this.signer.address,
     });
 
-    const lightTx = await this.contract.runAddChain(
-      lightEncryptedInput.handles[0],
-      lightEncryptedInput.inputProof,
-      1,
-    );
+    const lightTx = await this.contract.runAddChain(lightEncryptedInput.handles[0], lightEncryptedInput.inputProof, 1);
     const lightReceipt = await lightTx.wait();
     expect(lightReceipt?.status).to.eq(1);
   });

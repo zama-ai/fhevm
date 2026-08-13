@@ -6,6 +6,7 @@ import type { ZkProofLike } from '../../types/zkProof-p.js';
 import type { EncryptedValue } from '../../types/encryptedTypes.js';
 import { fetchVerifiedInputProof as fetchVerifiedInputProof_ } from '../../coprocessor/fetchVerifiedInputProof.js';
 import { assertIsZkProof } from '../../coprocessor/ZkProof-p.js';
+import { initPublicAction } from '../../runtime/CoreFhevm-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -32,7 +33,8 @@ export async function fetchEncryptedValues(
     metaMessages: ['Use generateZkProof() to create a valid ZkProof.'],
   });
 
-  const result = await fetchVerifiedInputProof_(fhevm, { zkProof, ...rest });
+  const fhevmContext = await initPublicAction(fhevm);
+  const result = await fetchVerifiedInputProof_(fhevm, { zkProof, ...rest, fhevmContext });
   return {
     encryptedValues: result.inputHandles.map(
       (encryptedValue) => encryptedValue.bytes32Hex as unknown as EncryptedValue,

@@ -1,20 +1,14 @@
-import type { BytesHex, ChecksummedAddress, Uint256BigInt, Uint8Number } from '../types/primitives.js';
+import type { ChecksummedAddress, Uint256BigInt, Uint8Number } from '../types/primitives.js';
 import type { kmsBrand } from '../types/kms.js';
 import type { KmsSignersContext } from '../types/kmsSignersContext.js';
 import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
+import type { KmsExtraData } from '../types/kms-p.js';
 import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
 import { addressToChecksummedAddress } from '../base/address.js';
 import { DuplicateSignerError, ThresholdSignerError, UnknownSignerError } from '../errors/SignersError.js';
 import { assertOwnedBy } from '../runtime/CoreFhevmRuntime-p.js';
-import {
-  assertIsKmsExtraData,
-  EXTRA_DATA_V0,
-  EXTRA_DATA_V1,
-  EXTRA_DATA_V2,
-  toKmsExtraData,
-} from '../kms/kmsExtraData.js';
-import { assertIsNonEmptyString, ensure0x } from '../base/string.js';
+import { createKmsExtraData, validateKmsExtraDataParams } from '../kms/kmsExtraData-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -29,12 +23,13 @@ class KmsSignersContextImpl implements KmsSignersContext {
   declare readonly [kmsBrand]: never;
 
   readonly #owner: WeakRef<FhevmRuntime>;
-  readonly #address: ChecksummedAddress;
+  readonly #kmsVerifierAddress: ChecksummedAddress;
   readonly #kmsContextId: Uint256BigInt;
   readonly #kmsEpochId: Uint256BigInt;
   readonly #kmsSigners: ChecksummedAddress[];
   readonly #kmsSignersSet: Set<string>;
-  readonly #kmsSignerThreshold: Uint8Number;
+  readonly #kmsPublicDecryptThreshold: Uint8Number;
+  readonly #kmsMpcThreshold: Uint8Number | undefined;
 
   constructor(
     privateToken: symbol,
@@ -45,25 +40,27 @@ class KmsSignersContextImpl implements KmsSignersContext {
       readonly kmsEpochId: Uint256BigInt;
       readonly kmsSigners: ChecksummedAddress[];
       readonly kmsSignerThreshold: Uint8Number;
+      readonly kmsMpcThreshold?: Uint8Number | undefined;
     },
   ) {
     if (privateToken !== PRIVATE_TOKEN) {
       throw new Error('Unauthorized');
     }
     this.#owner = owner;
-    this.#address = parameters.address;
+    this.#kmsVerifierAddress = parameters.address;
     this.#kmsContextId = parameters.kmsContextId;
     this.#kmsEpochId = parameters.kmsEpochId;
     this.#kmsSigners = [...parameters.kmsSigners];
-    this.#kmsSignerThreshold = parameters.kmsSignerThreshold;
+    this.#kmsPublicDecryptThreshold = parameters.kmsSignerThreshold;
+    this.#kmsMpcThreshold = parameters.kmsMpcThreshold;
     this.#kmsSignersSet = new Set(this.#kmsSigners.map((addr) => addr.toLowerCase()));
 
     Object.freeze(this.#kmsSigners);
     Object.freeze(this);
   }
 
-  public get address(): ChecksummedAddress {
-    return this.#address;
+  public get kmsVerifierAddress(): ChecksummedAddress {
+    return this.#kmsVerifierAddress;
   }
 
   public get id(): Uint256BigInt {
@@ -79,7 +76,11 @@ class KmsSignersContextImpl implements KmsSignersContext {
   }
 
   public get threshold(): Uint8Number {
-    return this.#kmsSignerThreshold;
+    return this.#kmsPublicDecryptThreshold;
+  }
+
+  public get mpcThreshold(): Uint8Number | undefined {
+    return this.#kmsMpcThreshold;
   }
 
   public has(signer: string): boolean {
@@ -99,9 +100,12 @@ class KmsSignersContextImpl implements KmsSignersContext {
 
   public toJSON(): Record<string, unknown> {
     return {
-      address: this.#address,
+      kmsVerifierAddress: this.#kmsVerifierAddress,
+      id: this.#kmsContextId,
+      epochId: this.#kmsEpochId,
       signers: this.#kmsSigners,
-      threshold: this.#kmsSignerThreshold,
+      threshold: this.#kmsPublicDecryptThreshold,
+      ...(this.#kmsMpcThreshold ? { mpcThreshold: this.#kmsMpcThreshold } : {}),
     };
   }
 }
@@ -120,9 +124,19 @@ export function createKmsSignersContext(
     readonly kmsEpochId: Uint256BigInt;
     readonly kmsSigners: readonly ChecksummedAddress[];
     readonly kmsSignerThreshold: Uint8Number;
+    readonly kmsMpcThreshold?: Uint8Number | undefined;
   },
 ): KmsSignersContext {
-  const { kmsVerifierAddress: address, kmsContextId, kmsEpochId, kmsSigners, kmsSignerThreshold } = parameters;
+  const {
+    kmsVerifierAddress: address,
+    kmsContextId,
+    kmsEpochId,
+    kmsSigners,
+    kmsSignerThreshold,
+    kmsMpcThreshold,
+  } = parameters;
+
+  validateKmsExtraDataParams({ kmsContextId: parameters.kmsContextId, kmsEpochId: parameters.kmsEpochId });
 
   return new KmsSignersContextImpl(PRIVATE_TOKEN, owner, {
     address: addressToChecksummedAddress(address),
@@ -130,74 +144,15 @@ export function createKmsSignersContext(
     kmsEpochId,
     kmsSignerThreshold: Number(kmsSignerThreshold) as Uint8Number,
     kmsSigners: kmsSigners.map(addressToChecksummedAddress),
+    kmsMpcThreshold,
   });
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export function kmsSignersContextToExtraData(kmsSignersContext: KmsSignersContext): BytesHex {
+export function kmsSignersContextToExtraData(kmsSignersContext: KmsSignersContext): KmsExtraData {
   assertIsKmsSignersContext(kmsSignersContext, {});
-
-  if (kmsSignersContext.id === 0n) {
-    return toKmsExtraData({
-      version: EXTRA_DATA_V0,
-      kmsContextId: 0n as Uint256BigInt,
-      kmsEpochId: 0n as Uint256BigInt,
-    });
-  }
-
-  if (kmsSignersContext.epochId === 0n) {
-    return toKmsExtraData({
-      version: EXTRA_DATA_V1,
-      kmsContextId: kmsSignersContext.id,
-      kmsEpochId: 0n as Uint256BigInt,
-    });
-  }
-
-  return toKmsExtraData({
-    version: EXTRA_DATA_V2,
-    kmsContextId: kmsSignersContext.id,
-    kmsEpochId: kmsSignersContext.epochId,
-  });
-}
-
-/**
- * Asserts that the given `extraData` is a valid KMS extra data string and
- * matches the `extraData` derived from the provided {@link KmsSignersContext}.
- *
- * @throws If `extraData` is not a non-empty string, not a valid KMS extra data,
- *   or does not match the expected value from the context.
- */
-export function assertExtraDataMatchesKmsSingersContext(
-  parameters: {
-    readonly extraData: unknown;
-    readonly kmsSignersContext: KmsSignersContext;
-  },
-  options: { subject?: string } & ErrorMetadataParams,
-): void {
-  const { extraData, kmsSignersContext } = parameters;
-  assertIsNonEmptyString(extraData);
-
-  const sanitizedExtraData = ensure0x(extraData);
-  assertIsKmsExtraData(sanitizedExtraData, options);
-
-  const expectedExtraData = kmsSignersContextToExtraData(kmsSignersContext);
-
-  if (sanitizedExtraData !== expectedExtraData) {
-    throw new Error(`extraData "${extraData}" does not match KmsSignersContext extraData "${expectedExtraData}".`);
-  }
-}
-
-export function extraDataMatchesKmsSingersContext(parameters: {
-  readonly extraData: unknown;
-  readonly kmsSignersContext: KmsSignersContext;
-}): boolean {
-  try {
-    assertExtraDataMatchesKmsSingersContext(parameters, {});
-    return true;
-  } catch {
-    return false;
-  }
+  return createKmsExtraData({ kmsContextId: kmsSignersContext.id, kmsEpochId: kmsSignersContext.epochId });
 }
 
 ////////////////////////////////////////////////////////////////////////////////

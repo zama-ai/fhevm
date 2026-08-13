@@ -39,6 +39,8 @@ queue_rules:
       - -files~=^(?!charts/)
 
   - name: main
+    # Allow 1 retry per-job in case of flaky runner failing the job
+    max_checks_retries: 1
     batch_size: 3
     batch_max_wait_time: 1h
     checks_timeout: 5h

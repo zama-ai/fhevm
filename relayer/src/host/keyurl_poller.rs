@@ -42,6 +42,12 @@ struct KmsStorageNode {
     storage_prefix: String,
 }
 
+/// The canonical 32-byte big-endian hex encoding of an on-chain key/CRS id, lowercase, no `0x`
+/// prefix. Used both as the URL path segment and, `0x`-prefixed, as the served `dataId`.
+fn id_hex(id: U256) -> String {
+    hex::encode(id.to_be_bytes::<32>())
+}
+
 /// Build the full object URL the KMS Core writes to:
 /// `{storage_url}/{storage_prefix}/{segment}/{id_hex}` (`segment` = `PublicKey`|`CRS`, `id_hex` =
 /// 32-byte big-endian id, lowercase, no `0x`). The getters return only `storage_url`.
@@ -50,13 +56,12 @@ struct KmsStorageNode {
 /// equivalent; the served response carries a single URL (the SDK requires exactly one), built
 /// from the first context node.
 fn build_object_url(node: &KmsStorageNode, segment: &str, id: U256) -> String {
-    let id_hex = hex::encode(id.to_be_bytes::<32>());
     format!(
         "{}/{}/{}/{}",
         node.storage_url.trim_end_matches('/'),
         node.storage_prefix,
         segment,
-        id_hex
+        id_hex(id)
     )
 }
 
@@ -211,11 +216,11 @@ impl KeyUrlPoller {
 
         Ok(KeyUrlResponseJson::new(
             KeyData {
-                data_id: ids.key_id.to_string(),
+                data_id: format!("0x{}", id_hex(ids.key_id)),
                 urls: vec![build_object_url(node, "PublicKey", ids.key_id)],
             },
             KeyData {
-                data_id: ids.crs_id.to_string(),
+                data_id: format!("0x{}", id_hex(ids.crs_id)),
                 urls: vec![build_object_url(node, "CRS", ids.crs_id)],
             },
         ))
