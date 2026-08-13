@@ -125,6 +125,13 @@ async fn ensure_benchmark_keys(db_url: &str) -> Result<(), Box<dyn std::error::E
         return Ok(());
     }
     println!("benchmark database has no keys; importing the test keys");
+    // The import also inserts the test host chain, and inserts it last, so on a
+    // database whose migration already seeded that same chain and ACL it fails
+    // on the duplicate after the keys are already in. Clear the seeded row
+    // first: the import writes it back with identical contents.
+    sqlx::query("DELETE FROM host_chains")
+        .execute(&pool)
+        .await?;
     // Without the SnS key, matching the docker path: it belongs to sns-worker,
     // and importing it would add well over a gigabyte to every scenario that
     // starts from a freshly recreated database.

@@ -17,8 +17,9 @@ BENCH_ONE_SHOT_UNKNOWN_SCENARIOS = $(filter-out $(BENCH_ONE_SHOT_CANONICAL_SCENA
 # otherwise "succeed" while measuring nothing, and an arbitrary word would be
 # executed rather than rejected.
 BENCH_ONE_SHOT_SCENARIO_CHECK = $(if $(strip $(BENCH_ONE_SHOT_SCENARIOS)),,$(error BENCH_ONE_SHOT_SCENARIOS is empty: no one-shot scenario to run))$(if $(BENCH_ONE_SHOT_UNKNOWN_SCENARIOS),$(error unknown one-shot scenario requested; expected a subset of BENCH_ONE_SHOT_CANONICAL_SCENARIOS = $(BENCH_ONE_SHOT_CANONICAL_SCENARIOS)),)
-# Recreate the benchmark database between scenarios so each measurement starts
-# from a freshly migrated database rather than the previous scenario's rows.
+# Reset the benchmark database between scenarios so each measurement starts from
+# a freshly migrated database rather than the previous scenario's rows. Uses
+# reset_bench_db, which recreates the data without rebuilding the image.
 BENCH_ONE_SHOT_RECREATE_DB ?= 0
 # Wall-clock budget per scenario, including its build, in seconds; 0 disables it.
 # The whole suite must fit the CI job timeout with room for instance setup, so
@@ -46,8 +47,30 @@ cleanup:
 .PHONY: init_db
 init_db:
 	docker compose up -d --build db-migration
-	docker wait db-migration
+	@status="$$(docker wait db-migration)"; \
+	if [ "$$status" != "0" ]; then \
+	  echo "db-migration exited with status $$status" >&2; \
+	  docker logs db-migration >&2; \
+	  exit 1; \
+	fi
 	@echo "Database migration completed"
+
+# Return the benchmark database to a freshly migrated state without rebuilding
+# the migration image. init_db builds the whole workspace image, including the
+# contract stages, which costs minutes and buries the benchmark log when a suite
+# resets between scenarios; only the data needs to be new.
+.PHONY: reset_bench_db
+reset_bench_db:
+	docker compose exec -T db psql -U postgres -d postgres \
+	  -c "DROP DATABASE IF EXISTS coprocessor WITH (FORCE);"
+	docker compose up -d --no-build --force-recreate db-migration
+	@status="$$(docker wait db-migration)"; \
+	if [ "$$status" != "0" ]; then \
+	  echo "db-migration exited with status $$status" >&2; \
+	  docker logs db-migration >&2; \
+	  exit 1; \
+	fi
+	@echo "Benchmark database reset"
 
 .PHONY: recreate_db
 recreate_db:
@@ -116,7 +139,7 @@ define run_one_shot_suite
 	failed=""; \
 	for scenario in $(BENCH_ONE_SHOT_SCENARIOS); do \
 	  if [ "$(BENCH_ONE_SHOT_RECREATE_DB)" = "1" ]; then \
-	    $(MAKE) recreate_db || exit 2; \
+	    $(MAKE) reset_bench_db || exit 2; \
 	  fi; \
 	  echo "=== reportable one-shot $(1) scenario: $$scenario (budget $(BENCH_ONE_SHOT_SCENARIO_TIMEOUT)s) ==="; \
 	  started=$$(date +%s); \
