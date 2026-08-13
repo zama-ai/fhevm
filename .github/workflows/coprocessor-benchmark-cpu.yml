@@ -283,7 +283,7 @@ jobs:
           --bench-date "${BENCH_DATE}" \
           --expected-scenarios "${expected_scenarios}" \
           --expected-revision "${BUILD_REVISION}" \
-          --name-suffix "main_block_one_shot-schedule_${SCHEDULING_POLICY}"
+          --name-suffix "schedule_${SCHEDULING_POLICY}"
         env:
           ONE_SHOT_SCENARIOS: ${{ inputs.one_shot_scenarios }}
           RESULTS_FILENAME: ${{ env.RESULTS_FILENAME }}

@@ -28,6 +28,16 @@ ONE_SECOND_IN_MILLISECONDS = 1e3
 OPERATOR_TYPE = "Atomic"
 BENCH_CLASS = "evaluate"
 BENCH_NAME = "erc20::transfer::main_block_one_shot"
+# Short labels for the reported series. The measurement's own name is long
+# enough that a test name built from it outruns the ones Slab already stores,
+# and the precise metric stays recorded in the point's parameters.
+METRIC_LABELS = {
+    "post_commit_worker_visible_to_terminal_outputs": "worker_visible_to_terminals",
+    "post_first_commit_worker_visible_to_final_terminal_outputs": (
+        "first_commit_to_final_terminals"
+    ),
+    "commit_start_to_terminal_outputs_upper_bound": "commit_start_to_terminals_bound",
+}
 # Artifact layout this parser understands, written by
 # `persist_main_block_one_shot_artifact`. A bump there must be handled here.
 SUPPORTED_SCHEMA_VERSION = 2
@@ -200,7 +210,7 @@ def scenario_parameters(content):
     topology = result["transfer_topology"]
     dispatch = result["dispatch"]
     build = content["build"]
-    return {
+    parameters = {
         "scenario": result["scenario"],
         "topology": result["topology"],
         "worker_semantics": result["worker_semantics"],
@@ -235,6 +245,9 @@ def scenario_parameters(content):
         "features": ",".join(build["features"]),
         "bench_lto": build["bench_lto"],
     }
+    # A parameter with no value is not a value: an inapplicable one (a lag on a
+    # single-block scenario) is better absent than null.
+    return {name: value for name, value in parameters.items() if value is not None}
 
 
 def parse_scenario(content, name_suffix):
@@ -288,7 +301,8 @@ def parse_scenario(content, name_suffix):
 
     points = []
     for metric_name, bench_type, value in measurements:
-        display_name = "::".join([BENCH_NAME, scenario, metric_name])
+        label = METRIC_LABELS.get(metric_name, metric_name)
+        display_name = "::".join([BENCH_NAME, scenario, label])
         test_name = "_".join(filter(None, [display_name, name_suffix]))
         points.append(
             _create_point(value, test_name, bench_type, params, display_name)
