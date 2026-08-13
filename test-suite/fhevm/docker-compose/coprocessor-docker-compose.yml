@@ -125,7 +125,6 @@ services:
     platform: linux/amd64
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
-    environment:
     command:
       - tfhe_worker
       - --run-bg-worker
@@ -155,7 +154,6 @@ services:
     platform: linux/amd64
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
-    environment:
     command:
       - zkproof_worker
       - --database-url=${DATABASE_URL}
@@ -174,7 +172,6 @@ services:
     platform: linux/amd64
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
-    environment:
     command:
       - sns_worker
       - --database-url=${DATABASE_URL}
