@@ -102,7 +102,7 @@ impl ExecutionAccountMeta {
     /// The record lives next to the mutation on purpose: it is only complete because `promote`
     /// does exactly two things — OR the flags and append purposes — so anything added here has to
     /// be added to [`ExecutionAccountMeta::demote`] in the same edit.
-    pub(crate) fn promote(&mut self, required: Self) -> MetaPromotion {
+    pub(crate) fn promote(&mut self, required: Self, tally: &mut usize) -> MetaPromotion {
         let undo = MetaPromotion {
             was_writable: self.is_writable,
             was_signer: self.is_signer,
@@ -112,6 +112,7 @@ impl ExecutionAccountMeta {
         self.is_signer |= required.is_signer;
         for purpose in required.purposes {
             if !self.purposes.contains(&purpose) {
+                crate::cost::tally_push(&self.purposes, tally);
                 self.purposes.push(purpose);
             }
         }

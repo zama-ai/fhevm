@@ -32,6 +32,8 @@ pub struct FheExecution {
     /// inside `args`. Keep this coupled to `args`; `finish` validates every
     /// index before constructing the execution.
     pub(crate) remaining_accounts: Vec<ExecutionAccountMeta>,
+    /// Shape-derived cost against the transaction ceilings, computed by `finish`.
+    pub(crate) cost: crate::cost::FheExecutionCost,
 }
 
 impl FheExecution {
@@ -89,6 +91,14 @@ impl FheExecution {
 
     pub fn encrypted_value_account_authority(&self) -> ExecutionEncryptedValueAccountAuthority {
         self.encrypted_value_account_authority
+    }
+
+    /// What this execution costs against the transaction ceilings: exact packet bytes, the
+    /// guaranteed instruction-trace floor, and the state-dependent worst case. An app composing
+    /// a transaction with more than the minimal wrapper budgets its own instructions and CPIs
+    /// out of what [`crate::TRANSACTION_INSTRUCTION_TRACE_LIMIT`] leaves over the floor.
+    pub fn cost(&self) -> crate::cost::FheExecutionCost {
+        self.cost
     }
 
     pub fn dynamic_account_requirements(
@@ -216,17 +226,10 @@ pub(crate) fn fhe_execute_step_output(step: &FheExecuteStep) -> &FheExecuteOutpu
     }
 }
 
-/// The `fhe_execute` instruction packet, serialized once into a right-sized buffer.
-///
-/// The generated `zama_host::instruction::FheExecute` wrapper takes the args by value, which
-/// would force a deep copy of every step and dictionary entry; writing the discriminator and then
-/// borsh-serializing the borrowed args produces byte-identical data (asserted below). The
-/// counting pre-pass matters as much as the avoided copy: a packet-sized `Vec` growing by
-/// doubling abandons roughly another packet of bytes on the never-freeing program heap.
-// Gated with its callers (the CPI path and the heap-budget tests) so a per-crate build
-// without `cpi` does not report it dead.
-#[cfg(any(feature = "cpi", test))]
-pub(crate) fn fhe_execute_instruction_data(args: &FheExecuteArgs) -> Vec<u8> {
+/// Exact byte length of the `fhe_execute` instruction packet — discriminator plus borsh-encoded
+/// args — counted through a sink writer, so measuring a packet allocates nothing. `finish`
+/// checks this against the CPI data limit; the CPI path sizes its one real buffer with it.
+pub(crate) fn packet_byte_count(args: &FheExecuteArgs) -> usize {
     use anchor_lang::{AnchorSerialize, Discriminator};
 
     struct CountingWriter(usize);
@@ -243,9 +246,24 @@ pub(crate) fn fhe_execute_instruction_data(args: &FheExecuteArgs) -> Vec<u8> {
     let mut counter = CountingWriter(0);
     args.serialize(&mut counter)
         .expect("counting borsh writer cannot fail");
-    let discriminator = zama_host::instruction::FheExecute::DISCRIMINATOR;
-    let mut data = Vec::with_capacity(discriminator.len() + counter.0);
-    data.extend_from_slice(discriminator);
+    zama_host::instruction::FheExecute::DISCRIMINATOR.len() + counter.0
+}
+
+/// The `fhe_execute` instruction packet, serialized once into a right-sized buffer.
+///
+/// The generated `zama_host::instruction::FheExecute` wrapper takes the args by value, which
+/// would force a deep copy of every step and dictionary entry; writing the discriminator and then
+/// borsh-serializing the borrowed args produces byte-identical data (asserted below). The
+/// counting pre-pass matters as much as the avoided copy: a packet-sized `Vec` growing by
+/// doubling abandons roughly another packet of bytes on the never-freeing program heap.
+// Gated with its callers (the CPI path and the heap-budget tests) so a per-crate build
+// without `cpi` does not report it dead.
+#[cfg(any(feature = "cpi", test))]
+pub(crate) fn fhe_execute_instruction_data(args: &FheExecuteArgs) -> Vec<u8> {
+    use anchor_lang::{AnchorSerialize, Discriminator};
+
+    let mut data = Vec::with_capacity(packet_byte_count(args));
+    data.extend_from_slice(zama_host::instruction::FheExecute::DISCRIMINATOR);
     args.serialize(&mut data)
         .expect("borsh serialization into a Vec cannot fail");
     data

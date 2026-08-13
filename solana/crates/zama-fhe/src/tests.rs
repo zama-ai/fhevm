@@ -1383,7 +1383,7 @@ fn persistent_output_create_matches_batch_lowering() {
                 .iter()
                 .map(|index| execution.args.dictionary_key(*index).unwrap())
                 .collect();
-            assert_eq!(output_subjects, binding.host_subjects());
+            assert_eq!(output_subjects, binding.subjects());
             assert_eq!(*previous_state, binding.previous_state());
         }
         other => panic!("unexpected step: {other:?}"),
@@ -1538,10 +1538,12 @@ fn step_tables_rollback_undoes_promotions_and_appends() {
     let dictionary_before = dictionary.clone();
     let producers_before = persistent_producers.clone();
 
+    let mut tally = 0;
     let mut tables = StepTables::open(
         &mut remaining_accounts,
         &mut dictionary,
         &mut persistent_producers,
+        &mut tally,
     );
     // Promote the same entry twice — first writable, then signer — so undoing in the wrong order
     // would leave the entry with the flags the first promotion set.

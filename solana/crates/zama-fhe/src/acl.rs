@@ -60,6 +60,10 @@ pub struct EncryptedValueId {
     pub(crate) domain: Domain,
     pub(crate) encrypted_value_account_authority: Pubkey,
     pub(crate) label: EncryptedValueLabel,
+    /// The encrypted value account's PDA, derived once at construction: on-chain the derivation
+    /// is a syscall the app pays where it builds the id, so the builder's heap tally stays
+    /// exact, and an id used across several steps derives once instead of per use.
+    pub(crate) address: Pubkey,
 }
 
 impl EncryptedValueId {
@@ -90,15 +94,22 @@ impl EncryptedValueId {
         encrypted_value_account_authority: Pubkey,
         label: EncryptedValueLabel,
     ) -> Self {
+        let address = encrypted_value_address(zama_solana_acl::derive_encrypted_value_id(
+            domain.pubkey().to_bytes(),
+            encrypted_value_account_authority.to_bytes(),
+            label.bytes(),
+        ))
+        .0;
         Self {
             domain,
             encrypted_value_account_authority,
             label,
+            address,
         }
     }
 
     pub fn address(&self) -> Pubkey {
-        encrypted_value_address(self.encrypted_value_id()).0
+        self.address
     }
 
     pub fn domain(&self) -> Domain {
@@ -125,9 +136,9 @@ impl EncryptedValueId {
 /// Previous on-chain state a persistent output updates. `None` means this bind
 /// is the encrypted value account's first (the `EncryptedValue` PDA is created).
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct PreviousEncryptedValueAccountState {
-    handle: [u8; 32],
-    subjects: Vec<Pubkey>,
+pub(crate) struct PreviousEncryptedValueAccountState {
+    pub(crate) handle: [u8; 32],
+    pub(crate) subjects: Vec<Pubkey>,
 }
 
 /// Persistent output descriptor accepted by persistent-only steps such as input bind.
@@ -190,18 +201,35 @@ impl PersistentOutput {
             make_public: self.make_public,
         })
     }
+
+    /// [`binding`](Self::binding) for the lowering path, which owns the output: the subject list
+    /// and previous state move instead of being cloned, so lowering a persistent output
+    /// allocates nothing for data the app already built. Same validation as `binding`.
+    pub(crate) fn into_binding(self) -> Result<PersistentOutputBinding> {
+        validate_encrypted_value_id(&self.key)?;
+        validate_subjects(&self.subjects)?;
+        Ok(PersistentOutputBinding {
+            encrypted_value: self.key.address(),
+            domain: self.key.domain,
+            encrypted_value_account_authority: self.key.encrypted_value_account_authority,
+            label: self.key.label.bytes(),
+            subjects: self.subjects,
+            previous: self.previous,
+            make_public: self.make_public,
+        })
+    }
 }
 
 /// Host-ready metadata for creating or updating a persistent `EncryptedValue` encrypted value account.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PersistentOutputBinding {
-    encrypted_value: Pubkey,
-    domain: Domain,
-    encrypted_value_account_authority: Pubkey,
-    label: [u8; 32],
-    subjects: Vec<Pubkey>,
-    previous: Option<PreviousEncryptedValueAccountState>,
-    make_public: bool,
+    pub(crate) encrypted_value: Pubkey,
+    pub(crate) domain: Domain,
+    pub(crate) encrypted_value_account_authority: Pubkey,
+    pub(crate) label: [u8; 32],
+    pub(crate) subjects: Vec<Pubkey>,
+    pub(crate) previous: Option<PreviousEncryptedValueAccountState>,
+    pub(crate) make_public: bool,
 }
 
 impl PersistentOutputBinding {
@@ -248,10 +276,6 @@ impl PersistentOutputBinding {
     pub fn make_public(&self) -> bool {
         self.make_public
     }
-
-    pub(crate) fn host_subjects(&self) -> Vec<Pubkey> {
-        self.subjects.clone()
-    }
 }
 
 /// Validated power-of-two upper bound for host bounded-random `euint64` creation.
@@ -294,6 +318,9 @@ impl TryFrom<u64> for BoundedU64UpperBound {
 pub struct Output(pub(crate) OutputKind);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+// Passed by value into lowering, which consumes it in place; boxing the persistent variant
+// would put one more allocation on the program's never-freeing heap per output.
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum OutputKind {
     Transient,
     Persistent(PersistentOutput),

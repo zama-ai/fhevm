@@ -21,6 +21,10 @@ pub(crate) struct StepTables<'b> {
     remaining_accounts: &'b mut Vec<ExecutionAccountMeta>,
     dictionary: &'b mut Vec<[u8; 32]>,
     persistent_producers: &'b mut Vec<anchor_lang::prelude::Pubkey>,
+    /// The builder's running allocation tally: every push that grows a table pays into it,
+    /// rollback included — on the never-freeing bump region a rolled-back step's requests are
+    /// spent all the same.
+    tally: &'b mut usize,
     remaining_accounts_len: usize,
     dictionary_len: usize,
     persistent_producers_len: usize,
@@ -32,6 +36,7 @@ impl<'b> StepTables<'b> {
         remaining_accounts: &'b mut Vec<ExecutionAccountMeta>,
         dictionary: &'b mut Vec<[u8; 32]>,
         persistent_producers: &'b mut Vec<anchor_lang::prelude::Pubkey>,
+        tally: &'b mut usize,
     ) -> Self {
         Self {
             remaining_accounts_len: remaining_accounts.len(),
@@ -40,6 +45,7 @@ impl<'b> StepTables<'b> {
             remaining_accounts,
             dictionary,
             persistent_producers,
+            tally,
             promotions: Vec::new(),
         }
     }
@@ -63,15 +69,23 @@ impl<'b> StepTables<'b> {
             .iter()
             .position(|candidate| candidate.pubkey == required.pubkey)
         {
-            let undo = self.remaining_accounts[index].promote(required);
+            let undo = self.remaining_accounts[index].promote(required, self.tally);
+            crate::cost::tally_push(&self.promotions, self.tally);
             self.promotions.push((index, undo));
             return u8::try_from(index)
                 .map_err(|_| FheExecutionBuildError::TooManyRemainingAccounts);
         }
         let index = u8::try_from(self.remaining_accounts.len())
             .map_err(|_| FheExecutionBuildError::TooManyRemainingAccounts)?;
+        crate::cost::tally_push(self.remaining_accounts, self.tally);
         self.remaining_accounts.push(required);
         Ok(index)
+    }
+
+    /// Pays step-local allocation bytes into the builder's tally (per-step operand tables that
+    /// are not one of the three shared tables).
+    pub(crate) fn tally_bytes(&mut self, bytes: usize) {
+        *self.tally += bytes;
     }
 
     /// Interns a 32-byte constant into the execution dictionary, reusing an existing entry
@@ -83,6 +97,7 @@ impl<'b> StepTables<'b> {
         }
         let index = u8::try_from(self.dictionary.len())
             .map_err(|_| FheExecutionBuildError::TooManyDictionaryEntries)?;
+        crate::cost::tally_push(self.dictionary, self.tally);
         self.dictionary.push(bytes);
         Ok(index)
     }
@@ -103,6 +118,8 @@ pub(crate) fn lower_operand(
                 return Err(FheExecutionBuildError::PersistentOperandWrittenEarlier);
             }
             let handle_index = tables.dictionary_index(persistent.handle)?;
+            // Every constructed meta allocates its one-purpose table, kept or not.
+            tables.tally_bytes(std::mem::size_of::<ExecutionAccountPurpose>());
             let encrypted_value_index = tables.account_index(ExecutionAccountMeta::readonly(
                 persistent.encrypted_value,
                 ExecutionAccountPurpose::PersistentInputAcl,
@@ -125,6 +142,13 @@ pub(crate) fn lower_operand(
                 .get(attestation_index as usize)
                 .ok_or(FheExecutionBuildError::MissingVerifiedInput)?
                 .clone();
+            // The embed is the attestation's boxed clone: the box itself plus the exact bytes
+            // of its three cloned tables. Reusing one verified input across steps pays this per
+            // consuming step.
+            *tables.tally += std::mem::size_of::<CoprocessorInputAttestation>()
+                + attestation.ct_handles.len() * std::mem::size_of::<[u8; 32]>()
+                + attestation.extra_data.len()
+                + attestation.signatures.len() * std::mem::size_of::<[u8; 65]>();
             Ok(FheExecuteOperand::VerifiedInput {
                 attestation: Box::new(attestation),
             })
@@ -143,42 +167,52 @@ pub(crate) fn lower_output(
     match output.0 {
         OutputKind::Transient => Ok(FheExecuteOutput::Transient),
         OutputKind::Persistent(output) => {
-            let binding = output.binding()?;
-            let encrypted_value = binding.encrypted_value();
+            // Lowering owns the output, so the binding moves the subject list and previous
+            // state instead of cloning them — a persistent output allocates nothing here for
+            // data the app already built (the interned dictionary entries and the subject
+            // index list are the step's only new bytes).
+            let binding = output.into_binding()?;
+            let encrypted_value = binding.encrypted_value;
+            // Every constructed meta allocates its one-purpose table, kept or not.
+            tables.tally_bytes(std::mem::size_of::<ExecutionAccountPurpose>());
             let output_encrypted_value_index =
                 tables.account_index(ExecutionAccountMeta::writable(
-                    binding.encrypted_value(),
+                    encrypted_value,
                     ExecutionAccountPurpose::PersistentOutputAcl,
                 ))?;
             // Both sides are encrypted value account authorities; what differs is the scope. The
             // local is the one this *output* declares, the parameter is the execution's fixed CPI
             // signer. Equal means the output rides that signer and needs no extra account.
-            let output_authority = binding.encrypted_value_account_authority();
+            let output_authority = binding.encrypted_value_account_authority;
             let output_authority_index =
                 if output_authority == encrypted_value_account_authority.pubkey() {
                     None
                 } else {
+                    tables.tally_bytes(std::mem::size_of::<ExecutionAccountPurpose>());
                     Some(tables.account_index(ExecutionAccountMeta::readonly_signer(
                         output_authority,
                         ExecutionAccountPurpose::PersistentOutputAuthority,
                     ))?)
                 };
-            let output_subject_indexes = binding
-                .host_subjects()
-                .into_iter()
-                .map(|subject| tables.dictionary_index(subject.to_bytes()))
-                .collect::<Result<Vec<u8>>>()?;
+            // One exact allocation for the index list, sized explicitly so the tally is exact.
+            *tables.tally += binding.subjects.len() * std::mem::size_of::<u8>();
+            let mut output_subject_indexes = Vec::with_capacity(binding.subjects.len());
+            for subject in &binding.subjects {
+                output_subject_indexes.push(tables.dictionary_index(subject.to_bytes())?);
+            }
             let output = FheExecuteOutput::StoredValue {
                 output_encrypted_value_index,
                 output_authority_index,
                 output_domain_index: tables
-                    .dictionary_index(binding.domain().pubkey().to_bytes())?,
-                output_account_index: tables
-                    .dictionary_index(binding.encrypted_value_account_authority().to_bytes())?,
-                output_label_index: tables.dictionary_index(binding.encrypted_value_label())?,
+                    .dictionary_index(binding.domain.pubkey().to_bytes())?,
+                output_account_index: tables.dictionary_index(output_authority.to_bytes())?,
+                output_label_index: tables.dictionary_index(binding.label)?,
                 output_subject_indexes,
-                previous_state: binding.previous_state(),
-                make_public: binding.make_public(),
+                previous_state: binding.previous.map(|previous| zama_host::PreviousState {
+                    handle: previous.handle,
+                    subjects: previous.subjects,
+                }),
+                make_public: binding.make_public,
             };
             tables.persistent_producers.push(encrypted_value);
             Ok(output)
