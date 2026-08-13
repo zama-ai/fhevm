@@ -257,16 +257,23 @@ jobs:
           username: ${{ secrets.CGR_USERNAME }}
           password: ${{ secrets.CGR_PASSWORD }}
 
-      # Sample the host while the image builds: this step compiles a Rust
-      # workspace in Docker and is one of the job's two memory peaks, and runs
-      # that end as a cancellation here leave no other evidence behind.
+      # The one-shot suite needs a schema, not an image: bring up postgres and
+      # apply the migrations with the sqlx CLI installed above. Building the
+      # migration image here would compile the whole workspace a second time,
+      # under whole-machine load, for a binary this benchmark never runs.
       - name: Init database
         run: |
           bash "${GITHUB_WORKSPACE}/ci/log_host_resources.sh" 30 &
           sampler=$!
           trap 'kill "${sampler}" 2>/dev/null || true' EXIT
-          make init_db
+          if [[ "${BENCHMARKS}" == "main_block_one_shot" ]]; then
+            make bench_db_up
+          else
+            make init_db
+          fi
         working-directory: coprocessor/fhevm-engine/tfhe-worker
+        env:
+          BENCHMARKS: ${{ inputs.benchmarks }}
 
       - name: Use Node.js
         uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2

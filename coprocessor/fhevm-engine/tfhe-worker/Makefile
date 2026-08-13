@@ -55,22 +55,40 @@ init_db:
 	fi
 	@echo "Database migration completed"
 
-# Return the benchmark database to a freshly migrated state without rebuilding
-# the migration image. init_db builds the whole workspace image, including the
-# contract stages, which costs minutes and buries the benchmark log when a suite
-# resets between scenarios; only the data needs to be new.
+# Database for the reportable benchmarks: postgres plus this repository's
+# migrations, applied with the sqlx CLI the benchmark runners already install.
+#
+# Deliberately not init_db. That target builds the migration image, which drags
+# in the contract stages and a full workspace cargo build: minutes of
+# whole-machine load, and pages of gateway deployment output, for a benchmark
+# that needs a schema and nothing else. The worker under test is the one the
+# benchmark itself builds, never the one in that image.
+BENCH_DB_URL ?= postgresql://postgres:postgres@127.0.0.1:5432/coprocessor
+BENCH_DB_MIGRATIONS ?= ../db-migration/migrations
+
+.PHONY: bench_db_up
+bench_db_up:
+	docker compose up -d db
+	@echo "Waiting for postgres..."
+	@for attempt in $$(seq 1 60); do \
+	  if docker compose exec -T db pg_isready -U postgres >/dev/null 2>&1; then break; fi; \
+	  if [ "$$attempt" = "60" ]; then echo "postgres did not become ready" >&2; exit 1; fi; \
+	  sleep 2; \
+	done
+	$(MAKE) migrate_bench_db
+
+.PHONY: migrate_bench_db
+migrate_bench_db:
+	DATABASE_URL="$(BENCH_DB_URL)" sqlx database create
+	DATABASE_URL="$(BENCH_DB_URL)" sqlx migrate run --source "$(BENCH_DB_MIGRATIONS)"
+	@echo "Benchmark database migrated"
+
+# Return the benchmark database to a freshly migrated state between scenarios.
 .PHONY: reset_bench_db
 reset_bench_db:
 	docker compose exec -T db psql -U postgres -d postgres \
 	  -c "DROP DATABASE IF EXISTS coprocessor WITH (FORCE);"
-	docker compose up -d --no-build --force-recreate db-migration
-	@status="$$(docker wait db-migration)"; \
-	if [ "$$status" != "0" ]; then \
-	  echo "db-migration exited with status $$status" >&2; \
-	  docker logs db-migration >&2; \
-	  exit 1; \
-	fi
-	@echo "Benchmark database reset"
+	$(MAKE) migrate_bench_db
 
 .PHONY: recreate_db
 recreate_db:
