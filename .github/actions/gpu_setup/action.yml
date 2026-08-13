@@ -19,9 +19,14 @@ runs:
     - name: Install dependencies
       shell: bash
       run: |
-        wget https://github.com/Kitware/CMake/releases/download/v"${CMAKE_VERSION}"/cmake-"${CMAKE_VERSION}"-linux-x86_64.sh
-        echo "${CMAKE_SCRIPT_SHA} cmake-${CMAKE_VERSION}-linux-x86_64.sh" | sha256sum --check
-        sudo bash cmake-"${CMAKE_VERSION}"-linux-x86_64.sh \
+        # Download outside the checkout: a downloaded file left in the workspace
+        # makes the tree dirty, which reportable benchmark targets refuse to
+        # measure on.
+        CMAKE_SCRIPT="${RUNNER_TEMP}/cmake-${CMAKE_VERSION}-linux-x86_64.sh"
+        wget -O "${CMAKE_SCRIPT}" \
+          https://github.com/Kitware/CMake/releases/download/v"${CMAKE_VERSION}"/cmake-"${CMAKE_VERSION}"-linux-x86_64.sh
+        echo "${CMAKE_SCRIPT_SHA}  ${CMAKE_SCRIPT}" | sha256sum --check
+        sudo bash "${CMAKE_SCRIPT}" \
           --skip-license --prefix=/usr/ --exclude-subdir
 
         # An image that never shipped unattended-upgrades makes the implied stop
@@ -73,9 +78,12 @@ runs:
       run: |
         CUDA_INSTALL_VERSION="${CUDA_VERSION%% *}"
         TOOLKIT_VERSION="$(echo "${CUDA_INSTALL_VERSION}" | sed 's/\(.*\)\.\(.*\)/\1-\2/')"
-        wget "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/${CUDA_KEYRING_PACKAGE}"
-        echo "${CUDA_KEYRING_SHA} ${CUDA_KEYRING_PACKAGE}" | sha256sum --check
-        sudo dpkg -i "${CUDA_KEYRING_PACKAGE}"
+        # Download outside the checkout, as above.
+        CUDA_KEYRING="${RUNNER_TEMP}/${CUDA_KEYRING_PACKAGE}"
+        wget -O "${CUDA_KEYRING}" \
+          "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/${CUDA_KEYRING_PACKAGE}"
+        echo "${CUDA_KEYRING_SHA}  ${CUDA_KEYRING}" | sha256sum --check
+        sudo dpkg -i "${CUDA_KEYRING}"
 
         # An image that never shipped unattended-upgrades makes the implied stop
         # fail; the purge below is already tolerant of it being absent.

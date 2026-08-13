@@ -66,7 +66,10 @@ clean_run:
 
 .PHONY: check_main_block_baseline_clean_source
 check_main_block_baseline_clean_source:
-	@test -z "$$(git status --porcelain --untracked-files=normal)" || (echo "reportable main_block_baseline requires a clean committed worktree" >&2; exit 2)
+	@test -z "$$(git status --porcelain --untracked-files=normal)" || ( \
+	  echo "reportable main_block_baseline requires a clean committed worktree; offending entries:" >&2; \
+	  git status --porcelain --untracked-files=normal >&2; \
+	  exit 2)
 
 .PHONY: benchmark_erc20_main_block_baseline_gpu
 benchmark_erc20_main_block_baseline_gpu: check_main_block_baseline_clean_source
@@ -95,7 +98,10 @@ print_bench_one_shot_scenarios:
 # and report, and the suite exits non-zero at the end.
 # $(1): backend suffix, cpu or gpu
 define run_one_shot_suite
-	@$(BENCH_ONE_SHOT_SCENARIO_CHECK)set -u; failed=""; \
+	@$(BENCH_ONE_SHOT_SCENARIO_CHECK)set -u; \
+	: "A dirty worktree is not a per-scenario failure: report it once up front"; \
+	$(MAKE) check_main_block_baseline_clean_source || exit 2; \
+	failed=""; \
 	for scenario in $(BENCH_ONE_SHOT_SCENARIOS); do \
 	  if [ "$(BENCH_ONE_SHOT_RECREATE_DB)" = "1" ]; then \
 	    $(MAKE) recreate_db || exit 2; \
