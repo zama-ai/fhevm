@@ -227,6 +227,10 @@ def scenario_parameters(content):
         "dcid_adaptive_batch_execution": dispatch.get(
             "dcid_adaptive_batch_execution", False
         ),
+        # At INFO the listener logs every ingested event, inside the window the
+        # traffic scenarios measure, so runs at different levels are not
+        # comparable. Artifacts written before this was recorded ran at INFO.
+        "log_level": dispatch.get("log_level", "info"),
         "backend": build["backend"],
         "features": ",".join(build["features"]),
         "bench_lto": build["bench_lto"],

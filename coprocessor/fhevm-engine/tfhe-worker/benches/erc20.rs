@@ -923,6 +923,9 @@ async fn run_main_block_one_shot() -> Result<(), Box<dyn std::error::Error>> {
         "dependence_chains_per_batch": utils::benchmark_dependence_chains_per_batch(2000)?,
         "dcid_batch_execution": utils::benchmark_dcid_batch_execution()?,
         "dcid_adaptive_batch_execution": utils::benchmark_dcid_adaptive_batch_execution()?,
+        // Recorded because it is not free: at INFO the listener logs every
+        // ingested event, inside the window the traffic scenarios measure.
+        "log_level": utils::benchmark_log_level()?.to_string(),
     });
     let mut app = setup_test_app().await?;
     let result: Result<MainBlockOneShotOutcome, Box<dyn std::error::Error>> = async {

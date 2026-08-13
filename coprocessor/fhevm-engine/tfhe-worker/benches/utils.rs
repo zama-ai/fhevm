@@ -179,7 +179,7 @@ async fn start_coprocessor(
             &application_name,
         )),
         service_name: std::env::var("OTEL_SERVICE_NAME").unwrap_or_default(),
-        log_level: Level::INFO,
+        log_level: benchmark_log_level()?,
         health_check_port: test_harness::localstack::pick_free_port(),
         metric_rerand_batch_latency: MetricsConfig::default(),
         metric_fhe_batch_latency: MetricsConfig::default(),
@@ -250,6 +250,20 @@ pub fn benchmark_dcid_batch_execution() -> Result<bool, Box<dyn std::error::Erro
         }
     }
     Ok(true)
+}
+
+/// Log level for the worker a benchmark starts, defaulting to warnings.
+///
+/// The subscriber applies one level to every target, so INFO here also turns on
+/// the listener's per-event logging. The traffic scenarios stage through the
+/// real ingest path and emit thousands of those records — which bury the run's
+/// own output, and, because those scenarios deliberately overlap ingestion with
+/// the window they measure, write log latency straight into the measurement.
+pub fn benchmark_log_level() -> Result<Level, Box<dyn std::error::Error>> {
+    let requested = std::env::var("FHEVM_BENCH_LOG_LEVEL").unwrap_or_else(|_| "warn".to_owned());
+    requested
+        .parse::<Level>()
+        .map_err(|error| format!("parse FHEVM_BENCH_LOG_LEVEL={requested:?}: {error}").into())
 }
 
 pub fn benchmark_dcid_adaptive_batch_execution() -> Result<bool, Box<dyn std::error::Error>> {
