@@ -972,12 +972,13 @@ impl TxLifecycleHooks for GatewayHandler {
         job_id: &JobId,
         receipt: &TxResult,
     ) -> Result<(), EventProcessingError> {
-        // The user-decrypt request emits one of three overloaded events depending on the entry
-        // point, each with a distinct signature hash: legacy `UserDecryptionRequest_0` (v2 direct
-        // and v2 delegated), RFC016 unified `UserDecryptionRequest_1` (v3 EVM), and
-        // `UserDecryptionRequestSolana` (RFC-021, v3 Solana). Try each in turn to recover the
-        // decryptionId; without the Solana fallback the gw_reference_id is never stored and the
-        // UserDecryptionResponse can never be matched back, so the request hangs until timeout.
+        // The user-decrypt request emits one of the overloaded `UserDecryptionRequest` events
+        // depending on the entry point, each with a distinct signature hash: legacy
+        // `UserDecryptionRequest_0` (v2 direct and v2 delegated), RFC016 unified
+        // `UserDecryptionRequest_1` (v3 EVM), and the host-generic `UserDecryptionRequest_4`
+        // (Solana). Try each in turn to recover the decryptionId; without the host-generic
+        // fallback the gw_reference_id is never stored and the UserDecryptionResponse can never
+        // be matched back, so the request hangs until timeout.
         let gw_reference_id = match TransactionHelper::extract_gateway_id_from_receipt::<
             Decryption::UserDecryptionRequest_0,
         >(
@@ -997,10 +998,10 @@ impl TxLifecycleHooks for GatewayHandler {
                     Ok(id) => id,
                     Err(EventProcessingError::ValidationFailed { .. }) => {
                         TransactionHelper::extract_gateway_id_from_receipt::<
-                            Decryption::UserDecryptionRequestSolana,
+                            Decryption::UserDecryptionRequest_4,
                         >(
                             receipt,
-                            Decryption::UserDecryptionRequestSolana::SIGNATURE_HASH,
+                            Decryption::UserDecryptionRequest_4::SIGNATURE_HASH,
                             |event| event.decryptionId,
                         )?
                     }

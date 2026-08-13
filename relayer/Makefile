@@ -392,6 +392,11 @@ test-run: _check-postgres ## Run pre-built test binaries
 	@$(CARGO_TEST) --features integration-tests --test user_decrypt_v2_test -- --test-threads=1
 	@$(CARGO_TEST) --features integration-tests --test delegated_user_decrypt_v2_test -- --test-threads=1
 	@$(CARGO_TEST) --features integration-tests --test user_decrypt_v3_test -- --test-threads=1
+	# Solana host-payload pins: the byte-parity vector against the connector-auth fixtures and
+	# the v0 teardown grep gate. Neither touches the database, but they live with the other
+	# integration binaries so the whole tree is run from one list.
+	@$(CARGO_TEST) --features integration-tests --test solana_host_payload_parity -- --test-threads=1
+	@$(CARGO_TEST) --features integration-tests --test solana_v0_teardown -- --test-threads=1
 	@$(CARGO_TEST) --features integration-tests --test health_tests -- --test-threads=1
 	@$(CARGO_TEST) --features integration-tests --test keyurl_test -- --test-threads=1
 

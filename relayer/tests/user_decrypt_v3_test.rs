@@ -127,6 +127,43 @@ mod helpers {
         sign_v3_user_decrypt_envelope(&mut envelope, &signer);
         envelope
     }
+
+    /// Build a valid `solana-srfc38-user-decrypt-v1` envelope. No signing step: the relayer never
+    /// verifies the ed25519 signature (the connector does), so any 64-byte blob is forwarded. The
+    /// handle uses `random_handle()` so its embedded chain id is a configured host chain and the
+    /// request survives the early chain-id gate; the permit fields are shaped to pass the strict
+    /// typed pre-check (`PermitFields::decode`): a 32-byte identity, an 869-byte transport key, a
+    /// validity window covering now, and a 65-byte `0x02` KMS-routing `extraData`.
+    pub fn create_srfc38_envelope() -> serde_json::Value {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        json!({
+            "attestationType": "solana-srfc38-user-decrypt-v1",
+            "attestedPayload": {
+                "userPubkey": random_0x_hex(32),
+                "transportKey": random_0x_hex(869),
+                "allowedAclDomainKeys": [random_0x_hex(32)],
+                "requestValidity": {
+                    "startTimestamp": (now - 1).to_string(),
+                    "durationSeconds": "604800",
+                },
+                "verifyingProgramId": random_0x_hex(32),
+                "chainId": (0x8000_0000_0000_0000u64 | 1).to_string(),
+                // 65-byte KMS routing: version 0x02 ‖ contextId(32) ‖ epochId(32).
+                "extraData": format!("0x02{}", "00".repeat(64)),
+                "handles": [{
+                    "handle": random_handle(),
+                    "owner": random_0x_hex(32),
+                    "encryptedValueId": random_0x_hex(32),
+                    "proofLeafCount": "0",
+                    "accessProof": "0x",
+                }],
+            },
+            "signature": random_0x_hex(64),
+        })
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -154,6 +191,58 @@ async fn v3_accepts_direct_handle() {
         "expected 202, got {}: {:?}",
         response.status(),
         response.text().await
+    );
+
+    setup.shutdown().await;
+}
+
+/// v3 accepts a host-generic Solana sRFC-38 request end to end: parsed, dispatched to the Solana
+/// envelope by attestation type, permit pre-checked, canonical host payload built, and enqueued
+/// (202). The ed25519 signature is not verified here — that is the connector's job.
+#[tokio::test]
+async fn v3_accepts_solana_srfc38_request() {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let payload = helpers::create_srfc38_envelope();
+
+    let response = reqwest::Client::new()
+        .post(helpers::v3_user_decrypt_post_url(&setup))
+        .header("Content-Type", "application/json")
+        .timeout(std::time::Duration::from_secs(10))
+        .json(&payload)
+        .send()
+        .await
+        .expect("POST failed");
+
+    assert_eq!(
+        response.status(),
+        reqwest::StatusCode::ACCEPTED,
+        "expected 202, got {}: {:?}",
+        response.status(),
+        response.text().await
+    );
+
+    setup.shutdown().await;
+}
+
+/// v3 refuses a Solana sRFC-38 payload carrying a stray field: the strict `deny_unknown_fields`
+/// envelope rejects the retired EVM `userAddress` / ed25519 `nonce` shapes at the HTTP boundary.
+#[tokio::test]
+async fn v3_rejects_solana_srfc38_with_stray_field() {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let mut payload = helpers::create_srfc38_envelope();
+    payload["attestedPayload"]["nonce"] = json!("0x00");
+
+    let response = reqwest::Client::new()
+        .post(helpers::v3_user_decrypt_post_url(&setup))
+        .json(&payload)
+        .send()
+        .await
+        .expect("POST failed");
+
+    assert!(
+        response.status().is_client_error(),
+        "expected a 4xx rejection for a stray field, got {}",
+        response.status()
     );
 
     setup.shutdown().await;

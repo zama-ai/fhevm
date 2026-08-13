@@ -9,7 +9,7 @@
 use crate::http::endpoints::common::types::{HandleEntryJson, RequestValiditySecondsJson};
 use crate::http::utils::redact::redact_len;
 use derivative::Derivative;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use validator::Validate;
 
@@ -96,23 +96,87 @@ pub struct Eip712UnifiedUserDecryptPayloadJson {
     #[schema(schema_with = crate::http::extra_data_decryption_schema)]
     #[validate(custom(function = "crate::http::validate_extra_data_field_decryption"))]
     pub extra_data: String,
+}
 
-    /// RFC-021 Solana ed25519 identity (32-byte pubkey, `0x` + 64 hex). Required for the
-    /// `solana-ed25519-user-decrypt-v2` attestation type; absent for EVM. The ed25519 `signature`
-    /// is verified against this identity off-chain by the KMS Connector.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schema(example = "0x1111111111111111111111111111111111111111111111111111111111111111")]
-    pub solana_user_identity: Option<String>,
+/// v3 Solana user-decrypt envelope (`solana-srfc38-user-decrypt-v1`). A Solana-native shape
+/// with no EVM placeholders: the ed25519 `signature` attests over the permit fields, and the
+/// relayer forwards everything opaquely into the host-generic gateway `userDecryptionRequest`
+/// overload (`hostKind = Solana`). Each KMS party's connector verifies the signature off-chain.
+#[derive(Deserialize, Clone, ToSchema, Validate, Derivative)]
+#[derivative(Debug)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SolanaAttestedUserDecryptRequestJson {
+    /// Must equal `"solana-srfc38-user-decrypt-v1"`.
+    #[validate(custom(function = "crate::http::validate_v3_attestation_type"))]
+    #[schema(example = "solana-srfc38-user-decrypt-v1")]
+    pub attestation_type: String,
 
-    /// RFC-021 per-request anti-replay nonce (`0x` + 64 hex) bound into the ed25519 signing
-    /// preimage. Required for the Solana ed25519 attestation type; absent for EVM.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schema(example = "0x2222222222222222222222222222222222222222222222222222222222222222")]
-    pub solana_nonce: Option<String>,
+    /// The Solana permit + handle-evidence payload the `signature` attests over.
+    #[validate(nested)]
+    pub attested_payload: SolanaSrfc38UserDecryptPayloadJson,
 
-    /// RFC-021 allowed Solana ACL domain keys (each a 32-byte pubkey, `0x` + 64 hex) — the Solana
-    /// analog of `allowedContracts`. May be empty (permissive mode). Absent for EVM.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schema(example = json!(["0x3333333333333333333333333333333333333333333333333333333333333333"]))]
-    pub solana_allowed_acl_domain_keys: Option<Vec<String>>,
+    /// The ed25519 signature over the reconstructed sRFC-38 permit envelope. `0x`-hex.
+    /// Opaque to the relayer — never verified here.
+    #[validate(custom(function = "crate::http::validate_0x_hex"))]
+    #[derivative(Debug(format_with = "redact_len"))]
+    #[schema(example = "0xaabbccdd")]
+    pub signature: String,
+}
+
+/// The Solana-native user-decryption payload: the eight signed permit fields (§3.1) plus the
+/// per-handle access evidence. No `userAddress`, no `nonce`, no EVM per-handle addresses.
+#[derive(Deserialize, Serialize, Clone, ToSchema, Validate, Derivative)]
+#[derivative(Debug)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SolanaSrfc38UserDecryptPayloadJson {
+    /// The subject's 32-byte ed25519 pubkey (`0x` + 64 hex).
+    #[validate(custom(function = "crate::http::validate_0x_hex"))]
+    pub user_pubkey: String,
+
+    /// The transport (re-encryption) public key: the tfhe safe-serialized ML-KEM-512 container
+    /// (`0x` + hex). The exact length is enforced downstream by the permit decode.
+    #[validate(custom(function = "crate::http::validate_0x_hex"))]
+    pub transport_key: String,
+
+    /// The signed ACL domain-key scope (each a 32-byte pubkey, `0x` + 64 hex). May be empty
+    /// (permissive mode).
+    pub allowed_acl_domain_keys: Vec<String>,
+
+    /// Validity window (`startTimestamp` + `durationSeconds`), in seconds.
+    #[validate(nested)]
+    pub request_validity: RequestValiditySecondsJson,
+
+    /// The 32-byte Solana program id the permit was signed for (`0x` + 64 hex).
+    #[validate(custom(function = "crate::http::validate_0x_hex"))]
+    pub verifying_program_id: String,
+
+    /// The host chain id the handles belong to (decimal string; carries the chain-type high bit).
+    pub chain_id: String,
+
+    /// The signed KMS routing bytes (version `0x02` ‖ contextId ‖ epochId), `0x`-hex.
+    #[validate(custom(function = "crate::http::validate_0x_hex"))]
+    pub extra_data: String,
+
+    /// One entry per ciphertext handle. Non-empty; the on-chain cap is applied at the gateway.
+    #[validate(length(min = 1, message = "Must not be empty"))]
+    pub handles: Vec<SolanaHandleJson>,
+}
+
+/// One Solana handle entry: the handle plus its self-authenticating access evidence. None of
+/// these fields are signed — a substituted value can fail the request but never widen access.
+#[derive(Deserialize, Serialize, Clone, ToSchema, Derivative)]
+#[derivative(Debug)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SolanaHandleJson {
+    /// The 32-byte ciphertext handle (`0x` + 64 hex).
+    pub handle: String,
+    /// The 32-byte ciphertext owner: the signer for a direct entry, the delegator for a
+    /// delegated one (`0x` + 64 hex).
+    pub owner: String,
+    /// The 32-byte encrypted value ID naming the `EncryptedValue` account (`0x` + 64 hex).
+    pub encrypted_value_id: String,
+    /// The `leaf_count` the access proof was built against; `"0"` in current mode (decimal string).
+    pub proof_leaf_count: String,
+    /// Empty (`"0x"`) for current access; otherwise the borsh `MmrProof` blob (`0x` + hex).
+    pub access_proof: String,
 }
