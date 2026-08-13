@@ -15,14 +15,16 @@ export function getCleartextViemRuntime(): FhevmRuntime {
     throw new Error('Call setFhevmRuntimeConfig first.');
   }
 
-  const em = cleartextEthereumModule();
-  const rm = cleartextRelayerModule();
+  if (viemFhevmRuntime === undefined) {
+    const em = cleartextEthereumModule();
+    const rm = cleartextRelayerModule();
 
-  viemFhevmRuntime ??= createFhevmRuntime({
-    ethereum: em.ethereum,
-    relayer: rm.relayer,
-    config: getFhevmRuntimeConfig(),
-  });
+    viemFhevmRuntime = createFhevmRuntime({
+      ethereum: em.ethereum,
+      relayer: rm.relayer,
+      config: getFhevmRuntimeConfig(),
+    });
+  }
 
   return viemFhevmRuntime;
 }

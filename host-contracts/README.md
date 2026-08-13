@@ -130,8 +130,7 @@ Ethereum rotation to every replica, in order, is the operator's responsibility.
 The Ethereum `ProtocolConfig` is the source of truth for protocol state, so **new** host chains
 seed their replica from it.
 
-The flow is artifact-centric — the same three steps in every environment, only the signer of
-step 3 changes:
+The flow is artifact-centric — the same three steps in every environment:
 
 **1. Export** the canonical KMS context to a reviewable JSON artifact (works from a clean
 checkout; needs only RPC access):
@@ -143,9 +142,9 @@ npx hardhat task:exportCanonicalProtocolConfig \
   --out canonical-protocol-config-snapshot.json
 ```
 
-The artifact records the canonical chainId, the block number the read was pinned to, the
-contract address, the active KMS context id, the active epoch id, the KMS node set, and all
-four thresholds (bigints serialized as strings).
+The artifact holds a single `export` object. That object is the snapshot as a flat `KEY=value` map,
+with bigints serialized as decimal strings. Each key becomes an environment variable that the apply
+tasks in step 3 read.
 
 **2. Review.** All reads happen at one block, so reviewers (e.g. DAO signers) reproduce the
 artifact byte-for-byte — even after a later `defineNewKmsContextAndEpoch` rotation — by re-running the
@@ -158,28 +157,57 @@ replica on canonical's active context and epoch instead of fresh local counters.
 who executes that payload: the devnet task sends it immediately with the deployer key, so **what runs
 on devnet is byte-identical to what the DAO signs**.
 
-| Environment       | Task                                                                       | Signer                                              |
-| ----------------- | -------------------------------------------------------------------------- | --------------------------------------------------- |
-| devnet / local    | `task:deployProtocolConfigFromCanonical --snapshot <artifact.json>`        | `DEPLOYER_PRIVATE_KEY`                              |
-| testnet / mainnet | `task:prepareDeployProtocolConfigFromCanonical --snapshot <artifact.json>` | DAO executes the printed `upgradeToAndCall` payload |
+Both apply tasks read their configuration from environment variables. They take no command-line flags
+for the canonical state. A deployment platform injects the values into the deploy container.
+
+The table lists the `export` keys from step 1. The tasks reject a bad value before they deploy anything, so a
+misconfigured environment leaves the proxy untouched.
+
+| Variable                            | Type           | Meaning                                                |
+| ----------------------------------- | -------------- | ------------------------------------------------------ |
+| `CANONICAL_CHAIN_ID`                | decimal string | Chain id of the canonical host chain.                  |
+| `CANONICAL_PROTOCOL_CONFIG_ADDRESS` | address        | Canonical `ProtocolConfig` the snapshot was read from. |
+| `CANONICAL_BLOCK_NUMBER`            | decimal string | Block the snapshot was pinned to.                      |
+| `CANONICAL_BLOCK_HASH`              | 32-byte hex    | Hash of that block.                                    |
+| `CANONICAL_KMS_CONTEXT_ID`          | decimal string | Active KMS context id to mirror.                       |
+| `CANONICAL_EPOCH_ID`                | decimal string | Active KMS epoch id to mirror.                         |
+| `CANONICAL_KMS_NODES`               | JSON array     | The KMS node set, one JSON object per node.            |
+| `CANONICAL_KMS_THRESHOLDS`          | JSON object    | The four thresholds, each a decimal string.            |
+
+The context id, epoch id, node set and thresholds become the `initializeFromCanonical` calldata, so
+the tasks check them in full. The chain id and block number are provenance, and the tasks parse them
+as decimal strings. The block hash and the address are provenance that the tasks only check for
+presence, then print.
+
+| Environment       | Task                                            | Signer                                              |
+| ----------------- | ----------------------------------------------- | --------------------------------------------------- |
+| devnet / local    | `task:deployProtocolConfigFromCanonical`        | `DEPLOYER_PRIVATE_KEY`                              |
+| testnet / mainnet | `task:prepareDeployProtocolConfigFromCanonical` | DAO executes the printed `upgradeToAndCall` payload |
 
 ```bash
 # devnet: direct upgrade with the deployer key
-npx hardhat task:deployProtocolConfigFromCanonical --snapshot canonical-protocol-config-snapshot.json
+npx hardhat task:deployProtocolConfigFromCanonical
 
 # testnet/mainnet: deploy the implementation and print the DAO payload, without touching the proxy
-npx hardhat task:prepareDeployProtocolConfigFromCanonical --snapshot canonical-protocol-config-snapshot.json
+npx hardhat task:prepareDeployProtocolConfigFromCanonical
 ```
 
-For quick devnet iteration, `task:deployProtocolConfigFromCanonical` also accepts
-`--canonical-rpc-url` + `--canonical-protocol-config-address` instead of `--snapshot` to read
-canonical live at deploy time — but then what is deployed is whatever canonical holds at that
-moment, not a reviewed artifact. The DAO path is artifact-only by design.
+Only step 1 talks to the canonical chain. The tasks check what the environment gives them, and no more.
+They do not prove the values match the reviewed artifact. The deployment platform
+owns that binding. Both apply tasks print `decodedArgs`, the context id, epoch id, node set and
+thresholds the payload encodes. They also print the chain id, block number, block hash and canonical
+`ProtocolConfig` address. An operator compares every provenance value against the artifact. The
+printed node set carries placeholder MPC fields, so the operator compares it field by field.
 
 When deploying a full non-canonical host stack, `task:deployAllHostContracts
---protocol-config-source canonical --canonical-rpc-url … --canonical-protocol-config-address …`
-runs the mirror in sequence with the other host contracts (this is what the fhevm-cli multi-chain
-stack uses, so e2e seeds non-canonical chains exactly like production).
+--protocol-config-source canonical` runs the mirror in sequence with the other host contracts, with
+the same environment variables (this is what the fhevm-cli multi-chain stack uses, so e2e seeds
+non-canonical chains exactly like production).
 
-Later canonical rotations are mirrored manually with `mirrorKmsContextAndEpoch` / `mirrorKmsEpoch`, as
-described in [Mirror methods](#mirror-methods-non-canonical-write-path).
+Later canonical rotations are mirrored with `task:buildMirrorKmsContextAndEpochCalldata` /
+`task:mirrorKmsContextAndEpoch` (context switch) and `task:buildMirrorKmsEpochCalldata` /
+`task:mirrorKmsEpoch` (same-set epoch rotation), defined in `tasks/mirrorKmsContext.ts`. Both read
+canonical's active KMS context/epoch over `--canonical-rpc-url` / `--canonical-protocol-config-address`
+(the context-switch pair also cross-checks the recovered `NewKmsContext` event data against the
+canonical `contextInfoHash` anchor) and call the replica's `mirrorKmsContextAndEpoch` /
+`mirrorKmsEpoch` described in [Mirror methods](#mirror-methods-non-canonical-write-path).

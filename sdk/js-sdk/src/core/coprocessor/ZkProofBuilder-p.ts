@@ -15,7 +15,7 @@ import type {
   BoolValueLike,
   AddressValueLike,
 } from '../types/primitives.js';
-import type { TfheVersion } from '../../wasm/tfhe/TfheApi.js';
+import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { assert } from '../base/errors/InternalError.js';
 import { isUint64, uint256ToBytes32 } from '../base/uint.js';
 import { isAddress } from '../base/address.js';
@@ -31,7 +31,6 @@ import { fetchFheEncryptionKeyWasm } from '../key/fetchFheEncryptionKey.js';
 type Context = {
   readonly chain: FhevmChain;
   readonly runtime: WithEncrypt;
-  readonly tfheVersion: TfheVersion;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -145,16 +144,18 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
       contractAddress,
       userAddress,
       extraData,
+      fhevmContext,
       seed,
     }: {
       readonly contractAddress: string;
       readonly userAddress: string;
       readonly extraData: string;
+      readonly fhevmContext: FhevmClientFrozenContext;
       readonly seed?: Uint8Array | undefined;
     },
   ): Promise<ZkProof> {
     // Fetch the FheEncryptionKey (in wasm format) from the global cache.
-    const fheEncryptionKeyWasm = await fetchFheEncryptionKeyWasm(context, {});
+    const fheEncryptionKeyWasm = await fetchFheEncryptionKeyWasm(context, { fhevmContext });
 
     if (this.#totalBits === 0) {
       throw new ZkProofError({
@@ -223,7 +224,7 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
         fheEncryptionKey: fheEncryptionKeyWasm,
         metaData,
         extraData: asBytesHex(extraData),
-        tfheVersion: context.tfheVersion,
+        tfheVersion: fhevmContext.tfheVersion,
         seed,
       });
 
@@ -285,10 +286,11 @@ export async function createZkProof(
     readonly contractAddress: ChecksummedAddress;
     readonly userAddress: ChecksummedAddress;
     readonly extraData: BytesHex;
+    readonly fhevmContext: FhevmClientFrozenContext;
     readonly seed?: Uint8Array | undefined;
   },
 ): Promise<ZkProof> {
-  const { contractAddress, userAddress, values, extraData, seed } = parameters;
+  const { contractAddress, userAddress, values, extraData, fhevmContext, seed } = parameters;
 
   const builder = new ZkProofBuilderImpl(PRIVATE_TOKEN, {
     ciphertextCapacity: TFHE_ZKPROOF_CIPHERTEXT_CAPACITY,
@@ -303,6 +305,7 @@ export async function createZkProof(
     contractAddress,
     userAddress,
     extraData,
+    fhevmContext,
     seed,
   });
 

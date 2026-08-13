@@ -2,12 +2,16 @@ import { expect } from 'chai';
 import { Wallet } from 'ethers';
 import fs from 'fs';
 import hre, { ethers, run, upgrades } from 'hardhat';
-import os from 'os';
-import path from 'path';
 
-import { buildSnapshotArtifact, readCanonicalSnapshot } from '../../tasks/protocolConfigMirror';
+import { readCanonicalSnapshot } from '../../tasks/protocolConfigMirror';
 import { makeEnvHelpers } from '../../tasks/utils/envSnapshot';
 import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
+import {
+  applyProtocolConfigCanonicalEnv,
+  buildCanonicalSnapshotEnv,
+  restoreProtocolConfigCanonicalEnv,
+  snapshotProtocolConfigCanonicalEnv,
+} from '../../tasks/utils/protocolConfigCanonicalEnv';
 import { UPGRADE_TO_AND_CALL_INTERFACE } from '../../tasks/utils/upgradeProposal';
 import { deployEmptyProxy } from '../utils/deploymentHelpers';
 import {
@@ -43,6 +47,8 @@ const HOST_ADDRESS_ENV_KEYS = [
 const { snapshot: snapshotHostAddressEnv, restore: restoreHostAddressEnv } = makeEnvHelpers(HOST_ADDRESS_ENV_KEYS);
 type HostAddressEnvSnapshot = ReturnType<typeof snapshotHostAddressEnv>;
 
+type CanonicalConfigEnvSnapshot = ReturnType<typeof snapshotProtocolConfigCanonicalEnv>;
+
 async function readImplementationSlot(proxyAddress: string): Promise<string> {
   return upgrades.erc1967.getImplementationAddress(proxyAddress);
 }
@@ -52,6 +58,7 @@ describe('Canonical prepare tasks', function () {
   const deployer = new ethers.Wallet(deployerPrivateKey).connect(ethers.provider);
   let originalEnvHost: string;
   let originalHostAddressEnv: HostAddressEnvSnapshot;
+  let originalCanonicalConfigEnv: CanonicalConfigEnvSnapshot;
 
   before(function () {
     originalEnvHost = fs.readFileSync(HOST_ENV_FILE, 'utf-8');
@@ -59,16 +66,23 @@ describe('Canonical prepare tasks', function () {
 
   beforeEach(function () {
     originalHostAddressEnv = snapshotHostAddressEnv();
+    originalCanonicalConfigEnv = snapshotProtocolConfigCanonicalEnv();
+    // Start every test from an unconfigured environment, so a value inherited from the shell or
+    // from another test file cannot change which branch the tasks take.
+    restoreProtocolConfigCanonicalEnv({});
   });
 
   afterEach(async function () {
     // Restore .env.host so other tests are unaffected.
     fs.writeFileSync(HOST_ENV_FILE, originalEnvHost);
     restoreHostAddressEnv(originalHostAddressEnv);
+    restoreProtocolConfigCanonicalEnv(originalCanonicalConfigEnv);
   });
 
   describe('ProtocolConfig from canonical artifact', function () {
-    async function writeCanonicalArtifact(): Promise<{ file: string; canonicalAddress: string }> {
+    // Deploys a canonical ProtocolConfig and reads it. Then puts the snapshot in the CANONICAL_* env
+    // variables. A deployment platform injects the export task's `export` map the same way.
+    async function applyCanonicalSnapshotEnv(): Promise<{ canonicalAddress: string }> {
       const canonicalAddress = await deployFreshProtocolConfigProxy(
         deployer,
         buildProtocolConfigNodes(),
@@ -78,22 +92,19 @@ describe('Canonical prepare tasks', function () {
         canonicalProvider: ethers.provider,
         canonicalProtocolConfigAddress: canonicalAddress,
       });
-      const artifact = buildSnapshotArtifact(snapshot, canonicalAddress);
-      const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'canonical-snapshot-')), 'snapshot.json');
-      fs.writeFileSync(file, JSON.stringify(artifact, null, 2));
-      return { file, canonicalAddress };
+      applyProtocolConfigCanonicalEnv(buildCanonicalSnapshotEnv(snapshot));
+      return { canonicalAddress };
     }
 
     it('prepares DAO calldata from a reviewed artifact without mutating the proxy', async function () {
       const proxyAddress = await deployEmptyUUPSProxy(deployer);
       patchHostEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS', proxyAddress);
-      const { file, canonicalAddress } = await writeCanonicalArtifact();
+      const { canonicalAddress } = await applyCanonicalSnapshotEnv();
       const canonical = await ethers.getContractAt('ProtocolConfig', canonicalAddress, deployer);
       const [canonicalContextId, canonicalEpochId] = await canonical.getCurrentKmsContextAndEpoch();
 
       const implementationSlotBefore = await readImplementationSlot(proxyAddress);
       const preparedUpgrade = await run('task:prepareDeployProtocolConfigFromCanonical', {
-        snapshot: file,
         verifyContract: false,
       });
       expect(await readImplementationSlot(proxyAddress)).to.equal(implementationSlotBefore);
@@ -128,14 +139,14 @@ describe('Canonical prepare tasks', function () {
       );
     });
 
-    it('applies a reviewed artifact with the devnet deploy task, without canonical RPC access', async function () {
+    it('applies the snapshot env variables to the replica with the devnet deploy task', async function () {
       const proxyAddress = await deployEmptyUUPSProxy(deployer);
       patchHostEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS', proxyAddress);
-      const { file, canonicalAddress } = await writeCanonicalArtifact();
+      const { canonicalAddress } = await applyCanonicalSnapshotEnv();
       const canonical = await ethers.getContractAt('ProtocolConfig', canonicalAddress, deployer);
       const [canonicalContextId, canonicalEpochId] = await canonical.getCurrentKmsContextAndEpoch();
 
-      await run('task:deployProtocolConfigFromCanonical', { snapshot: file });
+      await run('task:deployProtocolConfigFromCanonical');
 
       const secondary = await ethers.getContractAt('ProtocolConfig', proxyAddress, deployer);
       expect(await secondary.getCurrentKmsContextId()).to.equal(canonicalContextId);
@@ -150,9 +161,21 @@ describe('Canonical prepare tasks', function () {
       );
     });
 
-    it('rejects when neither a snapshot nor canonical RPC parameters are given', async function () {
-      await expect(run('task:deployProtocolConfigFromCanonical')).to.be.rejectedWith(/either --snapshot/);
-    });
+    // Both tasks read the environment before they compile or deploy, so an unset variable leaves the
+    // proxy untouched.
+    for (const [label, taskName, taskArgs] of [
+      ['deploy', 'task:deployProtocolConfigFromCanonical', {}],
+      ['prepare', 'task:prepareDeployProtocolConfigFromCanonical', { verifyContract: false }],
+    ] as const) {
+      it(`rejects the ${label} task when the snapshot env variables are not set`, async function () {
+        const proxyAddress = await deployEmptyUUPSProxy(deployer);
+        patchHostEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS', proxyAddress);
+        const implementationSlotBefore = await readImplementationSlot(proxyAddress);
+
+        await expect(run(taskName, taskArgs)).to.be.rejectedWith(/"CANONICAL_CHAIN_ID" env variable is not set/);
+        expect(await readImplementationSlot(proxyAddress)).to.equal(implementationSlotBefore);
+      });
+    }
   });
 
   describe('KMSVerifier deployment', function () {

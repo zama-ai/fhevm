@@ -68,7 +68,7 @@ cd <path/to/fhevm>/sdk/js-sdk
 npx playwright install
 
 # Test wasm load in browser using playwright
-npm run test:browser
+npm run test:browser-smoke
 ```
 
 ## Fast Devnet (no encryption)
@@ -253,10 +253,6 @@ bun install
 
 # Rebuild test suite (if needed)
 ./fhevm-cli upgrade test-suite
-
-# With a specific old relayer-sdk
-RELAYER_SDK_VERSION=0.4.2 ./fhevm-cli upgrade test-suite
-RELAYER_SDK_VERSION=0.5.0-rc.1 ./fhevm-cli upgrade test-suite
 
 # Run full test suite
 ./fhevm-cli test standard

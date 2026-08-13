@@ -3,6 +3,7 @@ import type { FhevmChain } from '../types/fhevmChain.js';
 import type { FheEncryptionKeyBytes, FheEncryptionKeyWasm } from '../types/fheEncryptionKey.js';
 import type { RelayerKeyUrlOptions } from '../types/relayer.js';
 import type { FetchFheEncryptionKeyBytesParameters } from '../modules/relayer/types.js';
+import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { globalFheEncryptionKeyCache } from './FheEncryptionKeyCache-p.js';
 import { serializeFheEncryptionKeyWasm } from './serializeFheEncryptionKey.js';
 import { asFhevmRuntimeWith } from '../runtime/CoreFhevmRuntime-p.js';
@@ -14,7 +15,8 @@ export async function fetchFheEncryptionKeyBytes(
     readonly chain: FhevmChain;
     readonly runtime: FhevmRuntime;
   },
-  parameters?: {
+  parameters: {
+    readonly fhevmContext: FhevmClientFrozenContext;
     readonly options?: RelayerKeyUrlOptions | undefined;
     readonly ignoreCache?: boolean | undefined;
   },
@@ -25,7 +27,7 @@ export async function fetchFheEncryptionKeyBytes(
   // Caller-provided options override runtime config defaults (e.g. auth)
   const relayerParameters: FetchFheEncryptionKeyBytesParameters = {
     ...parameters,
-    options: { auth: context.runtime.config.auth, ...parameters?.options },
+    options: { auth: context.runtime.config.auth, ...parameters.options },
   };
 
   // Ensure a fetch is in-flight
