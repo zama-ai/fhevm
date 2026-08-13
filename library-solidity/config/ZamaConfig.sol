@@ -40,8 +40,6 @@ library ZamaConfig {
             config = _getEthereumConfig();
         } else if (block.chainid == 11155111) {
             config = _getSepoliaConfig();
-        } else if (block.chainid == 80002) {
-            config = _getPolygonAmoyConfig();
         } else if (block.chainid == 31337) {
             config = _getLocalConfig();
         } else {
