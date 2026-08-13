@@ -1,5 +1,9 @@
 //! What one `fhe_execute` invocation costs against the transaction ceilings it must fit.
 //!
+//! Public API surface: app programs. An app composing a transaction with more than the minimal
+//! wrapper reads [`FheExecutionCost`]'s numbers — and the ceiling constants — to budget the
+//! rest of the transaction around the execution.
+//!
 //! Two of Solana's per-transaction ceilings are exact functions of an execution's shape, so the
 //! builder enforces them with typed errors instead of letting the transaction abort at runtime:
 //!
@@ -64,7 +68,7 @@ pub const CPI_INSTRUCTION_DATA_LIMIT: usize = 10 * 1024;
 /// rent exemption, so counting three never under-counts.
 pub const CPIS_PER_PERSISTENT_CREATE: usize = 3;
 
-/// Tallies the bytes the next `push` will request from the allocator, modelling `Vec` growth
+/// Tallies the bytes the next `push` will request from the allocator, modeling `Vec` growth
 /// the way the never-freeing bump region pays for it: a full vector reallocates to double its
 /// capacity (or to `RawVec`'s minimum first capacity), and the outgrown buffer is never
 /// reclaimed. Call immediately before the push. Validated byte-for-byte against a counting

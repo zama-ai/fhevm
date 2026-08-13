@@ -466,8 +466,7 @@ pub(crate) fn execute<'info>(request: Execute<'_, 'info>) -> Result<()> {
         .context
         .compute_authority
         .signer_seeds(&compute_bump);
-    let encrypted_value_account_authority_seeds =
-        encrypted_value_account_authority.signer.seeds();
+    let encrypted_value_account_authority_seeds = encrypted_value_account_authority.signer.seeds();
     let mut additional_authorities = Vec::new();
     for authority in request.execution.additional_output_authorities() {
         if authority == encrypted_value_account_authority.key() {

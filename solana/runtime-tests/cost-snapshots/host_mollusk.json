@@ -43,7 +43,7 @@
     "solana/stack_frame_bytes": {
       "value": 4096,
       "extendable": false,
-      "note": "per function frame"
+      "note": "per stack frame"
     },
     "solana/transaction_bytes": {
       "value": 1232,

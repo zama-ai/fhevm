@@ -305,7 +305,12 @@ fn max_buildable_attestation_count() -> usize {
         .expect("at least one attestation fits")
 }
 
-fn persist_shape(kind: PersistKind, steps: usize, outputs: usize, subjects: usize) -> impl for<'id> FnOnce(&mut FheExecutionBuilder<'id>) -> crate::Result<()> {
+fn persist_shape(
+    kind: PersistKind,
+    steps: usize,
+    outputs: usize,
+    subjects: usize,
+) -> impl for<'id> FnOnce(&mut FheExecutionBuilder<'id>) -> crate::Result<()> {
     let (input, outputs) = persist_shape_data(kind, outputs, subjects);
     chain_with_outputs(steps, input, outputs)
 }
@@ -366,7 +371,9 @@ fn print_build_frontier_grid() {
                         shape.build_bytes,
                         shape.packet_bytes,
                         shape.total(),
-                        if shape.total() + crate::cost::APP_HEAP_RESERVE_BYTES <= crate::cost::PROGRAM_HEAP_BYTES {
+                        if shape.total() + crate::cost::APP_HEAP_RESERVE_BYTES
+                            <= crate::cost::PROGRAM_HEAP_BYTES
+                        {
                             "fits"
                         } else {
                             "OVER"
@@ -448,7 +455,11 @@ fn the_heap_tally_matches_a_counting_allocator_for_every_admitted_shape() {
             "{}: admitted at {total} bytes, over the build budget",
             shape.name,
         );
-        assert!(total < BUDGET_BYTES, "{}: a per-step copy is back", shape.name);
+        assert!(
+            total < BUDGET_BYTES,
+            "{}: a per-step copy is back",
+            shape.name
+        );
     }
     assert!(
         admitted >= 50,
@@ -569,7 +580,9 @@ fn print_measurement_table() {
             shape.build_bytes,
             shape.packet_bytes,
             shape.total(),
-            if shape.total() + crate::cost::APP_HEAP_RESERVE_BYTES <= crate::cost::PROGRAM_HEAP_BYTES {
+            if shape.total() + crate::cost::APP_HEAP_RESERVE_BYTES
+                <= crate::cost::PROGRAM_HEAP_BYTES
+            {
                 "fits"
             } else {
                 "OVER"

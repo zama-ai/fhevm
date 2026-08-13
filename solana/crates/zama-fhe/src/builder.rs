@@ -855,8 +855,7 @@ impl<'id> FheExecutionBuilder<'id> {
             return Err(FheExecutionBuildError::TooManyReductionOperands);
         }
         let step_index = self.commit_step(fhe_type, |lowering| {
-            lowering
-                .tally_bytes(operand_ops.len() * std::mem::size_of::<FheExecuteOperand>());
+            lowering.tally_bytes(operand_ops.len() * std::mem::size_of::<FheExecuteOperand>());
             let mut lowered: Vec<FheExecuteOperand> = Vec::with_capacity(operand_ops.len());
             for op in operand_ops {
                 lowered.push(lowering.operand(op)?);

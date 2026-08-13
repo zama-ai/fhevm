@@ -558,13 +558,14 @@ if run_check 3; then
   # namespace in the workflows and a TypeScript namespace in the test-suite tooling.
   check_alias 'SDK namespace — renamed to label' core '' -E '\bnamespace\b|\bnamespaceKey\b'
   # execution <- batch, frame, plan. "frame" survives only in its Solana runtime sense (the
-  # CPI/instruction stack frame), and as the proper name of the retired `execute_frame` RFC-024
-  # prototype where the sentence says so. A sequence of steps is never a frame.
+  # CPI/instruction stack frame, and the ceiling-snapshot keys `heap_frame_bytes` /
+  # `stack_frame_bytes` that name it), and as the proper name of the retired `execute_frame`
+  # RFC-024 prototype where the sentence says so. A sequence of steps is never a frame.
   # The last group is the demo dapp's architecture walkthrough, where a "frame" is a presentation
   # panel — the film sense of the word, with its own CSS classes. Surfaced only once `.tsx` joined the
   # sweep. It is the same kind of unrelated meaning as the stack frame above, not a sequence of steps.
   check_alias 'frame — one fhe_execute invocation is an execution' all \
-    'stack frame|instruction frame|enclosing frame|execution frame|cpi frame|frame it belongs to|older `execute_frame`|framework|heap frame|heap-frame|HeapFrame|ArchitectureFrame|architecture-frame|frame-(heading|label|statement|separator)|frameNumber|\bframed\b|frames\.(map|length)|frame\.(diagram|title)' \
+    'stack frame|instruction frame|enclosing frame|execution frame|cpi frame|frame it belongs to|older `execute_frame`|framework|heap frame|heap-frame|HeapFrame|(heap|stack)_frame_bytes|ArchitectureFrame|architecture-frame|frame-(heading|label|statement|separator)|frameNumber|\bframed\b|frames\.(map|length)|frame\.(diagram|title)' \
     -E '\bframes?\b|execute_frame|_frame\b|frame_|Frame[A-Z]'
   # One fhe_execute invocation is an `execution`, never a batch: its steps are dependent, each reading
   # what the one before it produced, which is the opposite of what a batch means. Swept in FHE scope

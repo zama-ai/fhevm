@@ -277,7 +277,9 @@ mod tests {
         let mut rewritten = original.clone();
         rewritten.current_handle = [9; 32];
         let mut fresh_bytes = Vec::new();
-        rewritten.try_serialize(&mut fresh_bytes).expect("serializes");
+        rewritten
+            .try_serialize(&mut fresh_bytes)
+            .expect("serializes");
         accounts[0]
             .try_borrow_mut_data()
             .unwrap()

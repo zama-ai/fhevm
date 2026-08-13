@@ -251,7 +251,9 @@ impl<'info> ExecutionState<'_, '_, 'info> {
     ) -> Result<ResolvedOperand> {
         let chain_id = self.chain_id;
         let subject = self.subject;
-        let value = self.table.canonical_encrypted_value(encrypted_value_index)?;
+        let value = self
+            .table
+            .canonical_encrypted_value(encrypted_value_index)?;
         assert_encrypted_value_subject_allowed(value, handle, chain_id, subject)?;
         Ok(ResolvedOperand::encrypted(handle, false))
     }

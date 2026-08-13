@@ -2607,9 +2607,7 @@ fn failure_axis(result: &mollusk_svm::result::InstructionResult) -> String {
         Ok(()) => "none".to_string(),
         Err(InstructionError::ProgramFailedToComplete) => "heap".to_string(),
         Err(InstructionError::ComputationalBudgetExceeded) => "compute_units".to_string(),
-        Err(InstructionError::MaxInstructionTraceLengthExceeded) => {
-            "instruction_trace".to_string()
-        }
+        Err(InstructionError::MaxInstructionTraceLengthExceeded) => "instruction_trace".to_string(),
         Err(other) => format!("other:{other:?}"),
     }
 }
@@ -2621,10 +2619,10 @@ struct ProbeCase {
 }
 
 impl From<CreatedPublicBatch> for ProbeCase {
-    fn from(batch: CreatedPublicBatch) -> Self {
+    fn from(case: CreatedPublicBatch) -> Self {
         ProbeCase {
-            instruction: batch.instruction,
-            accounts: batch.accounts,
+            instruction: case.instruction,
+            accounts: case.accounts,
         }
     }
 }
@@ -2702,7 +2700,10 @@ fn assert_swept_boundary(profile: &str, sweep: &SweptBoundary) {
 /// previous step's transient result. This is the transient-heavy shape `dep-chain` and the
 /// load-smoke scenario drive, and the lightest per-step shape in the matrix.
 fn dependent_chain_case(steps: usize, authority: Pubkey) -> ProbeCase {
-    assert!(steps >= 2, "the chain shape needs a first read and a final persist");
+    assert!(
+        steps >= 2,
+        "the chain shape needs a first read and a final persist"
+    );
     let (host_config, host_config_account) = host_config_account(authority);
     let balance_handle = handle_for_chain(0x61, 5);
     let (balance_address, balance_value) = new_encrypted_value_account(
@@ -2931,7 +2932,14 @@ fn attestation_per_step_case(steps: usize, authority: Pubkey) -> ProbeCase {
 
 fn all_created_public_case(steps: usize, authority: Pubkey) -> ProbeCase {
     let all: Vec<usize> = (0..steps).collect();
-    persistent_creates_batch(steps, &all, authority, true, std::slice::from_ref(&authority)).into()
+    persistent_creates_batch(
+        steps,
+        &all,
+        authority,
+        true,
+        std::slice::from_ref(&authority),
+    )
+    .into()
 }
 
 /// Every step writes a plain persistent create (no `make_public`) — the exact shape
@@ -2939,16 +2947,28 @@ fn all_created_public_case(steps: usize, authority: Pubkey) -> ProbeCase {
 /// next to the app-side byte count that motivates the single step ceiling.
 fn all_private_creates_case(steps: usize, authority: Pubkey) -> ProbeCase {
     let all: Vec<usize> = (0..steps).collect();
-    persistent_creates_batch(steps, &all, authority, false, std::slice::from_ref(&authority))
-        .into()
+    persistent_creates_batch(
+        steps,
+        &all,
+        authority,
+        false,
+        std::slice::from_ref(&authority),
+    )
+    .into()
 }
 
 /// Every fourth step persists a created-public output, the rest stay transient — a mid-weight
 /// composite between the chain and all-created-public extremes.
 fn mixed_chain_creates_case(steps: usize, authority: Pubkey) -> ProbeCase {
     let creates: Vec<usize> = (0..steps).step_by(4).collect();
-    persistent_creates_batch(steps, &creates, authority, true, std::slice::from_ref(&authority))
-        .into()
+    persistent_creates_batch(
+        steps,
+        &creates,
+        authority,
+        true,
+        std::slice::from_ref(&authority),
+    )
+    .into()
 }
 
 /// Every step creates a persistent output with the widest legal audience: eight distinct
@@ -3156,7 +3176,11 @@ fn cost_snapshot_solana_ceilings() {
         ),
         (
             "solana/compute_units_per_transaction_max".to_string(),
-            ceiling(1_400_000, false, "hard runtime cap; no instruction raises it"),
+            ceiling(
+                1_400_000,
+                false,
+                "hard runtime cap; no instruction raises it",
+            ),
         ),
         (
             "solana/transaction_bytes".to_string(),
@@ -3188,7 +3212,7 @@ fn cost_snapshot_solana_ceilings() {
         ),
         (
             "solana/stack_frame_bytes".to_string(),
-            ceiling(4_096, false, "per function frame"),
+            ceiling(4_096, false, "per stack frame"),
         ),
         (
             "solana/return_data_bytes".to_string(),

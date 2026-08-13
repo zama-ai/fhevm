@@ -170,7 +170,10 @@ pub fn assert_boundary_snapshot(
             expected.limited_by, entry.limited_by
         ));
     }
-    failures.extend(cost_failures(&expected.cost_at_max_ok, &entry.cost_at_max_ok));
+    failures.extend(cost_failures(
+        &expected.cost_at_max_ok,
+        &entry.cost_at_max_ok,
+    ));
     assert_snapshot_matches(&path, &format!("boundary {profile:?}"), failures);
 }
 
