@@ -206,6 +206,11 @@ jobs:
             export BENCH_ONE_SHOT_SCENARIOS="${ONE_SHOT_SCENARIOS}"
           fi
           make print_bench_one_shot_scenarios
+          # The cargo cache restores "target", which holds CRITERION_HOME. Drop
+          # any artifact an earlier attempt on this commit left there: it would
+          # carry a matching revision, so a scenario that fails in this attempt
+          # would silently report the earlier attempt's numbers.
+          rm -rf "${CRITERION_HOME}/benchmark-runs"
           BENCH_ONE_SHOT_RECREATE_DB=1 FHEVM_DF_SCHEDULE="${SCHEDULING_POLICY}" \
             make -e benchmark_erc20_main_block_one_shot_suite_cpu
         working-directory: coprocessor/fhevm-engine/tfhe-worker

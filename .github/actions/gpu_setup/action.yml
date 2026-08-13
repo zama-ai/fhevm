@@ -35,8 +35,13 @@ runs:
         sudo apt-get clean
         sudo rm -rf /var/lib/apt/lists/*
         # The package lists were just wiped, so apt cannot even resolve the name
-        # on an image where unattended-upgrades is not installed.
-        sudo apt-get purge -y unattended-upgrades || true
+        # on an image where unattended-upgrades is not installed. Gate on the
+        # dpkg database rather than ignoring every failure: a purge that fails
+        # because unattended-upgrades holds the dpkg lock must still fail here,
+        # since that is the race the purge exists to end.
+        if dpkg-query --show unattended-upgrades >/dev/null 2>&1; then
+          sudo apt-get purge -y unattended-upgrades
+        fi
 
         sudo apt update
         sudo apt install -y cmake-format libclang-dev
@@ -91,8 +96,13 @@ runs:
         sudo apt-get clean
         sudo rm -rf /var/lib/apt/lists/*
         # The package lists were just wiped, so apt cannot even resolve the name
-        # on an image where unattended-upgrades is not installed.
-        sudo apt-get purge -y unattended-upgrades || true
+        # on an image where unattended-upgrades is not installed. Gate on the
+        # dpkg database rather than ignoring every failure: a purge that fails
+        # because unattended-upgrades holds the dpkg lock must still fail here,
+        # since that is the race the purge exists to end.
+        if dpkg-query --show unattended-upgrades >/dev/null 2>&1; then
+          sudo apt-get purge -y unattended-upgrades
+        fi
 
         sudo apt update
         sudo apt -y install cuda-toolkit-"${TOOLKIT_VERSION}"

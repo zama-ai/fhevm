@@ -221,9 +221,12 @@ def scenario_parameters(content):
         "work_items_batch_size": dispatch["work_items_batch_size"],
         "dependence_chains_per_batch": dispatch["dependence_chains_per_batch"],
         "dcid_batch_execution": dispatch["dcid_batch_execution"],
-        # Recorded from the run that introduced the adaptive window; artifacts
-        # written before it carry no such key.
-        "dcid_adaptive_batch_execution": dispatch.get("dcid_adaptive_batch_execution"),
+        # Artifacts written before the adaptive window existed carry no such key,
+        # and those runs could not have used it: report the setting they ran
+        # with rather than a null that would group apart from fresh points.
+        "dcid_adaptive_batch_execution": dispatch.get(
+            "dcid_adaptive_batch_execution", False
+        ),
         "backend": build["backend"],
         "features": ",".join(build["features"]),
         "bench_lto": build["bench_lto"],
