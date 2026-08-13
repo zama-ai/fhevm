@@ -60,6 +60,18 @@ struct WorkItem {
 
 const OPERAND_BOUNDARY_MASK_BYTES: usize = 32;
 
+fn dcid_transaction_share(
+    work_items_batch_size: i32,
+    acquired_dcid_count: usize,
+    adaptive_batch_execution: bool,
+) -> i32 {
+    if !adaptive_batch_execution || acquired_dcid_count <= 1 {
+        return work_items_batch_size;
+    }
+    let dcid_count = i32::try_from(acquired_dcid_count).unwrap_or(i32::MAX);
+    work_items_batch_size.saturating_add(dcid_count - 1) / dcid_count
+}
+
 fn operand_is_boundary(
     mask: Option<&[u8]>,
     operand_index: usize,
@@ -108,6 +120,14 @@ mod operand_boundary_mask_tests {
         assert!(operand_is_boundary(Some(&mask), 1).expect("valid mask"));
         assert!(operand_is_boundary(None, 0).is_err());
         assert!(operand_is_boundary(Some(&mask[..31]), 0).is_err());
+    }
+
+    #[test]
+    fn adaptive_dcid_transaction_share_is_bounded_and_disabled_by_default() {
+        assert_eq!(dcid_transaction_share(100, 20, true), 5);
+        assert_eq!(dcid_transaction_share(100, 3, true), 34);
+        assert_eq!(dcid_transaction_share(100, 1, true), 100);
+        assert_eq!(dcid_transaction_share(100, 20, false), 100);
     }
 
     #[tokio::test]
@@ -209,6 +229,108 @@ mod operand_boundary_mask_tests {
         assert!(
             nodes[0].inputs.contains_key(&stale_producer),
             "the boundary operand must be fetched canonically even though a stale same-transaction producer exists"
+        );
+
+        transaction.rollback().await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn adaptive_batch_shares_the_work_window_across_acquired_dcids(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let db = setup_test_db(ImportMode::None).await?;
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(db.db_url())
+            .await?;
+        let first_dcid = vec![0x61_u8; 32];
+        let second_dcid = vec![0x62_u8; 32];
+        for dcid in [&first_dcid, &second_dcid] {
+            sqlx::query(
+                "INSERT INTO dependence_chain (dependence_chain_id, status) VALUES ($1, 'updated')",
+            )
+            .bind(dcid)
+            .execute(&pool)
+            .await?;
+        }
+
+        let mut expected_outputs = Vec::new();
+        for (dcid_index, dcid) in [&first_dcid, &second_dcid].into_iter().enumerate() {
+            for transaction_index in 0..2 {
+                let output_handle = vec![0x70 + dcid_index as u8, transaction_index as u8];
+                let transaction_id = vec![0x80 + dcid_index as u8, transaction_index as u8];
+                if transaction_index == 0 {
+                    expected_outputs.push(output_handle.clone());
+                }
+                sqlx::query(
+                    r#"
+                    INSERT INTO computations (
+                        output_handle, dependencies, fhe_operation, is_scalar,
+                        dependence_chain_id, transaction_id, is_allowed,
+                        is_completed, is_error, host_chain_id, operand_boundary_mask
+                    ) VALUES ($1, $2, $3, false, $4, $5, true, false, false, 1, $6)
+                    "#,
+                )
+                .bind(output_handle)
+                .bind(vec![vec![1], vec![0]])
+                .bind(SupportedFheOperations::FheTrivialEncrypt as i16)
+                .bind(dcid)
+                .bind(transaction_id)
+                .bind(vec![0_u8; OPERAND_BOUNDARY_MASK_BYTES])
+                .execute(&pool)
+                .await?;
+            }
+        }
+
+        let mut args = crate::daemon_cli::Args::parse_from([
+            "tfhe-worker",
+            "--work-items-batch-size",
+            "2",
+            "--dependence-chains-per-batch",
+            "2",
+            "--dcid-adaptive-batch-execution",
+        ]);
+        args.database_url = Some(db.db_url.clone());
+        let health_check = crate::health_check::HealthCheck::new(db.db_url.clone());
+        let mut locks = dependence_chain::LockMngr::new_with_conf(
+            Uuid::new_v4(),
+            pool.clone(),
+            30,
+            false,
+            None,
+            None,
+            None,
+        );
+        assert_eq!(
+            locks.acquire_next_locks(2)
+                .await?
+                .into_iter()
+                .filter_map(|(id, _)| id)
+                .count(),
+            2,
+            "both test DCIDs are acquired"
+        );
+        let mut no_progress_cycles = 0;
+        let mut transaction = pool.begin().await?;
+        let (nodes, _, found_work) = query_for_work(
+            &args,
+            &health_check,
+            &mut transaction,
+            &mut locks,
+            &mut no_progress_cycles,
+        )
+        .await?;
+
+        assert!(found_work);
+        assert_eq!(nodes.len(), 2, "one transaction selected from each DCID");
+        let actual_outputs = nodes
+            .into_iter()
+            .flat_map(|node| node.results)
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(
+            actual_outputs,
+            expected_outputs.into_iter().collect(),
+            "the first transaction from both acquired chains is selected"
         );
 
         transaction.rollback().await?;
@@ -845,7 +967,63 @@ async fn query_for_work<'a>(
     let dcid_filter = deps_chain_mngr
         .enabled()
         .then(|| dependence_chain_ids.clone());
-    let the_work = sqlx::query_as::<_, WorkItem>(
+    let adaptive_batch_execution = args.dcid_adaptive_batch_execution
+        && dependence_chain_ids.len() > 1
+        && dependence_chain_ids.len() <= transaction_batch_size as usize;
+    // Keep the normal path byte-for-byte query-compatible. Opt-in adaptive
+    // batching bounds each acquired DCID to an equal transaction share, then
+    // fills the existing global work window in schedule order. This ensures a
+    // large chain cannot keep every smaller ready chain out of the next graph.
+    let the_work = if adaptive_batch_execution {
+        sqlx::query_as::<_, WorkItem>(
+            "
+SELECT
+  c.output_handle,
+  c.dependencies,
+  c.fhe_operation,
+  c.is_scalar,
+  c.is_allowed,
+  c.transaction_id,
+  c.schedule_order,
+  c.operand_boundary_mask
+FROM computations c
+WHERE c.transaction_id IN (
+    SELECT transaction_id
+    FROM (
+      SELECT
+        dependence_chain_id,
+        transaction_id,
+        MIN(schedule_order) AS schedule_order,
+        ROW_NUMBER() OVER (
+          PARTITION BY dependence_chain_id
+          ORDER BY MIN(schedule_order), transaction_id
+        ) AS dcid_transaction_rank
+      FROM computations
+      WHERE is_completed = FALSE
+        AND is_error = FALSE
+        AND is_allowed = TRUE
+        AND ($1::bytea[] IS NULL OR dependence_chain_id = ANY($1))
+      GROUP BY dependence_chain_id, transaction_id
+    ) AS adaptive_schedule_order
+    WHERE adaptive_schedule_order.dcid_transaction_rank <= $2
+    ORDER BY schedule_order ASC, transaction_id ASC
+    LIMIT $3
+)
+  AND ($1::bytea[] IS NULL OR c.dependence_chain_id = ANY($1))
+            ",
+        )
+        .bind(dcid_filter.as_deref())
+        .bind(dcid_transaction_share(
+            transaction_batch_size,
+            dependence_chain_ids.len(),
+            true,
+        ))
+        .bind(transaction_batch_size)
+        .fetch_all(trx.as_mut())
+        .instrument(s_work.clone())
+        .await
+    } else {
+        sqlx::query_as::<_, WorkItem>(
         "
 -- Acquire all computations from a transaction set
 SELECT
@@ -878,12 +1056,13 @@ WHERE c.transaction_id IN (
   -- and it must not enter this worker's graph.
   AND ($1::bytea[] IS NULL OR c.dependence_chain_id = ANY($1))
         ",
-    )
-    .bind(dcid_filter.as_deref())
-    .bind(transaction_batch_size)
-    .fetch_all(trx.as_mut())
-    .instrument(s_work.clone())
-    .await
+        )
+        .bind(dcid_filter.as_deref())
+        .bind(transaction_batch_size)
+        .fetch_all(trx.as_mut())
+        .instrument(s_work.clone())
+        .await
+    }
     .map_err(|err| {
         error!(target: "tfhe_worker", { error = %err }, "error while querying work items");
         err
