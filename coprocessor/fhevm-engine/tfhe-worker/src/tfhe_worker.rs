@@ -302,7 +302,8 @@ mod operand_boundary_mask_tests {
             None,
         );
         assert_eq!(
-            locks.acquire_next_locks(2)
+            locks
+                .acquire_next_locks(2)
                 .await?
                 .into_iter()
                 .filter_map(|(id, _)| id)
@@ -1024,7 +1025,7 @@ WHERE c.transaction_id IN (
         .await
     } else {
         sqlx::query_as::<_, WorkItem>(
-        "
+            "
 -- Acquire all computations from a transaction set
 SELECT
   c.output_handle,
