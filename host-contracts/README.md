@@ -204,5 +204,10 @@ When deploying a full non-canonical host stack, `task:deployAllHostContracts
 the same environment variables (this is what the fhevm-cli multi-chain stack uses, so e2e seeds
 non-canonical chains exactly like production).
 
-Later canonical rotations are mirrored manually with `mirrorKmsContextAndEpoch` / `mirrorKmsEpoch`, as
-described in [Mirror methods](#mirror-methods-non-canonical-write-path).
+Later canonical rotations are mirrored with `task:buildMirrorKmsContextAndEpochCalldata` /
+`task:mirrorKmsContextAndEpoch` (context switch) and `task:buildMirrorKmsEpochCalldata` /
+`task:mirrorKmsEpoch` (same-set epoch rotation), defined in `tasks/mirrorKmsContext.ts`. Both read
+canonical's active KMS context/epoch over `--canonical-rpc-url` / `--canonical-protocol-config-address`
+(the context-switch pair also cross-checks the recovered `NewKmsContext` event data against the
+canonical `contextInfoHash` anchor) and call the replica's `mirrorKmsContextAndEpoch` /
+`mirrorKmsEpoch` described in [Mirror methods](#mirror-methods-non-canonical-write-path).
