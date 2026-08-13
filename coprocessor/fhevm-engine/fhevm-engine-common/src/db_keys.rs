@@ -16,7 +16,7 @@ pub type DbKeyId = Vec<u8>;
 
 pub const FORCE_LEGACY_SERVER_KEY_ENV: &str = "FORCE_LEGACY_SERVER_KEY";
 
-pub fn force_legacy_server_key_from_env() -> anyhow::Result<bool> {
+pub fn reject_legacy_server_key_override() -> anyhow::Result<()> {
     let force_legacy = match std::env::var(FORCE_LEGACY_SERVER_KEY_ENV) {
         Ok(value) => value.parse::<bool>().map_err(|_| {
             anyhow::anyhow!(
@@ -26,54 +26,39 @@ pub fn force_legacy_server_key_from_env() -> anyhow::Result<bool> {
         Err(std::env::VarError::NotPresent) => Ok(false),
         Err(error) => Err(error.into()),
     }?;
-    #[cfg(feature = "gpu")]
     if force_legacy {
-        anyhow::bail!("{FORCE_LEGACY_SERVER_KEY_ENV}=true is not supported by GPU workers");
+        anyhow::bail!(
+            "{FORCE_LEGACY_SERVER_KEY_ENV}=true is not supported after compressed-key adoption"
+        );
     }
-    Ok(force_legacy)
+    Ok(())
 }
 
-/// Single row shape for both CPU and GPU builds. A forced worker selects only
-/// legacy material. An unforced worker preserves compressed-first behavior.
-///
-/// Single query shape across CPU and GPU keeps sqlx-prepare cacheable
-/// without a CUDA toolchain.
 struct DbKeyRow {
     key_id: DbKeyId,
     sequence_number: i64,
     pks_key: Vec<u8>,
-    server_key_blob: Vec<u8>,
-    is_xof: bool,
+    compressed_xof_keyset: Option<Vec<u8>>,
     cks_key: Option<Vec<u8>>,
 }
 
 #[derive(Clone)]
 pub struct DbKeyCache {
     cache: Arc<RwLock<lru::LruCache<DbKeyId, DbKey>>>,
-    force_legacy: bool,
 }
 
 impl DbKeyCache {
     pub fn new(capacity: usize) -> anyhow::Result<Self> {
-        Self::new_with_force_legacy(capacity, false)
+        let capacity = NonZeroUsize::new(capacity)
+            .ok_or_else(|| anyhow::anyhow!("Cache capacity must be greater than zero"))?;
+        Ok(Self {
+            cache: Arc::new(RwLock::new(lru::LruCache::new(capacity))),
+        })
     }
 
     pub fn new_from_env(capacity: usize) -> anyhow::Result<Self> {
-        Self::new_with_force_legacy(capacity, force_legacy_server_key_from_env()?)
-    }
-
-    pub fn new_with_force_legacy(capacity: usize, force_legacy: bool) -> anyhow::Result<Self> {
-        #[cfg(feature = "gpu")]
-        if force_legacy {
-            anyhow::bail!("{FORCE_LEGACY_SERVER_KEY_ENV}=true is not supported by GPU workers");
-        }
-        let capacity = NonZeroUsize::new(capacity)
-            .ok_or_else(|| anyhow::anyhow!("Cache capacity must be greater than zero"))?;
-        info!(force_legacy, "Configured server-key safeguard");
-        Ok(Self {
-            cache: Arc::new(RwLock::new(lru::LruCache::new(capacity))),
-            force_legacy,
-        })
+        reject_legacy_server_key_override()?;
+        Self::new(capacity)
     }
 
     pub async fn fetch<'a, T>(&self, db_key_id: &DbKeyId, executor: T) -> anyhow::Result<DbKey>
@@ -117,17 +102,10 @@ impl DbKeyCache {
         // Only fetch the heavy key blobs when the latest key is not already cached.
         let row = sqlx::query_as!(
             DbKeyRow,
-            r#"SELECT key_id, sequence_number, pks_key,
-               CASE WHEN $2 THEN sks_key
-                    ELSE COALESCE(compressed_xof_keyset, sks_key)
-               END AS "server_key_blob!",
-               CASE WHEN $2 THEN FALSE
-                    ELSE compressed_xof_keyset IS NOT NULL
-               END AS "is_xof!",
+            r#"SELECT key_id, sequence_number, pks_key, compressed_xof_keyset,
                cks_key
                FROM keys WHERE sequence_number = $1"#,
             sequence_number,
-            self.force_legacy,
         )
         .fetch_optional(&mut *executor)
         .await?
@@ -206,33 +184,18 @@ impl DbKeyCache {
         let rows = if let Some(ref ids) = db_key_ids_to_query {
             sqlx::query_as!(
                 DbKeyRow,
-                r#"SELECT key_id, sequence_number, pks_key,
-                   CASE WHEN $2 THEN sks_key
-                        ELSE COALESCE(compressed_xof_keyset, sks_key)
-                   END AS "server_key_blob!",
-                   CASE WHEN $2 THEN FALSE
-                        ELSE compressed_xof_keyset IS NOT NULL
-                   END AS "is_xof!",
+                r#"SELECT key_id, sequence_number, pks_key, compressed_xof_keyset,
                    cks_key
                    FROM keys WHERE key_id = ANY($1)"#,
                 ids,
-                self.force_legacy,
             )
             .fetch_all(conn)
             .await?
         } else {
             sqlx::query_as!(
                 DbKeyRow,
-                r#"SELECT key_id, sequence_number, pks_key,
-                   CASE WHEN $1 THEN sks_key
-                        ELSE COALESCE(compressed_xof_keyset, sks_key)
-                   END AS "server_key_blob!",
-                   CASE WHEN $1 THEN FALSE
-                        ELSE compressed_xof_keyset IS NOT NULL
-                   END AS "is_xof!",
-                   cks_key
+                r#"SELECT key_id, sequence_number, pks_key, compressed_xof_keyset, cks_key
                    FROM keys"#,
-                self.force_legacy,
             )
             .fetch_all(conn)
             .await?
@@ -252,12 +215,17 @@ impl DbKeyCache {
             key_id,
             sequence_number,
             pks_key,
-            server_key_blob,
-            is_xof,
+            compressed_xof_keyset,
             cks_key,
         } = row;
+        let server_key_blob = compressed_xof_keyset.ok_or_else(|| {
+            anyhow::anyhow!(
+                "compressed_xof_keyset is missing for key {}",
+                hex::encode(&key_id)
+            )
+        })?;
         info!(
-            server_key_representation = if is_xof { "compressed-xof" } else { "legacy" },
+            server_key_representation = "compressed-xof",
             key_id = hex::encode(&key_id),
             sequence_number,
             "Loading server-key material"
@@ -270,35 +238,19 @@ impl DbKeyCache {
 
         #[cfg(not(feature = "gpu"))]
         {
-            // Prefer the CompressedXofKeySet when present so CPU and
-            // GPU readers share a single source of truth. Decompress
-            // the whole keyset in one pass (the XOF stream is shared
-            // across subkeys, so taking the embedded CSK out and
-            // decompressing it alone would skip the public-key portion
-            // of the stream), then strip NS material in memory to
-            // match the legacy sks_key shape tfhe-worker expects.
-            //
-            // Legacy sks_key fallback is used only for rows that
-            // predate XOF keygen (compressed_xof_keyset IS NULL).
-            let sks: tfhe::ServerKey = if is_xof {
-                let kxs: CompressedXofKeySet =
-                    crate::utils::safe_deserialize_sns_key(&server_key_blob).map_err(|err| {
-                        anyhow::anyhow!(
-                            "failed to deserialize CompressedXofKeySet from compressed_xof_keyset: {err}"
-                        )
-                    })?;
-                let (_xof_pks, server_key) = kxs
-                    .decompress()
-                    .map_err(|err| {
-                        anyhow::anyhow!(
-                            "failed to decompress CompressedXofKeySet to ServerKey: {err}"
-                        )
-                    })?
-                    .into_raw_parts();
-                strip_ns_from_server_key(server_key)
-            } else {
-                safe_deserialize_key(&server_key_blob)?
-            };
+            let kxs: CompressedXofKeySet =
+                crate::utils::safe_deserialize_sns_key(&server_key_blob).map_err(|err| {
+                    anyhow::anyhow!(
+                        "failed to deserialize CompressedXofKeySet from compressed_xof_keyset: {err}"
+                    )
+                })?;
+            let (_xof_pks, server_key) = kxs
+                .decompress()
+                .map_err(|err| {
+                    anyhow::anyhow!("failed to decompress CompressedXofKeySet to ServerKey: {err}")
+                })?
+                .into_raw_parts();
+            let sks = strip_ns_from_server_key(server_key);
 
             Ok(DbKey {
                 key_id,
@@ -310,13 +262,6 @@ impl DbKeyCache {
         }
         #[cfg(feature = "gpu")]
         {
-            if !is_xof {
-                anyhow::bail!(
-                    "GPU coprocessor requires keys.compressed_xof_keyset to be populated; \
-                     rotate kms-core to publish CompressedXofKeySet so the host-listener can ingest it"
-                );
-            }
-
             // The whole CompressedXofKeySet must be decompressed before
             // we extract the server key. The XOF stream is shared across
             // subkeys, so taking the embedded CompressedServerKey out of
@@ -426,58 +371,24 @@ pub async fn read_keys_from_large_object_by_key_id_gw(
     read_large_object_in_chunks(pool, oid, CHUNK_SIZE, capacity).await
 }
 
-/// Encoding of the server-key blob returned by
-/// [`read_server_key_by_sequence_number`].
-///
-/// `CompressedXof` blobs are `tfhe::xof_key_set::CompressedXofKeySet` —
-/// the whole keyset must be deserialized in one pass to keep the XOF
-/// state consistent across subkeys. `Legacy` blobs are plain
-/// `tfhe::ServerKey` and can be deserialized directly. Reflects which
-/// column in the `keys` table held the bytes.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CompressedXofKeysetEncoding {
-    CompressedXof,
-    Legacy,
-}
-
-/// Reads legacy material when forced. Otherwise it preserves the existing
-/// compressed-first behavior with legacy fallback.
-pub async fn read_server_key_by_sequence_number(
+pub async fn read_compressed_server_key_by_sequence_number(
     pool: &PgPool,
     sequence_number: i64,
-    legacy_capacity: usize,
-    force_legacy: bool,
-) -> anyhow::Result<(Vec<u8>, CompressedXofKeysetEncoding)> {
-    if !force_legacy {
-        let bytes = sqlx::query_scalar::<_, Option<Vec<u8>>>(
-            "SELECT compressed_xof_keyset FROM keys WHERE sequence_number = $1",
-        )
-        .bind(sequence_number)
-        .fetch_one(pool)
-        .await?;
-        if let Some(bytes) = bytes {
-            info!(
-                bytes_len = bytes.len(),
-                "Retrieved compressed_xof_keyset BYTEA"
-            );
-            return Ok((bytes, CompressedXofKeysetEncoding::CompressedXof));
-        }
-    }
-
-    let legacy = sqlx::query_scalar::<_, Option<Oid>>(
-        "SELECT sns_pk FROM keys WHERE sequence_number = $1",
+) -> anyhow::Result<Vec<u8>> {
+    let bytes = sqlx::query_scalar::<_, Option<Vec<u8>>>(
+        "SELECT compressed_xof_keyset FROM keys WHERE sequence_number = $1",
     )
     .bind(sequence_number)
     .fetch_one(pool)
     .await?
     .ok_or_else(|| {
-        anyhow::anyhow!(
-            "selected legacy server-key representation is missing for sequence_number {sequence_number}"
-        )
+        anyhow::anyhow!("compressed_xof_keyset is missing for sequence_number {sequence_number}")
     })?;
-    info!("Retrieved legacy sns_pk oid: {:?}", legacy);
-    let bytes = read_large_object_in_chunks(pool, legacy, CHUNK_SIZE, legacy_capacity).await?;
-    Ok((bytes, CompressedXofKeysetEncoding::Legacy))
+    info!(
+        bytes_len = bytes.len(),
+        "Retrieved compressed_xof_keyset BYTEA"
+    );
+    Ok(bytes)
 }
 
 // Read a large object by Oid from the database in chunks

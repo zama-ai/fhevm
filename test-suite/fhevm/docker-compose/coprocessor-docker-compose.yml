@@ -125,7 +125,6 @@ services:
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
     environment:
-      FORCE_LEGACY_SERVER_KEY: "false"
     command:
       - tfhe_worker
       - --run-bg-worker
@@ -147,7 +146,6 @@ services:
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
     environment:
-      FORCE_LEGACY_SERVER_KEY: "false"
     command:
       - zkproof_worker
       - --database-url=${DATABASE_URL}
@@ -167,7 +165,6 @@ services:
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
     environment:
-      FORCE_LEGACY_SERVER_KEY: "false"
     command:
       - sns_worker
       - --database-url=${DATABASE_URL}
