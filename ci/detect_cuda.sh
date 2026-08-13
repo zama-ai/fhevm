@@ -24,7 +24,11 @@ NVCC_CANDIDATES=()
 DETECTED_VERSIONS=()
 for NVCC_PATH in "${NVCC_FOUND[@]}"; do
   PREFIX=$(dirname "$(dirname "${NVCC_PATH}")")
-  if [ ! -d "${PREFIX}/lib64" ] || [ ! -f "${PREFIX}/include/cuda_runtime.h" ]; then
+  # Accept either library layout: rejecting a usable toolkit is not harmless,
+  # it makes the caller install a second one over an image that already ships
+  # what was asked for.
+  if [ ! -f "${PREFIX}/include/cuda_runtime.h" ] ||
+    { [ ! -d "${PREFIX}/lib64" ] && [ ! -d "${PREFIX}/lib" ]; }; then
     echo "Ignoring ${NVCC_PATH}: ${PREFIX} is not laid out as a toolkit root" >&2
     continue
   fi

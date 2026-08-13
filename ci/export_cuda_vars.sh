@@ -14,7 +14,12 @@ shift 2
 NVCC_PATH=$(bash "$(dirname "$0")/detect_cuda.sh" "$@")
 CUDA_PATH=$(dirname "$(dirname "${NVCC_PATH}")")
 
-CUDA_LIBRARY_PATH="${CUDA_PATH}/lib64"
+# detect_cuda.sh accepts either library layout, so export the one that is there.
+if [ -d "${CUDA_PATH}/lib64" ]; then
+  CUDA_LIBRARY_PATH="${CUDA_PATH}/lib64"
+else
+  CUDA_LIBRARY_PATH="${CUDA_PATH}/lib"
+fi
 # Never leave an empty entry: the loader reads it as the current directory, which
 # would let a stray .so in a build or test directory take precedence.
 if [ -n "${LD_LIBRARY_PATH:-}" ]; then

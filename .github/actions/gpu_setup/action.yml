@@ -78,11 +78,32 @@ runs:
       run: |
         CUDA_INSTALL_VERSION="${CUDA_VERSION%% *}"
         TOOLKIT_VERSION="$(echo "${CUDA_INSTALL_VERSION}" | sed 's/\(.*\)\.\(.*\)/\1-\2/')"
+
+        # Take the repository for the distribution actually running, not a fixed
+        # one: the GPU images differ per cloud (jammy on hyperstack, noble on
+        # scaleway), and installing one distribution's CUDA packages on another
+        # lets apt resolve the conflict by removing or restarting packages the
+        # runner itself depends on.
+        # shellcheck disable=SC1091
+        . /etc/os-release
+        if [ "${ID:-}" != "ubuntu" ]; then
+          echo "Unsupported distribution '${ID:-unknown}': no NVIDIA CUDA repository mapping" >&2
+          exit 1
+        fi
+        CUDA_REPO="ubuntu${VERSION_ID//./}"
+        echo "Installing CUDA ${CUDA_INSTALL_VERSION} from the ${CUDA_REPO} repository"
+
         # Download outside the checkout, as above.
         CUDA_KEYRING="${RUNNER_TEMP}/${CUDA_KEYRING_PACKAGE}"
         wget -O "${CUDA_KEYRING}" \
-          "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/${CUDA_KEYRING_PACKAGE}"
-        echo "${CUDA_KEYRING_SHA}  ${CUDA_KEYRING}" | sha256sum --check
+          "https://developer.download.nvidia.com/compute/cuda/repos/${CUDA_REPO}/x86_64/${CUDA_KEYRING_PACKAGE}"
+        # The keyring package is the same artifact across repositories, so one
+        # pin covers them. If NVIDIA ever diverges them this fails loudly rather
+        # than installing an unverified keyring: re-pin for the new repository.
+        if ! echo "${CUDA_KEYRING_SHA}  ${CUDA_KEYRING}" | sha256sum --check; then
+          echo "Keyring checksum mismatch for ${CUDA_REPO}; update CUDA_KEYRING_SHA" >&2
+          exit 1
+        fi
         sudo dpkg -i "${CUDA_KEYRING}"
 
         # Reset the package lists so apt-get update cannot trip over stale

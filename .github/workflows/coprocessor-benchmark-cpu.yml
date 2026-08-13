@@ -45,6 +45,12 @@ on:
           - "LATENCY"
         default: "ALL"
 
+# Queue dispatches rather than letting two runs compete for the single AWS bench
+# profile: one run's teardown would stop the instance the other is using.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 env:
   CARGO_TERM_COLOR: always
   RESULTS_FILENAME: parsed_benchmark_results_${{ github.sha }}.json

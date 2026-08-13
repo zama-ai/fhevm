@@ -46,7 +46,8 @@ data "scaleway_instance_security_group" "github_runner" {
 }
 
 data "scaleway_instance_image" "gpu_benchmark_image" {
-  name = "tfhe-rs-ubuntu-24-cuda"
+  project_id = var.project_id
+  name       = "tfhe-rs-ubuntu-24-cuda"
 }
 
 resource "scaleway_instance_server" "scaleway_gpu_instance" {
@@ -71,4 +72,12 @@ resource "scaleway_instance_server" "scaleway_gpu_instance" {
 output "instance_id" {
   value       = scaleway_instance_server.scaleway_gpu_instance.id
   description = "Unique ID of the Scaleway instance"
+}
+
+# The reachable address of the instance. Every other backend hands the Slab
+# server something it can reach the runner on; without it Slab can only see an
+# opaque instance ID here.
+output "instance_ip" {
+  value       = scaleway_instance_ip.github_runner.address
+  description = "Public IP address of the Scaleway instance"
 }

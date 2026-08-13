@@ -71,6 +71,13 @@ on:
           - "LATENCY"
         default: "ALL"
 
+# Two runs holding the same Slab profile can have one run's teardown stop the
+# instance the other is still working on, which surfaces as an unexplained
+# cancellation mid-step. Queue same-profile dispatches instead of racing them.
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.profile }}
+  cancel-in-progress: false
+
 env:
   CARGO_TERM_COLOR: always
   RESULTS_FILENAME: parsed_benchmark_results_${{ github.sha }}.json
@@ -163,6 +170,27 @@ jobs:
           gcc-version: 12
           cloud-provider: ${{ needs.parse-inputs.outputs.cloud_provider }}
 
+      # A job that ends as "The operation was canceled." with no failing command
+      # lost its host rather than its command: out of disk, out of memory, or a
+      # reclaimed instance. Only a log already streaming can say which, so record
+      # the exhaustible resources and the toolkit actually selected. Keep this
+      # ahead of the heavy build, which is what consumes them.
+      - name: Log host resources
+        run: |
+          echo "::group::disk"
+          df -h
+          echo "::endgroup::"
+          echo "::group::memory"
+          free -h
+          swapon --show || true
+          echo "::endgroup::"
+          echo "::group::toolkit"
+          echo "cores: $(nproc)"
+          echo "CUDA_PATH=${CUDA_PATH:-unset}"
+          command -v nvcc && nvcc --version | tail -2
+          nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
+          echo "::endgroup::"
+
       - name: Get benchmark details
         run: |
           {
@@ -229,8 +257,15 @@ jobs:
           username: ${{ secrets.CGR_USERNAME }}
           password: ${{ secrets.CGR_PASSWORD }}
 
+      # Sample the host while the image builds: this step compiles a Rust
+      # workspace in Docker and is one of the job's two memory peaks, and runs
+      # that end as a cancellation here leave no other evidence behind.
       - name: Init database
-        run: make init_db
+        run: |
+          bash "${GITHUB_WORKSPACE}/ci/log_host_resources.sh" 30 &
+          sampler=$!
+          trap 'kill "${sampler}" 2>/dev/null || true' EXIT
+          make init_db
         working-directory: coprocessor/fhevm-engine/tfhe-worker
 
       - name: Use Node.js
@@ -285,6 +320,11 @@ jobs:
       - name: Run reportable one-shot benchmarks on GPU
         if: ${{ inputs.benchmarks == 'main_block_one_shot' }}
         run: |
+          # The job's other memory peak, and long enough that a host dying here
+          # is otherwise unattributable. See ci/log_host_resources.sh.
+          bash "${GITHUB_WORKSPACE}/ci/log_host_resources.sh" 30 &
+          sampler=$!
+          trap 'kill "${sampler}" 2>/dev/null || true' EXIT
           if [[ -n "${ONE_SHOT_SCENARIOS}" ]]; then
             export BENCH_ONE_SHOT_SCENARIOS="${ONE_SHOT_SCENARIOS}"
           fi

@@ -20,6 +20,11 @@ BENCH_ONE_SHOT_SCENARIO_CHECK = $(if $(strip $(BENCH_ONE_SHOT_SCENARIOS)),,$(err
 # Recreate the benchmark database between scenarios so each measurement starts
 # from a freshly migrated database rather than the previous scenario's rows.
 BENCH_ONE_SHOT_RECREATE_DB ?= 0
+# Wall-clock budget per scenario, including its build, in seconds; 0 disables it.
+# The whole suite must fit the CI job timeout with room for instance setup, so
+# this bounds one wedged scenario rather than letting it starve the others:
+# 6 canonical scenarios x 3600s leaves half of a 720-minute job spare.
+BENCH_ONE_SHOT_SCENARIO_TIMEOUT ?= 3600
 # Keep each canonical logical block in one Main scheduling acquisition. Callers
 # may still override this for a deliberate dispatch-shape experiment.
 BENCH_WORK_ITEMS_BATCH_SIZE ?= $(if $(filter dependent_1000_50x20 cross_tx_dependent_1000_50x20,$(BENCH_ONE_SHOT_SCENARIO)),5000,$(if $(filter auction_300,$(BENCH_ONE_SHOT_SCENARIO)),4800,1500))
@@ -99,7 +104,10 @@ print_bench_one_shot_scenarios:
 
 # Run every scenario of the reportable one-shot suite on one backend.
 # A failing scenario does not abort the suite: the remaining scenarios still run
-# and report, and the suite exits non-zero at the end.
+# and report, and the suite exits non-zero at the end. Each scenario is bounded
+# in wall clock so a wedged one cannot consume the CI job's whole budget: the
+# bench's own wait timeout is per wait, not per run, so an unbounded suite of N
+# scenarios can outlast the job and be cancelled with nothing reported at all.
 # $(1): backend suffix, cpu or gpu
 define run_one_shot_suite
 	@$(BENCH_ONE_SHOT_SCENARIO_CHECK)set -u; \
@@ -110,9 +118,25 @@ define run_one_shot_suite
 	  if [ "$(BENCH_ONE_SHOT_RECREATE_DB)" = "1" ]; then \
 	    $(MAKE) recreate_db || exit 2; \
 	  fi; \
-	  echo "=== reportable one-shot $(1) scenario: $$scenario ==="; \
-	  if ! $(MAKE) benchmark_erc20_main_block_baseline_$(1) BENCH_ONE_SHOT_SCENARIO=$$scenario; then \
-	    echo "!!! reportable one-shot scenario failed: $$scenario" >&2; \
+	  echo "=== reportable one-shot $(1) scenario: $$scenario (budget $(BENCH_ONE_SHOT_SCENARIO_TIMEOUT)s) ==="; \
+	  started=$$(date +%s); \
+	  if [ "$(BENCH_ONE_SHOT_SCENARIO_TIMEOUT)" = "0" ]; then \
+	    $(MAKE) benchmark_erc20_main_block_baseline_$(1) BENCH_ONE_SHOT_SCENARIO=$$scenario; \
+	    status=$$?; \
+	  else \
+	    timeout --kill-after=60 "$(BENCH_ONE_SHOT_SCENARIO_TIMEOUT)" \
+	      $(MAKE) benchmark_erc20_main_block_baseline_$(1) BENCH_ONE_SHOT_SCENARIO=$$scenario; \
+	    status=$$?; \
+	  fi; \
+	  elapsed=$$(($$(date +%s) - started)); \
+	  if [ "$$status" -eq 0 ]; then \
+	    echo "=== one-shot scenario $$scenario completed in $${elapsed}s ==="; \
+	  else \
+	    if [ "$$status" -eq 124 ] || [ "$$status" -eq 137 ]; then \
+	      echo "!!! reportable one-shot scenario timed out after $${elapsed}s: $$scenario" >&2; \
+	    else \
+	      echo "!!! reportable one-shot scenario failed after $${elapsed}s (status $$status): $$scenario" >&2; \
+	    fi; \
 	    failed="$$failed $$scenario"; \
 	  fi; \
 	done; \

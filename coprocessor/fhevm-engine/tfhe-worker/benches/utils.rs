@@ -95,6 +95,7 @@ const LOCAL_DB_URL: &str = "postgresql://postgres:postgres@127.0.0.1:5432/coproc
 
 async fn setup_test_app_existing_db() -> Result<TestInstance, Box<dyn std::error::Error>> {
     let db_url = local_benchmark_db_url()?;
+    ensure_benchmark_keys(&db_url).await?;
     let (app_close_channel, rx) = tokio::sync::watch::channel(false);
     let worker_thread = start_coprocessor(rx, &db_url).await?;
     Ok(TestInstance {
@@ -103,6 +104,32 @@ async fn setup_test_app_existing_db() -> Result<TestInstance, Box<dyn std::error
         worker_thread: Some(worker_thread),
         db_url,
     })
+}
+
+/// Seed the FHE keys the worker needs when the target database has none.
+///
+/// The docker path gets them from the test harness's import mode, but a local
+/// database is prepared by `make init_db`, which runs migrations and seeds host
+/// chains only. Without this a reportable run starts against a keyless database
+/// and the worker cycles on "No keys found in database" until the run's wait
+/// budget expires — a wedge whose cause is several layers away from its symptom.
+async fn ensure_benchmark_keys(db_url: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .connect(db_url)
+        .await?;
+    let key_count: i64 = sqlx::query_scalar("SELECT count(1) FROM keys")
+        .fetch_one(&pool)
+        .await?;
+    if key_count > 0 {
+        return Ok(());
+    }
+    println!("benchmark database has no keys; importing the test keys");
+    // Without the SnS key, matching the docker path: it belongs to sns-worker,
+    // and importing it would add well over a gigabyte to every scenario that
+    // starts from a freshly recreated database.
+    setup_test_key(&pool, false).await?;
+    Ok(())
 }
 
 fn local_benchmark_db_url() -> Result<String, Box<dyn std::error::Error>> {
