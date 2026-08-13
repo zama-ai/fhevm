@@ -428,6 +428,17 @@ jobs:
         if: ${{ !cancelled() && hashFiles(env.RESULTS_FILENAME) != '' }}
         shell: bash
         run: |
+          # Name what is being stored. A rejection from Slab reports only that it
+          # could not store the content, so the series identity — above all the
+          # hardware, which has to be known on its side — is the first thing to
+          # check and the last thing the log otherwise shows.
+          python3 -c "
+          import json, sys
+          series = json.load(open(sys.argv[1]))
+          print(f\"Sending {len(series['points'])} points to Slab\")
+          for field in ('database', 'hardware', 'branch', 'project_version'):
+              print(f'  {field}: {series[field]}')
+          " "${RESULTS_FILENAME}"
           python3 slab/scripts/data_sender.py "${RESULTS_FILENAME}" "${JOB_SECRET}" \
           --slab-url "${SLAB_URL}"
         env:
