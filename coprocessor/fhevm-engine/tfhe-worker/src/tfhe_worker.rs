@@ -28,6 +28,71 @@ use tracing::{debug, error, info, warn, Instrument};
 
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
 
+#[derive(sqlx::FromRow)]
+struct WorkItem {
+    output_handle: Vec<u8>,
+    dependencies: Vec<Vec<u8>>,
+    fhe_operation: i16,
+    is_scalar: bool,
+    is_allowed: bool,
+    transaction_id: Vec<u8>,
+    schedule_order: PrimitiveDateTime,
+    /// Authoritative, listener-derived executor `boundaryBits`. Nullable at
+    /// the schema level only for pre-blue-green historical rows; pending work
+    /// without it must never be scheduled.
+    operand_boundary_mask: Option<Vec<u8>>,
+}
+
+const OPERAND_BOUNDARY_MASK_BYTES: usize = 32;
+
+fn operand_is_boundary(
+    mask: Option<&[u8]>,
+    operand_index: usize,
+) -> Result<bool, CoprocessorError> {
+    let mask = mask.ok_or_else(|| {
+        CoprocessorError::Other(
+            std::io::Error::other(
+                "refusing computation without authoritative operand boundary mask",
+            )
+            .into(),
+        )
+    })?;
+    if mask.len() != OPERAND_BOUNDARY_MASK_BYTES {
+        return Err(CoprocessorError::Other(
+            std::io::Error::other(format!(
+                "invalid operand boundary mask length {}; expected {OPERAND_BOUNDARY_MASK_BYTES}",
+                mask.len()
+            ))
+            .into(),
+        ));
+    }
+    if operand_index >= OPERAND_BOUNDARY_MASK_BYTES * 8 {
+        return Err(CoprocessorError::Other(
+            std::io::Error::other(format!(
+                "operand index {operand_index} exceeds executor boundary mask width"
+            ))
+            .into(),
+        ));
+    }
+    let byte_index = OPERAND_BOUNDARY_MASK_BYTES - 1 - operand_index / 8;
+    Ok(mask[byte_index] & (1 << (operand_index % 8)) != 0)
+}
+
+#[cfg(test)]
+mod operand_boundary_mask_tests {
+    use super::*;
+
+    #[test]
+    fn boundary_mask_is_big_endian_and_null_fails_closed() {
+        let mut mask = [0_u8; OPERAND_BOUNDARY_MASK_BYTES];
+        mask[OPERAND_BOUNDARY_MASK_BYTES - 1] = 0b10;
+        assert!(!operand_is_boundary(Some(&mask), 0).expect("valid mask"));
+        assert!(operand_is_boundary(Some(&mask), 1).expect("valid mask"));
+        assert!(operand_is_boundary(None, 0).is_err());
+        assert!(operand_is_boundary(Some(&mask[..31]), 0).is_err());
+    }
+}
+
 lazy_static! {
     pub static ref TIMING: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 }
@@ -310,11 +375,12 @@ async fn tfhe_worker_cycle(
             .await?
             .is_none()
         {
-            // best-effort attempt to extend the lock and prevent other replicas from trying to lock the same DCID.
-            // Worst-case scenario, it returns None if the lock has expired.
-            // However, the worker has already secured exclusive access to the txn computations in the Computations table.
+            // This is a best-effort lease. A competing worker may have
+            // acquired an expired DCID before this extension; continuing is
+            // safe because result materialization is deterministic, although
+            // it can redundantly execute the batch.
             if dcid_mngr.enabled() {
-                warn!(target: "tfhe_worker", "Lost dcid lock while processing transactions, but continuing since computations are locked");
+                warn!(target: "tfhe_worker", "Lost dcid lock before processing transactions; continuing with potentially redundant work");
             }
         }
 
@@ -328,6 +394,19 @@ async fn tfhe_worker_cycle(
         )
         .instrument(loop_span.clone())
         .await?;
+        // A component can outlive the normal lease TTL. Renew once more
+        // immediately before persistence to minimize the window in which a
+        // second worker can steal and repeat completed FHE work. We do not
+        // cancel after a lost lease: duplicate deterministic work is safer
+        // and substantially simpler than interrupting an in-flight batch.
+        if dcid_mngr
+            .extend_or_release_current_lock(false)
+            .await?
+            .is_none()
+            && dcid_mngr.enabled()
+        {
+            warn!(target: "tfhe_worker", "Lost dcid lock during transaction execution; persisting deterministic results may be redundant");
+        }
         let has_progressed =
             upload_transaction_graph_results(&mut tx_graph, &mut trx, &mut dcid_mngr)
                 .instrument(loop_span.clone())
@@ -561,7 +640,7 @@ async fn query_for_work<'a>(
     // Schema isolation: BCS connects with `search_path = public`, GCS with
     // `search_path = gcs,public`. Unqualified `computations` therefore
     // resolves to the stack's own schema. No table-name swaps needed in code.
-    let the_work = query!(
+    let the_work = sqlx::query_as::<_, WorkItem>(
         "
 -- Acquire all computations from a transaction set
 SELECT
@@ -570,9 +649,9 @@ SELECT
   c.fhe_operation,
   c.is_scalar,
   c.is_allowed,
-  c.dependence_chain_id,
   c.transaction_id,
-  c.schedule_order
+  c.schedule_order,
+  c.operand_boundary_mask
 FROM computations c
 WHERE c.transaction_id IN (
     SELECT DISTINCT
@@ -588,10 +667,15 @@ WHERE c.transaction_id IN (
       LIMIT $2
     ) as c_schedule_order
   )
+  -- The transaction-id expansion above is only a convenience for loading
+  -- non-allowed intermediates. Re-apply ownership here: a fork-exposed DB
+  -- can retain a stale row with the same transaction hash in another DCID,
+  -- and it must not enter this worker's graph.
+  AND ($1::bytea IS NULL OR c.dependence_chain_id = $1)
         ",
-        dependence_chain_id,
-        transaction_batch_size as i32,
     )
+    .bind(dependence_chain_id.as_deref())
+    .bind(transaction_batch_size as i32)
     .fetch_all(trx.as_mut())
     .instrument(s_work.clone())
     .await
@@ -625,7 +709,23 @@ WHERE c.transaction_id IN (
         for (transaction_id, txwork) in work_by_transaction.iter() {
             let transaction_id: &Vec<u8> = transaction_id;
             let mut ops = vec![];
-            for w in txwork {
+            'operations: for w in txwork {
+                // A nullable column allows blue-green replacement without an
+                // unsafe semantic backfill, but it is never valid for work
+                // selected by this binary. Validate it before considering
+                // any operation so a malformed row fails closed.
+                let operand_boundary_mask = w.operand_boundary_mask.as_deref();
+                if let Err(e) = operand_is_boundary(operand_boundary_mask, 0) {
+                    set_computation_error(
+                        &w.output_handle,
+                        transaction_id,
+                        &e,
+                        trx,
+                        deps_chain_mngr,
+                    )
+                    .await?;
+                    continue;
+                }
                 let fhe_op: SupportedFheOperations = match w.fhe_operation.try_into() {
                     Ok(op) => op,
                     Err(e) => {
@@ -654,10 +754,37 @@ WHERE c.transaction_id IN (
                             dh.clone(),
                         )));
                     } else {
-                        inputs.push(DFGTaskInput::Dependence(dh.clone()));
+                        match operand_is_boundary(operand_boundary_mask, idx) {
+                            Ok(true) => inputs.push(DFGTaskInput::BoundaryDependence(dh.clone())),
+                            Ok(false) => inputs.push(DFGTaskInput::LocalDependence(dh.clone())),
+                            Err(e) => {
+                                set_computation_error(
+                                    &w.output_handle,
+                                    transaction_id,
+                                    &e,
+                                    trx,
+                                    deps_chain_mngr,
+                                )
+                                .await?;
+                                continue 'operations;
+                            }
+                        }
                     }
                 }
-                check_fhe_operand_types(w.fhe_operation.into(), &this_comp_inputs, &is_scalar_op_vec)?;
+                if let Err(e) =
+                    check_fhe_operand_types(w.fhe_operation.into(), &this_comp_inputs, &is_scalar_op_vec)
+                {
+                    let error = std::io::Error::other(format!("invalid FHE operands: {e}"));
+                    set_computation_error(
+                        &w.output_handle,
+                        transaction_id,
+                        &error,
+                        trx,
+                        deps_chain_mngr,
+                    )
+                    .await?;
+                    continue;
+                }
                 ops.push(DFGOp {
                     output_handle: w.output_handle.clone(),
                     fhe_op,
@@ -671,8 +798,32 @@ WHERE c.transaction_id IN (
                     earliest_schedule_order = w.schedule_order;
                 }
             }
-            let (mut components, _) = build_component_nodes(ops, transaction_id)
-                .map_err(|e| CoprocessorError::Other(e.into()))?;
+            let operation_handles: Vec<_> = ops
+                .iter()
+                .map(|op| op.output_handle.clone())
+                .collect();
+            let (mut components, _) = match build_component_nodes(ops, transaction_id) {
+                Ok(components) => components,
+                Err(e) => {
+                    // A malformed transaction-local graph cannot be safely
+                    // partially scheduled. Mark its remaining operations
+                    // terminal so this DCID cannot restart the entire worker
+                    // cycle forever; unrelated transactions continue below.
+                    let error_message = format!("invalid transaction graph: {e}");
+                    for output_handle in operation_handles {
+                        let error = std::io::Error::other(error_message.clone());
+                        set_computation_error(
+                            &output_handle,
+                            transaction_id,
+                            &error,
+                            trx,
+                            deps_chain_mngr,
+                        )
+                        .await?;
+                    }
+                    continue;
+                }
+            };
             transactions.append(&mut components);
         }
         Ok::<_, CoprocessorError>((transactions, earliest_schedule_order))

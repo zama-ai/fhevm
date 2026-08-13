@@ -6,7 +6,8 @@ use fhevm_engine_common::db_keys::DbKeyCache;
 use fhevm_engine_common::types::{AllowEvents, COMPUTED_HANDLE_INDEX_MARKER, HANDLE_VERSION};
 use host_listener::contracts::TfheContract::TfheContractEvents;
 use host_listener::database::tfhe_event_propagate::{
-    ClearConst, Database as ListenerDatabase, Handle, LogTfhe, TransactionHash,
+    operand_boundary_mask_from_minted, ClearConst, Database as ListenerDatabase, Handle, LogTfhe,
+    OperandBoundaryMask, TransactionHash,
 };
 use rand::Rng;
 use sqlx::types::time::PrimitiveDateTime;
@@ -21,6 +22,25 @@ pub fn tfhe_event(data: TfheContractEvents) -> Log<TfheContractEvents> {
         .parse()
         .unwrap();
     Log::<TfheContractEvents> { address, data }
+}
+
+async fn fixture_operand_boundary_mask(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    transaction_hash: TransactionHash,
+    event: &TfheContractEvents,
+) -> Result<OperandBoundaryMask, sqlx::Error> {
+    let previously_minted = sqlx::query_scalar::<_, Vec<u8>>(
+        "SELECT output_handle FROM computations WHERE transaction_id = $1",
+    )
+    .bind(transaction_hash.to_vec())
+    .fetch_all(&mut **tx)
+    .await?
+    .into_iter()
+    .collect::<std::collections::HashSet<_>>();
+    operand_boundary_mask_from_minted(event, |handle| {
+        previously_minted.contains(handle.as_slice())
+    })
+    .map_err(sqlx::Error::Protocol)
 }
 
 pub const DEF_TYPE: FheType = FheType::FheUint64;
@@ -249,15 +269,18 @@ pub async fn generate_trivial_encrypt(
     let ct_type = ct_type.unwrap_or(DEF_TYPE);
     let handle = next_random_handle(ct_type.clone());
     let ct_value = ct_value.unwrap_or(rand::rng().random::<u128>());
+    let event = tfhe_event(TfheContractEvents::TrivialEncrypt(
+        host_listener::contracts::TfheContract::TrivialEncrypt {
+            caller,
+            pt: as_scalar_uint(&BigInt::from(ct_value)),
+            toType: ct_type as u8,
+            result: handle,
+        },
+    ));
+    let operand_boundary_mask =
+        fixture_operand_boundary_mask(tx, transaction_hash, &event.data).await?;
     let log = LogTfhe {
-        event: tfhe_event(TfheContractEvents::TrivialEncrypt(
-            host_listener::contracts::TfheContract::TrivialEncrypt {
-                caller,
-                pt: as_scalar_uint(&BigInt::from(ct_value)),
-                toType: ct_type as u8,
-                result: handle,
-            },
-        )),
+        event,
         transaction_hash: Some(transaction_hash),
         is_allowed,
         block_number: 1,
@@ -266,6 +289,8 @@ pub async fn generate_trivial_encrypt(
         dependence_chain: transaction_hash,
         tx_depth_size: 0,
         log_index: None,
+        operand_boundary_mask: Some(operand_boundary_mask),
+        is_executor_minted: true,
     };
     listener_event_to_db.insert_tfhe_event(tx, &log).await?;
     Ok(handle)
@@ -423,6 +448,8 @@ pub async fn insert_tfhe_event(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let started_at = tokio::time::Instant::now();
 
+    let operand_boundary_mask =
+        fixture_operand_boundary_mask(tx, transaction_hash, &event.data).await?;
     let log = LogTfhe {
         event,
         transaction_hash: Some(transaction_hash),
@@ -433,6 +460,8 @@ pub async fn insert_tfhe_event(
         dependence_chain: transaction_hash,
         tx_depth_size: 0,
         log_index: None,
+        operand_boundary_mask: Some(operand_boundary_mask),
+        is_executor_minted: true,
     };
     listener_event_to_db.insert_tfhe_event(tx, &log).await?;
 
