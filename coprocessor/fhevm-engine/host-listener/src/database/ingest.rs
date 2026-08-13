@@ -19,7 +19,9 @@ use crate::contracts::{
 };
 use crate::database::dependence_chains::dependence_chains;
 use crate::database::tfhe_event_propagate::{
-    acl_result_handles, tfhe_result_handle, Chain, ChainHash, Database, LogTfhe,
+    acl_result_handles, operand_boundary_mask_from_minted, tfhe_result_handle,
+    Chain, ChainHash, Database, Handle as EventHandle, LogTfhe,
+    TransactionHash,
 };
 use crate::kms_generation::insert_kms_generation_events_tx;
 use crate::kms_generation::metrics::KMS_EVENT_DECODE_FAIL_COUNTER;
@@ -57,6 +59,78 @@ fn block_date_time_utc(timestamp: u64) -> PrimitiveDateTime {
             OffsetDateTime::now_utc()
         });
     PrimitiveDateTime::new(offset.date(), offset.time())
+}
+
+/// Derive the executor's operand-origin bits before any row is written.
+///
+/// The executor's transient minted set is transaction-scoped and journaled by
+/// EVM reverts. Successful event logs are therefore the authoritative
+/// off-chain reconstruction: inspect an operation's inputs first, then add
+/// its result only when the event came from the executor itself. In
+/// particular, bridge fallback synthesis creates a `TrivialEncrypt`-shaped
+/// computation row but did not execute the executor, so it must not mint a
+/// later operand in the same transaction.
+fn populate_operand_boundary_masks(
+    logs: &mut [LogTfhe],
+) -> Result<(), sqlx::Error> {
+    let mask_bearing = |log: &LogTfhe| tfhe_result_handle(&log.event).is_some();
+    for log in logs.iter().filter(|log| mask_bearing(log)) {
+        if log.transaction_hash.is_none() {
+            return Err(sqlx::Error::Protocol(
+                "refusing computation event without transaction hash for operand-origin derivation"
+                    .into(),
+            ));
+        }
+        if log.log_index.is_none() {
+            return Err(sqlx::Error::Protocol(
+                "refusing computation event without log index for operand-origin derivation"
+                    .into(),
+            ));
+        }
+    }
+
+    // `log_index` is globally ordered within the block. A stable order is
+    // deterministic even if a malformed provider supplied duplicate indexes;
+    // reject those instead of allowing the minted-set reconstruction to
+    // depend on input delivery order.
+    logs.sort_by_key(|log| log.log_index.unwrap_or(u64::MAX));
+    let mut previous_index = None;
+    for log in logs.iter().filter(|log| mask_bearing(log)) {
+        let log_index =
+            log.log_index.expect("validated mask-bearing log index");
+        if previous_index == Some(log_index) {
+            return Err(sqlx::Error::Protocol(
+                "refusing duplicate computation log index for operand-origin derivation"
+                    .into(),
+            ));
+        }
+        previous_index = Some(log_index);
+    }
+
+    let mut minted_by_transaction: HashMap<
+        TransactionHash,
+        HashSet<EventHandle>,
+    > = HashMap::new();
+    for log in logs.iter_mut().filter(|log| mask_bearing(log)) {
+        let transaction_hash = log
+            .transaction_hash
+            .expect("validated mask-bearing transaction hash");
+        let minted = minted_by_transaction.entry(transaction_hash).or_default();
+        let mask = operand_boundary_mask_from_minted(&log.event, |handle| {
+            minted.contains(handle)
+        })
+        .map_err(sqlx::Error::Protocol)?;
+        log.operand_boundary_mask = Some(mask);
+
+        // This happens strictly after the mask above, exactly as the executor
+        // computes the preimage before calling `_markMinted`.
+        if log.is_executor_minted {
+            if let Some(result) = tfhe_result_handle(&log.event) {
+                minted.insert(result);
+            }
+        }
+    }
+    Ok(())
 }
 
 fn propagate_slow_lane_to_dependents(
@@ -293,6 +367,8 @@ pub async fn ingest_block_logs(
                     dependence_chain: Default::default(),
                     tx_depth_size: 0,
                     log_index: log.log_index,
+                    operand_boundary_mask: None,
+                    is_executor_minted: true,
                 };
                 tfhe_event_log.push(log);
                 continue;
@@ -409,6 +485,11 @@ pub async fn ingest_block_logs(
                         tx_depth_size: 0,
 
                         log_index: log.log_index,
+                        operand_boundary_mask: None,
+                        // This row is synthesized by the listener after a
+                        // bridge event; the executor never called
+                        // `_markMinted` for it.
+                        is_executor_minted: false,
                     });
                     at_least_one_insertion |= db
                         .insert_pbs_computations(
@@ -461,6 +542,12 @@ pub async fn ingest_block_logs(
                 false
             };
     }
+
+    // Must happen before dependence grouping and database insertion. The
+    // boundary mask is consensus-critical execution metadata, so ordering or
+    // provenance gaps are fatal for this block instead of falling back to
+    // database-local inference.
+    populate_operand_boundary_masks(&mut tfhe_event_log)?;
 
     let chains = dependence_chains(
         &mut tfhe_event_log,
@@ -1070,7 +1157,10 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
 
 #[cfg(test)]
 mod tests {
-    use alloy::primitives::FixedBytes;
+    use crate::contracts::TfheContract;
+    use crate::contracts::TfheContract::TfheContractEvents;
+    use crate::database::tfhe_event_propagate::ClearConst;
+    use alloy::primitives::{Address, FixedBytes};
 
     use super::*;
 
@@ -1091,6 +1181,150 @@ mod tests {
             before_size: 0,
             new_chain: true,
         }
+    }
+
+    fn mask_log(
+        event: TfheContractEvents,
+        tx: TransactionHash,
+        log_index: Option<u64>,
+        is_executor_minted: bool,
+    ) -> LogTfhe {
+        LogTfhe {
+            event: alloy::primitives::Log {
+                address: Address::ZERO,
+                data: event,
+            },
+            transaction_hash: Some(tx),
+            is_allowed: true,
+            block_number: 1,
+            block_hash: FixedBytes::ZERO,
+            block_timestamp: PrimitiveDateTime::MIN,
+            tx_depth_size: 0,
+            dependence_chain: tx,
+            log_index,
+            operand_boundary_mask: None,
+            is_executor_minted,
+        }
+    }
+
+    fn handle(byte: u8) -> EventHandle {
+        FixedBytes::from([byte; 32])
+    }
+
+    #[test]
+    fn derives_executor_compatible_masks_and_leaves_scalar_bits_clear() {
+        let tx = handle(0x11);
+        let local = handle(0x21);
+        let boundary = handle(0x22);
+        let scalar = handle(0x23);
+        let mut logs = vec![
+            mask_log(
+                TfheContractEvents::TrivialEncrypt(
+                    TfheContract::TrivialEncrypt {
+                        caller: Address::ZERO,
+                        pt: ClearConst::from(7_u8),
+                        toType: 5,
+                        result: local,
+                    },
+                ),
+                tx,
+                Some(1),
+                true,
+            ),
+            // `local` is executor-minted earlier in this transaction, while
+            // `boundary` is not: bit 0 stays clear and bit 1 is set.
+            mask_log(
+                TfheContractEvents::FheAdd(TfheContract::FheAdd {
+                    caller: Address::ZERO,
+                    lhs: local,
+                    rhs: boundary,
+                    scalarByte: FixedBytes::ZERO,
+                    result: handle(0x24),
+                }),
+                tx,
+                Some(2),
+                true,
+            ),
+            // A scalar RHS occupies dependency position 1 but must retain a
+            // zero boundary bit even though its bytes are not minted.
+            mask_log(
+                TfheContractEvents::FheAdd(TfheContract::FheAdd {
+                    caller: Address::ZERO,
+                    lhs: boundary,
+                    rhs: scalar,
+                    scalarByte: FixedBytes::from([1]),
+                    result: handle(0x25),
+                }),
+                tx,
+                Some(3),
+                true,
+            ),
+        ];
+
+        populate_operand_boundary_masks(&mut logs)
+            .expect("ordered logs derive masks");
+        assert_eq!(logs[0].operand_boundary_mask.unwrap()[31], 0);
+        assert_eq!(logs[1].operand_boundary_mask.unwrap()[31], 0b10);
+        assert_eq!(logs[2].operand_boundary_mask.unwrap()[31], 0b01);
+    }
+
+    #[test]
+    fn synthetic_bridge_trivial_encrypt_is_not_treated_as_executor_minted() {
+        let tx = handle(0x31);
+        let synthetic = handle(0x32);
+        let boundary = handle(0x33);
+        let mut logs = vec![
+            mask_log(
+                TfheContractEvents::TrivialEncrypt(
+                    TfheContract::TrivialEncrypt {
+                        caller: Address::ZERO,
+                        pt: ClearConst::from(7_u8),
+                        toType: 5,
+                        result: synthetic,
+                    },
+                ),
+                tx,
+                Some(1),
+                false,
+            ),
+            mask_log(
+                TfheContractEvents::FheAdd(TfheContract::FheAdd {
+                    caller: Address::ZERO,
+                    lhs: synthetic,
+                    rhs: boundary,
+                    scalarByte: FixedBytes::ZERO,
+                    result: handle(0x34),
+                }),
+                tx,
+                Some(2),
+                true,
+            ),
+        ];
+
+        populate_operand_boundary_masks(&mut logs)
+            .expect("ordered logs derive masks");
+        assert_eq!(
+            logs[1].operand_boundary_mask.unwrap()[31],
+            0b11,
+            "fallback synthesis was not marked in executor transient storage"
+        );
+    }
+
+    #[test]
+    fn rejects_missing_mask_provenance() {
+        let mut logs = vec![mask_log(
+            TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
+                caller: Address::ZERO,
+                pt: ClearConst::from(7_u8),
+                toType: 5,
+                result: handle(0x41),
+            }),
+            handle(0x40),
+            None,
+            true,
+        )];
+
+        assert!(populate_operand_boundary_masks(&mut logs).is_err());
     }
 
     #[test]

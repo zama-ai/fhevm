@@ -643,7 +643,7 @@ fn try_execute_node(
 			    })?;
                 cts.push(decompressed);
             }
-            DFGTaskInput::Dependence(_) => {
+            DFGTaskInput::LocalDependence(_) | DFGTaskInput::BoundaryDependence(_) => {
                 error!(target: "scheduler", { handle = ?hex::encode(&node.result_handle) }, "Computation missing inputs");
                 return Err(SchedulerError::MissingInputs.into());
             }

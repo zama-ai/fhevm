@@ -52,6 +52,168 @@ struct WorkItem {
     is_allowed: bool,
     transaction_id: Vec<u8>,
     schedule_order: PrimitiveDateTime,
+    /// Authoritative, listener-derived executor `boundaryBits`. Nullable at
+    /// the schema level only for pre-blue-green historical rows; pending work
+    /// without it must never be scheduled.
+    operand_boundary_mask: Option<Vec<u8>>,
+}
+
+const OPERAND_BOUNDARY_MASK_BYTES: usize = 32;
+
+fn operand_is_boundary(
+    mask: Option<&[u8]>,
+    operand_index: usize,
+) -> Result<bool, CoprocessorError> {
+    let mask = mask.ok_or_else(|| {
+        CoprocessorError::Other(
+            std::io::Error::other(
+                "refusing computation without authoritative operand boundary mask",
+            )
+            .into(),
+        )
+    })?;
+    if mask.len() != OPERAND_BOUNDARY_MASK_BYTES {
+        return Err(CoprocessorError::Other(
+            std::io::Error::other(format!(
+                "invalid operand boundary mask length {}; expected {OPERAND_BOUNDARY_MASK_BYTES}",
+                mask.len()
+            ))
+            .into(),
+        ));
+    }
+    if operand_index >= OPERAND_BOUNDARY_MASK_BYTES * 8 {
+        return Err(CoprocessorError::Other(
+            std::io::Error::other(format!(
+                "operand index {operand_index} exceeds executor boundary mask width"
+            ))
+            .into(),
+        ));
+    }
+    let byte_index = OPERAND_BOUNDARY_MASK_BYTES - 1 - operand_index / 8;
+    Ok(mask[byte_index] & (1 << (operand_index % 8)) != 0)
+}
+
+#[cfg(test)]
+mod operand_boundary_mask_tests {
+    use super::*;
+    use clap::Parser;
+    use sqlx::postgres::PgPoolOptions;
+    use test_harness::instance::{setup_test_db, ImportMode};
+
+    #[test]
+    fn boundary_mask_is_big_endian_and_null_fails_closed() {
+        let mut mask = [0_u8; OPERAND_BOUNDARY_MASK_BYTES];
+        mask[OPERAND_BOUNDARY_MASK_BYTES - 1] = 0b10;
+        assert!(!operand_is_boundary(Some(&mask), 0).expect("valid mask"));
+        assert!(operand_is_boundary(Some(&mask), 1).expect("valid mask"));
+        assert!(operand_is_boundary(None, 0).is_err());
+        assert!(operand_is_boundary(Some(&mask[..31]), 0).is_err());
+    }
+
+    #[tokio::test]
+    async fn acquired_dcid_excludes_stale_same_transaction_producer_for_boundary_operand(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let db = setup_test_db(ImportMode::None).await?;
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(db.db_url())
+            .await?;
+
+        let canonical_dcid = vec![0x11_u8; 32];
+        let stale_dcid = vec![0x22_u8; 32];
+        let transaction_id = vec![0x33_u8; 32];
+        let stale_producer = vec![0x44_u8; 32];
+        let canonical_consumer = vec![0x55_u8; 32];
+
+        // Only the canonical component is acquired. The stale row models a
+        // fork-exposed database retaining the same transaction under a
+        // sibling DCID. The consumer's listener-authored bit says the input
+        // is a boundary, so it must be sourced from canonical ciphertext
+        // storage rather than forwarded from this stale producer.
+        sqlx::query(
+            "INSERT INTO dependence_chain (dependence_chain_id, status) VALUES ($1, 'updated')",
+        )
+        .bind(&canonical_dcid)
+        .execute(&pool)
+        .await?;
+        sqlx::query(
+            r#"
+            INSERT INTO computations (
+                output_handle, dependencies, fhe_operation, is_scalar,
+                dependence_chain_id, transaction_id, is_allowed,
+                is_completed, is_error, host_chain_id, operand_boundary_mask
+            ) VALUES ($1, $2, $3, false, $4, $5, $6, false, false, 1, $7)
+            "#,
+        )
+        .bind(&stale_producer)
+        .bind(Vec::<Vec<u8>>::new())
+        .bind(SupportedFheOperations::FheTrivialEncrypt as i16)
+        .bind(&stale_dcid)
+        .bind(&transaction_id)
+        .bind(true)
+        .bind(vec![0_u8; OPERAND_BOUNDARY_MASK_BYTES])
+        .execute(&pool)
+        .await?;
+        let mut boundary_mask = vec![0_u8; OPERAND_BOUNDARY_MASK_BYTES];
+        boundary_mask[OPERAND_BOUNDARY_MASK_BYTES - 1] = 1;
+        sqlx::query(
+            r#"
+            INSERT INTO computations (
+                output_handle, dependencies, fhe_operation, is_scalar,
+                dependence_chain_id, transaction_id, is_allowed,
+                is_completed, is_error, host_chain_id, operand_boundary_mask
+            ) VALUES ($1, $2, $3, false, $4, $5, true, false, false, 1, $6)
+            "#,
+        )
+        .bind(&canonical_consumer)
+        .bind(vec![stale_producer.clone()])
+        .bind(SupportedFheOperations::FheNot as i16)
+        .bind(&canonical_dcid)
+        .bind(&transaction_id)
+        .bind(boundary_mask)
+        .execute(&pool)
+        .await?;
+
+        let mut args = crate::daemon_cli::Args::parse_from([
+            "tfhe-worker",
+            "--work-items-batch-size",
+            "1",
+            "--dependence-chains-per-batch",
+            "1",
+        ]);
+        args.database_url = Some(db.db_url.clone());
+        let health_check = crate::health_check::HealthCheck::new(db.db_url.clone());
+        let mut locks = dependence_chain::LockMngr::new_with_conf(
+            Uuid::new_v4(),
+            pool.clone(),
+            30,
+            false,
+            None,
+            None,
+            None,
+        );
+        let mut no_progress_cycles = 0;
+        let mut transaction = pool.begin().await?;
+        let (nodes, _, found_work) = query_for_work(
+            &args,
+            &health_check,
+            &mut transaction,
+            &mut locks,
+            &mut no_progress_cycles,
+        )
+        .await?;
+
+        assert!(found_work);
+        assert_eq!(nodes.len(), 1, "only the acquired DCID may enter the graph");
+        assert_eq!(nodes[0].results, vec![canonical_consumer]);
+        assert!(
+            nodes[0].inputs.contains_key(&stale_producer),
+            "the boundary operand must be fetched canonically even though a stale same-transaction producer exists"
+        );
+
+        transaction.rollback().await?;
+        Ok(())
+    }
 }
 
 lazy_static! {
@@ -657,7 +819,8 @@ SELECT
   c.is_scalar,
   c.is_allowed,
   c.transaction_id,
-  c.schedule_order
+  c.schedule_order,
+  c.operand_boundary_mask
 FROM computations c
 WHERE c.transaction_id IN (
     SELECT DISTINCT
@@ -673,6 +836,11 @@ WHERE c.transaction_id IN (
       LIMIT $2
     ) as c_schedule_order
   )
+  -- The transaction-id expansion above is only a convenience for loading
+  -- non-allowed intermediates. Re-apply ownership here: a fork-exposed DB
+  -- can retain a stale row with the same transaction hash in another DCID,
+  -- and it must not enter this worker's graph.
+  AND ($1::bytea[] IS NULL OR c.dependence_chain_id = ANY($1))
         ",
     )
     .bind(dcid_filter.as_deref())
@@ -710,6 +878,12 @@ WHERE c.transaction_id IN (
             let transaction_id: &Vec<u8> = transaction_id;
             let mut ops = vec![];
             for w in txwork {
+                // A nullable column allows blue-green replacement without an
+                // unsafe semantic backfill, but it is never valid for work
+                // selected by this binary. Validate it before considering
+                // any operation so a malformed row fails closed.
+                let operand_boundary_mask = w.operand_boundary_mask.as_deref();
+                let _ = operand_is_boundary(operand_boundary_mask, 0)?;
                 let fhe_op: SupportedFheOperations = match w.fhe_operation.try_into() {
                     Ok(op) => op,
                     Err(e) => {
@@ -737,8 +911,10 @@ WHERE c.transaction_id IN (
                         inputs.push(DFGTaskInput::Value(SupportedFheCiphertexts::Scalar(
                             dh.clone(),
                         )));
+                    } else if operand_is_boundary(operand_boundary_mask, idx)? {
+                        inputs.push(DFGTaskInput::BoundaryDependence(dh.clone()));
                     } else {
-                        inputs.push(DFGTaskInput::Dependence(dh.clone()));
+                        inputs.push(DFGTaskInput::LocalDependence(dh.clone()));
                     }
                 }
                 check_fhe_operand_types(w.fhe_operation.into(), &this_comp_inputs, &is_scalar_op_vec)?;

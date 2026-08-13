@@ -14,7 +14,8 @@ use alloy::primitives::{FixedBytes, Log};
 use bigdecimal::num_bigint::BigInt;
 use host_listener::contracts::TfheContract::TfheContractEvents;
 use host_listener::database::tfhe_event_propagate::{
-    ClearConst, Database as ListenerDatabase, Handle, LogTfhe, ToType, Transaction,
+    operand_boundary_mask_from_minted, ClearConst, Database as ListenerDatabase, Handle, LogTfhe,
+    ToType, Transaction,
 };
 use sqlx::types::time::PrimitiveDateTime;
 use sqlx::PgPool;
@@ -823,6 +824,21 @@ pub async fn insert_tfhe_event_with_dependence_chain(
     dependence_chain: Handle,
     is_allowed: bool,
 ) -> Result<bool, sqlx::Error> {
+    // Bench staging bypasses ordered block ingestion, so derive the same
+    // authoritative transaction-local origin bits from rows already staged
+    // for this fixture transaction.
+    let previously_minted = sqlx::query_scalar::<_, Vec<u8>>(
+        "SELECT output_handle FROM computations WHERE transaction_id = $1",
+    )
+    .bind(transaction_hash.to_vec())
+    .fetch_all(&mut **tx)
+    .await?
+    .into_iter()
+    .collect::<std::collections::HashSet<_>>();
+    let operand_boundary_mask = operand_boundary_mask_from_minted(&log.inner.data, |handle| {
+        previously_minted.contains(handle.as_slice())
+    })
+    .map_err(sqlx::Error::Protocol)?;
     let event = LogTfhe {
         event: log.inner,
         transaction_hash: Some(transaction_hash),
@@ -833,6 +849,8 @@ pub async fn insert_tfhe_event_with_dependence_chain(
         dependence_chain,
         tx_depth_size: 0,
         log_index: log.log_index,
+        operand_boundary_mask: Some(operand_boundary_mask),
+        is_executor_minted: true,
     };
     db.insert_tfhe_event(tx, &event).await
 }
