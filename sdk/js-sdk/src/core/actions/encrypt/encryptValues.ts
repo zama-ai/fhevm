@@ -17,6 +17,7 @@ export type EncryptValuesParameters = {
   readonly contractAddress: string;
   readonly userAddress: string;
   readonly options?: RelayerInputProofOptions | undefined;
+  readonly seed?: Uint8Array;
 };
 
 export type EncryptValuesReturnType = {
@@ -30,7 +31,7 @@ export async function encryptValues(
   fhevm: Fhevm<FhevmChain, WithEncrypt>,
   parameters: EncryptValuesParameters,
 ): Promise<EncryptValuesReturnType> {
-  const { contractAddress, userAddress, options } = parameters;
+  const { contractAddress, userAddress, options, seed } = parameters;
 
   // Validates `values`
   const values = parameters.values.map((v) =>
@@ -48,6 +49,7 @@ export async function encryptValues(
     values,
     fhevmContext,
     options,
+    seed,
   });
 
   return {
