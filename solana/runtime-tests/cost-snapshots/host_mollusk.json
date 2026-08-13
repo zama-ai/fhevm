@@ -206,6 +206,19 @@
         "total_cpi_instruction_data_bytes": 1260,
         "max_cpi_instruction_data_bytes": 36
       }
+    },
+    "fhe_execute_boundary/subject_heavy_public_creates": {
+      "max_ok": 15,
+      "first_fail": 16,
+      "limited_by": "heap",
+      "cost_at_max_ok": {
+        "compute_units": 244646,
+        "unique_accounts": 20,
+        "instruction_data_bytes": 1595,
+        "cpi_instructions": 46,
+        "total_cpi_instruction_data_bytes": 1911,
+        "max_cpi_instruction_data_bytes": 1011
+      }
     }
   },
   "measurements": {

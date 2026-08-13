@@ -2983,6 +2983,18 @@ fn subject_heavy_creates_case(steps: usize, authority: Pubkey) -> ProbeCase {
     persistent_creates_batch(steps, &all, authority, false, &subjects).into()
 }
 
+/// [`subject_heavy_creates_case`] with every output also made public — the corner where the
+/// widest audience meets the public-outputs event. The one-subject public sweep sits exactly on
+/// the trace-heap boundary with zero margin, so this axis pair is measured rather than
+/// interpolated from the two single-axis sweeps.
+fn subject_heavy_public_creates_case(steps: usize, authority: Pubkey) -> ProbeCase {
+    let all: Vec<usize> = (0..steps).collect();
+    let subjects: Vec<Pubkey> = (1..=zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS as u8)
+        .map(|index| Pubkey::new_from_array([0x60 + index; 32]))
+        .collect();
+    persistent_creates_batch(steps, &all, authority, true, &subjects).into()
+}
+
 /// Every step past the first is a `Sum` over the coprocessor's maximum euint64 operand count,
 /// all referencing the previous step's transient (distinct operands keep the derived handles
 /// distinct) — the operand-width axis: per step the host allocates its operand tables
@@ -3083,6 +3095,27 @@ fn cost_snapshot_boundary_subject_heavy_creates() {
         subject_heavy_creates_case(steps, Pubkey::new_from_array([0x37; 32]))
     });
     assert_swept_boundary("fhe_execute_boundary/subject_heavy_creates", &sweep);
+}
+
+#[test]
+fn cost_snapshot_boundary_subject_heavy_public_creates() {
+    let sweep = sweep_step_boundary(1, |steps| {
+        subject_heavy_public_creates_case(steps, Pubkey::new_from_array([0x3B; 32]))
+    });
+    assert_swept_boundary("fhe_execute_boundary/subject_heavy_public_creates", &sweep);
+    // On this axis pair the wall is the HOST's own CPI frame — the created accounts' subject
+    // tables and the public-outputs event payload grow with creates x subjects-per-output —
+    // and it sits well below the trace cap, which the one-subject sweeps could not see. The
+    // builder models only the app's CPI frame (build + packet + invoke tables), and no
+    // app-side number can see this driver: with a shared audience the dictionary interns
+    // eight subjects once, so the builder admits the trace-capped twenty such creates while
+    // the host survives fifteen. Until the host's side gets its own typed ceiling (or a
+    // policy cap on the public payload), this wall is measured, not typed: the snapshot pins
+    // it, and the boundary matrix is the guidance — fhevm-internal#1872.
+    assert_eq!(
+        sweep.limited_by, "heap",
+        "the wide-audience public wall moved off the host heap — re-read the guidance above"
+    );
 }
 
 #[test]
@@ -3279,6 +3312,13 @@ fn print_boundary_matrix() {
             "all_private_creates",
             1,
             Box::new(|steps| all_private_creates_case(steps, Pubkey::new_from_array([0x36; 32]))),
+        ),
+        (
+            "subject_heavy_public_creates",
+            1,
+            Box::new(|steps| {
+                subject_heavy_public_creates_case(steps, Pubkey::new_from_array([0x3B; 32]))
+            }),
         ),
         (
             "dependent_chain",

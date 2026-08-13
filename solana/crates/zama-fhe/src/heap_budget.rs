@@ -84,11 +84,11 @@ unsafe impl GlobalAlloc for CountingAllocator {
 #[global_allocator]
 static ALLOCATOR: CountingAllocator = CountingAllocator;
 
-/// A regression ceiling on any buildable execution's build plus packet, far above the measured
-/// numbers so it only trips on a structural regression (a reintroduced per-step copy), not noise.
-/// For scale, the clone-per-step rollback this replaced asked for 270 KB across a full execution
-/// and exhausted the heap at the 10th step of the build alone.
-const BUDGET_BYTES: usize = 64 * 1024;
+/// Shapes of [`frontier_shapes`] the builder currently admits, asserted exactly by the
+/// keystone: a shape silently dropping out (a structural regression grew the tally) or joining
+/// (the budget widened) both fail until the change that moved the frontier updates this
+/// number and the documented tables with it.
+const ADMITTED_FRONTIER_SHAPES: usize = 43;
 
 /// The most persistent creates one execution can carry: the builder rejects the create whose
 /// three host CPIs push the transaction's instruction trace past its limit.
@@ -108,8 +108,10 @@ struct MeasuredShape {
 }
 
 impl MeasuredShape {
+    /// Everything the admission check charged: the measured build and packet plus the modeled
+    /// invoke-side account tables.
     fn total(&self) -> usize {
-        self.build_bytes + self.packet_bytes
+        self.build_bytes + self.packet_bytes + self.cost.invoke_heap_bytes
     }
 }
 
@@ -270,11 +272,12 @@ fn max_size_attestation(tag: u8) -> CoprocessorInputAttestation {
     }
 }
 
-/// Every step consumes its own maximum-size verified input. The CPI packet limit is what caps
-/// this shape — each attestation serializes to roughly a kilobyte — so the heaviest buildable
-/// attestation count is found by asking the builder, not assumed. The attestations are built
-/// before the measurement starts: they are the app's own data; what the builder pays for is
-/// registering them and embedding one copy per consuming step.
+/// Every step consumes its own maximum-size verified input. The build-heap budget is what caps
+/// this shape — each attestation embeds at over a kilobyte of handles, extra data, and
+/// signature — so the heaviest buildable attestation count is found by asking the builder, not
+/// assumed. The attestations are built before the measurement starts: they are the app's own
+/// data; what the builder pays for is registering them and embedding one copy per consuming
+/// step.
 fn attestation_shape(
     count: usize,
 ) -> impl for<'id> FnOnce(&mut FheExecutionBuilder<'id>) -> crate::Result<()> {
@@ -291,7 +294,7 @@ fn attestation_shape(
 }
 
 /// The largest attestation-per-step execution the builder admits — one past it must be rejected
-/// by the packet check, which the fit test asserts.
+/// by a typed ceiling (today the build-heap budget), which the fit test asserts.
 fn max_buildable_attestation_count() -> usize {
     (1..=MAX_FHE_EXECUTION_STEPS)
         .take_while(|count| {
@@ -336,12 +339,12 @@ fn measured_shapes() -> Vec<MeasuredShape> {
             persist_shape(PersistKind::Create, full, MAX_BUILDABLE_CREATES, 1),
         ),
         measure(
-            "near_budget_creates (20 x 4)",
+            "near_budget_creates (20 x 2)",
             full,
-            persist_shape(PersistKind::Create, full, MAX_BUILDABLE_CREATES, 4),
+            persist_shape(PersistKind::Create, full, MAX_BUILDABLE_CREATES, 2),
         ),
         measure(
-            "max_attestations (packet-capped)",
+            "max_attestations (budget-capped)",
             attestation_count,
             attestation_shape(attestation_count),
         ),
@@ -354,35 +357,94 @@ fn measured_shapes() -> Vec<MeasuredShape> {
 #[test]
 #[ignore = "frontier grid, run explicitly with --nocapture"]
 fn print_build_frontier_grid() {
-    for (kind, kind_name) in [
-        (PersistKind::Create, "create"),
-        (PersistKind::Update, "update"),
-    ] {
-        for subjects in [1, 2, 4, 6, 8] {
-            for outputs in [4, 8, 12, 16, 20, 24, 28, MAX_FHE_EXECUTION_STEPS] {
-                let name = format!("{kind_name} x{outputs:2} subjects={subjects}");
-                match try_measure(
-                    name.clone(),
-                    MAX_FHE_EXECUTION_STEPS,
-                    persist_shape(kind, MAX_FHE_EXECUTION_STEPS, outputs, subjects),
-                ) {
-                    Ok(shape) => println!(
-                        "{name:28} build={:6} packet={:6} total={:6} {}",
-                        shape.build_bytes,
-                        shape.packet_bytes,
-                        shape.total(),
-                        if shape.total() + crate::cost::APP_HEAP_RESERVE_BYTES
-                            <= crate::cost::PROGRAM_HEAP_BYTES
-                        {
-                            "fits"
-                        } else {
-                            "OVER"
-                        }
-                    ),
-                    Err(error) => println!("{name:28} rejected: {error:?}"),
+    for (name, build) in frontier_shapes() {
+        match try_measure(name.clone(), MAX_FHE_EXECUTION_STEPS, build) {
+            Ok(shape) => println!(
+                "{name:36} build={:6} packet={:6} invoke={:6} total={:6} fits",
+                shape.build_bytes,
+                shape.packet_bytes,
+                shape.cost.invoke_heap_bytes,
+                shape.total(),
+            ),
+            Err(error) => println!("{name:36} rejected: {error:?}"),
+        }
+    }
+}
+
+/// Which reduction op a reduction-heavy shape drives — the two ops whose operand tables carry
+/// hand-written tallies in `builder.rs`, which is exactly why the frontier must exercise them.
+#[derive(Clone, Copy)]
+enum ReductionKind {
+    Sum,
+    IsIn,
+}
+
+/// `steps` reduction steps of `operands` operands each, chained so each step consumes the
+/// previous one's result. The operand tables are what this shape stresses: reserved from the
+/// size hint and tallied per push.
+fn reduction_shape(
+    kind: ReductionKind,
+    steps: usize,
+    operands: usize,
+) -> impl for<'id> FnOnce(&mut FheExecutionBuilder<'id>) -> crate::Result<()> {
+    let authority = Pubkey::new_unique();
+    let domain = Domain::new(Pubkey::new_unique());
+    let input = Uint64Handle::persistent(
+        balance_handle(2),
+        EncryptedValueId::new(domain, authority, EncryptedValueLabel::new([0xfd; 32])),
+    )
+    .expect("input handle");
+    move |builder| {
+        let mut value = Encrypted::from(input);
+        for _ in 0..steps {
+            match kind {
+                ReductionKind::Sum => {
+                    value = builder.sum((0..operands).map(|_| value), Output::transient())?;
+                }
+                ReductionKind::IsIn => {
+                    builder.is_in(value, (0..operands).map(|_| value), Output::transient())?;
                 }
             }
         }
+        Ok(())
+    }
+}
+
+/// A chain that mixes every tallied table in one build: adds, a mid-chain sum and set
+/// membership, and one persistent create at the end.
+fn mixed_ops_shape() -> impl for<'id> FnOnce(&mut FheExecutionBuilder<'id>) -> crate::Result<()> {
+    let (input, outputs) = persist_shape_data(PersistKind::Create, 1, 2);
+    move |builder| {
+        let mut value = Encrypted::from(input);
+        for step in 0..(MAX_FHE_EXECUTION_STEPS - 2) {
+            value = if step % 4 == 3 {
+                builder.sum((0..8).map(|_| value), Output::transient())?
+            } else {
+                builder.add(value, Scalar::<Uint<64>>::u64(1), Output::transient())?
+            };
+        }
+        builder.is_in(value, (0..8).map(|_| value), Output::transient())?;
+        let output = outputs.into_iter().next().expect("one create");
+        builder.add(
+            value,
+            Scalar::<Uint<64>>::u64(1),
+            Output::persistent(output),
+        )?;
+        Ok(())
+    }
+}
+
+/// One maximum-size attestation consumed once, then reused by reference for the rest of the
+/// chain — the embed is paid once, not per consuming step.
+fn reused_attestation_shape(
+) -> impl for<'id> FnOnce(&mut FheExecutionBuilder<'id>) -> crate::Result<()> {
+    let attestation = max_size_attestation(0x8F);
+    move |builder| {
+        let mut value = builder.verified_input::<Uint<64>>(attestation)?;
+        for _ in 0..(MAX_FHE_EXECUTION_STEPS - 1) {
+            value = builder.add(value, Scalar::<Uint<64>>::u64(1), Output::transient())?;
+        }
+        Ok(())
     }
 }
 
@@ -414,6 +476,24 @@ fn frontier_shapes() -> Vec<(String, ShapeBuilder)> {
             Box::new(attestation_shape(count)),
         ));
     }
+    // The reduction ops carry the only hand-written operand-table tallies in `builder.rs`, so
+    // the frontier exercises both, thin-and-deep and wide-and-shallow.
+    for (kind, kind_name) in [(ReductionKind::Sum, "sum"), (ReductionKind::IsIn, "is_in")] {
+        for (steps, operands) in [(1, 60), (2, 60), (8, 8), (MAX_FHE_EXECUTION_STEPS, 8)] {
+            shapes.push((
+                format!("{kind_name} x{steps:2} operands={operands}"),
+                Box::new(reduction_shape(kind, steps, operands)),
+            ));
+        }
+    }
+    shapes.push((
+        "mixed ops (add/sum/is_in, 1 create)".to_string(),
+        Box::new(mixed_ops_shape()),
+    ));
+    shapes.push((
+        "attestation reused across the chain".to_string(),
+        Box::new(reused_attestation_shape()),
+    ));
     shapes
 }
 
@@ -446,24 +526,14 @@ fn the_heap_tally_matches_a_counting_allocator_for_every_admitted_shape() {
             "{}: the counted packet size disagrees with the bytes the packet requested",
             shape.name,
         );
-        // What the budget check guarantees, asserted independently: an admitted shape fits
-        // the program heap with the documented reserve to spare, and is nowhere near the
-        // structural regression budget.
-        let total = shape.total();
-        assert!(
-            total + crate::cost::APP_HEAP_RESERVE_BYTES <= crate::cost::PROGRAM_HEAP_BYTES,
-            "{}: admitted at {total} bytes, over the build budget",
-            shape.name,
-        );
-        assert!(
-            total < BUDGET_BYTES,
-            "{}: a per-step copy is back",
-            shape.name
-        );
     }
-    assert!(
-        admitted >= 50,
-        "the frontier admitted only {admitted} shapes — the ceilings tightened unexpectedly"
+    // Exact on purpose: a structural regression (a reintroduced per-step copy, a heavier
+    // table) shows up as shapes silently dropping out of the admitted set, and a widened
+    // budget as shapes silently joining it. Update the number together with the change that
+    // deliberately moves the frontier.
+    assert_eq!(
+        admitted, ADMITTED_FRONTIER_SHAPES,
+        "the admitted frontier moved — deliberate changes update ADMITTED_FRONTIER_SHAPES"
     );
 }
 
@@ -574,19 +644,129 @@ fn debug_tally_breakdown() {
 fn print_measurement_table() {
     for shape in measured_shapes() {
         println!(
-            "{:40} steps={:2} build={:6} packet={:6} total={:6} {}",
+            "{:40} steps={:2} build={:6} packet={:6} invoke={:6} total={:6} fits",
             shape.name,
             shape.steps,
             shape.build_bytes,
             shape.packet_bytes,
+            shape.cost.invoke_heap_bytes,
             shape.total(),
-            if shape.total() + crate::cost::APP_HEAP_RESERVE_BYTES
-                <= crate::cost::PROGRAM_HEAP_BYTES
-            {
-                "fits"
-            } else {
-                "OVER"
-            }
         );
     }
+}
+
+/// The invoke-side model measured against the real code: for every admitted frontier shape,
+/// `resolve_accounts` plus the CPI account-table assembly request exactly the bytes
+/// [`crate::cost::invoke_table_heap_bytes`] charged at `build()`. Runs under the `cpi` feature
+/// (workspace builds unify it in); Anchor codegen changing its allocation pattern, a new
+/// allocation in resolution, or a host account-list change all fail here.
+#[cfg(feature = "cpi")]
+#[test]
+fn the_invoke_model_matches_a_counting_allocator_for_every_admitted_shape() {
+    use anchor_lang::prelude::AccountInfo;
+
+    fn arena_infos<'a>(
+        keys: &'a [Pubkey],
+        lamports: &'a mut [u64],
+        data: &'a mut [Vec<u8>],
+        owner: &'a Pubkey,
+    ) -> Vec<AccountInfo<'a>> {
+        keys.iter()
+            .zip(lamports.iter_mut())
+            .zip(data.iter_mut())
+            .map(|((key, lamports), data)| {
+                AccountInfo::new(
+                    key,
+                    false,
+                    true,
+                    lamports,
+                    data.as_mut_slice(),
+                    owner,
+                    false,
+                )
+            })
+            .collect()
+    }
+
+    let owner = Pubkey::new_unique();
+    let mut checked = 0;
+    for (name, build) in frontier_shapes() {
+        let Ok(execution) = FheExecution::build(
+            ExecutionEncryptedValueAccountAuthority::new(Pubkey::new_unique()),
+            build,
+        ) else {
+            continue;
+        };
+        checked += 1;
+        let cost = execution.cost();
+
+        // Every AccountInfo the invoke needs, allocated before the measurement window: the
+        // accounts are the app's (Anchor deserialized them long before the build).
+        let dynamic_keys: Vec<Pubkey> = execution
+            .remaining_accounts
+            .iter()
+            .filter(|meta| meta.requires_dynamic_account())
+            .map(|meta| meta.pubkey)
+            .collect();
+        let authority_keys: Vec<Pubkey> = execution.output_authorities().collect();
+        let fixed_keys: Vec<Pubkey> = (0..crate::cost::FHE_EXECUTE_FIXED_CPI_ACCOUNTS)
+            .map(|_| Pubkey::new_unique())
+            .collect();
+        assert_eq!(dynamic_keys.len(), cost.dynamic_accounts, "{name}");
+        assert_eq!(authority_keys.len(), cost.output_authorities, "{name}");
+        let mut dynamic_lamports = vec![0u64; dynamic_keys.len()];
+        let mut dynamic_data = vec![Vec::new(); dynamic_keys.len()];
+        let dynamic_infos = arena_infos(
+            &dynamic_keys,
+            &mut dynamic_lamports,
+            &mut dynamic_data,
+            &owner,
+        );
+        let mut authority_lamports = vec![0u64; authority_keys.len()];
+        let mut authority_data = vec![Vec::new(); authority_keys.len()];
+        let authority_infos = arena_infos(
+            &authority_keys,
+            &mut authority_lamports,
+            &mut authority_data,
+            &owner,
+        );
+        let mut fixed_lamports = vec![0u64; fixed_keys.len()];
+        let mut fixed_data = vec![Vec::new(); fixed_keys.len()];
+        let fixed_infos = arena_infos(&fixed_keys, &mut fixed_lamports, &mut fixed_data, &owner);
+        // Both optional HCU witnesses present — the maximum the model charges; an absent one
+        // only shrinks the real cost. A host account-list change breaks this literal, which is
+        // the pin behind `FHE_EXECUTE_FIXED_CPI_ACCOUNTS`.
+        let fixed = zama_host::cpi::accounts::FheExecute {
+            payer: fixed_infos[0].clone(),
+            compute_subject: fixed_infos[1].clone(),
+            encrypted_value_account_authority: fixed_infos[2].clone(),
+            host_config: fixed_infos[3].clone(),
+            system_program: fixed_infos[4].clone(),
+            hcu_block_meter: Some(fixed_infos[5].clone()),
+            hcu_trusted_app_record: Some(fixed_infos[6].clone()),
+            event_authority: fixed_infos[7].clone(),
+            program: fixed_infos[8].clone(),
+        };
+
+        let before = counted_bytes();
+        let resolved = execution
+            .resolve_accounts(
+                dynamic_infos.iter().cloned(),
+                authority_infos.iter().cloned(),
+            )
+            .unwrap_or_else(|error| panic!("{name}: resolves: {error:?}"));
+        let tables = crate::cpi::fhe_execute_account_tables(&fixed, &execution, &resolved, &[])
+            .expect("assembles");
+        let measured = counted_bytes() - before;
+        assert_eq!(
+            measured, cost.invoke_heap_bytes,
+            "{name}: the invoke-side model disagrees with the counting allocator — an \
+             allocation is missing from the model (or modeled twice)",
+        );
+        drop(tables);
+    }
+    assert_eq!(
+        checked, ADMITTED_FRONTIER_SHAPES,
+        "the invoke measurement covered a different admitted set than the keystone"
+    );
 }
