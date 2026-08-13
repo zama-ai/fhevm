@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 import { defineConfig } from 'vitest/config';
+import { VitestConsoleReporter } from './vitestConsoleReporter.js';
 
 const chain = process.env.CHAIN ?? 'sepolia';
 
@@ -29,6 +30,7 @@ export default defineConfig({
   },
   test: {
     include: ['test/fheTest/**/*.test.ts'],
+    reporters: [new VitestConsoleReporter()],
     testTimeout: 120_000,
     hookTimeout: 120_000,
     retry: 0,
