@@ -361,34 +361,49 @@ not when the threat model changes.
     - **Build heap** — the builder tallies every byte it requests from the
       allocator (the ~10 KB up-front table reservations, growth past them,
       per-step operand tables, attestation embeds) and `finish` holds
-      build + packet under `BUILD_HEAP_BUDGET_BYTES` (24 KiB), leaving
-      `APP_HEAP_RESERVE_BYTES` (8 KiB) of the fixed 32 KB region for Anchor's
-      account deserialization, account resolution, and the app's own
-      allocations (`ExceedsBuildHeapBudget`).
+      build + packet + the invoke-side account tables under
+      `BUILD_HEAP_BUDGET_BYTES` (24 KiB), leaving `APP_HEAP_RESERVE_BYTES`
+      (8 KiB) of the fixed 32 KB region for what the builder genuinely cannot
+      see: Anchor's account deserialization and the app's own allocations
+      (`ExceedsBuildHeapBudget`). The invoke-side term prices
+      `resolve_accounts` plus the CPI meta/info tables as an exact function
+      of the account counts known at `finish`, so an admitted execution's
+      whole lifecycle in the app's CPI frame — build, serialize, resolve,
+      invoke — fits the budget.
 
     Lowering an execution never copies the builder's intern tables or the
-    app's subject lists (the binding moves them), and the whole instruction —
-    build plus the packet serialized once into a right-sized buffer — is what
-    the budget bounds. The tally is proven equal to a counting allocator
-    byte-for-byte across an 85-shape frontier by
+    app's subject lists (the binding moves them), the packet serializes once
+    into a right-sized buffer, and resolve and invoke reserve their exact
+    table sizes up front. Both tallies are proven equal to a counting
+    allocator byte-for-byte across a 122-shape frontier (43 admitted) by
     `solana/crates/zama-fhe/src/heap_budget.rs`
-    (`the_heap_tally_matches_a_counting_allocator_for_every_admitted_shape`),
-    so an untallied allocation cannot ship; the at-cap dep-chain specimen
-    proves the chain shape under SBF with the uncounted costs on top. For
-    scale, the heaviest admitted shapes measure: full 32-step chain 10,764
-    bytes; 20 creates 14,165; 20 creates x 4 subjects 20,361; six maximum
-    attestations 24,374 — the frontier grid is printed by that file's
+    (`the_heap_tally_matches_a_counting_allocator_for_every_admitted_shape`
+    for build + packet,
+    `the_invoke_model_matches_a_counting_allocator_for_every_admitted_shape`
+    for resolve + CPI tables), so an untallied allocation cannot ship; the
+    at-cap dep-chain specimen proves the chain shape under SBF with the
+    uncounted costs on top. For scale, the heaviest admitted totals
+    (build + packet + invoke): full 32-step chain 13,828 bytes; 20 creates
+    21,595; 20 creates x 2 subjects 22,295; four maximum attestations 21,730;
+    one 60-operand sum 21,278 — the frontier grid is printed by that file's
     `print_build_frontier_grid` (`#[ignore]`d — run with
     `--ignored --nocapture`).
 
-    What the ceilings cannot see stays measured, not guessed: the host-side
+    What the ceilings cannot see stays measured, not guessed. The host-side
     heap cost of persistent updates grows with the stored value's MMR peak
     count — on-chain state invisible at build time — and is swept per
     maturity (`fhe_execute_boundary/mature_updates_peaks_8` 11 steps, `_32` 6,
     the 55-peak extreme 4), alongside the operand-width axis
     (`fhe_execute_boundary/reduction_heavy`, host heap wall at 5 steps of
     60-operand sums; the builder's budget stops the same shape earlier on the
-    app side).
+    app side). And the host's own CPI frame scales with created outputs times
+    subjects per output — the created accounts' subject tables plus the
+    public-outputs event payload — which the builder cannot price from its
+    side of the boundary: its packet interns a shared audience once while the
+    host materializes it per created account. The
+    `fhe_execute_boundary/subject_heavy_public_creates` sweep pins that wall
+    (15 eight-subject public creates land, 16 abort in the host's CPI frame)
+    where the builder's typed ceilings alone admit 20.
 
 ## I. Roadmap
 
