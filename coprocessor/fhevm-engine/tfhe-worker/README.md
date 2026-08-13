@@ -120,3 +120,45 @@ without it, Main never schedules the consuming transactions at all. It has the s
 Main scheduling batch by default.
 
 Select it with `BENCH_ONE_SHOT_SCENARIO=cross_tx_dependent_1000_50x20`.
+
+### Running the canonical suite
+
+`BENCH_ONE_SHOT_CANONICAL_SCENARIOS` in the Makefile lists the canonical
+workloads in reporting order, and the suite targets run each of them in turn:
+
+```
+FHEVM_BENCH_DATABASE_URL=postgresql://... \
+  make benchmark_erc20_main_block_one_shot_suite_gpu \
+  BENCH_ONE_SHOT_RECREATE_DB=1
+```
+
+`FHEVM_BENCH_ISOLATED_DB=1` only requires an explicitly named database, it does
+not create one per run, so without `BENCH_ONE_SHOT_RECREATE_DB=1` every scenario
+runs against the rows the previous ones left behind — progressively larger
+tables and a residual processed-DCID backlog. Topology assertions still hold
+(they are scoped by randomized transaction IDs), but the timings are not
+comparable to CI, which always recreates.
+
+A failing scenario does not abort the suite; the remaining scenarios still run
+and the target exits non-zero at the end. `BENCH_ONE_SHOT_SCENARIOS="a b"`
+restricts the run to a subset of `BENCH_ONE_SHOT_CANONICAL_SCENARIOS` (an empty
+or unrecognized list is rejected), and `make print_bench_one_shot_scenarios`
+prints what a suite run would cover. Do not override
+`BENCH_ONE_SHOT_SCENARIO` (singular) on a suite target: it pins every iteration
+to one scenario.
+
+### Reporting in CI
+
+The `coprocessor-benchmark-cpu` and `coprocessor-benchmark-gpu` workflows run
+the suite when their "Benchmark set" input is `main_block_one_shot`, with the
+`one_shot_scenarios` input restricting it to a subset. Reportable one-shot runs
+bypass Criterion and write one JSON artifact per scenario under
+`target/criterion/benchmark-runs`, so the workflows parse them with
+`ci/benchmark_one_shot_parser.py` (rather than `ci/benchmark_parser.py`) before
+sending the points to Slab. Each scenario reports its primary metric and the
+commit-start upper bound as latencies, plus FHE-operation and transfer rates
+derived from the primary metric, with the workload topology attached as
+parameters. The workflows fail if an expected scenario produced no artifact — or
+if an artifact carries an unknown schema version or another commit's revision —
+after sending the scenarios that did complete. The "batch size" input does not
+apply to this set: each scenario derives its own work-item batch.
