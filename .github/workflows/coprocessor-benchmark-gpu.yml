@@ -353,7 +353,7 @@ jobs:
           python3 ./ci/benchmark_parser.py coprocessor/fhevm-engine/target/criterion "${RESULTS_FILENAME}" \
           --database coprocessor \
           --hardware "${HW_NAME}" \
-          --backend gpu \
+          --backend cuda \
           --project-version "${COMMIT_HASH}" \
           --branch "${GH_REF_NAME}" \
           --commit-date "${COMMIT_DATE}" \
@@ -386,7 +386,7 @@ jobs:
           coprocessor/fhevm-engine/target/criterion/benchmark-runs "${RESULTS_FILENAME}" \
           --database coprocessor \
           --hardware "${HW_NAME}" \
-          --backend gpu \
+          --backend cuda \
           --project-version "${COMMIT_HASH}" \
           --branch "${GH_REF_NAME}" \
           --commit-date "${COMMIT_DATE}" \
