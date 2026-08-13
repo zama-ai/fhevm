@@ -42,6 +42,7 @@ use kms_worker::core::solana::{
     encrypted_value_account::EncryptedValueAccountFailure,
     failure::{AuthorizationFailure, FailureClass as ConnectorClass},
     handle_binding::HandleBindingFailure,
+    host_payload::{decode_host_payload, encode_host_payload},
     kms_pair::{KmsPairFailure, KmsPairValidator},
     pipeline::{AuthorizationContext, authorize_request},
     request::{
@@ -1374,6 +1375,12 @@ fn record_of(scenario: &Scenario) -> ConnectorAuthVector {
                     access_proof: to_hex(&entry.access_proof),
                 })
                 .collect(),
+            // The canonical bytes of the same request: what the gateway event carries
+            // opaquely. Recorded from the canonical encoder so every consumer of this set
+            // can verify its own codec in both directions against the typed fields above.
+            host_payload: to_hex(
+                &encode_host_payload(&scenario.request).expect("the scenario request serializes"),
+            ),
         },
         observation: Observation {
             observed_slot: scenario.world.slot.to_string(),
@@ -1488,6 +1495,9 @@ fn rule_name(failure: &AuthorizationFailure) -> &'static str {
         AuthorizationFailure::SignatureMismatch | AuthorizationFailure::UnusableUserPubkey => {
             panic!("the permit set covers the signature rule")
         }
+        AuthorizationFailure::AclDomainKeyCountMismatch { .. } => {
+            panic!("every record is replayed with the honest declaration; this rule cannot fire")
+        }
         AuthorizationFailure::Deployment(deployment) => match deployment {
             DeploymentFailure::ProgramIdMismatch { .. } => rule::DEPLOYMENT_PROGRAM_MISMATCH,
             DeploymentFailure::ChainIdMismatch { .. } => rule::DEPLOYMENT_CHAIN_ID_MISMATCH,
@@ -1599,6 +1609,23 @@ async fn replay(record: &ConnectorAuthVector, file: &ConnectorAuthVectorFile) ->
             .collect(),
     };
 
+    // The record's canonical bytes and its typed fields must be the same request under the
+    // canonical codec, in both directions — this is what freezes the hostPayload layout for
+    // every implementation that consumes this set.
+    let recorded_payload = from_hex(&record.request.host_payload).expect("hex");
+    assert_eq!(
+        encode_host_payload(&wire).expect("the typed fields serialize"),
+        recorded_payload,
+        "record {}: the typed fields do not encode to the recorded hostPayload bytes",
+        record.name
+    );
+    assert_eq!(
+        decode_host_payload(&recorded_payload).expect("the recorded hostPayload decodes"),
+        wire,
+        "record {}: the recorded hostPayload bytes do not decode to the typed fields",
+        record.name
+    );
+
     let world = World::from_accounts(
         record.observation.observed_slot.parse().expect("decimal"),
         record.observation.accounts.iter().map(|account| {
@@ -1635,6 +1662,10 @@ async fn replay(record: &ConnectorAuthVector, file: &ConnectorAuthVectorFile) ->
             .now_unix_seconds
             .parse()
             .expect("decimal"),
+        // The vectors predate the gateway's typed declaration and do not probe it: every record
+        // is replayed with the honest declaration (the signed list's actual length), so the
+        // declaration rule never decides a vector's outcome.
+        declared_acl_domain_key_count: declared_acl_domain_key_count(&request),
     };
     match authorize_request(
         &reader,

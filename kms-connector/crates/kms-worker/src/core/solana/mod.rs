@@ -54,6 +54,8 @@ pub mod encrypted_value_account;
 pub mod failure;
 /// Handle binding: current membership and historical inclusion proofs.
 pub mod handle_binding;
+/// The canonical `hostPayload` byte layout and its parity with the event's typed handles.
+pub mod host_payload;
 /// KMS context/epoch servability.
 pub mod kms_pair;
 /// The authorization pipeline.

@@ -109,7 +109,7 @@ pub async fn mock_event_on_gw(
             };
             let tx = test_instance
                 .decryption_contract()
-                .userDecryptionRequest_1(
+                .userDecryptionRequest_2(
                     vec![],
                     RequestValidity::default(),
                     ContractsInfo::default(),
@@ -143,7 +143,7 @@ pub async fn mock_event_on_gw(
             };
             let tx = test_instance
                 .decryption_contract()
-                .userDecryptionRequest_0(
+                .userDecryptionRequest_1(
                     handles,
                     payload.userAddress,
                     payload.publicKey,
@@ -367,12 +367,11 @@ pub fn check_event_in_db(rows: &[PgRow], event: ProtocolEventKind) -> anyhow::Re
                 }
             }
         }
-        ProtocolEventKind::UserDecryptionSolana(e) => {
-            // Solana rows store the ed25519 signature verbatim + the typed solana_identity.
+        ProtocolEventKind::UserDecryptionV3(e) => {
+            // Host-generic V2 rows store the opaque host payload + the host-kind discriminator.
             for r in rows {
-                if e.payload.signature.to_vec() == r.try_get::<Vec<u8>, _>("signature")?
-                    && e.payload.userIdentity.as_slice()
-                        == r.try_get::<Vec<u8>, _>("solana_identity")?.as_slice()
+                if e.hostPayload.to_vec() == r.try_get::<Vec<u8>, _>("host_payload")?
+                    && i16::from(e.hostKind) == r.try_get::<i16, _>("host_kind")?
                 {
                     return Ok(());
                 }

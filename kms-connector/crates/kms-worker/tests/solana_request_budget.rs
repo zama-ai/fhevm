@@ -61,10 +61,12 @@ fn request_naming(wallet: &Wallet, handles: &[[u8; 32]]) -> SolanaUserDecryptReq
 
 fn context<'a>(
     deployment: &'a kms_worker::core::solana::deployment::DeploymentIdentity,
+    request: &SolanaUserDecryptRequest,
 ) -> AuthorizationContext<'a> {
     AuthorizationContext {
         deployment,
         now_unix_seconds: NOW_INSIDE_WINDOW,
+        declared_acl_domain_key_count: declared_acl_domain_key_count(request),
     }
 }
 
@@ -201,7 +203,7 @@ async fn both_occurrences_of_a_duplicate_handle_are_authorized() {
     let reader = ScriptedReader::constant(world);
     let deployment = deployment();
 
-    let authorized = authorize_request(&reader, &ServableKmsPair, context(&deployment), &request)
+    let authorized = authorize_request(&reader, &ServableKmsPair, context(&deployment, &request), &request)
         .await
         .expect("a duplicate of an authorized handle is authorized");
 

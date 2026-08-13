@@ -107,7 +107,7 @@ pub fn register_event_latency(event: &ProtocolEvent) {
         ProtocolEventKind::PublicDecryption(_)
             | ProtocolEventKind::UserDecryption(_)
             | ProtocolEventKind::UserDecryptionV2(_)
-            | ProtocolEventKind::UserDecryptionSolana(_)
+            | ProtocolEventKind::UserDecryptionV3(_)
     ) {
         let elapsed = Utc::now() - event.created_at;
         DECRYPTION_LATENCY_HISTOGRAM
@@ -119,31 +119,28 @@ pub fn register_event_latency(event: &ProtocolEvent) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloy::primitives::{Bytes, FixedBytes, U256};
+    use alloy::primitives::{Bytes, U256};
     use connector_utils::monitoring::otlp::PropagationContext;
     use fhevm_gateway_bindings::decryption::{
-        Decryption::UserDecryptionRequestSolana,
-        IDecryption::{RequestValiditySeconds, UserDecryptionRequestSolanaPayload},
+        Decryption::UserDecryptionRequest_4 as UserDecryptionRequestV3,
+        IDecryption::RequestValiditySeconds,
     };
 
     #[test]
-    fn records_solana_user_decryption_latency() {
+    fn records_solana_request_v3_latency() {
         let event = ProtocolEvent::new(
-            ProtocolEventKind::UserDecryptionSolana(UserDecryptionRequestSolana {
+            ProtocolEventKind::UserDecryptionV3(UserDecryptionRequestV3 {
                 decryptionId: U256::ZERO,
-                handles: Vec::new(),
-                payload: UserDecryptionRequestSolanaPayload {
-                    userIdentity: FixedBytes::ZERO,
-                    publicKey: Bytes::new(),
-                    allowedAclDomainKeys: Vec::new(),
-                    requestValidity: RequestValiditySeconds {
-                        startTimestamp: U256::ZERO,
-                        durationSeconds: U256::ZERO,
-                    },
-                    nonce: FixedBytes::ZERO,
-                    extraData: Bytes::new(),
-                    signature: Bytes::new(),
+                ctHandles: Vec::new(),
+                requestValidity: RequestValiditySeconds {
+                    startTimestamp: U256::ZERO,
+                    durationSeconds: U256::ZERO,
                 },
+                publicKey: Bytes::new(),
+                allowedAclDomainKeyCount: 0,
+                hostKind: 2,
+                extraData: Bytes::new(),
+                hostPayload: Bytes::new(),
             }),
             None,
             PropagationContext::default(),

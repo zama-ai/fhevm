@@ -215,7 +215,7 @@ pub async fn insert_rand_user_decryption_request_v2(
     let status = options.status.unwrap_or(OperationStatus::Pending);
 
     // Mock-friendly shape: `ownerAddress == userAddress` on every handle (direct ownership path) and
-    // empty `allowedContracts` (permissive mode). The worker's `check_user_decryption_request_v2`
+    // empty `allowedContracts` (permissive mode). The worker's `check_user_decryption_request_unified`
     // therefore issues exactly one `isAllowed(handle, userAddress)` call per handle and skips the
     // per-`allowedContracts` loop entirely — so tests can mock ACL responses as `vec![true; n_handles]`.
     let handles: Vec<HandleEntry> = ct_handles

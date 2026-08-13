@@ -4,13 +4,18 @@ use crate::core::{
         CiphertextManager, ProcessingError, RequestCheckError, RequestCheckKind,
         ciphertext::VerifiedCiphertexts,
         context::ContextManager,
-        solana_user_decrypt::{
-            SolanaHost, check_solana_handles_acl, check_solana_handles_public_decrypt,
-            verify_solana_user_decrypt_signature,
-        },
+        solana_public_decrypt::{SolanaHost, check_solana_handles_public_decrypt},
     },
-    solana_acl::HandleBytes,
+    solana::{
+        failure::FailureClass,
+        host_payload::{check_handle_list_parity, decode_host_payload},
+        kms_pair::{KmsPairFailure, KmsPairValidator},
+        pipeline::{AuthorizationContext, authorize_request},
+        request::SolanaUserDecryptRequest,
+    },
+    solana_acl::{HandleBytes, SolanaPubkeyBytes},
 };
+use connector_utils::types::extra_data::ExtraData;
 use alloy::{
     consensus::Transaction,
     hex,
@@ -20,13 +25,13 @@ use alloy::{
 };
 use anyhow::anyhow;
 use connector_utils::types::{
-    KmsGrpcRequest, extra_data::parse_extra_data, handle::extract_chain_id_from_handle,
-    u256_to_request_id,
+    KmsGrpcRequest, event::HOST_KIND_SOLANA, extra_data::parse_extra_data,
+    handle::extract_chain_id_from_handle, u256_to_request_id,
 };
 use fhevm_gateway_bindings::decryption::Decryption::{
-    self, DecryptionInstance, HandleEntry, UserDecryptionRequest_3 as UserDecryptionRequestV2,
-    UserDecryptionRequestSolana, delegatedUserDecryptionRequestCall,
-    userDecryptionRequest_1Call as userDecryptionRequestCall,
+    self, DecryptionInstance, HandleEntry,
+    UserDecryptionRequest_3 as UserDecryptionRequestV2, UserDecryptionRequest_4 as UserDecryptionRequestV3,
+    delegatedUserDecryptionRequestCall, userDecryptionRequest_2Call as userDecryptionRequestCall,
 };
 use fhevm_host_bindings::acl::ACL::ACLInstance;
 use futures::future::{join_all, try_join_all};
@@ -41,7 +46,38 @@ use user_decryption_signature::{compute_user_decrypt_digest, verify_signature};
 #[derive(Clone)]
 pub enum HostChainAclBackend<HP: Provider> {
     Evm(ACLInstance<HP>),
-    Solana(SolanaHost),
+    // Boxed: a `SolanaHost` carries a deployment identity plus two RPC clients, far larger than the
+    // EVM variant's contract handle, so keeping it inline would bloat every backend map entry.
+    Solana(Box<SolanaHost>),
+}
+
+/// Bridges the Solana pipeline's [`KmsPairValidator`] seam to the connector's existing
+/// [`ContextManager`] — the same context/epoch servability source the EVM path validates
+/// against, so the two paths cannot diverge on which KMS pairs are servable. The 32-byte
+/// context and epoch ids are the big-endian `U256`s the manager keys on (matching
+/// `parse_extra_data`'s `0x02` form). The manager's recoverable/irrecoverable outcome maps onto
+/// the pipeline's terminal/transient taxonomy: an irrecoverable outcome is a destroyed context
+/// (terminal), everything else is transient.
+struct ContextManagerPairValidator<'a, C>(&'a C);
+
+impl<C: ContextManager> KmsPairValidator for ContextManagerPairValidator<'_, C> {
+    async fn validate_pair(
+        &self,
+        kms_context_id: &SolanaPubkeyBytes,
+        kms_epoch_id: &SolanaPubkeyBytes,
+    ) -> Result<(), KmsPairFailure> {
+        let extra = ExtraData {
+            context_id: Some(U256::from_be_bytes(*kms_context_id)),
+            epoch_id: Some(U256::from_be_bytes(*kms_epoch_id)),
+        };
+        self.0.validate_context(&extra).await.map_err(|error| {
+            if error.is_recoverable() {
+                KmsPairFailure::PairNotServable
+            } else {
+                KmsPairFailure::ContextDestroyed
+            }
+        })
+    }
 }
 
 #[derive(Clone)]
@@ -271,9 +307,9 @@ where
         Ok(())
     }
 
-    /// Verify that a `UserDecryptionRequestV2` is internally consistent before the ACL phase:
+    /// Verify that a `UserDecryptionRequestV3` is internally consistent before the ACL phase:
     /// every handle resolves to the same host chain id. Returns that shared chain id.
-    /// Shared by the EVM (`UserDecryptionRequestV2`) and Solana (`UserDecryptionRequestSolana`)
+    /// Shared by the EVM (`UserDecryptionRequestV3`) and Solana (`UserDecryptionRequestSolana`)
     /// paths — both carry the same `handles` shape.
     fn validate_handles_and_extract_chain_id(
         handles: &[HandleEntry],
@@ -435,38 +471,46 @@ where
         Ok(())
     }
 
-    /// RFC-021 Solana user-decryption check. Mirrors the RFC016 validity window, then verifies
-    /// the ed25519 signature (pure, no I/O) and runs the account-based ACL against the host
-    /// program at confirmed commitment. There is no EVM contract call on this path.
-    pub async fn check_user_decryption_request_solana(
+    /// Host-generic (V2) Solana user-decryption check. The gateway forwarded the request's
+    /// host-specific material as one opaque `hostPayload`; here it is decoded, its handle list is
+    /// held to exactly the event's typed `ctHandles`, and the whole permit is authorized through
+    /// the connector pipeline (`authorize_request`) — one funnel doing signature, window,
+    /// deployment, KMS-pair servability, the atomic host-state snapshot, and every per-entry rule.
+    /// Returns the KMS-request identity data built from the decoded permit (the transport key from
+    /// the typed event, the Solana identity from the signed permit), since the V2 event carries no
+    /// typed identity field of its own.
+    pub async fn check_user_decryption_request_v3(
         &self,
-        request: &UserDecryptionRequestSolana,
-    ) -> Result<(), RequestCheckError> {
-        let chain_id = Self::validate_handles_and_extract_chain_id(&request.handles)?;
-        info!("Starting Solana user-decryption check for chain {chain_id}...");
-
-        let payload = &request.payload;
-
-        // Validity window (same semantics as the EVM path).
-        let start = payload.requestValidity.startTimestamp;
-        let now = U256::from(Utc::now().timestamp() as u64);
-        let end = start.saturating_add(payload.requestValidity.durationSeconds);
-        if now < start {
-            return Err(RequestCheckError::recoverable(
-                RequestCheckKind::Signature,
-                anyhow!(
-                    "Solana user decryption request not yet valid: now {now} < startTimestamp {start}",
-                ),
-            ));
-        }
-        if now > end {
+        request: &UserDecryptionRequestV3,
+    ) -> Result<UserDecryptionExtraData, RequestCheckError> {
+        // `hostKind` is the dispatch discriminator the gateway forwards verbatim, and it is
+        // read before anything else: a request naming another host has no field this
+        // connector may interpret — not even its handles — so any later rejection would
+        // misreport the refusal as a Solana one.
+        if request.hostKind != HOST_KIND_SOLANA {
             return Err(RequestCheckError::irrecoverable(
-                RequestCheckKind::Signature,
+                RequestCheckKind::Acl,
                 anyhow!(
-                    "Solana user decryption request validity window expired: now {now} > end {end}"
+                    "host-generic request names hostKind {}, but this connector serves \
+                     only Solana (hostKind {HOST_KIND_SOLANA})",
+                    request.hostKind
                 ),
             ));
         }
+        let ct_handles: Vec<HandleBytes> = request.ctHandles.iter().map(|h| h.0).collect();
+        let chain_id = ct_handles
+            .first()
+            .ok_or_else(|| {
+                RequestCheckError::irrecoverable(
+                    RequestCheckKind::Acl,
+                    anyhow!("Solana user decryption request names no handles"),
+                )
+            })
+            .and_then(|handle| {
+                extract_chain_id_from_handle(B256::from(*handle))
+                    .map_err(|e| RequestCheckError::irrecoverable(RequestCheckKind::Acl, e))
+            })?;
+        info!("Starting Solana V2 user-decryption check for chain {chain_id}...");
 
         let host = match self.host_chain_backend(chain_id)? {
             HostChainAclBackend::Solana(host) => host,
@@ -480,22 +524,106 @@ where
             }
         };
 
-        // ed25519 binding — the check that closes the substitution bug. Pure, no I/O.
-        let auth = verify_solana_user_decrypt_signature(request, chain_id)
-            .map_err(|e| RequestCheckError::from_processing(RequestCheckKind::Signature, e))?;
+        // The opaque host payload decodes to the wire request; its handle list must be exactly the
+        // event's typed `ctHandles` (order and count), or the bit budget the gateway enforced on
+        // the typed handles would not be the budget of the request being authorized.
+        let wire = decode_host_payload(request.hostPayload.as_ref()).map_err(|e| {
+            RequestCheckError::irrecoverable(
+                RequestCheckKind::Acl,
+                anyhow!("Solana host payload does not decode: {e}"),
+            )
+        })?;
+        check_handle_list_parity(&ct_handles, &wire).map_err(|e| {
+            RequestCheckError::irrecoverable(
+                RequestCheckKind::Acl,
+                anyhow!("Solana host payload handles do not match the event handles: {e}"),
+            )
+        })?;
+        let typed_request = SolanaUserDecryptRequest::decode(&wire).map_err(|e| {
+            RequestCheckError::irrecoverable(
+                RequestCheckKind::Acl,
+                anyhow!("Solana request is not well formed: {e}"),
+            )
+        })?;
 
-        // ACL phase: read each handle's record at confirmed commitment and run the domain-scoped
-        // verifier with the identity as subject.
-        let handles: Vec<HandleBytes> = request.handles.iter().map(|e| e.handle.0).collect();
-        check_solana_handles_acl(host, &handles, &auth)
+        // The gateway charged its fee against the event's typed `requestValidity` and forwarded it
+        // to monitoring and the SDK, but the window that actually authorizes the request is the one
+        // signed inside the permit — the event field is not signed. If the two disagree, the fee,
+        // the readiness view and the authorization would each be about a different window; refuse
+        // rather than authorize on the signed window while reporting the typed one. The EVM path
+        // gets this parity for free because there the typed window is inside the EIP-712 digest the
+        // signature covers; here it must be checked explicitly.
+        let permit = typed_request.permit();
+        if request.requestValidity.startTimestamp != U256::from(permit.start_timestamp())
+            || request.requestValidity.durationSeconds != U256::from(permit.duration_seconds())
+        {
+            return Err(RequestCheckError::irrecoverable(
+                RequestCheckKind::Acl,
+                anyhow!(
+                    "event requestValidity (start {}, duration {}) does not match the signed \
+                     permit window (start {}, duration {})",
+                    request.requestValidity.startTimestamp,
+                    request.requestValidity.durationSeconds,
+                    permit.start_timestamp(),
+                    permit.duration_seconds(),
+                ),
+            ));
+        }
+
+        // The same parity for the KMS routing: `prepare_decryption_request` parses the KMS
+        // context/epoch pair out of the event's typed `extraData` (and the gateway routed its fee
+        // by it), but the pair the user consented to is signed inside the permit. If the two
+        // disagree, the request would be authorized under the signed pair and served under the
+        // typed one; refuse instead. Exact bytes: the signed routing has one canonical rendering,
+        // which is what an honest relayer copies into the typed field.
+        if request.extraData.as_ref() != permit.extra_data().to_extra_data().as_slice() {
+            return Err(RequestCheckError::irrecoverable(
+                RequestCheckKind::Acl,
+                anyhow!(
+                    "event extraData 0x{} does not match the signed KMS routing 0x{}",
+                    hex::encode(&request.extraData),
+                    hex::encode(permit.extra_data().to_extra_data()),
+                ),
+            ));
+        }
+
+        // The identity the KMS keys the user by is the signed permit's user pubkey; the transport
+        // key the plaintext seals to is the permit's signed transport key too — never the event's
+        // unsigned `publicKey`, which a relayer can substitute without invalidating the permit.
+        // Both captured before the request is handed to authorization.
+        let solana_identity: SolanaPubkeyBytes = *permit.user_pubkey().as_bytes();
+        let seal_target = Bytes::copy_from_slice(permit.transport_key().as_bytes());
+
+        // One authorization funnel: signature, window, deployment, KMS-pair servability, the atomic
+        // snapshot, and every per-entry rule. The KMS-pair seam is the connector's existing context
+        // manager, bridged by the adapter below — the same servability source the EVM path uses.
+        let pair_validator = ContextManagerPairValidator(&self.context_manager);
+        let context = AuthorizationContext {
+            deployment: &host.deployment,
+            now_unix_seconds: Utc::now().timestamp() as u64,
+            declared_acl_domain_key_count: request.allowedAclDomainKeyCount,
+        };
+        authorize_request(&host.reader, &pair_validator, context, &typed_request)
             .await
-            .map_err(|e| RequestCheckError::from_processing(RequestCheckKind::Acl, e))?;
+            .map_err(|failure| {
+                let kind = RequestCheckKind::Acl;
+                let message = anyhow!("Solana user-decryption authorization failed: {failure}");
+                match failure.class() {
+                    FailureClass::Terminal => RequestCheckError::irrecoverable(kind, message),
+                    FailureClass::Transient | FailureClass::Retryable => {
+                        RequestCheckError::recoverable(kind, message)
+                    }
+                }
+            })?;
 
         info!(
-            "Solana user-decryption ACL check passed for {} handles!",
-            request.handles.len()
+            "Solana V2 user-decryption authorization passed for {} handles!",
+            ct_handles.len()
         );
-        Ok(())
+        Ok(UserDecryptionExtraData::new_solana(
+            solana_identity,
+            seal_target,
+        ))
     }
 
     pub fn user_decryption_extra_data_for_v2(
@@ -503,13 +631,6 @@ where
     ) -> UserDecryptionExtraData {
         let payload = &request.payload;
         UserDecryptionExtraData::new(payload.userAddress, payload.publicKey.clone())
-    }
-
-    pub fn user_decryption_extra_data_for_solana(
-        request: &UserDecryptionRequestSolana,
-    ) -> UserDecryptionExtraData {
-        let payload = &request.payload;
-        UserDecryptionExtraData::new_solana(payload.userIdentity.0, payload.publicKey.clone())
     }
 
     /// RFC016 per-handle ownership check. Direct path (`ownerAddress == userAddress`) calls
@@ -781,6 +902,10 @@ impl UserDecryptionExtraData {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::solana::host_payload::encode_host_payload;
+    use crate::core::solana::request::{
+        MAX_REQUEST_HANDLES, SolanaHandleEntryWire, SolanaUserDecryptRequestWire,
+    };
     use crate::core::solana_v2_fetcher::SolanaV2Fetcher;
     use alloy::{
         providers::{ProviderBuilder, mock::Asserter},
@@ -795,10 +920,7 @@ mod tests {
     };
     use fhevm_gateway_bindings::decryption::{
         Decryption::CtHandleContractPair,
-        IDecryption::{
-            RequestValiditySeconds, UserDecryptionRequestPayload,
-            UserDecryptionRequestSolanaPayload,
-        },
+        IDecryption::{RequestValiditySeconds, UserDecryptionRequestPayload},
     };
     use fhevm_host_bindings::acl::ACL;
     use rstest::rstest;
@@ -872,13 +994,21 @@ mod tests {
             )]),
             TestHostBackend::Solana => HashMap::from([(
                 chain_id,
-                HostChainAclBackend::Solana(SolanaHost {
-                    program_id: [7; 32],
+                HostChainAclBackend::Solana(Box::new(SolanaHost {
+                    deployment: crate::core::solana::deployment::DeploymentIdentity::resolve(
+                        [7; 32],
+                        chain_id | crate::core::config::SOLANA_CHAIN_TYPE_BIT,
+                    )
+                    .expect("fixture deployment resolves"),
+                    reader: crate::core::solana::snapshot::RpcHostStateReader::new(
+                        config.host_chains[0].url.clone(),
+                        ::reqwest::Client::new(),
+                    ),
                     fetcher: SolanaV2Fetcher::new(
                         config.host_chains[0].url.clone(),
                         ::reqwest::Client::new(),
                     ),
-                }),
+                })),
             )]),
             TestHostBackend::Missing => HashMap::new(),
         };
@@ -1102,7 +1232,7 @@ mod tests {
         }
     }
 
-    /// Builds a `UserDecryptionRequestV2` whose payload carries a valid 65-byte ECDSA signature
+    /// Builds a `UserDecryptionRequestV3` whose payload carries a valid 65-byte ECDSA signature
     /// over the EIP-712 digest.
     ///
     /// `user_address` and `signing_key` are intentionally decoupled: the EOA-direct case
@@ -1593,23 +1723,366 @@ mod tests {
         }
     }
 
-    fn make_solana_request(handle: B256) -> UserDecryptionRequestSolana {
-        let payload = UserDecryptionRequestSolanaPayload {
+    /// A host-generic V2 request naming `handle`. Its `hostPayload` is empty because every test
+    /// using it asserts a failure reached during backend resolution — before the payload decode.
+    fn make_solana_request(handle: B256) -> UserDecryptionRequestV3 {
+        UserDecryptionRequestV3 {
+            decryptionId: U256::from(1),
+            ctHandles: vec![handle],
             requestValidity: RequestValiditySeconds {
                 startTimestamp: U256::from((Utc::now().timestamp() - 60) as u64),
                 durationSeconds: U256::from(3_600),
             },
-            ..Default::default()
-        };
-        UserDecryptionRequestSolana {
-            decryptionId: U256::from(1),
-            handles: vec![HandleEntry {
-                handle,
-                contractAddress: Address::ZERO,
-                ownerAddress: Address::ZERO,
-            }],
-            payload,
+            publicKey: Bytes::new(),
+            allowedAclDomainKeyCount: 0,
+            hostKind: HOST_KIND_SOLANA,
+            extraData: Bytes::new(),
+            hostPayload: Bytes::new(),
         }
+    }
+
+    /// A host-generic request whose `hostPayload` is a fully well-formed Solana request
+    /// naming `count` copies of `handle`. Everything decodes — the permit, the signature
+    /// width, the handle-list parity — so the first rejection such a request can meet is a
+    /// deliberate one, not a decode accident.
+    fn make_host_generic_request(
+        handle: B256,
+        host_kind: u8,
+        count: usize,
+    ) -> UserDecryptionRequestV3 {
+        let mut extra_data = vec![zama_solana_permit::KMS_ROUTING_VERSION_BYTE];
+        extra_data.extend_from_slice(&[0u8; 64]);
+        let wire = SolanaUserDecryptRequestWire {
+            permit: zama_solana_permit::PermitWireFields {
+                user_pubkey: vec![0x11; 32],
+                transport_key: vec![0x22; zama_solana_permit::TRANSPORT_KEY_LEN],
+                allowed_acl_domain_keys: vec![],
+                start_timestamp: 0,
+                duration_seconds: 3_600,
+                verifying_program_id: vec![0x33; 32],
+                chain_id: 1,
+                extra_data,
+            },
+            signature: vec![0x44; 64],
+            handles: (0..count)
+                .map(|_| SolanaHandleEntryWire {
+                    handle: handle.to_vec(),
+                    owner: vec![0x55; 32],
+                    encrypted_value_id: vec![0x66; 32],
+                    proof_leaf_count: 0,
+                    access_proof: Vec::new(),
+                })
+                .collect(),
+        };
+
+        UserDecryptionRequestV3 {
+            decryptionId: U256::from(1),
+            ctHandles: vec![handle; count],
+            requestValidity: RequestValiditySeconds {
+                startTimestamp: U256::from((Utc::now().timestamp() - 60) as u64),
+                durationSeconds: U256::from(3_600),
+            },
+            publicKey: Bytes::new(),
+            allowedAclDomainKeyCount: 0,
+            hostKind: host_kind,
+            extraData: Bytes::new(),
+            hostPayload: encode_host_payload(&wire)
+                .expect("the test wire serializes")
+                .into(),
+        }
+    }
+
+    /// `hostKind` is the dispatch discriminator: a request naming another host must be
+    /// refused as such, before any byte of it is interpreted as Solana. The payload here is
+    /// a well-formed Solana request one entry past the handle cap, so a missing or late
+    /// `hostKind` check would surface as the Solana cap rejection instead of this one.
+    #[rstest]
+    #[case::evm_host_kind(1)]
+    #[case::unknown_host_kind(3)]
+    #[tokio::test]
+    async fn a_foreign_host_kind_is_rejected_before_any_solana_interpretation(
+        #[case] host_kind: u8,
+    ) {
+        let handle = rand_handle();
+        let processor =
+            setup_test_processor_with_backend(Asserter::new(), handle, TestHostBackend::Solana);
+        let request = make_host_generic_request(handle, host_kind, MAX_REQUEST_HANDLES + 1);
+
+        let result = processor
+            .check_user_decryption_request_v3(&request)
+            .await
+            .map(|_| ())
+            .map_err(RequestCheckError::record);
+
+        assert_irrecoverable_contains(result, "hostKind");
+    }
+
+    /// Runs one host-generic Solana user-decryption request through `check_user_decryption_request_v3`
+    /// against a fully authorizing on-chain snapshot, and returns the outcome together with the
+    /// victim's signed transport key.
+    ///
+    /// Everything the connector authorizes is the victim's: the permit is signed over
+    /// `permit_window`, binds the victim's wallet and transport key, and names one handle the
+    /// victim directly owns through a live encrypted value account. The two knobs are the fields a
+    /// relayer controls without the victim's signature: the event's `publicKey` (the seal target),
+    /// the event's `requestValidity`, and the event's `extraData` (the KMS routing). A caller
+    /// drives the divergence by passing an `event_public_key` other than the signed transport key,
+    /// an `event_validity` other than `permit_window`, or `Some(event_extra_data)` other than the
+    /// signed routing bytes (`None` is the honest relayer, which copies the permit's bytes).
+    async fn run_host_generic_solana_userdecrypt(
+        permit_window: (u64, u64),
+        event_validity: (u64, u64),
+        event_public_key: Vec<u8>,
+        event_extra_data: Option<Bytes>,
+    ) -> (Result<UserDecryptionExtraData, RequestCheckError>, Vec<u8>) {
+        use crate::core::solana::deployment::DeploymentIdentity;
+        use crate::core::solana::snapshot::{multiple_accounts_request_body, plan_first_read};
+        use crate::core::solana_encrypted_value_acl::encrypted_value_acl_address;
+        use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
+        use mocktail::server::MockServer;
+        use ring::signature::{Ed25519KeyPair, KeyPair};
+        use solana_pubkey::Pubkey;
+        use zama_solana_acl::{
+            EncryptedValue, derive_encrypted_value_id, encrypted_value_discriminator,
+        };
+        use zama_solana_permit::{
+            Identity, KmsRouting, PermitFields, PermitWireFields, TRANSPORT_KEY_LEN, build_envelope,
+        };
+
+        // The one deployment every fixture is built against, matching what the Solana test backend
+        // resolves (`setup_test_processor_inner`: program id `[7; 32]`, chain id from the handle).
+        const PROGRAM_ID: [u8; 32] = [7; 32];
+        const DOMAIN: [u8; 32] = [1; 32];
+        const AUTHORITY: [u8; 32] = [2; 32];
+        const LABEL: [u8; 32] = *b"balance_________________________";
+        const CHAIN_ID: u64 =
+            crate::core::config::SOLANA_CHAIN_TYPE_BIT | 0x0123_4567_89ab_cdef;
+        const FHE_TYPE_UINT64: u8 = 5;
+
+        // A handle of this cluster: chain id big-endian at [22..30], FHE type at [30], version at
+        // [31]. The connector routes to the Solana backend by the chain id embedded here.
+        let mut handle = [0x10u8; 32];
+        handle[22..30].copy_from_slice(&CHAIN_ID.to_be_bytes());
+        handle[30] = FHE_TYPE_UINT64;
+        handle[31] = 0;
+
+        // The victim's wallet, signing over the reconstructed envelope like a real one.
+        let victim = {
+            let prefix: [u8; 16] = [
+                0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22,
+                0x04, 0x20,
+            ];
+            let mut document = prefix.to_vec();
+            document.extend_from_slice(&[1u8; 32]);
+            Ed25519KeyPair::from_pkcs8_maybe_unchecked(&document).expect("fixture keypair")
+        };
+        let victim_pubkey: [u8; 32] = victim
+            .public_key()
+            .as_ref()
+            .try_into()
+            .expect("an Ed25519 public key is 32 bytes");
+
+        let victim_transport_key = vec![0xa5u8; TRANSPORT_KEY_LEN];
+
+        // The victim's permit: signed, binding the victim's transport key and `permit_window`.
+        let signed_routing = KmsRouting::ContextAndEpoch {
+            kms_context_id: Identity::new([0x11; 32]),
+            kms_epoch_id: Identity::new([0x12; 32]),
+        }
+        .to_extra_data();
+        let permit_wire = PermitWireFields {
+            user_pubkey: victim_pubkey.to_vec(),
+            transport_key: victim_transport_key.clone(),
+            allowed_acl_domain_keys: vec![DOMAIN.to_vec()],
+            start_timestamp: permit_window.0,
+            duration_seconds: permit_window.1,
+            verifying_program_id: PROGRAM_ID.to_vec(),
+            chain_id: CHAIN_ID,
+            extra_data: signed_routing.clone(),
+        };
+        let permit_typed =
+            PermitFields::decode(&permit_wire).expect("fixture permit is well formed");
+        let signature = victim.sign(&build_envelope(&permit_typed)).as_ref().to_vec();
+
+        let encrypted_value_id = derive_encrypted_value_id(DOMAIN, AUTHORITY, LABEL);
+        let wire = SolanaUserDecryptRequestWire {
+            permit: permit_wire,
+            signature,
+            handles: vec![SolanaHandleEntryWire {
+                handle: handle.to_vec(),
+                owner: victim_pubkey.to_vec(),
+                encrypted_value_id: encrypted_value_id.to_vec(),
+                proof_leaf_count: 0,
+                access_proof: Vec::new(),
+            }],
+        };
+
+        // The encrypted value account that authorizes the victim's direct current-access entry:
+        // owned by the program, holding this handle live for the victim.
+        let (_, bump) = encrypted_value_acl_address(PROGRAM_ID, encrypted_value_id);
+        let encrypted_value = EncryptedValue {
+            domain: DOMAIN,
+            encrypted_value_account_authority: AUTHORITY,
+            label: LABEL,
+            current_handle: handle,
+            subjects: vec![victim_pubkey],
+            leaf_count: 0,
+            peaks: Vec::new(),
+            bump,
+        };
+        let mut account_data = encrypted_value_discriminator().to_vec();
+        account_data.extend_from_slice(
+            &borsh::to_vec(&encrypted_value).expect("the encrypted value account serializes"),
+        );
+
+        // A mock Solana RPC serving the one authorizing read: the signer's invalidation record
+        // (never revoked → `null`), then the program-owned encrypted value account.
+        let deployment =
+            DeploymentIdentity::resolve(PROGRAM_ID, CHAIN_ID).expect("fixture deployment resolves");
+        let first_keys = plan_first_read(
+            &SolanaUserDecryptRequest::decode(&wire).expect("fixture request is well formed"),
+            &deployment,
+        );
+        let request_body = multiple_accounts_request_body(&first_keys);
+        let response = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "context": { "slot": 1 },
+                "value": [
+                    null,
+                    {
+                        "owner": Pubkey::new_from_array(PROGRAM_ID).to_string(),
+                        "data": [BASE64_STANDARD.encode(&account_data), "base64"],
+                        "lamports": 1,
+                        "executable": false,
+                        "rentEpoch": 0,
+                    },
+                ],
+            },
+        });
+
+        let mut server = MockServer::new_http("solana-rpc");
+        server.mock(move |when, then| {
+            when.post().json(request_body.clone());
+            then.json(response.clone());
+        });
+        server.start().await.expect("the mock RPC starts");
+        let rpc_url = server.base_url().expect("the mock RPC has a URL").clone();
+
+        // The gateway event: the victim's signed permit rides in `hostPayload`; `publicKey` and
+        // `requestValidity` carry whatever the caller chose (the unsigned, relayer-controlled
+        // fields).
+        let event = UserDecryptionRequestV3 {
+            decryptionId: U256::from(1),
+            ctHandles: vec![B256::from(handle)],
+            requestValidity: RequestValiditySeconds {
+                startTimestamp: U256::from(event_validity.0),
+                durationSeconds: U256::from(event_validity.1),
+            },
+            publicKey: Bytes::from(event_public_key),
+            allowedAclDomainKeyCount: 1,
+            hostKind: HOST_KIND_SOLANA,
+            extraData: event_extra_data.unwrap_or_else(|| Bytes::from(signed_routing.clone())),
+            hostPayload: encode_host_payload(&wire)
+                .expect("the test wire serializes")
+                .into(),
+        };
+
+        let mut config = Config::default();
+        config.host_chains[0].url = rpc_url;
+        let processor = setup_test_processor_inner(
+            Asserter::new(),
+            B256::from(handle),
+            config,
+            TestHostBackend::Solana,
+        );
+
+        let result = processor.check_user_decryption_request_v3(&event).await;
+        (result, victim_transport_key)
+    }
+
+    /// The seal target the connector hands the KMS must be the transport key signed inside the
+    /// permit, never the unsigned `publicKey` a relayer put on the event. Here the event carries an
+    /// attacker's transport key while the signed permit binds the victim's; the plaintext must seal
+    /// to the victim.
+    #[tokio::test]
+    async fn seal_target_is_the_signed_transport_key_not_the_event_public_key() {
+        let now = Utc::now().timestamp() as u64;
+        let window = (now - 60, 3_600);
+        let attacker_key = vec![0x5au8; zama_solana_permit::TRANSPORT_KEY_LEN];
+
+        // Event `requestValidity` matches the signed permit window, so the request is authorized;
+        // only the seal target is under test.
+        let (result, victim_transport_key) =
+            run_host_generic_solana_userdecrypt(window, window, attacker_key.clone(), None).await;
+
+        let extra = result.expect("the victim's permit authorizes the request end-to-end");
+        assert_eq!(
+            extra.public_key.as_ref(),
+            victim_transport_key.as_slice(),
+            "seal target must be the victim's signed transport key"
+        );
+        assert_ne!(
+            extra.public_key.as_ref(),
+            attacker_key.as_slice(),
+            "seal target must not be the attacker's unsigned event publicKey"
+        );
+    }
+
+    /// The fee the gateway charged and the window the KMS Connector authorizes against must be the
+    /// same window. The event's `requestValidity` is unsigned; the permit's window is signed. When
+    /// they disagree, the request must be terminally rejected rather than silently authorized on
+    /// the signed window while the fee and monitoring reflect the typed one.
+    #[tokio::test]
+    async fn event_request_validity_must_match_the_signed_permit_window() {
+        let now = Utc::now().timestamp() as u64;
+        let permit_window = (now - 60, 3_600);
+        // A different — but individually valid — window on the event. Only the mismatch is under
+        // test, not expiry.
+        let event_validity = (now - 120, 3_600);
+        let victim_transport_key = vec![0xa5u8; zama_solana_permit::TRANSPORT_KEY_LEN];
+
+        let (result, _) = run_host_generic_solana_userdecrypt(
+            permit_window,
+            event_validity,
+            victim_transport_key,
+            None,
+        )
+        .await;
+
+        let result = result.map(|_| ()).map_err(RequestCheckError::record);
+        assert_irrecoverable_contains(result, "requestValidity");
+    }
+
+    /// The KMS pair the request is served under is parsed from the event's typed `extraData`,
+    /// but the routing the user consented to is the one signed inside the permit. A relayer
+    /// that swaps the typed bytes for another (even servable) pair must be refused — the
+    /// request would otherwise be authorized under the signed pair and served under the
+    /// swapped one.
+    #[tokio::test]
+    async fn event_extra_data_must_match_the_signed_kms_routing() {
+        let now = Utc::now().timestamp() as u64;
+        let window = (now - 60, 3_600);
+        let victim_transport_key = vec![0xa5u8; zama_solana_permit::TRANSPORT_KEY_LEN];
+
+        // A well-formed routing blob naming a different context/epoch pair than the signed one.
+        let foreign_routing = zama_solana_permit::KmsRouting::ContextAndEpoch {
+            kms_context_id: zama_solana_permit::Identity::new([0x13; 32]),
+            kms_epoch_id: zama_solana_permit::Identity::new([0x14; 32]),
+        }
+        .to_extra_data();
+
+        let (result, _) = run_host_generic_solana_userdecrypt(
+            window,
+            window,
+            victim_transport_key,
+            Some(Bytes::from(foreign_routing)),
+        )
+        .await;
+
+        let result = result.map(|_| ()).map_err(RequestCheckError::record);
+        assert_irrecoverable_contains(result, "extraData");
     }
 
     #[test]
@@ -1622,7 +2095,7 @@ mod tests {
     }
 
     #[test]
-    fn solana_user_decryption_uses_only_the_typed_pubkey() {
+    fn solana_extra_data_uses_only_the_typed_pubkey() {
         let identity = [0x33; 32];
         let data = UserDecryptionExtraData::new_solana(identity, Bytes::from_static(&[0x44]));
 
@@ -1696,14 +2169,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn solana_user_decryption_rejects_evm_backend() {
+    async fn a_solana_request_rejects_the_evm_backend() {
         let handle = rand_handle();
         let processor = setup_test_processor(Asserter::new(), handle);
         let request = make_solana_request(handle);
 
         let result = processor
-            .check_user_decryption_request_solana(&request)
+            .check_user_decryption_request_v3(&request)
             .await
+            .map(|_| ())
             .map_err(RequestCheckError::record);
 
         assert_irrecoverable_contains(result, "request requires Solana");
@@ -1715,7 +2189,7 @@ mod tests {
         let processor =
             setup_test_processor_with_backend(Asserter::new(), handle, TestHostBackend::Missing);
         let signer = PrivateKeySigner::random();
-        let evm_v2_request = make_v2_request(
+        let evm_unified_request = make_v2_request(
             handle,
             signer.address(),
             signer.address(),
@@ -1738,16 +2212,17 @@ mod tests {
             )
             .await
             .map_err(RequestCheckError::record);
-        let evm_v2 = processor
-            .check_user_decryption_request_v2(&evm_v2_request)
+        let evm_unified = processor
+            .check_user_decryption_request_v2(&evm_unified_request)
             .await
             .map_err(RequestCheckError::record);
         let solana = processor
-            .check_user_decryption_request_solana(&solana_request)
+            .check_user_decryption_request_v3(&solana_request)
             .await
+            .map(|_| ())
             .map_err(RequestCheckError::record);
 
-        for result in [public, legacy, evm_v2, solana] {
+        for result in [public, legacy, evm_unified, solana] {
             match result {
                 Err(ProcessingError::Recoverable(error)) => assert!(
                     error

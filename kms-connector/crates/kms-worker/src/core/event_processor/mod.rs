@@ -6,7 +6,7 @@ mod kms;
 mod kms_client;
 mod processor;
 mod protocol_config;
-pub mod solana_user_decrypt;
+pub mod solana_public_decrypt;
 
 pub use ciphertext::CiphertextManager;
 pub use context::{ContextManager, DbContextManager};
