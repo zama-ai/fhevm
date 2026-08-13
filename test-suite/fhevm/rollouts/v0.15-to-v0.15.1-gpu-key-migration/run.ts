@@ -33,7 +33,7 @@ const CONNECTOR_PARTIES = 4;
 const OPERATOR_COUNT = 2;
 const CONNECTOR_SERVICES = ["db-migration", "gw-listener", "kms-worker", "tx-sender"] as const;
 const KEY_WORKERS = ["tfhe-worker", "zkproof-worker", "sns-worker"] as const;
-const BLUE_MIGRATION_SERVICES = ["host-listener", "host-listener-poller", "host-listener-consumer", ...KEY_WORKERS];
+const ACTIVE_MIGRATION_SERVICES = ["host-listener", "host-listener-poller", "host-listener-consumer", ...KEY_WORKERS];
 
 const logPhase = (label: string) => console.log(`\n[GPU key migration] ${label}`);
 
@@ -98,16 +98,38 @@ const activeKeyStateSql =
   "COALESCE(encode(block_hash, 'hex'), 'NULL') || '|' || count(*) OVER () " +
   "FROM keys ORDER BY sequence_number DESC LIMIT 1;";
 
-export const migrationScenario = (blueTag: string) => `version: 1
-kind: blue-green
-name: RFC 029 0.15 to 0.15.1 production migration
-hostChains:
+const hostChains = `hostChains:
   - key: host
     chainId: "12345"
     rpcPort: 8545
   - key: chain-b
     chainId: "67890"
-    rpcPort: 8547
+    rpcPort: 8547`;
+
+const kmsTopology = `kms:
+  mode: threshold
+  parties: ${CONNECTOR_PARTIES}
+  threshold: 1
+  fheParams: Test`;
+
+export const migrationScenario = () => `version: 1
+kind: coprocessor-consensus
+name: RFC 029 0.14 to 0.15 key migration
+${hostChains}
+topology:
+  count: ${OPERATOR_COUNT}
+  threshold: ${OPERATOR_COUNT}
+instances:
+${Array.from({ length: OPERATOR_COUNT }, (_, index) => `  - index: ${index}
+    env:
+      FORCE_LEGACY_SERVER_KEY: "true"`).join("\n")}
+${kmsTopology}
+`;
+
+export const adoptionScenario = (blueTag: string) => `version: 1
+kind: blue-green
+name: RFC 029 0.15 to 0.15.1 compressed key adoption
+${hostChains}
 topology:
   count: ${OPERATOR_COUNT}
   threshold: ${OPERATOR_COUNT}
@@ -122,11 +144,7 @@ gcs:
     mode: local
   stackVersion: "0.15.1"
   deferredStart: true
-kms:
-  mode: threshold
-  parties: ${CONNECTOR_PARTIES}
-  threshold: 1
-  fheParams: Test
+${kmsTopology}
 `;
 
 const connectorObservation = async (party: number): Promise<ConnectorObservation> => {
@@ -253,22 +271,22 @@ const forcesLegacyServerKey = async (container: string): Promise<boolean> => {
     .some((line) => line === "FORCE_LEGACY_SERVER_KEY=true");
 };
 
-const assertBlueSafeguard = async () => {
+const assertActiveSafeguard = async () => {
   for (let operator = 0; operator < OPERATOR_COUNT; operator += 1) {
     const prefix = operator === 0 ? "coprocessor-" : `coprocessor${operator}-`;
     for (const worker of KEY_WORKERS) {
-      const blue = `${prefix}${worker}`;
-      if (!(await forcesLegacyServerKey(blue))) {
-        throw new Error(`${blue} is not forced to use legacy material`);
+      const container = `${prefix}${worker}`;
+      if (!(await forcesLegacyServerKey(container))) {
+        throw new Error(`${container} is not forced to use legacy material`);
       }
     }
   }
 };
 
-const assertBlueImageTag = async (tag: string) => {
+const assertActiveImageTag = async (tag: string) => {
   for (let operator = 0; operator < OPERATOR_COUNT; operator += 1) {
     const prefix = operator === 0 ? "coprocessor-" : `coprocessor${operator}-`;
-    for (const service of BLUE_MIGRATION_SERVICES) {
+    for (const service of ACTIVE_MIGRATION_SERVICES) {
       const container = `${prefix}${service}`;
       const result = await run(["docker", "inspect", "--format", "{{.Config.Image}}|{{.Image}}", container]);
       const [configuredImage, imageId] = result.stdout.trim().split("|");
@@ -301,7 +319,7 @@ const assertGreenAbsent = async () => {
   }
 };
 
-const restartBlueKeyWorkers = async () => {
+const restartActiveKeyWorkers = async () => {
   const workers = Array.from({ length: OPERATOR_COUNT }, (_, operator) => {
     const prefix = operator === 0 ? "coprocessor-" : `coprocessor${operator}-`;
     return KEY_WORKERS.map((worker) => `${prefix}${worker}`);
@@ -313,7 +331,7 @@ const restartBlueKeyWorkers = async () => {
 };
 
 const assertWorkerRepresentation = async (
-  role: "Blue" | "Green",
+  role: "Active" | "Green",
   representation: "legacy" | "compressed-xof",
   since: string,
 ) => {
@@ -367,7 +385,18 @@ const upgradeKmsGeneration = async (ctx: RolloutRunContext, targetLock: string) 
   );
 };
 
-export default async function runMigration(ctx: RolloutRunContext) {
+type MigrationMode = "standalone" | "blue-green";
+
+type MigratedStack = {
+  continuityContract: string;
+  preMigrationHandles: string[];
+};
+
+/** Produces compressed material for the active legacy key without changing the serving representation. */
+export const migrateActiveStack = async (
+  ctx: RolloutRunContext,
+  mode: MigrationMode,
+): Promise<MigratedStack> => {
   const versions = migrationVersions();
   const baselineLock = await ctx.resolveVersionLock("rfc029-00-baseline", {
     versions: versions.baseline,
@@ -392,8 +421,11 @@ export default async function runMigration(ctx: RolloutRunContext) {
     versions: phaseVersions.blue,
     sources: versionSources,
   });
-  const scenario = path.join(ctx.stateDir(), "rollout", "rfc029-blue-green.yaml");
-  await Bun.write(scenario, migrationScenario(versions.baselineTag));
+  const scenario = path.join(ctx.stateDir(), "rollout", `rfc029-${mode}.yaml`);
+  await Bun.write(
+    scenario,
+    mode === "blue-green" ? adoptionScenario(versions.baselineTag) : migrationScenario(),
+  );
 
   logPhase("00 restore production-style legacy state before the 0.15 rollout");
   await ctx.up({
@@ -401,8 +433,8 @@ export default async function runMigration(ctx: RolloutRunContext) {
     scenario,
     overrides: [{ group: "test-suite" }],
   });
-  await assertGreenAbsent();
-  await assertBlueImageTag(versions.baselineTag);
+  if (mode === "blue-green") await assertGreenAbsent();
+  await assertActiveImageTag(versions.baselineTag);
   for (let operator = 0; operator < OPERATOR_COUNT; operator += 1) {
     const state = await sqlScalar(
       coprocessorDatabaseName(operator),
@@ -502,18 +534,19 @@ export default async function runMigration(ctx: RolloutRunContext) {
     }
   }, 300);
 
-  logPhase("04 upgrade the serving Blue fleet to 0.15 and pin it to legacy material");
+  logPhase("04 upgrade the serving workers to 0.15 and pin them to legacy material");
   await ctx.upgradeRuntimeGroup("coprocessor", {
     lockFile: blueLock,
-    bcsTag: versions.blueTag,
-    bcsCompatTag: "v0.15.0",
+    ...(mode === "blue-green"
+      ? { bcsTag: versions.blueTag, bcsCompatTag: "v0.15.0" }
+      : {}),
   });
-  await assertBlueSafeguard();
-  await assertBlueImageTag(versions.blueTag);
-  await assertGreenAbsent();
+  await assertActiveSafeguard();
+  await assertActiveImageTag(versions.blueTag);
+  if (mode === "blue-green") await assertGreenAbsent();
   await ctx.test("input-proof-compute-decrypt", { parallel: false });
 
-  logPhase("05 request compressed material for the existing active key while 0.15.1 Green is absent");
+  logPhase("05 request compressed material for the existing active Test key");
   const keyIdHex = await sqlScalar(
     coprocessorDatabaseName(0),
     "SELECT encode(key_id, 'hex') FROM keys ORDER BY sequence_number DESC LIMIT 1;",
@@ -521,11 +554,12 @@ export default async function runMigration(ctx: RolloutRunContext) {
   const keyId = BigInt(`0x${keyIdHex}`).toString();
   const legacyKmsDigests = await kmsPublicMaterialDigests("ServerKey", keyIdHex);
   const migrationRequestBoundary = await currentHostBlock();
+  const paramsType = state.scenario.kms.fheParams === "Test" ? 1 : 0;
   await ctx.runHostContractTask(
-    `npx hardhat task:triggerKeygen --params-type 0 --existing-key-id ${keyId} --use-internal-proxy-address true`,
+    `npx hardhat task:triggerKeygen --params-type ${paramsType} --existing-key-id ${keyId} --use-internal-proxy-address true`,
   );
 
-  logPhase("06 wait until KMS and every Blue operator expose identical material");
+  logPhase("06 wait until KMS and every active operator expose identical material");
   await waitUntil(
     "every KMS operator serves both representations under the original key ID",
     async () => {
@@ -569,21 +603,27 @@ export default async function runMigration(ctx: RolloutRunContext) {
       throw new Error(`operator ${operator} applied material to a different key ID`);
     }
   }
-  await assertBlueSafeguard();
-  await assertGreenAbsent();
+  await assertActiveSafeguard();
+  if (mode === "blue-green") await assertGreenAbsent();
 
-  // Publication is passive: Blue must still compute successfully after every
+  // Publication is passive: the active workers must still compute successfully after every
   // database contains the compressed representation, including after restarts.
-  const blueRestartedAt = new Date().toISOString();
-  await restartBlueKeyWorkers();
-  await assertBlueSafeguard();
+  const activeRestartedAt = new Date().toISOString();
+  await restartActiveKeyWorkers();
+  await assertActiveSafeguard();
   await ctx.test("input-proof-compute-decrypt", { parallel: false });
-  await assertWorkerRepresentation("Blue", "legacy", blueRestartedAt);
+  await assertWorkerRepresentation("Active", "legacy", activeRestartedAt);
+
+  return { continuityContract, preMigrationHandles };
+};
+
+export default async function runMigrationAndAdoption(ctx: RolloutRunContext) {
+  const { continuityContract, preMigrationHandles } = await migrateActiveStack(ctx, "blue-green");
 
   logPhase("07 deploy 0.15.1 Green only after every Blue database has applied material");
   const greenStartedAt = new Date().toISOString();
   await ctx.startDeferredGreen();
-  await assertBlueSafeguard();
+  await assertActiveSafeguard();
   await assertGreenSafeguard();
   await assertGreenWorkersParked();
   await ctx.test("input-proof-compute-decrypt", { parallel: false });
