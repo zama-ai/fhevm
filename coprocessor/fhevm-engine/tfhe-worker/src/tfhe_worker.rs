@@ -480,7 +480,12 @@ async fn tfhe_worker_cycle(
             // for a notification after this cycle.
             immediately_poll_more_work = true;
         } else {
-            dcid_mngr.release_current_lock(true, None).await?;
+            // There is no selected work for this batch. Commit the read
+            // transaction before releasing individual terminal DCIDs: a
+            // release must never become visible ahead of its computation
+            // state on another connection.
+            trx.commit().await?;
+            dcid_mngr.release_completed_locks().await?;
             dcid_mngr.do_cleanup().await?;
             no_progress_cycles = 0;
 
@@ -492,10 +497,22 @@ async fn tfhe_worker_cycle(
                 dependence_chain_id = tracing::field::Empty
             );
 
-            let (dependence_chain_id, _) = dcid_mngr
-                .acquire_next_lock()
-                .instrument(dcid_span.clone())
-                .await?;
+            let refill_limit = if args.dcid_batch_execution {
+                (args.dependence_chains_per_batch - dcid_mngr.get_current_lock_ids().len() as i32)
+                    .max(0)
+            } else {
+                1
+            };
+            let dependence_chain_id = if refill_limit > 0 {
+                dcid_mngr
+                    .acquire_next_locks(refill_limit)
+                    .instrument(dcid_span.clone())
+                    .await?
+                    .into_iter()
+                    .find_map(|(id, _)| id)
+            } else {
+                None
+            };
             immediately_poll_more_work = dependence_chain_id.is_some();
 
             dcid_span.record(
@@ -553,7 +570,13 @@ async fn tfhe_worker_cycle(
             upload_transaction_graph_results(&mut tx_graph, &mut trx, &mut dcid_mngr)
                 .instrument(loop_span.clone())
                 .await?;
-        if has_progressed {
+        trx.commit().await?;
+
+        // Releasing after commit makes terminal work visible before another
+        // worker can acquire a dependent DCID. Keep unfinished DCIDs leased;
+        // query_for_work will refill the freed slots on the next iteration.
+        let released_completed_locks = dcid_mngr.release_completed_locks().await?;
+        if has_progressed || released_completed_locks > 0 {
             no_progress_cycles = 0;
         } else {
             no_progress_cycles += 1;
@@ -565,7 +588,6 @@ async fn tfhe_worker_cycle(
                 dcid_mngr.park_current_lock();
             }
         }
-        trx.commit().await?;
         drop(loop_span);
         #[cfg(feature = "bench")]
         {

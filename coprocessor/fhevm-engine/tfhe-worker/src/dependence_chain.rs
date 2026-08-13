@@ -61,9 +61,9 @@ impl From<&str> for LockingReason {
 pub struct LockMngr {
     pool: sqlx::Pool<Postgres>,
     worker_id: Uuid,
-    // A worker normally owns one DCID.  The one-shot benchmark can opt into a
-    // bounded batch, in which case every entry is acquired/released as a
-    // single fenced ownership set.
+    // A worker normally owns one DCID. A bounded batch may own several; each
+    // completed DCID is released independently so the next ready DCID can
+    // refill its slot without waiting for the rest of the batch.
     locks: Vec<(DatabaseChainLock, SystemTime)>,
 
     // Configurations
@@ -155,9 +155,9 @@ impl LockMngr {
 
     /// Acquire up to `limit` ready dependence chains in one atomic query.
     ///
-    /// The caller must subsequently release the whole acquired set together;
-    /// this keeps the existing single-lock lifecycle unchanged when `limit` is
-    /// one while allowing batched worker schedules.
+    /// Completed entries can subsequently be released independently with
+    /// `release_completed_locks`; this keeps a bounded batch full while work
+    /// in other DCIDs is still pending.
     pub async fn acquire_next_locks(
         &mut self,
         limit: i32,
@@ -457,6 +457,111 @@ impl LockMngr {
         );
 
         Ok(rows.rows_affected())
+    }
+
+    /// Release only owned DCIDs whose allowed work has reached a terminal
+    /// state. The completion test, ownership release, and dependent-count
+    /// decrement are one statement, so a slot cannot be released twice and a
+    /// dependent observes exactly one decrement per completed parent.
+    ///
+    /// Call this only after the worker transaction that persisted the terminal
+    /// computation state has committed. Pending, deferred, or concurrently
+    /// re-updated DCIDs remain owned and continue through the normal lease
+    /// lifecycle.
+    pub async fn release_completed_locks(&mut self) -> Result<u64, sqlx::Error> {
+        if self.disable_locking {
+            debug!("Locking is disabled, skipping release_completed_locks");
+            return Ok(0);
+        }
+
+        let dep_chain_ids = self.get_current_lock_ids();
+        if dep_chain_ids.is_empty() {
+            return Ok(0);
+        }
+
+        let released: Vec<(Vec<u8>, bool)> = sqlx::query_as(
+            r#"
+            WITH completed AS (
+                UPDATE dependence_chain AS dc
+                SET
+                    worker_id = NULL,
+                    lock_acquired_at = NULL,
+                    lock_expires_at = NULL,
+                    status = CASE
+                        -- If the listener refreshed this DCID while it was
+                        -- owned, preserve its update so the new work is
+                        -- acquired again instead of being hidden as processed.
+                        WHEN dc.status = 'processing' THEN 'processed'
+                        ELSE dc.status
+                    END
+                WHERE dc.worker_id = $1
+                  AND dc.dependence_chain_id = ANY($2)
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM computations c
+                      WHERE c.dependence_chain_id = dc.dependence_chain_id
+                        AND c.is_allowed = TRUE
+                        AND c.is_completed = FALSE
+                        AND c.is_error = FALSE
+                  )
+                RETURNING
+                    dc.dependence_chain_id,
+                    dc.status = 'processed' AS marked_processed
+            ),
+            decrements AS (
+                SELECT dependent_id, count(*) AS n
+                FROM (
+                    SELECT unnest(parent.dependents) AS dependent_id
+                    FROM dependence_chain AS parent
+                    JOIN completed
+                      ON completed.dependence_chain_id = parent.dependence_chain_id
+                     AND completed.marked_processed
+                ) AS parent_dependents
+                GROUP BY dependent_id
+            ),
+            updated AS (
+                UPDATE dependence_chain AS dc
+                SET dependency_count = GREATEST(dc.dependency_count - decrements.n, 0)
+                FROM decrements
+                WHERE dc.dependence_chain_id = decrements.dependent_id
+                RETURNING dc.dependency_count
+            )
+            SELECT completed.dependence_chain_id,
+                   EXISTS (SELECT 1 FROM updated WHERE dependency_count = 0)
+                       AS dependent_became_ready
+            FROM completed
+            "#,
+        )
+        .bind(self.worker_id)
+        .bind(&dep_chain_ids)
+        .fetch_all(&self.pool)
+        .await?;
+
+        if released.is_empty() {
+            return Ok(0);
+        }
+
+        let notify_ready = released.iter().any(|(_, ready)| *ready);
+        let released_ids: Vec<_> = released.into_iter().map(|(id, _)| id).collect();
+        self.locks.retain(|(lock, _)| {
+            !released_ids
+                .iter()
+                .any(|id| id == &lock.dependence_chain_id)
+        });
+
+        if notify_ready {
+            sqlx::query("SELECT pg_notify('work_available', '')")
+                .execute(&self.pool)
+                .await?;
+        }
+
+        info!(
+            dcid_count = released_ids.len(),
+            remaining_dcid_count = self.locks.len(),
+            dependents_notified = notify_ready,
+            "Released completed locks"
+        );
+        Ok(released_ids.len() as u64)
     }
 
     /// Set error on the current dependence chain
