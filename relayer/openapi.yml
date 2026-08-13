@@ -1565,7 +1565,7 @@ components:
         dataId:
           type: string
           description: On-chain key/CRS identifier, as a `0x`-prefixed 32-byte big-endian hex string.
-          example: '0x0400000000000000000000000000000000000000000000000000000000000003'
+          example: "0x0400000000000000000000000000000000000000000000000000000000000003"
         urls:
           type: array
           items:
