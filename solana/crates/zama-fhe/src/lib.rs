@@ -103,14 +103,14 @@ pub enum FheExecutionBuildError {
     /// runtime would reject the invoke. Verified-input attestations are the heavy term
     /// (roughly 1 KiB each at maximum size); split them across executions.
     ExceedsCpiInstructionDataLimit,
-    /// Building and serializing this execution would request more of the program's fixed,
-    /// never-freeing 32 KB heap than the builder's budget
+    /// Building, serializing, and invoking this execution would request more of the program's
+    /// fixed, never-freeing 32 KB heap than the builder's budget
     /// ([`BUILD_HEAP_BUDGET_BYTES`]) — on-chain it would abort the instruction with no error
     /// at all once the region ran out. The builder tallies every byte it asks the allocator
-    /// for (validated byte-for-byte against a counting allocator), so this fires exactly when
-    /// the build cannot survive. Fewer persistent outputs, narrower subject lists, or fewer
-    /// embedded attestations shrink the shape; splitting the work across executions always
-    /// works.
+    /// for and charges the invoke-side account tables up front (both validated byte-for-byte
+    /// against a counting allocator), so this fires exactly when the instruction cannot
+    /// survive. Fewer persistent outputs, narrower subject lists, or fewer embedded
+    /// attestations shrink the shape; splitting the work across executions always works.
     ExceedsBuildHeapBudget,
     /// `finish` was called with no steps; the host rejects empty executions.
     EmptySteps,

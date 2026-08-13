@@ -1,4 +1,11 @@
 //! The validated, lowered execution request handed to the CPI helpers.
+//!
+//! Public API surface: app programs. The requirement accessors
+//! ([`FheExecution::dynamic_account_requirements`],
+//! [`FheExecution::output_authority_requirements`]) are how a caller that assembles the
+//! transaction's account list — an off-chain client or a wrapping instruction — learns which
+//! dynamic accounts the execution needs and in which roles; resolution itself re-reads the
+//! account metas directly.
 
 use anchor_lang::prelude::Pubkey;
 

@@ -834,9 +834,13 @@ impl<'id> FheExecutionBuilder<'id> {
         output: Output,
     ) -> Result<Encrypted<'id, T>> {
         // EVM `fheSum` and the coprocessor enforce no minimum: a zero/single-operand sum is valid.
-        // Collected with an explicit tallied loop so the operand table's growth is paid into the
-        // heap tally regardless of the iterator's size hint.
-        let mut operand_ops: Vec<Operand> = Vec::new();
+        // The table is reserved from the iterator's hint (a 60-operand table grown by doubling
+        // would strand nearly its own size on the never-freeing heap), and the explicit tallied
+        // loop pays for the reservation and for any growth past a lying hint.
+        let operands = operands.into_iter();
+        let (reserved_operands, _) = operands.size_hint();
+        self.requested_heap_bytes += reserved_operands * std::mem::size_of::<Operand>();
+        let mut operand_ops: Vec<Operand> = Vec::with_capacity(reserved_operands);
         for operand in operands {
             crate::cost::tally_push(&operand_ops, &mut self.requested_heap_bytes);
             operand_ops.push(operand.into().operand());
@@ -877,9 +881,11 @@ impl<'id> FheExecutionBuilder<'id> {
         output: Output,
     ) -> Result<Encrypted<'id, Bool>> {
         // EVM `fheIsIn` and the coprocessor enforce no minimum: an empty set is valid (false result).
-        // Collected with an explicit tallied loop so the set table's growth is paid into the
-        // heap tally regardless of the iterator's size hint.
-        let mut set_ops: Vec<Operand> = Vec::new();
+        // Reserved from the iterator's hint and tallied like `sum`'s operand table above.
+        let set = set.into_iter();
+        let (reserved_set, _) = set.size_hint();
+        self.requested_heap_bytes += reserved_set * std::mem::size_of::<Operand>();
+        let mut set_ops: Vec<Operand> = Vec::with_capacity(reserved_set);
         for operand in set {
             crate::cost::tally_push(&set_ops, &mut self.requested_heap_bytes);
             set_ops.push(operand.into().operand());
@@ -1041,10 +1047,29 @@ impl<'id> FheExecutionBuilder<'id> {
         if packet_bytes > crate::cost::CPI_INSTRUCTION_DATA_LIMIT {
             return Err(FheExecutionBuildError::ExceedsCpiInstructionDataLimit);
         }
-        // Build plus packet is everything this crate will ever request from the program heap
-        // for this execution; over budget it would abort the instruction with no error at all,
-        // so it is rejected here where the app can still shrink the shape.
-        if self.requested_heap_bytes + packet_bytes > crate::cost::BUILD_HEAP_BUDGET_BYTES {
+        // Build, packet, and the invoke-side account tables are everything this crate will
+        // request from the program heap for this execution — the tables are an exact function
+        // of the account counts known here (`invoke_table_heap_bytes`). Over budget the
+        // instruction would abort with no error at all, so it is rejected here where the app
+        // can still shrink the shape.
+        let dynamic_accounts = self
+            .remaining_accounts
+            .iter()
+            .filter(|meta| meta.requires_dynamic_account())
+            .count();
+        let output_authorities = 1 + self
+            .remaining_accounts
+            .iter()
+            .filter(|meta| meta.requires_output_authority())
+            .count();
+        let invoke_heap_bytes = crate::cost::invoke_table_heap_bytes(
+            self.remaining_accounts.len(),
+            dynamic_accounts,
+            output_authorities,
+        );
+        if self.requested_heap_bytes + packet_bytes + invoke_heap_bytes
+            > crate::cost::BUILD_HEAP_BUDGET_BYTES
+        {
             return Err(FheExecutionBuildError::ExceedsBuildHeapBudget);
         }
         let cost = crate::cost::FheExecutionCost {
@@ -1055,7 +1080,10 @@ impl<'id> FheExecutionBuilder<'id> {
             emits_public_outputs_event: self.has_public_output,
             packet_bytes,
             build_heap_bytes: self.requested_heap_bytes,
+            invoke_heap_bytes,
             remaining_accounts: self.remaining_accounts.len(),
+            dynamic_accounts,
+            output_authorities,
         };
         Ok(FheExecution {
             encrypted_value_account_authority: self.encrypted_value_account_authority,

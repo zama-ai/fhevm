@@ -60,10 +60,11 @@ pub struct EncryptedValueId {
     pub(crate) domain: Domain,
     pub(crate) encrypted_value_account_authority: Pubkey,
     pub(crate) label: EncryptedValueLabel,
-    /// The encrypted value account's PDA, derived once at construction: on-chain the derivation
-    /// is a syscall the app pays where it builds the id, so the builder's heap tally stays
-    /// exact, and an id used across several steps derives once instead of per use.
+    /// The encrypted value account's PDA and bump, derived once at construction: on-chain the
+    /// derivation is a syscall the app pays where it builds the id, so the builder's heap tally
+    /// stays exact, and an id used across several steps derives once instead of per use.
     pub(crate) address: Pubkey,
+    pub(crate) bump: u8,
 }
 
 impl EncryptedValueId {
@@ -94,18 +95,24 @@ impl EncryptedValueId {
         encrypted_value_account_authority: Pubkey,
         label: EncryptedValueLabel,
     ) -> Self {
-        let address = encrypted_value_address(zama_solana_acl::derive_encrypted_value_id(
+        let (address, bump) = encrypted_value_address(zama_solana_acl::derive_encrypted_value_id(
             domain.pubkey().to_bytes(),
             encrypted_value_account_authority.to_bytes(),
             label.bytes(),
-        ))
-        .0;
+        ));
         Self {
             domain,
             encrypted_value_account_authority,
             label,
             address,
+            bump,
         }
+    }
+
+    /// The PDA together with its bump, for a caller that signs or re-creates the account and
+    /// would otherwise have to run the derivation a second time.
+    pub fn address_with_bump(&self) -> (Pubkey, u8) {
+        (self.address, self.bump)
     }
 
     pub fn address(&self) -> Pubkey {
