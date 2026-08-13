@@ -2324,7 +2324,14 @@ struct CreatedPublicBatch {
 }
 
 fn created_public_batch(step_count: usize, created_public_steps: &[usize]) -> CreatedPublicBatch {
-    persistent_creates_batch(step_count, created_public_steps, Pubkey::new_unique(), true)
+    let authority = Pubkey::new_unique();
+    persistent_creates_batch(
+        step_count,
+        created_public_steps,
+        authority,
+        true,
+        std::slice::from_ref(&authority),
+    )
 }
 
 /// [`created_public_batch`] with a caller-fixed authority (for boundary sweeps recorded in the
@@ -2336,6 +2343,7 @@ fn persistent_creates_batch(
     created_public_steps: &[usize],
     authority: Pubkey,
     make_public: bool,
+    subjects: &[Pubkey],
 ) -> CreatedPublicBatch {
     let (host_config, host_config_account) = host_config_account(authority);
     let mut output_metas = Vec::new();
@@ -2363,7 +2371,7 @@ fn persistent_creates_batch(
                 output_domain_index: dictionary.intern_key(authority),
                 output_account_index: dictionary.intern_key(authority),
                 output_label_index: dictionary.intern(output_label),
-                output_subject_indexes: dictionary.intern_subjects([authority]),
+                output_subject_indexes: dictionary.intern_subjects(subjects.iter().copied()),
                 previous_state: None,
                 make_public,
             }
@@ -2776,17 +2784,23 @@ fn dependent_chain_case(steps: usize, authority: Pubkey) -> ProbeCase {
     }
 }
 
-/// Every step updates its own mature `EncryptedValue`: the full subject list and a peak set near
-/// `MAX_MMR_PEAKS`, so each account decode allocates the most the layout allows. The leaf count
-/// has eight trailing zero bits so the eight seal-appends per account stay cheap — the shape
-/// stresses decode allocation, not MMR merge hashing.
-fn mature_updates_case(steps: usize, authority: Pubkey) -> ProbeCase {
+/// Every step updates its own mature `EncryptedValue` carrying `peak_count` MMR peaks and the
+/// full subject list, so each account decode allocates what the given maturity forces. The leaf
+/// count keeps eight trailing zero bits so the eight seal-appends per account stay cheap — the
+/// shape stresses decode allocation, not MMR merge hashing. Peak count is `popcount(leaf_count)`
+/// — pure on-chain state the builder cannot see, which is why this axis is swept per maturity
+/// instead of enforced at build time.
+fn mature_updates_case(steps: usize, peak_count: u32, authority: Pubkey) -> ProbeCase {
     let (host_config, host_config_account) = host_config_account(authority);
     let subjects: Vec<Pubkey> = (1..=zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS as u8)
         .map(|index| Pubkey::new_from_array([0x70 + index; 32]))
         .collect();
-    // 55 one-bits (peaks), 8 trailing zeros (cheap appends).
-    let leaf_count: u64 = 0x7FFF_FFFF_FFFF_FF00;
+    // `peak_count` one-bits, 8 trailing zeros (cheap appends).
+    assert!(
+        (1..=55).contains(&peak_count),
+        "peak_count must keep 8 trailing zeros free"
+    );
+    let leaf_count: u64 = (((1u128 << peak_count) - 1) as u64) << 8;
     let peaks: Vec<[u8; 32]> = (0..leaf_count.count_ones())
         .map(|peak| [peak as u8 + 1; 32])
         .collect();
@@ -2917,7 +2931,7 @@ fn attestation_per_step_case(steps: usize, authority: Pubkey) -> ProbeCase {
 
 fn all_created_public_case(steps: usize, authority: Pubkey) -> ProbeCase {
     let all: Vec<usize> = (0..steps).collect();
-    persistent_creates_batch(steps, &all, authority, true).into()
+    persistent_creates_batch(steps, &all, authority, true, std::slice::from_ref(&authority)).into()
 }
 
 /// Every step writes a plain persistent create (no `make_public`) — the exact shape
@@ -2925,14 +2939,88 @@ fn all_created_public_case(steps: usize, authority: Pubkey) -> ProbeCase {
 /// next to the app-side byte count that motivates the single step ceiling.
 fn all_private_creates_case(steps: usize, authority: Pubkey) -> ProbeCase {
     let all: Vec<usize> = (0..steps).collect();
-    persistent_creates_batch(steps, &all, authority, false).into()
+    persistent_creates_batch(steps, &all, authority, false, std::slice::from_ref(&authority))
+        .into()
 }
 
 /// Every fourth step persists a created-public output, the rest stay transient — a mid-weight
 /// composite between the chain and all-created-public extremes.
 fn mixed_chain_creates_case(steps: usize, authority: Pubkey) -> ProbeCase {
     let creates: Vec<usize> = (0..steps).step_by(4).collect();
-    persistent_creates_batch(steps, &creates, authority, true).into()
+    persistent_creates_batch(steps, &creates, authority, true, std::slice::from_ref(&authority))
+        .into()
+}
+
+/// Every step creates a persistent output with the widest legal audience: eight distinct
+/// subjects, each interning its own dictionary entry and each resolved and stored by the host.
+/// The subject-width axis of the create frontier — the builder's build-heap budget stops this
+/// shape well below the host's own wall.
+fn subject_heavy_creates_case(steps: usize, authority: Pubkey) -> ProbeCase {
+    let all: Vec<usize> = (0..steps).collect();
+    let subjects: Vec<Pubkey> = (1..=zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS as u8)
+        .map(|index| Pubkey::new_from_array([0x50 + index; 32]))
+        .collect();
+    persistent_creates_batch(steps, &all, authority, false, &subjects).into()
+}
+
+/// Every step past the first is a `Sum` over the coprocessor's maximum euint64 operand count,
+/// all referencing the previous step's transient (distinct operands keep the derived handles
+/// distinct) — the operand-width axis: per step the host allocates its operand tables
+/// proportionally and meters every operand's HCU.
+fn reduction_heavy_case(steps: usize, authority: Pubkey) -> ProbeCase {
+    let (host_config, host_config_account) = host_config_account(authority);
+    let mut steps_vec = Vec::with_capacity(steps);
+    steps_vec.push(FheExecuteStep::TrivialEncrypt {
+        plaintext: [1; 32],
+        fhe_type: 5,
+        output: FheExecuteOutput::Transient,
+    });
+    for step_index in 1..steps {
+        steps_vec.push(FheExecuteStep::Sum {
+            operands: vec![
+                FheExecuteOperand::EarlierStep {
+                    producer_index: (step_index - 1) as u8
+                };
+                60
+            ],
+            fhe_type: 5,
+            output: FheExecuteOutput::Transient,
+        });
+    }
+    let instruction = fhe_execute_ix(
+        authority,
+        authority,
+        authority,
+        host_config,
+        FheExecuteArgs {
+            account_count: 0,
+            dictionary: ExecutionDictionary::default().into_entries(),
+            steps: steps_vec,
+        },
+        Vec::new(),
+    );
+    ProbeCase {
+        instruction,
+        accounts: vec![
+            (system_program::ID, system_program_account()),
+            (authority, funded_system_account()),
+            (host_config, host_config_account),
+            (event_authority(host::id()), Account::default()),
+        ],
+    }
+}
+
+/// The largest create count `zama-fhe`'s instruction-trace model admits: the greatest count
+/// whose floor — including the app wrapper instruction the builder budgets for — still fits the
+/// transaction's trace.
+fn max_creates_the_builder_admits(make_public: bool) -> usize {
+    (0..=host::MAX_FHE_EXECUTION_STEPS)
+        .take_while(|creates| {
+            zama_fhe::instruction_trace_floor(*creates, false, make_public)
+                <= zama_fhe::TRANSACTION_INSTRUCTION_TRACE_LIMIT
+        })
+        .last()
+        .expect("zero creates always fit")
 }
 
 #[test]
@@ -2941,6 +3029,15 @@ fn cost_snapshot_boundary_all_created_public() {
         all_created_public_case(steps, Pubkey::new_from_array([0x31; 32]))
     });
     assert_swept_boundary("fhe_execute_boundary/all_created_public", &sweep);
+    // The builder never admits a create count the host measured as failing. For this shape the
+    // heap and trace walls sit within one step of each other, so the builder's trace cap covers
+    // both.
+    assert!(
+        max_creates_the_builder_admits(true) <= sweep.max_ok,
+        "the builder admits {} created-public outputs but the host wall is {}",
+        max_creates_the_builder_admits(true),
+        sweep.max_ok,
+    );
 }
 
 #[test]
@@ -2949,6 +3046,31 @@ fn cost_snapshot_boundary_all_private_creates() {
         all_private_creates_case(steps, Pubkey::new_from_array([0x36; 32]))
     });
     assert_swept_boundary("fhe_execute_boundary/all_private_creates", &sweep);
+    // The tie between the builder's model and the measured wall: Mollusk probes the host
+    // top-level, one instruction short of the app wrapper the builder's floor budgets, so the
+    // host must run exactly one create past the builder's cap and no further.
+    assert_eq!(sweep.limited_by, "instruction_trace");
+    assert_eq!(
+        max_creates_the_builder_admits(false) + 1,
+        sweep.max_ok,
+        "the measured trace wall no longer sits one wrapper instruction past the builder's cap",
+    );
+}
+
+#[test]
+fn cost_snapshot_boundary_subject_heavy_creates() {
+    let sweep = sweep_step_boundary(1, |steps| {
+        subject_heavy_creates_case(steps, Pubkey::new_from_array([0x37; 32]))
+    });
+    assert_swept_boundary("fhe_execute_boundary/subject_heavy_creates", &sweep);
+}
+
+#[test]
+fn cost_snapshot_boundary_reduction_heavy() {
+    let sweep = sweep_step_boundary(1, |steps| {
+        reduction_heavy_case(steps, Pubkey::new_from_array([0x38; 32]))
+    });
+    assert_swept_boundary("fhe_execute_boundary/reduction_heavy", &sweep);
 }
 
 #[test]
@@ -2962,9 +3084,25 @@ fn cost_snapshot_boundary_dependent_chain() {
 #[test]
 fn cost_snapshot_boundary_mature_updates() {
     let sweep = sweep_step_boundary(1, |steps| {
-        mature_updates_case(steps, Pubkey::new_from_array([0x33; 32]))
+        mature_updates_case(steps, 55, Pubkey::new_from_array([0x33; 32]))
     });
     assert_swept_boundary("fhe_execute_boundary/mature_updates", &sweep);
+}
+
+#[test]
+fn cost_snapshot_boundary_mature_updates_peaks_8() {
+    let sweep = sweep_step_boundary(1, |steps| {
+        mature_updates_case(steps, 8, Pubkey::new_from_array([0x39; 32]))
+    });
+    assert_swept_boundary("fhe_execute_boundary/mature_updates_peaks_8", &sweep);
+}
+
+#[test]
+fn cost_snapshot_boundary_mature_updates_peaks_32() {
+    let sweep = sweep_step_boundary(1, |steps| {
+        mature_updates_case(steps, 32, Pubkey::new_from_array([0x3A; 32]))
+    });
+    assert_swept_boundary("fhe_execute_boundary/mature_updates_peaks_32", &sweep);
 }
 
 #[test]
@@ -3126,7 +3264,17 @@ fn print_boundary_matrix() {
         (
             "mature_updates",
             1,
-            Box::new(|steps| mature_updates_case(steps, Pubkey::new_from_array([0x33; 32]))),
+            Box::new(|steps| mature_updates_case(steps, 55, Pubkey::new_from_array([0x33; 32]))),
+        ),
+        (
+            "mature_updates_peaks_8",
+            1,
+            Box::new(|steps| mature_updates_case(steps, 8, Pubkey::new_from_array([0x39; 32]))),
+        ),
+        (
+            "mature_updates_peaks_32",
+            1,
+            Box::new(|steps| mature_updates_case(steps, 32, Pubkey::new_from_array([0x3A; 32]))),
         ),
         (
             "attestation_per_step",
@@ -3137,6 +3285,16 @@ fn print_boundary_matrix() {
             "mixed_chain_creates",
             1,
             Box::new(|steps| mixed_chain_creates_case(steps, Pubkey::new_from_array([0x35; 32]))),
+        ),
+        (
+            "subject_heavy_creates",
+            1,
+            Box::new(|steps| subject_heavy_creates_case(steps, Pubkey::new_from_array([0x37; 32]))),
+        ),
+        (
+            "reduction_heavy",
+            1,
+            Box::new(|steps| reduction_heavy_case(steps, Pubkey::new_from_array([0x38; 32]))),
         ),
     ];
     for (name, min_steps, build) in shapes {

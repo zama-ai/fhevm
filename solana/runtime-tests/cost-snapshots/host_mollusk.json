@@ -142,6 +142,32 @@
         "max_cpi_instruction_data_bytes": 0
       }
     },
+    "fhe_execute_boundary/mature_updates_peaks_32": {
+      "max_ok": 6,
+      "first_fail": 7,
+      "limited_by": "heap",
+      "cost_at_max_ok": {
+        "compute_units": 132732,
+        "unique_accounts": 11,
+        "instruction_data_bytes": 2573,
+        "cpi_instructions": 0,
+        "total_cpi_instruction_data_bytes": 0,
+        "max_cpi_instruction_data_bytes": 0
+      }
+    },
+    "fhe_execute_boundary/mature_updates_peaks_8": {
+      "max_ok": 11,
+      "first_fail": 12,
+      "limited_by": "heap",
+      "cost_at_max_ok": {
+        "compute_units": 272307,
+        "unique_accounts": 16,
+        "instruction_data_bytes": 4463,
+        "cpi_instructions": 0,
+        "total_cpi_instruction_data_bytes": 0,
+        "max_cpi_instruction_data_bytes": 0
+      }
+    },
     "fhe_execute_boundary/mixed_chain_creates": {
       "max_ok": 32,
       "first_fail": 33,
@@ -153,6 +179,32 @@
         "cpi_instructions": 25,
         "total_cpi_instruction_data_bytes": 1029,
         "max_cpi_instruction_data_bytes": 549
+      }
+    },
+    "fhe_execute_boundary/reduction_heavy": {
+      "max_ok": 4,
+      "first_fail": 5,
+      "limited_by": "heap",
+      "cost_at_max_ok": {
+        "compute_units": 59757,
+        "unique_accounts": 5,
+        "instruction_data_bytes": 433,
+        "cpi_instructions": 0,
+        "total_cpi_instruction_data_bytes": 0,
+        "max_cpi_instruction_data_bytes": 0
+      }
+    },
+    "fhe_execute_boundary/subject_heavy_creates": {
+      "max_ok": 21,
+      "first_fail": 22,
+      "limited_by": "instruction_trace",
+      "cost_at_max_ok": {
+        "compute_units": 323787,
+        "unique_accounts": 26,
+        "instruction_data_bytes": 2111,
+        "cpi_instructions": 63,
+        "total_cpi_instruction_data_bytes": 1260,
+        "max_cpi_instruction_data_bytes": 36
       }
     }
   },
