@@ -510,13 +510,21 @@ pub fn effective_main_block_bench_lto() -> Result<&'static str, String> {
         "main_block_baseline requires CARGO_PROFILE_BENCH_LTO=false from its isolated Make target"
             .to_owned()
     })?;
+    // `cargo bench` builds the benchmark target with the bench profile but its
+    // dependencies with the release profile, and this workspace sets fat LTO
+    // there. Requiring only the bench profile would record "no LTO" for a run
+    // whose entire dependency graph — tfhe included — was linked with it.
+    let cargo_release_lto = std::env::var("CARGO_PROFILE_RELEASE_LTO").map_err(|_| {
+        "main_block_baseline requires CARGO_PROFILE_RELEASE_LTO=false: bench dependencies build under the release profile"
+            .to_owned()
+    })?;
     let recorded_lto = std::env::var("FHEVM_BENCH_EFFECTIVE_LTO").map_err(|_| {
         "main_block_baseline requires FHEVM_BENCH_EFFECTIVE_LTO=false for artifact provenance"
             .to_owned()
     })?;
-    if cargo_profile_lto != "false" || recorded_lto != "false" {
+    if cargo_profile_lto != "false" || cargo_release_lto != "false" || recorded_lto != "false" {
         return Err(format!(
-            "main_block_baseline requires disabled bench LTO, got CARGO_PROFILE_BENCH_LTO={cargo_profile_lto:?}, FHEVM_BENCH_EFFECTIVE_LTO={recorded_lto:?}"
+            "main_block_baseline requires disabled LTO for the benchmark and its dependencies, got CARGO_PROFILE_BENCH_LTO={cargo_profile_lto:?}, CARGO_PROFILE_RELEASE_LTO={cargo_release_lto:?}, FHEVM_BENCH_EFFECTIVE_LTO={recorded_lto:?}"
         ));
     }
     Ok("false")

@@ -139,6 +139,14 @@ tables and a residual processed-DCID backlog. Topology assertions still hold
 (they are scoped by randomized transaction IDs), but the timings are not
 comparable to CI, which always recreates.
 
+The reportable targets build without LTO, for the benchmark and for its
+dependencies. `cargo bench` compiles the benchmark target with the `bench`
+profile but its dependencies with `release`, where this workspace sets fat LTO,
+so disabling it for one profile alone both left the dependency graph — tfhe
+included — linked with LTO and recorded the opposite in the run artifact.
+Disabling it for both is what makes `bench_lto` true, and it is most of the
+build time.
+
 A failing scenario does not abort the suite; the remaining scenarios still run
 and the target exits non-zero at the end. `BENCH_ONE_SHOT_SCENARIOS="a b"`
 restricts the run to a subset of `BENCH_ONE_SHOT_CANONICAL_SCENARIOS` (an empty
