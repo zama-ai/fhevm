@@ -928,6 +928,19 @@ async fn run_main_block_one_shot() -> Result<(), Box<dyn std::error::Error>> {
         "log_level": utils::benchmark_log_level()?.to_string(),
     });
     let mut app = setup_test_app().await?;
+    // Read the key's parameters before staging, so the record costs nothing
+    // inside the measured window.
+    let bench_parameters = {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(app.db_url())
+            .await?;
+        utils::atomic_u64_bench_params_json(
+            &pool,
+            &format!("erc20::transfer::main_block_one_shot::{}", scenario.name),
+        )
+        .await?
+    };
     let result: Result<MainBlockOneShotOutcome, Box<dyn std::error::Error>> = async {
         let listener_db = listener_event_db(&app).await?;
         if scenario.workload == MainBlockWorkload::Auction {
@@ -1135,6 +1148,9 @@ async fn run_main_block_one_shot() -> Result<(), Box<dyn std::error::Error>> {
             })
         } else { serde_json::Value::Null },
         "dispatch": dispatch,
+        // The parameter record reported points are stored under. The workload's
+        // own facts stay in this artifact and in the reported test name.
+        "bench_parameters": bench_parameters,
         "terminal_handle_count": outcome.terminal_handle_count,
         "computation_count": outcome.computation_count,
         "dependence_chain_count": outcome.dependence_chain_count,

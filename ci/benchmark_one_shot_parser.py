@@ -200,53 +200,26 @@ def _create_point(value, test_name, bench_type, params, display_name):
 
 def scenario_parameters(content):
     """
-    Flatten the artifact facts that qualify a measurement into Slab parameters.
+    Parameters to report the scenario's points under.
+
+    Points are stored against a typed parameter record — bit size, crypto
+    parameter alias and operand type are columns, not free-form keys — so a
+    one-shot run reports the same record every other benchmark does, flattened
+    the way ``benchmark_parser.py`` flattens it: the display name and operator
+    type are carried on the point itself, and the crypto parameters sit at the
+    same level as the rest. The workload's own facts are in the run artifact and
+    in the test name.
 
     :param content: parsed artifact content as :class:`dict`
 
     :return: :class:`dict` of parameters
     """
-    result = content["result"]
-    topology = result["transfer_topology"]
-    dispatch = result["dispatch"]
-    build = content["build"]
-    parameters = {
-        "scenario": result["scenario"],
-        "topology": result["topology"],
-        "worker_semantics": result["worker_semantics"],
-        "primary_metric": result["measurement_methodology"]["primary_metric"],
-        "transfer_count": result["logical_block"]["transfer_count"],
-        "l1_block_count": result["blocks_committed"],
-        "operations_per_transfer": topology["operations_per_transfer_count"],
-        "dependence_chain_count": result["dependence_chain_count"],
-        "dependent_transfers_per_chain": topology["dependent_transfers_per_chain"],
-        "transaction_identity": topology["transaction_identity"],
-        "transaction_id_count": topology["transaction_id_count"],
-        "cross_transaction_balance_dependency_edge_count": topology[
-            "same_block_cross_transaction_balance_dependency_edge_count"
-        ],
-        "dependence_lag_l1_blocks": topology["dependence_lag_l1_blocks"],
-        "computation_count": result["computation_count"],
-        "terminal_handle_count": result["terminal_handle_count"],
-        "work_items_batch_size": dispatch["work_items_batch_size"],
-        "dependence_chains_per_batch": dispatch["dependence_chains_per_batch"],
-        "dcid_batch_execution": dispatch["dcid_batch_execution"],
-        # Artifacts written before the adaptive window existed carry no such key,
-        # and those runs could not have used it: report the setting they ran
-        # with rather than a null that would group apart from fresh points.
-        "dcid_adaptive_batch_execution": dispatch.get(
-            "dcid_adaptive_batch_execution", False
-        ),
-        # At INFO the listener logs every ingested event, inside the window the
-        # traffic scenarios measure, so runs at different levels are not
-        # comparable. Artifacts written before this was recorded ran at INFO.
-        "log_level": dispatch.get("log_level", "info"),
-        "backend": build["backend"],
-        "features": ",".join(build["features"]),
-        "bench_lto": build["bench_lto"],
-    }
-    # A parameter with no value is not a value: an inapplicable one (a lag on a
-    # single-block scenario) is better absent than null.
+    parameters = dict(content["result"]["bench_parameters"])
+    parameters.pop("display_name", None)
+    parameters.pop("operator_type", None)
+    crypto_parameters = parameters.pop("crypto_parameters", None)
+    if crypto_parameters:
+        parameters.update(crypto_parameters)
     return {name: value for name, value in parameters.items() if value is not None}
 
 

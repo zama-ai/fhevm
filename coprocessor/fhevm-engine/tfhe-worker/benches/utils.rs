@@ -1442,6 +1442,56 @@ pub fn write_to_json<
     fs::write(params_directory, serde_json::to_string(&record).unwrap()).unwrap();
 }
 
+/// The Criterion parameter record for this benchmark's key, as JSON.
+///
+/// Reported points carry these parameters wherever they are stored, and the
+/// store types them: bit size, crypto parameter alias and operand type are
+/// columns, not free-form keys. A one-shot run therefore has to describe itself
+/// with the same record every other benchmark does, rather than with the
+/// workload facts alone — those stay in the test name and the run artifact.
+pub async fn atomic_u64_bench_params_json(
+    pool: &PgPool,
+    display_name: &str,
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    let db_key_cache = fhevm_engine_common::db_keys::DbKeyCache::new(100)?;
+    let key = db_key_cache.fetch_latest_from_pool(pool).await?;
+    let params = key
+        .cks
+        .ok_or_else(|| std::io::Error::other("latest key is missing cks"))?
+        .computation_parameters();
+    Ok(serde_json::to_value(atomic_u64_parameters_record(
+        params.into(),
+        display_name,
+    ))?)
+}
+
+fn atomic_u64_parameters_record(
+    params: CryptoParametersRecord<u64>,
+    display_name: &str,
+) -> BenchmarkParametersRecord<u64> {
+    BenchmarkParametersRecord {
+        display_name: display_name.to_owned(),
+        crypto_parameters_alias: String::new(),
+        crypto_parameters: params.to_owned(),
+        message_modulus: params.message_modulus,
+        carry_modulus: params.carry_modulus,
+        ciphertext_modulus: 64,
+        bit_size: 64,
+        polynomial_multiplication: PolynomialMultiplication::Fft,
+        precision: (params.message_modulus.unwrap_or(2) as u32).ilog2(),
+        error_probability: 2f64.powf(-41.0),
+        integer_representation: IntegerRepresentation::Radix,
+        decomposition_basis: vec![],
+        pbs_algorithm: None,
+        // The worker executes a scheduled batch across its own threads, over
+        // ciphertext operands.
+        execution_type: ExecutionType::Parallel,
+        key_set_type: KeySetType::Single,
+        operand_type: OperandType::CipherText,
+        operator_type: OperatorType::Atomic,
+    }
+}
+
 pub async fn write_atomic_u64_bench_params(
     pool: &PgPool,
     bench_id: &str,
