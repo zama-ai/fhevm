@@ -195,23 +195,15 @@ impl PersistentOutput {
         self
     }
 
+    /// One clone, then the moving path below — so the two spellings cannot validate or bind
+    /// differently.
     pub fn binding(&self) -> Result<PersistentOutputBinding> {
-        validate_encrypted_value_id(&self.key)?;
-        validate_subjects(&self.subjects)?;
-        Ok(PersistentOutputBinding {
-            encrypted_value: self.key.address(),
-            domain: self.key.domain,
-            encrypted_value_account_authority: self.key.encrypted_value_account_authority,
-            label: self.key.label.bytes(),
-            subjects: self.subjects.clone(),
-            previous: self.previous.clone(),
-            make_public: self.make_public,
-        })
+        self.clone().into_binding()
     }
 
     /// [`binding`](Self::binding) for the lowering path, which owns the output: the subject list
     /// and previous state move instead of being cloned, so lowering a persistent output
-    /// allocates nothing for data the app already built. Same validation as `binding`.
+    /// allocates nothing for data the app already built.
     pub(crate) fn into_binding(self) -> Result<PersistentOutputBinding> {
         validate_encrypted_value_id(&self.key)?;
         validate_subjects(&self.subjects)?;

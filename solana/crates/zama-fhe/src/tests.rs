@@ -297,7 +297,8 @@ fn finish_preflights_lowered_transient_order_and_account_uniqueness() {
         output_fhe_type: FheType::UINT64.byte(),
         output: FheExecuteOutput::Transient,
     });
-    builder.produced_types = vec![FheType::UINT64.byte(), FheType::UINT64.byte()];
+    builder.produced_types.push(FheType::UINT64.byte());
+    builder.produced_types.push(FheType::UINT64.byte());
 
     assert_eq!(
         builder.finish().unwrap_err(),
@@ -1528,22 +1529,25 @@ fn rejects_more_than_max_ops() {
 #[test]
 fn step_tables_rollback_undoes_promotions_and_appends() {
     let shared = Pubkey::new_unique();
-    let mut remaining_accounts = vec![ExecutionAccountMeta::readonly(
+    let mut remaining_accounts = crate::heap_tally::TalliedVec::new();
+    remaining_accounts.push(ExecutionAccountMeta::readonly(
         shared,
         ExecutionAccountPurpose::PersistentInputAcl,
-    )];
-    let mut dictionary = vec![handle(1)];
-    let mut persistent_producers = vec![Pubkey::new_unique()];
+    ));
+    let mut dictionary = crate::heap_tally::TalliedVec::new();
+    dictionary.push(handle(1));
+    let mut persistent_producers = crate::heap_tally::TalliedVec::new();
+    persistent_producers.push(Pubkey::new_unique());
     let accounts_before = remaining_accounts.clone();
     let dictionary_before = dictionary.clone();
     let producers_before = persistent_producers.clone();
 
-    let mut tally = 0;
+    let mut explicit_bytes = 0;
     let mut tables = StepTables::open(
         &mut remaining_accounts,
         &mut dictionary,
         &mut persistent_producers,
-        &mut tally,
+        &mut explicit_bytes,
     );
     // Promote the same entry twice — first writable, then signer — so undoing in the wrong order
     // would leave the entry with the flags the first promotion set.
@@ -1577,6 +1581,7 @@ fn step_tables_rollback_undoes_promotions_and_appends() {
     assert_eq!(tables.dictionary_index(handle(2)).unwrap(), 1);
     assert_eq!(tables.dictionary_index(handle(1)).unwrap(), 0);
     tables.rollback();
+    drop(tables);
 
     assert_eq!(remaining_accounts, accounts_before);
     assert_eq!(dictionary, dictionary_before);

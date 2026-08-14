@@ -8,24 +8,26 @@
 //!
 //! 1. **Building** the execution — lowering interns into the builder's own tables.
 //! 2. **Invoking** it — `invoke_execution_signed_resolved` stamps the final account count into the
-//!    args in place and serializes the whole packet once, into a right-sized buffer.
+//!    args in place, serializes the whole packet once into a right-sized buffer, resolves the
+//!    dynamic accounts, and assembles the CPI account tables.
 //!
 //! Measuring only the build is how the first version of this test reported a budget the runtime
-//! does not have: the build alone fits comfortably where build plus packet does not. Both phases
-//! are counted here, with a global allocator that models a never-freeing bump region — every
-//! request tallied, every deallocation ignored.
+//! does not have: the build alone fits comfortably where the whole instruction does not. Every
+//! phase is counted here, with a global allocator that models a never-freeing bump region —
+//! every request tallied, every deallocation ignored — and `finish` charges all of it against
+//! the budget: the build tally, the exact packet, and the invoke-side table model
+//! (`invoke_table_heap_bytes`), each proven against the counting allocator by its own test
+//! below. The only cost left to the [`crate::cost::APP_HEAP_RESERVE_BYTES`] reserve is what the
+//! builder genuinely cannot see: Anchor's deserialization of the instruction's accounts before
+//! any of this runs, and the app's own allocations. The at-cap dep-chain specimen
+//! (`runtime-tests/tests/dep_chain_mollusk.rs`) exercises those for real under SBF at full
+//! depth.
 //!
 //! What is measured is a *matrix of buildable shapes*, not one worst case, because the builder's
 //! typed ceilings shape what can exist at all: the instruction-trace check caps persistent
 //! creates at twenty, and the CPI packet check caps attestation-heavy executions well below the
 //! step cap. Every shape the builder admits must fit — that is the claim the single step ceiling
 //! rests on — and the fit test below asserts it for each row of the matrix.
-//!
-//! Two smaller costs sit on top of the numbers this produces: `resolve_accounts`'s meta and info
-//! vectors, and Anchor's own deserialization of the instruction's accounts before any of this
-//! runs. They are why the fit asserted here keeps its multi-KB slack. The at-cap dep-chain
-//! specimen (`runtime-tests/tests/dep_chain_mollusk.rs`) exercises them for real under SBF at
-//! full depth.
 //!
 //! Counted on the host rather than under SBF because the quantity that regresses — bytes
 //! requested per step — is the same in both places, and here it can be attributed to a phase.
@@ -226,6 +228,53 @@ fn persist_shape_data(
     (input, outputs)
 }
 
+/// A full-depth all-update execution whose outputs share one audience. The shared subjects
+/// intern once in the dictionary, so the build stays cheap — but every update ships its
+/// previous state (handle plus the full subject list) inline in the packet, which is what
+/// makes this the shape that outgrows the CPI data limit before it outgrows the heap budget.
+fn shared_audience_update_shape(
+    outputs: usize,
+    subjects_per_output: usize,
+) -> (Uint64Handle, Vec<PersistentOutput>) {
+    let authority = Pubkey::new_unique();
+    let domain = Domain::new(Pubkey::new_unique());
+    let input = Uint64Handle::persistent(
+        balance_handle(1),
+        EncryptedValueId::new(domain, authority, EncryptedValueLabel::new([0xfe; 32])),
+    )
+    .expect("input handle");
+    let audience: Vec<Pubkey> = (0..subjects_per_output)
+        .map(|subject| {
+            let mut key = [0u8; 32];
+            key[0] = 0x70;
+            key[1] = subject as u8 + 1;
+            key[31] = 1;
+            Pubkey::new_from_array(key)
+        })
+        .collect();
+    let outputs = (0..outputs)
+        .map(|index| {
+            let id = EncryptedValueId::new(
+                domain,
+                authority,
+                EncryptedValueLabel::new([index as u8; 32]),
+            );
+            let current = zama_host::EncryptedValue {
+                domain: domain.pubkey(),
+                encrypted_value_account_authority: authority,
+                label: [index as u8; 32],
+                current_handle: balance_handle(0xB0 + index as u8),
+                subjects: audience.clone(),
+                leaf_count: 0,
+                peaks: Vec::new(),
+                bump: 0,
+            };
+            PersistentOutput::update(id, audience.clone(), &current)
+        })
+        .collect();
+    (input, outputs)
+}
+
 /// The chain shape at full depth with the first `outputs.len()` steps writing persistent
 /// outputs and the rest staying transient, the value threading through all of them. With one
 /// create this is the dep-chain / load-smoke shape; with `MAX_BUILDABLE_CREATES` creates it is
@@ -316,6 +365,66 @@ fn persist_shape(
 ) -> impl for<'id> FnOnce(&mut FheExecutionBuilder<'id>) -> crate::Result<()> {
     let (input, outputs) = persist_shape_data(kind, outputs, subjects);
     chain_with_outputs(steps, input, outputs)
+}
+
+/// The invariant #61 counterexample shape: `creates` public outputs that all grant the same
+/// eight-subject audience. The shared subjects intern once in the dictionary, so the app-side
+/// ceilings price this shape like a narrow one — while the host materializes the audience per
+/// created account in its own CPI frame.
+fn shared_audience_public_creates_shape(
+    creates: usize,
+) -> impl for<'id> FnOnce(&mut FheExecutionBuilder<'id>) -> crate::Result<()> {
+    let authority = Pubkey::new_unique();
+    let domain = Domain::new(Pubkey::new_unique());
+    let input = Uint64Handle::persistent(
+        balance_handle(1),
+        EncryptedValueId::new(domain, authority, EncryptedValueLabel::new([0xfd; 32])),
+    )
+    .expect("input handle");
+    let audience: Vec<Pubkey> = (0..zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS)
+        .map(|subject| Pubkey::new_from_array([0x60 + subject as u8; 32]))
+        .collect();
+    let outputs = (0..creates)
+        .map(|index| {
+            let id = EncryptedValueId::new(
+                domain,
+                authority,
+                EncryptedValueLabel::new([index as u8; 32]),
+            );
+            PersistentOutput::create(id, audience.clone()).with_make_public(true)
+        })
+        .collect();
+    chain_with_outputs(MAX_FHE_EXECUTION_STEPS, input, outputs)
+}
+
+/// Invariant #61's builder-side pin: `build()` admits the shared-audience eight-subject
+/// `make_public` shape all the way to the trace-capped twenty creates — including the 16–20
+/// band the host's own CPI frame cannot hold (the measured wall is 15, pinned by
+/// `fhe_execute_boundary/subject_heavy_public_creates` in `runtime-tests`). If the app-side
+/// model ever learns to reject this shape, this test fails and both #61 and the sweep's
+/// documentation must move together; until then the 16–20 band is the documented gap between
+/// `build`'s admission and the host's survival — fhevm-internal#1872.
+#[test]
+fn the_builder_admits_what_the_host_heap_cannot_hold() {
+    for creates in [15, 16, MAX_BUILDABLE_CREATES] {
+        FheExecution::build(
+            ExecutionEncryptedValueAccountAuthority::new(Pubkey::new_unique()),
+            shared_audience_public_creates_shape(creates),
+        )
+        .unwrap_or_else(|error| {
+            panic!("{creates} shared-audience public creates should build: {error:?}")
+        });
+    }
+    // One past the trace cap is where the app-side ceilings finally stop the shape — the gap
+    // is exactly the 16–20 band, not open-ended.
+    assert_eq!(
+        FheExecution::build(
+            ExecutionEncryptedValueAccountAuthority::new(Pubkey::new_unique()),
+            shared_audience_public_creates_shape(MAX_BUILDABLE_CREATES + 1),
+        )
+        .unwrap_err(),
+        crate::FheExecutionBuildError::ExceedsInstructionTraceLimit,
+    );
 }
 
 /// The app-side shape matrix: every named shape the fit test asserts and the table prints.
@@ -567,14 +676,31 @@ fn the_shapes_past_each_ceiling_are_rejected_with_their_own_error() {
         ))),
         crate::FheExecutionBuildError::ExceedsBuildHeapBudget,
     );
-    // A full-depth all-update execution with wide audiences serializes past what a CPI may
-    // carry (updates ship their previous state inline).
+    // A full-depth all-update execution with wide audiences outgrows the budget during the
+    // build itself — its dictionary doubles past the up-front reservation — so the per-step
+    // gate rejects it at the step that crosses, before `finish` would also find its packet
+    // oversized.
     assert_eq!(
         build(Box::new(persist_shape(
             PersistKind::Update,
             MAX_FHE_EXECUTION_STEPS,
             MAX_FHE_EXECUTION_STEPS,
             6,
+        ))),
+        crate::FheExecutionBuildError::ExceedsBuildHeapBudget,
+    );
+    // A full-depth all-update execution whose outputs share one wide audience keeps the build
+    // cheap (the audience interns once) but ships every output's previous state inline — the
+    // packet ceiling, first known at `finish`, is the one that fires.
+    let (input, outputs) = shared_audience_update_shape(
+        MAX_FHE_EXECUTION_STEPS,
+        zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS,
+    );
+    assert_eq!(
+        build(Box::new(chain_with_outputs(
+            MAX_FHE_EXECUTION_STEPS,
+            input,
+            outputs,
         ))),
         crate::FheExecutionBuildError::ExceedsCpiInstructionDataLimit,
     );
@@ -604,9 +730,9 @@ fn debug_tally_breakdown() {
     println!(
         "new: measured={} tally={}",
         counted_bytes() - before,
-        builder.requested_heap_bytes
+        builder.requested_heap_bytes()
     );
-    let (m0, t0) = (counted_bytes(), builder.requested_heap_bytes);
+    let (m0, t0) = (counted_bytes(), builder.requested_heap_bytes());
     let mut value = Encrypted::from(input);
     value = builder
         .add(value, Scalar::<Uint<64>>::u64(1), Output::transient())
@@ -614,9 +740,9 @@ fn debug_tally_breakdown() {
     println!(
         "transient add: measured={} tally={}",
         counted_bytes() - m0,
-        builder.requested_heap_bytes - t0
+        builder.requested_heap_bytes() - t0
     );
-    let (m1, t1) = (counted_bytes(), builder.requested_heap_bytes);
+    let (m1, t1) = (counted_bytes(), builder.requested_heap_bytes());
     let mut outputs = outputs.into_iter();
     builder
         .add(
@@ -628,9 +754,9 @@ fn debug_tally_breakdown() {
     println!(
         "create add: measured={} tally={}",
         counted_bytes() - m1,
-        builder.requested_heap_bytes - t1
+        builder.requested_heap_bytes() - t1
     );
-    let (m2, t2) = (counted_bytes(), builder.requested_heap_bytes);
+    let (m2, t2) = (counted_bytes(), builder.requested_heap_bytes());
     let execution = builder.finish().unwrap();
     println!(
         "finish: measured={} tally={}",
@@ -657,7 +783,7 @@ fn print_measurement_table() {
 
 /// The invoke-side model measured against the real code: for every admitted frontier shape,
 /// `resolve_accounts` plus the CPI account-table assembly request exactly the bytes
-/// [`crate::cost::invoke_table_heap_bytes`] charged at `build()`. Runs under the `cpi` feature
+/// [`crate::heap_tally::invoke_table_heap_bytes`] charged at `build()`. Runs under the `cpi` feature
 /// (workspace builds unify it in); Anchor codegen changing its allocation pattern, a new
 /// allocation in resolution, or a host account-list change all fail here.
 #[cfg(feature = "cpi")]
@@ -709,7 +835,7 @@ fn the_invoke_model_matches_a_counting_allocator_for_every_admitted_shape() {
             .map(|meta| meta.pubkey)
             .collect();
         let authority_keys: Vec<Pubkey> = execution.output_authorities().collect();
-        let fixed_keys: Vec<Pubkey> = (0..crate::cost::FHE_EXECUTE_FIXED_CPI_ACCOUNTS)
+        let fixed_keys: Vec<Pubkey> = (0..crate::heap_tally::FHE_EXECUTE_FIXED_CPI_ACCOUNTS)
             .map(|_| Pubkey::new_unique())
             .collect();
         assert_eq!(dynamic_keys.len(), cost.dynamic_accounts, "{name}");

@@ -32,8 +32,10 @@ mod cpi;
 mod execution;
 #[cfg(test)]
 mod heap_budget;
+mod heap_tally;
 mod lower;
 mod operand;
+mod ops;
 #[cfg(test)]
 mod tests;
 mod types;

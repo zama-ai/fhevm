@@ -98,34 +98,6 @@ impl ExecutionAccountMeta {
         }
     }
 
-    /// Widens this entry so it also satisfies `required`, returning the record that undoes it.
-    /// The record lives next to the mutation on purpose: it is only complete because `promote`
-    /// does exactly two things — OR the flags and append purposes — so anything added here has to
-    /// be added to [`ExecutionAccountMeta::demote`] in the same edit.
-    pub(crate) fn promote(&mut self, required: Self, tally: &mut usize) -> MetaPromotion {
-        let undo = MetaPromotion {
-            was_writable: self.is_writable,
-            was_signer: self.is_signer,
-            purposes_len: self.purposes.len(),
-        };
-        self.is_writable |= required.is_writable;
-        self.is_signer |= required.is_signer;
-        for purpose in required.purposes {
-            if !self.purposes.contains(&purpose) {
-                crate::cost::tally_push(&self.purposes, tally);
-                self.purposes.push(purpose);
-            }
-        }
-        undo
-    }
-
-    /// Restores the entry to what it was before the [`MetaPromotion`] was taken.
-    pub(crate) fn demote(&mut self, undo: MetaPromotion) {
-        self.is_writable = undo.was_writable;
-        self.is_signer = undo.was_signer;
-        self.purposes.truncate(undo.purposes_len);
-    }
-
     /// Same predicate as [`ExecutionAccountRequirement::requires_dynamic_account`], on the
     /// stored meta directly so resolution never clones a purposes table just to ask.
     pub(crate) fn requires_dynamic_account(&self) -> bool {
@@ -140,14 +112,6 @@ impl ExecutionAccountMeta {
         self.purposes
             .contains(&ExecutionAccountPurpose::PersistentOutputAuthority)
     }
-}
-
-/// What one [`ExecutionAccountMeta::promote`] changed, small enough to record without allocating.
-#[derive(Debug)]
-pub(crate) struct MetaPromotion {
-    was_writable: bool,
-    was_signer: bool,
-    purposes_len: usize,
 }
 
 impl From<&ExecutionAccountMeta> for ExecutionAccountRequirement {
