@@ -515,7 +515,7 @@ export default async function runMigration(ctx: RolloutRunContext) {
     if (migrated !== originalKeyStates[operator]) {
       throw new Error(`operator ${operator} changed existing key identity or legacy bytes: ${migrated}`);
     }
-    if (materialRows[operator]?.keyId !== migrated.split("|")[0]) {
+    if (materialRows[operator]?.existingKeyId !== migrated.split("|")[0]) {
       throw new Error(`operator ${operator} applied material to a different key ID`);
     }
   }
