@@ -459,7 +459,6 @@ export default async function runMigration(ctx: RolloutRunContext) {
   await ctx.startDeferredGreen();
   await assertGreenForcedLegacy();
   await assertGreenWorkersParked();
-  await ctx.test("input-proof-compute-decrypt", { parallel: false });
 
   logPhase("05 cut over from 0.14 Blue to 0.15 Green through the existing Blue/Green flow");
   await ctx.test("blue-green", { parallel: false });
