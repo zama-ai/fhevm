@@ -18,6 +18,9 @@ use crate::contracts::{
     AclContract, BridgeContract, KMSGeneration, ProtocolConfig, TfheContract,
 };
 use crate::database::dependence_chains::dependence_chains;
+use crate::database::synthetic_ops::{
+    synthetic_logs, SyntheticContext, SYNTHETIC_BLOCK_OFFSET,
+};
 use crate::database::tfhe_event_propagate::{
     acl_result_handles, operand_boundary_mask_from_minted, tfhe_result_handle,
     Chain, ChainHash, Database, Handle as EventHandle, LogTfhe,
@@ -356,7 +359,43 @@ pub async fn ingest_block_logs(
     let mut allow_event_count: i32 = 0;
     let mut fhe_event_count: i32 = 0;
 
-    for log in &block_logs.logs {
+    // GCS only: on one designated block of each chain's dry-run window, append a
+    // deterministic synthetic transaction so a quiet chain can still anchor consensus. The
+    // logs go through the normal decode below, so `fhe_event_count`, `is_allowed`, the
+    // dependence chain and `schedule_order` are all derived by the production path. Blue
+    // never injects, so `public` stays untouched. See `database::synthetic_ops`.
+    let synthetic = if db.gcs_mode() {
+        synthetic_logs_for_block(
+            &mut tx,
+            chain_id,
+            block_number,
+            block_hash,
+            *tfhe_contract_address,
+            *acl_contract_address,
+            // Past every real log index in this block. `logs` can be a filtered subset of
+            // the block's logs, so its length is not an upper bound on their indices.
+            block_logs
+                .logs
+                .iter()
+                .filter_map(|log| log.log_index)
+                .max()
+                .map_or(0, |max| max.saturating_add(1)),
+        )
+        .await?
+    } else {
+        vec![]
+    };
+    if !synthetic.is_empty() {
+        info!(
+            chain_id = chain_id.as_u64(),
+            block_number,
+            count = synthetic.len(),
+            gcs_mode = db.gcs_mode(),
+            "GCS: injecting synthetic consensus work into this block"
+        );
+    }
+
+    for log in block_logs.logs.iter().chain(synthetic.iter()) {
         let current_address = Some(log.inner.address);
         let is_acl_address = &current_address == acl_contract_address;
         if acl_contract_address.is_none() || is_acl_address {
@@ -719,6 +758,68 @@ pub async fn ingest_block_logs(
         .await?;
     }
     tx.commit().await
+}
+
+/// Synthetic logs for this block, or empty if it is not the designated one.
+///
+/// GCS-only, and only for the block at `start_block + SYNTHETIC_BLOCK_OFFSET` of *this*
+/// chain's window, while the proposal is still dry-running. Reads the window from
+/// `upgrade_state` inside the ingest transaction — one indexed read per block on the green
+/// listener only.
+///
+/// Everything the derivation consumes (`proposal_id`, chain id, block number) comes from
+/// on-chain data, so every operator produces byte-identical logs. See
+/// `database::synthetic_ops`.
+async fn synthetic_logs_for_block(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    chain_id: ChainId,
+    block_number: u64,
+    block_hash: BlockHash,
+    tfhe_contract_address: Option<Address>,
+    acl_contract_address: Option<Address>,
+    log_index_base: u64,
+) -> Result<Vec<Log>, sqlx::Error> {
+    let Ok(block_number_i64) = i64::try_from(block_number) else {
+        return Ok(vec![]);
+    };
+    let Ok(chain_id_i64) = i64::try_from(chain_id.as_u64()) else {
+        return Ok(vec![]);
+    };
+
+    let row: Option<(Vec<u8>, String, i64)> = sqlx::query_as(
+        "SELECT proposal_id, version, start_block
+           FROM upgrade_state
+          WHERE stack_role = 'GCS'
+            AND status = 'in_progress'
+            AND state IN ('UpgradeActivated', 'DryRunStarted')
+            AND host_chain_id = $1
+            AND proposal_id IS NOT NULL
+            AND version IS NOT NULL
+            AND start_block IS NOT NULL",
+    )
+    .bind(chain_id_i64)
+    .fetch_optional(tx.as_mut())
+    .await?;
+
+    let Some((proposal_id, target_version, start_block)) = row else {
+        return Ok(vec![]);
+    };
+    if block_number_i64 != start_block.saturating_add(SYNTHETIC_BLOCK_OFFSET) {
+        return Ok(vec![]);
+    }
+
+    Ok(synthetic_logs(
+        &SyntheticContext {
+            proposal_id: &proposal_id,
+            target_version: &target_version,
+            chain_id: chain_id.as_u64(),
+            block_number: block_number_i64,
+            block_hash,
+        },
+        tfhe_contract_address,
+        acl_contract_address,
+        log_index_base,
+    ))
 }
 
 /// Channel name the upgrade-controller LISTENs on for `CoprocessorUpgradeProposed` events.
