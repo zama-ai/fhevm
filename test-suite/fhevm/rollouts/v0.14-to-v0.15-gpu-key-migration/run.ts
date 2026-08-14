@@ -252,13 +252,13 @@ const assertActiveImageTag = async (tag: string) => {
   }
 };
 
-const assertGreenSafeguard = async () => {
+const assertGreenForcedLegacy = async () => {
   for (let operator = 0; operator < OPERATOR_COUNT; operator += 1) {
     const prefix = operator === 0 ? "coprocessor-" : `coprocessor${operator}-`;
     for (const worker of KEY_WORKERS) {
       const green = `${prefix}gcs-${worker}`;
-      if (await forcesLegacyServerKey(green)) {
-        throw new Error(`${green} must not receive the force-legacy safeguard`);
+      if (!(await forcesLegacyServerKey(green))) {
+        throw new Error(`${green} must receive the force-legacy safeguard`);
       }
     }
   }
@@ -457,7 +457,7 @@ export default async function runMigration(ctx: RolloutRunContext) {
 
   logPhase("04 start 0.15 Green, still forced to use the legacy representation");
   await ctx.startDeferredGreen();
-  await assertGreenSafeguard();
+  await assertGreenForcedLegacy();
   await assertGreenWorkersParked();
   await ctx.test("input-proof-compute-decrypt", { parallel: false });
 
@@ -521,12 +521,12 @@ export default async function runMigration(ctx: RolloutRunContext) {
       throw new Error(`operator ${operator} applied material to a different key ID`);
     }
   }
-  await assertGreenSafeguard();
+  await assertGreenForcedLegacy();
 
   // The 0.15 release publishes compressed material but keeps serving with the legacy representation.
   const activeRestartedAt = new Date().toISOString();
   await restartActiveKeyWorkers("Green");
-  await assertGreenSafeguard();
+  await assertGreenForcedLegacy();
   await ctx.test("input-proof-compute-decrypt", { parallel: false });
   await assertWorkerRepresentation("Green", "legacy", activeRestartedAt);
 
