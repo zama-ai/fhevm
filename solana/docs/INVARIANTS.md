@@ -142,6 +142,24 @@ ID…).
     `compile_fail` doctest on `FheExecution::build`. One runtime check remains, the
     producer-index bounds check, which protects the wire against hand-built
     args (fhevm-internal#1859 §4).
+61. **[ANTI]** `FheExecution::build` does **not** guarantee the host's side of
+    the CPI survives. `build`'s promise is the app-side instruction (#54); the
+    host runs in its own fresh 32 KB heap frame, and what it allocates there
+    scales with created outputs times subjects per output — the created
+    accounts' subject tables plus the public-outputs event payload — which no
+    app-side number can price: the builder's packet interns a shared audience
+    once in the dictionary, while the host materializes it per created
+    account. The counterexample is pinned from both sides: the builder admits
+    20 shared-audience eight-subject `make_public` creates
+    (`the_builder_admits_what_the_host_heap_cannot_hold` in
+    `solana/crates/zama-fhe/src/heap_budget.rs` builds them `Ok`), and the
+    host's measured wall is 15
+    (`fhe_execute_boundary/subject_heavy_public_creates`: the 16th aborts in
+    the host's CPI frame). Executions in the 16–20 band build cleanly and die
+    on-chain with no error. Until this wall gets a typed policy cap or a
+    host-side heap model (a design decision tracked in fhevm-internal#1872),
+    apps creating many wide-audience public outputs must budget against the
+    sweep, not against `build`'s admission.
 
 ## D. Entry & exit trust
 
@@ -342,10 +360,13 @@ not when the threat model changes.
     close crank retries on the next batch preparation. One composition function
     fills the table and compresses against it, so provisioned and consumed
     membership cannot diverge (`solana/demo-dapp/src/vault`).
-54. **[HOLDS]** An execution `FheExecution::build` returns is one a transaction
-    can actually execute. Four typed ceilings hold that, each an exact
-    function of the execution's shape, each rejected at build time instead of
-    aborting at runtime:
+54. **[HOLDS]** An execution `FheExecution::build` returns is one whose
+    *app-side instruction* fits every wall the builder can see — the step cap,
+    the instruction trace, the CPI packet, and the app's heap frame. Four
+    typed ceilings hold that, each an exact function of the execution's
+    shape, each rejected at build time instead of aborting at runtime. (What
+    `build` deliberately does *not* promise is the host's side of the CPI —
+    see #61.)
     - **Steps** — the host's `MAX_FHE_EXECUTION_STEPS`, the one step ceiling,
       on-chain and off (`TooManySteps`).
     - **Instruction trace** — three system CPIs per created output plus the
@@ -360,16 +381,19 @@ not when the threat model changes.
       1,232 bytes (`ExceedsCpiInstructionDataLimit`).
     - **Build heap** — the builder tallies every byte it requests from the
       allocator (the ~10 KB up-front table reservations, growth past them,
-      per-step operand tables, attestation embeds) and `finish` holds
+      per-step operand tables, attestation embeds) and holds
       build + packet + the invoke-side account tables under
       `BUILD_HEAP_BUDGET_BYTES` (24 KiB), leaving `APP_HEAP_RESERVE_BYTES`
       (8 KiB) of the fixed 32 KB region for what the builder genuinely cannot
       see: Anchor's account deserialization and the app's own allocations
-      (`ExceedsBuildHeapBudget`). The invoke-side term prices
-      `resolve_accounts` plus the CPI meta/info tables as an exact function
-      of the account counts known at `finish`, so an admitted execution's
-      whole lifecycle in the app's CPI frame — build, serialize, resolve,
-      invoke — fits the budget.
+      (`ExceedsBuildHeapBudget`). The build term is gated per committed step —
+      the step that crosses the budget is the one rejected, and the region
+      itself can never be exhausted mid-build — while the packet and
+      invoke-table terms land at `finish`, where they are first known. The
+      invoke-side term prices `resolve_accounts` plus the CPI meta/info
+      tables as an exact function of the account counts, so an admitted
+      execution's whole lifecycle in the app's CPI frame — build, serialize,
+      resolve, invoke — fits the budget.
 
     Lowering an execution never copies the builder's intern tables or the
     app's subject lists (the binding moves them), the packet serializes once
@@ -396,14 +420,7 @@ not when the threat model changes.
     the 55-peak extreme 4), alongside the operand-width axis
     (`fhe_execute_boundary/reduction_heavy`, host heap wall at 5 steps of
     60-operand sums; the builder's budget stops the same shape earlier on the
-    app side). And the host's own CPI frame scales with created outputs times
-    subjects per output — the created accounts' subject tables plus the
-    public-outputs event payload — which the builder cannot price from its
-    side of the boundary: its packet interns a shared audience once while the
-    host materializes it per created account. The
-    `fhe_execute_boundary/subject_heavy_public_creates` sweep pins that wall
-    (15 eight-subject public creates land, 16 abort in the host's CPI frame)
-    where the builder's typed ceilings alone admit 20.
+    app side).
 
 ## I. Roadmap
 
