@@ -129,7 +129,7 @@ impl<'info> PersistentOutput<'info> {
             zama_fhe::PersistentOutput::update(key, subjects, &value)
         }
         .with_make_public(make_public);
-        output.binding().map_err(|error| {
+        output.validate().map_err(|error| {
             msg!("invalid persistent FHE output: {:?}", error);
             error!(ConfidentialTokenError::InvalidFheExecution)
         })?;

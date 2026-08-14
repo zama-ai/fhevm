@@ -195,9 +195,18 @@ impl PersistentOutput {
         self
     }
 
-    /// One clone, then the moving path below — so the two spellings cannot validate or bind
-    /// differently.
+    /// The exact checks [`binding`](Self::binding) and the lowering path run, without
+    /// allocating. On-chain callers that only need the verdict should call this: on the
+    /// never-freeing program heap, the binding they would discard costs real reserve bytes.
+    pub fn validate(&self) -> Result<()> {
+        validate_encrypted_value_id(&self.key)?;
+        validate_subjects(&self.subjects)
+    }
+
+    /// Validate first — the rejecting path allocates nothing — then one clone into the moving
+    /// path below, so the two spellings cannot validate or bind differently.
     pub fn binding(&self) -> Result<PersistentOutputBinding> {
+        self.validate()?;
         self.clone().into_binding()
     }
 
@@ -205,8 +214,7 @@ impl PersistentOutput {
     /// and previous state move instead of being cloned, so lowering a persistent output
     /// allocates nothing for data the app already built.
     pub(crate) fn into_binding(self) -> Result<PersistentOutputBinding> {
-        validate_encrypted_value_id(&self.key)?;
-        validate_subjects(&self.subjects)?;
+        self.validate()?;
         Ok(PersistentOutputBinding {
             encrypted_value: self.key.address(),
             domain: self.key.domain,
