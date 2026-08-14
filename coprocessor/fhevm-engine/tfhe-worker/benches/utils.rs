@@ -207,7 +207,7 @@ async fn start_coprocessor(
     Ok(worker_thread)
 }
 
-fn benchmark_gpu_streams_per_device() -> Result<usize, Box<dyn std::error::Error>> {
+pub fn benchmark_gpu_streams_per_device() -> Result<usize, Box<dyn std::error::Error>> {
     match std::env::var("FHEVM_GPU_STREAMS_PER_DEVICE") {
         Ok(value) => {
             let streams = value.parse::<usize>()?;

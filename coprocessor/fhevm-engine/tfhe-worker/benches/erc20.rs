@@ -926,6 +926,10 @@ async fn run_main_block_one_shot() -> Result<(), Box<dyn std::error::Error>> {
         // Recorded because it is not free: at INFO the listener logs every
         // ingested event, inside the window the traffic scenarios measure.
         "log_level": utils::benchmark_log_level()?.to_string(),
+        // Per device, so a multi-GPU host runs this many times its device
+        // count. Governs how much of a batch a GPU overlaps, which a reported
+        // GPU number cannot be compared without.
+        "gpu_streams_per_device": utils::benchmark_gpu_streams_per_device()?,
     });
     let mut app = setup_test_app().await?;
     // Read the key's parameters before staging, so the record costs nothing
