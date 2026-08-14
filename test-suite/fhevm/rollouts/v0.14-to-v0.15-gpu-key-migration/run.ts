@@ -529,4 +529,8 @@ export default async function runMigration(ctx: RolloutRunContext) {
   await assertGreenSafeguard();
   await ctx.test("input-proof-compute-decrypt", { parallel: false });
   await assertWorkerRepresentation("Green", "legacy", activeRestartedAt);
+
+  logPhase("08 verify normal 0.15 encryption and decryption remain functional");
+  await ctx.test("public-decryption", { parallel: false });
+  await ctx.test("user-decryption", { parallel: false });
 }
