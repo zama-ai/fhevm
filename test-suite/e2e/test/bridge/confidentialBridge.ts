@@ -26,7 +26,7 @@ const BRIDGE_SEND_ABI = [
   'function quote(uint32 dstEid, address srcApp, bytes32 dstApp, bytes payload, bytes32[] handleList, uint64 lzComposeGas) view returns (tuple(uint256 nativeFee, uint256 lzTokenFee) fee)',
 ];
 const LZ_COMPOSE_GAS = 1_000_000n;
-const DECRYPT_TIMEOUT_MS = 180_000;
+const DECRYPT_TIMEOUT_MS = USE_REAL_LZ ? 420_000 : 180_000;
 
 // Per-chain bridge/endpoint addresses: primary chain uses unindexed vars, others HOST_CHAIN_<i>_*.
 const bridgeAddrFor = (i: number) =>
