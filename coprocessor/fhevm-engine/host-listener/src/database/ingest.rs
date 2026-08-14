@@ -14,9 +14,6 @@ use tracing::{error, info, warn};
 
 use crate::cmd::block_history::{BlockHash, BlockSummary};
 use crate::cmd::InfiniteLogIter;
-use crate::contracts::{
-    AclContract, BridgeContract, KMSGeneration, ProtocolConfig, TfheContract,
-};
 use crate::database::dependence_chains::dependence_chains;
 use crate::database::tfhe_event_propagate::{
     acl_result_handles, tfhe_result_handle, Chain, ChainHash, Database, LogTfhe,
@@ -24,6 +21,11 @@ use crate::database::tfhe_event_propagate::{
 use crate::kms_generation::insert_kms_generation_events_tx;
 use crate::kms_generation::metrics::KMS_EVENT_DECODE_FAIL_COUNTER;
 use crate::protocol_config::metrics::PROTOCOL_CONFIG_EVENT_DECODE_FAIL_COUNTER;
+use fhevm_host_bindings::acl::ACL;
+use fhevm_host_bindings::bridge_events::BridgeEvents;
+use fhevm_host_bindings::fhevm_executor::FHEVMExecutor;
+use fhevm_host_bindings::kms_generation::KMSGeneration;
+use fhevm_host_bindings::protocol_config::ProtocolConfig;
 
 pub struct BlockLogs<T> {
     pub logs: Vec<T>,
@@ -263,9 +265,7 @@ pub async fn ingest_block_logs(
         let current_address = Some(log.inner.address);
         let is_acl_address = &current_address == acl_contract_address;
         if acl_contract_address.is_none() || is_acl_address {
-            if let Ok(event) =
-                AclContract::AclContractEvents::decode_log(&log.inner)
-            {
+            if let Ok(event) = ACL::ACLEvents::decode_log(&log.inner) {
                 allow_event_count = allow_event_count.saturating_add(1);
                 let handles = acl_result_handles(&event);
                 for handle in handles {
@@ -279,7 +279,7 @@ pub async fn ingest_block_logs(
         let is_tfhe_address = &current_address == tfhe_contract_address;
         if tfhe_contract_address.is_none() || is_tfhe_address {
             if let Ok(event) =
-                TfheContract::TfheContractEvents::decode_log(&log.inner)
+                FHEVMExecutor::FHEVMExecutorEvents::decode_log(&log.inner)
             {
                 fhe_event_count = fhe_event_count.saturating_add(1);
                 let log = LogTfhe {
@@ -324,12 +324,12 @@ pub async fn ingest_block_logs(
         let is_bridge_address = &current_address == confidential_bridge_address;
         if is_bridge_address {
             if let Ok(event) =
-                BridgeContract::BridgeContractEvents::decode_log(&log.inner)
+                BridgeEvents::BridgeEventsEvents::decode_log(&log.inner)
             {
                 // A FallbackGrantedPlaintext becomes a synthetic TrivialEncrypt
                 // computation so the normal pipeline materializes the ciphertext.
                 // PBS is enqueued so its ct128/digest get computed and published.
-                if let BridgeContract::BridgeContractEvents::FallbackGrantedPlaintext(e) =
+                if let BridgeEvents::BridgeEventsEvents::FallbackGrantedPlaintext(e) =
                     &event.data
                 {
                     let dst_handle = e.dstHandle;
@@ -383,8 +383,8 @@ pub async fn ingest_block_logs(
                     tfhe_event_log.push(LogTfhe {
                         event: alloy::primitives::Log {
                             address: log.inner.address,
-                            data: TfheContract::TfheContractEvents::TrivialEncrypt(
-                                TfheContract::TrivialEncrypt {
+                            data: FHEVMExecutor::FHEVMExecutorEvents::TrivialEncrypt(
+                                FHEVMExecutor::TrivialEncrypt {
                                     caller: Address::ZERO,
                                     pt: e.plaintext,
                                     toType: dst_handle.0[30],
@@ -626,9 +626,11 @@ async fn handle_protocol_config_log(
                 };
                 notify_coprocessor_upgrade_proposed(tx, chain_id, proposed, proposal_block).await?;
             }
-            other => {
+            _ => {
+                // ProtocolConfigEvents has no Debug impl; topic0 identifies
+                // the unhandled variant.
                 warn!(
-                    ?other,
+                    topic0 = ?log.topic0(),
                     block_number = ?log.block_number,
                     tx_hash = ?log.transaction_hash,
                     log_index = ?log.log_index,

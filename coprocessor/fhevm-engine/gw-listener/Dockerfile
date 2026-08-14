@@ -55,6 +55,7 @@ COPY coprocessor/fhevm-engine ./coprocessor/fhevm-engine
 COPY coprocessor/proto ./coprocessor/proto
 COPY gateway-contracts/contracts/ ./gateway-contracts/contracts/
 COPY gateway-contracts/rust_bindings/ ./gateway-contracts/rust_bindings
+COPY host-contracts/rust_bindings ./host-contracts/rust_bindings
 COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
 COPY --from=contract_builder /app/gateway-contracts/artifacts/contracts /app/gateway-contracts/artifacts/contracts
 # Solana path-dependencies. `cargo build -p <crate>` still loads EVERY

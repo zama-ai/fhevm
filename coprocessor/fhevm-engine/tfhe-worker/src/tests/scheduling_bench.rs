@@ -2,8 +2,8 @@ use crate::tests::event_helpers::{
     allow_handle, decrypt_handles, insert_event, insert_trivial_encrypt, next_handle, scalar_flag,
     scalar_u128_handle, setup_event_harness, wait_until_computed, zero_address,
 };
-use host_listener::contracts::TfheContract;
-use host_listener::contracts::TfheContract::TfheContractEvents;
+use fhevm_host_bindings::fhevm_executor::FHEVMExecutor;
+use fhevm_host_bindings::fhevm_executor::FHEVMExecutor::FHEVMExecutorEvents;
 use serial_test::serial;
 
 fn sample_count(default_count: usize) -> usize {
@@ -40,7 +40,7 @@ async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
             &harness.listener_db,
             &mut tx,
             tx_id,
-            TfheContractEvents::FheGe(TfheContract::FheGe {
+            FHEVMExecutorEvents::FheGe(FHEVMExecutor::FheGe {
                 caller,
                 lhs: bals,
                 rhs: trxa,
@@ -58,7 +58,7 @@ async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
             &harness.listener_db,
             &mut tx,
             tx_id,
-            TfheContractEvents::FheAdd(TfheContract::FheAdd {
+            FHEVMExecutorEvents::FheAdd(FHEVMExecutor::FheAdd {
                 caller,
                 lhs: bald,
                 rhs: trxa,
@@ -76,7 +76,7 @@ async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
             &harness.listener_db,
             &mut tx,
             tx_id,
-            TfheContractEvents::FheIfThenElse(TfheContract::FheIfThenElse {
+            FHEVMExecutorEvents::FheIfThenElse(FHEVMExecutor::FheIfThenElse {
                 caller,
                 control: has_funds,
                 ifTrue: new_to_target,
@@ -94,7 +94,7 @@ async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
             &harness.listener_db,
             &mut tx,
             tx_id,
-            TfheContractEvents::FheSub(TfheContract::FheSub {
+            FHEVMExecutorEvents::FheSub(FHEVMExecutor::FheSub {
                 caller,
                 lhs: bals,
                 rhs: trxa,
@@ -112,7 +112,7 @@ async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
             &harness.listener_db,
             &mut tx,
             tx_id,
-            TfheContractEvents::FheIfThenElse(TfheContract::FheIfThenElse {
+            FHEVMExecutorEvents::FheIfThenElse(FHEVMExecutor::FheIfThenElse {
                 caller,
                 control: has_funds,
                 ifTrue: new_from_target,
@@ -170,7 +170,7 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
             &harness.listener_db,
             &mut tx,
             tx_id,
-            TfheContractEvents::FheGe(TfheContract::FheGe {
+            FHEVMExecutorEvents::FheGe(FHEVMExecutor::FheGe {
                 caller,
                 lhs: bals,
                 rhs: trxa,
@@ -188,7 +188,7 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
             &harness.listener_db,
             &mut tx,
             tx_id,
-            TfheContractEvents::Cast(TfheContract::Cast {
+            FHEVMExecutorEvents::Cast(FHEVMExecutor::Cast {
                 caller,
                 ct: has_funds,
                 toType: crate::tests::event_helpers::to_ty(5),
@@ -205,7 +205,7 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
             &harness.listener_db,
             &mut tx,
             tx_id,
-            TfheContractEvents::FheMul(TfheContract::FheMul {
+            FHEVMExecutorEvents::FheMul(FHEVMExecutor::FheMul {
                 caller,
                 lhs: trxa,
                 rhs: cast_funds,
@@ -223,7 +223,7 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
             &harness.listener_db,
             &mut tx,
             tx_id,
-            TfheContractEvents::FheAdd(TfheContract::FheAdd {
+            FHEVMExecutorEvents::FheAdd(FHEVMExecutor::FheAdd {
                 caller,
                 lhs: bald,
                 rhs: selected,
@@ -241,7 +241,7 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
             &harness.listener_db,
             &mut tx,
             tx_id,
-            TfheContractEvents::FheSub(TfheContract::FheSub {
+            FHEVMExecutorEvents::FheSub(FHEVMExecutor::FheSub {
                 caller,
                 lhs: bals,
                 rhs: selected,
@@ -301,7 +301,7 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
             &harness.listener_db,
             &mut tx,
             tx_id,
-            TfheContractEvents::FheGe(TfheContract::FheGe {
+            FHEVMExecutorEvents::FheGe(FHEVMExecutor::FheGe {
                 caller,
                 lhs: bals,
                 rhs: trxa,
@@ -319,7 +319,7 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
             &harness.listener_db,
             &mut tx,
             tx_id,
-            TfheContractEvents::Cast(TfheContract::Cast {
+            FHEVMExecutorEvents::Cast(FHEVMExecutor::Cast {
                 caller,
                 ct: has_funds,
                 toType: crate::tests::event_helpers::to_ty(5),
@@ -336,7 +336,7 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
             &harness.listener_db,
             &mut tx,
             tx_id,
-            TfheContractEvents::FheMul(TfheContract::FheMul {
+            FHEVMExecutorEvents::FheMul(FHEVMExecutor::FheMul {
                 caller,
                 lhs: trxa,
                 rhs: cast_funds,
@@ -354,7 +354,7 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
             &harness.listener_db,
             &mut tx,
             tx_id,
-            TfheContractEvents::FheAdd(TfheContract::FheAdd {
+            FHEVMExecutorEvents::FheAdd(FHEVMExecutor::FheAdd {
                 caller,
                 lhs: bald,
                 rhs: selected,
@@ -372,7 +372,7 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
             &harness.listener_db,
             &mut tx,
             tx_id,
-            TfheContractEvents::FheSub(TfheContract::FheSub {
+            FHEVMExecutorEvents::FheSub(FHEVMExecutor::FheSub {
                 caller,
                 lhs: bals,
                 rhs: selected,
@@ -429,7 +429,7 @@ async fn counter_increment() -> Result<(), Box<dyn std::error::Error>> {
             &harness.listener_db,
             &mut tx,
             tx_id,
-            TfheContractEvents::FheAdd(TfheContract::FheAdd {
+            FHEVMExecutorEvents::FheAdd(FHEVMExecutor::FheAdd {
                 caller,
                 lhs: counter,
                 rhs: scalar_u128_handle(7),
@@ -491,7 +491,7 @@ async fn tree_reduction() -> Result<(), Box<dyn std::error::Error>> {
                 &harness.listener_db,
                 &mut tx,
                 tx_id,
-                TfheContractEvents::FheAdd(TfheContract::FheAdd {
+                FHEVMExecutorEvents::FheAdd(FHEVMExecutor::FheAdd {
                     caller,
                     lhs: level_inputs[2 * i],
                     rhs: level_inputs[2 * i + 1],

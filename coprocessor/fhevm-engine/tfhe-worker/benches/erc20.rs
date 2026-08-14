@@ -9,8 +9,8 @@ use crate::utils::{
 use criterion::{
     async_executor::FuturesExecutor, measurement::WallTime, Bencher, Criterion, Throughput,
 };
-use host_listener::contracts::TfheContract;
-use host_listener::contracts::TfheContract::TfheContractEvents;
+use fhevm_host_bindings::fhevm_executor::FHEVMExecutor;
+use fhevm_host_bindings::fhevm_executor::FHEVMExecutor::FHEVMExecutorEvents;
 use std::time::SystemTime;
 use tfhe_worker::tfhe_worker::TIMING;
 use tokio::runtime::Runtime;
@@ -121,8 +121,8 @@ fn next_log_index() -> u64 {
 
 fn log_with_tx(
     tx_hash: host_listener::database::tfhe_event_propagate::Handle,
-    inner: alloy::primitives::Log<TfheContractEvents>,
-) -> alloy::rpc::types::Log<TfheContractEvents> {
+    inner: alloy::primitives::Log<FHEVMExecutorEvents>,
+) -> alloy::rpc::types::Log<FHEVMExecutorEvents> {
     alloy::rpc::types::Log {
         inner,
         block_hash: None,
@@ -176,8 +176,8 @@ async fn schedule_erc20(
                 &mut tx,
                 log_with_tx(
                     tx_id,
-                    tfhe_event(TfheContractEvents::TrivialEncrypt(
-                        TfheContract::TrivialEncrypt {
+                    tfhe_event(FHEVMExecutorEvents::TrivialEncrypt(
+                        FHEVMExecutor::TrivialEncrypt {
                             caller,
                             pt: as_scalar_uint(&bigdecimal::num_bigint::BigInt::from(100_u64)),
                             toType: to_ty(5),
@@ -200,8 +200,8 @@ async fn schedule_erc20(
                 &mut tx,
                 log_with_tx(
                     tx_id,
-                    tfhe_event(TfheContractEvents::TrivialEncrypt(
-                        TfheContract::TrivialEncrypt {
+                    tfhe_event(FHEVMExecutorEvents::TrivialEncrypt(
+                        FHEVMExecutor::TrivialEncrypt {
                             caller,
                             pt: as_scalar_uint(&bigdecimal::num_bigint::BigInt::from(20_u64)),
                             toType: to_ty(5),
@@ -221,8 +221,8 @@ async fn schedule_erc20(
             &mut tx,
             log_with_tx(
                 tx_id,
-                tfhe_event(TfheContractEvents::TrivialEncrypt(
-                    TfheContract::TrivialEncrypt {
+                tfhe_event(FHEVMExecutorEvents::TrivialEncrypt(
+                    FHEVMExecutor::TrivialEncrypt {
                         caller,
                         pt: as_scalar_uint(&bigdecimal::num_bigint::BigInt::from(10_u64)),
                         toType: to_ty(5),
@@ -241,7 +241,7 @@ async fn schedule_erc20(
             &mut tx,
             log_with_tx(
                 tx_id,
-                tfhe_event(TfheContractEvents::FheGe(TfheContract::FheGe {
+                tfhe_event(FHEVMExecutorEvents::FheGe(FHEVMExecutor::FheGe {
                     caller,
                     lhs: from_balance,
                     rhs: transfer_amount,
@@ -263,7 +263,7 @@ async fn schedule_erc20(
                 &mut tx,
                 log_with_tx(
                     tx_id,
-                    tfhe_event(TfheContractEvents::FheAdd(TfheContract::FheAdd {
+                    tfhe_event(FHEVMExecutorEvents::FheAdd(FHEVMExecutor::FheAdd {
                         caller,
                         lhs: to_balance,
                         rhs: transfer_amount,
@@ -281,8 +281,8 @@ async fn schedule_erc20(
                 &mut tx,
                 log_with_tx(
                     tx_id,
-                    tfhe_event(TfheContractEvents::FheIfThenElse(
-                        TfheContract::FheIfThenElse {
+                    tfhe_event(FHEVMExecutorEvents::FheIfThenElse(
+                        FHEVMExecutor::FheIfThenElse {
                             caller,
                             control: has_funds,
                             ifTrue: to_target,
@@ -302,7 +302,7 @@ async fn schedule_erc20(
                 &mut tx,
                 log_with_tx(
                     tx_id,
-                    tfhe_event(TfheContractEvents::FheSub(TfheContract::FheSub {
+                    tfhe_event(FHEVMExecutorEvents::FheSub(FHEVMExecutor::FheSub {
                         caller,
                         lhs: from_balance,
                         rhs: transfer_amount,
@@ -320,8 +320,8 @@ async fn schedule_erc20(
                 &mut tx,
                 log_with_tx(
                     tx_id,
-                    tfhe_event(TfheContractEvents::FheIfThenElse(
-                        TfheContract::FheIfThenElse {
+                    tfhe_event(FHEVMExecutorEvents::FheIfThenElse(
+                        FHEVMExecutor::FheIfThenElse {
                             caller,
                             control: has_funds,
                             ifTrue: from_target,
@@ -341,7 +341,7 @@ async fn schedule_erc20(
                 &mut tx,
                 log_with_tx(
                     tx_id,
-                    tfhe_event(TfheContractEvents::Cast(TfheContract::Cast {
+                    tfhe_event(FHEVMExecutorEvents::Cast(FHEVMExecutor::Cast {
                         caller,
                         ct: has_funds,
                         toType: to_ty(5),
@@ -358,7 +358,7 @@ async fn schedule_erc20(
                 &mut tx,
                 log_with_tx(
                     tx_id,
-                    tfhe_event(TfheContractEvents::FheMul(TfheContract::FheMul {
+                    tfhe_event(FHEVMExecutorEvents::FheMul(FHEVMExecutor::FheMul {
                         caller,
                         lhs: transfer_amount,
                         rhs: funds_u64,
@@ -376,7 +376,7 @@ async fn schedule_erc20(
                 &mut tx,
                 log_with_tx(
                     tx_id,
-                    tfhe_event(TfheContractEvents::FheAdd(TfheContract::FheAdd {
+                    tfhe_event(FHEVMExecutorEvents::FheAdd(FHEVMExecutor::FheAdd {
                         caller,
                         lhs: to_balance,
                         rhs: selected_amount,
@@ -394,7 +394,7 @@ async fn schedule_erc20(
                 &mut tx,
                 log_with_tx(
                     tx_id,
-                    tfhe_event(TfheContractEvents::FheSub(TfheContract::FheSub {
+                    tfhe_event(FHEVMExecutorEvents::FheSub(FHEVMExecutor::FheSub {
                         caller,
                         lhs: from_balance,
                         rhs: selected_amount,

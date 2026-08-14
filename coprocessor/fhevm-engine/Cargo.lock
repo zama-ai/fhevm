@@ -4618,6 +4618,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "fhevm_host_bindings"
+version = "0.15.0"
+dependencies = [
+ "alloy",
+ "serde",
+]
+
+[[package]]
 name = "fiat-crypto"
 version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5489,6 +5497,7 @@ dependencies = [
  "clap",
  "consumer",
  "fhevm-engine-common",
+ "fhevm_host_bindings",
  "foundry-compilers",
  "foundry-compilers-artifacts 0.13.5",
  "futures-util",
@@ -12188,6 +12197,7 @@ dependencies = [
  "clap",
  "csv",
  "fhevm-engine-common",
+ "fhevm_host_bindings",
  "futures",
  "futures-util",
  "hex",
@@ -12660,6 +12670,7 @@ dependencies = [
  "confidential-token",
  "criterion",
  "fhevm-engine-common",
+ "fhevm_host_bindings",
  "hex",
  "host-listener",
  "itertools 0.13.0",

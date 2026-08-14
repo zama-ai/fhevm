@@ -34,10 +34,10 @@ use tracing::warn;
 
 use crate::cmd::block_history::BlockHash;
 use crate::cmd::block_history::BlockSummary;
-use crate::contracts::AclContract::AclContractEvents;
-use crate::contracts::BridgeContract::BridgeContractEvents;
-use crate::contracts::TfheContract;
-use crate::contracts::TfheContract::TfheContractEvents;
+use fhevm_host_bindings::acl::ACL::ACLEvents;
+use fhevm_host_bindings::bridge_events::BridgeEvents::BridgeEventsEvents;
+use fhevm_host_bindings::fhevm_executor::FHEVMExecutor;
+use fhevm_host_bindings::fhevm_executor::FHEVMExecutor::FHEVMExecutorEvents;
 
 type FheOperation = i32;
 pub type Handle = FixedBytes<32>;
@@ -327,7 +327,7 @@ pub struct Database {
 
 #[derive(Debug)]
 pub struct LogTfhe {
-    pub event: Log<TfheContractEvents>,
+    pub event: Log<FHEVMExecutorEvents>,
     pub transaction_hash: Option<TransactionHash>,
     pub is_allowed: bool,
     pub block_number: u64,
@@ -822,8 +822,8 @@ impl Database {
         tx: &mut Transaction<'_>,
         log: &LogTfhe,
     ) -> Result<bool, SqlxError> {
-        use TfheContract as C;
-        use TfheContractEvents as E;
+        use FHEVMExecutor as C;
+        use FHEVMExecutorEvents as E;
         const HAS_SCALAR : FixedBytes::<1> = FixedBytes([1]); // if any dependency is a scalar.
         const NO_SCALAR : FixedBytes::<1> = FixedBytes([0]); // if all dependencies are handles.
         // ciphertext type
@@ -2113,7 +2113,7 @@ impl Database {
     pub async fn handle_acl_event(
         &self,
         tx: &mut Transaction<'_>,
-        event: &Log<AclContractEvents>,
+        event: &Log<ACLEvents>,
         transaction_hash: &Option<Handle>,
         block_summary: &BlockSummary,
     ) -> Result<bool, SqlxError> {
@@ -2132,17 +2132,17 @@ impl Database {
         // Record only Allowed or AllowedForDecryption events
         if matches!(
             data,
-            AclContractEvents::Allowed(_)
-                | AclContractEvents::AllowedForDecryption(_)
-                | AclContractEvents::DelegatedForUserDecryption(_)
-                | AclContractEvents::RevokedDelegationForUserDecryption(_)
+            ACLEvents::Allowed(_)
+                | ACLEvents::AllowedForDecryption(_)
+                | ACLEvents::DelegatedForUserDecryption(_)
+                | ACLEvents::RevokedDelegationForUserDecryption(_)
         ) {
             self.record_transaction_begin(&transaction_hash, block_number)
                 .await;
         }
         let mut inserted = false;
         match data {
-            AclContractEvents::Allowed(allowed) => {
+            ACLEvents::Allowed(allowed) => {
                 let handle = allowed.handle.to_vec();
                 let producer_block = self
                     .resolve_handle_producer_block(
@@ -2179,7 +2179,7 @@ impl Database {
                     )
                     .await?;
             }
-            AclContractEvents::AllowedForDecryption(allowed_for_decryption) => {
+            ACLEvents::AllowedForDecryption(allowed_for_decryption) => {
                 let handles = allowed_for_decryption
                     .handlesList
                     .iter()
@@ -2229,7 +2229,7 @@ impl Database {
                     )
                     .await?;
             }
-            AclContractEvents::DelegatedForUserDecryption(delegation) => {
+            ACLEvents::DelegatedForUserDecryption(delegation) => {
                 info!(?delegation, "Delegation for user decryption");
                 inserted |= Self::insert_delegation(
                     tx,
@@ -2246,9 +2246,7 @@ impl Database {
                 )
                 .await?;
             }
-            AclContractEvents::RevokedDelegationForUserDecryption(
-                delegation,
-            ) => {
+            ACLEvents::RevokedDelegationForUserDecryption(delegation) => {
                 info!(?delegation, "Revoke delegation for user decryption");
                 inserted |= Self::insert_delegation(
                     tx,
@@ -2265,54 +2263,52 @@ impl Database {
                 )
                 .await?;
             }
-            AclContractEvents::Initialized(initialized) => {
+            ACLEvents::Initialized(initialized) => {
                 warn!(event = ?initialized, "unhandled Acl::Initialized event");
             }
-            AclContractEvents::OwnershipTransferStarted(
-                ownership_transfer_started,
-            ) => {
+            ACLEvents::OwnershipTransferStarted(ownership_transfer_started) => {
                 warn!(
                     event = ?ownership_transfer_started,
                     "unhandled Acl::OwnershipTransferStarted event"
                 );
             }
-            AclContractEvents::OwnershipTransferred(ownership_transferred) => {
+            ACLEvents::OwnershipTransferred(ownership_transferred) => {
                 warn!(
                     event = ?ownership_transferred,
                     "unhandled Acl::OwnershipTransferred event"
                 );
             }
-            AclContractEvents::Upgraded(upgraded) => {
+            ACLEvents::Upgraded(upgraded) => {
                 warn!(
                     event = ?upgraded,
                     "unhandled Acl::Upgraded event"
                 );
             }
-            AclContractEvents::Paused(paused) => {
+            ACLEvents::Paused(paused) => {
                 warn!(
                     event = ?paused,
                     "unhandled Acl::Paused event"
                 );
             }
-            AclContractEvents::Unpaused(unpaused) => {
+            ACLEvents::Unpaused(unpaused) => {
                 warn!(
                     event = ?unpaused,
                     "unhandled Acl::Unpaused event"
                 );
             }
-            AclContractEvents::BlockedAccount(blocked_account) => {
+            ACLEvents::BlockedAccount(blocked_account) => {
                 warn!(
                     event = ?blocked_account,
                     "unhandled Acl::BlockedAccount event"
                 );
             }
-            AclContractEvents::UnblockedAccount(unblocked_account) => {
+            ACLEvents::UnblockedAccount(unblocked_account) => {
                 warn!(
                     event = ?unblocked_account,
                     "unhandled Acl::UnblockedAccount event"
                 );
             }
-            AclContractEvents::DecryptionSignaturesInvalidated(
+            ACLEvents::DecryptionSignaturesInvalidated(
                 decryption_signatures_invalidated,
             ) => {
                 warn!(
@@ -2332,7 +2328,7 @@ impl Database {
     pub async fn handle_bridge_event(
         &self,
         tx: &mut Transaction<'_>,
-        event: &Log<BridgeContractEvents>,
+        event: &Log<BridgeEventsEvents>,
         transaction_hash: &Option<Handle>,
         block_number: u64,
         block_hash: &BlockHash,
@@ -2342,7 +2338,7 @@ impl Database {
     ) -> Result<bool, SqlxError> {
         let transaction_id = transaction_hash.map(|h| h.to_vec());
         let inserted = match &event.data {
-            BridgeContractEvents::BridgeHandle(e) => {
+            BridgeEventsEvents::BridgeHandle(e) => {
                 // Trust anchor: the chain id embedded in srcHandle (bytes 22-29)
                 // must match the chain that emitted the event. Ignore otherwise.
                 let embedded = chain_id_from_handle(&e.srcHandle.0);
@@ -2388,7 +2384,7 @@ impl Database {
                 .rows_affected()
                     > 0
             }
-            BridgeContractEvents::HandleBridged(e) => {
+            BridgeEventsEvents::HandleBridged(e) => {
                 // Verify the destination handle was correctly derived and ignore the
                 // event otherwise.
                 let Some(acl) = acl_contract_address else {
@@ -2856,9 +2852,9 @@ impl Database {
     }
 }
 
-fn event_to_op_int(op: &TfheContractEvents) -> FheOperation {
+fn event_to_op_int(op: &FHEVMExecutorEvents) -> FheOperation {
+    use FHEVMExecutorEvents as E;
     use SupportedFheOperations as O;
-    use TfheContractEvents as E;
     match op {
         E::FheAdd(_) => O::FheAdd as i32,
         E::FheSub(_) => O::FheSub as i32,
@@ -2895,8 +2891,8 @@ fn event_to_op_int(op: &TfheContractEvents) -> FheOperation {
     }
 }
 
-pub fn event_name(op: &TfheContractEvents) -> &'static str {
-    use TfheContractEvents as E;
+pub fn event_name(op: &FHEVMExecutorEvents) -> &'static str {
+    use FHEVMExecutorEvents as E;
     match op {
         E::FheAdd(_) => "FheAdd",
         E::FheSub(_) => "FheSub",
@@ -2934,9 +2930,9 @@ pub fn event_name(op: &TfheContractEvents) -> &'static str {
     }
 }
 
-pub fn tfhe_result_handle(op: &TfheContractEvents) -> Option<Handle> {
-    use TfheContract as C;
-    use TfheContractEvents as E;
+pub fn tfhe_result_handle(op: &FHEVMExecutorEvents) -> Option<Handle> {
+    use FHEVMExecutor as C;
+    use FHEVMExecutorEvents as E;
     match op {
         E::Cast(C::Cast { result, .. })
         | E::FheAdd(C::FheAdd { result, .. })
@@ -2973,30 +2969,30 @@ pub fn tfhe_result_handle(op: &TfheContractEvents) -> Option<Handle> {
     }
 }
 
-pub fn acl_result_handles(event: &Log<AclContractEvents>) -> Vec<Handle> {
+pub fn acl_result_handles(event: &Log<ACLEvents>) -> Vec<Handle> {
     let data = &event.data;
     match data {
-        AclContractEvents::Allowed(allowed) => vec![allowed.handle],
-        AclContractEvents::AllowedForDecryption(allowed_for_decryption) => {
+        ACLEvents::Allowed(allowed) => vec![allowed.handle],
+        ACLEvents::AllowedForDecryption(allowed_for_decryption) => {
             allowed_for_decryption.handlesList.clone()
         }
-        AclContractEvents::Initialized(_)
-        | AclContractEvents::DelegatedForUserDecryption(_)
-        | AclContractEvents::RevokedDelegationForUserDecryption(_)
-        | AclContractEvents::OwnershipTransferStarted(_)
-        | AclContractEvents::OwnershipTransferred(_)
-        | AclContractEvents::Upgraded(_)
-        | AclContractEvents::Paused(_)
-        | AclContractEvents::Unpaused(_)
-        | AclContractEvents::BlockedAccount(_)
-        | AclContractEvents::UnblockedAccount(_)
-        | AclContractEvents::DecryptionSignaturesInvalidated(_) => vec![],
+        ACLEvents::Initialized(_)
+        | ACLEvents::DelegatedForUserDecryption(_)
+        | ACLEvents::RevokedDelegationForUserDecryption(_)
+        | ACLEvents::OwnershipTransferStarted(_)
+        | ACLEvents::OwnershipTransferred(_)
+        | ACLEvents::Upgraded(_)
+        | ACLEvents::Paused(_)
+        | ACLEvents::Unpaused(_)
+        | ACLEvents::BlockedAccount(_)
+        | ACLEvents::UnblockedAccount(_)
+        | ACLEvents::DecryptionSignaturesInvalidated(_) => vec![],
     }
 }
 
-pub fn tfhe_inputs_handle(op: &TfheContractEvents) -> Vec<Handle> {
-    use TfheContract as C;
-    use TfheContractEvents as E;
+pub fn tfhe_inputs_handle(op: &FHEVMExecutorEvents) -> Vec<Handle> {
+    use FHEVMExecutor as C;
+    use FHEVMExecutorEvents as E;
     match op {
         E::Cast(C::Cast { ct, .. })
         | E::FheNeg(C::FheNeg { ct, .. })

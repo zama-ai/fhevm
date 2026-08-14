@@ -42,25 +42,12 @@
 ARG RUST_IMAGE_VERSION=1.97.1
 
 # =============================================================================
-# Stage 0: Build Solidity contracts (required for host-listener, gw-listener)
+# Stage 0: Build Solidity contracts (required for gw-listener)
 # =============================================================================
 FROM ghcr.io/zama-ai/fhevm/gci/nodejs:22.14.0-alpine3.21 AS contract_builder
 
 USER root
 WORKDIR /app
-
-# Copy root lockfile for workspace resolution
-COPY package.json package-lock.json ./
-
-# Copy host-contracts for host-listener
-COPY host-contracts ./host-contracts
-
-# Compile host-contracts
-RUN cp host-contracts/.env.example host-contracts/.env && \
-    npm ci --workspace=host-contracts --include-workspace-root=false && \
-    cd host-contracts && \
-    HARDHAT_NETWORK=hardhat npm run deploy:emptyProxies && \
-    npx hardhat compile
 
 # Copy gateway-contracts for gw-listener
 WORKDIR /app
@@ -82,14 +69,13 @@ ARG BUILD_ID=unknown
 USER root
 WORKDIR /app
 
-COPY --from=contract_builder /app/host-contracts/artifacts/contracts /app/host-contracts/artifacts/contracts
 COPY --from=contract_builder /app/gateway-contracts/artifacts/contracts /app/gateway-contracts/artifacts/contracts
 COPY listener ./listener
 COPY coprocessor/fhevm-engine ./coprocessor/fhevm-engine
 COPY coprocessor/proto ./coprocessor/proto
 COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
+COPY host-contracts/rust_bindings ./host-contracts/rust_bindings
 COPY gateway-contracts/contracts ./gateway-contracts/contracts
-COPY host-contracts/contracts ./host-contracts/contracts
 COPY solana ./solana
 COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
 

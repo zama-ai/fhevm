@@ -17,12 +17,12 @@ use zama_host::records::{
 use zama_host::state::{FheBinaryOpCode, FheTernaryOpCode, FheUnaryOpCode};
 
 use crate::cmd::block_history::BlockSummary;
-use crate::contracts::TfheContract;
-use crate::contracts::TfheContract::TfheContractEvents;
 use crate::database::dependence_chains::dependence_chains;
 use crate::database::tfhe_event_propagate::{
     ClearConst, Database, Handle, LogTfhe, Transaction, TransactionHash,
 };
+use fhevm_host_bindings::fhevm_executor::FHEVMExecutor;
+use fhevm_host_bindings::fhevm_executor::FHEVMExecutor::FHEVMExecutorEvents;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SolanaMaterialRequest {
@@ -45,7 +45,7 @@ pub enum SolanaHostRecord {
 
 #[derive(Clone, Debug)]
 pub enum SolanaMappedRecord {
-    Tfhe(Log<TfheContractEvents>),
+    Tfhe(Log<FHEVMExecutorEvents>),
     MaterialRequest(SolanaMaterialRequest),
 }
 
@@ -228,7 +228,7 @@ fn solana_block_summary(block: SolanaBlockMeta) -> BlockSummary {
 }
 
 pub fn to_log_tfhe(
-    event: Log<TfheContractEvents>,
+    event: Log<FHEVMExecutorEvents>,
     transaction_id: TransactionHash,
     block: SolanaBlockMeta,
     is_allowed: bool,
@@ -253,16 +253,16 @@ pub fn to_log_tfhe(
 /// Converts decoded Solana host op records into the existing TFHE event model.
 ///
 /// The current coprocessor worker consumes the database rows produced from
-/// `TfheContractEvents`. Keeping this adapter at the typed-event boundary lets
+/// `FHEVMExecutorEvents`. Keeping this adapter at the typed-event boundary lets
 /// the Solana listener use native Solana decoding while reusing the existing
 /// computation scheduler and worker unchanged.
-pub fn to_tfhe_event(event: FheBinaryOp) -> Log<TfheContractEvents> {
+pub fn to_tfhe_event(event: FheBinaryOp) -> Log<FHEVMExecutorEvents> {
     // Not persisted: the DB layer discards `caller` on every chain (INVARIANTS #49).
     let caller = Address::ZERO;
     let scalar_byte = FixedBytes::<1>::from([u8::from(event.scalar)]);
     let data = match event.op {
         FheBinaryOpCode::Add => {
-            TfheContractEvents::FheAdd(TfheContract::FheAdd {
+            FHEVMExecutorEvents::FheAdd(FHEVMExecutor::FheAdd {
                 caller,
                 lhs: Handle::from(event.lhs),
                 rhs: Handle::from(event.rhs),
@@ -271,7 +271,7 @@ pub fn to_tfhe_event(event: FheBinaryOp) -> Log<TfheContractEvents> {
             })
         }
         FheBinaryOpCode::Sub => {
-            TfheContractEvents::FheSub(TfheContract::FheSub {
+            FHEVMExecutorEvents::FheSub(FHEVMExecutor::FheSub {
                 caller,
                 lhs: Handle::from(event.lhs),
                 rhs: Handle::from(event.rhs),
@@ -280,7 +280,7 @@ pub fn to_tfhe_event(event: FheBinaryOp) -> Log<TfheContractEvents> {
             })
         }
         FheBinaryOpCode::Mul => {
-            TfheContractEvents::FheMul(TfheContract::FheMul {
+            FHEVMExecutorEvents::FheMul(FHEVMExecutor::FheMul {
                 caller,
                 lhs: Handle::from(event.lhs),
                 rhs: Handle::from(event.rhs),
@@ -289,7 +289,7 @@ pub fn to_tfhe_event(event: FheBinaryOp) -> Log<TfheContractEvents> {
             })
         }
         FheBinaryOpCode::Div => {
-            TfheContractEvents::FheDiv(TfheContract::FheDiv {
+            FHEVMExecutorEvents::FheDiv(FHEVMExecutor::FheDiv {
                 caller,
                 lhs: Handle::from(event.lhs),
                 rhs: Handle::from(event.rhs),
@@ -298,7 +298,7 @@ pub fn to_tfhe_event(event: FheBinaryOp) -> Log<TfheContractEvents> {
             })
         }
         FheBinaryOpCode::Rem => {
-            TfheContractEvents::FheRem(TfheContract::FheRem {
+            FHEVMExecutorEvents::FheRem(FHEVMExecutor::FheRem {
                 caller,
                 lhs: Handle::from(event.lhs),
                 rhs: Handle::from(event.rhs),
@@ -307,7 +307,7 @@ pub fn to_tfhe_event(event: FheBinaryOp) -> Log<TfheContractEvents> {
             })
         }
         FheBinaryOpCode::And => {
-            TfheContractEvents::FheBitAnd(TfheContract::FheBitAnd {
+            FHEVMExecutorEvents::FheBitAnd(FHEVMExecutor::FheBitAnd {
                 caller,
                 lhs: Handle::from(event.lhs),
                 rhs: Handle::from(event.rhs),
@@ -316,7 +316,7 @@ pub fn to_tfhe_event(event: FheBinaryOp) -> Log<TfheContractEvents> {
             })
         }
         FheBinaryOpCode::Or => {
-            TfheContractEvents::FheBitOr(TfheContract::FheBitOr {
+            FHEVMExecutorEvents::FheBitOr(FHEVMExecutor::FheBitOr {
                 caller,
                 lhs: Handle::from(event.lhs),
                 rhs: Handle::from(event.rhs),
@@ -325,7 +325,7 @@ pub fn to_tfhe_event(event: FheBinaryOp) -> Log<TfheContractEvents> {
             })
         }
         FheBinaryOpCode::Xor => {
-            TfheContractEvents::FheBitXor(TfheContract::FheBitXor {
+            FHEVMExecutorEvents::FheBitXor(FHEVMExecutor::FheBitXor {
                 caller,
                 lhs: Handle::from(event.lhs),
                 rhs: Handle::from(event.rhs),
@@ -334,7 +334,7 @@ pub fn to_tfhe_event(event: FheBinaryOp) -> Log<TfheContractEvents> {
             })
         }
         FheBinaryOpCode::Shl => {
-            TfheContractEvents::FheShl(TfheContract::FheShl {
+            FHEVMExecutorEvents::FheShl(FHEVMExecutor::FheShl {
                 caller,
                 lhs: Handle::from(event.lhs),
                 rhs: Handle::from(event.rhs),
@@ -343,7 +343,7 @@ pub fn to_tfhe_event(event: FheBinaryOp) -> Log<TfheContractEvents> {
             })
         }
         FheBinaryOpCode::Shr => {
-            TfheContractEvents::FheShr(TfheContract::FheShr {
+            FHEVMExecutorEvents::FheShr(FHEVMExecutor::FheShr {
                 caller,
                 lhs: Handle::from(event.lhs),
                 rhs: Handle::from(event.rhs),
@@ -352,7 +352,7 @@ pub fn to_tfhe_event(event: FheBinaryOp) -> Log<TfheContractEvents> {
             })
         }
         FheBinaryOpCode::Rotl => {
-            TfheContractEvents::FheRotl(TfheContract::FheRotl {
+            FHEVMExecutorEvents::FheRotl(FHEVMExecutor::FheRotl {
                 caller,
                 lhs: Handle::from(event.lhs),
                 rhs: Handle::from(event.rhs),
@@ -361,7 +361,7 @@ pub fn to_tfhe_event(event: FheBinaryOp) -> Log<TfheContractEvents> {
             })
         }
         FheBinaryOpCode::Rotr => {
-            TfheContractEvents::FheRotr(TfheContract::FheRotr {
+            FHEVMExecutorEvents::FheRotr(FHEVMExecutor::FheRotr {
                 caller,
                 lhs: Handle::from(event.lhs),
                 rhs: Handle::from(event.rhs),
@@ -369,50 +369,62 @@ pub fn to_tfhe_event(event: FheBinaryOp) -> Log<TfheContractEvents> {
                 result: Handle::from(event.result),
             })
         }
-        FheBinaryOpCode::Eq => TfheContractEvents::FheEq(TfheContract::FheEq {
-            caller,
-            lhs: Handle::from(event.lhs),
-            rhs: Handle::from(event.rhs),
-            scalarByte: scalar_byte,
-            result: Handle::from(event.result),
-        }),
-        FheBinaryOpCode::Ne => TfheContractEvents::FheNe(TfheContract::FheNe {
-            caller,
-            lhs: Handle::from(event.lhs),
-            rhs: Handle::from(event.rhs),
-            scalarByte: scalar_byte,
-            result: Handle::from(event.result),
-        }),
-        FheBinaryOpCode::Ge => TfheContractEvents::FheGe(TfheContract::FheGe {
-            caller,
-            lhs: Handle::from(event.lhs),
-            rhs: Handle::from(event.rhs),
-            scalarByte: scalar_byte,
-            result: Handle::from(event.result),
-        }),
-        FheBinaryOpCode::Gt => TfheContractEvents::FheGt(TfheContract::FheGt {
-            caller,
-            lhs: Handle::from(event.lhs),
-            rhs: Handle::from(event.rhs),
-            scalarByte: scalar_byte,
-            result: Handle::from(event.result),
-        }),
-        FheBinaryOpCode::Le => TfheContractEvents::FheLe(TfheContract::FheLe {
-            caller,
-            lhs: Handle::from(event.lhs),
-            rhs: Handle::from(event.rhs),
-            scalarByte: scalar_byte,
-            result: Handle::from(event.result),
-        }),
-        FheBinaryOpCode::Lt => TfheContractEvents::FheLt(TfheContract::FheLt {
-            caller,
-            lhs: Handle::from(event.lhs),
-            rhs: Handle::from(event.rhs),
-            scalarByte: scalar_byte,
-            result: Handle::from(event.result),
-        }),
+        FheBinaryOpCode::Eq => {
+            FHEVMExecutorEvents::FheEq(FHEVMExecutor::FheEq {
+                caller,
+                lhs: Handle::from(event.lhs),
+                rhs: Handle::from(event.rhs),
+                scalarByte: scalar_byte,
+                result: Handle::from(event.result),
+            })
+        }
+        FheBinaryOpCode::Ne => {
+            FHEVMExecutorEvents::FheNe(FHEVMExecutor::FheNe {
+                caller,
+                lhs: Handle::from(event.lhs),
+                rhs: Handle::from(event.rhs),
+                scalarByte: scalar_byte,
+                result: Handle::from(event.result),
+            })
+        }
+        FheBinaryOpCode::Ge => {
+            FHEVMExecutorEvents::FheGe(FHEVMExecutor::FheGe {
+                caller,
+                lhs: Handle::from(event.lhs),
+                rhs: Handle::from(event.rhs),
+                scalarByte: scalar_byte,
+                result: Handle::from(event.result),
+            })
+        }
+        FheBinaryOpCode::Gt => {
+            FHEVMExecutorEvents::FheGt(FHEVMExecutor::FheGt {
+                caller,
+                lhs: Handle::from(event.lhs),
+                rhs: Handle::from(event.rhs),
+                scalarByte: scalar_byte,
+                result: Handle::from(event.result),
+            })
+        }
+        FheBinaryOpCode::Le => {
+            FHEVMExecutorEvents::FheLe(FHEVMExecutor::FheLe {
+                caller,
+                lhs: Handle::from(event.lhs),
+                rhs: Handle::from(event.rhs),
+                scalarByte: scalar_byte,
+                result: Handle::from(event.result),
+            })
+        }
+        FheBinaryOpCode::Lt => {
+            FHEVMExecutorEvents::FheLt(FHEVMExecutor::FheLt {
+                caller,
+                lhs: Handle::from(event.lhs),
+                rhs: Handle::from(event.rhs),
+                scalarByte: scalar_byte,
+                result: Handle::from(event.result),
+            })
+        }
         FheBinaryOpCode::Min => {
-            TfheContractEvents::FheMin(TfheContract::FheMin {
+            FHEVMExecutorEvents::FheMin(FHEVMExecutor::FheMin {
                 caller,
                 lhs: Handle::from(event.lhs),
                 rhs: Handle::from(event.rhs),
@@ -421,7 +433,7 @@ pub fn to_tfhe_event(event: FheBinaryOp) -> Log<TfheContractEvents> {
             })
         }
         FheBinaryOpCode::Max => {
-            TfheContractEvents::FheMax(TfheContract::FheMax {
+            FHEVMExecutorEvents::FheMax(FHEVMExecutor::FheMax {
                 caller,
                 lhs: Handle::from(event.lhs),
                 rhs: Handle::from(event.rhs),
@@ -437,12 +449,12 @@ pub fn to_tfhe_event(event: FheBinaryOp) -> Log<TfheContractEvents> {
     }
 }
 
-pub fn to_tfhe_ternary_event(event: FheTernaryOp) -> Log<TfheContractEvents> {
+pub fn to_tfhe_ternary_event(event: FheTernaryOp) -> Log<FHEVMExecutorEvents> {
     // Not persisted: the DB layer discards `caller` on every chain (INVARIANTS #49).
     let caller = Address::ZERO;
     let data = match event.op {
         FheTernaryOpCode::IfThenElse => {
-            TfheContractEvents::FheIfThenElse(TfheContract::FheIfThenElse {
+            FHEVMExecutorEvents::FheIfThenElse(FHEVMExecutor::FheIfThenElse {
                 caller,
                 control: Handle::from(event.control),
                 ifTrue: Handle::from(event.if_true),
@@ -460,13 +472,13 @@ pub fn to_tfhe_ternary_event(event: FheTernaryOp) -> Log<TfheContractEvents> {
 
 pub fn to_trivial_encrypt_event(
     event: TrivialEncrypt,
-) -> Log<TfheContractEvents> {
+) -> Log<FHEVMExecutorEvents> {
     // Not persisted: the DB layer discards `caller` on every chain (INVARIANTS #49).
     let caller = Address::ZERO;
     Log {
         address: caller,
-        data: TfheContractEvents::TrivialEncrypt(
-            TfheContract::TrivialEncrypt {
+        data: FHEVMExecutorEvents::TrivialEncrypt(
+            FHEVMExecutor::TrivialEncrypt {
                 caller,
                 pt: ClearConst::from_be_slice(&event.plaintext),
                 toType: event.fhe_type,
@@ -476,12 +488,12 @@ pub fn to_trivial_encrypt_event(
     }
 }
 
-pub fn to_fhe_rand_event(event: FheRand) -> Log<TfheContractEvents> {
+pub fn to_fhe_rand_event(event: FheRand) -> Log<FHEVMExecutorEvents> {
     // Not persisted: the DB layer discards `caller` on every chain (INVARIANTS #49).
     let caller = Address::ZERO;
     Log {
         address: caller,
-        data: TfheContractEvents::FheRand(TfheContract::FheRand {
+        data: FHEVMExecutorEvents::FheRand(FHEVMExecutor::FheRand {
             caller,
             randType: event.fhe_type,
             seed: FixedBytes::<16>::from(event.seed),
@@ -492,13 +504,13 @@ pub fn to_fhe_rand_event(event: FheRand) -> Log<TfheContractEvents> {
 
 pub fn to_fhe_rand_bounded_event(
     event: FheRandBounded,
-) -> Log<TfheContractEvents> {
+) -> Log<FHEVMExecutorEvents> {
     // Not persisted: the DB layer discards `caller` on every chain (INVARIANTS #49).
     let caller = Address::ZERO;
     Log {
         address: caller,
-        data: TfheContractEvents::FheRandBounded(
-            TfheContract::FheRandBounded {
+        data: FHEVMExecutorEvents::FheRandBounded(
+            FHEVMExecutor::FheRandBounded {
                 caller,
                 upperBound: ClearConst::from_be_slice(&event.upper_bound),
                 randType: event.fhe_type,
@@ -509,32 +521,34 @@ pub fn to_fhe_rand_bounded_event(
     }
 }
 
-pub fn to_fhe_unary_event(event: FheUnaryOp) -> Log<TfheContractEvents> {
+pub fn to_fhe_unary_event(event: FheUnaryOp) -> Log<FHEVMExecutorEvents> {
     // Not persisted: the DB layer discards `caller` on every chain (INVARIANTS #49).
     let caller = Address::ZERO;
     let ct = Handle::from(event.operand);
     let result = Handle::from(event.result);
     let data = match event.op {
         FheUnaryOpCode::Neg => {
-            TfheContractEvents::FheNeg(TfheContract::FheNeg {
+            FHEVMExecutorEvents::FheNeg(FHEVMExecutor::FheNeg {
                 caller,
                 ct,
                 result,
             })
         }
         FheUnaryOpCode::Not => {
-            TfheContractEvents::FheNot(TfheContract::FheNot {
+            FHEVMExecutorEvents::FheNot(FHEVMExecutor::FheNot {
                 caller,
                 ct,
                 result,
             })
         }
-        FheUnaryOpCode::Cast => TfheContractEvents::Cast(TfheContract::Cast {
-            caller,
-            ct,
-            toType: event.result[30],
-            result,
-        }),
+        FheUnaryOpCode::Cast => {
+            FHEVMExecutorEvents::Cast(FHEVMExecutor::Cast {
+                caller,
+                ct,
+                toType: event.result[30],
+                result,
+            })
+        }
     };
     Log {
         address: caller,
@@ -542,12 +556,12 @@ pub fn to_fhe_unary_event(event: FheUnaryOp) -> Log<TfheContractEvents> {
     }
 }
 
-pub fn to_fhe_sum_event(event: FheSum) -> Log<TfheContractEvents> {
+pub fn to_fhe_sum_event(event: FheSum) -> Log<FHEVMExecutorEvents> {
     // Not persisted: the DB layer discards `caller` on every chain (INVARIANTS #49).
     let caller = Address::ZERO;
     Log {
         address: caller,
-        data: TfheContractEvents::FheSum(TfheContract::FheSum {
+        data: FHEVMExecutorEvents::FheSum(FHEVMExecutor::FheSum {
             caller,
             values: event.operands.into_iter().map(Handle::from).collect(),
             result: Handle::from(event.result),
@@ -555,12 +569,12 @@ pub fn to_fhe_sum_event(event: FheSum) -> Log<TfheContractEvents> {
     }
 }
 
-pub fn to_fhe_is_in_event(event: FheIsIn) -> Log<TfheContractEvents> {
+pub fn to_fhe_is_in_event(event: FheIsIn) -> Log<FHEVMExecutorEvents> {
     // Not persisted: the DB layer discards `caller` on every chain (INVARIANTS #49).
     let caller = Address::ZERO;
     Log {
         address: caller,
-        data: TfheContractEvents::FheIsIn(TfheContract::FheIsIn {
+        data: FHEVMExecutorEvents::FheIsIn(FHEVMExecutor::FheIsIn {
             caller,
             value: Handle::from(event.value),
             values: event.set.into_iter().map(Handle::from).collect(),
@@ -569,12 +583,12 @@ pub fn to_fhe_is_in_event(event: FheIsIn) -> Log<TfheContractEvents> {
     }
 }
 
-pub fn to_fhe_mul_div_event(event: FheMulDiv) -> Log<TfheContractEvents> {
+pub fn to_fhe_mul_div_event(event: FheMulDiv) -> Log<FHEVMExecutorEvents> {
     // Not persisted: the DB layer discards `caller` on every chain (INVARIANTS #49).
     let caller = Address::ZERO;
     Log {
         address: caller,
-        data: TfheContractEvents::FheMulDiv(TfheContract::FheMulDiv {
+        data: FHEVMExecutorEvents::FheMulDiv(FHEVMExecutor::FheMulDiv {
             caller,
             factor1: Handle::from(event.factor1),
             factor2: Handle::from(event.factor2),
@@ -613,7 +627,7 @@ mod tests {
 
         assert!(matches!(
             mapped.data,
-            TfheContractEvents::FheAdd(TfheContract::FheAdd {
+            FHEVMExecutorEvents::FheAdd(FHEVMExecutor::FheAdd {
                 lhs,
                 rhs,
                 scalarByte,
@@ -640,7 +654,7 @@ mod tests {
 
         assert!(matches!(
             mapped.data,
-            TfheContractEvents::FheGe(TfheContract::FheGe {
+            FHEVMExecutorEvents::FheGe(FHEVMExecutor::FheGe {
                 lhs,
                 rhs,
                 scalarByte,
@@ -667,7 +681,7 @@ mod tests {
 
         assert!(matches!(
             mapped.data,
-            TfheContractEvents::FheIfThenElse(TfheContract::FheIfThenElse {
+            FHEVMExecutorEvents::FheIfThenElse(FHEVMExecutor::FheIfThenElse {
                 control,
                 ifTrue,
                 ifFalse,
@@ -695,7 +709,7 @@ mod tests {
 
         assert!(matches!(
             mapped.data,
-            TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
+            FHEVMExecutorEvents::TrivialEncrypt(FHEVMExecutor::TrivialEncrypt {
                 pt,
                 toType,
                 result,
@@ -718,7 +732,7 @@ mod tests {
 
         assert!(matches!(
             mapped.data,
-            TfheContractEvents::FheRand(TfheContract::FheRand {
+            FHEVMExecutorEvents::FheRand(FHEVMExecutor::FheRand {
                 randType,
                 seed,
                 result,
@@ -966,15 +980,15 @@ mod tests {
         assert!(tfhe_logs[2].is_allowed, "eager compute: always schedulable");
         assert!(matches!(
             tfhe_logs[0].event.data,
-            TfheContractEvents::TrivialEncrypt(_)
+            FHEVMExecutorEvents::TrivialEncrypt(_)
         ));
         assert!(matches!(
             tfhe_logs[1].event.data,
-            TfheContractEvents::FheRand(_)
+            FHEVMExecutorEvents::FheRand(_)
         ));
         assert!(matches!(
             tfhe_logs[2].event.data,
-            TfheContractEvents::FheIfThenElse(_)
+            FHEVMExecutorEvents::FheIfThenElse(_)
         ));
         assert!(tfhe_inputs_handle(&tfhe_logs[0].event.data).is_empty());
         assert!(tfhe_inputs_handle(&tfhe_logs[1].event.data).is_empty());
