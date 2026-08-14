@@ -3,8 +3,12 @@
 //! This file also owns the whole heap-tally protocol for a step: the three shared tables are
 //! [`TalliedVec`]s that pay for their own growth, and every exact-size allocation lowering
 //! causes (attestation embeds, subject index lists, purpose tables) goes through
-//! [`StepTables::tally_bytes`]. Nothing outside this file and `builder.rs` touches the tally —
-//! `accounts.rs` in particular is plain account metadata with no allocator accounting in it.
+//! [`StepTables::tally_bytes`]. The protocol is *pre-emptive*: each site admits its bytes
+//! against the build budget via [`StepTables::ensure_headroom`] before the allocator serves
+//! them, so a step that gets rejected has only spent admitted bytes — the tally can never
+//! cross the budget, even transiently, on the never-freeing bump region. Nothing outside this
+//! file and `builder.rs` touches the tally — `accounts.rs` in particular is plain account
+//! metadata with no allocator accounting in it.
 
 use zama_host::{CoprocessorInputAttestation, FheExecuteOperand, FheExecuteOutput};
 
@@ -12,7 +16,7 @@ use crate::accounts::{
     ExecutionAccountMeta, ExecutionAccountPurpose, ExecutionEncryptedValueAccountAuthority,
 };
 use crate::acl::{Output, OutputKind};
-use crate::heap_tally::{tally_push, TalliedVec};
+use crate::heap_tally::{pushes_request, tally_push, TalliedVec};
 use crate::operand::{Operand, OperandKind};
 use crate::{FheExecutionBuildError, Result};
 
@@ -43,6 +47,10 @@ pub(crate) struct StepTables<'b> {
     /// rollback keeps every request — on the never-freeing bump region a rolled-back step's
     /// requests are spent all the same.
     explicit_bytes: &'b mut usize,
+    /// Requested bytes of the builder tables this step does not borrow (steps, produced types,
+    /// verified inputs) — frozen for the step's duration, so [`Self::ensure_headroom`] can see
+    /// the whole build's tally.
+    stable_bytes: usize,
     remaining_accounts_len: usize,
     dictionary_len: usize,
     persistent_producers_len: usize,
@@ -63,6 +71,7 @@ impl<'b> StepTables<'b> {
         dictionary: &'b mut TalliedVec<[u8; 32]>,
         persistent_producers: &'b mut TalliedVec<anchor_lang::prelude::Pubkey>,
         explicit_bytes: &'b mut usize,
+        stable_bytes: usize,
     ) -> Self {
         Self {
             remaining_accounts_len: remaining_accounts.len(),
@@ -72,8 +81,22 @@ impl<'b> StepTables<'b> {
             dictionary,
             persistent_producers,
             explicit_bytes,
+            stable_bytes,
             promotions: TalliedVec::new(),
         }
+    }
+
+    /// Admits `upcoming` bytes against the build budget *before* the allocator serves them —
+    /// the pre-emptive half of the per-step heap gate. Every growing or exact-size allocation
+    /// below passes here first, so a rejected step has only spent admitted bytes and the
+    /// builder's tally can never cross the budget, even transiently.
+    fn ensure_headroom(&self, upcoming: usize) -> Result<()> {
+        if self.stable_bytes + self.requested_bytes() + upcoming
+            > crate::cost::BUILD_HEAP_BUDGET_BYTES
+        {
+            return Err(FheExecutionBuildError::ExceedsBuildHeapBudget);
+        }
+        Ok(())
     }
 
     /// Undoes everything this step wrote: promotions newest-first, so an entry promoted twice ends
@@ -98,24 +121,42 @@ impl<'b> StepTables<'b> {
     }
 
     pub(crate) fn account_index(&mut self, required: ExecutionAccountMeta) -> Result<u8> {
-        // Every constructed meta allocated its one-purpose table, kept, merged away, or rolled
-        // back.
-        *self.explicit_bytes +=
+        // Every constructed meta arrives with its one-purpose table already allocated (the few
+        // bytes of one purpose entry — the only allocation in the protocol that precedes its
+        // admission); charged here, kept, merged away, or rolled back.
+        let purposes_bytes =
             required.purposes.len() * std::mem::size_of::<ExecutionAccountPurpose>();
+        self.ensure_headroom(purposes_bytes)?;
+        *self.explicit_bytes += purposes_bytes;
         if let Some(index) = self
             .remaining_accounts
             .iter()
             .position(|candidate| candidate.pubkey == required.pubkey)
         {
-            let meta = self
-                .remaining_accounts
-                .get_mut(index)
-                .expect("position returned a valid index");
+            // Admit the merge's allocations before mutating anything: the purpose-table growth
+            // the appends will cause (simulated against the current table, skipping duplicates
+            // within `required` itself) plus the undo record.
+            let meta = &self.remaining_accounts[index];
+            let appended_purposes = required
+                .purposes
+                .iter()
+                .enumerate()
+                .filter(|(position, purpose)| {
+                    !meta.purposes.contains(purpose)
+                        && !required.purposes[..*position].contains(purpose)
+                })
+                .count();
+            let merge_growth = pushes_request(&meta.purposes, appended_purposes);
+            self.ensure_headroom(merge_growth + self.promotions.next_push_request())?;
             let undo = MetaPromotion {
                 was_writable: meta.is_writable,
                 was_signer: meta.is_signer,
                 purposes_len: meta.purposes.len(),
             };
+            let meta = self
+                .remaining_accounts
+                .get_mut(index)
+                .expect("position returned a valid index");
             meta.is_writable |= required.is_writable;
             meta.is_signer |= required.is_signer;
             for purpose in required.purposes {
@@ -130,14 +171,18 @@ impl<'b> StepTables<'b> {
         }
         let index = u8::try_from(self.remaining_accounts.len())
             .map_err(|_| FheExecutionBuildError::TooManyRemainingAccounts)?;
+        self.ensure_headroom(self.remaining_accounts.next_push_request())?;
         self.remaining_accounts.push(required);
         Ok(index)
     }
 
     /// Pays step-local allocation bytes into the builder's tally (per-step operand tables that
-    /// are not one of the three shared tables).
-    pub(crate) fn tally_bytes(&mut self, bytes: usize) {
+    /// are not one of the three shared tables), admitting them against the budget first — call
+    /// before the allocation they price.
+    pub(crate) fn tally_bytes(&mut self, bytes: usize) -> Result<()> {
+        self.ensure_headroom(bytes)?;
         *self.explicit_bytes += bytes;
+        Ok(())
     }
 
     /// Every byte requested so far by the parts of the builder this step borrows: the explicit
@@ -160,6 +205,7 @@ impl<'b> StepTables<'b> {
         }
         let index = u8::try_from(self.dictionary.len())
             .map_err(|_| FheExecutionBuildError::TooManyDictionaryEntries)?;
+        self.ensure_headroom(self.dictionary.next_push_request())?;
         self.dictionary.push(bytes);
         Ok(index)
     }
@@ -168,8 +214,13 @@ impl<'b> StepTables<'b> {
         self.persistent_producers.contains(encrypted_value)
     }
 
-    fn record_persistent_producer(&mut self, encrypted_value: anchor_lang::prelude::Pubkey) {
+    fn record_persistent_producer(
+        &mut self,
+        encrypted_value: anchor_lang::prelude::Pubkey,
+    ) -> Result<()> {
+        self.ensure_headroom(self.persistent_producers.next_push_request())?;
         self.persistent_producers.push(encrypted_value);
+        Ok(())
     }
 }
 
@@ -215,7 +266,7 @@ pub(crate) fn lower_operand(
                     + attestation.ct_handles.len() * std::mem::size_of::<[u8; 32]>()
                     + attestation.extra_data.len()
                     + attestation.signatures.len() * std::mem::size_of::<[u8; 65]>(),
-            );
+            )?;
             Ok(FheExecuteOperand::VerifiedInput {
                 attestation: Box::new(attestation),
             })
@@ -259,7 +310,7 @@ pub(crate) fn lower_output(
                     ))?)
                 };
             // One exact allocation for the index list, sized explicitly so the tally is exact.
-            tables.tally_bytes(binding.subjects.len() * std::mem::size_of::<u8>());
+            tables.tally_bytes(binding.subjects.len() * std::mem::size_of::<u8>())?;
             let mut output_subject_indexes = Vec::with_capacity(binding.subjects.len());
             for subject in &binding.subjects {
                 output_subject_indexes.push(tables.dictionary_index(subject.to_bytes())?);
@@ -277,7 +328,7 @@ pub(crate) fn lower_output(
                 }),
                 make_public: binding.make_public,
             };
-            tables.record_persistent_producer(encrypted_value);
+            tables.record_persistent_producer(encrypted_value)?;
             Ok(output)
         }
     }

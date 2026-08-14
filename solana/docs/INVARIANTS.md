@@ -386,9 +386,15 @@ not when the threat model changes.
       `BUILD_HEAP_BUDGET_BYTES` (24 KiB), leaving `APP_HEAP_RESERVE_BYTES`
       (8 KiB) of the fixed 32 KB region for what the builder genuinely cannot
       see: Anchor's account deserialization and the app's own allocations
-      (`ExceedsBuildHeapBudget`). The build term is gated per committed step —
-      the step that crosses the budget is the one rejected, and the region
-      itself can never be exhausted mid-build — while the packet and
+      (`ExceedsBuildHeapBudget`). The build term is enforced pre-emptively:
+      every allocation the builder makes — table growth, dictionary
+      interning, caller-sized reduction operand tables, attestation embeds —
+      is admitted against the budget before the allocator serves it, so the
+      tally can never cross the budget even transiently and the builder alone
+      can never exhaust the region, whatever the app does with a rejection
+      (proven adversarially by
+      `the_tally_never_crosses_the_budget_even_transiently` in
+      `heap_budget.rs`). The packet and
       invoke-table terms land at `finish`, where they are first known. The
       invoke-side term prices `resolve_accounts` plus the CPI meta/info
       tables as an exact function of the account counts, so an admitted

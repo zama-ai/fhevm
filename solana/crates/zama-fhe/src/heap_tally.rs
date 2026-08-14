@@ -25,6 +25,22 @@ fn grown_capacity(capacity: usize, elem_size: usize) -> usize {
     std::cmp::max(2 * capacity, minimum_nonzero_capacity(elem_size))
 }
 
+/// Bytes `new_elements` further pushes into `vec` will request from the allocator, under the
+/// same growth model as [`tally_push`] — the projection callers use to admit a growth against
+/// a budget *before* the allocator serves it.
+pub(crate) fn pushes_request<T>(vec: &Vec<T>, new_elements: usize) -> usize {
+    let elem_size = std::mem::size_of::<T>();
+    let mut capacity = vec.capacity();
+    let mut requested = 0;
+    for length in vec.len()..vec.len() + new_elements {
+        if length == capacity {
+            capacity = grown_capacity(capacity, elem_size);
+            requested += capacity * elem_size;
+        }
+    }
+    requested
+}
+
 /// Tallies the bytes the next `push` will request from the allocator, modeling `Vec` growth
 /// the way the never-freeing bump region pays for it: a full vector reallocates to double its
 /// capacity (or to `RawVec`'s minimum first capacity), and the outgrown buffer is never
@@ -88,6 +104,13 @@ impl<T> TalliedVec<T> {
     /// Every byte this table has requested from the allocator so far.
     pub(crate) fn requested_bytes(&self) -> usize {
         self.requested
+    }
+
+    /// The bytes the next [`push`](Self::push) will request from the allocator — zero while
+    /// the table still fits its capacity. Lets a caller admit a growth against a budget
+    /// *before* the allocator serves it.
+    pub(crate) fn next_push_request(&self) -> usize {
+        pushes_request(&self.vec, 1)
     }
 
     /// Hands the underlying `Vec` over (to the wire args, or the finished execution). The

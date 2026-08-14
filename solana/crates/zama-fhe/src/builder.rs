@@ -25,19 +25,22 @@
 //!   build + packet + the invoke-side account tables under
 //!   [`crate::BUILD_HEAP_BUDGET_BYTES`], leaving [`crate::APP_HEAP_RESERVE_BYTES`] for what it
 //!   genuinely cannot see: Anchor's account deserialization and the app's own allocations
-//!   ([`FheExecutionBuildError::ExceedsBuildHeapBudget`]). The build side is checked per
-//!   committed step — so a shape that could exhaust the real region mid-build is rejected at
-//!   the step that crosses the budget, like the other per-step ceilings — and the packet and
-//!   invoke terms land at `finish`, where they are first known. The tally is validated
-//!   byte-for-byte against a counting allocator across the whole shape frontier in
-//!   `heap_budget.rs`, so it cannot silently drift from what the code allocates.
+//!   ([`FheExecutionBuildError::ExceedsBuildHeapBudget`]). The build side is enforced
+//!   *pre-emptively*: every allocation the builder makes — table growth, dictionary interning,
+//!   caller-sized reduction operand tables, attestation embeds — is admitted against the
+//!   budget before the allocator serves it, so the tally can never cross the budget even
+//!   transiently and the builder alone can never exhaust the real region, whatever the app
+//!   does with a rejection. The packet and invoke terms land at `finish`, where they are
+//!   first known. The tally is validated byte-for-byte against a counting allocator across
+//!   the whole shape frontier in `heap_budget.rs`, and the never-crosses claim has its own
+//!   adversarial test there, so neither can silently drift from what the code allocates.
 //!
 //! One wall is deliberately *not* typed, because no app-side number can see it: the host's own
 //! CPI frame grows with created outputs times subjects per output, and for shared-audience
 //! `make_public` creates it aborts before the ceilings above do (15 eight-subject public
 //! creates land, the 16th dies host-side, while the app-side ceilings admit 20). That
 //! wall — like the host's heap cost for MMR-mature updates — is pinned by the boundary sweeps
-//! in `runtime-tests/tests/fhe_execute_boundary.rs` and documented in invariant #54;
+//! in `runtime-tests/tests/fhe_execute_boundary.rs` and documented in invariant #61;
 //! see `crate::cost`'s module doc for the mechanism. `FheExecution::cost`
 //! reports the exact packet bytes, trace floor, and tallied heap so an app composing a larger
 //! transaction can budget the rest.
@@ -123,9 +126,10 @@ impl StepLowering<'_> {
         )
     }
 
-    /// Pays step-local allocation bytes into the builder's tally.
-    pub(crate) fn tally_bytes(&mut self, bytes: usize) {
-        self.tables.tally_bytes(bytes);
+    /// Pays step-local allocation bytes into the builder's tally, admitting them against the
+    /// budget first — call before the allocation they price.
+    pub(crate) fn tally_bytes(&mut self, bytes: usize) -> Result<()> {
+        self.tables.tally_bytes(bytes)
     }
 
     pub(crate) fn output(&mut self, output: Output) -> Result<FheExecuteOutput> {
@@ -192,6 +196,7 @@ impl<'id> FheExecutionBuilder<'id> {
                 dictionary,
                 persistent_producers,
                 explicit_heap_bytes,
+                stable_table_bytes,
             ),
             verified_inputs,
         };
@@ -236,14 +241,17 @@ impl<'id> FheExecutionBuilder<'id> {
                     lowering.tables.rollback();
                     return Err(FheExecutionBuildError::ExceedsInstructionTraceLimit);
                 }
-                // The build side of the heap budget, checked at the step that crosses it — the
-                // packet and invoke-table terms land at `finish`, where they are first known.
-                // Without this, a shape whose *build alone* outgrows the budget would keep
-                // allocating on the real, never-freeing region all the way to `finish`; with it,
-                // the running request stays under the budget after every admitted step, and no
-                // single step's allocations exceed the reserve — so the region itself can never
-                // be exhausted mid-build. The rolled-back tables stay truncated but their
-                // requests stay counted: on a bump region a rejected step's bytes are spent.
+                // The build side of the heap budget — the packet and invoke-table terms land at
+                // `finish`, where they are first known. The real enforcement is pre-emptive:
+                // every allocation lowering makes was admitted against the budget before the
+                // allocator served it (`StepTables::ensure_headroom`, and
+                // `collect_reduction_operands` for the caller-sized operand tables), so the
+                // tally can never cross the budget even transiently and the region itself can
+                // never be exhausted mid-build. This check is the belt over those braces: with
+                // every site admitted it cannot fire, and if a future allocation site forgets
+                // its admission, the step that crosses the budget is still rejected here. The
+                // rolled-back tables stay truncated but their requests stay counted: on a bump
+                // region a rejected step's bytes are spent.
                 if stable_table_bytes + lowering.tables.requested_bytes()
                     > crate::cost::BUILD_HEAP_BUDGET_BYTES
                 {
@@ -324,8 +332,15 @@ impl<'id> FheExecutionBuilder<'id> {
         if self.steps.is_empty() {
             return Err(FheExecutionBuildError::EmptySteps);
         }
-        // The validation below allocates its two one-byte-per-entry usage bitmaps.
-        self.explicit_heap_bytes += self.remaining_accounts.len() + self.dictionary.len();
+        // The validation below allocates its two one-byte-per-entry usage bitmaps — admitted
+        // against the budget first, like every other allocation, so the tally cannot cross it
+        // even here. Rejecting is consistent with the final check below, which charges strictly
+        // more.
+        let bitmap_bytes = self.remaining_accounts.len() + self.dictionary.len();
+        if self.requested_heap_bytes() + bitmap_bytes > crate::cost::BUILD_HEAP_BUDGET_BYTES {
+            return Err(FheExecutionBuildError::ExceedsBuildHeapBudget);
+        }
+        self.explicit_heap_bytes += bitmap_bytes;
         validate_lowered_execution(&self.steps, &self.remaining_accounts, &self.dictionary)?;
         validate_rand_steps_anchor_persistent_output(&self.steps)?;
         let account_count = u8::try_from(self.remaining_accounts.len())

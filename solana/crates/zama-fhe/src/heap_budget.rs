@@ -427,6 +427,126 @@ fn the_builder_admits_what_the_host_heap_cannot_hold() {
     );
 }
 
+/// The pre-emptive heap protocol, proven adversarially: drive the heaviest per-step
+/// allocators into their typed rejection with a probe after every single call, and assert the
+/// builder's tally never crosses the budget — not even transiently, not even on the rejected
+/// call, not even when the caller ignores the rejection and keeps going. Before the protocol
+/// admitted allocations up front, the per-step gate ran only *after* lowering had allocated,
+/// so a near-budget build could request past the 32 KB region itself (eleven 8-operand set
+/// memberships followed by one 60-operand sum requested 33.5 KB) and abort with no error —
+/// the exact failure mode `build()` promises away.
+#[test]
+fn the_tally_never_crosses_the_budget_even_transiently() {
+    fn probe(builder: &FheExecutionBuilder<'_>, probes: &Cell<usize>) {
+        probes.set(probes.get() + 1);
+        let tally = builder.requested_heap_bytes();
+        assert!(
+            tally <= crate::cost::BUILD_HEAP_BUDGET_BYTES,
+            "the tally reached {tally} bytes, past the {} budget — an allocation site is \
+             missing its headroom admission",
+            crate::cost::BUILD_HEAP_BUDGET_BYTES,
+        );
+    }
+    let probes = Cell::new(0usize);
+    let rejections = Cell::new(0usize);
+
+    // The review's counterexample: 8-operand set memberships to the brink, then a 60-operand
+    // sum whose operand table alone must be refused before it is allocated.
+    let authority = Pubkey::new_unique();
+    let domain = Domain::new(Pubkey::new_unique());
+    let input = Uint64Handle::persistent(
+        balance_handle(3),
+        EncryptedValueId::new(domain, authority, EncryptedValueLabel::new([0xfc; 32])),
+    )
+    .expect("input handle");
+    let _ = FheExecution::build(
+        ExecutionEncryptedValueAccountAuthority::new(Pubkey::new_unique()),
+        |builder| {
+            let value = Encrypted::from(input);
+            for _ in 0..MAX_FHE_EXECUTION_STEPS {
+                let result = builder.is_in(value, (0..8).map(|_| value), Output::transient());
+                probe(builder, &probes);
+                if let Err(error) = result {
+                    assert_eq!(error, crate::FheExecutionBuildError::ExceedsBuildHeapBudget);
+                    rejections.set(rejections.get() + 1);
+                    break;
+                }
+            }
+            let oversized = builder.sum((0..60).map(|_| value), Output::transient());
+            probe(builder, &probes);
+            assert_eq!(
+                oversized.unwrap_err(),
+                crate::FheExecutionBuildError::ExceedsBuildHeapBudget,
+            );
+            Ok(())
+        },
+    );
+
+    // Subject-heavy creates: every output interns eight fresh subjects, driving the
+    // dictionary and account tables through their doublings — and the rejections are ignored,
+    // as a buggy app would, so the ratchet past the first rejection is probed too.
+    let (input, outputs) = persist_shape_data(PersistKind::Create, MAX_BUILDABLE_CREATES, 8);
+    let _ = FheExecution::build(
+        ExecutionEncryptedValueAccountAuthority::new(Pubkey::new_unique()),
+        |builder| {
+            let mut value = Encrypted::from(input);
+            for output in outputs {
+                let result = builder.add(
+                    value,
+                    Scalar::<Uint<64>>::u64(1),
+                    Output::persistent(output),
+                );
+                probe(builder, &probes);
+                match result {
+                    Ok(next) => value = next,
+                    Err(error) => {
+                        assert_eq!(error, crate::FheExecutionBuildError::ExceedsBuildHeapBudget);
+                        rejections.set(rejections.get() + 1);
+                    }
+                }
+            }
+            Ok(())
+        },
+    );
+
+    // Maximum-size attestations: the embeds go through the explicit counter rather than a
+    // table, so this drives `tally_bytes`' admission into rejection.
+    let _ = FheExecution::build(
+        ExecutionEncryptedValueAccountAuthority::new(Pubkey::new_unique()),
+        |builder| {
+            for tag in 0..MAX_FHE_EXECUTION_STEPS {
+                let attested =
+                    builder.verified_input::<Uint<64>>(max_size_attestation(0x20 + tag as u8));
+                probe(builder, &probes);
+                let result = match attested {
+                    Ok(attested_input) => builder
+                        .add(
+                            attested_input,
+                            Scalar::<Uint<64>>::u64(1),
+                            Output::transient(),
+                        )
+                        .map(|_| ()),
+                    Err(error) => Err(error),
+                };
+                probe(builder, &probes);
+                if let Err(error) = result {
+                    assert_eq!(error, crate::FheExecutionBuildError::ExceedsBuildHeapBudget);
+                    rejections.set(rejections.get() + 1);
+                    break;
+                }
+            }
+            Ok(())
+        },
+    );
+
+    assert!(
+        rejections.get() >= 3,
+        "every adversarial shape must reach its heap rejection (got {})",
+        rejections.get(),
+    );
+    assert!(probes.get() > 20, "the probes must actually run");
+}
+
 /// The app-side shape matrix: every named shape the fit test asserts and the table prints.
 fn measured_shapes() -> Vec<MeasuredShape> {
     let full = MAX_FHE_EXECUTION_STEPS;
@@ -462,7 +582,7 @@ fn measured_shapes() -> Vec<MeasuredShape> {
 
 /// The full app-side frontier, persist kind x output count x subject width, printed with the
 /// typed rejection where the builder refuses the shape. This is the exploration companion to
-/// the host-side boundary sweeps in `runtime-tests/tests/host_mollusk.rs`.
+/// the host-side boundary sweeps in `runtime-tests/tests/fhe_execute_boundary.rs`.
 #[test]
 #[ignore = "frontier grid, run explicitly with --nocapture"]
 fn print_build_frontier_grid() {

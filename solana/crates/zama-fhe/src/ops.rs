@@ -47,7 +47,9 @@ impl<'id> FheExecutionBuilder<'id> {
             .map_err(|_| FheExecutionBuildError::TooManySteps)?;
         let input_handle = attestation.input_handle;
         // The attestation moves in — its tables are the app's own bytes — but the registry
-        // vector itself grows by doubling, and that growth is builder cost the tallied push pays.
+        // vector itself grows by doubling, and that growth is builder cost the tallied push
+        // pays, admitted against the budget before the allocator serves it.
+        self.ensure_build_headroom(self.verified_inputs.next_push_request())?;
         self.verified_inputs.push(attestation);
         Ok(Encrypted::from_operand(Operand::verified_input(
             input_handle,
@@ -563,36 +565,72 @@ impl<'id> FheExecutionBuilder<'id> {
         .map(Encrypted::from_operand)
     }
 
+    /// Admits `pending` upcoming bytes against the build budget *before* they are allocated.
+    /// Any step whose tally includes them can only end larger, so rejecting here is the same
+    /// verdict `commit_step`'s gate would reach — reached before the allocator serves the
+    /// bytes instead of after.
+    fn ensure_build_headroom(&self, pending: usize) -> Result<()> {
+        if self.requested_heap_bytes() + pending > crate::cost::BUILD_HEAP_BUDGET_BYTES {
+            return Err(FheExecutionBuildError::ExceedsBuildHeapBudget);
+        }
+        Ok(())
+    }
+
+    /// Collects a reduction's operand table — the one allocation in this crate whose size the
+    /// caller controls — charging the heap before the allocator is asked. Three guards keep a
+    /// single reduction step from out-allocating the reserve ahead of `commit_step`'s gate:
+    /// the reservation is clamped to the policy cap (a size hint is a promise the iterator
+    /// need not keep, so it never sizes an allocation by itself), the reservation and every
+    /// growth past a lying hint pass [`Self::ensure_build_headroom`] first, and collection
+    /// stops at the cap instead of buffering an oversized set. What does get allocated is
+    /// harvested into the tally whether or not a later check rejects the step — on a bump
+    /// region the bytes are spent either way.
+    fn collect_reduction_operands(
+        &mut self,
+        operands: impl Iterator<Item = Operand>,
+        max_operands: usize,
+    ) -> Result<Vec<Operand>> {
+        let (hinted, _) = operands.size_hint();
+        let reserved = hinted.min(max_operands);
+        self.ensure_build_headroom(reserved * std::mem::size_of::<Operand>())?;
+        let mut table: TalliedVec<Operand> = TalliedVec::with_capacity(reserved);
+        for operand in operands {
+            if table.len() == max_operands {
+                self.explicit_heap_bytes += table.requested_bytes();
+                return Err(FheExecutionBuildError::TooManyReductionOperands);
+            }
+            let growth = table.next_push_request();
+            if growth > 0 {
+                if let Err(error) = self.ensure_build_headroom(table.requested_bytes() + growth) {
+                    self.explicit_heap_bytes += table.requested_bytes();
+                    return Err(error);
+                }
+            }
+            table.push(operand);
+        }
+        self.explicit_heap_bytes += table.requested_bytes();
+        Ok(table.into_inner())
+    }
+
     pub fn sum<T: FheUint>(
         &mut self,
         operands: impl IntoIterator<Item = impl Into<Encrypted<'id, T>>>,
         output: Output,
     ) -> Result<Encrypted<'id, T>> {
         // EVM `fheSum` and the coprocessor enforce no minimum: a zero/single-operand sum is valid.
-        // The table is reserved from the iterator's hint (a 60-operand table grown by doubling
-        // would strand nearly its own size on the never-freeing heap); the tallied table pays
-        // for the reservation and for any growth past a lying hint, harvested below whether or
-        // not a later check rejects the step — on a bump region the bytes are spent either way.
-        let operands = operands.into_iter();
-        let (reserved_operands, _) = operands.size_hint();
-        let mut operand_ops: TalliedVec<Operand> = TalliedVec::with_capacity(reserved_operands);
-        for operand in operands {
-            operand_ops.push(operand.into().operand());
-        }
-        self.explicit_heap_bytes += operand_ops.requested_bytes();
-        let operand_ops = operand_ops.into_inner();
+        let fhe_type = T::FHE_TYPE.byte();
+        validate_uint_fhe_type(fhe_type)?;
+        let operand_ops = self.collect_reduction_operands(
+            operands.into_iter().map(|operand| operand.into().operand()),
+            max_reduction_operands(fhe_type),
+        )?;
         for op in &operand_ops {
             if matches!(op.0, OperandKind::Scalar(_)) {
                 return Err(FheExecutionBuildError::ScalarEncryptedOperand);
             }
         }
-        let fhe_type = T::FHE_TYPE.byte();
-        validate_uint_fhe_type(fhe_type)?;
-        if operand_ops.len() > max_reduction_operands(fhe_type) {
-            return Err(FheExecutionBuildError::TooManyReductionOperands);
-        }
         let step_index = self.commit_step(fhe_type, |lowering| {
-            lowering.tally_bytes(operand_ops.len() * std::mem::size_of::<FheExecuteOperand>());
+            lowering.tally_bytes(operand_ops.len() * std::mem::size_of::<FheExecuteOperand>())?;
             let mut lowered: Vec<FheExecuteOperand> = Vec::with_capacity(operand_ops.len());
             for op in operand_ops {
                 lowered.push(lowering.operand(op)?);
@@ -614,33 +652,27 @@ impl<'id> FheExecutionBuilder<'id> {
         output: Output,
     ) -> Result<Encrypted<'id, Bool>> {
         // EVM `fheIsIn` and the coprocessor enforce no minimum: an empty set is valid (false result).
-        // Reserved from the iterator's hint and harvested like `sum`'s operand table above.
-        let set = set.into_iter();
-        let (reserved_set, _) = set.size_hint();
-        let mut set_ops: TalliedVec<Operand> = TalliedVec::with_capacity(reserved_set);
-        for operand in set {
-            set_ops.push(operand.into().operand());
-        }
-        self.explicit_heap_bytes += set_ops.requested_bytes();
-        let set_ops = set_ops.into_inner();
+        let fhe_type = T::FHE_TYPE.byte();
+        validate_supported_fhe_type(fhe_type)?;
         let value_op = value.into().operand();
         if matches!(value_op.0, OperandKind::Scalar(_)) {
             return Err(FheExecutionBuildError::ScalarEncryptedOperand);
         }
+        // Collected like `sum`'s operand table above: reservation clamped to the cap and
+        // headroom-checked before allocation.
+        let set_ops = self.collect_reduction_operands(
+            set.into_iter().map(|operand| operand.into().operand()),
+            max_reduction_operands(fhe_type),
+        )?;
         for op in &set_ops {
             if matches!(op.0, OperandKind::Scalar(_)) {
                 return Err(FheExecutionBuildError::ScalarEncryptedOperand);
             }
         }
-        let fhe_type = T::FHE_TYPE.byte();
-        validate_supported_fhe_type(fhe_type)?;
-        if set_ops.len() > max_reduction_operands(fhe_type) {
-            return Err(FheExecutionBuildError::TooManyReductionOperands);
-        }
         let bool_type = FheType::BOOL.byte();
         let step_index = self.commit_step(bool_type, |lowering| {
             let value = lowering.operand(value_op)?;
-            lowering.tally_bytes(set_ops.len() * std::mem::size_of::<FheExecuteOperand>());
+            lowering.tally_bytes(set_ops.len() * std::mem::size_of::<FheExecuteOperand>())?;
             let mut set_lowered: Vec<FheExecuteOperand> = Vec::with_capacity(set_ops.len());
             for op in set_ops {
                 set_lowered.push(lowering.operand(op)?);

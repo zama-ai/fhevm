@@ -1548,6 +1548,7 @@ fn step_tables_rollback_undoes_promotions_and_appends() {
         &mut dictionary,
         &mut persistent_producers,
         &mut explicit_bytes,
+        0,
     );
     // Promote the same entry twice — first writable, then signer — so undoing in the wrong order
     // would leave the entry with the flags the first promotion set.
