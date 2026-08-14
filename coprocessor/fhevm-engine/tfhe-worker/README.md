@@ -165,8 +165,10 @@ bypass Criterion and write one JSON artifact per scenario under
 `ci/benchmark_one_shot_parser.py` (rather than `ci/benchmark_parser.py`) before
 sending the points to Slab. Each scenario reports its primary metric and the
 commit-start upper bound as latencies, plus FHE-operation and transfer rates
-derived from the primary metric, with the workload topology attached as
-parameters. The workflows fail if an expected scenario produced no artifact — or
+derived from the primary metric. Points are reported under the same parameter
+record every other benchmark uses, since that record is stored as typed columns;
+the workload's own topology stays in the run artifact and in the test name,
+which carries the scenario. The workflows fail if an expected scenario produced no artifact — or
 if an artifact carries an unknown schema version or another commit's revision —
 after sending the scenarios that did complete. The "batch size" input does not
 apply to this set: each scenario derives its own work-item batch.
