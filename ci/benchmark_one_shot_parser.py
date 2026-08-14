@@ -276,7 +276,11 @@ def parse_scenario(content, name_suffix):
     for metric_name, bench_type, value in measurements:
         label = METRIC_LABELS.get(metric_name, metric_name)
         display_name = "::".join([BENCH_NAME, scenario, label])
-        test_name = "_".join(filter(None, [display_name, name_suffix]))
+        # Follow the naming every stored point uses: the display name is stable
+        # per benchmark, and the test name carries the statistic and the run's
+        # suffix. A one-shot measures its workload once, so the run is its own
+        # mean and there is no deviation to report.
+        test_name = "_".join(filter(None, [display_name, "mean", name_suffix]))
         points.append(
             _create_point(value, test_name, bench_type, params, display_name)
         )

@@ -180,8 +180,9 @@ holds one row per point, joined to `benchmark.test`, `.hardware`, `.backend`,
 `.branch` and `.project_version`.
 
 Test names are `erc20::transfer::main_block_one_shot::<scenario>::<metric>`,
-followed by the run's name suffix, so `::`-splitting yields the scenario at
-position 4. GPU runs are stored under backend `cuda`. Latencies are in
+followed by the statistic and the run's name suffix, as every stored point is —
+so `::`-splitting yields the scenario at position 4, and stripping from `_mean`
+leaves the metric. GPU runs are stored under backend `cuda`. Latencies are in
 nanoseconds; the rate metrics are already per second.
 
 Primary metric per scenario, in milliseconds. The label differs between the
@@ -234,7 +235,7 @@ per test name, and stripping the suffix leaves the metric label:
 ```sql
 SELECT DISTINCT ON (test.name)
   split_part(test.name, '::', 4) AS scenario,
-  regexp_replace(split_part(test.name, '::', 5), '_schedule_.*$', '') AS metric,
+  regexp_replace(split_part(test.name, '::', 5), '_(mean|std_dev)_.*$', '') AS metric,
   m.value,
   pv.name AS commit,
   m.insert_time
