@@ -474,6 +474,19 @@ export const hostChainRuntimes = (chains: HostChainScenario[]) => {
 export const hostChainAddressesSolidityPath = (key: string) =>
   path.join(ADDRESS_DIR, key, "FHEVMHostAddresses.sol");
 
+/**
+ * Path to the e2e coprocessor-config Solidity file. Unlike the per-chain address files (which
+ * live in the runtime ADDRESS_DIR), this one is imported by the e2e contracts via a relative
+ * path, so `generate` overwrites it in place with per-chain (block.chainid) branches.
+ */
+export const e2eCoprocessorConfigSolidityPath = path.join(
+  CLI_DIR,
+  "..",
+  "e2e",
+  "contracts",
+  "E2ECoprocessorConfigLocal.sol",
+);
+
 /** Builds the docker compose argv prefix for one component. */
 export const dockerArgs = (component: string) => [
   "docker",
