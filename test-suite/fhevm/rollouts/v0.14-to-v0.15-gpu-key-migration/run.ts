@@ -92,7 +92,7 @@ const kmsTopology = `kms:
   threshold: 1
   fheParams: Test`;
 
-export const migrationScenario = (baselineTag: string, targetTag: string) => `version: 1
+export const migrationScenario = (baselineTag: string) => `version: 1
 kind: blue-green
 name: RFC 029 0.14 to 0.15 key migration
 ${hostChains}
@@ -105,8 +105,7 @@ bcs:
     tag: ${JSON.stringify(baselineTag)}
 gcs:
   source:
-    mode: registry
-    tag: ${JSON.stringify(targetTag)}
+    mode: local
   stackVersion: "0.15.0"
   deferredStart: true
   env:
@@ -362,7 +361,7 @@ export default async function runMigration(ctx: RolloutRunContext) {
     sources: versionSources,
   });
   const scenario = path.join(ctx.stateDir(), "rollout", "rfc029-v014-to-v015.yaml");
-  await Bun.write(scenario, migrationScenario(versions.baselineTag, versions.targetTag));
+  await Bun.write(scenario, migrationScenario(versions.baselineTag));
 
   logPhase("00 boot 0.14 and generate the legacy Test key");
   await ctx.up({

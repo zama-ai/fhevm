@@ -31,20 +31,19 @@ const material = (overrides: Partial<OperatorMaterial> = {}): OperatorMaterial =
 
 describe("RFC 029 rollout gates", () => {
   test("uses the last published 0.14 images to create the legacy-key baseline", () => {
-    const versions = migrationVersions({ RFC029_TARGET_FHEVM_TAG: "target-sha" });
+    const versions = migrationVersions();
     expect(versions.baselineTag).toBe("v0.14.0-10");
     expect(versions.baseline.HOST_VERSION).toBe("v0.14.0-9");
     expect(versions.baseline.GATEWAY_VERSION).toBe("v0.14.0-10");
-    expect(versions.targetTag).toBe("target-sha");
   });
 
-  test("boots 0.14 Blue and defers the published 0.15 Green with the legacy safeguard", () => {
+  test("boots 0.14 Blue and defers the locally built 0.15 Green with the legacy safeguard", () => {
     const scenario = parseBlueGreenScenario(
-      migrationScenario("v0.14.0-10", "target-sha"),
+      migrationScenario("v0.14.0-10"),
       "generated RFC 029 migration scenario",
     );
     expect(scenario.bcs?.source).toEqual({ mode: "registry", tag: "v0.14.0-10" });
-    expect(scenario.gcs.source).toEqual({ mode: "registry", tag: "target-sha" });
+    expect(scenario.gcs.source).toEqual({ mode: "local" });
     expect(scenario.gcs.env?.FORCE_LEGACY_SERVER_KEY).toBe("true");
     expect(scenario.gcs.deferredStart).toBe(true);
     expect(scenario.gcs.stackVersion).toBe("0.15.0");
@@ -54,7 +53,7 @@ describe("RFC 029 rollout gates", () => {
 
   test("changes only the intended deployment unit in each version lock", () => {
     const baseline: Record<string, string> = {
-      ...migrationVersions({ RFC029_TARGET_FHEVM_TAG: "target-sha" }).baseline,
+      ...migrationVersions().baseline,
       LISTENER_CORE_VERSION: "baseline-listener",
       RELAYER_VERSION: "baseline-relayer",
       TEST_SUITE_VERSION: "baseline-test-suite",
