@@ -7,6 +7,10 @@ on:
         description: "Path relative to test-suite/fhevm (for example rollouts/v0.13.21-to-v0.13.22-kms-node-by-node/run.ts)"
         required: true
         type: string
+      rfc029_target_tag:
+        description: "Published 0.15 image tag for the RFC 029 rollout"
+        required: false
+        type: string
 
 permissions: {}
 
@@ -25,6 +29,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       ROLLOUT_RUNBOOK: ${{ inputs.runbook }}
+      RFC029_TARGET_FHEVM_TAG: ${{ inputs.rfc029_target_tag }}
     steps:
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

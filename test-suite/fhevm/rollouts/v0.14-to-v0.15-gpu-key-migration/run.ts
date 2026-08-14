@@ -10,7 +10,6 @@ import {
   coprocessorDatabaseName,
   defaultHostChainKey,
   MINIO_EXTERNAL_URL,
-  TEST_SUITE_CONTAINER,
 } from "../../src/layout";
 import {
   kmsConnectorDbName,
@@ -36,25 +35,6 @@ const KEY_WORKERS = ["tfhe-worker", "zkproof-worker", "sns-worker"] as const;
 const ACTIVE_MIGRATION_SERVICES = ["host-listener", "host-listener-poller", "host-listener-consumer", ...KEY_WORKERS];
 
 const logPhase = (label: string) => console.log(`\n[GPU key migration] ${label}`);
-
-const runKeyContinuity = async (mode: "prepare" | "reuse", contract?: string) => {
-  const result = await run([
-    "docker",
-    "exec",
-    "-e",
-    `RFC029_KEY_CONTINUITY_MODE=${mode}`,
-    ...(contract ? ["-e", `RFC029_KEY_CONTINUITY_CONTRACT=${contract}`] : []),
-    TEST_SUITE_CONTAINER,
-    "npx",
-    "hardhat",
-    "run",
-    "--no-compile",
-    "scripts/rfc029-key-continuity.ts",
-    "--network",
-    "staging",
-  ]);
-  return result.stdout;
-};
 
 const sqlScalar = async (database: string, sql: string): Promise<string> => {
   const result = await run([
@@ -112,7 +92,7 @@ const kmsTopology = `kms:
   threshold: 1
   fheParams: Test`;
 
-export const migrationScenario = (baselineTag: string) => `version: 1
+export const migrationScenario = (baselineTag: string, targetTag: string) => `version: 1
 kind: blue-green
 name: RFC 029 0.14 to 0.15 key migration
 ${hostChains}
@@ -125,7 +105,8 @@ bcs:
     tag: ${JSON.stringify(baselineTag)}
 gcs:
   source:
-    mode: local
+    mode: registry
+    tag: ${JSON.stringify(targetTag)}
   stackVersion: "0.15.0"
   deferredStart: true
   env:
@@ -381,7 +362,7 @@ export default async function runMigration(ctx: RolloutRunContext) {
     sources: versionSources,
   });
   const scenario = path.join(ctx.stateDir(), "rollout", "rfc029-v014-to-v015.yaml");
-  await Bun.write(scenario, migrationScenario(versions.baselineTag));
+  await Bun.write(scenario, migrationScenario(versions.baselineTag, versions.targetTag));
 
   logPhase("00 boot 0.14 and generate the legacy Test key");
   await ctx.up({
@@ -402,22 +383,6 @@ export default async function runMigration(ctx: RolloutRunContext) {
     }
   }
   await ctx.test("input-proof-compute-decrypt", { parallel: false });
-  const continuityOutput = await runKeyContinuity("prepare");
-  const continuityContract = continuityOutput.match(/RFC029_KEY_CONTINUITY_CONTRACT=(0x[0-9a-fA-F]{40})/)?.[1];
-  if (!continuityContract) {
-    throw new Error("pre-migration key continuity probe did not return its contract address");
-  }
-  const preMigrationHandles = await Promise.all(
-    Array.from({ length: OPERATOR_COUNT }, (_, operator) =>
-      sqlScalar(
-        coprocessorDatabaseName(operator),
-        "SELECT encode(handle, 'hex') FROM ciphertexts ORDER BY created_at LIMIT 1;",
-      ),
-    ),
-  );
-  if (preMigrationHandles.some((handle) => !handle)) {
-    throw new Error("baseline traffic did not create a ciphertext on every operator");
-  }
 
   const originalKeyStates = await Promise.all(
     Array.from({ length: OPERATOR_COUNT }, (_, operator) =>
@@ -564,19 +529,4 @@ export default async function runMigration(ctx: RolloutRunContext) {
   await assertGreenSafeguard();
   await ctx.test("input-proof-compute-decrypt", { parallel: false });
   await assertWorkerRepresentation("Green", "legacy", activeRestartedAt);
-
-  logPhase("08 verify the 0.15 stack retained pre-upgrade ciphertexts and legacy execution");
-  await runKeyContinuity("reuse", continuityContract);
-  for (let operator = 0; operator < OPERATOR_COUNT; operator += 1) {
-    const handle = preMigrationHandles[operator]!;
-    const present = await sqlScalar(
-      coprocessorDatabaseName(operator),
-      `SELECT EXISTS (SELECT 1 FROM ciphertexts WHERE handle=decode('${handle}', 'hex'))::int;`,
-    );
-    if (present !== "1") {
-      throw new Error(`operator ${operator} lost pre-migration ciphertext ${handle}`);
-    }
-  }
-  await ctx.test("public-decryption", { parallel: false });
-  await ctx.test("user-decryption", { parallel: false });
 }

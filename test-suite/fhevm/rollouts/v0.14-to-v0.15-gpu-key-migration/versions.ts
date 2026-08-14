@@ -22,6 +22,7 @@ export const coprocessorVersionKeys = [
 export type MigrationVersions = {
   baseline: Record<string, string>;
   baselineTag: string;
+  targetTag: string;
 };
 
 const requiredVersion = (versions: Record<string, string>, key: string): string => {
@@ -51,9 +52,12 @@ export const migrationVersions = (env: Env = process.env): MigrationVersions => 
   // v0.14.0-10 did not publish a host-contracts image; that component remained on v0.14.0-9.
   const hostTag = env.RFC029_BASELINE_HOST_TAG?.trim() || "v0.14.0-9";
   const kmsCoreTag = env.RFC029_KMS_CORE_TAG?.trim() || "v0.14.0-1";
+  const targetTag = env.RFC029_TARGET_FHEVM_TAG?.trim();
+  if (!targetTag) throw new Error("RFC029_TARGET_FHEVM_TAG is required");
 
   return {
     baselineTag: releaseTag,
+    targetTag,
     baseline: {
       GATEWAY_VERSION: releaseTag,
       HOST_VERSION: hostTag,
