@@ -12,7 +12,7 @@ import {
   buildSafeMultisigSignature,
   collectSafeOwnerParts,
   deploySafeAccount,
-  deploySafeInfra,
+  resolveSafeInfra,
 } from './safe';
 
 // End-to-end coverage of `@fhevm/sdk` ERC-1271 (smart-contract-wallet) support
@@ -115,7 +115,7 @@ describe('ERC-1271 user decryption via the SDK client', function () {
     // A real Safe v1.4.1 2-of-3 proxy (owners bob/carol/dave; canonical
     // prebuilt artifacts) and a Safe-style approveHash mock wallet (owner
     // bob) — the userAddress targets of the tests.
-    const infra = await deploySafeInfra(signers.alice);
+    const infra = await resolveSafeInfra(signers.alice);
     safeAccount = await deploySafeAccount(
       infra,
       signers.alice,
