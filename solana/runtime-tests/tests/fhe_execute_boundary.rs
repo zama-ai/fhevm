@@ -658,13 +658,36 @@ fn assert_wall_pin(profile: &str, pin: &WallPin, sweep: &SweptBoundary) {
 
 /// Sweeps every shape in the table, asserts its pinned wall, and records it in the snapshot.
 /// The `cost_snapshot_` prefix keeps it inside `scripts/update-cost-snapshots.sh`'s test filter.
+///
+/// Every shape is swept before any failure is reported: a change that moves several
+/// boundaries surfaces as one complete report instead of a fix-and-rerun cycle per shape, and
+/// an update run (`ZAMA_UPDATE_COST_SNAPSHOT=1`) records every profile even when a wall pin
+/// fails mid-table — the snapshot on disk is never left partially rewritten.
 #[test]
 fn cost_snapshot_boundary_sweeps() {
+    let mut failures = Vec::new();
     for shape in boundary_shapes() {
-        let sweep = sweep_step_boundary(shape.min_steps, &shape.build);
-        assert_swept_boundary(shape.profile, &sweep);
-        assert_wall_pin(shape.profile, &shape.pin, &sweep);
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let sweep = sweep_step_boundary(shape.min_steps, &shape.build);
+            assert_swept_boundary(shape.profile, &sweep);
+            assert_wall_pin(shape.profile, &shape.pin, &sweep);
+        }));
+        if let Err(panic) = outcome {
+            let message = panic
+                .downcast_ref::<String>()
+                .map(String::as_str)
+                .or_else(|| panic.downcast_ref::<&str>().copied())
+                .unwrap_or("non-string panic");
+            failures.push(format!("{}: {message}", shape.profile));
+        }
     }
+    assert!(
+        failures.is_empty(),
+        "{} of {} boundary sweeps failed:\n\n{}",
+        failures.len(),
+        boundary_shapes().len(),
+        failures.join("\n\n"),
+    );
 }
 
 /// Prints every shape's full curve — CU, packet bytes, CPIs, and the failure axis per step

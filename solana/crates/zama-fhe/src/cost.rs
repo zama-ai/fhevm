@@ -40,8 +40,8 @@
 //! builder's typed ceilings alone would admit 20.
 //!
 //! Both ceilings are runtime facts of the pinned agave 4.x toolchain, asserted against
-//! measurement by `runtime-tests/tests/host_mollusk.rs` (`cost_snapshot_solana_ceilings` and
-//! the boundary sweeps).
+//! measurement by `runtime-tests/tests/fhe_execute_boundary.rs` (`cost_snapshot_solana_ceilings`
+//! and the boundary sweeps).
 
 /// Instructions one transaction may execute, top-level and CPI together — agave's
 /// `MAX_INSTRUCTION_TRACE_LENGTH` (`solana-transaction-context`); exceeding it aborts the

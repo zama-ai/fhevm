@@ -38,8 +38,8 @@ afterthought.
 
 ## Mollusk runtime coverage
 
-The `operator_mollusk_conformance`, `host_mollusk`, `token_mollusk`, `batcher_mollusk`,
-`vault_mollusk`, `permit_invalidation_mollusk`, `disclose_packet_fit`, and specimen
+The `operator_mollusk_conformance`, `host_mollusk`, `fhe_execute_boundary`, `token_mollusk`,
+`batcher_mollusk`, `vault_mollusk`, `permit_invalidation_mollusk`, `disclose_packet_fit`, and specimen
 (`counter_mollusk`, `dep_chain_mollusk`) suites execute real SBF under Mollusk, booted and
 asserted through the shared `zama-solana-test-kit` crate. Mollusk surfaces resulting **account state**, **inner instructions (CPIs)**, and **return
 data**, which are the stable artifacts these suites assert on. Plain `emit!` program-data logs are
@@ -65,6 +65,7 @@ cargo test -p zama-solana-runtime-tests --test execution_contracts
 cargo test -p zama-solana-runtime-tests --test operator_mollusk_conformance
 cargo test -p zama-solana-runtime-tests --test operator_mollusk_conformance encrypted_scalar_add_executes_then_reads_cleartext_outcome -- --exact
 cargo test -p zama-solana-runtime-tests --test host_mollusk -- --nocapture
+cargo test -p zama-solana-runtime-tests --test fhe_execute_boundary -- --nocapture
 cargo test -p zama-solana-runtime-tests --test token_mollusk -- --nocapture
 cargo test -p zama-solana-runtime-tests --test batcher_mollusk -- --nocapture
 cargo test -p zama-solana-runtime-tests --test vault_mollusk -- --nocapture

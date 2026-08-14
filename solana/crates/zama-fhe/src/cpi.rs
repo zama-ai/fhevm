@@ -109,7 +109,7 @@ where
 }
 
 /// Assembles the `fhe_execute` CPI account tables exactly as
-/// [`crate::cost::invoke_table_heap_bytes`] charges them at `build()`: Anchor's generated
+/// [`crate::heap_tally::invoke_table_heap_bytes`] charges them at `build()`: Anchor's generated
 /// accessors grow the fixed accounts from empty, then one exact reservation sizes the dynamic
 /// tail — no doubling on the never-freeing bump heap past the fixed accounts. The heap-budget
 /// invoke measurement runs this function under a counting allocator, so the model and this

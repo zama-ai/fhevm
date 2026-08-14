@@ -133,6 +133,8 @@ FHE_ROOTS=(
   solana/programs/zama-host
   solana/programs/confidential-token
   solana/runtime-tests/tests/host_mollusk.rs
+  solana/runtime-tests/tests/host_fixtures/mod.rs
+  solana/runtime-tests/tests/fhe_execute_boundary.rs
   solana/runtime-tests/tests/token_mollusk.rs
   solana/runtime-tests/tests/operator_conformance.rs
   solana/runtime-tests/tests/operator_mollusk_conformance.rs
