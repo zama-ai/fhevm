@@ -170,3 +170,114 @@ parameters. The workflows fail if an expected scenario produced no artifact — 
 if an artifact carries an unknown schema version or another commit's revision —
 after sending the scenarios that did complete. The "batch size" input does not
 apply to this set: each scenario derives its own work-item batch.
+
+### Querying the results in Grafana
+
+Slab stores each series in the PostgreSQL database its `--database` argument
+names, so these runs land in a database called `coprocessor` — a different data
+source from tfhe-rs's `tfhe_rs`, on the same server. Within it, `benchmark.metrics`
+holds one row per point, joined to `benchmark.test`, `.hardware`, `.backend`,
+`.branch` and `.project_version`.
+
+Test names are `erc20::transfer::main_block_one_shot::<scenario>::<metric>`,
+followed by the run's name suffix, so `::`-splitting yields the scenario at
+position 4. GPU runs are stored under backend `cuda`. Latencies are in
+nanoseconds; the rate metrics are already per second.
+
+Primary metric per scenario, in milliseconds. The label differs between the
+paced and unpaced workloads, which is why two are matched:
+
+```sql
+SELECT
+  m.insert_time AS "time",
+  split_part(test.name, '::', 4) AS metric,
+  m.value / 1e6 AS latency_ms
+FROM benchmark.metrics AS m
+JOIN benchmark.test AS test ON test.id = m.test_id
+JOIN benchmark.backend AS bk ON bk.id = m.backend_id
+JOIN benchmark.hardware AS h ON h.id = m.hardware_id
+JOIN benchmark.branch AS b ON b.id = m.branch_id
+WHERE $__timeFilter(m.insert_time)
+  AND test.name LIKE 'erc20::transfer::main_block_one_shot::%'
+  AND (test.name LIKE '%::worker_visible_to_terminals%'
+       OR test.name LIKE '%::first_commit_to_final_terminals%')
+  AND bk.name = '$backend'
+  AND h.name = '$hardware'
+  AND b.name = '$branch'
+ORDER BY 1
+```
+
+FHE operations per second per scenario — swap the pattern for
+`transfers_per_second` to chart transfer rate instead:
+
+```sql
+SELECT
+  m.insert_time AS "time",
+  split_part(test.name, '::', 4) AS metric,
+  m.value AS fhe_ops_per_second
+FROM benchmark.metrics AS m
+JOIN benchmark.test AS test ON test.id = m.test_id
+JOIN benchmark.backend AS bk ON bk.id = m.backend_id
+JOIN benchmark.hardware AS h ON h.id = m.hardware_id
+JOIN benchmark.branch AS b ON b.id = m.branch_id
+WHERE $__timeFilter(m.insert_time)
+  AND test.name LIKE 'erc20::transfer::main_block_one_shot::%::fhe_operations_per_second%'
+  AND bk.name = '$backend'
+  AND h.name = '$hardware'
+  AND b.name = '$branch'
+ORDER BY 1
+```
+
+Latest run, as a table of every scenario and metric. `DISTINCT ON` keeps one row
+per test name, and stripping the suffix leaves the metric label:
+
+```sql
+SELECT DISTINCT ON (test.name)
+  split_part(test.name, '::', 4) AS scenario,
+  regexp_replace(split_part(test.name, '::', 5), '_schedule_.*$', '') AS metric,
+  m.value,
+  pv.name AS commit,
+  m.insert_time
+FROM benchmark.metrics AS m
+JOIN benchmark.test AS test ON test.id = m.test_id
+JOIN benchmark.backend AS bk ON bk.id = m.backend_id
+JOIN benchmark.hardware AS h ON h.id = m.hardware_id
+JOIN benchmark.branch AS b ON b.id = m.branch_id
+LEFT JOIN benchmark.project_version AS pv ON pv.id = m.project_version_id
+WHERE test.name LIKE 'erc20::transfer::main_block_one_shot::%'
+  AND bk.name = '$backend'
+  AND h.name = '$hardware'
+  AND b.name = '$branch'
+ORDER BY test.name, m.insert_time DESC
+```
+
+Dashboard variables, so a panel is not pinned to one machine or branch:
+
+```sql
+-- $hardware
+SELECT DISTINCT h.name
+FROM benchmark.hardware AS h
+JOIN benchmark.metrics AS m ON m.hardware_id = h.id
+JOIN benchmark.test AS test ON test.id = m.test_id
+WHERE test.name LIKE 'erc20::transfer::main_block_one_shot::%'
+
+-- $branch
+SELECT DISTINCT b.name
+FROM benchmark.branch AS b
+JOIN benchmark.metrics AS m ON m.branch_id = b.id
+JOIN benchmark.test AS test ON test.id = m.test_id
+WHERE test.name LIKE 'erc20::transfer::main_block_one_shot::%'
+
+-- $backend: cuda for the GPU workflow, cpu for the CPU one
+SELECT DISTINCT bk.name
+FROM benchmark.backend AS bk
+JOIN benchmark.metrics AS m ON m.backend_id = bk.id
+JOIN benchmark.test AS test ON test.id = m.test_id
+WHERE test.name LIKE 'erc20::transfer::main_block_one_shot::%'
+```
+
+A scenario comparison is a scenario filter away: add
+`AND split_part(test.name, '::', 4) IN ('dependent_1000_50x20',
+'cross_tx_dependent_1000_50x20')` to contrast the intra-transaction control
+with its cross-transaction twin, which is the pair that isolates the
+transaction-boundary materialization cost.
