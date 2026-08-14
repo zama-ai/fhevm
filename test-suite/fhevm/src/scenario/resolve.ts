@@ -742,8 +742,8 @@ export const resolveBlueGreenScenario = (
     env: { ...(input.gcs.env ?? {}) },
     args: input.gcs.args ?? {},
   };
-  if (gcs.source.mode !== "local") {
-    throw new Error("gcs.source.mode must be local — the GCS fleet is always built from the working tree");
+  if (gcs.source.mode === "inherit") {
+    throw new Error("gcs.source.mode must be local or registry");
   }
   return {
     version: BLUE_GREEN_SCENARIO_VERSION,

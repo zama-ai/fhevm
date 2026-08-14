@@ -497,11 +497,6 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
         : instance.source.mode === "inherit"
           ? inheritedBuildServices
           : new Set<string>();
-    // Blue-green: force db-migration to HEAD so GCS gets the current schema regardless of BCS's pin.
-    if (isBlueGreen && !plan.blueGreen?.gcs.deferredStart) {
-      localServices.add("coprocessor-db-migration");
-    }
-    const argPolicy = argPolicyForInstance(compat, instance);
     const envName = instance.index === 0 ? "coprocessor" : `coprocessor.${instance.index}`;
     const envFileValue = envPath(envName);
     const instanceEnv = await readEnvFile(envFileValue);
@@ -515,18 +510,31 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
       }
       const suffix = name.replace(/^coprocessor-/, "");
       const serviceName = `${prefix}${suffix}`;
-      const locallyBuilt = localServices.has(name);
+      const greenDbMigration =
+        name === "coprocessor-db-migration" && isBlueGreen && !plan.blueGreen?.gcs.deferredStart;
+      const sourceInstance: ResolvedCoprocessorScenarioInstance = greenDbMigration
+        ? {
+            index: instance.index,
+            source: plan.blueGreen!.gcs.source,
+            env: plan.blueGreen!.gcs.env,
+            args: plan.blueGreen!.gcs.args,
+          }
+        : instance;
+      const locallyBuilt = greenDbMigration
+        ? sourceInstance.source.mode === "local"
+        : localServices.has(name);
+      const argPolicy = argPolicyForInstance(compat, sourceInstance);
       const adjusted = applyInstanceAdjustments(
         name,
         service,
         envFileValue,
         instanceEnv,
-        instance,
+        sourceInstance,
         locallyBuilt ? {} : argPolicy.coprocessorArgs,
         locallyBuilt ? {} : argPolicy.coprocessorDropFlags,
       );
       adjusted.container_name = serviceName;
-      applyCoprocessorSource(adjusted, name, instance, locallyBuilt);
+      applyCoprocessorSource(adjusted, name, sourceInstance, locallyBuilt);
       if (instance.index > 0 && adjusted.depends_on && typeof adjusted.depends_on === "object") {
         adjusted.depends_on = rewriteCoprocessorDependsOn(
           adjusted.depends_on as Record<string, unknown>,
@@ -553,6 +561,7 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
         env: gcs.env,
         args: gcs.args,
       };
+      const gcsArgPolicy = argPolicyForInstance(compat, gcsInstance);
       for (const [baseName, service] of Object.entries(doc.services)) {
         if (!includeConsumer && baseName === "coprocessor-host-listener-consumer") {
           continue;
@@ -563,20 +572,19 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
         const suffix = baseName.replace(/^coprocessor-/, "");
         const serviceName = `${gcsPrefix}${suffix}`;
         const buildSpec = localBuildSpecFor("coprocessor", baseName);
-        // A service with a build spec runs the locally built binary, which speaks
-        // the working tree's flag contract. Shimming it to any older contract
-        // would feed it flags it does not accept — same guard as the BCS loop.
+        const locallyBuilt = gcs.source.mode === "local" && Boolean(buildSpec);
         const adjusted = applyInstanceAdjustments(
           baseName,
           service,
           gcsEnvFileValue,
           gcsInstanceEnv,
           gcsInstance,
-          buildSpec ? {} : compat.coprocessorArgs,
-          buildSpec ? {} : compat.coprocessorDropFlags,
+          locallyBuilt ? {} : gcsArgPolicy.coprocessorArgs,
+          locallyBuilt ? {} : gcsArgPolicy.coprocessorDropFlags,
         );
         adjusted.container_name = serviceName;
-        if (buildSpec) {
+        applyCoprocessorSource(adjusted, baseName, gcsInstance, locallyBuilt);
+        if (locallyBuilt) {
           adjusted.image = retagLocal(service.image, `gcs-${gcs.stackVersion}`);
           // GCS compiles the newer stack version (build arg enables the override feature),
           // so its schema/version are gcs.stackVersion rather than the baseline.
@@ -828,21 +836,21 @@ const buildExtraCoprocessorListenerOverride = async (
         const cloneName = `${gcsPrefix}${suffix}${chainSuffix}`;
         const baseService = doc.services[baseName];
         if (!baseService) continue;
-        // GCS is always local-built and retagged to its stack version, so — as in
-        // buildCoprocessorOverride — a built service speaks the working tree's
-        // flag contract and must not be shimmed to an older one.
         const buildSpec = localBuildSpecFor("coprocessor", baseName);
+        const locallyBuilt = gcs.source.mode === "local" && Boolean(buildSpec);
+        const gcsArgPolicy = argPolicyForInstance(compat, gcsInstance);
         const adjusted = applyInstanceAdjustments(
           baseName,
           baseService,
           envFileValue,
           instanceEnv,
           gcsInstance,
-          buildSpec ? {} : compat.coprocessorArgs,
-          buildSpec ? {} : compat.coprocessorDropFlags,
+          locallyBuilt ? {} : gcsArgPolicy.coprocessorArgs,
+          locallyBuilt ? {} : gcsArgPolicy.coprocessorDropFlags,
         );
         adjusted.container_name = cloneName;
-        if (buildSpec) {
+        applyCoprocessorSource(adjusted, baseName, gcsInstance, locallyBuilt);
+        if (locallyBuilt) {
           adjusted.image = retagLocal(baseService.image, `gcs-${gcs.stackVersion}`);
           adjusted.build = {
             ...buildSpec,
