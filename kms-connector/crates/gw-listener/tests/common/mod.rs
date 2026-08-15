@@ -368,11 +368,9 @@ pub fn check_event_in_db(rows: &[PgRow], event: ProtocolEventKind) -> anyhow::Re
             }
         }
         ProtocolEventKind::UserDecryptionV3(e) => {
-            // Host-generic V2 rows store the opaque host payload + the host-kind discriminator.
+            // Solana rows store the opaque request blob, which is also what identifies them.
             for r in rows {
-                if e.hostPayload.to_vec() == r.try_get::<Vec<u8>, _>("host_payload")?
-                    && i16::from(e.hostKind) == r.try_get::<i16, _>("host_kind")?
-                {
+                if e.solanaRequest.to_vec() == r.try_get::<Vec<u8>, _>("solana_request")? {
                     return Ok(());
                 }
             }

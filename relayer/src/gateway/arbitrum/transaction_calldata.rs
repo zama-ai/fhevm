@@ -39,7 +39,7 @@ impl ComputeCalldata {
     pub fn user_decryption_req(
         user_decrypt_request: UserDecryptRequest,
     ) -> Result<Bytes, EventProcessingError> {
-        let kind = user_decrypt_request.attestation_kind();
+        let kind = user_decrypt_request.request_kind();
 
         let calldata = match user_decrypt_request {
             UserDecryptRequest::LegacyDirect {
@@ -143,17 +143,14 @@ impl ComputeCalldata {
                 ct_handles,
                 request_validity,
                 public_key,
-                allowed_acl_domain_key_count,
                 extra_data,
-                host_payload,
+                solana_request,
             } => {
-                // The host-generic overload: the gateway takes only what it consumes itself
-                // (handles, validity window, transport key, the declared ACL-scope length it
-                // bounds before the fee, the host-kind dispatch value) and carries everything
-                // Solana-specific as one opaque `hostPayload` the builder already serialized.
-                // The gateway never reads a byte of it; each KMS party's connector decodes it,
-                // verifies the ed25519 signature off-chain, and admits the request only when
-                // the declared ACL-scope length equals the signed list's actual length.
+                // The Solana overload: the gateway takes only what it consumes itself (handles,
+                // validity window, transport key, KMS routing) and carries everything else as
+                // one opaque `solanaRequest` the builder already serialized. The gateway never
+                // reads a byte of it; each KMS party's connector decodes it and verifies the
+                // ed25519 signature off-chain.
                 let ct_handles: Vec<FixedBytes<32>> = ct_handles
                     .iter()
                     .map(|handle| FixedBytes::<32>::from(handle.to_be_bytes::<32>()))
@@ -166,10 +163,8 @@ impl ComputeCalldata {
                     ct_handles,
                     validity,
                     public_key,
-                    allowed_acl_domain_key_count,
-                    crate::core::solana_host_payload::HOST_KIND_SOLANA,
                     extra_data,
-                    host_payload,
+                    solana_request,
                 ));
                 Decryption::userDecryptionRequest_0Call::abi_encode(&call)
             }
@@ -274,7 +269,7 @@ mod solana_calldata_tests {
         // The Solana arm must select the host-generic `userDecryptionRequest` overload and place
         // the pre-computed pieces in the right slots — the byte-parity test covers the payload
         // bytes, this covers where they land in the gateway calldata.
-        let host_payload = Bytes::from(vec![0x01, 0xaa, 0xbb, 0xcc]);
+        let solana_request = Bytes::from(vec![0x01, 0xaa, 0xbb, 0xcc]);
         let mut extra = vec![0x02u8];
         extra.extend_from_slice(&[0u8; 64]);
         let extra_data = Bytes::from(extra);
@@ -287,11 +282,8 @@ mod solana_calldata_tests {
                 duration_seconds: U256::from(604_800u64),
             },
             public_key: public_key.clone(),
-            // Distinctive on purpose: a value no other field carries, so the slot assertion
-            // below can only pass if the declaration landed in its own calldata slot.
-            allowed_acl_domain_key_count: 7,
             extra_data: extra_data.clone(),
-            host_payload: host_payload.clone(),
+            solana_request: solana_request.clone(),
         };
 
         let calldata =
@@ -305,14 +297,9 @@ mod solana_calldata_tests {
         let decoded = Decryption::userDecryptionRequest_0Call::abi_decode_raw(&calldata[4..])
             .expect("decode host-generic calldata");
         assert_eq!(decoded.ctHandles, vec![FixedBytes::<32>::from([0x11; 32])]);
-        assert_eq!(
-            decoded.hostKind,
-            crate::core::solana_host_payload::HOST_KIND_SOLANA
-        );
         assert_eq!(decoded.publicKey, public_key);
-        assert_eq!(decoded.allowedAclDomainKeyCount, 7);
         assert_eq!(decoded.extraData, extra_data);
-        assert_eq!(decoded.hostPayload, host_payload);
+        assert_eq!(decoded.solanaRequest, solana_request);
         assert_eq!(
             decoded.requestValidity.startTimestamp,
             U256::from(1_700_000_000u64)

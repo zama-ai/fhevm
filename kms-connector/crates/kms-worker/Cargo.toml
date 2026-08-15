@@ -15,6 +15,7 @@ fhevm_host_bindings.workspace = true
 user-decryption-signature.workspace = true
 zama-solana-acl.workspace = true
 zama-solana-permit.workspace = true
+zama-solana-request.workspace = true
 
 actix-web.workspace = true
 alloy.workspace = true

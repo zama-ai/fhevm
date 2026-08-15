@@ -329,14 +329,14 @@ impl<'a> RequestBuilder<'a> {
     pub fn entry(
         mut self,
         handle: [u8; 32],
-        owner: SolanaPubkeyBytes,
+        subject: SolanaPubkeyBytes,
         encrypted_value_id: [u8; 32],
         proof_leaf_count: u64,
         access_proof: Vec<u8>,
     ) -> Self {
         self.entries.push(SolanaHandleEntryWire {
             handle: handle.to_vec(),
-            owner: owner.to_vec(),
+            subject: subject.to_vec(),
             encrypted_value_id: encrypted_value_id.to_vec(),
             proof_leaf_count,
             access_proof,
@@ -358,14 +358,6 @@ impl<'a> RequestBuilder<'a> {
     pub fn typed(&self) -> SolanaUserDecryptRequest {
         SolanaUserDecryptRequest::decode(&self.wire()).expect("fixture request is well formed")
     }
-}
-
-/// The event-typed ACL-scope declaration an honest gateway carries for this request: the signed
-/// list's actual length. Scenarios probing the declaration rule itself state a lying value
-/// directly instead of using this.
-pub fn declared_acl_domain_key_count(request: &SolanaUserDecryptRequest) -> u8 {
-    u8::try_from(request.permit().allowed_acl_domain_keys().as_slice().len())
-        .expect("test permits stay under the ACL-scope cap")
 }
 
 // ---------------------------------------------------------------------------

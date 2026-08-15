@@ -65,12 +65,10 @@ fn resolved(
 
 fn context<'a>(
     deployment: &'a kms_worker::core::solana::deployment::DeploymentIdentity,
-    request: &kms_worker::core::solana::request::SolanaUserDecryptRequest,
 ) -> AuthorizationContext<'a> {
     AuthorizationContext {
         deployment,
         now_unix_seconds: NOW_INSIDE_WINDOW,
-        declared_acl_domain_key_count: declared_acl_domain_key_count(request),
     }
 }
 
@@ -453,7 +451,7 @@ async fn a_foreign_domain_handle_later_in_the_batch_rejects_the_whole_request() 
     let reader = ScriptedReader::constant(world);
     let deployment = deployment();
 
-    let failure = authorize_request(&reader, &ServableKmsPair, context(&deployment, &request), &request)
+    let failure = authorize_request(&reader, &ServableKmsPair, context(&deployment), &request)
         .await
         .expect_err("one out-of-scope entry rejects the request");
 
@@ -488,7 +486,7 @@ async fn a_permissive_permit_does_not_widen_membership() {
     let reader = ScriptedReader::constant(world);
     let deployment = deployment();
 
-    let failure = authorize_request(&reader, &ServableKmsPair, context(&deployment, &request), &request)
+    let failure = authorize_request(&reader, &ServableKmsPair, context(&deployment), &request)
         .await
         .expect_err("permissive does not make a non-member a member");
 

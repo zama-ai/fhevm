@@ -272,10 +272,8 @@ mod tests {
                 durationSeconds: U256::ZERO,
             },
             publicKey: Bytes::new(),
-            allowedAclDomainKeyCount: 0,
-            hostKind: 2,
             extraData: Bytes::new(),
-            hostPayload: Bytes::new(),
+            solanaRequest: Bytes::new(),
         };
 
         assert_eq!(

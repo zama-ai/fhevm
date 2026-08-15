@@ -2674,6 +2674,7 @@ dependencies = [
  "validator",
  "zama-solana-acl",
  "zama-solana-permit",
+ "zama-solana-request",
 ]
 
 [[package]]
@@ -7401,6 +7402,15 @@ dependencies = [
  "bs58",
  "ed25519-dalek",
  "sha3 0.10.9",
+]
+
+[[package]]
+name = "zama-solana-request"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "thiserror 2.0.18",
+ "zama-solana-permit",
 ]
 
 [[package]]

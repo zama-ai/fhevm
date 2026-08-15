@@ -21,7 +21,7 @@ const FORBIDDEN: &[(&str, &str)] = &[
     ),
     (
         "solana_unified_v1",
-        "the v0 request builder; replaced by TryFrom<SolanaAttestedUserDecryptRequestJson>",
+        "the v0 request builder; replaced by TryFrom<SolanaUserDecryptRequestJson>",
     ),
     (
         "userDecryptionRequestSolana",

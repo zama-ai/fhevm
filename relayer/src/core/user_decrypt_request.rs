@@ -133,15 +133,15 @@ impl ContentHasher for UserDecryptRequest {
                 hasher.update(b"user_address:");
                 hasher.update(user_address.as_slice());
             }
-            UserDecryptRequest::SolanaSrfc38V1 { host_payload, .. } => {
+            UserDecryptRequest::SolanaSrfc38V1 { solana_request, .. } => {
                 // Distinct variant tag so Solana hashes never collide with EVM unified hashes.
-                // `host_payload` is the canonical serialization of the whole normalized request
+                // `solana_request` is the canonical serialization of the whole normalized request
                 // (permit fields, signature, handle evidence), order-independent by construction:
                 // hashing it dedups byte-different transports of one request and separates any
                 // request differing in a typed field.
                 hasher.update(b"variant:solana_srfc38_v1:");
-                hasher.update(b"host_payload:");
-                hasher.update(host_payload);
+                hasher.update(b"solana_request:");
+                hasher.update(solana_request);
             }
         }
 
@@ -216,7 +216,7 @@ mod tests {
         }
     }
 
-    fn sample_solana_unified(host_payload: Bytes) -> UserDecryptRequest {
+    fn sample_solana_unified(solana_request: Bytes) -> UserDecryptRequest {
         UserDecryptRequest::SolanaSrfc38V1 {
             ct_handles: vec![U256::from(123)],
             request_validity: RequestValiditySeconds {
@@ -224,9 +224,8 @@ mod tests {
                 duration_seconds: U256::from(604_800),
             },
             public_key: Bytes::from(vec![0xab, 0xcd]),
-            allowed_acl_domain_key_count: 1,
             extra_data: Bytes::from(vec![0x02]),
-            host_payload,
+            solana_request,
         }
     }
 

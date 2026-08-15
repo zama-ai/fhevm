@@ -7,8 +7,8 @@ use crate::core::{
         solana_public_decrypt::{SolanaHost, check_solana_handles_public_decrypt},
     },
     solana::{
+        event_parity::check_event_permit_parity,
         failure::FailureClass,
-        host_payload::{check_handle_list_parity, decode_host_payload},
         kms_pair::{KmsPairFailure, KmsPairValidator},
         pipeline::{AuthorizationContext, authorize_request},
         request::SolanaUserDecryptRequest,
@@ -25,7 +25,7 @@ use alloy::{
 };
 use anyhow::anyhow;
 use connector_utils::types::{
-    KmsGrpcRequest, event::HOST_KIND_SOLANA, extra_data::parse_extra_data,
+    KmsGrpcRequest, extra_data::parse_extra_data,
     handle::extract_chain_id_from_handle, u256_to_request_id,
 };
 use fhevm_gateway_bindings::decryption::Decryption::{
@@ -40,6 +40,7 @@ use sqlx::types::chrono::Utc;
 use std::collections::HashMap;
 use tracing::info;
 use user_decryption_signature::{compute_user_decrypt_digest, verify_signature};
+use zama_solana_request::decode_solana_request;
 
 /// How a host chain's ACL is consulted: an EVM `ACL` contract call, or the Solana
 /// account-based ACL reached over the host program's RPC.
@@ -483,20 +484,6 @@ where
         &self,
         request: &UserDecryptionRequestV3,
     ) -> Result<UserDecryptionExtraData, RequestCheckError> {
-        // `hostKind` is the dispatch discriminator the gateway forwards verbatim, and it is
-        // read before anything else: a request naming another host has no field this
-        // connector may interpret — not even its handles — so any later rejection would
-        // misreport the refusal as a Solana one.
-        if request.hostKind != HOST_KIND_SOLANA {
-            return Err(RequestCheckError::irrecoverable(
-                RequestCheckKind::Acl,
-                anyhow!(
-                    "host-generic request names hostKind {}, but this connector serves \
-                     only Solana (hostKind {HOST_KIND_SOLANA})",
-                    request.hostKind
-                ),
-            ));
-        }
         let ct_handles: Vec<HandleBytes> = request.ctHandles.iter().map(|h| h.0).collect();
         let chain_id = ct_handles
             .first()
@@ -524,19 +511,13 @@ where
             }
         };
 
-        // The opaque host payload decodes to the wire request; its handle list must be exactly the
-        // event's typed `ctHandles` (order and count), or the bit budget the gateway enforced on
-        // the typed handles would not be the budget of the request being authorized.
-        let wire = decode_host_payload(request.hostPayload.as_ref()).map_err(|e| {
+        // The opaque host payload decodes to the wire request, which is then validated into the
+        // typed form. Neither step compares the request to the event it arrived on — that is the
+        // parity pass below.
+        let wire = decode_solana_request(request.solanaRequest.as_ref()).map_err(|e| {
             RequestCheckError::irrecoverable(
                 RequestCheckKind::Acl,
                 anyhow!("Solana host payload does not decode: {e}"),
-            )
-        })?;
-        check_handle_list_parity(&ct_handles, &wire).map_err(|e| {
-            RequestCheckError::irrecoverable(
-                RequestCheckKind::Acl,
-                anyhow!("Solana host payload handles do not match the event handles: {e}"),
             )
         })?;
         let typed_request = SolanaUserDecryptRequest::decode(&wire).map_err(|e| {
@@ -546,51 +527,23 @@ where
             )
         })?;
 
-        // The gateway charged its fee against the event's typed `requestValidity` and forwarded it
-        // to monitoring and the SDK, but the window that actually authorizes the request is the one
-        // signed inside the permit — the event field is not signed. If the two disagree, the fee,
-        // the readiness view and the authorization would each be about a different window; refuse
-        // rather than authorize on the signed window while reporting the typed one. The EVM path
-        // gets this parity for free because there the typed window is inside the EIP-712 digest the
-        // signature covers; here it must be checked explicitly.
+        // Every field the event carries typed and the permit carries signed, compared in one
+        // place. Each of them is unsigned on the event, so a relayer can substitute any without
+        // invalidating the signature; all of them must equal what the wallet signed. Runs before
+        // authorization, so a mismatch costs no RPC read and no KMS work.
         let permit = typed_request.permit();
-        if request.requestValidity.startTimestamp != U256::from(permit.start_timestamp())
-            || request.requestValidity.durationSeconds != U256::from(permit.duration_seconds())
-        {
-            return Err(RequestCheckError::irrecoverable(
+        check_event_permit_parity(request, &ct_handles, &wire, permit).map_err(|failure| {
+            RequestCheckError::irrecoverable(
                 RequestCheckKind::Acl,
-                anyhow!(
-                    "event requestValidity (start {}, duration {}) does not match the signed \
-                     permit window (start {}, duration {})",
-                    request.requestValidity.startTimestamp,
-                    request.requestValidity.durationSeconds,
-                    permit.start_timestamp(),
-                    permit.duration_seconds(),
-                ),
-            ));
-        }
-
-        // The same parity for the KMS routing: `prepare_decryption_request` parses the KMS
-        // context/epoch pair out of the event's typed `extraData` (and the gateway routed its fee
-        // by it), but the pair the user consented to is signed inside the permit. If the two
-        // disagree, the request would be authorized under the signed pair and served under the
-        // typed one; refuse instead. Exact bytes: the signed routing has one canonical rendering,
-        // which is what an honest relayer copies into the typed field.
-        if request.extraData.as_ref() != permit.extra_data().to_extra_data().as_slice() {
-            return Err(RequestCheckError::irrecoverable(
-                RequestCheckKind::Acl,
-                anyhow!(
-                    "event extraData 0x{} does not match the signed KMS routing 0x{}",
-                    hex::encode(&request.extraData),
-                    hex::encode(permit.extra_data().to_extra_data()),
-                ),
-            ));
-        }
+                anyhow!("Solana request does not match its gateway event: {failure}"),
+            )
+        })?;
 
         // The identity the KMS keys the user by is the signed permit's user pubkey; the transport
-        // key the plaintext seals to is the permit's signed transport key too — never the event's
-        // unsigned `publicKey`, which a relayer can substitute without invalidating the permit.
-        // Both captured before the request is handed to authorization.
+        // key the plaintext seals to is the permit's signed transport key too. The parity pass
+        // above has already established that the event's unsigned `publicKey` names the same key,
+        // so this is a choice of provenance rather than of value: the signed field is the one that
+        // cannot have been substituted. Both captured before the request is handed to authorization.
         let solana_identity: SolanaPubkeyBytes = *permit.user_pubkey().as_bytes();
         let seal_target = Bytes::copy_from_slice(permit.transport_key().as_bytes());
 
@@ -601,7 +554,6 @@ where
         let context = AuthorizationContext {
             deployment: &host.deployment,
             now_unix_seconds: Utc::now().timestamp() as u64,
-            declared_acl_domain_key_count: request.allowedAclDomainKeyCount,
         };
         authorize_request(&host.reader, &pair_validator, context, &typed_request)
             .await
@@ -902,10 +854,8 @@ impl UserDecryptionExtraData {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::solana::host_payload::encode_host_payload;
-    use crate::core::solana::request::{
-        MAX_REQUEST_HANDLES, SolanaHandleEntryWire, SolanaUserDecryptRequestWire,
-    };
+    use zama_solana_request::encode_solana_request;
+    use crate::core::solana::request::{SolanaHandleEntryWire, SolanaUserDecryptRequestWire};
     use crate::core::solana_v2_fetcher::SolanaV2Fetcher;
     use alloy::{
         providers::{ProviderBuilder, mock::Asserter},
@@ -1734,90 +1684,12 @@ mod tests {
                 durationSeconds: U256::from(3_600),
             },
             publicKey: Bytes::new(),
-            allowedAclDomainKeyCount: 0,
-            hostKind: HOST_KIND_SOLANA,
             extraData: Bytes::new(),
-            hostPayload: Bytes::new(),
+            solanaRequest: Bytes::new(),
         }
     }
 
-    /// A host-generic request whose `hostPayload` is a fully well-formed Solana request
-    /// naming `count` copies of `handle`. Everything decodes — the permit, the signature
-    /// width, the handle-list parity — so the first rejection such a request can meet is a
-    /// deliberate one, not a decode accident.
-    fn make_host_generic_request(
-        handle: B256,
-        host_kind: u8,
-        count: usize,
-    ) -> UserDecryptionRequestV3 {
-        let mut extra_data = vec![zama_solana_permit::KMS_ROUTING_VERSION_BYTE];
-        extra_data.extend_from_slice(&[0u8; 64]);
-        let wire = SolanaUserDecryptRequestWire {
-            permit: zama_solana_permit::PermitWireFields {
-                user_pubkey: vec![0x11; 32],
-                transport_key: vec![0x22; zama_solana_permit::TRANSPORT_KEY_LEN],
-                allowed_acl_domain_keys: vec![],
-                start_timestamp: 0,
-                duration_seconds: 3_600,
-                verifying_program_id: vec![0x33; 32],
-                chain_id: 1,
-                extra_data,
-            },
-            signature: vec![0x44; 64],
-            handles: (0..count)
-                .map(|_| SolanaHandleEntryWire {
-                    handle: handle.to_vec(),
-                    owner: vec![0x55; 32],
-                    encrypted_value_id: vec![0x66; 32],
-                    proof_leaf_count: 0,
-                    access_proof: Vec::new(),
-                })
-                .collect(),
-        };
-
-        UserDecryptionRequestV3 {
-            decryptionId: U256::from(1),
-            ctHandles: vec![handle; count],
-            requestValidity: RequestValiditySeconds {
-                startTimestamp: U256::from((Utc::now().timestamp() - 60) as u64),
-                durationSeconds: U256::from(3_600),
-            },
-            publicKey: Bytes::new(),
-            allowedAclDomainKeyCount: 0,
-            hostKind: host_kind,
-            extraData: Bytes::new(),
-            hostPayload: encode_host_payload(&wire)
-                .expect("the test wire serializes")
-                .into(),
-        }
-    }
-
-    /// `hostKind` is the dispatch discriminator: a request naming another host must be
-    /// refused as such, before any byte of it is interpreted as Solana. The payload here is
-    /// a well-formed Solana request one entry past the handle cap, so a missing or late
-    /// `hostKind` check would surface as the Solana cap rejection instead of this one.
-    #[rstest]
-    #[case::evm_host_kind(1)]
-    #[case::unknown_host_kind(3)]
-    #[tokio::test]
-    async fn a_foreign_host_kind_is_rejected_before_any_solana_interpretation(
-        #[case] host_kind: u8,
-    ) {
-        let handle = rand_handle();
-        let processor =
-            setup_test_processor_with_backend(Asserter::new(), handle, TestHostBackend::Solana);
-        let request = make_host_generic_request(handle, host_kind, MAX_REQUEST_HANDLES + 1);
-
-        let result = processor
-            .check_user_decryption_request_v3(&request)
-            .await
-            .map(|_| ())
-            .map_err(RequestCheckError::record);
-
-        assert_irrecoverable_contains(result, "hostKind");
-    }
-
-    /// Runs one host-generic Solana user-decryption request through `check_user_decryption_request_v3`
+    /// Runs one Solana user-decryption request through `check_user_decryption_request_v3`
     /// against a fully authorizing on-chain snapshot, and returns the outcome together with the
     /// victim's signed transport key.
     ///
@@ -1910,7 +1782,7 @@ mod tests {
             signature,
             handles: vec![SolanaHandleEntryWire {
                 handle: handle.to_vec(),
-                owner: victim_pubkey.to_vec(),
+                subject: victim_pubkey.to_vec(),
                 encrypted_value_id: encrypted_value_id.to_vec(),
                 proof_leaf_count: 0,
                 access_proof: Vec::new(),
@@ -1981,10 +1853,8 @@ mod tests {
                 durationSeconds: U256::from(event_validity.1),
             },
             publicKey: Bytes::from(event_public_key),
-            allowedAclDomainKeyCount: 1,
-            hostKind: HOST_KIND_SOLANA,
             extraData: event_extra_data.unwrap_or_else(|| Bytes::from(signed_routing.clone())),
-            hostPayload: encode_host_payload(&wire)
+            solanaRequest: encode_solana_request(&wire)
                 .expect("the test wire serializes")
                 .into(),
         };
@@ -2002,31 +1872,51 @@ mod tests {
         (result, victim_transport_key)
     }
 
-    /// The seal target the connector hands the KMS must be the transport key signed inside the
-    /// permit, never the unsigned `publicKey` a relayer put on the event. Here the event carries an
-    /// attacker's transport key while the signed permit binds the victim's; the plaintext must seal
-    /// to the victim.
+    /// The event's `publicKey` is unsigned; the permit's transport key is signed. When they
+    /// disagree the request must be terminally rejected, and rejected before any RPC read.
+    ///
+    /// Sealing to the signed key and letting the request proceed — which is what this path used
+    /// to do — keeps the plaintext confidential but produces a request that cannot complete: the
+    /// KMS signs its response over the key it sealed to, the gateway verifies that response
+    /// against the `publicKey` it stored from the event, and every valid response is refused
+    /// while the fee is already spent.
     #[tokio::test]
-    async fn seal_target_is_the_signed_transport_key_not_the_event_public_key() {
+    async fn event_public_key_must_match_the_signed_transport_key() {
         let now = Utc::now().timestamp() as u64;
         let window = (now - 60, 3_600);
         let attacker_key = vec![0x5au8; zama_solana_permit::TRANSPORT_KEY_LEN];
 
-        // Event `requestValidity` matches the signed permit window, so the request is authorized;
-        // only the seal target is under test.
-        let (result, victim_transport_key) =
-            run_host_generic_solana_userdecrypt(window, window, attacker_key.clone(), None).await;
+        // Event `requestValidity` matches the signed permit window, so nothing but the transport
+        // key is under test.
+        let (result, _) =
+            run_host_generic_solana_userdecrypt(window, window, attacker_key, None).await;
+
+        let result = result.map(|_| ()).map_err(RequestCheckError::record);
+        assert_irrecoverable_contains(result, "publicKey");
+    }
+
+    /// With the two in agreement, the seal target the connector hands the KMS is taken from the
+    /// signed permit rather than from the event. The values are equal by then, so what this pins
+    /// is the provenance: the field that cannot have been substituted is the one that is read.
+    #[tokio::test]
+    async fn seal_target_is_taken_from_the_signed_permit() {
+        let now = Utc::now().timestamp() as u64;
+        let window = (now - 60, 3_600);
+        let victim_transport_key = vec![0xa5u8; zama_solana_permit::TRANSPORT_KEY_LEN];
+
+        let (result, signed_transport_key) = run_host_generic_solana_userdecrypt(
+            window,
+            window,
+            victim_transport_key.clone(),
+            None,
+        )
+        .await;
 
         let extra = result.expect("the victim's permit authorizes the request end-to-end");
         assert_eq!(
             extra.public_key.as_ref(),
-            victim_transport_key.as_slice(),
-            "seal target must be the victim's signed transport key"
-        );
-        assert_ne!(
-            extra.public_key.as_ref(),
-            attacker_key.as_slice(),
-            "seal target must not be the attacker's unsigned event publicKey"
+            signed_transport_key.as_slice(),
+            "seal target must be the signed transport key"
         );
     }
 

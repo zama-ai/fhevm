@@ -3330,14 +3330,7 @@ describe('Decryption', function () {
     // The host-generic event is the complete input of the host Connector's authorization: for
     // Solana the permit and the per-handle evidence are reconstructed from it alone, so the shape
     // below is a cross-repository contract. Changing the form breaks this suite deliberately.
-    const HOST_GENERIC_EVENT_SIG =
-      'UserDecryptionRequest(uint256,bytes32[],(uint256,uint256),bytes,uint8,uint8,bytes,bytes)';
-
-    // Host-kind inventory: 0 reserved, 1 = EVM hosts (served by the unified entry, not the
-    // host-generic overload), 2 = Solana. The gateway checks the value against its served
-    // inventory at admission (`HostKindNotServed`) and gates the Solana handle-count cap on it.
-    const HOST_KIND_EVM = 1;
-    const HOST_KIND_SOLANA = 2;
+    const HOST_GENERIC_EVENT_SIG = 'UserDecryptionRequest(uint256,bytes32[],(uint256,uint256),bytes,bytes,bytes)';
 
     const decryptionId = getUserDecryptId(1);
 
@@ -3352,15 +3345,9 @@ describe('Decryption', function () {
     const durationSeconds = 120 * 24 * 60 * 60; // 120 days
     const requestValidity = { startTimestamp, durationSeconds };
 
-    // Host-specific request material is opaque to the gateway: random bytes are as good as a
-    // real payload here, and the suite passing with them is itself the opacity property.
-    const hostPayload = hre.ethers.hexlify(hre.ethers.randomBytes(96));
-
-    // The declared length of the permit's signed ACL-domain list. The gateway only bounds the
-    // declaration — its truth against the signed list is the host Connector's parity check —
-    // so with an opaque payload any value within the bound admits; a non-zero one keeps the
-    // emitted field observable in the assertions below.
-    const allowedAclDomainKeyCount = 1;
+    // The Solana request material is opaque to the gateway: random bytes are as good as a real
+    // request here, and the suite passing with them is itself the opacity property.
+    const solanaRequest = hre.ethers.hexlify(hre.ethers.randomBytes(96));
 
     // ctHandles = [Bool (2 bits), Uint8 (8 bits), Uint256 (256 bits)], all registered in
     // CiphertextCommits by the fixture. The Bool handle is the narrow type for count-cap
@@ -3396,33 +3383,22 @@ describe('Decryption', function () {
       handles: string[],
       overrides: {
         requestValidity?: { startTimestamp: number; durationSeconds: number };
-        allowedAclDomainKeyCount?: number;
-        hostKind?: number;
         extraData?: string;
-        hostPayload?: string;
+        solanaRequest?: string;
         sender?: Signer;
       } = {},
     ) {
       return decryption
         .connect(overrides.sender ?? tokenFundedTxSender)
         [
-          'userDecryptionRequest(bytes32[],(uint256,uint256),bytes,uint8,uint8,bytes,bytes)'
-        ](handles, overrides.requestValidity ?? requestValidity, publicKey, overrides.allowedAclDomainKeyCount ?? allowedAclDomainKeyCount, overrides.hostKind ?? HOST_KIND_SOLANA, overrides.extraData ?? solanaRoutingExtraData, overrides.hostPayload ?? hostPayload);
+          'userDecryptionRequest(bytes32[],(uint256,uint256),bytes,bytes,bytes)'
+        ](handles, overrides.requestValidity ?? requestValidity, publicKey, overrides.extraData ?? solanaRoutingExtraData, overrides.solanaRequest ?? solanaRequest);
     }
 
     it('Should emit the host-generic event carrying the request form', async function () {
       await expect(requestHostGeneric(ctHandles))
         .to.emit(decryption, HOST_GENERIC_EVENT_SIG)
-        .withArgs(
-          decryptionId,
-          ctHandles,
-          toValues(requestValidity),
-          publicKey,
-          allowedAclDomainKeyCount,
-          HOST_KIND_SOLANA,
-          solanaRoutingExtraData,
-          hostPayload,
-        );
+        .withArgs(decryptionId, ctHandles, toValues(requestValidity), publicKey, solanaRoutingExtraData, solanaRequest);
     });
 
     it('Should pin the host-generic event form as the cross-repository contract', async function () {
@@ -3454,61 +3430,25 @@ describe('Decryption', function () {
       ).to.not.be.null;
     });
 
-    it('Should forward the host payload verbatim and never interpret it', async function () {
-      // Opacity is load-bearing: the gateway accepts an empty payload and a large garbage one
-      // alike, and emits the exact bytes it received. What the payload means is decided by the
-      // host's KMS Connector against the protocol's normative fixtures, never here.
-      await expect(requestHostGeneric([eboolCtHandle], { hostPayload: '0x' }))
+    it('Should forward the Solana request verbatim and never interpret it', async function () {
+      // Opacity is load-bearing: the gateway accepts an empty blob and a large garbage one
+      // alike, and emits the exact bytes it received. What the blob means is decided by the
+      // KMS Connector against the protocol's normative fixtures, never here.
+      await expect(requestHostGeneric([eboolCtHandle], { solanaRequest: '0x' }))
         .to.emit(decryption, HOST_GENERIC_EVENT_SIG)
-        .withArgs(
-          decryptionId,
-          [eboolCtHandle],
-          toValues(requestValidity),
-          publicKey,
-          allowedAclDomainKeyCount,
-          HOST_KIND_SOLANA,
-          solanaRoutingExtraData,
-          '0x',
-        );
+        .withArgs(decryptionId, [eboolCtHandle], toValues(requestValidity), publicKey, solanaRoutingExtraData, '0x');
 
       const garbage = hre.ethers.hexlify(hre.ethers.randomBytes(4096));
-      await expect(requestHostGeneric([eboolCtHandle], { hostPayload: garbage }))
+      await expect(requestHostGeneric([eboolCtHandle], { solanaRequest: garbage }))
         .to.emit(decryption, HOST_GENERIC_EVENT_SIG)
         .withArgs(
           getUserDecryptId(2),
           [eboolCtHandle],
           toValues(requestValidity),
           publicKey,
-          allowedAclDomainKeyCount,
-          HOST_KIND_SOLANA,
           solanaRoutingExtraData,
           garbage,
         );
-    });
-
-    it('Should serve only the host kinds in the admission inventory', async function () {
-      // The dispatch discriminator is checked against the served inventory before the fee:
-      // no KMS Connector would ever serve these requests, so admitting them could only burn
-      // the fee. All three refused classes: the reserved 0, a known kind this entry
-      // deliberately does not serve (EVM travels the unified entry), and an unknown value.
-      for (const hostKind of [0, HOST_KIND_EVM, 99]) {
-        await expect(requestHostGeneric([eboolCtHandle], { hostKind }))
-          .to.be.revertedWithCustomError(decryption, 'HostKindNotServed')
-          .withArgs(hostKind);
-      }
-    });
-
-    it('Should bound the declared ACL-domain-key count before the fee', async function () {
-      // The declaration is bounded exactly like the EVM paths bound `allowedContracts`; its
-      // truth against the signed list inside `hostPayload` is the host Connector's parity
-      // check, never the gateway's.
-      await expect(
-        requestHostGeneric([eboolCtHandle], {
-          allowedAclDomainKeyCount: MAX_USER_DECRYPT_CONTRACT_ADDRESSES + 1,
-        }),
-      )
-        .to.be.revertedWithCustomError(decryption, 'ContractAddressesMaxLengthExceeded')
-        .withArgs(MAX_USER_DECRYPT_CONTRACT_ADDRESSES, MAX_USER_DECRYPT_CONTRACT_ADDRESSES + 1);
     });
 
     it('Should revert because ciphertext material has not been added', async function () {
@@ -3598,12 +3538,12 @@ describe('Decryption', function () {
       await expect(requestHostGeneric([])).to.be.revertedWithCustomError(decryption, 'EmptyHandles');
     });
 
-    it('Should apply the handle cap to Solana requests only', async function () {
-      // The cap is Solana's, not the entry's: the Solana Connector authorizes against one
-      // atomic account snapshot, so a longer list could never be authorized and is refused
-      // before the fee. Duplicates are legal (the gateway performs no deduplication), so the
-      // boundary is exercised without registering 33 distinct ciphertexts; narrow handles keep
-      // the bit budget out of the way: 34 * 2 = 68 bits.
+    it('Should apply the handle cap before the fee', async function () {
+      // The Solana Connector authorizes against one atomic account snapshot, so a longer list
+      // could never be authorized and is refused before the fee. Duplicates are legal (the
+      // gateway performs no deduplication), so the boundary is exercised without registering
+      // 33 distinct ciphertexts; narrow handles keep the bit budget out of the way:
+      // 34 * 2 = 68 bits.
       const atCap = Array(MAX_SOLANA_USER_DECRYPT_HANDLES).fill(eboolCtHandle);
       await expect(requestHostGeneric(atCap)).to.emit(decryption, HOST_GENERIC_EVENT_SIG);
 
@@ -3611,17 +3551,11 @@ describe('Decryption', function () {
       await expect(requestHostGeneric(pastCap))
         .to.be.revertedWithCustomError(decryption, 'SolanaHandlesMaxLengthExceeded')
         .withArgs(MAX_SOLANA_USER_DECRYPT_HANDLES, MAX_SOLANA_USER_DECRYPT_HANDLES + 1);
-
-      // Relabeling the request cannot buy a longer list: any other host kind now dies at the
-      // served-inventory check itself, one revert earlier than the cap.
-      await expect(requestHostGeneric(pastCap, { hostKind: HOST_KIND_EVM }))
-        .to.be.revertedWithCustomError(decryption, 'HostKindNotServed')
-        .withArgs(HOST_KIND_EVM);
     });
 
     it('Should admit only the 0x02 KMS routing form of extraData', async function () {
-      // The host-generic form has no other legal use of extraData — everything host-specific
-      // rides in hostPayload — so the v0-era context-only version, the proof-tail version and
+      // This entry has no other legal use of extraData — everything Solana-specific
+      // rides in solanaRequest — so the v0-era context-only version, the proof-tail version and
       // a right-versioned blob of the wrong length are all refused at admission, before the fee.
       const malformed = [
         extraDataV1(kmsContextId), // context-only version byte
@@ -3665,11 +3599,20 @@ describe('Decryption', function () {
     });
 
     it('Should keep Decryption.sol within the EIP-170 code-size limit', async function () {
-      // The contract lives near the limit — the Solana path carries the host-generic form
-      // partly because its typed-permit predecessor did not fit. This gate turns the next
-      // overflow into a test failure that names the problem, instead of a "code is too large"
-      // deploy revert in someone's fixture. If it fires, the levers are documented at the
-      // optimizer settings in hardhat.config.ts.
+      // The contract lives near the limit — the Solana path carries its opaque-blob form partly
+      // because its typed-permit predecessor did not fit. This gate turns the next overflow into
+      // a test failure that names the problem, instead of a "code is too large" deploy revert in
+      // someone's fixture. If it fires, the levers are documented at the optimizer settings in
+      // hardhat.config.ts.
+      //
+      // Under `hardhat coverage` the artifact is not the artifact that ships: solidity-coverage
+      // rewrites every contract with per-statement instrumentation and builds it unoptimized, so
+      // the measurement is of a binary that is never deployed. Asserting on it would fail the
+      // coverage run for a size no deployment has, so the gate measures only the real build.
+      if ((hre as unknown as { __SOLIDITY_COVERAGE_RUNNING?: boolean }).__SOLIDITY_COVERAGE_RUNNING) {
+        this.skip();
+      }
+
       const EIP170_LIMIT = 24576;
       const artifact = await hre.artifacts.readArtifact('Decryption');
       const deployedSize = (artifact.deployedBytecode.length - 2) / 2;

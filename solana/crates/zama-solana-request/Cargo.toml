@@ -1,0 +1,21 @@
+[package]
+name = "zama-solana-request"
+version = "0.1.0"
+description = "Canonical Solana user-decrypt request: the transport form carried opaquely by the gateway, with one encoder and one decoder for every Rust consumer"
+# Standalone (no workspace inheritance), for the same reason as `zama-solana-permit`
+# and `zama-solana-acl`: this crate is consumed as a `path` dependency by the relayer
+# and kms-connector Docker builds, whose contexts do not include the solana workspace root.
+authors = ["Zama"]
+edition = "2021"
+license = "BSD-3-Clause-Clear"
+
+[lib]
+name = "zama_solana_request"
+
+[dependencies]
+# The canonical byte layout. `default-features = false` so the crate stays usable from
+# both consumers, which pin borsh differently.
+borsh = { version = "1", default-features = false, features = ["derive"] }
+thiserror = { version = "2", default-features = false }
+# The eight signed permit fields the request carries verbatim.
+zama-solana-permit = { path = "../zama-solana-permit" }

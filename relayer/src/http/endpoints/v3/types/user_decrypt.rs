@@ -1,10 +1,14 @@
 //! v3 user-decrypt JSON wire types.
 //!
-//! The body is a typed-attestation envelope (see the issue comment
-//! 4278777024). Internally the `attestedPayload` is the EIP-712 Unified
-//! User-Decryption Request defined by the unified EIP-712 payload. The relayer never re-hashes
-//! the payload — `signature` is opaque and forwarded verbatim to the
-//! gateway (the KMS Connector verifies it off-chain, #1288).
+//! The body is an envelope discriminated by `attestationType` (see the issue comment
+//! 4278777024); the field name is the external JSON boundary and is kept as it stands.
+//!
+//! The two schemes differ in what the envelope carries and where its signature is checked.
+//! The EVM one carries the unified EIP-712 User-Decryption Request as `attestedPayload`; the
+//! relayer never re-hashes it, because the gateway contract verifies the EIP-712 signature on
+//! chain (#1288). The Solana one carries a wallet-signed permit plus per-handle evidence; no
+//! contract can check that signature, so the relayer verifies it against the locally rebuilt
+//! envelope before submitting, and each KMS party's connector verifies it again.
 
 use crate::http::endpoints::common::types::{HandleEntryJson, RequestValiditySecondsJson};
 use crate::http::utils::redact::redact_len;
@@ -13,19 +17,19 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use validator::Validate;
 
-/// v3 user-decrypt request envelope. The relayer dispatches strictly by
-/// `attestationType`. Supported values:
-/// - `"eip712-unified-user-decrypt-v1"` — EVM EIP-712 (verified on-chain by the gateway).
-/// - `"solana-ed25519-user-decrypt-v2"` — Solana ed25519 (verified off-chain per-party by the
-///   kms-connector). Both route to the same gateway V2 `userDecryptionRequest` calldata; the
-///   relayer forwards `signature` + `extraData` opaquely and never verifies them.
+/// The EVM arm of the v3 user-decrypt envelope, selected by
+/// `attestationType == "eip712-unified-user-decrypt-v1"`. Its EIP-712 signature is verified on
+/// chain by the gateway, so the relayer forwards `signature` and `extraData` verbatim without
+/// re-hashing anything.
+///
+/// Solana requests do not use this shape: they arrive as [`SolanaUserDecryptRequestJson`],
+/// which carries no EVM placeholders and is verified by the relayer before submission.
 #[derive(Deserialize, Clone, ToSchema, Validate, Derivative)]
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AttestedUserDecryptRequestJson {
-    /// The attestation/signature scheme used for the `signature` bytes.
-    /// Must equal `"eip712-unified-user-decrypt-v1"` (EVM EIP-712) or
-    /// `"solana-ed25519-user-decrypt-v2"` (Solana ed25519).
+    /// The scheme the `signature` bytes follow. Must equal
+    /// `"eip712-unified-user-decrypt-v1"` on this arm.
     #[validate(custom(function = "crate::http::validate_v3_attestation_type"))]
     #[schema(example = "eip712-unified-user-decrypt-v1")]
     pub attestation_type: String,
@@ -99,24 +103,27 @@ pub struct Eip712UnifiedUserDecryptPayloadJson {
 }
 
 /// v3 Solana user-decrypt envelope (`solana-srfc38-user-decrypt-v1`). A Solana-native shape
-/// with no EVM placeholders: the ed25519 `signature` attests over the permit fields, and the
+/// with no EVM placeholders: the ed25519 `signature` is the wallet's over the permit fields, and the
 /// relayer forwards everything opaquely into the host-generic gateway `userDecryptionRequest`
-/// overload (`hostKind = Solana`). Each KMS party's connector verifies the signature off-chain.
+/// overload (`hostKind = Solana`). The relayer verifies the signature before it submits, and
+/// each KMS party's connector verifies it again — that second check is the authorizing one.
 #[derive(Deserialize, Clone, ToSchema, Validate, Derivative)]
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct SolanaAttestedUserDecryptRequestJson {
+pub struct SolanaUserDecryptRequestJson {
     /// Must equal `"solana-srfc38-user-decrypt-v1"`.
     #[validate(custom(function = "crate::http::validate_v3_attestation_type"))]
     #[schema(example = "solana-srfc38-user-decrypt-v1")]
     pub attestation_type: String,
 
-    /// The Solana permit + handle-evidence payload the `signature` attests over.
+    /// The Solana permit fields the `signature` covers, plus the per-handle evidence it
+    /// deliberately does not: evidence is self-authenticating against host state.
     #[validate(nested)]
     pub attested_payload: SolanaSrfc38UserDecryptPayloadJson,
 
     /// The ed25519 signature over the reconstructed sRFC-38 permit envelope. `0x`-hex.
-    /// Opaque to the relayer — never verified here.
+    /// Rejected here if it does not verify, so an unsignable request costs no gateway
+    /// transaction; the authorizing check remains each connector's own.
     #[validate(custom(function = "crate::http::validate_0x_hex"))]
     #[derivative(Debug(format_with = "redact_len"))]
     #[schema(example = "0xaabbccdd")]
@@ -129,7 +136,9 @@ pub struct SolanaAttestedUserDecryptRequestJson {
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SolanaSrfc38UserDecryptPayloadJson {
-    /// The subject's 32-byte ed25519 pubkey (`0x` + 64 hex).
+    /// The requester's 32-byte ed25519 pubkey: the wallet that signs this permit (`0x` + 64
+    /// hex). Not necessarily the subject of any entry — on a delegated entry the subject is
+    /// the delegator, and this key is the delegate acting on their behalf.
     #[validate(custom(function = "crate::http::validate_0x_hex"))]
     pub user_pubkey: String,
 
@@ -170,9 +179,9 @@ pub struct SolanaSrfc38UserDecryptPayloadJson {
 pub struct SolanaHandleJson {
     /// The 32-byte ciphertext handle (`0x` + 64 hex).
     pub handle: String,
-    /// The 32-byte ciphertext owner: the signer for a direct entry, the delegator for a
-    /// delegated one (`0x` + 64 hex).
-    pub owner: String,
+    /// The 32-byte subject: the pubkey whose encrypted value this entry asks to decrypt — the
+    /// requester itself for a direct entry, the delegator for a delegated one (`0x` + 64 hex).
+    pub subject: String,
     /// The 32-byte encrypted value ID naming the `EncryptedValue` account (`0x` + 64 hex).
     pub encrypted_value_id: String,
     /// The `leaf_count` the access proof was built against; `"0"` in current mode (decimal string).

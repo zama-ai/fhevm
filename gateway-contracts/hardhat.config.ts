@@ -194,8 +194,10 @@ const config: HardhatUserConfig = {
         // coexist (sync merge), Decryption.sol exceeds the 24576-byte EIP-170 limit at 800.
         // 200 -> 150: the host-generic admission checks (served host-kind inventory, declared
         // ACL-domain-key count) tipped it over again by 28 bytes at 200.
-        // Lowering runs (optimize for size) keeps it deployable. Mirror this in foundry.toml.
-        runs: 150,
+        // 150 -> 200: those two admission checks were removed — neither could judge the opaque
+        // request blob they were about — which returned enough headroom to restore the setting.
+        // Mirror this in foundry.toml.
+        runs: 200,
       },
       evmVersion: 'cancun',
       viaIR: false,

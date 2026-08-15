@@ -63,6 +63,7 @@ user-decryption-signature = { path = "../shared/user-decryption-signature" }
 # Canonical Solana permit: strict typed decode (r1–r2 pre-check) reused verbatim so the
 # relayer is never softer or harder than the kms-connector on the same permit vectors.
 zama-solana-permit = { path = "../solana/crates/zama-solana-permit" }
+zama-solana-request = { path = "../solana/crates/zama-solana-request" }
 # Solana ACL: the strict borsh `MmrProof` form the relayer validates `accessProof` against.
 zama-solana-acl = { path = "../solana/crates/zama-solana-acl" }
 # Canonical `hostPayload` serialization forwarded into the host-generic gateway calldata.

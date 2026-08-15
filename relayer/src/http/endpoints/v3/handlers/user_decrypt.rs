@@ -26,7 +26,7 @@ use crate::http::endpoints::v2::types::user_decrypt::{
     UserDecryptPostResponseJson, UserDecryptQueuedResult,
 };
 use crate::http::endpoints::v3::types::{
-    AttestedUserDecryptRequestJson, SolanaAttestedUserDecryptRequestJson,
+    AttestedUserDecryptRequestJson, SolanaUserDecryptRequestJson,
 };
 use crate::http::retry_after::{DecryptQueueInfo, RetryAfterState};
 use crate::http::utils::validations::V3_ATTESTATION_TYPE_SOLANA_SRFC38_V1;
@@ -187,7 +187,7 @@ impl UserDecryptHandler {
             .unwrap_or(false);
 
         let parsed = if is_solana {
-            parse_and_validate::<SolanaAttestedUserDecryptRequestJson, UserDecryptRequest>(&body)
+            parse_and_validate::<SolanaUserDecryptRequestJson, UserDecryptRequest>(&body)
         } else {
             parse_and_validate::<AttestedUserDecryptRequestJson, UserDecryptRequest>(&body)
         };

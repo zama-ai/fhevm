@@ -118,7 +118,7 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                     ..
                 } => {
                     info!(
-                        kind = %decrypt_request.attestation_kind(),
+                        kind = %decrypt_request.request_kind(),
                         "Processing user decrypt request {}",
                         event.job_id
                     );
@@ -142,7 +142,7 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                         info!(
                             step = %UserDecryptStep::ReadinessCheckPassed,
                             int_job_id = %event.job_id,
-                            kind = %decrypt_request.attestation_kind(),
+                            kind = %decrypt_request.request_kind(),
                             "Readiness check passed, sending user decrypt request to gateway"
                         );
 
