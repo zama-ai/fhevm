@@ -40,12 +40,19 @@ impl std::fmt::Debug for ExecNode {
     }
 }
 
+/// Outputs of one operation can have different permissions, so each handle
+/// carries its own.
+#[derive(Clone, Debug)]
+pub struct DFGOutput {
+    pub handle: Handle,
+    pub is_allowed: bool,
+}
+
 #[derive(Debug)]
 pub struct DFGOp {
-    pub output_handles: Vec<Handle>,
+    pub outputs: Vec<DFGOutput>,
     pub fhe_op: SupportedFheOperations,
     pub inputs: Vec<DFGTaskInput>,
-    pub is_allowed: bool,
     /// Whether this worker OWNS the row: its chain is the one under lease.
     ///
     /// Distinct from `is_allowed`, and not derivable from it. `is_allowed` says
@@ -60,18 +67,18 @@ pub struct DFGOp {
 impl Default for DFGOp {
     fn default() -> Self {
         DFGOp {
-            output_handles: vec![],
+            outputs: vec![],
             fhe_op: SupportedFheOperations::FheTrivialEncrypt,
             inputs: vec![],
-            is_allowed: false,
             is_owned: false,
         }
     }
 }
 pub type ComponentEdge = ();
-/// A transaction's inner dataflow graph reduced to `(result handle,
-/// is_allowed, is_owned)` per node; see `DFComponentGraph::blocked_dependents`.
-type ReducedGraph = Dag<(Vec<Handle>, bool, bool), OpEdge>;
+/// A transaction's inner dataflow graph reduced to `(outputs, is_owned)` per
+/// node; see `DFComponentGraph::blocked_dependents`. Each output carries its
+/// own permission, so a partly-revealed group answers per handle.
+type ReducedGraph = Dag<(Vec<DFGOutput>, bool), OpEdge>;
 #[derive(Default)]
 pub struct ComponentNode {
     // Inner dataflow graph
@@ -175,16 +182,16 @@ pub fn build_component_nodes(
     mut operations: Vec<DFGOp>,
     transaction_id: &Handle,
 ) -> ComponentNodes {
-    if operations.iter().any(|o| o.output_handles.is_empty()) {
+    if operations.iter().any(|o| o.outputs.is_empty()) {
         return Err(SchedulerError::DataflowGraphError.into());
     }
-    operations.sort_by_key(|o| o.output_handles[0].clone());
+    operations.sort_by_key(|o| o.outputs[0].handle.clone());
     let mut graph: Dag<(bool, usize), OpEdge> = Dag::default();
     let mut produced_handles: HashMap<Handle, usize> = HashMap::new();
     let mut components: Vec<ComponentNode> = vec![];
     for (index, op) in operations.iter().enumerate() {
-        for h in op.output_handles.iter() {
-            produced_handles.insert(h.clone(), index);
+        for o in op.outputs.iter() {
+            produced_handles.insert(o.handle.clone(), index);
         }
     }
     let mut dependence_pairs = vec![];
@@ -207,7 +214,9 @@ pub fn build_component_nodes(
                 | DFGTaskInput::Compressed(..) => {}
             }
         }
-        let node_idx = graph.add_node((op.is_allowed, index)).index();
+        let node_idx = graph
+            .add_node((op.outputs.iter().any(|o| o.is_allowed), index))
+            .index();
         if index != node_idx {
             return Err(SchedulerError::DataflowGraphError.into());
         }
@@ -224,9 +233,9 @@ pub fn build_component_nodes(
         .into_iter()
         .flat_map(|i| {
             operations[i]
-                .output_handles
+                .outputs
                 .iter()
-                .map(|h| (h.clone(), transaction_id.clone()))
+                .map(|o| (o.handle.clone(), transaction_id.clone()))
                 .collect::<Vec<_>>()
         })
         .collect();
@@ -269,8 +278,8 @@ impl ComponentNode {
         // Gather all handles produced within the transaction
         let mut produced_handles: HashMap<Handle, usize> = HashMap::new();
         for (index, op) in operations.iter().enumerate() {
-            for h in op.output_handles.iter() {
-                produced_handles.insert(h.clone(), index);
+            for o in op.outputs.iter() {
+                produced_handles.insert(o.handle.clone(), index);
             }
         }
         let mut dependence_pairs = vec![];
@@ -292,19 +301,18 @@ impl ComponentNode {
                     DFGTaskInput::Value(_) | DFGTaskInput::Compressed(..) => {}
                 }
             }
-            for h in op.output_handles.iter() {
-                self.results.push(h.clone());
-                if !op.is_allowed {
-                    self.intermediate_handles.push(h.clone());
+            for o in op.outputs.iter() {
+                self.results.push(o.handle.clone());
+                if !o.is_allowed {
+                    self.intermediate_handles.push(o.handle.clone());
                 }
             }
             let node_idx = self
                 .graph
                 .add_node(
-                    op.output_handles.clone(),
+                    op.outputs.clone(),
                     (op.fhe_op as i16).into(),
                     std::mem::take(&mut op.inputs),
-                    op.is_allowed,
                     op.is_owned,
                 )?
                 .index();
@@ -477,7 +485,7 @@ impl DFComponentGraph {
                 warn!(target: "scheduler", { transaction_id = ?hex::encode(tx.transaction_id.clone()) },
                       "transaction deferred: part of a batch-composition dependence cycle");
                 for (_, op) in tx.graph.graph.node_references() {
-                    for h in op.result_handles.iter() {
+                    for h in op.handles().iter() {
                         self.results.push(DFGTxResult {
                             transaction_id: tx.transaction_id.clone(),
                             handle: h.clone(),
@@ -613,7 +621,7 @@ impl DFComponentGraph {
 
             // Add error results for all operations in this transaction
             for (_idx, op) in tx_node.graph.graph.node_references() {
-                for h in op.result_handles.iter() {
+                for h in op.handles().iter() {
                     self.results.push(DFGTxResult {
                         transaction_id: tx_node.transaction_id.clone(),
                         handle: h.clone(),
@@ -691,7 +699,7 @@ impl DFComponentGraph {
 
     fn reduce(graph: &DFGraph) -> ReducedGraph {
         graph.graph.map(
-            |_, node| (node.result_handles.clone(), node.is_allowed, node.is_owned),
+            |_, node| (node.outputs.clone(), node.is_owned),
             |_, edge| *edge,
         )
     }
@@ -707,10 +715,8 @@ impl DFComponentGraph {
         let owned = |reduced: &ReducedGraph| {
             reduced
                 .node_references()
-                .find(|(_, (result_handles, _, _))| {
-                    result_handles.iter().any(|h| h.as_slice() == handle)
-                })
-                .map(|(_, (_, _, is_owned))| *is_owned)
+                .find(|(_, (outs, _))| outs.iter().any(|o| o.handle.as_slice() == handle))
+                .map(|(_, (_, is_owned))| *is_owned)
         };
         let is_owned = if let Some(snapshot) = &self.blocked_dependents {
             snapshot.get(transaction_id).and_then(owned)
@@ -728,9 +734,7 @@ impl DFComponentGraph {
     fn allowed_dependents_in(reduced: &ReducedGraph, handle: &[u8]) -> Vec<Handle> {
         let Some(start) = reduced
             .node_references()
-            .find(|(_, (result_handles, _, _))| {
-                result_handles.iter().any(|h| h.as_slice() == handle)
-            })
+            .find(|(_, (outs, _))| outs.iter().any(|o| o.handle.as_slice() == handle))
             .map(|(index, _)| index)
         else {
             return vec![];
@@ -744,11 +748,13 @@ impl DFComponentGraph {
                 if !seen.insert(next) {
                     continue;
                 }
-                if let Some((result_handles, is_allowed, _)) = reduced.node_weight(next) {
-                    if *is_allowed {
-                        // Every handle of a group is an allowed dependent.
-                        out.extend(result_handles.iter().cloned());
-                    }
+                if let Some((outs, _)) = reduced.node_weight(next) {
+                    // Only the allowed handles of a group are dependents.
+                    out.extend(
+                        outs.iter()
+                            .filter(|o| o.is_allowed)
+                            .map(|o| o.handle.clone()),
+                    );
                 }
                 stack.push(next);
             }
@@ -802,16 +808,23 @@ pub struct DFGResult {
 pub type OpEdge = u8;
 pub struct OpNode {
     opcode: i32,
-    result_handles: Vec<Handle>,
+    outputs: Vec<DFGOutput>,
     inputs: Vec<DFGTaskInput>,
-    is_allowed: bool,
     is_owned: bool,
+}
+impl OpNode {
+    pub fn handles(&self) -> Vec<Handle> {
+        self.outputs.iter().map(|o| o.handle.clone()).collect()
+    }
+    pub fn is_needed(&self) -> bool {
+        self.outputs.iter().any(|o| o.is_allowed)
+    }
 }
 impl std::fmt::Debug for OpNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("OpNode")
             .field("OP", &self.opcode)
-            .field("Result handles", &format_args!("{:?}", self.result_handles))
+            .field("Outputs", &format_args!("{:?}", self.outputs))
             .finish()
     }
 }
@@ -850,7 +863,7 @@ impl OpNode {
                                 val,
                                 fhevm_engine_common::types::SupportedFheCiphertexts::Scalar(_)
                             ) {
-                                error!(target: "scheduler", { handle = ?hex::encode(&self.result_handles[0]) },
+                                error!(target: "scheduler", { handle = ?hex::encode(&self.outputs[0].handle) },
                                        "Consensus risk: non-scalar raw ciphertext crossing a transaction boundary");
                             }
                             DFGTaskInput::Value(val.clone())
@@ -876,22 +889,19 @@ impl DFGraph {
     #[allow(clippy::too_many_arguments)]
     pub fn add_node(
         &mut self,
-        result_handles: Vec<Handle>,
+        outputs: Vec<DFGOutput>,
         opcode: i32,
         inputs: Vec<DFGTaskInput>,
-        is_allowed: bool,
         is_owned: bool,
     ) -> Result<NodeIndex> {
-        // Scheduler indexes result_handles[0] directly; reject empty input
-        // here rather than panic the worker.
-        if result_handles.is_empty() {
+        // The scheduler indexes outputs[0] directly.
+        if outputs.is_empty() {
             return Err(SchedulerError::DataflowGraphError.into());
         }
         Ok(self.graph.add_node(OpNode {
             opcode,
-            result_handles,
+            outputs,
             inputs,
-            is_allowed,
             is_owned,
         }))
     }
@@ -1047,10 +1057,12 @@ mod tests {
     fn op(output: u8, input: DFGTaskInput, is_allowed: bool) -> DFGOp {
         // Owned: these fixtures stand in for rows under this worker's lease.
         DFGOp {
-            output_handles: vec![handle(output)],
+            outputs: vec![DFGOutput {
+                handle: handle(output),
+                is_allowed,
+            }],
             fhe_op: SupportedFheOperations::FheNot,
             inputs: vec![input],
-            is_allowed,
             is_owned: true,
         }
     }
@@ -1212,10 +1224,12 @@ mod tests {
 
     fn op_multi(output: Handle, inputs: Vec<DFGTaskInput>, is_allowed: bool) -> DFGOp {
         DFGOp {
-            output_handles: vec![output],
+            outputs: vec![DFGOutput {
+                handle: output,
+                is_allowed,
+            }],
             fhe_op: SupportedFheOperations::FheNot,
             inputs,
-            is_allowed,
             is_owned: true,
         }
     }
@@ -1413,10 +1427,12 @@ mod tests {
                 true,
             ),
             DFGOp {
-                output_handles: vec![stale_handle.clone()],
+                outputs: vec![DFGOutput {
+                    handle: stale_handle.clone(),
+                    is_allowed: false,
+                }],
                 fhe_op: SupportedFheOperations::FheNot,
                 inputs: vec![DFGTaskInput::BoundaryDependence(handle(0xC0))],
-                is_allowed: false,
                 is_owned: true,
             },
         ];

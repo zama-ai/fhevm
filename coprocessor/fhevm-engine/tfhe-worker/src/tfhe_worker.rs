@@ -21,7 +21,7 @@ use prometheus::{
 #[cfg(feature = "gpu")]
 use scheduler::dfg::scheduler::GpuExecutionLimiter;
 use scheduler::dfg::types::{CompressedCiphertext, DFGTxInput, SchedulerError};
-use scheduler::dfg::{build_component_nodes, ComponentNode, DFComponentGraph, DFGOp};
+use scheduler::dfg::{build_component_nodes, ComponentNode, DFComponentGraph, DFGOp, DFGOutput};
 use scheduler::dfg::{scheduler::Scheduler, types::DFGTaskInput};
 use sqlx::types::Uuid;
 use sqlx::{postgres::PgListener, query, query_scalar, Postgres};
@@ -271,6 +271,10 @@ mod operand_boundary_mask_tests {
         }
     }
 
+    fn op_handles(op: &DFGOp) -> Vec<Vec<u8>> {
+        op.outputs.iter().map(|o| o.handle.clone()).collect()
+    }
+
     fn input_kinds(op: &DFGOp) -> Vec<&'static str> {
         op.inputs
             .iter()
@@ -346,7 +350,7 @@ mod operand_boundary_mask_tests {
         let prepared = prepare_transaction_ops(&txwork, dcid.map(|d| vec![d]).as_deref(), &dead)
             .expect("prepared");
         assert_eq!(prepared.ops.len(), 1, "independent op still executes");
-        assert_eq!(prepared.ops[0].output_handles, vec![handle(4)]);
+        assert_eq!(op_handles(&prepared.ops[0]), vec![handle(4)]);
         assert_eq!(prepared.invalid_rows.len(), 1);
         assert_eq!(prepared.invalid_rows[0].0, handle(3));
         assert!(prepared.invalid_rows[0].1.contains("dead boundary input"));
@@ -417,7 +421,7 @@ mod operand_boundary_mask_tests {
         let consumer = prepared
             .ops
             .iter()
-            .find(|op| op.output_handles == vec![handle(2)])
+            .find(|op| op_handles(op) == vec![handle(2)])
             .expect("consumer op");
         // handle(1) is produced by this transaction -> local; handle(9) is
         // not -> canonical persisted form.
@@ -497,7 +501,7 @@ mod operand_boundary_mask_tests {
             prepare_transaction_ops(&txwork, dcid.map(|d| vec![d]).as_deref(), &HashSet::new())
                 .expect("prepared");
         assert_eq!(prepared.ops.len(), 1);
-        assert_eq!(prepared.ops[0].output_handles, vec![handle(4)]);
+        assert_eq!(op_handles(&prepared.ops[0]), vec![handle(4)]);
         let mut errored: Vec<Vec<u8>> = prepared
             .invalid_rows
             .iter()
@@ -589,18 +593,18 @@ mod operand_boundary_mask_tests {
         let foreign = prepared
             .ops
             .iter()
-            .find(|op| op.output_handles == vec![handle(1)])
+            .find(|op| op_handles(op) == vec![handle(1)])
             .expect("foreign producer joined the graph");
         // Recompute-only: never eligible for results or persistence, even
         // though its own row is allowed.
-        assert!(!foreign.is_allowed);
+        assert!(foreign.outputs.iter().all(|o| !o.is_allowed));
         assert_eq!(input_kinds(foreign), ["boundary", "boundary"]);
         let ours_op = prepared
             .ops
             .iter()
-            .find(|op| op.output_handles == vec![handle(2)])
+            .find(|op| op_handles(op) == vec![handle(2)])
             .expect("owned consumer");
-        assert!(ours_op.is_allowed);
+        assert!(ours_op.outputs.iter().any(|o| o.is_allowed));
         assert_eq!(input_kinds(ours_op), ["local", "boundary"]);
         // Foreign rows never anchor the batch's schedule order.
         assert_eq!(
@@ -634,7 +638,7 @@ mod operand_boundary_mask_tests {
             prepare_transaction_ops(&txwork, Some(std::slice::from_ref(&ours)), &HashSet::new())
                 .expect("prepared");
         assert_eq!(prepared.ops.len(), 1);
-        assert_eq!(prepared.ops[0].output_handles, vec![handle(2)]);
+        assert_eq!(op_handles(&prepared.ops[0]), vec![handle(2)]);
     }
 
     async fn seed_computation(
@@ -3876,16 +3880,24 @@ fn prepare_transaction_ops(
             ));
             continue;
         }
+        // Outputs of one operation can differ in permission, so each carries
+        // its own. Foreign rows are recompute-only producers whatever their own
+        // row says: results, persistence and completion belong to the chain
+        // that owns them, so an unowned group keeps nothing.
         ops.push(DFGOp {
-            output_handles: group_rows.iter().map(|r| r.output_handle.clone()).collect(),
+            outputs: group_rows
+                .iter()
+                .map(|r| DFGOutput {
+                    handle: r.output_handle.clone(),
+                    // Foreign rows are recompute-only producers, whatever
+                    // their own row says: results, persistence and
+                    // completion belong to the chain that owns them.
+                    is_allowed: owned && r.is_allowed,
+                })
+                .collect(),
             fhe_op,
             inputs,
-            // Foreign rows are recompute-only producers, whatever their own
-            // row says: results, persistence and completion belong to the
-            // chain that owns them. An op runs if any of its outputs is
-            // allowed; per-output permissions arrive with `DFGOutput`.
-            is_allowed: owned && group_rows.iter().any(|r| r.is_allowed),
-            // Kept separate from the line above, because the two answer
+            // Kept separate from the per-output flag, because the two answer
             // different questions. That one decides whether the output is
             // persisted; this one decides whether a failure of this node has a
             // row of OURS to stamp. An internal producer under our lease is
@@ -3945,11 +3957,11 @@ fn prepare_transaction_ops(
                 // Ownership derived from the row itself, so no parallel
                 // bookkeeping can drift out of alignment with `ops`.
                 let owned = rows_by_handle
-                    .get(op.output_handles[0].as_slice())
+                    .get(op.outputs[0].handle.as_slice())
                     .is_some_and(|row| row_is_owned(row));
-                uncomputable.extend(op.output_handles.iter().cloned());
+                uncomputable.extend(op.outputs.iter().map(|o| o.handle.clone()));
                 if owned {
-                    for handle in op.output_handles {
+                    for handle in op.outputs.into_iter().map(|o| o.handle) {
                         invalid_rows.push((
                             handle,
                             "transaction-local producer is terminally errored".to_string(),

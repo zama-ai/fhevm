@@ -482,9 +482,9 @@ fn execute_partition(
                         // ours to stamp, and gating on allowance dropped its
                         // verdict on the floor.
                         if node.is_owned {
-                            for h in node.result_handles.iter() {
+                            for h in node.handles() {
                                 reported.push((
-                                    h.clone(),
+                                    h,
                                     tid.clone(),
                                     Err(SchedulerError::MissingInputs.into()),
                                 ));
@@ -517,9 +517,9 @@ fn execute_partition(
                     continue;
                 };
                 if node.is_owned {
-                    for h in node.result_handles.iter() {
+                    for h in node.handles() {
                         reported.push((
-                            h.clone(),
+                            h,
                             tid.clone(),
                             Err(SchedulerError::CyclicDependence.into()),
                         ));
@@ -534,7 +534,7 @@ fn execute_partition(
                 error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
                 continue;
             };
-            let producer_handles: Vec<Handle> = node.result_handles.clone();
+            let producer_handles: Vec<Handle> = node.handles();
             let result = try_execute_node(
                 node,
                 nidx.index(),
@@ -557,8 +557,10 @@ fn execute_partition(
                         error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
                         continue;
                     };
-                    let producer_handles = node.result_handles.clone();
-                    let is_allowed = node.is_allowed;
+                    // Named apart from the partition's `outputs` results map.
+                    let node_outputs = node.outputs.clone();
+                    let producer_handles: Vec<Handle> =
+                        node_outputs.iter().map(|o| o.handle.clone()).collect();
                     let opcode = node.opcode;
                     match op_result {
                         Ok(working) if working.len() == producer_handles.len() => {
@@ -587,9 +589,8 @@ fn execute_partition(
                             // handle rather than once per operation.
                             let mut forwarded: Vec<Option<SupportedFheCiphertexts>> =
                                 Vec::with_capacity(working.len());
-                            for (handle, value) in producer_handles.iter().zip(working.into_iter())
-                            {
-                                if !is_allowed {
+                            for (output, value) in node_outputs.iter().zip(working.into_iter()) {
+                                if !output.is_allowed {
                                     forwarded.push(Some(value));
                                     continue;
                                 }
@@ -597,12 +598,12 @@ fn execute_partition(
                                     Ok(compressed_ct) => {
                                         let task_result = TaskResult {
                                             compressed_ct,
-                                            is_allowed,
+                                            is_allowed: output.is_allowed,
                                             transaction_id: tid.clone(),
                                         };
-                                        outputs.insert(handle.clone(), task_result.clone());
+                                        outputs.insert(output.handle.clone(), task_result.clone());
                                         reported.push((
-                                            handle.clone(),
+                                            output.handle.clone(),
                                             tid.clone(),
                                             Ok(task_result),
                                         ));
@@ -614,7 +615,7 @@ fn execute_partition(
                                         // downstream ops fail as missing
                                         // inputs instead of computing results
                                         // destined to be discarded.
-                                        reported.push((handle.clone(), tid.clone(), Err(e)));
+                                        reported.push((output.handle.clone(), tid.clone(), Err(e)));
                                         forwarded.push(None);
                                     }
                                 }
@@ -673,28 +674,19 @@ fn execute_partition(
                         error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
                         continue;
                     };
-                    // OWNERSHIP, not allowance. This arm carries the errors
-                    // that never became an OpResult -- a decompression failure,
-                    // a caught panic around it, missing inputs, a
-                    // re-randomization fault -- and gating them on `is_allowed`
-                    // silently discarded every one raised by an internal
-                    // producer. Nothing then stamped that row, so it never
-                    // accumulated a retry count and never reached demotion,
-                    // while its allowed consumer came back as MissingInputs,
-                    // which the upload path ignores by design. Both rows sat
-                    // pending forever, re-executed at poll cadence.
-                    //
-                    // Foreign rows are reported too. A foreign producer is
-                    // loaded as a recompute-only input for an OWNED consumer,
-                    // and when it fails here the consumer comes back with an
-                    // unresolved local dependence that upload leaves unstamped.
-                    // Dropping the producer's error left that consumer with no
-                    // verdict anywhere -- the owning chain never sees this
-                    // consumer -- so the transaction re-executed forever. The
-                    // worker routes a foreign row's error to the owned allowed
-                    // dependents it recorded before scheduling and never
-                    // touches the foreign row itself (`is_foreign_producer`).
-                    fan_out_error(&node.result_handles, e, &tid, &mut reported);
+                    // `is_owned`, matching the bubbled-error arm below:
+                    // an internal producer under our lease has a row of
+                    // ours to stamp, and gating on allowance dropped its
+                    // verdict on the floor.
+                    if node.is_owned {
+                        for h in node.handles() {
+                            reported.push((
+                                h,
+                                tid.clone(),
+                                Err(SchedulerError::MissingInputs.into()),
+                            ));
+                        }
+                    }
                 }
             }
         }
@@ -738,8 +730,8 @@ fn try_execute_node(
     if !node.check_ready_inputs(tx_inputs) {
         return Err(SchedulerError::SchedulerError.into());
     }
-    let handle = hex::encode(&node.result_handles[0]);
-    let outputs = node.result_handles.len();
+    let handle = hex::encode(&node.outputs[0].handle);
+    let outputs = node.outputs.len();
     let mut cts = Vec::with_capacity(node.inputs.len());
     for i in std::mem::take(&mut node.inputs) {
         match i {
@@ -824,7 +816,7 @@ fn try_execute_node(
         // Every handle of a group derives from one base, so output 0 binds the
         // operation for the transcript.
         if let Err(e) =
-            re_randomise_operation_inputs(&mut cts, &node.result_handles[0], node.opcode, cpk)
+            re_randomise_operation_inputs(&mut cts, &node.outputs[0].handle, node.opcode, cpk)
         {
             error!(target: "scheduler",
                 { handle = ?handle, outputs, error = ?e },
@@ -836,7 +828,7 @@ fn try_execute_node(
         RERAND_LATENCY_BATCH_HISTOGRAM.observe(elapsed.as_secs_f64());
     }
     let opcode = node.opcode;
-    let output_type = get_ct_type(&node.result_handles[0]).map_err(|e| {
+    let output_type = get_ct_type(&node.outputs[0].handle).map_err(|e| {
         error!(target: "scheduler",
             { handle = ?handle, outputs, error = ?e },
             "Invalid result handle: cannot read type byte");
