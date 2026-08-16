@@ -4,7 +4,8 @@ use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::types::AllowEvents;
 use host_listener::contracts::TfheContract::TfheContractEvents;
 use host_listener::database::tfhe_event_propagate::{
-    operand_boundary_mask_from_minted, ClearConst, Database as ListenerDatabase, Handle, LogTfhe,
+    operand_boundary_mask_from_minted, uniform_allowed_outputs, ClearConst,
+    Database as ListenerDatabase, Handle, LogTfhe,
     ToType, Transaction,
 };
 use sqlx::types::time::PrimitiveDateTime;
@@ -135,10 +136,11 @@ pub async fn insert_event(
         previously_minted.contains(handle.as_slice())
     })
     .map_err(sqlx::Error::Protocol)?;
+    let inner = log.inner;
     let event = LogTfhe {
-        event: log.inner,
+        allowed_outputs: uniform_allowed_outputs(&inner, is_allowed),
+        event: inner,
         transaction_hash: Some(tx_id),
-        is_allowed,
         block_number: 0,
         block_hash: Handle::ZERO,
         block_timestamp: PrimitiveDateTime::MAX,

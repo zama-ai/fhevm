@@ -6,8 +6,9 @@ use fhevm_engine_common::db_keys::DbKeyCache;
 use fhevm_engine_common::types::{AllowEvents, COMPUTED_HANDLE_INDEX_MARKER, HANDLE_VERSION};
 use host_listener::contracts::TfheContract::TfheContractEvents;
 use host_listener::database::tfhe_event_propagate::{
-    operand_boundary_mask_from_minted, ClearConst, Database as ListenerDatabase, Handle, LogTfhe,
-    OperandBoundaryMask, TransactionHash,
+    operand_boundary_mask_from_minted, uniform_allowed_outputs, ClearConst,
+    Database as ListenerDatabase, Handle, LogTfhe, OperandBoundaryMask,
+    TransactionHash,
 };
 use rand::Rng;
 use sqlx::types::time::PrimitiveDateTime;
@@ -269,7 +270,7 @@ pub async fn generate_trivial_encrypt(
     let ct_type = ct_type.unwrap_or(DEF_TYPE);
     let handle = next_random_handle(ct_type.clone());
     let ct_value = ct_value.unwrap_or(rand::rng().random::<u128>());
-    let event = tfhe_event(TfheContractEvents::TrivialEncrypt(
+    let trivial_event = tfhe_event(TfheContractEvents::TrivialEncrypt(
         host_listener::contracts::TfheContract::TrivialEncrypt {
             caller,
             pt: as_scalar_uint(&BigInt::from(ct_value)),
@@ -278,11 +279,11 @@ pub async fn generate_trivial_encrypt(
         },
     ));
     let operand_boundary_mask =
-        fixture_operand_boundary_mask(tx, transaction_hash, &event.data).await?;
+        fixture_operand_boundary_mask(tx, transaction_hash, &trivial_event.data).await?;
     let log = LogTfhe {
-        event,
+        allowed_outputs: uniform_allowed_outputs(&trivial_event, is_allowed),
+        event: trivial_event,
         transaction_hash: Some(transaction_hash),
-        is_allowed,
         block_number: 1,
         block_hash: Handle::ZERO,
         block_timestamp: PrimitiveDateTime::MAX,
@@ -451,9 +452,9 @@ pub async fn insert_tfhe_event(
     let operand_boundary_mask =
         fixture_operand_boundary_mask(tx, transaction_hash, &event.data).await?;
     let log = LogTfhe {
+        allowed_outputs: uniform_allowed_outputs(&event, is_allowed),
         event,
         transaction_hash: Some(transaction_hash),
-        is_allowed,
         block_number: 1,
         block_hash: Handle::ZERO,
         block_timestamp: PrimitiveDateTime::MAX,
