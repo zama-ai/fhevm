@@ -6,7 +6,8 @@ use fhevm_engine_common::db_keys::DbKeyCache;
 use fhevm_engine_common::types::{AllowEvents, COMPUTED_HANDLE_INDEX_MARKER, HANDLE_VERSION};
 use host_listener::contracts::TfheContract::TfheContractEvents;
 use host_listener::database::tfhe_event_propagate::{
-    ClearConst, Database as ListenerDatabase, Handle, LogTfhe, TransactionHash,
+    uniform_allowed_outputs, ClearConst, Database as ListenerDatabase, Handle, LogTfhe,
+    TransactionHash,
 };
 use rand::Rng;
 use sqlx::types::time::PrimitiveDateTime;
@@ -249,17 +250,18 @@ pub async fn generate_trivial_encrypt(
     let ct_type = ct_type.unwrap_or(DEF_TYPE);
     let handle = next_random_handle(ct_type.clone());
     let ct_value = ct_value.unwrap_or(rand::rng().random::<u128>());
+    let trivial_event = tfhe_event(TfheContractEvents::TrivialEncrypt(
+        host_listener::contracts::TfheContract::TrivialEncrypt {
+            caller,
+            pt: as_scalar_uint(&BigInt::from(ct_value)),
+            toType: ct_type as u8,
+            result: handle,
+        },
+    ));
     let log = LogTfhe {
-        event: tfhe_event(TfheContractEvents::TrivialEncrypt(
-            host_listener::contracts::TfheContract::TrivialEncrypt {
-                caller,
-                pt: as_scalar_uint(&BigInt::from(ct_value)),
-                toType: ct_type as u8,
-                result: handle,
-            },
-        )),
+        allowed_outputs: uniform_allowed_outputs(&trivial_event, is_allowed),
+        event: trivial_event,
         transaction_hash: Some(transaction_hash),
-        is_allowed,
         block_number: 1,
         block_hash: Handle::ZERO,
         block_timestamp: PrimitiveDateTime::MAX,
@@ -424,9 +426,9 @@ pub async fn insert_tfhe_event(
     let started_at = tokio::time::Instant::now();
 
     let log = LogTfhe {
+        allowed_outputs: uniform_allowed_outputs(&event, is_allowed),
         event,
         transaction_hash: Some(transaction_hash),
-        is_allowed,
         block_number: 1,
         block_hash: Handle::ZERO,
         block_timestamp: PrimitiveDateTime::MAX,

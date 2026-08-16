@@ -15,7 +15,7 @@ use itertools::Itertools;
 use lazy_static::lazy_static;
 use prometheus::{register_histogram, register_int_counter, Histogram, IntCounter};
 use scheduler::dfg::types::{CompressedCiphertext, DFGTxInput, SchedulerError};
-use scheduler::dfg::{build_component_nodes, ComponentNode, DFComponentGraph, DFGOp};
+use scheduler::dfg::{build_component_nodes, ComponentNode, DFComponentGraph, DFGOp, DFGOutput};
 use scheduler::dfg::{scheduler::Scheduler, types::DFGTaskInput};
 use sqlx::types::Uuid;
 use sqlx::{postgres::PgListener, query, Postgres};
@@ -669,7 +669,6 @@ WHERE c.transaction_id IN (
                 let fhe_op_raw = first.fhe_operation;
                 let dependencies = &first.dependencies;
                 let is_scalar = first.is_scalar;
-                let is_allowed = first.is_allowed;
 
                 let fhe_op: SupportedFheOperations = match fhe_op_raw.try_into() {
                     Ok(op) => op,
@@ -713,20 +712,22 @@ WHERE c.transaction_id IN (
                 )
                 .map_err(CoprocessorError::FhevmError)?;
 
-                let output_handles: Vec<Handle> = group_rows
+                let outputs: Vec<DFGOutput> = group_rows
                     .iter()
-                    .map(|w| w.output_handle.clone())
+                    .map(|w| DFGOutput {
+                        handle: w.output_handle.clone(),
+                        is_allowed: w.is_allowed,
+                    })
                     .collect();
-
+                let any_allowed = outputs.iter().any(|o| o.is_allowed);
 
                 ops.push(DFGOp {
-                    output_handles,
+                    outputs,
                     fhe_op,
                     inputs,
-                    is_allowed,
                 });
 
-                if is_allowed {
+                if any_allowed {
                     // Only account for allowed to avoid case of reorg
                     // where trivial encrypts will be in collision in
                     // the same transaction and old ones are re-used

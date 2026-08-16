@@ -13,7 +13,8 @@ use alloy::primitives::{FixedBytes, Log};
 use bigdecimal::num_bigint::BigInt;
 use host_listener::contracts::TfheContract::TfheContractEvents;
 use host_listener::database::tfhe_event_propagate::{
-    ClearConst, Database as ListenerDatabase, Handle, LogTfhe, ToType, Transaction,
+    uniform_allowed_outputs, ClearConst, Database as ListenerDatabase, Handle, LogTfhe,
+    ToType, Transaction,
 };
 use sqlx::types::time::PrimitiveDateTime;
 use sqlx::PgPool;
@@ -217,10 +218,11 @@ pub async fn insert_tfhe_event(
     tx_hash: Handle,
     is_allowed: bool,
 ) -> Result<bool, sqlx::Error> {
+    let inner = log.inner;
     let event = LogTfhe {
-        event: log.inner,
+        allowed_outputs: uniform_allowed_outputs(&inner, is_allowed),
+        event: inner,
         transaction_hash: Some(tx_hash),
-        is_allowed,
         block_number: log.block_number.unwrap_or(0),
         block_hash: log.block_hash.unwrap_or_default(),
         block_timestamp: PrimitiveDateTime::MAX,

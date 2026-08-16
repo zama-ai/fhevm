@@ -78,10 +78,10 @@ fn scan_transactions(
             tx.input_handle.push(input);
         }
         for output in outputs {
-            tx.output_handle.push(output);
-            if log.is_allowed {
+            if log.allowed_outputs.contains(&output) {
                 tx.allowed_handle.push(output);
             }
+            tx.output_handle.push(output);
         }
     }
     (ordered_txs_hash, txs)
@@ -476,7 +476,9 @@ mod tests {
     use crate::contracts::TfheContract as C;
     use crate::contracts::TfheContract::TfheContractEvents as E;
     use crate::database::dependence_chains::dependence_chains;
-    use crate::database::tfhe_event_propagate::{Chain, ChainCache, LogTfhe};
+    use crate::database::tfhe_event_propagate::{
+        uniform_allowed_outputs, Chain, ChainCache, LogTfhe,
+    };
     use crate::database::tfhe_event_propagate::{
         ClearConst, Handle, TransactionHash,
     };
@@ -500,9 +502,10 @@ mod tests {
     ) {
         static COUNTER: std::sync::atomic::AtomicU64 =
             std::sync::atomic::AtomicU64::new(0);
+        let event = tfhe_event(e);
         logs.push(LogTfhe {
-            event: tfhe_event(e),
-            is_allowed,
+            allowed_outputs: uniform_allowed_outputs(&event, is_allowed),
+            event,
             block_number: 0,
             block_hash: TransactionHash::ZERO,
             block_timestamp: sqlx::types::time::PrimitiveDateTime::MIN,
@@ -850,10 +853,10 @@ mod tests {
         let tx2 = TransactionHash::with_last_byte(2);
         let va_1 = input_handle(&mut logs, tx1);
         let _vb_1 = op1(va_1, &mut logs, tx1);
-        logs[1].is_allowed = false;
+        logs[1].allowed_outputs.clear();
         let va_2 = input_handle(&mut logs, tx2);
         let _vb_2 = op1(va_2, &mut logs, tx2);
-        logs[3].is_allowed = false;
+        logs[3].allowed_outputs.clear();
         let chains = dependence_chains(&mut logs, &cache, false, true).await;
         assert_eq!(chains.len(), 2);
         assert_eq!(cache.read().await.len(), 0);

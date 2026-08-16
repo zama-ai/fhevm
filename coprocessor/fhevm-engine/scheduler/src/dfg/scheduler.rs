@@ -305,9 +305,9 @@ fn execute_partition(
                             error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
                             continue;
                         };
-                        if node.is_allowed {
-                            for h in node.result_handles.iter() {
-                                res.insert(h.clone(), Err(SchedulerError::MissingInputs.into()));
+                        if node.is_needed() {
+                            for h in node.handles() {
+                                res.insert(h, Err(SchedulerError::MissingInputs.into()));
                             }
                         }
                     }
@@ -336,9 +336,9 @@ fn execute_partition(
                     error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
                     continue;
                 };
-                if node.is_allowed {
-                    for h in node.result_handles.iter() {
-                        res.insert(h.clone(), Err(SchedulerError::CyclicDependence.into()));
+                if node.is_needed() {
+                    for h in node.handles() {
+                        res.insert(h, Err(SchedulerError::CyclicDependence.into()));
                     }
                 }
             }
@@ -358,8 +358,8 @@ fn execute_partition(
                         error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
                         continue;
                     };
-                    let producer_handles = node.result_handles.clone();
-                    let is_allowed = node.is_allowed;
+                    let outputs = node.outputs.clone();
+                    let producer_handles = node.handles();
                     match result.1 {
                         Ok(vec_res) if vec_res.len() == producer_handles.len() => {
                             // Route each validated output to the consumers that depend on it.
@@ -386,13 +386,12 @@ fn execute_partition(
                                 child_node.inputs[input_idx] =
                                     DFGTaskInput::Compressed(vec_res[out_idx].clone());
                             }
-                            // Publish each output under its corresponding handle.
-                            for (h, ct) in producer_handles.into_iter().zip(vec_res) {
+                            for (o, ct) in outputs.into_iter().zip(vec_res) {
                                 res.insert(
-                                    h,
+                                    o.handle,
                                     Ok(TaskResult {
                                         compressed_ct: ct,
-                                        is_allowed,
+                                        is_allowed: o.is_allowed,
                                         transaction_id: tid.clone(),
                                     }),
                                 );
@@ -416,8 +415,8 @@ fn execute_partition(
                         error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
                         continue;
                     };
-                    if node.is_allowed {
-                        fan_out_error(&node.result_handles, e, &mut res);
+                    if node.is_needed() {
+                        fan_out_error(&node.handles(), e, &mut res);
                     }
                 }
             }
@@ -440,8 +439,8 @@ fn try_execute_node(
     if !node.check_ready_inputs(tx_inputs) {
         return Err(SchedulerError::SchedulerError.into());
     }
-    let handle = hex::encode(&node.result_handles[0]);
-    let outputs = node.result_handles.len();
+    let handle = hex::encode(&node.outputs[0].handle);
+    let outputs = node.outputs.len();
     let mut cts = Vec::with_capacity(node.inputs.len());
     for i in std::mem::take(&mut node.inputs) {
         match i {
@@ -490,7 +489,7 @@ fn try_execute_node(
         RERAND_LATENCY_BATCH_HISTOGRAM.observe(elapsed.as_secs_f64());
     }
     let opcode = node.opcode;
-    let output_type = get_ct_type(&node.result_handles[0]).map_err(|e| {
+    let output_type = get_ct_type(&node.outputs[0].handle).map_err(|e| {
         error!(target: "scheduler",
             { handle = ?handle, outputs, error = ?e },
             "Invalid result handle: cannot read type byte");

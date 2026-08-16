@@ -167,7 +167,8 @@ pub struct Database {
 pub struct LogTfhe {
     pub event: Log<TfheContractEvents>,
     pub transaction_hash: Option<TransactionHash>,
-    pub is_allowed: bool,
+    /// The output handles of this event that are allowed.
+    pub allowed_outputs: HashSet<Handle>,
     pub block_number: u64,
     pub block_hash: BlockHash,
     pub block_timestamp: PrimitiveDateTime,
@@ -543,6 +544,7 @@ impl Database {
         //
         // `dependencies` is already reduced to the primary row by the caller.
         let group_id_vec = group_id.map(|g| g.to_vec());
+        let output_allowed = log.is_output_allowed(output_handle);
         let query = sqlx::query!(
             r#"
             INSERT INTO computations (
@@ -570,12 +572,12 @@ impl Database {
             is_scalar,
             log.dependence_chain.to_vec(),
             log.transaction_hash.map(|txh| txh.to_vec()),
-            log.is_allowed,
+            output_allowed,
             log.block_timestamp
                 .saturating_add(TimeDuration::microseconds(
                     log.tx_depth_size as i64
                 )),
-            !log.is_allowed,
+            !output_allowed,
             self.chain_id.as_i64(),
             log.block_number as i64,
             group_id_vec,
@@ -2045,6 +2047,27 @@ pub fn event_name(op: &TfheContractEvents) -> &'static str {
         E::Initialized(_) => "Initialized",
         E::Upgraded(_) => "Upgraded",
         E::VerifyInput(_) => "VerifyInput",
+    }
+}
+
+/// Gives every output the same permission, for callers that have no per-output
+/// permission of their own.
+pub fn uniform_allowed_outputs(
+    event: &Log<TfheContractEvents>,
+    is_allowed: bool,
+) -> HashSet<Handle> {
+    if is_allowed {
+        tfhe_result_handles(event).into_iter().collect()
+    } else {
+        HashSet::new()
+    }
+}
+
+impl LogTfhe {
+    fn is_output_allowed(&self, output_handle: &[u8]) -> bool {
+        self.allowed_outputs
+            .iter()
+            .any(|h| h.as_slice() == output_handle)
     }
 }
 
