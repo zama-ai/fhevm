@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO public.gateway_config_coprocessors (\n                tx_sender_address,\n                signer_address,\n                s3_bucket_url,\n                coprocessor_threshold,\n                gateway_chain_id,\n                gateway_config_address,\n                snapshot_block_number,\n                snapshot_block_hash\n            )\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "Text",
+        "Int8",
+        "Int8",
+        "Bytea",
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3fe175e6e7675a40d0e99d989dc6c9e9822d7f8d368f07162aef606132eaf50a"
+}

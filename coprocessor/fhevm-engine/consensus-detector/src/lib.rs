@@ -1,5 +1,8 @@
-//! Consensus Detector (`consensus-detector`) — watches operator S3 buckets for
-//! unanimous state-hash agreement during an active GCS blue-green upgrade.
+//! Consensus Detector (`consensus-detector`) runs two independent consensus
+//! responsibilities: GCS upgrade state-hash agreement and generation-scoped
+//! ciphertext-manifest publication and verification.
+//!
+//! ## GCS upgrade state-hash agreement
 //!
 //! At startup the service queries the on-chain `GatewayConfig` contract for the
 //! set of coprocessor signers and resolves each one's `s3BucketUrl`. That URL
@@ -34,6 +37,27 @@
 //! **Timeout.** If a track is still un-anchored `commitment_timeout` after `end_block`,
 //! `unanimity_consensus_timeout` is emitted (and re-emitted each pass) until the
 //! upgrade-controller rolls the dry-run back.
+//!
+//! ## Ciphertext manifest lifecycle
+//!
+//! Each stack independently discovers completed ciphertext blocks, publishes signed
+//! manifests to its operator S3 bucket, downloads peer manifests, verifies their
+//! registered signers and canonical identities, compares exact commitments, and
+//! persists drift evidence. Manifest results are observation only: they do not alter
+//! Gateway readiness or computation state.
+//!
+//! Blue runs manifest publication and verification in its pinned generation during
+//! normal operation and throughout an upgrade. Green is deployed with the same
+//! workers parked, activates them only at `DryRunStarted`, and uses its separately
+//! pinned generation. Generation-qualified database identities and S3 keys let both
+//! stacks operate concurrently without overwriting or synchronizing their mutable
+//! work. Green parks again on rollback; after cutover it continues as the live stack,
+//! while the retired Blue instance is fenced by the stack-version transition.
+//!
+//! Manifest archive and work-state tables live in `public`, while ciphertext
+//! discovery follows each stack's database `search_path`. This preserves shared
+//! audit history while keeping Blue and Green computation inputs isolated. See
+//! `docs/s3-coprocessor-consensus.md` for the implemented protocol.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -117,7 +141,7 @@ pub struct Config {
     pub s3_endpoint: Option<String>,
     /// Max pending blocks processed per state_hash pass.
     pub state_hash_batch_limit: i64,
-    /// Generation-scoped manifest publication.
+    /// Generation-scoped manifest publication and peer verification.
     pub manifest_consensus: manifest_consensus::Config,
     /// Signer used for this generation's immutable manifests.
     pub manifest_signer: Option<fhevm_engine_common::types::CoproSigner>,

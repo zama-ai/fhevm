@@ -1,0 +1,56 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT signer_address,\n               s3_bucket_url,\n               coprocessor_threshold,\n               gateway_chain_id,\n               gateway_config_address,\n               snapshot_block_number,\n               snapshot_block_hash\n          FROM gateway_config_coprocessors\n         ORDER BY signer_address\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "signer_address",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "s3_bucket_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "coprocessor_threshold",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "gateway_chain_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "gateway_config_address",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
+        "name": "snapshot_block_number",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "snapshot_block_hash",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "321ea21af02ed1f654b4d8bf7975f8f5dc3f26d12aa96d90489efa9f53e690c6"
+}

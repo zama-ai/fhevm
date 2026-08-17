@@ -1,0 +1,33 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT EXISTS (\n                SELECT 1\n                  FROM block_manifest_verification_attempt_drift drift\n                  JOIN block_manifest_verification_attempt attempt\n                    USING (generation, task_id, attempt)\n                  JOIN block_manifest_verification_task task\n                    ON task.id = drift.task_id AND task.generation = drift.generation\n                  JOIN block_manifest manifest\n                    ON manifest.id = task.local_manifest_id AND manifest.generation = task.generation\n                 WHERE drift.generation = $1\n                   AND drift.range_kind = 'historical'\n                   AND drift.first_block_number = $2\n                   AND drift.last_block_number = $3\n                   AND drift.scale = $4\n                   AND drift.end_block_hash = $5\n                   AND drift.local_digest = $6\n                   AND drift.publisher_groups = $7\n                   AND attempt.localization_cacheable\n                   AND task.required_quorum = $8\n                   AND manifest.publisher = $9\n                   AND manifest.version = $10\n                   AND manifest.coprocessor_context_id = $11\n                   AND manifest.host_chain_id = $12\n            ) AS \"cached!\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "cached!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Int8",
+        "Int4",
+        "Bytea",
+        "Bytea",
+        "Jsonb",
+        "Int4",
+        "Bytea",
+        "Int2",
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "d9fd3b14d1f90c714d2059ac0380eca018810cded0436070eb4409228271f008"
+}

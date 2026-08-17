@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE block_manifest_peer_download\n           SET completed_attempt = $3,\n               last_attempt_at = NOW(),\n               last_error = NULL,\n               updated_at = NOW()\n         WHERE task_id = $1\n           AND publisher = $2\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "98544eae899a86f61a89de9e7a5507c89e31b08f1e39f664607e9e912486842f"
+}

@@ -3,6 +3,9 @@ use alloy_primitives::{Address, B256, U256};
 use block_manifest::{ManifestVersion, SignedManifest};
 use sqlx::{Postgres, Transaction};
 
+const MAX_COVERING_MANIFEST_CANDIDATES: i64 = 64;
+pub(crate) const MAX_HISTORY_PREDECESSORS: usize = 5;
+
 /// Internal database locator. It is not part of the signed manifest format.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ManifestReference {
@@ -29,12 +32,14 @@ pub(crate) enum StoreOutcome {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ManifestSource {
     Local,
+    Peer,
 }
 
 impl ManifestSource {
     const fn as_db_str(self) -> &'static str {
         match self {
             Self::Local => "local",
+            Self::Peer => "peer",
         }
     }
 }
@@ -169,6 +174,34 @@ pub(crate) async fn store_authenticated_manifest(
     )
     .fetch_optional(trx.as_mut())
     .await?;
+
+    if inserted.is_none() && matches!(source, ManifestSource::Local) {
+        sqlx::query!(
+            r#"
+            UPDATE block_manifest
+               SET manifest_source = 'local'
+             WHERE publisher = $1
+               AND generation = $8
+               AND version = $2
+               AND coprocessor_context_id = $3
+               AND host_chain_id = $4
+               AND publication_block_number = $5
+               AND publication_block_hash = $6
+               AND revision = $7
+               AND manifest_source = 'peer'
+            "#,
+            identity.publisher.as_slice(),
+            identity.version,
+            identity.coprocessor_context_id.as_slice(),
+            identity.host_chain_id,
+            identity.publication_block_number,
+            identity.publication_block_hash.as_slice(),
+            identity.revision,
+            identity.generation,
+        )
+        .execute(trx.as_mut())
+        .await?;
+    }
 
     let row = sqlx::query!(
         r#"
@@ -335,6 +368,204 @@ pub(crate) async fn load_manifest_revision(
         )));
     }
     Ok(Some(manifest))
+}
+
+/// Finds the nearest archived local manifest whose direct range contains the
+/// requested block. The caller supplies the block hash as well, so competing
+/// lineages at the same height cannot be confused.
+///
+/// This is the history scanner's jump primitive: a differing historical range
+/// selects the local manifest that directly covers that range's newest block,
+/// rather than requiring every intermediate publication point.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn load_local_manifest_covering_block(
+    trx: &mut Transaction<'_, Postgres>,
+    publisher: Address,
+    version: ManifestVersion,
+    coprocessor_context_id: U256,
+    host_chain_id: i64,
+    generation: &str,
+    target_block_number: U256,
+    target_block_hash: B256,
+) -> Result<Option<AuthenticatedManifest>, ExecutionError> {
+    let target_block = target_block_number;
+    let target_block_number = i64_from_u256("covered block number", target_block_number)?;
+    let context = coprocessor_context_id.to_be_bytes::<32>();
+    let candidates = sqlx::query!(
+        r#"
+        SELECT DISTINCT publication_block_number, publication_block_hash
+          FROM block_manifest
+         WHERE publisher = $1
+           AND generation = $7
+           AND version = $2
+           AND coprocessor_context_id = $3
+           AND host_chain_id = $4
+           AND publication_block_number >= $5
+           AND manifest_source = 'local'
+         ORDER BY publication_block_number, publication_block_hash
+         LIMIT $6
+        "#,
+        publisher.as_slice(),
+        i16::from(u8::from(version)),
+        context.as_slice(),
+        host_chain_id,
+        target_block_number,
+        MAX_COVERING_MANIFEST_CANDIDATES,
+        generation,
+    )
+    .fetch_all(trx.as_mut())
+    .await?;
+
+    for candidate in candidates {
+        let publication_block_hash = b256(
+            "covering manifest publication block hash",
+            &candidate.publication_block_hash,
+        )?;
+        let Some(manifest) = load_highest_archived_revision(
+            trx,
+            publisher,
+            version,
+            coprocessor_context_id,
+            host_chain_id,
+            generation,
+            candidate.publication_block_number,
+            publication_block_hash,
+        )
+        .await?
+        else {
+            continue;
+        };
+        if manifest
+            .signed
+            .payload
+            .detailed_range
+            .blocks
+            .iter()
+            .any(|block| {
+                block.block_number == target_block && block.block_hash == target_block_hash
+            })
+        {
+            return Ok(Some(manifest));
+        }
+    }
+    Ok(None)
+}
+
+/// Loads the closest earlier local publication points on the same generation
+/// and lineage namespace. Callers use these signed manifests only to refine
+/// history when a peer did not publish the corresponding covering manifest.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn load_previous_local_manifests(
+    trx: &mut Transaction<'_, Postgres>,
+    publisher: Address,
+    starting_manifest: &AuthenticatedManifest,
+    limit: usize,
+) -> Result<Vec<AuthenticatedManifest>, ExecutionError> {
+    let payload = &starting_manifest.signed.payload;
+    let version = payload.version;
+    let coprocessor_context_id = payload.coprocessor_context_id;
+    let host_chain_id = i64_from_u256("manifest host chain id", payload.host_chain_id)?;
+    let generation = payload.consensus_epoch.clone();
+    let mut current = starting_manifest.clone();
+    let mut manifests = Vec::with_capacity(limit);
+    for _ in 0..limit {
+        let Some(first_detailed_block) = current.signed.payload.detailed_range.blocks.first()
+        else {
+            break;
+        };
+        let Some(previous_block_number) = first_detailed_block.block_number.checked_sub(U256::ONE)
+        else {
+            break;
+        };
+        let previous_block_number =
+            i64_from_u256("previous manifest block number", previous_block_number)?;
+        let Some(previous) = load_highest_archived_revision(
+            trx,
+            publisher,
+            version,
+            coprocessor_context_id,
+            host_chain_id,
+            &generation,
+            previous_block_number,
+            first_detailed_block.parent_block_hash,
+        )
+        .await?
+        else {
+            break;
+        };
+        manifests.push(previous.clone());
+        current = previous;
+    }
+    Ok(manifests)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn load_highest_archived_revision(
+    trx: &mut Transaction<'_, Postgres>,
+    publisher: Address,
+    version: ManifestVersion,
+    coprocessor_context_id: U256,
+    host_chain_id: i64,
+    generation: &str,
+    publication_block_number: i64,
+    publication_block_hash: B256,
+) -> Result<Option<AuthenticatedManifest>, ExecutionError> {
+    let context = coprocessor_context_id.to_be_bytes::<32>();
+    let row = sqlx::query!(
+        r#"
+        SELECT manifest_digest, object_key, signed_manifest
+          FROM block_manifest
+         WHERE publisher = $1
+           AND version = $2
+           AND generation = $7
+           AND coprocessor_context_id = $3
+           AND host_chain_id = $4
+           AND publication_block_number = $5
+           AND publication_block_hash = $6
+         ORDER BY revision DESC
+         LIMIT 1
+        "#,
+        publisher.as_slice(),
+        i16::from(u8::from(version)),
+        context.as_slice(),
+        host_chain_id,
+        publication_block_number,
+        publication_block_hash.as_slice(),
+        generation,
+    )
+    .fetch_optional(trx.as_mut())
+    .await?;
+
+    let Some(row) = row else {
+        return Ok(None);
+    };
+    let object_key = row.object_key;
+    let signed_bytes = row.signed_manifest;
+    let candidate = authenticate_manifest_object(publisher, &object_key, &signed_bytes)?;
+    if !matches_archive_scope(
+        &candidate,
+        publisher,
+        version,
+        coprocessor_context_id,
+        host_chain_id,
+        generation,
+        publication_block_number,
+        publication_block_hash,
+    ) {
+        return Err(internal(format!(
+            "stored manifest body does not match its archive identity for publisher {} key {}",
+            publisher, object_key,
+        )));
+    }
+    let stored_digest = b256("stored manifest digest", &row.manifest_digest)?;
+    if candidate.digest != stored_digest {
+        return Err(internal(format!(
+            "stored manifest digest is corrupt for publisher {} key {}",
+            publisher, object_key,
+        )));
+    }
+
+    Ok(Some(candidate))
 }
 
 #[allow(clippy::too_many_arguments)]

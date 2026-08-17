@@ -34,6 +34,7 @@ use crate::manifest_consensus::{
             record_manifest_publication_error, retry_skipped_predecessor_once,
         },
     },
+    verification::peer_downloader::schedule_manifest_verification,
 };
 
 use super::metrics::{
@@ -508,6 +509,14 @@ pub(crate) async fn publish_block_manifest(
     mark_manifest_published(trx, block, signed.payload.publisher, manifest_digest).await?;
     retry_skipped_predecessor_once(trx, block, i64::from(consensus.publication_retry_count) + 1)
         .await?;
+    schedule_manifest_verification(
+        trx,
+        archived.id,
+        consensus.verification_delay,
+        consensus.verification_retry_delay,
+        consensus.verification_retry_count,
+    )
+    .await?;
     info!(
         host_chain_id = block.host_chain_id,
         block_number = block.block_number,

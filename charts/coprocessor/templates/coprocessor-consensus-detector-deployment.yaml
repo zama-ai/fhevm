@@ -108,6 +108,15 @@ spec:
             {{- if not (has "manifest-publication-retry-count" $disabled) }}
             - --manifest-publication-retry-count={{ $component.config.manifestPublicationRetryCount }}
             {{- end }}
+            {{- if not (has "manifest-verification-delay" $disabled) }}
+            - --manifest-verification-delay={{ $component.config.manifestVerificationDelay }}
+            {{- end }}
+            {{- if not (has "manifest-verification-retry-delay" $disabled) }}
+            - --manifest-verification-retry-delay={{ $component.config.manifestVerificationRetryDelay }}
+            {{- end }}
+            {{- if not (has "manifest-verification-retry-count" $disabled) }}
+            - --manifest-verification-retry-count={{ $component.config.manifestVerificationRetryCount }}
+            {{- end }}
             {{- if not (has "incomplete-block-timeout" $disabled) }}
             - --incomplete-block-timeout={{ $component.config.incompleteBlockTimeout }}
             {{- end }}

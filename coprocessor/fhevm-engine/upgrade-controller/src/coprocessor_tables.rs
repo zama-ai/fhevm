@@ -185,7 +185,8 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
         duplicated: true,
         conflict_cols: &[],
     },
-    // Manifest construction state is shared in `public`.
+    // Manifest construction, downloaded peer evidence, verification queues,
+    // localization progress, and drift inventory are shared in `public`.
     // Every row is generation-qualified, so Blue and Green can write the same
     // physical tables without colliding. Keeping these tables out of GCS also
     // makes failed generations durable and removes manifest merging at cutover.
@@ -201,6 +202,31 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
     },
     CoprocessorTable {
         name: "block_manifest",
+        duplicated: false,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
+        name: "block_manifest_verification_task",
+        duplicated: false,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
+        name: "block_manifest_peer_download",
+        duplicated: false,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
+        name: "block_manifest_verification_attempt",
+        duplicated: false,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
+        name: "block_manifest_verification_attempt_drift",
+        duplicated: false,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
+        name: "drifted_handle",
         duplicated: false,
         conflict_cols: &[],
     },
@@ -276,7 +302,7 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
         duplicated: false,
         conflict_cols: &[],
     },
-    // Global generation allocations are shared control-plane history. Blue and
+    // Event-derived generation history is shared control-plane state. Blue and
     // Green must see the same failed and successful attempts.
     CoprocessorTable {
         name: "generation_history",
@@ -314,6 +340,13 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
     },
     CoprocessorTable {
         name: "crs",
+        duplicated: false,
+        conflict_cols: &[],
+    },
+    // Current signer and bucket registry snapshot. Both stacks must authorize
+    // manifests against the same observed GatewayConfig state.
+    CoprocessorTable {
+        name: "gateway_config_coprocessors",
         duplicated: false,
         conflict_cols: &[],
     },
@@ -406,6 +439,11 @@ mod tests {
             "block_manifest_state",
             "block_range_commitment",
             "block_manifest",
+            "block_manifest_verification_task",
+            "block_manifest_peer_download",
+            "block_manifest_verification_attempt",
+            "block_manifest_verification_attempt_drift",
+            "drifted_handle",
         ];
         for name in MANIFEST_TABLES {
             let table = COPROCESSOR_TABLES

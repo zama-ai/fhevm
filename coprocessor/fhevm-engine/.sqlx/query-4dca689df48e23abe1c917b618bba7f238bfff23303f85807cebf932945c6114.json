@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id\n             FROM block_manifest_verification_task\n             WHERE local_manifest_id = $1\n               AND generation = (SELECT generation FROM block_manifest WHERE id = $1)\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "4dca689df48e23abe1c917b618bba7f238bfff23303f85807cebf932945c6114"
+}

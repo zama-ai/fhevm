@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO block_manifest_peer_download (\n                generation,\n                task_id,\n                publisher,\n                s3_bucket_url\n            )\n            VALUES ($4, $1, $2, $3)\n            ON CONFLICT (generation, task_id, publisher) DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8c299d7d2dac3c056459a652fac64f994eee7f0a42714f94ff0343e67b825a9f"
+}
