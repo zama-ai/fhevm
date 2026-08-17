@@ -2,11 +2,13 @@
 # namespace. Mirrors zama-zws/gitops's fhevm-dev/relayer.yaml pattern
 # (generic `common` chart + published image), not a fhevm-specific chart.
 #
-# IMPORTANT: this schema is validated against relayer/src/config/settings.rs
-# AT v0.13.0 specifically (`git show v0.13.0:relayer/src/config/settings.rs`)
-# - the schema on main/HEAD has since evolved (e.g. keyurl.* was replaced by
-# a kms_generation_address poller), so don't copy patterns from the current
-# checked-out worktree source without re-pinning to RELAYER_VERSION's tag.
+# IMPORTANT: this schema is validated against relayer/src/config/settings.rs.
+# PR previews deploy the HEAD relayer image (see preview-env-deploy.yml's
+# image-tag resolution), so this file tracks the CURRENT worktree settings.rs -
+# e.g. HEAD's keyurl.* is a KMSGeneration-contract poller (KeyUrlConfig), not
+# the old v0.13.0 static fhe_public_key/crs storage URLs. Re-check settings.rs
+# (and this file) whenever the relayer config schema changes; a manual
+# workflow_dispatch that pins an OLDER relayer image may need the old schema.
 #
 # Settings::new() layers a `config/local.yaml` file (relative to CWD, i.e.
 # this chart's configmapFiles mount below) with APP_-prefixed env var
@@ -109,6 +111,13 @@ configmapFiles:
           retry_delay_ms: 1000
       protocol_config:
         retry: {max_attempts: 3, retry_interval_ms: 200}
+      # Required top-level block on HEAD relayer (settings.rs:
+      # UserDecryptSignatureCheckConfig): gas cap for the ERC-1271
+      # isValidSignature static call. Its absence aborts startup with
+      # 'missing configuration field "user_decrypt_signature_check"'. Value
+      # matches the reference topology (test-suite/fhevm/templates/config/relayer.yaml).
+      user_decrypt_signature_check:
+        erc1271_gas_limit: 100000
       log:
         format: "json"
         show_file_line: true
@@ -197,44 +206,24 @@ env:
   - name: APP_GATEWAY__CONTRACTS__INPUT_VERIFICATION_ADDRESS
     valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: input_verification.address}}
 
-  # --- keyurl (fhe_public_key + crs) - populated by the "Trigger KMS keygen +
-  # CRS generation" job's on-chain poll (values-host-trigger-keygen-e2e.yaml)
-  # once the real 4-party DKG ceremony reaches consensus. data_id here is
-  # just a label the relayer echoes back in /v2/keyurl responses (not looked
-  # up anywhere), so the raw on-chain key/CRS id doubles as it.
+  # --- keyurl (/v2/keyurl poller) ---
+  # HEAD relayer replaced the old static fhe_public_key/crs storage-URL config
+  # with a poller that reads the active key/CRS/KMS context straight from the
+  # KMSGeneration contract on the host chain (relayer/src/config/settings.rs:
+  # KeyUrlConfig { kms_generation_address, poll_interval_ms }). `keyurl` is a
+  # required top-level field, so its absence aborts startup with
+  # 'missing configuration field "keyurl.kms_generation_address"'. This mirrors
+  # the reference topology in test-suite/fhevm/templates/config/relayer.yaml.
   #
-  # NB: every key below needs the ".address" suffix - charts/contracts'
-  # sc-deploy-config.yaml unconditionally appends ".address" to every key
-  # promoted from addresses/.env.* into this ConfigMap (confirmed live:
-  # `kubectl get configmap host-sc-addresses -o yaml` shows
-  # "kms_active_key_id.address", not "kms_active_key_id" - a bare key here
-  # 404s the pod with CreateContainerConfigError: "couldn't find key
-  # kms_active_key_id in ConfigMap ... host-sc-addresses").
-  - name: APP_KEYURL__FHE_PUBLIC_KEY__DATA_ID
-    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_active_key_id.address}}
-  - name: KMS_ACTIVE_KEY_STORAGE_URL
-    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_active_key_storage_url.address}}
-  - name: KMS_ACTIVE_KEY_ID
-    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_active_key_id.address}}
-  # /PUB-p1/ is hardcoded here (not derived), matching
-  # zama-zws/gitops/values/relayer/relayer/values-relayer-dev.yaml's own
-  # "$(KMS_BUCKET_URL)/PUB-p1/PublicKey/$(KMS_KEY_ID)" pattern exactly: unlike
-  # KMS_NODE_STORAGE_URL_x (the on-chain ProtocolConfig registration
-  # host-listener reads - deliberately kept prefix-less above, see that
-  # comment), the relayer has no per-party fallback/search logic of its own -
-  # it needs the *exact* object key path, and since every party publishes
-  # identical public content under its own PUB-p<i>/ prefix, party 1's is
-  # picked as the one arbitrary source of truth, same as production.
-  - {name: APP_KEYURL__FHE_PUBLIC_KEY__URL, value: "$(KMS_ACTIVE_KEY_STORAGE_URL)/PUB-p1/PublicKey/$(KMS_ACTIVE_KEY_ID)"}
-  - name: APP_KEYURL__CRS__DATA_ID
-    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_active_crs_id.address}}
-  - name: KMS_ACTIVE_CRS_STORAGE_URL
-    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_active_crs_storage_url.address}}
-  - name: KMS_ACTIVE_CRS_ID
-    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_active_crs_id.address}}
-  # See the matching comment on APP_KEYURL__FHE_PUBLIC_KEY__URL above - same
-  # hardcoded /PUB-p1/ requirement applies here.
-  - {name: APP_KEYURL__CRS__URL, value: "$(KMS_ACTIVE_CRS_STORAGE_URL)/PUB-p1/CRS/$(KMS_ACTIVE_CRS_ID)"}
+  # kms_generation_address is the SAME host-chain KMSGeneration contract the
+  # coprocessor/kms-connector use (host-sc-addresses[kms_generation.address]);
+  # the poller resolves the active key/CRS itself once the real DKG ceremony
+  # reaches consensus, so no static storage URLs / key ids are wired anymore.
+  # poll_interval_ms is a numeric string (config-rs coerces it, same as
+  # CHAIN_ID above) and must be >= 1 (settings.rs validate_keyurl).
+  - name: APP_KEYURL__KMS_GENERATION_ADDRESS
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_generation.address}}
+  - {name: APP_KEYURL__POLL_INTERVAL_MS, value: "12000"}
 
   # --- storage (dedicated in-cluster Postgres release, values-postgres-relayer-e2e.yaml) ---
   - {name: APP_STORAGE__SQL_DATABASE_URL, value: "postgresql://zama:zama@postgres-relayer:5432/relayer"}
