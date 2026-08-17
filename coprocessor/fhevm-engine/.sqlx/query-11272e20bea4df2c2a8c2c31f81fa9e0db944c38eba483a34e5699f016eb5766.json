@@ -1,0 +1,48 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DISTINCT producer.handle AS \"handle!\",\n               d.key_id_gw AS \"key_id_gw?\",\n               d.ciphertext AS \"ct64_digest?\",\n               d.ciphertext128 AS \"ct128_digest?\",\n               d.ciphertext128_format AS \"ct128_format?\"\n          FROM handle_producer_block producer\n          LEFT JOIN ciphertext_digest d\n            ON d.host_chain_id = producer.host_chain_id\n           AND d.handle = producer.handle\n         WHERE producer.host_chain_id = $1\n           AND producer.producer_block_number = $2\n           AND producer.producer_block_hash = $3\n         ORDER BY producer.handle\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "handle!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "key_id_gw?",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "ct64_digest?",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "ct128_digest?",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "ct128_format?",
+        "type_info": "Int2"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "11272e20bea4df2c2a8c2c31f81fa9e0db944c38eba483a34e5699f016eb5766"
+}

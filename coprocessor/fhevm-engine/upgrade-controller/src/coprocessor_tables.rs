@@ -177,6 +177,33 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
         duplicated: true,
         conflict_cols: &[],
     },
+    // Stack-local producer inventory: Blue and Green must independently discover
+    // the handles they observed. Sharing this table would let one stack's listener
+    // observations contaminate the other stack's manifest.
+    CoprocessorTable {
+        name: "handle_producer_block",
+        duplicated: true,
+        conflict_cols: &[],
+    },
+    // Manifest construction state is shared in `public`.
+    // Every row is generation-qualified, so Blue and Green can write the same
+    // physical tables without colliding. Keeping these tables out of GCS also
+    // makes failed generations durable and removes manifest merging at cutover.
+    CoprocessorTable {
+        name: "block_manifest_state",
+        duplicated: false,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
+        name: "block_range_commitment",
+        duplicated: false,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
+        name: "block_manifest",
+        duplicated: false,
+        conflict_cols: &[],
+    },
     // ---------------------------------------------------------------------
     // Deprecated wave1 branch-context state: no v0.15 binary references
     // these directly (legacy-table mirror triggers still write some of them
@@ -243,6 +270,25 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
         name: "versioning",
         duplicated: false,
         conflict_cols: &[],
+    },
+    // Global generation allocations are shared control-plane history. Blue and
+    // Green must see the same failed and successful attempts.
+    CoprocessorTable {
+        name: "generation_history",
+        duplicated: false,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
+        name: "generation_block_window",
+        duplicated: false,
+        conflict_cols: &[],
+    },
+    // Each stack owns its active generation during overlap. At cutover the
+    // Green singleton replaces Blue's active value in public.
+    CoprocessorTable {
+        name: "blue_green_generation",
+        duplicated: true,
+        conflict_cols: &["singleton"],
     },
     // Shared configuration / key material — both stacks must read the same
     // rows, so isolating a green copy would be wrong.
@@ -332,6 +378,22 @@ mod tests {
                     t.conflict_cols
                 );
             }
+        }
+    }
+
+    #[test]
+    fn manifest_tables_are_shared_public_state() {
+        const MANIFEST_TABLES: &[&str] = &[
+            "block_manifest_state",
+            "block_range_commitment",
+            "block_manifest",
+        ];
+        for name in MANIFEST_TABLES {
+            let table = COPROCESSOR_TABLES
+                .iter()
+                .find(|table| table.name == *name)
+                .expect("manifest table must be classified");
+            assert!(!table.duplicated, "{name} must remain public-only");
         }
     }
 

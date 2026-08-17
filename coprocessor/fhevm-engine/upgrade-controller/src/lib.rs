@@ -163,6 +163,9 @@ pub enum Error {
 
     #[error("invalid hex in proposal_id: {0}")]
     Hex(String),
+
+    #[error("invalid upgrade state: {0}")]
+    InvalidState(String),
 }
 
 /// Handle an `event_upgrade_activated` notification. The host-listener writes the
@@ -347,6 +350,18 @@ async fn create_gcs_tables(tx: &mut Transaction<'_, Postgres>) -> Result<Vec<&'s
         );
         sqlx::query(&sql).execute(&mut **tx).await?;
     }
+
+    // Before an upgrade is allocated, both stacks intentionally use the same
+    // generation. Green advances only its schema-local selector after the
+    // accepted proposal has a pending allocation.
+    let seed_generation = format!(
+        "INSERT INTO {GCS_SCHEMA_QUOTED}.blue_green_generation \
+         (singleton, generation, updated_at) \
+         SELECT singleton, generation, updated_at \
+           FROM public.blue_green_generation \
+         ON CONFLICT (singleton) DO NOTHING"
+    );
+    sqlx::query(&seed_generation).execute(&mut **tx).await?;
 
     Ok(duplicated)
 }
@@ -936,6 +951,42 @@ async fn merge_gcs_table(
     Ok(merged.rows_affected())
 }
 
+/// Completes the allocation made when the host listener accepted an upgrade.
+/// Older in-progress upgrades created before generation tracking keep their
+/// existing cutover and rollback behavior.
+async fn finish_generation(
+    tx: &mut Transaction<'_, Postgres>,
+    proposal_id: &[u8],
+    proposal_block: i64,
+    outcome: &str,
+) -> Result<(), Error> {
+    debug_assert!(matches!(outcome, "succeeded" | "failed"));
+
+    let result = sqlx::query(
+        r#"
+        UPDATE generation_history
+           SET outcome = $3,
+               completed_at = NOW()
+         WHERE proposal_id = $1
+           AND proposal_block = $2
+           AND outcome = 'pending'
+        "#,
+    )
+    .bind(proposal_id)
+    .bind(proposal_block)
+    .bind(outcome)
+    .execute(tx.as_mut())
+    .await?;
+
+    if result.rows_affected() == 0 {
+        warn!(
+            proposal_block,
+            outcome, "No pending generation allocation found for completed upgrade"
+        );
+    }
+    Ok(())
+}
+
 /// Cutover routine — run once the GCS row is `UpgradeAuthorized`, from the
 /// unanimity handler or from `reconcile`. Idempotent via the under-lock re-read.
 ///
@@ -973,8 +1024,15 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     sqlx::query("LOCK TABLE upgrade_state IN SHARE ROW EXCLUSIVE MODE")
         .execute(&mut *tx)
         .await?;
-    let rows: Vec<(String, Option<i64>, Option<String>)> = sqlx::query_as(
-        "SELECT state, start_block, version
+    type CutoverRow = (
+        String,
+        Option<i64>,
+        Option<String>,
+        Option<Vec<u8>>,
+        Option<i64>,
+    );
+    let rows: Vec<CutoverRow> = sqlx::query_as(
+        "SELECT state, start_block, version, proposal_id, proposal_block
            FROM upgrade_state
           WHERE stack_role = 'GCS'
           ORDER BY host_chain_id
@@ -982,12 +1040,14 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     )
     .fetch_all(&mut *tx)
     .await?;
-    let Some((first_state, _, first_version)) = rows.first() else {
+    let Some((first_state, _, first_version, first_proposal_id, first_proposal_block)) =
+        rows.first()
+    else {
         return Err(Error::Payload(
             "no GCS rows in upgrade_state — cannot run cutover".to_string(),
         ));
     };
-    if rows.iter().any(|(state, _, _)| state != first_state) {
+    if rows.iter().any(|(state, _, _, _, _)| state != first_state) {
         return Err(Error::Payload(
             "GCS upgrade_state rows disagree on state".to_string(),
         ));
@@ -996,17 +1056,29 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
         info!(state = %first_state, "cutover: GCS proposal is not UpgradeAuthorized — skipping (already cut over)");
         return Ok(());
     }
-    if rows.iter().any(|(_, start, _)| start.is_none()) {
+    if rows.iter().any(|(_, start, _, _, _)| start.is_none()) {
         return Err(Error::Payload(
             "a GCS upgrade_state row is missing start_block".to_string(),
         ));
     }
-    if rows.iter().any(|(_, _, version)| version != first_version) {
+    if rows
+        .iter()
+        .any(|(_, _, version, _, _)| version != first_version)
+    {
         return Err(Error::Payload(
             "GCS upgrade_state rows disagree on version".to_string(),
         ));
     }
+    if rows.iter().any(|(_, _, _, proposal_id, proposal_block)| {
+        proposal_id != first_proposal_id || proposal_block != first_proposal_block
+    }) {
+        return Err(Error::Payload(
+            "GCS upgrade_state rows disagree on proposal identity".to_string(),
+        ));
+    }
     let stack_version = first_version.clone().unwrap_or_default();
+    let proposal_id = first_proposal_id.clone();
+    let proposal_block = *first_proposal_block;
 
     // 2. Promote the new stack version inside the cutover tx. This is the
     //    source of truth read by `resolve_gcs_mode` / `reconcile_stack_mode`:
@@ -1020,6 +1092,10 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     .execute(&mut *tx)
     .await?;
     info!(stack_version, "versioning row updated");
+
+    if let (Some(proposal_id), Some(proposal_block)) = (&proposal_id, proposal_block) {
+        finish_generation(&mut tx, proposal_id, proposal_block, "succeeded").await?;
+    }
 
     // 3. Merge the GCS-canonical tables back into public before dropping the
     //    schema. Each merge lets the GCS rows win on PK collisions (GCS is the
@@ -1126,35 +1202,42 @@ async fn rollback_dry_run(
         "rollback acquired exclusive advisory lock"
     );
 
-    let claimed = sqlx::query(
+    let claimed_proposal_block: Option<Option<i64>> = sqlx::query_scalar(
         r#"
-        UPDATE upgrade_state u
-           SET state = 'PAUSED', status = 'failed',
-               last_error = 'unanimity_consensus_timeout',
-               host_consensus_reached = FALSE, gw_consensus_reached = FALSE,
-               gw_dry_run_started = FALSE, updated_at = NOW()
-         WHERE u.stack_role = 'GCS'
-           AND u.state IN ('UpgradeActivated', 'DryRunStarted')
-           AND u.proposal_id = $1
-           AND COALESCE(u.proposal_block, -1) = $2
-           AND $3 = (
-               SELECT MAX(w.end_block)
-                 FROM upgrade_state w
-                WHERE w.stack_role = u.stack_role
-                  AND w.proposal_id = u.proposal_id
-                  AND COALESCE(w.proposal_block, -1) =
-                      COALESCE(u.proposal_block, -1)
-           )
+        WITH claimed AS (
+            UPDATE upgrade_state u
+               SET state = 'PAUSED', status = 'failed',
+                   last_error = 'unanimity_consensus_timeout',
+                   host_consensus_reached = FALSE, gw_consensus_reached = FALSE,
+                   gw_dry_run_started = FALSE, updated_at = NOW()
+             WHERE u.stack_role = 'GCS'
+               AND u.state IN ('UpgradeActivated', 'DryRunStarted')
+               AND u.proposal_id = $1
+               AND COALESCE(u.proposal_block, -1) = $2
+               AND $3 = (
+                   SELECT MAX(w.end_block)
+                     FROM upgrade_state w
+                    WHERE w.stack_role = u.stack_role
+                      AND w.proposal_id = u.proposal_id
+                      AND COALESCE(w.proposal_block, -1) =
+                          COALESCE(u.proposal_block, -1)
+               )
+            RETURNING proposal_block
+        )
+        SELECT proposal_block FROM claimed LIMIT 1
         "#,
     )
     .bind(proposal_id)
     .bind(proposal_block)
     .bind(timeout_end_block)
-    .execute(&mut *tx)
+    .fetch_optional(&mut *tx)
     .await?;
-    if claimed.rows_affected() == 0 {
+    let Some(claimed_proposal_block) = claimed_proposal_block else {
         tx.rollback().await?;
         return Ok(false);
+    };
+    if let Some(claimed_proposal_block) = claimed_proposal_block {
+        finish_generation(&mut tx, proposal_id, claimed_proposal_block, "failed").await?;
     }
     reset_gcs_schema(&mut tx).await?;
     sqlx::query("SELECT pg_notify($1, '')")
@@ -1229,6 +1312,9 @@ async fn reconcile(
         *gw_start_block,
         *gw_dry_run_started,
     );
+    if let (Some(proposal_id), true) = (proposal_id.as_deref(), proposal_block >= 0) {
+        select_green_generation(pool, proposal_id, proposal_block).await?;
+    }
     match state.as_str() {
         // Re-arm readiness (no-op if already running).
         "UpgradeActivated" => {
@@ -1275,6 +1361,39 @@ async fn reconcile(
             try_cutover_if_consensus(pool).await?;
         }
         _ => {}
+    }
+    Ok(())
+}
+
+async fn select_green_generation(
+    pool: &Pool<Postgres>,
+    proposal_id: &[u8],
+    proposal_block: i64,
+) -> Result<(), Error> {
+    let sql = format!(
+        r#"
+        INSERT INTO {GCS_SCHEMA_QUOTED}.blue_green_generation (
+            singleton, generation, updated_at
+        )
+        SELECT TRUE, history.generation, NOW()
+          FROM public.generation_history history
+         WHERE history.proposal_id = $1
+           AND history.proposal_block = $2
+           AND history.outcome = 'pending'
+        ON CONFLICT (singleton) DO UPDATE
+        SET generation = EXCLUDED.generation,
+            updated_at = EXCLUDED.updated_at
+        "#
+    );
+    let updated = sqlx::query(&sql)
+        .bind(proposal_id)
+        .bind(proposal_block)
+        .execute(pool)
+        .await?;
+    if updated.rows_affected() != 1 {
+        return Err(Error::InvalidState(
+            "active upgrade has no pending generation allocation".to_owned(),
+        ));
     }
     Ok(())
 }
@@ -1679,10 +1798,11 @@ mod tests {
             r#"
             INSERT INTO upgrade_state (
                 stack_role, state, status, proposal_id, version,
-                start_block, end_block, gw_start_block, host_chain_id, updated_at
+                start_block, end_block, gw_start_block, host_chain_id,
+                proposal_block, updated_at
             )
             VALUES ('GCS', 'UpgradeAuthorized', 'in_progress', $1, 'v0.15',
-                    100, 200, 1, 1, NOW())
+                    100, 200, 1, 1, 50, NOW())
             ON CONFLICT (stack_role, host_chain_id) DO UPDATE
             SET state = EXCLUDED.state, status = EXCLUDED.status,
                 version = EXCLUDED.version, updated_at = NOW()
@@ -1693,7 +1813,27 @@ mod tests {
         .await
         .expect("seed GCS row");
 
+        sqlx::query("UPDATE versioning SET generation = 1 WHERE singleton = TRUE")
+            .execute(&pool)
+            .await
+            .expect("seed generation counter");
+        sqlx::query(
+            r#"
+            INSERT INTO generation_history (
+                generation, proposal_id, proposal_block, stack_version, outcome
+            )
+            VALUES (1, $1, 50, 'v0.15', 'pending')
+            "#,
+        )
+        .bind(&[0x02u8][..])
+        .execute(&pool)
+        .await
+        .expect("seed generation history");
+
         create_gcs_schema(&pool).await.expect("create gcs schema");
+        select_green_generation(&pool, &[0x02], 50)
+            .await
+            .expect("select Green generation");
 
         // The bug surfaced exactly here: a planning-time ON CONFLICT error.
         execute_cutover(&pool).await.expect("cutover succeeds");
@@ -1705,6 +1845,20 @@ mod tests {
                 .await
                 .expect("versioning row");
         assert_eq!(sv, "v0.15", "cutover should bump versioning.stack_version");
+
+        let (generation, outcome, completed): (i64, String, bool) = sqlx::query_as(
+            "SELECT selector.generation, history.outcome,
+                    history.completed_at IS NOT NULL
+               FROM blue_green_generation selector
+               JOIN generation_history history USING (generation)
+              WHERE selector.singleton = TRUE",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("promoted generation");
+        assert_eq!(generation, 1);
+        assert_eq!(outcome, "succeeded");
+        assert!(completed);
 
         // GCS row flipped LIVE and the gcs schema was dropped.
         let row = sqlx::query("SELECT state FROM upgrade_state WHERE stack_role = 'GCS'")
@@ -1807,6 +1961,19 @@ mod tests {
         let (_instance, pool) = test_pool().await;
 
         seed_gcs_row(&pool, "UpgradeActivated", "in_progress").await;
+        sqlx::query("UPDATE versioning SET generation = 1 WHERE singleton = TRUE")
+            .execute(&pool)
+            .await
+            .expect("seed generation counter");
+        sqlx::query(
+            "INSERT INTO generation_history (
+                 generation, proposal_id, proposal_block, stack_version, outcome
+             ) VALUES (1, $1, 10, 'v0.15', 'pending')",
+        )
+        .bind(&[0x02u8][..])
+        .execute(&pool)
+        .await
+        .expect("seed generation history");
         sqlx::query("UPDATE upgrade_state SET gw_dry_run_started = FALSE")
             .execute(&pool)
             .await
@@ -1877,6 +2044,16 @@ mod tests {
         assert!(!row.try_get::<bool, _>("host_consensus_reached").unwrap());
         assert!(!row.try_get::<bool, _>("gw_consensus_reached").unwrap());
         assert!(!row.try_get::<bool, _>("gw_dry_run_started").unwrap());
+        let (outcome, completed): (String, bool) = sqlx::query_as(
+            "SELECT outcome, completed_at IS NOT NULL
+               FROM generation_history
+              WHERE generation = 1",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("generation outcome");
+        assert_eq!(outcome, "failed");
+        assert!(completed);
 
         // Second timeout is a no-op: the marker survives (no second reset).
         create_marker(&pool).await;

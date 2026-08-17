@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE block_manifest_state\n           SET manifest_range_start = $3,\n               manifest_range_digest = $4,\n               manifest_digest = $5,\n               manifest_publisher = $7,\n               manifest_published = TRUE,\n               manifest_published_at = NOW(),\n               publication_error_count = 0,\n               publication_last_error = NULL,\n               publication_next_retry_at = NULL,\n               updated_at = NOW()\n         WHERE host_chain_id = $1\n           AND block_hash = $2\n           AND generation = $8\n           AND manifest_revision = $6\n           AND manifest_digest IS NULL\n           AND manifest_published = FALSE\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Int8",
+        "Bytea",
+        "Bytea",
+        "Int8",
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3b51cc03294def973e7fd8fbf8f56863e7c0ab268bbf9d2ca885c9479ab9d103"
+}

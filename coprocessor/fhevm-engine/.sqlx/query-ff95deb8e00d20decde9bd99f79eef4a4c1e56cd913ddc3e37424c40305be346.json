@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DISTINCT host_chain_id\n         FROM block_manifest_state candidate\n         WHERE candidate.generation = $1\n           AND (block_content_digest IS NULL\n            OR (\n                manifest_required\n                AND manifest_published = FALSE\n                AND (\n                    publication_error_count = 0\n                    OR publication_next_retry_at <= NOW()\n                )\n            ))\n         ORDER BY host_chain_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "host_chain_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ff95deb8e00d20decde9bd99f79eef4a4c1e56cd913ddc3e37424c40305be346"
+}

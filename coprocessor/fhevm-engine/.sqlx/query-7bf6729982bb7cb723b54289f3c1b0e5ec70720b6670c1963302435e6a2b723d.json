@@ -1,0 +1,91 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH RECURSIVE blocked_descendants AS (\n            SELECT child.generation,\n                   child.host_chain_id,\n                   child.block_hash\n              FROM block_manifest_state blocker\n              JOIN block_manifest_state child\n                ON child.generation = blocker.generation\n               AND child.host_chain_id = blocker.host_chain_id\n               AND child.parent_block_hash = blocker.block_hash\n             WHERE blocker.host_chain_id = $1\n               AND blocker.generation = $4\n               AND (\n                    blocker.block_content_digest IS NULL\n                    OR (\n                        blocker.manifest_required\n                        AND blocker.manifest_published = FALSE\n                        AND (\n                            blocker.publication_error_count = 0\n                            OR blocker.publication_next_retry_at IS NOT NULL\n                        )\n                    )\n               )\n            UNION\n            SELECT child.generation,\n                   child.host_chain_id,\n                   child.block_hash\n              FROM blocked_descendants blocked\n              JOIN block_manifest_state child\n                ON child.generation = blocked.generation\n               AND child.host_chain_id = blocked.host_chain_id\n               AND child.parent_block_hash = blocked.block_hash\n        )\n        SELECT candidate.generation,\n               candidate.host_chain_id,\n               candidate.block_number,\n               candidate.block_hash,\n               candidate.parent_block_hash,\n               candidate.publication_cadence,\n               candidate.block_content_digest,\n               candidate.block_handle_count,\n               candidate.manifest_revision,\n               candidate.manifest_publisher,\n               candidate.manifest_digest,\n               candidate.manifest_published\n          FROM block_manifest_state candidate\n         WHERE candidate.host_chain_id = $1\n           AND candidate.generation = $4\n           AND (\n                candidate.block_content_digest IS NULL\n                OR (\n                    candidate.manifest_required\n                    AND candidate.manifest_published = FALSE\n                    AND (\n                        candidate.publication_error_count = 0\n                        OR candidate.publication_next_retry_at <= NOW()\n                    )\n                )\n           )\n           AND NOT EXISTS (\n                SELECT 1\n                  FROM blocked_descendants blocked\n                 WHERE blocked.host_chain_id = candidate.host_chain_id\n                   AND blocked.generation = candidate.generation\n                   AND blocked.block_hash = candidate.block_hash\n           )\n           AND (\n                candidate.block_number > $2\n                OR (\n                    candidate.block_number = $2\n                    AND candidate.block_hash > $3\n                )\n           )\n         ORDER BY candidate.block_number, candidate.block_hash\n         LIMIT 1\n           FOR UPDATE SKIP LOCKED\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "generation",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "host_chain_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "block_number",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "block_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "parent_block_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
+        "name": "publication_cadence",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "block_content_digest",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 7,
+        "name": "block_handle_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "manifest_revision",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 9,
+        "name": "manifest_publisher",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 10,
+        "name": "manifest_digest",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 11,
+        "name": "manifest_published",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "7bf6729982bb7cb723b54289f3c1b0e5ec70720b6670c1963302435e6a2b723d"
+}

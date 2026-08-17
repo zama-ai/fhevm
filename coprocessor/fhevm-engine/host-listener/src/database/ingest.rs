@@ -614,6 +614,88 @@ pub async fn ingest_block_logs(
 /// Channel name the upgrade-controller LISTENs on for `CoprocessorUpgradeProposed` events.
 const UPGRADE_ACTIVATED_CHANNEL: &str = "event_upgrade_activated";
 
+/// Allocates one never-reused global generation for an accepted upgrade.
+/// Every host-chain window belongs to that same generation.
+async fn allocate_upgrade_generation(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    proposal_id: &[u8],
+    proposal_block: i64,
+    windows: &[(i64, i64, i64)],
+    stack_version: &str,
+) -> Result<i64, sqlx::Error> {
+    // Serialize allocations on the shared singleton. A replay of the same
+    // proposal returns its original allocation without consuming a number.
+    sqlx::query!(
+        "SELECT generation FROM versioning WHERE singleton = TRUE FOR UPDATE"
+    )
+    .fetch_one(tx.as_mut())
+    .await?;
+
+    if let Some(generation) = sqlx::query_scalar!(
+        r#"
+        SELECT generation
+          FROM generation_history
+         WHERE proposal_id = $1 AND proposal_block = $2
+        "#,
+        proposal_id,
+        proposal_block,
+    )
+    .fetch_optional(tx.as_mut())
+    .await?
+    {
+        return Ok(generation);
+    }
+
+    let generation = sqlx::query_scalar!(
+        r#"
+        UPDATE versioning
+           SET generation = GREATEST(
+                   generation,
+                   COALESCE((SELECT MAX(generation) FROM generation_history), 0)
+               ) + 1,
+               updated_at = NOW()
+         WHERE singleton = TRUE
+     RETURNING generation
+        "#,
+    )
+    .fetch_one(tx.as_mut())
+    .await?;
+
+    sqlx::query!(
+        r#"
+        INSERT INTO generation_history (
+            generation, proposal_id, proposal_block, stack_version, outcome
+        )
+        VALUES ($1, $2, $3, $4, 'pending')
+        "#,
+        generation,
+        proposal_id,
+        proposal_block,
+        stack_version,
+    )
+    .execute(tx.as_mut())
+    .await?;
+
+    for &(host_chain_id, start_block, consensus_deadline_block) in windows {
+        sqlx::query!(
+            r#"
+            INSERT INTO generation_block_window (
+                generation, host_chain_id, start_block, consensus_deadline_block
+            )
+            VALUES ($1, $2, $3, $4)
+            "#,
+            generation,
+            host_chain_id,
+            start_block,
+            consensus_deadline_block,
+        )
+        .execute(tx.as_mut())
+        .await?;
+    }
+
+    Ok(generation)
+}
+
 /// Decodes a log known to come from the configured ProtocolConfig contract on
 /// the authority chain and dispatches it. Caller must pre-gate on
 /// `is_protocol_config_listener && log.address == protocol_config_contract_address`.
@@ -853,6 +935,15 @@ async fn notify_coprocessor_upgrade_proposed(
         return Ok(());
     }
 
+    let generation = allocate_upgrade_generation(
+        tx,
+        &proposal_id_bytes,
+        proposal_block,
+        &windows,
+        &event.softwareVersion,
+    )
+    .await?;
+
     sqlx::query("DELETE FROM upgrade_state WHERE stack_role IN ('BCS', 'GCS')")
         .execute(&mut **tx)
         .await?;
@@ -886,6 +977,7 @@ async fn notify_coprocessor_upgrade_proposed(
     info!(
         proposal_id = %proposal_id_hex,
         software_version = %event.softwareVersion,
+        generation,
         chains = windows.len(),
         gw_start_block = event.gwStartBlock,
         "Persisted CoprocessorUpgradeProposed atomically, emitting pg_notify('event_upgrade_activated')"
@@ -1511,6 +1603,21 @@ mod tests {
             "UpgradeActivated"
         );
         assert_eq!(row.try_get::<String, _>("status").unwrap(), "in_progress");
+
+        let generation: i64 = sqlx::query_scalar(
+            "SELECT generation FROM versioning WHERE singleton = TRUE",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("generation counter");
+        assert_eq!(generation, 1, "a replay must not allocate again");
+        let history_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM generation_history WHERE generation = 1",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("generation history");
+        assert_eq!(history_count, 1);
     }
 
     /// A proposal with N windows atomically seeds N upgrade_state rows.
@@ -1589,6 +1696,27 @@ mod tests {
             assert_eq!(
                 row.try_get::<String, _>("status").unwrap(),
                 "in_progress"
+            );
+        }
+
+        let generation_windows = sqlx::query(
+            "SELECT host_chain_id, start_block, consensus_deadline_block
+               FROM generation_block_window
+              WHERE generation = 1
+              ORDER BY host_chain_id",
+        )
+        .fetch_all(&pool)
+        .await
+        .expect("generation windows");
+        assert_eq!(generation_windows.len(), 2);
+        for (row, (chain, start, end)) in
+            generation_windows.iter().zip(expected)
+        {
+            assert_eq!(row.try_get::<i64, _>("host_chain_id").unwrap(), chain);
+            assert_eq!(row.try_get::<i64, _>("start_block").unwrap(), start);
+            assert_eq!(
+                row.try_get::<i64, _>("consensus_deadline_block").unwrap(),
+                end
             );
         }
     }

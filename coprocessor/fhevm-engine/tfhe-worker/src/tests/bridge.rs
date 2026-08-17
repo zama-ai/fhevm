@@ -65,8 +65,11 @@ async fn insert_digest(
 ) {
     sqlx::query(
         "INSERT INTO ciphertext_digest
-             (host_chain_id, key_id_gw, handle, ciphertext, ciphertext128, ciphertext128_format, s3_format_version)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)",
+             (host_chain_id, key_id_gw, handle, ciphertext, ciphertext128,
+              ciphertext128_format, s3_format_version,
+              s3_publication_verified_at, s3_publication_verified_digest)
+         VALUES ($1, $2, $3, $4, $5, $6, $7,
+                 CASE WHEN $4::BYTEA IS NOT NULL THEN NOW() END, $4)",
     )
     .bind(host_chain_id)
     .bind(KEY_ID_GW)
@@ -558,6 +561,33 @@ async fn associates_only_once() {
         0
     );
     assert_eq!(digest_count(&pool, &dst).await, 1);
+}
+
+#[tokio::test]
+#[serial]
+async fn source_without_s3_witness_does_not_associate() {
+    let (_db, pool) = fresh_db().await;
+    let src = handle(31);
+    let dst = handle(32);
+    insert_ready_pair(&pool, &src, &dst).await;
+    sqlx::query(
+        "UPDATE ciphertext_digest
+         SET s3_publication_verified_at = NULL,
+             s3_publication_verified_digest = NULL
+         WHERE handle = $1",
+    )
+    .bind(&src)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    assert_eq!(
+        drain_associations(&pool, 128, &CancellationToken::new(), false)
+            .await
+            .unwrap(),
+        0
+    );
+    assert!(!is_associated(&pool, &dst).await);
 }
 
 #[tokio::test]

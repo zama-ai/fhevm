@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT upgrade.state,\n               selector.generation,\n               history.stack_version AS \"stack_version?\",\n               history.outcome AS \"outcome?\"\n          FROM upgrade_state upgrade\n          CROSS JOIN blue_green_generation selector\n          LEFT JOIN public.generation_history history\n            ON history.generation = selector.generation\n         WHERE upgrade.stack_role = 'GCS'\n           AND selector.singleton = TRUE\n         ORDER BY upgrade.proposal_block DESC NULLS LAST,\n                  upgrade.host_chain_id\n         LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "state",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "generation",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "stack_version?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "outcome?",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "e7fd55f71f2e0c4a29d1e054e018b9af713dfde957abdaebf4602f21866b5850"
+}

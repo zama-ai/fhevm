@@ -9,6 +9,7 @@
 # - TFHE worker (FHE computation)
 # - ZK proof worker (zero-knowledge proof generation)
 # - SNS worker (notification service)
+# - Consensus detector (manifest publication and peer verification)
 # - Transaction sender (blockchain transaction submission)
 # =============================================================================
 
@@ -1375,6 +1376,77 @@ snsWorker:
           - type: Percent
             value: 40
             periodSeconds: 60
+
+# -----------------------------------------------------------------------------
+# Consensus Detector
+# -----------------------------------------------------------------------------
+# Publishes generation-scoped manifests.
+consensusDetector:
+  enabled: false
+  nameOverride:
+
+  image:
+    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/consensus-detector
+    tag: v0.11.0
+
+  replicas: 1
+
+  config:
+    # Required when enabled. Accepts `value` or `valueFrom`. Set value to the
+    # literal `none` only to explicitly disable publication.
+    s3BucketName: {}
+    # Additional manifest publication attempts after the initial attempt.
+    publicationRetryCount: 30
+
+  env: []
+
+  # Manifest signer. Required whenever s3BucketName is not literal `none`.
+  # Uses the same KMS/private-key sources as snsWorker and txSender.
+  wallet:
+    enabled: true
+    awsKms:
+      enabled: false
+      configmap:
+        name: coprocessor-tx-sender
+        key: AWS_KEY_ID
+    secret:
+      name: coprocessor-tx-sender
+      key: private-key
+      value: ""  # devnet only; use a Secret in production
+
+  disabledArgs: []
+  extraArgs: []
+
+  ports:
+    metrics: 9100
+
+  serviceMonitor:
+    enabled: false
+
+  serviceAccountName:
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  tracing:
+    enabled: false
+    service: ""
+
+  podLabels: {}
+  nodeSelector:
+  affinity:
+  tolerations:
+
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
 
 # -----------------------------------------------------------------------------
 # Transaction Sender
