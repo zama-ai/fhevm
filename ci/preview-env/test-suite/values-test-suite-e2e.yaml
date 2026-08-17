@@ -27,14 +27,14 @@ imagePullSecrets:
 image:
   repository: hub.zama.org/ghcr/zama-ai/fhevm/test-suite/e2e
   # preview-env-deploy.yml ALWAYS overrides image.tag at deploy time via
-  # --set-string (this run's short-SHA build, or env.TEST_SUITE_VERSION's pinned
-  # fallback when build_images=false), so this value only applies to a raw manual
+  # --set-string (this run's short-SHA build, or the base commit's published
+  # image when build_images=false), so this value only applies to a raw manual
   # `helm upgrade` like this file's own header example. Even then, NEITHER this
-  # pinned v0.13.0 NOR the older v0.11.5-0 actually work against kms-core v0.13.20
-  # (both bundle a tfhe/node-tfhe build that can't deserialize its
-  # tfhe-rs-1.6.1-format public keys - confirmed live under both SDKs). If
-  # deploying by hand against a real v0.13.20 KMS, either build+push your own
-  # test-suite image from this branch first, or downgrade KMS_CORE_TAG.
+  # pinned v0.13.0 NOR the older v0.11.5-0 actually work against the workflow's
+  # pinned kms-core (>= v0.13.20: both bundle a tfhe/node-tfhe build that can't
+  # deserialize its tfhe-rs-1.6.1-format public keys - confirmed live under both
+  # SDKs). If deploying by hand against a KMS that recent, either build+push
+  # your own test-suite image from this branch first, or downgrade KMS_CORE_TAG.
   tag: v0.13.0
 
 job:
@@ -137,3 +137,11 @@ env:
   - {name: GATEWAY_DEPLOYER_PRIVATE_KEY, value: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"}
   - {name: RELAYER_URL, value: "http://relayer:3000/v2"}
   - {name: RELAYER_SDK_VERSION, value: ""}
+
+  # $ZAMA token + payment contract, needed only by scripts/gen_handles.ts: it mints mocked $ZAMA
+  # and max-approves ProtocolPayment so its own signer can pay the per-request decryption fee.
+  # The e2e suite pays via the relayer's tx sender and ignores these.
+  - name: PROTOCOL_PAYMENT_ADDRESS
+    valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: protocol_payment.address, optional: true}}
+  - name: ZAMA_OFT_ADDRESS
+    valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: zama_oft.address, optional: true}}

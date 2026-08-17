@@ -5,12 +5,14 @@
 //! `unanimity_consensus` channel is produced by `consensus-detector` once every
 //! operator publishes the same state commitment at the upgrade's `end_block`.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use fhevm_engine_common::database::GCS_SCHEMA_QUOTED;
+use fhevm_engine_common::gcs_activation::EVENT_DRY_RUN_ROLLED_BACK;
 use fhevm_engine_common::utils::DatabaseURL;
+use fhevm_engine_common::versioning::{begin_write_guarded, GcsRollbackPolicy, WriteGuard};
 use serde::Deserialize;
 use sqlx::{postgres::PgListener, Pool, Postgres, Transaction};
 use thiserror::Error;
@@ -57,6 +59,15 @@ pub use fhevm_engine_common::versioning::EVENT_STACK_VERSION_UPGRADED;
 /// also be fully settled before GCS can leave `UpgradeActivated`. Hard-coded
 /// for now; expected to become configurable.
 const READINESS_CONFIRMATIONS: i64 = 100;
+const NO_READINESS_ATTEMPT: i64 = -2;
+
+struct GcsReadinessAttempt {
+    proposal_id: Vec<u8>,
+    proposal_block: i64,
+    /// (chain_id, start_block) for every host chain in the proposal.
+    host_chains: Vec<(i64, i64)>,
+    gw_start_block: i64,
+}
 
 /// PostgreSQL advisory-lock key used to serialize controller changes against
 /// writes. Cutover and rollback take the exclusive form; write transactions take
@@ -64,16 +75,6 @@ const READINESS_CONFIRMATIONS: i64 = 100;
 /// Re-exported from the common crate so the controller and all writers agree on
 /// one canonical value.
 pub use fhevm_engine_common::versioning::CUTOVER_LOCK_ID;
-
-/// Returns the `upgrade_state.stack_role` value for a given `gcs_mode` flag:
-/// `true` → `"GCS"` (green), `false` (default) → `"BCS"` (blue).
-pub fn stack_role(gcs_mode: bool) -> &'static str {
-    if gcs_mode {
-        "GCS"
-    } else {
-        "BCS"
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -130,6 +131,11 @@ pub struct UpgradeActivatedPayload {
 #[derive(Debug, Clone, Deserialize)]
 pub struct UnanimityConsensusPayload {
     pub proposal_id: Vec<u8>,
+    /// The block containing the ProtocolConfig proposal. Optional only so a
+    /// rolling deployment can safely ignore notifications from an older
+    /// detector that did not yet carry attempt identity.
+    #[serde(default)]
+    pub proposal_block: Option<i64>,
     pub chain_id: i64,
     pub block_height: i64,
     pub block_hash: String,
@@ -159,136 +165,57 @@ pub enum Error {
     Hex(String),
 }
 
-/// Decode a hex string (with or without `0x` prefix) into bytes.
-fn decode_hex(s: &str) -> Result<Vec<u8>, Error> {
-    let trimmed = s.strip_prefix("0x").unwrap_or(s);
-    // Minimal local hex decoder to avoid pulling in another crate; payloads are short.
-    if !trimmed.len().is_multiple_of(2) {
-        return Err(Error::Hex("odd-length hex string".into()));
-    }
-    (0..trimmed.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&trimmed[i..i + 2], 16).map_err(|e| Error::Hex(e.to_string())))
-        .collect()
-}
-
-/// Handle an `event_upgrade_activated` notification: parse payload and upsert
-/// the FSM row with `state='UpgradeActivated'`, `status='in_progress'`. For
-/// GCS, additionally spawns the dry-run readiness loop.
+/// Handle an `event_upgrade_activated` notification. The host-listener writes the
+/// `upgrade_state` row in the same transaction that decodes `CoprocessorUpgradeProposed`,
+/// so this notification is only a wake-up: drive the FSM from the persisted row
+/// (via `reconcile`), not from the payload. A missed notification is recovered by the
+/// boot/poll-tick reconcile in `run`.
 pub async fn handle_upgrade_activated(
     pool: &Pool<Postgres>,
     cancel: &CancellationToken,
-    readiness: &Arc<AtomicBool>,
+    readiness: &Arc<AtomicI64>,
     gcs_mode: bool,
     raw_payload: &str,
 ) -> Result<(), Error> {
     let payload: UpgradeActivatedPayload =
         serde_json::from_str(raw_payload).map_err(|e| Error::Payload(e.to_string()))?;
 
-    let proposal_id_bytes = decode_hex(&payload.proposal_id)?;
-    let stack_role = stack_role(gcs_mode);
-
     info!(
-        stack_role,
+        gcs_mode,
         proposal_id = %payload.proposal_id,
-        chain_id = payload.chain_id,
-        start_block = payload.start_block,
-        end_block = payload.end_block,
-        gw_start_block = payload.gw_start_block,
-        "event_upgrade_activated received — inserting upgrade_state row"
+        "event_upgrade_activated received — reconciling from persisted upgrade_state row"
     );
 
-    let result = sqlx::query(
-        r#"
-        INSERT INTO upgrade_state (
-            stack_role, state, status, proposal_id, version,
-            start_block, end_block, gw_start_block, host_chain_id,
-            host_consensus_reached, gw_consensus_reached, updated_at
-        )
-        VALUES ($1, 'UpgradeActivated', 'in_progress', $2, $3, $4, $5, $6, $7, FALSE, FALSE, NOW())
-        ON CONFLICT (stack_role) DO UPDATE
-        SET state              = EXCLUDED.state,
-            status             = EXCLUDED.status,
-            proposal_id        = EXCLUDED.proposal_id,
-            version            = EXCLUDED.version,
-            start_block        = EXCLUDED.start_block,
-            end_block          = EXCLUDED.end_block,
-            gw_start_block     = EXCLUDED.gw_start_block,
-            host_chain_id      = EXCLUDED.host_chain_id,
-            -- Fresh window: clear both consensus latches so a prior upgrade's
-            -- observations can't authorize this one's cutover.
-            host_consensus_reached = FALSE,
-            gw_consensus_reached   = FALSE,
-            last_error         = NULL,
-            updated_at         = NOW()
-        WHERE upgrade_state.state IN ('LIVE', 'PAUSED')
-           OR upgrade_state.status IN ('completed', 'failed')
-           OR upgrade_state.proposal_id = EXCLUDED.proposal_id
-        "#,
-    )
-    .bind(stack_role)
-    .bind(&proposal_id_bytes)
-    .bind(payload.version.as_deref())
-    .bind(payload.start_block)
-    .bind(payload.end_block)
-    .bind(payload.gw_start_block)
-    .bind(payload.chain_id)
-    .execute(pool)
-    .await?;
-
-    if result.rows_affected() == 0 {
-        warn!(
-            stack_role,
-            proposal_id = %payload.proposal_id,
-            "Rejected event_upgrade_activated: another upgrade is already in flight for this stack role"
-        );
-        return Ok(());
-    }
-
-    // Note: the `gcs` schema and its table duplicates are created once at
-    // upgrade-controller startup (see `run`), not here — the GCS services start
-    // tailing the chain before activation and need the write target to already
-    // exist so their `search_path = gcs,public` writes don't fall back to the
-    // live `public` schema.
-
-    // Only GCS gates on the pre-snapshot completeness check; BCS keeps
-    // serving live traffic untouched until cutover.
-    if gcs_mode {
-        spawn_gcs_dry_run_readiness(
-            pool,
-            cancel,
-            readiness,
-            proposal_id_bytes,
-            payload.chain_id,
-            payload.start_block,
-            payload.gw_start_block,
-        );
-    }
-
-    Ok(())
+    reconcile(pool, cancel, readiness, gcs_mode).await
 }
 
-/// Spawn the GCS readiness gates (gateway + host) that release the workers and flip
-/// the row to `DryRunStarted`. `readiness` keeps one attempt running at a time, so a
-/// re-arm recovers a stopped task without piling up tasks.
 fn spawn_gcs_dry_run_readiness(
     pool: &Pool<Postgres>,
     cancel: &CancellationToken,
-    readiness: &Arc<AtomicBool>,
-    proposal_id: Vec<u8>,
-    chain_id: i64,
-    start_block: i64,
-    gw_start_block: i64,
+    readiness: &Arc<AtomicI64>,
+    attempt: GcsReadinessAttempt,
 ) {
-    if readiness
-        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-        .is_err()
-    {
-        return; // already running
+    let GcsReadinessAttempt {
+        proposal_id,
+        proposal_block,
+        host_chains,
+        gw_start_block,
+    } = attempt;
+
+    let mut active = readiness.load(Ordering::SeqCst);
+    loop {
+        if active >= proposal_block {
+            return;
+        }
+        match readiness.compare_exchange(active, proposal_block, Ordering::SeqCst, Ordering::SeqCst)
+        {
+            Ok(_) => break,
+            Err(next) => active = next,
+        }
     }
     info!(
-        chain_id,
-        start_block, gw_start_block, "arming GCS dry-run readiness"
+        chains = host_chains.len(),
+        gw_start_block, "arming GCS dry-run readiness"
     );
     let pool = pool.clone();
     let gw_cancel = cancel.child_token();
@@ -298,9 +225,24 @@ fn spawn_gcs_dry_run_readiness(
         // Gateway gate for the zkproof-worker: gw_start_block is a Gateway block,
         // a separate clock from the host start_block.
         let gw_gate = async {
-            match wait_until_gw_dry_run_ready(pool.clone(), gw_cancel, gw_start_block).await {
+            match wait_until_gw_dry_run_ready(
+                pool.clone(),
+                gw_cancel,
+                &proposal_id,
+                proposal_block,
+                gw_start_block,
+            )
+            .await
+            {
                 Ok(true) => {
-                    match prune_gcs_verify_proofs_before_start(&pool, gw_start_block).await {
+                    match prune_gcs_verify_proofs_before_start(
+                        &pool,
+                        &proposal_id,
+                        proposal_block,
+                        gw_start_block,
+                    )
+                    .await
+                    {
                         Ok(deleted) => info!(
                             gw_start_block,
                             deleted, "pruned pre-gw_start_block rows from gcs.verify_proofs"
@@ -310,7 +252,9 @@ fn spawn_gcs_dry_run_readiness(
                             return;
                         }
                     }
-                    if let Err(e) = transition_to_gw_dry_run_started(&pool, &proposal_id).await {
+                    if let Err(e) =
+                        transition_to_gw_dry_run_started(&pool, &proposal_id, proposal_block).await
+                    {
                         error!(error = %e, "failed to transition GCS gw_dry_run_started");
                     }
                 }
@@ -321,34 +265,66 @@ fn spawn_gcs_dry_run_readiness(
                 Err(e) => error!(error = %e, "GCS gateway dry-run readiness loop failed"),
             }
         };
-        // Host gate: wait until BCS settles up to start_block, prune, then flip to DryRunStarted.
+        // Host gate: every chain must settle to its start_block and be pruned
+        // before flipping the whole proposal to DryRunStarted.
         let host_gate = async {
-            match wait_until_dry_run_ready(pool.clone(), host_cancel, chain_id, start_block).await {
-                Ok(true) => {
-                    match prune_gcs_computations_before_start(&pool, chain_id, start_block).await {
-                        Ok(deleted) => info!(
-                            chain_id,
-                            start_block, deleted, "pruned pre-start_block rows from gcs.computations"
-                        ),
-                        Err(e) => {
-                            error!(error = %e, "failed to prune gcs.computations; skipping transition");
-                            return;
-                        }
-                    }
-                    if let Err(e) = transition_to_dry_run_started(&pool, &proposal_id).await {
-                        error!(error = %e, "failed to transition GCS to DryRunStarted");
-                    }
-                }
-                Ok(false) => info!(
+            for &(chain_id, start_block) in &host_chains {
+                match wait_until_dry_run_ready(
+                    pool.clone(),
+                    host_cancel.child_token(),
+                    &proposal_id,
+                    proposal_block,
                     chain_id,
                     start_block,
-                    "readiness loop exited without satisfying readiness — skipping prune and transition"
-                ),
-                Err(e) => error!(error = %e, "GCS dry-run readiness loop failed"),
+                )
+                .await
+                {
+                    Ok(true) => match prune_gcs_computations_before_start(
+                        &pool,
+                        &proposal_id,
+                        proposal_block,
+                        chain_id,
+                        start_block,
+                    )
+                    .await
+                    {
+                        Ok(deleted) => info!(
+                            chain_id,
+                            start_block,
+                            deleted,
+                            "pruned pre-start_block rows from gcs.computations"
+                        ),
+                        Err(e) => {
+                            error!(chain_id, start_block, error = %e, "failed to prune gcs.computations; skipping transition");
+                            return;
+                        }
+                    },
+                    Ok(false) => {
+                        info!(
+                            chain_id,
+                            start_block,
+                            "readiness loop exited without satisfying readiness — skipping transition"
+                        );
+                        return;
+                    }
+                    Err(e) => {
+                        error!(chain_id, start_block, error = %e, "GCS dry-run readiness loop failed");
+                        return;
+                    }
+                }
+            }
+            if let Err(e) = transition_to_dry_run_started(&pool, &proposal_id, proposal_block).await
+            {
+                error!(error = %e, "failed to transition GCS to DryRunStarted");
             }
         };
         tokio::join!(gw_gate, host_gate);
-        readiness.store(false, Ordering::SeqCst);
+        let _ = readiness.compare_exchange(
+            proposal_block,
+            NO_READINESS_ATTEMPT,
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        );
     });
 }
 
@@ -412,20 +388,40 @@ async fn reset_gcs_schema(tx: &mut Transaction<'_, Postgres>) -> Result<(), Erro
 /// left untouched. Returns the number of rows removed. Idempotent.
 async fn prune_gcs_computations_before_start(
     pool: &Pool<Postgres>,
+    proposal_id: &[u8],
+    proposal_block: i64,
     chain_id: i64,
     start_block: i64,
 ) -> Result<u64, Error> {
+    let WriteGuard::Proceed(mut tx) =
+        begin_write_guarded(pool, true, GcsRollbackPolicy::Skip).await?
+    else {
+        return Ok(0);
+    };
+
     let sql = format!(
-        "DELETE FROM {GCS_SCHEMA_QUOTED}.computations \
+        "WITH current_attempt AS (
+             SELECT 1 FROM upgrade_state
+              WHERE stack_role = 'GCS'
+                AND state = 'UpgradeActivated'
+                AND proposal_id = $3
+                AND COALESCE(proposal_block, -1) = $4
+              FOR SHARE
+         )
+         DELETE FROM {GCS_SCHEMA_QUOTED}.computations \
          WHERE host_chain_id = $1 \
            AND block_number IS NOT NULL \
-           AND block_number < $2"
+           AND block_number < $2 \
+           AND EXISTS (SELECT 1 FROM current_attempt)"
     );
     let result = sqlx::query(&sql)
         .bind(chain_id)
         .bind(start_block)
-        .execute(pool)
+        .bind(proposal_id)
+        .bind(proposal_block)
+        .execute(&mut *tx)
         .await?;
+    tx.commit().await?;
 
     info!(
         chain_id,
@@ -492,6 +488,8 @@ async fn check_dry_run_ready(
 async fn wait_until_dry_run_ready(
     pool: Pool<Postgres>,
     cancel: CancellationToken,
+    proposal_id: &[u8],
+    proposal_block: i64,
     chain_id: i64,
     start_block: i64,
 ) -> Result<bool, Error> {
@@ -507,7 +505,11 @@ async fn wait_until_dry_run_ready(
     // Dedicated listener so this loop is decoupled from the main run() listener.
     let mut listener = PgListener::connect_with(&pool).await?;
     listener
-        .listen_all([NEW_BLOCK_CHANNEL, EVENT_CIPHERTEXT_COMPUTED_CHANNEL])
+        .listen_all([
+            NEW_BLOCK_CHANNEL,
+            EVENT_CIPHERTEXT_COMPUTED_CHANNEL,
+            EVENT_DRY_RUN_ROLLED_BACK,
+        ])
         .await?;
 
     loop {
@@ -516,12 +518,18 @@ async fn wait_until_dry_run_ready(
             return Ok(false);
         }
 
-        // Idempotency: if a parallel firing of event_upgrade_activated already
-        // advanced the GCS row, exit silently.
-        let current_state: Option<(String,)> =
-            sqlx::query_as("SELECT state FROM upgrade_state WHERE stack_role = 'GCS'")
-                .fetch_optional(&pool)
-                .await?;
+        let current_state: Option<(String,)> = sqlx::query_as(
+            "SELECT state FROM upgrade_state
+                  WHERE stack_role = 'GCS'
+                    AND proposal_id = $1
+                    AND COALESCE(proposal_block, -1) = $2
+                  ORDER BY host_chain_id
+                  LIMIT 1",
+        )
+        .bind(proposal_id)
+        .bind(proposal_block)
+        .fetch_optional(&pool)
+        .await?;
         match current_state.as_ref().map(|(s,)| s.as_str()) {
             Some("UpgradeActivated") => {}
             Some(other) => {
@@ -591,21 +599,23 @@ async fn wait_until_dry_run_ready(
     }
 }
 
-/// Conditional UPDATE: only flips if the GCS row is still in `UpgradeActivated`
-/// for `proposal_id`. The `proposal_id` match stops a readiness task left over
-/// from an earlier proposal from advancing a newer one with stale block bounds.
 async fn transition_to_dry_run_started(
     pool: &Pool<Postgres>,
     proposal_id: &[u8],
+    proposal_block: i64,
 ) -> Result<(), Error> {
     let result = sqlx::query(
         r#"
         UPDATE upgrade_state
         SET state = 'DryRunStarted', updated_at = NOW()
-        WHERE stack_role = 'GCS' AND state = 'UpgradeActivated' AND proposal_id = $1
+        WHERE stack_role = 'GCS'
+          AND state = 'UpgradeActivated'
+          AND proposal_id = $1
+          AND COALESCE(proposal_block, -1) = $2
         "#,
     )
     .bind(proposal_id)
+    .bind(proposal_block)
     .execute(pool)
     .await?;
 
@@ -666,6 +676,8 @@ async fn check_gw_dry_run_ready(
 async fn wait_until_gw_dry_run_ready(
     pool: Pool<Postgres>,
     cancel: CancellationToken,
+    proposal_id: &[u8],
+    proposal_block: i64,
     gw_start_block: i64,
 ) -> Result<bool, Error> {
     info!(
@@ -676,7 +688,9 @@ async fn wait_until_gw_dry_run_ready(
     // Dedicated listener so this loop is decoupled from the main run() listener
     // and the host-chain readiness loop.
     let mut listener = PgListener::connect_with(&pool).await?;
-    listener.listen(GW_NEW_BLOCK_CHANNEL).await?;
+    listener
+        .listen_all([GW_NEW_BLOCK_CHANNEL, EVENT_DRY_RUN_ROLLED_BACK])
+        .await?;
 
     loop {
         if cancel.is_cancelled() {
@@ -684,11 +698,16 @@ async fn wait_until_gw_dry_run_ready(
             return Ok(false);
         }
 
-        // Idempotency: bail if the GCS row already had gw_dry_run_started set,
-        // or has moved past the states where the gw gate is meaningful.
         let row: Option<(String, bool)> = sqlx::query_as(
-            "SELECT state, gw_dry_run_started FROM upgrade_state WHERE stack_role = 'GCS'",
+            "SELECT state, gw_dry_run_started FROM upgrade_state
+              WHERE stack_role = 'GCS'
+                AND proposal_id = $1
+                AND COALESCE(proposal_block, -1) = $2
+              ORDER BY host_chain_id
+              LIMIT 1",
         )
+        .bind(proposal_id)
+        .bind(proposal_block)
         .fetch_optional(&pool)
         .await?;
         match row {
@@ -760,14 +779,40 @@ async fn wait_until_gw_dry_run_ready(
 /// the number of rows removed. Idempotent.
 async fn prune_gcs_verify_proofs_before_start(
     pool: &Pool<Postgres>,
+    proposal_id: &[u8],
+    proposal_block: i64,
     gw_start_block: i64,
 ) -> Result<u64, Error> {
+    // Skip policy: a rollback that paused the GCS row means there is no
+    // attempt left to prune for.
+    let WriteGuard::Proceed(mut tx) =
+        begin_write_guarded(pool, true, GcsRollbackPolicy::Skip).await?
+    else {
+        return Ok(0);
+    };
+
     let sql = format!(
-        "DELETE FROM {GCS_SCHEMA_QUOTED}.verify_proofs \
+        "WITH current_attempt AS (
+             SELECT 1 FROM upgrade_state
+              WHERE stack_role = 'GCS'
+                AND state IN ('UpgradeActivated', 'DryRunStarted')
+                AND gw_dry_run_started = FALSE
+                AND proposal_id = $2
+                AND COALESCE(proposal_block, -1) = $3
+              FOR SHARE
+         )
+         DELETE FROM {GCS_SCHEMA_QUOTED}.verify_proofs \
          WHERE block_number IS NOT NULL \
-           AND block_number < $1"
+           AND block_number < $1 \
+           AND EXISTS (SELECT 1 FROM current_attempt)"
     );
-    let result = sqlx::query(&sql).bind(gw_start_block).execute(pool).await?;
+    let result = sqlx::query(&sql)
+        .bind(gw_start_block)
+        .bind(proposal_id)
+        .bind(proposal_block)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
 
     info!(
         gw_start_block,
@@ -784,6 +829,7 @@ async fn prune_gcs_verify_proofs_before_start(
 async fn transition_to_gw_dry_run_started(
     pool: &Pool<Postgres>,
     proposal_id: &[u8],
+    proposal_block: i64,
 ) -> Result<(), Error> {
     let result = sqlx::query(
         r#"
@@ -793,9 +839,11 @@ async fn transition_to_gw_dry_run_started(
           AND gw_dry_run_started = FALSE
           AND state IN ('UpgradeActivated', 'DryRunStarted')
           AND proposal_id = $1
+          AND COALESCE(proposal_block, -1) = $2
         "#,
     )
     .bind(proposal_id)
+    .bind(proposal_block)
     .execute(pool)
     .await?;
 
@@ -902,7 +950,7 @@ async fn merge_gcs_table(
 ///   2. UPDATE `versioning` to the new stack_version.
 ///   3. Merge `gcs.ciphertexts` → `public.ciphertexts`.
 ///   4. DROP SCHEMA gcs CASCADE.
-///   5. Mark GCS row LIVE/completed and BCS row PAUSED/completed.
+///   5. Mark the GCS row LIVE/completed.
 ///
 /// After commit, any BCS write tx that was waiting on the shared lock
 /// acquires it, re-reads its FSM state, sees `PAUSED`, and exits cleanly.
@@ -920,29 +968,45 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
         "cutover acquired exclusive advisory lock"
     );
 
-    // Re-read under the lock: a concurrent cutover may have already promoted this row.
-    let row: Option<(String, Option<i64>, Option<String>)> = sqlx::query_as(
-        "SELECT state, start_block, version FROM upgrade_state WHERE stack_role = 'GCS'",
+    // Re-read every chain row under a table lock: a concurrent activation or
+    // cutover cannot replace only part of the proposal while it is promoted.
+    sqlx::query("LOCK TABLE upgrade_state IN SHARE ROW EXCLUSIVE MODE")
+        .execute(&mut *tx)
+        .await?;
+    let rows: Vec<(String, Option<i64>, Option<String>)> = sqlx::query_as(
+        "SELECT state, start_block, version
+           FROM upgrade_state
+          WHERE stack_role = 'GCS'
+          ORDER BY host_chain_id
+          FOR UPDATE",
     )
-    .fetch_optional(&mut *tx)
+    .fetch_all(&mut *tx)
     .await?;
-    let stack_version = match row {
-        None => {
-            return Err(Error::Payload(
-                "no GCS row in upgrade_state — cannot run cutover".to_string(),
-            ));
-        }
-        Some((state, _, _)) if state != "UpgradeAuthorized" => {
-            info!(state = %state, "cutover: GCS row is not UpgradeAuthorized — skipping (already cut over)");
-            return Ok(());
-        }
-        Some((_, None, _)) => {
-            return Err(Error::Payload(
-                "GCS upgrade_state row is missing start_block".to_string(),
-            ));
-        }
-        Some((_, Some(_start_block), version)) => version.unwrap_or_default(),
+    let Some((first_state, _, first_version)) = rows.first() else {
+        return Err(Error::Payload(
+            "no GCS rows in upgrade_state — cannot run cutover".to_string(),
+        ));
     };
+    if rows.iter().any(|(state, _, _)| state != first_state) {
+        return Err(Error::Payload(
+            "GCS upgrade_state rows disagree on state".to_string(),
+        ));
+    }
+    if first_state != "UpgradeAuthorized" {
+        info!(state = %first_state, "cutover: GCS proposal is not UpgradeAuthorized — skipping (already cut over)");
+        return Ok(());
+    }
+    if rows.iter().any(|(_, start, _)| start.is_none()) {
+        return Err(Error::Payload(
+            "a GCS upgrade_state row is missing start_block".to_string(),
+        ));
+    }
+    if rows.iter().any(|(_, _, version)| version != first_version) {
+        return Err(Error::Payload(
+            "GCS upgrade_state rows disagree on version".to_string(),
+        ));
+    }
+    let stack_version = first_version.clone().unwrap_or_default();
 
     // 2. Promote the new stack version inside the cutover tx. This is the
     //    source of truth read by `resolve_gcs_mode` / `reconcile_stack_mode`:
@@ -975,18 +1039,11 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     sqlx::query(&drop_sql).execute(&mut *tx).await?;
     info!(schema = GCS_SCHEMA_QUOTED, "dropped gcs schema");
 
-    // 6. Flip FSM rows.
+    // 6. Flip the FSM row.
     sqlx::query(
         "UPDATE upgrade_state
          SET state = 'LIVE', status = 'completed', updated_at = NOW()
          WHERE stack_role = 'GCS'",
-    )
-    .execute(&mut *tx)
-    .await?;
-    sqlx::query(
-        "UPDATE upgrade_state
-         SET state = 'PAUSED', status = 'completed', updated_at = NOW()
-         WHERE stack_role = 'BCS'",
     )
     .execute(&mut *tx)
     .await?;
@@ -1015,32 +1072,49 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     Ok(())
 }
 
-/// Flip to `UpgradeAuthorized` and cut over once both latches are set; guarded UPDATE, so duplicates no-op.
+/// Flip every GCS proposal row to `UpgradeAuthorized` and cut over once every
+/// row has its host and Gateway consensus latches set. Guarded UPDATE, so
+/// duplicates no-op.
 async fn try_cutover_if_consensus(pool: &Pool<Postgres>) -> Result<(), Error> {
     let result = sqlx::query(
         r#"
-        UPDATE upgrade_state
-        SET state = 'UpgradeAuthorized', updated_at = NOW()
-        WHERE stack_role = 'GCS' AND state = 'DryRunStarted'
-          AND host_consensus_reached AND gw_consensus_reached
+        WITH eligible_attempt AS (
+            SELECT proposal_id, COALESCE(proposal_block, -1) AS proposal_block
+              FROM upgrade_state
+             WHERE stack_role = 'GCS' AND status = 'in_progress'
+             GROUP BY proposal_id, COALESCE(proposal_block, -1)
+            HAVING COUNT(*) > 0
+               AND BOOL_AND(state = 'DryRunStarted')
+               AND BOOL_AND(host_consensus_reached)
+               AND BOOL_AND(gw_consensus_reached)
+        )
+        UPDATE upgrade_state u
+           SET state = 'UpgradeAuthorized', updated_at = NOW()
+          FROM eligible_attempt e
+         WHERE u.stack_role = 'GCS'
+           AND u.proposal_id = e.proposal_id
+           AND COALESCE(u.proposal_block, -1) = e.proposal_block
         "#,
     )
     .execute(pool)
     .await?;
     if result.rows_affected() == 0 {
-        debug!("cutover deferred — both consensus latches not yet set");
+        debug!("cutover deferred — gateway or a host chain's consensus latch not yet set");
         return Ok(());
     }
-    info!("both host and gateway consensus reached — transitioning to UpgradeAuthorized and running cutover");
+    info!("gateway + all host chains reached consensus — transitioning to UpgradeAuthorized and running cutover");
     execute_cutover(pool).await
 }
 
-/// Roll back a dry-run under the write lock: PAUSED/failed, reset schema, wake workers.
-/// Scoped to the proposal and end block. Returns whether it acted.
+/// Roll back a dry-run under the write lock: PAUSED/failed, reset schema, wake
+/// workers. Scoped to both the proposal and its maximum end block, which is the
+/// attempt identity carried by the detector's timeout notification. Returns
+/// whether it acted.
 async fn rollback_dry_run(
     pool: &Pool<Postgres>,
     proposal_id: &[u8],
-    end_block: i64,
+    proposal_block: i64,
+    timeout_end_block: i64,
 ) -> Result<bool, Error> {
     let mut tx = pool.begin().await?;
     sqlx::query("SELECT pg_advisory_xact_lock($1)")
@@ -1054,17 +1128,28 @@ async fn rollback_dry_run(
 
     let claimed = sqlx::query(
         r#"
-        UPDATE upgrade_state
+        UPDATE upgrade_state u
            SET state = 'PAUSED', status = 'failed',
                last_error = 'unanimity_consensus_timeout',
                host_consensus_reached = FALSE, gw_consensus_reached = FALSE,
                gw_dry_run_started = FALSE, updated_at = NOW()
-         WHERE stack_role = 'GCS' AND state IN ('UpgradeActivated', 'DryRunStarted')
-           AND proposal_id = $1 AND end_block = $2
+         WHERE u.stack_role = 'GCS'
+           AND u.state IN ('UpgradeActivated', 'DryRunStarted')
+           AND u.proposal_id = $1
+           AND COALESCE(u.proposal_block, -1) = $2
+           AND $3 = (
+               SELECT MAX(w.end_block)
+                 FROM upgrade_state w
+                WHERE w.stack_role = u.stack_role
+                  AND w.proposal_id = u.proposal_id
+                  AND COALESCE(w.proposal_block, -1) =
+                      COALESCE(u.proposal_block, -1)
+           )
         "#,
     )
     .bind(proposal_id)
-    .bind(end_block)
+    .bind(proposal_block)
+    .bind(timeout_end_block)
     .execute(&mut *tx)
     .await?;
     if claimed.rows_affected() == 0 {
@@ -1073,19 +1158,20 @@ async fn rollback_dry_run(
     }
     reset_gcs_schema(&mut tx).await?;
     sqlx::query("SELECT pg_notify($1, '')")
-        .bind(fhevm_engine_common::gcs_activation::EVENT_DRY_RUN_ROLLED_BACK)
+        .bind(EVENT_DRY_RUN_ROLLED_BACK)
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
     Ok(true)
 }
 
-/// GCS row fields reconcile reads: (state, proposal_id, host_chain_id, start_block, gw_start_block).
 type ReconcileRow = (
     String,
     Option<Vec<u8>>,
+    i64,
     Option<i64>,
-    Option<i64>,
+    bool,
+    i64,
     Option<i64>,
 );
 
@@ -1095,35 +1181,70 @@ type ReconcileRow = (
 async fn reconcile(
     pool: &Pool<Postgres>,
     cancel: &CancellationToken,
-    readiness: &Arc<AtomicBool>,
+    readiness: &Arc<AtomicI64>,
     gcs_mode: bool,
 ) -> Result<(), Error> {
     if !gcs_mode {
         return Ok(());
     }
-    let row: Option<ReconcileRow> = sqlx::query_as(
-        "SELECT state, proposal_id, host_chain_id, start_block, gw_start_block
-           FROM upgrade_state WHERE stack_role = 'GCS' AND status = 'in_progress'",
+    let rows: Vec<ReconcileRow> = sqlx::query_as(
+        "SELECT state, proposal_id, COALESCE(proposal_block, -1),
+                gw_start_block, gw_dry_run_started, host_chain_id, start_block
+           FROM upgrade_state
+          WHERE stack_role = 'GCS' AND status = 'in_progress'
+          ORDER BY host_chain_id",
     )
-    .fetch_optional(pool)
+    .fetch_all(pool)
     .await?;
-    let Some((state, proposal_id, host_chain_id, start_block, gw_start_block)) = row else {
+    let Some((state, proposal_id, proposal_block, gw_start_block, gw_dry_run_started, _, _)) =
+        rows.first()
+    else {
         return Ok(());
     };
+    if rows.iter().any(
+        |(row_state, row_id, row_block, row_gw_start, row_gw_started, _, _)| {
+            row_state != state
+                || row_id != proposal_id
+                || row_block != proposal_block
+                || row_gw_start != gw_start_block
+                || row_gw_started != gw_dry_run_started
+        },
+    ) {
+        return Err(Error::Payload(
+            "in-progress GCS upgrade_state rows do not describe one proposal".to_string(),
+        ));
+    }
+    let host_chains: Vec<(i64, i64)> = rows
+        .iter()
+        .map(|(_, _, _, _, _, chain_id, start)| {
+            start.map(|start| (*chain_id, start)).ok_or_else(|| {
+                Error::Payload(format!("GCS chain {chain_id} is missing start_block"))
+            })
+        })
+        .collect::<Result<_, _>>()?;
+    let (state, proposal_id, proposal_block, gw_start_block, gw_dry_run_started) = (
+        state.clone(),
+        proposal_id.clone(),
+        *proposal_block,
+        *gw_start_block,
+        *gw_dry_run_started,
+    );
     match state.as_str() {
         // Re-arm readiness (no-op if already running).
         "UpgradeActivated" => {
-            if let (Some(proposal_id), Some(chain_id), Some(start), Some(gw_start)) =
-                (proposal_id, host_chain_id, start_block, gw_start_block)
+            if let (Some(proposal_id), Some(gw_start), false) =
+                (proposal_id, gw_start_block, host_chains.is_empty())
             {
                 spawn_gcs_dry_run_readiness(
                     pool,
                     cancel,
                     readiness,
-                    proposal_id,
-                    chain_id,
-                    start,
-                    gw_start,
+                    GcsReadinessAttempt {
+                        proposal_id,
+                        proposal_block,
+                        host_chains,
+                        gw_start_block: gw_start,
+                    },
                 );
             }
         }
@@ -1131,8 +1252,26 @@ async fn reconcile(
             info!("reconcile: GCS in UpgradeAuthorized — resuming cutover");
             execute_cutover(pool).await?;
         }
-        // Guarded on both latches, so it no-ops until they're set.
         "DryRunStarted" => {
+            // Restore an incomplete Gateway gate after a controller restart.
+            if !gw_dry_run_started {
+                if let (Some(proposal_id), Some(gw_start), false) =
+                    (proposal_id, gw_start_block, host_chains.is_empty())
+                {
+                    spawn_gcs_dry_run_readiness(
+                        pool,
+                        cancel,
+                        readiness,
+                        GcsReadinessAttempt {
+                            proposal_id,
+                            proposal_block,
+                            host_chains,
+                            gw_start_block: gw_start,
+                        },
+                    );
+                }
+            }
+            // Guarded on both latches, so it no-ops until they're set.
             try_cutover_if_consensus(pool).await?;
         }
         _ => {}
@@ -1142,18 +1281,15 @@ async fn reconcile(
 
 /// Handle an `event_unanimity_consensus` notification. consensus-detector emits
 /// this for TWO independent tracks, distinguished by the payload `chain_id`:
-///   - the **host chain** (`chain_id == upgrade_state.host_chain_id`), over the
-///     host-block state hashes, valid only for `block_height` within the FSM
-///     row's `[start_block, end_block]` window; and
+///   - a **host chain** (`chain_id` present in `upgrade_state`), over the
+///     host-block state hashes, valid only for `block_height` within that
+///     chain's `[start_block, end_block]` window; and
 ///   - the **Gateway** (any other `chain_id`), over the re-randomized input
 ///     ciphertexts, emitted per Gateway block.
 ///
-/// Cutover requires unanimity on BOTH tracks. Each track sets its own latch
-/// (`host_consensus_reached` / `gw_consensus_reached`); the row is transitioned
-/// to 'UpgradeAuthorized' — and `execute_cutover` run — only once both latches
-/// are set. The transition is a conditional UPDATE guarded on both latches +
-/// `state='DryRunStarted'`, so whichever event arrives second fires cutover
-/// exactly once and any later/replayed firing is a no-op.
+/// Cutover requires unanimity on every host-chain track plus the Gateway track.
+/// Each host latch lives on its chain row; the Gateway latch is repeated across
+/// every row. The guarded `DryRunStarted` transition fires cutover exactly once.
 ///
 /// Latches are *recorded* in either `UpgradeActivated` or `DryRunStarted`, but
 /// cutover only *fires* in `DryRunStarted`. This matters because the Gateway
@@ -1180,145 +1316,137 @@ pub async fn handle_unanimity_consensus(
     let payload: UnanimityConsensusPayload =
         serde_json::from_str(raw_payload).map_err(|e| Error::Payload(e.to_string()))?;
 
-    type GcsUpgradeStateRow = (
-        String,
-        Option<i64>,
-        Option<i64>,
-        Option<Vec<u8>>,
-        Option<i64>,
-        Option<i64>,
-    );
-    let row: Option<GcsUpgradeStateRow> = sqlx::query_as(
-        "SELECT state, start_block, end_block, proposal_id, host_chain_id, gw_start_block
-           FROM upgrade_state WHERE stack_role = 'GCS'",
+    type GcsBaseRow = (String, Option<Vec<u8>>, i64, Option<i64>);
+    let base: Option<GcsBaseRow> = sqlx::query_as(
+        "SELECT state, proposal_id, COALESCE(proposal_block, -1), gw_start_block
+           FROM upgrade_state
+          WHERE stack_role = 'GCS' AND status = 'in_progress'
+          ORDER BY host_chain_id
+          LIMIT 1",
     )
     .fetch_optional(pool)
     .await?;
 
-    match row {
-        Some((state, start_block, end_block, proposal_id, host_chain_id, gw_start_block))
-            if state == "UpgradeActivated" || state == "DryRunStarted" =>
-        {
-            if proposal_id.as_deref() != Some(payload.proposal_id.as_slice()) {
-                warn!("event_unanimity_consensus: proposal does not match — ignoring");
-                return Ok(());
-            }
-
-            // Classify the event. Host track iff chain_id matches the stored
-            // host_chain_id; everything else is the Gateway track. For a legacy
-            // row predating host_chain_id, fall back to window membership.
-            let is_host = match host_chain_id {
-                Some(h) => payload.chain_id == h,
-                None => matches!(
-                    (start_block, end_block),
-                    (Some(s), Some(e)) if (s..=e).contains(&payload.block_height)
-                ),
-            };
-
-            if is_host {
-                // Host consensus only counts within the host window — guards
-                // against late/replayed events for a prior upgrade window.
-                match (start_block, end_block) {
-                    (Some(start), Some(end)) if (start..=end).contains(&payload.block_height) => {
-                        // `AND NOT host_consensus_reached` so a re-emitted anchor no-ops.
-                        let set = sqlx::query(
-                            "UPDATE upgrade_state SET host_consensus_reached = TRUE, updated_at = NOW()
-                              WHERE stack_role = 'GCS'
-                                AND state IN ('UpgradeActivated', 'DryRunStarted')
-                                AND proposal_id = $1
-                                AND NOT host_consensus_reached",
-                        )
-                        .bind(&payload.proposal_id)
-                        .execute(pool)
-                        .await?;
-                        if set.rows_affected() > 0 {
-                            info!(
-                                chain_id = payload.chain_id,
-                                block_height = payload.block_height,
-                                start_block = start,
-                                end_block = end,
-                                proposal_id = ?proposal_id.as_deref().map(hex_encode),
-                                "event_unanimity_consensus: host-track unanimity — host_consensus_reached set"
-                            );
-                        }
-                    }
-                    (Some(start), Some(end)) => {
-                        warn!(
-                            payload_block_height = payload.block_height,
-                            start_block = start,
-                            end_block = end,
-                            "event_unanimity_consensus: host block_height outside [start_block, end_block] — ignoring"
-                        );
-                        return Ok(());
-                    }
-                    _ => {
-                        warn!(
-                            payload_block_height = payload.block_height,
-                            ?start_block,
-                            ?end_block,
-                            "event_unanimity_consensus: GCS row missing start_block or end_block — ignoring"
-                        );
-                        return Ok(());
-                    }
-                }
-            } else {
-                // Gateway consensus only counts at/after gw_start_block —
-                // symmetric with the host window guard above. Drops late/replayed
-                // events from an earlier Gateway window, and pre-window events
-                // misclassified as Gateway when host_chain_id is NULL (legacy row).
-                match gw_start_block {
-                    Some(gw_start) if payload.block_height >= gw_start => {
-                        // `AND NOT gw_consensus_reached` so a re-emitted anchor no-ops.
-                        let set = sqlx::query(
-                            "UPDATE upgrade_state SET gw_consensus_reached = TRUE, updated_at = NOW()
-                              WHERE stack_role = 'GCS'
-                                AND state IN ('UpgradeActivated', 'DryRunStarted')
-                                AND proposal_id = $1
-                                AND NOT gw_consensus_reached",
-                        )
-                        .bind(&payload.proposal_id)
-                        .execute(pool)
-                        .await?;
-                        if set.rows_affected() > 0 {
-                            info!(
-                                chain_id = payload.chain_id,
-                                block_height = payload.block_height,
-                                gw_start_block = gw_start,
-                                "event_unanimity_consensus: gateway-track unanimity — gw_consensus_reached set"
-                            );
-                        }
-                    }
-                    Some(gw_start) => {
-                        warn!(
-                            payload_block_height = payload.block_height,
-                            gw_start_block = gw_start,
-                            "event_unanimity_consensus: gateway block_height below gw_start_block — ignoring"
-                        );
-                        return Ok(());
-                    }
-                    None => {
-                        warn!(
-                            payload_block_height = payload.block_height,
-                            "event_unanimity_consensus: GCS row missing gw_start_block — ignoring gateway consensus"
-                        );
-                        return Ok(());
-                    }
-                }
-            }
-
-            try_cutover_if_consensus(pool).await?;
-        }
-        Some((state, _, _, _, _, _)) => {
-            warn!(
-                state,
-                "event_unanimity_consensus: GCS state is not UpgradeActivated/DryRunStarted — skipping cutover"
-            );
-        }
-        None => {
-            warn!("event_unanimity_consensus: no GCS row in upgrade_state — skipping cutover");
-        }
+    let Some((state, proposal_id, proposal_block, gw_start_block)) = base else {
+        warn!(
+            "event_unanimity_consensus: no in-progress GCS row in upgrade_state — skipping cutover"
+        );
+        return Ok(());
+    };
+    if state != "UpgradeActivated" && state != "DryRunStarted" {
+        warn!(
+            state,
+            "event_unanimity_consensus: GCS state is not UpgradeActivated/DryRunStarted — skipping cutover"
+        );
+        return Ok(());
+    }
+    if proposal_id.as_deref() != Some(payload.proposal_id.as_slice()) {
+        warn!("event_unanimity_consensus: proposal does not match — ignoring");
+        return Ok(());
+    }
+    if payload.proposal_block != Some(proposal_block) {
+        warn!(
+            payload_proposal_block = payload.proposal_block,
+            proposal_block, "event_unanimity_consensus: proposal attempt does not match — ignoring"
+        );
+        return Ok(());
     }
 
+    // Classify the event: it's a host track iff its chain_id is one of the
+    // proposal's host chains; everything else is the Gateway track.
+    let host_window: Option<(i64, i64)> = sqlx::query_as(
+        "SELECT start_block, end_block FROM upgrade_state
+          WHERE stack_role = 'GCS' AND proposal_id = $1
+            AND COALESCE(proposal_block, -1) = $2
+            AND host_chain_id = $3",
+    )
+    .bind(&payload.proposal_id)
+    .bind(proposal_block)
+    .bind(payload.chain_id)
+    .fetch_optional(pool)
+    .await?;
+
+    match host_window {
+        // Host track: set only this chain's latch, and only within its window.
+        Some((start, end)) if (start..=end).contains(&payload.block_height) => {
+            let set = sqlx::query(
+                "UPDATE upgrade_state
+                    SET host_consensus_reached = TRUE, updated_at = NOW()
+                  WHERE stack_role = 'GCS'
+                    AND state IN ('UpgradeActivated', 'DryRunStarted')
+                    AND proposal_id = $1
+                    AND COALESCE(proposal_block, -1) = $2
+                    AND host_chain_id = $3 AND NOT host_consensus_reached",
+            )
+            .bind(&payload.proposal_id)
+            .bind(proposal_block)
+            .bind(payload.chain_id)
+            .execute(pool)
+            .await?;
+            if set.rows_affected() > 0 {
+                info!(
+                    chain_id = payload.chain_id,
+                    block_height = payload.block_height,
+                    start_block = start,
+                    end_block = end,
+                    proposal_id = %hex_encode(&payload.proposal_id),
+                    "event_unanimity_consensus: host-track unanimity — host_consensus_reached set for chain"
+                );
+            }
+        }
+        Some((start, end)) => {
+            warn!(
+                chain_id = payload.chain_id,
+                payload_block_height = payload.block_height,
+                start_block = start,
+                end_block = end,
+                "event_unanimity_consensus: host block_height outside [start_block, end_block] — ignoring"
+            );
+            return Ok(());
+        }
+        // Not a host chain → Gateway track. Only counts at/after gw_start_block.
+        None => match gw_start_block {
+            Some(gw_start) if payload.block_height >= gw_start => {
+                let set = sqlx::query(
+                    "UPDATE upgrade_state SET gw_consensus_reached = TRUE, updated_at = NOW()
+                      WHERE stack_role = 'GCS'
+                        AND state IN ('UpgradeActivated', 'DryRunStarted')
+                        AND proposal_id = $1
+                        AND COALESCE(proposal_block, -1) = $2
+                        AND NOT gw_consensus_reached",
+                )
+                .bind(&payload.proposal_id)
+                .bind(proposal_block)
+                .execute(pool)
+                .await?;
+                if set.rows_affected() > 0 {
+                    info!(
+                        chain_id = payload.chain_id,
+                        block_height = payload.block_height,
+                        gw_start_block = gw_start,
+                        "event_unanimity_consensus: gateway-track unanimity — gw_consensus_reached set"
+                    );
+                }
+            }
+            Some(gw_start) => {
+                warn!(
+                    payload_block_height = payload.block_height,
+                    gw_start_block = gw_start,
+                    "event_unanimity_consensus: gateway block_height below gw_start_block — ignoring"
+                );
+                return Ok(());
+            }
+            None => {
+                warn!(
+                    payload_block_height = payload.block_height,
+                    "event_unanimity_consensus: GCS row missing gw_start_block — ignoring gateway consensus"
+                );
+                return Ok(());
+            }
+        },
+    }
+
+    try_cutover_if_consensus(pool).await?;
     Ok(())
 }
 
@@ -1341,7 +1469,22 @@ pub async fn handle_unanimity_consensus_timeout(
     let payload: UnanimityConsensusPayload =
         serde_json::from_str(raw_payload).map_err(|e| Error::Payload(e.to_string()))?;
 
-    if rollback_dry_run(pool, &payload.proposal_id, payload.block_height).await? {
+    let Some(proposal_block) = payload.proposal_block else {
+        warn!(
+            proposal_id = %hex_encode(&payload.proposal_id),
+            "event_unanimity_consensus_timeout: missing proposal_block — ignoring legacy timeout"
+        );
+        return Ok(());
+    };
+
+    if rollback_dry_run(
+        pool,
+        &payload.proposal_id,
+        proposal_block,
+        payload.block_height,
+    )
+    .await?
+    {
         warn!(
             chain_id = payload.chain_id,
             block_height = payload.block_height,
@@ -1403,8 +1546,7 @@ pub async fn run(
     listener.listen_all(channels).await?;
     info!(?channels, "Listening for notifications");
 
-    // Keeps readiness to one attempt at a time.
-    let readiness = Arc::new(AtomicBool::new(false));
+    let readiness = Arc::new(AtomicI64::new(NO_READINESS_ATTEMPT));
 
     // Boot reconcile: recover an upgrade whose NOTIFY was missed while down (LISTEN already registered).
     if let Err(e) = reconcile(&pool, &cancel, &readiness, config.gcs_mode).await {
@@ -1494,12 +1636,14 @@ mod tests {
     fn parses_unanimity_consensus_payload() {
         let json = r#"{
             "proposal_id": [2],
+            "proposal_block": 10,
             "chain_id": 12345,
             "block_height": 200,
             "block_hash": "0xabc0000000000000000000000000000000000000000000000000000000000001"
         }"#;
         let p: UnanimityConsensusPayload = serde_json::from_str(json).unwrap();
         assert_eq!(p.proposal_id, vec![2]);
+        assert_eq!(p.proposal_block, Some(10));
         assert_eq!(p.chain_id, 12345);
         assert_eq!(p.block_height, 200);
         assert_eq!(
@@ -1509,67 +1653,9 @@ mod tests {
     }
 
     #[test]
-    fn hex_encode_round_trips() {
+    fn hex_encode_formats_bytes() {
         let bytes = vec![0x00, 0x01, 0xab, 0xff];
-        let s = hex_encode(&bytes);
-        assert_eq!(s, "0001abff");
-        assert_eq!(decode_hex(&s).unwrap(), bytes);
-    }
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn handle_upgrade_activated_accepts_new_proposal_after_paused_cutover() {
-        use sqlx::Row;
-
-        let (_instance, pool) = test_pool().await;
-
-        sqlx::query(
-            r#"
-            INSERT INTO upgrade_state (
-                stack_role, state, status, proposal_id, version,
-                start_block, end_block, gw_start_block, updated_at
-            )
-            VALUES ('BCS', 'PAUSED', 'completed', $1, 'v1', 100, 200, 1, NOW())
-            ON CONFLICT (stack_role) DO UPDATE
-            SET state = EXCLUDED.state, status = EXCLUDED.status,
-                proposal_id = EXCLUDED.proposal_id, updated_at = NOW()
-            "#,
-        )
-        .bind(&[0x01u8][..])
-        .execute(&pool)
-        .await
-        .expect("seed");
-
-        let payload = serde_json::json!({
-            "proposal_id":        "0x02",
-            "chain_id":           1_i64,
-            "start_block":        100_i64,
-            "end_block":          200_i64,
-            "gw_start_block":     1_i64,
-            "version":            "v2",
-        })
-        .to_string();
-
-        let cancel = CancellationToken::new();
-        let readiness = Arc::new(AtomicBool::new(false));
-        handle_upgrade_activated(&pool, &cancel, &readiness, false, &payload)
-            .await
-            .expect("handler ok");
-
-        let row = sqlx::query(
-            "SELECT proposal_id, state, status FROM upgrade_state WHERE stack_role = 'BCS'",
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("row");
-        assert_eq!(
-            row.try_get::<Vec<u8>, _>("proposal_id").unwrap(),
-            vec![0x02u8]
-        );
-        assert_eq!(
-            row.try_get::<String, _>("state").unwrap(),
-            "UpgradeActivated"
-        );
-        assert_eq!(row.try_get::<String, _>("status").unwrap(), "in_progress");
+        assert_eq!(hex_encode(&bytes), "0001abff");
     }
 
     /// Regression test for the cutover merge `ON CONFLICT` targets drifting away
@@ -1593,11 +1679,11 @@ mod tests {
             r#"
             INSERT INTO upgrade_state (
                 stack_role, state, status, proposal_id, version,
-                start_block, end_block, gw_start_block, updated_at
+                start_block, end_block, gw_start_block, host_chain_id, updated_at
             )
             VALUES ('GCS', 'UpgradeAuthorized', 'in_progress', $1, 'v0.15',
-                    100, 200, 1, NOW())
-            ON CONFLICT (stack_role) DO UPDATE
+                    100, 200, 1, 1, NOW())
+            ON CONFLICT (stack_role, host_chain_id) DO UPDATE
             SET state = EXCLUDED.state, status = EXCLUDED.status,
                 version = EXCLUDED.version, updated_at = NOW()
             "#,
@@ -1652,11 +1738,11 @@ mod tests {
     }
 
     fn timeout_payload() -> String {
-        serde_json::json!({ "proposal_id": [2], "chain_id": 1_i64, "block_height": 200_i64, "block_hash": "0x00" })
+        serde_json::json!({ "proposal_id": [2], "proposal_block": 10, "chain_id": 1_i64, "block_height": 200_i64, "block_hash": "0x00" })
             .to_string()
     }
 
-    /// Seed a GCS row with all latches + `gw_dry_run_started`.
+    /// Seed one GCS proposal row with all latches set.
     async fn seed_gcs_row(pool: &Pool<Postgres>, state: &str, status: &str) {
         sqlx::query(
             r#"
@@ -1664,15 +1750,20 @@ mod tests {
                 stack_role, state, status, proposal_id, version,
                 start_block, end_block, gw_start_block, host_chain_id,
                 host_consensus_reached, gw_consensus_reached, gw_dry_run_started,
-                updated_at
+                proposal_block, updated_at
             )
             VALUES ('GCS', $1, $2, $3, 'v0.15', 100, 200, 1, 1,
-                    TRUE, TRUE, TRUE, NOW())
-            ON CONFLICT (stack_role) DO UPDATE
+                    TRUE, TRUE, TRUE, 10, NOW())
+            ON CONFLICT (stack_role, host_chain_id) DO UPDATE
             SET state = EXCLUDED.state, status = EXCLUDED.status,
+                proposal_id = EXCLUDED.proposal_id,
+                start_block = EXCLUDED.start_block,
+                end_block = EXCLUDED.end_block,
+                host_chain_id = EXCLUDED.host_chain_id,
                 host_consensus_reached = EXCLUDED.host_consensus_reached,
                 gw_consensus_reached   = EXCLUDED.gw_consensus_reached,
                 gw_dry_run_started     = EXCLUDED.gw_dry_run_started,
+                proposal_block         = EXCLUDED.proposal_block,
                 updated_at = NOW()
             "#,
         )
@@ -1711,19 +1802,46 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn handle_timeout_rolls_back_dry_run_and_is_idempotent() {
         use sqlx::Row;
+        use tokio::time::{sleep, timeout, Duration};
 
         let (_instance, pool) = test_pool().await;
 
-        seed_gcs_row(&pool, "DryRunStarted", "in_progress").await;
+        seed_gcs_row(&pool, "UpgradeActivated", "in_progress").await;
+        sqlx::query("UPDATE upgrade_state SET gw_dry_run_started = FALSE")
+            .execute(&pool)
+            .await
+            .expect("reset gateway flag");
         create_gcs_schema(&pool).await.expect("create gcs schema");
         create_marker(&pool).await;
         assert!(marker_exists(&pool).await, "marker present before rollback");
+
+        let host_pool = pool.clone();
+        let host_readiness = tokio::spawn(async move {
+            wait_until_dry_run_ready(host_pool, CancellationToken::new(), &[0x02], 10, 1, 100).await
+        });
+        let gateway_pool = pool.clone();
+        let gateway_readiness = tokio::spawn(async move {
+            wait_until_gw_dry_run_ready(gateway_pool, CancellationToken::new(), &[0x02], 10, 1)
+                .await
+        });
+        sleep(Duration::from_millis(200)).await;
 
         let payload = timeout_payload();
 
         handle_unanimity_consensus_timeout(&pool, true, &payload)
             .await
             .expect("rollback ok");
+
+        assert!(!timeout(Duration::from_secs(10), host_readiness)
+            .await
+            .expect("host readiness did not stop")
+            .expect("host readiness task panicked")
+            .expect("host readiness failed"));
+        assert!(!timeout(Duration::from_secs(10), gateway_readiness)
+            .await
+            .expect("gateway readiness did not stop")
+            .expect("gateway readiness task panicked")
+            .expect("gateway readiness failed"));
 
         // Marker gone and schema dropped
         assert!(
@@ -1828,10 +1946,15 @@ mod tests {
     }
 
     async fn gcs_state(pool: &Pool<Postgres>) -> (String, String) {
-        sqlx::query_as("SELECT state, status FROM upgrade_state WHERE stack_role = 'GCS'")
-            .fetch_one(pool)
-            .await
-            .expect("GCS row")
+        sqlx::query_as(
+            "SELECT state, status FROM upgrade_state
+              WHERE stack_role = 'GCS'
+              ORDER BY host_chain_id
+              LIMIT 1",
+        )
+        .fetch_one(pool)
+        .await
+        .expect("GCS row")
     }
 
     /// Boot/poll reconcile resumes a cutover interrupted in `UpgradeAuthorized`.
@@ -1844,7 +1967,7 @@ mod tests {
         reconcile(
             &pool,
             &CancellationToken::new(),
-            &Arc::new(AtomicBool::new(false)),
+            &Arc::new(AtomicI64::new(NO_READINESS_ATTEMPT)),
             true,
         )
         .await
@@ -1869,13 +1992,243 @@ mod tests {
         reconcile(
             &pool,
             &CancellationToken::new(),
-            &Arc::new(AtomicBool::new(false)),
+            &Arc::new(AtomicI64::new(NO_READINESS_ATTEMPT)),
             true,
         )
         .await
         .expect("reconcile");
 
         assert_eq!(gcs_state(&pool).await, ("LIVE".into(), "completed".into()));
+    }
+
+    /// Seed one GCS chain row with an explicit host latch (aligned window
+    /// 100..200, proposal 0x02).
+    async fn seed_gcs_chain(
+        pool: &Pool<Postgres>,
+        chain_id: i64,
+        host_reached: bool,
+        gw_reached: bool,
+    ) {
+        sqlx::query(
+            r#"
+            INSERT INTO upgrade_state (
+                stack_role, state, status, proposal_id, version,
+                start_block, end_block, gw_start_block, host_chain_id,
+                host_consensus_reached, gw_consensus_reached, gw_dry_run_started,
+                proposal_block, updated_at
+            )
+            VALUES ('GCS', 'DryRunStarted', 'in_progress', $1, 'v0.15',
+                    100, 200, 1, $2, $3, $4, TRUE, 10, NOW())
+            ON CONFLICT (stack_role, host_chain_id) DO UPDATE
+            SET state = EXCLUDED.state,
+                status = EXCLUDED.status,
+                proposal_id = EXCLUDED.proposal_id,
+                proposal_block = EXCLUDED.proposal_block,
+                start_block = EXCLUDED.start_block,
+                end_block = EXCLUDED.end_block,
+                host_consensus_reached = EXCLUDED.host_consensus_reached,
+                gw_consensus_reached = EXCLUDED.gw_consensus_reached,
+                updated_at = NOW()
+            "#,
+        )
+        .bind(&[0x02u8][..])
+        .bind(chain_id)
+        .bind(host_reached)
+        .bind(gw_reached)
+        .execute(pool)
+        .await
+        .expect("seed GCS chain row");
+    }
+
+    fn consensus_payload(chain_id: i64, block_height: i64) -> String {
+        serde_json::json!({
+            "proposal_id": [2], "proposal_block": 10, "chain_id": chain_id,
+            "block_height": block_height, "block_hash": "0x00"
+        })
+        .to_string()
+    }
+
+    async fn host_reached(pool: &Pool<Postgres>, chain_id: i64) -> bool {
+        let (v,): (bool,) = sqlx::query_as(
+            "SELECT host_consensus_reached FROM upgrade_state
+              WHERE stack_role = 'GCS' AND host_chain_id = $1",
+        )
+        .bind(chain_id)
+        .fetch_one(pool)
+        .await
+        .expect("host latch");
+        v
+    }
+
+    /// Multi-chain: cutover is withheld until *every* host chain has
+    /// reached consensus, then fires exactly once for all chains.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn try_cutover_defers_until_all_host_chains_reach_consensus() {
+        let (_instance, pool) = test_pool().await;
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+
+        // Two chains, gateway agreed on both, but only chain 1 has host consensus.
+        seed_gcs_chain(&pool, 1, true, true).await;
+        seed_gcs_chain(&pool, 2, false, true).await;
+
+        try_cutover_if_consensus(&pool).await.expect("try cutover");
+        assert_eq!(
+            gcs_state(&pool).await,
+            ("DryRunStarted".into(), "in_progress".into()),
+            "cutover must defer while a host chain is missing consensus"
+        );
+
+        // Chain 2 now reaches consensus → cutover fires for the whole proposal.
+        seed_gcs_chain(&pool, 2, true, true).await;
+        try_cutover_if_consensus(&pool)
+            .await
+            .expect("try cutover 2");
+
+        assert_eq!(gcs_state(&pool).await, ("LIVE".into(), "completed".into()));
+    }
+
+    /// Multi-chain: a host anchor for one chain sets ONLY that chain's
+    /// latch — a second host chain must not be marked as reached.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn host_unanimity_sets_only_the_matching_chain_latch() {
+        let (_instance, pool) = test_pool().await;
+
+        seed_gcs_chain(&pool, 1, false, false).await;
+        seed_gcs_chain(&pool, 2, false, false).await;
+
+        // Host-track anchor for chain 1, block within [100, 200].
+        handle_unanimity_consensus(&pool, true, &consensus_payload(1, 150))
+            .await
+            .expect("handle chain 1");
+
+        assert!(host_reached(&pool, 1).await, "chain 1 latch must be set");
+        assert!(
+            !host_reached(&pool, 2).await,
+            "chain 2 latch must NOT be set by a chain-1 anchor"
+        );
+        // Not all chains agreed → still dry-running.
+        assert_eq!(
+            gcs_state(&pool).await,
+            ("DryRunStarted".into(), "in_progress".into())
+        );
+    }
+
+    /// Multi-chain: a gateway anchor sets the proposal-level Gateway
+    /// latch on every proposal row without changing any host latch.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn gateway_unanimity_sets_latch_on_all_chain_rows() {
+        let (_instance, pool) = test_pool().await;
+
+        seed_gcs_chain(&pool, 1, false, false).await;
+        seed_gcs_chain(&pool, 2, false, false).await;
+
+        // Gateway chain id (999) is not a host chain; block >= gw_start_block (1).
+        handle_unanimity_consensus(&pool, true, &consensus_payload(999, 5))
+            .await
+            .expect("handle gateway");
+
+        let gw: bool = sqlx::query_scalar(
+            "SELECT COALESCE(BOOL_AND(gw_consensus_reached), FALSE)
+               FROM upgrade_state WHERE stack_role = 'GCS'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("gw latch");
+        assert!(gw, "gateway latch set on every proposal row");
+        assert!(!host_reached(&pool, 1).await);
+        assert!(!host_reached(&pool, 2).await);
+    }
+
+    /// Multi-chain: a consensus timeout rolls back the proposal and
+    /// resets every per-chain host latch.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn timeout_rolls_back_all_chain_rows() {
+        let (_instance, pool) = test_pool().await;
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+
+        seed_gcs_chain(&pool, 1, true, true).await;
+        seed_gcs_chain(&pool, 2, false, true).await;
+
+        handle_unanimity_consensus_timeout(&pool, true, &consensus_payload(1, 200))
+            .await
+            .expect("rollback");
+
+        let row: (String, String, bool) = sqlx::query_as(
+            "SELECT state, status, gw_consensus_reached
+               FROM upgrade_state WHERE stack_role = 'GCS'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("header");
+        assert_eq!(row.0, "PAUSED");
+        assert_eq!(row.1, "failed");
+        assert!(!row.2, "gateway latch reset on rollback");
+        let host_latches: Vec<bool> = sqlx::query_scalar(
+            "SELECT host_consensus_reached FROM upgrade_state
+              WHERE stack_role = 'GCS' ORDER BY host_chain_id",
+        )
+        .fetch_all(&pool)
+        .await
+        .expect("host latches");
+        assert_eq!(host_latches, vec![false, false]);
+    }
+
+    /// A restart after the host gate finishes must restore an incomplete
+    /// Gateway gate instead of leaving the zkproof-worker paused forever.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn reconcile_rearms_gateway_gate_from_dry_run_started() {
+        use tokio::time::{sleep, timeout, Duration};
+
+        let (_instance, pool) = test_pool().await;
+        seed_gcs_row(&pool, "DryRunStarted", "in_progress").await;
+        sqlx::query(
+            "UPDATE upgrade_state
+                SET host_consensus_reached = FALSE,
+                    gw_consensus_reached = FALSE,
+                    gw_dry_run_started = FALSE
+              WHERE stack_role = 'GCS'",
+        )
+        .execute(&pool)
+        .await
+        .expect("reset latches and Gateway gate");
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+        sqlx::query(&format!(
+            "INSERT INTO {GCS_SCHEMA_QUOTED}.gw_listener_last_block
+                    (dummy_id, last_block_num)
+             VALUES (TRUE, 1)"
+        ))
+        .execute(&pool)
+        .await
+        .expect("seed Gateway watermark");
+
+        let cancel = CancellationToken::new();
+        reconcile(
+            &pool,
+            &cancel,
+            &Arc::new(AtomicI64::new(NO_READINESS_ATTEMPT)),
+            true,
+        )
+        .await
+        .expect("reconcile");
+
+        timeout(Duration::from_secs(30), async {
+            loop {
+                let (started,): (bool,) = sqlx::query_as(
+                    "SELECT gw_dry_run_started
+                       FROM upgrade_state WHERE stack_role = 'GCS'",
+                )
+                .fetch_one(&pool)
+                .await
+                .expect("Gateway gate");
+                if started {
+                    break;
+                }
+                sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("Gateway gate was not restored");
+        cancel.cancel();
     }
 
     /// A BCS-mode controller never reconciles GCS state.
@@ -1887,7 +2240,7 @@ mod tests {
         reconcile(
             &pool,
             &CancellationToken::new(),
-            &Arc::new(AtomicBool::new(false)),
+            &Arc::new(AtomicI64::new(NO_READINESS_ATTEMPT)),
             false,
         )
         .await
@@ -1906,7 +2259,7 @@ mod tests {
 
         // Timeout for a different window (block_height 999 != end_block 200).
         let payload =
-            serde_json::json!({ "proposal_id": [2], "chain_id": 1_i64, "block_height": 999_i64, "block_hash": "0x00" })
+            serde_json::json!({ "proposal_id": [2], "proposal_block": 10, "chain_id": 1_i64, "block_height": 999_i64, "block_hash": "0x00" })
                 .to_string();
         handle_unanimity_consensus_timeout(&pool, true, &payload)
             .await
@@ -1915,6 +2268,37 @@ mod tests {
         assert!(
             marker_exists(&pool).await,
             "a timeout for another window must not reset the schema"
+        );
+        assert_eq!(
+            gcs_state(&pool).await,
+            ("DryRunStarted".into(), "in_progress".into())
+        );
+    }
+
+    /// Reusing a caller-supplied proposal id and numeric window must not let a
+    /// delayed timeout from the prior on-chain attempt roll back the retry.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn handle_timeout_ignores_other_attempt() {
+        let (_instance, pool) = test_pool().await;
+        seed_gcs_row(&pool, "DryRunStarted", "in_progress").await; // proposal_block = 10
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+        create_marker(&pool).await;
+
+        let payload = serde_json::json!({
+            "proposal_id": [2],
+            "proposal_block": 9,
+            "chain_id": 1_i64,
+            "block_height": 200_i64,
+            "block_hash": "0x00"
+        })
+        .to_string();
+        handle_unanimity_consensus_timeout(&pool, true, &payload)
+            .await
+            .expect("handler ok");
+
+        assert!(
+            marker_exists(&pool).await,
+            "a timeout for another attempt must not reset the schema"
         );
         assert_eq!(
             gcs_state(&pool).await,
@@ -1931,6 +2315,7 @@ mod tests {
 
         let payload = serde_json::json!({
             "proposal_id": [0x99],
+            "proposal_block": 10,
             "chain_id": 1_i64,
             "block_height": 200_i64,
             "block_hash": "0x00"
@@ -1962,6 +2347,7 @@ mod tests {
 
         let payload = serde_json::json!({
             "proposal_id": [0x99],
+            "proposal_block": 10,
             "chain_id": 1_i64,
             "block_height": 150_i64,
             "block_hash": "0x00"
@@ -1979,6 +2365,7 @@ mod tests {
         .await
         .expect("latches");
         assert_eq!(latches, (false, false));
+        assert!(!host_reached(&pool, 1).await);
     }
 
     /// A readiness task left over from an old proposal must not advance a newer one.
@@ -1988,13 +2375,18 @@ mod tests {
         seed_gcs_row(&pool, "UpgradeActivated", "in_progress").await; // proposal_id = [0x02]
 
         // Stale proposal: no-op.
-        transition_to_dry_run_started(&pool, &[0x99])
+        transition_to_dry_run_started(&pool, &[0x99], 10)
+            .await
+            .expect("transition");
+        assert_eq!(gcs_state(&pool).await.0, "UpgradeActivated");
+
+        transition_to_dry_run_started(&pool, &[0x02], 9)
             .await
             .expect("transition");
         assert_eq!(gcs_state(&pool).await.0, "UpgradeActivated");
 
         // Matching proposal: advances.
-        transition_to_dry_run_started(&pool, &[0x02])
+        transition_to_dry_run_started(&pool, &[0x02], 10)
             .await
             .expect("transition");
         assert_eq!(gcs_state(&pool).await.0, "DryRunStarted");
@@ -2021,7 +2413,7 @@ mod tests {
         };
 
         // Stale proposal: no-op.
-        transition_to_gw_dry_run_started(&pool, &[0x99])
+        transition_to_gw_dry_run_started(&pool, &[0x99], 10)
             .await
             .expect("gw transition");
         assert!(
@@ -2029,11 +2421,73 @@ mod tests {
             "stale proposal must not release gw"
         );
 
-        // Matching proposal: releases.
-        transition_to_gw_dry_run_started(&pool, &[0x02])
+        transition_to_gw_dry_run_started(&pool, &[0x02], 9)
+            .await
+            .expect("gw transition");
+        assert!(
+            !gw_flag(pool.clone()).await,
+            "stale attempt must not release gw"
+        );
+
+        transition_to_gw_dry_run_started(&pool, &[0x02], 10)
             .await
             .expect("gw transition");
         assert!(gw_flag(pool.clone()).await, "matching proposal releases gw");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn prune_requires_matching_attempt() {
+        let (_instance, pool) = test_pool().await;
+        seed_gcs_row(&pool, "UpgradeActivated", "in_progress").await;
+        sqlx::query("UPDATE upgrade_state SET gw_dry_run_started = FALSE")
+            .execute(&pool)
+            .await
+            .expect("reset flag");
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+
+        sqlx::query(&format!(
+            "INSERT INTO {GCS_SCHEMA_QUOTED}.computations (
+                output_handle, dependencies, fhe_operation, is_scalar,
+                host_chain_id, block_number
+             ) VALUES ($1, ARRAY[]::BYTEA[], 0, FALSE, 1, 50)"
+        ))
+        .bind(&[1_u8][..])
+        .execute(&pool)
+        .await
+        .expect("insert computation");
+        sqlx::query(&format!(
+            "INSERT INTO {GCS_SCHEMA_QUOTED}.verify_proofs (
+                zk_proof_id, chain_id, contract_address, user_address, block_number
+             ) VALUES (1, 1, '', '', 50)"
+        ))
+        .execute(&pool)
+        .await
+        .expect("insert proof");
+
+        assert_eq!(
+            prune_gcs_computations_before_start(&pool, &[0x02], 9, 1, 100)
+                .await
+                .expect("stale computation prune"),
+            0
+        );
+        assert_eq!(
+            prune_gcs_verify_proofs_before_start(&pool, &[0x02], 9, 100)
+                .await
+                .expect("stale proof prune"),
+            0
+        );
+        assert_eq!(
+            prune_gcs_computations_before_start(&pool, &[0x02], 10, 1, 100)
+                .await
+                .expect("computation prune"),
+            1
+        );
+        assert_eq!(
+            prune_gcs_verify_proofs_before_start(&pool, &[0x02], 10, 100)
+                .await
+                .expect("proof prune"),
+            1
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -2074,7 +2528,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn rollback_waits_for_in_flight_guarded_write() {
+    async fn rollback_serializes_guarded_writes_and_pruning() {
         use fhevm_engine_common::versioning::{begin_write_guarded, GcsRollbackPolicy, WriteGuard};
         use tokio::time::{timeout, Duration};
 
@@ -2093,7 +2547,7 @@ mod tests {
 
         let rollback_pool = pool.clone();
         let mut rollback =
-            tokio::spawn(async move { rollback_dry_run(&rollback_pool, &[0x02], 200).await });
+            tokio::spawn(async move { rollback_dry_run(&rollback_pool, &[0x02], 10, 200).await });
 
         assert!(
             timeout(Duration::from_millis(200), &mut rollback)
@@ -2120,5 +2574,47 @@ mod tests {
             "schema should reset after the guarded write commits"
         );
         assert_eq!(gcs_state(&pool).await, ("PAUSED".into(), "failed".into()));
+
+        seed_gcs_row(&pool, "UpgradeActivated", "in_progress").await;
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+
+        let mut rollback_tx = pool.begin().await.expect("rollback tx");
+        sqlx::query("SELECT pg_advisory_xact_lock($1)")
+            .bind(CUTOVER_LOCK_ID)
+            .execute(&mut *rollback_tx)
+            .await
+            .expect("exclusive lock");
+        sqlx::query(
+            "UPDATE upgrade_state
+                SET state = 'PAUSED', status = 'failed'
+              WHERE stack_role = 'GCS'",
+        )
+        .execute(&mut *rollback_tx)
+        .await
+        .expect("claim rollback");
+
+        let prune_pool = pool.clone();
+        let mut prune = tokio::spawn(async move {
+            prune_gcs_computations_before_start(&prune_pool, &[0x02], 10, 1, 100).await
+        });
+        assert!(
+            timeout(Duration::from_millis(200), &mut prune)
+                .await
+                .is_err(),
+            "prune must wait while rollback holds the exclusive advisory lock"
+        );
+
+        reset_gcs_schema(&mut rollback_tx)
+            .await
+            .expect("reset schema");
+        rollback_tx.commit().await.expect("commit rollback");
+        assert_eq!(
+            timeout(Duration::from_secs(10), prune)
+                .await
+                .expect("prune remained blocked")
+                .expect("prune task panicked")
+                .expect("prune failed"),
+            0
+        );
     }
 }

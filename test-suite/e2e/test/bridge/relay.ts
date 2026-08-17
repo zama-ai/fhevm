@@ -82,11 +82,20 @@ export interface PendingCompose {
 /** Verifies + delivers a packet on the destination: validatePacket -> lzReceive -> lzCompose unless `skipCompose`. */
 async function deliver(
   ctx: RelayContext,
-  packet: { encodedPacket: string; origin: { srcEid: number; sender: string; nonce: bigint }; guid: string; message: string },
+  packet: {
+    encodedPacket: string;
+    origin: { srcEid: number; sender: string; nonce: bigint };
+    guid: string;
+    message: string;
+  },
   skipCompose: boolean,
 ): Promise<{ dstHandles: string[]; compose: PendingCompose }> {
   const endpoint = new ethers.Contract(ctx.dstEndpoint, ENDPOINT_ABI, ctx.dstSigner);
-  const lib = new ethers.Contract(await endpoint.defaultReceiveLibrary(packet.origin.srcEid), MSGLIB_ABI, ctx.dstSigner);
+  const lib = new ethers.Contract(
+    await endpoint.defaultReceiveLibrary(packet.origin.srcEid),
+    MSGLIB_ABI,
+    ctx.dstSigner,
+  );
   await sendWithNonceRetry(ctx.dstSigner, () => lib.validatePacket(packet.encodedPacket));
 
   const recvReceipt = await sendWithNonceRetry(ctx.dstSigner, () =>
@@ -122,7 +131,11 @@ export async function relayBridgeMessage(
   const encodedPacket = packetSent.args[0] as string;
   const pkt = decodePacket(encodedPacket);
   const origin = { srcEid: pkt.srcEid, sender: pkt.sender, nonce: pkt.nonce };
-  const { dstHandles, compose } = await deliver(ctx, { encodedPacket, origin, guid: pkt.guid, message: pkt.message }, opts.skipCompose ?? false);
+  const { dstHandles, compose } = await deliver(
+    ctx,
+    { encodedPacket, origin, guid: pkt.guid, message: pkt.message },
+    opts.skipCompose ?? false,
+  );
   return { dstHandles, guid: pkt.guid, compose };
 }
 
@@ -178,7 +191,11 @@ export async function forgeDelivery(
     guid,
     message,
   });
-  const { dstHandles } = await deliver(ctx, { encodedPacket, origin: { srcEid: params.srcEid, sender, nonce }, guid, message }, false);
+  const { dstHandles } = await deliver(
+    ctx,
+    { encodedPacket, origin: { srcEid: params.srcEid, sender, nonce }, guid, message },
+    false,
+  );
   return dstHandles;
 }
 

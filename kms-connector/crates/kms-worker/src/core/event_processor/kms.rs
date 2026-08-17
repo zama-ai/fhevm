@@ -1,7 +1,4 @@
-use crate::core::{
-    config::Config,
-    event_processor::{ContextManager, ProcessingError, RequestCheckError},
-};
+use crate::core::{config::Config, event_processor::ProcessingError};
 use alloy::primitives::U256;
 use connector_utils::types::{KmsGrpcRequest, extra_data::parse_extra_data, u256_to_request_id};
 use fhevm_host_bindings::kms_generation::KMSGeneration::{
@@ -15,19 +12,13 @@ use tracing::error;
 
 #[derive(Clone)]
 /// The struct responsible of processing incoming key management requests.
-pub struct KMSGenerationProcessor<C> {
+pub struct KMSGenerationProcessor {
     /// The EIP712 domain of the `KMSGeneration` contract.
     domain: Eip712DomainMsg,
-
-    /// The entity used to validate KMS context.
-    context_manager: C,
 }
 
-impl<C> KMSGenerationProcessor<C>
-where
-    C: ContextManager,
-{
-    pub fn new(config: &Config, context_manager: C) -> Self {
+impl KMSGenerationProcessor {
+    pub fn new(config: &Config) -> Self {
         let domain = Eip712DomainMsg {
             name: config.kms_generation_contract.domain_name.clone(),
             version: config.kms_generation_contract.domain_version.clone(),
@@ -36,10 +27,7 @@ where
             salt: None,
         };
 
-        Self {
-            domain,
-            context_manager,
-        }
+        Self { domain }
     }
 
     pub async fn prepare_prep_keygen_request(
@@ -48,10 +36,6 @@ where
     ) -> Result<KmsGrpcRequest, ProcessingError> {
         let parsed_extra_data = parse_extra_data(&prep_keygen_request.extraData)
             .map_err(ProcessingError::Irrecoverable)?;
-        self.context_manager
-            .validate_context(&parsed_extra_data)
-            .await
-            .map_err(RequestCheckError::record)?;
 
         Ok(KmsGrpcRequest::PrepKeygen(KeyGenPreprocRequest {
             request_id: Some(u256_to_request_id(prep_keygen_request.prepKeygenId)),
@@ -60,8 +44,8 @@ where
             epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
             context_id: parsed_extra_data.context_id.map(u256_to_request_id),
             extra_data: prep_keygen_request.extraData.to_vec(),
-            // Used to generate other types of key, but not planned to be supported by the Gateway
-            keyset_config: Some(UNCOMPRESSED_KEY_SET_CONFIG),
+            // Explicitly request the compressed XOF keyset layout expected by GPU workers.
+            keyset_config: Some(COMPRESSED_XOF_KEY_SET_CONFIG),
         }))
     }
 
@@ -71,10 +55,6 @@ where
     ) -> Result<KmsGrpcRequest, ProcessingError> {
         let parsed_extra_data =
             parse_extra_data(&keygen_request.extraData).map_err(ProcessingError::Irrecoverable)?;
-        self.context_manager
-            .validate_context(&parsed_extra_data)
-            .await
-            .map_err(RequestCheckError::record)?;
 
         Ok(KmsGrpcRequest::Keygen(KeyGenRequest {
             request_id: Some(u256_to_request_id(keygen_request.keyId)),
@@ -84,8 +64,8 @@ where
             epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
             context_id: parsed_extra_data.context_id.map(u256_to_request_id),
             extra_data: keygen_request.extraData.to_vec(),
-            // Used to generate other types of key, but not planned to be supported by the Gateway
-            keyset_config: Some(UNCOMPRESSED_KEY_SET_CONFIG),
+            // Explicitly request the compressed XOF keyset layout expected by GPU workers.
+            keyset_config: Some(COMPRESSED_XOF_KEY_SET_CONFIG),
             keyset_added_info: None,
         }))
     }
@@ -96,10 +76,6 @@ where
     ) -> Result<KmsGrpcRequest, ProcessingError> {
         let parsed_extra_data =
             parse_extra_data(&crsgen_request.extraData).map_err(ProcessingError::Irrecoverable)?;
-        self.context_manager
-            .validate_context(&parsed_extra_data)
-            .await
-            .map_err(RequestCheckError::record)?;
 
         let max_num_bits = crsgen_request
             .maxBitLength
@@ -124,11 +100,11 @@ where
     }
 }
 
-const UNCOMPRESSED_KEY_SET_CONFIG: KeySetConfig = KeySetConfig {
+const COMPRESSED_XOF_KEY_SET_CONFIG: KeySetConfig = KeySetConfig {
     keyset_type: KeySetType::Standard as i32,
     standard_keyset_config: Some(StandardKeySetConfig {
         compute_key_type: ComputeKeyType::Cpu as i32,
         secret_key_config: KeyGenSecretKeyConfig::GenerateAll as i32,
-        compressed_key_config: CompressedKeyConfig::CompressedNone as i32,
+        compressed_key_config: CompressedKeyConfig::CompressedAll as i32,
     }),
 };

@@ -1,1 +1,1 @@
-["GatewayConfig", "Decryption", "CiphertextCommits", "InputVerification"]
+["CiphertextCommits", "InputVerification", "Decryption", "GatewayConfig"]

@@ -1,5 +1,5 @@
 use crate::ExecutionError;
-use crate::SAFE_SER_LIMIT;
+use ciphertext_attestation::MAX_SNS_CIPHERTEXT_SERIALIZED_SIZE;
 use opentelemetry::trace::Status;
 use serde::Serialize;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
@@ -304,7 +304,7 @@ pub fn safe_serialize<T: Serialize + Named + Versionize>(
     object: &T,
 ) -> Result<Vec<u8>, ExecutionError> {
     let mut out = vec![];
-    tfhe::safe_serialization::safe_serialize(object, &mut out, SAFE_SER_LIMIT)
+    tfhe::safe_serialization::safe_serialize(object, &mut out, MAX_SNS_CIPHERTEXT_SERIALIZED_SIZE)
         .map_err(|e| ExecutionError::SerializationError(e.to_string()))?;
     Ok(out)
 }
@@ -313,7 +313,7 @@ pub fn safe_serialize<T: Serialize + Named + Versionize>(
 pub fn safe_deserialize<T: serde::de::DeserializeOwned + Named + tfhe::Unversionize>(
     input: &[u8],
 ) -> Result<T, ExecutionError> {
-    let res = tfhe::safe_serialization::safe_deserialize(input, SAFE_SER_LIMIT)
+    let res = tfhe::safe_serialization::safe_deserialize(input, MAX_SNS_CIPHERTEXT_SERIALIZED_SIZE)
         .map_err(ExecutionError::DeserializationError)?;
     Ok(res)
 }

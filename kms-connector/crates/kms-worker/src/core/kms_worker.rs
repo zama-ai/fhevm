@@ -5,7 +5,8 @@ use crate::{
         event_picker::{DbEventPicker, EventPicker},
         event_processor::{
             CiphertextManager, DbContextManager, DbEventProcessor, DecryptionProcessor,
-            EventProcessor, KMSGenerationProcessor, KmsClient, ProtocolConfigProcessor,
+            EventProcessor, HostRpcClient, KMSGenerationProcessor, KmsClient,
+            ProtocolConfigProcessor,
         },
         kms_response_publisher::DbKmsResponsePublisher,
     },
@@ -14,10 +15,9 @@ use crate::{
         metrics::register_event_latency,
     },
 };
-use alloy::transports::http::reqwest;
 use anyhow::anyhow;
 use connector_utils::{
-    conn::{DefaultProvider, connect_to_db, connect_to_rpc_node},
+    conn::{DefaultProvider, connect_to_db, connect_to_rpc_node, connect_to_rpc_node_with_bounds},
     tasks::spawn_with_limit,
     types::{KmsResponse, ProtocolEvent},
 };
@@ -133,12 +133,19 @@ impl
         let ethereum_provider =
             connect_to_rpc_node(config.ethereum_url.clone(), config.ethereum_chain_id).await?;
 
-        let mut acl_contracts = HashMap::new();
+        let mut host_clients = HashMap::new();
         for host_chain in &config.host_chains {
-            let provider = connect_to_rpc_node(host_chain.url.clone(), host_chain.chain_id).await?;
+            let provider = connect_to_rpc_node_with_bounds(
+                host_chain.url.clone(),
+                host_chain.chain_id,
+                config.host_rpc_max_concurrent_calls,
+                config.host_rpc_call_timeout,
+            )
+            .await?;
             let acl_contract = ACL::new(host_chain.acl_address, provider);
             let host_chain_id = host_chain.chain_id;
-            if acl_contracts.insert(host_chain_id, acl_contract).is_some() {
+            let host_client = HostRpcClient::new(host_chain_id, acl_contract);
+            if host_clients.insert(host_chain_id, host_client).is_some() {
                 return Err(anyhow!(
                     "Duplicate host chain in config for chain ID {host_chain_id}"
                 ));
@@ -147,29 +154,24 @@ impl
 
         let kms_client = KmsClient::connect(&config).await?;
         let kms_health_client = KmsHealthClient::connect(&config.kms_core_endpoints).await?;
-        let s3_client = reqwest::Client::builder()
-            .connect_timeout(config.s3_connect_timeout)
-            .build()
-            .map_err(|e| anyhow!("Failed to create HTTP client: {}", e))?;
 
         let event_picker = DbEventPicker::connect(db_pool.clone(), &config).await?;
 
         let context_manager =
             DbContextManager::new(db_pool.clone(), &config, ethereum_provider.clone());
         let ciphertext_manager =
-            CiphertextManager::connect(gateway_provider.clone(), s3_client, &config, cancel_token)
-                .await?;
+            CiphertextManager::connect(gateway_provider.clone(), &config, cancel_token).await?;
         let decryption_processor = DecryptionProcessor::new(
             &config,
-            context_manager.clone(),
             gateway_provider.clone(),
-            acl_contracts,
+            host_clients,
             ciphertext_manager,
         );
-        let kms_generation_processor = KMSGenerationProcessor::new(&config, context_manager);
+        let kms_generation_processor = KMSGenerationProcessor::new(&config);
         let protocol_config_processor = ProtocolConfigProcessor::new(&config, ethereum_provider);
         let event_processor = DbEventProcessor::new(
             kms_client.clone(),
+            context_manager,
             decryption_processor,
             kms_generation_processor,
             protocol_config_processor,

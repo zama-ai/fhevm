@@ -41,8 +41,7 @@ fn construct_config() -> Result<Config, fhevm_engine_common::database::DatabaseC
             lifo: args.lifo,
         },
         s3: S3Config {
-            bucket_ct128: args.bucket_name_ct128,
-            bucket_ct64: args.bucket_name_ct64,
+            bucket: args.bucket_name,
             max_concurrent_uploads: args.s3_max_concurrent_uploads,
             retry_policy: S3RetryPolicy {
                 max_retries_per_upload: args.s3_max_retries_per_upload,

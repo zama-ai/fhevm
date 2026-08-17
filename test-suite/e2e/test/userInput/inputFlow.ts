@@ -42,6 +42,15 @@ describe('Input Flow', function () {
     expect(receipt.status).to.equal(1);
   });
 
+  // Encrypt only (no host tx): verifies a Gateway input while host chains stay quiet.
+  it('test gateway-only user input uint64 (no host tx)', async function () {
+    await this.instances.alice.encryptUint64({
+      value: 18446744073709550042n,
+      contractAddress: this.contractAddress,
+      userAddress: this.signers.alice.address,
+    });
+  });
+
   it('test add 42 to uint64 input and decrypt', async function () {
     await runAdd42InputAndDecrypt.call(this);
   });

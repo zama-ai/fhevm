@@ -291,6 +291,7 @@ fn key_type_to_string(key_type: u8) -> anyhow::Result<String> {
     match KeyType::try_from(key_type)? {
         KeyType::Server => Ok("ServerKey".to_string()),
         KeyType::Public => Ok("PublicKey".to_string()),
+        KeyType::CompressedKeySet => Ok("CompressedXofKeySet".to_string()),
     }
 }
 

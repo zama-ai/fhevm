@@ -43,7 +43,7 @@ export type FhevmChainContracts = {
   readonly acl: ChainContract;
   readonly inputVerifier: ChainContract;
   readonly kmsVerifier: ChainContract;
-  readonly protocolConfig: ChainContract | undefined;
+  readonly protocolConfig?: ChainContract | undefined;
 };
 
 export type FhevmGatewayChain = {

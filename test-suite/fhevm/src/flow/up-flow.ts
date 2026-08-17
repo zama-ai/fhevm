@@ -8,8 +8,10 @@ import { ensureLockSnapshot, previewBundle, resolveBundle } from "../resolve/bun
 import {
   assertSupportedBundleScenario,
   bootstrapUsesHostKmsGeneration,
+  canonicalProtocolConfigSeedingUsesEnv,
   requiresGatewayKmsGenerationAddress,
   requiresLegacyHostChainSeedShim,
+  requiresLegacyKmsBootstrapBudget,
   requiresMultichainAclAddress,
   requiresModernHostAddressArtifacts,
   supportsCanonicalProtocolConfigSeeding,
@@ -525,16 +527,24 @@ const registerExtraChainInCoprocessor = async (state: State, chain: { key: strin
   }
 };
 
+/** Name of the export snapshot written into the canonical chain's mounted addresses directory. */
+const CANONICAL_SNAPSHOT_FILE = "canonical-protocol-config-snapshot.json";
+
 /**
- * Builds the `task:deployAllHostContracts` args that seed a non-canonical chain's ProtocolConfig
- * from the canonical chain, mirroring production. Returns "" when the host image predates
- * `task:deployProtocolConfigFromCanonical`, so older bundles keep the "fresh" seeding.
+ * Builds the `task:deployAllHostContracts` args and env that seed a non-canonical chain's
+ * ProtocolConfig from the canonical chain, mirroring production. Returns undefined when there is no
+ * non-canonical chain, or when the host image predates `task:deployProtocolConfigFromCanonical`, so
+ * older bundles keep the "fresh" seeding.
  * Must run after the canonical host deploy: it reads the canonical ProtocolConfig address from the
- * generated address file.
+ * generated address file, then exports the canonical KMS context from the live canonical chain.
+ * Host images before the `CANONICAL_*` env migration take the canonical chain as command-line flags
+ * instead and skip the export.
  */
-const canonicalProtocolConfigSeedingArgs = async (state: State) => {
-  if (!supportsCanonicalProtocolConfigSeeding(state)) {
-    return "";
+const canonicalProtocolConfigSeeding = async (
+  state: State,
+): Promise<{ args: string; env?: Record<string, string> } | undefined> => {
+  if (!supportsCanonicalProtocolConfigSeeding(state) || !extraHostChains(state).length) {
+    return undefined;
   }
   const canonicalChain = defaultHostChain(state)!;
   const canonicalAddresses = await readEnvFile(hostChainAddressesPath(canonicalChain.key));
@@ -544,11 +554,39 @@ const canonicalProtocolConfigSeedingArgs = async (state: State) => {
       `Canonical host addresses at ${hostChainAddressesPath(canonicalChain.key)} lack PROTOCOL_CONFIG_CONTRACT_ADDRESS; cannot seed non-canonical chains from canonical.`,
     );
   }
-  return [
-    "--protocol-config-source canonical",
-    `--canonical-rpc-url http://${canonicalChain.node}:${canonicalChain.rpcPort}`,
-    `--canonical-protocol-config-address ${canonicalProtocolConfigAddress}`,
-  ].join(" ");
+  if (!canonicalProtocolConfigSeedingUsesEnv(state)) {
+    return {
+      args: [
+        "--protocol-config-source canonical",
+        `--canonical-rpc-url http://${canonicalChain.node}:${canonicalChain.rpcPort}`,
+        `--canonical-protocol-config-address ${canonicalProtocolConfigAddress}`,
+      ].join(" "),
+    };
+  }
+  // Pin the export to the current head. The task defaults to the finalized block, but anvil reports
+  // a finalized block 64 blocks behind the head, which predates the canonical ProtocolConfig deploy.
+  const blockNumber = (
+    await run(["cast", "block-number", "--rpc-url", `http://localhost:${canonicalChain.rpcPort}`])
+  ).stdout.trim();
+  // Run the export task in the canonical chain's own deploy container, the same producer the
+  // deployment platform runs. The container reaches the canonical node over the compose network and
+  // writes the snapshot into the mounted addresses directory.
+  await timed("[multi-chain] export canonical ProtocolConfig", () =>
+    runContractTask(
+      "host-sc",
+      "host-sc-deploy",
+      `npx hardhat task:exportCanonicalProtocolConfig --canonical-rpc-url http://${canonicalChain.node}:${canonicalChain.rpcPort} --canonical-protocol-config-address ${canonicalProtocolConfigAddress} --block-number ${blockNumber} --out /app/addresses/${CANONICAL_SNAPSHOT_FILE}`,
+    ),
+  );
+  const exported = await readJson<{ export: Record<string, string> }>(
+    path.join(path.dirname(hostChainAddressesPath(canonicalChain.key)), CANONICAL_SNAPSHOT_FILE),
+  );
+  return {
+    args: "--protocol-config-source canonical",
+    // The deploy task reads the reviewed snapshot from the environment, not from flags, so that
+    // deployment platforms can inject the exported values as container environment variables.
+    env: exported.export,
+  };
 };
 
 export const runStep = async (state: State, step: StepName) => {
@@ -688,14 +726,15 @@ export const runStep = async (state: State, step: StepName) => {
       // (export → mirror), not "fresh" from env. The canonical address only exists after the
       // canonical deploy above, so the placeholder env var is patched here, per chain, before
       // its deploy container starts.
-      const canonicalSeedingArgs = await canonicalProtocolConfigSeedingArgs(state);
+      const canonicalSeeding = await canonicalProtocolConfigSeeding(state);
       for (const chain of extraHostChains(state)) {
         const scKey = chain.sc;
-        if (canonicalSeedingArgs || provisionBridgeProxy) {
+        if (canonicalSeeding || provisionBridgeProxy) {
           const scEnvPath = envPath(scKey);
           const scEnv = await readEnvFile(scEnvPath);
-          if (canonicalSeedingArgs) {
-            scEnv.HOST_SC_DEPLOY_PROTOCOL_CONFIG_ARGS = canonicalSeedingArgs;
+          if (canonicalSeeding) {
+            scEnv.HOST_SC_DEPLOY_PROTOCOL_CONFIG_ARGS = canonicalSeeding.args;
+            Object.assign(scEnv, canonicalSeeding.env);
           }
           if (provisionBridgeProxy) {
             scEnv.PROVISION_BRIDGE_PROXY = "true";
@@ -946,13 +985,18 @@ export const runStep = async (state: State, step: StepName) => {
         );
         await waitForContainer("gateway-sc-trigger-crsgen", "complete");
       }
-      // wait-for-materials polls roughly once per second. Centralized keygen is quick; a
-      // threshold-mode cluster runs a real multi-party DKG (~360s for 4 parties), so it needs a
-      // much larger budget before we conclude bootstrap failed.
+      // wait-for-materials polls every two seconds. Centralized keygen is quick; a threshold-mode
+      // cluster runs a real multi-party DKG. Legacy cores can take more than 20 minutes to finish
+      // two preprocessing sessions, so only they get the larger budget — a global raise would make
+      // every threshold CI job wait that long before reporting a genuinely hung DKG.
       const CENTRALIZED_BOOTSTRAP_ATTEMPTS = 120;
       const THRESHOLD_BOOTSTRAP_ATTEMPTS = 450;
+      const LEGACY_THRESHOLD_BOOTSTRAP_ATTEMPTS = 1200;
+      const thresholdAttempts = requiresLegacyKmsBootstrapBudget(state.versions.env.CORE_VERSION ?? "")
+        ? LEGACY_THRESHOLD_BOOTSTRAP_ATTEMPTS
+        : THRESHOLD_BOOTSTRAP_ATTEMPTS;
       const bootstrapAttempts =
-        state.scenario.kms.mode === "threshold" ? THRESHOLD_BOOTSTRAP_ATTEMPTS : CENTRALIZED_BOOTSTRAP_ATTEMPTS;
+        state.scenario.kms.mode === "threshold" ? thresholdAttempts : CENTRALIZED_BOOTSTRAP_ATTEMPTS;
       await timed("[bootstrap] wait-for-materials", () => waitForBootstrap(state, bootstrapAttempts));
       await generateRuntime(state, stackSpecForState(state));
       break;

@@ -1,6 +1,6 @@
-import { task, types } from "hardhat/config";
+import { task, types } from 'hardhat/config';
 
-import { getRequiredEnvVar, loadGatewayAddresses } from "./utils";
+import { getRequiredEnvVar, loadGatewayAddresses } from './utils';
 
 // Host chain lifecycle tasks for the GatewayConfig contract.
 //
@@ -14,26 +14,26 @@ import { getRequiredEnvVar, loadGatewayAddresses } from "./utils";
 // Resolves the GatewayConfig contract connected to the deployer wallet, applying the same
 // address-resolution rules as `addHostChains.ts`.
 async function loadGatewayConfig(hre: any, useInternalProxyAddress: boolean) {
-  await hre.run("compile:specific", { contract: "contracts" });
+  await hre.run('compile:specific', { contract: 'contracts' });
 
-  const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
+  const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new hre.ethers.Wallet(deployerPrivateKey).connect(hre.ethers.provider);
 
   if (useInternalProxyAddress) {
     loadGatewayAddresses();
   }
-  const proxyAddress = getRequiredEnvVar("GATEWAY_CONFIG_ADDRESS");
+  const proxyAddress = getRequiredEnvVar('GATEWAY_CONFIG_ADDRESS');
 
-  const gatewayConfig = await hre.ethers.getContractAt("GatewayConfig", proxyAddress, deployer);
+  const gatewayConfig = await hre.ethers.getContractAt('GatewayConfig', proxyAddress, deployer);
   return { gatewayConfig, proxyAddress };
 }
 
 // Disable a registered host chain. The chain stays registered but is flagged as disabled.
-task("task:disableHostChainOnGatewayConfig")
-  .addParam("chainId", "The chain ID of the host chain to disable", undefined, types.string)
+task('task:disableHostChainOnGatewayConfig')
+  .addParam('chainId', 'The chain ID of the host chain to disable', undefined, types.string)
   .addParam(
-    "useInternalProxyAddress",
-    "If proxy address from the /addresses directory should be used",
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
     false,
     types.boolean,
   )
@@ -48,20 +48,20 @@ task("task:disableHostChainOnGatewayConfig")
       throw new Error(`Host chain ${chainId} is already disabled in GatewayConfig at ${proxyAddress}.`);
     }
 
-    console.log(`Disabling host chain ${chainId} in GatewayConfig contract:`, proxyAddress, "\n");
+    console.log(`Disabling host chain ${chainId} in GatewayConfig contract:`, proxyAddress, '\n');
     const tx = await gatewayConfig.disableHostChain(chainId);
     await tx.wait();
 
     console.log(`Emitted DisableHostChain(${chainId}) (tx: ${tx.hash})`);
-    console.log("Host chain disabled!");
+    console.log('Host chain disabled!');
   });
 
 // Re-enable a previously disabled host chain.
-task("task:enableHostChainOnGatewayConfig")
-  .addParam("chainId", "The chain ID of the host chain to enable", undefined, types.string)
+task('task:enableHostChainOnGatewayConfig')
+  .addParam('chainId', 'The chain ID of the host chain to enable', undefined, types.string)
   .addParam(
-    "useInternalProxyAddress",
-    "If proxy address from the /addresses directory should be used",
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
     false,
     types.boolean,
   )
@@ -76,21 +76,21 @@ task("task:enableHostChainOnGatewayConfig")
       throw new Error(`Host chain ${chainId} is already enabled in GatewayConfig at ${proxyAddress}.`);
     }
 
-    console.log(`Enabling host chain ${chainId} in GatewayConfig contract:`, proxyAddress, "\n");
+    console.log(`Enabling host chain ${chainId} in GatewayConfig contract:`, proxyAddress, '\n');
     const tx = await gatewayConfig.enableHostChain(chainId);
     await tx.wait();
 
     console.log(`Emitted EnableHostChain(${chainId}) (tx: ${tx.hash})`);
-    console.log("Host chain enabled!");
+    console.log('Host chain enabled!');
   });
 
 // Remove a host chain entirely. The chain must be disabled first, mirroring the on-chain
 // `HostChainNotDisabled` guard, so the operator gets a clean error before submitting.
-task("task:removeHostChainOnGatewayConfig")
-  .addParam("chainId", "The chain ID of the host chain to remove", undefined, types.string)
+task('task:removeHostChainOnGatewayConfig')
+  .addParam('chainId', 'The chain ID of the host chain to remove', undefined, types.string)
   .addParam(
-    "useInternalProxyAddress",
-    "If proxy address from the /addresses directory should be used",
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
     false,
     types.boolean,
   )
@@ -110,10 +110,10 @@ task("task:removeHostChainOnGatewayConfig")
       );
     }
 
-    console.log(`Removing host chain ${chainId} from GatewayConfig contract:`, proxyAddress, "\n");
+    console.log(`Removing host chain ${chainId} from GatewayConfig contract:`, proxyAddress, '\n');
     const tx = await gatewayConfig.removeHostChain(chainId);
     await tx.wait();
 
     console.log(`Emitted RemoveHostChain(${chainId}) (tx: ${tx.hash})`);
-    console.log("Host chain removed!");
+    console.log('Host chain removed!');
   });

@@ -1,8 +1,8 @@
-import { Wallet } from "ethers";
-import { task, types } from "hardhat/config";
-import { HardhatEthersHelpers } from "hardhat/types";
+import { Wallet } from 'ethers';
+import { task, types } from 'hardhat/config';
+import { HardhatEthersHelpers } from 'hardhat/types';
 
-import { getRequiredAddressEnvVar, getRequiredEnvVar, loadGatewayAddresses } from "./utils";
+import { getRequiredAddressEnvVar, getRequiredEnvVar, loadGatewayAddresses } from './utils';
 
 // Helper function to get a Gateway contract and its proxy address
 async function getGatewayContract(
@@ -31,7 +31,7 @@ async function getGatewayContract(
 // Helper function to pause a contract
 async function pauseSingleContract(name: string, ethers: HardhatEthersHelpers, useInternalAddress: boolean) {
   // Get the contract and its address
-  const { contract, proxyAddress } = await getGatewayContract(name, ethers, useInternalAddress, "PAUSER_PRIVATE_KEY");
+  const { contract, proxyAddress } = await getGatewayContract(name, ethers, useInternalAddress, 'PAUSER_PRIVATE_KEY');
 
   // Pause the contract
   await contract.pause();
@@ -43,7 +43,7 @@ async function pauseSingleContract(name: string, ethers: HardhatEthersHelpers, u
 async function unpauseSingleContract(name: string, ethers: HardhatEthersHelpers, useInternalAddress: boolean) {
   // Get the contract and its address
   // NOTE: this task won't work once ownership will be transferred from initial deployer to the multisig
-  const { contract, proxyAddress } = await getGatewayContract(name, ethers, useInternalAddress, "DEPLOYER_PRIVATE_KEY");
+  const { contract, proxyAddress } = await getGatewayContract(name, ethers, useInternalAddress, 'DEPLOYER_PRIVATE_KEY');
 
   // Unpause the contract
   await contract.unpause();
@@ -53,52 +53,52 @@ async function unpauseSingleContract(name: string, ethers: HardhatEthersHelpers,
 
 // Pausing tasks
 // Pause the InputVerification contract
-task("task:pauseInputVerification")
+task('task:pauseInputVerification')
   .addOptionalParam(
-    "useInternalProxyAddress",
-    "If proxy address from the /addresses directory should be used",
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
     false,
     types.boolean,
   )
   .setAction(async function ({ useInternalProxyAddress }, { ethers }) {
-    await pauseSingleContract("InputVerification", ethers, useInternalProxyAddress);
+    await pauseSingleContract('InputVerification', ethers, useInternalProxyAddress);
   });
 
 // Pause the Decryption contract
-task("task:pauseDecryption")
+task('task:pauseDecryption')
   .addOptionalParam(
-    "useInternalProxyAddress",
-    "If proxy address from the /addresses directory should be used",
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
     false,
     types.boolean,
   )
   .setAction(async function ({ useInternalProxyAddress }, { ethers }) {
-    await pauseSingleContract("Decryption", ethers, useInternalProxyAddress);
+    await pauseSingleContract('Decryption', ethers, useInternalProxyAddress);
   });
 
 // Unpausing tasks
 // Unpause the InputVerification contract
-task("task:unpauseInputVerification")
+task('task:unpauseInputVerification')
   .addOptionalParam(
-    "useInternalProxyAddress",
-    "If proxy address from the /addresses directory should be used",
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
     false,
     types.boolean,
   )
   .setAction(async function ({ useInternalProxyAddress }, { ethers }) {
-    await unpauseSingleContract("InputVerification", ethers, useInternalProxyAddress);
+    await unpauseSingleContract('InputVerification', ethers, useInternalProxyAddress);
   });
 
 // Unpause the Decryption contract
-task("task:unpauseDecryption")
+task('task:unpauseDecryption')
   .addOptionalParam(
-    "useInternalProxyAddress",
-    "If proxy address from the /addresses directory should be used",
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
     false,
     types.boolean,
   )
   .setAction(async function ({ useInternalProxyAddress }, { ethers }) {
-    await unpauseSingleContract("Decryption", ethers, useInternalProxyAddress);
+    await unpauseSingleContract('Decryption', ethers, useInternalProxyAddress);
   });
 
 // Pause all the contracts
@@ -108,24 +108,24 @@ task("task:unpauseDecryption")
 // - GatewayConfig
 // In addition, the `KMSGeneration` contract is not used yet, so we don't need to pause it for now.
 // See https://github.com/zama-ai/fhevm-internal/issues/180
-task("task:pauseAllGatewayContracts")
+task('task:pauseAllGatewayContracts')
   .addOptionalParam(
-    "useInternalProxyAddress",
-    "If proxy address from the /addresses directory should be used",
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
     false,
     types.boolean,
   )
   .setAction(async function ({ useInternalProxyAddress }, hre) {
-    console.log("Pause all Gateway contracts:");
+    console.log('Pause all Gateway contracts:');
 
-    const name = "GatewayConfig";
+    const name = 'GatewayConfig';
 
     // Get the GatewayConfig contract and its address
     const { contract, proxyAddress } = await getGatewayContract(
       name,
       hre.ethers,
       useInternalProxyAddress,
-      "PAUSER_PRIVATE_KEY",
+      'PAUSER_PRIVATE_KEY',
     );
 
     // Pause all the Gateway contracts
@@ -136,16 +136,16 @@ task("task:pauseAllGatewayContracts")
 
 // Unpause all the contracts
 // See comment above for the list of contracts that are not pausable yet.
-task("task:unpauseAllGatewayContracts")
+task('task:unpauseAllGatewayContracts')
   .addOptionalParam(
-    "useInternalProxyAddress",
-    "If proxy address from the /addresses directory should be used",
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
     false,
     types.boolean,
   )
   .setAction(async function ({ useInternalProxyAddress }, hre) {
-    console.log("Unpause all Gateway contracts:");
-    const name = "GatewayConfig";
+    console.log('Unpause all Gateway contracts:');
+    const name = 'GatewayConfig';
 
     // Get the GatewayConfig contract and its address
     // NOTE: this task won't work once ownership will be transferred from initial deployer to the multisig
@@ -153,7 +153,7 @@ task("task:unpauseAllGatewayContracts")
       name,
       hre.ethers,
       useInternalProxyAddress,
-      "DEPLOYER_PRIVATE_KEY",
+      'DEPLOYER_PRIVATE_KEY',
     );
 
     // Unpause all the Gateway contracts

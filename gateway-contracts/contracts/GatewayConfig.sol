@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
-import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
-import { IGatewayConfig } from "./interfaces/IGatewayConfig.sol";
-import { IPauserSet } from "./interfaces/IPauserSet.sol";
-import { decryptionAddress, inputVerificationAddress, pauserSetAddress } from "../addresses/GatewayAddresses.sol";
-import { Decryption } from "./Decryption.sol";
-import { InputVerification } from "./InputVerification.sol";
-import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.sol";
-import { Pausable } from "./shared/Pausable.sol";
-import { ProtocolMetadata, HostChain, Coprocessor, Custodian, KmsNode } from "./shared/Structs.sol";
+import { Ownable2StepUpgradeable } from '@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol';
+import { Strings } from '@openzeppelin/contracts/utils/Strings.sol';
+import { IGatewayConfig } from './interfaces/IGatewayConfig.sol';
+import { IPauserSet } from './interfaces/IPauserSet.sol';
+import { decryptionAddress, inputVerificationAddress, pauserSetAddress } from '../addresses/GatewayAddresses.sol';
+import { Decryption } from './Decryption.sol';
+import { InputVerification } from './InputVerification.sol';
+import { UUPSUpgradeableEmptyProxy } from './shared/UUPSUpgradeableEmptyProxy.sol';
+import { Pausable } from './shared/Pausable.sol';
+import { ProtocolMetadata, HostChain, Coprocessor, Custodian, KmsNode } from './shared/Structs.sol';
 
 /**
  * @title GatewayConfig contract
@@ -41,9 +41,9 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * in order to force derived contracts to consider a different version. Note that
      * they can still define their own private constants with the same name.
      */
-    string private constant CONTRACT_NAME = "GatewayConfig";
+    string private constant CONTRACT_NAME = 'GatewayConfig';
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 7;
+    uint256 private constant MINOR_VERSION = 8;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
@@ -52,7 +52,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * This constant does not represent the number of time a specific contract have been upgraded,
      * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
      */
-    uint64 private constant REINITIALIZER_VERSION = 9;
+    uint64 private constant REINITIALIZER_VERSION = 10;
 
     /**
      * @notice The addresses of all gateway contracts
@@ -160,7 +160,9 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         mapping(uint256 contextId => bool isDestroyed) destroyedKmsContexts;
         /// @notice Whether a registered host chain has been disabled.
         mapping(uint256 chainId => bool isDisabled) disabledHostChains;
-        /// @notice The coprocessor transaction sender that can finalize consensus alone.
+        /// @dev Deprecated. The priority coprocessor feature was removed, so coprocessor consensus is
+        ///      always threshold-based. Kept to preserve the storage layout, and zeroed by
+        ///      `reinitializeV9`.
         address priorityCoprocessorTxSender;
     }
 
@@ -241,25 +243,24 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /**
-     * @notice Re-initializes the contract from V7.
-     * @dev If a priority coprocessor is set here, every host-chain `InputVerifier` must accept its signer
-     *      with threshold 1 before user inputs rely on priority mode.
-     * @dev Requests where the priority sender responded before this upgrade but consensus was not yet
-     *      reached will only finalize after priority mode is later removed (see
-     *      {IGatewayConfig-setPriorityCoprocessorTxSender}).
-     * @dev Intended to run atomically as the `call` of a UUPS `upgradeToAndCall`, whose `_authorizeUpgrade`
-     *      already enforces owner authorization; the `reinitializer` guard then prevents any later re-entry.
-     * @param coprocessorTxSenderAddress The registered priority coprocessor transaction sender to set,
-     *        or zero to leave priority mode disabled.
+     * @notice Re-initializes the contract from V8.
+     * @dev Clears the deprecated priority coprocessor slot, so the upgrade itself makes coprocessor
+     *      consensus threshold-based without depending on a prior ops call.
+     * @dev UPGRADE ORDER: this implementation drops `getPriorityCoprocessorTxSender()`, which the
+     *      currently deployed `CiphertextCommits` and `InputVerification` call on every response.
+     *      Upgrade `GatewayConfig` last, or batch all the `upgradeToAndCall` calls in one proposal;
+     *      upgrading it first makes those responses revert on the missing selector.
+     * @dev Every host-chain `InputVerifier` must already accept the full gateway coprocessor signer set
+     *      at the gateway threshold. Under priority mode the gateway emitted a single signature, so a
+     *      host still pinned to one signer would reject the bundles this upgrade makes unconditional.
+     * @dev Requests the former priority sender already responded to, without reaching consensus, become
+     *      finalizable again: their count resumes against the coprocessor threshold.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV8(address coprocessorTxSenderAddress) public virtual reinitializer(REINITIALIZER_VERSION) {
-        if (coprocessorTxSenderAddress != address(0)) {
-            _requireRegisteredPriorityCoprocessorTxSender(coprocessorTxSenderAddress);
-            _setPriorityCoprocessorTxSender(coprocessorTxSenderAddress);
-            emit UpdatePriorityCoprocessorTxSender(coprocessorTxSenderAddress);
-        }
+    function reinitializeV9() public virtual reinitializer(REINITIALIZER_VERSION) {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        delete $.priorityCoprocessorTxSender;
     }
 
     /**
@@ -346,24 +347,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         uint256 newCoprocessorThreshold
     ) external virtual onlyOwner {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        address priorityCoprocessorTxSender = $.priorityCoprocessorTxSender;
-        if (priorityCoprocessorTxSender != address(0)) {
-            (bool containsPriorityCoprocessor, address newPrioritySigner) = _findCoprocessorSigner(
-                newCoprocessors,
-                priorityCoprocessorTxSender
-            );
-            if (!containsPriorityCoprocessor) {
-                revert PriorityCoprocessorNotInNewCoprocessors(priorityCoprocessorTxSender);
-            }
-            address currentPrioritySigner = $.coprocessors[priorityCoprocessorTxSender].signerAddress;
-            if (newPrioritySigner != currentPrioritySigner) {
-                revert PriorityCoprocessorSignerChanged(
-                    priorityCoprocessorTxSender,
-                    currentPrioritySigner,
-                    newPrioritySigner
-                );
-            }
-        }
 
         // Remove the old coprocessors
         uint256 oldCoprocessorTxSenderAddressesLength = $.coprocessorTxSenderAddresses.length;
@@ -409,10 +392,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * @notice See {IGatewayConfig-updateMpcThresholdForContext}.
      * @dev The SDK derives the MPC threshold from the MPC nodes it knows about instead of reading this value.
      */
-    function updateMpcThresholdForContext(
-        uint256 contextId,
-        uint256 newMpcThreshold
-    ) external virtual onlyOwner {
+    function updateMpcThresholdForContext(uint256 contextId, uint256 newMpcThreshold) external virtual onlyOwner {
         _requireValidContext(contextId);
         _setMpcThreshold(contextId, newMpcThreshold);
         emit UpdateMpcThresholdForContext(contextId, newMpcThreshold);
@@ -452,10 +432,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * @notice See {IGatewayConfig-updateKmsGenThresholdForContext}.
      * @dev This threshold is consumed by host-side KMS generation, not Gateway-side decryption.
      */
-    function updateKmsGenThresholdForContext(
-        uint256 contextId,
-        uint256 newKmsGenThreshold
-    ) external virtual onlyOwner {
+    function updateKmsGenThresholdForContext(uint256 contextId, uint256 newKmsGenThreshold) external virtual onlyOwner {
         _requireValidContext(contextId);
         _setKmsGenThreshold(contextId, newKmsGenThreshold);
         emit UpdateKmsGenThresholdForContext(contextId, newKmsGenThreshold);
@@ -466,34 +443,9 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * @dev Applies live; the DAO proposal/runbook must preserve host verifier compatibility
      *      because InputVerification is not paused here.
      */
-    function updateCoprocessorThreshold(
-        uint256 newCoprocessorThreshold
-    ) external virtual onlyOwner {
+    function updateCoprocessorThreshold(uint256 newCoprocessorThreshold) external virtual onlyOwner {
         _setCoprocessorThreshold(newCoprocessorThreshold);
         emit UpdateCoprocessorThreshold(newCoprocessorThreshold);
-    }
-
-    /**
-     * @notice See {IGatewayConfig-setPriorityCoprocessorTxSender}.
-     * @dev Applies live; the DAO proposal/runbook must preserve host verifier compatibility
-     *      because InputVerification is not paused here.
-     */
-    function setPriorityCoprocessorTxSender(
-        address coprocessorTxSenderAddress
-    ) external virtual onlyOwner {
-        _requireRegisteredPriorityCoprocessorTxSender(coprocessorTxSenderAddress);
-        _setPriorityCoprocessorTxSender(coprocessorTxSenderAddress);
-        emit UpdatePriorityCoprocessorTxSender(coprocessorTxSenderAddress);
-    }
-
-    /**
-     * @notice See {IGatewayConfig-removePriorityCoprocessorTxSender}.
-     * @dev Applies live; the DAO proposal/runbook must preserve host verifier compatibility
-     *      because InputVerification is not paused here.
-     */
-    function removePriorityCoprocessorTxSender() external virtual onlyOwner {
-        _setPriorityCoprocessorTxSender(address(0));
-        emit UpdatePriorityCoprocessorTxSender(address(0));
     }
 
     /**
@@ -724,14 +676,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /**
-     * @notice See {IGatewayConfig-getPriorityCoprocessorTxSender}.
-     */
-    function getPriorityCoprocessorTxSender() external view virtual returns (address) {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.priorityCoprocessorTxSender;
-    }
-
-    /**
      * @notice See {IGatewayConfig-getKmsNode}.
      */
     function getKmsNode(address kmsTxSenderAddress) external view virtual returns (KmsNode memory) {
@@ -910,11 +854,11 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
             string(
                 abi.encodePacked(
                     CONTRACT_NAME,
-                    " v",
+                    ' v',
                     Strings.toString(MAJOR_VERSION),
-                    ".",
+                    '.',
                     Strings.toString(MINOR_VERSION),
-                    ".",
+                    '.',
                     Strings.toString(PATCH_VERSION)
                 )
             );
@@ -1095,7 +1039,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         // - `t >= 0` : it is already a uint256 so this is always true
         // - `t < n` : it should be strictly less than the number of registered KMS nodes
         if (newMpcThreshold > MAX_KMS_SIGNERS) {
-            revert ThresholdExceedsProofFormatLimit("mpc", newMpcThreshold, MAX_KMS_SIGNERS);
+            revert ThresholdExceedsProofFormatLimit('mpc', newMpcThreshold, MAX_KMS_SIGNERS);
         }
         if (newMpcThreshold >= nKmsNodes) {
             revert InvalidHighMpcThreshold(newMpcThreshold, nKmsNodes);
@@ -1120,7 +1064,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
             revert InvalidNullPublicDecryptionThreshold();
         }
         if (newPublicDecryptionThreshold > MAX_KMS_SIGNERS) {
-            revert ThresholdExceedsProofFormatLimit("publicDecryption", newPublicDecryptionThreshold, MAX_KMS_SIGNERS);
+            revert ThresholdExceedsProofFormatLimit('publicDecryption', newPublicDecryptionThreshold, MAX_KMS_SIGNERS);
         }
         if (newPublicDecryptionThreshold > nKmsNodes) {
             revert InvalidHighPublicDecryptionThreshold(newPublicDecryptionThreshold, nKmsNodes);
@@ -1145,7 +1089,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
             revert InvalidNullUserDecryptionThreshold();
         }
         if (newUserDecryptionThreshold > MAX_KMS_SIGNERS) {
-            revert ThresholdExceedsProofFormatLimit("userDecryption", newUserDecryptionThreshold, MAX_KMS_SIGNERS);
+            revert ThresholdExceedsProofFormatLimit('userDecryption', newUserDecryptionThreshold, MAX_KMS_SIGNERS);
         }
         if (newUserDecryptionThreshold > nKmsNodes) {
             revert InvalidHighUserDecryptionThreshold(newUserDecryptionThreshold, nKmsNodes);
@@ -1176,42 +1120,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /**
-     * @notice Sets the priority coprocessor transaction sender.
-     * @param coprocessorTxSenderAddress The priority coprocessor transaction sender, or zero to disable priority mode.
-     */
-    function _setPriorityCoprocessorTxSender(address coprocessorTxSenderAddress) internal virtual {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        $.priorityCoprocessorTxSender = coprocessorTxSenderAddress;
-    }
-
-
-    /**
-     * @notice Reverts if the priority coprocessor transaction sender is not registered.
-     * @param coprocessorTxSenderAddress The priority coprocessor transaction sender to validate.
-     */
-    function _requireRegisteredPriorityCoprocessorTxSender(address coprocessorTxSenderAddress) internal view virtual {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        if (!$.isCoprocessorTxSender[coprocessorTxSenderAddress]) {
-            revert PriorityCoprocessorTxSenderNotRegistered(coprocessorTxSenderAddress);
-        }
-    }
-
-    /**
-     * @notice Returns whether a coprocessor transaction sender is present in a calldata coprocessor list and its signer.
-     */
-    function _findCoprocessorSigner(
-        Coprocessor[] calldata coprocessors,
-        address coprocessorTxSenderAddress
-    ) internal pure virtual returns (bool, address) {
-        for (uint256 i = 0; i < coprocessors.length; i++) {
-            if (coprocessors[i].txSenderAddress == coprocessorTxSenderAddress) {
-                return (true, coprocessors[i].signerAddress);
-            }
-        }
-        return (false, address(0));
-    }
-
-    /**
      * @notice Sets the key and CRS generation threshold for a given context.
      * @param contextId The context ID.
      * @param newKmsGenThreshold The new key and CRS generation threshold.
@@ -1227,7 +1135,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
             revert InvalidNullKmsGenThreshold();
         }
         if (newKmsGenThreshold > MAX_KMS_SIGNERS) {
-            revert ThresholdExceedsProofFormatLimit("kmsGen", newKmsGenThreshold, MAX_KMS_SIGNERS);
+            revert ThresholdExceedsProofFormatLimit('kmsGen', newKmsGenThreshold, MAX_KMS_SIGNERS);
         }
         if (newKmsGenThreshold > nKmsNodes) {
             revert InvalidHighKmsGenThreshold(newKmsGenThreshold, nKmsNodes);

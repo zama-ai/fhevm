@@ -13,7 +13,7 @@ import type {
 import type { ZkProof } from './zkProof-p.js';
 import type { WithEncrypt } from './coreFhevmRuntime.js';
 import type { FhevmChain } from './fhevmChain.js';
-import type { TfheVersion } from '../../wasm/tfhe/TfheApi.js';
+import type { FhevmClientFrozenContext } from './fhevmClientFrozenContext-p.js';
 
 export interface ZkProofBuilder {
   addBool(value: boolean | number | bigint | BoolValueLike): this;
@@ -27,11 +27,12 @@ export interface ZkProofBuilder {
   addTypedValue(typedValue: TypedValue): this;
   getBits(): EncryptionBits[];
   build(
-    context: { readonly chain: FhevmChain; readonly runtime: WithEncrypt; readonly tfheVersion: TfheVersion },
+    context: { readonly chain: FhevmChain; readonly runtime: WithEncrypt },
     parameters: {
       readonly contractAddress: string;
       readonly userAddress: string;
       readonly extraData: string;
+      readonly fhevmContext: FhevmClientFrozenContext;
     },
   ): Promise<ZkProof>;
 }

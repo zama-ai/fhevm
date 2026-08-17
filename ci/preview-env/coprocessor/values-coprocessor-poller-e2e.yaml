@@ -62,10 +62,11 @@ hostListenerPollerShared:
   # --dependence-cross-block matches the production poller (resolves FHE-op
   # dependencies spanning blocks). --finality-lag kept small: single-node anvil
   # never reorgs, so events don't need to be held back (prod uses 15 on a live
-  # chain). --seed-start-block=0 is REQUIRED: the HEAD host-listener image aborts
-  # with "no poller state for this chain and no --seed-start-block; set it
-  # explicitly (0 for genesis)" on a fresh e2e namespace (no prior poller state).
-  # 0 = start from genesis, correct for a per-PR anvil created at this deploy.
+  # chain). --seed-start-block is back on current main (after being removed in
+  # the v0.11->v0.13 era) and now REQUIRED when no poller state exists yet:
+  # without it the poller exits "no poller state for this chain and no
+  # --seed-start-block". 0 = genesis, correct for a fresh per-PR anvil with a
+  # short history; only this first startup uses it (existing state always wins).
   extraArgs:
     - --log-level=INFO
     - --dependence-cross-block

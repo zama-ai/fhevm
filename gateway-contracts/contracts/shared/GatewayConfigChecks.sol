@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import { gatewayConfigAddress } from "../../addresses/GatewayAddresses.sol";
-import { IGatewayConfig } from "../interfaces/IGatewayConfig.sol";
-import { HandleOps } from "../libraries/HandleOps.sol";
+import { gatewayConfigAddress } from '../../addresses/GatewayAddresses.sol';
+import { IGatewayConfig } from '../interfaces/IGatewayConfig.sol';
+import { HandleOps } from '../libraries/HandleOps.sol';
 
 /**
  * @title GatewayConfig Checks

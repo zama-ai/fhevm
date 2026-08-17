@@ -1,197 +1,275 @@
 # Decryption
 
-Decryption is how you get data **out** of an FHEVM smart contract. There are two modes:
+There are two kinds of decryption, and they have very different trust models:
 
-| Mode                          | Who can see the result   | What's needed                          | When to use                                   |
-| ----------------------------- | ------------------------ | -------------------------------------- | --------------------------------------------- |
-| **Reading public values**     | Everyone                 | Nothing — just the encrypted values    | Auction results, vote tallies, game outcomes  |
-| **Decrypting private values** | Only the requesting user | E2E transport key pair + signed permit | Account balances, private bids, personal data |
+- **Private decryption** reveals a value only to a user who is authorized to see
+  it. The plaintext is re-encrypted under a key only that user holds, so nobody
+  else — not even the Relayer — learns it.
+- **Public decryption** reads a value the contract has explicitly marked as
+  publicly decryptable. The result is revealed to everyone.
 
-Both modes enforce the same limits: **2048-bit total** per request and **ACL permission checks** on every encrypted value.
+Private decryption needs `createFhevmClient` or `createFhevmDecryptClient`.
+Public decryption works on **every** client, including the base client — it needs
+no cryptography WASM.
 
----
+## Private decryption
 
-## Reading public values
+Reading a private value takes three ingredients:
 
-`publicDecrypt()` reveals encrypted values that your smart contract has marked as publicly readable via the Access Control List (ACL) contract. Anyone can call this — no keys, no signatures, no WASM.
+1. A **transport key pair** — generated in your app. The Key Management System (KMS) encrypts the result
+   under its public half so only you can reconstruct the plaintext. The private
+   half never leaves your application (your browser or Node process).
+2. A **signed decryption permit** — an EIP-712 message signed by the value's
+   owner, authorizing decryption of a specific set of contracts for a limited
+   time window.
+3. The **encrypted value** to decrypt, plus the contract it belongs to.
 
-```ts
-const result = await client.publicDecrypt({
-  encryptedValues: [encryptedValue1, encryptedValue2],
-});
-```
+{% hint style="info" %}
+The signed permit is reusable. Sign once, then decrypt many values across the listed contracts until it expires — no re-signing per value.
+{% endhint %}
 
-### What you get back
-
-The result is a `PublicDecryptionProof` containing the decrypted values and cryptographic proof that the decryption was performed correctly by the Zama Protocol:
-
-```ts
-result.orderedClearValues; // The decrypted values (same order as input)
-result.orderedAbiEncodedClearValues; // ABI-encoded values (for on-chain use)
-result.decryptionProof; // Cryptographic proof of correct decryption
-```
-
-### Reading decrypted values
-
-Each decrypted value in `result.orderedClearValues` has a `fheType` field that tells you the type, and a `value` field with the plaintext:
-
-```ts
-const d = result.orderedClearValues[0];
-
-if (d.fheType === 'ebool') {
-  d.value; // boolean
-} else if (d.fheType === 'euint32') {
-  d.value; // number (Uint32Number)
-} else if (d.fheType === 'euint64') {
-  d.value; // bigint (Uint64BigInt)
-} else if (d.fheType === 'eaddress') {
-  d.value; // string (ChecksummedAddress)
-}
-```
-
-**Value type mapping:**
-
-| FHE type   | JavaScript type | Example         |
-| ---------- | --------------- | --------------- |
-| `ebool`    | `boolean`       | `true`          |
-| `euint8`   | `number`        | `255`           |
-| `euint16`  | `number`        | `65535`         |
-| `euint32`  | `number`        | `4294967295`    |
-| `euint64`  | `bigint`        | `123n`          |
-| `euint128` | `bigint`        | `999n`          |
-| `euint256` | `bigint`        | `999999999999n` |
-| `eaddress` | `string`        | `"0xAbCd..."`   |
-
-### What gets validated
-
-The SDK validates your request before sending it to the Zama Protocol:
-
-1. At least one encrypted value is required
-2. Total encrypted bits must not exceed 2048
-3. All encrypted values must belong to the same chain
-4. Each encrypted value must be marked as `allowedForDecryption` on the ACL contract
-5. The response is verified against on-chain signers
-
-If any check fails, the SDK throws a descriptive error (see [Errors](errors.md)).
-
----
-
-## Decrypting private values
-
-`decrypt()` is for **private data** — the plaintext is never exposed on-chain or to anyone else. The Zama Protocol sends encrypted shares to your browser, and the SDK reconstructs the plaintext locally using an end-to-end transport key pair that never leaves the browser.
-
-The flow has two steps:
-
-### Step 1: Generate an E2E transport key pair
-
-The E2E transport key pair encrypts the communication channel between your app and the Zama Protocol. The private key stays in your browser; the public key is included in the permit so the protocol knows how to encrypt its response for you.
+### Step 1 — generate a transport key pair
 
 ```ts
 const transportKeyPair = await client.generateTransportKeyPair();
+
+transportKeyPair.publicKey; // BytesHex — safe to send; embedded in the permit
+// the private key is held internally and is never exposed on the object
 ```
 
-The returned `transportKeyPair` is an opaque object — you can't access the raw private key. This is intentional: the SDK protects it to prevent accidental exposure.
+### Step 2 — sign a decryption permit
 
-**Saving and restoring keys:** If you want to persist a key across sessions (e.g., in localStorage), you can serialize and restore it:
-
-```ts
-// Save
-const serialized = client.serializeTransportKeyPair({ transportKeyPair });
-localStorage.setItem('fhevm-key', JSON.stringify(serialized));
-
-// Restore
-const restored = await client.parseTransportKeyPair({
-  serialized: localStorage.getItem('fhevm-key'),
-});
-```
-
-### Step 2: Create a signed permit and decrypt
-
-The `signDecryptionPermit()` method constructs an EIP-712 permit and signs it with your wallet in a single step. The permit authorizes decryption of data from specific contracts, for a specific time window.
+`signDecryptionPermit` builds and signs the EIP-712 permit in one step. The
+`signer` is passed here — it is the only place a client touches a wallet.
 
 ```ts
+const now = Math.floor(Date.now() / 1000);
+
 const signedPermit = await client.signDecryptionPermit({
-  contractAddresses: ['0xContractA...', '0xContractB...'],
-  startTimestamp: Math.floor(Date.now() / 1000),
-  durationDays: 7,
-  signerAddress: await signer.getAddress(), // or walletClient.account.address for viem
-  signer, // ethers Signer or viem WalletClient
   transportKeyPair,
+  contractAddresses: ['0xYourContract…'],
+  startTimestamp: now,
+  durationSeconds: 7 * 24 * 60 * 60, // 7 days
+  signerAddress: await signer.getAddress(),
+  signer, // ethers Signer, or a viem Account / WalletClient
 });
 ```
 
-**Permit constraints:**
+| Parameter          | Type                | Notes                                                     |
+| ------------------ | ------------------- | --------------------------------------------------------- |
+| `transportKeyPair` | `TransportKeyPair`  | From step 1; its public key is bound into the permit.     |
+| `contractAddresses`| `readonly string[]` | Every contract this permit authorizes decryption for.     |
+| `startTimestamp`   | `number`            | Unix time in seconds (since 1970-01-01). When the permit becomes valid. |
+| `durationSeconds`  | `number`            | Validity window length, in **seconds**.                   |
+| `signerAddress`    | `string`            | The address that signs — normally the value's owner.      |
+| `signer`           | native signer       | ethers `Signer` / viem `Account` or `WalletClient`.       |
+| `delegatorAddress` | `string` (optional) | Present only for delegated decryption — see below.        |
 
-- Up to **10 contract addresses** per permit
-- Up to **365 days** duration
-- `startTimestamp` is a Unix timestamp in **seconds**
+{% hint style="warning" %}
+`durationSeconds` is a number of **seconds**, not days. For a one-week permit, pass `7 * 24 * 60 * 60`.
+{% endhint %}
 
-Now you have everything needed to request decryption:
+The signed permit is reusable: sign once, then decrypt many values across the
+listed contracts until it expires. `signedPermit.assertNotExpired()` throws if it
+has.
+
+### Step 3 — decrypt
 
 ```ts
-const results = await client.decrypt({
+const decrypted = await client.decryptValue({
   transportKeyPair,
-  encryptedValues: [
-    { encryptedValue: encryptedValue1, contractAddress: '0xContractA...' },
-    { encryptedValue: encryptedValue2, contractAddress: '0xContractA...' },
-  ],
+  encryptedValue, // a bytes32 handle read from your contract
+  contractAddress: '0xYourContract…',
   signedPermit,
 });
 
-results[0].value; // the plaintext
-results[0].fheType; // "euint32", "ebool", etc.
+decrypted.value; // 42 (number), 1000n (bigint), true, or "0x…" (address)
+decrypted.type; // "uint32", "bool", "address", … (Solidity value-type name)
 ```
 
-**What happens behind the scenes:**
+The result is a `TypedValue`. The mapping from encrypted type to JavaScript type:
 
-1. The SDK checks ACL permissions for each encrypted value
-2. The permit and encrypted values are sent to the Zama Protocol
-3. The protocol returns encrypted shares
-4. The SDK decrypts the shares locally using your `transportKeyPair` (TKMS WASM)
-5. The plaintext is reconstructed and returned
+| Encrypted type            | `type`    | `value`             |
+| ------------------------- | --------- | ------------------- |
+| `euint8` / `16` / `32`    | matching  | `number`            |
+| `euint64` / `128` / `256` | matching  | `bigint`            |
+| `ebool`                   | `'bool'`  | `boolean`           |
+| `eaddress`                | `'address'` | checksummed string |
 
-The plaintext never touches the blockchain or any server — it's reconstructed entirely in your browser.
+The plaintext is reconstructed locally from the KMS shares — it is never
+transmitted in the clear.
 
----
+### Decrypting several values
 
-## Decrypting on behalf of another user
-
-Sometimes you want another account (like a backend service) to decrypt on a user's behalf. The flow is the same, but the permit includes an `onBehalfOf` field:
+Two batch variants avoid signing and network round-trips per value:
 
 ```ts
-const signedPermit = await client.signDecryptionPermit({
-  contractAddresses: ['0xContract...'],
-  startTimestamp: Math.floor(Date.now() / 1000),
-  durationDays: 1,
-  signerAddress: await signer.getAddress(),
-  signer,
+// All values from the same contract:
+const results = await client.decryptValues({
   transportKeyPair,
-  onBehalfOf: '0xDataOwnerAddress...',
+  contractAddress: '0xYourContract…',
+  encryptedValues: [handleA, handleB, handleC],
+  signedPermit,
+});
+
+// Values spread across different contracts:
+const results = await client.decryptValuesFromPairs({
+  transportKeyPair,
+  pairs: [
+    { encryptedValue: handleA, contractAddress: '0xContractA…' },
+    { encryptedValue: handleB, contractAddress: '0xContractB…' },
+  ],
+  signedPermit, // must list every contract referenced above
 });
 ```
 
-The delegate signs this permit with their own wallet, and can then decrypt on behalf of the data owner. The Zama Protocol verifies that the on-chain ACL grants the delegate access to the owner's encrypted values.
+Both return `readonly TypedValue[]` in input order.
 
----
+## What can be decrypted
 
-## Reusing permits
+The `encryptedValue` you pass is a `bytes32` handle. The SDK accepts it in
+several shapes (`EncryptedValueLike`):
 
-You don't need to create a new permit for every decryption. A single signed permit is valid for any number of decryptions within its time window and contract scope:
+- a hex string, e.g. read from a contract getter;
+- a `Uint8Array` of the 32 bytes;
+- an `EncryptedValue` handle object.
+
+You typically read the handle straight from a contract call. For example, reading
+an encrypted counter:
 
 ```ts
-// Sign once
-const signedPermit = await client.signDecryptionPermit({
-  contractAddresses: ['0xContract...'],
-  startTimestamp: Math.floor(Date.now() / 1000),
-  durationDays: 7,
-  signerAddress: await signer.getAddress(),
-  signer,
-  transportKeyPair,
-});
+const rawCount = await counter.getCount(); // bigint from a uint256 getter
+const countHex = '0x' + rawCount.toString(16).padStart(64, '0');
 
-// Decrypt multiple batches with the same permit
-await client.decrypt({ transportKeyPair, encryptedValues: batch1, signedPermit });
-await client.decrypt({ transportKeyPair, encryptedValues: batch2, signedPermit });
+const decrypted = await client.decryptValue({
+  transportKeyPair,
+  encryptedValue: countHex,
+  contractAddress,
+  signedPermit,
+});
 ```
 
-Permits are valid from `startTimestamp` until `startTimestamp + durationDays`. This design minimizes the number of wallet signature requests your users see — you can ask once and use the permit for all subsequent decryptions during that session.
+## Checking permission before decrypting
+
+A decrypt call fails if the Access Control List (ACL) doesn't allow it. To check first — for example to
+grey out a "reveal" button — use the `canDecrypt*` **actions**. They return a boolean
+plus a breakdown, and never throw on a permission miss. These are standalone
+actions rather than client methods, so import them and pass the client as the first
+argument:
+
+```ts
+import { canDecryptValue } from '@fhevm/sdk/actions/decrypt';
+
+const { allowed, details } = await canDecryptValue(client, {
+  encryptedValue,
+  contractAddress,
+  signedPermit, // or: userAddress: '0x…'
+});
+
+allowed; // boolean
+details.contractAllowed; // is the contract allowed to hold this value?
+details.userAllowed; // is the user allowed to decrypt it?
+```
+
+Plural forms `canDecryptValues` and `canDecryptValuesFromPairs` (also from
+[`@fhevm/sdk/actions/decrypt`](actions.md)) mirror the batch decrypt methods.
+
+## Delegated decryption
+
+Delegation lets one account decrypt values owned by **another** account — for
+example, a service decrypting on behalf of a user who authorized it on-chain.
+
+Sign the permit with the delegate's `signer`, and name the owner in
+`delegatorAddress`:
+
+```ts
+const signedPermit = await client.signDecryptionPermit({
+  transportKeyPair,
+  contractAddresses: ['0xYourContract…'],
+  startTimestamp: now,
+  durationSeconds: 24 * 60 * 60,
+  signerAddress: delegateAddress, // the delegate signs
+  signer: delegateSigner,
+  delegatorAddress: ownerAddress, // whose values are being decrypted
+});
+```
+
+The resulting permit reports `isDelegated: true`. Decrypt with it exactly as
+above. The delegation itself must already be granted on-chain in the ACL;
+`signDecryptionPermit` only authorizes the request.
+
+## Public decryption
+
+When a contract makes a value publicly decryptable — the result of a confidential
+computation that everyone should see, like a closed auction's winning bid — read
+it with the public methods. No transport key pair or permit is required.
+
+```ts
+// A single value:
+const value = await client.decryptPublicValue({ encryptedValue });
+value.value; // decrypted plaintext
+value.type; // "uint32", "bool", …
+
+// A batch:
+const values = await client.decryptPublicValues({
+  encryptedValues: [handleA, handleB],
+});
+```
+
+Both return `TypedValue`(s), identical in shape to private decryption results.
+
+### Verifying a public decryption on-chain
+
+To prove to a contract that a handle decrypts to a specific clear value, use
+`decryptPublicValuesWithSignatures`. It returns the KMS signatures and the exact
+arguments a verifier contract expects:
+
+```ts
+const { clearValues, checkSignaturesArgs } = await client.decryptPublicValuesWithSignatures({
+  encryptedValues: [handle],
+});
+
+clearValues; // the decrypted TypedValue[]
+checkSignaturesArgs.handlesList; // the handles
+checkSignaturesArgs.abiEncodedCleartexts; // ABI-encoded clear values
+checkSignaturesArgs.decryptionProof; // KMS quorum signatures
+```
+
+Pass `checkSignaturesArgs` to your contract's verification function so it can
+confirm the KMS quorum attested to these clear values.
+
+## Persisting a session
+
+Both the transport key pair and the signed permit can be serialized to plain
+objects — useful for caching a decryption session across page reloads so the user
+doesn't re-sign on every visit.
+
+```ts
+// Serialize (synchronous):
+const kp = client.serializeTransportKeyPair({ transportKeyPair });
+const permit = client.serializeSignedDecryptionPermit({ signedPermit });
+// persist `kp` and `permit` (e.g. in storage)
+
+// Restore later:
+const transportKeyPair = await client.parseTransportKeyPair(kp);
+const signedPermit = await client.parseSignedDecryptionPermit({
+  serializedPermit: permit,
+  transportKeyPair,
+});
+```
+
+The serialized transport key pair contains the private key — treat it as a
+secret and store it accordingly.
+
+{% hint style="danger" %}
+The serialized transport key pair contains the private key. Treat it as a secret: never log it, embed it in a URL, or send it to a server. Store it only where you would store a session secret.
+{% endhint %}
+
+## Related
+
+- [Encryption](encryption.md) — produce the encrypted values you read back.
+- [Types](types.md) — `TransportKeyPair`, `SignedDecryptionPermit`, `TypedValue`.
+- [Actions](actions.md) — the same operations as standalone functions.
+- [Error handling](error-handling.md) — `AclUserDecryptionError`, `AclPublicDecryptionError`.
+```
+

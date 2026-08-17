@@ -1,4 +1,4 @@
-import type { Bytes65Hex, BytesHex, ChecksummedAddress } from '../../types/primitives.js';
+import type { Bytes32Hex, Bytes65Hex, BytesHex, ChecksummedAddress, Uint256 } from '../../types/primitives.js';
 import type { Prettify } from '../../types/utils.js';
 import type { EthereumModule } from './types.js';
 
@@ -30,6 +30,28 @@ export type SignReturnType = Bytes65Hex;
 
 export type SignModuleFunction = {
   sign(parameters: SignParameters): Promise<SignReturnType>;
+};
+
+////////////////////////////////////////////////////////////////////////////////
+// hashTypedData
+////////////////////////////////////////////////////////////////////////////////
+
+export type HashTypedDataParameters = Readonly<{
+  domain: {
+    readonly chainId: Uint256;
+    readonly name: string;
+    readonly verifyingContract: ChecksummedAddress;
+    readonly version: string;
+  };
+  types: Readonly<Record<string, ReadonlyArray<{ name: string; type: string }>>>;
+  primaryType: string;
+  message: Readonly<Record<string, unknown>>;
+}>;
+
+export type HashTypedDataReturnType = Bytes32Hex;
+
+export type HashTypedDataModuleFunction = {
+  hashTypedData(parameters: HashTypedDataParameters): HashTypedDataReturnType;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -81,7 +103,8 @@ export type CleartextEthereumModule = EthereumModule &
       SignModuleFunction &
       GeneratePrivateKeyModuleFunction &
       GetPublicKeyModuleFunction &
-      RecoverAddressModuleFunction
+      RecoverAddressModuleFunction &
+      HashTypedDataModuleFunction
   >;
 
 export type CleartextEthereumModuleFactory = () => {
