@@ -81,7 +81,7 @@ const SYNTHETIC_TXN_DOMAIN: &[u8] = b"FHEVM_BLUE_GREEN_SYNTHETIC_TXN_V1";
 /// plain arithmetic type, so `A + B` is a genuine non-trivial op.
 const SYNTHETIC_FHE_TYPE: u8 = 5;
 
-/// Plaintext operands. Any fixed values work; these are recognisable in logs.
+/// Plaintext operands. Any fixed values work; these are recognizable in logs.
 const SYNTHETIC_PLAINTEXT_A: u64 = 0xA;
 const SYNTHETIC_PLAINTEXT_B: u64 = 0xB;
 

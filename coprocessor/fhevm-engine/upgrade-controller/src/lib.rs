@@ -10,7 +10,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use fhevm_engine_common::database::GCS_SCHEMA_QUOTED;
-use fhevm_engine_common::gcs_activation::EVENT_DRY_RUN_ROLLED_BACK;
+use fhevm_engine_common::gcs_activation::{EVENT_DRY_RUN_ROLLED_BACK, WORK_AVAILABLE_CHANNEL};
+use fhevm_engine_common::synthetic_input::SYNTHETIC_ZK_PROOF_ID_BASE;
 use fhevm_engine_common::utils::DatabaseURL;
 use fhevm_engine_common::versioning::{begin_write_guarded, GcsRollbackPolicy, WriteGuard};
 use serde::Deserialize;
@@ -330,6 +331,36 @@ fn spawn_gcs_dry_run_readiness(
 
 /// Create the GCS schema with an empty copy of each duplicated table. Returns
 /// their names.
+/// Notify triggers recreated inside the GCS schema, as `(table, trigger, trigger function)`.
+///
+/// `CREATE TABLE ... (LIKE public.X INCLUDING ALL)` copies defaults, constraints, indexes and
+/// storage - but *not* triggers. Without these the GCS clones are silent: the host-listener runs
+/// the same unqualified `INSERT INTO computations`, it lands in `gcs.computations` via
+/// `search_path`, and no `work_available` fires. The tfhe- and sns-workers then only ever wake on
+/// their polling interval, which was observed as a 60s stall between the host-listener ingesting
+/// synthetic ops and the tfhe-worker acquiring the dependence chain.
+///
+/// Only the legacy tables carry a trigger. The host-listener writes the legacy and `_branch`
+/// forms in the same transaction, so one notification per channel already wakes the worker, and
+/// a second trigger would only add duplicate wake-ups.
+///
+/// The functions themselves live in `public` and are shared, so they are referenced
+/// schema-qualified rather than relying on the connection's `search_path`.
+const GCS_NOTIFY_TRIGGERS: &[(&str, &str, &str)] = &[
+    // NOTIFY work_available -> tfhe-worker
+    (
+        "computations",
+        "work_updated_trigger_from_computations_insertions",
+        "public.notify_work_available",
+    ),
+    // NOTIFY event_pbs_computations -> sns-worker
+    (
+        "pbs_computations",
+        "on_insert_notify_event_pbs_computations",
+        "public.notify_event_pbs_computations",
+    ),
+];
+
 async fn create_gcs_tables(tx: &mut Transaction<'_, Postgres>) -> Result<Vec<&'static str>, Error> {
     let create_schema = format!("CREATE SCHEMA IF NOT EXISTS {GCS_SCHEMA_QUOTED}");
     sqlx::query(&create_schema).execute(&mut **tx).await?;
@@ -346,6 +377,25 @@ async fn create_gcs_tables(tx: &mut Transaction<'_, Postgres>) -> Result<Vec<&'s
              (LIKE public.{name} INCLUDING ALL)"
         );
         sqlx::query(&sql).execute(&mut **tx).await?;
+    }
+
+    // Restore the notify triggers `INCLUDING ALL` left behind, so a GCS insert wakes the
+    // workers exactly as the same insert does in `public`.
+    for (table, trigger, function) in GCS_NOTIFY_TRIGGERS {
+        // Postgres has no `CREATE TRIGGER IF NOT EXISTS`, and this function must stay
+        // idempotent (it runs on every activation), so drop first.
+        let drop_sql = format!("DROP TRIGGER IF EXISTS {trigger} ON {GCS_SCHEMA_QUOTED}.{table}");
+        sqlx::query(&drop_sql).execute(&mut **tx).await?;
+
+        let create_sql = format!(
+            "CREATE TRIGGER {trigger} AFTER INSERT ON {GCS_SCHEMA_QUOTED}.{table} \
+             FOR EACH STATEMENT EXECUTE FUNCTION {function}()"
+        );
+        sqlx::query(&create_sql).execute(&mut **tx).await?;
+        info!(
+            schema = GCS_SCHEMA_QUOTED,
+            table, trigger, "created GCS notify trigger"
+        );
     }
 
     Ok(duplicated)
@@ -630,12 +680,38 @@ async fn transition_to_dry_run_started(
     // GCS row in `DryRunStarted` (i.e. BCS has settled to start_block and
     // pre-start rows have been pruned). The payload is unused — each worker's
     // activation watcher re-reads upgrade_state on wake.
-    sqlx::query("SELECT pg_notify($1, $2)")
+    //
+    // `WORK_AVAILABLE_CHANNEL` goes out in the same statement, after the unpause, so the
+    // tfhe-worker re-fetches pending uncomputed ops instead of idling until its next poll
+    // tick. It is needed because `gcs.computations` carries no
+    // `work_updated_trigger_from_computations_insertions`: the GCS tables are cloned with
+    // `LIKE ... INCLUDING ALL`, which does not copy triggers. Everything queued while the
+    // fleet was parked — the host-listener's synthetic ops at `start_block + 1`, plus any
+    // real traffic in the window — therefore notified nobody on insert.
+    //
+    // Both in one statement purely to save a round trip; the relative order does not matter.
+    //
+    // This wake is BEST-EFFORT, not a guarantee. The worker's activation watcher and its work
+    // loop are separate tasks on separate LISTEN connections, so this can land while the work
+    // loop is still parked in its gated sleep. It survives that case (the loop never reads the
+    // socket while gated, so the notification just queues), but it can still be missed if the
+    // LISTEN connection resets in between. Nothing is lost when that happens - the
+    // `computations` rows persist and the next poll tick picks them up - so the only cost of a
+    // missed wake is one polling interval of latency.
+    //
+    // The durable fix is to give `gcs.computations` its own
+    // `work_updated_trigger_from_computations_insertions`, so every insert notifies the way it
+    // does in `public` and this explicit kick stops being load-bearing.
+    sqlx::query("SELECT pg_notify($1, $3), pg_notify($2, $3)")
         .bind(DRY_RUN_STARTED_CHANNEL)
+        .bind(WORK_AVAILABLE_CHANNEL)
         .bind("")
         .execute(pool)
         .await?;
-    info!("transition_to_dry_run_started: GCS now in DryRunStarted; unpause notify sent");
+    info!(
+        work_available_channel = WORK_AVAILABLE_CHANNEL,
+        "transition_to_dry_run_started: GCS now in DryRunStarted; unpause + work_available notifies sent"
+    );
 
     Ok(())
 }
@@ -954,6 +1030,78 @@ async fn merge_gcs_table(
 ///
 /// After commit, any BCS write tx that was waiting on the shared lock
 /// acquires it, re-reads its FSM state, sees `PAUSED`, and exits cleanly.
+/// Delete the synthetic Gateway input the GCS gw-listener injected for consensus anchoring,
+/// and everything derived from it, before the merge carries `gcs.*` into `public`.
+///
+/// Why this is mandatory: `verify_proofs`, `ciphertexts`, `ciphertexts_branch`,
+/// `ciphertext_digest`, `input_handles` and `pbs_computations` are all merged at cutover. Left
+/// alone, the synthetic input's handles become live production rows, and the now-live green
+/// `transaction-sender` starts trying to publish ciphertext digests for a handle that belongs
+/// to no contract on any chain.
+///
+/// Keyed on `zk_proof_id >= SYNTHETIC_ZK_PROOF_ID_BASE` — the marker
+/// [`fhevm_engine_common::synthetic_input::synthetic_zk_proof_id`] guarantees. The handle list
+/// comes from `verify_proofs.handles`, a concatenation of 32-byte handles, unpacked with
+/// `generate_series`.
+///
+/// Runs inside the cutover transaction and before the merge loop, so it is atomic with the
+/// cutover: if the cutover rolls back, so does this.
+async fn delete_gcs_synthetic_inputs(tx: &mut Transaction<'_, Postgres>) -> Result<(), Error> {
+    // Unpack the 32-byte handles out of every synthetic row's `handles` blob. `handles` is
+    // NULL until the zkproof-worker verifies the proof, so a synthetic input that never got
+    // verified contributes no handles — only its `verify_proofs` row, deleted at the end.
+    let snapshot_sql = format!(
+        "CREATE TEMP TABLE synthetic_input_handles ON COMMIT DROP AS
+         SELECT DISTINCT substring(v.handles FROM g.pos FOR 32) AS handle
+           FROM {GCS_SCHEMA_QUOTED}.verify_proofs v
+           CROSS JOIN LATERAL generate_series(1, octet_length(v.handles), 32) AS g(pos)
+          WHERE v.zk_proof_id >= $1
+            AND v.handles IS NOT NULL
+            AND octet_length(v.handles) > 0"
+    );
+    sqlx::query(&snapshot_sql)
+        .bind(SYNTHETIC_ZK_PROOF_ID_BASE)
+        .execute(&mut **tx)
+        .await?;
+
+    // Every table the verified input fans out into. `ciphertexts128*` are included because the
+    // sns-worker may already have produced a 128-bit form for the synthetic handle.
+    for table in [
+        "ciphertexts",
+        "ciphertexts_branch",
+        "ciphertexts128",
+        "ciphertexts128_branch",
+        "ciphertext_digest",
+        "ciphertext_digest_branch",
+        "pbs_computations",
+        "pbs_computations_branch",
+        "input_handles",
+    ] {
+        let sql = format!(
+            "DELETE FROM {GCS_SCHEMA_QUOTED}.{table}              WHERE handle IN (SELECT handle FROM synthetic_input_handles)"
+        );
+        let deleted = sqlx::query(&sql).execute(&mut **tx).await?.rows_affected();
+        if deleted > 0 {
+            info!(table, deleted, "cutover: deleted synthetic input rows");
+        }
+    }
+
+    // The `verify_proofs` row last, so a failure above leaves the marker in place for a retry
+    // rather than orphaning the derived rows.
+    let sql = format!("DELETE FROM {GCS_SCHEMA_QUOTED}.verify_proofs WHERE zk_proof_id >= $1");
+    let deleted = sqlx::query(&sql)
+        .bind(SYNTHETIC_ZK_PROOF_ID_BASE)
+        .execute(&mut **tx)
+        .await?
+        .rows_affected();
+    info!(
+        deleted,
+        "cutover: deleted synthetic Gateway inputs from gcs.verify_proofs"
+    );
+
+    Ok(())
+}
+
 pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     info!("execute_cutover() starting");
 
@@ -1020,6 +1168,10 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     .execute(&mut *tx)
     .await?;
     info!(stack_version, "versioning row updated");
+
+    // 3a. Drop the GCS stack's synthetic Gateway input before anything merges:
+    //     it exists only to anchor dry-run consensus and must not become live data.
+    delete_gcs_synthetic_inputs(&mut tx).await?;
 
     // 3. Merge the GCS-canonical tables back into public before dropping the
     //    schema. Each merge lets the GCS rows win on PK collisions (GCS is the
@@ -1650,6 +1802,25 @@ mod tests {
             p.block_hash,
             "0xabc0000000000000000000000000000000000000000000000000000000000001"
         );
+    }
+
+    /// A trigger can only be created on a table that exists in the GCS schema, i.e. one
+    /// classified `duplicated = true`. Reclassifying either table would otherwise turn
+    /// `create_gcs_tables` into a hard error at activation time.
+    #[test]
+    fn gcs_notify_trigger_tables_are_duplicated() {
+        for (table, trigger, _) in GCS_NOTIFY_TRIGGERS {
+            let entry = crate::coprocessor_tables::COPROCESSOR_TABLES
+                .iter()
+                .find(|t| t.name == *table)
+                .unwrap_or_else(|| {
+                    panic!("trigger {trigger} targets {table}, which is not a COPROCESSOR_TABLES entry")
+                });
+            assert!(
+                entry.duplicated,
+                "trigger {trigger} targets {table}, which is not duplicated into the GCS schema"
+            );
+        }
     }
 
     #[test]
