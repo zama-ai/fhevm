@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO block_manifest_verification_attempt (\n            consensus_epoch,\n            task_id,\n            attempt,\n            outcome,\n            local_quorum_status,\n            drifted_block_count,\n            drifted_handle_count,\n            localization_complete,\n            localization_cacheable\n        ) VALUES ($8, $1, $2, $3, $4, $5, $6, $7, $9)\n        ON CONFLICT (consensus_epoch, task_id, attempt) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4",
+        "Text",
+        "Text",
+        "Int8",
+        "Int8",
+        "Bool",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5cdf72b67b8c8d6bbb39fdc546f96a527de4a7fe54eac87ed26a03e233b07bc6"
+}

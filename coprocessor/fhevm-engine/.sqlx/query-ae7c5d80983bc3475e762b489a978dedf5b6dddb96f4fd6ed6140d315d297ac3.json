@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT task.consensus_epoch,\n               manifest.publisher AS local_publisher,\n               manifest.version,\n               manifest.coprocessor_context_id,\n               manifest.host_chain_id,\n               manifest.publication_block_number,\n               manifest.publication_block_hash,\n               task.state\n          FROM block_manifest_verification_task task\n          JOIN block_manifest manifest\n            ON manifest.id = task.local_manifest_id\n           AND manifest.consensus_epoch = task.consensus_epoch\n         WHERE task.id = $1\n         FOR UPDATE\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "consensus_epoch",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "local_publisher",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "version",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 3,
+        "name": "coprocessor_context_id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "host_chain_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "publication_block_number",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "publication_block_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 7,
+        "name": "state",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "ae7c5d80983bc3475e762b489a978dedf5b6dddb96f4fd6ed6140d315d297ac3"
+}
