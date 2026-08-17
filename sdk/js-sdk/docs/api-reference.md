@@ -166,6 +166,7 @@ encryptValues(parameters: {
   readonly contractAddress: string;
   readonly userAddress: string;
   readonly options?: RelayerInputProofOptions | undefined;
+  readonly seed?: Uint8Array | undefined;
 }): Promise<{ readonly encryptedValues: readonly EncryptedValue[]; readonly inputProof: BytesHex }>;
 
 encryptValue(parameters: {
@@ -173,10 +174,17 @@ encryptValue(parameters: {
   readonly contractAddress: string;
   readonly userAddress: string;
   readonly options?: RelayerInputProofOptions | undefined;
+  readonly seed?: Uint8Array | undefined;
 }): Promise<{ readonly encryptedValue: EncryptedValue; readonly inputProof: BytesHex }>;
 ```
 
 Valid `type` strings: `'bool' | 'uint8' | 'uint16' | 'uint32' | 'uint64' | 'uint128' | 'uint256' | 'address'`.
+
+`seed` is optional and makes encryption deterministic. Reusing a `seed` across
+values you intend to keep confidential from each other creates a
+plaintext-equality oracle that spans contracts and users — see
+[Encryption → Deterministic encryption](encryption.md#deterministic-encryption)
+before using it.
 
 ## Private decryption methods
 

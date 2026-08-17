@@ -17,7 +17,14 @@ export type EncryptValuesParameters = {
   readonly contractAddress: string;
   readonly userAddress: string;
   readonly options?: RelayerInputProofOptions | undefined;
-  readonly seed?: Uint8Array;
+  /**
+   * Optional, at least 16 bytes. Makes encryption deterministic: the same `seed` +
+   * the same `values` always produce byte-identical ciphertext, regardless of
+   * `contractAddress`/`userAddress`. Reusing a `seed` across values you intend to
+   * keep confidential from each other creates a plaintext-equality oracle that
+   * spans contracts and users — see docs/encryption.md#deterministic-encryption.
+   */
+  readonly seed?: Uint8Array | undefined;
 };
 
 export type EncryptValuesReturnType = {
