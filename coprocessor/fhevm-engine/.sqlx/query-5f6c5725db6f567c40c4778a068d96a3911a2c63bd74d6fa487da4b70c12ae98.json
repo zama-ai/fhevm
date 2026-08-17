@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT required_quorum\n          FROM block_manifest_verification_task\n         WHERE id = $1 AND consensus_epoch = $2\n           AND next_attempt_at <= NOW()\n           AND (state = 'pending'\n                OR (state = 'claimed' AND claim_expires_at <= NOW()))\n         FOR UPDATE SKIP LOCKED\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "required_quorum",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "5f6c5725db6f567c40c4778a068d96a3911a2c63bd74d6fa487da4b70c12ae98"
+}
