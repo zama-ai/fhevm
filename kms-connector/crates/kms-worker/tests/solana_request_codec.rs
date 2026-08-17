@@ -15,13 +15,13 @@
 mod solana_support;
 
 use kms_worker::core::solana_acl::HandleBytes;
-use zama_solana_request::{
-    SOLANA_REQUEST_VERSION, SolanaRequestDecodeError, SolanaUserDecryptRequestWire,
-    check_handle_list_parity, decode_solana_request, encode_solana_request,
-};
 use solana_support::{
     DOMAIN, EncryptedValueAccountFixture, FHE_TYPE_UINT64, PermitBuilder, RequestBuilder, Wallet,
     handle,
+};
+use zama_solana_request::{
+    SOLANA_REQUEST_VERSION, SolanaRequestDecodeError, SolanaUserDecryptRequestWire,
+    check_handle_list_parity, decode_solana_request, encode_solana_request,
 };
 
 /// A reference request exercising the whole width of the wire form: two entries, one
@@ -163,7 +163,8 @@ fn every_wire_field_reaches_the_canonical_bytes() {
 
 #[test]
 fn a_request_of_an_unknown_version_is_rejected() {
-    let mut bytes = encode_solana_request(&reference_wire()).expect("the reference wire serializes");
+    let mut bytes =
+        encode_solana_request(&reference_wire()).expect("the reference wire serializes");
     bytes[0] = 0x02;
     assert_eq!(
         decode_solana_request(&bytes),
@@ -196,7 +197,8 @@ fn a_truncated_request_is_rejected() {
 
 #[test]
 fn trailing_bytes_after_the_body_are_rejected() {
-    let mut bytes = encode_solana_request(&reference_wire()).expect("the reference wire serializes");
+    let mut bytes =
+        encode_solana_request(&reference_wire()).expect("the reference wire serializes");
     bytes.push(0);
 
     assert_eq!(

@@ -12,7 +12,7 @@
 //! substitute any of them without invalidating the signature. What a substitution costs
 //! differs per field — a swapped window shifts the fee off the authorized request, a swapped
 //! routing serves the request under a KMS pair the user never consented to, a swapped
-//! transport key strands the response — but the shape of the defence is identical: the typed
+//! transport key strands the response — but the shape of the defense is identical: the typed
 //! value must equal the signed one, and a mismatch is wrong forever, so it is terminal.
 //!
 //! Collecting them here is not tidiness. Scattered across the request path, these checks
@@ -25,7 +25,7 @@
 //! The gateway entry carries exactly four fields that also exist inside the signed blob, and
 //! all four are here. It used to carry two more — a declared ACL-scope length and a host-kind
 //! discriminator — and neither was a duplicate worth comparing: the first could not widen
-//! anything (a request was admitted only when the declaration equalled the signed list, so a
+//! anything (a request was admitted only when the declaration equaled the signed list, so a
 //! truthful one added nothing and a false one was refused), and the second had no signed
 //! counterpart at all. Both are gone from the entry, together with the checks that read them.
 
@@ -33,7 +33,7 @@ use crate::core::solana_acl::HandleBytes;
 use alloy::primitives::U256;
 use fhevm_gateway_bindings::decryption::Decryption::UserDecryptionRequest_4 as UserDecryptionRequestV3;
 use zama_solana_permit::PermitFields;
-use zama_solana_request::{check_handle_list_parity, SolanaUserDecryptRequestWire};
+use zama_solana_request::{SolanaUserDecryptRequestWire, check_handle_list_parity};
 
 /// Which duplicated field disagreed with the signed request, and how.
 ///

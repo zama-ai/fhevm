@@ -39,7 +39,6 @@ use sqlx::{
 use std::fmt::Display;
 use tracing::{info, warn};
 
-
 /// The events emitted by the Zama Protocol which are monitored by the KMS Connector.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ProtocolEvent {

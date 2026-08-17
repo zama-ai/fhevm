@@ -15,7 +15,6 @@ use crate::core::{
     },
     solana_acl::{HandleBytes, SolanaPubkeyBytes},
 };
-use connector_utils::types::extra_data::ExtraData;
 use alloy::{
     consensus::Transaction,
     hex,
@@ -24,14 +23,15 @@ use alloy::{
     sol_types::{Eip712Domain, SolCall},
 };
 use anyhow::anyhow;
+use connector_utils::types::extra_data::ExtraData;
 use connector_utils::types::{
-    KmsGrpcRequest, extra_data::parse_extra_data,
-    handle::extract_chain_id_from_handle, u256_to_request_id,
+    KmsGrpcRequest, extra_data::parse_extra_data, handle::extract_chain_id_from_handle,
+    u256_to_request_id,
 };
 use fhevm_gateway_bindings::decryption::Decryption::{
-    self, DecryptionInstance, HandleEntry,
-    UserDecryptionRequest_3 as UserDecryptionRequestV2, UserDecryptionRequest_4 as UserDecryptionRequestV3,
-    delegatedUserDecryptionRequestCall, userDecryptionRequest_2Call as userDecryptionRequestCall,
+    self, DecryptionInstance, HandleEntry, UserDecryptionRequest_3 as UserDecryptionRequestV2,
+    UserDecryptionRequest_4 as UserDecryptionRequestV3, delegatedUserDecryptionRequestCall,
+    userDecryptionRequest_2Call as userDecryptionRequestCall,
 };
 use fhevm_host_bindings::acl::ACL::ACLInstance;
 use futures::future::{join_all, try_join_all};
@@ -854,7 +854,6 @@ impl UserDecryptionExtraData {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zama_solana_request::encode_solana_request;
     use crate::core::solana::request::{SolanaHandleEntryWire, SolanaUserDecryptRequestWire};
     use crate::core::solana_v2_fetcher::SolanaV2Fetcher;
     use alloy::{
@@ -877,6 +876,7 @@ mod tests {
     use user_decryption_signature::{
         ERC1271_MAGIC_VALUE, compute_user_decrypt_digest, default_user_decrypt_domain,
     };
+    use zama_solana_request::encode_solana_request;
 
     enum ExpectedOutcome {
         Ok,
@@ -1727,8 +1727,7 @@ mod tests {
         const DOMAIN: [u8; 32] = [1; 32];
         const AUTHORITY: [u8; 32] = [2; 32];
         const LABEL: [u8; 32] = *b"balance_________________________";
-        const CHAIN_ID: u64 =
-            crate::core::config::SOLANA_CHAIN_TYPE_BIT | 0x0123_4567_89ab_cdef;
+        const CHAIN_ID: u64 = crate::core::config::SOLANA_CHAIN_TYPE_BIT | 0x0123_4567_89ab_cdef;
         const FHE_TYPE_UINT64: u8 = 5;
 
         // A handle of this cluster: chain id big-endian at [22..30], FHE type at [30], version at
@@ -1774,7 +1773,10 @@ mod tests {
         };
         let permit_typed =
             PermitFields::decode(&permit_wire).expect("fixture permit is well formed");
-        let signature = victim.sign(&build_envelope(&permit_typed)).as_ref().to_vec();
+        let signature = victim
+            .sign(&build_envelope(&permit_typed))
+            .as_ref()
+            .to_vec();
 
         let encrypted_value_id = derive_encrypted_value_id(DOMAIN, AUTHORITY, LABEL);
         let wire = SolanaUserDecryptRequestWire {
@@ -1904,13 +1906,9 @@ mod tests {
         let window = (now - 60, 3_600);
         let victim_transport_key = vec![0xa5u8; zama_solana_permit::TRANSPORT_KEY_LEN];
 
-        let (result, signed_transport_key) = run_host_generic_solana_userdecrypt(
-            window,
-            window,
-            victim_transport_key.clone(),
-            None,
-        )
-        .await;
+        let (result, signed_transport_key) =
+            run_host_generic_solana_userdecrypt(window, window, victim_transport_key.clone(), None)
+                .await;
 
         let extra = result.expect("the victim's permit authorizes the request end-to-end");
         assert_eq!(

@@ -19,8 +19,8 @@ use zama_solana_acl::MmrProof;
 use zama_solana_permit::{PermitFields, Signature};
 
 pub use zama_solana_request::{
-    SolanaHandleEntryWire, SolanaUserDecryptRequestWire, MAX_ACCESS_PROOF_SIBLINGS,
-    MAX_REQUEST_HANDLES,
+    MAX_ACCESS_PROOF_SIBLINGS, MAX_REQUEST_HANDLES, SolanaHandleEntryWire,
+    SolanaUserDecryptRequestWire,
 };
 
 /// How an entry claims access to its handle. The mode is per entry: one request freely

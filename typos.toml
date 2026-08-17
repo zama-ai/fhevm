@@ -25,6 +25,12 @@ extend-exclude = [
     "coprocessor/fhevm-engine/host-listener/README.md",
     "sdk/js-sdk/src/wasm/tfhe/v1.6.1/tfhe-worker.mjs",
 
+    # Vendored TKMS wasm blobs and their generated typings: copied verbatim from
+    # the kms repo by scripts/regen-tkms-wasm.sh, so any wording fixed here comes
+    # back on the next regeneration. The directory rather than the file, because
+    # the filenames carry the source commit and change with it.
+    "sdk/js-sdk/src/wasm/tkms/",
+
     # Keys and charts (binary/config data)
     "fhevm-keys/",
     "charts/",

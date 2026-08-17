@@ -49,9 +49,7 @@ fn direct_scenario() -> (Wallet, EncryptedValueAccountFixture, [u8; 32]) {
     (wallet, encrypted_value_account, handle)
 }
 
-fn context<'a>(
-    deployment: &'a DeploymentIdentity,
-) -> AuthorizationContext<'a> {
+fn context<'a>(deployment: &'a DeploymentIdentity) -> AuthorizationContext<'a> {
     AuthorizationContext {
         deployment,
         now_unix_seconds: NOW_INSIDE_WINDOW,

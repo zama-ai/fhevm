@@ -52,7 +52,6 @@ use kms_worker::core::solana::{
     watermark::{WatermarkFailure, WindowFailure, permit_invalidation_address},
 };
 use kms_worker::core::solana_acl::SolanaPubkeyBytes;
-use zama_solana_request::{decode_solana_request, encode_solana_request};
 use schema::{
     CONNECTOR_AUTH_VECTOR_SCHEMA, ConnectorAuthVector, ConnectorAuthVectorFile, Deployment,
     FailureClass, KmsPairStatus, Observation, RecordedAccount, VectorResult, WireHandleEntry,
@@ -63,6 +62,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use zama_solana_acl::{MmrProof, historical_access_leaf_commitment};
 use zama_solana_permit::PermitWireFields;
+use zama_solana_request::{decode_solana_request, encode_solana_request};
 
 /// Setting this rewrites the committed file from the in-memory build.
 const UPDATE_ENV: &str = "ZAMA_UPDATE_CONNECTOR_AUTH_VECTORS";
