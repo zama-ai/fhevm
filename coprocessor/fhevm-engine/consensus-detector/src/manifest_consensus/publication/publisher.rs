@@ -21,9 +21,9 @@ use crate::manifest_consensus::{
     manifest_archive::{manifest_object_key, store_authenticated_manifest, ManifestSource},
     publication::{
         block_discovery::{
-            discover_blocks_for_consensus_epoch, discover_children_for_consensus_epoch, discover_children_of,
-            lock_next_block_to_progress_for_consensus_epoch, pending_chain_ids_for_consensus_epoch,
-            ManifestProgressCursor, PendingBlock,
+            discover_blocks_for_consensus_epoch, discover_children_for_consensus_epoch,
+            discover_children_of, lock_next_block_to_progress_for_consensus_epoch,
+            pending_chain_ids_for_consensus_epoch, ManifestProgressCursor, PendingBlock,
         },
         manifest_builder::{
             is_block_manifest_ready, load_manifest_descriptors, missing_handles_are_uncomputed,
@@ -34,6 +34,7 @@ use crate::manifest_consensus::{
             record_manifest_publication_error, retry_skipped_predecessor_once,
         },
     },
+    verification::peer_downloader::schedule_manifest_verification,
 };
 
 use super::metrics::{
@@ -164,9 +165,12 @@ async fn publish_due_work(
         return Ok(());
     };
 
-    let discovered =
-        discover_blocks_for_consensus_epoch(pool, &consensus_epoch, &consensus.publication_cadence_overrides)
-            .await?;
+    let discovered = discover_blocks_for_consensus_epoch(
+        pool,
+        &consensus_epoch,
+        &consensus.publication_cadence_overrides,
+    )
+    .await?;
     if discovered > 0 {
         debug!(discovered, "Discovered manifest blocks");
     }
@@ -508,6 +512,14 @@ pub(crate) async fn publish_block_manifest(
     mark_manifest_published(trx, block, signed.payload.publisher, manifest_digest).await?;
     retry_skipped_predecessor_once(trx, block, i64::from(consensus.publication_retry_count) + 1)
         .await?;
+    schedule_manifest_verification(
+        trx,
+        archived.id,
+        consensus.verification_delay,
+        consensus.verification_retry_delay,
+        consensus.verification_retry_count,
+    )
+    .await?;
     info!(
         host_chain_id = block.host_chain_id,
         block_number = block.block_number,

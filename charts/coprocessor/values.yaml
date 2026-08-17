@@ -1544,7 +1544,7 @@ snsWorker:
 # -----------------------------------------------------------------------------
 # Consensus Detector
 # -----------------------------------------------------------------------------
-# Publishes generation-scoped manifests.
+# Publishes generation-scoped manifests and always verifies peer manifests.
 consensusDetector:
   enabled: false
   nameOverride:
@@ -1567,7 +1567,7 @@ consensusDetector:
 
   config:
     # Accepts `value` or `valueFrom`; empty uses the bucket fallback below. Set value to the
-    # literal `none` only to explicitly disable publication.
+    # literal `none` only to explicitly disable publication and verification.
     s3BucketName: {}
     # Interval between host-block discovery ticks (also seals/publishes
     # already-tracked work). After bootstrap, new heights arrive parent→child,
@@ -1591,6 +1591,15 @@ consensusDetector:
     # skipped ancestor once (bound + 1). If that works, older skips peel next.
     # Clap: --manifest-publication-retry-count
     manifestPublicationRetryCount: 30
+    # Delay after publication before the first peer verification attempt.
+    # Clap: --manifest-verification-delay
+    manifestVerificationDelay: 5m
+    # Delay between peer verification retries.
+    # Clap: --manifest-verification-retry-delay
+    manifestVerificationRetryDelay: 1m
+    # Additional peer verification attempts after the initial attempt.
+    # Clap: --manifest-verification-retry-count
+    manifestVerificationRetryCount: 5
     # Wall-clock stall with no newly computed handle before missing
     # ciphertext may be sealed as uncomputed. A computed handle resets it.
     # Clap: --incomplete-block-timeout
