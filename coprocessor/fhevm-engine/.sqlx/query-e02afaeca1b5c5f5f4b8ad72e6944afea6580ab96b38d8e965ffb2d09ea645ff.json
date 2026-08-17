@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE block_manifest_verification_task\n           SET next_attempt_at = GREATEST(\n                   eligible_at,\n                   NOW() + retry_delay_secs * INTERVAL '1 second'\n               ),\n               last_error = $2,\n               updated_at = NOW()\n         WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e02afaeca1b5c5f5f4b8ad72e6944afea6580ab96b38d8e965ffb2d09ea645ff"
+}

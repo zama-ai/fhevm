@@ -230,6 +230,16 @@ impl BlockCiphertextDescriptor {
             _ => None,
         }
     }
+
+    /// Keccak of this descriptor's contribution to [`block_content_digest`].
+    ///
+    /// Excludes `error_message` and `gateway_key_id`. Structural [`Eq`] still
+    /// includes those provenance fields.
+    pub fn consensus_digest(&self) -> B256 {
+        let mut hasher = Keccak256::new();
+        update_descriptor(&mut hasher, self);
+        finalize(hasher)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -732,27 +742,31 @@ pub fn canonical_history_scale(upper: U256, previous_scale: u32) -> Result<u32, 
 
 fn update_descriptors(hasher: &mut Keccak256, descriptors: &[BlockCiphertextDescriptor]) {
     for descriptor in descriptors {
-        hasher.update(descriptor.handle.as_slice());
-        match &descriptor.status {
-            CiphertextStatus::Computed {
-                keyset_id,
-                ct64_digest,
-                ct128_digest,
-                ct128_format,
-                ..
-            } => {
-                hasher.update([0, 0]);
-                update_u256(hasher, *keyset_id);
-                hasher.update(ct64_digest.as_slice());
-                hasher.update(ct128_digest.as_slice());
-                hasher.update([*ct128_format as u8]);
-            }
-            CiphertextStatus::Error { .. } => {
-                hasher.update([1, 0]);
-            }
-            CiphertextStatus::Uncomputed => {
-                hasher.update([0, 1]);
-            }
+        update_descriptor(hasher, descriptor);
+    }
+}
+
+fn update_descriptor(hasher: &mut Keccak256, descriptor: &BlockCiphertextDescriptor) {
+    hasher.update(descriptor.handle.as_slice());
+    match &descriptor.status {
+        CiphertextStatus::Computed {
+            keyset_id,
+            ct64_digest,
+            ct128_digest,
+            ct128_format,
+            ..
+        } => {
+            hasher.update([0, 0]);
+            update_u256(hasher, *keyset_id);
+            hasher.update(ct64_digest.as_slice());
+            hasher.update(ct128_digest.as_slice());
+            hasher.update([*ct128_format as u8]);
+        }
+        CiphertextStatus::Error { .. } => {
+            hasher.update([1, 0]);
+        }
+        CiphertextStatus::Uncomputed => {
+            hasher.update([0, 1]);
         }
     }
 }
@@ -1063,6 +1077,10 @@ mod tests {
             .unwrap()
         };
         assert_eq!(
+            with_message.consensus_digest(),
+            without_message.consensus_digest(),
+        );
+        assert_eq!(
             block_digest(with_message.clone()),
             block_digest(without_message.clone()),
         );
@@ -1120,6 +1138,10 @@ mod tests {
             )
             .unwrap()
         };
+        assert_eq!(
+            with_gateway.consensus_digest(),
+            without_gateway.consensus_digest(),
+        );
         assert_eq!(
             block_digest(with_gateway.clone()),
             block_digest(without_gateway.clone()),

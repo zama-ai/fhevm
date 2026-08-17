@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT consensus_epoch, state, COUNT(*)::BIGINT AS \"count!\"\n          FROM block_manifest_verification_task\n         GROUP BY consensus_epoch, state\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "consensus_epoch",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "state",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "fdf0ac8d105449d1f972c64b83826e843c0445e8b43e6de23b44f479b969b054"
+}
