@@ -10,18 +10,18 @@
 
 # Gateway Team ownership
 /gateway-contracts/ @zama-ai/fhevm-gateway
-/relayer/ @zama-ai/fhevm-gateway
 
 # Coprocessor Team ownership
 /coprocessor/ @zama-ai/fhevm-coprocessor
 /host-contracts/ @zama-ai/fhevm-coprocessor
-/library-solidity/ @zama-ai/fhevm-coprocessor
 
 # Listener ownership
 /listener/ @zama-ai/listener-guild
 
 # SDK / Dev-Ex ownership
 /sdk/js-sdk/ @zama-ai/dev-ex
+/library-solidity/ @zama-ai/dev-ex
+/relayer/ @zama-ai/dev-ex
 
 # MPC Team ownership
 /kms-connector/ @zama-ai/mpc-devs
