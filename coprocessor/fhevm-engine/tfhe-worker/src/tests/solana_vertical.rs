@@ -74,6 +74,22 @@ const OPENING_BALANCE: u8 = 125;
 const DIVERGE_AMOUNT: u8 = 20;
 /// Second transfer — the one this test asserts on.
 const TRANSFER_AMOUNT: u8 = 40;
+/// Ed25519 secret-key seeds for the four accounts this vertical creates.
+///
+/// Fixed rather than freshly generated, for the same reason the slot, the timestamp and the
+/// parent bank hash above are fixed: this test runs under a compute-unit limit, and both
+/// programs derive PDAs on chain with `Pubkey::find_program_address` from seeds that include
+/// these pubkeys (`[b"fhe-compute", mint]`, `[b"total-supply", mint]`,
+/// `[b"vault-authority", mint]`, and the encrypted-value address off the token authority).
+/// That call walks bumps from 255 down, hashing at each step until the candidate is off-curve,
+/// so its cost is a function of the key — random keys make the transaction's compute draw vary
+/// by thousands of units between runs. With a fixed budget that turns the test into a coin
+/// flip, and a compute-unit measurement taken from it into a number that means nothing. Pinned
+/// keys make both reproducible.
+const ALICE_SEED: [u8; 32] = [0x11; 32];
+const BOB_SEED: [u8; 32] = [0x22; 32];
+const MINT_SEED: [u8; 32] = [0x33; 32];
+const UNDERLYING_MINT_SEED: [u8; 32] = [0x44; 32];
 type SeededCiphertext = ([u8; 32], i16, Vec<u8>);
 
 #[tokio::test]
@@ -366,10 +382,10 @@ fn token_fixture() -> TokenFixture {
     svm.add_program_from_file(token_program_id, &token_program_path)
         .unwrap();
 
-    let alice = Keypair::new();
-    let bob = Keypair::new();
-    let mint = Keypair::new();
-    let underlying_mint = Keypair::new();
+    let alice = Keypair::new_from_array(ALICE_SEED);
+    let bob = Keypair::new_from_array(BOB_SEED);
+    let mint = Keypair::new_from_array(MINT_SEED);
+    let underlying_mint = Keypair::new_from_array(UNDERLYING_MINT_SEED);
     svm.airdrop(&alice.pubkey(), 2_000_000_000).unwrap();
     svm.airdrop(&bob.pubkey(), 1_000_000_000).unwrap();
     let host_config = seed_host_config(&mut svm, host_program_id, alice.pubkey());
