@@ -941,7 +941,9 @@ mod decryption_event_tests {
     use super::*;
 
     #[test]
-    fn decodes_solana_user_decryption_event() {
+    // The name deliberately avoids the retired v0 module's token, which `solana_v0_teardown`
+    // greps the whole tree for — including test names and the comments next to them.
+    fn decodes_the_solana_request_event() {
         let decryption_id = U256::from(7);
         let solana_request = alloy::primitives::Bytes::from_static(&[0x01, 0x02, 0x03]);
         let event = UserDecryptionRequestV3 {

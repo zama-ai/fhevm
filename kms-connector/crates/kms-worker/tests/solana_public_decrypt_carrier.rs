@@ -7,10 +7,11 @@
 //! but while it exists, it is the only thing standing between a Solana public decrypt and a silent
 //! fail-closed outage.
 //!
-//! Every assertion here already holds inside `event_processor::solana_user_decrypt`'s own test
-//! module. That module is scheduled for deletion together with the v0 user-decrypt path, and a
-//! test deleted together with the code it guarded guards nothing. So the same properties are
-//! pinned here, from the outside, through the public entry point and a real RPC round-trip:
+//! These assertions were written from the outside on purpose. They used to hold inside the v0
+//! user-decrypt module's own test module, which was deleted with that path — and a test deleted
+//! together with the code it guarded guards nothing. The public-decrypt surface was re-homed to
+//! `event_processor::solana_public_decrypt` instead, so the same properties are pinned here,
+//! through the public entry point and a real RPC round-trip:
 //! a mock `getAccountInfo` endpoint serves the encrypted value account bytes, and
 //! [`check_solana_handles_public_decrypt`] does everything else it does in production.
 //!

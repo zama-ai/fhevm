@@ -103,10 +103,10 @@ pub struct Eip712UnifiedUserDecryptPayloadJson {
 }
 
 /// v3 Solana user-decrypt envelope (`solana-srfc38-user-decrypt-v1`). A Solana-native shape
-/// with no EVM placeholders: the ed25519 `signature` is the wallet's over the permit fields, and the
-/// relayer forwards everything opaquely into the host-generic gateway `userDecryptionRequest`
-/// overload (`hostKind = Solana`). The relayer verifies the signature before it submits, and
-/// each KMS party's connector verifies it again — that second check is the authorizing one.
+/// with no EVM placeholders: the ed25519 `signature` is the wallet's over the permit fields, and
+/// the relayer forwards everything opaquely into the gateway's Solana `userDecryptionRequest`
+/// overload as `solanaRequest`. The relayer verifies the signature before it submits, and each
+/// KMS party's connector verifies it again — that second check is the authorizing one.
 #[derive(Deserialize, Clone, ToSchema, Validate, Derivative)]
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

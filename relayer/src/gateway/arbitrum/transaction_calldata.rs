@@ -265,9 +265,9 @@ mod solana_calldata_tests {
     }
 
     #[test]
-    fn solana_user_decrypt_encodes_the_host_generic_overload() {
-        // The Solana arm must select the host-generic `userDecryptionRequest` overload and place
-        // the pre-computed pieces in the right slots — the byte-parity test covers the payload
+    fn the_solana_arm_encodes_the_solana_overload() {
+        // The Solana arm must select the Solana `userDecryptionRequest` overload and place the
+        // pre-computed pieces in the right slots — the connector-auth vectors cover the request
         // bytes, this covers where they land in the gateway calldata.
         let solana_request = Bytes::from(vec![0x01, 0xaa, 0xbb, 0xcc]);
         let mut extra = vec![0x02u8];
