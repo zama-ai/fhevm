@@ -23,9 +23,10 @@ const USE_REAL_LZ = (process.env.BRIDGE_REAL_LZ || '').toLowerCase() === 'true';
 
 const BRIDGE_SEND_ABI = [
   'function send(uint32 dstEid, bytes32 dstApp, bytes payload, bytes32[] handleList, uint64 lzComposeGas) payable',
+  'function quote(uint32 dstEid, address srcApp, bytes32 dstApp, bytes payload, bytes32[] handleList, uint64 lzComposeGas) view returns (tuple(uint256 nativeFee, uint256 lzTokenFee) fee)',
 ];
 const LZ_COMPOSE_GAS = 1_000_000n;
-const DECRYPT_TIMEOUT_MS = 180_000;
+const DECRYPT_TIMEOUT_MS = USE_REAL_LZ ? 420_000 : 180_000;
 
 // Per-chain bridge/endpoint addresses: primary chain uses unindexed vars, others HOST_CHAIN_<i>_*.
 const bridgeAddrFor = (i: number) =>
@@ -34,10 +35,16 @@ const bridgeAddrFor = (i: number) =>
     : process.env[`HOST_CHAIN_${i}_CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS`]) || undefined;
 const endpointAddrFor = (i: number) =>
   (i === 0 ? process.env.LZ_ENDPOINT_ADDRESS : process.env[`HOST_CHAIN_${i}_LZ_ENDPOINT_ADDRESS`]) || undefined;
+// LayerZero endpoint id of a chain. On real networks the EID differs from the chain id (e.g.
+// sepolia=40161, amoy=40267); the mock endpoint used in CI is wired with eid == chainId, so we
+// fall back to chainId when LZ_EID / HOST_CHAIN_<i>_LZ_EID is unset.
+const eidFor = (i: number) =>
+  Number((i === 0 ? process.env.LZ_EID : process.env[`HOST_CHAIN_${i}_LZ_EID`]) ?? HOST_CHAINS[i].chainId);
 
 /** Everything needed to act as a source or destination of a bridge transfer on one chain. */
 interface BridgeEnd {
   cfg: ChainConfig;
+  eid: number;
   bridge: string;
   endpoint: string;
   app: ethers.Contract;
@@ -134,9 +141,14 @@ describe('Confidential Bridge', function () {
     const fromBlock = await getProvider(dst.cfg).getBlockNumber();
     const dstApp = ethers.zeroPadValue(dst.appAddr, 32);
     const bridgeContract = new ethers.Contract(src.bridge, BRIDGE_SEND_ABI, src.alice);
+    // Address the destination by its LayerZero endpoint id (== chainId under the mock).
+    const dstEid = dst.eid;
+    // The bridge requires msg.value to exactly equal the quoted native fee (no refund path).
+    // The mock endpoint quotes to 0, so this preserves the previous value: 0 behaviour in CI.
+    const { nativeFee } = await bridgeContract.quote(dstEid, src.alice.address, dstApp, payload, handles, LZ_COMPOSE_GAS);
     const sendReceipt = await sendWithNonceRetry(src.alice, () =>
-      bridgeContract.send(dst.cfg.chainId, dstApp, payload, handles, LZ_COMPOSE_GAS, {
-        value: 0,
+      bridgeContract.send(dstEid, dstApp, payload, handles, LZ_COMPOSE_GAS, {
+        value: nativeFee,
         gasLimit: 5_000_000,
       }),
     );
@@ -172,6 +184,7 @@ describe('Confidential Bridge', function () {
       const app = await deployContract('BridgeApp', alice);
       return {
         cfg,
+        eid: eidFor(i),
         bridge: addrs[i].bridge!,
         endpoint: addrs[i].endpoint!,
         app,
