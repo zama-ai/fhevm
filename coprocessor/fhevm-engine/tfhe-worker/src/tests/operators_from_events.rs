@@ -229,6 +229,18 @@ fn binary_op_to_event(
     }
 }
 
+#[test]
+fn typed_handles_stay_distinct() {
+    const N: usize = 1000;
+    let handles: std::collections::HashSet<Handle> =
+        (0..N).map(|_| next_handle_with_type(0)).collect();
+    assert_eq!(
+        handles.len(),
+        N,
+        "next_handle_with_type produced duplicates"
+    );
+}
+
 #[tokio::test]
 #[serial(db)]
 async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Error>> {

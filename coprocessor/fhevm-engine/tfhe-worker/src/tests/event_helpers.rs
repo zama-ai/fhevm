@@ -48,7 +48,8 @@ pub fn next_handle() -> Handle {
     let mut out = [0_u8; 32];
     // Keep generated test handles in a namespace disjoint from scalar-encoded handles.
     out[0] = 0x80;
-    out[24..].copy_from_slice(&v.to_be_bytes());
+    // Skip byte 30: next_handle_with_type overwrites it, so handles 256 apart would collide.
+    out[24..30].copy_from_slice(&v.to_be_bytes()[2..]);
     Handle::from(out)
 }
 
