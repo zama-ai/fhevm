@@ -1,6 +1,6 @@
 use crate::tests::event_helpers::{
-    allow_handle, as_scalar_uint, decrypt_handles, insert_event, next_handle, setup_event_harness,
-    to_ty, wait_until_computed, zero_address,
+    allow_handle, as_scalar_uint, decrypt_handles, insert_event, next_handle,
+    next_handle_with_type, setup_event_harness, to_ty, wait_until_computed, zero_address,
 };
 use alloy::primitives::FixedBytes;
 use bigdecimal::num_bigint::BigInt;
@@ -79,7 +79,7 @@ async fn test_fhe_random_basic() -> Result<(), Box<dyn std::error::Error>> {
             .await?
             .expect("new_transaction() returns Some on a live stack");
 
-        let output1 = next_handle();
+        let output1 = next_handle_with_type(rand_type);
         insert_event(
             &harness.listener_db,
             &mut tx,
@@ -95,7 +95,7 @@ async fn test_fhe_random_basic() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
         allow_handle(&harness.listener_db, &mut tx, &output1).await?;
 
-        let output2 = next_handle();
+        let output2 = next_handle_with_type(rand_type);
         insert_event(
             &harness.listener_db,
             &mut tx,
@@ -111,7 +111,7 @@ async fn test_fhe_random_basic() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
         allow_handle(&harness.listener_db, &mut tx, &output2).await?;
 
-        let output3 = next_handle();
+        let output3 = next_handle_with_type(rand_type);
         insert_event(
             &harness.listener_db,
             &mut tx,
@@ -216,7 +216,7 @@ async fn test_fhe_random_bounded() -> Result<(), Box<dyn std::error::Error>> {
             .expect("new_transaction() returns Some on a live stack");
 
         // First sample
-        let output1 = next_handle();
+        let output1 = next_handle_with_type(rand_type);
         insert_event(
             &harness.listener_db,
             &mut tx,
@@ -234,7 +234,7 @@ async fn test_fhe_random_bounded() -> Result<(), Box<dyn std::error::Error>> {
         allow_handle(&harness.listener_db, &mut tx, &output1).await?;
 
         // Second sample with a different seed
-        let output2 = next_handle();
+        let output2 = next_handle_with_type(rand_type);
         insert_event(
             &harness.listener_db,
             &mut tx,

@@ -1,6 +1,6 @@
 use crate::tests::event_helpers::{
-    allow_handle, decrypt_handles, insert_trivial_encrypt, next_handle, setup_event_harness,
-    wait_until_computed,
+    allow_handle, decrypt_handles, insert_trivial_encrypt, next_handle, next_handle_with_type,
+    setup_event_harness, wait_until_computed,
 };
 use serial_test::serial;
 
@@ -30,7 +30,7 @@ async fn test_fhe_inputs() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut output_handles = Vec::with_capacity(test_cases.len());
     for &(value, to_type, _, _) in test_cases {
-        let handle = next_handle();
+        let handle = next_handle_with_type(to_type);
         insert_trivial_encrypt(
             &harness.listener_db,
             &mut tx,
