@@ -41,6 +41,15 @@ pub const EVENT_GW_DRY_RUN_STARTED: &str = "event_gw_dry_run_started";
 /// on it to re-pause without waiting for the fallback poll.
 pub const EVENT_DRY_RUN_ROLLED_BACK: &str = "event_dry_run_rolled_back";
 
+/// pg_notify channel the `tfhe-worker` listens on for newly queued FHE work.
+///
+/// In `public` this is fired by the `work_updated_trigger_from_computations_insertions`
+/// trigger on every `computations` insert. The GCS schema has no such trigger -
+/// `CREATE TABLE ... (LIKE public.X INCLUDING ALL)` copies defaults, constraints and
+/// indexes but *not* triggers - so inserts into `gcs.computations` wake nobody, and the
+/// upgrade-controller fires this explicitly instead.
+pub const WORK_AVAILABLE_CHANNEL: &str = "work_available";
+
 /// Sentinel for the activation atomic: the GCS row has not yet been observed in
 /// `DryRunStarted`. Any other value is the real `start_block`.
 pub const GCS_NOT_ACTIVATED: i64 = -1;
