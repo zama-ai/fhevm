@@ -14,6 +14,7 @@ import {
 } from "./kms-core";
 import { buildGatewayScSwapEnv, buildHostScSwapEnv, renderEnvMaps, type WalletMaterial } from "./env";
 import {
+  renderE2ECoprocessorConfigSolidity,
   renderGatewayAddressesEnv,
   renderGatewayAddressesSolidity,
   renderHostChainAddresses,
@@ -26,6 +27,7 @@ import type { State } from "../types";
 import {
   ADDRESS_DIR,
   COMPONENTS,
+  e2eCoprocessorConfigSolidityPath,
   ENV_DIR,
   GENERATED_CONFIG_DIR,
   TEMPLATE_KMS_CORE_CONFIG_LEGACY,
@@ -155,6 +157,12 @@ export const generateRuntime = async (state: State, plan: StackSpec) => {
     await writeWritableFile(hostChainAddressesPath(chain.key), renderHostChainAddresses(state, chain.key));
     await writeWritableFile(hostChainAddressesSolidityPath(chain.key), renderHostChainAddressesSolidity(state, chain.key));
   }
+  // Overwrite the e2e coprocessor config with per-chain (block.chainid) branches so the shared
+  // BridgeApp/operations bytecode uses each chain's own FHEVM system contracts.
+  await writeWritableFile(
+    e2eCoprocessorConfigSolidityPath,
+    renderE2ECoprocessorConfigSolidity(state, plan.hostChains),
+  );
 
   await generateComposeOverrides(state, plan);
 };
