@@ -10,12 +10,14 @@ import {
   getSigners,
 } from '../multiChain/multiChainHelper';
 import {
+  ComposeGrant,
   extractBridgeGuid,
   forgeDelivery,
   relayBridgeMessage,
   relayCompose,
   sendWithNonceRetry,
   waitForBridgedHandles,
+  waitForComposeApplied,
 } from './relay';
 
 // Mock endpoint has no executor, so the test relays itself; with a real endpoint (BRIDGE_REAL_LZ), LZ delivers and the test only waits for the HandleBridged event.
@@ -26,7 +28,9 @@ const BRIDGE_SEND_ABI = [
   'function quote(uint32 dstEid, address srcApp, bytes32 dstApp, bytes payload, bytes32[] handleList, uint64 lzComposeGas) view returns (tuple(uint256 nativeFee, uint256 lzTokenFee) fee)',
 ];
 const LZ_COMPOSE_GAS = 1_000_000n;
-const DECRYPT_TIMEOUT_MS = USE_REAL_LZ ? 420_000 : 180_000;
+// Per-step real-LZ budget (delivery, lzCompose grant, decrypt). Reverse amoy->sepolia delivery can
+// take ~30min on devnet, so this is deliberately generous; the mock relay stays fast.
+const DECRYPT_TIMEOUT_MS = USE_REAL_LZ ? 1_800_000 : 180_000;
 
 // Per-chain bridge/endpoint addresses: primary chain uses unindexed vars, others HOST_CHAIN_<i>_*.
 const bridgeAddrFor = (i: number) =>
@@ -91,7 +95,9 @@ async function notPubliclyDecryptable(end: BridgeEnd, handle: string): Promise<b
 }
 
 describe('Confidential Bridge', function () {
-  this.timeout(600_000);
+  // Round-trips chain two slow real-LZ legs (each up to ~30min delivery), so the per-test budget
+  // must clear their sum; the mock relay stays fast.
+  this.timeout(USE_REAL_LZ ? 3_600_000 : 600_000);
 
   let host: BridgeEnd;
   let chainB: BridgeEnd;
@@ -161,6 +167,13 @@ describe('Confidential Bridge', function () {
         fromBlock,
         DECRYPT_TIMEOUT_MS,
       );
+      // Wait for the lzCompose grant (empty payload => public; address => allow(user)) before
+      // returning, so callers can reuse the handle without racing the compose leg.
+      const grant: ComposeGrant =
+        payload === '0x'
+          ? { kind: 'public' }
+          : { kind: 'account', account: ethers.AbiCoder.defaultAbiCoder().decode(['address'], payload)[0] as string };
+      await waitForComposeApplied(getProvider(dst.cfg), dst.cfg.aclAddress, dstHandles, grant, DECRYPT_TIMEOUT_MS);
       return { dstHandles, ctx, compose: undefined };
     }
     const { dstHandles, compose } = await relayBridgeMessage(sendReceipt, ctx, { skipCompose });
