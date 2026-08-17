@@ -9,6 +9,7 @@ import type { EncryptedValueLike } from '../../types/encryptedTypes.js';
 import { decryptValuesFromPairs as decryptValuesFromPairs_ } from '../../kms/decryptValuesFromPairs.js';
 import { addressToChecksummedAddress, assertIsAddress } from '../../base/address.js';
 import { toFhevmHandle } from '../../handle/FhevmHandle.js';
+import { initPublicAction } from '../../runtime/CoreFhevm-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -33,15 +34,21 @@ export async function decryptValues(
   assertIsAddress(contractAddress, {});
   const sanitizedContractAddress = addressToChecksummedAddress(contractAddress);
 
+  const ownerAddress = addressToChecksummedAddress(parameters.signedPermit.encryptedDataOwnerAddress);
   const sanitizedPairs = encryptedValues.map((ev) => {
     return {
       handle: toFhevmHandle(ev),
       contractAddress: sanitizedContractAddress,
+      ownerAddress,
     };
   });
+
+  // context is not needed
+  const fhevmContext = await initPublicAction(fhevm);
 
   return decryptValuesFromPairs_(fhevm, {
     ...rest,
     pairs: sanitizedPairs,
-  } as Parameters<typeof decryptValuesFromPairs_>[1]);
+    fhevmContext,
+  });
 }

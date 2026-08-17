@@ -3,6 +3,7 @@ import type { FhevmChain } from '../types/fhevmChain.js';
 import type { BytesHex, ChecksummedAddress, TypedValue } from '../types/primitives.js';
 import type { RelayerInputProofOptions } from '../types/relayer.js';
 import type { InputHandle } from '../types/encryptedTypes-p.js';
+import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { fetchVerifiedInputProof } from './fetchVerifiedInputProof.js';
 import { createZkProof } from './ZkProofBuilder-p.js';
 
@@ -19,6 +20,7 @@ type Parameters = {
   readonly contractAddress: ChecksummedAddress;
   readonly userAddress: ChecksummedAddress;
   readonly values: readonly TypedValue[];
+  readonly fhevmContext: FhevmClientFrozenContext;
   readonly options?: RelayerInputProofOptions | undefined;
 };
 
@@ -32,11 +34,15 @@ type ReturnType = {
 export async function encrypt(context: Context, parameters: Parameters): Promise<ReturnType> {
   const hardCodedExtraData = '0x00' as BytesHex;
 
-  const zkProof = await createZkProof(context, { ...parameters, extraData: hardCodedExtraData });
+  const zkProof = await createZkProof(
+    { chain: context.chain, runtime: context.runtime },
+    { ...parameters, extraData: hardCodedExtraData, fhevmContext: parameters.fhevmContext },
+  );
 
   const inputProof = await fetchVerifiedInputProof(context, {
     zkProof,
     options: parameters.options,
+    fhevmContext: parameters.fhevmContext,
   });
 
   return {

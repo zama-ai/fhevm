@@ -6,6 +6,7 @@ import type { FhevmRuntime, FhevmRuntimeConfig, WithModuleMap } from '../types/c
 import type { DecryptModule } from '../modules/decrypt/types.js';
 import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
 import { uid } from '../base/uid.js';
+import { cloneModuleVersions } from '../runtimeConfig-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -131,6 +132,7 @@ class CoreFhevmRuntimeImpl {
       ...parameters.config,
       logger: parameters.config.logger ? { ...parameters.config.logger } : undefined,
       auth: parameters.config.auth ? { ...parameters.config.auth } : undefined,
+      moduleVersions: cloneModuleVersions(parameters.config.moduleVersions),
     };
     const decrypt = this.#decrypt;
     const encrypt = this.#encrypt;

@@ -34,7 +34,10 @@ export function assertIsRelayerPublicDecryptSucceeded(
   });
   assertRecordStringProperty(value, 'requestId' satisfies keyof T, name, options);
   assertRecordNonNullableProperty(value, 'result' satisfies keyof T, name, options);
-  _assertIsRelayerResult200PublicDecrypt(value.result, `${name}.result`, options);
+
+  // In v11 extraData is optional.
+  const requiredExtraData = false;
+  _assertIsRelayerResult200PublicDecrypt(value.result, `${name}.result`, requiredExtraData, options);
 }
 
 /**
@@ -50,10 +53,15 @@ export function assertIsRelayerPublicDecryptSucceeded(
 function _assertIsRelayerResult200PublicDecrypt(
   value: unknown,
   name: string,
+  requiredExtraData: boolean,
   options: ErrorMetadataParams,
 ): asserts value is RelayerResult200PublicDecrypt {
   type T = RelayerResult200PublicDecrypt;
   assertRecordBytesHexNo0xArrayProperty(value, 'signatures' satisfies keyof T, name, options);
   assertRecordBytesHexNo0xProperty(value, 'decryptedValue' satisfies keyof T, name, options);
-  assertRecordBytesHexProperty(value, 'extraData' satisfies keyof T, name, options);
+
+  const hasExtraData = Object.prototype.hasOwnProperty.call(value, 'extraData');
+  if (hasExtraData || requiredExtraData) {
+    assertRecordBytesHexProperty(value, 'extraData' satisfies keyof T, name, options);
+  }
 }

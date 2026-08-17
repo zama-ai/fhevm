@@ -8,15 +8,16 @@ use aws_sdk_s3::error::SdkError;
 use aws_sdk_s3::operation::head_bucket::HeadBucketError;
 use aws_sdk_s3::operation::head_object::HeadObjectError;
 use aws_sdk_s3::primitives::ByteStream;
-use aws_sdk_s3::types::{ChecksumAlgorithm, ChecksumMode};
+use aws_sdk_s3::types::ChecksumMode;
 use aws_sdk_s3::Client;
 use base64::Engine;
 use bytesize::ByteSize;
 use ciphertext_attestation::{
-    CiphertextAttestation, CiphertextAttestationPayload, CiphertextFormat, Version,
-    S3_METADATA_ATTESTATION_KEY,
+    s3_ct128_key, s3_ct64_key, CiphertextAttestation, CiphertextAttestationPayload,
+    CiphertextFormat, Version, S3_METADATA_ATTESTATION_KEY,
 };
 use fhevm_engine_common::chain_id::ChainId;
+use fhevm_engine_common::database::EVENT_CIPHERTEXTS_UPLOADED;
 use fhevm_engine_common::pg_pool::{is_fatal_connection_error, PostgresPoolManager, ServiceError};
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::CoproSigner;
@@ -37,8 +38,6 @@ use tracing::{debug, error, error_span, info, warn, Instrument, Span};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 // TODO: Use a config TOML to set these values
-pub const EVENT_CIPHERTEXTS_UPLOADED: &str = "event_ciphertexts_uploaded";
-
 // Default batch size for fetching pending uploads
 // There might be pending uploads in the database
 // with sizes of 32MiB so the batch size is set to 10
@@ -125,14 +124,15 @@ async fn run_uploader_loop(
                     continue;
                 }
 
-                let mut trx = pool.begin().await?;
+                let mut trx = fhevm_engine_common::versioning::begin_guarded_pool(&pool).await?;
 
-                let item = match job {
-                    UploadJob::Normal(item) => {
-                        item.enqueue_upload_task(&mut trx).await?;
-                        create_upload_task_savepoint(&mut trx).await?;
-                        item
-                    }
+                // Normal jobs defer their enqueue into the spawned task: the
+                // provenance witness takes FOR KEY SHARE on the pbs row,
+                // which blocks while the originating batch transaction still
+                // holds its FOR UPDATE work locks — the dispatch loop must
+                // never park head-of-line on that.
+                let (item, needs_enqueue) = match job {
+                    UploadJob::Normal(item) => (item, true),
                     UploadJob::DatabaseLock(mut item) => {
                         create_upload_task_savepoint(&mut trx).await?;
                         let row = match sqlx::query!(
@@ -195,7 +195,7 @@ async fn run_uploader_loop(
                             item.ct128 = Arc::new(BigCiphertext::new(Vec::new(), ct128_format));
                         }
 
-                        item
+                        (item, false)
                     }
                 };
                 debug!(handle = hex::encode(&item.handle), "Received task, handle");
@@ -229,9 +229,35 @@ async fn run_uploader_loop(
                     // that was captured when the upload item was created.
                     let upload_span = error_span!("upload_s3");
                     upload_span.set_parent(item.span.context());
-                    let result = upload_ciphertexts(&mut trx, item, &client, &conf, signer)
-                        .instrument(upload_span.clone())
-                        .await;
+                    // Enqueue deferred from the dispatch loop (see above). A
+                    // dead witness means reorg cleanup cancelled the
+                    // publication while this job was queued: drop it.
+                    let prep: anyhow::Result<bool> = async {
+                        if needs_enqueue {
+                            if !item.enqueue_upload_task(&mut trx).await? {
+                                return Ok(false);
+                            }
+                            create_upload_task_savepoint(&mut trx).await?;
+                        }
+                        Ok(true)
+                    }
+                    .await;
+                    let result = match prep {
+                        Ok(false) => {
+                            if let Err(err) = trx.rollback().await {
+                                warn!(error = %err, "Failed to roll back cancelled upload");
+                            }
+                            drop(upload_span);
+                            drop(permit);
+                            return Ok(());
+                        }
+                        Ok(true) => {
+                            upload_ciphertexts(&mut trx, item, &client, &conf, signer)
+                                .instrument(upload_span.clone())
+                                .await
+                        }
+                        Err(err) => Err(err),
+                    };
                     let outcome = match result {
                         Ok(()) => {
                             if let Err(err) = trx.commit().await {
@@ -472,10 +498,8 @@ async fn upload_ct(
     client: Client,
     bucket: String,
     key: String,
-    ct_format: String,
     metadata: S3ObjectMetadata,
     ct_bytes: Vec<u8>,
-    extra_digest_key: Option<String>,
     result: UploadResult,
     verify_sha256_checksum: bool,
 ) -> anyhow::Result<UploadResult> {
@@ -483,7 +507,6 @@ async fn upload_ct(
     let mut upload = client
         .put_object()
         .bucket(bucket.clone())
-        .metadata("Ct-Format", ct_format)
         .metadata("Uploaded-By", "sns-worker")
         .metadata(S3_METADATA_ATTESTATION_KEY, &metadata.attestation_json)
         .metadata("Key-Id", metadata.key_id)
@@ -500,27 +523,7 @@ async fn upload_ct(
         span.set_status(Status::error(err.to_string()));
         return Err(ExecutionError::S3TransientError(err.to_string()).into());
     }
-    if let Some(extra_digest_key) = extra_digest_key {
-        let copy_source = format!("{}/{}", bucket, key);
-        let upload_backward_compatible = client
-            .copy_object()
-            .copy_source(copy_source)
-            .bucket(bucket.clone())
-            .key(&extra_digest_key)
-            .set_checksum_algorithm(verify_sha256_checksum.then_some(ChecksumAlgorithm::Sha256))
-            .send()
-            .await;
-        if let Err(err) = upload_backward_compatible {
-            error!(error = %err, bucket, extra_digest_key, metadata.attestation_json, "Failed to upload ct for backcompatibility");
-            span.set_status(Status::error(err.to_string()));
-            return Err(ExecutionError::S3TransientError(err.to_string()).into());
-        }
-    }
     Ok(result)
-}
-
-pub(crate) fn s3_ciphertext_key(handle: &[u8], context_id: U256) -> String {
-    hex::encode(handle) + "/" + &context_id.to_string()
 }
 
 fn b256_from_bytes(field: &str, bytes: &[u8]) -> anyhow::Result<B256> {
@@ -677,8 +680,7 @@ async fn upload_ciphertexts(
     };
 
     if *ct128_digest != NO_SNS_CIPHERTEXT_DIGEST.to_vec() {
-        let key = s3_ciphertext_key(&task.handle, context_id);
-        let digest_key = hex::encode(ct128_digest);
+        let key = s3_ct128_key(&task.handle, context_id);
 
         if preserve_legacy_s3_format {
             info!(
@@ -703,11 +705,10 @@ async fn upload_ciphertexts(
             );
             let exists = object_check_result(
                 &ct128_check_span,
-                check_ct128_objects_exist(
+                check_attested_object_exists(
                     client,
-                    &conf.bucket_ct128,
+                    &conf.bucket,
                     &key,
-                    &digest_key,
                     &expected_attestation,
                     expected_signer,
                     ct128_checksum_sha256.as_deref(),
@@ -736,7 +737,7 @@ async fn upload_ciphertexts(
                     "Uploading ct128"
                 );
 
-                let bucket = &conf.bucket_ct128;
+                let bucket = &conf.bucket;
                 let ct_format = ct128_format.to_string();
                 let ct128_upload_span = tracing::info_span!(
                     "ct128_upload_s3",
@@ -750,10 +751,8 @@ async fn upload_ciphertexts(
                     client.clone(),
                     bucket.clone(),
                     key,
-                    ct_format,
                     s3_metadata.clone(),
                     ct128_bytes.to_vec(),
-                    Some(digest_key),
                     result,
                     conf.verify_sha256_checksum,
                 );
@@ -778,7 +777,7 @@ async fn upload_ciphertexts(
     {
         let ct64_compressed = task.ct64_compressed.as_ref();
         let ct64_digest = &upload_material.ct64_digest;
-        let key = s3_ciphertext_key(&task.handle, context_id);
+        let key = s3_ct64_key(&task.handle, context_id);
         let ct64_checksum_sha256 = conf
             .verify_sha256_checksum
             .then(|| match ct64_compressed.is_empty() {
@@ -796,7 +795,7 @@ async fn upload_ciphertexts(
             &ct64_check_span,
             check_attested_object_exists(
                 client,
-                &conf.bucket_ct64,
+                &conf.bucket,
                 &key,
                 &expected_attestation,
                 expected_signer,
@@ -822,7 +821,7 @@ async fn upload_ciphertexts(
                 "Uploading ct64",
             );
 
-            let bucket = &conf.bucket_ct64;
+            let bucket = &conf.bucket;
             let ct64_upload_span = tracing::info_span!(
                 "ct64_upload_s3",
                 ct_type = "ct64",
@@ -834,10 +833,8 @@ async fn upload_ciphertexts(
                 client.clone(),
                 bucket.clone(),
                 key,
-                "ct64_compressed".to_string(),
                 s3_metadata.clone(),
                 ct64_compressed.clone(),
-                None,
                 result,
                 conf.verify_sha256_checksum,
             );
@@ -968,7 +965,7 @@ async fn fetch_pending_uploads(
         if row_incomplete || should_verify_existing_s3 {
             if let Ok(row) = sqlx::query!(
                 "SELECT ciphertext FROM ciphertexts WHERE handle = $1;",
-                handle
+                handle,
             )
             .fetch_optional(db_pool)
             .await
@@ -990,7 +987,7 @@ async fn fetch_pending_uploads(
         if has_ct128_ciphertext && (row_incomplete || should_verify_existing_s3) {
             if let Ok(row) = sqlx::query!(
                 "SELECT ciphertext FROM ciphertexts128 WHERE handle = $1;",
-                handle
+                handle,
             )
             .fetch_optional(db_pool)
             .await
@@ -1125,7 +1122,7 @@ async fn do_resubmits_loop(
             _ = recheck_ticker.tick() => {
                 if !is_ready.load(Ordering::Acquire) {
                     info!("Recheck S3 setup ...");
-                    let (is_ready_res, _) = check_is_ready(&client, &conf).await;
+                    let (is_ready_res, _) = check_is_ready(&client, &conf.s3).await;
                     if is_ready_res {
                         info!("Reconnected to S3, buckets exist");
                         is_ready.store(true, Ordering::Release);
@@ -1198,19 +1195,13 @@ async fn try_resubmit(
     }
 }
 
-/// Checks if the S3 client is ready by verifying the existence of both
-/// the ct64 and ct128 buckets.
+/// Checks if the S3 client is ready by verifying the existence of the ciphertext bucket.
 ///
 /// Returns is_ready and is_connected status.
-pub(crate) async fn check_is_ready(client: &Client, conf: &Config) -> (bool, bool) {
-    // Check if the S3 client is ready
-    //
-    // By checking the existence of both ct64 and ct128 buckets here,
-    // we also incorporate the aws-sdk connection retry
-    let (ct64_exists, _) = check_bucket_exists(client, &conf.s3.bucket_ct64).await;
-    let (ct128_exists, conn) = check_bucket_exists(client, &conf.s3.bucket_ct128).await;
-
-    ((ct64_exists && ct128_exists), conn)
+pub(crate) async fn check_is_ready(client: &Client, conf: &S3Config) -> (bool, bool) {
+    // By checking the existence of the bucket here, we also incorporate the
+    // aws-sdk connection retry
+    check_bucket_exists(client, &conf.bucket).await
 }
 
 async fn check_attested_object_exists(
@@ -1316,47 +1307,7 @@ fn object_check_result(
     }
 }
 
-async fn check_ct128_objects_exist(
-    client: &Client,
-    bucket: &str,
-    key: &str,
-    digest_key: &str,
-    expected: &CiphertextAttestationPayload,
-    expected_signer: Address,
-    expected_checksum_sha256: Option<&str>,
-) -> Result<bool, ExecutionError> {
-    let key_exists = check_attested_object_exists(
-        client,
-        bucket,
-        key,
-        expected,
-        expected_signer,
-        expected_checksum_sha256,
-    )
-    .await?;
-    let digest_key_exists = check_attested_object_exists(
-        client,
-        bucket,
-        digest_key,
-        expected,
-        expected_signer,
-        expected_checksum_sha256,
-    )
-    .await?;
-
-    if key_exists && !digest_key_exists {
-        warn!(
-            bucket,
-            key,
-            digest_key,
-            "ct128 object exists without digest-key compatibility copy, reuploading"
-        );
-    }
-
-    Ok(key_exists && digest_key_exists)
-}
-
-async fn check_bucket_exists(
+pub async fn check_bucket_exists(
     client: &Client,
     bucket: &str,
 ) -> (bool, bool /* connection status */) {
@@ -1648,9 +1599,8 @@ mod tests {
 
         let aws_conf = aws_config::load_defaults(BehaviorVersion::latest()).await;
         let client = aws_sdk_s3::Client::new(&aws_conf);
-        let bucket_ct64 = "legacy-partial-ct64";
-        let bucket_ct128 = "legacy-partial-ct128-not-created";
-        client.create_bucket().bucket(bucket_ct64).send().await?;
+        let bucket = "legacy-partial-ct";
+        client.create_bucket().bucket(bucket).send().await?;
 
         let handle = vec![0x42; 32];
         let key_id_gw = vec![0x07; 32];
@@ -1689,8 +1639,7 @@ mod tests {
             transaction_id: None,
         };
         let conf = S3Config {
-            bucket_ct128: bucket_ct128.to_owned(),
-            bucket_ct64: bucket_ct64.to_owned(),
+            bucket: bucket.to_owned(),
             max_concurrent_uploads: 1,
             retry_policy: S3RetryPolicy {
                 max_retries_per_upload: 1,
@@ -1730,13 +1679,32 @@ mod tests {
         assert_eq!(row.ciphertext128.as_deref(), Some(ct128_digest.as_slice()));
         assert_eq!(row.s3_format_version, Some(S3_FORMAT_VERSION_LEGACY));
 
-        let ct64_key = s3_ciphertext_key(&handle, COPROCESSOR_CONTEXT_ID_1);
+        let ct64_key = s3_ct64_key(&handle, COPROCESSOR_CONTEXT_ID_1);
         client
             .head_object()
-            .bucket(bucket_ct64)
+            .bucket(bucket)
             .key(ct64_key)
             .send()
             .await?;
+
+        // No ct128 is written: its bytes are unavailable, so the legacy object is
+        // left as-is for the migration to pick up later.
+        let ct128_key = s3_ct128_key(&handle, COPROCESSOR_CONTEXT_ID_1);
+        let err = client
+            .head_object()
+            .bucket(bucket)
+            .key(ct128_key)
+            .send()
+            .await
+            .expect_err("ct128 object should not be uploaded");
+        assert!(
+            matches!(
+                err,
+                SdkError::ServiceError(ref err)
+                    if matches!(err.err(), HeadObjectError::NotFound(_))
+            ),
+            "expected missing ct128 object, got {err}"
+        );
 
         Ok(())
     }
@@ -1745,10 +1713,13 @@ mod tests {
     fn s3_key_v1() {
         let handle = B256::ZERO;
         let coprocessor_context_id = U256::ZERO;
-        let s3_key = s3_ciphertext_key(handle.as_ref(), coprocessor_context_id);
         assert_eq!(
-            "0000000000000000000000000000000000000000000000000000000000000000/0",
-            &s3_key
+            "ct128/0000000000000000000000000000000000000000000000000000000000000000/0",
+            &s3_ct128_key(handle.as_ref(), coprocessor_context_id)
+        );
+        assert_eq!(
+            "ct64/0000000000000000000000000000000000000000000000000000000000000000/0",
+            &s3_ct64_key(handle.as_ref(), coprocessor_context_id)
         );
     }
 }

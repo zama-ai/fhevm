@@ -1,0 +1,29 @@
+version: 1
+kind: blue-green
+name: Blue-Green Upgrade (multi-chain)
+description: >
+  Two-host-chain Blue-Green upgrade. A single coprocessor stack serves
+  both host chains; the upgrade proposal carries one ChainUpgradeWindow per chain
+  and cutover fires only after BOTH chains (and the Gateway) reach unanimity.
+  Runs the same failed-then-successful flow as blue-green.yaml, over two chains.
+
+    ./fhevm-cli up --scenario blue-green-multi-chain --build
+    ./fhevm-cli test blue-green
+
+hostChains:
+  - key: host
+    chainId: "12345"
+    rpcPort: 8545
+  - key: chain-b
+    chainId: "67890"
+    rpcPort: 8547
+
+bcs:
+  source:
+    mode: registry
+    tag: v0.14.0-7
+
+gcs:
+  source:
+    mode: local
+  stackVersion: "0.15.0"

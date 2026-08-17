@@ -1,6 +1,6 @@
 use crate::types::handle::extract_chain_id_from_handle;
 use alloy::{
-    primitives::Address,
+    primitives::{Address, B256},
     providers::{ProviderBuilder, RootProvider, mock::Asserter},
 };
 use fhevm_host_bindings::acl::ACL::{self, ACLInstance};
@@ -20,7 +20,7 @@ pub fn erc1271_magic_response() -> Vec<u8> {
 ///
 /// Accepts ABI-encoded responses, allowing callers to mix responses with different types.
 pub fn init_host_chains_acl_contracts_mock(
-    ct_handle: &[u8],
+    ct_handle: B256,
     responses: Vec<Vec<u8>>,
 ) -> HashMap<u64, ACLInstance<RootProvider>> {
     let asserter = Asserter::new();

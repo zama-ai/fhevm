@@ -15,6 +15,16 @@ export function removeSuffix(s: string | undefined, suffix: string): string {
   return s.endsWith(suffix) ? s.slice(0, -suffix.length) : s;
 }
 
+export function removePrefix(s: string | undefined, prefix: string): string {
+  if (s === undefined) {
+    return '';
+  }
+  if (prefix.length === 0) {
+    return s;
+  }
+  return s.startsWith(prefix) ? s.substring(prefix.length) : s;
+}
+
 export function is0x(s: unknown): s is `0x${string}` {
   return typeof s === 'string' && s.startsWith('0x');
 }

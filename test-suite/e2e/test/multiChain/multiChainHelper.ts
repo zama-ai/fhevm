@@ -1,10 +1,8 @@
-import { createInstance as createFhevmInstance } from '@zama-fhe/relayer-sdk/node';
 import { ethers } from 'ethers';
 import { ethers as hardhatEthers } from 'hardhat';
 import { vars } from 'hardhat/config';
 
 import { FhevmSdk } from '../sdk/fhevm-sdk/sdk';
-import { RelayerSdk } from '../sdk/relayer-sdk/sdk';
 
 const defaultMnemonic =
   'adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer';
@@ -74,7 +72,10 @@ const providers = new Map<string, ethers.JsonRpcProvider>();
 
 export function getProvider(chain: ChainConfig): ethers.JsonRpcProvider {
   if (!providers.has(chain.rpcUrl)) {
-    providers.set(chain.rpcUrl, new ethers.JsonRpcProvider(chain.rpcUrl));
+    // cacheTimeout: -1 disables ethers' 250ms result sharing. Tests assert on
+    // freshly-read chain state, and with 1s block times a cached eth_blockNumber
+    // can lag a receipt observed in the same window (head appears to go backwards).
+    providers.set(chain.rpcUrl, new ethers.JsonRpcProvider(chain.rpcUrl, undefined, { cacheTimeout: -1 }));
   }
   return providers.get(chain.rpcUrl)!;
 }
@@ -126,15 +127,13 @@ export async function createInstance(chain: ChainConfig) {
     kmsContractAddress: chain.kmsVerifierAddress,
     inputVerifierContractAddress: chain.inputVerifierAddress,
     aclContractAddress: chain.aclAddress,
+    protocolConfigAddress: chain.protocolConfigAddress,
     rpcUrl: chain.rpcUrl,
     relayerUrl,
     gatewayChainId,
     chainId: chain.chainId,
   };
-  if (useFhevmSdk) {
-    return FhevmSdk.create(cfg);
-  }
-  return RelayerSdk.create(cfg);
+  return FhevmSdk.create(cfg);
 }
 
 export async function deployContract(

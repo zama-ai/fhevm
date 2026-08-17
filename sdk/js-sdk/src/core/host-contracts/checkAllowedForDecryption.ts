@@ -15,21 +15,21 @@ type Context = {
 };
 
 type Parameters = {
-  readonly address: ChecksummedAddress;
+  readonly aclAddress: ChecksummedAddress;
   readonly handles: readonly Handle[];
 };
 
 ////////////////////////////////////////////////////////////////////////////////
 
 export async function checkAllowedForDecryption(context: Context, parameters: Parameters): Promise<void> {
-  const { handles } = parameters;
+  const { aclAddress, handles } = parameters;
 
   const results = await isAllowedForDecryption(context, parameters);
 
   const failedHandles = handles.filter((_, i) => results[i] !== true).map((h) => h.bytes32Hex);
   if (failedHandles.length > 0) {
     throw new AclPublicDecryptionError({
-      contractAddress: context.chain.fhevm.contracts.acl.address as ChecksummedAddress,
+      contractAddress: aclAddress,
       handles: failedHandles,
     });
   }

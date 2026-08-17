@@ -23,6 +23,44 @@ pub enum KmsWallet {
     AwsKms(AwsSigner),
 }
 
+/// A wallet private key, provided as a hex string (with or without `0x` prefix).
+///
+/// # Testing only
+///
+/// Configuring a raw private key is intended for **testing purposes only**.
+/// Production deployments should use an AWS KMS signer instead (see [`AwsKmsConfig`]).
+///
+/// The [`Debug`] implementation redacts the inner secret, so the key is not leaked through debug
+/// logs.
+#[derive(Clone, Deserialize, PartialEq)]
+#[cfg_attr(debug_assertions, derive(Serialize))]
+#[serde(transparent)]
+pub struct TestingPrivateKey(String);
+
+impl TestingPrivateKey {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for TestingPrivateKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("PrivateKey(<redacted>)")
+    }
+}
+
+impl From<String> for TestingPrivateKey {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<&str> for TestingPrivateKey {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+
 /// Configuration for AWS KMS signer.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct AwsKmsConfig {
@@ -157,6 +195,47 @@ mod tests {
             KmsWallet::from_private_key_str(&format!("0x{private_key}"), Some(TEST_CHAIN_ID))
                 .unwrap();
         assert_eq!(wallet_with_prefix.address(), expected_address);
+    }
+
+    /// Guards the `default-https-client` feature on `aws-config`/`aws-sdk-kms` in the workspace
+    /// `Cargo.toml`. Without it, the SDK compiles fine but no HTTP client is wired in, so every
+    /// request fails at dispatch ("No HTTP client was available to send this request"), breaking
+    /// AWS KMS signing in prod.
+    #[tokio::test]
+    async fn aws_sdk_has_http_client() {
+        use aws_sdk_kms::{
+            config::{Credentials, Region},
+            error::SdkError,
+        };
+
+        let conf = aws_sdk_kms::Config::builder()
+            .behavior_version(BehaviorVersion::latest())
+            .region(Region::new("us-east-1"))
+            .credentials_provider(Credentials::new("test", "test", None, None, "test"))
+            // Closed port: a present HTTP client fails to connect; an absent one never tries.
+            .endpoint_url("http://127.0.0.1:1")
+            .build();
+        let client = aws_sdk_kms::Client::from_conf(conf);
+
+        let err = client
+            .describe_key()
+            .key_id("test")
+            .send()
+            .await
+            .expect_err("request to a closed port must fail");
+
+        let SdkError::DispatchFailure(dispatch) = &err else {
+            panic!("expected a dispatch failure, got: {err:?}");
+        };
+        let connector_err = dispatch
+            .as_connector_error()
+            .unwrap_or_else(|| panic!("expected a connector error, got: {dispatch:?}"));
+        assert!(
+            connector_err.is_io(),
+            "AWS SDK built without an HTTP client — the `default-https-client` feature was likely \
+             removed from aws-config/aws-sdk-kms in Cargo.toml. Expected an IO/connection error \
+             but got: {connector_err:?}"
+        );
     }
 
     #[test]

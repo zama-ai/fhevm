@@ -47,7 +47,7 @@ jobs:
         env:
           PR_TITLE: ${{ github.event.pull_request.title  }}
         run: |
-          npm install @commitlint/config-conventional@^18 conventional-changelog-conventionalcommits @commitlint/types@^18
+          npm install @commitlint/config-conventional@^18 conventional-changelog-conventionalcommits@^7 @commitlint/types@^18
           npm install -g @commitlint/cli@^18
           echo "$PR_TITLE" | npx commitlint --config .github/config/commitlint.config.js --verbose
 

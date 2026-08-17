@@ -86,6 +86,7 @@ const chainIds = {
   composeCoprocessorL1: 123456,
   composeCoprocessorL2: 654321,
   localCoprocessorL1Input: 123456,
+  localcleartext: 31337,
 };
 
 function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
@@ -156,16 +157,23 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
     case 'composeCoprocessorL2':
       jsonRpcUrl = 'http://mock-gateway-1:8757';
       break;
+    case 'localcleartext':
+      jsonRpcUrl = 'http://localhost:8544';
+      break;
     default:
       throw new Error(`unsupported chain: ${chain}`);
   }
+  const chainId =
+    chain === 'staging' && process.env.CHAIN_ID_HOST
+      ? Number(process.env.CHAIN_ID_HOST)
+      : chainIds[chain];
   return {
     accounts: {
       count: NUM_ACCOUNTS,
       mnemonic,
       path: "m/44'/60'/0'/0",
     },
-    chainId: chainIds[chain],
+    chainId,
     url: jsonRpcUrl,
   };
 }
@@ -209,6 +217,7 @@ const config: HardhatUserConfig = {
     localCoprocessorL2: getChainConfig('localCoprocessorL2'),
     composeCoprocessorL1: getChainConfig('composeCoprocessorL1'),
     composeCoprocessorL2: getChainConfig('composeCoprocessorL2'),
+    localcleartext: getChainConfig('localcleartext'),
   },
   paths: {
     artifacts: './artifacts',

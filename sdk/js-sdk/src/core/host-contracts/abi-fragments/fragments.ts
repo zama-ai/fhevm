@@ -309,6 +309,34 @@ export const getSignersForKmsContextAbi: readonly [
   },
 ] as const;
 
+////////////////////////////////////////////////////////////////////////////////
+// ProtocolConfig.getCurrentKmsContextAndEpoch()
+// Protocol version >= 0.14
+////////////////////////////////////////////////////////////////////////////////
+
+export const getCurrentKmsContextAndEpochAbi: readonly [
+  Record<string, unknown> & { readonly name: 'getCurrentKmsContextAndEpoch' },
+] = [
+  {
+    inputs: [],
+    name: 'getCurrentKmsContextAndEpoch',
+    outputs: [
+      {
+        internalType: 'uint256',
+        name: 'contextId',
+        type: 'uint256',
+      },
+      {
+        internalType: 'uint256',
+        name: 'epochId',
+        type: 'uint256',
+      },
+    ],
+    stateMutability: 'view',
+    type: 'function',
+  },
+] as const;
+
 //getSignersForKmsContext
 ////////////////////////////////////////////////////////////////////////////////
 // InputVerifier.getCoprocessorSigners()

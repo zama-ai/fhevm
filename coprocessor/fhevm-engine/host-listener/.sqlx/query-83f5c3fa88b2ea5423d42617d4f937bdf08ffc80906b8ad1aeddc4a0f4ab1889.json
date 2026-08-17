@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO pbs_computations(handle, host_chain_id) VALUES($1, $2) \n             ON CONFLICT DO NOTHING;",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "83f5c3fa88b2ea5423d42617d4f937bdf08ffc80906b8ad1aeddc4a0f4ab1889"
+}

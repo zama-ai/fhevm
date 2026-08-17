@@ -1,6 +1,10 @@
 {
   "files": [],
-  "references": [{ "path": "./src/tsconfig.json" }, { "path": "./test/tsconfig.json" }],
+  "references": [
+    { "path": "./src/tsconfig.json" },
+    { "path": "./test/tsconfig.json" },
+    { "path": "./scripts/tsconfig.json" }
+  ],
   "compilerOptions": {
     "module": "nodenext",
     "moduleResolution": "nodenext"

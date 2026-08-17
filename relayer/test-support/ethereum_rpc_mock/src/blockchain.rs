@@ -245,6 +245,13 @@ impl BlockchainState {
         state.all_logs.clone()
     }
 
+    /// Seed a log returned by `eth_getLogs`. The handler serves all seeded logs unfiltered, so
+    /// tests that exercise an `eth_getLogs` code path register the log(s) they expect back here.
+    pub fn add_log(&self, log: InnerLog) {
+        let mut state = self.state.write().unwrap();
+        state.all_logs.push(log);
+    }
+
     pub fn reset(&self, initial_accounts: HashMap<Address, Account>) {
         let mut state = self.state.write().unwrap();
         *state = RuntimeState::new(initial_accounts);

@@ -23,6 +23,7 @@ extend-exclude = [
     "lib/openzeppelin-contracts-upgradeable/",
     # Specific docs with known legacy typos (tracked separately)
     "coprocessor/fhevm-engine/host-listener/README.md",
+    "sdk/js-sdk/src/wasm/tfhe/v1.6.1/tfhe-worker.mjs",
 
     # Keys and charts (binary/config data)
     "fhevm-keys/",
@@ -138,6 +139,7 @@ eip = "eip"               # Ethereum Improvement Proposal
 calldata = "calldata"     # Solidity calldata keyword
 bytecode = "bytecode"     # compiled contract code
 hardhat = "hardhat"       # Ethereum dev framework
+datas = "datas"           # required JSON key in governance remote-proposal format
 
 # Common variable/function name patterns that might be flagged
 noop = "noop"             # no operation

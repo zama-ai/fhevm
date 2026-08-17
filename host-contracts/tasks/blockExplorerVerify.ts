@@ -10,9 +10,13 @@ import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
 // When a per-contract `task:verify*` is called straight from a deploy script (the gitops sc-deploy
 // pattern), that error combines with `set -eo pipefail` to abort the whole deploy. Genuine failures
 // (bad API key, explorer down, bytecode mismatch) are rethrown unchanged.
-export async function verifyContract(run: RunTaskFunction, address: string): Promise<void> {
+export async function verifyContract(
+  run: RunTaskFunction,
+  address: string,
+  constructorArguments: unknown[] = [],
+): Promise<void> {
   try {
-    await run('verify:verify', { address, constructorArguments: [] });
+    await run('verify:verify', { address, constructorArguments });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (/already verified/i.test(message)) {
@@ -157,6 +161,28 @@ task('task:verifyKMSGeneration')
     await verifyContract(run, proxyAddress);
   });
 
+task('task:verifyBridge')
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
+    false,
+    types.boolean,
+  )
+  .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
+    if (useInternalProxyAddress) {
+      loadHostAddresses();
+    }
+    const proxyAddress = getRequiredEnvVar('CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS');
+    const lzEndpoint = getRequiredEnvVar('LZ_ENDPOINT_ADDRESS');
+    const implementationConfidentialBridgeAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
+    // The ConfidentialBridge implementation stores the LayerZero V2 endpoint as
+    // an immutable in its constructor (via OAppCoreUpgradeable), so the impl
+    // verification needs that one constructorArg. The proxy itself is a
+    // standard ERC1967Proxy with no constructor args.
+    await verifyContract(run, implementationConfidentialBridgeAddress, [lzEndpoint]);
+    await verifyContract(run, proxyAddress);
+  });
+
 task('task:verifyAllHostContracts')
   .addOptionalParam(
     'useInternalProxyAddress',
@@ -225,6 +251,14 @@ task('task:verifyAllHostContracts')
       // to not panic if Etherscan throws an error due to already verified implementation
       console.log('Verify KMSGeneration contract:');
       await hre.run('task:verifyKMSGeneration', { useInternalProxyAddress });
+    } catch (error) {
+      console.error('An error occurred:', error);
+    }
+
+    try {
+      // to not panic if Etherscan throws an error due to already verified implementation
+      console.log('Verify ConfidentialBridge contract:');
+      await hre.run('task:verifyBridge', { useInternalProxyAddress });
     } catch (error) {
       console.error('An error occurred:', error);
     }

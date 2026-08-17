@@ -5,7 +5,7 @@ import type { CoprocessorEip712Types } from '../types/coprocessor.js';
 ////////////////////////////////////////////////////////////////////////////////
 
 /*
-    const EIP712DomainType = [
+    const Eip712DomainType = [
       { name: 'name', type: 'string' },
       { name: 'version', type: 'string' },
       { name: 'chainId', type: 'uint256' },
@@ -16,7 +16,7 @@ import type { CoprocessorEip712Types } from '../types/coprocessor.js';
 export const coprocessorEip712PrimaryType = 'CiphertextVerification' satisfies keyof CoprocessorEip712Types;
 
 export const coprocessorEip712Types: CoprocessorEip712Types = {
-  // EIP712Domain: [
+  // Eip712Domain: [
   //   { name: 'name', type: 'string' },
   //   { name: 'version', type: 'string' },
   //   { name: 'chainId', type: 'uint256' },

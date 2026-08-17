@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                DELETE FROM transactions\n                WHERE (completed_at IS NOT NULL\n                  AND created_at < NOW() - INTERVAL '1 day') OR (completed_at IS NULL\n                  AND created_at < NOW() - INTERVAL '7 day')\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "faf23b99c8ddbc31b32cdbbcc96cdf4b113a5c4181cc95ab2db93f680fe2a8ea"
+}

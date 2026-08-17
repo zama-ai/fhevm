@@ -1,15 +1,15 @@
 use crate::{
     conn::WalletProvider,
     tests::setup::{
-        CustomTestWriter, DbInstance, KmsInstance, S3Instance, blockchain::GatewayInstance,
+        CustomTestWriter, DbInstance, KmsInstance, S3Instance, blockchain::BlockchainInstance,
     },
 };
-use alloy::{primitives::Address, transports::http::reqwest::Url};
-use fhevm_gateway_bindings::{
-    decryption::Decryption::DecryptionInstance,
-    gateway_config::GatewayConfig::GatewayConfigInstance,
+use alloy::transports::http::reqwest::Url;
+use fhevm_gateway_bindings::decryption::Decryption::DecryptionInstance;
+use fhevm_host_bindings::{
+    kms_generation::KMSGeneration::KMSGenerationInstance,
+    protocol_config::ProtocolConfig::ProtocolConfigInstance,
 };
-use fhevm_host_bindings::kms_generation::KMSGeneration::KMSGenerationInstance;
 use sqlx::{Pool, Postgres};
 use std::time::Duration;
 use testcontainers::{ContainerAsync, GenericImage};
@@ -21,7 +21,7 @@ pub struct TestInstance {
     /// Use to enable tracing during tests.
     _tracing_default_guard: Option<tracing::subscriber::DefaultGuard>,
     db: Option<DbInstance>,
-    gateway: Option<GatewayInstance>,
+    blockchain: Option<BlockchainInstance>,
     s3: Option<S3Instance>,
     kms: Option<KmsInstance>,
 
@@ -62,7 +62,14 @@ impl TestInstance {
     }
 
     pub fn db_container(&self) -> &ContainerAsync<GenericImage> {
-        &self.db.as_ref().expect("DB is not setup").db_container
+        self.db
+            .as_ref()
+            .expect("DB is not setup")
+            .db_container
+            .as_ref()
+            .expect(
+                "DB container is not available when running against an external Postgres server",
+            )
     }
 
     pub fn db_url(&self) -> &str {
@@ -78,33 +85,35 @@ impl TestInstance {
     }
 
     pub fn provider(&self) -> &WalletProvider {
-        &self.gateway().provider
+        &self.blockchain().provider
     }
 
-    pub fn anvil_container(&self) -> &ContainerAsync<GenericImage> {
-        &self.gateway().anvil
+    /// Freezes the Anvil process.
+    pub fn pause_anvil(&self) -> anyhow::Result<()> {
+        self.blockchain().pause_anvil()
+    }
+
+    /// Resumes a previously paused Anvil process.
+    pub fn unpause_anvil(&self) -> anyhow::Result<()> {
+        self.blockchain().unpause_anvil()
     }
 
     pub fn decryption_contract(&self) -> &DecryptionInstance<WalletProvider> {
-        &self.gateway().decryption_contract
-    }
-
-    pub fn gateway_config_contract(&self) -> &GatewayConfigInstance<WalletProvider> {
-        &self.gateway().gateway_config_contract
+        &self.blockchain().decryption_contract
     }
 
     pub fn kms_generation_contract(&self) -> &KMSGenerationInstance<WalletProvider> {
-        &self.gateway().kms_generation_contract
+        &self.blockchain().kms_generation_contract
     }
 
-    pub fn kms_verifier_address(&self) -> Address {
-        self.gateway().kms_verifier_address
+    pub fn protocol_config_contract(&self) -> &ProtocolConfigInstance<WalletProvider> {
+        &self.blockchain().protocol_config_contract
     }
 
-    fn gateway(&self) -> &GatewayInstance {
-        self.gateway
+    fn blockchain(&self) -> &BlockchainInstance {
+        self.blockchain
             .as_ref()
-            .expect("GatewayInstance has not been setup")
+            .expect("BlockchainInstance has not been setup")
     }
 
     pub fn s3_url(&self) -> &str {
@@ -112,11 +121,11 @@ impl TestInstance {
     }
 
     pub fn anvil_block_time(&self) -> Duration {
-        self.gateway().anvil_block_time()
+        self.blockchain().anvil_block_time()
     }
 
     pub fn anvil_http_endpoint(&self) -> Url {
-        self.gateway().anvil_http_endpoint()
+        self.blockchain().anvil_http_endpoint()
     }
 
     pub fn kms_container(&self) -> &ContainerAsync<GenericImage> {
@@ -127,7 +136,7 @@ impl TestInstance {
 pub struct TestInstanceBuilder {
     _tracing_default_guard: Option<tracing::subscriber::DefaultGuard>,
     db: Option<DbInstance>,
-    gateway: Option<GatewayInstance>,
+    blockchain: Option<BlockchainInstance>,
     s3: Option<S3Instance>,
     kms: Option<KmsInstance>,
     log_rx: UnboundedReceiver<Vec<u8>>,
@@ -147,7 +156,7 @@ impl Default for TestInstanceBuilder {
         Self {
             _tracing_default_guard: Some(tracing::subscriber::set_default(subscriber)),
             db: None,
-            gateway: None,
+            blockchain: None,
             s3: None,
             kms: None,
             log_rx,
@@ -161,8 +170,8 @@ impl TestInstanceBuilder {
         self
     }
 
-    pub fn with_gateway(mut self, gateway_instance: GatewayInstance) -> Self {
-        self.gateway = Some(gateway_instance);
+    pub fn with_blockchain(mut self, blockchain_instance: BlockchainInstance) -> Self {
+        self.blockchain = Some(blockchain_instance);
         self
     }
 
@@ -185,7 +194,7 @@ impl TestInstanceBuilder {
         TestInstance {
             _tracing_default_guard: self._tracing_default_guard,
             db: self.db,
-            gateway: self.gateway,
+            blockchain: self.blockchain,
             s3: self.s3,
             kms: self.kms,
             log_rx: self.log_rx,
@@ -193,29 +202,20 @@ impl TestInstanceBuilder {
     }
 
     /// Test setup with a DB only.
+    ///
+    /// Uses an already-running, shared Postgres server (one fresh database per test) rather than
+    /// spinning up a container, which is much faster for the many DB-only tests.
     pub async fn db_setup() -> anyhow::Result<TestInstance> {
         let builder = TestInstanceBuilder::default();
-        let db = DbInstance::setup().await?;
+        let db = DbInstance::setup_external().await?;
         Ok(builder.with_db(db).build())
     }
 
-    /// Test setup with a DB and Anvil Gateway.
-    pub async fn db_gw_setup() -> anyhow::Result<TestInstance> {
+    /// Test setup with a DB and Anvil blockchain.
+    pub async fn db_bc_setup() -> anyhow::Result<TestInstance> {
         let builder = TestInstanceBuilder::default();
-        let db = DbInstance::setup().await?;
-        let gateway = GatewayInstance::setup().await?;
-        Ok(builder.with_db(db).with_gateway(gateway).build())
-    }
-
-    /// Full test setup.
-    pub async fn full() -> anyhow::Result<TestInstance> {
-        let s3_instance = S3Instance::setup().await?;
-        let kms_instance = KmsInstance::setup(&s3_instance.url).await?;
-        let test_instance_builder = TestInstanceBuilder::default()
-            .with_db(DbInstance::setup().await?)
-            .with_gateway(GatewayInstance::setup().await?)
-            .with_s3(s3_instance)
-            .with_kms(kms_instance);
-        Ok(test_instance_builder.build())
+        let db = DbInstance::setup_external().await?;
+        let blockchain = BlockchainInstance::setup().await?;
+        Ok(builder.with_db(db).with_blockchain(blockchain).build())
     }
 }

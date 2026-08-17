@@ -9,6 +9,8 @@ coverage
 dist
 node_modules
 types
+# self-contained sub-project: own pnpm deps + prettier/eslint config
+lz-wiring
 
 # files
 *.env

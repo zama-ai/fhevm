@@ -14,11 +14,17 @@ import CustomProvider from './CustomProvider';
 import './tasks/accounts';
 import './tasks/addPausers';
 import './tasks/blockExplorerVerify';
+import './tasks/examples/cOFT';
+import './tasks/examples/handlesList';
 import './tasks/generateKmsMaterials';
+import './tasks/kmsContext';
+import './tasks/mirrorKmsContext';
 import './tasks/ownership';
 import './tasks/pauseContracts';
+import './tasks/prepareCoprocessorUpgrade';
+import './tasks/removePauser';
+import './tasks/swapPauser';
 import './tasks/taskDeploy';
-import './tasks/taskMigrate';
 import './tasks/taskUtils';
 import './tasks/upgradeContracts';
 
@@ -94,11 +100,14 @@ task('test', async (taskArgs, hre, runSuper) => {
 
 const chainIds = {
   localHostChain: 123456,
-  sepolia: 11155111,
   staging: 12345,
   zwsDev: 1337,
-  mainnet: 1,
+  sepolia: 11155111,
+  hoodi: 560048,
   polygonAmoy: 80002,
+  bscTestnet: 97,
+  mainnet: 1,
+  polygon: 137,
   custom: 9999,
 };
 
@@ -139,12 +148,15 @@ const config: HardhatUserConfig = {
         path: "m/44'/60'/0'/0",
       },
     },
+    localHostChain: getChainConfig('localHostChain'),
     staging: getChainConfig('staging'),
     zwsDev: getChainConfig('zwsDev'),
     sepolia: getChainConfig('sepolia'),
-    localHostChain: getChainConfig('localHostChain'),
-    mainnet: getChainConfig('mainnet'),
+    hoodi: getChainConfig('hoodi'),
     polygonAmoy: getChainConfig('polygonAmoy'),
+    bscTestnet: getChainConfig('bscTestnet'),
+    mainnet: getChainConfig('mainnet'),
+    polygon: getChainConfig('polygon'),
     custom: getChainConfig('custom'),
   },
   paths: {

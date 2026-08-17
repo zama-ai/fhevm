@@ -1,5 +1,5 @@
 use std::{
-    sync::Arc,
+    sync::{atomic::AtomicI64, Arc},
     time::{Duration, SystemTime},
 };
 
@@ -18,13 +18,13 @@ mod utils;
 #[tokio::test]
 #[serial(db)]
 async fn test_verify_proof() {
-    let (pool_mngr, _instance) = utils::setup().await.expect("valid setup");
+    let (pool_mngr, _instance, material) = utils::setup().await.expect("valid setup");
     let pool = pool_mngr.pool();
 
     // Generate Valid ZkPok
     let aux: (crate::auxiliary::ZkData, [u8; 92]) =
         utils::aux_fixture(ACL_CONTRACT_ADDR.to_owned());
-    let zk_pok = utils::generate_sample_zk_pok(&pool, &aux.1).await;
+    let zk_pok = utils::generate_sample_zk_pok(&material, &aux.1).await;
     // Insert ZkPok into database
     let request_id_valid = utils::insert_proof(&pool, 101, &zk_pok, &aux.0)
         .await
@@ -48,16 +48,221 @@ async fn test_verify_proof() {
     assert!(!utils::is_valid(&pool, request_id_invalid, max_retries)
         .await
         .unwrap());
+
+    let request_id_null = 103;
+    sqlx::query(
+        "INSERT INTO verify_proofs
+             (zk_proof_id, input, chain_id, contract_address, user_address, verified)
+         VALUES ($1, NULL, $2, $3, $4, NULL)",
+    )
+    .bind(request_id_null)
+    .bind(aux.chain_id.as_i64())
+    .bind(aux.contract_address)
+    .bind(aux.user_address)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("SELECT pg_notify('fhevm', '')")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    for retry in 0..max_retries {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let state = sqlx::query_as::<_, (Option<bool>, Option<Vec<u8>>)>(
+            "SELECT verified, handles FROM verify_proofs WHERE zk_proof_id = $1",
+        )
+        .bind(request_id_null)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        if state.0 == Some(false) {
+            assert_eq!(state.1, Some(Vec::new()));
+            break;
+        }
+        assert!(retry < max_retries - 1, "NULL input was not rejected");
+    }
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_quorum_accepted_proof_is_replayed_only_locally() {
+    let (pool_mngr, _instance, material) = utils::setup().await.expect("valid setup");
+    let pool = pool_mngr.pool();
+
+    let aux = utils::aux_fixture(ACL_CONTRACT_ADDR.to_owned());
+    let zk_pok = utils::generate_sample_zk_pok(&material, &aux.1).await;
+    let request_id = utils::insert_proof(&pool, 150, &zk_pok, &aux.0)
+        .await
+        .unwrap();
+    let handles = utils::wait_for_handles(&pool, request_id, 1000)
+        .await
+        .unwrap();
+    assert!(
+        !handles.is_empty(),
+        "initial verification should produce handles"
+    );
+    let expected_ciphertext_count = handles.len() as i64;
+    let expected_handles = handles.concat();
+
+    sqlx::query("DELETE FROM ciphertexts_branch WHERE handle = ANY($1::BYTEA[])")
+        .bind(&handles)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM ciphertexts WHERE handle = ANY($1::BYTEA[])")
+        .bind(&handles)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let missing_ciphertexts = sqlx::query_as::<_, (i64, i64)>(
+        "SELECT
+             (SELECT COUNT(*) FROM ciphertexts WHERE handle = ANY($1::BYTEA[])),
+             (SELECT COUNT(*) FROM ciphertexts_branch WHERE handle = ANY($1::BYTEA[]))",
+    )
+    .bind(&handles)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(missing_ciphertexts, (0, 0));
+
+    sqlx::query(
+        "UPDATE verify_proofs
+         SET verified = NULL,
+             verified_at = NOW(),
+             handles = $2,
+             retry_count = 0,
+             last_retry_at = NULL
+         WHERE zk_proof_id = $1",
+    )
+    .bind(request_id)
+    .bind(expected_handles)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("SELECT pg_notify('fhevm', '')")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    for retry in 0..1000 {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let remaining: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM verify_proofs WHERE zk_proof_id = $1")
+                .bind(request_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        if remaining == 0 {
+            break;
+        }
+        assert!(
+            retry < 999,
+            "successful local replay should delete the proof row"
+        );
+    }
+
+    let restored_ciphertexts = sqlx::query_as::<_, (i64, i64)>(
+        "SELECT
+             (SELECT COUNT(*) FROM ciphertexts WHERE handle = ANY($1::BYTEA[])),
+             (SELECT COUNT(*) FROM ciphertexts_branch WHERE handle = ANY($1::BYTEA[]))",
+    )
+    .bind(&handles)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        restored_ciphertexts,
+        (expected_ciphertext_count, expected_ciphertext_count),
+        "successful local replay should restore every missing ciphertext"
+    );
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_failed_replay_is_delayed_and_retained() {
+    let (pool_mngr, _instance, material) = utils::setup().await.expect("valid setup");
+    let pool = pool_mngr.pool();
+
+    let aux = utils::aux_fixture(ACL_CONTRACT_ADDR.to_owned());
+    let zk_pok = utils::generate_sample_zk_pok(&material, &aux.1).await;
+    let request_id = utils::insert_proof(&pool, 150, &zk_pok, &aux.0)
+        .await
+        .unwrap();
+    utils::wait_for_handles(&pool, request_id, 1000)
+        .await
+        .unwrap();
+
+    sqlx::query(
+        "UPDATE verify_proofs
+         SET verified = NULL,
+             verified_at = NOW(),
+             handles = $2,
+             retry_count = 0,
+             last_retry_at = NULL
+         WHERE zk_proof_id = $1",
+    )
+    .bind(request_id)
+    .bind(vec![7u8; 32])
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("SELECT pg_notify('fhevm', '')")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    for retry in 0..1000 {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let row = sqlx::query_as::<_, (i32, Option<String>, bool)>(
+            "SELECT retry_count, last_error, last_retry_at IS NOT NULL
+             FROM verify_proofs WHERE zk_proof_id = $1",
+        )
+        .bind(request_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        if row.0 == 1 {
+            assert!(row.1.is_some());
+            assert!(row.2);
+            break;
+        }
+        assert!(retry < 999, "failed replay should record one retry");
+    }
+
+    sqlx::query(
+        "UPDATE verify_proofs
+         SET verified_at = NOW() - INTERVAL '8 days', last_retry_at = NULL
+         WHERE zk_proof_id = $1",
+    )
+    .bind(request_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("SELECT pg_notify('fhevm', '')")
+        .execute(&pool)
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    let retry_count: i32 =
+        sqlx::query_scalar("SELECT retry_count FROM verify_proofs WHERE zk_proof_id = $1")
+            .bind(request_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(retry_count, 1, "expired replay payload should be retained");
 }
 
 #[tokio::test]
 #[serial(db)]
 async fn test_rolled_back_claim_is_reprocessed_exactly_once() {
-    let (pool_mngr, _instance) = utils::setup().await.expect("valid setup");
+    let (pool_mngr, _instance, material) = utils::setup().await.expect("valid setup");
     let pool = pool_mngr.pool();
 
     let aux = utils::aux_fixture(ACL_CONTRACT_ADDR.to_owned());
-    let zk_pok = utils::generate_sample_zk_pok(&pool, &aux.1).await;
+    let zk_pok = utils::generate_sample_zk_pok(&material, &aux.1).await;
     let request_id: i64 = 201;
 
     // Insert WITHOUT notifying so the idle worker doesn't race us to the row.
@@ -143,6 +348,7 @@ async fn test_worker_recovers_after_backend_termination() {
         worker_thread_count: 1,
         pg_timeout: Duration::from_secs(60),
         pg_auto_explain_with_min_duration: None,
+        gcs_mode: false,
     };
 
     let pool_mngr = PostgresPoolManager::connect_pool(
@@ -162,12 +368,16 @@ async fn test_worker_recovers_after_backend_termination() {
     // keyset and CRS; doing that while the worker is also loading them contends
     // for the shared pool and can exhaust the acquire timeout on a slow runner.
     let aux = utils::aux_fixture(ACL_CONTRACT_ADDR.to_owned());
-    let zk_pok = utils::generate_sample_zk_pok(&pool, &aux.1).await;
+    let material = utils::load_proof_material(&pool)
+        .await
+        .expect("proof material should load");
+    let zk_pok = utils::generate_sample_zk_pok(&material, &aux.1).await;
 
     let _service_task = tokio::spawn(crate::verifier::execute_verify_proofs_loop(
         pool_mngr,
         conf,
         Arc::new(RwLock::new(SystemTime::now())),
+        Arc::new(AtomicI64::new(-1)),
     ));
 
     // Process one proof so the worker is fully up and running.
@@ -210,12 +420,12 @@ async fn test_worker_recovers_after_backend_termination() {
 #[tokio::test]
 #[serial(db)]
 async fn test_verify_empty_input_list() {
-    let (pool_mngr, _instance) = utils::setup().await.expect("valid setup");
+    let (pool_mngr, _instance, material) = utils::setup().await.expect("valid setup");
     let pool = pool_mngr.pool();
 
     let aux: (crate::auxiliary::ZkData, [u8; 92]) =
         utils::aux_fixture(ACL_CONTRACT_ADDR.to_owned());
-    let input = utils::generate_empty_input_list(&pool, &aux.1).await;
+    let input = utils::generate_empty_input_list(&material, &aux.1).await;
     let request_id = utils::insert_proof(&pool, 101, &input, &aux.0)
         .await
         .unwrap();
@@ -239,7 +449,7 @@ async fn test_verify_empty_input_list() {
 #[tokio::test]
 #[serial(db)]
 async fn test_max_input_index() {
-    let (pool_mngr, _instance) = utils::setup().await.expect("valid setup");
+    let (pool_mngr, _instance, material) = utils::setup().await.expect("valid setup");
     let pool = pool_mngr.pool();
 
     let aux: (crate::auxiliary::ZkData, [u8; 92]) =
@@ -253,7 +463,7 @@ async fn test_max_input_index() {
         utils::insert_proof(
             &pool,
             101,
-            &utils::generate_zk_pok_with_inputs(&pool, &aux.1, &inputs).await,
+            &utils::generate_zk_pok_with_inputs(&material, &aux.1, &inputs).await,
             &aux.0
         )
         .await
@@ -268,7 +478,7 @@ async fn test_max_input_index() {
     let request_id = utils::insert_proof(
         &pool,
         102,
-        &utils::generate_zk_pok_with_inputs(&pool, &aux.1, &inputs).await,
+        &utils::generate_zk_pok_with_inputs(&material, &aux.1, &inputs).await,
         &aux.0,
     )
     .await
@@ -295,8 +505,8 @@ async fn test_max_input_index() {
 
 #[tokio::test]
 #[serial(db)]
-async fn test_verify_proof_rerandomises_ciphertexts_before_storage() {
-    let (pool_mngr, _instance) = utils::setup().await.expect("valid setup");
+async fn test_verify_proof_rerandomises_compact_list_before_expansion() {
+    let (pool_mngr, _instance, material) = utils::setup().await.expect("valid setup");
     let pool = pool_mngr.pool();
 
     let aux: (crate::auxiliary::ZkData, [u8; 92]) =
@@ -308,7 +518,7 @@ async fn test_verify_proof_rerandomises_ciphertexts_before_storage() {
         utils::ZkInput::U32(67890),
         utils::ZkInput::U64(1234567890),
     ];
-    let zk_pok = utils::generate_zk_pok_with_inputs(&pool, &aux.1, &inputs).await;
+    let zk_pok = utils::generate_zk_pok_with_inputs(&material, &aux.1, &inputs).await;
     let request_id = utils::insert_proof(&pool, 103, &zk_pok, &aux.0)
         .await
         .unwrap();
@@ -348,7 +558,7 @@ async fn test_verify_proof_rerandomises_ciphertexts_before_storage() {
             .collect::<Vec<_>>()
     );
 
-    let baseline = utils::compress_inputs_without_rerandomization(&pool, &zk_pok)
+    let baseline = utils::compress_inputs_without_rerandomization(&material, &zk_pok)
         .await
         .unwrap();
     assert_eq!(baseline.len(), stored.len());
@@ -360,7 +570,20 @@ async fn test_verify_proof_rerandomises_ciphertexts_before_storage() {
         "stored ciphertexts should differ from the pre-rerandomization compression"
     );
 
-    let decrypted = utils::decrypt_ciphertexts(&pool, &handles).await.unwrap();
+    let expected = utils::compress_inputs_with_compact_list_rerandomization(&material, &zk_pok)
+        .await
+        .unwrap();
+    assert_eq!(
+        stored
+            .iter()
+            .map(|ct| ct.ciphertext.clone())
+            .collect::<Vec<_>>(),
+        expected
+    );
+
+    let decrypted = utils::decrypt_ciphertexts(&pool, &material, &handles)
+        .await
+        .unwrap();
     assert_eq!(
         decrypted
             .iter()
@@ -390,12 +613,12 @@ async fn test_verify_proof_rerandomises_ciphertexts_before_storage() {
 async fn test_unknown_chain_id_does_not_stop_known_chain_processing() {
     use sqlx::Row;
 
-    let (pool_mngr, _instance) = utils::setup().await.expect("valid setup");
+    let (pool_mngr, _instance, material) = utils::setup().await.expect("valid setup");
     let pool = pool_mngr.pool();
 
     let aux: (crate::auxiliary::ZkData, [u8; 92]) =
         utils::aux_fixture(ACL_CONTRACT_ADDR.to_owned());
-    let zk_pok = utils::generate_sample_zk_pok(&pool, &aux.1).await;
+    let zk_pok = utils::generate_sample_zk_pok(&material, &aux.1).await;
 
     // Request 1 (LOWER zk_proof_id): chain_id 99_999, not in host_chains.
     // Before the filter, this would be the first row the worker fetched and

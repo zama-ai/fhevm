@@ -1,6 +1,7 @@
+import { canUseUnifiedDecryptionPermit } from '@fhevm/sdk/actions/base';
 import { defineFhevmChain } from '@fhevm/sdk/chains';
 import { createFhevmClient, hasFhevmRuntimeConfig, setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
-import type { Auth } from '@fhevm/sdk/types';
+import { createFhevmCleartextClient } from '@fhevm/sdk/ethers/cleartext';
 import type { Signer } from 'ethers';
 import { JsonRpcProvider, getBytes, hexlify } from 'ethers';
 
@@ -16,6 +17,9 @@ import type {
 type FhevmClient = ReturnType<typeof createFhevmClient>;
 type CreateFhevmClientParameters = Parameters<typeof createFhevmClient>[0];
 type FhevmClientProvider = CreateFhevmClientParameters['provider'];
+type Auth = any;
+
+const CLEARTEXT = false;
 
 export class FhevmSdk implements SdkInstance {
   #fullClient: FhevmClient;
@@ -24,6 +28,17 @@ export class FhevmSdk implements SdkInstance {
   constructor(fullClient: FhevmClient, auth: Auth | undefined) {
     this.#fullClient = fullClient;
     this.#auth = auth;
+  }
+
+  /**
+   * Escape hatch exposing the underlying `@fhevm/sdk` client for suites that
+   * must exercise raw client actions the `SdkInstance` interface does not
+   * cover — e.g. the ERC-1271 SDK-client-gap tests, which drive
+   * `signDecryptionPermit` / `parseSignedDecryptionPermit` directly to pin the
+   * SDK's current signature-shape limitations.
+   */
+  get rawClient(): FhevmClient {
+    return this.#fullClient;
   }
 
   getUserDecryptErrorMessage(parameters: {
@@ -69,11 +84,12 @@ export class FhevmSdk implements SdkInstance {
     readonly kmsContractAddress: string;
     readonly inputVerifierContractAddress: string;
     readonly aclContractAddress: string;
+    readonly protocolConfigAddress?: string;
     readonly relayerUrl: string;
     readonly rpcUrl: string;
     readonly gatewayChainId: number;
     readonly chainId: number;
-    readonly auth?: RelayerSdkAuth;
+    readonly auth?: Auth;
   }): Promise<SdkInstance> {
     const {
       verifyingContractAddressDecryption,
@@ -81,6 +97,7 @@ export class FhevmSdk implements SdkInstance {
       kmsContractAddress,
       inputVerifierContractAddress,
       aclContractAddress,
+      protocolConfigAddress,
       relayerUrl,
       rpcUrl,
       gatewayChainId,
@@ -95,12 +112,18 @@ export class FhevmSdk implements SdkInstance {
       setFhevmRuntimeConfig({
         singleThread: false,
         logger: {
-          debug: (message: string) => console.log(message),
-          error: (message: string, _cause: unknown) => console.error(message),
+          debug: (message: string) => console.log(`[debug] ${message}`),
+          warn: (message: string) => console.log(`[warn] ${message}`),
+          error: (message: string, cause: unknown) => {
+            console.log(`[error] ${message}`);
+            if (cause !== undefined) {
+              console.log(`[error] ${cause}`);
+            }
+          },
         },
       });
     }
-    const fullClient = createFhevmClient({
+    const args = {
       provider: new JsonRpcProvider(rpcUrl) as unknown as FhevmClientProvider,
       chain: defineFhevmChain({
         id: chainId,
@@ -109,6 +132,7 @@ export class FhevmSdk implements SdkInstance {
             acl: { address: aclContractAddress as `0x${string}` },
             inputVerifier: { address: inputVerifierContractAddress as `0x${string}` },
             kmsVerifier: { address: kmsContractAddress as `0x${string}` },
+            ...(protocolConfigAddress ? { protocolConfig: { address: protocolConfigAddress as `0x${string}` } } : {}),
           },
           relayerUrl: sanitizedRelayerUrl,
           gateway: {
@@ -124,15 +148,24 @@ export class FhevmSdk implements SdkInstance {
           },
         },
       }),
-    });
+    };
+
+    const fullClient = CLEARTEXT ? createFhevmCleartextClient(args) : createFhevmClient(args);
     await fullClient.ready;
-    return new FhevmSdk(fullClient, toSdkAuth(auth));
+    return new FhevmSdk(fullClient, auth);
   }
 
   get supportsWildcard(): boolean {
     return true;
   }
 
+  /**
+   * Decrypt one handle through the LEGACY permit path (v1 permit -> relayer
+   * `/v2`). Kept legacy deliberately: this helper is shared by suites that run
+   * against older protocol versions, so it must not require the unified route.
+   * Suites asserting the UNIFIED (v3) envelope must not treat a pass here as
+   * evidence that v3 works — use `userDecryptSingleHandleUnified` for that.
+   */
   async userDecryptSingleHandle(parameters: {
     readonly handle: string;
     readonly contractAddress: string;
@@ -149,9 +182,9 @@ export class FhevmSdk implements SdkInstance {
       transportKeyPair = await this.#fullClient.generateTransportKeyPair();
     }
 
-    const signedPermit = await this.#fullClient.signDecryptionPermit({
+    const signedPermit = await this.#fullClient.signLegacyDecryptionPermit({
       contractAddresses: [contractAddress],
-      durationDays: 10,
+      durationSeconds: 10 * 24 * 3600, // 10 days
       startTimestamp: parameters.startTimestamp ?? Math.floor(Date.now() / 1000),
       transportKeyPair,
       signer,
@@ -163,13 +196,50 @@ export class FhevmSdk implements SdkInstance {
       transportKeyPair,
       signedPermit,
       encryptedValue: handle,
-      options: this.#auth ? { auth: this.#auth } : undefined,
     });
 
     if (typeof res.value === 'number') {
       return BigInt(res.value);
     }
     return res.value;
+  }
+
+  /**
+   * Decrypt one handle through the UNIFIED permit path (v3). Same assertion as
+   * `userDecryptSingleHandle`, but built on `signUnifiedDecryptionPermit`, so a
+   * pass proves the v3 envelope works end to end through the public SDK — the
+   * claim the legacy helper cannot support. Returns `undefined` when the
+   * relayer does not advertise the v3 route, letting callers skip rather than
+   * fail on a deployment that legitimately has no unified endpoint.
+   */
+  async userDecryptSingleHandleUnified(parameters: {
+    readonly handle: string;
+    readonly contractAddress: string;
+    readonly signer: Signer & { readonly address: string };
+  }): Promise<ClearValueType | undefined> {
+    if (!(await canUseUnifiedDecryptionPermit(this.#fullClient))) {
+      return undefined;
+    }
+    const { handle, contractAddress, signer } = parameters;
+    const transportKeyPair = await this.#fullClient.generateTransportKeyPair();
+
+    const signedPermit = await this.#fullClient.signUnifiedDecryptionPermit({
+      contractAddresses: [contractAddress],
+      durationSeconds: 10 * 24 * 3600,
+      startTimestamp: Math.floor(Date.now() / 1000),
+      transportKeyPair,
+      signer,
+      signerAddress: signer.address,
+    });
+
+    const res = await this.#fullClient.decryptValue({
+      contractAddress,
+      transportKeyPair,
+      signedPermit,
+      encryptedValue: handle,
+    });
+
+    return typeof res.value === 'number' ? BigInt(res.value) : res.value;
   }
 
   async delegatedUserDecryptSingleHandle(parameters: {
@@ -189,9 +259,9 @@ export class FhevmSdk implements SdkInstance {
       transportKeyPair = await this.#fullClient.generateTransportKeyPair();
     }
 
-    const signedPermit = await this.#fullClient.signDecryptionPermit({
+    const signedPermit = await this.#fullClient.signLegacyDecryptionPermit({
       contractAddresses: [contractAddress],
-      durationDays: 10,
+      durationSeconds: 10 * 24 * 3600, // 10 days
       startTimestamp: parameters.startTimestamp ?? Math.floor(Date.now() / 1000),
       transportKeyPair,
       signer,
@@ -204,7 +274,6 @@ export class FhevmSdk implements SdkInstance {
       transportKeyPair,
       signedPermit,
       encryptedValue: handle,
-      options: this.#auth ? { auth: this.#auth } : undefined,
     });
 
     if (typeof res.value === 'number') {
@@ -216,9 +285,9 @@ export class FhevmSdk implements SdkInstance {
   async publicDecrypt(
     handles: readonly string[],
   ): Promise<{ clearValues: ClearValues; abiEncodedClearValues: `0x${string}`; decryptionProof: `0x${string}` }> {
-    const res = await this.#fullClient.readPublicValuesWithSignatures({
+    const res = await this.#fullClient.decryptPublicValuesWithSignatures({
       encryptedValues: handles,
-      options: this.#auth ? { auth: this.#auth } : undefined,
+      options: this.#auth ? { auth: toSdkAuth(this.#auth) } : undefined,
     });
 
     const clearValues: Record<`0x${string}`, bigint | boolean | `0x${string}`> = {};
@@ -245,7 +314,7 @@ export class FhevmSdk implements SdkInstance {
       values: parameters.values,
       contractAddress: parameters.contractAddress,
       userAddress: parameters.userAddress,
-      options: this.#auth ? { auth: this.#auth } : undefined,
+      options: this.#auth ? { auth: toSdkAuth(this.#auth) } : undefined,
     });
     return {
       handles: res.encryptedValues.map((ev) => getBytes(ev)),
@@ -262,7 +331,6 @@ export class FhevmSdk implements SdkInstance {
       contractAddress: parameters.contractAddress,
       userAddress: parameters.userAddress,
       value: { type: 'uint64', value: parameters.value },
-      options: this.#auth ? { auth: this.#auth } : undefined,
     });
     return {
       handles: [getBytes(res.encryptedValue)],

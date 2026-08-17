@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Multi-WASM Round Trip</title>
+    <style>
+      body {
+        background: #111;
+        color: #e8e8e8;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        padding: 2rem;
+      }
+      .pass {
+        color: #4caf50;
+      }
+      .fail {
+        color: #f44336;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>Multi-WASM Round Trip</h2>
+    <pre id="log"></pre>
+    <script type="module" src="../scripts/roundtrip.ts"></script>
+  </body>
+</html>

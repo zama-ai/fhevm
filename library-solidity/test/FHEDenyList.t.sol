@@ -45,7 +45,7 @@ contract FHEDenyListTest is HostContractsDeployerTestUtils {
             GATEWAY_SOURCE,
             GATEWAY_SOURCE,
             GATEWAY_CHAIN_ID,
-            _makeKmsNodes(1),
+            _makeKmsNodeParams(1),
             _defaultThresholds(),
             inputSigners,
             1

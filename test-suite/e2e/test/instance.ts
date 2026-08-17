@@ -1,27 +1,31 @@
-import { MainnetConfig, SepoliaConfig } from '@zama-fhe/relayer-sdk/node';
 import { network } from 'hardhat';
 import { vars } from 'hardhat/config';
 
 import { FhevmSdk } from './sdk/fhevm-sdk/sdk';
-import { RelayerSdk } from './sdk/relayer-sdk/sdk';
 import type { Signers } from './signers';
 import { FhevmInstances } from './types';
 
-console.log(`=========================================================`);
-console.log(`process.env.RELAYER_SDK_VERSION=${process.env.RELAYER_SDK_VERSION}`);
+const MainnetConfig = {
+  aclContractAddress: '0xcA2E8f1F656CD25C01F05d0b243Ab1ecd4a8ffb6',
+  kmsContractAddress: '0x77627828a55156b04Ac0DC0eb30467f1a552BB03',
+  inputVerifierContractAddress: '0xCe0FC2e05CFff1B719EFF7169f7D80Af770c8EA2',
+  verifyingContractAddressDecryption: '0x0f6024a97684f7d90ddb0fAAD79cB15F2C888D24',
+  verifyingContractAddressInputVerification: '0xcB1bB072f38bdAF0F328CdEf1Fc6eDa1DF029287',
+  chainId: 1,
+  gatewayChainId: 261131,
+  relayerUrl: 'https://relayer.mainnet.zama.org/v2',
+} as const;
 
-let useFhevmSdk = false;
-if (!(typeof process.env.RELAYER_SDK_VERSION === 'string' && process.env.RELAYER_SDK_VERSION.length > 0)) {
-  useFhevmSdk = true;
-}
-
-console.log(`useFhevmSdk=${useFhevmSdk}`);
-console.log(`=========================================================`);
-
-// By default use @fhevm/sdk
-// const useFhevmSdk =
-//   !(typeof process.env.RELAYER_SDK_VERSION === "string" && process.env.RELAYER_SDK_VERSION.length > 0) && false;
-//const useFhevmSdk = true;
+const SepoliaConfig = {
+  aclContractAddress: '0xf0Ffdc93b7E186bC2f8CB3dAA75D86d1930A433D',
+  kmsContractAddress: '0xbE0E383937d564D7FF0BC3b46c51f0bF8d5C311A',
+  inputVerifierContractAddress: '0xBBC1fFCdc7C316aAAd72E807D9b0272BE8F84DA0',
+  verifyingContractAddressDecryption: '0x5D8BD78e2ea6bbE41f26dFe9fdaEAa349e077478',
+  verifyingContractAddressInputVerification: '0x483b9dE06E4E4C7D35CCf5837A1668487406D955',
+  chainId: 11155111,
+  gatewayChainId: 10901,
+  relayerUrl: 'https://relayer.testnet.zama.org/v2',
+} as const;
 
 const defaults = (() => {
   const chainId = network.config.chainId;
@@ -69,6 +73,11 @@ const verifyingContractAddressInputVerification =
   process.env.INPUT_VERIFICATION_ADDRESS || defaults?.verifyingContractAddressInputVerification;
 if (!verifyingContractAddressInputVerification) throw new Error('INPUT_VERIFICATION_ADDRESS is required');
 
+const protocolConfigAddress = requireEnv(
+  process.env.PROTOCOL_CONFIG_CONTRACT_ADDRESS,
+  'PROTOCOL_CONFIG_CONTRACT_ADDRESS',
+);
+
 const relayerUrl = process.env.RELAYER_URL || defaults?.relayerUrl;
 if (!relayerUrl) throw new Error('RELAYER_URL is required');
 
@@ -94,17 +103,32 @@ export const createInstance = async () => {
     kmsContractAddress: kmsVerifierAddress,
     inputVerifierContractAddress: inputAdd,
     aclContractAddress: aclAddress,
+    ...(protocolConfigAddress ? { protocolConfigAddress } : {}),
     rpcUrl: (network.config as { url: string }).url,
     relayerUrl,
     gatewayChainId: gatewayChainID,
     chainId: hostChainID,
     ...(auth ? { auth } : {}),
   };
-  if (useFhevmSdk) {
-    return FhevmSdk.create(cfg);
-  }
-  return RelayerSdk.create(cfg);
+  return FhevmSdk.create(cfg);
 };
 
 // Export coprocessor config addresses for smoke tests
-export { aclAddress, coprocessorAddress, kmsVerifierAddress };
+export { aclAddress, coprocessorAddress, kmsVerifierAddress, protocolConfigAddress };
+
+// Values the unified user-decryption helper needs to build and
+// submit requests directly against the relayer's `/v3/user-decrypt` endpoint
+// (see test/sdk/unified/unifiedUserDecrypt.ts for why the public SDK is not
+// used there). Re-declared with explicit `string` types: the module-level
+// throw guards above narrow them within this module, but the exported declared
+// type would otherwise remain `string | undefined` and fail strict-mode
+// consumers.
+const unifiedRelayerUrl: string = relayerUrl;
+const unifiedDecryptionAddress: string = verifyingContractAddressDecryption;
+/** `x-api-key` value for auth-fronted relayers; empty string on local stacks. */
+const relayerApiKey: string = apiKey;
+export {
+  unifiedRelayerUrl as relayerUrl,
+  unifiedDecryptionAddress as verifyingContractAddressDecryption,
+  relayerApiKey,
+};

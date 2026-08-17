@@ -1,12 +1,12 @@
 use std::time::Duration;
 
-use clap::{command, Parser};
+use clap::Parser;
 use fhevm_engine_common::telemetry::MetricsConfig;
 use fhevm_engine_common::types::SignerType;
 use fhevm_engine_common::utils::DatabaseURL;
 use humantime::parse_duration;
 use sns_worker::metrics::SNS_LATENCY_OP_HISTOGRAM_CONF;
-use sns_worker::SchedulePolicy;
+use sns_worker::{S3MigrationMode, SchedulePolicy, DEFAULT_S3_MIGRATION_MAX_RETRIES};
 use tracing::Level;
 
 #[derive(Parser, Debug, Clone)]
@@ -49,15 +49,10 @@ pub struct Args {
     #[arg(long, env = "OTEL_SERVICE_NAME", default_value = "sns-executor")]
     pub service_name: String,
 
-    /// S3 bucket name for ct128 ciphertexts
+    /// S3 bucket name for ciphertexts.
     /// See also: general purpose buckets naming rules
-    #[arg(long, default_value = "ct128")]
-    pub bucket_name_ct128: String,
-
-    /// S3 bucket name for ct64 ciphertexts
-    /// See also: general purpose buckets naming rules
-    #[arg(long, default_value = "ct64")]
-    pub bucket_name_ct64: String,
+    #[arg(long)]
+    pub bucket_name: String,
 
     /// Maximum number of concurrent uploads to S3
     #[arg(long, default_value_t = 100)]
@@ -137,9 +132,35 @@ pub struct Args {
 
     #[arg(short, long)]
     pub private_key: Option<String>,
+
+    /// Print the compiled-in coprocessor stack version and exit.
+    #[arg(long)]
+    pub stack_version: bool,
+
+    /// S3 object format migration mode: no, before, before-and-quit, concurrent, or dry-run.
+    ///
+    /// concurrent keeps the worker running and publishes legacy S3 object copies
+    /// alongside the current format for mixed-version rollouts.
+    /// dry-run scans visible legacy rows and reports planned actions without S3
+    /// or database writes.
+    ///
+    /// The value can also be supplied via the S3_MIGRATION_MODE environment variable
+    /// (useful for test-suite rollouts so that old pre-feature images are unaffected
+    /// by changes to the compose command line).
+    #[arg(long, default_value = "no", value_parser = clap::value_parser!(S3MigrationMode), env = "S3_MIGRATION_MODE")]
+    pub s3_migration: S3MigrationMode,
+
+    /// Delay between S3 migration retries after idle concurrent scans or migration panics.
+    #[arg(long, default_value = "5m", value_parser = parse_duration, env = "S3_MIGRATION_SLEEP_DURATION")]
+    pub s3_migration_sleep_duration: Duration,
+
+    /// Maximum recorded migration failures per handle before retry selection stops.
+    #[arg(long, default_value_t = DEFAULT_S3_MIGRATION_MAX_RETRIES, value_parser = clap::value_parser!(i32).range(1..), env = "S3_MIGRATION_MAX_RETRIES")]
+    pub s3_migration_max_retries: i32,
 }
 
 pub fn parse_args() -> Args {
+    fhevm_engine_common::handle_stack_version_flag();
     let args = Args::parse();
     // Set global configs from args
     let _ = SNS_LATENCY_OP_HISTOGRAM_CONF.set(args.metric_sns_op_latency);

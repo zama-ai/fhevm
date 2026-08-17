@@ -1,11 +1,13 @@
 # syntax=docker/dockerfile:1
-# Base from https://docs.docker.com/guides/rust/develop/
-ARG RUST_VERSION=1.93
+# RUST_IMAGE_VERSION is intentionally left without a default so the Rust toolchain
+# version has a single source of truth: relayer/rust-toolchain.toml.
+ARG RUST_IMAGE_VERSION
 ARG APP_NAME=fhevm-relayer
 
-FROM cgr.dev/zama.ai/rust:${RUST_VERSION}-dev AS build
+FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS build
 ARG APP_NAME
 WORKDIR /app
+USER root
 
 # Build the application.
 # Leverage a cache mount to /usr/local/cargo/registry/
@@ -14,14 +16,16 @@ WORKDIR /app
 # Leverage a bind mount to the src directory to avoid having to copy the
 # source code into the container. Once built, copy the executable to an
 # output directory before the cache mounted /app/target is unmounted.
-USER root
-RUN apk add --no-cache openssl-dev=3.6.1-r4
-
 RUN --mount=type=bind,source=relayer/Cargo.toml,target=Cargo.toml \
     --mount=type=bind,source=relayer/Cargo.lock,target=Cargo.lock \
     --mount=type=bind,source=relayer/build.rs,target=build.rs \
     --mount=type=bind,source=relayer/src,target=src \
     --mount=type=bind,source=relayer/test-support,target=test-support \
+    # Out-of-tree crates the relayer depends on; bound at absolute paths so Cargo
+    # can resolve the `../` path dependencies declared in relayer/Cargo.toml.
+    --mount=type=bind,source=gateway-contracts/rust_bindings,target=/gateway-contracts/rust_bindings \
+    --mount=type=bind,source=host-contracts/rust_bindings,target=/host-contracts/rust_bindings \
+    --mount=type=bind,source=shared/user-decryption-signature,target=/shared/user-decryption-signature \
 #    --mount=type=bind,source=.git/HEAD,target=.git/HEAD \
 #    --mount=type=bind,source=.git/index,target=.git/index \
 #    --mount=type=bind,source=.git/objects,target=.git/objects \
@@ -39,7 +43,7 @@ RUN --mount=type=bind,source=relayer/Cargo.toml,target=Cargo.toml \
 # runtime dependencies for the application. This often uses a different base
 # image from the build stage where the necessary files are copied from the build
 # stage.
-FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0-dev AS prod
+FROM cgr.dev/zama.ai/glibc-dynamic:16-dev AS prod
 USER root
 RUN apk add --no-cache ca-certificates=20241010-r0
 

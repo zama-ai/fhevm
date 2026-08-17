@@ -11,17 +11,23 @@ import {
 ////////////////////////////////////////////////////////////////////////////////
 
 export async function serializeFheEncryptionKeyWasm(
-  context: { readonly runtime: WithEncrypt },
+  context: {
+    readonly runtime: WithEncrypt;
+  },
   parameters: FheEncryptionKeyWasm,
 ): Promise<FheEncryptionKeyBytes> {
-  assertFheEncryptionKeyWasmOwnedBy(parameters, context.runtime);
+  const tfheVersion = parameters.tfheVersion;
+
+  assertFheEncryptionKeyWasmOwnedBy(parameters, context.runtime, tfheVersion);
 
   const publicKeyBytes: FheEncryptionPublicKeyBytes = await context.runtime.encrypt.serializeFheEncryptionPublicKey({
     publicKey: parameters.publicKey,
+    tfheVersion,
   });
 
   const crsBytes: FheEncryptionCrsBytes = await context.runtime.encrypt.serializeFheEncryptionCrs({
     crs: parameters.crs,
+    tfheVersion,
   });
 
   const metadata: FheEncryptionKeyMetadata = Object.freeze({

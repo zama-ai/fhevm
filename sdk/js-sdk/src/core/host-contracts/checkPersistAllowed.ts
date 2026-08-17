@@ -14,7 +14,7 @@ type Context = {
 };
 
 type Parameters = {
-  readonly address: ChecksummedAddress;
+  readonly aclAddress: ChecksummedAddress;
   readonly userAddress: ChecksummedAddress;
   readonly handleContractPairs: ReadonlyArray<{
     readonly handle: Handle;
@@ -25,7 +25,7 @@ type Parameters = {
 ////////////////////////////////////////////////////////////////////////////////
 
 export async function checkPersistAllowed(context: Context, parameters: Parameters): Promise<void> {
-  const { address, userAddress, handleContractPairs } = parameters;
+  const { aclAddress, userAddress, handleContractPairs } = parameters;
 
   if (handleContractPairs.length === 0) {
     throw new Error('checkPersistAllowed requires at least one (handle, contractAddress) pair');
@@ -38,9 +38,9 @@ export async function checkPersistAllowed(context: Context, parameters: Paramete
 
   // 1. Verify rule: userAddress !== contractAddress
   for (const pair of handleContractPairs) {
-    if (parameters.userAddress.toLowerCase() === pair.contractAddress.toLowerCase()) {
+    if (userAddress.toLowerCase() === pair.contractAddress.toLowerCase()) {
       throw new AclUserDecryptionError({
-        contractAddress: address,
+        contractAddress: aclAddress,
         message: `userAddress ${userAddress} should not be equal to contractAddress when requesting user decryption!`,
       });
     }
@@ -52,12 +52,12 @@ export async function checkPersistAllowed(context: Context, parameters: Paramete
 
   for (const pair of handleContractPairs) {
     // User check (runtime defensive check, use lowercase)
-    const userKey = getKey(parameters.userAddress, pair.handle.bytes32Hex);
+    const userKey = getKey(userAddress, pair.handle.bytes32Hex);
     if (!seenKeys.has(userKey)) {
       seenKeys.add(userKey);
       allChecks.push({
         handle: pair.handle,
-        account: parameters.userAddress,
+        account: userAddress,
       });
     }
     // Contract check (runtime defensive check, use lowercase)
@@ -77,7 +77,7 @@ export async function checkPersistAllowed(context: Context, parameters: Paramete
 
   // 3. Single batched RPC call for all unique checks
   const allResults = await persistAllowed(context, {
-    address,
+    aclAddress,
     pairs: allChecks,
   });
 
@@ -98,8 +98,8 @@ export async function checkPersistAllowed(context: Context, parameters: Paramete
     const userKey = getKey(parameters.userAddress, pair.handle.bytes32Hex);
     if (resultMap.get(userKey) !== true) {
       throw new AclUserDecryptionError({
-        contractAddress: address,
-        message: `User ${parameters.userAddress} is not authorized to decrypt handle ${pair.handle.bytes32Hex}!`,
+        contractAddress: aclAddress,
+        message: `User ${userAddress} is not authorized to decrypt handle ${pair.handle.bytes32Hex}!`,
       });
     }
 
@@ -107,7 +107,7 @@ export async function checkPersistAllowed(context: Context, parameters: Paramete
     const contractKey = getKey(pair.contractAddress, pair.handle.bytes32Hex);
     if (resultMap.get(contractKey) !== true) {
       throw new AclUserDecryptionError({
-        contractAddress: address,
+        contractAddress: aclAddress,
         message: `Dapp contract ${pair.contractAddress} is not authorized to user decrypt handle ${pair.handle.bytes32Hex}!`,
       });
     }

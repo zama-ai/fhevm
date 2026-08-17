@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { PreflightError } from "../errors";
 import { projectContainers } from "../flow/runtime-compose";
+import { kmsConnectorDbName } from "../kms-party";
 import { STATE_DIR } from "../layout";
 import type { VersionBundle } from "../types";
 import { ensureDir, readJson } from "../utils/fs";
@@ -65,6 +66,15 @@ const versionChanges = (previous: Record<string, string> | undefined, next: Reco
 
 type InspectResult = { containers: ReceiptContainer[]; error?: string };
 
+export const requireDockerSnapshot = (snapshot: InspectResult) => {
+  if (snapshot.error) {
+    throw new PreflightError(`Required Docker snapshot failed: ${snapshot.error}`);
+  }
+  if (!snapshot.containers.length) {
+    throw new PreflightError("Required Docker snapshot contained no project containers");
+  }
+};
+
 const inspectFailed = (error: string): InspectResult => {
   console.warn(`[receipt] docker inspect failed: ${error}`);
   return { containers: [], error };
@@ -112,6 +122,49 @@ const psql = async (container: string, database: string, sql: string): Promise<D
   };
 };
 
+export const diagnosticLogArgs = (container: string) => [
+  "docker",
+  "logs",
+  "--since",
+  "1h",
+  "--tail",
+  "10000",
+  container,
+];
+
+/** Bounds a container's logs for the receipt, dropping the OTEL exporter retry spam the
+ * local stack emits with no collector attached — hence fetching more lines than we keep,
+ * so what survives the filter is `maxLines` of signal rather than of noise. */
+export const diagnosticLogOutput = (stdout: string, stderr: string, maxLines = 2000) => {
+  const lines = [stdout, stderr]
+    .filter(Boolean)
+    .join("\n")
+    .split(/\r?\n/)
+    .filter((line) => !line.includes("BatchSpanProcessor.ExportError"));
+  if (lines.length <= maxLines) {
+    return lines.join("\n").trim();
+  }
+  const head = Math.floor(maxLines / 2);
+  const tail = maxLines - head;
+  return [
+    ...lines.slice(0, head),
+    `[receipt] ${lines.length - maxLines} diagnostic log lines omitted`,
+    ...lines.slice(-tail),
+  ].join("\n").trim();
+};
+
+const containerLogs = async (container: string): Promise<DiagnosticSection> => {
+  const args = diagnosticLogArgs(container);
+  const command = args.join(" ");
+  const result = await run(args, { allowFailure: true });
+  return {
+    title: `${container} logs`,
+    command,
+    output: diagnosticLogOutput(result.stdout, result.stderr),
+    error: result.code === 0 ? undefined : (result.stderr || result.stdout).trim() || `docker logs exited ${result.code}`,
+  };
+};
+
 const diagnosticSql = {
   relayer: `
 select ext_job_id, req_status, err_reason, accepted, created_at, updated_at
@@ -133,10 +186,42 @@ where relname ilike '%proof%'
    or relname ilike '%transaction%'
 order by relname;
 `,
+  kmsConnector: `
+select 'prep_keygen_requests' as table_name, status, count(*) from prep_keygen_requests group by status
+union all
+select 'prep_keygen_responses', status, count(*) from prep_keygen_responses group by status
+union all
+select 'keygen_requests', status, count(*) from keygen_requests group by status
+union all
+select 'keygen_responses', status, count(*) from keygen_responses group by status
+union all
+select 'crsgen_requests', status, count(*) from crsgen_requests group by status
+union all
+select 'crsgen_responses', status, count(*) from crsgen_responses group by status
+order by table_name, status;
+`,
 };
 
-const collectFailureDiagnostics = async () => {
+export const kmsConnectorPartyIds = (containerNames: string[]) =>
+  [
+    ...new Set(
+      containerNames.flatMap((name) => {
+        const match = /^kms-connector(?:-(\d+))?-db-migration$/.exec(name);
+        return match ? [match[1] ? Number(match[1]) : 1] : [];
+      }),
+    ),
+  ].sort((a, b) => a - b);
+
+const collectFailureDiagnostics = async (containers: ReceiptContainer[]) => {
   const sections: DiagnosticSection[] = [];
+  const kmsContainers = containers
+    .map((container) => container.name)
+    .filter((name) => /^kms-core(?:-|$)/.test(name) || /^kms-connector(?:-|$)/.test(name));
+  sections.push(...(await Promise.all(kmsContainers.map(containerLogs))));
+  const connectorParties = kmsConnectorPartyIds(containers.map((container) => container.name));
+  for (const party of connectorParties) {
+    sections.push(await psql("coprocessor-and-kms-db", kmsConnectorDbName(party), diagnosticSql.kmsConnector));
+  }
   sections.push(await psql("fhevm-relayer-db", "relayer_db", diagnosticSql.relayer));
   for (const database of ["coprocessor", "coprocessor_1", "coprocessor_2"]) {
     sections.push(await psql("coprocessor-and-kms-db", database, diagnosticSql.coprocessor));
@@ -200,7 +285,9 @@ const markdownEntry = (entry: ReceiptEntry) => {
   return `${lines.join("\n")}\n`;
 };
 
-export const createRolloutReceipt = () => {
+export const createRolloutReceipt = (
+  operations: { inspectContainers?: typeof inspectContainers } = {},
+) => {
   let seq = 0;
   let started = false;
   let currentEnv: Record<string, string> | undefined;
@@ -239,8 +326,10 @@ export const createRolloutReceipt = () => {
     if (lock) {
       currentEnv = lock.env;
     }
-    const docker = options.docker || options.diagnostics ? await inspectContainers() : undefined;
-    const diagnostics = options.diagnostics ? await collectFailureDiagnostics() : undefined;
+    const docker = options.docker || options.diagnostics
+      ? await (operations.inspectContainers ?? inspectContainers)()
+      : undefined;
+    const diagnostics = options.diagnostics ? await collectFailureDiagnostics(docker?.containers ?? []) : undefined;
     const entry: ReceiptEntry = {
       seq: ++seq,
       at: new Date().toISOString(),
@@ -256,6 +345,9 @@ export const createRolloutReceipt = () => {
     await fs.appendFile(receiptJsonlPath(), `${JSON.stringify(entry)}\n`);
     await fs.appendFile(receiptMarkdownPath(), markdownEntry(entry));
     console.log(`[receipt] ${entry.seq}. ${kind}: ${title}`);
+    if (options.docker && docker) {
+      requireDockerSnapshot(docker);
+    }
   };
 
   return { record, start };

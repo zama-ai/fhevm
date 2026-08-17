@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            chain_id,\n            block_hash,\n            crs_id,\n            crs_digest,\n            storage_urls\n        FROM kms_crs_activation_events\n        WHERE\n            status = 'pending'\n            AND crs_content IS NULL\n        FOR UPDATE SKIP LOCKED\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "chain_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "block_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "crs_id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "crs_digest",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "storage_urls",
+        "type_info": "TextArray"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "9d174a381db2612da046ebb58eab90320717f3057752205275e05f8a4640cf8b"
+}

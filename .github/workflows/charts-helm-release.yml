@@ -17,7 +17,7 @@ jobs:
       actions: 'read' # Required to read workflow run information
       contents: 'read' # Required to checkout repository code
       pull-requests: 'read' # Required to read pull request information
-    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
+    runs-on: ubuntu-latest
     outputs:
       changes-charts: ${{ steps.filter.outputs.charts }}
     steps:
@@ -67,10 +67,51 @@ jobs:
         with:
           version: ${{ env.HELM_VERSION }}
 
-      - name: Run chart-releaser
-        uses: helm/chart-releaser-action@d1e09fd16821c091b45aa754f65bae4dd675d425 # v1.6.0
+      - name: Check if helm releases already exist
+        id: check-release
         env:
-          CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}"
+          OCI_REGISTRY: 'oci://ghcr.io/${{ github.repository }}/charts'
+        run: |
+          # At least one chart needs a release unless every chart already exists.
+          release_needed='false'
+
+          for chart_dir in charts/*/; do
+            chart_file="${chart_dir}Chart.yaml"
+            [ -f "${chart_file}" ] || continue
+
+            CHART_NAME=$(grep '^name:' "${chart_file}" | awk '{print $2}' | tr -d '[:space:]')
+            CHART_VERSION=$(grep '^version:' "${chart_file}" | awk '{print $2}' | tr -d '[:space:]')
+
+            if [ -z "${CHART_NAME}" ] || [ -z "${CHART_VERSION}" ]; then
+              echo "Error: Failed to extract chart name or version from ${chart_file}"
+              echo "CHART_NAME: '${CHART_NAME}'"
+              echo "CHART_VERSION: '${CHART_VERSION}'"
+              exit 1
+            fi
+
+            CHART_REF="${OCI_REGISTRY}/${CHART_NAME}"
+
+            echo "Checking if release ${CHART_REF} version ${CHART_VERSION} already exists..."
+
+            if helm show chart "${CHART_REF}" --version "${CHART_VERSION}" > /dev/null 2>&1; then
+              echo "  -> Release already exists for ${CHART_NAME} version ${CHART_VERSION}"
+            else
+              echo "  -> Release does not exist for ${CHART_NAME} version ${CHART_VERSION}"
+              release_needed='true'
+            fi
+          done
+
+          if [ "${release_needed}" = 'true' ]; then
+            echo "release_exists=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "release_exists=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run chart-releaser
+        if: steps.check-release.outputs.release_exists == 'false'
+        uses: helm/chart-releaser-action@cae68fefc6b5f367a0275617c9f83181ba54714f # v1.7.0
+        env:
+          CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CR_SKIP_EXISTING: true
           CR_SKIP_UPLOAD: true
           CR_GENERATE_RELEASE_NOTES: true
@@ -80,13 +121,23 @@ jobs:
           charts_dir: charts
 
       - name: Push Charts to GHCR
-        if: ${{ always() }}
+        if: always() && steps.check-release.outputs.release_exists == 'false'
         env:
           OCI_REGISTRY: "oci://ghcr.io/${{ github.repository }}/charts"
         run: |
-          for pkg in .cr-release-packages/*; do
-            if [ -z "${pkg:-}" ]; then
+          for pkg in .cr-release-packages/*.tgz; do
+            if [ ! -f "${pkg}" ]; then
               break
             fi
+
+            CHART_NAME=$(helm show chart "${pkg}" | grep '^name:' | awk '{print $2}' | tr -d '[:space:]')
+            CHART_VERSION=$(helm show chart "${pkg}" | grep '^version:' | awk '{print $2}' | tr -d '[:space:]')
+
+            if helm show chart "${OCI_REGISTRY}/${CHART_NAME}" --version "${CHART_VERSION}" > /dev/null 2>&1; then
+              echo "Skipping ${CHART_NAME} ${CHART_VERSION}, already exists in registry"
+              continue
+            fi
+
+            echo "Pushing ${pkg}..."
             helm push "${pkg}" "${OCI_REGISTRY}"
           done

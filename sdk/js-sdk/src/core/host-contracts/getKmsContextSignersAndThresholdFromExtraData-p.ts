@@ -1,12 +1,14 @@
-import type { BytesHex, ChecksummedAddress, Uint8Number } from '../types/primitives.js';
+import type { ChecksummedAddress, Uint8Number } from '../types/primitives.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
-import { getVersion, isVersionStrictlyBefore } from './HostContractVersion-p.js';
-import { createCachedFetch } from '../base/cachedFetch.js';
-import { assertIsKmsExtraData, fromKmsExtraData } from '../kms/kmsExtraData.js';
+import type { KmsExtraData } from '../types/kms-p.js';
+import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
+import { isVersionStrictlyBefore } from './HostContractVersion-p.js';
+import { CACHE_TTL_15MIN, createCachedFetch } from '../base/cachedFetch.js';
 import { assertIsChecksummedAddressArray } from '../base/address.js';
 import { isUint8 } from '../base/uint.js';
 import { getContextSignersAndThresholdFromExtraDataAbi } from './abi-fragments/fragments.js';
 import { getTrustedClient } from '../runtime/CoreFhevm-p.js';
+import { assertIsKmsExtraData } from '../kms/kmsExtraData-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -16,8 +18,9 @@ type Context = {
 };
 
 type Parameters = {
-  readonly address: ChecksummedAddress;
-  readonly extraData: BytesHex;
+  readonly kmsVerifierAddress: ChecksummedAddress;
+  readonly extraData: KmsExtraData;
+  readonly fhevmContext: FhevmClientFrozenContext;
 };
 
 type ReturnType = {
@@ -30,11 +33,21 @@ type ReturnType = {
 const cachedGetKmsContextSignersAndThresholdFromExtraData = createCachedFetch<Context, Parameters, ReturnType>({
   executeFn: _getKmsContextSignersAndThresholdFromExtraData,
   cacheKeyFn: (context, params) => {
-    const { kmsContextId } = fromKmsExtraData(params.extraData);
-    const contextIdHex = kmsContextId.toString(16).padStart(64, '0');
-    return `${context.runtime.uid.toLowerCase()}:${params.address.toLowerCase()}:${contextIdHex}`;
+    const kmsContextId = params.extraData.kmsContextId;
+    const kmsContextIdHex = kmsContextId.toString(16).padStart(64, '0');
+    return `${context.runtime.uid.toLowerCase()}:${params.kmsVerifierAddress.toLowerCase()}:${kmsContextIdHex}`;
   },
-  // Permanent cache: signers and threshold are immutable per context ID.
+  // Signers + threshold are immutable per context id, so in principle this could be
+  // cached forever. But this on-chain read also serves as a context validity check —
+  // it reverts (InvalidKmsContext) for an unknown/revoked context — and validity is
+  // NOT immutable: a context can be revoked. Because the relayer is untrusted (it could
+  // keep serving shares for a revoked context and won't signal the revocation), we must
+  // re-verify on-chain within a bounded window rather than trust a stale "valid" entry.
+  // Hence a short TTL, not a permanent cache.
+  // NOTE: this only catches revocation if the on-chain read actually reflects it (reverts
+  // for a *revoked*, not just non-existent, context). If revocation lives only on the
+  // gateway (GatewayConfig.isValidKmsContext), a separate validity read is still needed.
+  ttlMs: CACHE_TTL_15MIN,
 });
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -44,12 +57,14 @@ const cachedGetKmsContextSignersAndThresholdFromExtraData = createCachedFetch<Co
  *
  * Only available on KMSVerifier contracts >= v0.2.0. Throws on older versions.
  *
- * **Caching:** Results are cached permanently per (runtime, address, contextId)
- * with no TTL. On-chain, new KMS context IDs can be added over time, but once
- * a context is created its signers and threshold are immutable — they can never
- * be modified or removed. This makes indefinite caching safe: a cached entry
- * will always match the on-chain state. Concurrent callers to the same context
- * share a single in-flight RPC request (deduplication).
+ * **Caching:** Cached per (runtime, address, contextId) with a short TTL
+ * ({@link CACHE_TTL_15MIN}). The signers and threshold themselves are immutable per
+ * context id, so they alone could be cached indefinitely — but this read also acts as
+ * an on-chain context validity check (it reverts for an unknown/revoked context), and
+ * validity is mutable. Since the relayer is untrusted, a TTL bounds how long a revoked
+ * context could still be served from a stale entry before it is re-verified on-chain.
+ * Concurrent callers to the same context share a single in-flight RPC request
+ * (deduplication).
  *
  * @param parameters.address - The checksummed address of the KMSVerifier contract.
  * @param parameters.extraData - The encoded extraData (v1 format: version byte + 32-byte context ID).
@@ -69,18 +84,19 @@ async function _getKmsContextSignersAndThresholdFromExtraData(
   context: Context,
   parameters: Parameters,
 ): Promise<ReturnType> {
-  const version = await getVersion(context, { address: parameters.address });
-  if (isVersionStrictlyBefore(version, { major: 0, minor: 2 })) {
+  const kmsVerifierVersion = parameters.fhevmContext.hostContractVersion('KMSVerifier');
+  if (isVersionStrictlyBefore(kmsVerifierVersion, { major: 0, minor: 2 })) {
     throw new Error('getContextSignersAndThresholdFromExtraData requires KMSVerifier >= v0.2.0');
   }
 
   const trustedClient = getTrustedClient(context);
-  const address = parameters.address;
+
+  const extraDataBytesHex = parameters.extraData.bytesHex;
 
   const res = await context.runtime.ethereum.readContract(trustedClient, {
-    address: address,
+    address: parameters.kmsVerifierAddress,
     abi: getContextSignersAndThresholdFromExtraDataAbi,
-    args: [parameters.extraData],
+    args: [extraDataBytesHex],
     functionName: getContextSignersAndThresholdFromExtraDataAbi[0].name,
   });
 

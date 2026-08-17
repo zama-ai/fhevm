@@ -15,12 +15,15 @@ use crate::{Config, ExecutionError};
 use aws_sdk_s3::Client;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::db_keys::DbKeyId;
+use fhevm_engine_common::gcs_activation::GCS_NOT_ACTIVATED;
 use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Version};
 use fhevm_engine_common::pg_pool::PostgresPoolManager;
 use fhevm_engine_common::pg_pool::ServiceError;
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::{get_ct_type, SupportedFheCiphertexts};
 use fhevm_engine_common::utils::to_hex;
+use fhevm_engine_common::versioning::StackMode;
+use fhevm_engine_common::versioning::{GcsRollbackPolicy, WriteGuard};
 use opentelemetry::trace::{Status, TraceContextExt};
 use rayon::prelude::*;
 use sqlx::postgres::PgListener;
@@ -28,6 +31,7 @@ use sqlx::Pool;
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use std::fmt;
 use std::num::NonZeroUsize;
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::SystemTime;
@@ -71,6 +75,14 @@ pub struct SwitchNSquashService {
 
     /// Channel to emit internal events, e.g. keys-loaded event
     events_tx: InternalEvents,
+
+    /// Shared blue-green stack mode. While `gcs_mode` is set the worker is the
+    /// green stack in its dry-run window and suppresses S3 uploads + GC.
+    mode: Arc<StackMode>,
+
+    /// GCS dry-run pause flag, re-checked every iteration so a rollback re-pauses
+    /// the loop. `GCS_NOT_ACTIVATED` parks; a real `start_block` runs.
+    start_block_state: Arc<AtomicI64>,
 }
 impl HealthCheckService for SwitchNSquashService {
     async fn health_check(&self) -> HealthStatus {
@@ -83,7 +95,7 @@ impl HealthCheckService for SwitchNSquashService {
         // Timeout for S3 readiness check as the S3 client has its internal retry logic
         match tokio::time::timeout(
             S3_HEALTH_CHECK_TIMEOUT,
-            check_is_ready(&self.s3_client, &self.conf),
+            check_is_ready(&self.s3_client, &self.conf.s3),
         )
         .await
         {
@@ -126,6 +138,7 @@ impl HealthCheckService for SwitchNSquashService {
 }
 
 impl SwitchNSquashService {
+    #[allow(clippy::too_many_arguments)]
     pub async fn create(
         pool_mngr: &PostgresPoolManager,
         conf: Config,
@@ -133,6 +146,8 @@ impl SwitchNSquashService {
         token: CancellationToken,
         s3_client: Arc<Client>,
         events_tx: InternalEvents,
+        mode: Arc<StackMode>,
+        start_block_state: Arc<AtomicI64>,
     ) -> Result<SwitchNSquashService, ExecutionError> {
         Ok(SwitchNSquashService {
             pool: pool_mngr.pool(),
@@ -142,6 +157,8 @@ impl SwitchNSquashService {
             s3_client,
             tx,
             events_tx,
+            mode,
+            start_block_state,
         })
     }
 
@@ -156,6 +173,8 @@ impl SwitchNSquashService {
             let last_active_at = self.last_active_at.clone();
             let keys_cache = keys_cache.clone();
             let events_tx = self.events_tx.clone();
+            let mode = self.mode.clone();
+            let start_block_state = self.start_block_state.clone();
 
             async move {
                 run_loop(
@@ -166,6 +185,8 @@ impl SwitchNSquashService {
                     last_active_at.clone(),
                     keys_cache,
                     events_tx,
+                    mode,
+                    start_block_state,
                 )
                 .await
                 .map_err(ServiceError::from)
@@ -185,6 +206,7 @@ async fn get_keyset(
 }
 
 /// Executes the worker logic for the SnS task.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn run_loop(
     conf: Config,
     tx: Sender<UploadJob>,
@@ -193,6 +215,8 @@ pub(crate) async fn run_loop(
     last_active_at: Arc<RwLock<SystemTime>>,
     keys_cache: Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>>,
     events_tx: InternalEvents,
+    mode: Arc<StackMode>,
+    start_block_state: Arc<AtomicI64>,
 ) -> Result<(), ExecutionError> {
     update_last_active(last_active_at.clone()).await;
 
@@ -211,6 +235,16 @@ pub(crate) async fn run_loop(
     loop {
         // Continue looping until the service is cancelled or a critical error occurs
         update_last_active(last_active_at.clone()).await;
+
+        // GCS gating: park while the dry-run flag is unset (pre-activation or after rollback). No-op for BCS.
+        if mode.gcs_mode() && start_block_state.load(Ordering::SeqCst) == GCS_NOT_ACTIVATED {
+            debug!("GCS not activated (or rolled back); sns-worker paused, re-checking shortly");
+            tokio::select! {
+                _ = token.cancelled() => return Ok(()),
+                _ = tokio::time::sleep(Duration::from_secs(5)) => {}
+            }
+            continue;
+        }
 
         let latest_keys = get_keyset(pool.clone(), keys_cache.clone()).await?;
         if let Some((key_id_gw, keyset)) = latest_keys {
@@ -238,27 +272,49 @@ pub(crate) async fn run_loop(
         // keys is guaranteed by the branch above; panic here if that invariant ever regresses.
         let (_, keys) = keys.as_ref().expect("keyset should be available");
 
-        let (maybe_remaining, _tasks_processed) =
-            fetch_and_execute_sns_tasks(&pool, &tx, keys, &conf, &token)
-                .await
-                .inspect(|(_, tasks_processed)| {
-                    TASK_EXECUTE_SUCCESS_COUNTER.inc_by(*tasks_processed as u64);
-                })
-                .inspect_err(|_| {
-                    TASK_EXECUTE_FAILURE_COUNTER.inc();
-                })?;
+        // While the green stack is in its dry-run window (`gcs_mode`) uploads
+        // and GC are suppressed: ct128 bytes accumulate in `ciphertexts128` and
+        // are only pushed to S3 after cutover flips the mode (on
+        // `event_stack_version_upgraded`). A blue (live) worker has
+        // `gcs_mode == false` from the start, so this is always true for it.
+        let uploads_enabled = !mode.gcs_mode();
+
+        let result = fetch_and_execute_sns_tasks(
+            &pool,
+            &tx,
+            keys,
+            &conf,
+            &token,
+            uploads_enabled,
+            mode.gcs_mode(),
+        )
+        .await
+        .inspect(|res| {
+            if let Some((_, tasks_processed)) = res {
+                TASK_EXECUTE_SUCCESS_COUNTER.inc_by(*tasks_processed as u64);
+            }
+        })
+        .inspect_err(|_| {
+            TASK_EXECUTE_FAILURE_COUNTER.inc();
+        })?;
+        let Some((maybe_remaining, _tasks_processed)) = result else {
+            info!("Cutover completed — SnS BCS worker stopping");
+            return Ok(());
+        };
         if maybe_remaining {
             if token.is_cancelled() {
                 return Ok(());
             }
 
             info!("more tasks to process, continuing");
-            if let Ok(elapsed) = gc_timestamp.elapsed() {
-                if elapsed >= conf.db.cleanup_interval {
-                    info!("gc interval, cleaning up");
-                    gc_ticker.reset();
-                    gc_timestamp = SystemTime::now();
-                    garbage_collect(&pool, conf.db.gc_batch_limit).await?;
+            if uploads_enabled {
+                if let Ok(elapsed) = gc_timestamp.elapsed() {
+                    if elapsed >= conf.db.cleanup_interval {
+                        info!("gc interval, cleaning up");
+                        gc_ticker.reset();
+                        gc_timestamp = SystemTime::now();
+                        garbage_collect(&pool, conf.db.gc_batch_limit).await?;
+                    }
                 }
             }
 
@@ -286,7 +342,9 @@ pub(crate) async fn run_loop(
             _ = gc_ticker.tick() => {
                 info!("gc tick, on_idle");
                 gc_timestamp = SystemTime::now();
-                garbage_collect(&pool, conf.db.gc_batch_limit).await?;
+                if uploads_enabled {
+                    garbage_collect(&pool, conf.db.gc_batch_limit).await?;
+                }
             }
         }
     }
@@ -300,18 +358,36 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
         return Ok(());
     }
 
+    // Fence the GC behind the cutover gate: once execute_cutover merges the green
+    // ct128 into `public` (with digests NULL-re-armed), a retired BCS worker must
+    // not delete those rows before the now-live green stack re-uploads them. The
+    // shared lock + retirement re-check make that airtight instead of relying on
+    // the digest-NULL predicate alone. GC only runs for the live (non-GCS) stack,
+    // so gcs_mode is false here.
+    let WriteGuard::Proceed(mut trx) = fhevm_engine_common::versioning::begin_write_guarded(
+        pool,
+        false,
+        GcsRollbackPolicy::Continue,
+    )
+    .await?
+    else {
+        info!("Cutover completed — skipping ciphertexts128 GC on retired stack");
+        return Ok(());
+    };
+
     let count: Option<i64> = sqlx::query_scalar!(
         "
         SELECT COUNT(*)::BIGINT
         FROM ciphertexts128
         "
     )
-    .fetch_one(pool)
+    .fetch_one(trx.as_mut())
     .await?;
 
     let count = count.unwrap_or(0);
     if count <= limit as i64 {
         // Avoid unnecessary cleanup when there are not too many rows
+        trx.rollback().await?;
         return Ok(());
     }
 
@@ -320,10 +396,8 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
     // Limit the number of rows to update in case of a large backlog due to catchup or burst.
     // Skip locked to prevent concurrent updates.
     let cleanup_span = tracing::info_span!("cleanup_ct128", rows_affected = tracing::field::Empty);
-    let rows_affected: u64 = async {
-        Ok::<u64, sqlx::Error>(
-            sqlx::query!(
-                "
+    let rows_affected: u64 = sqlx::query!(
+        "
         WITH uploaded_ct128 AS (
             SELECT c.handle
             FROM ciphertexts128 c
@@ -339,15 +413,12 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
         USING uploaded_ct128 r
         WHERE c.handle = r.handle;
         ",
-                limit as i32
-            )
-            .execute(pool)
-            .await?
-            .rows_affected(),
-        )
-    }
+        limit as i32,
+    )
+    .execute(trx.as_mut())
     .instrument(cleanup_span.clone())
-    .await?;
+    .await?
+    .rows_affected();
     cleanup_span.record("rows_affected", rows_affected as i64);
 
     if rows_affected > 0 {
@@ -357,20 +428,44 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
         );
     }
 
+    trx.commit().await?;
+
     Ok(())
 }
 
 /// Fetch and process SnS tasks from the database.
 /// Returns (maybe_remaining, number_of_tasks_processed) on success.
+/// Returns `Ok(None)` when a committed cutover has retired this BCS worker
+/// (caller should stop); `Ok(Some((maybe_remaining, tasks_processed)))` otherwise.
 async fn fetch_and_execute_sns_tasks(
     pool: &PgPool,
     tx: &Sender<UploadJob>,
     keys: &KeySet,
     conf: &Config,
     token: &CancellationToken,
-) -> Result<(bool, usize), ExecutionError> {
-    let mut db_txn = match pool.begin().await {
-        Ok(txn) => txn,
+    uploads_enabled: bool,
+    gcs_mode: bool,
+) -> Result<Option<(bool, usize)>, ExecutionError> {
+    // Begin the write tx under the shared controller lock before changing any
+    // ct128 or digest rows. A retired BCS stack stops here; a GCS worker skips
+    // while the dry-run is PAUSED after rollback. See
+    // versioning::begin_write_guarded.
+    let mut db_txn = match fhevm_engine_common::versioning::begin_write_guarded(
+        pool,
+        gcs_mode,
+        GcsRollbackPolicy::Skip,
+    )
+    .await
+    {
+        Ok(WriteGuard::Proceed(txn)) => txn,
+        Ok(WriteGuard::Stop) => {
+            info!("Cutover completed — SnS BCS worker stopping");
+            return Ok(None);
+        }
+        Ok(WriteGuard::Skip) => {
+            debug!("GCS dry-run rolled back — SnS worker skipping cycle");
+            return Ok(Some((false, 0)));
+        }
         Err(err) => {
             error!(error = %err, "Failed to begin transaction");
             return Err(err.into());
@@ -403,6 +498,7 @@ async fn fetch_and_execute_sns_tasks(
                 conf.enable_compression,
                 conf.schedule_policy,
                 token.clone(),
+                uploads_enabled,
             )
         })?;
 
@@ -444,7 +540,7 @@ async fn fetch_and_execute_sns_tasks(
         db_txn.rollback().await?;
     }
 
-    Ok((maybe_remaining, tasks_processed))
+    Ok(Some((maybe_remaining, tasks_processed)))
 }
 
 /// Queries the database for a fixed number of tasks.
@@ -525,7 +621,10 @@ async fn enqueue_upload_tasks(
     tasks: &[HandleItem],
 ) -> Result<(), ExecutionError> {
     for task in tasks.iter() {
-        task.enqueue_upload_task(db_txn).await?;
+        // false = the handle's provenance was deleted by reorg cleanup while
+        // this batch was computing; its publication is cancelled (logged by
+        // the callee) and the computed ct128 is simply left unpublished.
+        let _enqueued = task.enqueue_upload_task(db_txn).await?;
     }
     Ok(())
 }
@@ -542,6 +641,7 @@ fn process_tasks(
     enable_compression: bool,
     policy: SchedulePolicy,
     token: CancellationToken,
+    uploads_enabled: bool,
 ) -> Result<(), ExecutionError> {
     set_server_key(keys.server_key.clone());
 
@@ -554,6 +654,7 @@ fn process_tasks(
                     enable_compression,
                     token.clone(),
                     &keys.client_key,
+                    uploads_enabled,
                 );
             }
         }
@@ -569,6 +670,7 @@ fn process_tasks(
                     enable_compression,
                     token.clone(),
                     &keys.client_key,
+                    uploads_enabled,
                 );
             });
         }
@@ -583,6 +685,7 @@ fn compute_task(
     enable_compression: bool,
     token: CancellationToken,
     _client_key: &Option<ClientKey>,
+    uploads_enabled: bool,
 ) {
     let started_at = SystemTime::now();
     let thread_id = format!("{:?}", std::thread::current().id());
@@ -647,6 +750,20 @@ fn compute_task(
             };
 
             task.ct128 = Arc::new(BigCiphertext::new(bytes, format));
+
+            // In GCS (green) dry-run mode uploads are suppressed: the ct128 is
+            // persisted to `ciphertexts128` + `ciphertext_digest` (with NULL
+            // digests) only. The backfill happens after cutover, when the
+            // resubmit loop drains those rows. Skipping the dispatch here avoids
+            // filling the bounded upload channel (and the resulting error-log
+            // spam) for the whole evaluation window.
+            if !uploads_enabled {
+                let elapsed = started_at.elapsed().map(|d| d.as_secs_f64()).unwrap_or(0.0);
+                if elapsed > 0.0 {
+                    SNS_LATENCY_OP_HISTOGRAM.observe(elapsed);
+                }
+                return;
+            }
 
             // Start uploading the ciphertexts as soon as the ct128 is computed
             //

@@ -9,6 +9,7 @@ import { readFhevmExecutorContractData } from './readFhevmExecutorContractData.j
 import { readInputVerifierContractData } from './readInputVerifierContractData.js';
 import { readKmsVerifierContractData } from './readKmsVerifierContractData.js';
 import { resolveChainId } from './resolveChainId.js';
+import { initPublicAction } from '../../runtime/CoreFhevm-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // resolveFhevmConfig
@@ -29,6 +30,7 @@ export type ResolveFhevmConfigParameters = {
       readonly hcuLimit?: OptionalChainContract | undefined;
       readonly inputVerifier?: OptionalChainContract | undefined;
       readonly kmsVerifier: { readonly address: string };
+      readonly protocolConfig?: OptionalChainContract | undefined;
     };
     readonly gateway?:
       | {
@@ -52,6 +54,7 @@ export type ResolveFhevmConfigReturnType = {
   readonly fhevmExecutor: FhevmExecutorContractData;
   readonly inputVerifier: InputVerifierContractData;
   readonly kmsVerifier: KmsVerifierContractData;
+  readonly protocolConfig: ChecksummedAddress | undefined;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -63,6 +66,14 @@ export async function resolveFhevmConfig(
   // Input is loose
   const kmsVerifierAddress = parameters.fhevm.contracts.kmsVerifier.address;
   assertIsAddress(kmsVerifierAddress, {});
+
+  const protocolConfigAddress = parameters.fhevm.contracts.protocolConfig?.address;
+  if (protocolConfigAddress !== undefined) {
+    assertIsAddress(protocolConfigAddress, {});
+  }
+
+  // no context needed
+  await initPublicAction(fhevm);
 
   const id: Uint64BigInt = await resolveChainId(fhevm, parameters);
   const fhevmExecutorData = await _resolveFhevmExecutor(fhevm, parameters.fhevm.contracts);
@@ -86,6 +97,7 @@ export async function resolveFhevmConfig(
     () =>
       readKmsVerifierContractData(fhevm, {
         address: addressToChecksummedAddress(kmsVerifierAddress),
+        protocolConfigAddress: protocolConfigAddress ? addressToChecksummedAddress(protocolConfigAddress) : undefined,
       }),
   ];
 
@@ -120,6 +132,7 @@ export async function resolveFhevmConfig(
     fhevmExecutor: fhevmExecutorData,
     inputVerifier: inputVerifierData,
     kmsVerifier: kmsVerifierData,
+    protocolConfig: protocolConfigAddress ? addressToChecksummedAddress(protocolConfigAddress) : undefined,
   };
 
   return Object.freeze(returnValue);
@@ -150,7 +163,7 @@ async function _resolveFhevmExecutor(
 
   if (acl !== undefined) {
     const aclFhevmExecutor = await getFhevmExecutorAddress(fhevm, {
-      address: addressToChecksummedAddress(acl),
+      aclAddress: addressToChecksummedAddress(acl),
     });
     if (fhevmExecutor !== undefined) {
       if (aclFhevmExecutor !== fhevmExecutor) {

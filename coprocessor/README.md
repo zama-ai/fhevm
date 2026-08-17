@@ -118,20 +118,59 @@ region and enforce `verify-full` TLS with the expected CA bundle.
 
 ```bash
 $ host_listener --help
-Usage: host_listener [OPTIONS]
+Usage: host_listener [OPTIONS] --acl-contract-address <ACL_CONTRACT_ADDRESS> --tfhe-contract-address <TFHE_CONTRACT_ADDRESS>
 
 Options:
-      --url <URL>                                      [default: ws://0.0.0.0:8746]
-      --ignore-tfhe-events
-      --ignore-acl-events
+      --url <URL>
+          [default: ws://0.0.0.0:8545]
       --acl-contract-address <ACL_CONTRACT_ADDRESS>
       --tfhe-contract-address <TFHE_CONTRACT_ADDRESS>
+      --kms-generation-address <KMS_GENERATION_ADDRESS>
+          [default: ]
       --database-url <DATABASE_URL>
-      --start-at-block <START_AT_BLOCK>                Can be negative from last block
+          [default: postgresql://postgres:postgres@localhost:5432/coprocessor]
+      --start-at-block <START_AT_BLOCK>
+          Can be negative from last block
       --end-at-block <END_AT_BLOCK>
-  -h, --help                                           Print help
-  -V, --version                                        Print version
+          End catchup at this block (can be negative from last block)
+      --catchup-margin <CATCHUP_MARGIN>
+          Catchup margin relative the last seen block [default: 5]
+      --catchup-paging <CATCHUP_PAGING>
+          Catchup paging size in number of blocks [default: 100]
+      --initial-block-time <INITIAL_BLOCK_TIME>
+          Initial block time, refined on each block [default: 12]
+      --log-level <LOG_LEVEL>
+          [default: INFO]
+      --health-port <HEALTH_PORT>
+          Health check port [default: 8080]
+      --dependence-cache-size <DEPENDENCE_CACHE_SIZE>
+          Pre-computation dependence chain cache size [default: 10000]
+      --dependence-by-connexity
+          Dependence chain are connected components
+      --dependence-cross-block
+          Dependence chain are across blocks
+      --dependent-ops-max-per-chain <DEPENDENT_OPS_MAX_PER_CHAIN>
+          Max dependent ops per chain before slow-lane (0 disables; startup promotes all chains to fast) [default: 0]
+      --reorg-maximum-duration-in-blocks <REORG_MAXIMUM_DURATION_IN_BLOCKS>
+          Maximum duration in blocks to detect reorgs [default: 50]
+      --service-name <SERVICE_NAME>
+          service name in OTLP traces [env: OTEL_SERVICE_NAME=] [default: host-listener]
+      --catchup-finalization-in-blocks <CATCHUP_FINALIZATION_IN_BLOCKS>
+          Maximum number of blocks to wait before a block is finalized [default: 20]
+      --only-catchup-loop
+          Run only catchup loop without real-time subscription
+      --catchup-loop-sleep-secs <CATCHUP_LOOP_SLEEP_SECS>
+          Sleep duration in seconds between catchup loop iterations [default: 60]
+      --timeout-request-websocket <TIMEOUT_REQUEST_WEBSOCKET>
+          Timeout in seconds for RPC calls over websocket [default: 15]
+  -h, --help
+          Print help
+  -V, --version
+          Print version
 ```
+
+`host_listener_consumer` can take its broker address from `--url`,
+`--broker-url`, or the `BROKER_URL` environment variable.
 
 ##### gw-listener
 

@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use fhevm_engine_common::drift_revert::{self, ReExec, RevertRunnerConfig, SignalStatus};
+use fhevm_engine_common::types::COMPUTED_HANDLE_INDEX_MARKER;
 use serial_test::serial;
 use sqlx::PgPool;
 use test_harness::instance::{setup_test_db, ImportMode};
@@ -30,11 +31,11 @@ async fn setup_chain_and_computation(pool: &PgPool, chain_id: i64, block_number:
     .await
     .expect("insert host_chain");
 
-    // Byte 21 = 0xff marks a compute output (see host-contracts FHEVMExecutor.sol).
+    // Byte 21 marks a compute output (see host-contracts FHEVMExecutor.sol).
     // Other bytes are seeded from chain_id so multi-chain tests don't collide.
     let seed = chain_id as u8;
     let mut handle: Vec<u8> = vec![seed; 32];
-    handle[21] = 0xff;
+    handle[21] = COMPUTED_HANDLE_INDEX_MARKER;
     let txn_id: Vec<u8> = vec![seed.wrapping_add(1); 32];
 
     sqlx::query("INSERT INTO transactions (id, chain_id, block_number) VALUES ($1, $2, $3)")
@@ -61,6 +62,45 @@ async fn setup_chain_and_computation(pool: &PgPool, chain_id: i64, block_number:
     handle
 }
 
+/// Inserts a host_chain and a copy-bridged destination handle: a
+/// `handle_bridged_events` row with NO `computations` row (the bridge worker
+/// copies the source ciphertext directly). Returns the destination handle.
+async fn setup_chain_and_bridged_handle(
+    pool: &PgPool,
+    chain_id: i64,
+    block_number: i64,
+) -> Vec<u8> {
+    sqlx::query(
+        "INSERT INTO host_chains (chain_id, name, acl_contract_address) \
+         VALUES ($1, 'test', '0x1')",
+    )
+    .bind(chain_id)
+    .execute(pool)
+    .await
+    .expect("insert host_chain");
+
+    // Compute-output marker (byte 21) so on_drift_detected treats it as a
+    // compute output, like a real bridged destination handle.
+    let mut dst_handle: Vec<u8> = vec![0xBD; 32];
+    dst_handle[21] = COMPUTED_HANDLE_INDEX_MARKER;
+    let src_handle: Vec<u8> = vec![0xB5; 32];
+
+    sqlx::query(
+        "INSERT INTO handle_bridged_events \
+         (src_handle, dst_handle, dst_chain_id, receiver_dapp, guid, block_number) \
+         VALUES ($1, $2, $3, '\\xdada'::bytea, '\\xab'::bytea, $4)",
+    )
+    .bind(&src_handle)
+    .bind(&dst_handle)
+    .bind(chain_id)
+    .bind(block_number)
+    .execute(pool)
+    .await
+    .expect("insert handle_bridged_events");
+
+    dst_handle
+}
+
 #[tokio::test]
 #[serial(db)]
 async fn on_drift_detected_creates_signal_with_correct_block() {
@@ -76,6 +116,29 @@ async fn on_drift_detected_creates_signal_with_correct_block() {
         .await
         .expect("latest_signal")
         .expect("should have a signal");
+
+    assert_eq!(signal.host_chain_id, CHAIN_A);
+    assert_eq!(signal.offending_host_block_number, block);
+    assert_eq!(signal.status, SignalStatus::Pending);
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn on_drift_detected_creates_signal_for_bridged_handle() {
+    let db = setup_test_db(ImportMode::None).await.expect("setup db");
+    let pool = PgPool::connect(db.db_url()).await.unwrap();
+
+    let block = 42;
+    let dst_handle = setup_chain_and_bridged_handle(&pool, CHAIN_A, block).await;
+
+    // A copy-bridged handle has no `computations` row; recovery must still
+    // create a revert signal using the HandleBridged block.
+    drift_revert::on_drift_detected(&pool, &dst_handle, CHAIN_A).await;
+
+    let signal = drift_revert::latest_signal(&pool)
+        .await
+        .expect("latest_signal")
+        .expect("should have a signal for a drifted bridged handle");
 
     assert_eq!(signal.host_chain_id, CHAIN_A);
     assert_eq!(signal.offending_host_block_number, block);
@@ -154,7 +217,7 @@ async fn on_drift_detected_skips_for_input_handle() {
     let db = setup_test_db(ImportMode::None).await.expect("setup db");
     let pool = PgPool::connect(db.db_url()).await.unwrap();
 
-    // Byte 21 != 0xff → ZK input handle.
+    // Byte 21 != COMPUTED_HANDLE_INDEX_MARKER → ZK input handle.
     let mut input_handle: Vec<u8> = vec![0xAA; 32];
     input_handle[21] = 0x01;
 

@@ -3,7 +3,7 @@ use bigdecimal::num_bigint::BigInt;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::crs::CrsCache;
 use fhevm_engine_common::db_keys::DbKeyCache;
-use fhevm_engine_common::types::AllowEvents;
+use fhevm_engine_common::types::{AllowEvents, COMPUTED_HANDLE_INDEX_MARKER, HANDLE_VERSION};
 use host_listener::contracts::TfheContract::TfheContractEvents;
 use host_listener::database::tfhe_event_propagate::{
     ClearConst, Database as ListenerDatabase, Handle, LogTfhe, TransactionHash,
@@ -73,10 +73,10 @@ pub fn next_random_handle(ct_type: FheType) -> Handle {
     handle[0..3].copy_from_slice(&[0u8; 3]);
 
     // Handle from computation
-    handle[21] = 255u8;
+    handle[21] = COMPUTED_HANDLE_INDEX_MARKER;
     handle[22..30].copy_from_slice(&ecfg.chain_id.as_u64().to_be_bytes());
     handle[30] = ct_type as u8;
-    handle[31] = 0u8;
+    handle[31] = HANDLE_VERSION;
     Handle::from_slice(&handle)
 }
 
@@ -261,6 +261,7 @@ pub async fn generate_trivial_encrypt(
         transaction_hash: Some(transaction_hash),
         is_allowed,
         block_number: 1,
+        block_hash: Handle::ZERO,
         block_timestamp: PrimitiveDateTime::MAX,
         dependence_chain: transaction_hash,
         tx_depth_size: 0,
@@ -312,8 +313,10 @@ pub async fn get_ciphertext_digests(
         .await;
 
         if let Ok(digests) = digests {
-            if digests.ciphertext.is_some() && digests.ciphertext128.is_some() {
-                return Ok((digests.ciphertext.unwrap(), digests.ciphertext128.unwrap()));
+            if let (Some(ciphertext), Some(ciphertext128)) =
+                (digests.ciphertext, digests.ciphertext128)
+            {
+                return Ok((ciphertext, ciphertext128));
             }
         }
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
@@ -425,6 +428,7 @@ pub async fn insert_tfhe_event(
         transaction_hash: Some(transaction_hash),
         is_allowed,
         block_number: 1,
+        block_hash: Handle::ZERO,
         block_timestamp: PrimitiveDateTime::MAX,
         dependence_chain: transaction_hash,
         tx_depth_size: 0,

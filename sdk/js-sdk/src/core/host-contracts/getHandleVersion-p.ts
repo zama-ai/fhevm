@@ -12,7 +12,7 @@ type Context = {
 };
 
 type Parameters = {
-  readonly address: ChecksummedAddress;
+  readonly fhevmExecutorAddress: ChecksummedAddress;
 };
 
 type ReturnType = Uint8Number;
@@ -26,10 +26,9 @@ type ReturnType = Uint8Number;
  */
 export async function getHandleVersion(context: Context, parameters: Parameters): Promise<ReturnType> {
   const trustedClient = getTrustedClient(context);
-  const address = parameters.address;
 
   const res = await context.runtime.ethereum.readContract(trustedClient, {
-    address: address,
+    address: parameters.fhevmExecutorAddress,
     abi: getHandleVersionAbi,
     args: [],
     functionName: getHandleVersionAbi[0].name,

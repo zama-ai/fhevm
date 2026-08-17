@@ -7,7 +7,10 @@
 
 mod common;
 
-use crate::common::utils::{assert_retry_after_header_present, TestSetup};
+use crate::common::utils::{
+    assert_retry_after_header_present, sign_v3_user_decrypt_envelope, user_decrypt_test_signer,
+    TestSetup,
+};
 use crate::common::validation_helper::{
     expect_v2_malformed_json, expect_v2_missing_field, expect_v2_validation_error, test_endpoint,
     test_endpoint_raw_body, with_invalid_field,
@@ -18,6 +21,7 @@ use fhevm_relayer::http::endpoints::v2::types::error::ApiResponseStatus;
 use fhevm_relayer::http::endpoints::v2::types::user_decrypt::{
     UserDecryptPostResponseJson, UserDecryptStatusResponseJson,
 };
+use fhevm_relayer::http::validation_messages as constants_validation;
 use rand::{rng, RngExt};
 use serde_json::json;
 use std::str::FromStr;
@@ -81,28 +85,36 @@ mod helpers {
         .expect("attestedPayload.userAddress must be a valid hex address")
     }
 
-    /// Build a syntactically valid unified EIP-712 v3 envelope. Callers can mutate
-    /// the returned `serde_json::Value` to test rejection paths.
+    /// Build a unified EIP-712 v3 envelope with a single random allowed contract, correctly
+    /// signed by the fixed test signer so it passes the pre-check.
     pub fn create_v3_envelope() -> serde_json::Value {
-        let user_address = random_address();
-        let contract_address = random_address();
+        create_v3_envelope_with_allowed_contracts(vec![format!("{:?}", random_address())])
+    }
+
+    /// Like [`create_v3_envelope`] but with a caller-chosen `allowedContracts` list. The list is
+    /// part of the signed payload, so signing happens after it is set.
+    pub fn create_v3_envelope_with_allowed_contracts(
+        allowed_contracts: Vec<String>,
+    ) -> serde_json::Value {
+        let signer = user_decrypt_test_signer();
+        let user_address = signer.address();
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
 
-        json!({
+        let mut envelope = json!({
             "attestationType": "eip712-unified-user-decrypt-v1",
             "attestedPayload": {
                 "version": "2.0",
                 "type": "user_decryption",
                 "handles": [{
                     "ctHandle": random_handle(),
-                    "contractAddress": format!("{:?}", contract_address),
+                    "contractAddress": format!("{:?}", random_address()),
                     "ownerAddress": format!("{:?}", user_address),
                 }],
                 "userAddress": format!("{:?}", user_address),
-                "allowedContracts": [format!("{:?}", contract_address)],
+                "allowedContracts": allowed_contracts,
                 "requestValidity": {
                     "startTimestamp": (now - 1).to_string(),
                     "durationSeconds": "604800",
@@ -110,8 +122,10 @@ mod helpers {
                 "publicKey": random_0x_hex(32),
                 "extraData": "0x00",
             },
-            "signature": random_0x_hex(65),
-        })
+            "signature": "0x",
+        });
+        sign_v3_user_decrypt_envelope(&mut envelope, &signer);
+        envelope
     }
 }
 
@@ -188,8 +202,7 @@ async fn v3_accepts_mixed_direct_and_delegated_handles() {
 #[tokio::test]
 async fn v3_accepts_empty_allowed_contracts() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
-    let mut payload = helpers::create_v3_envelope();
-    payload["attestedPayload"]["allowedContracts"] = json!([]);
+    let payload = helpers::create_v3_envelope_with_allowed_contracts(vec![]);
 
     let response = reqwest::Client::new()
         .post(helpers::v3_user_decrypt_post_url(&setup))
@@ -206,8 +219,7 @@ async fn v3_accepts_empty_allowed_contracts() {
 #[tokio::test]
 async fn v3_accepts_multiple_allowed_contracts() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
-    let mut payload = helpers::create_v3_envelope();
-    payload["attestedPayload"]["allowedContracts"] = json!([
+    let payload = helpers::create_v3_envelope_with_allowed_contracts(vec![
         format!("{:?}", helpers::random_address()),
         format!("{:?}", helpers::random_address()),
         format!("{:?}", helpers::random_address()),
@@ -224,11 +236,15 @@ async fn v3_accepts_multiple_allowed_contracts() {
     setup.shutdown().await;
 }
 
-/// v3 accepts an arbitrary `signature` blob (the relayer forwards it
-/// verbatim; it never verifies). 65-byte random hex is the realistic
-/// length but the relayer doesn't enforce that.
+// ---------------------------------------------------------------------------
+// Envelope-level rejection (attestationType, signature)
+// ---------------------------------------------------------------------------
+
+/// v3 rejects a signature that fails the pre-check. A random blob doesn't recover to
+/// `userAddress`, and the host mock reports no code there, so the request is rejected with 400
+/// and never forwarded.
 #[tokio::test]
-async fn v3_accepts_arbitrary_signature_blob() {
+async fn v3_rejects_invalid_signature() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
     let mut payload = helpers::create_v3_envelope();
     // 100-byte arbitrary signature — not a valid EIP-712 signature.
@@ -241,13 +257,9 @@ async fn v3_accepts_arbitrary_signature_blob() {
         .await
         .expect("POST failed");
 
-    assert_eq!(response.status(), reqwest::StatusCode::ACCEPTED);
+    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
     setup.shutdown().await;
 }
-
-// ---------------------------------------------------------------------------
-// Envelope-level rejection (attestationType, signature)
-// ---------------------------------------------------------------------------
 
 #[tokio::test]
 async fn v3_rejects_unknown_attestation_type() {
@@ -399,6 +411,55 @@ async fn v3_rejects_expired_request_validity_window() {
         expect_v2_validation_error(
             "attestedPayload.requestValidity",
             "requestValidity window has already expired",
+        ),
+    )
+    .await;
+
+    setup.shutdown().await;
+}
+
+/// `extraData` id-tag validation: a `contextId` missing its type-tag first
+/// byte (`0x07`) must be rejected as an invalid extraData format.
+#[tokio::test]
+async fn v3_rejects_untagged_context_id_extra_data() {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let url = helpers::v3_user_decrypt_post_url(&setup);
+
+    test_endpoint(
+        &url,
+        helpers::create_v3_envelope(),
+        |p: &mut serde_json::Value| {
+            p["attestedPayload"]["extraData"] =
+                json!("0x010000000000000000000000000000000000000000000000000000000000000001");
+        },
+        expect_v2_validation_error(
+            "attestedPayload.extraData",
+            constants_validation::INVALID_EXTRA_DATA_FORMAT,
+        ),
+    )
+    .await;
+
+    setup.shutdown().await;
+}
+
+/// `extraData` id-tag validation: an `epochId` missing its type-tag first
+/// byte (`0x08`) must be rejected as an invalid extraData format.
+#[tokio::test]
+async fn v3_rejects_untagged_epoch_id_extra_data() {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let url = helpers::v3_user_decrypt_post_url(&setup);
+
+    test_endpoint(
+        &url,
+        helpers::create_v3_envelope(),
+        |p: &mut serde_json::Value| {
+            p["attestedPayload"]["extraData"] = json!(
+                "0x0207000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000002"
+            );
+        },
+        expect_v2_validation_error(
+            "attestedPayload.extraData",
+            constants_validation::INVALID_EXTRA_DATA_FORMAT,
         ),
     )
     .await;

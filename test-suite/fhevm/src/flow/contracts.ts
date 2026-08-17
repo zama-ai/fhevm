@@ -2,7 +2,7 @@ import path from "node:path";
 
 import { PreflightError } from "../errors";
 import { resolvedComposeEnv } from "../generate/compose";
-import { RUNTIME_DIR, dockerArgs, envPath } from "../layout";
+import { PROJECT, RUNTIME_DIR, dockerArgs, envPath } from "../layout";
 import { loadState } from "../state/state";
 import { ensureDir, exists, readEnvFileIfExists, remove } from "../utils/fs";
 import { run, runStreaming } from "../utils/process";
@@ -63,9 +63,14 @@ export const snapshotContractSources = async (surface: ContractSurface) => {
 /** Runs a host or gateway contract task inside its deploy container. */
 export const runContractTask = async (
   component: "host-sc" | "gateway-sc",
-  service: "host-sc-deploy" | "gateway-sc-deploy",
+  service: string,
   command: string,
-  options: { env?: Record<string, string> } = {},
+  // envComponent overrides which generated env file is loaded (used to target a
+  // non-default host chain's deploy container, whose env lives at envPath(<sc>)).
+  // composeFile targets a non-default chain's generated compose override
+  // (which defines that chain's `<sc>-deploy` service), since the default
+  // host-sc compose files don't include it.
+  options: { env?: Record<string, string>; envComponent?: string; composeFile?: string } = {},
 ) => {
   const state = await loadState();
   if (!state) {
@@ -75,8 +80,11 @@ export const runContractTask = async (
   assertContractTaskStackRunning(true, (await projectContainers()).length);
   await ensureRuntimeArtifacts(runningState, "contract task");
   await maybeBuild(component, runningState);
+  const composePrefix = options.composeFile
+    ? ["docker", "compose", "-p", PROJECT, "-f", options.composeFile]
+    : dockerArgs(component);
   const argv = [
-    ...dockerArgs(component),
+    ...composePrefix,
     "run",
     "--rm",
     "--no-deps",
@@ -88,7 +96,7 @@ export const runContractTask = async (
     "-lc",
     withPreviousContractsSnapshot(command),
   ];
-  const env = { ...resolvedComposeEnv(runningState), ...(await readEnvFileIfExists(envPath(component))), ...options.env };
+  const env = { ...resolvedComposeEnv(runningState), ...(await readEnvFileIfExists(envPath(options.envComponent ?? component))), ...options.env };
   await runStreaming(argv, { env });
 };
 

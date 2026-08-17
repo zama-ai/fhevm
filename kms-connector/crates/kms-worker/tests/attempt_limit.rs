@@ -1,8 +1,8 @@
 mod common;
 
 use crate::common::{
-    create_mock_user_decryption_request_tx, init_kms_worker, mock_copro_registry_load,
-    testing_ct_attestation_config,
+    TEST_COPRO_REGISTRY_REFRESH, create_mock_user_decryption_request_tx, init_kms_worker,
+    mock_copro_registry_load,
 };
 use alloy::{
     hex::FromHex,
@@ -16,10 +16,10 @@ use connector_utils::{
             InsertRequestOptions, TestEventType, check_no_uncompleted_request_in_db,
             insert_rand_request,
         },
-        rand::{rand_digest, rand_sns_ct},
+        rand::rand_digest,
         setup::{
-            DbInstance, S3_CT_DIGEST, S3_CT_HANDLE, S3_CT_KEY_ID, S3Instance, TestInstanceBuilder,
-            erc1271_magic_response, init_host_chains_acl_contracts_mock,
+            DbInstance, S3_CT_HANDLE, S3Instance, TestInstanceBuilder, erc1271_magic_response,
+            init_host_chains_acl_contracts_mock,
         },
     },
     types::ProtocolEventKind,
@@ -39,12 +39,18 @@ use tracing::{info, warn};
 #[case::prep_keygen_processing_not_removed_on_error(TestEventType::PrepKeygen)]
 #[case::keygen_processing_not_removed_on_error(TestEventType::Keygen)]
 #[case::crsgen_processing_not_removed_on_error(TestEventType::Crsgen)]
+#[case::new_kms_context_processing_not_removed_on_error(TestEventType::NewKmsContext)]
+#[case::new_kms_epoch_processing_not_removed_on_error(TestEventType::NewKmsEpoch)]
+#[case::abort_keygen_processing_not_removed_on_error(TestEventType::AbortKeygen)]
+#[case::abort_crsgen_processing_not_removed_on_error(TestEventType::AbortCrsgen)]
+#[case::kms_context_destroyed_processing_not_removed_on_error(TestEventType::KmsContextDestroyed)]
+#[case::kms_epoch_destroyed_processing_not_removed_on_error(TestEventType::KmsEpochDestroyed)]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_request_processing(#[case] event_type: TestEventType) -> anyhow::Result<()> {
     // Setup real DB and S3 instance
     let test_instance = TestInstanceBuilder::default()
-        .with_db(DbInstance::setup().await?)
+        .with_db(DbInstance::setup_external().await?)
         .with_s3(S3Instance::setup().await?)
         .build();
 
@@ -52,31 +58,27 @@ async fn test_request_processing(#[case] event_type: TestEventType) -> anyhow::R
     const MAX_DECRYPTION_ATTEMPTS: u16 = 3;
     const GRPC_REQUEST_RETRIES: u8 = 2;
 
-    // Mocking Gateway
+    // Mocking Gateway/Ethereum
     let asserter = Asserter::new();
-    let copro_tx_sender = mock_copro_registry_load(&asserter, test_instance.s3_url());
-    let mut sns_ct = rand_sns_ct();
-    sns_ct.keyId = S3_CT_KEY_ID;
-    sns_ct.ctHandle = FixedBytes::<32>::from_hex(S3_CT_HANDLE)?;
-    sns_ct.snsCiphertextDigest = FixedBytes::<32>::from_hex(S3_CT_DIGEST)?;
-    sns_ct.coprocessorTxSenderAddresses = vec![copro_tx_sender];
+    mock_copro_registry_load(&asserter, test_instance.s3_url());
+    let handle = FixedBytes::<32>::from_hex(S3_CT_HANDLE)?;
 
     let tx_hash = rand_digest();
     let insert_options = InsertRequestOptions::new()
-        .with_sns_ct_materials(vec![sns_ct.clone()])
+        .with_ct_handles(vec![handle])
         .with_tx_hash(tx_hash);
     for _ in 0..MAX_DECRYPTION_ATTEMPTS {
         if matches!(event_type, TestEventType::UserDecryption) {
             // Mocking `get_transaction_by_hash` call result
-            let mock_tx = create_mock_user_decryption_request_tx(tx_hash, sns_ct.ctHandle)?;
+            let mock_tx = create_mock_user_decryption_request_tx(tx_hash, handle)?;
             asserter.push_success(&mock_tx);
         }
     }
 
-    let gateway_mock_provider = ProviderBuilder::new()
+    let mock_provider = ProviderBuilder::new()
         .disable_recommended_fillers()
         .connect_mocked_client(asserter.clone());
-    info!("Gateway mock started!");
+    info!("Gateway + Ethereum mock started!");
 
     // Mocking Host chain.
     // Per attempt: Public → 1 bool; Legacy user → 2 bools;
@@ -99,8 +101,7 @@ async fn test_request_processing(#[case] event_type: TestEventType) -> anyhow::R
         }
         _ => vec![],
     };
-    let acl_contracts_mock =
-        init_host_chains_acl_contracts_mock(sns_ct.ctHandle.as_slice(), acl_responses);
+    let acl_contracts_mock = init_host_chains_acl_contracts_mock(handle, acl_responses);
 
     // Insert request in DB to trigger kms_worker job
     let request = insert_rand_request(test_instance.db(), event_type, insert_options).await?;
@@ -119,12 +120,12 @@ async fn test_request_processing(#[case] event_type: TestEventType) -> anyhow::R
         grpc_request_retries: GRPC_REQUEST_RETRIES,
         db_fast_event_polling: Duration::from_millis(500),
         db_long_event_polling: Duration::from_millis(500),
-        ct_attestation: testing_ct_attestation_config(true),
+        copro_registry_refresh: TEST_COPRO_REGISTRY_REFRESH,
         ..Default::default()
     };
     let kms_worker = init_kms_worker(
         config,
-        gateway_mock_provider,
+        mock_provider,
         acl_contracts_mock,
         test_instance.db(),
     )
@@ -177,6 +178,48 @@ fn prepare_mocks(req: &ProtocolEventKind) -> MockSet {
         ProtocolEventKind::PrepKeygen(_) => ("KeyGenPreproc", "GetKeyGenPreprocResult"),
         ProtocolEventKind::Keygen(_) => ("KeyGen", "GetKeyGenResult"),
         ProtocolEventKind::Crsgen(_) => ("CrsGen", "GetCrsGenResult"),
+        ProtocolEventKind::NewKmsContext(_) => {
+            // Mock error at the request time for `NewKmsContext` as we don't poll any result from
+            // the KMS Core for this event.
+            kms_mocks.mock(|when, then| {
+                when.path("/kms_service.v1.CoreServiceEndpoint/NewMpcContext");
+                then.error(StatusCode::SERVICE_UNAVAILABLE, "unavailable");
+            });
+            return kms_mocks;
+        }
+        ProtocolEventKind::NewKmsEpoch(_) => ("NewMpcEpoch", "GetEpochResult"),
+        // Like `NewKmsContext`, abort events have no result-polling endpoint, so the error is
+        // mocked at request time.
+        ProtocolEventKind::AbortKeygen(_) => {
+            kms_mocks.mock(|when, then| {
+                when.path("/kms_service.v1.CoreServiceEndpoint/AbortKeyGen");
+                then.error(StatusCode::SERVICE_UNAVAILABLE, "unavailable");
+            });
+            return kms_mocks;
+        }
+        ProtocolEventKind::AbortCrsgen(_) => {
+            kms_mocks.mock(|when, then| {
+                when.path("/kms_service.v1.CoreServiceEndpoint/AbortCrsGen");
+                then.error(StatusCode::SERVICE_UNAVAILABLE, "unavailable");
+            });
+            return kms_mocks;
+        }
+        // Like aborts, destruction events have no result-polling endpoint, so the error is
+        // mocked at request time.
+        ProtocolEventKind::KmsContextDestroyed(_) => {
+            kms_mocks.mock(|when, then| {
+                when.path("/kms_service.v1.CoreServiceEndpoint/DestroyMpcContext");
+                then.error(StatusCode::SERVICE_UNAVAILABLE, "unavailable");
+            });
+            return kms_mocks;
+        }
+        ProtocolEventKind::KmsEpochDestroyed(_) => {
+            kms_mocks.mock(|when, then| {
+                when.path("/kms_service.v1.CoreServiceEndpoint/DestroyMpcEpoch");
+                then.error(StatusCode::SERVICE_UNAVAILABLE, "unavailable");
+            });
+            return kms_mocks;
+        }
     };
 
     // Mock initial KMS response to initial GRPC request

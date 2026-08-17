@@ -13,6 +13,11 @@
 {{- default $kmsConnectorTxSenderNameDefault .Values.kmsConnectorTxSender.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+{{- define "kmsConnectorDbMigrationName" -}}
+{{- $kmsConnectorDbMigrationNameDefault := printf "%s-db-migration-%s" .Release.Name .Values.kmsConnectorDbMigration.image.tag }}
+{{- default $kmsConnectorDbMigrationNameDefault .Values.kmsConnectorDbMigration.nameOverride | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
 {{/*
 Resolve smart contract addresses by loading the configs/contracts-<network>.yaml
 preset for commonConfig.network and overriding individual entries with any
@@ -32,15 +37,18 @@ consume with `fromYaml`.
 {{- $gw := .Values.commonConfig.gatewayContractAddresses | default dict -}}
 {{- $eth := .Values.commonConfig.ethereumContractAddresses | default dict -}}
 {{- $pol := .Values.commonConfig.polygonContractAddresses | default dict -}}
+{{- $bnb := .Values.commonConfig.bnbTestnetContractAddresses | default dict -}}
 gatewayChainId: {{ default (index $preset "gateway.chain_id") .Values.commonConfig.gatewayChainId | quote }}
 ethereumChainId: {{ default (index $preset "ethereum.chain_id") .Values.commonConfig.ethereumChainId | quote }}
 polygonChainId: {{ default (index $preset "polygon.chain_id") .Values.commonConfig.polygonChainId | quote }}
+bnbTestnetChainId: {{ default (index $preset "bnb_testnet.chain_id") .Values.commonConfig.bnbTestnetChainId | quote }}
 decryption: {{ default (index $preset "gateway.decryption.address") $gw.decryption | quote }}
 gatewayConfig: {{ default (index $preset "gateway.gateway_config.address") $gw.gatewayConfig | quote }}
-kmsGeneration: {{ default (index $preset "gateway.kms_generation.address") $gw.kmsGeneration | quote }}
+ethereumKmsGeneration: {{ default (index $preset "gateway.kms_generation.address") $eth.kmsGeneration | quote }}
 ethereumAcl: {{ default (index $preset "ethereum.acl.address") $eth.acl | quote }}
-ethereumKmsVerifier: {{ default (index $preset "ethereum.kms_verifier.address") $eth.kmsVerifier | quote }}
+ethereumProtocolConfig: {{ default (index $preset "ethereum.protocol_config.address") $eth.protocolConfig | quote }}
 polygonAcl: {{ default (index $preset "polygon.acl.address") $pol.acl | quote }}
+bnbTestnetAcl: {{ default (index $preset "bnb_testnet.acl.address") $bnb.acl | quote }}
 {{- end -}}
 
 {{/*

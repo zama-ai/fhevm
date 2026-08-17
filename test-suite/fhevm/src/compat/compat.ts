@@ -1,13 +1,18 @@
 /**
  * Encodes legacy runtime shims and incompatibility rules across supported fhevm component version combinations.
  */
-import { PreflightError } from "../errors";
 import { effectiveOverrides } from "../scenario/resolve";
 import type { StackSpec } from "../stack-spec/stack-spec";
 import type { State } from "../types";
 
 type CompatSemver = readonly [number, number, number];
-type CompatService = "gw-listener" | "host-listener" | "host-listener-poller" | "sns-worker" | "transaction-sender";
+type CompatService =
+  | "gw-listener"
+  | "host-listener"
+  | "host-listener-poller"
+  | "host-listener-consumer"
+  | "sns-worker"
+  | "transaction-sender";
 type CompatArgValue = { env: string } | { value: string };
 
 export type CompatPolicy = {
@@ -16,6 +21,9 @@ export type CompatPolicy = {
   connectorEnv: Record<string, string>;
   composeEnv: Record<string, string>;
 };
+
+/** The command-shaping half of a policy — all a coprocessor fleet needs. */
+export type CoprocessorArgPolicy = Pick<CompatPolicy, "coprocessorArgs" | "coprocessorDropFlags">;
 
 export const COMPAT_MATRIX = {
   incompatibilities: [
@@ -42,8 +50,26 @@ export const COMPAT_MATRIX = {
     },
     {
       key: "COPROCESSOR_HOST_LISTENER_VERSION",
+      below: [0, 14, 0] as CompatSemver,
+      profile: "legacy-host-listener-no-protocol-config-address",
+      unparsed: "modern" as const,
+    },
+    {
+      key: "COPROCESSOR_HOST_LISTENER_VERSION",
       below: [0, 13, 0] as CompatSemver,
       profile: "legacy-host-listener-no-kms-generation-address",
+      unparsed: "modern" as const,
+    },
+    {
+      key: "COPROCESSOR_HOST_LISTENER_VERSION",
+      below: [0, 14, 0] as CompatSemver,
+      profile: "legacy-host-listener-no-confidential-bridge-address",
+      unparsed: "modern" as const,
+    },
+    {
+      key: "COPROCESSOR_HOST_LISTENER_VERSION",
+      below: [0, 13, 2] as CompatSemver,
+      profile: "legacy-host-listener-poller-no-seed-start-block",
       unparsed: "modern" as const,
     },
     {
@@ -56,6 +82,12 @@ export const COMPAT_MATRIX = {
       key: "COPROCESSOR_SNS_WORKER_VERSION",
       below: [0, 14, 0] as CompatSemver,
       profile: "legacy-sns-worker-no-signer-flags",
+      unparsed: "modern" as const,
+    },
+    {
+      key: "COPROCESSOR_SNS_WORKER_VERSION",
+      below: [0, 15, 0] as CompatSemver,
+      profile: "legacy-sns-worker-split-bucket-flags",
       unparsed: "modern" as const,
     },
     {
@@ -113,6 +145,38 @@ const SHIM_PROFILES = {
     connectorEnv: {},
     composeEnv: {},
   },
+  "legacy-host-listener-no-protocol-config-address": {
+    coprocessorArgs: {},
+    coprocessorDropFlags: {
+      "host-listener": ["--protocol-config-address"],
+      "host-listener-poller": ["--protocol-config-address"],
+      "host-listener-consumer": ["--protocol-config-address"],
+    },
+    connectorEnv: {},
+    composeEnv: {},
+  },
+  "legacy-host-listener-no-confidential-bridge-address": {
+    coprocessorArgs: {},
+    coprocessorDropFlags: {
+      "host-listener": ["--confidential-bridge-address"],
+      "host-listener-poller": ["--confidential-bridge-address"],
+      "host-listener-consumer": ["--confidential-bridge-address"],
+    },
+    connectorEnv: {},
+    composeEnv: {},
+  },
+  // --seed-start-block landed on main and was backported to release/0.13.x
+  // (first shipped in v0.13.2-0) and release/0.14.x (first shipped in
+  // v0.14.0-4). Build suffixes within a release family are not comparable, so
+  // the floor is the 0.13.2 family; 0.14.x builds all resolve as supported.
+  "legacy-host-listener-poller-no-seed-start-block": {
+    coprocessorArgs: {},
+    coprocessorDropFlags: {
+      "host-listener-poller": ["--seed-start-block"],
+    },
+    connectorEnv: {},
+    composeEnv: {},
+  },
   "legacy-coprocessor-api-keys": {
     coprocessorArgs: {
       "host-listener": [["--coprocessor-api-key", { env: "COPROCESSOR_API_KEY" }]],
@@ -127,6 +191,32 @@ const SHIM_PROFILES = {
     coprocessorArgs: {},
     coprocessorDropFlags: {
       "sns-worker": ["--signer-type", "--private-key"],
+    },
+    connectorEnv: {},
+    composeEnv: {},
+  },
+  // v0.15.0 replaced the split --bucket-name-ct64/--bucket-name-ct128 pair with
+  // a single required --bucket-name, since both artifact kinds now live in one
+  // bucket under their own key prefixes (#3372). Legacy images still expect both
+  // flags, and the standalone `ct64`/`ct128` minio buckets are gone, so point
+  // both at the per-coprocessor bucket.
+  //
+  // Collapsing two buckets into one is only safe for images that carry #3372,
+  // i.e. that key ct128/ct64 as `ct128/{handle}/{ctx}` and `ct64/{handle}/{ctx}`.
+  // Before it, BOTH artifacts used the bare `{handle}/{ctx}` key and the separate
+  // buckets were the only thing keeping them apart — sharing a bucket would make
+  // them overwrite each other. On the 0.14 line #3372 first shipped in v0.14.0-7,
+  // which is what the blue-green scenarios pin; earlier 0.14.0-N prereleases must
+  // not be used as a BCS baseline against this stack.
+  "legacy-sns-worker-split-bucket-flags": {
+    coprocessorArgs: {
+      "sns-worker": [
+        ["--bucket-name-ct128", { env: "BUCKET_NAME" }],
+        ["--bucket-name-ct64", { env: "BUCKET_NAME" }],
+      ],
+    },
+    coprocessorDropFlags: {
+      "sns-worker": ["--bucket-name"],
     },
     connectorEnv: {},
     composeEnv: {},
@@ -162,22 +252,37 @@ const SHIM_PROFILES = {
 
 /** Parses a semver-like version string into comparable numeric parts. */
 const parseCompatVersion = (version: string) => {
-  const match = version.match(/^v?(\d+)\.(\d+)\.(\d+)(?:([-+]).*)?$/);
+  const match = version.match(/^v?(\d+)\.(\d+)\.(\d+)(?:([-+])(.+))?$/);
   if (!match) {
     return undefined;
   }
-  const [, major, minor, patch, suffixType] = match;
+  const [, major, minor, patch, suffixType, suffix = ""] = match;
   return {
     parts: [Number(major), Number(minor), Number(patch)] as const,
-    prerelease: suffixType === "-",
+    prerelease: suffixType === "-" && !/^\d+$/.test(suffix),
+    build: suffixType === "-" && /^\d+$/.test(suffix) ? Number(suffix) : undefined,
   };
 };
 
-// Non-semver tags (e.g. SHA-style tags built from main) belong to the modern registry.
-const usesModernRelayerRepository = (version: string) => {
+const compatVersionGte = (
+  version: string,
+  target: CompatSemver,
+  options?: { unparsed?: "modern" | "legacy" },
+) => {
   const parsed = parseCompatVersion(version);
-  return !parsed || parsed.parts[0] > 0 || parsed.parts[1] >= 13;
+  if (!parsed) {
+    return options?.unparsed === "modern";
+  }
+  for (let index = 0; index < parsed.parts.length; index += 1) {
+    if (parsed.parts[index] !== target[index]) {
+      return parsed.parts[index] > target[index];
+    }
+  }
+  return !parsed.prerelease;
 };
+
+const usesModernRelayerRepository = (version: string) =>
+  compatVersionGte(version, [0, 13, 0], { unparsed: "modern" });
 
 const sameCompatBase = (version: string, target: CompatSemver) => {
   const parsed = parseCompatVersion(version);
@@ -204,7 +309,7 @@ const versionLt = (version: string, target: CompatSemver, options?: { unparsed?:
   return parsed.prerelease;
 };
 
-const versionBeforeReleaseFamily = (
+export const versionBeforeReleaseFamily = (
   version: string,
   target: CompatSemver,
   options?: { unparsed?: "modern" | "legacy" },
@@ -215,8 +320,14 @@ type CompatState =
   | Pick<StackSpec, "versions" | "overrides" | "coprocessor">;
 
 /** Computes the effective override set used for compatibility decisions. */
-const effectiveCompatOverrides = (state: CompatState) =>
-  effectiveOverrides(state.overrides, "scenario" in state ? state.scenario : state.coprocessor);
+const effectiveCompatOverrides = (state: CompatState) => {
+  const scenario = "scenario" in state ? state.scenario : state.coprocessor;
+  // Blue-green has no instance-based sources for `effectiveOverrides` to expand.
+  if (!scenario || scenario.kind !== "coprocessor-consensus") {
+    return state.overrides;
+  }
+  return effectiveOverrides(state.overrides, scenario);
+};
 
 /** Detects when local workspace overrides imply the modern runtime protocol. */
 const usesModernWorkspaceProtocol = (state: CompatState) =>
@@ -231,6 +342,10 @@ export const requiresMultichainAclAddress = (state: CompatState) =>
 /** Detects when relayer readiness config must stay on the legacy shape. */
 export const requiresLegacyRelayerReadinessConfig = (state: Pick<CompatState, "versions">) =>
   versionBeforeReleaseFamily(state.versions.env.RELAYER_VERSION ?? "", [0, 10, 0]);
+
+/** Detects when relayer keyurl config must stay on the pre-host-poller static shape. */
+export const requiresLegacyRelayerKeyUrlConfig = (state: Pick<CompatState, "versions">) =>
+  versionBeforeReleaseFamily(state.versions.env.RELAYER_VERSION ?? "", [0, 14, 0], { unparsed: "modern" });
 
 /** Detects when kms-core still expects the legacy config schema. */
 export const requiresLegacyKmsCoreConfig = (state: Pick<CompatState, "versions">) =>
@@ -251,16 +366,18 @@ export const supportsCoprocessorDbStateRevert = (state: Pick<CompatState, "versi
  *
  * The host_chains table only exists from v0.12.0 onward (the remove_tenants
  * migration splits it out of the old `tenants` table); v0.11.x images have no
- * such table, so seeding it would fail. Within [0.12.0, 0.13.0) the table
+ * such table, so seeding it would fail. Within [0.12.0, 0.13.1) the table
  * exists but the runtime does not reliably seed it before zkproof caches it, so
- * the harness seeds it manually. From v0.13.0 the runtime self-seeds.
+ * the harness seeds it manually. Declarative seeding was added to
+ * initialize_db.sh after v0.13.0 was cut, so all v0.13.0-N Docker builds still
+ * need the manual shim; v0.13.1+ images self-seed.
  */
 export const requiresLegacyHostChainSeedShim = (state: Pick<CompatState, "versions">) => {
   const dbMigrationVersion = state.versions.env.COPROCESSOR_DB_MIGRATION_VERSION ?? "";
   const hostChainsTableExists = !versionBeforeReleaseFamily(dbMigrationVersion, [0, 12, 0], { unparsed: "modern" });
   const runtimeNeedsManualSeed =
-    versionBeforeReleaseFamily(dbMigrationVersion, [0, 13, 0], { unparsed: "modern" }) ||
-    versionBeforeReleaseFamily(state.versions.env.COPROCESSOR_ZKPROOF_WORKER_VERSION ?? "", [0, 13, 0], {
+    versionBeforeReleaseFamily(dbMigrationVersion, [0, 13, 1], { unparsed: "modern" }) ||
+    versionBeforeReleaseFamily(state.versions.env.COPROCESSOR_ZKPROOF_WORKER_VERSION ?? "", [0, 13, 1], {
       unparsed: "modern",
     });
   return hostChainsTableExists && runtimeNeedsManualSeed;
@@ -272,16 +389,38 @@ export const supportsHostListenerConsumer = (state: Pick<CompatState, "versions"
   return !versionBeforeReleaseFamily(version, [0, 13, 0], { unparsed: "modern" });
 };
 
+/** Detects when the resolved coprocessor bundle includes the consensus-detector service. */
+export const supportsConsensusDetector = (state: Pick<CompatState, "versions">) => {
+  const version = state.versions.env.COPROCESSOR_CONSENSUS_DETECTOR_VERSION;
+  if (!version) return false;
+  return !versionBeforeReleaseFamily(version, [0, 14, 0], { unparsed: "modern" });
+};
+
+/** Detects when the resolved coprocessor bundle includes the upgrade-controller service. */
+export const supportsUpgradeController = (state: Pick<CompatState, "versions">) => {
+  const version = state.versions.env.COPROCESSOR_UPGRADE_CONTROLLER_VERSION;
+  if (!version) return false;
+  return !versionBeforeReleaseFamily(version, [0, 14, 0], { unparsed: "modern" });
+};
+
 /** Detects when gateway deployment still emits a gateway-side KMSGeneration address. */
 export const requiresLegacyGatewayKmsGenerationAddress = (state: Pick<CompatState, "versions">) =>
   versionBeforeReleaseFamily(state.versions.env.GATEWAY_VERSION ?? "", [0, 13, 0], { unparsed: "modern" });
 
-/** Detects when contract tasks still expect the legacy internal PauserSet flag name. */
+/** Detects when contract tasks still expect the legacy internal PauserSet flag name.
+ * Host and gateway renamed the param at different releases: `task:addHostPausers` takes
+ * `useInternalProxyAddress` from v0.12.1, while `task:addGatewayPausers` only from v0.13.0. */
 const requiresLegacyHostPauserTaskFlag = (version: string) =>
-  versionBeforeReleaseFamily(version, [0, 12, 0], { unparsed: "modern" });
+  versionBeforeReleaseFamily(version, [0, 12, 1], { unparsed: "modern" });
 
 const requiresLegacyGatewayPauserTaskFlag = (version: string) =>
   versionBeforeReleaseFamily(version, [0, 13, 0], { unparsed: "modern" });
+
+/** Detects KMS cores whose bootstrap preprocessing needs a much larger wait budget.
+ * Pre-v0.13.20 cores can spend more than 20 minutes on two four-party preprocessing
+ * sessions; from v0.13.20 the standard threshold budget is enough. */
+export const requiresLegacyKmsBootstrapBudget = (coreVersion: string) =>
+  versionBeforeReleaseFamily(coreVersion, [0, 13, 20], { unparsed: "modern" });
 
 /** Detects when host address artifacts include ProtocolConfig and KMSGeneration proxy addresses. */
 export const requiresModernHostAddressArtifacts = (state: CompatState) =>
@@ -312,12 +451,45 @@ export const coprocessorUsesHostKmsGeneration = (state: CompatState) =>
 export const bootstrapUsesHostKmsGeneration = kmsConnectorUsesHostKmsGeneration;
 
 /**
- * Detects when host images ship `task:deployProtocolConfigFromCanonical` (0.13.1+), so non-canonical
+ * Detects when host images ship canonical ProtocolConfig seeding at all (0.13.1+), so non-canonical
  * chains can seed ProtocolConfig from the canonical chain like production instead of "fresh".
+ * This only answers "does the image have the task". Use `canonicalProtocolConfigSeedingUsesEnv` to
+ * pick which input the task accepts.
  */
 export const supportsCanonicalProtocolConfigSeeding = (state: CompatState) =>
   effectiveCompatOverrides(state).some((override) => override.group === "host-contracts") ||
   !versionLt(state.versions.env.HOST_VERSION ?? "", [0, 13, 1], { unparsed: "modern" });
+
+/**
+ * First host build whose canonical seeding tasks read the reviewed snapshot from `CANONICAL_*`
+ * environment variables. Every tag from v0.13.1 through v0.14.0-8 declares `--canonical-rpc-url` /
+ * `--canonical-protocol-config-address` instead. The floor therefore sits inside the v0.14.0 family.
+ * A three-part floor cannot express it. [0, 14, 0] would wrongly claim v0.14.0-0..8 read environment
+ * variables. [0, 14, 1] would wrongly claim the release carrying the migration reads command-line
+ * flags. The separate build floor below closes that gap. Confirm the build number against the tag
+ * that ships the migration when that tag is cut.
+ */
+const CANONICAL_ENV_SEEDING_FLOOR: CompatSemver = [0, 14, 0];
+const CANONICAL_ENV_SEEDING_FLOOR_BUILD = 9;
+
+/**
+ * Detects when the host image's canonical seeding tasks take the exported snapshot as `CANONICAL_*`
+ * environment variables instead of command-line flags. Older images take the same input as
+ * command-line flags. Those images read the canonical chain live over RPC and need no exported
+ * snapshot.
+ */
+export const canonicalProtocolConfigSeedingUsesEnv = (state: CompatState) => {
+  if (effectiveCompatOverrides(state).some((override) => override.group === "host-contracts")) {
+    return true;
+  }
+  const version = state.versions.env.HOST_VERSION ?? "";
+  const parsed = parseCompatVersion(version);
+  // Same base family as the floor, with a numeric `-N` suffix, so compare build numbers.
+  if (parsed?.build !== undefined && sameCompatBase(version, CANONICAL_ENV_SEEDING_FLOOR)) {
+    return parsed.build >= CANONICAL_ENV_SEEDING_FLOOR_BUILD;
+  }
+  return compatVersionGte(version, CANONICAL_ENV_SEEDING_FLOOR, { unparsed: "modern" });
+};
 
 type BundleIncompatibility = { severity: "error"; code: string; message: string };
 
@@ -354,7 +526,9 @@ export const validateBundleCompatibility = (state: Pick<CompatState, "versions">
 
 /** Rejects multi-chain scenarios when the resolved coprocessor bundle predates multi-chain support. */
 export const assertSupportedBundleScenario = (state: CompatState) => {
-  const hostChains = "scenario" in state ? state.scenario.hostChains : state.coprocessor.hostChains;
+  const scenario = "scenario" in state ? state.scenario : state.coprocessor;
+  if (!scenario) return; // blue-green stack spec — handled by its own compat path
+  const hostChains = scenario.hostChains;
   if (hostChains.length <= 1 || !requiresLegacySingleChainCoprocessor(state)) {
     return;
   }
@@ -362,6 +536,49 @@ export const assertSupportedBundleScenario = (state: CompatState) => {
   throw new Error(
     `Multi-chain scenarios require coprocessor runtime >= v0.12.0; resolved COPROCESSOR_HOST_LISTENER_VERSION=${hostListener || "unknown"}.`,
   );
+};
+
+/** Folds one shim profile's coprocessor arg adjustments into an accumulating policy. */
+const mergeShimArgs = (policy: CoprocessorArgPolicy, profile: CompatPolicy) => {
+  for (const [service, args] of Object.entries(profile.coprocessorArgs)) {
+    policy.coprocessorArgs[service as CompatService] = [
+      ...(policy.coprocessorArgs[service as CompatService] ?? []),
+      ...args,
+    ];
+  }
+  for (const [service, flags] of Object.entries(profile.coprocessorDropFlags)) {
+    policy.coprocessorDropFlags[service as CompatService] = [
+      ...(policy.coprocessorDropFlags[service as CompatService] ?? []),
+      ...flags,
+    ];
+  }
+};
+
+/**
+ * Builds the coprocessor arg policy for a fleet pinned to one published image tag.
+ *
+ * `compatPolicyForState` reads the resolved version bundle, i.e. the images the
+ * target/lock picked. A scenario instance with `source.mode: registry` ignores
+ * that bundle and runs the tag it names instead — blue-green's BCS fleet being
+ * the case that matters, since it deliberately runs the *previous* release while
+ * the bundle describes HEAD. Its shims therefore have to be evaluated against
+ * the pinned tag, or those older binaries are handed the modern flag contract.
+ *
+ * Only `COPROCESSOR_*` shims are consulted: a pinned coprocessor image tag says
+ * nothing about the connector or the contracts.
+ */
+export const compatArgPolicyForPinnedTag = (tag: string): CoprocessorArgPolicy => {
+  const policy: CoprocessorArgPolicy = { coprocessorArgs: {}, coprocessorDropFlags: {} };
+  for (const shim of COMPAT_MATRIX.legacyShims) {
+    if (!shim.key.startsWith("COPROCESSOR_")) {
+      continue;
+    }
+    if (!versionBeforeReleaseFamily(tag, shim.below, { unparsed: shim.unparsed })) {
+      continue;
+    }
+    mergeShimArgs(policy, SHIM_PROFILES[shim.profile]);
+  }
+  return policy;
 };
 
 /** Builds the compatibility policy that rendering and runtime should apply. */
@@ -377,30 +594,22 @@ export const compatPolicyForState = (state: CompatState): CompatPolicy => {
       continue;
     }
     const profile = SHIM_PROFILES[shim.profile];
-    for (const [service, args] of Object.entries(profile.coprocessorArgs)) {
-      policy.coprocessorArgs[service as CompatService] = [
-        ...(policy.coprocessorArgs[service as CompatService] ?? []),
-        ...args,
-      ];
-    }
-    for (const [service, flags] of Object.entries(profile.coprocessorDropFlags)) {
-      policy.coprocessorDropFlags[service as CompatService] = [
-        ...(policy.coprocessorDropFlags[service as CompatService] ?? []),
-        ...flags,
-      ];
-    }
+    mergeShimArgs(policy, profile);
     Object.assign(policy.connectorEnv, profile.connectorEnv);
   }
-  policy.composeEnv.HOST_ADD_PAUSERS_INTERNAL_FLAG = requiresLegacyHostPauserTaskFlag(
-    state.versions.env.HOST_VERSION ?? "",
-  )
-    ? "--use-internal-pauser-set-address"
-    : "--use-internal-proxy-address";
-  policy.composeEnv.GATEWAY_ADD_PAUSERS_INTERNAL_FLAG = requiresLegacyGatewayPauserTaskFlag(
-    state.versions.env.GATEWAY_VERSION ?? "",
-  )
-    ? "--use-internal-pauser-set-address"
-    : "--use-internal-proxy-address";
+  // Local overrides build the current working tree, which always uses the
+  // modern --use-internal-proxy-address flag regardless of the version label.
+  const overrides = effectiveCompatOverrides(state);
+  const hostOverridden = overrides.some((override) => override.group === "host-contracts");
+  const gatewayOverridden = overrides.some((override) => override.group === "gateway-contracts");
+  policy.composeEnv.HOST_ADD_PAUSERS_INTERNAL_FLAG =
+    !hostOverridden && requiresLegacyHostPauserTaskFlag(state.versions.env.HOST_VERSION ?? "")
+      ? "--use-internal-pauser-set-address"
+      : "--use-internal-proxy-address";
+  policy.composeEnv.GATEWAY_ADD_PAUSERS_INTERNAL_FLAG =
+    !gatewayOverridden && requiresLegacyGatewayPauserTaskFlag(state.versions.env.GATEWAY_VERSION ?? "")
+      ? "--use-internal-pauser-set-address"
+      : "--use-internal-proxy-address";
   if (state.versions.env.RELAYER_VERSION) {
     policy.composeEnv.RELAYER_IMAGE_REPOSITORY = relayerImageRepository(state.versions.env.RELAYER_VERSION);
   }

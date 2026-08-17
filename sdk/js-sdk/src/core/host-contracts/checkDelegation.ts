@@ -15,7 +15,7 @@ type Context = {
 };
 
 type Parameters = {
-  readonly address: ChecksummedAddress;
+  readonly aclAddress: ChecksummedAddress;
   readonly delegator: ChecksummedAddress;
   readonly delegate: ChecksummedAddress;
   readonly handleContractPairs: ReadonlyArray<{
@@ -27,7 +27,7 @@ type Parameters = {
 ////////////////////////////////////////////////////////////////////////////////
 
 export async function checkDelegation(context: Context, parameters: Parameters): Promise<void> {
-  const { address, delegator, delegate, handleContractPairs } = parameters;
+  const { aclAddress, delegator, delegate, handleContractPairs } = parameters;
 
   if (handleContractPairs.length === 0) {
     throw new Error('checkDelegation requires at least one (handle, contractAddress) pair');
@@ -41,7 +41,7 @@ export async function checkDelegation(context: Context, parameters: Parameters):
   // 1. Verify rule: delegator !== delegate
   if (delegator.toLowerCase() === delegate.toLowerCase()) {
     throw new AclUserDecryptionError({
-      contractAddress: address,
+      contractAddress: aclAddress,
       message: `delegator ${delegator} cannot be equal to delegate`,
     });
   }
@@ -49,13 +49,13 @@ export async function checkDelegation(context: Context, parameters: Parameters):
   // 2. Verify rule: delegate !== WILDCARD_CONTRACT
   if (delegate.toLowerCase() === WILDCARD_DELEGATION_ADDRESS.toLowerCase()) {
     throw new AclUserDecryptionError({
-      contractAddress: address,
+      contractAddress: aclAddress,
       message: `delegate cannot be equal to wildcard contract address`,
     });
   }
   if (delegator.toLowerCase() === WILDCARD_DELEGATION_ADDRESS.toLowerCase()) {
     throw new AclUserDecryptionError({
-      contractAddress: address,
+      contractAddress: aclAddress,
       message: `delegator cannot be equal to wildcard contract address`,
     });
   }
@@ -64,13 +64,13 @@ export async function checkDelegation(context: Context, parameters: Parameters):
   for (const pair of handleContractPairs) {
     if (delegator.toLowerCase() === pair.contractAddress.toLowerCase()) {
       throw new AclUserDecryptionError({
-        contractAddress: address,
+        contractAddress: aclAddress,
         message: `delegator ${delegator} cannot be equal to contractAddress`,
       });
     }
     if (delegate.toLowerCase() === pair.contractAddress.toLowerCase()) {
       throw new AclUserDecryptionError({
-        contractAddress: address,
+        contractAddress: aclAddress,
         message: `delegate ${delegate} cannot be equal to contractAddress`,
       });
     }
@@ -98,7 +98,7 @@ export async function checkDelegation(context: Context, parameters: Parameters):
 
   // 5. Single batched RPC call for all unique checks
   const allResults = await isHandleDelegatedForUserDecryption(context, {
-    address,
+    aclAddress,
     delegator,
     delegate,
     pairs: allChecks,
@@ -121,7 +121,7 @@ export async function checkDelegation(context: Context, parameters: Parameters):
     const key = getKey(pair.contractAddress, pair.handle.bytes32Hex);
     if (resultMap.get(key) !== true) {
       throw new AclUserDecryptionError({
-        contractAddress: address,
+        contractAddress: aclAddress,
         message: `Delegate ${delegate} is not delegated by ${delegator} to user decrypt handle ${pair.handle.bytes32Hex} on contract ${pair.contractAddress}!`,
       });
     }

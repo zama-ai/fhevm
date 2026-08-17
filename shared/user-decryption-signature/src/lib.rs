@@ -431,6 +431,116 @@ mod tests {
             .unwrap();
     }
 
+    // A 65-byte "signature" is `r (32) || s (32) || v (1)`, where `r` and `s` are the two curve
+    // scalars produced by ECDSA signing.
+    // For a real ECDSA signature `v` is the recovery id (27/28), letting `ecrecover` recover the
+    // signer.
+    // Safe reads that same `v` byte as a *type selector* to pack non-ECDSA shapes into the same
+    // 65 bytes (so for these cases `v` is a branch tag, not a recovery id):
+    //   - approveHash (v = 1): `r` = owner address (left-padded), `s` = unused (0).
+    //   - eth_sign   (v > 30): normal ECDSA sig with `v` shifted by 4 (27/28 → 31/32).
+    //   - contract   (v = 0):  ERC-1271; `r` = signer contract address.
+    // The `safe_threshold_1_*` tests craft each shape and assert it falls through to ERC-1271
+    // rather than being wrongly accepted/rejected at the ecrecover stage.
+    // Ref: https://docs.safe.global/advanced/smart-account-signatures
+    #[tokio::test]
+    async fn safe_threshold_1_owner_signature_falls_through_to_erc1271() {
+        // 1-of-N Safe, standard EIP-712 owner signature: the blob is exactly 65 bytes, so
+        // `try_ecrecover` parses it and recovers the *owner's* EOA — not the Safe address the
+        // request claims. The mismatch must fall through to ERC-1271, never reject outright.
+        let asserter = Asserter::new();
+        let provider = mock_provider(asserter.clone());
+        let safe = Address::from([0xDE; 20]);
+        let digest = B256::from([0u8; 32]);
+
+        let owner = PrivateKeySigner::random();
+        let sig = owner.sign_hash_sync(&digest).unwrap().as_bytes().to_vec();
+        assert_eq!(sig.len(), 65);
+        assert_ne!(owner.address(), safe);
+
+        let mut returndata = [0u8; 32];
+        returndata[..4].copy_from_slice(&ERC1271_MAGIC_VALUE);
+        asserter.push_success(&returndata);
+
+        verify_signature(&provider, safe, digest, &sig, 100_000)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn safe_threshold_1_approved_hash_falls_through_to_erc1271() {
+        // 1-of-N Safe, `approveHash` entry (see the r/s/v note above). Alloy parses v = 1 as a
+        // valid parity, but s = 0 is outside the ECDSA scalar range so recovery fails — must fall
+        // through to ERC-1271.
+        let asserter = Asserter::new();
+        let provider = mock_provider(asserter.clone());
+        let safe = Address::from([0xDE; 20]);
+        let digest = B256::from([0u8; 32]);
+        let owner = Address::from([0xAB; 20]);
+
+        let mut sig = vec![0u8; 65];
+        sig[12..32].copy_from_slice(owner.as_slice()); // r = owner address
+        // s stays 0
+        sig[64] = 1; // v = 1: approved-hash marker
+        let mut returndata = [0u8; 32];
+        returndata[..4].copy_from_slice(&ERC1271_MAGIC_VALUE);
+        asserter.push_success(&returndata);
+
+        verify_signature(&provider, safe, digest, &sig, 100_000)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn safe_threshold_1_eth_sign_signature_falls_through_to_erc1271() {
+        // 1-of-N Safe, eth_sign-style owner signature (see the r/s/v note above): v is shifted
+        // by 4 (31/32), which alloy's `normalize_v` rejects — `try_ecrecover` returns None and the
+        // blob must fall through to ERC-1271 untouched.
+        let asserter = Asserter::new();
+        let provider = mock_provider(asserter.clone());
+        let safe = Address::from([0xDE; 20]);
+        let digest = B256::from([0u8; 32]);
+
+        let owner = PrivateKeySigner::random();
+        let mut sig = owner.sign_hash_sync(&digest).unwrap().as_bytes().to_vec();
+        sig[64] += 4; // 27/28 → 31/32
+        assert!(matches!(sig[64], 31 | 32));
+
+        let mut returndata = [0u8; 32];
+        returndata[..4].copy_from_slice(&ERC1271_MAGIC_VALUE);
+        asserter.push_success(&returndata);
+
+        verify_signature(&provider, safe, digest, &sig, 100_000)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn multisig_concatenated_signature_falls_through_to_erc1271() {
+        // Safe-style 2-of-N multi-signature: two 65-byte owner ECDSA signatures concatenated
+        // (130 bytes). `try_ecrecover` must not treat it as a single ECDSA signature, and the
+        // blob must be forwarded opaquely to ERC-1271. Reaching `Ok(())` requires consuming
+        // the queued `isValidSignature` response, proving the fall-through happened.
+        let asserter = Asserter::new();
+        let provider = mock_provider(asserter.clone());
+        let claimed = Address::from([0xDE; 20]);
+        let digest = B256::from([0u8; 32]);
+
+        let owner_a = PrivateKeySigner::random();
+        let owner_b = PrivateKeySigner::random();
+        let mut sig = owner_a.sign_hash_sync(&digest).unwrap().as_bytes().to_vec();
+        sig.extend_from_slice(&owner_b.sign_hash_sync(&digest).unwrap().as_bytes());
+        assert_eq!(sig.len(), 130, "concatenated 2-owner signature");
+
+        let mut returndata = [0u8; 32];
+        returndata[..4].copy_from_slice(&ERC1271_MAGIC_VALUE);
+        asserter.push_success(&returndata);
+
+        verify_signature(&provider, claimed, digest, &sig, 100_000)
+            .await
+            .unwrap();
+    }
+
     #[tokio::test]
     async fn unparsable_signature_falls_through_to_erc1271() {
         // A 1-byte "signature" cannot be ecrecovered — must fall through to ERC-1271.

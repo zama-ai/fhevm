@@ -282,3 +282,105 @@ async function _isDataUrlFetchSupported(): Promise<boolean> {
     return false;
   }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * RFC 7230 `token` grammar restricted to lower-case (since names are normalized).
+ *   tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." /
+ *           "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA
+ * Rejects whitespace, CR/LF, colons, and any non-ASCII characters.
+ */
+const HEADER_NAME_RE = /^[!#$%&'*+\-.^_`|~0-9a-z]+$/;
+
+/** RFC 7230 forbids CR, LF, and NUL in header values (CRLF-injection vector). */
+const HEADER_VALUE_FORBIDDEN_RE = /[\r\n\0]/;
+
+/**
+ * Lower-cases a header name and validates it against the RFC 7230 `token` grammar.
+ * Throws if the input is not a non-empty string of valid token characters.
+ *
+ * @param name - The header name to normalize.
+ * @returns The lower-cased, validated header name.
+ * @throws Error When `name` is not a string or contains characters outside RFC 7230 `token`.
+ *
+ * @example
+ * normalizeHeaderName('Content-Type'); // → 'content-type'
+ * normalizeHeaderName('X-Bad\r\nInject'); // throws
+ */
+export function normalizeHeaderName(name: string): string {
+  const lower = name.toLowerCase();
+  if (!HEADER_NAME_RE.test(lower)) {
+    throw new Error(`normalizeHeaderName: invalid header name ${JSON.stringify(name)}`);
+  }
+  return lower;
+}
+
+/**
+ * Validates a header value against the CRLF-injection forbidden set (`\r`, `\n`, `\0`).
+ * Returns the value unchanged when valid, so it can be used inline at the assignment site.
+ *
+ * @param value - The header value to validate.
+ * @returns The same `value`, unchanged.
+ * @throws Error When `value` contains CR, LF, or NUL.
+ *
+ * @example
+ * headers.authorization = `Bearer ${validateHeaderValue(token)}`;
+ * validateHeaderValue('bad\r\nInjected: x'); // throws
+ */
+export function validateHeaderValue(value: string): string {
+  if (HEADER_VALUE_FORBIDDEN_RE.test(value)) {
+    throw new Error(`validateHeaderValue: header value contains CR, LF, or NUL`);
+  }
+  return value;
+}
+
+/**
+ * Returns a new header record with keys lower-cased and non-string values dropped.
+ * Validates each header name against the RFC 7230 `token` grammar and rejects
+ * values containing CR, LF, or NUL (CRLF-injection vectors).
+ * Throws if two input keys lower-case to the same name (e.g. `Authorization` and
+ * `authorization`) — collision detection runs before value filtering.
+ * Non-object inputs (`null`, primitives, arrays) return `{}`.
+ *
+ * @param headers - Arbitrary value; only plain enumerable string-keyed objects
+ *                  are processed. Anything else yields `{}`.
+ * @returns A fresh, lower-cased header record with string values only.
+ * @throws Error When a header name violates RFC 7230, a value contains CR/LF/NUL,
+ *               or two input keys differ only in case.
+ *
+ * @example
+ * normalizeHeaders({ 'Content-Type': 'application/json', Authorization: 'Bearer x' });
+ * // → { 'content-type': 'application/json', authorization: 'Bearer x' }
+ *
+ * @example
+ * normalizeHeaders({ Authorization: 'a', authorization: 'b' });
+ * // throws: keys 'Authorization' and 'authorization' both lower-case to 'authorization'
+ *
+ * @example
+ * normalizeHeaders({ 'X-Bad\r\nInject': 'x' });
+ * // throws: invalid header name
+ *
+ * @example
+ * normalizeHeaders({ foo: 'bar', count: 42, missing: undefined });
+ * // → { foo: 'bar' }  (non-string values dropped)
+ */
+export function normalizeHeaders(headers: unknown): Readonly<Record<string, string>> {
+  if (headers === null || typeof headers !== 'object' || Array.isArray(headers)) {
+    return {};
+  }
+  const firstSeen = new Map<string, string>();
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    const lowerKey = normalizeHeaderName(key);
+    const previousKey = firstSeen.get(lowerKey);
+    if (previousKey !== undefined) {
+      throw new Error(`normalizeHeaders: keys '${previousKey}' and '${key}' both lower-case to '${lowerKey}'`);
+    }
+    firstSeen.set(lowerKey, key);
+    if (typeof value === 'string') {
+      result[lowerKey] = validateHeaderValue(value);
+    }
+  }
+  return result;
+}

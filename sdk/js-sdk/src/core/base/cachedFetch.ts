@@ -23,6 +23,7 @@ type CachedFetchOptions<TContext, TParams, TResult> = {
 };
 
 export const CACHE_TTL_24H = 24 * 60 * 60 * 1000; // 24 hours
+export const CACHE_TTL_15MIN = 15 * 60 * 1000; // 15 min
 
 /**
  * Creates a cached, deduplicating wrapper around an async fetch function.
@@ -68,8 +69,8 @@ type CachedFetchResult<TContext, TParams, TResult> = {
    *
    * @example
    * ```ts
-   * cached.clear();                              // evict all settled entries
-   * cached.clear({ includeInflight: true });     // evict everything
+   * cached.clear();                             // evict all settled entries
+   * cached.clear({ includeInflight: true });    // evict everything
    * cached.clear({ key: 'uid:0xABC' });         // evict one settled entry
    * cached.clear({ key: 'uid:0xABC', includeInflight: true }); // evict one entry regardless
    * ```

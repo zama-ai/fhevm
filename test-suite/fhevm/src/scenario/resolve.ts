@@ -17,6 +17,7 @@ import {
   resolveServiceOverrides,
 } from "../layout";
 import type {
+  BlueGreenScenario,
   CoprocessorInstanceSource,
   CoprocessorScenario,
   HostChainScenario,
@@ -24,17 +25,43 @@ import type {
   KmsScenarioBlock,
   LocalOverride,
   OverrideGroup,
+  ResolvedBlueGreenScenario,
+  ResolvedBlueGreenScenarioFleet,
   ResolvedCoprocessorScenario,
   ResolvedCoprocessorScenarioInstance,
   ResolvedKmsTopology,
+  ResolvedScenario,
   ScenarioSummary,
 } from "../types";
+
+/** Reads only the `kind` field so the loader can dispatch without full validation. */
+export const peekScenarioKind = async (sourcePath: string): Promise<string | undefined> => {
+  const text = await fs.readFile(sourcePath, "utf8");
+  const parsed = YAML.parse(text) as Record<string, unknown> | null;
+  if (!parsed || typeof parsed !== "object") return undefined;
+  const kind = parsed.kind;
+  return typeof kind === "string" ? kind : undefined;
+};
+
+/** Narrows `ResolvedScenario` to `ResolvedCoprocessorScenario`, throwing otherwise. */
+export const assertCoprocessorConsensus = (
+  scenario: ResolvedScenario,
+  context = "operation",
+): ResolvedCoprocessorScenario => {
+  if (scenario.kind !== "coprocessor-consensus") {
+    throw new Error(
+      `${context}: expected coprocessor-consensus scenario, got kind="${scenario.kind}"`,
+    );
+  }
+  return scenario;
+};
 
 /** Centralized single-node KMS — today's behaviour when a scenario omits `kms`. */
 export const DEFAULT_KMS_TOPOLOGY: ResolvedKmsTopology = {
   mode: "centralized",
   parties: 1,
   threshold: 1,
+  committeeSize: 1,
   fheParams: "Default",
 };
 
@@ -75,23 +102,30 @@ export const resolveKmsTopology = (
       mode,
       parties: 1,
       threshold: 1,
+      committeeSize: 1,
       fheParams: "Default",
     };
   }
   const parties = block.parties ?? 4;
   const threshold = block.threshold ?? 1;
+  const committeeSize = block.committeeSize ?? parties;
   if (!Number.isInteger(parties) || parties < 4) {
     throw new Error(`${sourceLabel}.parties must be an integer >= 4 for threshold mode`);
   }
   if (parties > MAX_KMS_PARTIES) {
     throw new Error(`${sourceLabel}.parties must be <= ${MAX_KMS_PARTIES}`);
   }
-  // The KMS core enforces parties === 3*threshold + 1 (see zama-ai/kms
-  // core/service/src/conf/threshold.rs). Valid cluster sizes are therefore only
-  // 4, 7, 10, ... — 2 and 3 parties cannot form a threshold-mode cluster at all.
-  if (!Number.isInteger(threshold) || threshold < 1 || 3 * threshold + 1 !== parties) {
+  if (!Number.isInteger(committeeSize) || committeeSize < 4 || committeeSize > parties) {
     throw new Error(
-      `${sourceLabel}: KMS core requires parties === 3*threshold + 1; smallest threshold-mode cluster is 4 parties (t=1), next valid sizes 7, 10. Got parties=${parties}, threshold=${threshold}`,
+      `${sourceLabel}.committeeSize must be an integer in [4, parties=${parties}] (defaults to parties); got ${committeeSize}`,
+    );
+  }
+  // The KMS core enforces committee === 3*threshold + 1 for the MPC group (see zama-ai/kms
+  // core/service/src/conf/threshold.rs). Valid committee sizes are 4, 7, 10, ... Extra cores
+  // (parties > committeeSize) boot as spares so a context switch can rotate one into the committee.
+  if (!Number.isInteger(threshold) || threshold < 1 || 3 * threshold + 1 !== committeeSize) {
+    throw new Error(
+      `${sourceLabel}: KMS core requires committee === 3*threshold + 1; smallest committee is 4 (t=1), next valid sizes 7, 10. Got committeeSize=${committeeSize}, threshold=${threshold}`,
     );
   }
   // Threshold uses SECURE keygen (real DKG preprocessing): it signs the on-chain prepKeygenId, so it
@@ -104,13 +138,17 @@ export const resolveKmsTopology = (
       `${sourceLabel}.fheParams must be "Test" for threshold mode (Default params are deferred to a follow-up PR: secure DKG with Default params is hours + 32-96 GiB/party, not viable in CI)`,
     );
   }
-  return { mode, parties, threshold, fheParams };
+  return { mode, parties, threshold, committeeSize, fheParams };
 };
 
 const COPROCESSOR_SCENARIO_KIND = "coprocessor-consensus";
 const COPROCESSOR_SCENARIO_VERSION = 1;
 const COPROCESSOR_SCENARIO_DIR = path.join(REPO_ROOT, "test-suite", "fhevm", "scenarios");
 const SCENARIO_FILE = /\.ya?ml$/i;
+
+const BLUE_GREEN_SCENARIO_KIND = "blue-green";
+const BLUE_GREEN_SCENARIO_VERSION = 1;
+const SEMVER_STACK_VERSION = /^\d+\.\d+\.\d+$/;
 const COPROCESSOR_ARG_TARGETS = new Set([
   "*",
   ...GROUP_SERVICE_SUFFIXES.coprocessor.filter((value) => !value.includes("migration")),
@@ -528,10 +566,20 @@ export const synthesizeOverrideScenario = (overrides: LocalOverride[]): Resolved
   };
 };
 
-/** Reports whether a resolved scenario includes any local coprocessor instances. */
+/** True iff any coprocessor instance is `mode: local`. Blue-green returns false (addressed by role). */
 export const hasLocalCoprocessorInstance = (
-  state: Pick<ResolvedCoprocessorScenario, "instances"> | { scenario: ResolvedCoprocessorScenario },
-) => ("scenario" in state ? state.scenario.instances : state.instances).some((instance) => instance.source.mode === "local");
+  state:
+    | Pick<ResolvedCoprocessorScenario, "instances">
+    | { scenario: ResolvedScenario }
+    | { scenario: ResolvedCoprocessorScenario },
+) => {
+  const instances = "scenario" in state
+    ? state.scenario.kind === "coprocessor-consensus"
+      ? state.scenario.instances
+      : []
+    : state.instances;
+  return instances.some((instance) => instance.source.mode === "local");
+};
 
 /** Lists bundled scenarios with their summary metadata for CLI discovery. */
 export const listScenarioSummaries = async (): Promise<ScenarioSummary[]> => {
@@ -544,16 +592,180 @@ export const listScenarioSummaries = async (): Promise<ScenarioSummary[]> => {
     return await Promise.all(
       files.map(async (fileName) => {
         const filePath = path.join(COPROCESSOR_SCENARIO_DIR, fileName);
-        const parsed = parseCoprocessorScenario(await fs.readFile(filePath, "utf8"), filePath);
+        const text = await fs.readFile(filePath, "utf8");
+        const parsedYaml = YAML.parse(text) as Record<string, unknown> | null;
+        const kind = parsedYaml && typeof parsedYaml === "object" ? parsedYaml.kind : undefined;
+        const summary =
+          kind === BLUE_GREEN_SCENARIO_KIND
+            ? parseBlueGreenScenario(text, filePath)
+            : parseCoprocessorScenario(text, filePath);
         return {
           key: fileName.replace(SCENARIO_FILE, ""),
           filePath,
-          name: parsed.name,
-          description: parsed.description,
+          name: summary.name,
+          description: summary.description,
         } satisfies ScenarioSummary;
       }),
     );
   } catch (error) {
+    throw new PreflightError(error instanceof Error ? error.message : String(error));
+  }
+};
+
+// ============================================================================
+// Blue-Green scenario support
+// ============================================================================
+
+/** Parses + validates a `source:` block. Shape matches CoprocessorInstanceSource. */
+const parseSource = (
+  raw: unknown,
+  sourceLabel: string,
+): CoprocessorInstanceSource | undefined => {
+  if (raw === undefined) return undefined;
+  if (!raw || typeof raw !== "object") {
+    throw new Error(`${sourceLabel} must be an object`);
+  }
+  const mode = String((raw as Record<string, unknown>).mode ?? "");
+  if (mode === "inherit" || mode === "local") {
+    return { mode };
+  }
+  if (mode === "registry") {
+    const tag = String((raw as Record<string, unknown>).tag ?? "");
+    if (!tag) {
+      throw new Error(`${sourceLabel}.tag is required for registry mode`);
+    }
+    return { mode, tag };
+  }
+  throw new Error(`${sourceLabel}.mode must be inherit, local, or registry`);
+};
+
+/** Parses + validates a `blue-green` scenario YAML. */
+export const parseBlueGreenScenario = (text: string, sourceLabel = "scenario"): BlueGreenScenario => {
+  const parsed = YAML.parse(text) as Record<string, unknown> | null;
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error(`${sourceLabel}: expected a YAML object`);
+  }
+  if (parsed.version !== BLUE_GREEN_SCENARIO_VERSION) {
+    throw new Error(`${sourceLabel}: expected version ${BLUE_GREEN_SCENARIO_VERSION}`);
+  }
+  if (parsed.kind !== BLUE_GREEN_SCENARIO_KIND) {
+    throw new Error(`${sourceLabel}: expected kind ${BLUE_GREEN_SCENARIO_KIND}`);
+  }
+
+  const hostChains = parseHostChains(parsed, sourceLabel);
+
+  let topology: { count: number; threshold: number } | undefined;
+  if (parsed.topology !== undefined) {
+    if (!parsed.topology || typeof parsed.topology !== "object") {
+      throw new Error(`${sourceLabel}: topology must be an object`);
+    }
+    const raw = parsed.topology as Record<string, unknown>;
+    const count = Number(raw.count);
+    const threshold = Number(raw.threshold);
+    if (!Number.isInteger(count) || count < 1 || count > MAX_COPROCESSOR_INSTANCES) {
+      throw new Error(
+        `${sourceLabel}: topology.count must be an integer between 1 and ${MAX_COPROCESSOR_INSTANCES}`,
+      );
+    }
+    if (!Number.isInteger(threshold) || threshold < 1 || threshold > count) {
+      throw new Error(`${sourceLabel}: topology.threshold must be between 1 and count`);
+    }
+    topology = { count, threshold };
+  }
+
+  const gcs = parsed.gcs;
+  if (!gcs || typeof gcs !== "object") {
+    throw new Error(`${sourceLabel}: gcs block is required`);
+  }
+  const gcsObj = gcs as Record<string, unknown>;
+  const stackVersion = String(gcsObj.stackVersion ?? "");
+  if (!SEMVER_STACK_VERSION.test(stackVersion)) {
+    throw new Error(
+      `${sourceLabel}: gcs.stackVersion must be a semver-like string (e.g. "0.15.0"), got "${stackVersion}"`,
+    );
+  }
+
+  const bcs = parsed.bcs;
+  if (bcs !== undefined && (bcs === null || typeof bcs !== "object")) {
+    throw new Error(`${sourceLabel}: bcs must be an object`);
+  }
+  const bcsObj = (bcs ?? undefined) as Record<string, unknown> | undefined;
+
+  return {
+    version: BLUE_GREEN_SCENARIO_VERSION,
+    kind: BLUE_GREEN_SCENARIO_KIND,
+    name: typeof parsed.name === "string" ? parsed.name : undefined,
+    description: typeof parsed.description === "string" ? parsed.description : undefined,
+    hostChains,
+    topology,
+    bcs: bcsObj
+      ? {
+          source: parseSource(bcsObj.source, `${sourceLabel}.bcs.source`),
+          env: { ...((bcsObj.env as Record<string, string> | undefined) ?? {}) },
+          args: normalizeArgs(
+            bcsObj.args as Record<string, unknown> | undefined,
+            `${sourceLabel}.bcs.args`,
+          ),
+        }
+      : undefined,
+    gcs: {
+      source: parseSource(gcsObj.source, `${sourceLabel}.gcs.source`),
+      stackVersion,
+      env: { ...((gcsObj.env as Record<string, string> | undefined) ?? {}) },
+      args: normalizeArgs(
+        gcsObj.args as Record<string, unknown> | undefined,
+        `${sourceLabel}.gcs.args`,
+      ),
+    },
+    kms: parsed.kms as KmsScenarioBlock | undefined,
+  };
+};
+
+/** Applies defaults and resolves derived fields. */
+export const resolveBlueGreenScenario = (
+  filePath: string,
+  input: BlueGreenScenario,
+): ResolvedBlueGreenScenario => {
+  const bcs: ResolvedBlueGreenScenarioFleet = {
+    source: normalizeSource(input.bcs?.source),
+    env: { ...(input.bcs?.env ?? {}) },
+    args: input.bcs?.args ?? {},
+  };
+  const gcs = {
+    source: normalizeSource(input.gcs.source ?? { mode: "local" as const }),
+    stackVersion: input.gcs.stackVersion,
+    env: { ...(input.gcs.env ?? {}) },
+    args: input.gcs.args ?? {},
+  };
+  if (gcs.source.mode !== "local") {
+    throw new Error("gcs.source.mode must be local — the GCS fleet is always built from the working tree");
+  }
+  return {
+    version: BLUE_GREEN_SCENARIO_VERSION,
+    kind: BLUE_GREEN_SCENARIO_KIND,
+    origin: "file",
+    name: input.name,
+    description: input.description,
+    hostChains: input.hostChains ?? [DEFAULT_HOST_CHAIN],
+    sourcePath: filePath,
+    topology: input.topology ?? { count: 1, threshold: 1 },
+    bcs,
+    gcs,
+    kms: resolveKmsTopology(input.kms, "scenario.kms"),
+  };
+};
+
+/** Loads and resolves a blue-green scenario from disk. */
+export const loadBlueGreenScenario = async (scenarioRef: string): Promise<ResolvedBlueGreenScenario> => {
+  try {
+    const absolute = await resolveScenarioReference(scenarioRef);
+    const text = await fs.readFile(absolute, "utf8");
+    const parsed = parseBlueGreenScenario(text, absolute);
+    return resolveBlueGreenScenario(absolute, parsed);
+  } catch (error) {
+    if (error instanceof PreflightError) {
+      throw error;
+    }
     throw new PreflightError(error instanceof Error ? error.message : String(error));
   }
 };

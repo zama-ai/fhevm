@@ -3,7 +3,7 @@
   "compilerOptions": {
     "ignoreDeprecations": "6.0"
   },
-  "include": ["src/**/*.ts", "src/wasm/wasmBaseUrl.cts"],
+  "include": ["src/**/*.ts"],
   "exclude": [
     "src/**/*.bench.ts",
     "src/**/*.bench-d.ts",

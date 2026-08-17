@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO transactions (id, chain_id, created_at, block_number) VALUES ($1, $2, NOW(), $3)\n            ON CONFLICT (id) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fd1604ca19ddd4ebb61b085800bf355b6812d8aa8cc254c9e0b27c780462f9e9"
+}

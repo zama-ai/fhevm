@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE kms_key_activation_events AS e\n            SET status = 'activated'\n            WHERE\n                e.chain_id = $1\n                AND e.block_hash = $2\n                AND e.key_id = $3\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d110d61ab0c93c996a2fb603eb45f46d5bcbde6dd6ef1d9630b6a8201862d3c1"
+}

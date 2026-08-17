@@ -131,6 +131,12 @@ async function main(): Promise<void> {
   const client = createFhevmClient({ chain: sepolia, publicClient });
   console.log('  uid:', client.uid);
 
+  // Preload WASM and resolve protocol/TFHE/TKMS versions before encrypting or
+  // decrypting. `await client.ready` (or `await client.init()`) is required
+  // before encryptValues / generateTransportKeyPair / decryptValue.
+  await client.ready;
+  console.log('  ready');
+
   // ════════════════════════════════════════════════════════════════════════
   // ENCRYPTION
   // ════════════════════════════════════════════════════════════════════════
@@ -164,7 +170,7 @@ async function main(): Promise<void> {
   step(`Read ${PUBLIC_ENCRYPTED_VALUES.length} public values from testnet`);
   try {
     const encryptedValues = PUBLIC_ENCRYPTED_VALUES.map((h) => h.hex);
-    const typedValues = await client.readPublicValues({ encryptedValues });
+    const typedValues = await client.decryptPublicValues({ encryptedValues });
 
     console.log('  Read public values succeeded!');
     for (let i = 0; i < typedValues.length; i++) {
@@ -208,11 +214,11 @@ async function main(): Promise<void> {
 
     step('Create and sign EIP-712 decrypt permit');
     const now = Math.floor(Date.now() / 1000);
-    const signedPermit = await client.signDecryptionPermit({
+    const signedPermit = await client.signLegacyDecryptionPermit({
       transportKeyPair: transportKeyPair,
       contractAddresses: [FHE_COUNTER_ADDRESS],
       startTimestamp: now,
-      durationDays: 1,
+      durationSeconds: 24 * 60 * 60,
       signerAddress: account.address,
       signer: account,
     });

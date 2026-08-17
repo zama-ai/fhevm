@@ -427,6 +427,29 @@ impl RelayerV2ResponseFailed {
         )
     }
 
+    /// Creates an invalid-signature response (400) for the v3 signature pre-check. `reason`
+    /// is logged for diagnostics; the client-facing body just flags the `signature` field.
+    pub fn invalid_signature(reason: &str, request_id: &str) -> (StatusCode, Json<Self>) {
+        let status_code = StatusCode::BAD_REQUEST;
+
+        info!(
+            request_id,
+            http_status = status_code.as_u16(),
+            label = "validation_failed",
+            message = reason,
+            "HTTP response"
+        );
+
+        (
+            status_code,
+            Json(Self {
+                status: ApiResponseStatus::Failed,
+                request_id: Some(request_id.to_string()),
+                error: V2ErrorResponseBody::invalid_signature(),
+            }),
+        )
+    }
+
     /// Creates an error response from a ParseError
     pub fn from_parse_error(
         parse_error: &ParseError,

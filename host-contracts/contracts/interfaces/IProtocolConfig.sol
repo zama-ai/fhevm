@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import {KmsNode} from "../shared/Structs.sol";
+import {KmsNode, KmsNodeParams, PcrValues, ChainUpgradeWindow} from "../shared/Structs.sol";
+import {IKMSGeneration} from "./IKMSGeneration.sol";
 
 /**
  * @title Interface for the ProtocolConfig contract.
  * @notice ProtocolConfig manages the KMS node set, threshold configuration, and context lifecycle
- * on the Ethereum host chain. It replaces the context-management duties previously held by KMSVerifier.
+ * on the host chains.
+ * @dev Ethereum is the canonical host and source of truth: the lifecycle/quorum functions run only
+ * there. The same contract is deployed on every other host chain as a read-replica, advancing state
+ * only through the owner-only mirror functions, which copy already-finalized Ethereum state without
+ * replaying confirmations.
  */
 interface IProtocolConfig {
     /**
@@ -14,7 +19,7 @@ interface IProtocolConfig {
      * @param publicDecryption Minimum signatures required for public decryption verification.
      * @param userDecryption Minimum signatures required for user decryption verification.
      * @param kmsGen Minimum signatures required for key/CRS generation consensus.
-     * @param mpc Minimum signatures required for MPC computation quorums.
+     * @param mpc MPC fault threshold `t`: max faulty or malicious MPC nodes tolerated.
      */
     struct KmsThresholds {
         uint256 publicDecryption;
@@ -23,23 +28,140 @@ interface IProtocolConfig {
         uint256 mpc;
     }
 
+    /**
+     * @notice A signed keygen result attested by a KMS signer during epoch activation.
+     * @param prepKeygenId The preprocessing keygen ID the key derives from.
+     * @param keyId The generated key ID.
+     * @param keyDigests The per-type digests of the generated key.
+     * @param signature The signer's EIP-712 KeygenVerification signature.
+     */
+    struct EpochKeyResult {
+        uint256 prepKeygenId;
+        uint256 keyId;
+        IKMSGeneration.KeyDigest[] keyDigests;
+        bytes signature;
+    }
+
+    /**
+     * @notice A signed CRS result attested by a KMS signer during epoch activation.
+     * @param crsId The generated CRS ID.
+     * @param maxBitLength The maximum bit length the CRS supports.
+     * @param crsDigest The digest of the generated CRS.
+     * @param signature The signer's EIP-712 CrsgenVerification signature.
+     */
+    struct EpochCrsResult {
+        uint256 crsId;
+        uint256 maxBitLength;
+        bytes crsDigest;
+        bytes signature;
+    }
+
     // -----------------------------------------------------------------------------------------
     // Events
     // -----------------------------------------------------------------------------------------
 
     /**
      * @notice Emitted when a new KMS context is created.
-     * @param kmsContextId The new context ID.
-     * @param kmsNodes The KMS nodes registered in the context.
+     * @param contextId The new context ID.
+     * @param previousContextId The active context ID superseded by the new context.
+     * @param kmsNodeParams The KMS nodes registered in the context, including MPC metadata.
      * @param thresholds The thresholds for the context.
+     * @param softwareVersion The KMS software version expected for the context.
+     * @param pcrValues Accepted enclave PCR values for the context.
      */
-    event NewKmsContext(uint256 indexed kmsContextId, KmsNode[] kmsNodes, KmsThresholds thresholds);
+    event NewKmsContext(
+        uint256 indexed contextId,
+        uint256 indexed previousContextId,
+        KmsNodeParams[] kmsNodeParams,
+        KmsThresholds thresholds,
+        string softwareVersion,
+        PcrValues[] pcrValues
+    );
+
+    /**
+     * @notice Emitted when a new pending epoch is ready for resharing under a KMS context.
+     * @dev Signals Connectors to begin resharing key/CRS material into the new epoch. Emitted both
+     *      for same-set resharing (a new epoch opened under the active context) and for a context
+     *      switch (once enough previous and new signers confirm the pending context was created).
+     * @param kmsContextId The context that owns the pending epoch.
+     * @param epochId The pending epoch ID.
+     * @param previousContextId The context that holds the previous epoch's shares.
+     * @param previousEpochId The active epoch superseded by the pending epoch.
+     * @param materialBlockNumber Block where Connectors should read previous key/CRS material
+     *        from the canonical KMSGeneration contract.
+     */
+    event NewKmsEpoch(
+        uint256 indexed kmsContextId,
+        uint256 indexed epochId,
+        uint256 previousContextId,
+        uint256 previousEpochId,
+        uint256 materialBlockNumber
+    );
+
+    /**
+     * @notice Emitted when an epoch becomes active.
+     * @param kmsContextId The activated context ID.
+     * @param epochId The activated epoch ID.
+     * @param keys Key results included in the activation.
+     * @param crsList CRS results included in the activation.
+     * @param kmsNodeStorageUrls Storage URLs for nodes in the activated context.
+     */
+    event ActivateEpoch(
+        uint256 indexed kmsContextId,
+        uint256 indexed epochId,
+        EpochKeyResult[] keys,
+        EpochCrsResult[] crsList,
+        string[] kmsNodeStorageUrls
+    );
+
+    /**
+     * @notice Emitted on every successful KMS context creation confirmation.
+     * @param kmsContextId The pending context ID being confirmed.
+     * @param txSender The KMS tx sender that confirmed.
+     * @param isPreviousTxSender Whether the tx sender is part of the previous active context.
+     * @param isNewTxSender Whether the tx sender is part of the new pending context.
+     */
+    event KmsContextCreationConfirmation(
+        uint256 indexed kmsContextId,
+        address indexed txSender,
+        bool isPreviousTxSender,
+        bool isNewTxSender
+    );
+
+    /**
+     * @notice Emitted on every successful epoch activation confirmation.
+     * @param epochId The pending epoch ID being confirmed.
+     * @param signer The KMS signer that confirmed.
+     * @param dataHash The digest of the structured key/CRS payload the signer agreed on.
+     */
+    event EpochActivationConfirmation(uint256 indexed epochId, address indexed signer, bytes32 dataHash);
 
     /**
      * @notice Emitted when a KMS context is destroyed.
      * @param kmsContextId The destroyed context ID.
      */
     event KmsContextDestroyed(uint256 indexed kmsContextId);
+
+    /**
+     * @notice Emitted when a KMS epoch is destroyed.
+     * @param epochId The destroyed epoch ID.
+     */
+    event KmsEpochDestroyed(uint256 indexed epochId);
+
+    /**
+     * @notice Emitted when a coprocessor upgrade is proposed. This event drives the
+     *         coprocessor software upgrade.
+     * @param proposalId Caller-supplied identifier for this upgrade attempt.
+     * @param softwareVersion The coprocessor software version for the proposal.
+     * @param chainUpgradeWindows The per-host-chain replay windows for the upgrade.
+     * @param gwStartBlock The Gateway block at which GCS's gateway-listener resumes from.
+     */
+    event CoprocessorUpgradeProposed(
+        uint256 indexed proposalId,
+        string softwareVersion,
+        ChainUpgradeWindow[] chainUpgradeWindows,
+        uint64 gwStartBlock
+    );
 
     /**
      * @notice Emitted when the public decryption threshold for a KMS context is updated.
@@ -68,6 +190,31 @@ interface IProtocolConfig {
      * @param threshold The new MPC threshold.
      */
     event MpcThresholdUpdated(uint256 indexed kmsContextId, uint256 threshold);
+
+    /**
+     * @notice Emitted when a canonical KMS context is mirrored and activated.
+     * @param contextId The mirrored canonical context ID.
+     * @param epochId The mirrored canonical epoch ID activated for the context.
+     * @param kmsNodeParams The KMS nodes mirrored from the canonical context, including MPC metadata.
+     * @param thresholds The thresholds mirrored from the canonical context.
+     * @param softwareVersion The KMS software version of the canonical context.
+     * @param pcrValues Accepted enclave PCR values of the canonical context.
+     */
+    event MirrorKmsContextAndEpoch(
+        uint256 indexed contextId,
+        uint256 indexed epochId,
+        KmsNodeParams[] kmsNodeParams,
+        KmsThresholds thresholds,
+        string softwareVersion,
+        PcrValues[] pcrValues
+    );
+
+    /**
+     * @notice Emitted when a canonical KMS epoch is mirrored and activated.
+     * @param contextId The active mirrored context ID.
+     * @param epochId The mirrored canonical epoch ID.
+     */
+    event MirrorKmsEpoch(uint256 indexed contextId, uint256 indexed epochId);
 
     // -----------------------------------------------------------------------------------------
     // Errors
@@ -117,26 +264,166 @@ interface IProtocolConfig {
     /// @param kmsContextId The invalid context ID.
     error InvalidKmsContext(uint256 kmsContextId);
 
-    /// @notice Cannot destroy the current active context.
-    /// @param kmsContextId The current context ID.
-    error CurrentKmsContextCannotBeDestroyed(uint256 kmsContextId);
+    /// @notice Cannot destroy the latest active context.
+    /// @param kmsContextId The latest active context ID.
+    error LatestActiveKmsContextCannotBeDestroyed(uint256 kmsContextId);
+
+    /// @notice Cannot destroy the latest active epoch.
+    /// @param epochId The latest active epoch ID.
+    error LatestActiveKmsEpochCannotBeDestroyed(uint256 epochId);
+
+    /// @notice The epoch ID is invalid or not in the required lifecycle state for this operation.
+    /// @param epochId The epoch ID.
+    error InvalidKmsEpoch(uint256 epochId);
+
+    /// @notice The KMS context is not pending.
+    /// @param kmsContextId The context ID.
+    error KmsContextNotPending(uint256 kmsContextId);
+
+    /// @notice The KMS context has not reached the created state.
+    /// @param kmsContextId The context ID.
+    error KmsContextNotCreated(uint256 kmsContextId);
+
+    /// @notice A context switch or epoch rotation is still settling; settle it before opening another.
+    /// @param kmsContextId The latest-issued context ID.
+    /// @param epochId The latest-issued epoch ID.
+    error KmsLifecycleOperationInFlight(uint256 kmsContextId, uint256 epochId);
+
+    /// @notice The caller cannot confirm creation for the KMS context.
+    /// @param caller The unauthorized caller.
+    /// @param kmsContextId The context ID.
+    error KmsContextCreationUnauthorized(address caller, uint256 kmsContextId);
+
+    /// @notice The tx sender has already confirmed creation for the KMS context.
+    /// @param txSender The tx sender address.
+    /// @param kmsContextId The context ID.
+    error KmsContextCreationAlreadyConfirmed(address txSender, uint256 kmsContextId);
+
+    /// @notice The caller cannot confirm activation for the epoch.
+    /// @param caller The unauthorized caller.
+    /// @param epochId The epoch ID.
+    error EpochActivationUnauthorized(address caller, uint256 epochId);
+
+    /// @notice The signer has already confirmed activation for the epoch.
+    /// @param signer The signer address.
+    /// @param epochId The epoch ID.
+    error EpochActivationAlreadyConfirmed(address signer, uint256 epochId);
+
+    /// @notice The epoch activation payload has no keys or no CRS, so a required attestation cannot be verified.
+    /// @param epochId The epoch ID.
+    error EmptyEpochActivationAttestation(uint256 epochId);
+
+    /// @notice The structured activation signature does not match the caller's KMS signer.
+    /// @param signer The recovered signer.
+    /// @param txSender The transaction sender.
+    error EpochActivationSignerDoesNotMatchTxSender(address signer, address txSender);
+
+    /// @notice The mirrored context ID is not strictly greater than the latest activated one.
+    /// @param contextId The rejected context ID.
+    /// @param latestActiveKmsContextId The most recently activated mirrored context ID.
+    error NonIncreasingKmsContextId(uint256 contextId, uint256 latestActiveKmsContextId);
+
+    /// @notice The mirrored epoch ID is not strictly greater than the latest known one.
+    /// @param epochId The rejected epoch ID.
+    /// @param currentEpochId The latest known epoch ID.
+    error NonIncreasingEpochId(uint256 epochId, uint256 currentEpochId);
+
+    /// @notice The coprocessor `softwareVersion` argument is the empty string.
+    error EmptySoftwareVersion();
+
+    /// @notice The `chainUpgradeWindows` array argument is empty.
+    error EmptyChainUpgradeWindows();
+
+    /// @notice A chain entry has a zero `chainId`.
+    error ZeroChainId();
+
+    /// @notice The same `chainId` appears more than once in the `chainUpgradeWindows` array.
+    /// @param chainId The duplicated chain id.
+    error DuplicateChainId(uint64 chainId);
+
+    /// @notice The block window for a chain entry is invalid (`startBlock > endBlock`).
+    /// @param chainId The chain id whose window is invalid.
+    /// @param startBlock The provided start block.
+    /// @param endBlock The provided end block.
+    error InvalidBlockWindow(uint64 chainId, uint64 startBlock, uint64 endBlock);
+
+    /// @notice The `gwStartBlock` argument is zero.
+    error ZeroGwStartBlock();
+
+    /// @notice The supplied `proposalId` is zero.
+    error InvalidProposalId();
 
     // -----------------------------------------------------------------------------------------
     // State-changing functions
     // -----------------------------------------------------------------------------------------
 
     /**
-     * @notice Create a new KMS context with the given nodes and thresholds.
-     * @param kmsNodes The KMS nodes to register.
+     * @notice Create a pending KMS context and pending epoch.
+     * @param kmsNodeParams The KMS nodes to register, including MPC metadata.
      * @param thresholds The thresholds for the new context.
+     * @param softwareVersion The KMS software version expected for the context.
+     * @param pcrValues Accepted enclave PCR values for the context.
      */
-    function defineNewKmsContext(KmsNode[] calldata kmsNodes, KmsThresholds calldata thresholds) external;
+    function defineNewKmsContextAndEpoch(
+        KmsNodeParams[] calldata kmsNodeParams,
+        KmsThresholds calldata thresholds,
+        string calldata softwareVersion,
+        PcrValues[] calldata pcrValues
+    ) external;
+
+    /**
+     * @notice Create a pending epoch under the current active KMS context.
+     */
+    function defineNewEpochForCurrentKmsContext() external;
+
+    /**
+     * @notice Confirm that a pending KMS context has been created.
+     * @param kmsContextId The pending context ID.
+     */
+    function confirmKmsContextCreation(uint256 kmsContextId) external;
+
+    /**
+     * @notice Confirm activation of a pending epoch.
+     * @param epochId The pending epoch ID.
+     * @param keys The key results to associate with the epoch.
+     * @param crsList The CRS results to associate with the epoch.
+     */
+    function confirmEpochActivation(
+        uint256 epochId,
+        EpochKeyResult[] calldata keys,
+        EpochCrsResult[] calldata crsList
+    ) external;
 
     /**
      * @notice Destroy a KMS context, preventing it from being used.
      * @param kmsContextId The context ID to destroy.
      */
     function destroyKmsContext(uint256 kmsContextId) external;
+
+    /**
+     * @notice Destroy a superseded (non-current) KMS epoch, preventing it from being used.
+     *         Also used to abort a stuck Pending epoch of an Active context — a same-set rotation whose
+     *         one-shot activation confirmations diverged and can no longer reach unanimity.
+     * @param epochId The epoch ID to destroy.
+     */
+    function destroyKmsEpoch(uint256 epochId) external;
+
+    /**
+     * @notice Propose a coprocessor upgrade. Emits `CoprocessorUpgradeProposed` and does not
+     *         change any on-chain state — the lifecycle of the proposal (dry-run, consensus,
+     *         cutover, failure) is driven entirely off-chain.
+     * @param proposalId Caller-supplied identifier for this upgrade attempt. Must be non-zero.
+     *        Uniqueness across calls is the caller's responsibility; the contract does not enforce it.
+     * @param softwareVersion The coprocessor software version.
+     * @param chainUpgradeWindows The per-host-chain replay windows.
+     * @param gwStartBlock The Gateway block to resume from.
+     */
+    function proposeCoprocessorUpgrade(
+        uint256 proposalId,
+        string calldata softwareVersion,
+        ChainUpgradeWindow[] calldata chainUpgradeWindows,
+        uint64 gwStartBlock
+    ) external;
 
     /**
      * @notice Update the public decryption threshold for a KMS context.
@@ -166,18 +453,121 @@ interface IProtocolConfig {
      */
     function updateMpcThresholdForContext(uint256 kmsContextId, uint256 threshold) external;
 
+    // -----------------------------------------------------------------------------------------
+    // Mirror functions
+    //
+    // The write path for non-canonical replicas. Ethereum's quorum has already finalized the state
+    // these import, so they skip the confirmation flow and land it as Active. Owner-only; the
+    // operator must fan each Ethereum rotation out to every replica in order. The strictly-increasing
+    // ID checks guard against rollback, not skipped calls.
+    //
+    // The contract does not track deployment mode on-chain. The mirror entry points target a replica
+    // only. The committee and owner entry points target a canonical deployment only. Nothing reverts
+    // when a caller uses the wrong entry points on the wrong deployment. This wrong use is unsupported
+    // operator misuse.
+    // -----------------------------------------------------------------------------------------
+
     /**
-     * @notice Returns the current active KMS context ID.
-     * @return The current context ID.
+     * @notice Mirror and immediately activate a canonical KMS context.
+     * @dev Non-canonical hosts use this to import signer/threshold state without replaying
+     *      context-creation confirmations. The `contextId` and `epochId` must be strictly greater
+     *      than the latest active context and latest known epoch IDs. Gaps are allowed (canonical
+     *      contexts/epochs that were destroyed or never activated are simply never mirrored).
+     * @param contextId The canonical context ID to mirror; must exceed the current active context ID.
+     * @param epochId The canonical epoch ID to activate for the mirrored context.
+     * @param kmsNodeParams The KMS nodes from the canonical context, including MPC metadata.
+     * @param thresholds The thresholds from the canonical context.
+     * @param softwareVersion The KMS software version of the canonical context.
+     * @param pcrValues Accepted enclave PCR values of the canonical context.
+     */
+    function mirrorKmsContextAndEpoch(
+        uint256 contextId,
+        uint256 epochId,
+        KmsNodeParams[] calldata kmsNodeParams,
+        KmsThresholds calldata thresholds,
+        string calldata softwareVersion,
+        PcrValues[] calldata pcrValues
+    ) external;
+
+    /**
+     * @notice Mirror and immediately activate a canonical KMS epoch for the active context.
+     * @dev Non-canonical hosts use this to advance the active epoch without replaying
+     *      epoch-activation confirmations. The `epochId` must be strictly greater than the
+     *      latest known epoch ID. The context must already be the active mirrored context
+     *      (mirror the context first with `mirrorKmsContextAndEpoch`).
+     * @param contextId The active mirrored context the epoch belongs to.
+     * @param epochId The canonical epoch ID to mirror; must exceed the latest known epoch ID.
+     */
+    function mirrorKmsEpoch(uint256 contextId, uint256 epochId) external;
+
+    /**
+     * @notice Returns the active KMS context and epoch IDs.
+     * @return contextId The active context ID.
+     * @return epochId The active epoch ID.
+     */
+    function getCurrentKmsContextAndEpoch() external view returns (uint256 contextId, uint256 epochId);
+
+    /**
+     * @notice Returns the context anchor recorded when NewKmsContext was emitted.
+     * @dev Canonical-only. The canonical definition and bootstrap paths record the anchor. The replica
+     *      paths (`initializeFromCanonical` and `mirrorKmsContextAndEpoch`) do not record it. On a
+     *      replica this returns `(0, 0x0)` for every mirrored context. Cross-chain verification tooling
+     *      must not compare the anchor on a replica.
+     * @param contextId The context ID.
+     * @return emissionBlockNumber The block where NewKmsContext was emitted, or 0 on a replica.
+     * @return contextInfoHash Hash of the emitted context payload, or 0x0 on a replica.
+     */
+    function getKmsContextAnchor(
+        uint256 contextId
+    ) external view returns (uint256 emissionBlockNumber, bytes32 contextInfoHash);
+
+    /**
+     * @notice Checks whether an epoch is active and belongs to the given KMS context.
+     * @param kmsContextId The context ID the epoch must belong to.
+     * @param epochId The epoch ID to check.
+     * @return True if the epoch is active and owned by the context.
+     */
+    function isValidEpochForContext(uint256 kmsContextId, uint256 epochId) external view returns (bool);
+
+    /**
+     * @notice Returns the active KMS context ID.
+     * @return The active context ID.
      */
     function getCurrentKmsContextId() external view returns (uint256);
 
     /**
-     * @notice Checks whether a KMS context ID is valid (exists and is not destroyed).
+     * @notice Returns the KMS context ID allocation counter: the latest issued context ID.
+     * @dev This is the allocation frontier, always `>= getCurrentKmsContextId()`. It differs from the
+     *      active context ID while a context is Pending or Created (an in-flight context switch).
+     * @return The latest issued context ID.
+     */
+    function getCurrentKmsContextIdCounter() external view returns (uint256);
+
+    /**
+     * @notice Checks whether a KMS context ID is valid (exists, is not destroyed, and is active).
      * @param kmsContextId The context ID to check.
      * @return True if the context is valid.
      */
     function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
+
+    /**
+     * @notice Checks whether a KMS context exists and has not been destroyed.
+     * @dev Unlike `isValidKmsContext`, this returns true for a Pending or Created context, so it
+     *      distinguishes an in-flight context switch from a destroyed or never-issued context.
+     * @param kmsContextId The context ID to check.
+     * @return True if the context exists and is not destroyed.
+     */
+    function isLiveKmsContext(uint256 kmsContextId) external view returns (bool);
+
+    /**
+     * @notice Returns the previous-committee confirmation quorum cached for a context at define time.
+     * @dev The `(n - t)` target that `confirmKmsContextCreation` requires from the previous committee.
+     *      Returns 0 for a context that was never a switch target or whose bookkeeping was cleared on
+     *      destruction.
+     * @param kmsContextId The context ID.
+     * @return The cached previous-committee confirmation target.
+     */
+    function getContextCreationPreviousTxSenderThreshold(uint256 kmsContextId) external view returns (uint256);
 
     /**
      * @notice Returns the signer addresses for the current active context.
@@ -264,6 +654,9 @@ interface IProtocolConfig {
 
     /**
      * @notice Returns the kmsGen threshold for a given context.
+     * @dev The other threshold getters require an `Active` context. This one returns a value for any
+     *      live context, whatever its state, so the kmsGen threshold stays readable even before the
+     *      context becomes `Active`.
      * @param kmsContextId The context ID.
      * @return The kmsGen threshold for the context.
      */

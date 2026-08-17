@@ -1,4 +1,5 @@
 import type { Auth } from '../../../types/auth.js';
+import type { Logger } from '../../../types/logger.js';
 import type {
   RelayerApiError,
   RelayerAsyncRequestState,
@@ -37,7 +38,7 @@ import { sdkName, version } from '../../../_version.js';
 import { setAuth } from '../../../base/auth.js';
 import { InvalidPropertyError } from '../../../base/errors/InvalidPropertyError.js';
 import { assertNever } from '../../../base/errors/utils.js';
-import { formatFetchErrorMetaMessages } from '../../../base/fetch.js';
+import { formatFetchErrorMetaMessages, normalizeHeaders } from '../../../base/fetch.js';
 import { isNonEmptyString, safeJSONstringify } from '../../../base/string.js';
 import { isUint } from '../../../base/uint.js';
 import { RelayerAbortError } from '../../../errors/RelayerAbortError.js';
@@ -65,6 +66,7 @@ import {
   assertIsRelayerPostResponse202Queued,
 } from './guards/RelayerResponseQueued.js';
 import { assertIsRelayerUserDecryptSucceeded } from './guards/RelayerUserDecryptSucceeded.js';
+import { readErrorMessage } from './readErrorMessage.js';
 
 /*
     Actions:
@@ -109,6 +111,7 @@ type RelayerAsyncRequestParams = {
   payload: Record<string, unknown>;
   timeoutInSeconds?: number | undefined;
   throwErrorIfNoRetryAfter?: boolean | undefined;
+  logger?: Logger | undefined;
   options?:
     | RelayerInputProofOptions
     | RelayerUserDecryptOptions
@@ -119,6 +122,7 @@ type RelayerAsyncRequestParams = {
 
 export class RelayerAsyncRequest {
   private readonly _debug: boolean;
+  private readonly _logger: Logger | undefined;
   private _fetchMethod: 'GET' | 'POST' | undefined;
   private _elapsed: number;
   private _jobId: string | undefined;
@@ -139,6 +143,7 @@ export class RelayerAsyncRequest {
   private readonly _url: string;
   private readonly _payload: Record<string, unknown>;
   private readonly _fhevmAuth: Auth | undefined;
+  private readonly _customHeaders: Record<string, string> | undefined;
   private _retryAfterTimeoutPromiseFuncReject?: ((reason?: unknown) => void) | undefined;
   private readonly _onProgress?:
     | ((
@@ -205,7 +210,9 @@ export class RelayerAsyncRequest {
     this._url = params.url;
     this._payload = params.payload;
     this._debug = params.options?.debug === true;
+    this._logger = params.logger;
     this._fhevmAuth = params.options?.auth;
+    this._customHeaders = normalizeHeaders(params.options?.headers);
     this._onProgress = params.options?.onProgress as typeof this._onProgress;
     this._state = {
       aborted: false,
@@ -488,6 +495,15 @@ export class RelayerAsyncRequest {
 
       // At this stage: `terminated` is guaranteed to be `false`.
 
+      // 403 is not part of the typed relayer contract: it is emitted by an
+      // edge proxy (Cloudflare/Kong), typically on a missing/invalid
+      // `x-api-key`. Intercept it before the typed switch, read the JSON body,
+      // and surface the edge message instead of discarding it.
+      if (response.status === 403) {
+        const { message } = await readErrorMessage(response);
+        this._throwUnexpectedStatusError(403, message);
+      }
+
       const responseStatus: RelayerPostResponseStatus = response.status as RelayerPostResponseStatus;
 
       switch (responseStatus) {
@@ -562,7 +578,10 @@ export class RelayerAsyncRequest {
         // RelayerApiError401
         // falls through
         case 401: {
-          this._throwUnauthorizedError(responseStatus);
+          // Surface the message the origin (Kong/relayer) actually sent for a
+          // missing/invalid `x-api-key`, falling back to the canned string.
+          const { message } = await readErrorMessage(response);
+          this._throwUnauthorizedError(responseStatus, message);
         }
         // RelayerResponseFailed
         // RelayerApiError429
@@ -584,6 +603,10 @@ export class RelayerAsyncRequest {
           }
 
           const retryAfterMs = this._getRetryAfterHeaderValueInMs(response);
+
+          this._logger?.warn?.(
+            `[RelayerAsyncRequest] Throttled (429) on ${this._url} (operation=${this._relayerOperation}, retryCount=${this._retryCount}). Retrying in ${retryAfterMs}ms.`,
+          );
 
           // Async onProgress callback
           this._postAsyncOnProgressCallback({
@@ -663,6 +686,10 @@ export class RelayerAsyncRequest {
         default: {
           // Use TS compiler + `never` to guarantee the switch integrity
           const throwUnsupportedStatus = (unsupportedStatus: never): never => {
+            this._logger?.error?.(
+              `[RelayerAsyncRequest] Unsupported POST response status ${String(unsupportedStatus)} on ${this._url} (operation=${this._relayerOperation})`,
+              undefined,
+            );
             throw new RelayerResponseStatusError({
               fetchMethod: 'POST',
               status: unsupportedStatus,
@@ -721,6 +748,15 @@ export class RelayerAsyncRequest {
       // ======================= End Fetch Retry ===============================
 
       // At this stage: `terminated` is guaranteed to be `false`.
+
+      // 403 is not part of the typed relayer contract: it is emitted by an
+      // edge proxy (Cloudflare/Kong), typically on a missing/invalid
+      // `x-api-key`. Intercept it before the typed switch, read the JSON body,
+      // and surface the edge message instead of discarding it.
+      if (response.status === 403) {
+        const { message } = await readErrorMessage(response);
+        this._throwUnexpectedStatusError(403, message);
+      }
 
       const responseStatus: RelayerGetResponseStatus = response.status as RelayerGetResponseStatus;
 
@@ -959,7 +995,10 @@ export class RelayerAsyncRequest {
         }
         // falls through
         case 401: {
-          this._throwUnauthorizedError(responseStatus);
+          // Surface the message the origin (Kong/relayer) actually sent for a
+          // missing/invalid `x-api-key`, falling back to the canned string.
+          const { message } = await readErrorMessage(response);
+          this._throwUnauthorizedError(responseStatus, message);
         }
         // falls through
         case 404: {
@@ -1032,6 +1071,10 @@ export class RelayerAsyncRequest {
         default: {
           // Use TS compiler + `never` to guarantee the switch integrity
           const throwUnsupportedStatus = (unsupportedStatus: never): never => {
+            this._logger?.error?.(
+              `[RelayerAsyncRequest] Unsupported GET response status ${String(unsupportedStatus)} on ${this._url} (operation=${this._relayerOperation}, jobId=${this.jobId})`,
+              undefined,
+            );
             throw new RelayerResponseStatusError({
               fetchMethod: 'GET',
               status: unsupportedStatus,
@@ -1164,6 +1207,10 @@ export class RelayerAsyncRequest {
         throw fetchError;
       }
 
+      this._logger?.warn?.(
+        `[RelayerAsyncRequest] Fetch to ${this._url} failed (attempt ${attempts}/${this._fetchRetries}, operation=${this._relayerOperation}): ${formatFetchErrorMetaMessages(fetchError).join('. ')}. Retrying.`,
+      );
+
       // Wait before retry using state-machine-aware timeout
       // This allows cancellation to interrupt the delay
       // Skip incrementing _retryCount since fetch retries are separate from polling retries
@@ -1197,9 +1244,10 @@ export class RelayerAsyncRequest {
       {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'ZAMA-SDK-VERSION': version,
-          'ZAMA-SDK-NAME': sdkName,
+          ...this._customHeaders,
+          'content-type': 'application/json',
+          'zama-sdk-version': version,
+          'zama-sdk-name': sdkName,
         },
         body: JSON.stringify(this._payload),
         ...(this._internalAbortSignal ? { signal: this._internalAbortSignal } : {}),
@@ -1265,19 +1313,18 @@ export class RelayerAsyncRequest {
 
     this._trace('_fetchGet', `jobId=${this.jobId}`);
 
-    // Do not include API key here!
-    // API key is only required on POST (by design).
-    // This is necessary for future caching on gateway.
-    // It will be implemented in future releases on (relayer).
-    // See relayer team.
-    const init: RequestInit = {
-      method: 'GET',
-      headers: {
-        'ZAMA-SDK-VERSION': version,
-        'ZAMA-SDK-NAME': sdkName,
-      },
-      ...(this._internalAbortSignal ? { signal: this._internalAbortSignal } : {}),
-    };
+    const init = setAuth(
+      {
+        method: 'GET',
+        headers: {
+          ...this._customHeaders,
+          'zama-sdk-version': version,
+          'zama-sdk-name': sdkName,
+        },
+        ...(this._internalAbortSignal ? { signal: this._internalAbortSignal } : {}),
+      } satisfies RequestInit,
+      this._fhevmAuth,
+    );
 
     this._state.fetching = true;
 
@@ -1363,6 +1410,10 @@ export class RelayerAsyncRequest {
     if (signal.reason !== 'cancel') {
       this._assert(!this._state.canceled, '!this._state.canceled');
     }
+
+    this._logger?.warn?.(
+      `[RelayerAsyncRequest] Request aborted on ${this._url} (reason=${String(signal.reason)}, operation=${this._relayerOperation}, jobId=${this._jobId})`,
+    );
 
     this._postAsyncOnProgressCallback({
       type: 'abort',
@@ -1531,6 +1582,11 @@ export class RelayerAsyncRequest {
 
     this._state.timeout = true;
 
+    this._logger?.error?.(
+      `[RelayerAsyncRequest] Request timed out on ${this._url} (operation=${this._relayerOperation}, jobId=${this._jobId}, retryCount=${this._retryCount}, timeoutMs=${this._requestMaxDurationInMs})`,
+      undefined,
+    );
+
     this._postAsyncOnProgressCallback({
       type: 'timeout',
       url: this._url,
@@ -1599,15 +1655,50 @@ export class RelayerAsyncRequest {
 
   /**
    * Throws an unauthorized error for 401 responses.
+   *
+   * The `message` surfaced from the response body (the relayer/edge JSON error)
+   * is used when present; otherwise the canned string is kept. The
+   * `'unauthorized'` label and error shape are preserved so downstream
+   * consumers reading `relayerApiError.message`/`.label` keep working.
+   *
+   * @param status - The 401 status.
+   * @param surfacedMessage - The message read from the response body, if any.
    * @throws {RelayerResponseApiError} Always throws with 'unauthorized' label.
    */
-  private _throwUnauthorizedError(status: Extract<RelayerFailureStatus, 401>): never {
+  private _throwUnauthorizedError(status: Extract<RelayerFailureStatus, 401>, surfacedMessage?: string): never {
     this._throwRelayerResponseApiError({
       status,
       relayerApiError: {
         label: 'unauthorized',
-        message: 'Unauthorized, missing or invalid Zama Fhevm API Key.',
+        message: surfacedMessage ?? 'Unauthorized, missing or invalid Zama Fhevm API Key.',
       },
+    });
+  }
+
+  /**
+   * Throws for an HTTP status that is not part of the typed relayer contract —
+   * e.g. a 403 emitted by an edge proxy (Cloudflare/Kong). The `message`
+   * surfaced from the JSON body is appended to the error when present.
+   *
+   * @param status - The unexpected HTTP status.
+   * @param surfacedMessage - The message read from the response body, if any.
+   * @throws {RelayerResponseStatusError} Always throws.
+   */
+  private _throwUnexpectedStatusError(status: number, surfacedMessage?: string): never {
+    this._logger?.error?.(
+      `[RelayerAsyncRequest] Unexpected HTTP status ${status} on ${this._url} (operation=${this._relayerOperation}, jobId=${this._jobId})${surfacedMessage !== undefined ? `: ${surfacedMessage}` : ''}`,
+      undefined,
+    );
+    throw new RelayerResponseStatusError({
+      fetchMethod: this._fetchMethod as unknown as RelayerFetchMethod,
+      status,
+      url: this._url,
+      ...(this._jobId !== undefined ? { jobId: this._jobId } : {}),
+      operation: this._relayerOperation,
+      elapsed: this._elapsed,
+      retryCount: this._retryCount,
+      state: { ...this._state },
+      ...(surfacedMessage !== undefined ? { responseMessage: surfacedMessage } : {}),
     });
   }
 
@@ -1635,6 +1726,11 @@ export class RelayerAsyncRequest {
   }): never {
     // Clone
     const clonedRelayerApiError = JSON.parse(JSON.stringify(params.relayerApiError)) as RelayerApiError;
+
+    this._logger?.error?.(
+      `[RelayerAsyncRequest] Relayer API error on ${this._url} (status=${params.status}, operation=${this._relayerOperation}, jobId=${this._jobId}, retryCount=${this._retryCount}): label=${params.relayerApiError.label}, message=${params.relayerApiError.message}`,
+      undefined,
+    );
 
     const args: RelayerProgressFailed<RelayerPostOperation> = {
       type: 'failed',
@@ -1685,6 +1781,10 @@ export class RelayerAsyncRequest {
    * @throws {RelayerRequestInternalError}
    */
   private _throwInternalError(message: string): never {
+    this._logger?.error?.(
+      `[RelayerAsyncRequest] Internal error on ${this._url} (operation=${this._relayerOperation}): ${message}`,
+      undefined,
+    );
     throw new RelayerRequestInternalError({
       operation: this._relayerOperation,
       url: this._url,
@@ -1700,6 +1800,10 @@ export class RelayerAsyncRequest {
    */
   private _throwMaxRetryError(params: { fetchMethod: 'GET' | 'POST' }): never {
     const elapsed = this._jobIdTimestamp !== undefined ? Date.now() - this._jobIdTimestamp : 0;
+    this._logger?.error?.(
+      `[RelayerAsyncRequest] Max retry count exceeded on ${this._url} (${params.fetchMethod}, operation=${this._relayerOperation}, jobId=${this._jobId}, retryCount=${this._retryCount}, elapsed=${elapsed}ms).`,
+      undefined,
+    );
     throw new RelayerMaxRetryError({
       operation: this._relayerOperation,
       url: this._url,
@@ -1720,6 +1824,10 @@ export class RelayerAsyncRequest {
     cause: InvalidPropertyError;
     bodyJson: string;
   }): never {
+    this._logger?.error?.(
+      `[RelayerAsyncRequest] Unexpected response body on ${this._url} (status=${params.status}, operation=${this._relayerOperation}, jobId=${this._jobId}): ${params.bodyJson}`,
+      params.cause,
+    );
     throw new RelayerResponseInvalidBodyError({
       ...params,
       fetchMethod: this._fetchMethod as unknown as RelayerFetchMethod,
@@ -1737,6 +1845,10 @@ export class RelayerAsyncRequest {
    * @throws {RelayerFetchError} Always throws.
    */
   private _throwFetchError(params: { message: string; cause: unknown }): never {
+    this._logger?.error?.(
+      `[RelayerAsyncRequest] ${params.message} (url=${this._url}, operation=${this._relayerOperation}, jobId=${this._jobId}, retryCount=${this._retryCount})`,
+      params.cause,
+    );
     throw new RelayerFetchError({
       ...params,
       elapsed: this._elapsed,
@@ -1781,5 +1893,6 @@ export class RelayerAsyncRequest {
     if (this._debug) {
       console.log(`[RelayerAsyncRequest]:${functionName}: ${message}`);
     }
+    this._logger?.debug?.(`[RelayerAsyncRequest]:${functionName}: ${message}`);
   }
 }

@@ -68,13 +68,13 @@ spec:
             - name: KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS
               value: {{ $contracts.gatewayConfig | quote }}
             - name: KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS
-              value: {{ $contracts.kmsGeneration | quote }}
+              value: {{ $contracts.ethereumKmsGeneration | quote }}
             - name: KMS_CONNECTOR_ETHEREUM_URL
               value: {{ .Values.commonConfig.ethereumUrl | quote }}
             - name: KMS_CONNECTOR_ETHEREUM_CHAIN_ID
               value: {{ $contracts.ethereumChainId | quote }}
-            - name: KMS_CONNECTOR_KMS_VERIFIER_ADDRESS
-              value: {{ $contracts.ethereumKmsVerifier | quote }}
+            - name: KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS
+              value: {{ $contracts.ethereumProtocolConfig | quote }}
           {{- if default .Values.commonConfig.tracing.enabled .Values.kmsConnectorGwListener.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.commonConfig.tracing.endpoint }}

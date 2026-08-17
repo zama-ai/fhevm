@@ -33,13 +33,9 @@ pub struct AttestedUserDecryptRequestJson {
     #[validate(nested)]
     pub attested_payload: Eip712UnifiedUserDecryptPayloadJson,
 
-    /// Attestation signature. Opaque to the relayer — forwarded verbatim
-    /// to the gateway, where the KMS Connector verifies it.
-    /// `0x` + arbitrary hex.
-    #[validate(
-        length(min = 4, message = "Must not be empty"),
-        custom(function = "crate::http::validate_0x_hex")
-    )]
+    /// Attestation signature: `0x`-hex, or empty for the ERC-1271
+    /// empty-signature path.
+    #[validate(custom(function = "crate::http::validate_0x_hex_allow_empty"))]
     #[derivative(Debug(format_with = "redact_len"))]
     #[schema(example = "0xaabbccddeeff")]
     pub signature: String,
@@ -95,10 +91,7 @@ pub struct Eip712UnifiedUserDecryptPayloadJson {
     #[schema(example = "0x04b8e5d3f1a2c4e6d8f0a1b3c5d7e9f1a2b4c6d8e0f2a3b5c7d9e1f3a5b7c9d1")]
     pub public_key: String,
 
-    /// Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`,
-    /// version `0x01` (`0x01` + 32-byte contextId), or version `0x02`
-    /// (`0x02` + 32-byte contextId + 32-byte epochId).
+    #[schema(schema_with = crate::http::extra_data_decryption_schema)]
     #[validate(custom(function = "crate::http::validate_extra_data_field_decryption"))]
-    #[schema(example = "0x00")]
     pub extra_data: String,
 }

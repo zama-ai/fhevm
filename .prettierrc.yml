@@ -12,8 +12,27 @@ overrides:
   - files: "*.sol"
     options:
       compiler: "0.8.24"
-      parser: "solidity-parse"
+      # No explicit `parser`: prettier-plugin-solidity v2 renamed it from
+      # "solidity-parse" to "slang", and packages inheriting this config run
+      # DIFFERENT plugin majors (gateway-contracts has no local config and
+      # installs v1). Letting Prettier infer the parser from whichever plugin
+      # version is installed keeps every package working; pinning either name
+      # breaks the other major with `Couldn't resolve parser`.
       tabWidth: 4
+  - files: "test-suite/e2e/**/*.sol"
+    options:
+      # Keep the e2e contracts in the dominant repo Solidity style (double
+      # quotes, unspaced `{FheType}` import braces, matching host-contracts /
+      # library-solidity) — without these pins the root-level
+      # `singleQuote: true` / `bracketSpacing: true` leak in under the v2
+      # plugin and reformat every e2e contract. Scoped to e2e on purpose:
+      # gateway-contracts inherits this config too and its style IS spaced
+      # braces under the v1 plugin.
+      bracketSpacing: false
+      singleQuote: false
+  - files: ".github/workflows/js-sdk-*.yml"
+    options:
+      printWidth: 160
   - files: "*.md"
     options:
       proseWrap: preserve

@@ -14,10 +14,12 @@ use tracing::info;
 #[case::prep_keygen(TestEventType::PrepKeygen)]
 #[case::keygen(TestEventType::Keygen)]
 #[case::crsgen(TestEventType::Crsgen)]
+#[case::new_kms_context(TestEventType::NewKmsContext)]
+#[case::new_kms_epoch(TestEventType::NewKmsEpoch)]
 #[timeout(Duration::from_secs(90))]
 #[tokio::test]
 async fn test_block_tracking(#[case] event_type: TestEventType) -> anyhow::Result<()> {
-    let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
+    let mut test_instance = TestInstanceBuilder::db_bc_setup().await?;
     let cancel_token = CancellationToken::new();
     let gw_listener_task =
         start_test_listener(&mut test_instance, cancel_token.clone(), None).await;

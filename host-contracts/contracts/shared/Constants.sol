@@ -3,21 +3,42 @@ pragma solidity ^0.8.24;
 
 uint8 constant HANDLE_VERSION = 0;
 
-// ----------------------------------------------------------------------------------------------
-// KMS identifier type-tag family
-//
-// Every KMS-related identifier embeds a one-byte type tag in its most-significant byte, followed by
-// a 31-byte counter: [type tag | counter_1..31]. The tags share a single namespace and must stay
-// mutually distinct so identifiers from different families can never collide. The preprocessing-keygen
-// (0x03), keygen (0x04) and CRS-generation (0x05) tags are applied in `KMSGeneration.sol`; the KMS
-// context tag (0x07) is below. Keep this list and `KMSGeneration.sol` in sync as the single source.
-// ----------------------------------------------------------------------------------------------
+/**
+ * @notice The KMS request and protocol-lifecycle ID tags used in the high byte of KMS IDs.
+ * @dev The ordering preserves Gateway request-type history so migrated IDs keep their meaning.
+ */
+enum RequestType {
+    _deprecated_, // 0: DEPRECATED
+    _gatewayPublicDecrypt_, // 1: reserved on Gateway
+    _gatewayUserDecrypt_, // 2: reserved on Gateway
+    PrepKeygen, // 3
+    Keygen, // 4
+    Crsgen, // 5
+    _deprecatedKeyReshare_, // 6: was KeyReshare on Gateway
+    KmsContext, // 7
+    Epoch // 8
+}
 
-/// @dev Bit shift placing a one-byte type tag in the most-significant byte of a 32-byte identifier.
+// Bit position to left shift for initializing KMS ID counters.
 uint256 constant REQUEST_TYPE_SHIFT = 248;
 
-/// @dev Type tag for KMS context IDs (must stay distinct from the KMSGeneration tags 0x03/0x04/0x05).
-uint8 constant KMS_CONTEXT_REQUEST_TYPE = 0x07;
+/// @dev Base value for preprocessing keygen request IDs. Format: [0x03 type tag | 31 counter bytes].
+uint256 constant PREP_KEYGEN_COUNTER_BASE = uint256(RequestType.PrepKeygen) << REQUEST_TYPE_SHIFT;
+
+/// @dev Base value for keygen request IDs. Format: [0x04 type tag | 31 counter bytes].
+uint256 constant KEY_COUNTER_BASE = uint256(RequestType.Keygen) << REQUEST_TYPE_SHIFT;
+
+/// @dev Base value for CRS generation request IDs. Format: [0x05 type tag | 31 counter bytes].
+uint256 constant CRS_COUNTER_BASE = uint256(RequestType.Crsgen) << REQUEST_TYPE_SHIFT;
 
 /// @dev Base value for KMS context IDs. Format: [0x07 type tag | 31 counter bytes].
-uint256 constant KMS_CONTEXT_COUNTER_BASE = uint256(KMS_CONTEXT_REQUEST_TYPE) << REQUEST_TYPE_SHIFT;
+uint256 constant KMS_CONTEXT_COUNTER_BASE = uint256(RequestType.KmsContext) << REQUEST_TYPE_SHIFT;
+
+/// @dev Base value for epoch IDs. Format: [0x08 type tag | 31 counter bytes].
+uint256 constant EPOCH_COUNTER_BASE = uint256(RequestType.Epoch) << REQUEST_TYPE_SHIFT;
+
+/// @dev Version byte for v1 extraData layout: [version(1)] [contextId(32)].
+uint8 constant EXTRA_DATA_V1 = 0x01;
+
+/// @dev Version byte for v2 extraData layout: [version(1)] [contextId(32)] [epochId(32)].
+uint8 constant EXTRA_DATA_V2 = 0x02;

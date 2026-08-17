@@ -17,6 +17,44 @@ export function simpleDeepFreeze<T extends object>(obj: T): Readonly<T> {
 }
 
 /**
+ * Recursively compares two JSON-like values.
+ *
+ * Arrays are order-sensitive. Objects must have the same own enumerable string keys, but key
+ * insertion order does not matter.
+ */
+export function isDeepEqual(value: unknown, expected: unknown): boolean {
+  if (value === expected) {
+    return true;
+  }
+
+  if (Array.isArray(expected)) {
+    return (
+      Array.isArray(value) &&
+      value.length === expected.length &&
+      expected.every((expectedItem, index) => isDeepEqual(value[index], expectedItem))
+    );
+  }
+
+  if (expected === null || typeof expected !== 'object') {
+    return value === expected;
+  }
+
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  const expectedRecord = expected as Record<string, unknown>;
+  const keys = Object.keys(record);
+  const expectedKeys = Object.keys(expectedRecord);
+
+  return (
+    keys.length === expectedKeys.length &&
+    expectedKeys.every((key) => Object.hasOwn(record, key) && isDeepEqual(record[key], expectedRecord[key]))
+  );
+}
+
+/**
  * Defines a non-enumerable, non-writable, non-configurable property on the target object.
  * The property is hidden from `Object.keys()` / `Object.entries()` and cannot be
  * overwritten or reconfigured after creation.

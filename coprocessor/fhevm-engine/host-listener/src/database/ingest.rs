@@ -4,20 +4,26 @@ use std::future::Future;
 use alloy::primitives::Address;
 use alloy::rpc::types::Log;
 use alloy::sol_types::SolEventInterface;
+use fhevm_engine_common::bridge::chain_id_from_handle;
 use fhevm_engine_common::chain_id::ChainId;
-use fhevm_engine_common::types::Handle;
+use fhevm_engine_common::types::{
+    Handle, COMPUTED_HANDLE_INDEX_MARKER, HANDLE_VERSION,
+};
 use sqlx::types::time::{OffsetDateTime, PrimitiveDateTime};
-use tracing::{error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::cmd::block_history::{BlockHash, BlockSummary};
 use crate::cmd::InfiniteLogIter;
-use crate::contracts::{AclContract, KMSGeneration, TfheContract};
+use crate::contracts::{
+    AclContract, BridgeContract, KMSGeneration, ProtocolConfig, TfheContract,
+};
 use crate::database::dependence_chains::dependence_chains;
 use crate::database::tfhe_event_propagate::{
     acl_result_handles, tfhe_result_handle, Chain, ChainHash, Database, LogTfhe,
 };
 use crate::kms_generation::insert_kms_generation_events_tx;
 use crate::kms_generation::metrics::KMS_EVENT_DECODE_FAIL_COUNTER;
+use crate::protocol_config::metrics::PROTOCOL_CONFIG_EVENT_DECODE_FAIL_COUNTER;
 
 pub struct BlockLogs<T> {
     pub logs: Vec<T>,
@@ -26,11 +32,15 @@ pub struct BlockLogs<T> {
     pub finalized: bool,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct IngestOptions {
     pub dependence_by_connexity: bool,
     pub dependence_cross_block: bool,
     pub dependent_ops_max_per_chain: u32,
+    /// Resolved once at startup from the listener's own `chain_id` and the
+    /// configured `--canonical-protocol-config-chain-id`. When false, the listener silently
+    /// skips `ProtocolConfig.CoprocessorUpgradeProposed` events.
+    pub is_protocol_config_listener: bool,
 }
 
 /// Converts a block timestamp to a UTC `PrimitiveDateTime`.
@@ -142,6 +152,56 @@ fn classify_slow_by_split_dependency_closure(
     slow_dep_chain_ids
 }
 
+/// pg_notify channel announcing a fully-ingested block.
+///
+/// Must stay in sync with `consensus_detector::NEW_BLOCK_CHANNEL`. Snake_case
+/// per the channel-name convention.
+const NEW_BLOCK_CHANNEL: &str = "event_new_block";
+
+fn is_valid_fallback_dst_handle(
+    dst_handle: &[u8; 32],
+    chain_id: ChainId,
+) -> bool {
+    let embedded = chain_id_from_handle(dst_handle);
+    if embedded != chain_id.as_u64() {
+        warn!(
+            dst_handle = ?dst_handle,
+            embedded_chain_id = embedded,
+            chain_id = %chain_id,
+            "Ignoring FallbackGrantedPlaintext: dstHandle chain id does not match this chain"
+        );
+        return false;
+    }
+    if dst_handle[21] != COMPUTED_HANDLE_INDEX_MARKER {
+        warn!(
+            dst_handle = ?dst_handle,
+            "Ignoring FallbackGrantedPlaintext: dstHandle is missing the computed-handle marker"
+        );
+        return false;
+    }
+    if dst_handle[31] != HANDLE_VERSION {
+        warn!(
+            dst_handle = ?dst_handle,
+            "Ignoring FallbackGrantedPlaintext: dstHandle has an unexpected handle version"
+        );
+        return false;
+    }
+    // Restrict to the same allowlist the contract
+    // enforces: Bool(0), Uint8(2), Uint16(3), Uint32(4), Uint64(5), Uint128(6),
+    // Uint160(7), Uint256(8). Anything else is rejected.
+    let to_type = dst_handle[30];
+    if !matches!(to_type, 0 | 2..=8) {
+        warn!(
+            dst_handle = ?dst_handle,
+            to_type,
+            "Ignoring FallbackGrantedPlaintext: unsupported FheType in dstHandle"
+        );
+        return false;
+    }
+    true
+}
+
+#[allow(clippy::too_many_arguments)]
 pub async fn ingest_block_logs(
     chain_id: ChainId,
     db: &mut Database,
@@ -149,10 +209,44 @@ pub async fn ingest_block_logs(
     acl_contract_address: &Option<Address>,
     tfhe_contract_address: &Option<Address>,
     kms_generation_contract_address: &Option<Address>,
+    protocol_config_contract_address: &Option<Address>,
+    confidential_bridge_address: &Option<Address>,
     options: IngestOptions,
 ) -> Result<(), sqlx::Error> {
-    let mut tx = db.new_transaction().await?;
+    let Some(mut tx) = db.new_transaction().await? else {
+        info!("cutover completed — host-listener skipping block ingest (retired stack)");
+        return Ok(());
+    };
+
+    // Queue `pg_notify('event_new_block', ...)` at the top of the transaction so
+    // postgres defers delivery until `tx.commit()` below succeeds. Same
+    // "after all events committed" guarantee as emitting post-commit, but
+    // atomic with the data — if the tx rolls back, the notification is
+    // discarded too. JSON shape must match consensus_detector::NewBlockPayload.
+    let new_block_payload = serde_json::json!({
+        "chain_id": chain_id.as_u64() as i64,
+        "block_height": block_logs.summary.number as i64,
+        "block_hash": format!("{:#x}", block_logs.summary.hash),
+    })
+    .to_string();
+    info!(
+        channel = NEW_BLOCK_CHANNEL,
+        payload = %new_block_payload,
+        "Queuing new_block pg_notify in ingest transaction"
+    );
+    sqlx::query("SELECT pg_notify($1, $2)")
+        .bind(NEW_BLOCK_CHANNEL)
+        .bind(&new_block_payload)
+        .execute(&mut *tx)
+        .await?;
+
+    // Only the listener watching the configured canonical chain decodes
+    // `CoprocessorUpgradeProposed`; every other listener skips the channel.
+    let is_protocol_config_listener = options.is_protocol_config_listener;
+
     let mut is_allowed = HashSet::<Handle>::new();
+    let mut seen_fallback_handles = HashSet::<Handle>::new();
+    let mut acl_event_log = vec![];
     let mut tfhe_event_log = vec![];
     let mut kms_gen_events = vec![];
     let block_hash = block_logs.summary.hash;
@@ -160,46 +254,24 @@ pub async fn ingest_block_logs(
     let mut catchup_insertion = 0;
     let block_timestamp = block_date_time_utc(block_logs.summary.timestamp);
     let mut at_least_one_insertion = false;
+    // Per-block tallies persisted in host_chain_blocks_valid. Counted at decode
+    // time, so an event that fails to insert (e.g. ON CONFLICT) still counts.
+    let mut allow_event_count: i32 = 0;
+    let mut fhe_event_count: i32 = 0;
 
     for log in &block_logs.logs {
         let current_address = Some(log.inner.address);
         let is_acl_address = &current_address == acl_contract_address;
-        let transaction_hash = log.transaction_hash;
         if acl_contract_address.is_none() || is_acl_address {
             if let Ok(event) =
                 AclContract::AclContractEvents::decode_log(&log.inner)
             {
+                allow_event_count = allow_event_count.saturating_add(1);
                 let handles = acl_result_handles(&event);
                 for handle in handles {
                     is_allowed.insert(handle.to_vec());
                 }
-                let inserted = db
-                    .handle_acl_event(
-                        &mut tx,
-                        &event,
-                        &log.transaction_hash,
-                        chain_id,
-                        block_hash.as_ref(),
-                        block_number,
-                    )
-                    .await?;
-                at_least_one_insertion |= inserted;
-                if block_logs.catchup && inserted {
-                    info!(
-                        acl_event = ?event,
-                        ?transaction_hash,
-                        ?block_number,
-                        "ACL event missed before"
-                    );
-                    catchup_insertion += 1;
-                } else {
-                    info!(
-                        acl_event = ?event,
-                        ?transaction_hash,
-                        ?block_number,
-                        "ACL event"
-                    );
-                }
+                acl_event_log.push((event, log.transaction_hash));
                 continue;
             }
         }
@@ -209,10 +281,12 @@ pub async fn ingest_block_logs(
             if let Ok(event) =
                 TfheContract::TfheContractEvents::decode_log(&log.inner)
             {
+                fhe_event_count = fhe_event_count.saturating_add(1);
                 let log = LogTfhe {
                     event,
                     transaction_hash: log.transaction_hash,
                     block_number,
+                    block_hash,
                     block_timestamp,
                     // updated in the next loop and dependence_chains
                     is_allowed: false,
@@ -238,12 +312,144 @@ pub async fn ingest_block_logs(
             }
         }
 
-        if is_acl_address || is_tfhe_address || is_kms_gen_address {
+        let is_protocol_config_address = is_protocol_config_listener
+            && protocol_config_contract_address
+                .as_ref()
+                .is_some_and(|addr| &log.inner.address == addr);
+        if is_protocol_config_address {
+            handle_protocol_config_log(&mut tx, chain_id, log).await?;
+            continue;
+        }
+
+        let is_bridge_address = &current_address == confidential_bridge_address;
+        if is_bridge_address {
+            if let Ok(event) =
+                BridgeContract::BridgeContractEvents::decode_log(&log.inner)
+            {
+                // A FallbackGrantedPlaintext becomes a synthetic TrivialEncrypt
+                // computation so the normal pipeline materializes the ciphertext.
+                // PBS is enqueued so its ct128/digest get computed and published.
+                if let BridgeContract::BridgeContractEvents::FallbackGrantedPlaintext(e) =
+                    &event.data
+                {
+                    let dst_handle = e.dstHandle;
+                    if !is_valid_fallback_dst_handle(&dst_handle.0, chain_id) {
+                        continue;
+                    }
+                    // Record the observation durably (keyed by block hash)
+                    // regardless of the synthesis decision below: reorg
+                    // cleanup and operators need the grant to survive even
+                    // when this particular observation is suppressed.
+                    db.record_fallback_grant_observation(
+                        &mut tx,
+                        dst_handle.as_slice(),
+                        &e.plaintext.to_be_bytes::<32>(),
+                        &log.transaction_hash,
+                        block_number,
+                        block_hash.as_ref(),
+                    )
+                    .await?;
+                    // The contract specifies that if multiple fallback events
+                    // are emitted for the same handle, only the first one is
+                    // the source of truth: skip duplicates within this block
+                    // and grants from a different transaction. The SAME grant
+                    // re-observed in another block context (fork sibling or
+                    // canonical re-inclusion after a reorg) is synthesized
+                    // again for its own context, so cleanup of one fork never
+                    // erases the grant from the surviving fork. A handle
+                    // materialized by a bridge association (ciphertext copy
+                    // without a computations row) also stays write-once.
+                    let first_in_block =
+                        seen_fallback_handles.insert(dst_handle.to_vec());
+                    if !first_in_block
+                        || db
+                            .fallback_grant_conflicts(
+                                &mut tx,
+                                dst_handle.as_slice(),
+                                &log.transaction_hash,
+                                block_hash.as_ref(),
+                            )
+                            .await?
+                    {
+                        warn!(
+                            dst_handle = ?dst_handle,
+                            "Ignoring FallbackGrantedPlaintext: dstHandle is already materialized"
+                        );
+                        continue;
+                    }
+                    // Force the handle allowed so the synthetic computation runs.
+                    // governance ensures the handle is in the ACL.
+                    is_allowed.insert(dst_handle.to_vec());
+                    tfhe_event_log.push(LogTfhe {
+                        event: alloy::primitives::Log {
+                            address: log.inner.address,
+                            data: TfheContract::TfheContractEvents::TrivialEncrypt(
+                                TfheContract::TrivialEncrypt {
+                                    caller: Address::ZERO,
+                                    pt: e.plaintext,
+                                    toType: dst_handle.0[30],
+                                    result: dst_handle,
+                                },
+                            ),
+                        },
+                        transaction_hash: log.transaction_hash,
+                        block_number,
+                        block_hash,
+                        block_timestamp,
+
+                        // This is a placeholder. The real value can't be known yet
+                        // because the is_allowed set is still being built from
+                        // the rest of the block's logs. It is recomputed for
+                        // every event in the loop right after this one.
+                        is_allowed: false,
+
+                        // Placeholders: dependence_chains() (called once the
+                        // whole block is scanned) assigns the real dependence
+                        // chain this op belongs to and its depth within it.
+                        dependence_chain: Default::default(),
+                        tx_depth_size: 0,
+
+                        log_index: log.log_index,
+                    });
+                    at_least_one_insertion |= db
+                        .insert_pbs_computations(
+                            &mut tx,
+                            &[dst_handle.to_vec()],
+                            log.transaction_hash.map(|h| h.to_vec()),
+                            block_number,
+                            block_hash.as_ref(),
+                        )
+                        .await?;
+                } else {
+                    at_least_one_insertion |= db
+                        .handle_bridge_event(
+                            &mut tx,
+                            &event,
+                            &log.transaction_hash,
+                            block_number,
+                            &block_logs.summary.hash,
+                            &block_logs.summary.parent_hash,
+                            block_logs.summary.timestamp,
+                            acl_contract_address,
+                        )
+                        .await?;
+                }
+                continue;
+            }
+        }
+
+        if is_acl_address
+            || is_tfhe_address
+            || is_kms_gen_address
+            || is_protocol_config_address
+            || is_bridge_address
+        {
             error!(
                 event_address = ?log.inner.address,
                 acl_contract_address = ?acl_contract_address,
                 tfhe_contract_address = ?tfhe_contract_address,
                 kms_generation_contract_address = ?kms_generation_contract_address,
+                confidential_bridge_address = ?confidential_bridge_address,
                 log = ?log,
                 "Cannot decode event",
             );
@@ -284,6 +490,42 @@ pub async fn ingest_block_logs(
             catchup_insertion += 1;
         } else {
             info!(tfhe_log = ?tfhe_log, "TFHE event");
+        }
+    }
+
+    // ACL events are processed only after every tfhe compute event for this
+    // block has been inserted into computations_branch. handle_acl_event
+    // resolves each allowed handle's producer block by matching
+    // computations_branch against the current-branch ancestry (which includes
+    // this block); a handle produced *and* allowed within this same block only
+    // has its producer row once the loop above has run. Resolving ACL events
+    // earlier would miss the same-block producer and fall back to branchless,
+    // spuriously incrementing host_listener_unresolved_producer_block_total.
+    for (event, transaction_hash) in acl_event_log {
+        let inserted = db
+            .handle_acl_event(
+                &mut tx,
+                &event,
+                &transaction_hash,
+                &block_logs.summary,
+            )
+            .await?;
+        at_least_one_insertion |= inserted;
+        if block_logs.catchup && inserted {
+            info!(
+                acl_event = ?event,
+                ?transaction_hash,
+                ?block_number,
+                "ACL event missed before"
+            );
+            catchup_insertion += 1;
+        } else {
+            info!(
+                acl_event = ?event,
+                ?transaction_hash,
+                ?block_number,
+                "ACL event"
+            );
         }
     }
 
@@ -338,8 +580,14 @@ pub async fn ingest_block_logs(
         block_number,
     )
     .await?;
-    db.mark_block_as_valid(&mut tx, &block_logs.summary, block_logs.finalized)
-        .await?;
+    db.mark_block_as_valid(
+        &mut tx,
+        &block_logs.summary,
+        block_logs.finalized,
+        fhe_event_count,
+        allow_event_count,
+    )
+    .await?;
     if at_least_one_insertion {
         db.update_dependence_chain(
             &mut tx,
@@ -351,6 +599,305 @@ pub async fn ingest_block_logs(
         .await?;
     }
     tx.commit().await
+}
+
+/// Channel name the upgrade-controller LISTENs on for `CoprocessorUpgradeProposed` events.
+const UPGRADE_ACTIVATED_CHANNEL: &str = "event_upgrade_activated";
+
+/// Decodes a log known to come from the configured ProtocolConfig contract on
+/// the authority chain and dispatches it. Caller must pre-gate on
+/// `is_protocol_config_listener && log.address == protocol_config_contract_address`.
+async fn handle_protocol_config_log(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    chain_id: ChainId,
+    log: &Log,
+) -> Result<(), sqlx::Error> {
+    match ProtocolConfig::ProtocolConfigEvents::decode_log(&log.inner) {
+        Ok(event) => match &event.data {
+            ProtocolConfig::ProtocolConfigEvents::CoprocessorUpgradeProposed(proposed) => {
+                let Some(proposal_block) =
+                    log.block_number.and_then(|b| i64::try_from(b).ok())
+                else {
+                    warn!(
+                        proposal_id = %proposed.proposalId,
+                        "Ignoring CoprocessorUpgradeProposed without a valid block number"
+                    );
+                    return Ok(());
+                };
+                notify_coprocessor_upgrade_proposed(tx, chain_id, proposed, proposal_block).await?;
+            }
+            other => {
+                warn!(
+                    ?other,
+                    block_number = ?log.block_number,
+                    tx_hash = ?log.transaction_hash,
+                    log_index = ?log.log_index,
+                    "ProtocolConfig event decoded but no handler matched — likely a new variant added without updating host-listener",
+                );
+                PROTOCOL_CONFIG_EVENT_DECODE_FAIL_COUNTER.inc();
+            }
+        },
+        Err(_) => {
+            PROTOCOL_CONFIG_EVENT_DECODE_FAIL_COUNTER.inc();
+        }
+    }
+    Ok(())
+}
+
+async fn notify_coprocessor_upgrade_proposed(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    chain_id: ChainId,
+    event: &ProtocolConfig::CoprocessorUpgradeProposed,
+    proposal_block: i64,
+) -> Result<(), sqlx::Error> {
+    let listener_chain_id = chain_id.as_u64();
+    let Ok(listener_chain_id_i64) = i64::try_from(listener_chain_id) else {
+        warn!(
+            listener_chain_id,
+            "Rejecting CoprocessorUpgradeProposed: listener chain id exceeds i64 range"
+        );
+        return Ok(());
+    };
+
+    if event.proposalId.is_zero() {
+        warn!(
+            chain_id = listener_chain_id,
+            "Rejecting CoprocessorUpgradeProposed with proposalId == 0 — production contract guards against this; defense in depth against test mocks or future callers"
+        );
+        return Ok(());
+    }
+
+    let proposal_id_bytes = event.proposalId.to_be_bytes::<32>();
+    let proposal_id_hex =
+        format!("0x{}", alloy_primitives::hex::encode(proposal_id_bytes));
+
+    // gwStartBlock is a single top-level field shared by every per-chain window.
+    let Ok(gw_start_block) = i64::try_from(event.gwStartBlock) else {
+        warn!(
+            listener_chain_id,
+            proposal_id = %proposal_id_hex,
+            gw_start_block = event.gwStartBlock,
+            "Rejecting CoprocessorUpgradeProposed: gwStartBlock exceeds i64 range"
+        );
+        return Ok(());
+    };
+
+    if event.chainUpgradeWindows.is_empty() {
+        warn!(
+            listener_chain_id,
+            proposal_id = %proposal_id_hex,
+            "CoprocessorUpgradeProposed carries no chain windows — nothing to activate"
+        );
+        return Ok(());
+    }
+
+    // Validate and materialize the complete set before touching durable state.
+    // Rejecting the whole event avoids a partially installed proposal.
+    let mut seen_chain_ids = HashSet::new();
+    let mut windows = Vec::with_capacity(event.chainUpgradeWindows.len());
+    for window in &event.chainUpgradeWindows {
+        let (Ok(window_chain_id), Ok(start_block), Ok(end_block)) = (
+            i64::try_from(window.chainId),
+            i64::try_from(window.startBlock),
+            i64::try_from(window.endBlock),
+        ) else {
+            warn!(
+                listener_chain_id,
+                proposal_id = %proposal_id_hex,
+                window_chain_id = window.chainId,
+                start_block = window.startBlock,
+                end_block = window.endBlock,
+                "Rejecting CoprocessorUpgradeProposed: chain/block field exceeds i64 range"
+            );
+            return Ok(());
+        };
+        if start_block > end_block {
+            warn!(
+                listener_chain_id,
+                proposal_id = %proposal_id_hex,
+                window_chain_id,
+                start_block,
+                end_block,
+                "Rejecting CoprocessorUpgradeProposed: start_block is after end_block"
+            );
+            return Ok(());
+        }
+        if !seen_chain_ids.insert(window_chain_id) {
+            warn!(
+                listener_chain_id,
+                proposal_id = %proposal_id_hex,
+                window_chain_id,
+                "Rejecting CoprocessorUpgradeProposed: duplicate host chain window"
+            );
+            return Ok(());
+        }
+        windows.push((window_chain_id, start_block, end_block));
+    }
+    windows.sort_unstable_by_key(|&(window_chain_id, _, _)| window_chain_id);
+
+    let Some(&(_, canonical_start, canonical_end)) =
+        windows.iter().find(|&&(window_chain_id, _, _)| {
+            window_chain_id == listener_chain_id_i64
+        })
+    else {
+        warn!(
+            listener_chain_id,
+            proposal_id = %proposal_id_hex,
+            nb_windows = windows.len(),
+            "Rejecting CoprocessorUpgradeProposed: proposal does not include the canonical listener chain"
+        );
+        return Ok(());
+    };
+
+    // ProtocolConfig ingestion replaces a proposal-wide row set. Serialize it
+    // with controller transitions and concurrent listeners so readers can
+    // never observe only a subset of the proposed chains.
+    sqlx::query("LOCK TABLE upgrade_state IN SHARE ROW EXCLUSIVE MODE")
+        .execute(&mut **tx)
+        .await?;
+
+    type ExistingWindow = (
+        String,
+        Option<Vec<u8>>,
+        Option<i64>,
+        i64,
+        Option<i64>,
+        Option<i64>,
+        Option<String>,
+        Option<i64>,
+    );
+    let existing: Vec<ExistingWindow> = sqlx::query_as(
+        "SELECT status, proposal_id, proposal_block, host_chain_id,
+                start_block, end_block, version, gw_start_block
+           FROM upgrade_state
+          WHERE stack_role = 'GCS'
+          ORDER BY host_chain_id
+          FOR UPDATE",
+    )
+    .fetch_all(&mut **tx)
+    .await?;
+
+    let same_attempt = !existing.is_empty()
+        && existing.iter().all(
+            |(_, existing_id, existing_block, _, _, _, _, _)| {
+                existing_id.as_deref() == Some(&proposal_id_bytes[..])
+                    && *existing_block == Some(proposal_block)
+            },
+        );
+    if same_attempt {
+        let same_windows = existing.len() == windows.len()
+            && existing.iter().zip(&windows).all(
+                |(
+                    (
+                        _,
+                        _,
+                        _,
+                        existing_chain,
+                        existing_start,
+                        existing_end,
+                        existing_version,
+                        existing_gw_start,
+                    ),
+                    (chain, start, end),
+                )| {
+                    *existing_chain == *chain
+                        && *existing_start == Some(*start)
+                        && *existing_end == Some(*end)
+                        && existing_version.as_deref()
+                            == Some(event.softwareVersion.as_str())
+                        && *existing_gw_start == Some(gw_start_block)
+                },
+            );
+        if same_windows {
+            debug!(
+                proposal_id = %proposal_id_hex,
+                proposal_block,
+                "Ignoring exact replay of CoprocessorUpgradeProposed"
+            );
+        } else {
+            warn!(
+                proposal_id = %proposal_id_hex,
+                proposal_block,
+                "Rejecting CoprocessorUpgradeProposed: an existing attempt has different proposal data"
+            );
+        }
+        return Ok(());
+    }
+
+    let can_replace = existing.is_empty()
+        || existing.iter().all(
+            |(status, existing_id, existing_block, _, _, _, _, _)| {
+                existing_block.is_none_or(|block| proposal_block > block)
+                    && (status == "failed"
+                        || (status == "completed"
+                            && existing_id.as_deref()
+                                != Some(&proposal_id_bytes[..])))
+            },
+        );
+    if !can_replace {
+        warn!(
+            proposal_id = %proposal_id_hex,
+            proposal_block,
+            "Rejected event_upgrade_activated: another proposal is active, completed, or newer"
+        );
+        return Ok(());
+    }
+
+    sqlx::query("DELETE FROM upgrade_state WHERE stack_role IN ('BCS', 'GCS')")
+        .execute(&mut **tx)
+        .await?;
+
+    for &(window_chain_id, start_block, end_block) in &windows {
+        sqlx::query(
+            r#"
+            INSERT INTO upgrade_state (
+                stack_role, state, status, proposal_id, version,
+                start_block, end_block, gw_start_block, host_chain_id,
+                host_consensus_reached, gw_consensus_reached,
+                gw_dry_run_started, proposal_block, last_error, updated_at
+            )
+            VALUES (
+                'GCS', 'UpgradeActivated', 'in_progress', $1, $2,
+                $3, $4, $5, $6, FALSE, FALSE, FALSE, $7, NULL, NOW()
+            )
+            "#,
+        )
+        .bind(&proposal_id_bytes[..])
+        .bind(&event.softwareVersion)
+        .bind(start_block)
+        .bind(end_block)
+        .bind(gw_start_block)
+        .bind(window_chain_id)
+        .bind(proposal_block)
+        .execute(&mut **tx)
+        .await?;
+    }
+
+    info!(
+        proposal_id = %proposal_id_hex,
+        software_version = %event.softwareVersion,
+        chains = windows.len(),
+        gw_start_block = event.gwStartBlock,
+        "Persisted CoprocessorUpgradeProposed atomically, emitting pg_notify('event_upgrade_activated')"
+    );
+
+    // One wake-up for the complete proposal; the controller reconciles from
+    // the durable per-chain rows.
+    let payload = serde_json::json!({
+        "proposal_id":    &proposal_id_hex,
+        "chain_id":       listener_chain_id_i64,
+        "start_block":    canonical_start,
+        "end_block":      canonical_end,
+        "gw_start_block": gw_start_block,
+        "version":        &event.softwareVersion,
+    });
+    sqlx::query("SELECT pg_notify($1, $2)")
+        .bind(UPGRADE_ACTIVATED_CHANNEL)
+        .bind(payload.to_string())
+        .execute(&mut **tx)
+        .await?;
+
+    Ok(())
 }
 
 pub async fn update_finalized_blocks(
@@ -384,8 +931,85 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
     GetBlockHashFuture: Future<Output = anyhow::Result<BlockHash>>,
 {
     info!(last_block_number, finality_lag, "Updating finalized blocks");
+    let last_finalized_block = last_block_number.saturating_sub(finality_lag);
+
+    // Read the candidate numbers in a short transaction, then resolve the
+    // canonical hashes over RPC with NO transaction open: block fetches can
+    // take seconds each, and holding the finalization transaction across the
+    // round-trips kept its row locks pinned for the whole time.
+    let blocks_number = {
+        let mut tx = match db.new_transaction().await {
+            Ok(Some(tx)) => tx,
+            Ok(None) => {
+                info!(
+                    "cutover completed — skipping finalized-blocks lookup (retired stack)"
+                );
+                return;
+            }
+            Err(err) => {
+                error!(
+                    ?err,
+                    "Failed to create transaction for finalized blocks update"
+                );
+                return;
+            }
+        };
+        match Database::get_finalized_blocks_number(
+            &mut tx,
+            last_finalized_block as i64,
+            db.chain_id,
+        )
+        .await
+        {
+            Ok(numbers) => numbers,
+            Err(err) => {
+                error!(
+                    ?err,
+                    last_finalized_block,
+                    "Failed to fetch finalized blocks number"
+                );
+                return;
+            }
+        }
+    };
+    info!(?blocks_number, "Finalizing blocks");
+
+    // Ascending: finalization verifies each block's parent linkage against
+    // its finalized predecessor, so within one batch the predecessor must be
+    // finalized first.
+    let mut blocks_number: Vec<i64> = blocks_number.into_iter().collect();
+    blocks_number.sort_unstable();
+
+    let mut canonical = Vec::with_capacity(blocks_number.len());
+    for block_number in blocks_number {
+        match get_block_hash_by_number(block_number as u64).await {
+            Ok(block_hash) => canonical.push((block_number, block_hash)),
+            Err(err) => {
+                error!(
+                    block_number,
+                    ?err,
+                    "Failed to fetch block for finalization, \
+                     stopping the batch at the gap"
+                );
+                // STOP, don't skip: a gap at this height would let the next
+                // height's parent-linkage check pass vacuously (no finalized
+                // predecessor), the same hazard the refusal branch below
+                // stops the batch for. The fetched prefix is still safe to
+                // finalize; the rest retries next pass.
+                break;
+            }
+        }
+    }
+    if canonical.is_empty() {
+        return;
+    }
+
     let mut tx = match db.new_transaction().await {
-        Ok(tx) => tx,
+        Ok(Some(tx)) => tx,
+        Ok(None) => {
+            info!("cutover completed — skipping finalized-blocks update (retired stack)");
+            return;
+        }
         Err(err) => {
             error!(
                 ?err,
@@ -394,42 +1018,45 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
             return;
         }
     };
-    let last_finalized_block = last_block_number.saturating_sub(finality_lag);
-    let blocks_number = match Database::get_finalized_blocks_number(
-        &mut tx,
-        last_finalized_block as i64,
-        db.chain_id,
-    )
-    .await
-    {
-        Ok(numbers) => numbers,
-        Err(err) => {
-            error!(
-                ?err,
-                last_finalized_block, "Failed to fetch finalized blocks number"
-            );
-            return;
-        }
-    };
-    info!(?blocks_number, "Finalizing blocks");
-    for block_number in blocks_number {
-        let block_hash =
-            match get_block_hash_by_number(block_number as u64).await {
-                Ok(block_hash) => block_hash,
-                Err(err) => {
-                    error!(
-                        block_number,
-                        ?err,
-                        "Failed to fetch block for finalization"
-                    );
-                    continue;
-                }
-            };
-        if let Err(err) = db
+    for (block_number, block_hash) in canonical {
+        match db
             .update_block_as_finalized(&mut tx, block_number, &block_hash)
             .await
         {
-            error!(block_number, ?err, "Failed to update block as finalized");
+            Ok(Some(orphaned_hashes)) => {
+                if let Err(err) = db
+                    .cleanup_orphaned_branch_state(&mut tx, &orphaned_hashes)
+                    .await
+                {
+                    error!(
+                        block_number,
+                        ?err,
+                        "Failed to clean orphaned branch state during finalization"
+                    );
+                    return;
+                }
+            }
+            Ok(None) => {
+                // Finalization refused (missing row / orphaned / parent
+                // linkage contradiction). STOP the batch: the next height's
+                // linkage check would pass vacuously without a finalized
+                // predecessor, letting a stale or poisoned RPC finalize a
+                // fork block right behind the refusal. Earlier blocks of
+                // this batch stay finalized; the rest retries next pass.
+                warn!(
+                    block_number,
+                    "Stopping finalization batch at refused block"
+                );
+                break;
+            }
+            Err(err) => {
+                error!(
+                    block_number,
+                    ?err,
+                    "Failed to update block as finalized"
+                );
+                return;
+            }
         }
     }
     if let Err(err) = tx.commit().await {
@@ -440,6 +1067,17 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
     // Delayed delegation rely on this signal to reconsider ready delegation
     if let Err(err) = db.block_notification().await {
         error!(error = %err, "Error notifying listener for new block");
+    }
+    // Best-effort maintenance: drop old finalized block rows nothing
+    // references anymore, so ancestry probes and the table itself stop
+    // growing with chain history. Failures only delay pruning.
+    match db
+        .prune_finalized_block_history(last_finalized_block as i64)
+        .await
+    {
+        Ok(0) => {}
+        Ok(pruned) => info!(pruned, "Pruned finalized block history"),
+        Err(err) => error!(?err, "Failed to prune finalized block history"),
     }
 }
 
@@ -597,5 +1235,556 @@ mod tests {
             slow.contains(&chains[3].hash),
             "D should be slow (depends on B and C)"
         );
+    }
+
+    #[test]
+    fn proposal_id_max_uint256_round_trips_to_hex() {
+        let proposal_id = alloy::primitives::U256::MAX;
+        let bytes = proposal_id.to_be_bytes::<32>();
+        let hex = format!("0x{}", alloy_primitives::hex::encode(bytes));
+        assert_eq!(hex, format!("0x{}", "ff".repeat(32)));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn upgrade_upsert_uses_single_canonical_row() {
+        use alloy::primitives::U256;
+        use sqlx::postgres::PgPoolOptions;
+        use sqlx::Row;
+        use test_harness::instance::{setup_test_db, ImportMode};
+
+        let instance = setup_test_db(ImportMode::None).await.expect("test db");
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(instance.db_url())
+            .await
+            .expect("pool");
+
+        sqlx::query(
+            r#"
+            INSERT INTO upgrade_state (
+                stack_role, state, status, proposal_id, version,
+                start_block, end_block, gw_start_block, host_chain_id, proposal_block, updated_at
+            )
+            VALUES ('BCS', 'PAUSED', 'completed', $1, 'v1',
+                    100, 200, 1, 1, 100, NOW())
+            "#,
+        )
+        .bind(&U256::from(1u64).to_be_bytes::<32>()[..])
+        .execute(&pool)
+        .await
+        .expect("seed legacy row");
+
+        let event = ProtocolConfig::CoprocessorUpgradeProposed {
+            proposalId: U256::from(2u64),
+            softwareVersion: "v2".to_string(),
+            chainUpgradeWindows: vec![ProtocolConfig::ChainUpgradeWindow {
+                chainId: 1,
+                startBlock: 100,
+                endBlock: 200,
+            }],
+            gwStartBlock: 1,
+        };
+
+        let mut tx = pool.begin().await.expect("tx");
+        notify_coprocessor_upgrade_proposed(
+            &mut tx,
+            ChainId::try_from(1_u64).expect("chain id"),
+            &event,
+            300,
+        )
+        .await
+        .expect("upsert ok");
+        tx.commit().await.expect("commit");
+
+        let mut tx = pool.begin().await.expect("tx");
+        notify_coprocessor_upgrade_proposed(
+            &mut tx,
+            ChainId::try_from(1_u64).expect("chain id"),
+            &event,
+            300,
+        )
+        .await
+        .expect("duplicate upsert ok");
+        tx.commit().await.expect("commit");
+
+        let row = sqlx::query(
+            "SELECT stack_role, proposal_id, state, status,
+                    (SELECT COUNT(*) FROM upgrade_state) AS row_count
+               FROM upgrade_state",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("row");
+        assert_eq!(row.try_get::<String, _>("stack_role").unwrap(), "GCS");
+        assert_eq!(row.try_get::<i64, _>("row_count").unwrap(), 1);
+        assert_eq!(
+            row.try_get::<Vec<u8>, _>("proposal_id").unwrap(),
+            U256::from(2u64).to_be_bytes::<32>().to_vec()
+        );
+        assert_eq!(
+            row.try_get::<String, _>("state").unwrap(),
+            "UpgradeActivated"
+        );
+        assert_eq!(row.try_get::<String, _>("status").unwrap(), "in_progress");
+    }
+
+    /// A proposal with N windows atomically seeds N upgrade_state rows.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn upgrade_seeds_one_row_per_chain_window() {
+        use alloy::primitives::U256;
+        use sqlx::postgres::PgPoolOptions;
+        use sqlx::Row;
+        use test_harness::instance::{setup_test_db, ImportMode};
+
+        let instance = setup_test_db(ImportMode::None).await.expect("test db");
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(instance.db_url())
+            .await
+            .expect("pool");
+
+        let event = ProtocolConfig::CoprocessorUpgradeProposed {
+            proposalId: U256::from(2u64),
+            softwareVersion: "v2".to_string(),
+            chainUpgradeWindows: vec![
+                ProtocolConfig::ChainUpgradeWindow {
+                    chainId: 1,
+                    startBlock: 100,
+                    endBlock: 200,
+                },
+                ProtocolConfig::ChainUpgradeWindow {
+                    chainId: 2,
+                    startBlock: 300,
+                    endBlock: 400,
+                },
+            ],
+            gwStartBlock: 5,
+        };
+
+        let mut tx = pool.begin().await.expect("tx");
+        // The canonical listener (chain 1) decodes the event and seeds *all*
+        // windows, not just its own.
+        notify_coprocessor_upgrade_proposed(
+            &mut tx,
+            ChainId::try_from(1_u64).expect("chain id"),
+            &event,
+            300,
+        )
+        .await
+        .expect("seed ok");
+        tx.commit().await.expect("commit");
+
+        let rows = sqlx::query(
+            "SELECT host_chain_id, start_block, end_block, gw_start_block,
+                    proposal_id, proposal_block, state, status
+               FROM upgrade_state
+              WHERE stack_role = 'GCS'
+              ORDER BY host_chain_id",
+        )
+        .fetch_all(&pool)
+        .await
+        .expect("rows");
+        assert_eq!(rows.len(), 2);
+
+        let expected = [(1_i64, 100_i64, 200_i64), (2_i64, 300_i64, 400_i64)];
+        for (row, (chain, start, end)) in rows.iter().zip(expected) {
+            assert_eq!(row.try_get::<i64, _>("host_chain_id").unwrap(), chain);
+            assert_eq!(row.try_get::<i64, _>("start_block").unwrap(), start);
+            assert_eq!(row.try_get::<i64, _>("end_block").unwrap(), end);
+            assert_eq!(row.try_get::<i64, _>("gw_start_block").unwrap(), 5);
+            assert_eq!(row.try_get::<i64, _>("proposal_block").unwrap(), 300);
+            assert_eq!(
+                row.try_get::<Vec<u8>, _>("proposal_id").unwrap(),
+                U256::from(2u64).to_be_bytes::<32>().to_vec()
+            );
+            assert_eq!(
+                row.try_get::<String, _>("state").unwrap(),
+                "UpgradeActivated"
+            );
+            assert_eq!(
+                row.try_get::<String, _>("status").unwrap(),
+                "in_progress"
+            );
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn upgrade_upsert_resets_gw_dry_run_started_for_new_gcs_proposal() {
+        use alloy::primitives::U256;
+        use sqlx::postgres::PgPoolOptions;
+        use sqlx::Row;
+        use test_harness::instance::{setup_test_db, ImportMode};
+
+        let instance = setup_test_db(ImportMode::None).await.expect("test db");
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(instance.db_url())
+            .await
+            .expect("pool");
+
+        // Seed a completed GCS row from a prior cycle with gw_dry_run_started TRUE.
+        sqlx::query(
+            r#"
+            INSERT INTO upgrade_state (
+                stack_role, state, status, proposal_id, version,
+                start_block, end_block, gw_start_block, host_chain_id,
+                gw_dry_run_started, proposal_block, updated_at
+            )
+            VALUES ('GCS', 'LIVE', 'completed', $1, 'v1', 100, 200, 1, 1, TRUE, 100, NOW())
+            "#,
+        )
+        .bind(&U256::from(1u64).to_be_bytes::<32>()[..])
+        .execute(&pool)
+        .await
+        .expect("seed");
+
+        let event = ProtocolConfig::CoprocessorUpgradeProposed {
+            proposalId: U256::from(2u64),
+            softwareVersion: "v2".to_string(),
+            chainUpgradeWindows: vec![ProtocolConfig::ChainUpgradeWindow {
+                chainId: 1,
+                startBlock: 300,
+                endBlock: 400,
+            }],
+            gwStartBlock: 5,
+        };
+
+        let mut tx = pool.begin().await.expect("tx");
+        notify_coprocessor_upgrade_proposed(
+            &mut tx,
+            ChainId::try_from(1_u64).expect("chain id"),
+            &event,
+            300,
+        )
+        .await
+        .expect("upsert ok");
+        tx.commit().await.expect("commit");
+
+        let row = sqlx::query(
+            "SELECT state, gw_dry_run_started, gw_start_block FROM upgrade_state WHERE stack_role = 'GCS'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("row");
+        assert_eq!(
+            row.try_get::<String, _>("state").unwrap(),
+            "UpgradeActivated"
+        );
+        assert!(
+            !row.try_get::<bool, _>("gw_dry_run_started").unwrap(),
+            "gw_dry_run_started must be reset for the new proposal"
+        );
+        assert_eq!(row.try_get::<i64, _>("gw_start_block").unwrap(), 5);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn upgrade_upsert_replayed_completed_proposal_is_noop() {
+        use alloy::primitives::U256;
+        use sqlx::postgres::PgPoolOptions;
+        use sqlx::Row;
+        use test_harness::instance::{setup_test_db, ImportMode};
+
+        let instance = setup_test_db(ImportMode::None).await.expect("test db");
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(instance.db_url())
+            .await
+            .expect("pool");
+
+        // A completed GCS cycle for proposal 1.
+        sqlx::query(
+            r#"
+            INSERT INTO upgrade_state (
+                stack_role, state, status, proposal_id, version,
+                start_block, end_block, gw_start_block, host_chain_id, proposal_block, updated_at
+            )
+            VALUES ('GCS', 'LIVE', 'completed', $1, 'v1', 100, 200, 1, 1, 100, NOW())
+            "#,
+        )
+        .bind(&U256::from(1u64).to_be_bytes::<32>()[..])
+        .execute(&pool)
+        .await
+        .expect("seed");
+
+        let event = ProtocolConfig::CoprocessorUpgradeProposed {
+            proposalId: U256::from(1u64),
+            softwareVersion: "v1".to_string(),
+            chainUpgradeWindows: vec![ProtocolConfig::ChainUpgradeWindow {
+                chainId: 1,
+                startBlock: 100,
+                endBlock: 200,
+            }],
+            gwStartBlock: 1,
+        };
+
+        let mut tx = pool.begin().await.expect("tx");
+        notify_coprocessor_upgrade_proposed(
+            &mut tx,
+            ChainId::try_from(1_u64).expect("chain id"),
+            &event,
+            200,
+        )
+        .await
+        .expect("no-op ok");
+        tx.commit().await.expect("commit");
+
+        let row = sqlx::query(
+            "SELECT state, status FROM upgrade_state WHERE stack_role = 'GCS'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("row");
+        assert_eq!(row.try_get::<String, _>("state").unwrap(), "LIVE");
+        assert_eq!(row.try_get::<String, _>("status").unwrap(), "completed");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn upgrade_upsert_accepts_any_newer_proposal_after_failure() {
+        use alloy::primitives::U256;
+        use sqlx::postgres::PgPoolOptions;
+        use sqlx::Row;
+        use test_harness::instance::{setup_test_db, ImportMode};
+
+        let instance = setup_test_db(ImportMode::None).await.expect("test db");
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(instance.db_url())
+            .await
+            .expect("pool");
+
+        sqlx::query(
+            r#"
+            INSERT INTO upgrade_state (
+                stack_role, state, status, proposal_id, version,
+                start_block, end_block, gw_start_block, host_chain_id, proposal_block,
+                host_consensus_reached, gw_consensus_reached,
+                gw_dry_run_started, last_error, updated_at
+            )
+            VALUES ('GCS', 'PAUSED', 'failed', $1, 'v1', 100, 200, 1, 1, 100,
+                    TRUE, TRUE, TRUE, 'timeout', NOW())
+            "#,
+        )
+        .bind(&U256::from(1u64).to_be_bytes::<32>()[..])
+        .execute(&pool)
+        .await
+        .expect("seed");
+
+        let same_id = ProtocolConfig::CoprocessorUpgradeProposed {
+            proposalId: U256::from(1u64),
+            softwareVersion: "v2".to_string(),
+            chainUpgradeWindows: vec![ProtocolConfig::ChainUpgradeWindow {
+                chainId: 1,
+                startBlock: 300,
+                endBlock: 400,
+            }],
+            gwStartBlock: 5,
+        };
+        let mut tx = pool.begin().await.expect("tx");
+        notify_coprocessor_upgrade_proposed(
+            &mut tx,
+            ChainId::try_from(1_u64).expect("chain id"),
+            &same_id,
+            200,
+        )
+        .await
+        .expect("same-id retry");
+        tx.commit().await.expect("commit");
+
+        let row = sqlx::query(
+            "SELECT status, proposal_block, host_consensus_reached,
+                    gw_consensus_reached, gw_dry_run_started, last_error
+               FROM upgrade_state WHERE stack_role = 'GCS'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("row");
+        assert_eq!(row.try_get::<String, _>("status").unwrap(), "in_progress");
+        assert_eq!(row.try_get::<i64, _>("proposal_block").unwrap(), 200);
+        assert!(!row.try_get::<bool, _>("host_consensus_reached").unwrap());
+        assert!(!row.try_get::<bool, _>("gw_consensus_reached").unwrap());
+        assert!(!row.try_get::<bool, _>("gw_dry_run_started").unwrap());
+        assert!(row
+            .try_get::<Option<String>, _>("last_error")
+            .unwrap()
+            .is_none());
+
+        sqlx::query(
+            "UPDATE upgrade_state
+                SET state = 'PAUSED', status = 'failed', last_error = 'timeout'
+              WHERE stack_role = 'GCS'",
+        )
+        .execute(&pool)
+        .await
+        .expect("mark failed");
+
+        let other_id = ProtocolConfig::CoprocessorUpgradeProposed {
+            proposalId: U256::from(2u64),
+            softwareVersion: "v3".to_string(),
+            chainUpgradeWindows: vec![ProtocolConfig::ChainUpgradeWindow {
+                chainId: 1,
+                startBlock: 500,
+                endBlock: 600,
+            }],
+            gwStartBlock: 10,
+        };
+        let mut tx = pool.begin().await.expect("tx");
+        notify_coprocessor_upgrade_proposed(
+            &mut tx,
+            ChainId::try_from(1_u64).expect("chain id"),
+            &other_id,
+            300,
+        )
+        .await
+        .expect("different-id retry");
+        tx.commit().await.expect("commit");
+
+        let proposal_id: Vec<u8> = sqlx::query_scalar(
+            "SELECT proposal_id FROM upgrade_state WHERE stack_role = 'GCS'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("proposal id");
+        assert_eq!(proposal_id, U256::from(2u64).to_be_bytes::<32>());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn upgrade_upsert_does_not_replace_active_proposal() {
+        use alloy::primitives::U256;
+        use sqlx::postgres::PgPoolOptions;
+        use test_harness::instance::{setup_test_db, ImportMode};
+
+        let instance = setup_test_db(ImportMode::None).await.expect("test db");
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(instance.db_url())
+            .await
+            .expect("pool");
+
+        sqlx::query(
+            r#"
+            INSERT INTO upgrade_state (
+                stack_role, state, status, proposal_id, version,
+                start_block, end_block, gw_start_block, host_chain_id, proposal_block, updated_at
+            )
+            VALUES ('GCS', 'UpgradeActivated', 'in_progress', $1, 'v1',
+                    100, 200, 1, 1, 100, NOW())
+            "#,
+        )
+        .bind(&U256::from(1u64).to_be_bytes::<32>()[..])
+        .execute(&pool)
+        .await
+        .expect("seed");
+
+        let event = ProtocolConfig::CoprocessorUpgradeProposed {
+            proposalId: U256::from(2u64),
+            softwareVersion: "v2".to_string(),
+            chainUpgradeWindows: vec![
+                ProtocolConfig::ChainUpgradeWindow {
+                    chainId: 1,
+                    startBlock: 300,
+                    endBlock: 400,
+                },
+                ProtocolConfig::ChainUpgradeWindow {
+                    chainId: 2,
+                    startBlock: 500,
+                    endBlock: 600,
+                },
+            ],
+            gwStartBlock: 5,
+        };
+        let mut tx = pool.begin().await.expect("tx");
+        notify_coprocessor_upgrade_proposed(
+            &mut tx,
+            ChainId::try_from(1_u64).expect("chain id"),
+            &event,
+            200,
+        )
+        .await
+        .expect("upsert");
+        tx.commit().await.expect("commit");
+
+        let proposal_id: Vec<u8> = sqlx::query_scalar(
+            "SELECT proposal_id FROM upgrade_state WHERE stack_role = 'GCS'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("proposal id");
+        assert_eq!(proposal_id, U256::from(1u64).to_be_bytes::<32>());
+        let row_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM upgrade_state WHERE stack_role = 'GCS'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("row count");
+        assert_eq!(
+            row_count, 1,
+            "a rejected proposal must not install only its previously absent chain"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn upgrade_upsert_rejects_older_replayed_proposal() {
+        use alloy::primitives::U256;
+        use sqlx::postgres::PgPoolOptions;
+        use sqlx::Row;
+        use test_harness::instance::{setup_test_db, ImportMode};
+
+        let instance = setup_test_db(ImportMode::None).await.expect("test db");
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(instance.db_url())
+            .await
+            .expect("pool");
+
+        // A completed cycle for proposal 2, observed at block 100.
+        sqlx::query(
+            r#"
+            INSERT INTO upgrade_state (
+                stack_role, state, status, proposal_id, version,
+                start_block, end_block, gw_start_block, host_chain_id, proposal_block, updated_at
+            )
+            VALUES ('GCS', 'LIVE', 'completed', $1, 'v2', 100, 200, 1, 1, 100, NOW())
+            "#,
+        )
+        .bind(&U256::from(2u64).to_be_bytes::<32>()[..])
+        .execute(&pool)
+        .await
+        .expect("seed");
+
+        // Replay the older proposal 1 from an earlier block (50).
+        let event = ProtocolConfig::CoprocessorUpgradeProposed {
+            proposalId: U256::from(1u64),
+            softwareVersion: "v1".to_string(),
+            chainUpgradeWindows: vec![ProtocolConfig::ChainUpgradeWindow {
+                chainId: 1,
+                startBlock: 10,
+                endBlock: 20,
+            }],
+            gwStartBlock: 1,
+        };
+
+        let mut tx = pool.begin().await.expect("tx");
+        notify_coprocessor_upgrade_proposed(
+            &mut tx,
+            ChainId::try_from(1_u64).expect("chain id"),
+            &event,
+            50,
+        )
+        .await
+        .expect("no-op ok");
+        tx.commit().await.expect("commit");
+
+        // Row unchanged: the older replay did not re-arm the completed cycle.
+        let row =
+            sqlx::query("SELECT proposal_id, state, status FROM upgrade_state WHERE stack_role = 'GCS'")
+                .fetch_one(&pool)
+                .await
+                .expect("row");
+        assert_eq!(
+            row.try_get::<Vec<u8>, _>("proposal_id").unwrap(),
+            U256::from(2u64).to_be_bytes::<32>().to_vec()
+        );
+        assert_eq!(row.try_get::<String, _>("state").unwrap(), "LIVE");
+        assert_eq!(row.try_get::<String, _>("status").unwrap(), "completed");
     }
 }

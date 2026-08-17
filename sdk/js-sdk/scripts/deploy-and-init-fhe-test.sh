@@ -11,11 +11,11 @@ echo $FHEVM_DIR
 # Deploy FHETest.sol
 cd ${CONTRACTS_DIR}
 forge clean
-forge script script/DeployFHETest.s.sol --rpc-url http://localhost:8545 --broadcast
+forge script scripts/DeployFHETest.s.sol --rpc-url http://localhost:8545 --broadcast
 
 # Init FHETest.sol (broadcast init transactions)
 cd ${CONTRACTS_DIR}
-forge script script/InitFHETest.s.sol --rpc-url http://localhost:8545 --broadcast
+forge script scripts/InitFHETest.s.sol --rpc-url http://localhost:8545 --broadcast
 
 # Export ABI to test/fheTest/abi-v2.ts
 ${SCRIPT_DIR}/export-abi.sh

@@ -15,10 +15,8 @@ edition = "2024"
 license = "BSD-3-Clause-Clear"
 
 [workspace.dependencies]
-alloy        = { version = "=1.1.2", features = ["full", "trie", "rpc-types", "network", "consensus", "rlp"] }
-alloy-json-rpc     = "=1.1.2"
-alloy-primitives = { version = "=1.5.2", features = ["serde"] }
-alloy-transport-ipc = "=1.1.2"
+alloy        = { version = "=2.2.0", features = ["full", "trie", "rpc-types", "network", "consensus", "rlp", "json-rpc", "transport-ipc"] }
+alloy-primitives = { version = "=1.6.1", features = ["serde"] }
 async-trait  = "0.1.88"
 axum         = { version = "0.8", default-features = false }
 serde        = "1.0.225"

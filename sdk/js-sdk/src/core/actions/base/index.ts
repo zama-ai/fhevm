@@ -1,55 +1,34 @@
-export { type ReadKmsSignersContextReturnType, readKmsSignersContext } from './readKmsSignersContext.js';
-
-export { type ReadPublicValueParameters, type ReadPublicValueReturnType, readPublicValue } from './readPublicValue.js';
+export {
+  type DecryptPublicValueParameters,
+  type DecryptPublicValueReturnType,
+  decryptPublicValue,
+} from './decryptPublicValue.js';
 
 export type { RelayerPublicDecryptOptions, RelayerPublicDecryptProgressArgs } from '../../types/relayer.js';
 
 export {
-  type ReadPublicValuesParameters,
-  type ReadPublicValuesReturnType,
-  readPublicValues,
-} from './readPublicValues.js';
+  type DecryptPublicValuesParameters,
+  type DecryptPublicValuesReturnType,
+  decryptPublicValues,
+} from './decryptPublicValues.js';
 
 export {
-  type ReadPublicValuesWithSignaturesParameters,
-  type ReadPublicValuesWithSignaturesReturnType,
-  readPublicValuesWithSignatures,
-} from './readPublicValuesWithSignatures.js';
+  type DecryptPublicValuesWithSignaturesParameters,
+  type DecryptPublicValuesWithSignaturesReturnType,
+  decryptPublicValuesWithSignatures,
+} from './decryptPublicValuesWithSignatures.js';
 
 export {
-  type CanReadPublicValueParameters,
-  type CanReadPublicValueReturnType,
-  canReadPublicValue,
-} from './canReadPublicValue.js';
+  type CanDecryptPublicValueParameters,
+  type CanDecryptPublicValueReturnType,
+  canDecryptPublicValue,
+} from './canDecryptPublicValue.js';
 
 export {
-  type CanReadPublicValuesParameters,
-  type CanReadPublicValuesReturnType,
-  canReadPublicValues,
-} from './canReadPublicValues.js';
-
-export {
-  type CreateVerifiedInputProofFromRawBytesParameters,
-  type CreateVerifiedInputProofFromRawBytesReturnType,
-  createVerifiedInputProofFromRawBytes,
-} from './createVerifiedInputProofFromRawBytes.js';
-
-export {
-  type ReadCoprocessorSignersContextReturnType,
-  readCoprocessorSignersContext,
-} from './readCoprocessorSignersContext.js';
-
-export {
-  type VerifyInputProofParameters,
-  type VerifyInputProofReturnType,
-  verifyInputProof,
-} from './verifyInputProof.js';
-
-export {
-  type FetchVerifiedInputProofParameters,
-  type FetchVerifiedInputProofReturnType,
-  fetchVerifiedInputProof,
-} from './fetchVerifiedInputProof.js';
+  type CanDecryptPublicValuesParameters,
+  type CanDecryptPublicValuesReturnType,
+  canDecryptPublicValues,
+} from './canDecryptPublicValues.js';
 
 export {
   type FetchEncryptedValuesParameters,
@@ -57,19 +36,38 @@ export {
   fetchEncryptedValues,
 } from './fetchEncryptedValues.js';
 
+// V1 permit (protocol v13 and below) — kept for chains/relayers not yet on v14.
 export {
-  type VerifyZkProofCoprocessorSignaturesParameters,
-  verifyZkProofCoprocessorSignatures,
-} from './verifyZkProofCoprocessorSignatures.js';
+  type CreateUnsignedLegacyDecryptionPermitEip712Parameters,
+  type CreateUnsignedLegacyDecryptionPermitEip712ReturnType,
+  createUnsignedLegacyDecryptionPermitEip712,
+} from './createUnsignedLegacyDecryptionPermitEip712.js';
 
 export {
-  type FetchSelfKmsSigncryptedSharesParameters,
-  type FetchDelegatedKmsSigncryptedSharesParameters,
-  type FetchKmsSigncryptedSharesReturnType,
-  fetchKmsSigncryptedShares,
-} from './fetchKmsSigncryptedShares.js';
+  type CanUseUnifiedDecryptionPermitParameters,
+  type CanUseUnifiedDecryptionPermitReturnType,
+  canUseUnifiedDecryptionPermit,
+} from './canUseUnifiedDecryptionPermit.js';
 
+// V1 permit (protocol v13 and below) — kept for chains/relayers not yet on v14.
 export {
-  type VerifyHandlesCoprocessorSignaturesParameters,
-  verifyHandlesCoprocessorSignatures,
-} from './verifyHandlesCoprocessorSignatures.js';
+  type SignLegacyDecryptionPermitParameters,
+  type SignLegacyDecryptionPermitReturnType,
+  signLegacyDecryptionPermit,
+} from './signLegacyDecryptionPermit.js';
+
+// V2 permit (protocol v14 and above) — requires an SDK on protocol API v0.14.0+
+// and a chain whose KMSVerifier/ProtocolConfig support the unified extraData v2.
+export {
+  type CreateUnsignedUnifiedDecryptionPermitEip712Parameters,
+  type CreateUnsignedUnifiedDecryptionPermitEip712ReturnType,
+  createUnsignedUnifiedDecryptionPermitEip712,
+} from './createUnsignedUnifiedDecryptionPermitEip712.js';
+
+// V2 permit (protocol v14 and above) — requires an SDK on protocol API v0.14.0+
+// and a chain whose KMSVerifier/ProtocolConfig support the unified extraData v2.
+export {
+  type SignUnifiedDecryptionPermitParameters,
+  type SignUnifiedDecryptionPermitReturnType,
+  signUnifiedDecryptionPermit,
+} from './signUnifiedDecryptionPermit.js';

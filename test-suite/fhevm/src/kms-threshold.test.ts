@@ -3,15 +3,18 @@ import { describe, expect, test } from "bun:test";
 
 import { partyContainers, quorumPlan } from "./commands/kms-generation";
 import { resolveUpgradePlan } from "./flow/repair";
+import { upgradeThresholdKmsNode } from "./flow/up-flow";
 import { buildKmsConnectorOverride } from "./generate/compose";
-import { renderEnvMaps } from "./generate/env";
+import { buildGatewayScSwapEnv, buildHostScSwapEnv, renderEnvMaps } from "./generate/env";
 import {
   KMS_THRESHOLD_CONFIG_NAME,
+  KMS_THRESHOLD_SPARE_CONFIG_NAME,
   THRESHOLD_PEERS_MARKER,
   buildKmsThresholdOverride,
   kmsRenderOptionsFor,
   renderThresholdCoreConfig,
   renderThresholdPeers,
+  renderThresholdSpareConfig,
   thresholdCoreEnv,
 } from "./generate/kms-core";
 import {
@@ -24,13 +27,16 @@ import {
 import { COMPONENTS, TEMPLATE_ENV_DIR } from "./layout";
 import { presetBundle } from "./resolve/target";
 import { resolveKmsTopology } from "./scenario/resolve";
-import { stackSpecForState } from "./stack-spec/stack-spec";
+import { stackSpecForState, type StackSpec } from "./stack-spec/stack-spec";
 import { testDefaultScenario } from "./test-fixtures";
+import { withTempStateDir } from "./test-state";
 import type { State } from "./types";
-import { readEnvFile } from "./utils/fs";
+import { readEnvFile, writeJson } from "./utils/fs";
 
 const RENDER_OPTS = kmsRenderOptionsFor("c57f52f");
 const fourParty = resolveKmsTopology({ mode: "threshold", parties: 4, threshold: 1 });
+// 5 cores, 4-node committee (t=1), 1 spare — the node-swap substrate.
+const swapTopology = resolveKmsTopology({ mode: "threshold", parties: 5, threshold: 1, committeeSize: 4 });
 
 describe("resolveKmsTopology", () => {
   test("absent block keeps today's centralized single node", () => {
@@ -38,6 +44,7 @@ describe("resolveKmsTopology", () => {
       mode: "centralized",
       parties: 1,
       threshold: 1,
+      committeeSize: 1,
       fheParams: "Default",
     });
   });
@@ -47,6 +54,7 @@ describe("resolveKmsTopology", () => {
       mode: "threshold",
       parties: 4,
       threshold: 1,
+      committeeSize: 4,
       fheParams: "Test",
     });
   });
@@ -64,6 +72,28 @@ describe("resolveKmsTopology", () => {
 
   test("rejects fewer than 4 parties", () => {
     expect(() => resolveKmsTopology({ mode: "threshold", parties: 3, threshold: 1 })).toThrow();
+  });
+
+  test("committeeSize defaults to parties (no spares)", () => {
+    expect(resolveKmsTopology({ mode: "threshold", parties: 4, threshold: 1 }).committeeSize).toBe(4);
+    expect(resolveKmsTopology({ mode: "threshold", parties: 7, threshold: 2 }).committeeSize).toBe(7);
+  });
+
+  test("accepts a spare cluster: committeeSize < parties (4-of-5 for a node swap)", () => {
+    expect(swapTopology).toMatchObject({ parties: 5, threshold: 1, committeeSize: 4 });
+  });
+
+  test("enforces 3*t+1 on the committee, not the cluster size", () => {
+    // 5 cores with a 4-node committee (t=1) is valid; a 5-node committee is not (5 != 3t+1).
+    expect(() =>
+      resolveKmsTopology({ mode: "threshold", parties: 5, threshold: 1, committeeSize: 5 }),
+    ).toThrow(/3\*threshold/);
+  });
+
+  test("rejects committeeSize greater than parties", () => {
+    expect(() =>
+      resolveKmsTopology({ mode: "threshold", parties: 4, threshold: 1, committeeSize: 7 }),
+    ).toThrow(/committeeSize/);
   });
 
   test("rejects Default params for threshold (deferred to a follow-up PR)", () => {
@@ -137,8 +167,10 @@ describe("buildKmsThresholdOverride", () => {
 
   test("gen-keys generates ONLY signing keys, sized to exactly N parties", () => {
     const entrypoint = JSON.stringify(buildKmsThresholdOverride(fourParty, RENDER_OPTS).services["kms-core-gen-keys"].entrypoint);
-    // Guards the KMS reference flow: `--cmd` defaults to `all` (which pre-generates FHE key shares +
-    // CRS centrally) and `--num-parties` defaults to 4 (too small for a larger cluster).
+    // `--cmd signing-keys` and `--num-parties` are gated by `--help` probes (newer cores dropped both);
+    // keep the probes so a pinned newer CORE_VERSION still boots.
+    expect(entrypoint).toContain("if kms-gen-keys --help");
+    expect(entrypoint).toContain("if kms-gen-keys threshold --help");
     expect(entrypoint).toContain("--cmd signing-keys");
     expect(entrypoint).toContain("--num-parties 4");
   });
@@ -158,11 +190,37 @@ describe("buildKmsThresholdOverride", () => {
     expect(JSON.stringify(core.volumes)).not.toContain("minio_secrets");
   });
 
+  test("renders an explicitly selected core version without changing the other nodes", () => {
+    const services = buildKmsThresholdOverride(fourParty, RENDER_OPTS, { 2: "target-core" }).services;
+    expect(services["kms-core"].image).toBe(RENDER_OPTS.coreImage);
+    expect(services["kms-core-2"].image).toBe("ghcr.io/zama-ai/kms/core-service:target-core");
+    expect(services["kms-core-3"].image).toBe(RENDER_OPTS.coreImage);
+    expect(services["kms-core-gen-keys"].image).toBe(RENDER_OPTS.coreImage);
+  });
+
   test("cores publish no host ports (everything dials them over the docker network)", () => {
     const services = buildKmsThresholdOverride(fourParty, RENDER_OPTS).services;
     for (const name of ["kms-core", "kms-core-2", "kms-core-3", "kms-core-4"]) {
       expect(services[name].ports).toBeUndefined();
     }
+  });
+
+  test("provisions all parties; spares (party > committeeSize) mount the peers=None config", () => {
+    const services = buildKmsThresholdOverride(swapTopology, RENDER_OPTS).services;
+    // 5 cores provisioned: 4 committee + 1 spare.
+    expect(Object.keys(services)).toEqual(expect.arrayContaining(["kms-core", "kms-core-4", "kms-core-5"]));
+    // The committee core mounts the committee roster config; the spare mounts the peers=None config.
+    expect(JSON.stringify(services["kms-core-4"].volumes)).toContain(KMS_THRESHOLD_CONFIG_NAME);
+    expect(JSON.stringify(services["kms-core-4"].volumes)).not.toContain(KMS_THRESHOLD_SPARE_CONFIG_NAME);
+    expect(JSON.stringify(services["kms-core-5"].volumes)).toContain(KMS_THRESHOLD_SPARE_CONFIG_NAME);
+  });
+
+  test("kms-init bootstraps the committee endpoints only (not the spare)", () => {
+    const init = JSON.stringify(
+      buildKmsThresholdOverride(swapTopology, RENDER_OPTS).services["kms-core-init"].entrypoint,
+    );
+    expect(init).toContain(`${kmsCoreName(4)}:`);
+    expect(init).not.toContain(`${kmsCoreName(5)}:`);
   });
 });
 
@@ -174,6 +232,10 @@ describe("threshold core config", () => {
     expect(peers).toContain('address = "kms-core"');
     expect(peers).toContain('address = "kms-core-4"');
     expect(peers).toContain("port = 50004");
+    // mpc_identity must equal the on-chain KMS_NODE_MPC_IDENTITY (kmsCoreName) so a node's identity
+    // matches across the config-seeded baseline context and a dynamically-added switch context.
+    expect(peers).toContain('mpc_identity = "kms-core"');
+    expect(peers).toContain('mpc_identity = "kms-core-4"');
   });
 
   test("renderThresholdCoreConfig injects the roster and leaves no marker", () => {
@@ -184,6 +246,20 @@ describe("threshold core config", () => {
 
   test("renderThresholdCoreConfig fails fast when the template marker is missing", () => {
     expect(() => renderThresholdCoreConfig("[threshold]\n", fourParty)).toThrow(/marker/);
+  });
+
+  test("renderThresholdPeers rosters the committee, not the whole cluster", () => {
+    // 5 cores, 4-node committee: roster has the 4 committee members; the spare (party 5) is absent.
+    const peers = renderThresholdPeers(swapTopology);
+    expect(peers).toContain("party_id = 4");
+    expect(peers).not.toContain("party_id = 5");
+  });
+
+  test("renderThresholdSpareConfig drops the roster entirely (peers=None)", () => {
+    const spare = renderThresholdSpareConfig(`[threshold]\nmy_id = 0\n\n${THRESHOLD_PEERS_MARKER}\n`);
+    expect(spare).not.toContain(THRESHOLD_PEERS_MARKER);
+    expect(spare).not.toContain("threshold.peers");
+    expect(spare).not.toContain("party_id");
   });
 
   test("thresholdCoreEnv overrides per-party identity, ports and prefixes", () => {
@@ -205,7 +281,7 @@ describe("buildKmsConnectorOverride (--override kms-connector)", () => {
       requiresGitHub: true,
       versions: presetBundle("latest-main", "abcdef0", "latest-main.json"),
       overrides,
-      scenario: testDefaultScenario({ kms: { mode: "threshold", parties: 4, threshold: 1, fheParams: "Test" } }),
+      scenario: testDefaultScenario({ kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" } }),
     });
 
   test("without an override every party runs the resolved published image (no build specs)", async () => {
@@ -249,7 +325,7 @@ describe("renderEnvMaps (threshold)", () => {
       requiresGitHub: true,
       versions: presetBundle("latest-main", "abcdef0", "latest-main.json"),
       overrides: [],
-      scenario: testDefaultScenario({ kms: { mode: "threshold", parties: 4, threshold: 1, fheParams: "Test" } }),
+      scenario: testDefaultScenario({ kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" } }),
       completedSteps: [],
       updatedAt: "2026-03-30T00:00:00.000Z",
     };
@@ -273,14 +349,271 @@ describe("renderEnvMaps (threshold)", () => {
   });
 });
 
+describe("buildHostScSwapEnv / buildGatewayScSwapEnv (node swap)", () => {
+  const swapPlan = { kms: swapTopology } as unknown as StackSpec;
+  const noSwapPlan = { kms: fourParty } as unknown as StackSpec;
+
+  // Rendered host-sc carries every provisioned party: connection vars + MPC metadata for the
+  // committee (0..3) and the spare (4); signer/CA-cert come from post-boot discovery.
+  const hostSc = (): Record<string, string> => ({
+    NUM_KMS_NODES: "4",
+    KMS_TX_SENDER_ADDRESS_3: "0xtx4",
+    KMS_TX_SENDER_ADDRESS_4: "0xtx5",
+    KMS_SIGNER_ADDRESS_3: "0xsigner4",
+    KMS_SIGNER_ADDRESS_4: "0xsigner5",
+    KMS_NODE_IP_3: "http://kms-core-4:50004",
+    KMS_NODE_IP_4: "http://kms-core-5:50005",
+    KMS_NODE_STORAGE_URL_3: "http://minio/kms-public",
+    KMS_NODE_STORAGE_URL_4: "http://minio/kms-public",
+    KMS_NODE_PARTY_ID_3: "4",
+    KMS_NODE_PARTY_ID_4: "5",
+    KMS_NODE_MPC_IDENTITY_3: "kms-core-4",
+    KMS_NODE_MPC_IDENTITY_4: "kms-core-5",
+    KMS_NODE_CA_CERT_3: "cert4",
+    KMS_NODE_CA_CERT_4: "cert5",
+    KMS_NODE_STORAGE_PREFIX_3: "PUB-p4",
+    KMS_NODE_STORAGE_PREFIX_4: "PUB-p5",
+  });
+  const gatewaySc = (): Record<string, string> => ({
+    NUM_KMS_NODES: "4",
+    KMS_TX_SENDER_ADDRESS_3: "0xtx4",
+    KMS_TX_SENDER_ADDRESS_4: "0xtx5",
+    KMS_SIGNER_ADDRESS_3: "0xsigner4",
+    KMS_SIGNER_ADDRESS_4: "0xsigner5",
+    KMS_NODE_IP_ADDRESS_3: "http://kms-core-4:50004",
+    KMS_NODE_IP_ADDRESS_4: "http://kms-core-5:50005",
+    KMS_NODE_STORAGE_URL_3: "http://minio/kms-public",
+    KMS_NODE_STORAGE_URL_4: "http://minio/kms-public",
+  });
+
+  test("host swap env promotes the spare (node 5) into the dropped committee slot, keeping NUM_KMS_NODES", () => {
+    const swap = buildHostScSwapEnv(hostSc(), swapPlan)!;
+    expect(swap).toBeDefined();
+    expect(swap.NUM_KMS_NODES).toBe("4"); // still a 4-node committee, just a different member
+    // The spare takes the dropped node's MPC position, so the party id stays positional (the core
+    // rejects ids outside 1..n); only the node's identity/address/material move to the spare.
+    expect(swap.KMS_NODE_PARTY_ID_3).toBe("4");
+    expect(swap.KMS_SIGNER_ADDRESS_3).toBe("0xsigner5");
+    expect(swap.KMS_TX_SENDER_ADDRESS_3).toBe("0xtx5");
+    expect(swap.KMS_NODE_IP_3).toBe("http://kms-core-5:50005");
+    expect(swap.KMS_NODE_MPC_IDENTITY_3).toBe("kms-core-5"); // physical core is the spare
+    expect(swap.KMS_NODE_CA_CERT_3).toBe("cert5");
+    expect(swap.KMS_NODE_STORAGE_PREFIX_3).toBe("PUB-p5");
+  });
+
+  test("gateway swap env promotes the spare's (txSender, signer, ip, storageUrl) into the slot", () => {
+    const swap = buildGatewayScSwapEnv(gatewaySc(), swapPlan)!;
+    expect(swap).toBeDefined();
+    expect(swap.KMS_TX_SENDER_ADDRESS_3).toBe("0xtx5");
+    expect(swap.KMS_SIGNER_ADDRESS_3).toBe("0xsigner5");
+    expect(swap.KMS_NODE_IP_ADDRESS_3).toBe("http://kms-core-5:50005");
+    expect(swap.NUM_KMS_NODES).toBe("4");
+  });
+
+  test("returns undefined for a non-swap topology (no spare)", () => {
+    expect(buildHostScSwapEnv(hostSc(), noSwapPlan)).toBeUndefined();
+    expect(buildGatewayScSwapEnv(gatewaySc(), noSwapPlan)).toBeUndefined();
+  });
+
+  test("returns undefined before the spare's signer is discovered (so no half-built env is written)", () => {
+    const hostPre = hostSc();
+    delete hostPre.KMS_SIGNER_ADDRESS_4;
+    expect(buildHostScSwapEnv(hostPre, swapPlan)).toBeUndefined();
+    const gwPre = gatewaySc();
+    delete gwPre.KMS_SIGNER_ADDRESS_4;
+    expect(buildGatewayScSwapEnv(gwPre, swapPlan)).toBeUndefined();
+  });
+});
+
 describe("resolveUpgradePlan (threshold guard)", () => {
   const thresholdState = {
     overrides: [],
-    scenario: testDefaultScenario({ kms: { mode: "threshold", parties: 4, threshold: 1, fheParams: "Test" } }),
+    scenario: testDefaultScenario({ kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" } }),
   };
 
   test("refuses to upgrade the single-core/connector KMS groups on a threshold-mode cluster", () => {
     expect(() => resolveUpgradePlan(thresholdState, "kms", { lockFile: true })).toThrow(/threshold-mode KMS/);
     expect(() => resolveUpgradePlan(thresholdState, "kms-core", { lockFile: true })).toThrow(/threshold-mode KMS/);
+  });
+});
+
+describe("upgradeThresholdKmsNode", () => {
+  test("persists a mixed fleet and recreates only the selected serving core", async () => {
+    await withTempStateDir(async (stateDir) => {
+      const versions = presetBundle("latest-main", "abcdef0", "baseline.json");
+      const state: State = {
+        target: "latest-main",
+        lockPath: "/tmp/baseline.json",
+        requiresGitHub: true,
+        versions,
+        overrides: [],
+        scenario: testDefaultScenario({
+          kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" },
+        }),
+        completedSteps: ["base"],
+        updatedAt: "2026-07-14T00:00:00.000Z",
+      };
+      const lockFile = path.join(stateDir, "target.json");
+      await writeJson(lockFile, {
+        ...versions,
+        lockName: "target.json",
+        env: { ...versions.env, CORE_VERSION: "target-core" },
+      });
+      const calls: string[] = [];
+      let persisted = state;
+
+      await upgradeThresholdKmsNode(3, { lockFile }, {
+        async loadState() {
+          return persisted;
+        },
+        async projectContainers() {
+          return ["kms-core", "kms-core-2", "kms-core-3", "kms-core-4"];
+        },
+        async ensureRuntimeArtifacts() {
+          calls.push("artifacts");
+        },
+        async saveState(next) {
+          persisted = next;
+          calls.push(`save:${next.versions.env.CORE_VERSION}:${next.kmsCoreVersionByNodeId?.[3]}`);
+        },
+        async generateRuntime(_next, plan) {
+          calls.push(`generate:${plan.versions.env.CORE_VERSION}:${plan.kmsCoreVersionByNodeId?.[3]}`);
+        },
+        async composeUp(component, services = [], options = {}) {
+          calls.push(`up:${component}:${services.join(",")}:${options.noDeps}:${options.forceRecreate}`);
+        },
+        async waitForContainer(container, want) {
+          calls.push(`wait:${container}:${want}`);
+        },
+      });
+
+      expect(calls).toEqual([
+        "artifacts",
+        `save:${versions.env.CORE_VERSION}:target-core`,
+        `generate:${versions.env.CORE_VERSION}:target-core`,
+        "up:core-threshold:kms-core-3:true:true",
+        "wait:kms-core-3:healthy",
+      ]);
+      expect(persisted.versions.env.CORE_VERSION).toBe(versions.env.CORE_VERSION);
+      expect(persisted.kmsCoreVersionByNodeId).toEqual({ 3: "target-core" });
+    });
+  });
+
+  test("moves the global version only after every serving core reaches the target", async () => {
+    await withTempStateDir(async (stateDir) => {
+      const versions = presetBundle("latest-main", "abcdef0", "baseline.json");
+      let persisted: State = {
+        target: "latest-main",
+        lockPath: "/tmp/baseline.json",
+        requiresGitHub: true,
+        versions,
+        overrides: [],
+        scenario: testDefaultScenario({
+          kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" },
+        }),
+        completedSteps: ["base"],
+        updatedAt: "2026-07-14T00:00:00.000Z",
+      };
+      const lockFile = path.join(stateDir, "target.json");
+      await writeJson(lockFile, {
+        ...versions,
+        lockName: "target.json",
+        env: { ...versions.env, CORE_VERSION: "target-core" },
+      });
+      const operations = {
+        async loadState() {
+          return persisted;
+        },
+        async projectContainers() {
+          return ["kms-core"];
+        },
+        async ensureRuntimeArtifacts() {},
+        async saveState(next: State) {
+          persisted = next;
+        },
+        async generateRuntime() {},
+        async composeUp() {},
+        async waitForContainer() {},
+      };
+
+      for (const nodeId of [1, 2, 3, 4]) {
+        await upgradeThresholdKmsNode(nodeId, { lockFile }, operations);
+      }
+
+      expect(persisted.versions.env.CORE_VERSION).toBe("target-core");
+      expect(persisted.kmsCoreVersionByNodeId).toBeUndefined();
+    });
+  });
+
+  test("keeps a spare core on its prior version when the serving committee reaches the target", async () => {
+    await withTempStateDir(async (stateDir) => {
+      const versions = presetBundle("latest-main", "abcdef0", "baseline.json");
+      let persisted: State = {
+        target: "latest-main",
+        lockPath: "/tmp/baseline.json",
+        requiresGitHub: true,
+        versions,
+        overrides: [],
+        scenario: testDefaultScenario({
+          kms: { mode: "threshold", parties: 5, threshold: 1, committeeSize: 4, fheParams: "Test" },
+        }),
+        completedSteps: ["base"],
+        updatedAt: "2026-07-14T00:00:00.000Z",
+      };
+      const lockFile = path.join(stateDir, "target.json");
+      await writeJson(lockFile, {
+        ...versions,
+        lockName: "target.json",
+        env: { ...versions.env, CORE_VERSION: "target-core" },
+      });
+      const operations = {
+        async loadState() {
+          return persisted;
+        },
+        async projectContainers() {
+          return ["kms-core"];
+        },
+        async ensureRuntimeArtifacts() {},
+        async saveState(next: State) {
+          persisted = next;
+        },
+        async generateRuntime() {},
+        async composeUp() {},
+        async waitForContainer() {},
+      };
+
+      for (const nodeId of [1, 2, 3, 4]) {
+        await upgradeThresholdKmsNode(nodeId, { lockFile }, operations);
+      }
+
+      expect(persisted.versions.env.CORE_VERSION).toBe("target-core");
+      expect(persisted.kmsCoreVersionByNodeId).toEqual({ 5: versions.env.CORE_VERSION });
+    });
+  });
+
+  test("rejects a spare node before changing runtime artifacts", async () => {
+    const state = {
+      scenario: testDefaultScenario({
+        kms: { mode: "threshold", parties: 5, threshold: 1, committeeSize: 4, fheParams: "Test" },
+      }),
+      completedSteps: ["base"],
+    } as State;
+    let touched = false;
+    await expect(upgradeThresholdKmsNode(5, { lockFile: "unused" }, {
+      async loadState() {
+        return state;
+      },
+      async projectContainers() {
+        return ["kms-core"];
+      },
+      async ensureRuntimeArtifacts() {
+        touched = true;
+      },
+      async saveState() {},
+      async generateRuntime() {},
+      async composeUp() {},
+      async waitForContainer() {},
+    })).rejects.toThrow(/between 1 and 4/);
+    expect(touched).toBe(false);
   });
 });

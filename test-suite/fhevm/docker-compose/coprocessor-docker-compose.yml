@@ -19,6 +19,7 @@ services:
   coprocessor-db-migration:
     container_name: coprocessor-db-migration
     image: ghcr.io/zama-ai/fhevm/coprocessor/db-migration:${COPROCESSOR_DB_MIGRATION_VERSION}
+    platform: linux/amd64
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
     environment:
@@ -32,6 +33,7 @@ services:
   coprocessor-host-listener:
     container_name: coprocessor-host-listener
     image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:${COPROCESSOR_HOST_LISTENER_VERSION}
+    platform: linux/amd64
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
     command:
@@ -40,6 +42,8 @@ services:
       - --acl-contract-address=${ACL_CONTRACT_ADDRESS}
       - --tfhe-contract-address=${FHEVM_EXECUTOR_CONTRACT_ADDRESS}
       - --kms-generation-address=${KMS_GENERATION_ADDRESS}
+      - --protocol-config-address=${PROTOCOL_CONFIG_ADDRESS}
+      - --confidential-bridge-address=${CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS}
       - --url=${RPC_WS_URL}
       - --initial-block-time=1
       - --catchup-finalization-in-blocks=5
@@ -50,14 +54,18 @@ services:
   coprocessor-host-listener-poller:
     container_name: coprocessor-host-listener-poller
     image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:${COPROCESSOR_HOST_LISTENER_VERSION}
+    platform: linux/amd64
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
     command:
       - host_listener_poller
       - --database-url=${DATABASE_URL}
+      - --seed-start-block=0
       - --acl-contract-address=${ACL_CONTRACT_ADDRESS}
       - --tfhe-contract-address=${FHEVM_EXECUTOR_CONTRACT_ADDRESS}
       - --kms-generation-address=${KMS_GENERATION_ADDRESS}
+      - --protocol-config-address=${PROTOCOL_CONFIG_ADDRESS}
+      - --confidential-bridge-address=${CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS}
       - --url=${RPC_HTTP_URL}
       - --finality-lag=2
     depends_on:
@@ -70,6 +78,7 @@ services:
     #   context: ../../..
     #   dockerfile: coprocessor/fhevm-engine/host-listener/Dockerfile
     image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:${COPROCESSOR_HOST_LISTENER_VERSION}
+    platform: linux/amd64
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
     command:
@@ -78,6 +87,8 @@ services:
       - --acl-contract-address=${ACL_CONTRACT_ADDRESS}
       - --tfhe-contract-address=${FHEVM_EXECUTOR_CONTRACT_ADDRESS}
       - --kms-generation-address=${KMS_GENERATION_ADDRESS}
+      - --protocol-config-address=${PROTOCOL_CONFIG_ADDRESS}
+      - --confidential-bridge-address=${CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS}
       - --url=redis://listener-redis:6379
       #- --url=amqp://user:pass@listener-rabbitmq:5672
       - --chain-id=${CHAIN_ID}
@@ -89,6 +100,7 @@ services:
   coprocessor-gw-listener:
     container_name: coprocessor-gw-listener
     image: ghcr.io/zama-ai/fhevm/coprocessor/gw-listener:${COPROCESSOR_GW_LISTENER_VERSION}
+    platform: linux/amd64
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
     command:
@@ -109,6 +121,7 @@ services:
   coprocessor-tfhe-worker:
     container_name: coprocessor-tfhe-worker
     image: ghcr.io/zama-ai/fhevm/coprocessor/tfhe-worker:${COPROCESSOR_TFHE_WORKER_VERSION}
+    platform: linux/amd64
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
     command:
@@ -128,6 +141,7 @@ services:
   coprocessor-zkproof-worker:
     container_name: coprocessor-zkproof-worker
     image: ghcr.io/zama-ai/fhevm/coprocessor/zkproof-worker:${COPROCESSOR_ZKPROOF_WORKER_VERSION}
+    platform: linux/amd64
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
     command:
@@ -145,6 +159,7 @@ services:
   coprocessor-sns-worker:
     container_name: coprocessor-sns-worker
     image: ghcr.io/zama-ai/fhevm/coprocessor/sns-worker:${COPROCESSOR_SNS_WORKER_VERSION}
+    platform: linux/amd64
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
     command:
@@ -158,8 +173,7 @@ services:
       - --work-items-batch-size=20
       - --pg-polling-interval=30
       - --pg-pool-connections=10
-      - --bucket-name-ct64=ct64
-      - --bucket-name-ct128=ct128
+      - --bucket-name=${BUCKET_NAME}
       - --s3-max-concurrent-uploads=100
       - --s3-max-retries-per-upload=100
       - --s3-max-backoff=10s
@@ -177,6 +191,7 @@ services:
   coprocessor-transaction-sender:
     container_name: coprocessor-transaction-sender
     image: ghcr.io/zama-ai/fhevm/coprocessor/tx-sender:${COPROCESSOR_TX_SENDER_VERSION}
+    platform: linux/amd64
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
     command:
@@ -194,6 +209,33 @@ services:
       - --verify-proof-resp-max-retries=15
       - --verify-proof-remove-after-max-retries
       - --signer-type=private-key
+    depends_on:
+      coprocessor-db-migration:
+        condition: service_completed_successfully
+
+  coprocessor-consensus-detector:
+    container_name: coprocessor-consensus-detector
+    image: ghcr.io/zama-ai/fhevm/coprocessor/consensus-detector:${COPROCESSOR_CONSENSUS_DETECTOR_VERSION}
+    env_file:
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
+    command:
+      - consensus-detector
+      - --database-url=${DATABASE_URL}
+      - --gw-url=${GATEWAY_WS_URL}
+      - --gateway-config-address=${GATEWAY_CONFIG_ADDRESS}
+      - --my-bucket=${BUCKET_NAME}
+    depends_on:
+      coprocessor-db-migration:
+        condition: service_completed_successfully
+
+  coprocessor-upgrade-controller:
+    container_name: coprocessor-upgrade-controller
+    image: ghcr.io/zama-ai/fhevm/coprocessor/upgrade-controller:${COPROCESSOR_UPGRADE_CONTROLLER_VERSION}
+    env_file:
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
+    command:
+      - upgrade-controller
+      - --database-url=${DATABASE_URL}
     depends_on:
       coprocessor-db-migration:
         condition: service_completed_successfully

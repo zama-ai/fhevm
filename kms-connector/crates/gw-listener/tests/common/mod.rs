@@ -8,23 +8,33 @@ use anyhow::anyhow;
 use connector_utils::{
     tests::{
         db::requests::TestEventType,
-        rand::{rand_address, rand_digest, rand_public_key, rand_signature, rand_u256},
+        rand::{
+            rand_address, rand_digest, rand_kms_node_params, rand_kms_thresholds, rand_pcr_values,
+            rand_public_key, rand_signature, rand_u256,
+        },
         setup::TestInstance,
     },
-    types::{ProtocolEventKind, db::ParamsTypeDb},
+    types::{KMS_CONTEXT_COUNTER_BASE, ProtocolEventKind, db::ParamsTypeDb},
 };
 use fhevm_gateway_bindings::decryption::{
     Decryption::{
-        HandleEntry, PublicDecryptionRequest, UserDecryptionRequest_0 as UserDecryptionRequest,
-        UserDecryptionRequest_1 as UserDecryptionRequestV2,
+        HandleEntry, PublicDecryptionRequest_1 as PublicDecryptionRequest,
+        UserDecryptionRequest_2 as UserDecryptionRequest,
+        UserDecryptionRequest_3 as UserDecryptionRequestV2,
     },
     IDecryption::{
         ContractsInfo, RequestValidity, RequestValiditySeconds, UserDecryptionRequestPayload,
     },
 };
-use fhevm_host_bindings::kms_generation::KMSGeneration::{
-    CrsgenRequest, KeygenRequest, PrepKeygenRequest,
+use fhevm_host_bindings::{
+    kms_generation::KMSGeneration::{
+        AbortCrsgen, AbortKeygen, CrsgenRequest, KeygenRequest, PrepKeygenRequest,
+    },
+    protocol_config::ProtocolConfig::{
+        KmsContextDestroyed, KmsEpochDestroyed, NewKmsContext, NewKmsEpoch,
+    },
 };
+
 use gw_listener::core::{Config, EthereumListener, EventListener, GatewayListener};
 use sqlx::{Pool, Postgres, Row, postgres::PgRow};
 use std::time::Duration;
@@ -40,7 +50,7 @@ pub async fn start_test_listener(
     let mut config = Config::default();
     config.decryption_contract.address = *test_instance.decryption_contract().address();
     config.kms_generation_contract.address = *test_instance.kms_generation_contract().address();
-    config.kms_verifier_address = test_instance.kms_verifier_address();
+    config.protocol_config_contract.address = *test_instance.protocol_config_contract().address();
     config.decryption_from_block_number = from_block_number;
     config.kms_operation_from_block_number = from_block_number;
     config.decryption_polling = Duration::from_millis(300);
@@ -128,7 +138,6 @@ pub async fn mock_event_on_gw(
             };
             let event = UserDecryptionRequestV2 {
                 decryptionId: U256::ZERO,
-                snsCtMaterials: vec![],
                 handles: handles.clone(),
                 payload: payload.clone(),
             };
@@ -185,6 +194,96 @@ pub async fn mock_event_on_gw(
                 .await?;
             (tx, event.into())
         }
+        TestEventType::AbortKeygen => {
+            let rand_prep_id = rand_u256();
+            let event = AbortKeygen {
+                prepKeygenId: rand_prep_id,
+            };
+            let tx = test_instance
+                .kms_generation_contract()
+                .abortKeygen(rand_prep_id)
+                .send()
+                .await?;
+            (tx, event.into())
+        }
+        TestEventType::AbortCrsgen => {
+            let rand_crs_id = rand_u256();
+            let event = AbortCrsgen { crsId: rand_crs_id };
+            let tx = test_instance
+                .kms_generation_contract()
+                .abortCrsgen(rand_crs_id)
+                .send()
+                .await?;
+            (tx, event.into())
+        }
+        TestEventType::NewKmsContext => {
+            let thresholds = rand_kms_thresholds();
+            let kms_node_params = vec![rand_kms_node_params()];
+            let software_version = format!("v{}", rand_u256());
+            let pcr_values = vec![rand_pcr_values()];
+            // `defineNewKmsContextAndEpoch` emits a non-genesis switch: contextId = base + 2,
+            // previousContextId = base + 1 (a real, non-sentinel predecessor).
+            let event = NewKmsContext {
+                contextId: KMS_CONTEXT_COUNTER_BASE + U256::from(2),
+                previousContextId: KMS_CONTEXT_COUNTER_BASE + U256::ONE,
+                kmsNodeParams: kms_node_params.clone(),
+                thresholds: thresholds.clone(),
+                softwareVersion: software_version.clone(),
+                pcrValues: pcr_values.clone(),
+            };
+            let tx = test_instance
+                .protocol_config_contract()
+                .defineNewKmsContextAndEpoch(
+                    kms_node_params,
+                    thresholds,
+                    software_version,
+                    pcr_values,
+                )
+                .send()
+                .await?;
+            (tx, event.into())
+        }
+        TestEventType::NewKmsEpoch => {
+            let event = NewKmsEpoch {
+                kmsContextId: KMS_CONTEXT_COUNTER_BASE + U256::ONE,
+                previousContextId: KMS_CONTEXT_COUNTER_BASE + U256::ONE,
+                epochId: KMS_EPOCH_ID_COUNTER + U256::ONE,
+                previousEpochId: KMS_EPOCH_ID_COUNTER,
+                // The mock emits `block.number`; the value isn't asserted (the DB check matches on
+                // context_id + epoch_id only), so any placeholder works here.
+                materialBlockNumber: U256::ZERO,
+            };
+            let tx = test_instance
+                .protocol_config_contract()
+                .defineNewEpochForCurrentKmsContext()
+                .send()
+                .await?;
+            (tx, event.into())
+        }
+        TestEventType::KmsContextDestroyed => {
+            let rand_context_id = rand_u256();
+            let event = KmsContextDestroyed {
+                kmsContextId: rand_context_id,
+            };
+            let tx = test_instance
+                .protocol_config_contract()
+                .destroyKmsContext(rand_context_id)
+                .send()
+                .await?;
+            (tx, event.into())
+        }
+        TestEventType::KmsEpochDestroyed => {
+            let rand_epoch_id = rand_u256();
+            let event = KmsEpochDestroyed {
+                epochId: rand_epoch_id,
+            };
+            let tx = test_instance
+                .protocol_config_contract()
+                .destroyKmsEpoch(rand_epoch_id)
+                .send()
+                .await?;
+            (tx, event.into())
+        }
     };
     let receipt = pending_tx.get_receipt().await?;
     let block_number = test_instance
@@ -210,6 +309,12 @@ pub async fn fetch_from_db(
         TestEventType::PrepKeygen => "SELECT * FROM prep_keygen_requests",
         TestEventType::Keygen => "SELECT * FROM keygen_requests",
         TestEventType::Crsgen => "SELECT * FROM crsgen_requests",
+        TestEventType::AbortKeygen => "SELECT * FROM abort_keygen_requests",
+        TestEventType::AbortCrsgen => "SELECT * FROM abort_crsgen_requests",
+        TestEventType::NewKmsContext => "SELECT * FROM new_kms_context",
+        TestEventType::NewKmsEpoch => "SELECT * FROM new_kms_epoch",
+        TestEventType::KmsContextDestroyed => "SELECT * FROM kms_context_destroyed",
+        TestEventType::KmsEpochDestroyed => "SELECT * FROM kms_epoch_destroyed",
     };
     sqlx::query(query).fetch_all(db).await
 }
@@ -287,8 +392,61 @@ pub fn check_event_in_db(rows: &[PgRow], event: ProtocolEventKind) -> anyhow::Re
                 }
             }
         }
+        ProtocolEventKind::AbortKeygen(e) => {
+            for r in rows {
+                if e.prepKeygenId
+                    == U256::from_le_bytes(r.try_get::<[u8; 32], _>("prep_keygen_id")?)
+                {
+                    return Ok(());
+                }
+            }
+        }
+        ProtocolEventKind::AbortCrsgen(e) => {
+            for r in rows {
+                if e.crsId == U256::from_le_bytes(r.try_get::<[u8; 32], _>("crs_id")?) {
+                    return Ok(());
+                }
+            }
+        }
+        ProtocolEventKind::NewKmsContext(e) => {
+            for r in rows {
+                if e.softwareVersion == r.try_get::<String, _>("software_version")? {
+                    return Ok(());
+                }
+            }
+        }
+        ProtocolEventKind::NewKmsEpoch(e) => {
+            if matches_context_epoch(rows, e.kmsContextId, e.epochId)? {
+                return Ok(());
+            }
+        }
+        ProtocolEventKind::KmsContextDestroyed(e) => {
+            for r in rows {
+                if e.kmsContextId == U256::from_le_bytes(r.try_get::<[u8; 32], _>("context_id")?) {
+                    return Ok(());
+                }
+            }
+        }
+        ProtocolEventKind::KmsEpochDestroyed(e) => {
+            for r in rows {
+                if e.epochId == U256::from_le_bytes(r.try_get::<[u8; 32], _>("epoch_id")?) {
+                    return Ok(());
+                }
+            }
+        }
     };
     Err(anyhow!("Event not found in DB..."))
+}
+
+fn matches_context_epoch(rows: &[PgRow], context_id: U256, epoch_id: U256) -> anyhow::Result<bool> {
+    for r in rows {
+        let row_context: Vec<u8> = r.try_get("context_id")?;
+        let row_epoch: Vec<u8> = r.try_get("epoch_id")?;
+        if context_id.as_le_slice() == row_context && epoch_id.as_le_slice() == row_epoch {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 pub const PUB_DECRYPTION_COUNTER: U256 = U256::from_be_bytes([
@@ -313,4 +471,8 @@ pub const CRS_COUNTER: U256 = U256::from_be_bytes([
 
 pub const KEY_RESHARE_ID_COUNTER: U256 = U256::from_be_bytes([
     6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+]);
+
+pub const KMS_EPOCH_ID_COUNTER: U256 = U256::from_be_bytes([
+    8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 ]);

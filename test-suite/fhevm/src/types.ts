@@ -8,6 +8,7 @@ export const STEP_NAMES = [
   "gateway-deploy",
   "host-deploy",
   "discover",
+  "bridge-deploy",
   "regenerate",
   "validate",
   "coprocessor",
@@ -63,14 +64,20 @@ export type KmsScenarioBlock = {
   mode?: KmsMode;
   parties?: number;
   threshold?: number;
+  /** Initial on-chain committee size; defaults to `parties`. When `< parties` the extra cores boot
+   *  as spares (peers=None) so a context switch can rotate one in (e.g. a node swap). */
+  committeeSize?: number;
   fheParams?: KmsFheParams;
 };
 
 /** Fully-resolved KMS topology carried on the resolved scenario / StackSpec. */
 export type ResolvedKmsTopology = {
   mode: KmsMode;
+  /** Total cores provisioned in the cluster. */
   parties: number;
   threshold: number;
+  /** Initial on-chain committee (and the `3t+1` MPC group); `<= parties`. Cores beyond it are spares. */
+  committeeSize: number;
   fheParams: KmsFheParams;
 };
 
@@ -112,6 +119,58 @@ export type ResolvedCoprocessorScenario = {
   kms: ResolvedKmsTopology;
 };
 
+// Raw `blue-green` scenario as written in YAML.
+export type BlueGreenScenario = {
+  version: 1;
+  kind: "blue-green";
+  name?: string;
+  description?: string;
+  hostChains?: HostChainScenario[];
+  topology?: {
+    count: number;
+    threshold: number;
+  };
+  // Blue (previous release) fleet.
+  bcs?: {
+    source?: CoprocessorInstanceSource;
+    env?: Record<string, string>;
+    args?: Record<string, string[]>;
+  };
+  gcs: {
+    source?: CoprocessorInstanceSource;
+    stackVersion: string;
+    env?: Record<string, string>;
+    args?: Record<string, string[]>;
+  };
+  kms?: KmsScenarioBlock;
+};
+
+export type ResolvedBlueGreenScenarioFleet = {
+  source: CoprocessorInstanceSource;
+  env: Record<string, string>;
+  args: Record<string, string[]>;
+};
+
+export type ResolvedBlueGreenScenario = {
+  version: 1;
+  kind: "blue-green";
+  origin: "default" | "file";
+  name?: string;
+  description?: string;
+  hostChains: HostChainScenario[];
+  sourcePath?: string;
+  topology: {
+    count: number;
+    threshold: number;
+  };
+  bcs: ResolvedBlueGreenScenarioFleet;
+  gcs: ResolvedBlueGreenScenarioFleet & { stackVersion: string };
+  kms: ResolvedKmsTopology;
+};
+
+// Union of every scenario shape the runtime accepts. Narrow on `kind`.
+export type ResolvedScenario = ResolvedCoprocessorScenario | ResolvedBlueGreenScenario;
+
 export type ScenarioSummary = {
   key: string;
   filePath: string;
@@ -138,6 +197,9 @@ export type Discovery = {
   gateway: Record<string, string>;
   hosts: Record<string, Record<string, string>>;
   kmsSigners: string[];
+  // Per-party serialized CA certificate (hex `0x…`), discovered alongside the signers. Optional
+  // like minioKeyPrefix: seeded to [] by createDiscovery and filled at the `kms-signer` step.
+  kmsCaCerts?: string[];
   fheKeyId: string;
   crsKeyId: string;
   actualFheKeyId?: string;
@@ -170,8 +232,10 @@ export type State = {
   lockPath: string;
   requiresGitHub?: boolean;
   versions: VersionBundle;
+  /** Per-node threshold KMS core versions while a rollout is intentionally mixed. */
+  kmsCoreVersionByNodeId?: Record<string, string>;
   overrides: LocalOverride[];
-  scenario: ResolvedCoprocessorScenario;
+  scenario: ResolvedScenario;
   scenarioSourcePath?: string;
   discovery?: Discovery;
   builtImages?: BuiltImage[];
@@ -184,7 +248,11 @@ export type UpOptions = {
   requestedTarget?: VersionTarget;
   sha?: string;
   overrides: LocalOverride[];
+  // True when overrides were expanded from --build (all groups) rather than explicit --override flags.
+  build?: boolean;
   scenarioPath?: string;
+  // Blue-green only: override `bcs.source` to `{mode: registry, tag: bcsTag}`.
+  bcsTag?: string;
   fromStep?: StepName;
   lockFile?: string;
   allowSchemaMismatch: boolean;

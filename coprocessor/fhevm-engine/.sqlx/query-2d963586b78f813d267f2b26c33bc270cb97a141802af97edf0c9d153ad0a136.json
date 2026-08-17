@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT DISTINCT handle AS \"handle!\"\n             FROM pbs_computations_branch\n             WHERE host_chain_id = $1\n               AND (\n                    block_hash = ANY($2::bytea[])\n                    OR producer_block_hash = ANY($2::bytea[])\n               )\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "handle!",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "ByteaArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "2d963586b78f813d267f2b26c33bc270cb97a141802af97edf0c9d153ad0a136"
+}

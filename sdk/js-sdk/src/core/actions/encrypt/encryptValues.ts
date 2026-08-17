@@ -7,6 +7,8 @@ import type { EncryptedValue } from '../../types/encryptedTypes.js';
 import { addressToChecksummedAddress, assertIsAddress } from '../../base/address.js';
 import { createTypedValue } from '../../base/typedValue.js';
 import { encrypt as encrypt_ } from '../../coprocessor/encrypt.js';
+import { resolveRawValueTypeName } from '../../handle/FheType.js';
+import { initPublicAction } from '../../runtime/CoreFhevm-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -29,16 +31,22 @@ export async function encryptValues(
   parameters: EncryptValuesParameters,
 ): Promise<EncryptValuesReturnType> {
   const { contractAddress, userAddress, options } = parameters;
+
   // Validates `values`
-  const values = parameters.values.map(createTypedValue);
+  const values = parameters.values.map((v) =>
+    createTypedValue({ type: resolveRawValueTypeName(v.type), value: v.value }),
+  );
 
   assertIsAddress(contractAddress, {});
   assertIsAddress(userAddress, {});
+
+  const fhevmContext = await initPublicAction(fhevm);
 
   const result = await encrypt_(fhevm, {
     contractAddress: addressToChecksummedAddress(contractAddress),
     userAddress: addressToChecksummedAddress(userAddress),
     values,
+    fhevmContext,
     options,
   });
 

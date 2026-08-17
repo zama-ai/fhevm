@@ -3,31 +3,37 @@
 # All pull request should be reviewed by at least one of the members of fhevm-devs
 *    @zama-ai/fhevm-devs
 
-# Production Dockerfiles should be reviewed by members of fhevm-devops
-**/Dockerfile @zama-ai/fhevm-devops
-
-# Test tooling Dockerfiles can be reviewed by members of fhevm-devs
-coprocessor/fhevm-engine/stress-test-generator/Dockerfile @zama-ai/fhevm-devs
-test-suite/gateway-stress/Dockerfile @zama-ai/fhevm-devs
+# Shared ownership
+/shared/ciphertext-attestation/ @zama-ai/fhevm-devs @zama-ai/mpc-devs
+/shared/user-decryption-signature/ @zama-ai/fhevm-devs @zama-ai/mpc-devs
+/test-suite/ @zama-ai/fhevm-devs @zama-ai/mpc-devs
 
 # Gateway Team ownership
 /gateway-contracts/ @zama-ai/fhevm-gateway
-/host-contracts/ @zama-ai/fhevm-gateway
-/library-solidity/ @zama-ai/fhevm-gateway
-/kms-connector/ @zama-ai/mpc-devs @dartdart26
-/relayer/ @zama-ai/fhevm-gateway
 
 # Coprocessor Team ownership
 /coprocessor/ @zama-ai/fhevm-coprocessor
 /host-contracts/ @zama-ai/fhevm-coprocessor
-/library-solidity/ @zama-ai/fhevm-coprocessor
 
 # Listener ownership
 /listener/ @zama-ai/listener-guild
 
 # SDK / Dev-Ex ownership
 /sdk/js-sdk/ @zama-ai/dev-ex
+/library-solidity/ @zama-ai/dev-ex
+/relayer/ @zama-ai/dev-ex
+
+# MPC Team ownership
+/kms-connector/ @zama-ai/mpc-devs
+/test-suite/gateway-stress/ @zama-ai/mpc-devs
 
 # Enforces changes in Sandboxed AI CI/CD
-.github/squid/sandbox-*.conf @zama-ai/security-team 
-.github/workflows/claude-*.yml @zama-ai/security-team 
+.github/squid/sandbox-*.conf @zama-ai/security-team
+.github/workflows/claude-*.yml @zama-ai/security-team
+
+# Production Dockerfiles should be reviewed by members of fhevm-devops
+**/Dockerfile @zama-ai/fhevm-devops
+
+# Test tooling Dockerfiles can be reviewed by members of fhevm-devs / mpc-devs
+/coprocessor/fhevm-engine/stress-test-generator/Dockerfile @zama-ai/fhevm-devs
+/test-suite/gateway-stress/Dockerfile @zama-ai/mpc-devs

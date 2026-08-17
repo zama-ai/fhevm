@@ -2,10 +2,10 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ .Release.Name }}-kms-connector-db-migration-{{ printf "%s" .Values.kmsConnectorDbMigration.image.tag }}
+  name: {{ include "kmsConnectorDbMigrationName" . }}
   labels:
     app: kms-connector-db-migration
-    app.kubernetes.io/name: {{ .Release.Name }}-kms-connector-db-migration
+    app.kubernetes.io/name: {{ include "kmsConnectorDbMigrationName" . }}
   namespace: {{ .Release.Namespace }}
   {{- with .Values.kmsConnectorDbMigration.annotations }}
   annotations:
@@ -20,7 +20,7 @@ spec:
     metadata:
       labels:
         app: kms-connector-db-migration
-        app.kubernetes.io/name: {{ .Release.Name }}-kms-connector-db-migration
+        app.kubernetes.io/name: {{ include "kmsConnectorDbMigrationName" . }}
     spec:
       imagePullSecrets:
         - name: registry-credentials

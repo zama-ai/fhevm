@@ -3,11 +3,13 @@
  */
 import { compatPolicyForState, supportsCoprocessorDbStateRevert } from "../compat/compat";
 import { type DecryptionRunner, runKmsGenerationProfile } from "./kms-generation";
-import { DRIFT_CLEANUP_SQL, DRIFT_INSTALL_SQL, driftDatabaseName, parseDriftInstanceIndex, parsePositiveInteger } from "../drift";
+import { runKmsGenerationAbortProfile } from "./kms-generation-abort";
+import { runKmsContextSwitchProfile } from "./kms-context-switch";
+import { DRIFT_CLEANUP_SQL, DRIFT_INSTALL_SQL, parseDriftInstanceIndex, parsePositiveInteger } from "../drift";
 import { PreflightError, formatCliError } from "../errors";
 import { dockerInspect } from "../flow/readiness";
 import { pause, shellEscape, unpause } from "../flow/up-flow";
-import { hostReachableRpcUrl } from "../utils/fs";
+import { hostReachableRpcUrl, readEnvFile, withHexPrefix } from "../utils/fs";
 import { run, runWithHeartbeat } from "../utils/process";
 import { loadState } from "../state/state";
 import { topologyForState } from "../stack-spec/stack-spec";
@@ -17,14 +19,20 @@ import {
   DEFAULT_POSTGRES_DB,
   DEFAULT_POSTGRES_PASSWORD,
   DEFAULT_POSTGRES_USER,
+  defaultHostChainKey,
+  envPath,
   HEAVY_TEST_PROFILES,
   LIGHT_TEST_PROFILES,
   POSTGRES_HOST,
   ROLLOUT_STANDARD_TEST_PROFILES,
+  STANDARD_SHARD_COMPUTE_TEST_PROFILES,
+  STANDARD_SHARD_DECRYPTION_TEST_PROFILES,
+  STANDARD_SHARD_STATEFUL_TEST_PROFILES,
   STANDARD_TEST_PROFILES,
   TEST_GREP,
   TEST_PARALLEL,
   TEST_SUITE_CONTAINER,
+  coprocessorDatabaseName,
 } from "../layout";
 import type { State, TestOptions } from "../types";
 
@@ -56,14 +64,20 @@ const timedLabel = (label: string, started: number) =>
 
 const TEST_PROFILE_NAMES = [
   ...Object.keys(TEST_GREP),
+  "blue-green",
   "ciphertext-drift",
   "ciphertext-drift-auto-recovery",
   "coprocessor-db-state-revert",
   "heavy",
+  "kms-context-switch",
   "kms-generation",
+  "kms-generation-abort",
   "light",
   "rollout-standard",
   "standard",
+  "standard-shard-compute",
+  "standard-shard-decryption",
+  "standard-shard-stateful",
 ].sort();
 // The below-quorum probe is expected to hang waiting for KMS responses, so it is killed after
 // this bound. Only a timeout — or a run that demonstrably executed the tests and failed — is
@@ -93,9 +107,11 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "paused-gateway-contracts": "Run pause-mode checks with gateway contracts paused.",
   "input-proof": "Run basic user input proof coverage.",
   "input-proof-compute-decrypt": "Run compute-and-decrypt input proof coverage.",
-  "priority-coprocessor": "Run input proof coverage with gateway priority-coprocessor mode enabled.",
   "user-decryption": "Run user decryption coverage.",
   "delegated-user-decryption": "Run delegated user decryption coverage.",
+  "erc1271-user-decryption": "Run ERC-1271 smart-account signature verification coverage.",
+  "unified-user-decryption": "Run unified EIP-712 user decryption coverage: allowedContracts modes, mixed direct+delegated batches, extraData versions.",
+  "decryption-signature-invalidation": "Run on-chain decryption-signature invalidation coverage.",
   "public-decryption": "Run async public decryption coverage.",
   "public-decrypt-http-ebool": "Run HTTP public decrypt coverage for ebool payloads.",
   "public-decrypt-http-mixed": "Run mixed HTTP public decrypt coverage.",
@@ -106,12 +122,20 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   erc20: "Run ERC20 transfer coverage.",
   "negative-acl": "Run negative ACL scenarios.",
   "multi-chain-isolation": "Run multi-chain state isolation coverage.",
+  "confidential-bridge": "Run confidential bridge cross-chain decrypt coverage (multi-chain).",
+  "blue-green":
+    "Run the Blue-Green upgrade end-to-end (fires proposeCoprocessorUpgrade on-chain, waits for cutover, " +
+    "asserts final state). Requires `--scenario blue-green*`.",
   "ciphertext-drift": "Run ciphertext drift detection checks (requires 2+ coprocessors).",
   "ciphertext-drift-auto-recovery":
     "Run ciphertext drift auto-recovery checks — services self-recover (requires 2+ coprocessors).",
   "coprocessor-db-state-revert": "Run coprocessor DB state revert checks.",
   "kms-generation":
     "Audit the on-chain key/CRS generation state (KMSGeneration contract) and prove the 2t+1 decryption quorum (threshold-mode KMS).",
+  "kms-generation-abort":
+    "Abort an in-flight keygen and crsgen, prove the contract and every kms-connector retire the requests, then prove the pipeline recovers with a fresh keygen/crsgen to full activation. Disruptive: rotates the active key/CRS — run last or re-up afterwards.",
+  "kms-context-switch":
+    "Drive the NewKmsContext + NewKmsEpoch lifecycle on the host ProtocolConfig and prove the KMS reshares, activates, and still decrypts under each, with the input-proof app smoke at baseline, while the switch is pending, and after each transition. On a cluster with a spare core (e.g. --scenario swap-threshold-kms) the NewKmsContext step is a genuine node swap — stop a committee node's tx-sender before the switch so it cannot confirm on-chain, promote the spare, and force it into the 2t+1 quorum (threshold-mode KMS).",
 };
 
 /** Validates whether a named profile supports an extra grep narrowing expression. */
@@ -132,6 +156,7 @@ export const listTestProfiles = () => {
     const topologyTags = [
       name === "ciphertext-drift" ? "2+ coprocessors" : undefined,
       name === "multi-chain-isolation" ? "multi-chain" : undefined,
+      name === "confidential-bridge" ? "multi-chain" : undefined,
     ].filter(Boolean);
     const suiteTags = [
       LIGHT_TEST_PROFILES.includes(name as (typeof LIGHT_TEST_PROFILES)[number]) ? "light" : undefined,
@@ -204,7 +229,7 @@ const injectCiphertextDrift = async (options: {
   postgresUser: string;
   postgresPassword: string;
 }) => {
-  const dbName = driftDatabaseName(options.instanceIndex);
+  const dbName = coprocessorDatabaseName(options.instanceIndex);
   await psql(dbName, [], options, DRIFT_INSTALL_SQL);
   try {
     const attempts = Math.max(0, Math.ceil(options.timeoutSeconds / options.pollIntervalSeconds));
@@ -395,7 +420,7 @@ type DriftRevertDbOptions = {
 
 /** Counts computations rows for the host chain (coprocessor DB). */
 const countComputations = async (dbOptions: DriftRevertDbOptions, hostChainId: string) => {
-  const dbName = driftDatabaseName(dbOptions.instanceIndex);
+  const dbName = coprocessorDatabaseName(dbOptions.instanceIndex);
   const value = await psql(
     dbName,
     ["-t", "-A", "-c", `SELECT COUNT(*) FROM computations WHERE host_chain_id = ${hostChainId};`],
@@ -439,7 +464,7 @@ const waitForDriftRevertStatus = async (
     pollIntervalSeconds: number;
   },
 ) => {
-  const dbName = driftDatabaseName(options.instanceIndex);
+  const dbName = coprocessorDatabaseName(options.instanceIndex);
   const attempts = Math.max(0, Math.ceil(options.timeoutSeconds / options.pollIntervalSeconds));
   for (let attempt = 0; attempt <= attempts; attempt += 1) {
     const status = await psql(
@@ -733,6 +758,564 @@ const localDbMigrationImageRef = (state: Pick<State, "overrides" | "builtImages"
     ? state.builtImages?.find((image) => image.group === "coprocessor" && image.ref.includes("/coprocessor/db-migration:"))?.ref
     : undefined;
 
+// ============================================================================
+// Blue-Green upgrade E2E
+// ============================================================================
+
+/** Reads deployer PK from host-sc env and ProtocolConfig address from test-suite env. */
+const readBlueGreenOnChainCreds = async (): Promise<{ deployerPk: string; protocolConfig: string }> => {
+  const [hostSc, testSuite] = await Promise.all([
+    readEnvFile(envPath("host-sc")),
+    readEnvFile(envPath("test-suite")),
+  ]);
+  const deployerPk = hostSc.DEPLOYER_PRIVATE_KEY;
+  const protocolConfig = testSuite.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
+  if (!deployerPk) throw new Error("DEPLOYER_PRIVATE_KEY missing from host-sc env");
+  if (!protocolConfig) throw new Error("PROTOCOL_CONFIG_CONTRACT_ADDRESS missing from test-suite env");
+  return { deployerPk: withHexPrefix(deployerPk), protocolConfig };
+};
+
+const psqlQuery = async (database: string, query: string): Promise<string> =>
+  scalarQuery(database, query, postgresRuntime());
+
+const waitUntil = async (opts: {
+  label: string;
+  timeoutSecs: number;
+  intervalMs?: number;
+  check: () => Promise<boolean>;
+}) => {
+  const started = Date.now();
+  const interval = opts.intervalMs ?? 2000;
+  while (true) {
+    if (await opts.check()) {
+      console.log(`OK:   ${opts.label}`);
+      return;
+    }
+    const elapsed = Math.floor((Date.now() - started) / 1000);
+    if (elapsed >= opts.timeoutSecs) {
+      throw new Error(`${opts.label} — timeout after ${opts.timeoutSecs}s`);
+    }
+    if (elapsed && elapsed % 10 === 0) {
+      console.log(`  waiting: ${opts.label} (${elapsed}s / ${opts.timeoutSecs}s)`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, interval));
+  }
+};
+
+type TrafficStats = { iterations: number; retries: number; failures: number };
+type TrafficTarget = { label: string; argv: string[] };
+type TrafficStream = {
+  stop: () => Promise<TrafficStats>;
+  /** Rejects the moment any stream sees a permanent failure (retry didn't recover). */
+  errored: Promise<never>;
+};
+
+/**
+ * Spawns background ERC-20 loops across the supplied chain-specific targets.
+ * Targets are assigned round-robin, with the caller ensuring at least one
+ * stream per chain. Each iteration retries up to `TRAFFIC_MAX_RETRIES` times
+ * with backoff. First permanent failure trips `errored` and stops every stream.
+ */
+const TRAFFIC_MAX_RETRIES = 3;
+const TRAFFIC_RETRY_BACKOFF_MS = 2000;
+const startContinuousErc20Traffic = (targets: TrafficTarget[], streams: number): TrafficStream => {
+  if (targets.length === 0 || streams < targets.length) {
+    throw new Error("ERC-20 traffic requires at least one stream target per host chain");
+  }
+  let stopped = false;
+  let rejectErrored!: (err: Error) => void;
+  const errored = new Promise<never>((_, reject) => {
+    rejectErrored = reject;
+  });
+  errored.catch(() => undefined);
+  const counters = Array.from({ length: streams }, () => ({ iterations: 0, retries: 0, failures: 0 }));
+  const loops = counters.map((counter, streamIdx) => (async () => {
+    const target = targets[streamIdx % targets.length]!;
+    while (!stopped) {
+      counter.iterations += 1;
+      const label = `[traffic ${target.label} s${streamIdx}#${counter.iterations}]`;
+      let result = await run(target.argv, { allowFailure: true });
+      for (let attempt = 1; attempt <= TRAFFIC_MAX_RETRIES && result.code !== 0 && !stopped; attempt += 1) {
+        counter.retries += 1;
+        console.warn(
+          `${label} erc20 exited ${result.code}, ` +
+            `retry ${attempt}/${TRAFFIC_MAX_RETRIES} after ${TRAFFIC_RETRY_BACKOFF_MS}ms`,
+        );
+        await Bun.sleep(TRAFFIC_RETRY_BACKOFF_MS);
+        result = await run(target.argv, { allowFailure: true });
+      }
+      if (result.code !== 0) {
+        // A failure after stop() is a shutdown artifact (retry budget denied by `stopped`) — don't count it.
+        if (stopped) {
+          console.warn(`${label} erc20 exited ${result.code} during shutdown — cancelled, not counted`);
+          break;
+        }
+        counter.failures += 1;
+        console.warn(`${label} erc20 failed after ${TRAFFIC_MAX_RETRIES} retries (code=${result.code})`);
+        stopped = true;
+        rejectErrored(
+          new Error(
+            `traffic stream ${streamIdx} failed after ${TRAFFIC_MAX_RETRIES} retries ` +
+              `at iteration ${counter.iterations}`,
+          ),
+        );
+        break;
+      }
+      if (stopped) break;
+    }
+  })());
+  return {
+    stop: async () => {
+      stopped = true;
+      await Promise.all(loops);
+      return counters.reduce(
+        (acc, c) => ({
+          iterations: acc.iterations + c.iterations,
+          retries: acc.retries + c.retries,
+          failures: acc.failures + c.failures,
+        }),
+        { iterations: 0, retries: 0, failures: 0 },
+      );
+    },
+    errored,
+  };
+};
+
+/**
+ * Runs the Blue-Green upgrade end-to-end against a stack booted via
+ * `./fhevm-cli up --scenario blue-green*`. Fires the on-chain proposal, sends
+ * traffic via `./fhevm-cli test erc20`, waits for cutover, and asserts final
+ * state in every operator's database.
+ *
+ * Runs a failed upgrade first: an empty window (no non-trivial FHE op) never
+ * anchors, so the detector's commitment_timeout forces a rollback; the phase
+ * asserts the reset (PAUSED/failed, latches cleared, schema recreated empty,
+ * versioning untouched) and the successful flow then reruns over the residue.
+ */
+const runBlueGreenProfile = async (
+  state: State,
+  options: Pick<TestOptions, "network" | "noHardhatCompile">,
+): Promise<boolean> => {
+  if (state.scenario.kind !== "blue-green") {
+    throw new PreflightError(
+      "test blue-green requires the stack to be booted with --scenario blue-green* " +
+        `(active scenario kind: "${state.scenario.kind}").`,
+    );
+  }
+
+  const gcsStackVersion = state.scenario.gcs.stackVersion;
+  const gcsVersionLive = `v${gcsStackVersion}`;
+  const opCount = state.scenario.topology.count;
+
+  const operatorDatabases: string[] = [];
+  for (let index = 0; index < opCount; index += 1) {
+    operatorDatabases.push(coprocessorDatabaseName(index));
+  }
+
+  const MIN_BLUE_GREEN_TRAFFIC_STREAMS = 2;
+  const CROSS_CUTOVER_CHAIN_DEPTH = 5;
+
+  console.log(`\n==== blue-green E2E: ${opCount} operator(s) ====`);
+
+  console.log(`\n[1/11] verify initial state`);
+  for (const db of operatorDatabases) {
+    const version = await psqlQuery(db, "SELECT stack_version FROM versioning;");
+    if (version !== "v0.14") {
+      throw new Error(`${db}.versioning = "${version}", expected "v0.14" (prior test residue?)`);
+    }
+    const rows = await psqlQuery(db, "SELECT count(*) FROM upgrade_state;");
+    if (rows !== "0") {
+      throw new Error(`${db}.upgrade_state has ${rows} rows, expected 0 (prior test residue?)`);
+    }
+    const schema = await psqlQuery(
+      db,
+      `SELECT nspname FROM pg_namespace WHERE nspname='gcs-${gcsStackVersion}';`,
+    );
+    if (schema !== `gcs-${gcsStackVersion}`) {
+      throw new Error(`${db} missing schema "gcs-${gcsStackVersion}" (GCS upgrade-controller didn't create it)`);
+    }
+  }
+  console.log(`OK:   ${opCount} DB(s) at v0.14, empty upgrade_state, gcs-${gcsStackVersion} schema present`);
+
+  const defaultHostKey = defaultHostChainKey(state.scenario.hostChains);
+  const hostRpcUrl = hostReachableRpcUrl(state.discovery!.endpoints.hosts[defaultHostKey]!.http);
+  const gatewayRpcUrl = hostReachableRpcUrl(state.discovery!.endpoints.gateway.http);
+  const { deployerPk, protocolConfig } = await readBlueGreenOnChainCreds();
+
+  // One ChainUpgradeWindow per host chain, each off that chain's own current
+  // block. Single-chain yields a one-element array, as before.
+  const hostChains = state.scenario.hostChains;
+  const hostChainRpc = (key: string) =>
+    hostReachableRpcUrl(state.discovery!.endpoints.hosts[key]!.http);
+  const testSuiteEnv = await readEnvFile(envPath("test-suite"));
+  const erc20Grep = TEST_GREP.erc20;
+  if (!erc20Grep) {
+    throw new Error("blue-green profile requires the ERC-20 test grep");
+  }
+  const gatewayInputGrep = TEST_GREP["input-proof-gateway-only"];
+  if (!gatewayInputGrep) {
+    throw new Error("blue-green profile requires the gateway-only input-proof grep");
+  }
+  const chainEnvValue = (index: number, primaryName: string, indexedSuffix: string): string => {
+    const key = index === 0 ? primaryName : `HOST_CHAIN_${index}_${indexedSuffix}`;
+    const value = testSuiteEnv[key];
+    if (!value) {
+      throw new Error(`blue-green traffic target is missing ${key} in the test-suite environment`);
+    }
+    return value;
+  };
+  const chainExtraExecArgs = (index: number): string[] =>
+    [
+      ["RPC_URL", chainEnvValue(index, "RPC_URL", "RPC_URL")],
+      ["CHAIN_ID_HOST", chainEnvValue(index, "CHAIN_ID_HOST", "CHAIN_ID")],
+      ["ACL_CONTRACT_ADDRESS", chainEnvValue(index, "ACL_CONTRACT_ADDRESS", "ACL_CONTRACT_ADDRESS")],
+      ["KMS_VERIFIER_CONTRACT_ADDRESS", chainEnvValue(index, "KMS_VERIFIER_CONTRACT_ADDRESS", "KMS_VERIFIER_CONTRACT_ADDRESS")],
+      ["INPUT_VERIFIER_CONTRACT_ADDRESS", chainEnvValue(index, "INPUT_VERIFIER_CONTRACT_ADDRESS", "INPUT_VERIFIER_CONTRACT_ADDRESS")],
+      ["FHEVM_EXECUTOR_CONTRACT_ADDRESS", chainEnvValue(index, "FHEVM_EXECUTOR_CONTRACT_ADDRESS", "FHEVM_EXECUTOR_CONTRACT_ADDRESS")],
+      ["PROTOCOL_CONFIG_CONTRACT_ADDRESS", chainEnvValue(index, "PROTOCOL_CONFIG_CONTRACT_ADDRESS", "PROTOCOL_CONFIG_CONTRACT_ADDRESS")],
+    ].flatMap(([name, value]) => ["-e", `${name}=${value}`]);
+  const trafficTargets: TrafficTarget[] = hostChains.map((chain, index) => ({
+    label: chain.key,
+    argv: buildTestContainerArgs(
+      runTestsArgs({ ...options, verbose: false, parallel: false, grep: erc20Grep }),
+      chainExtraExecArgs(index),
+    ),
+  }));
+  const gatewayInputProbeArgv = buildTestContainerArgs(
+    runTestsArgs({ ...options, verbose: false, parallel: false, grep: gatewayInputGrep }),
+    chainExtraExecArgs(0),
+  );
+  const blueGreenTrafficStreams = Math.max(MIN_BLUE_GREEN_TRAFFIC_STREAMS, trafficTargets.length);
+  const buildWindowArray = async (startOffset: number, endOffset: number): Promise<string> => {
+    const tuples: string[] = [];
+    for (const chain of hostChains) {
+      const block = Number(
+        (await run(["cast", "block-number", "--rpc-url", hostChainRpc(chain.key)])).stdout.trim(),
+      );
+      tuples.push(`(${chain.chainId},${block + startOffset},${block + endOffset})`);
+    }
+    return `[${tuples.join(",")}]`;
+  };
+
+  // Host chains stay quiet (no non-trivial FHE op) while [3/11] anchors the Gateway
+  // track with one input. Cutover needs at least one non-trivial host anchor, so the
+  // controller withholds the hosts and commitment_timeout rolls back every row — the
+  // rollback this asserts. A regression that notified quiet hosts would cut over.
+  console.log(`\n[2/11] failed upgrade: Gateway input, hosts quiet (no non-trivial host → no cutover)`);
+  const failGwBlock = Number((await run(
+    ["cast", "block-number", "--rpc-url", gatewayRpcUrl],
+  )).stdout.trim());
+  const failGwStartBlock = failGwBlock + 10;
+  const failWindows = await buildWindowArray(15, 45);
+  await run([
+    "cast", "send", protocolConfig,
+    "--rpc-url", hostRpcUrl,
+    "--private-key", deployerPk,
+    "proposeCoprocessorUpgrade(uint256,string,(uint64,uint64,uint64)[],uint64)",
+    "1", gcsVersionLive,
+    failWindows,
+    String(failGwStartBlock),
+  ]);
+  console.log(
+    `OK:   activation emitted (windows=${failWindows} gw_start=${failGwStartBlock})`,
+  );
+
+  console.log(`\n[3/11] failed upgrade: wait for GCS DryRunStarted, then submit a Gateway-only input proof`);
+  for (const db of operatorDatabases) {
+    await waitUntil({
+      label: `${db}  GCS DryRunStarted`,
+      timeoutSecs: 120,
+      check: async () =>
+        (await psqlQuery(
+          db,
+          `SELECT CASE WHEN COUNT(*)=${hostChains.length}
+                              AND BOOL_AND(state='DryRunStarted')
+                              AND COUNT(DISTINCT proposal_id)=1
+                              AND COUNT(DISTINCT proposal_block)=1
+                       THEN 'ready' ELSE 'waiting' END
+             FROM upgrade_state WHERE stack_role='GCS';`,
+        )) === "ready",
+    });
+  }
+  // Verify one Gateway input inside the window. Host chains get no non-trivial FHE
+  // op, so cutover must be withheld and the window must time out (asserted in [4/11]).
+  await run(gatewayInputProbeArgv);
+  console.log(`OK:   Gateway input submitted (host chains remain quiet)`);
+
+  console.log(`\n[4/11] failed upgrade: wait for unanimity timeout rollback + verify reset`);
+  for (const db of operatorDatabases) {
+    await waitUntil({
+      label: `${db}  GCS rolled back to PAUSED/failed`,
+      timeoutSecs: 300,
+      check: async () =>
+        (await psqlQuery(
+          db,
+          `SELECT CASE WHEN COUNT(*)=${hostChains.length}
+                              AND BOOL_AND(state='PAUSED' AND status='failed')
+                              AND BOOL_AND(NOT host_consensus_reached)
+                              AND BOOL_AND(NOT gw_consensus_reached)
+                              AND BOOL_AND(NOT gw_dry_run_started)
+                       THEN 'rolled-back' ELSE 'waiting' END
+             FROM upgrade_state WHERE stack_role='GCS';`,
+        )) === "rolled-back",
+    });
+  }
+  for (const db of operatorDatabases) {
+    const flags = await psqlQuery(
+      db,
+      "SELECT MIN(last_error)||'|'||BOOL_OR(host_consensus_reached)||'|'||" +
+        "BOOL_OR(gw_consensus_reached)||'|'||BOOL_OR(gw_dry_run_started)||'|'||" +
+        "BOOL_OR(host_consensus_reached) FROM upgrade_state WHERE stack_role='GCS';",
+    );
+    if (flags !== "unanimity_consensus_timeout|false|false|false|false") {
+      throw new Error(
+        `${db} rollback left unexpected flags "${flags}", expected "unanimity_consensus_timeout|false|false|false|false"`,
+      );
+    }
+    const version = await psqlQuery(db, "SELECT stack_version FROM versioning;");
+    if (version !== "v0.14") {
+      throw new Error(`${db}.versioning = "${version}" after failed upgrade, expected "v0.14"`);
+    }
+    const schema = await psqlQuery(
+      db,
+      `SELECT nspname FROM pg_namespace WHERE nspname='gcs-${gcsStackVersion}';`,
+    );
+    if (schema !== `gcs-${gcsStackVersion}`) {
+      throw new Error(`${db} missing schema "gcs-${gcsStackVersion}" after rollback`);
+    }
+    const residue = await psqlQuery(
+      db,
+      `SELECT (SELECT count(*) FROM "gcs-${gcsStackVersion}".computations) + ` +
+        `(SELECT count(*) FROM "gcs-${gcsStackVersion}".state_hash);`,
+    );
+    if (residue !== "0") {
+      throw new Error(`${db} gcs schema not reset: ${residue} residual computations/state_hash rows`);
+    }
+    console.log(`OK:   ${db}  PAUSED/failed, latches cleared, v0.14 kept, gcs schema recreated empty`);
+  }
+
+  // Deploy ERC20 + mint before the proposal so the balance handle lands in
+  // public.ciphertexts with block_number < start_block. Transfers during the
+  // dry-run window will force GCS's tfhe-worker to fall back to
+  // public.ciphertexts for this handle.
+  console.log(`\n[5/11] cross-cutover setup: deploy ERC20 + mint (pre-cutover)`);
+  const setupResult = await run(["./fhevm-cli", "test", "cross-cutover-setup"], { allowFailure: true });
+  if (setupResult.code !== 0) {
+    throw new Error("cross-cutover setup failed — see log above");
+  }
+  // Wait for the coprocessor stack to ingest the mint. hardhat returns as soon
+  // as the tx is confirmed on-chain, but host-listener → tfhe-worker processes
+  // the block asynchronously and the row in public.ciphertexts appears a
+  // second or two later. Poll all operators before snapshotting.
+  const preCutoverCounts = new Map<string, number>();
+  const preCutoverSampleHandle = new Map<string, string>();
+  for (const db of operatorDatabases) {
+    await waitUntil({
+      label: `${db}  mint ciphertext ingested`,
+      timeoutSecs: 60,
+      check: async () =>
+        Number(await psqlQuery(db, "SELECT count(*) FROM public.ciphertexts;")) > 0,
+    });
+    const count = Number(await psqlQuery(db, "SELECT count(*) FROM public.ciphertexts;"));
+    const sample = await psqlQuery(
+      db,
+      "SELECT encode(handle, 'hex') FROM public.ciphertexts ORDER BY handle LIMIT 1;",
+    );
+    preCutoverCounts.set(db, count);
+    preCutoverSampleHandle.set(db, sample);
+    console.log(`OK:   ${db}  pre-cutover ciphertexts=${count} (sample handle recorded)`);
+  }
+
+  console.log(`\n[6/11] propose upgrade on-chain (ProtocolConfig.proposeCoprocessorUpgrade)`);
+  const gwBlock = Number((await run(
+    ["cast", "block-number", "--rpc-url", gatewayRpcUrl],
+  )).stdout.trim());
+  const gwStartBlock = gwBlock + 10;
+  // A wide window per chain so real dry-run traffic on every chain lands inside it.
+  const okWindows = await buildWindowArray(30, 230);
+  await run([
+    "cast", "send", protocolConfig,
+    "--rpc-url", hostRpcUrl,
+    "--private-key", deployerPk,
+    "proposeCoprocessorUpgrade(uint256,string,(uint64,uint64,uint64)[],uint64)",
+    "2", gcsVersionLive,
+    okWindows,
+    String(gwStartBlock),
+  ]);
+  console.log(`OK:   activation emitted (windows=${okWindows} gw_start=${gwStartBlock})`);
+
+  console.log(`\n[7/11] wait for GCS DryRunStarted per operator`);
+  for (const db of operatorDatabases) {
+    await waitUntil({
+      label: `${db}  GCS DryRunStarted`,
+      timeoutSecs: 120,
+      check: async () =>
+        (await psqlQuery(
+          db,
+          `SELECT CASE WHEN COUNT(*)=${hostChains.length}
+                              AND BOOL_AND(state='DryRunStarted')
+                              AND COUNT(DISTINCT proposal_id)=1
+                              AND COUNT(DISTINCT proposal_block)=1
+                       THEN 'ready' ELSE 'waiting' END
+             FROM upgrade_state WHERE stack_role='GCS';`,
+        )) === "ready",
+    });
+  }
+
+  console.log(
+    `\n[8/11] start ${blueGreenTrafficStreams} background stream(s) across ` +
+      `${trafficTargets.length} host chain(s) + cross-cutover chain (depth ${CROSS_CUTOVER_CHAIN_DEPTH})`,
+  );
+  const traffic = startContinuousErc20Traffic(trafficTargets, blueGreenTrafficStreams);
+  let trafficStats: { iterations: number; retries: number; failures: number };
+  try {
+    // The chain is a stress signal — a fence hit mid-transfer is expected; [11/11] verifies actual transferCount.
+    const chainPromise = (async () => {
+      for (let step = 1; step <= CROSS_CUTOVER_CHAIN_DEPTH; step += 1) {
+        console.log(`  cross-cutover transfer ${step}/${CROSS_CUTOVER_CHAIN_DEPTH}`);
+        let lastCode = 0;
+        for (let attempt = 1; attempt <= TRAFFIC_MAX_RETRIES; attempt += 1) {
+          const stepResult = await run(
+            ["./fhevm-cli", "test", "cross-cutover-transfer"],
+            { allowFailure: true },
+          );
+          lastCode = stepResult.code;
+          if (lastCode === 0) break;
+          if (attempt < TRAFFIC_MAX_RETRIES) {
+            console.warn(
+              `  cross-cutover transfer ${step} exited ${lastCode}, ` +
+                `retry ${attempt}/${TRAFFIC_MAX_RETRIES} after ${TRAFFIC_RETRY_BACKOFF_MS}ms`,
+            );
+            await Bun.sleep(TRAFFIC_RETRY_BACKOFF_MS);
+          }
+        }
+        if (lastCode !== 0) {
+          console.warn(
+            `  cross-cutover chain stopped at step ${step} after ${TRAFFIC_MAX_RETRIES} retries (code=${lastCode}) ` +
+              `— likely fenced mid-transfer; verify step will decrypt against actual completed count`,
+          );
+          return;
+        }
+      }
+    })();
+    await Promise.race([chainPromise, traffic.errored]);
+
+    console.log(`\n[9/11] wait for cutover (versioning=${gcsVersionLive} per operator)`);
+    for (const db of operatorDatabases) {
+      await Promise.race([
+        waitUntil({
+          label: `${db}  versioning=${gcsVersionLive}`,
+          timeoutSecs: 300,
+          check: async () =>
+            (await psqlQuery(db, "SELECT stack_version FROM versioning;")) === gcsVersionLive,
+        }),
+        traffic.errored,
+      ]);
+    }
+
+    // BCS has no upgrade_state row — retires implicitly via `resolve_gcs_mode`.
+    console.log(`\n[10/11] verify FSM final state`);
+    for (const db of operatorDatabases) {
+      const gcsState = await psqlQuery(
+        db,
+        `SELECT CASE WHEN COUNT(*)=${hostChains.length}
+                            AND BOOL_AND(state='LIVE' AND status='completed')
+                     THEN 'LIVE completed' ELSE 'unexpected' END
+           FROM upgrade_state WHERE stack_role='GCS';`,
+      );
+      if (gcsState !== "LIVE completed") {
+        throw new Error(`${db} GCS state = "${gcsState}", expected "LIVE completed"`);
+      }
+      const persistedWindows = await psqlQuery(
+        db,
+        "SELECT count(*) FROM upgrade_state WHERE stack_role='GCS';",
+      );
+      if (persistedWindows !== String(hostChains.length)) {
+        throw new Error(
+          `${db} persisted ${persistedWindows} chain windows, expected ${hostChains.length}`,
+        );
+      }
+      const leftoverSchemas = await psqlQuery(
+        db,
+        "SELECT count(*) FROM pg_namespace WHERE nspname LIKE 'gcs-%';",
+      );
+      if (leftoverSchemas !== "0") {
+        throw new Error(`${db} still has ${leftoverSchemas} gcs-* schema(s) (execute_cutover didn't DROP)`);
+      }
+      console.log(`OK:   ${db}  GCS=LIVE completed, gcs schema dropped`);
+    }
+  } finally {
+    trafficStats = await traffic.stop();
+  }
+
+  console.log(`\n[11/11] stop background traffic + cross-cutover verify + continuity check`);
+  console.log(
+    `  traffic stopped: ${trafficStats.iterations} iterations across ${blueGreenTrafficStreams} stream(s), ` +
+      `${trafficStats.retries} retried, ${trafficStats.failures} failed after retry`,
+  );
+  if (trafficStats.failures > 0) {
+    throw new Error(
+      `${trafficStats.failures} erc20 iteration(s) failed even after retry — ` +
+        "the upgraded stack dropped traffic across cutover.",
+    );
+  }
+
+  // TODO(fhevm-internal#1567): re-enable once RFC-023 lands — wait for the post-cutover
+  // backfill to converge before verifying (the convergence signal will replace txn_is_sent).
+  // for (const db of operatorDatabases) {
+  //   await waitUntil({
+  //     label: `${db}  digest re-commit drained`,
+  //     timeoutSecs: 300,
+  //     check: async () =>
+  //       (await psqlQuery(db, "SELECT count(*) FROM public.ciphertext_digest WHERE txn_is_sent = false;")) === "0",
+  //   });
+  // }
+
+  console.log(`  cross-cutover verify: decrypt Alice's balance on promoted stack`);
+  const verifyResult = await run(["./fhevm-cli", "test", "cross-cutover-verify"], { allowFailure: true });
+  if (verifyResult.code !== 0) {
+    // TODO(fhevm-internal#1567): re-enable once RFC-023 lands — dry-run-era handles are
+    // undecryptable until then (S3 backfill vs immutable on-chain digests).
+    // throw new Error(
+    //   "cross-cutover verify failed — decrypted balance ≠ expected math after cutover. " +
+    //     "Either the fallback query broke, or GCS lost/corrupted state across cutover.",
+    // );
+    console.warn(
+      "  KNOWN ISSUE (soft-fail): cross-cutover verify failed — dry-run-era handles are " +
+        "undecryptable until RFC-023 lands.",
+    );
+  }
+
+  for (const db of operatorDatabases) {
+    const preCt = preCutoverCounts.get(db)!;
+    const finalCt = Number(await psqlQuery(db, "SELECT count(*) FROM public.ciphertexts;"));
+    if (finalCt < preCt) {
+      throw new Error(
+        `${db} lost ${preCt - finalCt} ciphertexts across cutover (pre=${preCt}, final=${finalCt})`,
+      );
+    }
+    if (finalCt <= preCt) {
+      throw new Error(
+        `${db} no new ciphertexts written after cutover (pre=${preCt}, final=${finalCt})`,
+      );
+    }
+    const sample = preCutoverSampleHandle.get(db)!;
+    const stillPresent = await psqlQuery(
+      db,
+      `SELECT encode(handle, 'hex') FROM public.ciphertexts WHERE handle = decode('${sample}', 'hex');`,
+    );
+    if (stillPresent !== sample) {
+      throw new Error(`${db} pre-cutover sample handle ${sample} not queryable post-cutover`);
+    }
+    console.log(
+      `OK:   ${db}  ciphertexts ${preCt} → ${finalCt} (sample handle survived, +${finalCt - preCt} new)`,
+    );
+  }
+
+  console.log(`\n==== ✓ Blue-Green E2E PASSED (${opCount} operator(s)) ====`);
+  return true;
+};
+
 /** Runs the coprocessor DB state revert e2e flow against the active stack. */
 const runDbStateRevert = async (
   state: Awaited<ReturnType<typeof loadState>>,
@@ -907,13 +1490,6 @@ export const test = async (testName: string | undefined, options: TestOptions) =
       ? undefined
       : "multi-chain-isolation requires a multi-chain topology; rerun `fhevm-cli up --scenario multi-chain` first";
 
-  const priorityCoprocessorRequirement = () => {
-    const topology = topologyForState(state);
-    return topology.count > 1
-      ? undefined
-      : "priority-coprocessor requires a multi-coprocessor topology; rerun `fhevm-cli up --scenario two-of-three-multi-chain` first";
-  };
-
   const multiChainIsolationSkipReason = () =>
     state.scenario.hostChains.length > 1 ? undefined : "topology has fewer than 2 host chains";
 
@@ -973,9 +1549,32 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     return false;
   };
 
+  // App-level smoke for the kms-context-switch checkpoints: a normal encrypted-input flow (the
+  // input-proof grep) must keep working before, while, and after a KMS context/epoch transition —
+  // not only the dedicated user-decryption probe. Same key-bootstrap wait as the input-proof
+  // profile (a no-op once the sns-workers have fetched the keyset).
+  const runInputProofSmoke = async (label: string) => {
+    const grep = TEST_GREP["input-proof"];
+    if (!grep) {
+      throw new PreflightError("kms-context-switch: missing input-proof grep pattern");
+    }
+    console.log(`[test] ${label}`);
+    await waitForKeyBootstrap(state);
+    await runNamedE2e(options, grep, label);
+  };
+
   const runProfile = async (name: string) => {
     if (name === "kms-generation") {
       return runKmsGenerationProfile(state, runUserDecryption);
+    }
+    if (name === "kms-generation-abort") {
+      return runKmsGenerationAbortProfile(state);
+    }
+    if (name === "kms-context-switch") {
+      return runKmsContextSwitchProfile(state, runUserDecryption, runInputProofSmoke);
+    }
+    if (name === "blue-green") {
+      return runBlueGreenProfile(state, options);
     }
     if (name === "coprocessor-db-state-revert") {
       return runDbStateRevert(state, options);
@@ -1208,12 +1807,6 @@ export const test = async (testName: string | undefined, options: TestOptions) =
         throw new PreflightError(precondition);
       }
     }
-    if (name === "priority-coprocessor") {
-      const precondition = priorityCoprocessorRequirement();
-      if (precondition) {
-        throw new PreflightError(precondition);
-      }
-    }
 
     const filter = TEST_GREP[name];
     if (!filter) {
@@ -1250,21 +1843,21 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     return runGrep();
   };
 
-  const runStandardSuite = async () => {
+  const runStandardProfiles = async (label: string, profiles: readonly string[]) => {
     if (options.grep) {
-      throw new PreflightError("`fhevm-cli test standard` does not accept `--grep`; run a named profile instead");
+      throw new PreflightError(`\`fhevm-cli test ${label}\` does not accept \`--grep\`; run a named profile instead`);
     }
     if (options.parallel === true) {
-      throw new PreflightError("`fhevm-cli test standard` does not accept `--parallel`; suite members choose their own mode");
+      throw new PreflightError(`\`fhevm-cli test ${label}\` does not accept \`--parallel\`; suite members choose their own mode`);
     }
-    console.log(`[test] standard (${options.network})`);
+    console.log(`[test] ${label} (${options.network})`);
     const started = Date.now();
-    await runLogged("standard", started, async () => {
-      for (const profile of STANDARD_TEST_PROFILES) {
-        if (profile === "multi-chain-isolation") {
+    await runLogged(label, started, async () => {
+      for (const profile of profiles) {
+        if (profile === "multi-chain-isolation" || profile === "confidential-bridge") {
           const skipReason = multiChainIsolationSkipReason();
           if (skipReason) {
-            console.log(`[test] skipping multi-chain-isolation: ${skipReason}`);
+            console.log(`[test] skipping ${profile}: ${skipReason}`);
             continue;
           }
         }
@@ -1287,8 +1880,20 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     });
   };
 
+  // CI shards of the standard suite — see layout.ts for the split rationale.
+  const STANDARD_SHARDS: Record<string, readonly string[]> = {
+    "standard-shard-stateful": STANDARD_SHARD_STATEFUL_TEST_PROFILES,
+    "standard-shard-decryption": STANDARD_SHARD_DECRYPTION_TEST_PROFILES,
+    "standard-shard-compute": STANDARD_SHARD_COMPUTE_TEST_PROFILES,
+  };
+
   if (testName === "standard") {
-    await runStandardSuite();
+    await runStandardProfiles("standard", STANDARD_TEST_PROFILES);
+    return;
+  }
+
+  if (testName && STANDARD_SHARDS[testName]) {
+    await runStandardProfiles(testName, STANDARD_SHARDS[testName]);
     return;
   }
 

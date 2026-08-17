@@ -8,19 +8,20 @@ import { ensureLockSnapshot, previewBundle, resolveBundle } from "../resolve/bun
 import {
   assertSupportedBundleScenario,
   bootstrapUsesHostKmsGeneration,
+  canonicalProtocolConfigSeedingUsesEnv,
   requiresGatewayKmsGenerationAddress,
   requiresLegacyHostChainSeedShim,
+  requiresLegacyKmsBootstrapBudget,
   requiresMultichainAclAddress,
   requiresModernHostAddressArtifacts,
   supportsCanonicalProtocolConfigSeeding,
   supportsHostListenerConsumer,
   validateBundleCompatibility,
 } from "../compat/compat";
-import { driftDatabaseName } from "../drift";
 import { serviceNameList } from "../generate/compose";
 import { generateRuntime } from "../generate";
 import { resolveScenarioForOptions, stackSpecForState, topologyForState } from "../stack-spec/stack-spec";
-import { effectiveOverrides, hasLocalCoprocessorInstance, listScenarioSummaries } from "../scenario/resolve";
+import { effectiveOverrides, listScenarioSummaries } from "../scenario/resolve";
 import { run, runStreaming } from "../utils/process";
 import { loadState, markStep, saveState } from "../state/state";
 import {
@@ -66,11 +67,12 @@ import {
   SCHEMA_COUPLED_GROUPS,
   STATE_DIR,
   TEST_SUITE_CONTAINER,
+  coprocessorDatabaseName,
   coprocessorHostKey,
-  dockerArgs,
   envPath,
   gatewayAddressesPath,
   hostChainAddressesPath,
+  realLzEndpointFor,
 } from "../layout";
 import type {
   BuiltImage,
@@ -100,12 +102,13 @@ import {
   writeJson,
 } from "../utils/fs";
 import { ensureDiscovery, createDiscovery, defaultEndpoints, discoverContracts, minioIp, validateDiscovery } from "./discovery";
-import { kmsConnectorEnvName } from "../kms-party";
+import { kmsConnectorEnvName, kmsCoreName } from "../kms-party";
 import { defaultHostChain, extraHostChains, hostChainsForState } from "./topology";
 import {
   kmsConnectorHealthContainers,
   castBool,
   coprocessorHealthContainers,
+  waitForCoprocessorDbMigrations,
   discoverKmsSigners,
   dockerInspect,
   ensureMaterial,
@@ -199,7 +202,8 @@ export const assertDockerMemory = async (scenario: State["scenario"]) => {
   const memBytes = parseInt(result.stdout.trim(), 10);
   if (isNaN(memBytes)) return;
 
-  const minGb = scenario.hostChains.length > 1 && scenario.topology.count > 1 ? 32 : 16;
+  const count = scenario.kind === "coprocessor-consensus" ? scenario.topology.count : 2;
+  const minGb = scenario.hostChains.length > 1 && count > 1 ? 32 : 16;
   if (memBytes >= (minGb - 1) * 1024 ** 3) return;
 
   const reportedGb = Math.round((memBytes / 1024 ** 3) * 2) / 2;
@@ -252,8 +256,10 @@ const describeOverride = (item: { group: string; services?: string[] }) =>
   `${item.group}${item.services?.length ? `[${item.services.join(",")}]` : ""}`;
 
 /** Computes the user-visible override set after scenario expansion. */
-const visibleOverrides = (state: Pick<State, "overrides" | "scenario">) =>
-  effectiveOverrides(state.overrides, state.scenario);
+const visibleOverrides = (state: Pick<State, "overrides" | "scenario">) => {
+  if (state.scenario.kind === "blue-green") return state.overrides;
+  return effectiveOverrides(state.overrides, state.scenario);
+};
 
 /** Builds human-readable warnings for risky override combinations. */
 const overrideWarnings = (overrides: LocalOverride[], target?: string) => {
@@ -432,7 +438,9 @@ const assertSchemaCompatibility = async (
   if (allowSchemaMismatch || !SCHEMA_GUARD_TARGETS.has(bundle.target)) {
     return;
   }
-  for (const item of partialSchemaOverrides(effectiveOverrides(overrides, scenario))) {
+  const scenarioForOverrides =
+    scenario.kind === "coprocessor-consensus" ? effectiveOverrides(overrides, scenario) : overrides;
+  for (const item of partialSchemaOverrides(scenarioForOverrides)) {
     await assertSchemaRepoStable(
       item.group,
       bundle,
@@ -451,7 +459,9 @@ const coprocessorDbSeeded = async (database: string) => {
 
 const coprocessorDbsSeeded = async (state: Pick<State, "scenario">) =>
   (await Promise.all(
-    Array.from({ length: topologyForState(state).count }, (_, index) => driftDatabaseName(index)).map(coprocessorDbSeeded),
+    Array.from({ length: topologyForState(state).count }, (_, index) => coprocessorDatabaseName(index)).map(
+      coprocessorDbSeeded,
+    ),
   )).every(Boolean);
 
 const restartZkproofWorker = async (index: number, reason: string) => {
@@ -474,7 +484,7 @@ const upsertHostChainInCoprocessorDb = async (
   index: number,
   logPrefix: string,
 ) => {
-  const dbName = driftDatabaseName(index);
+  const dbName = coprocessorDatabaseName(index);
   const chainHost = state.discovery?.hosts[chain.key] ?? {};
   const aclAddress = chainHost.ACL_CONTRACT_ADDRESS ?? "";
   console.log(`${logPrefix} registering ${chain.key} in ${dbName}`);
@@ -517,16 +527,24 @@ const registerExtraChainInCoprocessor = async (state: State, chain: { key: strin
   }
 };
 
+/** Name of the export snapshot written into the canonical chain's mounted addresses directory. */
+const CANONICAL_SNAPSHOT_FILE = "canonical-protocol-config-snapshot.json";
+
 /**
- * Builds the `task:deployAllHostContracts` args that seed a non-canonical chain's ProtocolConfig
- * from the canonical chain, mirroring production. Returns "" when the host image predates
- * `task:deployProtocolConfigFromCanonical`, so older bundles keep the "fresh" seeding.
+ * Builds the `task:deployAllHostContracts` args and env that seed a non-canonical chain's
+ * ProtocolConfig from the canonical chain, mirroring production. Returns undefined when there is no
+ * non-canonical chain, or when the host image predates `task:deployProtocolConfigFromCanonical`, so
+ * older bundles keep the "fresh" seeding.
  * Must run after the canonical host deploy: it reads the canonical ProtocolConfig address from the
- * generated address file.
+ * generated address file, then exports the canonical KMS context from the live canonical chain.
+ * Host images before the `CANONICAL_*` env migration take the canonical chain as command-line flags
+ * instead and skip the export.
  */
-const canonicalProtocolConfigSeedingArgs = async (state: State) => {
-  if (!supportsCanonicalProtocolConfigSeeding(state)) {
-    return "";
+const canonicalProtocolConfigSeeding = async (
+  state: State,
+): Promise<{ args: string; env?: Record<string, string> } | undefined> => {
+  if (!supportsCanonicalProtocolConfigSeeding(state) || !extraHostChains(state).length) {
+    return undefined;
   }
   const canonicalChain = defaultHostChain(state)!;
   const canonicalAddresses = await readEnvFile(hostChainAddressesPath(canonicalChain.key));
@@ -536,11 +554,39 @@ const canonicalProtocolConfigSeedingArgs = async (state: State) => {
       `Canonical host addresses at ${hostChainAddressesPath(canonicalChain.key)} lack PROTOCOL_CONFIG_CONTRACT_ADDRESS; cannot seed non-canonical chains from canonical.`,
     );
   }
-  return [
-    "--protocol-config-source canonical",
-    `--canonical-rpc-url http://${canonicalChain.node}:${canonicalChain.rpcPort}`,
-    `--canonical-protocol-config-address ${canonicalProtocolConfigAddress}`,
-  ].join(" ");
+  if (!canonicalProtocolConfigSeedingUsesEnv(state)) {
+    return {
+      args: [
+        "--protocol-config-source canonical",
+        `--canonical-rpc-url http://${canonicalChain.node}:${canonicalChain.rpcPort}`,
+        `--canonical-protocol-config-address ${canonicalProtocolConfigAddress}`,
+      ].join(" "),
+    };
+  }
+  // Pin the export to the current head. The task defaults to the finalized block, but anvil reports
+  // a finalized block 64 blocks behind the head, which predates the canonical ProtocolConfig deploy.
+  const blockNumber = (
+    await run(["cast", "block-number", "--rpc-url", `http://localhost:${canonicalChain.rpcPort}`])
+  ).stdout.trim();
+  // Run the export task in the canonical chain's own deploy container, the same producer the
+  // deployment platform runs. The container reaches the canonical node over the compose network and
+  // writes the snapshot into the mounted addresses directory.
+  await timed("[multi-chain] export canonical ProtocolConfig", () =>
+    runContractTask(
+      "host-sc",
+      "host-sc-deploy",
+      `npx hardhat task:exportCanonicalProtocolConfig --canonical-rpc-url http://${canonicalChain.node}:${canonicalChain.rpcPort} --canonical-protocol-config-address ${canonicalProtocolConfigAddress} --block-number ${blockNumber} --out /app/addresses/${CANONICAL_SNAPSHOT_FILE}`,
+    ),
+  );
+  const exported = await readJson<{ export: Record<string, string> }>(
+    path.join(path.dirname(hostChainAddressesPath(canonicalChain.key)), CANONICAL_SNAPSHOT_FILE),
+  );
+  return {
+    args: "--protocol-config-source canonical",
+    // The deploy task reads the reviewed snapshot from the environment, not from flags, so that
+    // deployment platforms can inject the exported values as container environment variables.
+    env: exported.export,
+  };
 };
 
 export const runStep = async (state: State, step: StepName) => {
@@ -629,8 +675,9 @@ export const runStep = async (state: State, step: StepName) => {
     case "kms-signer": {
       // `kms.parties` is 1 for centralized and N for threshold, so one call covers both.
       const discovery = await ensureDiscovery(state);
-      const { signers, minioKeyPrefix } = await discoverKmsSigners(state.scenario.kms.parties);
+      const { signers, caCerts, minioKeyPrefix } = await discoverKmsSigners(state.scenario.kms.parties);
       discovery.kmsSigners = signers;
+      discovery.kmsCaCerts = caCerts;
       discovery.minioKeyPrefix = minioKeyPrefix;
       await generateRuntime(state, stackSpecForState(state));
       break;
@@ -656,7 +703,16 @@ export const runStep = async (state: State, step: StepName) => {
       if (!defaultHostChain(state)) {
         throw new PreflightError("Missing default host chain");
       }
-      await stepComposeTask("host-sc", state, ["host-sc-deploy"]);
+      // Multi-chain scenarios run the bridge-deploy step (deploys the LZ endpoint + upgrades the
+      // bridge). Provision the empty bridge proxy here via PROVISION_BRIDGE_PROXY so the ACL bakes
+      // its deterministic address before that later upgrade.
+      const provisionBridgeProxy = hostChainsForState(state).length >= 2;
+      await stepComposeTask(
+        "host-sc",
+        state,
+        ["host-sc-deploy"],
+        provisionBridgeProxy ? { env: { PROVISION_BRIDGE_PROXY: "true" } } : undefined,
+      );
       await waitForContainer("host-sc-deploy", "complete");
       await ensureGeneratedAddressFile(hostChainAddressesPath(defaultHostChain(state)!.key), "host-sc-deploy", [
         "ACL_CONTRACT_ADDRESS",
@@ -670,13 +726,19 @@ export const runStep = async (state: State, step: StepName) => {
       // (export → mirror), not "fresh" from env. The canonical address only exists after the
       // canonical deploy above, so the placeholder env var is patched here, per chain, before
       // its deploy container starts.
-      const canonicalSeedingArgs = await canonicalProtocolConfigSeedingArgs(state);
+      const canonicalSeeding = await canonicalProtocolConfigSeeding(state);
       for (const chain of extraHostChains(state)) {
         const scKey = chain.sc;
-        if (canonicalSeedingArgs) {
+        if (canonicalSeeding || provisionBridgeProxy) {
           const scEnvPath = envPath(scKey);
           const scEnv = await readEnvFile(scEnvPath);
-          scEnv.HOST_SC_DEPLOY_PROTOCOL_CONFIG_ARGS = canonicalSeedingArgs;
+          if (canonicalSeeding) {
+            scEnv.HOST_SC_DEPLOY_PROTOCOL_CONFIG_ARGS = canonicalSeeding.args;
+            Object.assign(scEnv, canonicalSeeding.env);
+          }
+          if (provisionBridgeProxy) {
+            scEnv.PROVISION_BRIDGE_PROXY = "true";
+          }
           await writeEnvFile(scEnvPath, scEnv);
         }
         await timed(`[multi-chain] ${scKey}-deploy`, async () => {
@@ -707,6 +769,78 @@ export const runStep = async (state: State, step: StepName) => {
       discovery.hosts = { ...discovery.hosts, ...contracts.hosts };
       break;
     }
+    case "bridge-deploy": {
+      // Confidential bridge needs >= 2 host chains. Per chain: deploy a LayerZero endpoint +
+      // upgrade the bridge, then wire each chain to its remote (peer + dstChainId). eid == chainId
+      // locally. Verify with: ./fhevm-cli up --scenario multi-chain --build
+      const chains = hostChainsForState(state);
+      if (chains.length < 2) {
+        console.log("[bridge-deploy] skipping: confidential bridge needs >= 2 host chains");
+        break;
+      }
+      const discovery = await ensureDiscovery(state);
+      const remoteOf = (i: number) => chains[(i + 1) % chains.length];
+
+      const runBridgeService = async (
+        chain: (typeof chains)[number],
+        suffix: string,
+        env: Record<string, string>,
+        onComplete?: (service: string) => Promise<void>,
+      ) => {
+        Object.assign(process.env, env);
+        const service = chain.isDefault ? `host-sc-${suffix}` : `${chain.sc}-${suffix}`;
+        await timed(`[bridge-deploy] ${service}`, async () => {
+          if (chain.isDefault) {
+            await stepComposeTask("host-sc", state, [service], { env, noDeps: true });
+          } else {
+            await multiChainComposeTask(chain.sc, [service]);
+          }
+          await waitForContainer(service, "complete");
+          await onComplete?.(service);
+        });
+      };
+
+      // Pass 1: deploy the LZ endpoint (local mock unless a real one is configured) and upgrade
+      // the bridge proxy against it. LZ_ENDPOINT_ADDRESS is always pinned (empty = deploy mock) so
+      // a real value from a prior chain or the ambient env can't leak into a mock chain's command.
+      for (let i = 0; i < chains.length; i++) {
+        const chain = chains[i];
+        const realEndpoint = realLzEndpointFor(chain.key);
+        console.log(
+          realEndpoint
+            ? `[bridge-deploy] ${chain.key}: using preconfigured LZ endpoint ${realEndpoint} (skipping local mock)`
+            : `[bridge-deploy] ${chain.key}: deploying local LZ mock endpoint`,
+        );
+        await runBridgeService(
+          chain,
+          "deploy-bridge",
+          { BRIDGE_EID: chain.chainId, BRIDGE_REMOTE_EID: remoteOf(i).chainId, LZ_ENDPOINT_ADDRESS: realEndpoint ?? "" },
+          (service) => ensureGeneratedAddressFile(hostChainAddressesPath(chain.key), service, ["LZ_ENDPOINT_ADDRESS"]),
+        );
+      }
+
+      // Reload addresses so LZ_ENDPOINT_ADDRESS and the bridge proxies are in discovery.
+      const refreshed = await discoverContracts(state);
+      discovery.hosts = { ...discovery.hosts, ...refreshed.hosts };
+
+      // Pass 2: wire each chain to its remote.
+      for (let i = 0; i < chains.length; i++) {
+        const chain = chains[i];
+        const remote = remoteOf(i);
+        const localBridge = discovery.hosts[chain.key]?.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS;
+        const remoteBridge = discovery.hosts[remote.key]?.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS;
+        if (!localBridge || !remoteBridge) {
+          throw new PreflightError(`[bridge-deploy] missing bridge address for ${chain.key} or ${remote.key}`);
+        }
+        await runBridgeService(chain, "wire-bridge", {
+          BRIDGE_LOCAL_ADDRESS: localBridge,
+          BRIDGE_REMOTE_EID: remote.chainId,
+          BRIDGE_REMOTE_ADDRESS: remoteBridge,
+          BRIDGE_REMOTE_CHAIN_ID: remote.chainId,
+        });
+      }
+      break;
+    }
     case "regenerate":
       await generateRuntime(state, stackSpecForState(state));
       break;
@@ -734,9 +868,18 @@ export const runStep = async (state: State, step: StepName) => {
       break;
     case "coprocessor": {
       const skipMigration = await coprocessorDbsSeeded(state);
-      const services = skipMigration ? coprocessorHealthContainers(state) : serviceNameList(state, "coprocessor");
-      await stepComposeUp("coprocessor", state, services, { noDeps: skipMigration });
-      await waitForCoprocessorServices(state, skipMigration);
+      if (skipMigration) {
+        await stepComposeUp("coprocessor", state, coprocessorHealthContainers(state), { noDeps: true });
+      } else {
+        // Migrations before workers, so a GCS fleet isn't started before the versioning baseline is seeded.
+        const allServices = serviceNameList(state, "coprocessor");
+        const migrationServices = allServices.filter((name) => name.endsWith("db-migration"));
+        const runtimeServices = allServices.filter((name) => !name.endsWith("db-migration"));
+        await stepComposeUp("coprocessor", state, migrationServices);
+        await waitForCoprocessorDbMigrations(state);
+        await stepComposeUp("coprocessor", state, runtimeServices, { noDeps: true });
+      }
+      await waitForCoprocessorServices(state, true);
       if (requiresLegacyHostChainSeedShim(state)) {
         await applyLegacyHostChainSeedShim(state);
       }
@@ -842,13 +985,18 @@ export const runStep = async (state: State, step: StepName) => {
         );
         await waitForContainer("gateway-sc-trigger-crsgen", "complete");
       }
-      // wait-for-materials polls roughly once per second. Centralized keygen is quick; a
-      // threshold-mode cluster runs a real multi-party DKG (~360s for 4 parties), so it needs a
-      // much larger budget before we conclude bootstrap failed.
+      // wait-for-materials polls every two seconds. Centralized keygen is quick; a threshold-mode
+      // cluster runs a real multi-party DKG. Legacy cores can take more than 20 minutes to finish
+      // two preprocessing sessions, so only they get the larger budget — a global raise would make
+      // every threshold CI job wait that long before reporting a genuinely hung DKG.
       const CENTRALIZED_BOOTSTRAP_ATTEMPTS = 120;
       const THRESHOLD_BOOTSTRAP_ATTEMPTS = 450;
+      const LEGACY_THRESHOLD_BOOTSTRAP_ATTEMPTS = 1200;
+      const thresholdAttempts = requiresLegacyKmsBootstrapBudget(state.versions.env.CORE_VERSION ?? "")
+        ? LEGACY_THRESHOLD_BOOTSTRAP_ATTEMPTS
+        : THRESHOLD_BOOTSTRAP_ATTEMPTS;
       const bootstrapAttempts =
-        state.scenario.kms.mode === "threshold" ? THRESHOLD_BOOTSTRAP_ATTEMPTS : CENTRALIZED_BOOTSTRAP_ATTEMPTS;
+        state.scenario.kms.mode === "threshold" ? thresholdAttempts : CENTRALIZED_BOOTSTRAP_ATTEMPTS;
       await timed("[bootstrap] wait-for-materials", () => waitForBootstrap(state, bootstrapAttempts));
       await generateRuntime(state, stackSpecForState(state));
       break;
@@ -1214,9 +1362,11 @@ export const status = async () => {
     );
     if (state.scenario.origin !== "default") {
       console.log(`[scenario] ${state.scenario.origin}${state.scenario.sourcePath ? ` ${state.scenario.sourcePath}` : ""}`);
-      for (const instance of state.scenario.instances) {
-        const source = instance.source.mode === "registry" ? `registry:${instance.source.tag}` : instance.source.mode;
-        console.log(`[coprocessor-${instance.index}] ${source}`);
+      if (state.scenario.kind === "coprocessor-consensus") {
+        for (const instance of state.scenario.instances) {
+          const source = instance.source.mode === "registry" ? `registry:${instance.source.tag}` : instance.source.mode;
+          console.log(`[coprocessor-${instance.index}] ${source}`);
+        }
       }
     }
     console.log(`[steps] ${state.completedSteps.join(", ") || "none"}`);
@@ -1544,6 +1694,91 @@ export const upgradeRuntimeGroup = async (groupValue: string | undefined, option
   for (const step of plan.steps) {
     await markStep(nextState, step);
   }
+};
+
+type ThresholdKmsNodeUpgradeOperations = {
+  composeUp: typeof composeUp;
+  ensureRuntimeArtifacts: typeof ensureRuntimeArtifacts;
+  generateRuntime: typeof generateRuntime;
+  loadState: typeof loadState;
+  projectContainers: typeof projectContainers;
+  saveState: typeof saveState;
+  waitForContainer: typeof waitForContainer;
+};
+
+const thresholdKmsNodeUpgradeOperations: ThresholdKmsNodeUpgradeOperations = {
+  composeUp,
+  ensureRuntimeArtifacts,
+  generateRuntime,
+  loadState,
+  projectContainers,
+  saveState,
+  waitForContainer,
+};
+
+/** Recreates exactly one serving threshold KMS core with the CORE_VERSION from a lock file. */
+export const upgradeThresholdKmsNode = async (
+  nodeId: number,
+  options: { lockFile: string },
+  operations: ThresholdKmsNodeUpgradeOperations = thresholdKmsNodeUpgradeOperations,
+) => {
+  const state = await operations.loadState();
+  if (!state || !(await operations.projectContainers()).length) {
+    throw new PreflightError("Stack is not running; start a threshold KMS scenario first");
+  }
+  if (state.scenario.kms.mode !== "threshold") {
+    throw new PreflightError("upgradeKmsNode requires a threshold-mode KMS cluster");
+  }
+  if (!Number.isInteger(nodeId) || nodeId < 1 || nodeId > state.scenario.kms.committeeSize) {
+    throw new PreflightError(
+      `upgradeKmsNode expects a serving node id between 1 and ${state.scenario.kms.committeeSize}; received ${nodeId}`,
+    );
+  }
+  if (!state.completedSteps.includes("base")) {
+    throw new PreflightError("upgradeKmsNode requires a stack that has completed the base step");
+  }
+
+  await operations.ensureRuntimeArtifacts(state, "upgrade");
+  const lockedState = (await applyRuntimeUpgradeLock(state, "kms-core", ["CORE_VERSION"], options.lockFile)).state;
+  await assertSchemaCompatibility(lockedState.versions, lockedState.overrides, lockedState.scenario, false);
+
+  const targetVersion = lockedState.versions.env.CORE_VERSION;
+  if (!targetVersion?.trim()) {
+    throw new PreflightError("upgradeKmsNodes requires CORE_VERSION in its lock file");
+  }
+  const versionByNodeId = Object.fromEntries(
+    Array.from({ length: state.scenario.kms.parties }, (_, index) => {
+      const id = index + 1;
+      return [id, state.kmsCoreVersionByNodeId?.[id] ?? state.versions.env.CORE_VERSION];
+    }),
+  );
+  versionByNodeId[nodeId] = targetVersion;
+  const servingNodesAtTarget = Array.from(
+    { length: state.scenario.kms.committeeSize },
+    (_, index) => versionByNodeId[index + 1] === targetVersion,
+  ).every(Boolean);
+  const globalVersion = servingNodesAtTarget ? targetVersion : state.versions.env.CORE_VERSION;
+  const perNodeVersions = Object.fromEntries(
+    Object.entries(versionByNodeId).filter(([, version]) => version !== globalVersion),
+  );
+  const nextState: State = servingNodesAtTarget
+    ? {
+        ...lockedState,
+        kmsCoreVersionByNodeId: Object.keys(perNodeVersions).length ? perNodeVersions : undefined,
+      }
+    : {
+        ...state,
+        kmsCoreVersionByNodeId: perNodeVersions,
+        updatedAt: new Date().toISOString(),
+      };
+
+  await operations.saveState(nextState);
+  await operations.generateRuntime(nextState, stackSpecForState(nextState));
+
+  const container = kmsCoreName(nodeId);
+  console.log(`[upgrade] KMS node ${nodeId} (${container})`);
+  await operations.composeUp("core-threshold", [container], { noDeps: true, forceRecreate: true });
+  await operations.waitForContainer(container, "healthy");
 };
 
 const RESUME_HINT_BLOCKERS = new Set([

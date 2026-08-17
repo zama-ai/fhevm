@@ -24,6 +24,7 @@ SCAN_DIRS=(
 # File patterns to exclude (glob patterns matched against the full path)
 EXCEPTIONS=(
   "*/index.ts"
+  "test/manual-pack"
 )
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -88,7 +89,6 @@ check_file() {
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 echo "Checking import order..."
-echo ""
 
 for dir in "${SCAN_DIRS[@]}"; do
   full_dir="$ROOT_DIR/$dir"
@@ -106,7 +106,6 @@ for dir in "${SCAN_DIRS[@]}"; do
   done < <(find "$full_dir" -name '*.ts' -not -name '*.d.ts' -print0)
 done
 
-echo ""
 if [[ $violations -gt 0 ]]; then
   echo "Found $violations import order violation(s)."
   echo "Rule: import type statements must come before value imports, with no interleaving."

@@ -15,6 +15,7 @@ deploy-pauser-set:
 # Ensure that the empty proxy and pauser set addresses exists as these are required for contract compilation.
 ensure-addresses: deploy-empty-proxies deploy-pauser-set
 
+forge-test: export PROVISION_BRIDGE_PROXY=true
 forge-test: ensure-addresses
 	forge soldeer install && forge test
 

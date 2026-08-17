@@ -1,9 +1,7 @@
 ARG NODE_VERSION=22.22.2-alpine3.22
-ARG RELAYER_SDK_VERSION=""
 
 # --- Builder Stage ---
 FROM node:${NODE_VERSION} AS builder
-ARG RELAYER_SDK_VERSION=""
 
 WORKDIR /app
 
@@ -28,21 +26,14 @@ COPY test-suite/e2e/package.json ./test-suite/e2e/
 COPY sdk/js-sdk/package.json ./sdk/js-sdk/
 COPY sdk/js-sdk/src/package.json ./sdk/js-sdk/src/
 
+# Install dependencies
+RUN npm ci && \
+    npm prune
+
+# Copy sources after deps are cached
 COPY library-solidity ./library-solidity
 COPY test-suite/e2e ./test-suite/e2e
 COPY sdk/js-sdk ./sdk/js-sdk
-
-# Install dependencies. Normal builds stay locked; rollout hotswap builds first
-# update the e2e workspace manifest in the image, then let npm resolve one
-# coherent dependency graph for that requested SDK version.
-RUN if [ -n "$RELAYER_SDK_VERSION" ]; then \
-      npm pkg set -w test-suite/e2e "dependencies.@zama-fhe/relayer-sdk=${RELAYER_SDK_VERSION}" && \
-      npm install && \
-      npm prune; \
-    else \
-      npm ci && \
-      npm prune; \
-    fi
 
 # Compile js-sdk
 WORKDIR /app/sdk/js-sdk
@@ -57,13 +48,6 @@ RUN npx hardhat compile
 
 # --- Runtime Stage ---
 FROM node:${NODE_VERSION} AS prod
-ARG RELAYER_SDK_VERSION=""
-
-# Propagate the build ARG into the container's runtime env. instance.ts gates
-# on this:
-#   process.env.RELAYER_SDK_VERSION === ""   → use @fhevm/sdk (default)
-#   process.env.RELAYER_SDK_VERSION === "x"  → use @zama-fhe/relayer-sdk@x
-ENV RELAYER_SDK_VERSION=${RELAYER_SDK_VERSION}
 
 COPY --from=builder /lib/ /lib/
 COPY --from=builder /bin/ /bin/

@@ -4,11 +4,10 @@ use alloy::{
     providers::{Provider, mock::Asserter},
     rpc::types::Transaction,
     sol_types::{SolCall, SolValue},
-    transports::http::reqwest,
 };
 use connector_utils::tests::{
     rand::rand_address,
-    setup::{S3_CT_RFC023_BUCKET, s3_ct_attestation_signer},
+    setup::{S3_CT_BUCKET, s3_ct_attestation_signer},
 };
 use fhevm_gateway_bindings::{
     decryption::Decryption::{
@@ -18,10 +17,10 @@ use fhevm_gateway_bindings::{
 };
 use fhevm_host_bindings::acl::ACL::ACLInstance;
 use kms_worker::core::{
-    Config, CtAttestationConfig, DbEventPicker, DbKmsResponsePublisher, KmsWorker,
+    Config, DbEventPicker, DbKmsResponsePublisher, KmsWorker,
     event_processor::{
-        CiphertextManager, DbContextManager, DbEventProcessor, DecryptionProcessor,
-        KMSGenerationProcessor, KmsClient,
+        CiphertextManager, DbContextManager, DbEventProcessor, DecryptionProcessor, HostRpcClient,
+        KMSGenerationProcessor, KmsClient, ProtocolConfigProcessor,
     },
 };
 use sqlx::{Pool, Postgres};
@@ -36,49 +35,43 @@ pub fn mock_copro_registry_load(asserter: &Asserter, s3_url: &str) -> Address {
     asserter.push_success(&vec![copro_tx_sender].abi_encode());
     asserter.push_success(&U256::ONE.abi_encode());
     let coprocessor = Coprocessor {
-        s3BucketUrl: format!("{s3_url}/{S3_CT_RFC023_BUCKET}"),
+        s3BucketUrl: format!("{s3_url}/{S3_CT_BUCKET}"),
         ..Default::default()
     };
     asserter.push_success(&coprocessor.abi_encode());
     copro_tx_sender
 }
 
-pub async fn init_kms_worker<GP, HP>(
+pub async fn init_kms_worker<P>(
     config: Config,
-    gateway_provider: GP,
-    acl_contracts_mock: HashMap<u64, ACLInstance<HP>>,
+    provider: P,
+    acl_contracts_mock: HashMap<u64, ACLInstance<P>>,
     db: &Pool<Postgres>,
-) -> anyhow::Result<KmsWorker<DbEventPicker, DbEventProcessor<GP, HP, DbContextManager>>>
+) -> anyhow::Result<KmsWorker<DbEventPicker, DbEventProcessor<P, P, DbContextManager<P>>>>
 where
-    GP: Provider + Clone + 'static,
-    HP: Provider + Clone + 'static,
+    P: Provider + Clone + 'static,
 {
-    // The 24h refresh interval (see `testing_ct_attestation_config`) means the refresh task
-    // never fires during a test, so a throwaway token is fine here.
-    let ciphertext_manager = CiphertextManager::connect(
-        gateway_provider.clone(),
-        reqwest::Client::new(),
-        &config,
-        CancellationToken::new(),
-    )
-    .await?;
+    let ciphertext_manager =
+        CiphertextManager::connect(provider.clone(), &config, CancellationToken::new()).await?;
 
     let kms_client = KmsClient::connect(&config).await?;
     let event_picker = DbEventPicker::connect(db.clone(), &config).await?;
 
-    let context_manager = DbContextManager::new(db.clone());
-    let decryption_processor = DecryptionProcessor::new(
-        &config,
-        context_manager.clone(),
-        gateway_provider.clone(),
-        acl_contracts_mock,
-        ciphertext_manager,
-    );
-    let kms_generation_processor = KMSGenerationProcessor::new(&config, context_manager);
+    let context_manager = DbContextManager::new(db.clone(), &config, provider.clone());
+    let host_clients = acl_contracts_mock
+        .into_iter()
+        .map(|(chain_id, acl)| (chain_id, HostRpcClient::new(chain_id, acl)))
+        .collect();
+    let decryption_processor =
+        DecryptionProcessor::new(&config, provider.clone(), host_clients, ciphertext_manager);
+    let kms_generation_processor = KMSGenerationProcessor::new(&config);
+    let protocol_config_processor = ProtocolConfigProcessor::new(&config, provider.clone());
     let event_processor = DbEventProcessor::new(
         kms_client.clone(),
+        context_manager,
         decryption_processor,
         kms_generation_processor,
+        protocol_config_processor,
         config.max_decryption_attempts,
         db.clone(),
     );
@@ -87,13 +80,8 @@ where
     Ok(kms_worker)
 }
 
-pub fn testing_ct_attestation_config(enabled: bool) -> CtAttestationConfig {
-    CtAttestationConfig {
-        enabled,
-        registry_refresh: Duration::from_hours(24), // Avoid refreshing the registry during test
-        ..Default::default()
-    }
-}
+/// Registry refresh interval used by the tests: long enough that the refresh task never fires.
+pub const TEST_COPRO_REGISTRY_REFRESH: Duration = Duration::from_hours(24);
 
 pub fn create_mock_user_decryption_request_tx(
     tx_hash: FixedBytes<32>,
@@ -109,7 +97,8 @@ pub fn create_mock_user_decryption_request_tx(
     }
     .abi_encode();
 
-    // Mock get_transaction_by_hash response
+    // Mock get_transaction_by_hash response. `to` is the default Decryption contract address so
+    // the direct-target hardening check in `fetch_calldata` passes.
     serde_json::from_value(serde_json::json!({
         "hash": hex::encode(tx_hash.as_slice()),
         "nonce": "0x0",

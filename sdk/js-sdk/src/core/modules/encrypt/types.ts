@@ -10,6 +10,7 @@ import type {
 } from '../../types/fheEncryptionKey.js';
 import type { Prettify } from '../../types/utils.js';
 import type { FhevmRuntime } from '../../types/coreFhevmRuntime.js';
+import type { TfheVersion } from '../../../wasm/tfhe/TfheApi.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -23,7 +24,7 @@ WASM compilation (how to get WebAssembly.Module):
 
 | wasmUrl   | Result                                                         |
 |-----------|----------------------------------------------------------------|
-| defined   | Compile from URL (isomorphicCompileWasm)                       |
+| defined   | Verify and compile from URL (isomorphicCompileVerifiedWasm)    |
 | undefined | Compile from embedded base64 (isomorphicCompileWasmFromBase64) |
 
 Worker creation (how to spawn thread pool workers):
@@ -39,8 +40,12 @@ Worker creation (how to spawn thread pool workers):
 // initTfheModuleFunction
 ////////////////////////////////////////////////////////////////////////////////
 
+export type InitTfheModuleParameters = {
+  readonly tfheVersion: TfheVersion;
+};
+
 export type InitTfheModuleFunction = {
-  initTfheModule(): Promise<void>;
+  initTfheModule(parameters: InitTfheModuleParameters): Promise<void>;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -73,6 +78,25 @@ export type TfheModuleInfo = {
    * - `false` — multi-threading was requested but unavailable; fell back to single-threaded.
    */
   readonly threadsAvailable: boolean | undefined;
+
+  /**
+   * Current size of the TFHE WASM linear memory.
+   * This is the size of the underlying `WebAssembly.Memory` buffer, not live heap usage.
+   */
+  readonly memory: {
+    /**
+     * Current memory buffer size in bytes.
+     */
+    readonly byteLength: number;
+    /**
+     * Current memory buffer size in 64 KiB WASM pages.
+     */
+    readonly pages: number;
+  };
+};
+
+export type GetTfheModuleInfoParameters = {
+  readonly tfheVersion: TfheVersion;
 };
 
 export type GetTfheModuleInfoReturnType = TfheModuleInfo | undefined;
@@ -82,7 +106,7 @@ export type GetTfheModuleInfoFunction = {
    * Returns {@link TfheModuleInfo} when the module is initialized,
    * or `undefined` if the module has not completed initialization.
    */
-  getTfheModuleInfo(): GetTfheModuleInfoReturnType;
+  getTfheModuleInfo(parameters: GetTfheModuleInfoParameters): Promise<GetTfheModuleInfoReturnType>;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -91,6 +115,7 @@ export type GetTfheModuleInfoFunction = {
 
 export type ParseTFHEProvenCompactCiphertextListParameters = {
   readonly ciphertextWithZkProof: Uint8Array | string;
+  readonly tfheVersion: TfheVersion;
 };
 
 export type ParseTFHEProvenCompactCiphertextListReturnType = {
@@ -113,11 +138,13 @@ export type BuildWithProofPackedParameters = {
   readonly typedValues: TypedValue[];
   readonly metaData: Uint8Array;
   readonly extraData: BytesHex;
+  readonly tfheVersion: TfheVersion;
 };
 
 export type BuildWithProofPackedReturnType = {
   readonly ciphertextWithZKProofBytes: Uint8Array;
   readonly extraData: BytesHex;
+  readonly tfheVersion: TfheVersion;
 };
 
 export type BuildWithProofPackedModuleFunction = {
@@ -130,6 +157,7 @@ export type BuildWithProofPackedModuleFunction = {
 
 export type SerializeFheEncryptionKeyParameters = {
   readonly fheEncryptionKey: FheEncryptionKeyWasm;
+  readonly tfheVersion: TfheVersion;
 };
 
 export type SerializeFheEncryptionKeyReturnType = FheEncryptionKeyBytes;
@@ -146,6 +174,7 @@ export type SerializeFheEncryptionKeyModuleFunction = {
 
 export type SerializeFheEncryptionPublicKeyParameters = {
   readonly publicKey: FheEncryptionPublicKey;
+  readonly tfheVersion: TfheVersion;
 };
 
 export type SerializeFheEncryptionPublicKeyReturnType = FheEncryptionPublicKeyBytes;
@@ -162,6 +191,7 @@ export type SerializeFheEncryptionPublicKeyModuleFunction = {
 
 export type SerializeFheEncryptionCrsParameters = {
   readonly crs: FheEncryptionCrs;
+  readonly tfheVersion: TfheVersion;
 };
 
 export type SerializeFheEncryptionCrsReturnType = FheEncryptionCrsBytes;
@@ -178,6 +208,7 @@ export type SerializeFheEncryptionCrsModuleFunction = {
 
 export type DeserializeFheEncryptionPublicKeyParameters = {
   readonly publicKeyBytes: FheEncryptionPublicKeyBytes;
+  readonly tfheVersion: TfheVersion;
 };
 
 export type DeserializeFheEncryptionPublicKeyReturnType = FheEncryptionPublicKey;
@@ -194,6 +225,7 @@ export type DeserializeFheEncryptionPublicKeyModuleFunction = {
 
 export type DeserializeFheEncryptionCrsParameters = {
   readonly crsBytes: FheEncryptionCrsBytes;
+  readonly tfheVersion: TfheVersion;
 };
 
 export type DeserializeFheEncryptionCrsReturnType = FheEncryptionCrs;

@@ -6,8 +6,9 @@ import {MulticallUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/Mu
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
-import {fhevmExecutorAdd, pauserSetAdd} from "../addresses/FHEVMHostAddresses.sol";
+import {confidentialBridgeAdd, fhevmExecutorAdd, pauserSetAdd} from "../addresses/FHEVMHostAddresses.sol";
 import {IPauserSet} from "./interfaces/IPauserSet.sol";
+import {IConfidentialBridge} from "./bridge/interfaces/IConfidentialBridge.sol";
 
 import {ACLEvents} from "./ACLEvents.sol";
 
@@ -162,6 +163,9 @@ contract ACL is
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
 
+    /// @notice ConfidentialBridge address.
+    address private constant CONFIDENTIAL_BRIDGE_ADDRESS = confidentialBridgeAdd;
+
     /// @notice FHEVMExecutor address.
     address private constant FHEVM_EXECUTOR_ADDRESS = fhevmExecutorAdd;
 
@@ -203,6 +207,19 @@ contract ACL is
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
     function reinitializeV5() public virtual reinitializer(REINITIALIZER_VERSION) {}
+
+    /**
+     * @notice Accepts pending ownership and re-syncs the ConfidentialBridge's LayerZero
+     *         endpoint delegate to the new owner in the same transaction.
+     */
+    function acceptOwnership() public virtual override {
+        super.acceptOwnership();
+
+        // A bridge address is null if and only if there is no bridge on this chain, by deployment convention.
+        if (CONFIDENTIAL_BRIDGE_ADDRESS != address(0)) {
+            IConfidentialBridge(CONFIDENTIAL_BRIDGE_ADDRESS).syncDelegate();
+        }
+    }
 
     /**
      * @notice Allows the use of `handle` for the address `account`.
@@ -253,7 +270,7 @@ contract ACL is
      * @notice Invalidates decryption signatures before a given timestamp for the caller.
      * @param timestamp Oldest timestamp that remains valid. Passing 0 resolves to the current block timestamp.
      */
-    function invalidateDecryptionSignaturesBefore(uint256 timestamp) external virtual whenNotPaused {
+    function invalidateDecryptionSignaturesBefore(uint256 timestamp) external virtual {
         uint256 resolvedTimestamp = timestamp == 0 ? block.timestamp : timestamp;
         ACLStorage storage $ = _getACLStorage();
         if (resolvedTimestamp <= $.decryptionSignatureInvalidatedBefore[msg.sender]) {
@@ -270,13 +287,13 @@ contract ACL is
     /**
      * @notice Allows the use of `handle` by address `account` for this transaction.
      * @dev The caller must not be in the deny list and must be allowed to use `handle` for allowTransient() to succeed.
-     *      If not, allowTransient() reverts. The Coprocessor contract can always `allowTransient`,
+     *      If not, allowTransient() reverts. The FHEVMExecutor and ConfidentialBridge contracts can always `allowTransient`,
      *      contrarily to `allow`.
      * @param handle Handle.
      * @param account Address of the account.
      */
     function allowTransient(bytes32 handle, address account) public virtual whenNotPaused {
-        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) {
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS && msg.sender != CONFIDENTIAL_BRIDGE_ADDRESS) {
             if (isAccountDenied(msg.sender)) {
                 revert SenderDenied(msg.sender);
             }
@@ -459,6 +476,17 @@ contract ACL is
             isAllowedTransient := tload(key)
         }
         return isAllowedTransient;
+    }
+
+    /**
+     * @notice Getter function for the ConfidentialBridge contract address.
+     * @dev    Returns the null address (address(0)) when no ConfidentialBridge was deployed on
+     *         this host chain, so callers can use a null result to detect the bridge's absence.
+     * @return confidentialBridgeAddress Address of the ConfidentialBridge contract, or the null
+     *         address if no ConfidentialBridge is deployed on this host chain.
+     */
+    function getConfidentialBridgeAddress() public view virtual returns (address) {
+        return CONFIDENTIAL_BRIDGE_ADDRESS;
     }
 
     /**

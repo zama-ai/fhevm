@@ -1,0 +1,1167 @@
+//! Consensus Detector (`consensus-detector`) — watches operator S3 buckets for
+//! unanimous state-hash agreement during an active GCS blue-green upgrade.
+//!
+//! At startup the service queries the on-chain `GatewayConfig` contract for the
+//! set of coprocessor signers and resolves each one's `s3BucketUrl`. That URL
+//! list is the input to the consensus poll.
+//!
+//! Consensus runs **per-block and eagerly** over two independent tracks, each
+//! keyed by its own `chain_id` in S3:
+//!
+//!   * **host chain** — for each finalized, fully-computed, *non-trivial* block
+//!     in `[start_block, end_block]` (one carrying a real FHE op, not only
+//!     `trivialEncrypt`), poll every operator's per-block state-hash blob. A chain
+//!     that finalizes the window with no non-trivial op anchors on any block
+//!     (readiness); at least one non-trivial anchor is still required across chains.
+//!   * **Gateway inputs** — likewise for each sealed Gateway block carrying
+//!     re-randomized ZK-proof input ciphertexts.
+//!
+//! The poll runs on a `commitment_poll_interval` ticker (and opportunistically
+//! on `new_block` / `gw_new_block` notifications), caching per-operator bytes so
+//! each pass only re-requests operators it hasn't heard from — a slow operator
+//! simply fills in on a later tick. The FIRST block on a track whose blob is
+//! unanimous across all operators anchors that track: the service stops polling
+//! it and emits a proposal-scoped unanimity event — and
+//! re-emits it each pass until the window closes, so a controller that missed the
+//! NOTIFY still latches. One unanimous non-trivial block is a sufficient anchor
+//! because a determinism-breaking upgrade is systematic — any such block reveals
+//! it (RFC 021).
+//!
+//! `unanimity_consensus` is consumed only by the upgrade-controller, which
+//! authorizes cutover once every host track and the Gateway track have anchored,
+//! with at least one host anchor on a non-trivial block.
+//!
+//! **Timeout.** If a track is still un-anchored `commitment_timeout` after `end_block`,
+//! `unanimity_consensus_timeout` is emitted (and re-emitted each pass) until the
+//! upgrade-controller rolls the dry-run back.
+
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use alloy::network::Ethereum;
+use alloy::primitives::Address;
+use alloy::providers::Provider;
+use fhevm_engine_common::database::GCS_SCHEMA_QUOTED;
+use fhevm_engine_common::utils::DatabaseURL;
+use serde::{Deserialize, Serialize};
+use sqlx::{postgres::PgListener, Executor, Pool, Postgres};
+use thiserror::Error;
+use tokio::select;
+use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
+use tracing::{debug, error, info, warn, Level};
+
+pub mod s3;
+pub mod state_hash;
+
+use crate::s3::S3Service;
+use crate::state_hash::state_hash_key;
+
+/// pg_notify channels this service listens on.
+pub const NEW_BLOCK_CHANNEL: &str = "event_new_block";
+pub const NEW_OPERATOR_ADDED_CHANNEL: &str = "event_new_operator_added";
+/// Fired by gw-listener on each ingested Gateway block (payload = the new
+/// Gateway tip). Drives the per-Gateway-block consensus track.
+pub const GW_NEW_BLOCK_CHANNEL: &str = fhevm_engine_common::gcs_activation::EVENT_GW_NEW_BLOCK;
+
+/// pg_notify channels this service emits.
+///
+/// `unanimity_consensus` is consumed only by the upgrade procedure — no other
+/// service should treat it as a generic "agreement" signal.
+pub const UNANIMITY_CONSENSUS_CHANNEL: &str = "event_unanimity_consensus";
+/// Emitted (and re-emitted each poll until the row is rolled back) when the host
+/// reaches `end_block` without both tracks anchoring within `commitment_timeout`.
+/// Consumed by the upgrade-controller.
+pub const UNANIMITY_CONSENSUS_TIMEOUT_CHANNEL: &str = "event_unanimity_consensus_timeout";
+
+/// `SupportedFheOperations::FheTrivialEncrypt` opcode (fhevm-engine-common
+/// `types.rs`), as stored in `computations.fhe_operation`. trivialEncrypt
+/// outputs are deterministic across operators, so a block whose only FHE ops are
+/// trivial encrypts carries no consensus signal and is not used as an anchor.
+const FHE_TRIVIAL_ENCRYPT_OPCODE: i16 = 24;
+
+/// Cap on how many earliest candidate blocks a track polls per pass. We only
+/// need ONE unanimous block to anchor, so a small window is enough; a few (not
+/// exactly one) gives robustness if a single block stalls on one operator.
+const MAX_ANCHOR_CANDIDATES: i64 = 8;
+
+#[derive(Debug, Clone)]
+pub struct Config {
+    pub service_name: String,
+    pub database_url: DatabaseURL,
+    pub database_pool_size: u32,
+    /// On-chain `GatewayConfig` contract address. Queried at startup to
+    /// resolve the operator S3 buckets.
+    pub gateway_config_address: Address,
+    pub log_level: Level,
+    /// Fallback poll interval used while waiting for notifications so a missed
+    /// NOTIFY (e.g. dropped connection) still gets re-checked eventually.
+    pub poll_interval: Duration,
+    /// How often to re-call `fetch_state_commitments` while waiting for
+    /// unanimity.
+    pub commitment_poll_interval: Duration,
+    /// Hard cap on how long we wait for unanimity before giving up and
+    /// emitting `unanimity_consensus_timeout`.
+    pub commitment_timeout: Duration,
+    /// This operator's S3 bucket. `None` disables GCS uploads (read-only).
+    pub my_bucket: Option<String>,
+    /// S3 endpoint override (e.g. `http://minio:9000`).
+    pub s3_endpoint: Option<String>,
+    /// Max pending blocks processed per state_hash pass.
+    pub state_hash_batch_limit: i64,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            service_name: "consensus-detector".to_owned(),
+            database_url: DatabaseURL::default(),
+            database_pool_size: 4,
+            gateway_config_address: Address::ZERO,
+            log_level: Level::INFO,
+            poll_interval: Duration::from_secs(30),
+            commitment_poll_interval: Duration::from_secs(5),
+            commitment_timeout: Duration::from_secs(60),
+            my_bucket: None,
+            s3_endpoint: None,
+            state_hash_batch_limit: 256,
+        }
+    }
+}
+
+/// Payload of `new_block` notifications.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct NewBlockPayload {
+    pub chain_id: i64,
+    pub block_height: i64,
+    pub block_hash: String,
+}
+
+/// Payload emitted on `unanimity_consensus` / `unanimity_consensus_timeout`.
+#[derive(Debug, Clone, Serialize)]
+struct UnanimityPayload<'a> {
+    proposal_id: &'a [u8],
+    proposal_block: i64,
+    chain_id: i64,
+    block_height: i64,
+    block_hash: &'a str,
+}
+
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("database error: {0}")]
+    Db(#[from] sqlx::Error),
+
+    #[error("invalid notification payload: {0}")]
+    Payload(String),
+
+    #[error("gateway RPC error: {0}")]
+    Gateway(String),
+}
+
+/// HTTP-GETs `state_hash` for `(chain_id, block_height)` from each opera
+/// whose slot is `None`, concurrently. Slots already populated by a prior
+/// attempt are left untouched, so retries only re-request the missing
+/// operators. Failure modes (404 / 5xx / transport) are logged distinctly
+/// so "peer hasn't uploaded yet" is visually separable from "peer's S3 is
+/// flaky".
+async fn fetch_state_commitments(
+    http: &reqwest::Client,
+    s3_urls: &[String],
+    chain_id: i64,
+    block_height: i64,
+    slots: &mut [Option<Vec<u8>>],
+) {
+    debug_assert_eq!(s3_urls.len(), slots.len());
+    let key = state_hash_key(chain_id, block_height);
+    let missing: Vec<usize> = slots
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, slot)| slot.is_none().then_some(idx))
+        .collect();
+    if missing.is_empty() {
+        return;
+    }
+    let fetches = missing.into_iter().map(|idx| {
+        let url = s3_urls[idx].clone();
+        let path = format!("{}/{key}", url.trim_end_matches('/'));
+        async move {
+            let bytes = match http.get(&path).send().await {
+                Ok(r) => {
+                    let status = r.status();
+                    if status.is_success() {
+                        match r.bytes().await {
+                            Ok(b) => Some(b.to_vec()),
+                            Err(e) => {
+                                warn!(operator = %url, error = %e, "operator body read failed");
+                                None
+                            }
+                        }
+                    } else if status == reqwest::StatusCode::NOT_FOUND {
+                        debug!(operator = %url, "operator state_hash not yet uploaded");
+                        None
+                    } else if status.is_server_error() {
+                        warn!(operator = %url, %status, "operator S3 server error");
+                        None
+                    } else {
+                        warn!(operator = %url, %status, "operator returned unexpected status");
+                        None
+                    }
+                }
+                Err(e) => {
+                    warn!(operator = %url, error = %e, "operator request failed (timeout/transport)");
+                    None
+                }
+            };
+            (idx, bytes)
+        }
+    });
+    let results = futures::future::join_all(fetches).await;
+    for (idx, bytes) in results {
+        if bytes.is_some() {
+            slots[idx] = bytes;
+        }
+    }
+}
+
+/// Returns true when every slot is `Some` and all bytes are identical.
+/// Empty / partially filled slot sets return false.
+fn all_some_and_identical(slots: &[Option<Vec<u8>>]) -> bool {
+    let mut iter = slots.iter();
+    let Some(Some(first)) = iter.next() else {
+        return false;
+    };
+    iter.all(|s| matches!(s, Some(b) if b == first))
+}
+
+/// True iff every operator has responded (no `None` slots). Distinguishes
+/// "every operator answered but they disagree" (an upgrade-blocking divergence)
+/// from "still waiting for a slow operator" — the two look identical to
+/// [`all_some_and_identical`], which returns false for both.
+fn all_slots_filled(slots: &[Option<Vec<u8>>]) -> bool {
+    !slots.is_empty() && slots.iter().all(Option::is_some)
+}
+
+/// An upgrade attempt and its per-chain windows:
+/// `(proposal_id, proposal_block, [(chain_id, start, end), ...])`.
+pub(crate) type HostWindows = (Vec<u8>, i64, Vec<(i64, i64, i64)>);
+
+/// Returns the complete per-chain window set for the active GCS dry-run.
+/// `None` otherwise. Proposal-level fields must agree across every row.
+pub(crate) async fn active_upgrade_windows<'e, E>(executor: E) -> Result<Option<HostWindows>, Error>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    type ActiveWindowRow = (
+        String,
+        Option<Vec<u8>>,
+        Option<i64>,
+        i64,
+        Option<i64>,
+        Option<i64>,
+    );
+    let rows: Vec<ActiveWindowRow> = sqlx::query_as(
+        "SELECT state, proposal_id, proposal_block,
+                host_chain_id, start_block, end_block
+           FROM upgrade_state
+          WHERE stack_role = 'GCS' AND status = 'in_progress'
+          ORDER BY host_chain_id",
+    )
+    .fetch_all(executor)
+    .await?;
+
+    let Some((state, proposal_id, proposal_block, _, _, _)) = rows.first() else {
+        return Ok(None);
+    };
+    if !matches!(state.as_str(), "UpgradeActivated" | "DryRunStarted") {
+        debug!(state = %state, "GCS not in UpgradeActivated/DryRunStarted — ignoring");
+        return Ok(None);
+    }
+    let (Some(proposal_id), Some(proposal_block)) = (proposal_id.as_ref(), *proposal_block) else {
+        return Err(Error::Payload(
+            "active GCS proposal is missing proposal_id or proposal_block".to_owned(),
+        ));
+    };
+
+    let mut windows = Vec::with_capacity(rows.len());
+    for (row_state, row_id, row_block, chain_id, start, end) in &rows {
+        if row_state != state
+            || row_id.as_deref() != Some(proposal_id.as_slice())
+            || *row_block != Some(proposal_block)
+        {
+            return Err(Error::Payload(
+                "active GCS upgrade_state rows do not describe one proposal".to_owned(),
+            ));
+        }
+        let (Some(start), Some(end)) = (*start, *end) else {
+            return Err(Error::Payload(format!(
+                "active GCS chain {chain_id} is missing its evaluation window"
+            )));
+        };
+        windows.push((*chain_id, start, end));
+    }
+    Ok(Some((proposal_id.clone(), proposal_block, windows)))
+}
+
+/// Per-track eager consensus state. We only need ONE unanimous block to anchor
+/// a track (RFC 021: a determinism-breaking change is systematic, so any
+/// non-trivial block reveals it), after which we stop polling but re-emit the
+/// anchor each pass (so a controller that missed the NOTIFY still latches).
+/// `partial` caches per-operator bytes per candidate block, so each poll only
+/// re-requests operators we haven't heard from — a slow operator fills in later.
+struct ConsensusTrack {
+    chain_id: i64,
+    /// The anchored block once unanimity is reached; `None` until then.
+    anchored: Option<i64>,
+    /// Whether the anchor block carried a non-trivial FHE op.
+    anchored_nontrivial: bool,
+    partial: HashMap<i64, Vec<Option<Vec<u8>>>>,
+    /// Blocks we've already logged a divergence warning for. State hashes are
+    /// deterministic per block, so a divergence is permanent — warn once per
+    /// block instead of re-warning on every poll tick.
+    divergence_warned: HashSet<i64>,
+}
+
+impl ConsensusTrack {
+    fn new(chain_id: i64) -> Self {
+        Self {
+            chain_id,
+            anchored: None,
+            anchored_nontrivial: false,
+            partial: HashMap::new(),
+            divergence_warned: HashSet::new(),
+        }
+    }
+
+    /// Clear state for a fresh upgrade window.
+    fn reset(&mut self) {
+        self.anchored = None;
+        self.anchored_nontrivial = false;
+        self.partial.clear();
+        self.divergence_warned.clear();
+    }
+}
+
+/// Poll `candidates` for one track: top up each candidate's cached slots and, on
+/// the FIRST block that reaches unanimity across all operators, record it as the
+/// track's anchor. No-op once anchored, or with no operators/candidates.
+async fn poll_track(
+    http: &reqwest::Client,
+    urls: &[String],
+    track: &mut ConsensusTrack,
+    candidates: &[i64],
+    nontrivial: bool,
+) -> Result<(), Error> {
+    if track.anchored.is_some() || urls.is_empty() {
+        return Ok(());
+    }
+    for &block in candidates {
+        let slots = track
+            .partial
+            .entry(block)
+            .or_insert_with(|| vec![None; urls.len()]);
+        // Operator-set size changed (new_operator_added) — restart this block's
+        // slots so indices line up with the current URL list.
+        if slots.len() != urls.len() {
+            *slots = vec![None; urls.len()];
+        }
+        fetch_state_commitments(http, urls, track.chain_id, block, slots).await;
+        if all_some_and_identical(slots) {
+            info!(
+                chain_id = track.chain_id,
+                block,
+                operator_count = urls.len(),
+                "unanimity anchor reached"
+            );
+            // consensus_pass emits (and re-emits) the anchor; here we just record it.
+            track.anchored = Some(block);
+            track.anchored_nontrivial = nontrivial;
+            track.partial.clear();
+            return Ok(());
+        }
+        // Every operator responded but their state hashes disagree — the exact
+        // determinism divergence the dry run exists to catch. Without this the
+        // block stays a non-anchor forever and a stuck upgrade is
+        // indistinguishable from one still waiting on a slow operator. Warn once
+        // per block (divergence is permanent) and keep polling other candidates.
+        if all_slots_filled(slots) && track.divergence_warned.insert(block) {
+            warn!(
+                chain_id = track.chain_id,
+                block,
+                operator_count = urls.len(),
+                "state-hash divergence — all operators responded but hashes disagree; \
+                 this block cannot anchor consensus"
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Host-chain blocks eligible to anchor consensus: those in `[start, end]` that
+/// have a locally produced `state_hash` (⇒ finalized + fully computed, per the
+/// state_hash worker) AND carry at least one non-trivial, successful FHE op
+/// (`fhe_operation <> trivialEncrypt`). Trivial-only / empty blocks are excluded
+/// — their ciphertexts are deterministic across operators, so consensus on them
+/// is vacuous. Capped to the earliest [`MAX_ANCHOR_CANDIDATES`].
+async fn host_consensus_candidates(
+    pool: &Pool<Postgres>,
+    host_chain_id: i64,
+    start: i64,
+    end: i64,
+    require_nontrivial: bool,
+) -> Result<Vec<i64>, Error> {
+    let nontrivial = if require_nontrivial {
+        format!(
+            "AND EXISTS (SELECT 1 FROM {GCS_SCHEMA_QUOTED}.computations c
+                 WHERE c.host_chain_id = sh.chain_id AND c.block_number = sh.block_number
+                   AND c.is_error = false AND c.fhe_operation <> {FHE_TRIVIAL_ENCRYPT_OPCODE})"
+        )
+    } else {
+        String::new()
+    };
+    let sql = format!(
+        "SELECT sh.block_number
+           FROM {GCS_SCHEMA_QUOTED}.state_hash sh
+          WHERE sh.chain_id = $1
+            AND sh.block_number >= $2 AND sh.block_number <= $3
+            {nontrivial}
+          ORDER BY sh.block_number
+          LIMIT {MAX_ANCHOR_CANDIDATES}"
+    );
+    let rows: Vec<(i64,)> = sqlx::query_as(&sql)
+        .bind(host_chain_id)
+        .bind(start)
+        .bind(end)
+        .fetch_all(pool)
+        .await?;
+    Ok(rows.into_iter().map(|(b,)| b).collect())
+}
+
+/// Latest finalized GCS host-chain block for `host_chain_id`, or -1 if none.
+async fn gcs_host_watermark(pool: &Pool<Postgres>, host_chain_id: i64) -> Result<i64, Error> {
+    let sql = format!(
+        "SELECT COALESCE(
+                  (SELECT MAX(block_number) FROM {GCS_SCHEMA_QUOTED}.host_chain_blocks_valid
+                    WHERE chain_id = $1 AND block_status = 'finalized'),
+                  -1
+                )"
+    );
+    let (watermark,): (i64,) = sqlx::query_as(&sql)
+        .bind(host_chain_id)
+        .fetch_one(pool)
+        .await?;
+    Ok(watermark)
+}
+
+/// True once every block in `[start, end]` has a `state_hash`: counts the hashes and
+/// compares to the window size, so a gap below a hashed block still fails.
+async fn gcs_window_fully_hashed(
+    pool: &Pool<Postgres>,
+    host_chain_id: i64,
+    start: i64,
+    end: i64,
+) -> Result<bool, Error> {
+    let sql = format!(
+        "SELECT (SELECT COUNT(*) FROM {GCS_SCHEMA_QUOTED}.state_hash
+                  WHERE chain_id = $1 AND block_number BETWEEN $2 AND $3) >= ($3 - $2 + 1)"
+    );
+    let (ok,): (bool,) = sqlx::query_as(&sql)
+        .bind(host_chain_id)
+        .bind(start)
+        .bind(end)
+        .fetch_one(pool)
+        .await?;
+    Ok(ok)
+}
+
+/// Timeout state machine for the tracked window.
+enum WindowTimeout {
+    /// No deadline running.
+    NotArmed,
+    /// Give up at this instant, then re-emit each poll until the row is rolled back.
+    Armed(Instant),
+}
+
+struct WindowState {
+    /// Tracked proposal + per-chain window set; a change resets every track.
+    tracked_window: Option<HostWindows>,
+    timeout: WindowTimeout,
+    /// Stall detection: `chain_id -> (watermark, last-advance instant)`; reset with the window set.
+    host_progress: HashMap<i64, (i64, Instant)>,
+}
+
+/// Returns true if the timeout clock should start: either every chain finished its
+/// window, or one chain made no progress for `commitment_timeout` (a stuck listener
+/// that would otherwise leave the upgrade running forever). Also updates each chain's
+/// recorded progress.
+fn should_arm_timeout(
+    windows: &[(i64, i64, i64)],
+    watermarks: &HashMap<i64, i64>,
+    progress: &mut HashMap<i64, (i64, Instant)>,
+    now: Instant,
+    commitment_timeout: Duration,
+) -> bool {
+    let mut all_reached = true;
+    let mut stalled = false;
+    for &(chain_id, _start, end) in windows {
+        let watermark = watermarks.get(&chain_id).copied().unwrap_or(-1);
+        let entry = progress.entry(chain_id).or_insert((watermark, now));
+        if watermark > entry.0 {
+            *entry = (watermark, now);
+        }
+        if watermark < end {
+            all_reached = false;
+            stalled |= now.duration_since(entry.1) >= commitment_timeout;
+        }
+    }
+    all_reached || stalled
+}
+
+/// Host side is ready: every chain anchored and at least one anchor is non-trivial.
+fn host_consensus_ready(host_tracks: &HashMap<i64, ConsensusTrack>) -> bool {
+    !host_tracks.is_empty()
+        && host_tracks.values().all(|t| t.anchored.is_some())
+        && host_tracks.values().any(|t| t.anchored_nontrivial)
+}
+
+/// `(chain_id, block)` anchors to notify: host anchors only once `host_consensus_ready`
+/// holds, plus the Gateway anchor whenever it is set.
+fn unanimity_notifications(
+    host_tracks: &HashMap<i64, ConsensusTrack>,
+    gateway: &ConsensusTrack,
+) -> Vec<(i64, i64)> {
+    let mut out = Vec::new();
+    if host_consensus_ready(host_tracks) {
+        for t in host_tracks.values() {
+            if let Some(block) = t.anchored {
+                out.push((t.chain_id, block));
+            }
+        }
+    }
+    if let Some(block) = gateway.anchored {
+        out.push((gateway.chain_id, block));
+    }
+    out
+}
+
+/// One pass over every host-chain track plus the Gateway track: resets tracks on
+/// a window-set change, polls each chain's + the Gateway's candidates, re-emits
+/// anchors, and — once every host chain hit end_block without unanimity — emits a
+/// single timeout past the deadline.
+async fn consensus_pass(
+    pool: &Pool<Postgres>,
+    http: &reqwest::Client,
+    s3_urls: &Arc<RwLock<Vec<String>>>,
+    host_tracks: &mut HashMap<i64, ConsensusTrack>,
+    gateway: &mut ConsensusTrack,
+    window_state: &mut WindowState,
+    commitment_timeout: Duration,
+) -> Result<(), Error> {
+    let active = active_upgrade_windows(pool).await?;
+    if window_state.tracked_window != active {
+        // Window set changed: reset all tracks + timeout so no prior anchor carries over.
+        host_tracks.clear();
+        gateway.reset();
+        window_state.timeout = WindowTimeout::NotArmed;
+        window_state.host_progress.clear();
+        window_state.tracked_window = active.clone();
+    }
+    let Some((proposal_id, proposal_block, windows)) = active else {
+        return Ok(());
+    };
+
+    // Snapshot the URL list so every track sees a stable operator set this pass.
+    let urls = s3_urls.read().await.clone();
+
+    // Host tracks: one per chain window, each anchoring independently.
+    for &(chain_id, start, end) in &windows {
+        let track = host_tracks
+            .entry(chain_id)
+            .or_insert_with(|| ConsensusTrack::new(chain_id));
+        if track.anchored.is_none() {
+            let candidates = host_consensus_candidates(pool, chain_id, start, end, true).await?;
+            poll_track(http, &urls, track, &candidates, true).await?;
+            // No FHE op in the whole window: let this chain anchor on any block so it
+            // doesn't block the upgrade. Require every window block hashed (no gap), so a
+            // finalized-but-unfinished non-trivial block can't be mistaken for quiet.
+            if track.anchored.is_none()
+                && candidates.is_empty()
+                && gcs_window_fully_hashed(pool, chain_id, start, end).await?
+            {
+                let readiness =
+                    host_consensus_candidates(pool, chain_id, start, end, false).await?;
+                poll_track(http, &urls, track, &readiness, false).await?;
+            }
+        }
+    }
+
+    // Gateway track: needs gw_start_block + the gw-listener tip (sealed blocks).
+    if gateway.anchored.is_none() {
+        if let (Some(gw_start), Some(gw_tip)) = (
+            state_hash::gw_start_block(pool).await?,
+            state_hash::gw_listener_tip(pool).await?,
+        ) {
+            let candidates =
+                pending_gw_consensus_blocks(pool, gateway.chain_id, gw_start, gw_tip).await?;
+            poll_track(http, &urls, gateway, &candidates, true).await?;
+        }
+    }
+
+    // Re-emit each anchor every pass so a controller that missed the NOTIFY still
+    // latches. Host anchors are withheld until host_consensus_ready holds (all host
+    // anchored + >=1 non-trivial), so the controller can't cut over on an all-quiet
+    // fleet; the Gateway anchor is independent.
+    for (chain_id, block) in unanimity_notifications(host_tracks, gateway) {
+        notify_unanimity(
+            pool,
+            UNANIMITY_CONSENSUS_CHANNEL,
+            &proposal_id,
+            proposal_block,
+            &NewBlockPayload {
+                chain_id,
+                block_height: block,
+                block_hash: String::new(),
+            },
+        )
+        .await?;
+    }
+
+    // One global deadline, armed once every host chain reached its end_block
+    // without agreeing, so the upgrade can be rerun.
+    let all_host_anchored =
+        !host_tracks.is_empty() && host_tracks.values().all(|t| t.anchored.is_some());
+    let both_anchored = host_consensus_ready(host_tracks) && gateway.anchored.is_some();
+    if !both_anchored {
+        let max_end = windows.iter().map(|&(_, _, end)| end).max().unwrap_or(0);
+        match window_state.timeout {
+            WindowTimeout::NotArmed => {
+                let mut watermarks = HashMap::with_capacity(windows.len());
+                for &(chain_id, _, _) in &windows {
+                    watermarks.insert(chain_id, gcs_host_watermark(pool, chain_id).await?);
+                }
+                let now = Instant::now();
+                if should_arm_timeout(
+                    &windows,
+                    &watermarks,
+                    &mut window_state.host_progress,
+                    now,
+                    commitment_timeout,
+                ) {
+                    window_state.timeout = WindowTimeout::Armed(now + commitment_timeout);
+                    info!(
+                        chains = windows.len(),
+                        max_end_block = max_end,
+                        timeout_secs = commitment_timeout.as_secs(),
+                        "arming consensus timeout (all chains reached end_block, or a host listener stalled)"
+                    );
+                }
+            }
+            // Still armed past the deadline — (re)emit the timeout.
+            WindowTimeout::Armed(deadline) if Instant::now() >= deadline => {
+                let mut unanchored: Vec<i64> = host_tracks
+                    .iter()
+                    .filter(|(_, t)| t.anchored.is_none())
+                    .map(|(&c, _)| c)
+                    .collect();
+                unanchored.sort_unstable();
+                if gateway.anchored.is_none() {
+                    unanchored.push(gateway.chain_id);
+                }
+                warn!(
+                    chains = windows.len(),
+                    max_end_block = max_end,
+                    all_host_anchored,
+                    nontrivial_anchored = host_tracks.values().any(|t| t.anchored_nontrivial),
+                    gateway_anchored = gateway.anchored.is_some(),
+                    unanchored_chains = ?unanchored,
+                    "consensus timeout elapsed without unanimity on all tracks — emitting event_unanimity_consensus_timeout"
+                );
+                notify_unanimity(
+                    pool,
+                    UNANIMITY_CONSENSUS_TIMEOUT_CHANNEL,
+                    &proposal_id,
+                    proposal_block,
+                    &NewBlockPayload {
+                        chain_id: unanchored.first().copied().unwrap_or(0),
+                        block_height: max_end,
+                        block_hash: String::new(),
+                    },
+                )
+                .await?;
+            }
+            WindowTimeout::Armed(_) => {}
+        }
+    }
+
+    Ok(())
+}
+
+async fn notify_unanimity(
+    pool: &Pool<Postgres>,
+    channel: &str,
+    proposal_id: &[u8],
+    proposal_block: i64,
+    payload: &NewBlockPayload,
+) -> Result<(), Error> {
+    let body = serde_json::to_string(&UnanimityPayload {
+        proposal_id,
+        proposal_block,
+        chain_id: payload.chain_id,
+        block_height: payload.block_height,
+        block_hash: &payload.block_hash,
+    })
+    .map_err(|e| Error::Payload(e.to_string()))?;
+
+    // pg_notify is a function call, not a statement — bind the channel and payload.
+    sqlx::query("SELECT pg_notify($1, $2)")
+        .bind(channel)
+        .bind(body)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Handle a `new_operator_added` notification.
+///
+/// Placeholder — the intended behaviour is to re-fetch the operator signer set
+/// from `GatewayConfig` (via `S3Service::refresh_signer_urls`) and update the
+/// shared URL list. The wiring is left here so the refresh can be turned on
+/// in a follow-up without changing the dispatch surface.
+async fn handle_new_operator_added<P>(
+    s3_urls: &Arc<RwLock<Vec<String>>>,
+    s3_service: &S3Service<P>,
+    raw_payload: &str,
+) -> Result<(), Error>
+where
+    P: Provider<Ethereum>,
+{
+    info!(
+        payload = raw_payload,
+        "new_operator_added received (placeholder — operator set refresh not yet wired)"
+    );
+    // Suppress unused-variable warnings without dropping the wiring.
+    let _ = (s3_urls, s3_service);
+    Ok(())
+}
+
+/// Sealed Gateway blocks for which this operator has already produced a local
+/// `state_hash` row — the candidate set for the Gateway consensus poll. Bounded
+/// to `[gw_start, gw_tip)` so only sealed blocks are polled, and capped to the
+/// earliest [`MAX_ANCHOR_CANDIDATES`]. The poll reads every operator's S3 blob,
+/// including our own; our own object is uploaded only for blocks we've hashed
+/// locally (see `upload_pending_gw_state_hashes`). So a block with no local
+/// `state_hash` row is one we'll never upload — our own slot stays empty and
+/// unanimity is unreachable — hence restricting candidates to locally-produced
+/// rows avoids polling peers for a block we ourselves can't contribute to.
+async fn pending_gw_consensus_blocks(
+    pool: &Pool<Postgres>,
+    gw_chain_id: i64,
+    gw_start: i64,
+    gw_tip: i64,
+) -> Result<Vec<i64>, Error> {
+    let sql = format!(
+        "SELECT block_number FROM {GCS_SCHEMA_QUOTED}.state_hash
+          WHERE chain_id = $1 AND block_number >= $2 AND block_number < $3
+          ORDER BY block_number
+          LIMIT {MAX_ANCHOR_CANDIDATES}"
+    );
+    let rows: Vec<(i64,)> = sqlx::query_as(&sql)
+        .bind(gw_chain_id)
+        .bind(gw_start)
+        .bind(gw_tip)
+        .fetch_all(pool)
+        .await?;
+    Ok(rows.into_iter().map(|(b,)| b).collect())
+}
+
+async fn build_s3_client(config: &Config) -> aws_sdk_s3::Client {
+    let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest());
+    if let Some(endpoint) = config.s3_endpoint.as_deref() {
+        loader = loader.endpoint_url(endpoint);
+    }
+    let sdk_config = loader.load().await;
+    let mut builder = aws_sdk_s3::config::Builder::from(&sdk_config);
+    if config.s3_endpoint.is_some() {
+        // path-style addressing is required by minio / localstack
+        builder = builder.force_path_style(true);
+    }
+    aws_sdk_s3::Client::from_conf(builder.build())
+}
+
+/// Main service loop.
+pub async fn run<P>(
+    config: Config,
+    pool: Pool<Postgres>,
+    provider: P,
+    cancel: CancellationToken,
+) -> anyhow::Result<()>
+where
+    P: Provider<Ethereum> + Clone + 'static,
+{
+    // Resolve the Gateway chain id from the connected provider (eth_chainId).
+    // This is the authoritative source — it can't drift from the chain we're
+    // actually watching — and mirrors how transaction-sender derives it. Must
+    // run before `provider` is moved into the S3Service below. Kept as i64 to
+    // match the `state_hash`/`upgrade_state` chain_id columns and the notify
+    // payloads.
+    let gw_chain_id: i64 = provider
+        .get_chain_id()
+        .await?
+        .try_into()
+        .map_err(|e| anyhow::anyhow!("gateway chain_id does not fit in i64: {e}"))?;
+
+    info!(
+        service_name = %config.service_name,
+        gateway_config_address = %config.gateway_config_address,
+        gw_chain_id,
+        my_bucket = ?config.my_bucket,
+        "starting consensus-detector"
+    );
+
+    let s3_service = S3Service::new(provider, config.gateway_config_address);
+    let urls = s3_service.refresh_signer_urls().await?;
+    if urls.is_empty() {
+        return Err(anyhow::anyhow!(
+            "GatewayConfig returned no operator S3 URLs at startup"
+        ));
+    }
+    info!(
+        operator_count = urls.len(),
+        urls = ?urls,
+        "fetched operator S3 URLs from GatewayConfig"
+    );
+    let s3_urls: Arc<RwLock<Vec<String>>> = Arc::new(RwLock::new(urls));
+
+    let http = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()?;
+
+    // GCS upload only when --my-bucket is set.
+    let s3 = if config.my_bucket.is_none() {
+        info!("--my-bucket not set; GCS upload disabled");
+        None
+    } else {
+        Some(Arc::new(build_s3_client(&config).await))
+    };
+    {
+        let pool = pool.clone();
+        let worker_cancel = cancel.child_token();
+        let parent_cancel = cancel.clone();
+        let bucket = config.my_bucket.clone().unwrap_or_default();
+        let batch_limit = config.state_hash_batch_limit;
+        tokio::spawn(async move {
+            // The state_hash worker is required for the consensus poll: without
+            // it, no GCS state hashes get uploaded and the poll always times
+            // out. If it exits unexpectedly, cancel the parent so the service
+            // crashes and is restarted by its supervisor.
+            if let Err(e) =
+                state_hash::run(pool, s3, bucket, batch_limit, gw_chain_id, worker_cancel).await
+            {
+                error!(error = %e, "state_hash worker exited with error; shutting down consensus-detector");
+                parent_cancel.cancel();
+            }
+        });
+    }
+
+    let channels = [
+        NEW_BLOCK_CHANNEL,
+        NEW_OPERATOR_ADDED_CHANNEL,
+        GW_NEW_BLOCK_CHANNEL,
+    ];
+    let mut listener = PgListener::connect_with(&pool).await?;
+    listener.listen_all(channels).await?;
+    info!(?channels, "listening for notifications");
+
+    // One host track per chain, discovered from upgrade_state each pass;
+    // the Gateway track is keyed by the provider-resolved gw_chain_id.
+    let mut host_tracks: HashMap<i64, ConsensusTrack> = HashMap::new();
+    let mut gateway_track = ConsensusTrack::new(gw_chain_id);
+    // Tracked window + its timeout state.
+    let mut window_state = WindowState {
+        tracked_window: None,
+        timeout: WindowTimeout::NotArmed,
+        host_progress: HashMap::new(),
+    };
+
+    // The consensus poll cadence: re-attempt S3 every commitment_poll_interval,
+    // caching partial per-operator responses so slow operators fill in later.
+    let mut ticker = tokio::time::interval(config.commitment_poll_interval);
+    // First tick fires immediately — attempt straight away on startup.
+
+    loop {
+        // Run one consensus pass over both tracks. Shared by the ticker and the
+        // notification triggers below.
+        macro_rules! consensus_pass {
+            () => {
+                if let Err(e) = consensus_pass(
+                    &pool,
+                    &http,
+                    &s3_urls,
+                    &mut host_tracks,
+                    &mut gateway_track,
+                    &mut window_state,
+                    config.commitment_timeout,
+                )
+                .await
+                {
+                    error!(error = %e, "consensus pass failed");
+                }
+            };
+        }
+
+        select! {
+            _ = cancel.cancelled() => {
+                info!("cancellation received — consensus-detector shutting down");
+                return Ok(());
+            }
+            recv = listener.recv() => {
+                match recv {
+                    Ok(notification) => {
+                        let channel = notification.channel();
+                        let payload = notification.payload();
+                        debug!(channel, payload, "notification received");
+
+                        match channel {
+                            // A new host or Gateway block may expose a fresh
+                            // candidate — poll immediately for responsiveness.
+                            NEW_BLOCK_CHANNEL | GW_NEW_BLOCK_CHANNEL => {
+                                consensus_pass!();
+                            }
+                            NEW_OPERATOR_ADDED_CHANNEL => {
+                                if let Err(e) =
+                                    handle_new_operator_added(&s3_urls, &s3_service, payload).await
+                                {
+                                    error!(channel, error = %e, "failed to handle notification");
+                                }
+                            }
+                            other => {
+                                warn!(channel = other, "ignoring notification on unexpected channel");
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!(error = %e, "listener recv error; sleeping before retry");
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                    }
+                }
+            }
+            _ = ticker.tick() => {
+                consensus_pass!();
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const CT: Duration = Duration::from_secs(60);
+
+    const GW: i64 = 54321;
+
+    fn track(chain_id: i64, anchored: Option<i64>, nontrivial: bool) -> ConsensusTrack {
+        let mut t = ConsensusTrack::new(chain_id);
+        t.anchored = anchored;
+        t.anchored_nontrivial = nontrivial;
+        t
+    }
+
+    #[test]
+    fn host_ready_needs_all_anchored_and_one_nontrivial() {
+        assert!(host_consensus_ready(&HashMap::from([
+            (1, track(1, Some(5), false)),
+            (2, track(2, Some(9), true)),
+        ])));
+        assert!(!host_consensus_ready(&HashMap::from([
+            (1, track(1, Some(5), false)),
+            (2, track(2, Some(7), false)),
+        ])));
+        assert!(!host_consensus_ready(&HashMap::from([
+            (1, track(1, Some(5), true)),
+            (2, track(2, None, false)),
+        ])));
+        assert!(!host_consensus_ready(&HashMap::new()));
+    }
+
+    #[test]
+    fn unanimity_notifications_gate_hosts_on_nontrivial() {
+        let gateway = track(GW, Some(500), true);
+        let sorted = |mut v: Vec<(i64, i64)>| {
+            v.sort_unstable();
+            v
+        };
+
+        // 2 chains, 0 FHE ops (both empty), 1 GW input -> only GW notified -> NO cutover.
+        let all_quiet =
+            HashMap::from([(1, track(1, Some(5), false)), (2, track(2, Some(6), false))]);
+        assert_eq!(
+            unanimity_notifications(&all_quiet, &gateway),
+            vec![(GW, 500)]
+        );
+
+        // 2 chains, 1 FHE op (chain 2), chain 1 empty, 1 GW input -> all notified -> cutover.
+        let mixed = HashMap::from([(1, track(1, Some(5), false)), (2, track(2, Some(6), true))]);
+        assert_eq!(
+            sorted(unanimity_notifications(&mixed, &gateway)),
+            vec![(1, 5), (2, 6), (GW, 500)]
+        );
+
+        // 1 chain, 0 FHE ops (empty), 1 GW input -> only GW notified -> NO cutover.
+        let single_quiet = HashMap::from([(1, track(1, Some(5), false))]);
+        assert_eq!(
+            unanimity_notifications(&single_quiet, &gateway),
+            vec![(GW, 500)]
+        );
+        // 1 chain, 1 FHE op, 1 GW input -> host + GW notified -> cutover.
+        let single_nt = HashMap::from([(1, track(1, Some(5), true))]);
+        assert_eq!(
+            sorted(unanimity_notifications(&single_nt, &gateway)),
+            vec![(1, 5), (GW, 500)]
+        );
+    }
+
+    #[test]
+    fn arm_timeout_when_all_chains_reached_end_block() {
+        let windows = vec![(1, 0, 100), (2, 0, 200)];
+        let watermarks = HashMap::from([(1, 100), (2, 200)]);
+        let mut progress = HashMap::new();
+        assert!(should_arm_timeout(
+            &windows,
+            &watermarks,
+            &mut progress,
+            Instant::now(),
+            CT
+        ));
+    }
+
+    #[test]
+    fn wait_while_a_chain_is_below_end_and_recently_seen() {
+        let windows = vec![(1, 0, 100), (2, 0, 200)];
+        let watermarks = HashMap::from([(1, 100), (2, 150)]);
+        let mut progress = HashMap::new();
+        assert!(!should_arm_timeout(
+            &windows,
+            &watermarks,
+            &mut progress,
+            Instant::now(),
+            CT
+        ));
+    }
+
+    #[test]
+    fn progressing_chain_never_stalls() {
+        let windows = vec![(1, 0, 100)];
+        let mut progress = HashMap::new();
+        let t0 = Instant::now();
+        // Below end_block, first observation → wait.
+        assert!(!should_arm_timeout(
+            &windows,
+            &HashMap::from([(1, 40)]),
+            &mut progress,
+            t0,
+            CT
+        ));
+        // Advanced after commitment_timeout — progress refreshes, so not stalled.
+        assert!(!should_arm_timeout(
+            &windows,
+            &HashMap::from([(1, 70)]),
+            &mut progress,
+            t0 + CT + Duration::from_secs(1),
+            CT,
+        ));
+    }
+
+    #[test]
+    fn stalled_listener_arms_after_commitment_timeout() {
+        // Chain 1 reached end_block; chain 2's GCS watermark is frozen below it.
+        let windows = vec![(1, 0, 100), (2, 0, 100)];
+        let watermarks = HashMap::from([(1, 100), (2, 40)]);
+        let mut progress = HashMap::new();
+        let t0 = Instant::now();
+        // First observation: not yet stalled.
+        assert!(!should_arm_timeout(
+            &windows,
+            &watermarks,
+            &mut progress,
+            t0,
+            CT
+        ));
+        // Still frozen commitment_timeout later → stalled listener → arm.
+        assert!(should_arm_timeout(
+            &windows,
+            &watermarks,
+            &mut progress,
+            t0 + CT + Duration::from_millis(1),
+            CT,
+        ));
+    }
+
+    #[test]
+    fn parses_new_block_payload() {
+        let json = r#"{
+            "chain_id": 12345,
+            "block_height": 9876,
+            "block_hash": "0xabcdef"
+        }"#;
+        let p: NewBlockPayload = serde_json::from_str(json).unwrap();
+        assert_eq!(p.chain_id, 12345);
+        assert_eq!(p.block_height, 9876);
+        assert_eq!(p.block_hash, "0xabcdef");
+    }
+
+    #[test]
+    fn all_some_and_identical_rejects_empty() {
+        let v: Vec<Option<Vec<u8>>> = vec![];
+        assert!(!all_some_and_identical(&v));
+    }
+
+    #[test]
+    fn all_some_and_identical_accepts_single() {
+        let v = vec![Some(vec![1u8, 2, 3])];
+        assert!(all_some_and_identical(&v));
+    }
+
+    #[test]
+    fn all_some_and_identical_detects_match() {
+        let v = vec![
+            Some(vec![1, 2, 3]),
+            Some(vec![1, 2, 3]),
+            Some(vec![1, 2, 3]),
+        ];
+        assert!(all_some_and_identical(&v));
+    }
+
+    #[test]
+    fn all_some_and_identical_detects_mismatch() {
+        let v = vec![
+            Some(vec![1, 2, 3]),
+            Some(vec![1, 2, 3]),
+            Some(vec![9, 9, 9]),
+        ];
+        assert!(!all_some_and_identical(&v));
+    }
+
+    #[test]
+    fn all_some_and_identical_rejects_partial() {
+        let v = vec![Some(vec![1, 2, 3]), None, Some(vec![1, 2, 3])];
+        assert!(!all_some_and_identical(&v));
+    }
+
+    #[test]
+    fn all_slots_filled_distinguishes_divergence_from_waiting() {
+        // Every operator responded but hashes differ → filled (divergence).
+        let divergent = vec![Some(vec![1, 2, 3]), Some(vec![9, 9, 9])];
+        assert!(all_slots_filled(&divergent));
+        assert!(!all_some_and_identical(&divergent));
+
+        // Still waiting on an operator → not filled.
+        let waiting = vec![Some(vec![1, 2, 3]), None];
+        assert!(!all_slots_filled(&waiting));
+
+        // Empty slot set → not filled.
+        let empty: Vec<Option<Vec<u8>>> = vec![];
+        assert!(!all_slots_filled(&empty));
+    }
+}

@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT s3_format_version as \"s3_format_version!\",\n               s3_migration_failure_count as \"s3_migration_failure_count!\",\n               s3_migration_last_error\n         FROM ciphertext_digest\n         WHERE handle = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "s3_format_version!",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 1,
+        "name": "s3_migration_failure_count!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "s3_migration_last_error",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "f7ef7af22c265a5ae331aaea8beee7e231cf0c7557773d02f33d256f8fab04d6"
+}

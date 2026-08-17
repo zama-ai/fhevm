@@ -1,9 +1,9 @@
 use alloy::primitives::Signature;
-use alloy::providers::RootProvider;
-use alloy::signers::Signer;
-use alloy_provider::fillers::{
+use alloy::providers::fillers::{
     BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller,
 };
+use alloy::providers::RootProvider;
+use alloy::signers::Signer;
 use anyhow::Result;
 use bigdecimal::num_bigint::BigInt;
 use clap::{Parser, ValueEnum};
@@ -725,67 +725,6 @@ impl SupportedFheCiphertexts {
         }
     }
 
-    pub fn add_re_randomization_metadata(&mut self, hash_data: &[u8]) {
-        match self {
-            SupportedFheCiphertexts::FheBool(ct) => {
-                ct.re_randomization_metadata_mut().set_data(hash_data);
-            }
-            SupportedFheCiphertexts::FheUint4(ct) => {
-                ct.re_randomization_metadata_mut().set_data(hash_data);
-            }
-            SupportedFheCiphertexts::FheUint8(ct) => {
-                ct.re_randomization_metadata_mut().set_data(hash_data);
-            }
-            SupportedFheCiphertexts::FheUint16(ct) => {
-                ct.re_randomization_metadata_mut().set_data(hash_data);
-            }
-            SupportedFheCiphertexts::FheUint32(ct) => {
-                ct.re_randomization_metadata_mut().set_data(hash_data);
-            }
-            SupportedFheCiphertexts::FheUint64(ct) => {
-                ct.re_randomization_metadata_mut().set_data(hash_data);
-            }
-            SupportedFheCiphertexts::FheUint128(ct) => {
-                ct.re_randomization_metadata_mut().set_data(hash_data);
-            }
-            SupportedFheCiphertexts::FheUint160(ct) => {
-                ct.re_randomization_metadata_mut().set_data(hash_data);
-            }
-            SupportedFheCiphertexts::FheUint256(ct) => {
-                ct.re_randomization_metadata_mut().set_data(hash_data);
-            }
-            SupportedFheCiphertexts::FheBytes64(ct) => {
-                ct.re_randomization_metadata_mut().set_data(hash_data);
-            }
-            SupportedFheCiphertexts::FheBytes128(ct) => {
-                ct.re_randomization_metadata_mut().set_data(hash_data);
-            }
-            SupportedFheCiphertexts::FheBytes256(ct) => {
-                ct.re_randomization_metadata_mut().set_data(hash_data);
-            }
-            SupportedFheCiphertexts::Scalar(_) => (),
-        }
-    }
-
-    pub fn add_to_rerandomisation_context(&self, context: &mut ReRandomizationContext) {
-        match self {
-            SupportedFheCiphertexts::FheBool(c) => context.add_ciphertext(c),
-            SupportedFheCiphertexts::FheUint4(c) => context.add_ciphertext(c),
-            SupportedFheCiphertexts::FheUint8(c) => context.add_ciphertext(c),
-            SupportedFheCiphertexts::FheUint16(c) => context.add_ciphertext(c),
-            SupportedFheCiphertexts::FheUint32(c) => context.add_ciphertext(c),
-            SupportedFheCiphertexts::FheUint64(c) => context.add_ciphertext(c),
-            SupportedFheCiphertexts::FheUint128(c) => context.add_ciphertext(c),
-            SupportedFheCiphertexts::FheUint160(c) => context.add_ciphertext(c),
-            SupportedFheCiphertexts::FheUint256(c) => context.add_ciphertext(c),
-            SupportedFheCiphertexts::FheBytes64(c) => context.add_ciphertext(c),
-            SupportedFheCiphertexts::FheBytes128(c) => context.add_ciphertext(c),
-            SupportedFheCiphertexts::FheBytes256(c) => context.add_ciphertext(c),
-            SupportedFheCiphertexts::Scalar(_) => {
-                // Do nothing
-            }
-        };
-    }
     pub fn re_randomise(
         &mut self,
         cpk: &CompactPublicKey,
@@ -1043,6 +982,16 @@ impl From<SupportedFheOperations> for i16 {
 
 pub type Handle = Vec<u8>;
 pub const HANDLE_LEN: usize = 32;
+
+/// Byte 21 marker for handles produced by FHE operations or by the bridge,
+/// distinguishing them from input-verification handles which encode the input
+/// index in this position (0..=254). Matches the `0xff` literal used by the
+/// FHEVMExecutor and the bridge contracts in `host-contracts/`.
+pub const COMPUTED_HANDLE_INDEX_MARKER: u8 = 0xff;
+
+/// Byte 31 of every handle. Matches the contract-side `HANDLE_VERSION`
+/// constant in `host-contracts/contracts/shared/Constants.sol`.
+pub const HANDLE_VERSION: u8 = 0;
 
 pub fn get_ct_type(handle: &[u8]) -> Result<i16, FhevmError> {
     match handle.len() {

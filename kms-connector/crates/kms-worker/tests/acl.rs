@@ -1,8 +1,8 @@
 mod common;
 
 use crate::common::{
-    create_mock_user_decryption_request_tx, init_kms_worker, mock_copro_registry_load,
-    testing_ct_attestation_config,
+    TEST_COPRO_REGISTRY_REFRESH, create_mock_user_decryption_request_tx, init_kms_worker,
+    mock_copro_registry_load,
 };
 use alloy::{
     primitives::U256,
@@ -14,57 +14,71 @@ use connector_utils::tests::{
         InsertRequestOptions, TestEventType, check_no_uncompleted_request_in_db,
         check_request_failed_in_db, insert_rand_request,
     },
-    rand::{rand_digest, rand_sns_ct},
+    rand::{rand_digest, rand_handle},
     setup::{
         DbInstance, TestInstanceBuilder, erc1271_magic_response,
         init_host_chains_acl_contracts_mock,
     },
 };
+use kms_grpc::kms::v1::{
+    Empty, PublicDecryptionResponse, PublicDecryptionResponsePayload, UserDecryptionResponse,
+    UserDecryptionResponsePayload,
+};
 use kms_worker::core::Config;
-use mocktail::server::MockServer;
+use mocktail::{MockSet, server::MockServer};
 use rstest::rstest;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
+// The `already_sent` cases pin the retry behavior: validity checks are re-run on every attempt, so
+// a request that became invalid after being sent to the KMS Core must fail without its result
+// being published.
 #[rstest]
-#[case::public_decryption(TestEventType::PublicDecryption)]
-#[case::user_decryption(TestEventType::UserDecryption)]
-#[case::user_decryption_v2(TestEventType::UserDecryptionV2)]
+#[case::public_decryption(TestEventType::PublicDecryption, false)]
+#[case::user_decryption(TestEventType::UserDecryption, false)]
+#[case::user_decryption_v2(TestEventType::UserDecryptionV2, false)]
+#[case::public_decryption_already_sent(TestEventType::PublicDecryption, true)]
+#[case::user_decryption_already_sent(TestEventType::UserDecryption, true)]
+#[case::user_decryption_v2_already_sent(TestEventType::UserDecryptionV2, true)]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
-async fn test_decryption_acl_failure(#[case] event_type: TestEventType) -> anyhow::Result<()> {
+async fn test_decryption_acl_failure(
+    #[case] event_type: TestEventType,
+    #[case] already_sent: bool,
+) -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::default()
-        .with_db(DbInstance::setup().await?)
+        .with_db(DbInstance::setup_external().await?)
         .build();
 
     // Test constant
     const MAX_DECRYPTION_ATTEMPTS: u16 = 3;
 
-    // Mocking Gateway
+    // Mocking Gateway/Ethereum
     let asserter = Asserter::new();
     mock_copro_registry_load(&asserter, "http://unused-bucket-url");
-    let sns_ct = rand_sns_ct();
+    let handle = rand_handle();
     let tx_hash = rand_digest();
     let insert_options = InsertRequestOptions::new()
-        .with_sns_ct_materials(vec![sns_ct.clone()])
-        .with_tx_hash(tx_hash);
+        .with_ct_handles(vec![handle])
+        .with_tx_hash(tx_hash)
+        .with_already_sent(already_sent);
     for _ in 0..MAX_DECRYPTION_ATTEMPTS {
         match event_type {
             TestEventType::PublicDecryption | TestEventType::UserDecryptionV2 => (),
             TestEventType::UserDecryption => {
                 // Mocking `get_transaction_by_hash` call result
-                let mock_tx = create_mock_user_decryption_request_tx(tx_hash, sns_ct.ctHandle)?;
+                let mock_tx = create_mock_user_decryption_request_tx(tx_hash, handle)?;
                 asserter.push_success(&mock_tx);
             }
             _ => panic!("Unexpected event kind"),
         };
     }
 
-    let gateway_mock_provider = ProviderBuilder::new()
+    let mock_provider = ProviderBuilder::new()
         .disable_recommended_fillers()
         .connect_mocked_client(asserter);
-    info!("Gateway mock started!");
+    info!("Gateway + Ethereum mock started!");
 
     // Mocking Host chain ACL to DENY decryption.
     // Per attempt: Public → 1 bool; Legacy user → 2 bools;
@@ -87,11 +101,12 @@ async fn test_decryption_acl_failure(#[case] event_type: TestEventType) -> anyho
         }
         _ => vec![],
     };
-    let acl_contracts_mock =
-        init_host_chains_acl_contracts_mock(sns_ct.ctHandle.as_slice(), acl_responses);
+    let acl_contracts_mock = init_host_chains_acl_contracts_mock(handle, acl_responses);
 
-    // No KMS mocks needed - request should fail before reaching KMS
-    let kms_mock_server = MockServer::new_grpc("kms_service.v1.CoreServiceEndpoint");
+    // The Core is mocked to succeed on purpose: the request must be rejected by the ACL check
+    // before ever reaching it, on the first attempt *and* on `already_sent` retries.
+    let kms_mock_server = MockServer::new_grpc("kms_service.v1.CoreServiceEndpoint")
+        .with_mocks(kms_mocks(event_type));
     kms_mock_server.start().await?;
     info!("KMS mock server started!");
 
@@ -100,12 +115,12 @@ async fn test_decryption_acl_failure(#[case] event_type: TestEventType) -> anyho
         kms_core_endpoints: vec![kms_mock_server.base_url().unwrap().to_string()],
         max_decryption_attempts: MAX_DECRYPTION_ATTEMPTS,
         db_fast_event_polling: Duration::from_millis(500),
-        ct_attestation: testing_ct_attestation_config(false),
+        copro_registry_refresh: TEST_COPRO_REGISTRY_REFRESH,
         ..Default::default()
     };
     let kms_worker = init_kms_worker(
         config,
-        gateway_mock_provider,
+        mock_provider,
         acl_contracts_mock,
         test_instance.db(),
     )
@@ -130,4 +145,39 @@ async fn test_decryption_acl_failure(#[case] event_type: TestEventType) -> anyho
     cancel_token.cancel();
     kms_worker_task.await.unwrap();
     Ok(())
+}
+
+/// Mocks a KMS Core that acknowledges the request and returns a valid decryption result.
+fn kms_mocks(event_type: TestEventType) -> MockSet {
+    let (req_endpoint, resp_endpoint) = match event_type {
+        TestEventType::PublicDecryption => ("PublicDecrypt", "GetPublicDecryptionResult"),
+        TestEventType::UserDecryption | TestEventType::UserDecryptionV2 => {
+            ("UserDecrypt", "GetUserDecryptionResult")
+        }
+        _ => panic!("Unexpected event kind"),
+    };
+
+    let mut mocks = MockSet::new();
+    mocks.mock(|when, then| {
+        when.path(format!(
+            "/kms_service.v1.CoreServiceEndpoint/{req_endpoint}"
+        ));
+        then.pb(Empty::default());
+    });
+    mocks.mock(|when, then| {
+        when.path(format!(
+            "/kms_service.v1.CoreServiceEndpoint/{resp_endpoint}"
+        ));
+        match event_type {
+            TestEventType::PublicDecryption => then.pb(PublicDecryptionResponse {
+                payload: Some(PublicDecryptionResponsePayload::default()),
+                ..Default::default()
+            }),
+            _ => then.pb(UserDecryptionResponse {
+                payload: Some(UserDecryptionResponsePayload::default()),
+                ..Default::default()
+            }),
+        };
+    });
+    mocks
 }

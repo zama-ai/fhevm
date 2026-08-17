@@ -20,7 +20,8 @@ struct Args {
     #[arg(
         long = "url",
         alias = "broker-url",
-        help = "Broker (Redis or Rabbit)"
+        env = "BROKER_URL",
+        help = "Broker (Redis or Rabbit); falls back to BROKER_URL env var if unset"
     )]
     url: String,
 
@@ -36,6 +37,16 @@ struct Args {
         help = "Optional KMS generation contract address to monitor"
     )]
     kms_generation_address: String,
+
+    #[command(flatten)]
+    protocol_config: host_listener::protocol_config::ProtocolConfigArgs,
+
+    #[arg(
+        long,
+        default_value = "",
+        help = "Optional ConfidentialBridge contract address to monitor"
+    )]
+    confidential_bridge_address: String,
 
     #[arg(long, help = "PostgreSQL connection URL")]
     database_url: DatabaseURL,
@@ -115,6 +126,12 @@ fn parse_optional_address(
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Handle `--stack-version` before clap parsing: it prints the compiled-in
+    // STACK_VERSION and exits 0. Without this, clap rejects the unknown flag
+    // with exit code 2, so the Helm `--stack-version` startupProbe would never
+    // pass and the pod would CrashLoop.
+    fhevm_engine_common::handle_stack_version_flag();
+
     let args = Args::parse();
 
     let _otel_guard = telemetry::init_tracing_otel_with_logs_only_fallback(
@@ -125,11 +142,30 @@ async fn main() -> anyhow::Result<()> {
 
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
+    if matches!(args.protocol_config.chain_id, Some(0)) {
+        return Err(anyhow::anyhow!(
+            "--canonical-protocol-config-chain-id=0 is not a valid chain id; omit the flag to disable ProtocolConfig decoding"
+        ));
+    }
+    let protocol_config_address = args.protocol_config.parsed_address()?;
+
     let cancel_token = CancellationToken::new();
     metrics_server::spawn(
         args.metrics_addr.clone(),
         cancel_token.child_token(),
     );
+
+    let gcs_mode = match fhevm_engine_common::versioning::resolve_gcs_mode(
+        args.database_url.as_str(),
+    )
+    .await
+    {
+        Ok(gcs_mode) => gcs_mode,
+        Err(err) => {
+            tracing::error!(error = %err, "Failed to resolve gcs_mode from versioning table");
+            return Err(err);
+        }
+    };
 
     let config = ConsumerConfig {
         url: args.url,
@@ -138,6 +174,11 @@ async fn main() -> anyhow::Result<()> {
         kms_generation_address: parse_optional_address(
             &args.kms_generation_address,
             "KMS generation contract",
+        )?,
+        protocol_config_address,
+        confidential_bridge_address: parse_optional_address(
+            &args.confidential_bridge_address,
+            "ConfidentialBridge contract",
         )?,
         database_url: args.database_url,
         database_retry_interval: Duration::from_millis(
@@ -150,6 +191,8 @@ async fn main() -> anyhow::Result<()> {
         dependence_cross_block: args.dependence_cross_block,
         dependent_ops_max_per_chain: args.dependent_ops_max_per_chain,
         chain_id: args.chain_id,
+        gcs_mode,
+        canonical_protocol_config_chain_id: args.protocol_config.chain_id,
     };
 
     run_consumer(config).await

@@ -358,7 +358,9 @@ impl AwsS3ClientMocked {
                 // /CompressedXofKeySet/<id>.
                 let prefix = match key_type {
                     KeyType::PublicKey => "/PublicKey",
-                    KeyType::ServerKey => "/CompressedXofKeySet",
+                    KeyType::ServerKey | KeyType::CompressedKeySet => {
+                        "/CompressedXofKeySet"
+                    }
                 };
                 let full_key =
                     format!("PUB-p1{}/{}", prefix, key_id_to_aws_key(key_id));
@@ -447,6 +449,7 @@ where
         dependence_by_connexity: false,
         dependence_cross_block: true,
         dependent_ops_max_per_chain: 0,
+        is_protocol_config_listener: true,
     };
 
     ingest_block_logs(
@@ -456,12 +459,17 @@ where
         &None,
         &None,
         &Some(kms_address),
+        &None,
+        &None,
         options,
     )
     .await?;
 
-    let mut tx = db.new_transaction().await?;
-    db.mark_block_as_valid(&mut tx, &block_logs.summary, true)
+    let mut tx = db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
+    db.mark_block_as_valid(&mut tx, &block_logs.summary, true, 0, 0)
         .await?;
     tx.commit().await?;
 

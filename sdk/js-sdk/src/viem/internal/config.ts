@@ -1,4 +1,5 @@
 import type { FhevmRuntimeConfig } from '../../core/types/coreFhevmRuntime.js';
+import { cloneModuleVersions, moduleVersionsAreEqual } from '../../core/runtimeConfig-p.js';
 
 let viemFhevmRuntimeConfig: FhevmRuntimeConfig | undefined;
 
@@ -16,9 +17,10 @@ let viemFhevmRuntimeConfig: FhevmRuntimeConfig | undefined;
  */
 export function setFhevmRuntimeConfig(config: FhevmRuntimeConfig): void {
   if (viemFhevmRuntimeConfig === undefined) {
-    viemFhevmRuntimeConfig = Object.freeze({
+    viemFhevmRuntimeConfig = Object.freeze<FhevmRuntimeConfig>({
       ...config,
       logger: config.logger ? Object.freeze({ ...config.logger }) : undefined,
+      moduleVersions: cloneModuleVersions(config.moduleVersions),
     });
     return;
   }
@@ -26,6 +28,8 @@ export function setFhevmRuntimeConfig(config: FhevmRuntimeConfig): void {
   if (
     viemFhevmRuntimeConfig.logger !== config.logger ||
     viemFhevmRuntimeConfig.locateFile !== config.locateFile ||
+    viemFhevmRuntimeConfig.wasmAssetLoadMode !== config.wasmAssetLoadMode ||
+    !moduleVersionsAreEqual(viemFhevmRuntimeConfig.moduleVersions, config.moduleVersions) ||
     viemFhevmRuntimeConfig.singleThread !== config.singleThread ||
     viemFhevmRuntimeConfig.numberOfThreads !== config.numberOfThreads
   ) {

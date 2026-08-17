@@ -4,6 +4,7 @@ import type { Bytes, BytesHex } from '../../types/primitives.js';
 import type { Prettify } from '../../types/utils.js';
 import type { FhevmRuntime } from '../../types/coreFhevmRuntime.js';
 import type { ClearValue } from '../../types/encryptedTypes-p.js';
+import type { TkmsVersion } from '../../../wasm/tkms/KmsLibApi.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -17,17 +18,25 @@ WASM compilation (how to get WebAssembly.Module):
 
 | wasmUrl   | Result                                                         |
 |-----------|----------------------------------------------------------------|
-| defined   | Compile from URL (isomorphicCompileWasm)                       |
+| defined   | Verify and compile from URL (isomorphicCompileVerifiedWasm)    |
 | undefined | Compile from embedded base64 (isomorphicCompileWasmFromBase64) |
 
 */
+
+type WithTkmsVersion = {
+  readonly tkmsVersion: TkmsVersion;
+};
 
 ////////////////////////////////////////////////////////////////////////////////
 // initTkmsModule
 ////////////////////////////////////////////////////////////////////////////////
 
+export type InitTkmsModuleParameters = {
+  readonly tkmsVersion: TkmsVersion;
+};
+
 export type InitTkmsModuleFunction = {
-  initTkmsModule(): Promise<void>;
+  initTkmsModule(parameters: InitTkmsModuleParameters): Promise<void>;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -39,11 +48,28 @@ export type InitTkmsModuleFunction = {
  */
 export type TkmsModuleInfo = {
   /**
-   * URL used to fetch the TFHE WASM binary.
+   * URL used to fetch the TKMS WASM binary.
    * `undefined` means the base64-embedded fallback is used.
    */
   readonly wasmUrl: URL | undefined;
+
+  /**
+   * Current size of the TKMS WASM linear memory.
+   * This is the size of the underlying `WebAssembly.Memory` buffer, not live heap usage.
+   */
+  readonly memory: {
+    /**
+     * Current memory buffer size in bytes.
+     */
+    readonly byteLength: number;
+    /**
+     * Current memory buffer size in 64 KiB WASM pages.
+     */
+    readonly pages: number;
+  };
 };
+
+export type GetTkmsModuleInfoParameters = WithTkmsVersion;
 
 export type GetTkmsModuleInfoReturnType = TkmsModuleInfo | undefined;
 
@@ -52,11 +78,12 @@ export type GetTkmsModuleInfoFunction = {
    * Returns {@link TkmsModuleInfo} when the module is initialized,
    * or `undefined` if the module has not completed initialization.
    */
-  getTkmsModuleInfo(): GetTkmsModuleInfoReturnType;
+  getTkmsModuleInfo(parameters: GetTkmsModuleInfoParameters): Promise<GetTkmsModuleInfoReturnType>;
 };
+
 ////////////////////////////////////////////////////////////////////////////////
 
-type WithTkmsPrivateKey = {
+type WithTkmsPrivateKey = WithTkmsVersion & {
   readonly tkmsPrivateKey: TkmsPrivateKey;
 };
 
@@ -76,30 +103,21 @@ export type DecryptAndReconstructModuleFunction = {
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-// 1. (User) decryptAndReconstruct
-////////////////////////////////////////////////////////////////////////////////
-
-export type DecryptAndReconstructUserParameters = DecryptAndReconstructBaseParameters;
-
-export type DecryptAndReconstructUserModuleFunction = {
-  decryptAndReconstruct(parameters: DecryptAndReconstructUserParameters): Promise<DecryptAndReconstructReturnType>;
-};
-
-////////////////////////////////////////////////////////////////////////////////
 // 2. generateTkmsPrivateKey
 ////////////////////////////////////////////////////////////////////////////////
 
+export type GenerateTkmsPrivateKeyParameters = WithTkmsVersion;
 export type GenerateTkmsPrivateKeyReturnType = TkmsPrivateKey;
 
 export type GenerateTkmsPrivateKeyModuleFunction = {
-  generateTkmsPrivateKey(): Promise<GenerateTkmsPrivateKeyReturnType>;
+  generateTkmsPrivateKey(parameters: GenerateTkmsPrivateKeyParameters): Promise<GenerateTkmsPrivateKeyReturnType>;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
 // 3 getTkmsPublicKeyHex
 ////////////////////////////////////////////////////////////////////////////////
 
-export type GetTkmsPublicKeyHexParameters = WithTkmsPrivateKey;
+export type GetTkmsPublicKeyHexParameters = WithTkmsPrivateKey & WithTkmsVersion;
 export type GetTkmsPublicKeyHexReturnType = BytesHex;
 
 export type GetTkmsPublicKeyHexModuleFunction = {
@@ -107,20 +125,10 @@ export type GetTkmsPublicKeyHexModuleFunction = {
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-// 3. (User) getTkmsPublicKeyHex
-////////////////////////////////////////////////////////////////////////////////
-
-export type GetTkmsPublicKeyHexUserModuleFunction = {
-  getTkmsPublicKeyHex(): Promise<GetTkmsPublicKeyHexReturnType>;
-};
-
-////////////////////////////////////////////////////////////////////////////////
 // 4. serializeTkmsPrivateKey
 ////////////////////////////////////////////////////////////////////////////////
 
-export type SerializeTkmsPrivateKeyParameters = {
-  readonly tkmsPrivateKey: TkmsPrivateKey;
-};
+export type SerializeTkmsPrivateKeyParameters = WithTkmsPrivateKey;
 
 export type SerializeTkmsPrivateKeyReturnType = Bytes;
 
@@ -129,18 +137,10 @@ export type SerializeTkmsPrivateKeyModuleFunction = {
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-// 4. (User) serializeTkmsPrivateKey
-////////////////////////////////////////////////////////////////////////////////
-
-export type SerializeTkmsPrivateKeyUserModuleFunction = {
-  serializeTkmsPrivateKey(): Promise<SerializeTkmsPrivateKeyReturnType>;
-};
-
-////////////////////////////////////////////////////////////////////////////////
 // 5. deserializeTkmsPrivateKey
 ////////////////////////////////////////////////////////////////////////////////
 
-export type DeserializeTkmsPrivateKeyParameters = {
+export type DeserializeTkmsPrivateKeyParameters = WithTkmsVersion & {
   readonly tkmsPrivateKeyBytes: Bytes;
 };
 
@@ -156,9 +156,7 @@ export type DeserializeTkmsPrivateKeyModuleFunction = {
 // 6. verifyTkmsPrivateKey
 ////////////////////////////////////////////////////////////////////////////////
 
-export type VerifyTkmsPrivateKeyParameters = {
-  readonly tkmsPrivateKey: TkmsPrivateKey;
-};
+export type VerifyTkmsPrivateKeyParameters = WithTkmsVersion & WithTkmsPrivateKey;
 
 export type VerifyTkmsPrivateKeyModuleFunction = {
   verifyTkmsPrivateKey(parameters: VerifyTkmsPrivateKeyParameters): void;
@@ -185,30 +183,4 @@ export type DecryptModule = Prettify<
 
 export type DecryptModuleFactory = (runtime: FhevmRuntime) => {
   readonly decrypt: DecryptModule;
-};
-
-////////////////////////////////////////////////////////////////////////////////
-// UserDecryptModule
-////////////////////////////////////////////////////////////////////////////////
-
-export type WithUserDecryptModule = {
-  readonly userDecrypt: UserDecryptModule;
-};
-
-export type UserDecryptModuleParameters = {
-  readonly privateKey: TkmsPrivateKey;
-};
-
-export type UserDecryptModule = Prettify<
-  InitTkmsModuleFunction &
-    DecryptAndReconstructUserModuleFunction &
-    GetTkmsPublicKeyHexUserModuleFunction &
-    SerializeTkmsPrivateKeyUserModuleFunction
->;
-
-export type UserDecryptModuleFactory = (
-  runtime: FhevmRuntime,
-  parameters: UserDecryptModuleParameters,
-) => {
-  readonly userDecrypt: UserDecryptModule;
 };

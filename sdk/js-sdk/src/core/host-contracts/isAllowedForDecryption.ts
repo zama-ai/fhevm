@@ -14,7 +14,7 @@ type Context = {
 };
 
 type Parameters = {
-  readonly address: ChecksummedAddress;
+  readonly aclAddress: ChecksummedAddress;
   readonly handles: readonly Handle[];
 };
 
@@ -23,12 +23,12 @@ type ReturnType = boolean[];
 ////////////////////////////////////////////////////////////////////////////////
 
 export async function isAllowedForDecryption(context: Context, parameters: Parameters): Promise<ReturnType> {
-  const { address, handles } = parameters;
+  const { aclAddress, handles } = parameters;
 
   const rpcCalls = handles.map(
     (handle) => () =>
       _isAllowedForDecryption(context, {
-        address,
+        aclAddress,
         handle,
       }),
   );
@@ -43,15 +43,15 @@ export async function isAllowedForDecryption(context: Context, parameters: Param
 async function _isAllowedForDecryption(
   context: Context,
   parameters: {
-    readonly address: ChecksummedAddress;
+    readonly aclAddress: ChecksummedAddress;
     readonly handle: Handle;
   },
 ): Promise<boolean> {
-  const { address, handle } = parameters;
+  const { aclAddress, handle } = parameters;
   const trustedClient = getTrustedClient(context);
 
   const res = await context.runtime.ethereum.readContract(trustedClient, {
-    address: address,
+    address: aclAddress,
     abi: isAllowedForDecryptionAbi,
     args: [handle.bytes32Hex],
     functionName: isAllowedForDecryptionAbi[0].name,

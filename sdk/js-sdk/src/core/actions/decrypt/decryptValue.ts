@@ -9,6 +9,7 @@ import type { EncryptedValueLike } from '../../types/encryptedTypes.js';
 import { decryptValuesFromPairs as decryptValuesFromPairs_ } from '../../kms/decryptValuesFromPairs.js';
 import { addressToChecksummedAddress, assertIsAddress } from '../../base/address.js';
 import { toFhevmHandle } from '../../handle/FhevmHandle.js';
+import { initPublicAction } from '../../runtime/CoreFhevm-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -37,13 +38,17 @@ export async function decryptValue(
     {
       handle: toFhevmHandle(encryptedValue),
       contractAddress: sanitizedContractAddress,
+      ownerAddress: addressToChecksummedAddress(parameters.signedPermit.encryptedDataOwnerAddress),
     },
   ];
+
+  const fhevmContext = await initPublicAction(fhevm);
 
   const typedValues = await decryptValuesFromPairs_(fhevm, {
     ...rest,
     pairs: sanitizedPairs,
-  } as Parameters<typeof decryptValuesFromPairs_>[1]);
+    fhevmContext,
+  });
 
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   return typedValues[0]!;

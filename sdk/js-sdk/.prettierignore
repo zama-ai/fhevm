@@ -1,6 +1,11 @@
 contracts
-docs
+docs/**
 *.md
+!docs/compatibility.md
+# Generated WASM wrappers and payloads are opt-in formatted by installer scripts.
 src/wasm
+test/manual-pack
 test/fheTest/.keys
-test/standalone/relayer-sdk-test
+# browser-next is an isolated platform; its Next-generated files are not ours to format.
+test/browser-next/.next
+test/browser-next/next-env.d.ts

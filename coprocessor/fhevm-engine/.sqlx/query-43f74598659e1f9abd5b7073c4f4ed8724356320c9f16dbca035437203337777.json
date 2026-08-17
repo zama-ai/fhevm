@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM fallback_granted_events\n            WHERE dst_chain_id = $1\n              AND block_hash = ANY($2::bytea[])\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "ByteaArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "43f74598659e1f9abd5b7073c4f4ed8724356320c9f16dbca035437203337777"
+}

@@ -15,7 +15,7 @@ type Context = {
 };
 
 type Parameters = {
-  readonly address: ChecksummedAddress;
+  readonly aclAddress: ChecksummedAddress;
   readonly pairs: readonly HandleAccountPair[];
 };
 
@@ -24,12 +24,12 @@ type ReturnType = boolean[];
 ////////////////////////////////////////////////////////////////////////////////
 
 export async function persistAllowed(context: Context, parameters: Parameters): Promise<ReturnType> {
-  const { address, pairs } = parameters;
+  const { aclAddress, pairs } = parameters;
 
   const rpcCalls = pairs.map(
     (pair) => () =>
       _persistAllowed(context, {
-        address,
+        aclAddress,
         handle: pair.handle,
         account: pair.account,
       }),
@@ -45,16 +45,16 @@ export async function persistAllowed(context: Context, parameters: Parameters): 
 async function _persistAllowed(
   context: Context,
   parameters: {
-    readonly address: ChecksummedAddress;
+    readonly aclAddress: ChecksummedAddress;
     readonly handle: Handle;
     readonly account: ChecksummedAddress;
   },
 ): Promise<boolean> {
-  const { address, handle, account } = parameters;
+  const { aclAddress, handle, account } = parameters;
   const trustedClient = getTrustedClient(context);
 
   const res = await context.runtime.ethereum.readContract(trustedClient, {
-    address: address,
+    address: aclAddress,
     abi: persistAllowedAbi,
     args: [handle.bytes32Hex, account],
     functionName: persistAllowedAbi[0].name,

@@ -5,7 +5,8 @@ use connector_utils::{
     conn::connect_to_rpc_node_with_wallet,
     tests::{
         db::responses::{
-            insert_rand_crsgen_response, insert_rand_keygen_response,
+            insert_rand_crsgen_response, insert_rand_epoch_result_response,
+            insert_rand_keygen_response, insert_rand_new_kms_context_response,
             insert_rand_prep_keygen_response, insert_rand_public_decrypt_response,
             insert_rand_user_decrypt_response,
         },
@@ -14,7 +15,7 @@ use connector_utils::{
     types::db::OperationStatus,
 };
 use fhevm_gateway_bindings::decryption::Decryption::DecryptionInstance;
-use fhevm_host_bindings::kms_generation::KMSGeneration;
+use fhevm_host_bindings::{kms_generation::KMSGeneration, protocol_config::ProtocolConfig};
 use rstest::rstest;
 use sqlx::Row;
 use std::time::Duration;
@@ -31,7 +32,7 @@ use tx_sender::core::{
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_process_public_decryption_response() -> anyhow::Result<()> {
-    let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
+    let mut test_instance = TestInstanceBuilder::db_bc_setup().await?;
     let mut response_filter = test_instance
         .decryption_contract()
         .PublicDecryptionResponse_filter()
@@ -83,7 +84,7 @@ async fn test_process_public_decryption_response() -> anyhow::Result<()> {
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_process_user_decryption_response() -> anyhow::Result<()> {
-    let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
+    let mut test_instance = TestInstanceBuilder::db_bc_setup().await?;
     let mut response_filter = test_instance
         .decryption_contract()
         .UserDecryptionResponse_filter()
@@ -135,7 +136,7 @@ async fn test_process_user_decryption_response() -> anyhow::Result<()> {
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_process_prep_keygen_response() -> anyhow::Result<()> {
-    let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
+    let mut test_instance = TestInstanceBuilder::db_bc_setup().await?;
     let mut keygen_filter = test_instance
         .kms_generation_contract()
         .KeygenRequest_filter()
@@ -187,7 +188,7 @@ async fn test_process_prep_keygen_response() -> anyhow::Result<()> {
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_process_keygen_response() -> anyhow::Result<()> {
-    let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
+    let mut test_instance = TestInstanceBuilder::db_bc_setup().await?;
     let mut activate_key_filter = test_instance
         .kms_generation_contract()
         .ActivateKey_filter()
@@ -238,7 +239,7 @@ async fn test_process_keygen_response() -> anyhow::Result<()> {
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_process_crsgen_response() -> anyhow::Result<()> {
-    let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
+    let mut test_instance = TestInstanceBuilder::db_bc_setup().await?;
     let mut activate_crs_filter = test_instance
         .kms_generation_contract()
         .ActivateCrs_filter()
@@ -288,8 +289,112 @@ async fn test_process_crsgen_response() -> anyhow::Result<()> {
 #[rstest]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
+async fn test_process_new_kms_context_response() -> anyhow::Result<()> {
+    let mut test_instance = TestInstanceBuilder::db_bc_setup().await?;
+    let mut confirmation_filter = test_instance
+        .protocol_config_contract()
+        .KmsContextCreationConfirmation_filter()
+        .watch()
+        .await?;
+    confirmation_filter.poller = confirmation_filter
+        .poller
+        .with_poll_interval(Duration::from_millis(500));
+    let mut confirmation_stream = confirmation_filter.into_stream();
+
+    // Wait for 2 anvil blocks before starting the tx-sender, so event listening is fully ready
+    tokio::time::sleep(2 * test_instance.anvil_block_time()).await;
+
+    let cancel_token = CancellationToken::new();
+    let tx_sender_task = start_test_tx_sender(&test_instance, cancel_token.clone()).await?;
+
+    info!("Mocking NewKmsContextResponse in Postgres...");
+    let inserted_response =
+        insert_rand_new_kms_context_response(test_instance.db(), None, None).await?;
+    info!("NewKmsContextResponse successfully stored!");
+
+    info!("Checking response has been sent to Anvil...");
+    let (event, _) = confirmation_stream
+        .next()
+        .await
+        .ok_or_else(|| anyhow!("Failed to capture KmsContextCreationConfirmation"))??;
+    assert_eq!(event.kmsContextId, inserted_response.context_id);
+    info!("Response successfully sent to Anvil!");
+
+    test_instance
+        .wait_for_log("Successfully updated response in DB!")
+        .await;
+
+    info!("Checking response was completed in DB...");
+    let status: OperationStatus =
+        sqlx::query("SELECT status FROM new_kms_context_responses WHERE context_id = $1")
+            .bind(event.kmsContextId.as_le_slice())
+            .fetch_one(test_instance.db())
+            .await?
+            .try_get("status")?;
+    assert_eq!(status, OperationStatus::Completed);
+    info!("Response successfully completed in DB! Stopping TransactionSender...");
+
+    cancel_token.cancel();
+    Ok(tx_sender_task.await?)
+}
+
+#[rstest]
+#[timeout(Duration::from_secs(60))]
+#[tokio::test]
+async fn test_process_epoch_result_response() -> anyhow::Result<()> {
+    let mut test_instance = TestInstanceBuilder::db_bc_setup().await?;
+    let mut confirmation_filter = test_instance
+        .protocol_config_contract()
+        .EpochActivationConfirmation_filter()
+        .watch()
+        .await?;
+    confirmation_filter.poller = confirmation_filter
+        .poller
+        .with_poll_interval(Duration::from_millis(500));
+    let mut confirmation_stream = confirmation_filter.into_stream();
+
+    // Wait for 2 anvil blocks before starting the tx-sender, so event listening is fully ready
+    tokio::time::sleep(2 * test_instance.anvil_block_time()).await;
+
+    let cancel_token = CancellationToken::new();
+    let tx_sender_task = start_test_tx_sender(&test_instance, cancel_token.clone()).await?;
+
+    info!("Mocking EpochResultResponse in Postgres...");
+    let inserted_response =
+        insert_rand_epoch_result_response(test_instance.db(), None, None).await?;
+    info!("EpochResultResponse successfully stored!");
+
+    info!("Checking response has been sent to Anvil...");
+    let (event, _) = confirmation_stream
+        .next()
+        .await
+        .ok_or_else(|| anyhow!("Failed to capture EpochActivationConfirmation"))??;
+    assert_eq!(event.epochId, inserted_response.epoch_id);
+    info!("Response successfully sent to Anvil!");
+
+    test_instance
+        .wait_for_log("Successfully updated response in DB!")
+        .await;
+
+    info!("Checking response was completed in DB...");
+    let status: OperationStatus =
+        sqlx::query("SELECT status FROM epoch_result_responses WHERE epoch_id = $1")
+            .bind(event.epochId.as_le_slice())
+            .fetch_one(test_instance.db())
+            .await?
+            .try_get("status")?;
+    assert_eq!(status, OperationStatus::Completed);
+    info!("Response successfully completed in DB! Stopping TransactionSender...");
+
+    cancel_token.cancel();
+    Ok(tx_sender_task.await?)
+}
+
+#[rstest]
+#[timeout(Duration::from_secs(60))]
+#[tokio::test]
 async fn stress_test() -> anyhow::Result<()> {
-    let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
+    let mut test_instance = TestInstanceBuilder::db_bc_setup().await?;
     let mut response_filter = test_instance
         .decryption_contract()
         .UserDecryptionResponse_filter()
@@ -392,8 +497,16 @@ async fn start_test_tx_sender(
         *test_instance.kms_generation_contract().address(),
         eth_provider.clone(),
     );
-    let eth_sender =
-        EthereumTransactionSender::new(eth_provider, kms_generation_contract, eth_sender_config);
+    let protocol_config_contract = ProtocolConfig::new(
+        *test_instance.protocol_config_contract().address(),
+        eth_provider.clone(),
+    );
+    let eth_sender = EthereumTransactionSender::new(
+        eth_provider,
+        kms_generation_contract,
+        protocol_config_contract,
+        eth_sender_config,
+    );
 
     let tx_sender = TransactionSender::new(
         response_picker,

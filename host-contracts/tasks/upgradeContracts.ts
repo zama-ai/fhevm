@@ -2,7 +2,9 @@ import { Interface, Wallet } from 'ethers';
 import { task, types } from 'hardhat/config';
 import { HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
 
+import { assertBridgeEndpointImmutable, buildProtocolConfigReinitializeArgs } from './taskDeploy';
 import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
+import { buildUpgradeProposal, printUpgradeProposal, verifyProposalImplementation } from './utils/upgradeProposal';
 
 const REINITIALIZE_FUNCTION_PREFIX = 'reinitializeV'; // Prefix for reinitialize functions
 
@@ -39,6 +41,17 @@ function formatCastArg(arg: unknown): string {
 
 function shellQuote(arg: string): string {
   return `'${arg.replace(/'/g, `'\\''`)}'`;
+}
+
+// Parses a comma-separated integer list task arg (e.g. --dst-eids "30101,30109") into its entries.
+function parseCsvIntegers(raw: string | undefined): string[] {
+  if (!raw) {
+    return [];
+  }
+  return raw
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
 }
 
 async function upgradeCurrentToNew(
@@ -344,6 +357,80 @@ task('task:prepareUpgradeACL')
     await prepareUpgradeContract('ACL', 'ACL_CONTRACT_ADDRESS', taskArgs, hre);
   });
 
+// Governance prepare for the first bridge upgrade: EmptyUUPSProxy -> ConfidentialBridge via
+// initializeFromEmptyProxy. New chains get the bridge from task:deployAllHostContracts.
+// Any subsequent ConfidentialBridge-to-ConfidentialBridge upgrade should go through prepareUpgradeContract, not this task.
+task('task:prepareUpgradeConfidentialBridge')
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
+    false,
+    types.boolean,
+  )
+  .addOptionalParam(
+    'dstEids',
+    'Comma-separated LayerZero endpoint ids to seed the dstEid → dstChainId map (paired index-by-index with --dst-chain-ids). Empty by default; pairs can also be wired later via task:setDstChainId.',
+    '',
+    types.string,
+  )
+  .addOptionalParam(
+    'dstChainIds',
+    'Comma-separated destination chain ids paired index-by-index with --dst-eids.',
+    '',
+    types.string,
+  )
+  .addOptionalParam(
+    'verifyContract',
+    'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
+    true,
+    types.boolean,
+  )
+  .setAction(async function (taskArgs: TaskArguments, hre) {
+    if (taskArgs.useInternalProxyAddress) {
+      loadHostAddresses();
+    }
+    const proxyAddress = getRequiredEnvVar('CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS');
+    const lzEndpoint = getRequiredEnvVar('LZ_ENDPOINT_ADDRESS');
+    if (!hre.ethers.isAddress(lzEndpoint)) {
+      throw new Error(`LZ_ENDPOINT_ADDRESS is not a valid address: ${lzEndpoint}`);
+    }
+
+    const dstEids = parseCsvIntegers(taskArgs.dstEids);
+    const dstChainIds = parseCsvIntegers(taskArgs.dstChainIds);
+    if (dstEids.length !== dstChainIds.length) {
+      throw new Error(
+        `--dst-eids and --dst-chain-ids must have the same length: got ${dstEids.length} eid(s) and ${dstChainIds.length} chain id(s). initializeFromEmptyProxy would revert with DstChainIdArrayLengthMismatch.`,
+      );
+    }
+
+    await hre.run('compile:specific', { contract: 'contracts' });
+
+    const preparedUpgrade = await buildUpgradeProposal(hre, {
+      proxyAddress,
+      contractName: 'contracts/bridge/ConfidentialBridge.sol:ConfidentialBridge',
+      innerFunctionName: 'initializeFromEmptyProxy',
+      decodedArgs: [dstEids, dstChainIds],
+      constructorArgs: [lzEndpoint],
+      unsafeAllow: ['constructor', 'state-variable-immutable', 'missing-initializer-call'],
+    });
+
+    // The proxy is not upgraded here (the DAO executes the proposal later), so read the endpoint
+    // immutable back off the freshly deployed implementation to confirm LZ_ENDPOINT_ADDRESS was baked
+    // in correctly before the proposal is signed.
+    await assertBridgeEndpointImmutable(
+      hre,
+      preparedUpgrade.newImplementationAddress,
+      lzEndpoint,
+      '[task:prepareUpgradeConfidentialBridge]',
+    );
+
+    printUpgradeProposal(preparedUpgrade);
+    if (taskArgs.verifyContract) {
+      await verifyProposalImplementation(hre, preparedUpgrade);
+    }
+    return preparedUpgrade;
+  });
+
 task('task:upgradeKMSVerifier')
   .addParam(
     'currentImplementation',
@@ -416,7 +503,8 @@ task('task:upgradeProtocolConfig')
     types.boolean,
   )
   .setAction(async function (taskArgs: TaskArguments, hre) {
-    await upgradeContract('ProtocolConfig', 'PROTOCOL_CONFIG_CONTRACT_ADDRESS', taskArgs, hre);
+    const reinitializeArgs = buildProtocolConfigReinitializeArgs();
+    await upgradeContract('ProtocolConfig', 'PROTOCOL_CONFIG_CONTRACT_ADDRESS', taskArgs, hre, reinitializeArgs);
   });
 
 task('task:prepareUpgradeProtocolConfig')
@@ -441,7 +529,58 @@ task('task:prepareUpgradeProtocolConfig')
     types.boolean,
   )
   .setAction(async function (taskArgs: TaskArguments, hre) {
-    await prepareUpgradeContract('ProtocolConfig', 'PROTOCOL_CONFIG_CONTRACT_ADDRESS', taskArgs, hre);
+    const reinitializeArgs = buildProtocolConfigReinitializeArgs();
+    await prepareUpgradeContract('ProtocolConfig', 'PROTOCOL_CONFIG_CONTRACT_ADDRESS', taskArgs, hre, reinitializeArgs);
+  });
+
+task('task:upgradeKMSGeneration')
+  .addParam(
+    'currentImplementation',
+    'The currently deployed implementation solidity contract path and name, eg: contracts/KMSGeneration.sol:KMSGeneration',
+  )
+  .addParam(
+    'newImplementation',
+    'The new implementation solidity contract path and name, eg: examples/KMSGenerationUpgradedExample.sol:KMSGenerationUpgradedExample',
+  )
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
+    false,
+    types.boolean,
+  )
+  .addOptionalParam(
+    'verifyContract',
+    'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
+    true,
+    types.boolean,
+  )
+  .setAction(async function (taskArgs: TaskArguments, hre) {
+    await upgradeContract('KMSGeneration', 'KMS_GENERATION_CONTRACT_ADDRESS', taskArgs, hre);
+  });
+
+task('task:prepareUpgradeKMSGeneration')
+  .addParam(
+    'currentImplementation',
+    'The currently deployed implementation solidity contract path and name, eg: contracts/KMSGeneration.sol:KMSGeneration',
+  )
+  .addParam(
+    'newImplementation',
+    'The new implementation solidity contract path and name, eg: contracts/KMSGeneration.sol:KMSGeneration',
+  )
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
+    false,
+    types.boolean,
+  )
+  .addOptionalParam(
+    'verifyContract',
+    'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
+    true,
+    types.boolean,
+  )
+  .setAction(async function (taskArgs: TaskArguments, hre) {
+    await prepareUpgradeContract('KMSGeneration', 'KMS_GENERATION_CONTRACT_ADDRESS', taskArgs, hre);
   });
 
 task('task:upgradeInputVerifier')

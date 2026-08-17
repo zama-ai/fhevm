@@ -3,9 +3,9 @@ import type { FhevmRuntime } from '../../types/coreFhevmRuntime.js';
 import type { Bytes65Hex, ChecksummedAddress } from '../../types/primitives.js';
 import { assertIsBytes65HexArray } from '../../base/bytes.js';
 
-type EIP712TypesType = Record<string, ReadonlyArray<{ name: string; type: string }>>;
+type Eip712TypesType = Record<string, ReadonlyArray<{ name: string; type: string }>>;
 
-export type RecoverSignersParameters<T extends EIP712TypesType> = {
+export type RecoverSignersParameters<T extends Eip712TypesType> = {
   readonly domain: Parameters<RecoverTypedDataAddressModuleFunction['recoverTypedDataAddress']>[0]['domain'];
   readonly types: T;
   readonly primaryType: string & keyof T;

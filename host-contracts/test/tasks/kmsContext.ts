@@ -1,0 +1,514 @@
+import { expect } from 'chai';
+import { Signer } from 'ethers';
+import hre, { ethers, run } from 'hardhat';
+
+import {
+  encodeDefineNewEpochForCurrentKmsContext,
+  encodeDefineNewKmsContextAndEpoch,
+  encodeDestroyKmsContext,
+  encodeDestroyKmsEpoch,
+  getProtocolConfigInterface,
+  inspectKmsContextSwitch,
+  predictNewKmsContextId,
+} from '../../tasks/kmsContext';
+import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
+import type { ProtocolConfig } from '../../types';
+import { buildSingleKeyAndCrsActivationPayload, deployFreshProtocolConfigProxy } from './taskHelpers';
+
+const PROTOCOL_CONFIG_ENV_VAR = 'PROTOCOL_CONFIG_CONTRACT_ADDRESS';
+
+interface NodeConfig {
+  txSenderAddress: string;
+  signerAddress: string;
+  ipAddress: string;
+  storageUrl: string;
+  partyId: number;
+  mpcIdentity: string;
+  caCert: string;
+  storagePrefix: string;
+}
+
+interface Thresholds {
+  publicDecryption: number;
+  userDecryption: number;
+  kmsGen: number;
+  mpc: number;
+}
+
+function makeNode(txSenderAddress: string, signerAddress: string, idx: number): NodeConfig {
+  return {
+    txSenderAddress,
+    signerAddress,
+    ipAddress: `10.0.0.${idx + 1}`,
+    storageUrl: `https://s${idx}.example.com`,
+    partyId: idx,
+    mpcIdentity: `node-${idx}`,
+    caCert: '0x',
+    storagePrefix: `kms-node-${idx}`,
+  };
+}
+
+function defaultNodes(): NodeConfig[] {
+  return [
+    makeNode('0x0000000000000000000000000000000000001111', '0x0000000000000000000000000000000000002222', 0),
+    makeNode('0x0000000000000000000000000000000000003333', '0x0000000000000000000000000000000000004444', 1),
+    makeNode('0x0000000000000000000000000000000000005555', '0x0000000000000000000000000000000000006666', 2),
+  ];
+}
+
+const DEFAULT_THRESHOLDS: Thresholds = { publicDecryption: 1, userDecryption: 2, kmsGen: 2, mpc: 1 };
+
+// Sets the KMS_* env vars the tasks read (the same vars that define the node set at deployment).
+function setKmsEnv(
+  nodes: NodeConfig[],
+  thresholds: Thresholds,
+  opts: {
+    softwareVersion?: string;
+    pcrValues?: { pcr0: string; pcr1: string; pcr2: string }[];
+  } = {},
+): void {
+  process.env.NUM_KMS_NODES = String(nodes.length);
+  nodes.forEach((node, i) => {
+    process.env[`KMS_TX_SENDER_ADDRESS_${i}`] = node.txSenderAddress;
+    process.env[`KMS_SIGNER_ADDRESS_${i}`] = node.signerAddress;
+    process.env[`KMS_NODE_IP_${i}`] = node.ipAddress;
+    process.env[`KMS_NODE_STORAGE_URL_${i}`] = node.storageUrl;
+    process.env[`KMS_NODE_PARTY_ID_${i}`] = String(node.partyId);
+    process.env[`KMS_NODE_MPC_IDENTITY_${i}`] = node.mpcIdentity;
+    process.env[`KMS_NODE_CA_CERT_${i}`] = node.caCert;
+    process.env[`KMS_NODE_STORAGE_PREFIX_${i}`] = node.storagePrefix;
+  });
+  process.env.PUBLIC_DECRYPTION_THRESHOLD = String(thresholds.publicDecryption);
+  process.env.USER_DECRYPTION_THRESHOLD = String(thresholds.userDecryption);
+  process.env.KMS_GEN_THRESHOLD = String(thresholds.kmsGen);
+  process.env.MPC_THRESHOLD = String(thresholds.mpc);
+  process.env.KMS_SOFTWARE_VERSION = opts.softwareVersion ?? 'v0.14.0';
+  process.env.KMS_PCR_VALUES = JSON.stringify(opts.pcrValues ?? [{ pcr0: '0xaa', pcr1: '0xbb', pcr2: '0xcc' }]);
+}
+
+describe('KMS context tasks', function () {
+  const deployer = new ethers.Wallet(getRequiredEnvVar('DEPLOYER_PRIVATE_KEY')).connect(ethers.provider);
+  // Full env snapshot/restore: the tasks read process-wide KMS_* vars, so each test must leave the
+  // environment exactly as it found it for the rest of the suite.
+  let envBackup: NodeJS.ProcessEnv;
+
+  beforeEach(function () {
+    envBackup = { ...process.env };
+  });
+
+  afterEach(function () {
+    for (const key of Object.keys(process.env)) {
+      if (!(key in envBackup)) {
+        delete process.env[key];
+      }
+    }
+    Object.assign(process.env, envBackup);
+  });
+
+  // ---------------------------------------------------------------------------
+  // defineNewKmsContextAndEpoch — DAO calldata (build) + direct (execute)
+  // ---------------------------------------------------------------------------
+
+  describe('defineNewKmsContextAndEpoch', function () {
+    it('builds calldata that decodes back to the env node set (DAO path)', async function () {
+      const nodes = defaultNodes();
+      setKmsEnv(nodes, DEFAULT_THRESHOLDS);
+
+      const iface = await getProtocolConfigInterface(hre);
+      const encoded = encodeDefineNewKmsContextAndEpoch(iface);
+      const decoded = iface.decodeFunctionData('defineNewKmsContextAndEpoch', encoded.calldata);
+
+      const decodedNodes = decoded[0];
+      expect(decodedNodes.length).to.equal(nodes.length);
+      nodes.forEach((node, i) => {
+        expect(decodedNodes[i][0]).to.equal(node.txSenderAddress);
+        expect(decodedNodes[i][1]).to.equal(node.signerAddress);
+        expect(decodedNodes[i][2]).to.equal(node.ipAddress);
+        expect(decodedNodes[i][3]).to.equal(node.storageUrl);
+        expect(decodedNodes[i][4]).to.equal(BigInt(node.partyId));
+        expect(decodedNodes[i][5]).to.equal(node.mpcIdentity);
+        expect(decodedNodes[i][6]).to.equal(node.caCert);
+        expect(decodedNodes[i][7]).to.equal(node.storagePrefix);
+      });
+      expect(decoded[1][0]).to.equal(BigInt(DEFAULT_THRESHOLDS.publicDecryption));
+      expect(decoded[1][3]).to.equal(BigInt(DEFAULT_THRESHOLDS.mpc));
+      expect(decoded[2]).to.equal('v0.14.0');
+      expect(decoded[3][0][0]).to.equal('0xaa');
+    });
+
+    it('derives the new context id as the allocation counter + 1 from a live ProtocolConfig', async function () {
+      const proxyAddress = await deployFreshProtocolConfigProxy(deployer, defaultNodes(), DEFAULT_THRESHOLDS);
+      const protocolConfig = (await ethers.getContractAt('ProtocolConfig', proxyAddress)) as unknown as ProtocolConfig;
+      const allocationCounter = await protocolConfig.getCurrentKmsContextIdCounter();
+
+      expect(await predictNewKmsContextId(hre, proxyAddress)).to.equal(allocationCounter + 1n);
+    });
+
+    it('predicts from the allocation counter, staying ahead of the activation pointer during an in-flight switch', async function () {
+      const proxyAddress = await deployFreshProtocolConfigProxy(deployer, defaultNodes(), DEFAULT_THRESHOLDS);
+      const protocolConfig = (await ethers.getContractAt('ProtocolConfig', proxyAddress)) as unknown as ProtocolConfig;
+
+      // Define a new context so the allocation counter advances while the activation pointer stays put.
+      // This leaves the switch in-flight (PENDING), so the counter runs ahead of the pointer.
+      const newNodes = [
+        makeNode('0x00000000000000000000000000000000000C1111', '0x00000000000000000000000000000000000C2222', 0),
+        makeNode('0x00000000000000000000000000000000000C3333', '0x00000000000000000000000000000000000C4444', 1),
+      ];
+      setKmsEnv(newNodes, { publicDecryption: 1, userDecryption: 1, kmsGen: 1, mpc: 1 });
+      process.env[PROTOCOL_CONFIG_ENV_VAR] = proxyAddress;
+      await run('task:defineNewKmsContextAndEpoch', {});
+
+      const allocationCounter = await protocolConfig.getCurrentKmsContextIdCounter();
+      const activationPointer = await protocolConfig.getCurrentKmsContextId();
+      expect(allocationCounter).to.be.greaterThan(activationPointer);
+
+      // The prediction must track the allocation counter, not the activation pointer. Reverting the
+      // production fix to the activation pointer makes this assertion fail.
+      const predicted = await predictNewKmsContextId(hre, proxyAddress);
+      expect(predicted).to.equal(allocationCounter + 1n);
+      expect(predicted).to.be.greaterThan(activationPointer + 1n);
+    });
+
+    it('broadcasts the switch with the deployer key (no-DAO path) leaving a PENDING context', async function () {
+      const initialNodes = defaultNodes();
+      const proxyAddress = await deployFreshProtocolConfigProxy(deployer, initialNodes, DEFAULT_THRESHOLDS);
+
+      // A distinct new committee for the switch.
+      const newNodes = [
+        makeNode('0x00000000000000000000000000000000000A1111', '0x00000000000000000000000000000000000A2222', 0),
+        makeNode('0x00000000000000000000000000000000000A3333', '0x00000000000000000000000000000000000A4444', 1),
+      ];
+      setKmsEnv(newNodes, { publicDecryption: 1, userDecryption: 1, kmsGen: 1, mpc: 1 });
+      process.env[PROTOCOL_CONFIG_ENV_VAR] = proxyAddress;
+
+      await run('task:defineNewKmsContextAndEpoch', {});
+
+      const status = await inspectKmsContextSwitch(hre, proxyAddress, 0);
+      expect(status.flow).to.equal('context-switch');
+      expect(status.contextState).to.equal('PENDING');
+      expect(status.newSigners).to.deep.equal(newNodes.map((n) => n.signerAddress));
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // defineNewEpochForCurrentKmsContext — DAO calldata (build) + direct (execute)
+  // ---------------------------------------------------------------------------
+
+  describe('defineNewEpochForCurrentKmsContext', function () {
+    it('builds the no-arg selector calldata (DAO path)', async function () {
+      const iface = await getProtocolConfigInterface(hre);
+      const encoded = encodeDefineNewEpochForCurrentKmsContext(iface);
+      expect(encoded.calldata).to.equal(iface.getFunction('defineNewEpochForCurrentKmsContext')!.selector);
+      expect(encoded.calldata).to.have.lengthOf(10);
+    });
+
+    it('broadcasts the rotation with the deployer key (no-DAO path) leaving a PENDING epoch', async function () {
+      const proxyAddress = await deployFreshProtocolConfigProxy(deployer, defaultNodes(), DEFAULT_THRESHOLDS);
+      process.env[PROTOCOL_CONFIG_ENV_VAR] = proxyAddress;
+
+      await run('task:defineNewEpochForCurrentKmsContext', {});
+
+      const status = await inspectKmsContextSwitch(hre, proxyAddress, 0);
+      expect(status.flow).to.equal('same-set-rotation');
+      expect(status.epochState).to.equal('PENDING');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // destroyKmsContext / destroyKmsEpoch — DAO calldata (build) + direct (execute)
+  // ---------------------------------------------------------------------------
+
+  describe('destroyKmsContext', function () {
+    it('builds calldata that decodes back to the context id (DAO path)', async function () {
+      const iface = await getProtocolConfigInterface(hre);
+      const encoded = encodeDestroyKmsContext(iface, 7n);
+      const decoded = iface.decodeFunctionData('destroyKmsContext', encoded.calldata);
+      expect(decoded[0]).to.equal(7n);
+      expect(encoded.calldata.slice(0, 10)).to.equal(iface.getFunction('destroyKmsContext')!.selector);
+    });
+
+    it('broadcasts the destruction of a non-current PENDING context (no-DAO path)', async function () {
+      const proxyAddress = await deployFreshProtocolConfigProxy(deployer, defaultNodes(), DEFAULT_THRESHOLDS);
+      process.env[PROTOCOL_CONFIG_ENV_VAR] = proxyAddress;
+
+      // Open a context switch so a non-current, live (PENDING) context exists to destroy.
+      const newNodes = [
+        makeNode('0x00000000000000000000000000000000000B1111', '0x00000000000000000000000000000000000B2222', 0),
+        makeNode('0x00000000000000000000000000000000000B3333', '0x00000000000000000000000000000000000B4444', 1),
+      ];
+      setKmsEnv(newNodes, { publicDecryption: 1, userDecryption: 1, kmsGen: 1, mpc: 1 });
+      await run('task:defineNewKmsContextAndEpoch', {});
+      const pending = await inspectKmsContextSwitch(hre, proxyAddress, 0);
+      expect(pending.contextState).to.equal('PENDING');
+
+      await run('task:destroyKmsContext', { contextId: pending.pendingContextId!.toString() });
+
+      const after = await inspectKmsContextSwitch(hre, proxyAddress, 0);
+      expect(after.aborted).to.equal(true);
+      expect(after.abortReason).to.equal('context-destroyed');
+    });
+  });
+
+  describe('destroyKmsEpoch', function () {
+    it('builds calldata that decodes back to the epoch id (DAO path)', async function () {
+      const iface = await getProtocolConfigInterface(hre);
+      const encoded = encodeDestroyKmsEpoch(iface, 42n);
+      const decoded = iface.decodeFunctionData('destroyKmsEpoch', encoded.calldata);
+      expect(decoded[0]).to.equal(42n);
+      expect(encoded.calldata.slice(0, 10)).to.equal(iface.getFunction('destroyKmsEpoch')!.selector);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Status task (event-indexing monitor)
+  // ---------------------------------------------------------------------------
+
+  describe('context-switch status', function () {
+    // Old context: 3 nodes, mpc=2 -> previous-side creation target (n - t) = 1.
+    // New context: 2 nodes, mpc=1. Old/new committees are disjoint so confirmations partition cleanly.
+    let proxyAddress: string;
+    let protocolConfig: ProtocolConfig;
+    let oldSigners: Signer[];
+    let oldTxSenders: Signer[];
+    let newSigners: Signer[];
+    let newTxSenders: Signer[];
+    let newNodes: NodeConfig[];
+    const newThresholds: Thresholds = { publicDecryption: 1, userDecryption: 1, kmsGen: 1, mpc: 1 };
+
+    async function asOwner(): Promise<ProtocolConfig> {
+      return (await ethers.getContractAt('ProtocolConfig', proxyAddress, deployer)) as unknown as ProtocolConfig;
+    }
+
+    function parseEventArg(
+      receipt: { logs: readonly { topics: string[]; data: string }[] },
+      name: string,
+      arg: string,
+    ): bigint | undefined {
+      for (const log of receipt.logs) {
+        let parsed;
+        try {
+          parsed = protocolConfig.interface.parseLog({ topics: [...log.topics], data: log.data });
+        } catch {
+          continue;
+        }
+        if (parsed?.name === name) {
+          return parsed.args[arg] as bigint;
+        }
+      }
+      return undefined;
+    }
+
+    async function defineSwitch(): Promise<bigint> {
+      const receipt = await (
+        await (await asOwner()).defineNewKmsContextAndEpoch(newNodes, newThresholds, '', [])
+      ).wait();
+      const contextId = parseEventArg(receipt!, 'NewKmsContext', 'contextId');
+      if (contextId === undefined) {
+        throw new Error('NewKmsContext not emitted');
+      }
+      return contextId;
+    }
+
+    async function confirmCreation(contextId: bigint, txSenders: Signer[]): Promise<bigint | undefined> {
+      let epochId: bigint | undefined;
+      for (const txSender of txSenders) {
+        const asTxSender = (await ethers.getContractAt(
+          'ProtocolConfig',
+          proxyAddress,
+          txSender,
+        )) as unknown as ProtocolConfig;
+        const receipt = await (await asTxSender.confirmKmsContextCreation(contextId)).wait();
+        epochId ??= parseEventArg(receipt!, 'NewKmsEpoch', 'epochId');
+      }
+      return epochId;
+    }
+
+    // `signers` are the new-context signer accounts, parallel to `txSenders` (same index = same node).
+    // The signature must recover to the signer while msg.sender is the tx-sender; they are distinct accounts.
+    async function confirmActivation(
+      contextId: bigint,
+      epochId: bigint,
+      txSenders: Signer[],
+      signers: Signer[],
+    ): Promise<void> {
+      for (let i = 0; i < txSenders.length; i++) {
+        const asTxSender = (await ethers.getContractAt(
+          'ProtocolConfig',
+          proxyAddress,
+          txSenders[i],
+        )) as unknown as ProtocolConfig;
+        const { keys, crsList } = await buildSingleKeyAndCrsActivationPayload(
+          signers[i],
+          proxyAddress,
+          contextId,
+          epochId,
+        );
+        await (await asTxSender.confirmEpochActivation(epochId, keys, crsList)).wait();
+      }
+    }
+
+    beforeEach(async function () {
+      const accounts = await ethers.getSigners();
+      oldSigners = accounts.slice(1, 4);
+      newSigners = accounts.slice(4, 6);
+      newTxSenders = accounts.slice(6, 8);
+      oldTxSenders = accounts.slice(8, 11);
+
+      // confirmKmsContextCreation authorizes by tx-sender, so old-committee tx-senders must be real
+      // signable accounts (not throwaway addresses) for the confirmation calls below.
+      const oldNodes = await Promise.all(
+        oldSigners.map(async (s, i) => makeNode(await oldTxSenders[i].getAddress(), await s.getAddress(), i)),
+      );
+      newNodes = await Promise.all(
+        newSigners.map(async (s, i) => makeNode(await newTxSenders[i].getAddress(), await s.getAddress(), i)),
+      );
+
+      proxyAddress = await deployFreshProtocolConfigProxy(deployer, oldNodes, {
+        publicDecryption: 1,
+        userDecryption: 1,
+        kmsGen: 1,
+        mpc: 2, // -> previousTxSenderThreshold = 3 - 2 = 1
+      });
+      protocolConfig = (await ethers.getContractAt('ProtocolConfig', proxyAddress)) as unknown as ProtocolConfig;
+    });
+
+    it('reports idle when no switch is in progress', async function () {
+      const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
+      expect(result.flow).to.equal('idle');
+      expect(result.fullyLive).to.equal(true);
+    });
+
+    it('reports PENDING with outstanding new signers part-way through creation', async function () {
+      const contextId = await defineSwitch();
+      await confirmCreation(contextId, [newTxSenders[0]]);
+
+      const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
+      expect(result.flow).to.equal('context-switch');
+      expect(result.pendingContextId).to.equal(contextId);
+      expect(result.contextState).to.equal('PENDING');
+      expect(result.newTxSendersConfirmed).to.have.lengthOf(1);
+      expect(result.newTxSendersOutstanding).to.deep.equal([await newTxSenders[1].getAddress()]);
+      expect(result.contextCreationQuorumReached).to.equal(false);
+    });
+
+    it('surfaces the (n - t) old-side target and flags being stuck below it', async function () {
+      const contextId = await defineSwitch();
+      await confirmCreation(contextId, [...newTxSenders]);
+
+      const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
+      expect(result.contextState).to.equal('PENDING');
+      expect(result.newTxSendersOutstanding).to.have.lengthOf(0);
+      expect(result.previousTxSenderThreshold).to.equal(1);
+      expect(result.previousConfirmationCount).to.equal(0);
+      expect(result.stuckBelowPreviousThreshold).to.equal(true);
+      expect(result.contextCreationQuorumReached).to.equal(false);
+    });
+
+    it('reports CREATED once the creation quorum is reached, with the epoch still PENDING', async function () {
+      const contextId = await defineSwitch();
+      const epochId = await confirmCreation(contextId, [...newTxSenders, oldTxSenders[0]]);
+      expect(epochId, 'creation quorum should emit NewKmsEpoch').to.not.be.undefined;
+
+      const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
+      expect(result.contextState).to.equal('CREATED');
+      expect(result.contextCreationQuorumReached).to.equal(true);
+      expect(result.pendingEpochId).to.equal(epochId);
+      expect(result.epochState).to.equal('PENDING');
+      expect(result.epochSignersOutstanding).to.have.lengthOf(newSigners.length);
+      expect(result.fullyLive).to.equal(false);
+    });
+
+    it('reports fully live once the epoch is activated', async function () {
+      const contextId = await defineSwitch();
+      const epochId = await confirmCreation(contextId, [...newTxSenders, oldTxSenders[0]]);
+      await confirmActivation(contextId, epochId!, newTxSenders, newSigners);
+
+      const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
+      expect(result.flow).to.equal('idle');
+      expect(result.fullyLive).to.equal(true);
+      expect(result.activeContextId).to.equal(contextId);
+      const [activeContextId, activeEpochId] = await protocolConfig.getCurrentKmsContextAndEpoch();
+      expect(activeContextId).to.equal(contextId);
+      expect(activeEpochId).to.equal(epochId);
+    });
+
+    it('distinguishes an aborted switch from one still in progress', async function () {
+      const contextId = await defineSwitch();
+      await confirmCreation(contextId, [newTxSenders[0]]);
+
+      const inProgress = await inspectKmsContextSwitch(hre, proxyAddress, 0);
+      expect(inProgress.aborted).to.equal(false);
+      expect(inProgress.contextState).to.equal('PENDING');
+
+      await (await (await asOwner()).destroyKmsContext(contextId)).wait();
+
+      const aborted = await inspectKmsContextSwitch(hre, proxyAddress, 0);
+      expect(aborted.flow).to.equal('context-switch');
+      expect(aborted.aborted).to.equal(true);
+      expect(aborted.abortReason).to.equal('context-destroyed');
+    });
+
+    it('reports a rotation opened after an aborted switch', async function () {
+      // Destroying a context does not rewind the allocation counter, so it stays ahead of the active
+      // context pointer with nothing in flight. A check on the counter alone would keep reporting the
+      // dead switch and never see the rotation opened afterwards.
+      const contextId = await defineSwitch();
+      await (await (await asOwner()).destroyKmsContext(contextId)).wait();
+      expect(await protocolConfig.getCurrentKmsContextIdCounter()).to.be.greaterThan(
+        await protocolConfig.getCurrentKmsContextId(),
+      );
+
+      const receipt = await (await (await asOwner()).defineNewEpochForCurrentKmsContext()).wait();
+      const epochId = parseEventArg(receipt!, 'NewKmsEpoch', 'epochId');
+
+      const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
+      expect(result.flow).to.equal('same-set-rotation');
+      expect(result.pendingEpochId).to.equal(epochId);
+      // Same-set resharing keeps the committee, so the old signers are the expected confirmers.
+      expect(result.epochSignersOutstanding).to.have.lengthOf(oldSigners.length);
+    });
+
+    it('reports a pending switch whose defining event is outside the scanned range', async function () {
+      const contextId = await defineSwitch();
+
+      // Scan a window that starts after the NewKmsContext event, so a purely event-based monitor
+      // would see nothing. The allocation-counter check must still surface the in-flight switch.
+      const defineBlock = await ethers.provider.getBlockNumber();
+      await ethers.provider.send('evm_mine', []);
+      const scanFromBlock = defineBlock + 1;
+
+      const result = await inspectKmsContextSwitch(hre, proxyAddress, scanFromBlock);
+      expect(result.flow).to.equal('context-switch');
+      expect(result.pendingContextId).to.equal(contextId);
+      expect(result.contextState).to.equal('PENDING');
+      expect(result.aborted).to.equal(false);
+      // Cached previous-committee target (3 old nodes, mpc = 2 -> n - t = 1), read authoritatively.
+      expect(result.previousTxSenderThreshold).to.equal(1);
+      // The new committee comes from the out-of-range event, so it is not reconstructable.
+      expect(result.newSigners).to.equal(undefined);
+    });
+
+    it('reports the same quorum result as the contract after lowering the previous context MPC threshold', async function () {
+      const previousContextId = await protocolConfig.getCurrentKmsContextId();
+      const contextId = await defineSwitch();
+
+      // Lower the previous context's live MPC threshold after the switch was defined. Recomputing the
+      // (n - t) target from live reads would now give 3 - 1 = 2. The value cached at define time stays 1.
+      await (await (await asOwner()).updateMpcThresholdForContext(previousContextId, 1)).wait();
+      expect(await protocolConfig.getMpcThresholdForContext(previousContextId)).to.equal(1n);
+      expect(await protocolConfig.getContextCreationPreviousTxSenderThreshold(contextId)).to.equal(1n);
+
+      // All new tx senders + exactly one previous tx sender: enough for the cached target of 1, so the
+      // contract reaches the creation quorum (CREATED). A recomputed target of 2 would read as stuck.
+      const epochId = await confirmCreation(contextId, [...newTxSenders, oldTxSenders[0]]);
+      expect(epochId, 'creation quorum should emit NewKmsEpoch').to.not.be.undefined;
+
+      const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
+      expect(result.contextState).to.equal('CREATED');
+      expect(result.previousTxSenderThreshold).to.equal(1);
+      expect(result.previousConfirmationCount).to.equal(1);
+      expect(result.contextCreationQuorumReached).to.equal(true);
+      expect(result.stuckBelowPreviousThreshold).to.equal(false);
+    });
+  });
+});

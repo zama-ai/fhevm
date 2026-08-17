@@ -1,13 +1,42 @@
 import type { KmsSigncryptedSharesMetadata, KmsSigncryptedShare } from '../types/kms-p.js';
 import type { KmsSigncryptedShares, KmsSigncryptedSharesBrand } from '../types/kms.js';
-import type { BytesHex, BytesHexNo0x, ChecksummedAddress } from '../types/primitives.js';
-import type { KmsSignersContext } from '../types/kmsSignersContext.js';
+import type { BytesHex } from '../types/primitives.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
+import type { TkmsVersion } from '../../wasm/tkms/KmsLibApi.js';
 import { assertIsKmsSignersContext } from '../host-contracts/KmsSignersContext-p.js';
 import { ensure0x } from '../base/string.js';
-import { assertIsKmsExtraData } from './kmsExtraData.js';
-import { reconcileKmsSignersContext } from '../host-contracts/readKmsSignersContext-p.js';
+import { recoverSigners } from '../utils-p/runtime/recoverSigners.js';
+import { createKmsExtraDataFromBytesHex, toKmsSignedExtraDataBytesHex } from './kmsExtraData-p.js';
+
+////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * EIP-712 types for the KMS `UserDecryptResponseVerification` structure that each
+ * KMS node signs per response share (see gateway `Decryption.sol`).
+ *
+ * CRITICAL: field order and types are authoritative — they define the EIP-712
+ * type hash and must match the on-chain struct exactly.
+ *
+ * Note: `ctHandles` is declared `bytes32[]` to match `Decryption.sol` (the tkms
+ * WASM doc comments it as `uint256[]`; both encode the same 32 bytes, but the
+ * type string participates in the type hash — if verification unexpectedly
+ * fails, `uint256[]` is the first thing to try).
+ */
+const kmsUserDecryptResponseEip712Types = {
+  EIP712Domain: [
+    { name: 'name', type: 'string' },
+    { name: 'version', type: 'string' },
+    { name: 'chainId', type: 'uint256' },
+    { name: 'verifyingContract', type: 'address' },
+  ],
+  UserDecryptResponseVerification: [
+    { name: 'publicKey', type: 'bytes' },
+    { name: 'ctHandles', type: 'bytes32[]' },
+    { name: 'userDecryptedShare', type: 'bytes' },
+    { name: 'extraData', type: 'bytes' },
+  ],
+} as const;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -23,8 +52,8 @@ const GET_SHARES_FUNC = Symbol('KmsSigncryptedShares.getShares');
  *
  * Construction guarantees:
  * - Contains at least one share.
- * - All shares have identical `extraData` values.
- * - The shared `extraData` matches the `extraData` derived from the associated {@link KmsSignersContext}.
+ * - All shares may not have identical `extraData` values.
+ * - The shared `extraData` may not match the `extraData` derived from the associated {@link KmsSignersContext}.
  *
  * @internal
  */
@@ -39,7 +68,9 @@ class KmsSigncryptedSharesImpl implements KmsSigncryptedShares {
       eip712Domain: metadata.eip712Domain,
       eip712Signature: metadata.eip712Signature,
       eip712SignerAddress: metadata.eip712SignerAddress,
+      eip712ExtraData: metadata.eip712ExtraData,
       handles: [...metadata.handles],
+      tkmsVersion: metadata.tkmsVersion,
     };
     Object.freeze(this.#metadata);
     Object.freeze(this.#metadata.handles);
@@ -47,6 +78,13 @@ class KmsSigncryptedSharesImpl implements KmsSigncryptedShares {
     this.#shares = [...shares];
     Object.freeze(this.#shares);
     this.#shares.forEach((share) => Object.freeze(share));
+    if (this.#shares.length === 0) {
+      throw new Error('Expected at least one signcrypted share.');
+    }
+  }
+
+  public get tkmsVersion(): TkmsVersion {
+    return this.#metadata.tkmsVersion;
   }
 
   public [GET_SHARES_FUNC](token: symbol): readonly KmsSigncryptedShare[] {
@@ -72,46 +110,65 @@ type Context = {
 };
 
 /**
- * Asserts that at least one share exists and that all shares carry the same
- * `extraData`. Returns the common `extraData` value.
- */
-function assertUniformExtraData(shares: readonly KmsSigncryptedShare[]): BytesHexNo0x {
-  const firstShare = shares[0];
-  if (firstShare === undefined) {
-    throw new Error('Expected at least one signcrypted share.');
-  }
-
-  const firstExtraData = firstShare.extraData;
-  for (let i = 1; i < shares.length; i++) {
-    const share = shares[i];
-    if (share !== undefined && share.extraData !== firstExtraData) {
-      throw new Error(
-        `Mismatched extraData across shares: share[0]="${firstExtraData}" vs share[${i}]="${share.extraData}".`,
-      );
-    }
-  }
-
-  return firstExtraData;
-}
-
-/**
- * Creates a validated {@link KmsSigncryptedShares} instance.
+ * Helper:
+ * Verifies the EIP-712 signature of a single KMS signcrypted share.
  *
- * Enforces all invariants documented on {@link KmsSigncryptedSharesImpl}:
- * at least one share, uniform `extraData`, and consistency with the
- * {@link KmsSignersContext}.
+ * Rebuilds the `UserDecryptResponseVerification` payload the KMS node signed,
+ * recovers the signer, and asserts it belongs to the reconciled KMS signers
+ * context. This is an independent, JS-only check — the same verification is also
+ * performed inside the tkms WASM during reconstruction (`verify=true`), so this
+ * is primarily a test/defense-in-depth pass and is not required for correctness.
  *
- * @throws If validation fails.
- * @internal
+ * @throws If the signer cannot be recovered, or is not a known KMS signer.
  */
-export async function createKmsSigncryptedShares(
+export async function verifyKmsSigncryptedShare(
   context: Context,
   parameters: {
+    readonly share: KmsSigncryptedShare;
     readonly metadata: KmsSigncryptedSharesMetadata;
-    readonly shares: readonly KmsSigncryptedShare[];
+    readonly transportPublicKey: BytesHex;
   },
-): Promise<KmsSigncryptedShares> {
+): Promise<void> {
+  const { share, metadata, transportPublicKey } = parameters;
+
+  // Rebuild the exact EIP-712 message each KMS node signs per response share
+  // (gateway Decryption.sol `UserDecryptResponseVerification`). `userDecryptedShare`
+  // is the serialized share bytes carried in `share.payload`.
+  const message = {
+    publicKey: transportPublicKey,
+    ctHandles: metadata.handles.map((h) => h.bytes32Hex),
+    userDecryptedShare: ensure0x(share.payload),
+    // Normalize to the form the KMS actually signs over (v0 sentinel -> empty '0x').
+    extraData: toKmsSignedExtraDataBytesHex(createKmsExtraDataFromBytesHex(ensure0x(share.extraData))),
+  };
+
+  // Recover the signer of this share. The KMS EIP-712 domain lives in `metadata`.
+  const [recoveredAddress] = await recoverSigners(context, {
+    domain: metadata.eip712Domain,
+    types: kmsUserDecryptResponseEip712Types,
+    primaryType: 'UserDecryptResponseVerification',
+    signatures: [ensure0x(share.signature)],
+    message,
+  });
+
+  if (recoveredAddress === undefined) {
+    throw new Error('Failed to recover signer from KMS signcrypted share signature.');
+  }
+
+  // The recovered signer must be one of the reconciled KMS signers (case-insensitive).
+  if (!metadata.kmsSignersContext.has(recoveredAddress)) {
+    throw new Error(
+      `KMS signcrypted share signature was not signed by a known KMS signer (recovered ${recoveredAddress}).`,
+    );
+  }
+}
+
+export function createKmsSigncryptedShares(parameters: {
+  readonly metadata: KmsSigncryptedSharesMetadata;
+  readonly shares: readonly KmsSigncryptedShare[];
+}): KmsSigncryptedShares {
   const { metadata, shares } = parameters;
+
   /*
     TODO: add an optional signature verification pass. 
     (13 signatures verifications. Could be CPU costly)
@@ -130,19 +187,7 @@ export async function createKmsSigncryptedShares(
   // Assert context first — extraData comparison depends on a valid KmsSignersContext.
   assertIsKmsSignersContext(metadata.kmsSignersContext, {});
 
-  // Extract the common extraData from all shares and validate its format.
-  const relayerExtraData: BytesHex = ensure0x(assertUniformExtraData(shares));
-  assertIsKmsExtraData(relayerExtraData, {});
-
-  // Reconcile KMS signer context using 'loose' mode.
-  const reconciledKmsSignersContext: KmsSignersContext = await reconcileKmsSignersContext(context, {
-    address: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
-    relayerExtraData,
-    requestedKmsSignersContext: metadata.kmsSignersContext,
-    mode: 'loose',
-  });
-
-  return new KmsSigncryptedSharesImpl({ ...metadata, kmsSignersContext: reconciledKmsSignersContext }, shares);
+  return new KmsSigncryptedSharesImpl(metadata, shares);
 }
 
 /**

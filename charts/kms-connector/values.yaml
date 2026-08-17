@@ -31,7 +31,6 @@ commonConfig:
   gatewayContractAddresses:
     decryption: ""
     gatewayConfig: ""
-    kmsGeneration: ""
 
   # Ethereum chain RPC node endpoint (HTTP)
   ethereumUrl: "http://ethereum-node:8545"
@@ -39,9 +38,10 @@ commonConfig:
   ethereumChainId: ""
   # Ethereum smart contract addresses (override the network preset when set)
   ethereumContractAddresses:
+    # ProtocolConfig and KMSGeneration are only listened on Ethereum, not other host chains
+    kmsGeneration: ""
+    protocolConfig: ""
     acl: ""
-    # KMS Verifier is only present on Ethereum and not other host chains
-    kmsVerifier: ""
 
   # Polygon chain RPC node endpoint (HTTP)
   polygonUrl: "http://polygon-node:8545"
@@ -49,6 +49,14 @@ commonConfig:
   polygonChainId: ""
   # Polygon smart contract addresses (override the network preset when set)
   polygonContractAddresses:
+    acl: ""
+
+  # BNB Testnet chain RPC node endpoint (HTTP)
+  bnbTestnetUrl: ""
+  # BNB Testnet chain identifier (override the network preset when set)
+  bnbTestnetChainId: ""
+  # BNB Testnet smart contract addresses (override the network preset when set)
+  bnbTestnetContractAddresses:
     acl: ""
 
   # Distributed tracing configuration
@@ -81,6 +89,7 @@ commonConfig:
 # Sets up the database schema for KMS connector
 kmsConnectorDbMigration:
   enabled: true
+  nameOverride:
   annotations:
 
   image:

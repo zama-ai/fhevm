@@ -9,7 +9,6 @@ import {
   requiresMultichainAclAddress,
   requiresModernHostAddressArtifacts,
 } from "../compat/compat";
-import { driftDatabaseName } from "../drift";
 import type { StackSpec } from "../stack-spec/stack-spec";
 import {
   COPROCESSOR_WALLET_INDICES,
@@ -17,9 +16,11 @@ import {
   KMS_NODE_WALLET_INDICES,
   MINIO_INTERNAL_URL,
   POSTGRES_HOST,
+  coprocessorDatabaseName,
   hostChainRuntimes,
+  realLzEndpointFor,
 } from "../layout";
-import { kmsConnectorDbName, kmsConnectorEnvName, kmsCoreName, kmsServicePort, reconstructionThreshold } from "../kms-party";
+import { kmsConnectorDbName, kmsConnectorEnvName, kmsCoreName, kmsMpcPort, kmsPublicPrefix, kmsServicePort, reconstructionThreshold } from "../kms-party";
 import type { State } from "../types";
 import { predictedCrsId, predictedKeyId } from "../utils/fs";
 
@@ -116,8 +117,6 @@ const applyBaseRuntimeEnv = (
   envs["coprocessor"].KMS_SERVER_KEY = `${minioInternal}/kms-public/${keyPrefix}/ServerKey/${fheKeyId}`;
   envs["coprocessor"].KMS_SNS_KEY = `${minioInternal}/kms-public/${keyPrefix}/SnsKey/${fheKeyId}`;
   envs["coprocessor"].KMS_CRS_KEY = `${minioInternal}/kms-public/${keyPrefix}/CRS/${crsKeyId}`;
-  envs["relayer"].APP_KEYURL__FHE_PUBLIC_KEY__URL = `${minioInternal}/kms-public/${keyPrefix}/PublicKey/${fheKeyId}`;
-  envs["relayer"].APP_KEYURL__CRS__URL = `${minioInternal}/kms-public/${keyPrefix}/CRS/${crsKeyId}`;
 };
 
 /** Applies compatibility-driven env aliases and URL rewrites. */
@@ -151,6 +150,11 @@ const applyDiscoveryEnv = (
     envs["gateway-sc"][`KMS_SIGNER_ADDRESS_${index}`] = address;
     envs["host-sc"][`KMS_SIGNER_ADDRESS_${index}`] = address;
   });
+  // Each node's serialized CA certificate (hex), discovered from its public vault
+  // alongside the VerfAddress. The host ProtocolConfig deploy reads it as KMS_NODE_CA_CERT_i.
+  (state.discovery?.kmsCaCerts ?? []).forEach((caCert, index) => {
+    envs["host-sc"][`KMS_NODE_CA_CERT_${index}`] = caCert;
+  });
   if (!state.discovery) {
     return;
   }
@@ -169,6 +173,9 @@ const applyDiscoveryEnv = (
   const connectorKmsGenerationAddress = kmsConnectorUsesHostKmsGeneration(plan)
     ? hostKmsGenerationAddress
     : gatewayKmsGenerationAddress;
+  const protocolConfigAddress = requiresModernHostAddressArtifacts(plan)
+    ? primaryHost.PROTOCOL_CONFIG_CONTRACT_ADDRESS
+    : "";
 
   updateContracts(envs["gateway-sc"], state.discovery.gateway);
   updateContracts(envs["gateway-mocked-payment"], {
@@ -189,6 +196,8 @@ const applyDiscoveryEnv = (
     CIPHERTEXT_COMMITS_ADDRESS: state.discovery.gateway.CIPHERTEXT_COMMITS_ADDRESS,
     ...(requiresMultichainAclAddress(plan) ? { MULTICHAIN_ACL_ADDRESS: state.discovery.gateway.MULTICHAIN_ACL_ADDRESS } : {}),
     KMS_GENERATION_ADDRESS: coprocessorKmsGenerationAddress ?? "",
+    PROTOCOL_CONFIG_ADDRESS: protocolConfigAddress,
+    CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS: primaryHost.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS ?? "",
   });
 
   const kmsHostChains = chains.map((chain) => {
@@ -204,6 +213,7 @@ const applyDiscoveryEnv = (
     KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS: state.discovery.gateway.DECRYPTION_ADDRESS,
     KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS: state.discovery.gateway.GATEWAY_CONFIG_ADDRESS,
     KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS: connectorKmsGenerationAddress ?? "",
+    KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS: primaryHost.PROTOCOL_CONFIG_CONTRACT_ADDRESS,
     KMS_CONNECTOR_HOST_CHAINS: JSON.stringify(kmsHostChains),
   });
   updateContracts(envs["relayer"], {
@@ -220,10 +230,48 @@ const applyDiscoveryEnv = (
     FHEVM_EXECUTOR_CONTRACT_ADDRESS: primaryHost.FHEVM_EXECUTOR_CONTRACT_ADDRESS,
     PROTOCOL_CONFIG_CONTRACT_ADDRESS: primaryHost.PROTOCOL_CONFIG_CONTRACT_ADDRESS,
     KMS_GENERATION_CONTRACT_ADDRESS: primaryHost.KMS_GENERATION_CONTRACT_ADDRESS,
+    CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS: primaryHost.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS,
+    LZ_ENDPOINT_ADDRESS: primaryHost.LZ_ENDPOINT_ADDRESS,
+    PROTOCOL_PAYMENT_ADDRESS: state.discovery.gateway.PROTOCOL_PAYMENT_ADDRESS,
+    ZAMA_OFT_ADDRESS: envs["gateway-sc"].ZAMA_OFT_ADDRESS,
   });
+  envs["test-suite"].BRIDGE_REAL_LZ = chains.some((chain) => realLzEndpointFor(chain.key)) ? "true" : "";
 };
 
 export type KmsParty = { party: number; endpoint: string; privateKey: string; dbName: string };
+
+/**
+ * ProtocolConfig context globals the host deploy reads, shared by both KMS modes.
+ * mock_enclave skips PCR attestation, so zero PCRs suffice. softwareVersion must be valid semver
+ * (the KMS core parses it) — fall back to a placeholder when CORE_VERSION is a git-SHA tag.
+ */
+const applyProtocolConfigKmsGlobals = (hostSc: Record<string, string>, plan: StackSpec) => {
+  const zeroPcr = `0x${"00".repeat(48)}`;
+  const coreVersion = (plan.versions.env.CORE_VERSION ?? "").replace(/^v/, "");
+  hostSc.KMS_SOFTWARE_VERSION = /^\d+(\.\d+){0,2}(-[0-9A-Za-z.-]+)?$/.test(coreVersion) ? coreVersion : "0.1.0";
+  hostSc.KMS_PCR_VALUES = JSON.stringify([{ pcr0: zeroPcr, pcr1: zeroPcr, pcr2: zeroPcr }]);
+};
+
+/**
+ * Centralized mode: the single KMS node's ProtocolConfig params the threshold path sets per-node.
+ * The rest (tx-sender, IP, storage URL, signer, CA cert) already come from the templates and
+ * discovery. storagePrefix is "PUB" for the centralized core (PUB-p{i} is threshold-only), so it
+ * tracks the discovered minioKeyPrefix. Must run after applyDiscoveryEnv.
+ */
+const applyKmsCentralizedHostEnv = (
+  envs: Record<string, Record<string, string>>,
+  plan: StackSpec,
+  state: Pick<State, "discovery">,
+) => {
+  if (plan.kms.mode === "threshold") {
+    return;
+  }
+  const hostSc = envs["host-sc"];
+  applyProtocolConfigKmsGlobals(hostSc, plan);
+  hostSc.KMS_NODE_PARTY_ID_0 = "1";
+  hostSc.KMS_NODE_MPC_IDENTITY_0 = kmsCoreName(1);
+  hostSc.KMS_NODE_STORAGE_PREFIX_0 = state.discovery?.minioKeyPrefix ?? "PUB";
+};
 
 /**
  * Threshold mode only: sets gateway-sc KMS counts/thresholds + per-party
@@ -240,16 +288,19 @@ const applyKmsThresholdGatewayEnv = async (
   if (plan.kms.mode !== "threshold") {
     return [];
   }
-  const { parties, threshold } = plan.kms;
+  const { parties, threshold, committeeSize } = plan.kms;
   if (parties > KMS_NODE_WALLET_INDICES.length) {
     throw new Error(`KMS parties ${parties} exceeds supported ${KMS_NODE_WALLET_INDICES.length}`);
   }
   const gw = envs["gateway-sc"];
+  const hostSc = envs["host-sc"];
   const mnemonic = gw.MNEMONIC;
   if (!mnemonic) {
     throw new Error("Missing gateway mnemonic for threshold-mode KMS setup");
   }
-  gw.NUM_KMS_NODES = String(parties);
+  // On-chain committee = the first committeeSize parties; cores beyond it are spares (still provisioned
+  // below with a connector + signing key so a context switch can rotate one into the committee).
+  gw.NUM_KMS_NODES = String(committeeSize);
   gw.MPC_THRESHOLD = String(threshold);
   // host-sc deploy reads MPC_THRESHOLD too (ProtocolConfig). applyHostScKmsEnv
   // mirrors the other KMS thresholds gateway->host but NOT MPC_THRESHOLD, and
@@ -264,13 +315,26 @@ const applyKmsThresholdGatewayEnv = async (
   gw.USER_DECRYPTION_THRESHOLD = reconstruct;
   gw.KMS_GENERATION_THRESHOLD = reconstruct;
 
+  applyProtocolConfigKmsGlobals(hostSc, plan);
+
   const result: KmsParty[] = [];
   for (let party = 1; party <= parties; party += 1) {
     const idx = party - 1;
     const wallet = await deriveWallet(mnemonic, KMS_NODE_WALLET_INDICES[idx]);
     gw[`KMS_TX_SENDER_ADDRESS_${idx}`] = wallet.address;
-    gw[`KMS_NODE_IP_ADDRESS_${idx}`] = kmsCoreName(party);
+    // external_url: the core does url::Url::parse() and requires host+port, so it needs a scheme.
+    gw[`KMS_NODE_IP_ADDRESS_${idx}`] = `http://${kmsCoreName(party)}:${kmsMpcPort(party)}`;
     gw[`KMS_NODE_STORAGE_URL_${idx}`] = `${MINIO_INTERNAL_URL}/kms-public`;
+    // Per-node KmsNodeParams the host ProtocolConfig deploy reads. partyId is 1-based
+    // (the env index is 0-based), mpcIdentity must match the node's TLS cert CN (gen-keys sets
+    // --tls-subject to the core name), and storagePrefix is the node's public vault prefix. The
+    // signer address and CA cert are discovered post-boot (applyDiscoveryEnv).
+    hostSc[`KMS_NODE_PARTY_ID_${idx}`] = String(party);
+    hostSc[`KMS_NODE_MPC_IDENTITY_${idx}`] = kmsCoreName(party);
+    hostSc[`KMS_NODE_STORAGE_PREFIX_${idx}`] = kmsPublicPrefix(party);
+    hostSc[`KMS_TX_SENDER_ADDRESS_${idx}`] = wallet.address;
+    hostSc[`KMS_NODE_IP_${idx}`] = gw[`KMS_NODE_IP_ADDRESS_${idx}`];
+    hostSc[`KMS_NODE_STORAGE_URL_${idx}`] = gw[`KMS_NODE_STORAGE_URL_${idx}`];
     // KMS_SIGNER_ADDRESS_{idx} comes from per-party signing-key discovery.
     const endpoint = `http://${kmsCoreName(party)}:${kmsServicePort(party)}`;
     const dbName = kmsConnectorDbName(party);
@@ -283,6 +347,61 @@ const applyKmsThresholdGatewayEnv = async (
     result.push({ party, endpoint, privateKey: wallet.privateKey, dbName });
   }
   return result;
+};
+
+const isKmsSwapTopology = (plan: StackSpec) =>
+  plan.kms.mode === "threshold" && plan.kms.parties > plan.kms.committeeSize;
+
+/** Node swap: maps the trailing committee slots onto the spare cores (parties beyond
+ * committeeSize). For 5 parties / committee 4 / 1 spare this overwrites slot 3 (node 4) with the
+ * spare at env index 4 (node 5), yielding committee {1,2,3,5}. */
+const kmsSwapSlots = (plan: StackSpec): { slot: number; src: number }[] => {
+  const { parties, committeeSize } = plan.kms;
+  const spares = parties - committeeSize;
+  return Array.from({ length: spares }, (_, k) => ({ slot: committeeSize - spares + k, src: committeeSize + k }));
+};
+
+/** host ProtocolConfig swap-committee env for `defineNewKmsContextAndEpoch`. host-sc carries every
+ * provisioned party (committee + spares).
+ * Returns undefined for non-swap topologies or before the spare's signer is discovered. */
+export const buildHostScSwapEnv = (
+  hostSc: Record<string, string>,
+  plan: StackSpec,
+): Record<string, string> | undefined => {
+  if (!isKmsSwapTopology(plan)) return undefined;
+  const swap = { ...hostSc };
+  for (const { slot, src } of kmsSwapSlots(plan)) {
+    if (!hostSc[`KMS_SIGNER_ADDRESS_${src}`]) return undefined;
+    // The spare joins at the dropped node's MPC position, so KMS_NODE_PARTY_ID_{slot} stays the
+    // positional id (1..committeeSize) — the core rejects party ids outside that range. Only the
+    // node's identity (signer, tx-sender, cert), address and storage prefix move to the spare.
+    swap[`KMS_TX_SENDER_ADDRESS_${slot}`] = hostSc[`KMS_TX_SENDER_ADDRESS_${src}`];
+    swap[`KMS_SIGNER_ADDRESS_${slot}`] = hostSc[`KMS_SIGNER_ADDRESS_${src}`];
+    swap[`KMS_NODE_IP_${slot}`] = hostSc[`KMS_NODE_IP_${src}`];
+    swap[`KMS_NODE_STORAGE_URL_${slot}`] = hostSc[`KMS_NODE_STORAGE_URL_${src}`];
+    swap[`KMS_NODE_MPC_IDENTITY_${slot}`] = hostSc[`KMS_NODE_MPC_IDENTITY_${src}`];
+    swap[`KMS_NODE_CA_CERT_${slot}`] = hostSc[`KMS_NODE_CA_CERT_${src}`];
+    swap[`KMS_NODE_STORAGE_PREFIX_${slot}`] = hostSc[`KMS_NODE_STORAGE_PREFIX_${src}`];
+  }
+  return swap;
+};
+
+/** gateway GatewayConfig swap-committee env for `updateKmsContext`. The Gateway KmsNode carries only
+ * (txSender, signer, ip, storageUrl), all present in gateway-sc for every party. */
+export const buildGatewayScSwapEnv = (
+  gatewaySc: Record<string, string>,
+  plan: StackSpec,
+): Record<string, string> | undefined => {
+  if (!isKmsSwapTopology(plan)) return undefined;
+  const swap = { ...gatewaySc };
+  for (const { slot, src } of kmsSwapSlots(plan)) {
+    if (!gatewaySc[`KMS_SIGNER_ADDRESS_${src}`]) return undefined;
+    swap[`KMS_TX_SENDER_ADDRESS_${slot}`] = gatewaySc[`KMS_TX_SENDER_ADDRESS_${src}`];
+    swap[`KMS_SIGNER_ADDRESS_${slot}`] = gatewaySc[`KMS_SIGNER_ADDRESS_${src}`];
+    swap[`KMS_NODE_IP_ADDRESS_${slot}`] = gatewaySc[`KMS_NODE_IP_ADDRESS_${src}`];
+    swap[`KMS_NODE_STORAGE_URL_${slot}`] = gatewaySc[`KMS_NODE_STORAGE_URL_${src}`];
+  }
+  return swap;
 };
 
 /** Clones the (discovery-rewritten) base connector env into per-party instance envs. */
@@ -310,6 +429,9 @@ const buildInstanceEnvs = async (
   deriveWallet: (mnemonic: string, index: number) => Promise<WalletMaterial>,
 ) => {
   const instanceEnvs: Record<string, Record<string, string>> = {};
+  if (!plan.coprocessor) {
+    return instanceEnvs;
+  }
   const baseInstance = plan.coprocessor.instances.find((instance) => instance.index === 0);
   if (plan.topology.count === 1) {
     if (baseInstance) {
@@ -326,18 +448,25 @@ const buildInstanceEnvs = async (
   }
   for (let index = 0; index < plan.topology.count; index += 1) {
     const wallet = await deriveWallet(mnemonic, COPROCESSOR_WALLET_INDICES[index]);
+    // A single bucket per coprocessor holds both its ct128 and ct64 objects,
+    // under their respective key prefixes, as deployed in production.
+    const opBucket = `coproc-${index}`;
     envs["gateway-sc"][`COPROCESSOR_TX_SENDER_ADDRESS_${index}`] = wallet.address;
     envs["gateway-sc"][`COPROCESSOR_SIGNER_ADDRESS_${index}`] = wallet.address;
-    envs["gateway-sc"][`COPROCESSOR_S3_BUCKET_URL_${index}`] = `${MINIO_INTERNAL_URL}/ct128`;
+    envs["gateway-sc"][`COPROCESSOR_S3_BUCKET_URL_${index}`] = `${MINIO_INTERNAL_URL}/${opBucket}`;
     envs["host-sc"][`COPROCESSOR_SIGNER_ADDRESS_${index}`] = wallet.address;
     if (index === 0) {
       envs["coprocessor"].TX_SENDER_PRIVATE_KEY = wallet.privateKey;
       Object.assign(envs["coprocessor"], baseInstance?.env ?? {});
+      envs["coprocessor"].BUCKET_NAME = opBucket;
       continue;
     }
     const next = { ...envs["coprocessor"] };
-    next.DATABASE_URL = `postgresql://${envs.database.POSTGRES_USER}:${envs.database.POSTGRES_PASSWORD}@${POSTGRES_HOST}/${driftDatabaseName(index)}`;
+    const dbName = coprocessorDatabaseName(index);
+    const dbCreds = `${envs.database.POSTGRES_USER}:${envs.database.POSTGRES_PASSWORD}`;
+    next.DATABASE_URL = `postgresql://${dbCreds}@${POSTGRES_HOST}/${dbName}`;
     next.TX_SENDER_PRIVATE_KEY = wallet.privateKey;
+    next.BUCKET_NAME = opBucket;
     const instance = plan.coprocessor.instances.find((item) => item.index === index);
     Object.assign(next, instance?.env ?? {});
     instanceEnvs[`coprocessor.${index}`] = next;
@@ -374,6 +503,7 @@ export const renderEnvMaps = async (
   applyBaseRuntimeEnv(envs, state);
   applyCompatEnv(envs, plan);
   applyDiscoveryEnv(envs, state, plan);
+  applyKmsCentralizedHostEnv(envs, plan, state);
   envs["host-node"].RPC_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["host-node"].HOST_NODE_PORT = String(defaultChain.rpcPort);
   envs["host-node"].HOST_NODE_CHAIN_ID = defaultChain.chainId;
@@ -381,10 +511,16 @@ export const renderEnvMaps = async (
   envs["host-sc"].HOST_ADDRESS_DIR = defaultChain.key;
   envs["host-sc"].HOST_SC_DEPLOY_KMS_GENERATION_ARGS = hostDeployKmsGenerationArgs(plan, true);
   // Canonical host seeds ProtocolConfig fresh; non-canonical chains get this patched at deploy time
-  // by the up flow (see `canonicalProtocolConfigSeedingArgs`) once the canonical address exists.
+  // by the up flow (see `canonicalProtocolConfigSeeding`) once the canonical address exists.
   envs["host-sc"].HOST_SC_DEPLOY_PROTOCOL_CONFIG_ARGS = "";
   envs["coprocessor"].RPC_HTTP_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["coprocessor"].RPC_WS_URL = `ws://${defaultChain.node}:${defaultChain.rpcPort}`;
+  envs["coprocessor"].CANONICAL_PROTOCOL_CONFIG_CHAIN_ID = defaultChain.chainId;
+  // TODO: drop once RFC-023 lands — the post-cutover backfill rewrites
+  // digests away from the immutable on-chain consensus, so drift auto-revert loops forever.
+  if (plan.blueGreen) {
+    envs["coprocessor"].DRIFT_AUTO_REVERT_ENABLED = "false";
+  }
   envs["kms-connector"].KMS_CONNECTOR_ETHEREUM_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["kms-connector"].KMS_CONNECTOR_ETHEREUM_CHAIN_ID = defaultChain.chainId;
   envs["test-suite"].RPC_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
@@ -410,9 +546,27 @@ export const renderEnvMaps = async (
   const instanceEnvs = await buildInstanceEnvs(envs, plan, deriveWallet);
   envs["test-suite"].GATEWAY_DEPLOYER_PRIVATE_KEY = envs["gateway-sc"].DEPLOYER_PRIVATE_KEY;
   envs["test-suite"].GATEWAY_PAUSER_PRIVATE_KEY = envs["gateway-sc"].PAUSER_PRIVATE_KEY;
-  envs["test-suite"].PRIORITY_COPROCESSOR_TX_SENDER_ADDRESS =
-    envs["gateway-sc"].COPROCESSOR_TX_SENDER_ADDRESS_0;
   Object.assign(instanceEnvs, buildKmsConnectorInstanceEnvs(envs, kmsParties));
+
+  // Propagate SNS-worker S3 migration configuration.
+  // These are carried in version locks (see rollouts/.../versions.ts) so that
+  // rollout phases can request "concurrent" etc. without touching the compose
+  // command line (old pre-feature binaries must not see new --flags).
+  // We write them into the coprocessor env files (base + all instance + chain copies)
+  // so the clap parser (with env=) in the new binary picks them up.
+  const migrationMode = plan.versions.env.S3_MIGRATION_MODE ?? "no";
+  const cleanOld = plan.versions.env.CLEAN_OLD_S3_FORMAT_VERSION ?? "false";
+  envs["coprocessor"].S3_MIGRATION_MODE = migrationMode;
+  envs["coprocessor"].CLEAN_OLD_S3_FORMAT_VERSION = cleanOld;
+  // Also push into any per-instance envs that were already built (they clone the base).
+  for (const [name, inst] of Object.entries(instanceEnvs)) {
+    if (name.startsWith("coprocessor")) {
+      inst.S3_MIGRATION_MODE = migrationMode;
+      inst.CLEAN_OLD_S3_FORMAT_VERSION = cleanOld;
+    }
+  }
+  // The later host-chain coprocessor-*.N copies are built from the base + spreads
+  // in the loop below, so they will inherit the values we just set on the base.
 
   // Uniform per-chain gateway-sc indexed vars for ALL host chains.
   envs["gateway-sc"].NUM_HOST_CHAINS = String(chains.length);
@@ -471,6 +625,7 @@ export const renderEnvMaps = async (
         coproChain.FHEVM_EXECUTOR_CONTRACT_ADDRESS = hostAddresses.FHEVM_EXECUTOR_CONTRACT_ADDRESS;
         coproChain.INPUT_VERIFIER_ADDRESS = hostAddresses.INPUT_VERIFIER_CONTRACT_ADDRESS;
       }
+      coproChain.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS = hostAddresses.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS ?? "";
       instanceEnvs[`coprocessor-${chain.key}.${index}`] = coproChain;
     }
 
@@ -480,6 +635,8 @@ export const renderEnvMaps = async (
     envs["test-suite"][`HOST_CHAIN_${chainIndex}_KMS_VERIFIER_CONTRACT_ADDRESS`] = hostAddresses.KMS_VERIFIER_CONTRACT_ADDRESS ?? "";
     envs["test-suite"][`HOST_CHAIN_${chainIndex}_INPUT_VERIFIER_CONTRACT_ADDRESS`] = hostAddresses.INPUT_VERIFIER_CONTRACT_ADDRESS ?? "";
     envs["test-suite"][`HOST_CHAIN_${chainIndex}_FHEVM_EXECUTOR_CONTRACT_ADDRESS`] = hostAddresses.FHEVM_EXECUTOR_CONTRACT_ADDRESS ?? "";
+    envs["test-suite"][`HOST_CHAIN_${chainIndex}_CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS`] = hostAddresses.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS ?? "";
+    envs["test-suite"][`HOST_CHAIN_${chainIndex}_LZ_ENDPOINT_ADDRESS`] = hostAddresses.LZ_ENDPOINT_ADDRESS ?? "";
     envs["test-suite"][`HOST_CHAIN_${chainIndex}_PROTOCOL_CONFIG_CONTRACT_ADDRESS`] = hostAddresses.PROTOCOL_CONFIG_CONTRACT_ADDRESS ?? "";
   }
 

@@ -1,26 +1,33 @@
 use crate::core::tx_sender::{Error, get_revert_reason, overprovision_gas};
 use alloy::{
     hex,
-    providers::{Provider, fillers::TxFiller},
+    providers::Provider,
     rpc::types::{TransactionReceipt, TransactionRequest},
+    sol_types::SolValue,
 };
 use anyhow::anyhow;
-use connector_utils::{
-    provider::NonceManagedProvider,
-    types::{CrsgenResponse, KeygenResponse, KmsResponseKind, PrepKeygenResponse},
+use connector_utils::types::{
+    CrsgenResponse, EpochResultResponse, KeygenResponse, KmsResponseKind, NewKmsContextResponse,
+    PrepKeygenResponse,
 };
-use fhevm_host_bindings::kms_generation::KMSGeneration::KMSGenerationInstance;
+use fhevm_host_bindings::{
+    kms_generation::KMSGeneration::KMSGenerationInstance,
+    protocol_config::{
+        IProtocolConfig::{EpochCrsResult, EpochKeyResult},
+        ProtocolConfig::ProtocolConfigInstance,
+    },
+};
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
 /// The struct used to send keygen transactions to Ethereum.
-pub struct EthereumTransactionSender<F, P>
+pub struct EthereumTransactionSender<P>
 where
-    F: TxFiller,
     P: Provider,
 {
-    provider: NonceManagedProvider<F, P>,
-    kms_generation_contract: KMSGenerationInstance<NonceManagedProvider<F, P>>,
+    provider: P,
+    kms_generation_contract: KMSGenerationInstance<P>,
+    protocol_config_contract: ProtocolConfigInstance<P>,
     config: EthereumSenderConfig,
 }
 
@@ -47,19 +54,20 @@ impl From<&super::Config> for EthereumSenderConfig {
     }
 }
 
-impl<F, P> EthereumTransactionSender<F, P>
+impl<P> EthereumTransactionSender<P>
 where
-    F: TxFiller,
     P: Provider,
 {
     pub fn new(
-        provider: NonceManagedProvider<F, P>,
-        kms_generation_contract: KMSGenerationInstance<NonceManagedProvider<F, P>>,
+        provider: P,
+        kms_generation_contract: KMSGenerationInstance<P>,
+        protocol_config_contract: ProtocolConfigInstance<P>,
         inner_config: EthereumSenderConfig,
     ) -> Self {
         Self {
             provider,
             kms_generation_contract,
+            protocol_config_contract,
             config: inner_config,
         }
     }
@@ -71,7 +79,15 @@ where
             KmsResponseKind::PrepKeygen(response) => self.send_prep_keygen_response(response).await,
             KmsResponseKind::Keygen(response) => self.send_keygen_response(response).await,
             KmsResponseKind::Crsgen(response) => self.send_crsgen_response(response).await,
-            _ => unreachable!("Only keygen responses should be sent to Ethereum"),
+            KmsResponseKind::NewKmsContext(response) => {
+                self.send_new_kms_context_response(response).await
+            }
+            KmsResponseKind::EpochResult(response) => {
+                self.send_epoch_result_response(response).await
+            }
+            _ => {
+                unreachable!("Only keygen and ProtocolConfig responses should be sent to Ethereum")
+            }
         };
 
         let receipt = tx_result.inspect_err(|e| {
@@ -94,7 +110,6 @@ where
         let call_builder = self
             .kms_generation_contract
             .prepKeygenResponse(response.prep_keygen_id, response.signature.into());
-        debug!("Calldata length {}", call_builder.calldata().len());
 
         let call = call_builder.into_transaction_request();
         self.send_tx_with_retry(call).await
@@ -109,7 +124,6 @@ where
             response.key_digests.into_iter().map(|k| k.into()).collect(),
             response.signature.into(),
         );
-        debug!("Calldata length {}", call_builder.calldata().len());
 
         let call = call_builder.into_transaction_request();
         self.send_tx_with_retry(call).await
@@ -124,7 +138,35 @@ where
             response.crs_digest.into(),
             response.signature.into(),
         );
-        debug!("Calldata length {}", call_builder.calldata().len());
+
+        let call = call_builder.into_transaction_request();
+        self.send_tx_with_retry(call).await
+    }
+
+    pub async fn send_new_kms_context_response(
+        &self,
+        response: NewKmsContextResponse,
+    ) -> Result<TransactionReceipt, Error> {
+        let call_builder = self
+            .protocol_config_contract
+            .confirmKmsContextCreation(response.context_id);
+
+        let call = call_builder.into_transaction_request();
+        self.send_tx_with_retry(call).await
+    }
+
+    pub async fn send_epoch_result_response(
+        &self,
+        response: EpochResultResponse,
+    ) -> Result<TransactionReceipt, Error> {
+        let keys = <Vec<EpochKeyResult> as SolValue>::abi_decode(&response.keys)
+            .map_err(|e| Error::Irrecoverable(anyhow!("Failed to decode epoch keys: {e}")))?;
+        let crs_list = <Vec<EpochCrsResult> as SolValue>::abi_decode(&response.crs_list)
+            .map_err(|e| Error::Irrecoverable(anyhow!("Failed to decode epoch crs_list: {e}")))?;
+
+        let call_builder =
+            self.protocol_config_contract
+                .confirmEpochActivation(response.epoch_id, keys, crs_list);
 
         let call = call_builder.into_transaction_request();
         self.send_tx_with_retry(call).await
@@ -198,15 +240,15 @@ where
     }
 }
 
-impl<F, P> Clone for EthereumTransactionSender<F, P>
+impl<P> Clone for EthereumTransactionSender<P>
 where
-    F: TxFiller,
     P: Provider + Clone,
 {
     fn clone(&self) -> Self {
         Self {
             provider: self.provider.clone(),
             kms_generation_contract: self.kms_generation_contract.clone(),
+            protocol_config_contract: self.protocol_config_contract.clone(),
             config: self.config.clone(),
         }
     }
@@ -216,11 +258,11 @@ where
 mod tests {
     use super::*;
     use alloy::{
-        network::{Ethereum, IntoWallet, Network, TransactionBuilder},
+        network::{Ethereum, IntoWallet, Network, NetworkTransactionBuilder, TransactionBuilder},
         primitives::Address,
         providers::{
             ProviderBuilder, SendableTx,
-            fillers::{FillProvider, FillerControlFlow},
+            fillers::{FillProvider, FillerControlFlow, TxFiller},
             mock::Asserter,
         },
         rpc::types::trace::geth::GethTrace,
@@ -228,6 +270,7 @@ mod tests {
     };
     use connector_utils::{
         config::KmsWallet,
+        provider::NonceManagedProvider,
         tests::rand::{rand_signature, rand_u256},
     };
     use serde::de::DeserializeOwned;
@@ -275,6 +318,7 @@ mod tests {
         let tx_sender = EthereumTransactionSender::new(
             mock_provider.clone(),
             KMSGenerationInstance::new(Address::default(), mock_provider.clone()),
+            ProtocolConfigInstance::new(Address::default(), mock_provider.clone()),
             EthereumSenderConfig {
                 tx_retries: 1,
                 trace_reverted_tx: true,

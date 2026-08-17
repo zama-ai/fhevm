@@ -23,6 +23,7 @@ SCAN_DIRS=(
 EXCEPTIONS=(
   "src/core/host-contracts/abi-fragments/fragments.ts"
   "src/core/_version.ts"
+  "test/manual-pack"
 )
 
 # ── Helpers ──────────────────────────────────────────────────────────────────

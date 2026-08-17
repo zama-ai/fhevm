@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { getResponseBytes, fetchWithRetry } from './fetch.js';
+import { getResponseBytes, fetchWithRetry, normalizeHeaders } from './fetch.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // npx vitest run --config src/vitest.config.ts src/core/base/fetch.test.ts
@@ -263,5 +263,194 @@ describe('fetchWithRetry', () => {
     await fetchWithRetry({ url: 'https://example.com', init });
 
     expect(global.fetch).toHaveBeenCalledWith('https://example.com', init);
+  });
+});
+
+////////////////////////////////////////////////////////////////////////////////
+
+describe('normalizeHeaders', () => {
+  //////////////////////////////////////////////////////////////////////////////
+  // Cases that return a value
+  //////////////////////////////////////////////////////////////////////////////
+
+  const cases: ReadonlyArray<{ name: string; input: unknown; expected: Record<string, string> }> = [
+    // Non-object inputs → {}
+    { name: 'undefined', input: undefined, expected: {} },
+    { name: 'null', input: null, expected: {} },
+    { name: 'number', input: 42, expected: {} },
+    { name: 'string', input: 'foo', expected: {} },
+    { name: 'boolean', input: true, expected: {} },
+    { name: 'array (empty)', input: [], expected: {} },
+    { name: 'array (entries-shaped)', input: [['a', 'b']], expected: {} },
+
+    // Empty / simple objects
+    { name: 'empty object', input: {}, expected: {} },
+    { name: 'single string entry', input: { foo: 'bar' }, expected: { foo: 'bar' } },
+
+    // Key lower-casing
+    {
+      name: 'mixed-case keys lower-cased',
+      input: { 'Content-Type': 'application/json' },
+      expected: { 'content-type': 'application/json' },
+    },
+    { name: 'all-upper key', input: { AUTHORIZATION: 'Bearer x' }, expected: { authorization: 'Bearer x' } },
+
+    // Non-string values dropped — one row per `typeof` category
+    { name: 'undefined value dropped', input: { foo: undefined, bar: 'keep' }, expected: { bar: 'keep' } },
+    { name: 'null value dropped', input: { foo: null, bar: 'keep' }, expected: { bar: 'keep' } },
+    { name: 'number value dropped', input: { foo: 42, bar: 'keep' }, expected: { bar: 'keep' } },
+    { name: 'NaN value dropped', input: { foo: NaN, bar: 'keep' }, expected: { bar: 'keep' } },
+    { name: 'Infinity value dropped', input: { foo: Infinity, bar: 'keep' }, expected: { bar: 'keep' } },
+    { name: 'bigint value dropped', input: { foo: 10n, bar: 'keep' }, expected: { bar: 'keep' } },
+    { name: 'boolean true dropped', input: { foo: true, bar: 'keep' }, expected: { bar: 'keep' } },
+    { name: 'boolean false dropped', input: { foo: false, bar: 'keep' }, expected: { bar: 'keep' } },
+    { name: 'symbol value dropped', input: { foo: Symbol('s'), bar: 'keep' }, expected: { bar: 'keep' } },
+    { name: 'function value dropped', input: { foo: () => {}, bar: 'keep' }, expected: { bar: 'keep' } },
+    { name: 'async function value dropped', input: { foo: async () => {}, bar: 'keep' }, expected: { bar: 'keep' } },
+    { name: 'class value dropped', input: { foo: class Foo {}, bar: 'keep' }, expected: { bar: 'keep' } },
+    { name: 'object value dropped', input: { foo: { nested: 1 }, bar: 'keep' }, expected: { bar: 'keep' } },
+    { name: 'array value dropped', input: { foo: [1, 2, 3], bar: 'keep' }, expected: { bar: 'keep' } },
+    { name: 'Date value dropped', input: { foo: new Date(), bar: 'keep' }, expected: { bar: 'keep' } },
+    { name: 'Map value dropped', input: { foo: new Map(), bar: 'keep' }, expected: { bar: 'keep' } },
+    { name: 'Set value dropped', input: { foo: new Set(), bar: 'keep' }, expected: { bar: 'keep' } },
+    { name: 'RegExp value dropped', input: { foo: /x/, bar: 'keep' }, expected: { bar: 'keep' } },
+    {
+      name: 'Uint8Array value dropped',
+      input: { foo: new Uint8Array([1, 2]), bar: 'keep' },
+      expected: { bar: 'keep' },
+    },
+    { name: 'String wrapper object dropped', input: { foo: new String('x'), bar: 'keep' }, expected: { bar: 'keep' } },
+    { name: 'all values dropped → empty result', input: { a: 1, b: null, c: undefined }, expected: {} },
+    { name: 'empty-string value kept', input: { foo: '' }, expected: { foo: '' } },
+    { name: 'whitespace-only string kept', input: { foo: '   ' }, expected: { foo: '   ' } },
+    { name: 'numeric-looking string kept', input: { foo: '42' }, expected: { foo: '42' } },
+
+    // Null-prototype objects pass through (typeof === 'object', not an array)
+    {
+      name: 'null-prototype object',
+      input: Object.assign(Object.create(null) as Record<string, unknown>, { Foo: 'bar' }),
+      expected: { foo: 'bar' },
+    },
+  ];
+
+  it.each(cases)('$name', ({ input, expected }) => {
+    expect(normalizeHeaders(input)).toEqual(expected);
+  });
+
+  //////////////////////////////////////////////////////////////////////////////
+  // Cases that throw — duplicate keys after lower-casing
+  //////////////////////////////////////////////////////////////////////////////
+
+  const throwingCases: ReadonlyArray<{ name: string; input: unknown; errorMatch: RegExp }> = [
+    {
+      name: 'two keys differing only in case',
+      input: { Foo: 'a', foo: 'b' },
+      errorMatch: /keys 'Foo' and 'foo' both lower-case to 'foo'/,
+    },
+    {
+      name: 'collision when second value is non-string (check runs before filter)',
+      input: { Authorization: 'Bearer x', authorization: undefined },
+      errorMatch: /keys 'Authorization' and 'authorization' both lower-case to 'authorization'/,
+    },
+    {
+      name: 'three-way collision reports first duplicate',
+      input: { 'Content-Type': 'a', 'content-type': 'b', 'CONTENT-TYPE': 'c' },
+      errorMatch: /keys 'Content-Type' and 'content-type' both lower-case to 'content-type'/,
+    },
+
+    // Invalid header name (RFC 7230 token violations)
+    {
+      name: 'CRLF injection in name',
+      input: { 'X-Bad\r\nInject': 'x' },
+      errorMatch: /invalid header name/,
+    },
+    {
+      name: 'space in name',
+      input: { 'X Bad': 'x' },
+      errorMatch: /invalid header name/,
+    },
+    {
+      name: 'colon in name',
+      input: { 'X:Bad': 'x' },
+      errorMatch: /invalid header name/,
+    },
+    {
+      name: 'tab in name',
+      input: { 'X\tBad': 'x' },
+      errorMatch: /invalid header name/,
+    },
+    {
+      name: 'non-ASCII (unicode) in name',
+      input: { 'X-Café': 'x' },
+      errorMatch: /invalid header name/,
+    },
+    {
+      name: 'empty-string name',
+      input: { '': 'x' },
+      errorMatch: /invalid header name/,
+    },
+    {
+      name: 'parentheses in name',
+      input: { 'X-(paren)': 'x' },
+      errorMatch: /invalid header name/,
+    },
+
+    // Invalid header value (CRLF / NUL injection)
+    {
+      name: 'CR in value',
+      input: { 'x-foo': 'bad\rinject' },
+      errorMatch: /CR, LF, or NUL/,
+    },
+    {
+      name: 'LF in value',
+      input: { 'x-foo': 'bad\ninject' },
+      errorMatch: /CR, LF, or NUL/,
+    },
+    {
+      name: 'CRLF in value (header smuggling)',
+      input: { 'x-foo': 'bad\r\nAuthorization: Bearer evil' },
+      errorMatch: /CR, LF, or NUL/,
+    },
+    {
+      name: 'NUL byte in value',
+      input: { 'x-foo': 'bad\0inject' },
+      errorMatch: /CR, LF, or NUL/,
+    },
+  ];
+
+  it.each(throwingCases)('throws: $name', ({ input, errorMatch }) => {
+    expect(() => normalizeHeaders(input)).toThrow(errorMatch);
+  });
+
+  //////////////////////////////////////////////////////////////////////////////
+  // Valid uncommon name characters — confirm the regex doesn't over-reject
+  //////////////////////////////////////////////////////////////////////////////
+
+  const validUncommonNames = [
+    'x-token-1.0', // dot + digit
+    'x_test',
+    'x-test!',
+    'x#test',
+    'x-test*',
+    'x-test^h',
+    'x-test|h',
+    'x-test~h',
+    'x-test`h',
+    "x-test'h",
+  ];
+
+  it.each(validUncommonNames)('accepts RFC 7230 token char: %s', (name) => {
+    expect(normalizeHeaders({ [name]: 'ok' })).toEqual({ [name.toLowerCase()]: 'ok' });
+  });
+
+  //////////////////////////////////////////////////////////////////////////////
+  // Result is a fresh object (not the input)
+  //////////////////////////////////////////////////////////////////////////////
+
+  it('returns a fresh object — mutating the result does not affect the input', () => {
+    const input = { Foo: 'bar' };
+    const result = normalizeHeaders(input) as Record<string, string>;
+    result.foo = 'mutated';
+    expect(input).toEqual({ Foo: 'bar' });
   });
 });

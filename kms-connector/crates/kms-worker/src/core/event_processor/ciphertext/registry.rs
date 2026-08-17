@@ -163,7 +163,7 @@ where
             gateway_config_contract,
             snapshot: Arc::new(RwLock::new(Arc::new(snapshot))),
         };
-        registry.spawn_refresh_task(config.ct_attestation.registry_refresh, cancel_token);
+        registry.spawn_refresh_task(config.copro_registry_refresh, cancel_token);
 
         Ok(registry)
     }
@@ -234,6 +234,13 @@ where
             snapshot: Arc::new(RwLock::new(
                 Arc::new(CoprocessorRegistrySnapshot::default()),
             )),
+        }
+    }
+
+    pub fn with_snapshot(self, snapshot: CoprocessorRegistrySnapshot) -> Self {
+        Self {
+            snapshot: Arc::new(RwLock::new(Arc::new(snapshot))),
+            ..self
         }
     }
 }

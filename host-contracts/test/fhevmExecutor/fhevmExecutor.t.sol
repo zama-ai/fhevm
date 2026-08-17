@@ -2251,7 +2251,13 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(factor1, sender);
         _approveHandleInACL(factor2, sender);
 
-        bytes32 expectedResult = _computeExpectedResultFheMulDiv(factor1, factor2, divisor, scalarByte, FheType(fheType));
+        bytes32 expectedResult = _computeExpectedResultFheMulDiv(
+            factor1,
+            factor2,
+            divisor,
+            scalarByte,
+            FheType(fheType)
+        );
 
         vm.prank(sender);
         vm.expectEmit(true, true, true, true);
@@ -2273,7 +2279,13 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
 
         _approveHandleInACL(factor1, sender);
 
-        bytes32 expectedResult = _computeExpectedResultFheMulDiv(factor1, factor2, divisor, scalarByte, FheType(fheType));
+        bytes32 expectedResult = _computeExpectedResultFheMulDiv(
+            factor1,
+            factor2,
+            divisor,
+            scalarByte,
+            FheType(fheType)
+        );
 
         vm.prank(sender);
         vm.expectEmit(true, true, true, true);

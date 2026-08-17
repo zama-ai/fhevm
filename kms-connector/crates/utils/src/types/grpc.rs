@@ -2,9 +2,10 @@ use crate::types::request_id_to_u256;
 use alloy::primitives::U256;
 use anyhow::anyhow;
 use kms_grpc::kms::v1::{
-    CrsGenRequest, CrsGenResult, KeyGenPreprocRequest, KeyGenPreprocResult, KeyGenRequest,
-    KeyGenResult, PublicDecryptionRequest, PublicDecryptionResponse, RequestId,
-    UserDecryptionRequest, UserDecryptionResponse,
+    CrsGenRequest, CrsGenResult, DestroyMpcContextRequest, DestroyMpcEpochRequest,
+    EpochResultResponse, KeyGenPreprocRequest, KeyGenPreprocResult, KeyGenRequest, KeyGenResult,
+    NewMpcContextRequest, NewMpcEpochRequest, PublicDecryptionRequest, PublicDecryptionResponse,
+    RequestId, UserDecryptionRequest, UserDecryptionResponse,
 };
 use tonic::Response;
 
@@ -16,6 +17,15 @@ pub enum KmsGrpcRequest {
     PrepKeygen(KeyGenPreprocRequest),
     Keygen(KeyGenRequest),
     Crsgen(CrsGenRequest),
+    AbortKeygen(RequestId),
+    AbortCrsgen(RequestId),
+    NewMpcContext {
+        old: NewMpcContextRequest,
+        new: NewMpcContextRequest,
+    },
+    NewMpcEpoch(NewMpcEpochRequest),
+    DestroyMpcContext(DestroyMpcContextRequest),
+    DestroyMpcEpoch(DestroyMpcEpochRequest),
 }
 
 impl From<PublicDecryptionRequest> for KmsGrpcRequest {
@@ -44,6 +54,14 @@ pub enum KmsGrpcResponse {
     PrepKeygen(KeyGenPreprocResult),
     Keygen(KeyGenResult),
     Crsgen(CrsGenResult),
+    NewKmsContext {
+        context_id: U256,
+    },
+    EpochResult {
+        context_id: U256,
+        epoch_id: U256,
+        grpc_response: EpochResultResponse,
+    },
     NoResponseExpected,
 }
 
@@ -75,4 +93,16 @@ impl TryFrom<(RequestId, Response<UserDecryptionResponse>)> for KmsGrpcResponse 
             grpc_response: value.1.into_inner(),
         })
     }
+}
+
+/// The outcome of sending a GRPC request to the KMS Core.
+///
+/// Most requests only yield an acknowledgement (`Empty`). Context destruction additionally
+/// returns the list of epochs destroyed as a side effect, which the caller invalidates locally.
+#[derive(Clone, Debug, PartialEq)]
+pub enum KmsSendResponse {
+    /// The send was acknowledged, with no meaningful payload to act on.
+    Empty,
+    /// Epoch IDs destroyed as part of a context destruction, to be invalidated locally.
+    DestroyedEpochs(Vec<U256>),
 }

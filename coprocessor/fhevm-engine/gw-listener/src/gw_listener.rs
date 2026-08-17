@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use alloy::eips::BlockId;
@@ -6,16 +7,19 @@ use alloy::sol_types::SolEventInterface;
 use alloy::{network::Ethereum, primitives::Address, providers::Provider, rpc::types::Log};
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::database::connect_options_for_database_url;
+use fhevm_engine_common::gcs_activation::EVENT_GW_NEW_BLOCK;
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::utils::to_hex;
+use fhevm_engine_common::versioning::{run_stack_version_listener, StackMode};
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres, Row};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::drift_detector::{DriftDetector, EventContext};
 use crate::metrics::{
     GET_BLOCK_NUM_FAIL_COUNTER, GET_BLOCK_NUM_SUCCESS_COUNTER, GET_LOGS_FAIL_COUNTER,
-    GET_LOGS_SUCCESS_COUNTER, VERIFY_PROOF_FAIL_COUNTER, VERIFY_PROOF_SUCCESS_COUNTER,
+    GET_LOGS_SUCCESS_COUNTER, VERIFY_PROOF_FAIL_COUNTER, VERIFY_PROOF_REPLAY_COUNTER,
+    VERIFY_PROOF_SUCCESS_COUNTER,
 };
 use crate::ConfigSettings;
 use crate::HealthStatus;
@@ -36,6 +40,10 @@ pub struct GatewayListener<P: Provider<Ethereum> + Clone + 'static> {
     conf: ConfigSettings,
     cancel_token: CancellationToken,
     provider: P,
+    /// Runtime stack mode, updated by the `event_stack_version_upgraded`
+    /// listener. When this (blue) stack is retired at cutover it flips to
+    /// paused and the work loop becomes a no-op.
+    stack_mode: Arc<StackMode>,
 }
 
 impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
@@ -45,11 +53,13 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         cancel_token: CancellationToken,
         provider: P,
     ) -> Self {
+        let stack_mode = StackMode::new(conf.gcs_mode);
         GatewayListener {
             input_verification_address,
             conf,
             cancel_token,
             provider,
+            stack_mode,
         }
     }
 
@@ -59,6 +69,25 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             self.input_verification_address = %self.input_verification_address,
             "Starting Gateway Listener",
         );
+
+        // In GCS mode the listener is NOT paused before activation: it brings up
+        // and processes events from startup, writing to `gcs.*` via the
+        // connection's `search_path`. Only the cutover transition (below) pauses
+        // it, when this (blue) stack is retired.
+
+        // Listen for `event_stack_version_upgraded`: at cutover this (blue)
+        // stack is retired and `stack_mode` flips to paused, turning the
+        // GW get-logs loop into a no-op.
+        {
+            let pool = db_pool.clone();
+            let stack_mode = self.stack_mode.clone();
+            let cancel = self.cancel_token.clone();
+            tokio::spawn(async move {
+                if let Err(err) = run_stack_version_listener(pool, stack_mode, cancel).await {
+                    error!(error = %err, "stack-version listener exited with error");
+                }
+            });
+        }
 
         let get_logs_handle = {
             let s = self.clone();
@@ -150,6 +179,12 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                 }
 
                 _ = ticker.tick() => {
+                    // Paused (retired blue stack after cutover): no-op — don't
+                    // fetch or process any logs.
+                    if self.stack_mode.is_paused() {
+                        continue;
+                    }
+
                     let current_block = self.provider.get_block_number().await.inspect(|_| {
                         GET_BLOCK_NUM_SUCCESS_COUNTER.inc();
                     }).inspect_err(|_| {
@@ -190,16 +225,33 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                         match log.address() {
                             a if a == self.input_verification_address => {
                                 if let Ok(event) = InputVerification::InputVerificationEvents::decode_log(&log.inner) {
-                                    // This listener only reacts to proof requests. Other known InputVerification
-                                    // events are expected when multiple coprocessors interact with the gateway.
-                                    if let InputVerification::InputVerificationEvents::VerifyProofRequest(request) = event.data {
-                                        self.verify_proof_request(db_pool, request, log.clone()).await.
-                                            inspect(|_| {
-                                                verify_proof_success += 1;
-                                            }).inspect_err(|e| {
-                                                error!(error = %e, "VerifyProofRequest processing failed");
-                                                VERIFY_PROOF_FAIL_COUNTER.inc();
-                                        })?;
+                                    match event.data {
+                                        InputVerification::InputVerificationEvents::VerifyProofRequest(request) => {
+                                            self.verify_proof_request(db_pool, request, log.clone()).await.
+                                                inspect(|_| {
+                                                    verify_proof_success += 1;
+                                                }).inspect_err(|e| {
+                                                    error!(error = %e, "VerifyProofRequest processing failed");
+                                                    VERIFY_PROOF_FAIL_COUNTER.inc();
+                                            })?;
+                                        }
+                                        InputVerification::InputVerificationEvents::VerifyProofResponse(response) => {
+                                            let zk_proof_id = response.zkProofId.to::<i64>();
+                                            self.verify_proof_accepted(db_pool, response).await.inspect_err(|e| {
+                                                error!(zk_proof_id, error = %e, "VerifyProofResponse processing failed");
+                                            })?;
+                                        }
+                                        InputVerification::InputVerificationEvents::RejectProofResponse(response) => {
+                                            let zk_proof_id = response.zkProofId.to::<i64>();
+                                            self.verify_proof_rejected(db_pool, response).await.inspect_err(|e| {
+                                                error!(zk_proof_id, error = %e, "RejectProofResponse processing failed");
+                                            })?;
+                                        }
+                                        _ => {
+                                            // Per-coprocessor response-call events are expected while
+                                            // consensus is still being collected. Only the final events
+                                            // above determine whether a local replay is safe.
+                                        }
                                     }
                                 } else {
                                     error!(log = ?log, "Failed to decode InputVerification event log");
@@ -441,14 +493,34 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         )
         .await;
 
+        let block_number: Option<i64> = log
+            .block_number
+            .map(|n| n.try_into())
+            .transpose()
+            .map_err(|err| anyhow::anyhow!("block_number does not fit in i64: {err}"))?;
+
+        // Fence this write against cutover and schema reset. Retired BCS
+        // listeners stop, while GCS raw ingestion continues after rollback.
+        // `verify_proofs` is not merged, but follows the same write boundary as
+        // the other listener tables.
+        let Some(mut tx) = fhevm_engine_common::versioning::begin_write_guarded(
+            db_pool,
+            self.stack_mode.gcs_mode(),
+            fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
+        )
+        .await?
+        .into_tx() else {
+            info!("Cutover completed — gw-listener skipping verify_proofs insert on retired stack");
+            return Ok(());
+        };
         // TODO: check if we can avoid the cast from u256 to i64
         sqlx::query!(
             "WITH ins AS (
-                INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, input, extra_data, transaction_id)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, input, extra_data, transaction_id, block_number)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 ON CONFLICT(zk_proof_id) DO NOTHING
             )
-            SELECT pg_notify($8, '')",
+            SELECT pg_notify($9, '')",
             request.zkProofId.to::<i64>(),
             chain_id.as_i64(),
             request.contractAddress.to_string(),
@@ -456,10 +528,164 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             Some(request.ciphertextWithZKProof.as_ref()),
             request.extraData.as_ref(),
             transaction_id,
+            block_number,
             self.conf.verify_proof_req_db_channel
         )
-        .execute(db_pool)
+        .execute(tx.as_mut())
         .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn verify_proof_accepted(
+        &self,
+        db_pool: &Pool<Postgres>,
+        response: InputVerification::VerifyProofResponse,
+    ) -> anyhow::Result<()> {
+        let zk_proof_id = response.zkProofId.to::<i64>();
+        let expected_handles = response
+            .ctHandles
+            .iter()
+            .map(|handle| handle.as_slice().to_vec())
+            .collect::<Vec<_>>();
+        let handles = expected_handles.concat();
+
+        let Some(mut tx) = fhevm_engine_common::versioning::begin_write_guarded(
+            db_pool,
+            self.stack_mode.gcs_mode(),
+            fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
+        )
+        .await?
+        .into_tx() else {
+            info!(
+                zk_proof_id,
+                "Cutover completed — skipping proof replay scheduling"
+            );
+            return Ok(());
+        };
+        let result = sqlx::query!(
+            "UPDATE verify_proofs
+             SET verified = NULL,
+                 verified_at = NOW(),
+                 handles = $2,
+                 retry_count = 0,
+                 last_error = NULL,
+                 last_retry_at = NULL
+             WHERE zk_proof_id = $1
+               AND verified IS DISTINCT FROM TRUE
+               AND (verified = FALSE OR handles IS NULL)",
+            zk_proof_id,
+            handles,
+        )
+        .execute(tx.as_mut())
+        .await?;
+
+        let missing_ciphertexts = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*)
+             FROM unnest($1::BYTEA[]) AS expected(handle)
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM ciphertexts c
+                 WHERE c.handle = expected.handle AND c.ciphertext IS NOT NULL
+             )",
+        )
+        .bind(&expected_handles)
+        .fetch_one(tx.as_mut())
+        .await?;
+
+        if missing_ciphertexts == 0 {
+            sqlx::query(
+                "DELETE FROM verify_proofs
+                 WHERE zk_proof_id = $1 AND verified IS DISTINCT FROM TRUE",
+            )
+            .bind(zk_proof_id)
+            .execute(tx.as_mut())
+            .await?;
+            debug!(
+                zk_proof_id,
+                "Gateway-accepted input ciphertexts are already available locally"
+            );
+        } else if result.rows_affected() > 0 {
+            warn!(
+                zk_proof_id,
+                missing_ciphertexts,
+                "Gateway accepted locally unavailable proof; scheduling local replay"
+            );
+            VERIFY_PROOF_REPLAY_COUNTER.inc();
+            sqlx::query!(
+                "SELECT pg_notify($1, '')",
+                self.conf.verify_proof_req_db_channel
+            )
+            .execute(tx.as_mut())
+            .await?;
+        } else {
+            let replay_pending = sqlx::query_scalar::<_, bool>(
+                "SELECT EXISTS (
+                     SELECT 1 FROM verify_proofs
+                     WHERE zk_proof_id = $1
+                       AND verified IS NULL
+                       AND handles IS NOT NULL
+                 )",
+            )
+            .bind(zk_proof_id)
+            .fetch_one(tx.as_mut())
+            .await?;
+
+            if replay_pending {
+                debug!(
+                    zk_proof_id,
+                    "Gateway-accepted proof replay is already pending"
+                );
+            } else {
+                error!(
+                    zk_proof_id,
+                    missing_ciphertexts,
+                    "Gateway accepted proof, but local ciphertexts and retained proof are missing"
+                );
+                VERIFY_PROOF_FAIL_COUNTER.inc();
+            }
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn verify_proof_rejected(
+        &self,
+        db_pool: &Pool<Postgres>,
+        response: InputVerification::RejectProofResponse,
+    ) -> anyhow::Result<()> {
+        let zk_proof_id = response.zkProofId.to::<i64>();
+        let Some(mut tx) = fhevm_engine_common::versioning::begin_write_guarded(
+            db_pool,
+            self.stack_mode.gcs_mode(),
+            fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
+        )
+        .await?
+        .into_tx() else {
+            info!(
+                zk_proof_id,
+                "Cutover completed — skipping rejected proof cleanup"
+            );
+            return Ok(());
+        };
+        let result = sqlx::query!(
+            "DELETE FROM verify_proofs WHERE zk_proof_id = $1 AND verified IS DISTINCT FROM TRUE",
+            zk_proof_id,
+        )
+        .execute(tx.as_mut())
+        .await?;
+
+        if result.rows_affected() > 0 {
+            info!(
+                zk_proof_id,
+                "Gateway rejected proof; discarded retained local proof"
+            );
+        } else {
+            debug!(
+                zk_proof_id,
+                "Gateway rejection found no retained local proof to discard"
+            );
+        }
+        tx.commit().await?;
         Ok(())
     }
 
@@ -512,6 +738,19 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             .earliest_open_ct_commits_block
             .map(i64::try_from)
             .transpose()?;
+        // Fence the watermark and notification against cutover and schema reset.
+        // Retired BCS listeners stop; GCS raw ingestion continues after rollback.
+        // This keeps the stored progress aligned with the listener's writes.
+        let Some(mut tx) = fhevm_engine_common::versioning::begin_write_guarded(
+            db_pool,
+            self.stack_mode.gcs_mode(),
+            fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
+        )
+        .await?
+        .into_tx() else {
+            info!("Cutover completed — gw-listener skipping watermark update on retired stack");
+            return Ok(());
+        };
         sqlx::query(
             "INSERT into gw_listener_last_block (dummy_id, last_block_num, earliest_open_ct_commits_block)
             VALUES (true, $1, $2)
@@ -521,8 +760,23 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         )
         .bind(last_block_num)
         .bind(earliest_open_ct_commits_block)
-        .execute(db_pool)
+        .execute(tx.as_mut())
         .await?;
+
+        // Wake the upgrade-controller's Gateway-side readiness task so it can
+        // re-check whether the GCS gw-listener has reached `gw_start_block`.
+        // The payload carries the new tip purely for observability; the
+        // controller re-reads the `gw_listener_last_block` watermark itself. In
+        // GCS mode this notify (and the progress row above) target the `gcs`
+        // schema's watermark via the connection's `search_path`.
+        if let Some(last_block_num) = last_block_num {
+            sqlx::query("SELECT pg_notify($1, $2)")
+                .bind(EVENT_GW_NEW_BLOCK)
+                .bind(last_block_num.to_string())
+                .execute(tx.as_mut())
+                .await?;
+        }
+        tx.commit().await?;
 
         *number_of_last_processed_updates += 1;
         if (*number_of_last_processed_updates)

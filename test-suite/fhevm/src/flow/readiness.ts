@@ -1,4 +1,10 @@
-import { bootstrapUsesHostKmsGeneration, kmsConnectorUsesHostKmsGeneration, supportsHostListenerConsumer } from "../compat/compat";
+import {
+  bootstrapUsesHostKmsGeneration,
+  kmsConnectorUsesHostKmsGeneration,
+  supportsConsensusDetector,
+  supportsHostListenerConsumer,
+  supportsUpgradeController,
+} from "../compat/compat";
 import { BootstrapTimeout, ContainerCrashed, MinioError, PreflightError, ProbeTimeout, RpcError } from "../errors";
 import {
   COPROCESSOR_DB_CONTAINER,
@@ -12,6 +18,7 @@ import {
   defaultHostChainKey,
   hostChainSuffix,
 } from "../layout";
+import { blueGreenServiceNames } from "../generate/compose";
 import { kmsConnectorPrefix, kmsPublicPrefix } from "../kms-party";
 import { topologyForState } from "../stack-spec/stack-spec";
 import type { State } from "../types";
@@ -22,7 +29,7 @@ const POST_BOOT_HEALTH_GATE_DELAY_MS = 5_000;
 const KMS_CONNECTOR_DECRYPTION_READY =
   /Started Decryption polling from block|Last block polled updated for \d+\/\d+ event types in \[PublicDecryptionRequest, UserDecryptionRequest\]/;
 const KMS_CONNECTOR_KMS_GENERATION_READY =
-  /Started KMSGeneration polling from block|Last block polled updated for \d+\/\d+ event types in \[PrepKeygenRequest, KeygenRequest, CrsgenRequest, PrssInit, KeyReshareSameSet\]/;
+  /Started KMSGeneration polling from block|Started Ethereum polling from block|Last block polled updated for chain ethereum|Last block polled updated for \d+\/\d+ event types in \[[^\]]*PrepKeygenRequest[^\]]*\]/;
 
 /** Number of KMS connector instances: one per party in threshold mode, else one. */
 // `kms.parties` is the canonical connector/party count: 1 for centralized, N for threshold.
@@ -173,12 +180,17 @@ export const postBootHealthGate = async (containers: string[], delayMs = POST_BO
 
 /** Lists the coprocessor containers whose health determines coprocessor readiness. */
 export const coprocessorHealthContainers = (state: Pick<State, "scenario" | "versions">) => {
-  const topology = topologyForState(state);
+  if (state.scenario.kind === "blue-green") {
+    return blueGreenServiceNames(state, { includeMigration: false });
+  }
   const suffixes = GROUP_SERVICE_SUFFIXES.coprocessor.filter(
     (suffix) =>
       !suffix.includes("migration") &&
-      (suffix !== "host-listener-consumer" || supportsHostListenerConsumer(state)),
+      (suffix !== "host-listener-consumer" || supportsHostListenerConsumer(state)) &&
+      (suffix !== "consensus-detector" || supportsConsensusDetector(state)) &&
+      (suffix !== "upgrade-controller" || supportsUpgradeController(state)),
   );
+  const topology = topologyForState(state);
   const names: string[] = [];
   for (let index = 0; index < topology.count; index += 1) {
     for (const suffix of suffixes) {
@@ -190,26 +202,43 @@ export const coprocessorHealthContainers = (state: Pick<State, "scenario" | "ver
 
 /** Waits for all coprocessor runtime services to reach their expected states. */
 export const waitForCoprocessorServices = async (state: State, skipMigration: boolean) => {
-  const topology = topologyForState(state);
-  for (let index = 0; index < topology.count; index += 1) {
-    if (!skipMigration) {
-      await waitForContainer(toServiceName("db-migration", index), "complete");
+  const waitCoreFleet = async (prefix: string, withMigration: boolean) => {
+    if (withMigration && !skipMigration) {
+      await waitForContainer(`${prefix}db-migration`, "complete");
     }
-    await waitForContainer(toServiceName("host-listener", index), "running");
-    await waitForContainer(toServiceName("host-listener-poller", index), "running");
+    await waitForContainer(`${prefix}host-listener`, "running");
+    await waitForContainer(`${prefix}host-listener-poller`, "running");
     if (supportsHostListenerConsumer(state)) {
-      await waitForContainer(toServiceName("host-listener-consumer", index), "running");
+      await waitForContainer(`${prefix}host-listener-consumer`, "running");
     }
-    await waitForContainer(toServiceName("gw-listener", index), "running");
-    await waitForContainer(toServiceName("tfhe-worker", index), "running");
-    await waitForContainer(toServiceName("zkproof-worker", index), "running");
-    await waitForContainer(toServiceName("sns-worker", index), "running");
-    await waitForContainer(toServiceName("transaction-sender", index), "running");
+    await waitForContainer(`${prefix}gw-listener`, "running");
+    await waitForContainer(`${prefix}tfhe-worker`, "running");
+    await waitForContainer(`${prefix}zkproof-worker`, "running");
+    await waitForContainer(`${prefix}sns-worker`, "running");
+    await waitForContainer(`${prefix}transaction-sender`, "running");
+  };
+  const count = topologyForState(state).count;
+  for (let index = 0; index < count; index += 1) {
+    const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
+    await waitCoreFleet(prefix, true);
+    if (state.scenario.kind === "blue-green") {
+      await waitCoreFleet(`${prefix}gcs-`, false);
+      await waitForContainer(`${prefix}gcs-upgrade-controller`, "running");
+      await waitForContainer(`${prefix}gcs-consensus-detector`, "running");
+    }
   }
 };
 
 /** Waits for the full coprocessor stack, including migrations, to become ready. */
 export const waitForCoprocessor = async (state: State) => waitForCoprocessorServices(state, false);
+
+/** Waits for db-migration containers (one per operator) to exit successfully. */
+export const waitForCoprocessorDbMigrations = async (state: Pick<State, "scenario" | "versions">) => {
+  const count = topologyForState(state).count;
+  for (let index = 0; index < count; index += 1) {
+    await waitForContainer(toServiceName("db-migration", index), "complete");
+  }
+};
 
 /** Waits for extra-chain host listeners to reach running state. */
 const waitForExtraChainCoprocessorListeners = async (state: Pick<State, "scenario">, chainKey: string) => {
@@ -261,6 +290,22 @@ const fetchVerfAddress = async (
   return null;
 };
 
+/** Reads a single party's serialized CA certificate (PEM) for `handle` under `prefix`, returning
+ * it hex-encoded as `0x…`. Best-effort: returns null when the prefix has no CACert (e.g. a build
+ * that ships no TLS material), so discovery can fall back to an empty `0x` cert. */
+const fetchCaCert = async (prefix: string, handle: string): Promise<string> => {
+  try {
+    const response = await fetch(`${MINIO_EXTERNAL_URL}/kms-public/${prefix}/CACert/${handle}`);
+    if (response.ok) {
+      return `0x${Buffer.from(await response.arrayBuffer()).toString("hex")}`;
+    }
+  } catch {
+    // treat as "no cert available"
+    console.warn(`No CACert available for handle "${handle}" under prefix "${prefix}". Falling back to "0x"`)
+  }
+  return "0x";
+};
+
 /**
  * Discovers the KMS signer addresses after bootstrap: one for a centralized node,
  * one per party for a threshold-mode cluster (`parties` is 1 in the centralized case).
@@ -269,7 +314,7 @@ const fetchVerfAddress = async (
  */
 export const discoverKmsSigners = async (
   parties: number,
-): Promise<{ signers: string[]; minioKeyPrefix: string }> => {
+): Promise<{ signers: string[]; caCerts: string[]; minioKeyPrefix: string }> => {
   let lastFailure = "no signing-key handle in the kms-core logs yet";
   for (let attempt = 0; attempt <= 60; attempt += 1) {
     const logs = await run(["docker", "logs", KMS_CORE_CONTAINER], { allowFailure: true });
@@ -277,6 +322,7 @@ export const discoverKmsSigners = async (
     const handle = (text.match(/SigningKey\/([a-f0-9]{64})/) ?? text.match(/handle ([a-zA-Z0-9]+)/))?.[1];
     if (handle) {
       const signers: string[] = [];
+      const caCerts: string[] = [];
       let minioKeyPrefix = "";
       for (let party = 1; party <= parties; party += 1) {
         const prefixes = verfAddressPrefixes(parties, party);
@@ -286,12 +332,15 @@ export const discoverKmsSigners = async (
           break;
         }
         signers.push(found.address);
+        // The CA cert lives alongside the VerfAddress under the same prefix. Best-effort: an empty
+        // `0x` when a build ships no TLS material, so non-TLS stacks still resolve a signer set.
+        caCerts.push(await fetchCaCert(found.prefix, handle));
         if (party === 1) {
           minioKeyPrefix = found.prefix;
         }
       }
       if (signers.length === parties) {
-        return { signers, minioKeyPrefix };
+        return { signers, caCerts, minioKeyPrefix };
       }
     }
     await Bun.sleep(1_000);

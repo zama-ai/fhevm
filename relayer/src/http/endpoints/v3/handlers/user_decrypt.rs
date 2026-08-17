@@ -13,7 +13,7 @@ use crate::core::event::{
     ApiVersion, RelayerEvent, RelayerEventData, UserDecryptEventData, UserDecryptRequest,
 };
 use crate::core::job_id::JobId;
-use crate::host::HostChainIdChecker;
+use crate::host::{HostChainIdChecker, SigPreCheckError, UserDecryptSignaturePreChecker};
 use crate::http::endpoints::v2::handlers::user_decrypt::UserDecryptHandler as UserDecryptHandlerV2;
 use crate::http::endpoints::v2::types::error::{ApiResponseStatus, RelayerV2ResponseFailed};
 use crate::http::endpoints::v2::types::user_decrypt::{
@@ -25,7 +25,10 @@ use crate::http::utils::BounceChecker;
 use crate::http::{parse_and_validate, AppResponse};
 use crate::logging::UserDecryptStep;
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
-use crate::metrics::{observe_raw_eta_seconds, HttpApiVersion, RetryAfterRequestType};
+use crate::metrics::{
+    observe_raw_eta_seconds, observe_signature_precheck, HttpApiVersion, RetryAfterRequestType,
+    SignaturePreCheckOutcome,
+};
 use crate::orchestrator::{ContentHasher, Orchestrator};
 use crate::readiness::throttler::UserDecryptReadinessTask;
 use crate::store::sql::models::user_decrypt_req_model::UserDecryptReqData;
@@ -38,7 +41,7 @@ use axum::http::{header, HeaderMap, Request, StatusCode};
 use axum::response::IntoResponse;
 use axum::Json;
 use std::sync::Arc;
-use tracing::{error, info, instrument, span, Level};
+use tracing::{error, info, instrument, span, warn, Level};
 use uuid::Uuid;
 
 pub type UserDecryptResponse = AppResponse<UserDecryptPostResponseJson>;
@@ -53,11 +56,13 @@ pub struct UserDecryptHandler {
     user_decrypt_queue_checker: BounceChecker<UserDecryptReadinessTask>,
     retry_after_state: Arc<RetryAfterState>,
     host_chain_id_checker: Arc<HostChainIdChecker>,
+    signature_prechecker: Arc<UserDecryptSignaturePreChecker>,
     /// GET is delegated to the v2 handler whose response schema is shared.
     v2_handler: Arc<UserDecryptHandlerV2>,
 }
 
 impl UserDecryptHandler {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         orchestrator: Arc<Orchestrator>,
         api_version: ApiVersion,
@@ -65,6 +70,7 @@ impl UserDecryptHandler {
         user_decrypt_queue_checker: BounceChecker<UserDecryptReadinessTask>,
         retry_after_state: Arc<RetryAfterState>,
         host_chain_id_checker: Arc<HostChainIdChecker>,
+        signature_prechecker: Arc<UserDecryptSignaturePreChecker>,
         v2_handler: Arc<UserDecryptHandlerV2>,
     ) -> Self {
         Self {
@@ -74,6 +80,7 @@ impl UserDecryptHandler {
             user_decrypt_queue_checker,
             retry_after_state,
             host_chain_id_checker,
+            signature_prechecker,
             v2_handler,
         }
     }
@@ -184,6 +191,41 @@ impl UserDecryptHandler {
                 &request_id.to_string(),
             )
             .into_response();
+        }
+
+        // Signature pre-check: reject detectably-bad signatures here so the SDK caller gets
+        // early feedback instead of waiting for the gateway/KMS round-trip. The KMS Connector
+        // remains the authoritative verifier.
+        match self
+            .signature_prechecker
+            .verify(&user_decrypt_request)
+            .await
+        {
+            Ok(()) => observe_signature_precheck(SignaturePreCheckOutcome::Accepted),
+            Err(SigPreCheckError::Invalid { signer, reason }) => {
+                info!(
+                    signer = %signer,
+                    reason = %reason,
+                    request_id = %request_id,
+                    "v3 user-decrypt signature pre-check rejected request"
+                );
+                observe_signature_precheck(SignaturePreCheckOutcome::Rejected);
+                return RelayerV2ResponseFailed::invalid_signature(
+                    &reason,
+                    &request_id.to_string(),
+                )
+                .into_response();
+            }
+            Err(SigPreCheckError::HostCallFailed(msg)) => {
+                warn!(
+                    error = %msg,
+                    request_id = %request_id,
+                    "v3 user-decrypt signature pre-check host call failed; rejecting"
+                );
+                observe_signature_precheck(SignaturePreCheckOutcome::HostCallFailed);
+                return RelayerV2ResponseFailed::internal_server_error(&request_id.to_string())
+                    .into_response();
+            }
         }
 
         let int_job_id: JobId = user_decrypt_request.content_hash().into();

@@ -7,9 +7,12 @@ import type { FetchKeyUrlResult } from '../../../types/relayer-p.js';
 import { setAuth } from '../../../base/auth.js';
 import { RelayerFetchError } from '../../../errors/RelayerFetchError.js';
 import { assertRecordArrayProperty, assertRecordNonNullableProperty } from '../../../base/record.js';
-import { fetchWithRetry } from '../../../base/fetch.js';
+import { fetchWithRetry, normalizeHeaders } from '../../../base/fetch.js';
 import { sdkName, version } from '../../../_version.js';
-import { assertRecordStringArrayProperty, assertRecordStringProperty, removeSuffix } from '../../../base/string.js';
+import { assertRecordStringArrayProperty, assertRecordStringProperty } from '../../../base/string.js';
+import { buildRelayerUrlString, validateRelayerBaseUrl } from './relayerUrl.js';
+import { readErrorMessage } from './readErrorMessage.js';
+import { assert } from '../../../base/errors/InternalError.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // fetchFheEncryptionKeySource
@@ -20,19 +23,22 @@ export async function fetchFheEncryptionKeySource(
   parameters: FetchFheEncryptionKeySourceParameters,
 ): Promise<FetchFheEncryptionKeySourceReturnType> {
   const { options } = parameters;
-  const relayerUrl = relayerClient.relayerUrl;
+  const relayerBaseUrl: URL = validateRelayerBaseUrl(relayerClient.relayerUrl, options?.auth !== undefined);
+  const customHeaders = normalizeHeaders(options?.headers);
   const init = setAuth(
     {
       method: 'GET',
       headers: {
-        'ZAMA-SDK-VERSION': version,
-        'ZAMA-SDK-NAME': sdkName,
+        ...customHeaders,
+        'zama-sdk-version': version,
+        'zama-sdk-name': sdkName,
       },
     } satisfies RequestInit,
     options?.auth,
   );
 
-  const url = `${removeSuffix(relayerUrl, '/')}/v2/keyurl`;
+  assert(relayerBaseUrl.pathname.endsWith('/'));
+  const url = buildRelayerUrlString(relayerBaseUrl, 'v2/keyurl');
 
   let response;
   try {
@@ -54,9 +60,16 @@ export async function fetchFheEncryptionKeySource(
   }
 
   if (!response.ok) {
+    // Surface the message the relayer/edge (Cloudflare/Kong) actually sent for
+    // a 401/403 — e.g. a missing/invalid `x-api-key` — instead of discarding
+    // the body behind a generic "HTTP error! status: X".
+    const { message } = await readErrorMessage(response);
     _throwFetchError({
       url,
-      message: `HTTP error! status: ${response.status} on ${response.url}`,
+      message:
+        message !== undefined
+          ? `HTTP error! status: ${response.status} on ${response.url}: ${message}`
+          : `HTTP error! status: ${response.status} on ${response.url}`,
     });
   }
 
@@ -87,7 +100,7 @@ export async function fetchFheEncryptionKeySource(
       capacity: 2048,
     },
     metadata: {
-      relayerUrl,
+      relayerUrl: relayerClient.relayerUrl,
       chainId: relayerClient.chainId,
     },
   };

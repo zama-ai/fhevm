@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT handle as \"handle!\",\n                       s3_migration_failure_count as \"s3_migration_failure_count!\"\n                 FROM ciphertext_digest\n                 WHERE s3_format_version = $1\n                   AND (ciphertext IS NOT NULL OR ciphertext128 IS NOT NULL)\n                 ORDER BY s3_migration_failure_count, handle\n                 LIMIT $2\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "handle!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "s3_migration_failure_count!",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int2",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "bfc19e61ef2b4ebee152c06f0b07431d85270704048bfe553e085f37c4ebed38"
+}
