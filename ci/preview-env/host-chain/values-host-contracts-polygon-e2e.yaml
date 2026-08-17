@@ -64,7 +64,30 @@ scDeploy:
     - {name: KMS_SOFTWARE_VERSION, value: "0.1.0"}
     - {name: KMS_PCR_VALUES, value: '[{"pcr0":"0x00","pcr1":"0x00","pcr2":"0x00"}]'}
   deployCommands:
-    - npx hardhat task:deployAllHostContracts --with-kms-generation false --protocol-config-source canonical --canonical-rpc-url http://anvil-host-anvil-node:8545 --canonical-protocol-config-address "${CANONICAL_PROTOCOL_CONFIG_ADDRESS}"
+    # HEAD host-contracts (#3457) split canonical ProtocolConfig seeding into
+    # export -> load CANONICAL_* env -> deploy: task:deployAllHostContracts no
+    # longer accepts --canonical-rpc-url / --canonical-protocol-config-address
+    # (they now raise HH305 "Unrecognized param"), it reads the snapshot from
+    # CANONICAL_* env vars instead. Mirror fhevm-cli's multi-chain seeding:
+    #   1. export the ETH (canonical) ProtocolConfig KMS context to a JSON
+    #      artifact, PINNED to the canonical HEAD block - anvil's `finalized`
+    #      tag lags behind head and can predate the ETH ProtocolConfig deploy;
+    #   2. load the artifact's flat CANONICAL_* KEY=value `export` map into env
+    #      (base64 per value so JSON arrays/objects survive the shell verbatim);
+    #   3. run the canonical-source deploy, which reads that snapshot from env.
+    # NB: a manual workflow_dispatch pinning an OLDER host-contracts image (pre
+    # #3457) would instead need the old inline --canonical-* flags.
+    - |
+      canonical_head=$(node -e "const {JsonRpcProvider}=require('ethers'); new JsonRpcProvider('http://anvil-host-anvil-node:8545').getBlockNumber().then(n=>process.stdout.write(String(n)))")
+      npx hardhat task:exportCanonicalProtocolConfig \
+        --canonical-rpc-url http://anvil-host-anvil-node:8545 \
+        --canonical-protocol-config-address "${CANONICAL_PROTOCOL_CONFIG_ADDRESS}" \
+        --block-number "${canonical_head}" \
+        --out /tmp/canonical-protocol-config-snapshot.json
+      while IFS=$'\t' read -r canonical_key canonical_b64; do
+        export "${canonical_key}=$(printf '%s' "${canonical_b64}" | base64 -d)"
+      done < <(node -e "const e=require('/tmp/canonical-protocol-config-snapshot.json').export; for (const kv of Object.entries(e)) process.stdout.write(kv[0]+'\t'+Buffer.from(String(kv[1])).toString('base64')+'\n')")
+      npx hardhat task:deployAllHostContracts --with-kms-generation false --protocol-config-source canonical
   verifyContracts: false
 persistence:
   enabled: true
