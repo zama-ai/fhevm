@@ -78,6 +78,13 @@ scDeploy:
     # NB: a manual workflow_dispatch pinning an OLDER host-contracts image (pre
     # #3457) would instead need the old inline --canonical-* flags.
     - |
+      # task:exportCanonicalProtocolConfig compiles contracts/ for the ProtocolConfig
+      # ABI, and contracts/ACL.sol imports the generated addresses/FHEVMHostAddresses.sol.
+      # This per-Polygon PVC is mounted over /app/addresses, so on a fresh volume that
+      # stub is absent (compile -> HH404) until task:deployEmptyUUPSProxies writes it.
+      # Seed it first - the same task deployAllHostContracts re-runs internally, so the
+      # throwaway empty proxies are harmless on the ephemeral anvil.
+      npx hardhat task:deployEmptyUUPSProxies --with-kms-generation false
       canonical_head=$(node -e "const {JsonRpcProvider}=require('ethers'); new JsonRpcProvider('http://anvil-host-anvil-node:8545').getBlockNumber().then(n=>process.stdout.write(String(n)))")
       npx hardhat task:exportCanonicalProtocolConfig \
         --canonical-rpc-url http://anvil-host-anvil-node:8545 \
