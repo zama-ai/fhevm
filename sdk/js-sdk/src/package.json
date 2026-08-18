@@ -14,7 +14,9 @@
     "!**/*.template",
     "!**/*.tsbuildinfo",
     "!vitest.config.ts",
-    "!tsconfig.json"
+    "!tsconfig.json",
+    "!wasm/tfhe/v*/**",
+    "!wasm/tkms/v*/**"
   ],
   "exports": {
     ".": {
