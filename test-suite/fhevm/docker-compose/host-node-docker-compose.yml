@@ -23,4 +23,4 @@ services:
       - --slots-in-an-epoch
       - "1"
     ports:
-      - "${HOST_NODE_PORT:-8545}:${HOST_NODE_PORT:-8545}"
+      - "127.0.0.1:${HOST_NODE_PORT:-8545}:${HOST_NODE_PORT:-8545}"

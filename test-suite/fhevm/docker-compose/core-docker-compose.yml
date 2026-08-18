@@ -34,7 +34,7 @@ services:
       - fhevm_kms_core_keys:/app/kms/core/service/keys
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/config/kms-core.toml:/app/kms/core/service/config/config.toml
     ports:
-      - "50051:50051"
+      - "127.0.0.1:50051:50051"
     healthcheck:
       disable: true
 

@@ -19,4 +19,4 @@ services:
       - --mnemonic
       - "${MNEMONIC}"
     ports:
-      - "8546:8546"
+      - "127.0.0.1:8546:8546"

@@ -13,7 +13,7 @@ services:
       timeout: 5s
       retries: 5
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - relayer_postgres_data:/var/lib/postgresql/data
 
@@ -26,7 +26,7 @@ services:
     command:
     - /bin/server
     ports:
-      - "3001:3001"
+      - "127.0.0.1:3001:3001"
     depends_on:
       relayer-db:
         condition: service_healthy
@@ -43,7 +43,7 @@ services:
     volumes:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/config/relayer.yaml:/app/config/local.yaml
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     depends_on:
       relayer-db:
         condition: service_healthy
