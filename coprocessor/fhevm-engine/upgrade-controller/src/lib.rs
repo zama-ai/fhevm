@@ -2016,6 +2016,46 @@ async fn reconcile(
     Ok(())
 }
 
+/// Per-track latch state for one upgrade attempt, for logging.
+struct ConsensusTrackStatus {
+    /// `chain_id=bool` per host chain, comma separated and ordered by chain id. `tracing` field
+    /// names must be static, so per-chain latches cannot each be their own field.
+    host: String,
+    /// The Gateway track. Set on every chain row at once, so any row answers for all of them.
+    gateway: bool,
+}
+
+/// Read the consensus-track latches for the given proposal attempt.
+async fn consensus_track_status(
+    pool: &Pool<Postgres>,
+    proposal_id: Option<&[u8]>,
+    proposal_block: i64,
+) -> Result<ConsensusTrackStatus, Error> {
+    let rows: Vec<(i64, bool, bool)> = sqlx::query_as(
+        "SELECT host_chain_id, host_consensus_reached, gw_consensus_reached
+           FROM upgrade_state
+          WHERE stack_role = 'GCS'
+            AND proposal_id IS NOT DISTINCT FROM $1
+            AND COALESCE(proposal_block, -1) = $2
+          ORDER BY host_chain_id",
+    )
+    .bind(proposal_id)
+    .bind(proposal_block)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(ConsensusTrackStatus {
+        host: rows
+            .iter()
+            .map(|(chain_id, host_reached, _)| format!("{chain_id}={host_reached}"))
+            .collect::<Vec<_>>()
+            .join(","),
+        // Every chain row carries the same value, so ALL is the same as ANY here; ALL states
+        // the intent and is safe on an empty set.
+        gateway: !rows.is_empty() && rows.iter().all(|(_, _, gw_reached)| *gw_reached),
+    })
+}
+
 /// Handle an `event_unanimity_consensus` notification. consensus-detector emits
 /// this for TWO independent tracks, distinguished by the payload `chain_id`:
 ///   - a **host chain** (`chain_id` present in `upgrade_state`), over the
@@ -2044,10 +2084,11 @@ pub async fn handle_unanimity_consensus(
     gcs_mode: bool,
     raw_payload: &str,
 ) -> Result<(), Error> {
-    info!("event_unanimity_consensus received — checking conditions for cutover execution");
-
     if !gcs_mode {
-        debug!("event_unanimity_consensus: service not in gcs mode, ignoring");
+        debug!(
+            gcs_mode = false,
+            "event_unanimity_consensus received — service not in gcs mode, ignoring"
+        );
         return Ok(());
     }
 
@@ -2067,22 +2108,40 @@ pub async fn handle_unanimity_consensus(
 
     let Some((state, proposal_id, proposal_block, gw_start_block)) = base else {
         warn!(
+            gcs_row_present = false,
             "event_unanimity_consensus: no in-progress GCS row in upgrade_state — skipping cutover"
         );
         return Ok(());
     };
-    if state != "UpgradeActivated" && state != "DryRunStarted" {
+    let state_eligible = state == "UpgradeActivated" || state == "DryRunStarted";
+    let proposal_matches = proposal_id.as_deref() == Some(payload.proposal_id.as_slice());
+    let attempt_matches = payload.proposal_block == Some(proposal_block);
+
+    // Only the consensus-track latches, since those are what actually gate cutover: one host
+    // track per host chain plus the single Gateway track. Read for the *stored* proposal, not
+    // the payload's, so the line always describes the active attempt even when a stale event
+    // arrives. State as of arrival — this event's own latch is set further down.
+    //
+    // Rejection reasons are not repeated here; each gate below warns with its own detail.
+    let tracks = consensus_track_status(pool, proposal_id.as_deref(), proposal_block).await?;
+    info!(
+        host_tracks = tracks.host.as_str(),
+        gw_track = tracks.gateway,
+        "event_unanimity_consensus received — checking conditions for cutover execution"
+    );
+
+    if !state_eligible {
         warn!(
             state,
             "event_unanimity_consensus: GCS state is not UpgradeActivated/DryRunStarted — skipping cutover"
         );
         return Ok(());
     }
-    if proposal_id.as_deref() != Some(payload.proposal_id.as_slice()) {
+    if !proposal_matches {
         warn!("event_unanimity_consensus: proposal does not match — ignoring");
         return Ok(());
     }
-    if payload.proposal_block != Some(proposal_block) {
+    if !attempt_matches {
         warn!(
             payload_proposal_block = payload.proposal_block,
             proposal_block, "event_unanimity_consensus: proposal attempt does not match — ignoring"
