@@ -132,3 +132,21 @@ export {
   unifiedDecryptionAddress as verifyingContractAddressDecryption,
   relayerApiKey,
 };
+
+// Values the E2E benchmarks need to build verified inputs and sign relayer
+// requests without going through the public SDK (see
+// test/encryptedERC20/EncryptedERC20.benchmark.ts and
+// test/auction/ConfidentialAuctionBid.benchmark.ts). Re-declared with explicit
+// types for the same reason as the block above: the module-level throw guards
+// narrow them here, but an exported declaration would otherwise widen to
+// `... | undefined` and fail strict-mode consumers.
+const benchInputVerifierContractAddress: string = inputAdd;
+const benchInputVerificationAddress: string = verifyingContractAddressInputVerification;
+const benchHostChainID: number = hostChainID;
+const benchGatewayChainID: number = gatewayChainID;
+export {
+  benchInputVerifierContractAddress as inputVerifierContractAddress,
+  benchInputVerificationAddress as verifyingContractAddressInputVerification,
+  benchHostChainID as hostChainID,
+  benchGatewayChainID as gatewayChainID,
+};

@@ -78,6 +78,10 @@ export class FhevmSdk implements SdkInstance {
     readonly gatewayChainId: number;
     readonly chainId: number;
     readonly auth?: Auth;
+    /** WASM worker threads for proving. Left undefined the SDK uses
+     * `navigator.hardwareConcurrency`, which oversubscribes badly when several
+     * proof processes run side by side (N processes x 32 threads on 32 cores). */
+    readonly numberOfThreads?: number;
   }): Promise<SdkInstance> {
     const {
       verifyingContractAddressDecryption,
@@ -90,6 +94,7 @@ export class FhevmSdk implements SdkInstance {
       rpcUrl,
       gatewayChainId,
       chainId,
+      numberOfThreads,
       auth,
     } = parameters;
     let sanitizedRelayerUrl = relayerUrl;
@@ -99,6 +104,8 @@ export class FhevmSdk implements SdkInstance {
     if (!hasFhevmRuntimeConfig()) {
       setFhevmRuntimeConfig({
         singleThread: false,
+        // Only override when asked: undefined keeps the SDK's own default.
+        ...(numberOfThreads === undefined ? {} : { numberOfThreads }),
         logger: {
           debug: (message: string) => console.log(`[debug] ${message}`),
           warn: (message: string) => console.log(`[warn] ${message}`),

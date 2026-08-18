@@ -58,11 +58,38 @@ contract EncryptedERC20 is Ownable2Step, E2ECoprocessorConfig {
     /// @dev Only the contract owner can call this function.
     /// @param mintedAmount The amount of tokens to mint
     function mint(uint64 mintedAmount) public virtual onlyOwner {
-        balances[owner()] = FHE.add(balances[owner()], mintedAmount); // overflow impossible because of next line
-        FHE.allowThis(balances[owner()]);
-        FHE.allow(balances[owner()], owner());
+        _mint(owner(), mintedAmount);
+    }
+
+    /// @notice Mints new tokens and assigns them to a specific recipient.
+    /// @dev Only the contract owner can call this function.
+    /// @param to The address receiving the minted tokens
+    /// @param mintedAmount The amount of tokens to mint
+    function mintTo(address to, uint64 mintedAmount) public virtual onlyOwner {
+        _mint(to, mintedAmount);
+    }
+
+    /// @notice Mints the same amount to each recipient in a batch.
+    /// @dev Only the contract owner can call this function. The E2E throughput
+    /// benchmark funds hundreds of wallets, which is impractical one
+    /// transaction at a time.
+    /// @param recipients The addresses receiving the minted tokens
+    /// @param mintedAmount The amount of tokens to mint for each recipient
+    function mintToMany(address[] calldata recipients, uint64 mintedAmount) public virtual onlyOwner {
+        for (uint256 i = 0; i < recipients.length; i++) {
+            _mint(recipients[i], mintedAmount);
+        }
+    }
+
+    /// @notice Internal mint helper shared by single-recipient and batch minting.
+    /// @param to The address receiving the minted tokens
+    /// @param mintedAmount The amount of tokens to mint
+    function _mint(address to, uint64 mintedAmount) internal virtual {
+        balances[to] = FHE.add(balances[to], mintedAmount); // overflow impossible because of next line
+        FHE.allowThis(balances[to]);
+        FHE.allow(balances[to], to);
         _totalSupply = _totalSupply + mintedAmount;
-        emit Mint(owner(), mintedAmount);
+        emit Mint(to, mintedAmount);
     }
 
     /// @notice Transfers an encrypted amount from the message sender address to the `to` address.
