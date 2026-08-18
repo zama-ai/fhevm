@@ -6,7 +6,7 @@ use fhevm_engine_common::database::{
 };
 use fhevm_engine_common::db_keys::DbKeyCache;
 use fhevm_engine_common::gcs_activation::{
-    run_gcs_activation_watcher, GCS_NOT_ACTIVATED, WORK_AVAILABLE_CHANNEL,
+    run_gcs_activation_watcher, GCS_GATE_RECHECK, GCS_NOT_ACTIVATED, WORK_AVAILABLE_CHANNEL,
 };
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::check_fhe_operand_types;
@@ -29,8 +29,6 @@ use time::PrimitiveDateTime;
 use tracing::{debug, error, info, warn, Instrument};
 
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
-const GCS_GATE_RECHECK: Duration = Duration::from_millis(1000);
-
 lazy_static! {
     pub static ref TIMING: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 }
@@ -189,6 +187,7 @@ async fn tfhe_worker_cycle(
     }
     let mut immediately_poll_more_work = false;
     let mut no_progress_cycles = 0;
+
     loop {
         // GCS gating: skip the iteration entirely until the activation
         // watcher has populated `start_block` in `upgrade_state` for

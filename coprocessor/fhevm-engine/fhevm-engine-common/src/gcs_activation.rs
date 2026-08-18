@@ -54,6 +54,16 @@ pub const WORK_AVAILABLE_CHANNEL: &str = "work_available";
 /// `DryRunStarted`. Any other value is the real `start_block`.
 pub const GCS_NOT_ACTIVATED: i64 = -1;
 
+/// Re-check cadence for a worker's GCS activation gate, shared by the tfhe-, sns- and
+/// zkproof-workers so they park at one consistent latency.
+///
+/// Deliberately NOT a worker's database polling interval. Those are tuned for how often to
+/// query Postgres for work (tens of seconds); this gate is a single atomic load. Reusing the
+/// polling interval means the release is only noticed up to a full interval late, which lands
+/// squarely on the most timing-sensitive moment of an upgrade - the dry-run window has a
+/// consensus timeout, and every second parked here is a second not spent anchoring.
+pub const GCS_GATE_RECHECK: Duration = Duration::from_millis(1000);
+
 /// Pause flag for the tfhe/sns workers: run from `start_block` while dry-running,
 /// keep the released value through cutover (`UpgradeAuthorized`/`LIVE`), pause on
 /// any other state — including a fresh re-proposal (`UpgradeActivated`) that races
