@@ -79,12 +79,18 @@ scDeploy:
     # #3457) would instead need the old inline --canonical-* flags.
     - |
       # task:exportCanonicalProtocolConfig compiles contracts/ for the ProtocolConfig
-      # ABI, and contracts/ACL.sol imports the generated addresses/FHEVMHostAddresses.sol.
-      # This per-Polygon PVC is mounted over /app/addresses, so on a fresh volume that
-      # stub is absent (compile -> HH404) until task:deployEmptyUUPSProxies writes it.
-      # Seed it first - the same task deployAllHostContracts re-runs internally, so the
-      # throwaway empty proxies are harmless on the ephemeral anvil.
+      # ABI; contracts/ACL.sol imports every symbol of the generated
+      # addresses/FHEVMHostAddresses.sol (aclAdd .. pauserSetAdd). This per-Polygon PVC
+      # is mounted over /app/addresses, so on a fresh volume that stub is absent until
+      # the deploy writes it. Reproduce deployAllHostContracts' address-seeding prologue
+      # (deployEmptyUUPSProxies -> compile immutable -> deployPauserSet) so the stub is
+      # COMPLETE before the export compiles - a partial stub fails too (HH404 with none,
+      # DeclarationError "pauserSetAdd not found" with only deployEmptyUUPSProxies). None
+      # of these need local KMS env; the canonical deploy below re-runs them and owns the
+      # final addresses, so the throwaway proxies are harmless on the ephemeral anvil.
       npx hardhat task:deployEmptyUUPSProxies --with-kms-generation false
+      npx hardhat compile:specific --contract contracts/immutable
+      npx hardhat task:deployPauserSet
       canonical_head=$(node -e "const {JsonRpcProvider}=require('ethers'); new JsonRpcProvider('http://anvil-host-anvil-node:8545').getBlockNumber().then(n=>process.stdout.write(String(n)))")
       npx hardhat task:exportCanonicalProtocolConfig \
         --canonical-rpc-url http://anvil-host-anvil-node:8545 \
