@@ -1,0 +1,192 @@
+{
+  "schema": "zama-solana-user-decrypt-envelope/v1",
+  "description": "The v3 relayer envelope for a Solana user decryption: the exact JSON shape the SDK emits and the relayer parses. Hand-committed, no generator — the shape is what these records pin (key names, camelCase, which values are 0x-hex and which are decimal strings), and a change that moves it is a change to the HTTP contract, not a fixture refresh. The permit half is not copied here: it is named by reference into the permit canon, so this file cannot drift from it.",
+  "attestation_type": "solana-srfc38-user-decrypt-v1",
+  "permit_source": {
+    "file": "../permit/permit_v1.json",
+    "record": "reference-permit-two-domains",
+    "derivation": "Take the record's `permit` and `signature`. Every hex field gains a `0x` prefix; every u64 field stays the decimal string it already is; `start_timestamp`/`duration_seconds` move under `requestValidity`; `transport_key` is resolved through the file's `transport_keys` table. Field names go from snake_case to camelCase."
+  },
+  "composition": "request = { attestationType, attestedPayload: { userPubkey, transportKey, allowedAclDomainKeys, requestValidity, verifyingProgramId, chainId, extraData, handles, ...payload_extra }, signature } — the permit fields derived as above, `handles` and `payload_extra` taken from the record.",
+  "rejected_by_values": {
+    "json-shape": "The typed envelope refuses to deserialize: an unknown key, or a missing one.",
+    "payload-rules": "Deserializes, and the payload validator refuses it.",
+    "request-decode": "Validates, and the conversion into the internal request refuses it.",
+    "host-chain-support": "Converts, and the handle's embedded chain id is not one this relayer serves. Rejected above the conversion, so a record naming this reason is expected to convert cleanly."
+  },
+  "accepted": [
+    {
+      "name": "current-access-one-handle",
+      "comment": "The ordinary request: one handle whose access is current, so there is no proof to carry. `proofLeafCount` is \"0\" and `accessProof` is the empty blob — not omitted, because the field is not optional.",
+      "handles": [
+        {
+          "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
+          "subject": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+          "encryptedValueId": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1",
+          "proofLeafCount": "0",
+          "accessProof": "0x"
+        }
+      ]
+    },
+    {
+      "name": "historical-access-one-handle",
+      "comment": "The same handle after its access was superseded: the entry carries the leaf count the proof was built against and a bare borsh MmrProof — no mode byte, unlike the public-decrypt transport blob.",
+      "handles": [
+        {
+          "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
+          "subject": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+          "encryptedValueId": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1",
+          "proofLeafCount": "8",
+          "accessProof": "0x030000000000000003000000111111111111111111111111111111111111111111111111111111111111111122222222222222222222222222222222222222222222222222222222222222223333333333333333333333333333333333333333333333333333333333333333"
+        }
+      ]
+    },
+    {
+      "name": "one-handle-asked-for-twice",
+      "comment": "Two entries that are byte-identical. Duplicates travel as they are: de-duplicating them would change what the KMS is asked for, and the linker binds the ordered list the request actually carried.",
+      "handles": [
+        {
+          "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
+          "subject": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+          "encryptedValueId": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1",
+          "proofLeafCount": "0",
+          "accessProof": "0x"
+        },
+        {
+          "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
+          "subject": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+          "encryptedValueId": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1",
+          "proofLeafCount": "0",
+          "accessProof": "0x"
+        }
+      ]
+    },
+    {
+      "name": "delegated-entry-beside-a-direct-one",
+      "comment": "Two handles with different subjects: one the signer's own, one a delegator's. The subject is per entry precisely so a single permit can carry both, and the signer's own key appears only once, in the permit.",
+      "handles": [
+        {
+          "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
+          "subject": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+          "encryptedValueId": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1",
+          "proofLeafCount": "0",
+          "accessProof": "0x"
+        },
+        {
+          "handle": "0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b28b4cddfda76385ae0000",
+          "subject": "0xd0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
+          "encryptedValueId": "0xe2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2",
+          "proofLeafCount": "0",
+          "accessProof": "0x"
+        }
+      ]
+    }
+  ],
+  "rejected": [
+    {
+      "name": "unknown-key-in-the-payload",
+      "comment": "A field from the retired v0 shape. The envelope denies unknown keys, so a client that keeps sending a nonce is told rather than silently having it ignored.",
+      "rejected_by": "json-shape",
+      "payload_extra": { "solanaNonce": "0x0000000000000000000000000000000000000000000000000000000000000000" },
+      "handles": [
+        {
+          "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
+          "subject": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+          "encryptedValueId": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1",
+          "proofLeafCount": "0",
+          "accessProof": "0x"
+        }
+      ]
+    },
+    {
+      "name": "handle-entry-without-its-subject",
+      "comment": "No entry field is optional. A missing subject cannot default to the signer: on a delegated entry that would silently ask for the wrong pubkey's value.",
+      "rejected_by": "json-shape",
+      "handles": [
+        {
+          "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
+          "encryptedValueId": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1",
+          "proofLeafCount": "0",
+          "accessProof": "0x"
+        }
+      ]
+    },
+    {
+      "name": "handle-entry-under-the-retired-key-name",
+      "comment": "The v0 entry called this field `owner`. It is `subject` now, because on a delegated entry the pubkey is the delegator rather than any owner of the request — and the old name is refused rather than accepted as a synonym.",
+      "rejected_by": "json-shape",
+      "handles": [
+        {
+          "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
+          "subject": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+          "owner": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+          "encryptedValueId": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1",
+          "proofLeafCount": "0",
+          "accessProof": "0x"
+        }
+      ]
+    },
+    {
+      "name": "no-handles",
+      "comment": "A permit authorizes nothing on its own; a request that names no handle has nothing to decrypt and is refused before it costs a gateway transaction.",
+      "rejected_by": "payload-rules",
+      "handles": []
+    },
+    {
+      "name": "access-proof-with-a-trailing-byte",
+      "comment": "A well-formed proof followed by one byte nobody reads. Accepting it would make two blobs mean the same proof, and the relayer and the connector would have to agree on which one the request carried.",
+      "rejected_by": "request-decode",
+      "handles": [
+        {
+          "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
+          "subject": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+          "encryptedValueId": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1",
+          "proofLeafCount": "8",
+          "accessProof": "0x03000000000000000300000011111111111111111111111111111111111111111111111111111111111111112222222222222222222222222222222222222222222222222222222222222222333333333333333333333333333333333333333333333333333333333333333399"
+        }
+      ]
+    },
+    {
+      "name": "access-proof-that-is-not-a-proof",
+      "comment": "Three bytes that decode as nothing. Non-empty means historical mode, and historical mode means a proof.",
+      "rejected_by": "request-decode",
+      "handles": [
+        {
+          "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
+          "subject": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+          "encryptedValueId": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1",
+          "proofLeafCount": "8",
+          "accessProof": "0xffffff"
+        }
+      ]
+    },
+    {
+      "name": "handle-of-the-wrong-width",
+      "comment": "Thirty-one bytes. A handle carries its host chain id in fixed positions, so a short one is not a handle with a missing byte — it is a different reading of every field.",
+      "rejected_by": "request-decode",
+      "handles": [
+        {
+          "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae00",
+          "subject": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+          "encryptedValueId": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1",
+          "proofLeafCount": "0",
+          "accessProof": "0x"
+        }
+      ]
+    },
+    {
+      "name": "handle-of-another-host-chain",
+      "comment": "A handle whose embedded chain id is a Solana chain this relayer does not serve, while the permit is signed for the one it does. Refused above the conversion, so this record must still convert cleanly — what it pins is that nothing in the conversion silently accepts the mismatch.",
+      "rejected_by": "host-chain-support",
+      "handles": [
+        {
+          "handle": "0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c380000000000000010000",
+          "subject": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+          "encryptedValueId": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1",
+          "proofLeafCount": "0",
+          "accessProof": "0x"
+        }
+      ]
+    }
+  ]
+}

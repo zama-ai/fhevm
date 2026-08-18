@@ -129,7 +129,13 @@ type SolanaSdkSurface = {
   setFhevmRuntimeConfig(config: { auth: { type: "ApiKeyHeader"; value: string } }): void;
   defineFhevmSolanaChain(definition: {
     id: bigint;
-    fhevm: { relayerUrl: string; acl: { domainKeys: readonly `0x${string}`[] } };
+    fhevm: {
+      relayerUrl: string;
+      acl: { domainKeys: readonly `0x${string}`[] };
+      rpcUrl?: string;
+      proofServiceUrl?: string;
+      verifyingProgramId?: `0x${string}`;
+    };
   }): unknown;
   createFhevmEncryptClient(parameters: { chain: unknown; aclProgramAddress: `0x${string}` }): {
     buildInputProof(parameters: {
@@ -141,17 +147,16 @@ type SolanaSdkSurface = {
   };
   /** Settle's certificate phase consumes exactly `runtime.config.auth` (set via setFhevmRuntimeConfig). */
   createFhevmPublicDecryptClient(parameters: { chain: unknown }): { runtime: unknown };
-  /** Wraps a raw 32-byte ed25519 seed into the SDK's user-decrypt signer identity. */
-  solanaSignerFromSecretKey(secretKey: Uint8Array): unknown;
+  /** Wraps a raw ed25519 secret key into the conforming sRFC-38 permit wallet. */
+  solanaPermitWalletFromSecretKey(secretKey: Uint8Array): unknown;
   /**
-   * `ready` resolves once the TKMS decrypt WASM is initialized (loaded from local package assets,
-   * no fetch); `runtime`/`options` are exactly the context the client's own decorator would pass
-   * to `userDecrypt`, which `decryptPosition` aliases.
+   * The permit-path client: `signPermit` takes the permit to the wallet once, `userDecrypt` runs
+   * requests under that one signature; `decryptPosition` aliases the latter.
    */
-  createFhevmDecryptClient(parameters: { chain: unknown; signer: unknown }): {
-    runtime: unknown;
-    options: unknown;
+  createFhevmDecryptClient(parameters: { chain: unknown; trust: unknown }): {
     ready: Promise<unknown>;
+    signPermit(parameters: { wallet: unknown; durationSeconds: bigint }): Promise<unknown>;
+    userDecrypt(parameters: unknown): Promise<readonly { value: unknown }[]>;
   };
 };
 
@@ -598,29 +603,48 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
 
       // Step 17: decrypt. claim.rs grants `owner(alice)` on the claim-amount encrypted value account — "the user
       // decrypts their claimed amount" — so alice user-decrypts her fresh claim handle through the
-      // SDK's KMS path (`decryptPosition`): an ed25519-signed request to the relayer, signcrypted
-      // KMS shares back, de-signcrypted in the SDK against a per-request transport key. The TKMS
-      // WASM loads from local package assets, so this phase needs no minio fetch rewrite (verified
-      // against the SDK's userDecrypt action + decrypt module init). The decrypt CONTEXT is
-      // assembled from the decrypt client's public surface exactly as its own decorator would.
+      // SDK's permit path (`decryptPosition`): one sRFC-38 permit signature mints a session, the
+      // request runs under it — evidence (the claim account read and any historical proof) is
+      // resolved by the SDK's own evidence source against the demo RPC and proof service. The TKMS
+      // WASM loads from local package assets, so this phase needs no minio fetch rewrite.
       console.log("deposit-arc decrypt: alice user-decrypting her claimed payout (KMS roundtrip)...");
-      const aliceDecryptSigner = solanaSdk.solanaSignerFromSecretKey(aliceKeypairBytes.slice(0, 32));
-      const decryptClient = solanaSdk.createFhevmDecryptClient({ chain, signer: aliceDecryptSigner });
-      await decryptClient.ready;
-      const clearValues = await vault.decryptPosition(
-        { chain, runtime: decryptClient.runtime, options: decryptClient.options } as never,
-        aliceDecryptSigner as never,
-        {
-          handles: [`0x${Buffer.from(claimValueState.currentHandle).toString("hex")}` as `0x${string}`],
-          // Batcher encrypted value accounts live in the BATCH's ACL domain (their PDA seeds hang off the batch
-          // address), so the allowed domain key here is the batch — not the chain default (the
-          // join mint's domain, which serves the token-account encrypted value accounts).
-          allowedAclDomainKeys: [asBytes32Hex(batch) as Bytes32Hex],
-          contextId: asBytes32BigEndian(config.userDecryptContextId),
-          aclValueKey: claimValueAccount.aclValueKey,
-          options: { timeout: DECRYPT_ROUNDTRIP_TIMEOUT_MS },
+      const aliceWallet = solanaSdk.solanaPermitWalletFromSecretKey(aliceKeypairBytes);
+      // Batcher encrypted value accounts live in the BATCH's ACL domain (their PDA seeds hang off
+      // the batch address), so the permit's allowed domain key is the batch — not the chain
+      // default (the join mint's domain, which serves the token-account encrypted value accounts).
+      const decryptChain = solanaSdk.defineFhevmSolanaChain({
+        id: BigInt(config.chainId),
+        fhevm: {
+          relayerUrl: env.relayerUrl,
+          acl: { domainKeys: [asBytes32Hex(batch) as Bytes32Hex] },
+          rpcUrl: config.rpcUrl,
+          proofServiceUrl: config.proofServiceUrl,
+          verifyingProgramId: config.aclProgram,
         },
-      );
+      });
+      const decryptClient = solanaSdk.createFhevmDecryptClient({
+        chain: decryptChain,
+        trust: {
+          // Party ids follow the registry order — the same assumption the EVM SDK path makes.
+          kmsSigners: config.kmsSigners.map((signer, index) => ({ partyId: index + 1, address: signer })),
+          kmsContextId: `0x${BigInt(config.userDecryptContextId).toString(16).padStart(64, "0")}`,
+          kmsEpochId: config.kmsEpochId,
+          fheParameter: config.fheParameter,
+          gatewayEip712Domain: {
+            name: "Decryption",
+            version: "1",
+            chainId: BigInt(config.gatewayChainId),
+            verifyingContract: config.gatewayDecryptionContract,
+          },
+        },
+      });
+      await decryptClient.ready;
+      const permitSession = await decryptClient.signPermit({ wallet: aliceWallet, durationSeconds: 3_600n });
+      const clearValues = await vault.decryptPosition(decryptClient as never, {
+        session: permitSession,
+        entries: [{ handle: claimValueState.currentHandle, encryptedValueId: claimValueAccount.aclValueKey }],
+        options: { timeout: DECRYPT_ROUNDTRIP_TIMEOUT_MS },
+      } as never);
 
       // Alice is the batch's sole joiner, so totalJoined == her joined amount and the claim's
       // floor(joined x payoutReceived / totalJoined) is EXACTLY payoutReceived: assert equality,

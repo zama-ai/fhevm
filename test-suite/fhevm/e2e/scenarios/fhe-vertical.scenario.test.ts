@@ -86,12 +86,20 @@ describe("solana fhe_execute decrypt vertical", () => {
       // the value's domain, so its pubkey is both the signer identity and the allowed domain key.
       const decrypted = await runSolanaCurrentUserDecrypt({
         UD_RELAYER_URL: config.relayerUrl,
+        UD_RPC_URL: config.rpcUrl,
+        UD_PROOF_SERVICE_URL: config.proofServiceUrl,
         UD_CONTRACTS_CHAIN_ID: config.chainId.toString(),
         UD_HANDLE: hex(result.handle),
         UD_SECRET_KEY: secretKey,
         UD_CONTEXT_ID: solanaUserDecryptContext(config.userDecryptContextId),
+        UD_EPOCH_ID: config.kmsEpochId,
         UD_ALLOWED_DOMAIN_KEYS: walletHex,
         UD_ACL_VALUE_KEY: hex(result.target.encryptedValueId),
+        UD_VERIFYING_PROGRAM_ID: config.verifyingProgramId,
+        UD_KMS_SIGNERS: config.kmsSigners.join(","),
+        UD_FHE_PARAMETER: config.fheParameter,
+        UD_GATEWAY_CHAIN_ID: config.gatewayChainId,
+        UD_GATEWAY_DECRYPTION_CONTRACT: config.gatewayDecryptionContract,
         UD_EXPECTED: "42",
       });
       expect(decrypted).toBe(42n);
