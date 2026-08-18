@@ -18,9 +18,10 @@ ONE_SECOND_IN_NANOSECONDS = 1e9
 parser = argparse.ArgumentParser()
 parser.add_argument(
     "results",
-    help="Location of criterion benchmark results directory."
-    "If the --key-size option is used, then the value would have to point to"
-    "a CSV file.",
+    help=(
+        "Location of the criterion results directory. "
+        "If --object-sizes or --key-gen is used, this should point to a CSV file."
+    ),
 )
 parser.add_argument("output_file", help="File storing parsed results")
 parser.add_argument(
@@ -87,7 +88,7 @@ parser.add_argument(
     dest="bench_type",
     choices=["latency", "throughput"],
     default="latency",
-    help="Compute and append number of operations per second and"
+    help="Compute and append number of operations per second and "
     "operations per dollar",
 )
 parser.add_argument(
@@ -124,15 +125,6 @@ def recursive_parse(
     """
     Parse all the benchmark results in a directory. It will attempt to parse all the files having a
     .json extension at the top-level of this directory.
-
-    :param directory: path to directory that contains raw results as :class:`pathlib.Path`
-    :param crate: the name of the crate that has been benched
-    :param bench_type: type of benchmark performed as :class:`BenchType`
-    :param walk_subdirs: traverse results subdirectories if parameters changes for benchmark case.
-    :param name_suffix: a :class:`str` suffix to apply to each test name found
-    :param hardware_hourly_cost: hourly cost of the hardware used in dollar
-
-    :return: tuple of :class:`list` as (data points, parsing failures)
     """
     excluded_directories = ["child_generate", "fork", "parent_generate", "report"]
     result_values = []
@@ -156,7 +148,6 @@ def recursive_parse(
             full_name, test_name, elements = parse_benchmark_file(subdir)
 
             if bench_type == BenchType.throughput and elements is None:
-                # Current subdir contains only latency measurements
                 continue
 
             if test_name is None:
@@ -192,17 +183,14 @@ def recursive_parse(
                 )
 
                 lowercase_test_name = test_name.lower()
-                # This is a special case where PBS are blasted as vector LWE ciphertext with
-                # variable length to saturate the machine. To get the actual throughput we need to
-                # multiply by the length of the vector.
+                # Fix: proper suffix removal
                 if (
                     "pbs_throughput" in lowercase_test_name
                     and lowercase_test_name.endswith("chunk")
                 ):
                     try:
-                        multiplier = int(
-                            lowercase_test_name.strip("chunk").split("::")[-1]
-                        )
+                        name_wo_suffix = lowercase_test_name.removesuffix("chunk")
+                        multiplier = int(name_wo_suffix.split("::")[-1])
                     except ValueError:
                         parsing_failures.append(
                             (full_name, "failed to extract throughput multiplier")
@@ -249,14 +237,6 @@ def _create_point(
 
 
 def parse_benchmark_file(directory):
-    """
-    Parse file containing details of the parameters used for a benchmark.
-
-    :param directory: directory where a benchmark case results are located as :class:`pathlib.Path`
-
-    :return: names of the test and throughput elements as :class:`tuple` formatted as
-    (:class:`str`, :class:`str`, :class:`int`)
-    """
     raw_res = _parse_file_to_json(directory, "benchmark.json")
     throughput = raw_res["throughput"]
     elements = throughput.get("Elements", None) if throughput else None
@@ -264,13 +244,6 @@ def parse_benchmark_file(directory):
 
 
 def parse_estimate_file(directory):
-    """
-    Parse file containing timing results for a benchmark.
-
-    :param directory: directory where a benchmark case results are located as :class:`pathlib.Path`
-
-    :return: :class:`dict` of data points
-    """
     raw_res = _parse_file_to_json(directory, "estimates.json")
     return {
         stat_name: raw_res[stat_name]["point_estimate"]
@@ -279,15 +252,6 @@ def parse_estimate_file(directory):
 
 
 def _parse_key_results(result_file, crate, bench_type):
-    """
-    Parse file containing results about operation on keys. The file must be formatted as CSV.
-
-    :param result_file: results file as :class:`pathlib.Path`
-    :param crate: crate for which benchmarks have run
-    :param bench_type: type of benchmark as :class:`str`
-
-    :return: tuple of :class:`list` as (data points, parsing failures)
-    """
     result_values = []
     parsing_failures = []
 
@@ -304,11 +268,11 @@ def _parse_key_results(result_file, crate, bench_type):
                 _create_point(
                     value,
                     test_name,
-                    display_name,
-                    "keygen",
+                    "evaluate",
                     bench_type,
                     operator,
                     params,
+                    display_name=display_name,
                 )
             )
 
@@ -316,45 +280,19 @@ def _parse_key_results(result_file, crate, bench_type):
 
 
 def parse_object_sizes(result_file, crate):
-    """
-    Parse file containing key sizes results. The file must be formatted as CSV.
-
-    :param result_file: results file as :class:`pathlib.Path`
-    :param crate: crate for which benchmarks have run
-
-    :return: tuple of :class:`list` as (data points, parsing failures)
-    """
     return _parse_key_results(result_file, crate, "keysize")
 
 
 def parse_key_gen_time(result_file, crate):
-    """
-    Parse file containing key generation time results. The file must be formatted as CSV.
-
-    :param result_file: results file as :class:`pathlib.Path`
-    :param crate: crate for which benchmarks have run
-
-    :return: tuple of :class:`list` as (data points, parsing failures)
-    """
     return _parse_key_results(result_file, crate, "latency")
 
 
 def get_parameters(bench_id, directory):
-    """
-    Get benchmarks parameters recorded for a given benchmark case.
-
-    :param bench_id: function name used for the benchmark case
-    :param directory: directory where the parameters are stored
-
-    :return: :class:`tuple` as ``(benchmark parameters, display name, operator type)``
-    """
     params_dir = pathlib.Path(directory, "benchmarks_parameters", bench_id)
     params = _parse_file_to_json(params_dir, "parameters.json")
 
     display_name = params.pop("display_name")
     operator = params.pop("operator_type")
-
-    # Put cryptographic parameters at the same level as the others parameters
     crypto_params = params.pop("crypto_parameters")
     params.update(crypto_params)
 
@@ -362,25 +300,10 @@ def get_parameters(bench_id, directory):
 
 
 def compute_ops_per_dollar(data_point, product_hourly_cost):
-    """
-    Compute numbers of operations per dollar for a given ``data_point``.
-
-    :param data_point: throughput value measured during benchmark in elements per second
-    :param product_hourly_cost: cost in dollar per hour of hardware used
-
-    :return: number of operations per dollar
-    """
     return ONE_HOUR_IN_SECONDS * data_point / product_hourly_cost
 
 
 def compute_ops_per_second(data_point):
-    """
-    Compute numbers of operations per second for a given ``data_point``.
-
-    :param data_point: timing value measured during benchmark in nanoseconds
-
-    :return: number of operations per second
-    """
     return 1e9 / data_point
 
 
@@ -390,13 +313,6 @@ def _parse_file_to_json(directory, filename):
 
 
 def dump_results(parsed_results, filename, input_args):
-    """
-    Dump parsed results formatted as JSON to file.
-
-    :param parsed_results: :class:`list` of data points
-    :param filename: filename for dump file as :class:`pathlib.Path`
-    :param input_args: CLI input arguments
-    """
     for point in parsed_results:
         point["backend"] = input_args.backend
 
@@ -419,19 +335,13 @@ def dump_results(parsed_results, filename, input_args):
 
 
 def check_mandatory_args(input_args):
-    """
-    Check for availability of required input arguments, the program will exit if one of them is
-    not present. If `append_results` flag is set, all the required arguments will be ignored.
-
-    :param input_args: CLI input arguments
-    """
     if input_args.append_results:
         return
 
     missing_args = []
     for arg_name in vars(input_args):
         if arg_name in [
-            "results_dir",
+            "results",
             "output_file",
             "name_suffix",
             "append_results",
