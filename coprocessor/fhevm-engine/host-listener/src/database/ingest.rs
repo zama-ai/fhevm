@@ -367,7 +367,6 @@ pub async fn ingest_block_logs(
                                 &mut tx,
                                 dst_handle.as_slice(),
                                 &log.transaction_hash,
-                                block_hash.as_ref(),
                             )
                             .await?
                     {
@@ -417,7 +416,6 @@ pub async fn ingest_block_logs(
                             &[dst_handle.to_vec()],
                             log.transaction_hash.map(|h| h.to_vec()),
                             block_number,
-                            block_hash.as_ref(),
                         )
                         .await?;
                 } else {
@@ -494,13 +492,8 @@ pub async fn ingest_block_logs(
     }
 
     // ACL events are processed only after every tfhe compute event for this
-    // block has been inserted into computations_branch. handle_acl_event
-    // resolves each allowed handle's producer block by matching
-    // computations_branch against the current-branch ancestry (which includes
-    // this block); a handle produced *and* allowed within this same block only
-    // has its producer row once the loop above has run. Resolving ACL events
-    // earlier would miss the same-block producer and fall back to branchless,
-    // spuriously incrementing host_listener_unresolved_producer_block_total.
+    // block has been inserted, so a handle produced *and* allowed within this
+    // same block already has its computation row when the allow is recorded.
     for (event, transaction_hash) in acl_event_log {
         let inserted = db
             .handle_acl_event(
@@ -1023,18 +1016,11 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
             .update_block_as_finalized(&mut tx, block_number, &block_hash)
             .await
         {
-            Ok(Some(orphaned_hashes)) => {
-                if let Err(err) = db
-                    .cleanup_orphaned_branch_state(&mut tx, &orphaned_hashes)
-                    .await
-                {
-                    error!(
-                        block_number,
-                        ?err,
-                        "Failed to clean orphaned branch state during finalization"
-                    );
-                    return;
-                }
+            Ok(Some(_orphaned_hashes)) => {
+                // Orphaned work/ACL rows are deliberately left in place
+                // (pre-wave1 semantics): handles are fork-scoped by
+                // construction, so orphaned state is unreferenced on the
+                // canonical branch and benign.
             }
             Ok(None) => {
                 // Finalization refused (missing row / orphaned / parent

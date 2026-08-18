@@ -67,12 +67,7 @@ impl CoprocessorTable {
 
 /// Every coprocessor `public` table, with its blue-green upgrade treatment.
 ///
-/// Kept in rough migration/topical order. Each `*_branch` table is the
-/// block-context-aware form that becomes the canonical table after v0.15 (see
-/// `20260610130100_branch_context_tables`); it is treated exactly like its
-/// legacy sibling, except its `conflict_cols` are the branch table's own PK,
-/// which extends the legacy key with `producer_block_hash` (and `block_hash`
-/// for some) so competing fork branches coexist.
+/// Kept in rough migration/topical order.
 pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
     // ---------------------------------------------------------------------
     // Ciphertext / computation data — the GCS stack writes these during the
@@ -84,19 +79,9 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
         conflict_cols: &["handle", "ciphertext_version"],
     },
     CoprocessorTable {
-        name: "ciphertexts_branch",
-        duplicated: true,
-        conflict_cols: &["handle", "ciphertext_version", "producer_block_hash"],
-    },
-    CoprocessorTable {
         name: "ciphertexts128",
         duplicated: true,
         conflict_cols: &["tenant_id", "handle"],
-    },
-    CoprocessorTable {
-        name: "ciphertexts128_branch",
-        duplicated: true,
-        conflict_cols: &["handle", "producer_block_hash"],
     },
     // Green-wins overwrite propagates GCS's NULL digests into public, re-arming
     // the sns-worker resubmit loop to backfill S3 after cutover.
@@ -106,29 +91,14 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
         conflict_cols: &["handle"],
     },
     CoprocessorTable {
-        name: "ciphertext_digest_branch",
-        duplicated: true,
-        conflict_cols: &["handle", "producer_block_hash", "block_hash"],
-    },
-    CoprocessorTable {
         name: "computations",
         duplicated: true,
         conflict_cols: &["output_handle", "transaction_id"],
     },
     CoprocessorTable {
-        name: "computations_branch",
-        duplicated: true,
-        conflict_cols: &["output_handle", "transaction_id", "producer_block_hash"],
-    },
-    CoprocessorTable {
         name: "pbs_computations",
         duplicated: true,
         conflict_cols: &["tenant_id", "handle"],
-    },
-    CoprocessorTable {
-        name: "pbs_computations_branch",
-        duplicated: true,
-        conflict_cols: &["handle", "producer_block_hash", "block_hash"],
     },
     CoprocessorTable {
         name: "verify_proofs",
@@ -181,11 +151,6 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
     },
     CoprocessorTable {
         name: "allowed_handles",
-        duplicated: true,
-        conflict_cols: &[],
-    },
-    CoprocessorTable {
-        name: "allowed_handles_branch",
         duplicated: true,
         conflict_cols: &[],
     },
@@ -293,11 +258,6 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
     },
     CoprocessorTable {
         name: "input_blobs",
-        duplicated: false,
-        conflict_cols: &[],
-    },
-    CoprocessorTable {
-        name: "coprocessor_settlement",
         duplicated: false,
         conflict_cols: &[],
     },
