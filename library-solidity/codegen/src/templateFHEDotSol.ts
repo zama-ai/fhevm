@@ -595,6 +595,7 @@ function handleSolidityTFHEConvertPlaintextAndEinputToRespectiveType(fheType: Ad
                   : 0
             });
           }
+          _checkExternalHandle(inputBytes32, FheType.${fheType.isAlias ? fheType.aliasType : fheType.type});
           if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
           return e${fheType.type.toLowerCase()}.wrap(inputBytes32);
         }
