@@ -45,7 +45,7 @@ for that).
 
 ## Option B — manual run (`workflow_dispatch`)
 
-GitHub → **Actions** → **pr-preview-deploy** → **Run workflow**, pick the branch
+GitHub → **Actions** → **preview-env-deploy** → **Run workflow**, pick the branch
 (via "Use workflow from"), set inputs, run. Use this to change versions or
 topology, or to deploy without a PR.
 
@@ -89,8 +89,33 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
 - **Namespace:** `fhevm-ci-<actor>-<namespace_suffix | run-id>`.
 - **Results:** run summary (deployment plan + e2e report if `automated_tests`).
 - **Teardown:** **manual** — a dispatch env is not tied to a PR, so nothing
-  destroys it automatically. Run **pr-preview-destroy** with the namespace (see
+  destroys it automatically. Run **preview-env-destroy** with the namespace (see
   [Destroy an environment](#destroy-an-environment)), or re-run to reuse it.
+
+### Launch from the CLI (`gh api`)
+
+Same manual run, scripted. `gh api` expands the `inputs[key]=value` brackets into
+the `inputs` object the dispatch endpoint expects; `ref` is the branch the run
+executes from. Every input has a default, so pass only `ref` plus what you want
+to override:
+
+```bash
+gh api --method POST \
+  -H "Accept: application/vnd.github+json" \
+  /repos/zama-ai/fhevm/actions/workflows/preview-env-deploy.yml/dispatches \
+  -f "ref=<your-branch>" \
+  -f "inputs[build_images]=true" \
+  -f "inputs[automated_tests]=true" \
+  -f "inputs[nb_coprocessor]=1" \
+  -f "inputs[nb_kms_core]=4" \
+  -f "inputs[deploy_polygon]=false"
+```
+
+The endpoint returns `204 No Content` (fire-and-forget); find the run with:
+
+```bash
+gh run list --workflow=preview-env-deploy.yml --branch=<your-branch> --limit 5
+```
 
 ---
 
@@ -123,10 +148,21 @@ namespace. All handled by
   `preview-env-e2e` stays keeps the env alive).
 
 **Manual (dispatch) env.** A dispatch env has no PR to key off, so tear it down
-by hand: GitHub → **Actions** → **pr-preview-destroy** → **Run workflow**, and
+by hand: GitHub → **Actions** → **preview-env-destroy** → **Run workflow**, and
 set the `namespace` input to the **exact** namespace from your deploy run's
 summary (e.g. `fhevm-ci-alice-987654`). It must start with `fhevm-ci-` (a guard
 refuses anything else, so it can't nuke an unrelated namespace).
+
+Or script it with `gh api` (runs the destroy workflow from `main`; the
+`fhevm-ci-` namespace guard still applies):
+
+```bash
+gh api --method POST \
+  -H "Accept: application/vnd.github+json" \
+  /repos/zama-ai/fhevm/actions/workflows/preview-env-destroy.yml/dispatches \
+  -f "ref=main" \
+  -f "inputs[namespace]=fhevm-ci-<actor>-<suffix|run_id>"
+```
 
 **Fallback.** If a run can't reach the cluster, do it yourself:
 
@@ -165,5 +201,5 @@ kubectl delete namespace <namespace>
   and teardown always agree.
 - **`nb_coprocessor > 1` is expensive** (each party is a full stack with its own
   workers/Postgres/S3). Keep it `1` unless you're specifically testing multi-party.
-- **Manual (dispatch) envs never auto-destroy** — run **pr-preview-destroy** with
+- **Manual (dispatch) envs never auto-destroy** — run **preview-env-destroy** with
   the namespace to clean up (see [Destroy an environment](#destroy-an-environment)).

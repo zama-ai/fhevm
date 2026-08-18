@@ -187,10 +187,10 @@ env:
   REDIS_CHART: oci://hub.zama.org/cgr/zama.ai/iamguarded-charts/redis
   REDIS_CHART_VERSION: ${{ inputs.redis_chart_version || '25.3.8' }}
   #=====POLYGON=============================================================
-  # Second (Polygon Amoy, 80002) host chain: dispatch input, or hardcoded on
-  # this branch while the Polygon path is under test. Set to
-  # ${{ inputs.deploy_polygon || 'false' }} to default it off for PR runs.
-  DEPLOY_POLYGON: "true"
+  # Second (Polygon Amoy, 80002) host chain: opt-in via the deploy_polygon
+  # dispatch input, off by default (inputs.* is empty on PR runs, so PRs never
+  # get Polygon).
+  DEPLOY_POLYGON: ${{ inputs.deploy_polygon || 'false' }}
   #=====TAILSCALE============================================================
   TAILSCALE_HOSTNAME: tailscale-operator-zws-dev.diplodocus-boa.ts.net
 
