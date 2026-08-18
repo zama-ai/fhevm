@@ -80,6 +80,7 @@ const chainIds = {
   zwsDev: 1337,
   sepolia: 11155111,
   mainnet: 1,
+  polygon: 137,
   polygonAmoy: 80002,
   localCoprocessorL1: 123456,
   localCoprocessorL2: 654321,
@@ -125,6 +126,15 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
           throw new Error('MAINNET_ETH_RPC_URL (or RPC_URL) is required for mainnet network');
         }
         jsonRpcUrl = 'https://eth.llamarpc.com'; // placeholder for config validation
+      }
+      break;
+    case 'polygon':
+      jsonRpcUrl = process.env.POLYGON_RPC_URL || vars.get('POLYGON_RPC_URL', '') || process.env.RPC_URL;
+      if (!jsonRpcUrl) {
+        if (shouldWarn) {
+          throw new Error('POLYGON_RPC_URL (or RPC_URL) is required for polygon network');
+        }
+        jsonRpcUrl = 'https://polygon-rpc.com'; // placeholder for config validation
       }
       break;
     case 'polygonAmoy':
@@ -209,6 +219,7 @@ const config: HardhatUserConfig = {
     zwsDev: getChainConfig('zwsDev'),
     sepolia: getChainConfig('sepolia'),
     mainnet: getChainConfig('mainnet'),
+    polygon: getChainConfig('polygon'),
     polygonAmoy: getChainConfig('polygonAmoy'),
     localNative: getChainConfig('localNative'),
     localCoprocessor: getChainConfig('localCoprocessor'),
