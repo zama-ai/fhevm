@@ -279,24 +279,69 @@ pub(crate) async fn run_loop(
         // `gcs_mode == false` from the start, so this is always true for it.
         let uploads_enabled = !mode.gcs_mode();
 
-        let result = fetch_and_execute_sns_tasks(
-            &pool,
-            &tx,
-            keys,
-            &conf,
-            &token,
-            uploads_enabled,
-            mode.gcs_mode(),
-        )
-        .await
-        .inspect(|res| {
-            if let Some((_, tasks_processed)) = res {
-                TASK_EXECUTE_SUCCESS_COUNTER.inc_by(*tasks_processed as u64);
+        // Run `pipeline_depth` batch cycles concurrently, refilling each slot as
+        // soon as it completes rather than waiting for the whole set. The cycle
+        // is serial internally (fetch → GPU squash → status/ct128/notify →
+        // commit), so a single cycle leaves the device idle through every DB
+        // phase and stalls the rayon pool at the batch barrier whenever one task
+        // runs long. Overlapping cycles fills both gaps without enlarging the
+        // batch — enlarging it would only delay the commit that every transfer
+        // in the batch waits on. Concurrent cycles are safe because the fetch
+        // takes rows FOR UPDATE SKIP LOCKED, so they claim disjoint work.
+        let depth = conf.db.pipeline_depth.max(1) as usize;
+        let run_cycle = || {
+            fetch_and_execute_sns_tasks(
+                &pool,
+                &tx,
+                keys,
+                &conf,
+                &token,
+                uploads_enabled,
+                mode.gcs_mode(),
+            )
+        };
+
+        let mut cutover_completed = false;
+        let mut maybe_remaining = false;
+        {
+            let mut inflight = futures::stream::FuturesUnordered::new();
+            for _ in 0..depth {
+                inflight.push(run_cycle());
             }
-        })
-        .inspect_err(|_| {
-            TASK_EXECUTE_FAILURE_COUNTER.inc();
-        })?;
+            while let Some(result) = futures::StreamExt::next(&mut inflight).await {
+                let result = result
+                    .inspect(|res| {
+                        if let Some((_, tasks_processed)) = res {
+                            TASK_EXECUTE_SUCCESS_COUNTER.inc_by(*tasks_processed as u64);
+                        }
+                    })
+                    .inspect_err(|_| {
+                        TASK_EXECUTE_FAILURE_COUNTER.inc();
+                    })?;
+                match result {
+                    // Cutover: stop refilling and let the outer loop exit.
+                    None => {
+                        cutover_completed = true;
+                        break;
+                    }
+                    Some((more, _)) => {
+                        if more && !token.is_cancelled() {
+                            maybe_remaining = true;
+                            // Keep the device fed: replace the finished slot now
+                            // instead of waiting for its siblings.
+                            inflight.push(run_cycle());
+                        }
+                    }
+                }
+            }
+        }
+
+        if cutover_completed {
+            info!("Cutover completed — SnS BCS worker stopping");
+            return Ok(());
+        }
+
+        let result = Some((maybe_remaining, 0usize));
         let Some((maybe_remaining, _tasks_processed)) = result else {
             info!("Cutover completed — SnS BCS worker stopping");
             return Ok(());

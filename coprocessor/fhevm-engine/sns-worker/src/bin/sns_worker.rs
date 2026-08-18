@@ -33,6 +33,7 @@ fn construct_config() -> Result<Config, fhevm_engine_common::database::DatabaseC
             listen_channels: args.pg_listen_channels,
             notify_channel: args.pg_notify_channel,
             batch_limit: args.work_items_batch_size,
+            pipeline_depth: args.sns_pipeline_depth,
             gc_batch_limit: args.gc_batch_size,
             polling_interval: args.pg_polling_interval,
             max_connections: args.pg_pool_connections,

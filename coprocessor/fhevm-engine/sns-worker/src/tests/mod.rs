@@ -1176,6 +1176,8 @@ fn build_test_config(url: DatabaseURL, enable_compression: bool) -> Config {
 
     Config {
         db: DBConfig {
+            // Tests exercise the single-cycle path, matching the CLI default.
+            pipeline_depth: 1,
             url,
             listen_channels: vec![LISTEN_CHANNEL.to_string()],
             notify_channel: "fhevm".to_string(),

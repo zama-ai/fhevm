@@ -16,6 +16,13 @@ pub struct Args {
     #[arg(long, default_value_t = 4)]
     pub work_items_batch_size: u32,
 
+    /// Concurrent batch cycles inside this worker. The cycle is serial (fetch →
+    /// GPU squash → DB writes → commit), so depth 1 leaves the GPU idle through
+    /// every DB phase; overlapping cycles fills those gaps without enlarging the
+    /// batch, which is what would cost commit latency. 1 = original behaviour.
+    #[arg(long, default_value_t = 1, env = "SNS_PIPELINE_DEPTH")]
+    pub sns_pipeline_depth: u32,
+
     /// NOTIFY/LISTEN channels for database that the worker listen to
     #[arg(long, num_args(1..))]
     pub pg_listen_channels: Vec<String>,

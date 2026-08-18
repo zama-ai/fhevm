@@ -88,6 +88,16 @@ pub struct DBConfig {
     pub listen_channels: Vec<String>,
     pub notify_channel: String,
     pub batch_limit: u32,
+    /// Number of batch cycles to run concurrently within this worker.
+    ///
+    /// The cycle is inherently serial — fetch, squash on GPU, then write
+    /// status/ct128/notify and commit — so with depth 1 the device idles through
+    /// every DB phase, and a straggler in the batch holds the rayon pool at the
+    /// barrier. Overlapping independent cycles fills those gaps; the fetch uses
+    /// FOR UPDATE SKIP LOCKED, so concurrent cycles claim disjoint rows.
+    ///
+    /// 1 preserves the original single-cycle behaviour exactly.
+    pub pipeline_depth: u32,
     pub gc_batch_limit: u32,
     pub polling_interval: u32,
     pub cleanup_interval: Duration,
