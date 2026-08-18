@@ -1,4 +1,9 @@
-import type { FhevmSolanaPermitDecryptClient, SolanaUserDecryptParameters } from "@fhevm/sdk/solana";
+// The vault module reaches the SDK through @sdk-src (source-mapped in every consumer's tsconfig),
+// like the rest of src/vault: the published package's types need a built SDK, and the test-suite
+// typechecks these files from a clean checkout.
+import type { FhevmSolanaPermitDecryptClient, SolanaUserDecryptParameters } from '@sdk-src/solana/index.js';
+
+type ClearValues = Awaited<ReturnType<FhevmSolanaPermitDecryptClient['userDecrypt']>>;
 
 /**
  * Decrypts a batch position for its owner. This is a deliberately THIN wrapper over the permit
@@ -16,6 +21,6 @@ import type { FhevmSolanaPermitDecryptClient, SolanaUserDecryptParameters } from
 export async function decryptPosition(
   client: FhevmSolanaPermitDecryptClient,
   parameters: SolanaUserDecryptParameters,
-): ReturnType<FhevmSolanaPermitDecryptClient["userDecrypt"]> {
+): Promise<ClearValues> {
   return client.userDecrypt(parameters);
 }

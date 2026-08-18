@@ -34,7 +34,7 @@ describe('the normalized start, when no revocation constrains it', () => {
 
 describe('the normalized start, when a revocation constrains it', () => {
   // The case plain rounding gets wrong: the revocation landed mid-minute, and rounding down would
-  // put the start before it, so the permit would be born invalidated.
+  // put the start before it, so the permit would start already invalidated.
   it('does not fall below a watermark set later in the same minute', () => {
     expect(startOf(1_767_229_439n, 1_767_229_400n)).toBe(1_767_229_400n);
   });

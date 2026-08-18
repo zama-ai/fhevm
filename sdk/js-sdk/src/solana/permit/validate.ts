@@ -139,9 +139,9 @@ function decodeIdentity(bytes: Uint8Array, field: SolanaPermitIdentityField): Ui
 
 /**
  * Decodes the ACL-domain list: widths first, by index, so a malformed entry is named by its
- * position; then the count; then the strict byte-order ascent between neighbours. Equality is
+ * position; then the count; then the strict byte-order ascent between neighbors. Equality is
  * reported as a duplicate rather than as a failed ascent, because that is the mistake a caller
- * actually made — and strict ascent between neighbours is the whole ordering rule, since a list in
+ * actually made — and strict ascent between neighbors is the whole ordering rule, since a list in
  * which every key exceeds its predecessor cannot repeat a key anywhere.
  *
  * @param keys - The claimed domain keys, in the order they would be signed.

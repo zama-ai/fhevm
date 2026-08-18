@@ -200,8 +200,8 @@ fn every_accepted_record_becomes_a_solana_request() {
         let name = name_of(record);
         let body = fixture.compose(record);
 
-        let parsed: SolanaUserDecryptRequestJson =
-            serde_json::from_value(body).unwrap_or_else(|err| panic!("{name}: should parse: {err}"));
+        let parsed: SolanaUserDecryptRequestJson = serde_json::from_value(body)
+            .unwrap_or_else(|err| panic!("{name}: should parse: {err}"));
         parsed
             .validate()
             .unwrap_or_else(|err| panic!("{name}: should validate: {err}"));
@@ -333,7 +333,11 @@ fn every_rejecting_record_is_refused_by_the_layer_it_names() {
         // What is left is refused above the conversion, on the handle's host chain. The rejection
         // itself belongs to the configured chain-id check in the handler; what this asserts is the
         // condition that check fires on, and that nothing below it quietly accepted the mismatch.
-        assert_eq!(declared, RejectedBy::HostChainSupport, "{name}: was accepted");
+        assert_eq!(
+            declared,
+            RejectedBy::HostChainSupport,
+            "{name}: was accepted"
+        );
         let foreign: Vec<&U256> = request
             .ct_handles()
             .into_iter()
@@ -361,9 +365,7 @@ fn the_fixture_exercises_every_layer_it_documents() {
     let exercised: BTreeSet<RejectedBy> = fixture
         .records("rejected")
         .iter()
-        .map(|record| {
-            RejectedBy::parse(record["rejected_by"].as_str().expect("names its layer"))
-        })
+        .map(|record| RejectedBy::parse(record["rejected_by"].as_str().expect("names its layer")))
         .collect();
 
     assert_eq!(
@@ -382,7 +384,9 @@ fn the_accepted_records_cover_both_access_modes() {
     let mut modes = BTreeSet::new();
     for record in fixture.records("accepted") {
         for entry in record["handles"].as_array().expect("handles is a list") {
-            let proof = entry["accessProof"].as_str().expect("accessProof is a string");
+            let proof = entry["accessProof"]
+                .as_str()
+                .expect("accessProof is a string");
             modes.insert(proof == "0x");
         }
     }
