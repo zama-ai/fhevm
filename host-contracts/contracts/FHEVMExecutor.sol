@@ -1117,7 +1117,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
                 lhs,
                 middle,
                 rhs,
-                _oneOperandBoundaryBit(lhs) | (_oneOperandBoundaryBit(middle) << 1) | (_oneOperandBoundaryBit(rhs) << 2),
+                _oneOperandBoundaryBit(lhs) |
+                    (_oneOperandBoundaryBit(middle) << 1) |
+                    (_oneOperandBoundaryBit(rhs) << 2),
                 ACL,
                 block.chainid,
                 blockhash(block.number - 1),

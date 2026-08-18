@@ -2308,8 +2308,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
                 factor2,
                 divisor,
                 scalarByte,
-                _boundaryBit(factor1) |
-                    (scalarByte == FHE_MUL_DIV_FACTOR2_ENCRYPTED ? _boundaryBit(factor2) << 1 : 0),
+                _boundaryBit(factor1) | (scalarByte == FHE_MUL_DIV_FACTOR2_ENCRYPTED ? _boundaryBit(factor2) << 1 : 0),
                 acl,
                 block.chainid,
                 blockhash(block.number - 1),
