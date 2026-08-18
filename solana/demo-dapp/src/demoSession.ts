@@ -10,6 +10,7 @@ import {
   createTransactionSignerFromWalletAccount,
 } from "@solana/wallet-account-signer";
 import type { UiWalletAccount } from "@wallet-standard/react";
+import { solanaPermitWalletFromSecretKey, type SolanaPermitWallet } from "@fhevm/sdk/solana";
 
 import { demoApiFetch, demoFaucetFetch } from "./demoAuthorization";
 import { parseDemoConfig, parseDemoConfigResponse, type DemoConfig } from "./demoConfig";
@@ -20,6 +21,12 @@ export type DemoSession = {
   readonly config: DemoConfig;
   readonly signer: TransactionSigner;
   readonly signMessageExact: (message: Uint8Array) => Promise<Uint8Array>;
+  /**
+   * The wallet a user-decrypt permit is signed through, when this session kind can provide one.
+   * The burner session always can; a wallet-standard session cannot until the connected wallet
+   * exposes `solana:signOffchainMessage` and the adapter reaches its feature object.
+   */
+  readonly permitWallet: SolanaPermitWallet | undefined;
   readonly wallet:
     | { readonly kind: "burner"; readonly name: "Demo wallet" }
     | { readonly kind: "wallet-standard"; readonly name: string; readonly accountKey: string };
@@ -241,6 +248,9 @@ export const connectWalletSession = async (
       return signature;
     },
     wallet: { kind: "wallet-standard", name: walletName, accountKey },
+    // The permit channel is exclusively `solana:signOffchainMessage`, and the UiWalletAccount
+    // adapter does not reach that feature object yet: reveals tell the user to use the demo wallet.
+    permitWallet: undefined,
     isActive,
     assertActive,
   };
@@ -272,6 +282,8 @@ export const connectDemoSession = async (isActive: () => boolean = () => true): 
       return new Uint8Array(signature);
     },
     wallet: { kind: "burner", name: "Demo wallet" },
+    // The burner key doubles as a conforming sRFC-38 wallet: the permit path's one channel.
+    permitWallet: solanaPermitWalletFromSecretKey(Uint8Array.from(aliceKeypair)),
     isActive,
     assertActive,
   };

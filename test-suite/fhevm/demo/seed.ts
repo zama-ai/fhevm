@@ -43,7 +43,7 @@ import {
 } from "@solana/kit";
 
 import { resolveEnv } from "../e2e/harness/loadEnv";
-import { BRINGUP_KMS_CONTEXT_ID } from "../src/solana/addresses";
+import { BRINGUP_KMS_CONTEXT_ID, readGatewayBootstrapInputs } from "../src/solana/addresses";
 import { createProvisioningContext, hostConfigAddress } from "../src/solana/provision";
 import {
   SPL_MINT_ACCOUNT_SPACE,
@@ -286,6 +286,13 @@ const main = async (): Promise<void> => {
   const depositLookupTable = await openFirstBatch(depositRoots);
   const redeemLookupTable = await openFirstBatch(redeemRoots);
 
+  // The permit path's trust inputs, read live from the gateway: the KMS signer set (party ids
+  // follow this registry order) and the Decryption contract KMS node signatures verify under. The
+  // epoch id has no Solana-side source yet and is seeded as zero; the local stack runs the test
+  // FHE parameter set.
+  const gateway = await readGatewayBootstrapInputs({ gatewayRpcUrl: env.gatewayRpcUrl });
+  const hex = (bytes: Uint8Array): `0x${string}` => `0x${Buffer.from(bytes).toString("hex")}` as `0x${string}`;
+
   // 6 + 7. Assemble and persist the demo-config. Endpoints/ids come from the resolved env; the vault
   // roots are the real addresses provisioned above. `writeDemoConfig` re-parses before persisting, so
   // a malformed assembly fails at write with a named field rather than later inside an SDK call.
@@ -299,6 +306,11 @@ const main = async (): Promise<void> => {
     gatewayRpcUrl: env.gatewayRpcUrl,
     aclProgram: env.aclProgram,
     userDecryptContextId: env.userDecryptContextId,
+    kmsSigners: gateway.kmsSigners.map(hex),
+    kmsEpochId: `0x${"0".repeat(64)}`,
+    fheParameter: "test",
+    gatewayChainId: gateway.gatewayChainId.toString(),
+    gatewayDecryptionContract: hex(gateway.decryptionContract),
     // Must suffice to cover the rent settle's CPIs charge to the batch authority; the open_batch
     // value is recorded as a known-good amount.
     authorityFundingLamports: BATCH_AUTHORITY_FUNDING_LAMPORTS.toString(),
