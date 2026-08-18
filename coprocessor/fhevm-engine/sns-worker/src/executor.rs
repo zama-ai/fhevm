@@ -482,14 +482,20 @@ async fn fetch_and_execute_sns_tasks(
 
     let mut maybe_remaining = false;
     let tasks_processed;
+    // PROFILING: the batch loop is strictly serial — fetch, compute on GPU, then
+    // several DB round-trips (status, ct128 blobs, notify, enqueue) and a commit,
+    // all with the GPU idle. Time each phase to see where the duty cycle goes.
+    let t_fetch = std::time::Instant::now();
     if let Some(mut tasks) =
         query_sns_tasks(trx, conf.db.batch_limit, order, &keys.key_id_gw).await?
     {
+        let fetch_ms = t_fetch.elapsed().as_millis();
         maybe_remaining = conf.db.batch_limit as usize == tasks.len();
         tasks_processed = tasks.len();
 
         let batch_exec_span = tracing::info_span!("batch_execution", count = tasks.len());
 
+        let t_exec = std::time::Instant::now();
         batch_exec_span.in_scope(|| {
             process_tasks(
                 &mut tasks,
@@ -502,9 +508,14 @@ async fn fetch_and_execute_sns_tasks(
             )
         })?;
 
+        let exec_ms = t_exec.elapsed().as_millis();
+
+        let t_status = std::time::Instant::now();
         update_computations_status(trx, &tasks)
             .instrument(batch_exec_span.clone())
             .await?;
+        let status_ms = t_status.elapsed().as_millis();
+        let t_store = std::time::Instant::now();
 
         let batch_store_span = tracing::info_span!(
             parent: &batch_exec_span,
@@ -527,8 +538,43 @@ async fn fetch_and_execute_sns_tasks(
             return Err(err);
         }
         drop(batch_store_span);
+        let store_ms = t_store.elapsed().as_millis();
 
+        let t_commit = std::time::Instant::now();
         db_txn.commit().await?;
+        let commit_ms = t_commit.elapsed().as_millis();
+
+        // Intra-batch spread shows whether stragglers hold the barrier: every
+        // task must finish before the next fetch can begin.
+        let mut task_ms: Vec<u128> = tasks.iter().filter_map(|t| t.sns_compute_ms).collect();
+        task_ms.sort_unstable();
+        let (tmin, tmed, tmax, tsum) = if task_ms.is_empty() {
+            (0, 0, 0, 0)
+        } else {
+            (
+                task_ms[0],
+                task_ms[task_ms.len() / 2],
+                task_ms[task_ms.len() - 1],
+                task_ms.iter().sum::<u128>(),
+            )
+        };
+        let gpu_ms = exec_ms.max(1);
+        tracing::info!(
+            target: "sns_profile",
+            batch = tasks.len(),
+            fetch_ms,
+            exec_ms,
+            status_ms,
+            store_ms,
+            commit_ms,
+            db_ms = fetch_ms + status_ms + store_ms + commit_ms,
+            task_min_ms = tmin,
+            task_med_ms = tmed,
+            task_max_ms = tmax,
+            straggler_ratio = format!("{:.2}", tmax as f64 / tmed.max(1) as f64),
+            batch_efficiency = format!("{:.2}", tsum as f64 / (gpu_ms as f64 * tasks.len() as f64)),
+            "sns batch profile"
+        );
 
         for task in tasks.iter() {
             if let Some(transaction_id) = &task.transaction_id {
@@ -609,6 +655,7 @@ pub async fn query_sns_tasks(
                 s3_format_version: None,
                 span: task_span,
                 transaction_id,
+                sns_compute_ms: None,
             })
         })
         .collect::<Result<Vec<_>, ExecutionError>>()?;
@@ -762,6 +809,7 @@ fn compute_task(
                 if elapsed > 0.0 {
                     SNS_LATENCY_OP_HISTOGRAM.observe(elapsed);
                 }
+                task.sns_compute_ms = Some((elapsed * 1000.0) as u128);
                 return;
             }
 
@@ -795,6 +843,7 @@ fn compute_task(
             if elapsed > 0.0 {
                 SNS_LATENCY_OP_HISTOGRAM.observe(elapsed);
             }
+            task.sns_compute_ms = Some((elapsed * 1000.0) as u128);
         }
         Err(err) => {
             squash_span

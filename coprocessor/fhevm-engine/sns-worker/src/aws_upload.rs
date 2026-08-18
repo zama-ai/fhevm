@@ -1063,6 +1063,7 @@ async fn fetch_pending_uploads(
                 s3_format_version,
                 span: recovery_span,
                 transaction_id,
+                sns_compute_ms: None,
             };
 
             // Instruct the uploader to acquire DB lock when processing the item
@@ -1371,6 +1372,7 @@ mod tests {
             s3_format_version: None,
             span: Span::none(),
             transaction_id: None,
+                sns_compute_ms: None,
         }
     }
 
@@ -1473,6 +1475,7 @@ mod tests {
             s3_format_version: None,
             span: Span::none(),
             transaction_id: None,
+                sns_compute_ms: None,
         };
 
         let material = upload_material(&task).unwrap();
@@ -1510,6 +1513,7 @@ mod tests {
             s3_format_version: Some(S3_FORMAT_VERSION_LEGACY),
             span: Span::none(),
             transaction_id: None,
+                sns_compute_ms: None,
         };
 
         let material = upload_material(&task).unwrap();
@@ -1542,6 +1546,7 @@ mod tests {
             s3_format_version: Some(S3_FORMAT_VERSION_LEGACY),
             span: Span::none(),
             transaction_id: None,
+                sns_compute_ms: None,
         };
 
         assert!(should_preserve_legacy_s3_format(&task, &real_ct128_digest));
@@ -1568,6 +1573,7 @@ mod tests {
             s3_format_version: Some(S3_FORMAT_VERSION_LEGACY),
             span: Span::none(),
             transaction_id: None,
+                sns_compute_ms: None,
         };
 
         assert!(!should_preserve_legacy_s3_format(&task, &real_ct128_digest));
@@ -1637,6 +1643,7 @@ mod tests {
             s3_format_version: Some(S3_FORMAT_VERSION_LEGACY),
             span: Span::none(),
             transaction_id: None,
+                sns_compute_ms: None,
         };
         let conf = S3Config {
             bucket: bucket.to_owned(),

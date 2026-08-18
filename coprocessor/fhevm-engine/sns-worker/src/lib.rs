@@ -283,6 +283,11 @@ pub struct HandleItem {
 
     pub span: tracing::Span,
     pub transaction_id: Option<Vec<u8>>,
+
+    /// PROFILING: wall time this task spent in squash+serialise, so the batch
+    /// loop can report intra-batch spread (a straggler holds the barrier and
+    /// idles the GPU until the whole batch completes).
+    pub(crate) sns_compute_ms: Option<u128>,
 }
 
 impl std::fmt::Debug for HandleItem {
