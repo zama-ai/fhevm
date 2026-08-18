@@ -20,7 +20,7 @@ use std::{
 };
 
 use broker::{AsyncHandlerPayloadOnly, Broker, CancellationToken, Topic};
-use consumer::{FilterCommand, ListenerConsumer};
+use consumer::{FilterCommand, FilterType, ListenerConsumer};
 use primitives::routing;
 use primitives::utils::chain_id_to_namespace;
 use test_support::shared_redis_url;
@@ -169,6 +169,7 @@ async fn watch_contract_publishes_register_filter() {
                 .unwrap(),
         ),
         log_address: None,
+        filter_type: None,
     };
 
     let msg = assert_filter_command_roundtrip(routing::WATCH, "watch-e2e-register", &command).await;
@@ -185,12 +186,35 @@ async fn register_full_block_publishes_wildcard_filter() {
         from: None,
         to: None,
         log_address: None,
+        filter_type: None,
     };
 
     let msg =
         assert_filter_command_roundtrip(routing::WATCH, "watch-e2e-full-block", &command).await;
     assert_eq!(msg, command);
     assert!(msg.from.is_none() && msg.to.is_none() && msg.log_address.is_none());
+}
+
+#[tokio::test]
+#[ignore = "requires Docker"]
+async fn watch_final_contract_publishes_register_filter() {
+    // A finalized-only filter must survive the broker wire with its
+    // filter_type intact — the listener relies on it to create a FINAL watcher.
+    let command = FilterCommand {
+        consumer_id: "gateway".into(),
+        from: None,
+        to: None,
+        log_address: Some(
+            "0x00000000000000000000000000000000deadbeef"
+                .parse()
+                .unwrap(),
+        ),
+        filter_type: Some(FilterType::Final),
+    };
+
+    let msg = assert_filter_command_roundtrip(routing::WATCH, "watch-e2e-final", &command).await;
+    assert_eq!(msg, command);
+    assert_eq!(msg.filter_type, Some(FilterType::Final));
 }
 
 #[tokio::test]
@@ -205,6 +229,7 @@ async fn unwatch_contract_publishes_unregister_filter() {
                 .unwrap(),
         ),
         log_address: None,
+        filter_type: None,
     };
 
     let msg =

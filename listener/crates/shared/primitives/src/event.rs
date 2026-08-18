@@ -25,6 +25,15 @@ pub enum FilterCommandValidationError {
     MissingContractAddresses,
 }
 
+/// Delivery mode of a watcher: live head-of-chain events, or finalized-only events.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum FilterType {
+    #[default]
+    Live,
+    Final,
+}
+
 /// Event payload for the control.watch and control.unwatch consumers.
 /// Chain ID is omitted because the listener injects chain scope through namespaced routing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -33,6 +42,9 @@ pub struct FilterCommand {
     pub from: Option<Address>,
     pub to: Option<Address>,
     pub log_address: Option<Address>,
+    /// Watcher type. `None` means Live (backward-compatible default).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filter_type: Option<FilterType>,
 }
 
 impl FilterCommand {
@@ -339,6 +351,7 @@ mod tests {
             ),
             to: None,
             log_address: None,
+            filter_type: None,
         };
         assert_eq!(
             cmd.validate().unwrap_err(),
@@ -357,6 +370,7 @@ mod tests {
             ),
             to: None,
             log_address: None,
+            filter_type: None,
         };
         assert_eq!(
             cmd.validate().unwrap_err(),
@@ -373,6 +387,7 @@ mod tests {
             from: None,
             to: None,
             log_address: None,
+            filter_type: None,
         };
         cmd.validate().unwrap();
         assert_eq!(cmd.consumer_id, "gateway");
@@ -386,6 +401,7 @@ mod tests {
             from: None,
             to: None,
             log_address: None,
+            filter_type: None,
         };
         assert_eq!(
             cmd.validate().unwrap_err(),
@@ -404,6 +420,7 @@ mod tests {
             ),
             to: None,
             log_address: None,
+            filter_type: None,
         };
         cmd.validate().unwrap();
     }
@@ -419,6 +436,7 @@ mod tests {
             ),
             to: None,
             log_address: None,
+            filter_type: None,
         };
         cmd.validate().unwrap();
         assert_eq!(cmd.consumer_id, "gateway");
@@ -435,6 +453,7 @@ mod tests {
                     .unwrap(),
             ),
             log_address: None,
+            filter_type: None,
         };
         cmd.validate().unwrap();
     }
@@ -450,6 +469,7 @@ mod tests {
             ),
             to: None,
             log_address: None,
+            filter_type: None,
         };
 
         let json = serde_json::to_value(&filter).unwrap();
@@ -476,6 +496,7 @@ mod tests {
                     .parse()
                     .unwrap(),
             ),
+            filter_type: None,
         };
         cmd.validate().unwrap();
     }
@@ -491,6 +512,7 @@ mod tests {
                     .parse()
                     .unwrap(),
             ),
+            filter_type: None,
         };
 
         let json = serde_json::to_value(&filter).unwrap();
@@ -504,6 +526,81 @@ mod tests {
 
         let deserialized: FilterCommand = serde_json::from_value(json).unwrap();
         assert_eq!(filter, deserialized);
+    }
+
+    #[test]
+    fn filter_command_defaults_to_no_filter_type_on_legacy_json() {
+        // Payloads produced before the filter_type field existed must keep
+        // deserializing, and the missing field must resolve to Live downstream.
+        let json = json!({
+            "consumer_id": "gateway",
+            "from": null,
+            "to": null,
+            "log_address": "0x00000000000000000000000000000000deadbeef",
+        });
+        let deserialized: FilterCommand = serde_json::from_value(json).unwrap();
+        assert_eq!(deserialized.filter_type, None);
+        assert_eq!(
+            deserialized.filter_type.unwrap_or_default(),
+            FilterType::Live
+        );
+    }
+
+    #[test]
+    fn filter_command_round_trips_with_final_filter_type() {
+        let filter = FilterCommand {
+            consumer_id: "gateway".into(),
+            from: None,
+            to: None,
+            log_address: Some(
+                "0x00000000000000000000000000000000deadbeef"
+                    .parse()
+                    .unwrap(),
+            ),
+            filter_type: Some(FilterType::Final),
+        };
+
+        let json = serde_json::to_value(&filter).unwrap();
+        let expected = json!({
+            "consumer_id": "gateway",
+            "from": null,
+            "to": null,
+            "log_address": "0x00000000000000000000000000000000deadbeef",
+            "filter_type": "FINAL",
+        });
+        assert_eq!(json, expected);
+
+        let deserialized: FilterCommand = serde_json::from_value(json).unwrap();
+        assert_eq!(filter, deserialized);
+    }
+
+    #[test]
+    fn filter_command_omits_filter_type_key_when_none() {
+        // A None filter_type must serialize byte-identical to the pre-feature
+        // wire format so old listeners see unchanged LIVE traffic.
+        let filter = FilterCommand {
+            consumer_id: "gateway".into(),
+            from: None,
+            to: None,
+            log_address: None,
+            filter_type: None,
+        };
+        let json = serde_json::to_value(&filter).unwrap();
+        assert!(json.get("filter_type").is_none());
+    }
+
+    #[test]
+    fn filter_command_rejects_unknown_filter_type_string() {
+        // An invalid enum value fails deserialization, which the listener
+        // handlers dead-letter (deterministic, never succeeds on retry).
+        let json = json!({
+            "consumer_id": "gateway",
+            "from": null,
+            "to": null,
+            "log_address": null,
+            "filter_type": "BOGUS",
+        });
+        assert!(serde_json::from_value::<FilterCommand>(json).is_err());
     }
 
     #[test]

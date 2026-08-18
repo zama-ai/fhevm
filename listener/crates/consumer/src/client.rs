@@ -3,7 +3,7 @@ use async_trait::async_trait;
 pub use broker::{AckDecision, Broker, HandlerError};
 use broker::{BrokerError, CancellationToken, Consumer, Handler, Message, Topic};
 use primitives::event::{
-    BlockPayload, CatchupPayload, FilterCommand, FilterCommandValidationError,
+    BlockPayload, CatchupPayload, FilterCommand, FilterCommandValidationError, FilterType,
 };
 use primitives::routing;
 use primitives::utils::chain_id_to_namespace;
@@ -116,13 +116,32 @@ impl ListenerConsumer {
         &self.consumer_id
     }
 
-    pub fn create_filter_on_log_address(&self, contract: Address) -> FilterCommand {
+    /// Build a filter command scoped to this consumer.
+    fn filter_command(
+        &self,
+        log_address: Option<Address>,
+        filter_type: Option<FilterType>,
+    ) -> FilterCommand {
         FilterCommand {
             consumer_id: self.consumer_id.clone(),
             from: None,
             to: None,
-            log_address: Some(contract),
+            log_address,
+            filter_type,
         }
+    }
+
+    pub fn create_filter_on_log_address(&self, contract: Address) -> FilterCommand {
+        self.filter_command(Some(contract), None)
+    }
+
+    /// Build a finalized-only filter command for events emitted by `contract`.
+    ///
+    /// The watcher only receives events once their block is finalized, so it
+    /// never sees reorged blocks. Delivery for final watchers is handled by a
+    /// separate flow on the listener side.
+    pub fn create_final_filter_on_log_address(&self, contract: Address) -> FilterCommand {
+        self.filter_command(Some(contract), Some(FilterType::Final))
     }
 
     /// Build a full-block (wildcard) filter command for this consumer.
@@ -131,12 +150,15 @@ impl ListenerConsumer {
     /// "broadcast the entire block": every transaction with every log is
     /// delivered, letting the consumer parse the chain dynamically.
     pub fn create_full_block_filter(&self) -> FilterCommand {
-        FilterCommand {
-            consumer_id: self.consumer_id.clone(),
-            from: None,
-            to: None,
-            log_address: None,
-        }
+        self.filter_command(None, None)
+    }
+
+    /// Build a finalized-only full-block (wildcard) filter command.
+    ///
+    /// Same wildcard semantics as [`create_full_block_filter`](Self::create_full_block_filter),
+    /// but blocks are only delivered once finalized.
+    pub fn create_final_full_block_filter(&self) -> FilterCommand {
+        self.filter_command(None, Some(FilterType::Final))
     }
 
     /// Register a full-block (wildcard) subscription for this consumer.
@@ -152,6 +174,18 @@ impl ListenerConsumer {
     /// Remove this consumer's full-block (wildcard) subscription.
     pub async fn unregister_full_block(&self) -> Result<(), ConsumerError> {
         self.unregister_filter(&self.create_full_block_filter())
+            .await
+    }
+
+    /// Register a finalized-only full-block (wildcard) subscription.
+    pub async fn register_final_full_block(&self) -> Result<(), ConsumerError> {
+        self.register_filter(&self.create_final_full_block_filter())
+            .await
+    }
+
+    /// Remove this consumer's finalized-only full-block (wildcard) subscription.
+    pub async fn unregister_final_full_block(&self) -> Result<(), ConsumerError> {
+        self.unregister_filter(&self.create_final_full_block_filter())
             .await
     }
 
@@ -310,6 +344,44 @@ impl ListenerConsumer {
         }
         for contract in contracts {
             self.unregister_filter(&self.create_filter_on_log_address(*contract))
+                .await?;
+        }
+        Ok(())
+    }
+
+    /// Publish filters registration command to watch contracts with
+    /// finalized-only delivery.
+    ///
+    /// Events are only delivered once their block is finalized, so the
+    /// consumer never sees reorged blocks.
+    pub async fn register_final_contracts(
+        &self,
+        contracts: &[Address],
+    ) -> Result<(), ConsumerError> {
+        if contracts.is_empty() {
+            return Err(ConsumerError::InvalidParameter(
+                "contracts array cannot be empty".into(),
+            ));
+        }
+        for contract in contracts {
+            self.register_filter(&self.create_final_filter_on_log_address(*contract))
+                .await?;
+        }
+        Ok(())
+    }
+
+    /// Publish filters removal command to unwatch finalized-only contracts.
+    pub async fn unregister_final_contracts(
+        &self,
+        contracts: &[Address],
+    ) -> Result<(), ConsumerError> {
+        if contracts.is_empty() {
+            return Err(ConsumerError::InvalidFilterCommand(
+                FilterCommandValidationError::MissingContractAddresses,
+            ));
+        }
+        for contract in contracts {
+            self.unregister_filter(&self.create_final_filter_on_log_address(*contract))
                 .await?;
         }
         Ok(())
@@ -553,7 +625,38 @@ mod tests {
         assert!(cmd.from.is_none());
         assert!(cmd.to.is_none());
         assert!(cmd.log_address.is_none());
+        assert!(cmd.filter_type.is_none(), "live filters carry no type");
         cmd.validate().expect("full-block filter must validate");
+    }
+
+    /// Final filter builders mark the command as finalized-only and keep the
+    /// same address semantics as their live counterparts. `build()` does not
+    /// open a connection, so this runs without Docker.
+    #[tokio::test]
+    async fn create_final_filters_carry_final_type_and_validate() {
+        let broker = Broker::amqp("amqp://user:pass@localhost:5672")
+            .build()
+            .await
+            .unwrap();
+        let consumer = ListenerConsumer::new(&broker, 1, "copro-1-host-eth");
+
+        let mut cmd = consumer.create_final_full_block_filter();
+        assert_eq!(cmd.consumer_id, "copro-1-host-eth");
+        assert!(cmd.from.is_none());
+        assert!(cmd.to.is_none());
+        assert!(cmd.log_address.is_none());
+        assert_eq!(cmd.filter_type, Some(FilterType::Final));
+        cmd.validate()
+            .expect("final full-block filter must validate");
+
+        let contract: Address = "0x00000000000000000000000000000000deadbeef"
+            .parse()
+            .unwrap();
+        let mut cmd = consumer.create_final_filter_on_log_address(contract);
+        assert_eq!(cmd.log_address, Some(contract));
+        assert_eq!(cmd.filter_type, Some(FilterType::Final));
+        cmd.validate()
+            .expect("final log-address filter must validate");
     }
 
     /// Locks in the parent/child cancellation contract that `ListenerConsumer`

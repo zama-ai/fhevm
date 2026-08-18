@@ -78,6 +78,7 @@ async fn main() -> anyhow::Result<()> {
         from: None,
         to: None,
         log_address: Some(token),
+        filter_type: None,
     };
     consumer.register_filter(&filter).await?;
     info!(%token, "registered WATCH filter on log_address");

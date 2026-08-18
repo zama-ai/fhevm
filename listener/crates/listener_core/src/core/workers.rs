@@ -9,6 +9,7 @@ use primitives::routing;
 use primitives::utils::checksum_optional_address;
 
 use crate::store::FlowLock;
+use crate::store::models::FilterType as DbFilterType;
 
 use super::cleaner::{Cleaner, CleanerError};
 use super::evm_listener::{CursorResult, EvmListener, EvmListenerError};
@@ -325,6 +326,8 @@ impl Handler for WatchHandler {
         let from = checksum_optional_address(&event.from);
         let to = checksum_optional_address(&event.to);
         let log_address = checksum_optional_address(&event.log_address);
+        // Missing filter_type means a legacy (or default) command: Live watcher.
+        let filter_type: DbFilterType = event.filter_type.unwrap_or_default().into();
 
         self.filters
             .add_filter(
@@ -332,6 +335,7 @@ impl Handler for WatchHandler {
                 from.as_deref(),
                 to.as_deref(),
                 log_address.as_deref(),
+                filter_type,
             )
             .await
             .map(|_| AckDecision::Ack)
@@ -388,6 +392,8 @@ impl Handler for UnwatchHandler {
         let from = checksum_optional_address(&event.from);
         let to = checksum_optional_address(&event.to);
         let log_address = checksum_optional_address(&event.log_address);
+        // Missing filter_type means a legacy (or default) command: Live watcher.
+        let filter_type: DbFilterType = event.filter_type.unwrap_or_default().into();
 
         self.filters
             .remove_filter(
@@ -395,6 +401,7 @@ impl Handler for UnwatchHandler {
                 from.as_deref(),
                 to.as_deref(),
                 log_address.as_deref(),
+                filter_type,
             )
             .await
             .map(|_| AckDecision::Ack)

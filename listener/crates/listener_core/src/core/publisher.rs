@@ -648,6 +648,7 @@ mod tests {
             from: from.map(|s| s.to_string()),
             to: to.map(|s| s.to_string()),
             log_address: log_address.map(|s| s.to_string()),
+            filter_type: crate::store::models::FilterType::Live,
             created_at: Utc::now(),
         }
     }
