@@ -30,7 +30,7 @@
     },
     {
       "name": "historical-access-one-handle",
-      "comment": "The same handle after its access was superseded: the entry carries the leaf count the proof was built against and a bare borsh MmrProof — no mode byte, unlike the public-decrypt transport blob.",
+      "comment": "The same handle after an update replaced it: the entry carries the leaf count the proof was built against and a bare borsh MmrProof — no mode byte, unlike the public-decrypt transport blob.",
       "handles": [
         {
           "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
