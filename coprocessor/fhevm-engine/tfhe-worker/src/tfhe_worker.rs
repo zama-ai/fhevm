@@ -2070,7 +2070,20 @@ fn prepare_transaction_ops(
             .get(&this_group)
             .map(|v| v.as_slice())
             .unwrap_or(std::slice::from_ref(&w));
+        // Op-level fields are identical across the group; results bind to
+        // handles by position, so a group not starting at index 0 is
+        // malformed and cannot be bound safely.
         let w = group_rows[0];
+        if w.output_index != 0 {
+            for row in group_rows {
+                invalid_rows.push((
+                    row.output_handle.clone(),
+                    "multi-output group does not start at output_index 0"
+                        .to_string(),
+                ));
+            }
+            continue;
+        }
         let owned = row_is_owned(w);
         let fhe_op: SupportedFheOperations = match w.fhe_operation.try_into() {
             Ok(op) => op,
