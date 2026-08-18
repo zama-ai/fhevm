@@ -9,6 +9,7 @@ import {
   SOLANA_ACL_PROGRAM,
   SOLANA_DEFAULT_USER_DECRYPT_CONTEXT,
 } from "../layout";
+import { readGatewayBootstrapInputs } from "./addresses";
 import { runSolanaCurrentUserDecrypt } from "./current-user-decrypt";
 import {
   createConfidentialMint,
@@ -31,6 +32,8 @@ export const SOLANA_TWO_HOLDER_TRANSFER_DESCRIPTION =
   "Transfer an SDK-encrypted euint64 between two real Solana holders and decrypt both latest balances.";
 
 const RPC_URL = "http://127.0.0.1:8899";
+const PROOF_SERVICE_URL = "http://127.0.0.1:8088";
+const GATEWAY_RPC_URL = "http://127.0.0.1:8546";
 const WS_URL = "ws://127.0.0.1:8900";
 const RELAYER_URL = "http://127.0.0.1:3000";
 const ACL_PROGRAM = SOLANA_ACL_PROGRAM;
@@ -57,6 +60,8 @@ export type TwoHolderConfig = {
   readonly rpcUrl: string;
   readonly wsUrl: string;
   readonly relayerUrl: string;
+  readonly proofServiceUrl: string;
+  readonly gatewayRpcUrl: string;
   readonly aclProgram: string;
   readonly userDecryptContext: string;
 };
@@ -110,6 +115,8 @@ const resolveConfig = (config: Partial<TwoHolderConfig>): TwoHolderConfig => ({
   rpcUrl: config.rpcUrl ?? RPC_URL,
   wsUrl: config.wsUrl ?? WS_URL,
   relayerUrl: config.relayerUrl ?? RELAYER_URL,
+  proofServiceUrl: config.proofServiceUrl ?? PROOF_SERVICE_URL,
+  gatewayRpcUrl: config.gatewayRpcUrl ?? GATEWAY_RPC_URL,
   aclProgram: config.aclProgram ?? ACL_PROGRAM,
   userDecryptContext: config.userDecryptContext ?? solanaUserDecryptContext(),
 });
@@ -190,9 +197,15 @@ export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig>
       });
       parseTransferWorkerResult(result.stdout);
     },
-    decrypt: (scenario, holder, state, expected) =>
-      runSolanaCurrentUserDecrypt({
+    decrypt: async (scenario, holder, state, expected) => {
+      // The permit path's trust inputs, read live from the gateway; party ids follow this
+      // registry order inside the runner.
+      const gateway = await readGatewayBootstrapInputs({ gatewayRpcUrl: cfg.gatewayRpcUrl });
+      const hex20 = (bytes: Uint8Array): string => `0x${Buffer.from(bytes).toString("hex")}`;
+      return runSolanaCurrentUserDecrypt({
         UD_RELAYER_URL: cfg.relayerUrl,
+        UD_RPC_URL: cfg.rpcUrl,
+        UD_PROOF_SERVICE_URL: cfg.proofServiceUrl,
         UD_CONTRACTS_CHAIN_ID: state.chainId,
         UD_HANDLE: state.currentHandle,
         UD_SECRET_KEY: holder.secretKey,
@@ -201,8 +214,13 @@ export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig>
         // The env var and the v3 request field keep the wire name `aclValueKey`; what the probe
         // reports is the encrypted value ID it derives.
         UD_ACL_VALUE_KEY: state.encryptedValueId,
+        UD_VERIFYING_PROGRAM_ID: cfg.aclProgram,
+        UD_KMS_SIGNERS: gateway.kmsSigners.map(hex20).join(","),
+        UD_GATEWAY_CHAIN_ID: gateway.gatewayChainId.toString(),
+        UD_GATEWAY_DECRYPTION_CONTRACT: hex20(gateway.decryptionContract),
         UD_EXPECTED: expected.toString(),
-      }),
+      });
+    },
     async cleanup() {
       if (scenarioDir) await fs.rm(scenarioDir, { recursive: true, force: true });
       scenarioDir = undefined;

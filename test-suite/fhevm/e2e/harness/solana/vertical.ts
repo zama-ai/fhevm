@@ -9,6 +9,7 @@
 import { getAddressEncoder } from "@solana/kit";
 
 import { SOLANA_DEFAULT_PUBLIC_DECRYPT_CONTEXT } from "../../../src/layout";
+import { readGatewayBootstrapInputs } from "../../../src/solana/addresses";
 import type { FheVerticalConfig } from "../../../src/solana/fhe-vertical";
 import {
   createProvisioningContext,
@@ -39,14 +40,26 @@ export const verticalSetup = async (): Promise<VerticalTestSetup> => {
   const context = createProvisioningContext(env.rpcUrl, env.wsUrl);
   const wallet = await generateSolanaKeypair();
   await context.airdropSol(wallet.signer.address, 10n);
+  // The permit path's trust inputs, read live from the gateway; party ids follow this registry
+  // order. The epoch id has no Solana-side source yet and rides as zero; the local stack runs the
+  // test FHE parameter set.
+  const gateway = await readGatewayBootstrapInputs({ gatewayRpcUrl: env.gatewayRpcUrl });
+  const hex20 = (bytes: Uint8Array): `0x${string}` => `0x${Buffer.from(bytes).toString("hex")}` as `0x${string}`;
   const config: FheVerticalConfig = {
     relayerUrl: env.relayerUrl,
     proofServiceUrl: env.proofServiceUrl,
+    rpcUrl: env.rpcUrl,
     // From the live HostConfig account, not the env: the decrypts must bind the chain id the
     // deployed host actually signs for.
     chainId: await readHostChainId(context),
     publicDecryptContextId: SOLANA_DEFAULT_PUBLIC_DECRYPT_CONTEXT,
     userDecryptContextId: env.userDecryptContextId,
+    verifyingProgramId: env.aclProgram,
+    kmsSigners: gateway.kmsSigners.map(hex20),
+    kmsEpochId: `0x${"0".repeat(64)}`,
+    fheParameter: "test",
+    gatewayChainId: gateway.gatewayChainId.toString(),
+    gatewayDecryptionContract: hex20(gateway.decryptionContract),
   };
   const secretKey = `0x${Buffer.from(wallet.bytes.subarray(0, 32)).toString("hex")}`;
   const walletHex = `0x${Buffer.from(getAddressEncoder().encode(wallet.signer.address)).toString("hex")}` as const;

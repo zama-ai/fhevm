@@ -87,7 +87,10 @@ export function assertIsRelayerApiError(
     assertIsRelayerApiError429(value, name, options);
   }
   // 500
-  else if (value.label === ('internal_server_error' satisfies RelayerApiError500['label'])) {
+  else if (
+    value.label === ('internal_server_error' satisfies RelayerApiError500['label']) ||
+    value.label === ('host_acl_failed' satisfies RelayerApiError500['label'])
+  ) {
     assertIsRelayerApiError500(value, name, options);
   }
   // 503
@@ -117,6 +120,7 @@ export function assertIsRelayerApiError(
           'validation_failed',
           'rate_limited',
           'internal_server_error',
+          'host_acl_failed',
           'protocol_paused',
           'insufficient_balance',
           'insufficient_allowance',

@@ -3,12 +3,17 @@ import type { RelayerPublicDecryptOptions } from '../../core/types/relayer.js';
 import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import type { FhevmRuntime } from '../../core/types/coreFhevmRuntime.js';
 import type { MmrProof } from '../proof.js';
-import { bytesToHex } from '../../core/base/bytes.js';
-import { buildSolanaUserDecryptMmrProofExtraData } from '../../core/coprocessor/SolanaUserDecrypt-p.js';
+import { bytesToHex, concatBytes, unsafeBytesEquals } from '../../core/base/bytes.js';
 import { toFhevmHandle } from '../../core/handle/FhevmHandle.js';
 import { RelayerAsyncRequest } from '../../core/modules/relayer/module/RelayerAsyncRequest.js';
 import { removeSuffix } from '../../core/base/string.js';
-import { decodeMmrProofTransportBlob, hexToBytes, MMR_PROOF_MODE_PUBLIC, verifyPublicDecryptProof } from '../proof.js';
+import {
+  decodeMmrProofTransportBlob,
+  hexToBytes,
+  MMR_PROOF_MODE_PUBLIC,
+  u64BE,
+  verifyPublicDecryptProof,
+} from '../proof.js';
 
 export type SolanaPublicDecryptCertificateContext = {
   readonly chain: FhevmSolanaChain;
@@ -43,9 +48,57 @@ export type SolanaPublicDecryptCertificateClaim = {
   readonly inclusionProof: MmrProof;
 };
 
-function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
-  if (left.length !== right.length) return false;
-  return left.every((byte, index) => byte === right[index]);
+/**
+ * `extraData` version byte carrying the context id plus the MMR-proof tail (RFC-024): version ‖
+ * contextId(32) ‖ aclValueKey(32) ‖ proofSlot(8 BE) ‖ mmrProofLen(4 BE) ‖ mmrProofBytes. Mirrors
+ * `SOLANA_EXTRA_DATA_VERSION_MMR_PROOF` in the connector's `solana_extra_data.rs`.
+ */
+export const SOLANA_MMR_PROOF_EXTRA_DATA_VERSION = 0x03;
+
+/** Encodes a u32 as 4 big-endian bytes (`u32::to_be_bytes`). */
+function u32BE(value: number): Uint8Array {
+  const out = new Uint8Array(4);
+  new DataView(out.buffer).setUint32(0, value, false);
+  return out;
+}
+
+/**
+ * Builds the MMR-proof-tail `extraData` a public-decrypt request carries on the wire.
+ *
+ * Owned by public decrypt: user decrypt stopped carrying this blob when its requests moved to the
+ * permit envelope — its proofs travel as bare borsh beside the handle, and its `extraData` is the
+ * version-`0x02` KMS routing. The Rust half of this hand-mirrored codec is
+ * `encode_solana_extra_data_mmr_proof` in the connector's `solana_extra_data.rs`; the two layouts
+ * must change together, and `solana/test-fixtures/user-decrypt/extra_data_v1.json` is what pins
+ * them to each other.
+ *
+ * @param contextId - The 32-byte KMS context id.
+ * @param aclValueKey - The 32-byte ACL value key naming the encrypted-value account.
+ * @param proofSlot - The slot the proof was built at.
+ * @param mmrProofBytes - The canonical transport proof blob, verbatim.
+ */
+export function buildSolanaPublicDecryptMmrProofExtraData(
+  contextId: Uint8Array,
+  aclValueKey: Uint8Array,
+  proofSlot: bigint,
+  mmrProofBytes: Uint8Array,
+): Uint8Array {
+  assertExtraDataFieldLen('contextId', contextId, 32);
+  assertExtraDataFieldLen('aclValueKey', aclValueKey, 32);
+  return concatBytes(
+    new Uint8Array([SOLANA_MMR_PROOF_EXTRA_DATA_VERSION]),
+    contextId,
+    aclValueKey,
+    u64BE(proofSlot),
+    u32BE(mmrProofBytes.length),
+    mmrProofBytes,
+  );
+}
+
+function assertExtraDataFieldLen(name: string, bytes: Uint8Array, len: number): void {
+  if (bytes.length !== len) {
+    throw new Error(`${name} must be ${len} bytes, got ${bytes.length}`);
+  }
 }
 
 /** Requests a public-decrypt certificate after verifying its pinned MMR inclusion locally. */
@@ -75,7 +128,7 @@ export async function publicDecryptCertificate(
     throw new Error('public-decrypt MMR proof failed client-side verification');
   }
 
-  const requestExtraData = buildSolanaUserDecryptMmrProofExtraData(
+  const requestExtraData = buildSolanaPublicDecryptMmrProofExtraData(
     parameters.contextId,
     parameters.aclValueKey,
     parameters.proofSlot,
@@ -97,7 +150,7 @@ export async function publicDecryptCertificate(
     readonly extraData?: string | undefined;
   };
 
-  if (result.extraData !== undefined && !bytesEqual(hexToBytes(result.extraData), requestExtraData)) {
+  if (result.extraData !== undefined && !unsafeBytesEquals(hexToBytes(result.extraData), requestExtraData)) {
     throw new Error('public-decrypt response extraData does not match the request');
   }
   if (
