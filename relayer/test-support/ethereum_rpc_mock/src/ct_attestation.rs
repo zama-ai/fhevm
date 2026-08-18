@@ -1,7 +1,7 @@
 //! Mock of the Coprocessors' S3 attestation surface (RFC 023).
 //!
 //! The relayer's readiness check probes each Coprocessor bucket with an unauthenticated HTTP
-//! `HEAD` on `{bucket}/{hex handle}/{context id}` and reads the attestation out of the
+//! `HEAD` on `{bucket}/ct128/{hex handle}/{context id}` and reads the attestation out of the
 //! `x-amz-meta-ct-attestation` response header. That is plain HTTP, not JSON-RPC and not real S3
 //! — no SigV4, no XML, no bucket semantics — so it needs a listener of its own rather than a
 //! MinIO container.
@@ -103,16 +103,16 @@ impl Respond for AttestationResponder {
     }
 }
 
-/// Extracts the handle from an RFC 023 object path: `/{hex handle}/{context id}`.
+/// Extracts the handle from an RFC 023 object path: `/ct128/{hex handle}/{context id}`.
 fn handle_from_path(path: &str) -> Option<B256> {
-    let handle_hex = path.trim_start_matches('/').split('/').next()?;
+    let handle_hex = path.trim_start_matches('/').split('/').nth(1)?;
     let bytes = hex::decode(handle_hex).ok()?;
     (bytes.len() == 32).then(|| B256::from_slice(&bytes))
 }
 
 /// Matches any RFC 023 ciphertext object path, since tests mint handles at runtime.
 fn ct_object_path() -> wiremock::matchers::PathRegexMatcher {
-    path_regex(r"^/[0-9a-fA-F]{64}/\d+$")
+    path_regex(r"^/ct128/[0-9a-fA-F]{64}/\d+$")
 }
 
 /// A running Coprocessor S3 attestation surface.

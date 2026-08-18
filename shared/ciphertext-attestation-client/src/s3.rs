@@ -9,16 +9,18 @@
 //! is KMS-only behavior that stays in `kms-connector`.
 
 use alloy::{
-    hex,
     primitives::{B256, U256},
     transports::http::{Client, reqwest::header::HeaderMap},
 };
-use ciphertext_attestation::{CiphertextAttestation, S3_METADATA_ATTESTATION_HEADER};
+use ciphertext_attestation::{CiphertextAttestation, S3_METADATA_ATTESTATION_HEADER, s3_ct128_key};
 use std::time::Duration;
 
 /// URL of a ciphertext object in a Coprocessor bucket (RFC 023 layout).
 pub fn rfc023_ciphertext_url(bucket_url: &str, handle: B256, context_id: U256) -> String {
-    format!("{bucket_url}/{}/{context_id}", hex::encode(handle))
+    format!(
+        "{bucket_url}/{}",
+        s3_ct128_key(handle.as_slice(), context_id)
+    )
 }
 
 /// Why a single bucket's HEAD attempt did not yield an attestation.

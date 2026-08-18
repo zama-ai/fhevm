@@ -87,7 +87,7 @@ impl Bucket {
     /// Matches whatever object path the client builds, so no test has to spell the URL out.
     async fn mount(&self, response: ResponseTemplate) {
         Mock::given(method("HEAD"))
-            .and(path_regex(r"^/[0-9a-fA-F]{64}/\d+$"))
+            .and(path_regex(r"^/ct128/[0-9a-fA-F]{64}/\d+$"))
             .respond_with(response)
             .mount(&self.server)
             .await;
