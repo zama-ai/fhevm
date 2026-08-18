@@ -1176,8 +1176,11 @@ fn build_test_config(url: DatabaseURL, enable_compression: bool) -> Config {
 
     Config {
         db: DBConfig {
-            // Tests exercise the single-cycle path, matching the CLI default.
+            // Tests exercise the single-cycle, batch-synchronous path — the CLI
+            // defaults — so the decoupled path is covered separately.
             pipeline_depth: 1,
+            commit_group_size: 8,
+            decoupled: false,
             url,
             listen_channels: vec![LISTEN_CHANNEL.to_string()],
             notify_channel: "fhevm".to_string(),

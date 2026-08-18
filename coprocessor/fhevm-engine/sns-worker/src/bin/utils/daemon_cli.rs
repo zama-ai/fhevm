@@ -23,6 +23,18 @@ pub struct Args {
     #[arg(long, default_value_t = 1, env = "SNS_PIPELINE_DEPTH")]
     pub sns_pipeline_depth: u32,
 
+    /// Finished tasks per commit on the decoupled path. Sizes the commit
+    /// independently of the batch, which sizes the claim.
+    #[arg(long, default_value_t = 8, env = "SNS_COMMIT_GROUP_SIZE")]
+    pub sns_commit_group_size: u32,
+
+    /// Claim rows, release their locks, then dispatch per item and commit
+    /// finished work in groups — instead of holding one transaction across the
+    /// whole batch. Removes the intra-batch barrier; requires the claimed_at
+    /// column (migration 20260817120000).
+    #[arg(long, default_value_t = false, env = "SNS_DECOUPLED")]
+    pub sns_decoupled: bool,
+
     /// NOTIFY/LISTEN channels for database that the worker listen to
     #[arg(long, num_args(1..))]
     pub pg_listen_channels: Vec<String>,

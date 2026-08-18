@@ -98,6 +98,15 @@ pub struct DBConfig {
     ///
     /// 1 preserves the original single-cycle behaviour exactly.
     pub pipeline_depth: u32,
+    /// Finished tasks committed per transaction on the decoupled path.
+    ///
+    /// Independent of batch_limit by design: the batch sizes the claim (and so
+    /// amortises the fetch), while this sizes the commit (and so amortises the
+    /// ~5 ms WAL fsync) without making any task wait on an unrelated straggler.
+    pub commit_group_size: u32,
+    /// Use the decoupled claim/dispatch/commit path instead of the
+    /// batch-synchronous one.
+    pub decoupled: bool,
     pub gc_batch_limit: u32,
     pub polling_interval: u32,
     pub cleanup_interval: Duration,
