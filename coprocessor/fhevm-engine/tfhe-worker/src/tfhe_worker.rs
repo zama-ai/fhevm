@@ -645,10 +645,10 @@ WHERE c.transaction_id IN (
             for key in group_order.iter() {
                 let mut group_rows = by_group.remove(key).expect("group key present");
                 group_rows.sort_by_key(|w| w.output_index);
+                // Op-level fields are identical across the group.
                 let first = group_rows[0];
-                // Op-level scalar fields are duplicated on every row; dependencies live
-                // only on the primary (output_index = 0). If the primary is missing,
-                // mark every handle in the group errored rather than panicking the worker.
+                // Results bind to handles by position, so a group not starting at
+                // index 0 is malformed. Error every handle rather than panicking.
                 if first.output_index != 0 {
                     error!(target: "tfhe_worker",
                         { output_handle = ?first.output_handle, transaction_id = ?hex::encode(transaction_id), output_index = first.output_index },

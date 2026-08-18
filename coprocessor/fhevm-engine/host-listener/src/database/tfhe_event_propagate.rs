@@ -507,16 +507,10 @@ impl Database {
     ) -> Result<bool, SqlxError> {
         let is_scalar = !scalar_byte.is_zero();
         let output_handle = result.to_vec();
-        // Dependencies live only on the primary row of a multi-output group:
-        // repeating them on all N rows is quadratic in storage for an
-        // N-input/N-output operation.
-        let is_primary = group_id.is_none() || output_index == 0;
-        let deps_for_row: &[Vec<u8>] =
-            if is_primary { &dependencies } else { &[] };
         self.insert_computation_legacy_row(
             tx,
             &output_handle,
-            deps_for_row,
+            &dependencies,
             fhe_operation,
             is_scalar,
             group_id,
@@ -541,8 +535,6 @@ impl Database {
         // Schema isolation handles BCS/GCS routing at the connection layer
         // (`search_path = gcs,public` for GCS, default `public` for BCS), so
         // this INSERT references `computations` unqualified.
-        //
-        // `dependencies` is already reduced to the primary row by the caller.
         let group_id_vec = group_id.map(|g| g.to_vec());
         let output_allowed = log.is_output_allowed(output_handle);
         let query = sqlx::query!(
