@@ -24,3 +24,10 @@ services:
       - "1"
     ports:
       - "127.0.0.1:${HOST_NODE_PORT:-8545}:${HOST_NODE_PORT:-8545}"
+    # Anvil keeps all chain state in memory and grows without bound under
+    # benchmark load: a 1500-transfer burst run drove it to 228 GB RSS on a 235 GB
+    # host, and the kernel OOM-killer picked it only because it happened to be the
+    # largest process — postgres or a GPU worker could have gone instead, which
+    # would have corrupted a run rather than merely ending it. Cap it so anvil dies
+    # alone, visibly, and long before the host is at risk.
+    mem_limit: ${HOST_NODE_MEM_LIMIT:-64g}
