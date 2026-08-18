@@ -55,7 +55,7 @@ export const PERMIT_SIGNATURE_LEN = 64;
  *
  * A chain id or a timestamp past `Number.MAX_SAFE_INTEGER` loses precision as a `number`, and a
  * permit whose fields silently changed value renders a text the wallet's signature does not cover.
- * Excluding `number` from the type is the first line of that defence; `decodeSolanaPermitFields`
+ * Excluding `number` from the type is the first line of that defense; `decodeSolanaPermitFields`
  * rejects it at runtime as well, for callers reaching this module from untyped JavaScript.
  */
 export type SolanaPermitU64 = bigint | string;

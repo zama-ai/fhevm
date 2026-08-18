@@ -144,7 +144,7 @@ export async function generateSolanaTransportKeyPair(): Promise<SolanaTransportK
  */
 export async function solanaUserDecryptLink(inputs: SolanaUserDecryptLinkInputs): Promise<Uint8Array> {
   await ensureInit();
-  // Marshalling and nothing else: the one canonical link computation lives in the blob, and a
+  // Marshaling and nothing else: the one canonical link computation lives in the blob, and a
   // second copy here would be a link rule that agrees today and drifts tomorrow.
   return compute_solana_user_decrypt_link_from_js(
     inputs.userPubkey,

@@ -41,8 +41,9 @@ let _resolvedWorkerApi: Promise<WorkerApi> | undefined;
 export function resolveWorkerApi(): Promise<WorkerApi> {
   _resolvedWorkerApi ??= (async () => {
     try {
-      // @ts-expect-error - Bun is a runtime global only under Bun
-      const isBun = typeof Bun !== 'undefined';
+      // Bun is a runtime global only under Bun; read through globalThis so this compiles
+      // identically with and without bun-types in the consumer's graph.
+      const isBun = (globalThis as { Bun?: unknown }).Bun !== undefined;
 
       // Preference order is runtime-specific:
       // - Bun has first-class worker_threads, so prefer Node for parity with

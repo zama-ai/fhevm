@@ -75,7 +75,7 @@ describe("solana-current-user-decrypt", () => {
     });
   });
 
-  test("honours the optional epoch, parameter and duration overrides", async () => {
+  test("honors the optional epoch, parameter and duration overrides", async () => {
     let received: unknown;
     await runSolanaCurrentUserDecrypt(
       {

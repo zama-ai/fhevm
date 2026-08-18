@@ -24,8 +24,10 @@ export function isNodeLike(): boolean {
 
 export function isBrowserLike(): boolean {
   return (
-    // @ts-expect-error - Bun is a runtime global only under Bun
-    typeof Bun === 'undefined' &&
+    // Bun is a runtime global only under Bun; read through globalThis so this compiles identically
+    // with and without bun-types in the consumer's graph (a @ts-expect-error would be "unused"
+    // wherever bun-types declare it).
+    (globalThis as { Bun?: unknown }).Bun === undefined &&
     !isNodeLike() &&
     typeof location !== 'undefined' &&
     typeof location.href === 'string' &&

@@ -329,7 +329,7 @@ describe('a request that is never answered', () => {
     expect(error.rejection).toEqual({ kind: 'unanswered' });
   });
 
-  it('honours a smaller budget when one is given', async () => {
+  it('honors a smaller budget when one is given', async () => {
     const { submit, transport } = scriptedTransport([rejectedWith({ kind: 'unanswered' })]);
     const { clock } = recordingClock();
 
