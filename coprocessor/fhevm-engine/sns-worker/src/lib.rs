@@ -107,6 +107,13 @@ pub struct DBConfig {
     /// Use the decoupled claim/dispatch/commit path instead of the
     /// batch-synchronous one.
     pub decoupled: bool,
+    /// How long a decoupled claim excludes its rows from being claimed again.
+    ///
+    /// The decoupled claim commits before GPU execution, which releases the
+    /// `FOR UPDATE SKIP LOCKED` locks that provide mutual exclusion on the
+    /// batch-synchronous path; `claimed_at` plus this window takes over that job.
+    /// Must exceed the worst-case claim-to-commit time by a wide margin.
+    pub claim_reclaim_after: Duration,
     pub gc_batch_limit: u32,
     pub polling_interval: u32,
     pub cleanup_interval: Duration,

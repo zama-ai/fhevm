@@ -1,5 +1,5 @@
 use crate::{
-    executor::{garbage_collect, query_sns_tasks, Order},
+    executor::{claim_sns_tasks, garbage_collect, query_sns_tasks, Order},
     keyset::fetch_client_key,
     squash_noise::safe_deserialize,
     Config, DBConfig, S3Config, S3MigrationMode, S3RetryPolicy, SchedulePolicy,
@@ -328,6 +328,86 @@ async fn test_lifo_mode() {
     } else {
         panic!("No tasks found in Asc order");
     }
+}
+
+/// Successive decoupled claims must hand out disjoint rows.
+///
+/// The decoupled claim commits before GPU execution, which releases the
+/// `FOR UPDATE SKIP LOCKED` row locks that are the batch-synchronous path's only
+/// mutual exclusion. Rows stay `is_completed = FALSE` for the whole GPU run, so
+/// without a `claimed_at` filter a second concurrent cycle re-selects exactly the
+/// same tasks, computes them twice and collides on `ciphertexts128_pkey` — which
+/// is what `--sns-decoupled --sns-pipeline-depth=2` did before this filter existed.
+#[tokio::test]
+#[serial(db)]
+#[cfg(not(feature = "gpu"))]
+async fn test_decoupled_claims_are_disjoint() {
+    init_tracing();
+
+    let test_instance = setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
+
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(3)
+        .connect(test_instance.db_url())
+        .await
+        .unwrap();
+
+    const HANDLES_COUNT: usize = 12;
+    const BATCH_SIZE: u32 = 4;
+    let key_id_gw: DbKeyId = vec![0u8; 32];
+    let host_chain_id: i64 = 1;
+
+    for i in 0..HANDLES_COUNT {
+        test_harness::db_utils::insert_ciphertext64(
+            &pool,
+            &Vec::from([i as u8; 32]),
+            &Vec::from([i as u8; 32]),
+        )
+        .await
+        .unwrap();
+        test_harness::db_utils::insert_into_pbs_computations(
+            &pool,
+            host_chain_id,
+            &Vec::from([i as u8; 32]),
+        )
+        .await
+        .unwrap();
+    }
+
+    // Nothing is completed between the claims, mimicking two cycles whose GPU work
+    // is still in flight.
+    let reclaim = Duration::from_secs(300);
+    let first = claim_sns_tasks(&pool, BATCH_SIZE, Order::Asc, &key_id_gw, reclaim)
+        .await
+        .expect("first claim");
+    let second = claim_sns_tasks(&pool, BATCH_SIZE, Order::Asc, &key_id_gw, reclaim)
+        .await
+        .expect("second claim");
+
+    assert_eq!(first.len(), BATCH_SIZE as usize, "first claim short");
+    assert_eq!(second.len(), BATCH_SIZE as usize, "second claim short");
+
+    let first_handles: std::collections::HashSet<Vec<u8>> =
+        first.iter().map(|t| t.handle.clone()).collect();
+    for task in &second {
+        assert!(
+            !first_handles.contains(&task.handle),
+            "handle {} claimed twice: the claimed_at filter is not excluding in-flight rows",
+            hex::encode(&task.handle)
+        );
+    }
+
+    // A claim older than the window must come back, or a crashed worker's rows
+    // would be stranded forever.
+    let expired = claim_sns_tasks(&pool, BATCH_SIZE, Order::Asc, &key_id_gw, Duration::ZERO)
+        .await
+        .expect("reclaim after expiry");
+    assert!(
+        expired.iter().any(|t| first_handles.contains(&t.handle)),
+        "a claim past its reclaim window was not taken again"
+    );
 }
 
 /// Reorg cleanup deletes the pbs_computations and ciphertext_digest rows of
@@ -1181,6 +1261,7 @@ fn build_test_config(url: DatabaseURL, enable_compression: bool) -> Config {
             pipeline_depth: 1,
             commit_group_size: 8,
             decoupled: false,
+            claim_reclaim_after: Duration::from_secs(300),
             url,
             listen_channels: vec![LISTEN_CHANNEL.to_string()],
             notify_channel: "fhevm".to_string(),

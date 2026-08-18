@@ -669,7 +669,7 @@ async fn fetch_and_execute_sns_tasks_decoupled(
         conf.db.batch_limit,
         order,
         &keys.key_id_gw,
-        conf.db.cleanup_interval,
+        conf.db.claim_reclaim_after,
     )
     .await?;
     if tasks.is_empty() {
@@ -761,7 +761,8 @@ pub async fn claim_sns_tasks(
     reclaim_after: Duration,
 ) -> Result<Vec<HandleItem>, ExecutionError> {
     let mut db_txn = pool.begin().await?;
-    let tasks = query_sns_tasks(&mut db_txn, limit, order, key_id_gw).await?;
+    let tasks =
+        query_sns_tasks_inner(&mut db_txn, limit, order, key_id_gw, Some(reclaim_after)).await?;
     let Some(tasks) = tasks else {
         db_txn.rollback().await?;
         return Ok(vec![]);
@@ -780,9 +781,8 @@ pub async fn claim_sns_tasks(
     .execute(db_txn.as_mut())
     .await?;
     // Commit here: the rows stay unfinished but are marked, so no peer re-takes
-    // them and no lock is held across GPU execution.
+    // them (see `query_sns_tasks_inner`) and no lock is held across GPU execution.
     db_txn.commit().await?;
-    let _ = reclaim_after;
 
     tracing::Span::current().record("count", tasks.len());
     Ok(tasks)
@@ -818,25 +818,58 @@ pub async fn query_sns_tasks(
     order: Order,
     key_id_gw: &DbKeyId,
 ) -> Result<Option<Vec<HandleItem>>, ExecutionError> {
+    query_sns_tasks_inner(db_txn, limit, order, key_id_gw, None).await
+}
+
+/// Shared selection, optionally skipping rows another cycle already claimed.
+///
+/// `skip_claimed_within` matters only to the decoupled path. There the claim
+/// transaction commits before GPU execution, which releases the `SKIP LOCKED` row
+/// locks that are the batch-synchronous path's entire mutual exclusion — so a
+/// concurrent cycle would re-select the same still-unfinished rows and compute
+/// them twice, colliding on `ciphertexts128_pkey` at persist time. Filtering on
+/// `claimed_at` restores exclusion without holding a lock across the GPU.
+///
+/// A claim older than the window is deliberately taken again: that is how a
+/// crashed worker's in-flight rows come back without a separate reaper.
+async fn query_sns_tasks_inner(
+    db_txn: &mut Transaction<'_, Postgres>,
+    limit: u32,
+    order: Order,
+    key_id_gw: &DbKeyId,
+    skip_claimed_within: Option<Duration>,
+) -> Result<Option<Vec<HandleItem>>, ExecutionError> {
+    // Interval arithmetic stays in SQL so the comparison uses the database clock,
+    // not this process's, and cannot skew between workers.
+    let claim_filter = match skip_claimed_within {
+        Some(_) => {
+            "AND (a.claimed_at IS NULL
+                  OR a.claimed_at < (NOW() AT TIME ZONE 'UTC')
+                                    - make_interval(secs => $2::double precision))"
+        }
+        None => "",
+    };
     let query = format!(
         "
         SELECT a.*, c.ciphertext
         FROM pbs_computations a
-        JOIN ciphertexts c 
+        JOIN ciphertexts c
         ON a.handle = c.handle
         WHERE c.ciphertext IS NOT NULL
         AND a.is_completed = FALSE
+        {}
         ORDER BY a.created_at {}
         FOR UPDATE SKIP LOCKED
         LIMIT $1;
         ",
-        order
+        claim_filter, order
     );
 
-    let records = sqlx::query(&query)
-        .bind(limit as i64)
-        .fetch_all(db_txn.as_mut())
-        .await?;
+    let mut sql = sqlx::query(&query).bind(limit as i64);
+    if let Some(window) = skip_claimed_within {
+        sql = sql.bind(window.as_secs_f64());
+    }
+    let records = sql.fetch_all(db_txn.as_mut()).await?;
 
     info!(target: "worker", { count = records.len(), order = order.to_string() }, "Fetched SnS tasks");
     tracing::Span::current().record("count", records.len());

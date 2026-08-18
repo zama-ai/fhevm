@@ -35,6 +35,14 @@ pub struct Args {
     #[arg(long, default_value_t = false, env = "SNS_DECOUPLED")]
     pub sns_decoupled: bool,
 
+    /// How long a decoupled claim is respected before the rows may be taken
+    /// again. This is what returns a crashed worker's in-flight rows, so it must
+    /// exceed the worst-case time from claim to commit (seconds, even at large
+    /// batches) by a wide margin — too short and two workers compute the same
+    /// task and collide on `ciphertexts128_pkey`.
+    #[arg(long, default_value = "5min", value_parser = parse_duration, env = "SNS_CLAIM_RECLAIM_AFTER")]
+    pub sns_claim_reclaim_after: Duration,
+
     /// NOTIFY/LISTEN channels for database that the worker listen to
     #[arg(long, num_args(1..))]
     pub pg_listen_channels: Vec<String>,

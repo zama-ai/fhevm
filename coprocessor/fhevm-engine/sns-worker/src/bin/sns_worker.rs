@@ -36,6 +36,7 @@ fn construct_config() -> Result<Config, fhevm_engine_common::database::DatabaseC
             pipeline_depth: args.sns_pipeline_depth,
             commit_group_size: args.sns_commit_group_size,
             decoupled: args.sns_decoupled,
+            claim_reclaim_after: args.sns_claim_reclaim_after,
             gc_batch_limit: args.gc_batch_size,
             polling_interval: args.pg_polling_interval,
             max_connections: args.pg_pool_connections,
