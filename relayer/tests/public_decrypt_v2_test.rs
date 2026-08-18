@@ -769,6 +769,122 @@ async fn test_stalled_buckets_are_bounded_by_the_request_budget() {
     setup.shutdown().await;
 }
 
+/// The majority threshold, not the registry size, is what readiness requires.
+///
+/// Two of the three registered Coprocessors have published; the third 404s. The mocked
+/// `getCoprocessorMajorityThreshold()` reports 2, so the quorum is satisfied without the silent
+/// bucket and the request goes through. Substituting the registry size for the threshold — the
+/// off-by-one every all-buckets-agree test misses, since there the two numbers coincide — starves
+/// this round instead and turns the 200 into a 503.
+#[tokio::test]
+async fn test_partial_quorum_passes_readiness() {
+    let setup = TestSetup::new_with_fast_readiness()
+        .await
+        .expect("Failed to create test setup");
+
+    setup.ct_attestation.serve_attestations_from_first(2).await;
+
+    let payload = helpers::create_public_decrypt_payload();
+    let handles = helpers::extract_ciphertext_handles_from_public_payload(&payload);
+    let plaintext_values = helpers::random_plaintext_values(handles.len());
+    setup.fhevm_mock.on_public_decrypt_success(
+        handles,
+        plaintext_values,
+        ethereum_rpc_mock::SubscriptionTarget::All,
+    );
+
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+
+    assert_eq!(
+        status,
+        reqwest::StatusCode::OK,
+        "A threshold-sized quorum is consensus; the third Coprocessor is not required"
+    );
+    assert_eq!(body.status, ApiResponseStatus::Succeeded);
+    assert!(body.result.is_some());
+
+    setup.shutdown().await;
+}
+
+/// The other side of the same boundary: one attestation short of the threshold is retriable, not
+/// terminal.
+///
+/// Only one of three buckets has published, so the leading group cannot reach the majority of 2.
+/// Nothing disagreed, though — a lone unanimous vote is a gap, not a split — so this must spend the
+/// retry budget and end on the retryable timeout label rather than `no_attestation_consensus`.
+/// Loosening the quorum check to "any valid attestation" would let this request through instead.
+///
+/// The vote is genuinely counted before the verdict: the mock holds the empty buckets back so the
+/// attestation is not overtaken by the two 404s, which would otherwise decide the round at zero
+/// votes and leave the quorum arithmetic untested.
+#[tokio::test]
+async fn test_below_quorum_is_retriable_not_terminal() {
+    let setup = TestSetup::new_with_minimal_readiness()
+        .await
+        .expect("Failed to create test setup");
+
+    setup.ct_attestation.serve_attestations_from_first(1).await;
+
+    let payload = helpers::create_public_decrypt_payload();
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+
+    assert_eq!(
+        status,
+        reqwest::StatusCode::SERVICE_UNAVAILABLE,
+        "One attestation under a majority of 2 must fail closed"
+    );
+    assert_eq!(body.status, ApiResponseStatus::Failed);
+    assert!(body.result.is_none());
+
+    let error = body.error.as_ref().expect("Error should be present");
+    assert_eq!(
+        error.label(),
+        "readiness_check_timed_out",
+        "Agreement that merely lacks numbers stays retryable, so not 'no_attestation_consensus'"
+    );
+
+    setup.shutdown().await;
+}
+
+/// A starved round is retried, and a later round that finds the attestations succeeds.
+///
+/// Every bucket 404s its first probe and serves from the second on, so the first readiness attempt
+/// is starved and the second reaches consensus. This is the only test that proves the retry loop
+/// converts a late attestation into a success: treating `Starved` as terminal would fail the
+/// request on the first miss with `no_attestation_consensus`.
+#[tokio::test]
+async fn test_starved_round_retries_then_passes() {
+    let setup = TestSetup::new_with_fast_readiness()
+        .await
+        .expect("Failed to create test setup");
+
+    setup.ct_attestation.serve_after_n_misses(1).await;
+
+    let payload = helpers::create_public_decrypt_payload();
+    let handles = helpers::extract_ciphertext_handles_from_public_payload(&payload);
+    let plaintext_values = helpers::random_plaintext_values(handles.len());
+    setup.fhevm_mock.on_public_decrypt_success(
+        handles,
+        plaintext_values,
+        ethereum_rpc_mock::SubscriptionTarget::All,
+    );
+
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+
+    assert_eq!(
+        status,
+        reqwest::StatusCode::OK,
+        "The second attempt finds the attestations, so the request must succeed"
+    );
+    assert_eq!(body.status, ApiResponseStatus::Succeeded);
+    assert!(body.result.is_some());
+
+    setup.shutdown().await;
+}
+
 /// Test that malformed JSON returns V2 error format with status and request_id
 #[tokio::test]
 async fn test_v2_post_malformed_json_has_status_and_request_id() {

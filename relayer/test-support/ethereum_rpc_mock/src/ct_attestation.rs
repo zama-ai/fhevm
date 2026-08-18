@@ -34,6 +34,20 @@ const COPROCESSOR_CONTEXT_ID: U256 = U256::ONE;
 const DEFAULT_COPROCESSOR_COUNT: usize = 3;
 const DEFAULT_MAJORITY_THRESHOLD: usize = 2;
 
+/// Ciphertext digest every agreeing bucket attests over. Consensus groups on this value, so
+/// sharing one constant is what makes separate buckets land in the same group.
+const AGREED_CIPHERTEXT_DIGEST: B256 = B256::repeat_byte(0xBB);
+
+/// How long a bucket with nothing to serve waits before answering, in
+/// [`CtAttestationMock::serve_attestations_from_first`].
+///
+/// A 404 is otherwise far quicker than a signed attestation, so the failures reach the tracker
+/// first and it returns its verdict before any vote is counted — which makes the state under test
+/// the arrival order rather than the quorum arithmetic. Ordering the misses last means a partial
+/// round is decided on the votes it actually received. Three orders of magnitude above the
+/// signing cost, and far below any `head_timeout` a test configures.
+const MISS_DELAY: Duration = Duration::from_millis(200);
+
 /// One Coprocessor as the mocked `GatewayConfig` reports it.
 #[derive(Clone, Debug)]
 pub struct MockCoprocessor {
@@ -158,17 +172,34 @@ impl CtAttestationMock {
 
     /// Every bucket serves a valid attestation over the same material: consensus succeeds.
     pub async fn serve_attestations(&self) {
+        self.serve_attestations_from_first(self.servers.len()).await;
+    }
+
+    /// Only the first `count` buckets have published: they serve valid attestations over the same
+    /// material, the remaining buckets 404.
+    ///
+    /// This is what separates the majority threshold from the registry size. At or above the
+    /// threshold, consensus is reached without the silent buckets; below it the round is starved
+    /// and therefore retriable, because agreement that merely lacks numbers is not a split.
+    ///
+    /// The silent buckets answer last, by [`MISS_DELAY`], so the votes are counted before the
+    /// failures and the verdict is not a race.
+    pub async fn serve_attestations_from_first(&self, count: usize) {
         self.reset().await;
-        let digest = B256::repeat_byte(0xBB);
-        for (server, signer) in self.servers.iter().zip(&self.signers) {
-            Mock::given(method("HEAD"))
-                .and(ct_object_path())
-                .respond_with(AttestationResponder {
+        for (index, (server, signer)) in self.servers.iter().zip(&self.signers).enumerate() {
+            let mock = Mock::given(method("HEAD")).and(ct_object_path());
+            if index < count {
+                mock.respond_with(AttestationResponder {
                     signer: signer.clone(),
-                    ciphertext_digest: digest,
+                    ciphertext_digest: AGREED_CIPHERTEXT_DIGEST,
                 })
                 .mount(server)
                 .await;
+            } else {
+                mock.respond_with(ResponseTemplate::new(404).set_delay(MISS_DELAY))
+                    .mount(server)
+                    .await;
+            }
         }
     }
 
@@ -191,7 +222,6 @@ impl CtAttestationMock {
     /// readiness attempts that fail before one succeeds.
     pub async fn serve_after_n_misses(&self, misses: u64) {
         self.reset().await;
-        let digest = B256::repeat_byte(0xBB);
         for (server, signer) in self.servers.iter().zip(&self.signers) {
             Mock::given(method("HEAD"))
                 .and(ct_object_path())
@@ -204,7 +234,7 @@ impl CtAttestationMock {
                 .and(ct_object_path())
                 .respond_with(AttestationResponder {
                     signer: signer.clone(),
-                    ciphertext_digest: digest,
+                    ciphertext_digest: AGREED_CIPHERTEXT_DIGEST,
                 })
                 .with_priority(2)
                 .mount(server)
