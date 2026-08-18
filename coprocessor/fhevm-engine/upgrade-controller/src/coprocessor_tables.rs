@@ -178,6 +178,47 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
         conflict_cols: &[],
     },
     // ---------------------------------------------------------------------
+    // Deprecated wave1 branch-context state: no v0.15 binary reads or writes
+    // these, so no gcs.* duplicate is created; a v0.16 migration drops them
+    // (see db-migration/DEPRECATIONS.md). Remove these entries together with
+    // that migration.
+    // ---------------------------------------------------------------------
+    CoprocessorTable {
+        name: "computations_branch",
+        duplicated: false,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
+        name: "pbs_computations_branch",
+        duplicated: false,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
+        name: "allowed_handles_branch",
+        duplicated: false,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
+        name: "ciphertext_digest_branch",
+        duplicated: false,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
+        name: "ciphertexts_branch",
+        duplicated: false,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
+        name: "ciphertexts128_branch",
+        duplicated: false,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
+        name: "coprocessor_settlement",
+        duplicated: false,
+        conflict_cols: &[],
+    },
+    // ---------------------------------------------------------------------
     // Ignored: no gcs.* duplicate. Shared configuration, key material, and
     // control-plane / listener-progress state that both stacks must agree on
     // (or that only the always-live blue stack owns). This preserves the
