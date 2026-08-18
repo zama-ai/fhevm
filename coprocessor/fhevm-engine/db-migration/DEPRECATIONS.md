@@ -2,7 +2,7 @@
 
 ## wave1 branch-context state — deprecated in v0.15, removed in v0.16
 
-The wave1 branch-context (block-scoped materialisation) staging schema is
+The wave1 branch-context (block-scoped materialization) staging schema is
 retired in two releases so that neither release requires ordering between the
 db-migration Job and the service Deployment rollout (the migration Job is not
 hook-gated and may run concurrently with the rollout):
