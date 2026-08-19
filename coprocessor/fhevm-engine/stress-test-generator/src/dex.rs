@@ -6,7 +6,7 @@ use crate::utils::{
 use crate::zk_gen::generate_random_handle_amount_if_none;
 use alloy_primitives::Address;
 use fhevm_engine_common::types::AllowEvents;
-use host_listener::contracts::{TfheContract, TfheContract::TfheContractEvents};
+use fhevm_host_bindings::fhevm_executor::{FHEVMExecutor, FHEVMExecutor::FHEVMExecutorEvents};
 use host_listener::database::tfhe_event_propagate::{
     Database as ListenerDatabase, Handle, ScalarByte,
 };
@@ -51,7 +51,7 @@ async fn dex_swap_request_update_dex_balance(
     )
     .await?;
     let sent_amount = next_random_handle(DEF_TYPE);
-    let event = tfhe_event(TfheContractEvents::FheSub(TfheContract::FheSub {
+    let event = tfhe_event(FHEVMExecutorEvents::FheSub(FHEVMExecutor::FheSub {
         caller,
         lhs: new_current_balance,
         rhs: current_dex_balance,
@@ -88,7 +88,7 @@ async fn dex_swap_request_finalize(
     let sent =
         generate_random_handle_amount_if_none(ctx, sent, contract_address, user_address).await?;
     let pending_in = next_random_handle(DEF_TYPE);
-    let event = tfhe_event(TfheContractEvents::FheAdd(TfheContract::FheAdd {
+    let event = tfhe_event(FHEVMExecutorEvents::FheAdd(FHEVMExecutor::FheAdd {
         caller,
         lhs: to_balance,
         rhs: sent,
@@ -97,7 +97,7 @@ async fn dex_swap_request_finalize(
     }));
     insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, true).await?;
     let pending_total_token_in = next_random_handle(DEF_TYPE);
-    let event = tfhe_event(TfheContractEvents::FheAdd(TfheContract::FheAdd {
+    let event = tfhe_event(FHEVMExecutorEvents::FheAdd(FHEVMExecutor::FheAdd {
         caller,
         lhs: total_dex_token_in,
         rhs: sent,
@@ -296,7 +296,7 @@ async fn dex_swap_claim_prepare(
     let mut amount_1_out = pending_0_in;
     if total_dex_token_1_in != 0 {
         let big_pending_1_in = next_random_handle(crate::utils::FheType::FheUint128);
-        let event = tfhe_event(TfheContractEvents::Cast(TfheContract::Cast {
+        let event = tfhe_event(FHEVMExecutorEvents::Cast(FHEVMExecutor::Cast {
             caller,
             ct: pending_1_in,
             toType: crate::utils::FheType::FheUint128 as u8,
@@ -315,7 +315,7 @@ async fn dex_swap_claim_prepare(
         )
         .await?;
         let big_amount_0_out_mul = next_random_handle(crate::utils::FheType::FheUint128);
-        let event = tfhe_event(TfheContractEvents::FheMul(TfheContract::FheMul {
+        let event = tfhe_event(FHEVMExecutorEvents::FheMul(FHEVMExecutor::FheMul {
             caller,
             lhs: big_pending_1_in,
             rhs: total_dex_token_0_out_te,
@@ -335,7 +335,7 @@ async fn dex_swap_claim_prepare(
         )
         .await?;
         let big_amount_0_out_div = next_random_handle(crate::utils::FheType::FheUint128);
-        let event = tfhe_event(TfheContractEvents::FheDiv(TfheContract::FheDiv {
+        let event = tfhe_event(FHEVMExecutorEvents::FheDiv(FHEVMExecutor::FheDiv {
             caller,
             lhs: big_amount_0_out_mul,
             rhs: total_dex_token_1_in_te,
@@ -344,7 +344,7 @@ async fn dex_swap_claim_prepare(
         }));
         insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, false).await?;
         amount_0_out = next_random_handle(crate::utils::FheType::FheUint64);
-        let event = tfhe_event(TfheContractEvents::Cast(TfheContract::Cast {
+        let event = tfhe_event(FHEVMExecutorEvents::Cast(FHEVMExecutor::Cast {
             caller,
             ct: big_amount_0_out_div,
             toType: crate::utils::FheType::FheUint64 as u8,
@@ -354,7 +354,7 @@ async fn dex_swap_claim_prepare(
     }
     if total_dex_token_0_in != 0 {
         let big_pending_0_in = next_random_handle(crate::utils::FheType::FheUint128);
-        let event = tfhe_event(TfheContractEvents::Cast(TfheContract::Cast {
+        let event = tfhe_event(FHEVMExecutorEvents::Cast(FHEVMExecutor::Cast {
             caller,
             ct: pending_0_in,
             toType: crate::utils::FheType::FheUint128 as u8,
@@ -373,7 +373,7 @@ async fn dex_swap_claim_prepare(
         )
         .await?;
         let big_amount_1_out_mul = next_random_handle(crate::utils::FheType::FheUint128);
-        let event = tfhe_event(TfheContractEvents::FheMul(TfheContract::FheMul {
+        let event = tfhe_event(FHEVMExecutorEvents::FheMul(FHEVMExecutor::FheMul {
             caller,
             lhs: big_pending_0_in,
             rhs: total_dex_token_1_out_te,
@@ -393,7 +393,7 @@ async fn dex_swap_claim_prepare(
         )
         .await?;
         let big_amount_1_out_div = next_random_handle(crate::utils::FheType::FheUint128);
-        let event = tfhe_event(TfheContractEvents::FheDiv(TfheContract::FheDiv {
+        let event = tfhe_event(FHEVMExecutorEvents::FheDiv(FHEVMExecutor::FheDiv {
             caller,
             lhs: big_amount_1_out_mul,
             rhs: total_dex_token_0_in_te,
@@ -402,7 +402,7 @@ async fn dex_swap_claim_prepare(
         }));
         insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, false).await?;
         amount_1_out = next_random_handle(crate::utils::FheType::FheUint64);
-        let event = tfhe_event(TfheContractEvents::Cast(TfheContract::Cast {
+        let event = tfhe_event(FHEVMExecutorEvents::Cast(FHEVMExecutor::Cast {
             caller,
             ct: big_amount_1_out_div,
             toType: crate::utils::FheType::FheUint64 as u8,

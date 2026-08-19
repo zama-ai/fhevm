@@ -471,13 +471,13 @@ mod tests {
     use alloy::primitives::FixedBytes;
     use alloy_primitives::Address;
 
-    use crate::contracts::TfheContract as C;
-    use crate::contracts::TfheContract::TfheContractEvents as E;
     use crate::database::dependence_chains::dependence_chains;
     use crate::database::tfhe_event_propagate::{Chain, ChainCache, LogTfhe};
     use crate::database::tfhe_event_propagate::{
         ClearConst, Handle, TransactionHash,
     };
+    use fhevm_host_bindings::fhevm_executor::FHEVMExecutor as C;
+    use fhevm_host_bindings::fhevm_executor::FHEVMExecutor::FHEVMExecutorEvents as E;
 
     fn caller() -> Address {
         Address::from_slice(&[0x11u8; 20])

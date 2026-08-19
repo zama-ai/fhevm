@@ -1,5 +1,5 @@
 use fhevm_engine_common::types::AllowEvents;
-use host_listener::contracts::{TfheContract, TfheContract::TfheContractEvents};
+use fhevm_host_bindings::fhevm_executor::{FHEVMExecutor, FHEVMExecutor::FHEVMExecutorEvents};
 use host_listener::database::tfhe_event_propagate::{
     Database as ListenerDatabase, Handle, ScalarByte,
 };
@@ -47,7 +47,7 @@ pub async fn erc20_transaction(
     info!(target: "tool", "ERC20 Transfer: {} -> {}: {}", source, destination, amount);
 
     let has_enough_funds = next_random_handle(FheType::FheBool);
-    let event = tfhe_event(TfheContractEvents::FheGe(TfheContract::FheGe {
+    let event = tfhe_event(FHEVMExecutorEvents::FheGe(FHEVMExecutor::FheGe {
         caller,
         lhs: source,
         rhs: amount,
@@ -60,7 +60,7 @@ pub async fn erc20_transaction(
     match variant {
         ERCTransferVariant::Whitepaper => {
             let new_destination_target = next_random_handle(DEF_TYPE);
-            let event = tfhe_event(TfheContractEvents::FheAdd(TfheContract::FheAdd {
+            let event = tfhe_event(FHEVMExecutorEvents::FheAdd(FHEVMExecutor::FheAdd {
                 caller,
                 lhs: destination,
                 rhs: amount,
@@ -68,8 +68,8 @@ pub async fn erc20_transaction(
                 scalarByte: ScalarByte::from(false as u8),
             }));
             insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, false).await?;
-            let event = tfhe_event(TfheContractEvents::FheIfThenElse(
-                TfheContract::FheIfThenElse {
+            let event = tfhe_event(FHEVMExecutorEvents::FheIfThenElse(
+                FHEVMExecutor::FheIfThenElse {
                     caller,
                     control: has_enough_funds,
                     ifTrue: new_destination_target,
@@ -87,7 +87,7 @@ pub async fn erc20_transaction(
             )
             .await?;
             let new_source_target = next_random_handle(DEF_TYPE);
-            let event = tfhe_event(TfheContractEvents::FheSub(TfheContract::FheSub {
+            let event = tfhe_event(FHEVMExecutorEvents::FheSub(FHEVMExecutor::FheSub {
                 caller,
                 lhs: source,
                 rhs: amount,
@@ -95,8 +95,8 @@ pub async fn erc20_transaction(
                 scalarByte: ScalarByte::from(false as u8),
             }));
             insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, false).await?;
-            let event = tfhe_event(TfheContractEvents::FheIfThenElse(
-                TfheContract::FheIfThenElse {
+            let event = tfhe_event(FHEVMExecutorEvents::FheIfThenElse(
+                FHEVMExecutor::FheIfThenElse {
                     caller,
                     control: has_enough_funds,
                     ifTrue: new_source_target,
@@ -116,7 +116,7 @@ pub async fn erc20_transaction(
         }
         ERCTransferVariant::NoCMUX => {
             let cast_has_enough_funds = next_random_handle(DEF_TYPE);
-            let event = tfhe_event(TfheContractEvents::Cast(TfheContract::Cast {
+            let event = tfhe_event(FHEVMExecutorEvents::Cast(FHEVMExecutor::Cast {
                 caller,
                 ct: has_enough_funds,
                 toType: 5u8,
@@ -124,7 +124,7 @@ pub async fn erc20_transaction(
             }));
             insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, false).await?;
             let select_amount = next_random_handle(DEF_TYPE);
-            let event = tfhe_event(TfheContractEvents::FheMul(TfheContract::FheMul {
+            let event = tfhe_event(FHEVMExecutorEvents::FheMul(FHEVMExecutor::FheMul {
                 caller,
                 lhs: amount,
                 rhs: cast_has_enough_funds,
@@ -132,7 +132,7 @@ pub async fn erc20_transaction(
                 scalarByte: ScalarByte::from(false as u8),
             }));
             insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, false).await?;
-            let event = tfhe_event(TfheContractEvents::FheAdd(TfheContract::FheAdd {
+            let event = tfhe_event(FHEVMExecutorEvents::FheAdd(FHEVMExecutor::FheAdd {
                 caller,
                 lhs: destination,
                 rhs: select_amount,
@@ -148,7 +148,7 @@ pub async fn erc20_transaction(
                 transaction_id,
             )
             .await?;
-            let event = tfhe_event(TfheContractEvents::FheSub(TfheContract::FheSub {
+            let event = tfhe_event(FHEVMExecutorEvents::FheSub(FHEVMExecutor::FheSub {
                 caller,
                 lhs: source,
                 rhs: select_amount,

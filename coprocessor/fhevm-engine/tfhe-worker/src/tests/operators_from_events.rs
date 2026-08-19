@@ -1,8 +1,8 @@
 use bigdecimal::num_bigint::BigInt;
 use serial_test::serial;
 
-use host_listener::contracts::TfheContract;
-use host_listener::contracts::TfheContract::TfheContractEvents;
+use fhevm_host_bindings::fhevm_executor::FHEVMExecutor;
+use fhevm_host_bindings::fhevm_executor::FHEVMExecutor::FHEVMExecutorEvents;
 use host_listener::database::tfhe_event_propagate::Handle;
 
 use crate::tests::event_helpers::{
@@ -68,10 +68,10 @@ fn binary_op_to_event(
     rhs: &Handle,
     r_scalar: &BigInt,
     result: &Handle,
-) -> TfheContractEvents {
+) -> FHEVMExecutorEvents {
     use fhevm_engine_common::types::SupportedFheOperations as S;
-    use host_listener::contracts::TfheContract as C;
-    use host_listener::contracts::TfheContract::TfheContractEvents as E;
+    use fhevm_host_bindings::fhevm_executor::FHEVMExecutor as C;
+    use fhevm_host_bindings::fhevm_executor::FHEVMExecutor::FHEVMExecutorEvents as E;
     use host_listener::database::tfhe_event_propagate::ScalarByte;
     let caller = zero_address();
     let s_byte = |is_scalar: bool| ScalarByte::from(is_scalar as u8);
@@ -268,7 +268,7 @@ async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Err
             &listener_db,
             &mut tx,
             transaction_id,
-            TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
+            FHEVMExecutorEvents::TrivialEncrypt(FHEVMExecutor::TrivialEncrypt {
                 caller,
                 pt: lhs_bytes,
                 toType: to_ty(op.input_types),
@@ -283,7 +283,7 @@ async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Err
                 &listener_db,
                 &mut tx,
                 transaction_id,
-                TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
+                FHEVMExecutorEvents::TrivialEncrypt(FHEVMExecutor::TrivialEncrypt {
                     caller,
                     pt: rhs_bytes,
                     toType: to_ty(op.input_types),
@@ -369,7 +369,7 @@ async fn test_fhe_binary_operands_events_panic() -> Result<(), Box<dyn std::erro
             &listener_db,
             &mut tx,
             transaction_id,
-            TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
+            FHEVMExecutorEvents::TrivialEncrypt(FHEVMExecutor::TrivialEncrypt {
                 caller,
                 pt: lhs_bytes,
                 toType: to_ty(op.input_types),
@@ -384,7 +384,7 @@ async fn test_fhe_binary_operands_events_panic() -> Result<(), Box<dyn std::erro
                 &listener_db,
                 &mut tx,
                 transaction_id,
-                TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
+                FHEVMExecutorEvents::TrivialEncrypt(FHEVMExecutor::TrivialEncrypt {
                     caller,
                     pt: rhs_bytes,
                     toType: to_ty(op.input_types),
@@ -423,10 +423,10 @@ fn unary_op_to_event(
     op: &UnaryOperatorTestCase,
     input: &Handle,
     result: &Handle,
-) -> TfheContractEvents {
+) -> FHEVMExecutorEvents {
     use fhevm_engine_common::types::SupportedFheOperations as S;
-    use host_listener::contracts::TfheContract as C;
-    use host_listener::contracts::TfheContract::TfheContractEvents as E;
+    use fhevm_host_bindings::fhevm_executor::FHEVMExecutor as C;
+    use fhevm_host_bindings::fhevm_executor::FHEVMExecutor::FHEVMExecutorEvents as E;
 
     let caller = zero_address();
     let input = *input;
@@ -487,7 +487,7 @@ async fn test_fhe_unary_operands_events() -> Result<(), Box<dyn std::error::Erro
             &listener_db,
             &mut tx,
             transaction_id,
-            TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
+            FHEVMExecutorEvents::TrivialEncrypt(FHEVMExecutor::TrivialEncrypt {
                 caller,
                 pt: inp_bytes,
                 toType: to_ty(op.operand_types),
@@ -556,7 +556,7 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
         &listener_db,
         &mut tx,
         transaction_id,
-        TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
+        FHEVMExecutorEvents::TrivialEncrypt(FHEVMExecutor::TrivialEncrypt {
             caller,
             pt: as_scalar_uint(&BigInt::from(0)),
             toType: to_ty(fhe_bool_type),
@@ -571,7 +571,7 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
         &listener_db,
         &mut tx,
         transaction_id,
-        TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
+        FHEVMExecutorEvents::TrivialEncrypt(FHEVMExecutor::TrivialEncrypt {
             caller,
             pt: as_scalar_uint(&BigInt::from(1)),
             toType: to_ty(fhe_bool_type),
@@ -604,7 +604,7 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
                 &listener_db,
                 &mut tx,
                 transaction_id,
-                TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
+                FHEVMExecutorEvents::TrivialEncrypt(FHEVMExecutor::TrivialEncrypt {
                     caller,
                     pt: as_scalar_uint(&left_input),
                     toType: to_ty(*input_types),
@@ -619,7 +619,7 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
                 &listener_db,
                 &mut tx,
                 transaction_id,
-                TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
+                FHEVMExecutorEvents::TrivialEncrypt(FHEVMExecutor::TrivialEncrypt {
                     caller,
                     pt: as_scalar_uint(&right_input),
                     toType: to_ty(*input_types),
@@ -646,7 +646,7 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
                 &listener_db,
                 &mut tx,
                 transaction_id,
-                TfheContractEvents::FheIfThenElse(TfheContract::FheIfThenElse {
+                FHEVMExecutorEvents::FheIfThenElse(FHEVMExecutor::FheIfThenElse {
                     caller,
                     control: *input_handle,
                     ifTrue: left_handle,
@@ -724,7 +724,7 @@ async fn test_fhe_cast_events() -> Result<(), Box<dyn std::error::Error>> {
                 &listener_db,
                 &mut tx,
                 transaction_id,
-                TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
+                FHEVMExecutorEvents::TrivialEncrypt(FHEVMExecutor::TrivialEncrypt {
                     caller,
                     pt: as_scalar_uint(&BigInt::from(input)),
                     toType: to_ty(*type_from),
@@ -739,7 +739,7 @@ async fn test_fhe_cast_events() -> Result<(), Box<dyn std::error::Error>> {
                 &listener_db,
                 &mut tx,
                 transaction_id,
-                TfheContractEvents::Cast(TfheContract::Cast {
+                FHEVMExecutorEvents::Cast(FHEVMExecutor::Cast {
                     caller,
                     ct: input_handle,
                     toType: to_ty(*type_to),
@@ -833,7 +833,7 @@ async fn test_op_trivial_encrypt() -> Result<(), Box<dyn std::error::Error>> {
             &listener_db,
             &mut tx,
             tx_id,
-            TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
+            FHEVMExecutorEvents::TrivialEncrypt(FHEVMExecutor::TrivialEncrypt {
                 caller: zero_address(),
                 pt: as_scalar_uint(&value),
                 toType: to_ty(fhe_type),
@@ -910,7 +910,7 @@ async fn test_fhe_sum_events() -> Result<(), Box<dyn std::error::Error>> {
             &listener_db,
             &mut tx,
             tx_id,
-            TfheContractEvents::FheSum(TfheContract::FheSum {
+            FHEVMExecutorEvents::FheSum(FHEVMExecutor::FheSum {
                 caller: zero_address(),
                 values: vec![handle_a, handle_b],
                 result: output,
@@ -1000,7 +1000,7 @@ async fn test_fhe_is_in_events() -> Result<(), Box<dyn std::error::Error>> {
                 &listener_db,
                 &mut tx,
                 tx_id,
-                TfheContractEvents::FheIsIn(TfheContract::FheIsIn {
+                FHEVMExecutorEvents::FheIsIn(FHEVMExecutor::FheIsIn {
                     caller: zero_address(),
                     value: value_handle,
                     values: set_handles,
@@ -1111,7 +1111,7 @@ async fn test_fhe_mul_div_events() -> Result<(), Box<dyn std::error::Error>> {
                 &listener_db,
                 &mut tx,
                 tx_id,
-                TfheContractEvents::FheMulDiv(TfheContract::FheMulDiv {
+                FHEVMExecutorEvents::FheMulDiv(FHEVMExecutor::FheMulDiv {
                     caller: zero_address(),
                     factor1: factor1_handle,
                     factor2: factor2_handle,

@@ -4,7 +4,7 @@ use crate::utils::{
 };
 use crate::zk_gen::generate_random_handle_amount_if_none;
 use fhevm_engine_common::types::AllowEvents;
-use host_listener::contracts::{TfheContract, TfheContract::TfheContractEvents};
+use fhevm_host_bindings::fhevm_executor::{FHEVMExecutor, FHEVMExecutor::FHEVMExecutorEvents};
 use host_listener::database::tfhe_event_propagate::{
     Database as ListenerDatabase, Handle, ScalarByte,
 };
@@ -47,7 +47,7 @@ pub async fn add_chain_transaction(
 
     for i in 0..length {
         let new_counter = next_random_handle(FheType::FheUint64);
-        let event = tfhe_event(TfheContractEvents::FheAdd(TfheContract::FheAdd {
+        let event = tfhe_event(FHEVMExecutorEvents::FheAdd(FHEVMExecutor::FheAdd {
             caller,
             lhs: counter,
             rhs: amount,
@@ -111,7 +111,7 @@ pub async fn mul_chain_transaction(
 
     for i in 0..length {
         let new_counter = next_random_handle(FheType::FheUint64);
-        let event = tfhe_event(TfheContractEvents::FheMul(TfheContract::FheMul {
+        let event = tfhe_event(FHEVMExecutorEvents::FheMul(FHEVMExecutor::FheMul {
             caller,
             lhs: counter,
             rhs: amount,

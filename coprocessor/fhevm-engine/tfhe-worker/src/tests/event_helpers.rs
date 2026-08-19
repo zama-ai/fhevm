@@ -2,7 +2,7 @@ use alloy::primitives::{Address, FixedBytes, Log};
 use bigdecimal::num_bigint::BigInt;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::types::AllowEvents;
-use host_listener::contracts::TfheContract::TfheContractEvents;
+use fhevm_host_bindings::fhevm_executor::FHEVMExecutor::FHEVMExecutorEvents;
 use host_listener::database::tfhe_event_propagate::{
     ClearConst, Database as ListenerDatabase, Handle, LogTfhe, ProducerBlock, ToType, Transaction,
 };
@@ -83,8 +83,8 @@ pub fn scalar_u128_handle(value: u128) -> Handle {
     Handle::from(out)
 }
 
-pub fn tfhe_event(data: TfheContractEvents) -> Log<TfheContractEvents> {
-    Log::<TfheContractEvents> {
+pub fn tfhe_event(data: FHEVMExecutorEvents) -> Log<FHEVMExecutorEvents> {
+    Log::<FHEVMExecutorEvents> {
         address: zero_address(),
         data,
     }
@@ -97,8 +97,8 @@ fn next_log_index() -> u64 {
 
 pub fn log_with_tx(
     tx_hash: Handle,
-    inner: Log<TfheContractEvents>,
-) -> alloy::rpc::types::Log<TfheContractEvents> {
+    inner: Log<FHEVMExecutorEvents>,
+) -> alloy::rpc::types::Log<FHEVMExecutorEvents> {
     alloy::rpc::types::Log {
         inner,
         block_hash: None,
@@ -115,7 +115,7 @@ pub async fn insert_event(
     listener_db: &ListenerDatabase,
     tx: &mut Transaction<'_>,
     tx_id: Handle,
-    event: TfheContractEvents,
+    event: FHEVMExecutorEvents,
     is_allowed: bool,
 ) -> Result<(), sqlx::Error> {
     let log = log_with_tx(tx_id, tfhe_event(event));
@@ -143,12 +143,12 @@ pub async fn insert_trivial_encrypt(
     result: Handle,
     is_allowed: bool,
 ) -> Result<(), sqlx::Error> {
-    use host_listener::contracts::TfheContract;
+    use fhevm_host_bindings::fhevm_executor::FHEVMExecutor;
     insert_event(
         listener_db,
         tx,
         tx_id,
-        TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
+        FHEVMExecutorEvents::TrivialEncrypt(FHEVMExecutor::TrivialEncrypt {
             caller: zero_address(),
             pt: as_scalar_uint(&BigInt::from(value)),
             toType: to_ty(to_type),

@@ -4,8 +4,8 @@ use crate::tests::event_helpers::{
 };
 use alloy::primitives::FixedBytes;
 use bigdecimal::num_bigint::BigInt;
-use host_listener::contracts::TfheContract;
-use host_listener::contracts::TfheContract::TfheContractEvents;
+use fhevm_host_bindings::fhevm_executor::FHEVMExecutor;
+use fhevm_host_bindings::fhevm_executor::FHEVMExecutor::FHEVMExecutorEvents;
 use serial_test::serial;
 use std::str::FromStr;
 
@@ -84,7 +84,7 @@ async fn test_fhe_random_basic() -> Result<(), Box<dyn std::error::Error>> {
             &harness.listener_db,
             &mut tx,
             tx_id,
-            TfheContractEvents::FheRand(TfheContract::FheRand {
+            FHEVMExecutorEvents::FheRand(FHEVMExecutor::FheRand {
                 caller: zero_address(),
                 randType: to_ty(rand_type),
                 seed: FixedBytes::from([0_u8; 16]),
@@ -100,7 +100,7 @@ async fn test_fhe_random_basic() -> Result<(), Box<dyn std::error::Error>> {
             &harness.listener_db,
             &mut tx,
             tx_id,
-            TfheContractEvents::FheRand(TfheContract::FheRand {
+            FHEVMExecutorEvents::FheRand(FHEVMExecutor::FheRand {
                 caller: zero_address(),
                 randType: to_ty(rand_type),
                 seed: FixedBytes::from([0_u8; 16]),
@@ -116,7 +116,7 @@ async fn test_fhe_random_basic() -> Result<(), Box<dyn std::error::Error>> {
             &harness.listener_db,
             &mut tx,
             tx_id,
-            TfheContractEvents::FheRand(TfheContract::FheRand {
+            FHEVMExecutorEvents::FheRand(FHEVMExecutor::FheRand {
                 caller: zero_address(),
                 randType: to_ty(rand_type),
                 seed: FixedBytes::from([42_u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
@@ -221,7 +221,7 @@ async fn test_fhe_random_bounded() -> Result<(), Box<dyn std::error::Error>> {
             &harness.listener_db,
             &mut tx,
             tx_id,
-            TfheContractEvents::FheRandBounded(TfheContract::FheRandBounded {
+            FHEVMExecutorEvents::FheRandBounded(FHEVMExecutor::FheRandBounded {
                 caller: zero_address(),
                 upperBound: as_scalar_uint(&bound),
                 randType: to_ty(rand_type),
@@ -239,7 +239,7 @@ async fn test_fhe_random_bounded() -> Result<(), Box<dyn std::error::Error>> {
             &harness.listener_db,
             &mut tx,
             tx_id,
-            TfheContractEvents::FheRandBounded(TfheContract::FheRandBounded {
+            FHEVMExecutorEvents::FheRandBounded(FHEVMExecutor::FheRandBounded {
                 caller: zero_address(),
                 upperBound: as_scalar_uint(&bound),
                 randType: to_ty(rand_type),

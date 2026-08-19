@@ -57,6 +57,7 @@ url = "2.5.7"
 
 # local dependencies
 fhevm-engine-common = { path = "../fhevm-engine-common" }
+fhevm_host_bindings = { path = "../../../host-contracts/rust_bindings", default-features = false }
 # TODO: integrate github or better path when available
 consumer = { path = "../../../listener/crates/consumer" }
 primitives = { path = "../../../listener/crates/shared/primitives" }
@@ -65,7 +66,6 @@ primitives = { path = "../../../listener/crates/shared/primitives" }
 alloy = { workspace = true, features = ["node-bindings"] }
 anyhow = { workspace = true }
 aws-smithy-mocks = "0.1.1"
-fhevm_host_bindings = { path = "../../../host-contracts/rust_bindings", default-features = false }
 serial_test = { workspace = true }
 test-harness = { path = "../test-harness" }
 tracing-test = { workspace = true }

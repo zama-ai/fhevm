@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
 
 use fhevm_engine_common::types::AllowEvents;
-use host_listener::contracts::{TfheContract, TfheContract::TfheContractEvents};
+use fhevm_host_bindings::fhevm_executor::{FHEVMExecutor, FHEVMExecutor::FHEVMExecutorEvents};
 use host_listener::database::tfhe_event_propagate::{
     Database as ListenerDatabase, Handle, ScalarByte,
 };
@@ -86,7 +86,7 @@ pub async fn batch_submit_encrypted_bids(
            );
         */
         let result_handle = next_random_handle(DEF_TYPE);
-        let event = tfhe_event(TfheContractEvents::FheAdd(TfheContract::FheAdd {
+        let event = tfhe_event(FHEVMExecutorEvents::FheAdd(FHEVMExecutor::FheAdd {
             caller,
             lhs: e_total_payment_value,
             rhs: e_paid,
@@ -164,7 +164,7 @@ pub async fn process_bid_entry(
     .await?;
 
     let less_than_total_supply = next_random_handle(FheType::FheBool);
-    let event = tfhe_event(TfheContractEvents::FheLe(TfheContract::FheLe {
+    let event = tfhe_event(FHEVMExecutorEvents::FheLe(FHEVMExecutor::FheLe {
         caller,
         lhs: e_amount,
         rhs: total_supply,
@@ -186,8 +186,8 @@ pub async fn process_bid_entry(
     .await?;
 
     let result_handle = next_random_handle(DEF_TYPE);
-    let event = tfhe_event(TfheContractEvents::FheIfThenElse(
-        TfheContract::FheIfThenElse {
+    let event = tfhe_event(FHEVMExecutorEvents::FheIfThenElse(
+        FHEVMExecutor::FheIfThenElse {
             caller,
             control: less_than_total_supply,
             ifTrue: e_amount,
@@ -213,7 +213,7 @@ pub async fn process_bid_entry(
 
     let e_paid = next_random_handle(DEF_TYPE);
 
-    let event = tfhe_event(TfheContractEvents::FheMul(TfheContract::FheMul {
+    let event = tfhe_event(FHEVMExecutorEvents::FheMul(FHEVMExecutor::FheMul {
         caller,
         lhs: e_amount,
         rhs: e_price,
@@ -264,7 +264,7 @@ pub async fn process_batch_payment(
     .await?;
 
     let e_is_payment_confirmed = next_random_handle(FheType::FheBool);
-    let event = tfhe_event(TfheContractEvents::FheEq(TfheContract::FheEq {
+    let event = tfhe_event(FHEVMExecutorEvents::FheEq(FHEVMExecutor::FheEq {
         caller,
         lhs: e_total_paid,
         rhs: e_total_value,
@@ -308,8 +308,8 @@ pub async fn confirm_and_finalize_bid(
     */
 
     let result_handle = next_random_handle(DEF_TYPE);
-    let event = tfhe_event(TfheContractEvents::FheIfThenElse(
-        TfheContract::FheIfThenElse {
+    let event = tfhe_event(FHEVMExecutorEvents::FheIfThenElse(
+        FHEVMExecutor::FheIfThenElse {
             caller,
             control: e_is_payment_confirmed,
             ifTrue: bid_entry.e_amount,
@@ -321,8 +321,8 @@ pub async fn confirm_and_finalize_bid(
     bid_entry.e_amount = result_handle;
 
     let result_handle = next_random_handle(DEF_TYPE);
-    let event = tfhe_event(TfheContractEvents::FheIfThenElse(
-        TfheContract::FheIfThenElse {
+    let event = tfhe_event(FHEVMExecutorEvents::FheIfThenElse(
+        FHEVMExecutor::FheIfThenElse {
             caller,
             control: e_is_payment_confirmed,
             ifTrue: bid_entry.e_paid,
@@ -351,8 +351,8 @@ pub async fn confirm_and_finalize_bid(
             .entry(bid_entry.price)
             .and_modify(|updated_total_amount| {
                 let result_handle = next_random_handle(DEF_TYPE);
-                event = Some(tfhe_event(TfheContractEvents::FheAdd(
-                    TfheContract::FheAdd {
+                event = Some(tfhe_event(FHEVMExecutorEvents::FheAdd(
+                    FHEVMExecutor::FheAdd {
                         caller,
                         lhs: *updated_total_amount,
                         rhs: bid_entry.e_amount,
@@ -402,8 +402,8 @@ pub async fn confirm_and_finalize_bid(
             .entry(bid_entry.price)
             .and_modify(|updated_total_amount_by_token_price| {
                 let result_handle = next_random_handle(DEF_TYPE);
-                event = Some(tfhe_event(TfheContractEvents::FheAdd(
-                    TfheContract::FheAdd {
+                event = Some(tfhe_event(FHEVMExecutorEvents::FheAdd(
+                    FHEVMExecutor::FheAdd {
                         caller,
                         lhs: *updated_total_amount_by_token_price,
                         rhs: bid_entry.e_amount,

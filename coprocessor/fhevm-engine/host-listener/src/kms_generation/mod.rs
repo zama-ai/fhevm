@@ -5,7 +5,6 @@ use fhevm_engine_common::chain_id::ChainId;
 use sqlx::{Pool, Postgres, Transaction};
 use tracing::{error, info, warn};
 
-use crate::contracts::KMSGeneration::{self, KMSGenerationEvents};
 use crate::kms_generation::aws_s3::{download_key_from_s3, AwsS3Interface};
 use crate::kms_generation::database::{
     activate_ready_crs_activations, activate_ready_key_activations,
@@ -25,6 +24,9 @@ use crate::kms_generation::metrics::{
 };
 use crate::kms_generation::sks_key::{
     prepare_legacy_server_key_for_db, prepare_xof_key_set_for_db,
+};
+use fhevm_host_bindings::kms_generation::KMSGeneration::{
+    self, KMSGenerationEvents,
 };
 
 pub mod aws_s3;
@@ -136,11 +138,9 @@ pub async fn insert_kms_generation_events_tx(
                 .await?;
             }
             _ => {
-                warn!(
-                    ?log,
-                    ?event,
-                    "Unsupported KMSGeneration event type, skipping"
-                );
+                // KMSGenerationEvents has no Debug impl; the raw log already
+                // carries the identifying topics and data.
+                warn!(?log, "Unsupported KMSGeneration event type, skipping");
             }
         }
     }

@@ -9,9 +9,9 @@ use serial_test::serial;
 use sqlx::Row;
 use test_harness::instance::{setup_test_db, DBInstance, ImportMode};
 
+use fhevm_host_bindings::bridge_events::BridgeEvents;
+use fhevm_host_bindings::bridge_events::BridgeEvents::BridgeEventsEvents;
 use host_listener::cmd::block_history::BlockSummary;
-use host_listener::contracts::BridgeContract;
-use host_listener::contracts::BridgeContract::BridgeContractEvents;
 use host_listener::database::ingest::{
     ingest_block_logs, BlockLogs, IngestOptions,
 };
@@ -42,7 +42,7 @@ async fn fresh_db(chain_id: u64) -> (Database, DBInstance) {
 /// Ingests one bridge event end-to-end and returns whether a row was written.
 async fn ingest(
     db: &Database,
-    event: BridgeContractEvents,
+    event: BridgeEventsEvents,
     prev_block_hash: FixedBytes<32>,
     acl: Option<Address>,
 ) -> bool {
@@ -76,8 +76,8 @@ fn bridge_handle_event(
     src_handle: FixedBytes<32>,
     dst_chain_id: u64,
     guid: FixedBytes<32>,
-) -> BridgeContractEvents {
-    BridgeContractEvents::BridgeHandle(BridgeContract::BridgeHandle {
+) -> BridgeEventsEvents {
+    BridgeEventsEvents::BridgeHandle(BridgeEvents::BridgeHandle {
         senderDapp: Address::from([0xDA; 20]),
         srcHandle: src_handle,
         dstChainId: dst_chain_id,
@@ -221,7 +221,7 @@ async fn handle_bridged_with_valid_derivation_is_inserted() {
         BLOCK_TIMESTAMP,
     ));
     let event =
-        BridgeContractEvents::HandleBridged(BridgeContract::HandleBridged {
+        BridgeEventsEvents::HandleBridged(BridgeEvents::HandleBridged {
             receiverDapp: Address::from([0xDB; 20]),
             srcHandle: src_handle,
             dstHandle: dst_handle,
@@ -256,7 +256,7 @@ async fn handle_bridged_with_invalid_derivation_is_ignored() {
     // dst_handle that does NOT match the derivation -> must be ignored.
     let dst_handle = FixedBytes::from([0xFF; 32]);
     let event =
-        BridgeContractEvents::HandleBridged(BridgeContract::HandleBridged {
+        BridgeEventsEvents::HandleBridged(BridgeEvents::HandleBridged {
             receiverDapp: Address::from([0xDB; 20]),
             srcHandle: src_handle,
             dstHandle: dst_handle,
@@ -298,7 +298,7 @@ async fn handle_bridged_is_idempotent() {
         BLOCK_TIMESTAMP,
     ));
     let event = || {
-        BridgeContractEvents::HandleBridged(BridgeContract::HandleBridged {
+        BridgeEventsEvents::HandleBridged(BridgeEvents::HandleBridged {
             receiverDapp: Address::from([0xDB; 20]),
             srcHandle: src_handle,
             dstHandle: dst_handle,
@@ -338,7 +338,7 @@ async fn handle_bridged_without_acl_address_is_ignored() {
         BLOCK_TIMESTAMP,
     ));
     let event =
-        BridgeContractEvents::HandleBridged(BridgeContract::HandleBridged {
+        BridgeEventsEvents::HandleBridged(BridgeEvents::HandleBridged {
             receiverDapp: Address::from([0xDB; 20]),
             srcHandle: src_handle,
             dstHandle: dst_handle,
@@ -397,7 +397,7 @@ async fn ingest_fallback_block_at(
         .iter()
         .enumerate()
         .map(|(log_index, (dst_handle, plaintext, tx_seed))| {
-            let event = BridgeContract::FallbackGrantedPlaintext {
+            let event = BridgeEvents::FallbackGrantedPlaintext {
                 dstHandle: *dst_handle,
                 plaintext: *plaintext,
             };

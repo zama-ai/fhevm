@@ -4,7 +4,7 @@ use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::crs::CrsCache;
 use fhevm_engine_common::db_keys::DbKeyCache;
 use fhevm_engine_common::types::{AllowEvents, COMPUTED_HANDLE_INDEX_MARKER, HANDLE_VERSION};
-use host_listener::contracts::TfheContract::TfheContractEvents;
+use fhevm_host_bindings::fhevm_executor::FHEVMExecutor::FHEVMExecutorEvents;
 use host_listener::database::tfhe_event_propagate::{
     ClearConst, Database as ListenerDatabase, Handle, LogTfhe, TransactionHash,
 };
@@ -16,11 +16,11 @@ use std::sync::Arc;
 use tracing::info;
 
 use alloy::primitives::Log;
-pub fn tfhe_event(data: TfheContractEvents) -> Log<TfheContractEvents> {
+pub fn tfhe_event(data: FHEVMExecutorEvents) -> Log<FHEVMExecutorEvents> {
     let address = "0x0000000000000000000000000000000000000000"
         .parse()
         .unwrap();
-    Log::<TfheContractEvents> { address, data }
+    Log::<FHEVMExecutorEvents> { address, data }
 }
 
 pub const DEF_TYPE: FheType = FheType::FheUint64;
@@ -250,8 +250,8 @@ pub async fn generate_trivial_encrypt(
     let handle = next_random_handle(ct_type.clone());
     let ct_value = ct_value.unwrap_or(rand::rng().random::<u128>());
     let log = LogTfhe {
-        event: tfhe_event(TfheContractEvents::TrivialEncrypt(
-            host_listener::contracts::TfheContract::TrivialEncrypt {
+        event: tfhe_event(FHEVMExecutorEvents::TrivialEncrypt(
+            fhevm_host_bindings::fhevm_executor::FHEVMExecutor::TrivialEncrypt {
                 caller,
                 pt: as_scalar_uint(&BigInt::from(ct_value)),
                 toType: ct_type as u8,
@@ -418,7 +418,7 @@ pub async fn insert_tfhe_event(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     listener_event_to_db: &ListenerDatabase,
     transaction_hash: TransactionHash,
-    event: Log<TfheContractEvents>,
+    event: Log<FHEVMExecutorEvents>,
     is_allowed: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let started_at = tokio::time::Instant::now();
