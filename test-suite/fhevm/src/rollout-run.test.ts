@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import {
+  failureDiagnosticContainerNames,
   diagnosticLogArgs,
   diagnosticLogOutput,
   createRolloutReceipt,
@@ -286,6 +287,25 @@ describe("rollout runbook", () => {
         "kms-connector-3-kms-worker",
       ]),
     ).toEqual([1, 3, 4]);
+  });
+
+  test("retains runtime logs needed to diagnose rollout traffic failures", () => {
+    expect(
+      failureDiagnosticContainerNames([
+        { image: "image", imageId: "id", name: "fhevm-relayer", state: "running" },
+        { image: "image", imageId: "id", name: "coprocessor-gcs-tfhe-worker", state: "running" },
+        { image: "image", imageId: "id", name: "coprocessor1-gcs-zkproof-worker", state: "running" },
+        { image: "image", imageId: "id", name: "coprocessor-sns-worker", state: "exited" },
+        { image: "image", imageId: "id", name: "kms-core-2", state: "running" },
+        { image: "image", imageId: "id", name: "host-node", state: "running" },
+      ]),
+    ).toEqual([
+      "fhevm-relayer",
+      "coprocessor-gcs-tfhe-worker",
+      "coprocessor1-gcs-zkproof-worker",
+      "coprocessor-sns-worker",
+      "kms-core-2",
+    ]);
   });
 
   test("records a failed required Docker snapshot before rejecting it", async () => {
