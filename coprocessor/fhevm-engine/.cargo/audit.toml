@@ -3,8 +3,10 @@
 
 [advisories]
 # The ignored vulnerability RUSTSEC-2024-0388 is due to sqlx-mysql which is not used
-ignore = ["RUSTSEC-2023-0071", "RUSTSEC-2025-0111"]
+ignore = ["RUSTSEC-2023-0071", "RUSTSEC-2025-0111", "RUSTSEC-2026-0258"]
 # RUSTSEC-2025-0111 impacts only testcontainers
+# RUSTSEC-2026-0258: h2 0.4 is patched to 0.4.16; remaining hit is 0.3.27 via
+# hyper 0.14 (no 0.3 patch published).
 informational_warnings = ["unmaintained"]
 severity_threshold = "medium"
 
