@@ -105,27 +105,20 @@ async fn test_quorum_accepted_proof_is_replayed_only_locally() {
     let expected_ciphertext_count = handles.len() as i64;
     let expected_handles = handles.concat();
 
-    sqlx::query("DELETE FROM ciphertexts_branch WHERE handle = ANY($1::BYTEA[])")
-        .bind(&handles)
-        .execute(&pool)
-        .await
-        .unwrap();
     sqlx::query("DELETE FROM ciphertexts WHERE handle = ANY($1::BYTEA[])")
         .bind(&handles)
         .execute(&pool)
         .await
         .unwrap();
 
-    let missing_ciphertexts = sqlx::query_as::<_, (i64, i64)>(
-        "SELECT
-             (SELECT COUNT(*) FROM ciphertexts WHERE handle = ANY($1::BYTEA[])),
-             (SELECT COUNT(*) FROM ciphertexts_branch WHERE handle = ANY($1::BYTEA[]))",
+    let missing_ciphertexts = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM ciphertexts WHERE handle = ANY($1::BYTEA[])",
     )
     .bind(&handles)
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(missing_ciphertexts, (0, 0));
+    assert_eq!(missing_ciphertexts, 0);
 
     sqlx::query(
         "UPDATE verify_proofs
@@ -163,18 +156,15 @@ async fn test_quorum_accepted_proof_is_replayed_only_locally() {
         );
     }
 
-    let restored_ciphertexts = sqlx::query_as::<_, (i64, i64)>(
-        "SELECT
-             (SELECT COUNT(*) FROM ciphertexts WHERE handle = ANY($1::BYTEA[])),
-             (SELECT COUNT(*) FROM ciphertexts_branch WHERE handle = ANY($1::BYTEA[]))",
+    let restored_ciphertexts = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM ciphertexts WHERE handle = ANY($1::BYTEA[])",
     )
     .bind(&handles)
     .fetch_one(&pool)
     .await
     .unwrap();
     assert_eq!(
-        restored_ciphertexts,
-        (expected_ciphertext_count, expected_ciphertext_count),
+        restored_ciphertexts, expected_ciphertext_count,
         "successful local replay should restore every missing ciphertext"
     );
 }

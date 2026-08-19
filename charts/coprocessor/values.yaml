@@ -218,10 +218,12 @@ dbMigration:
   # ConfigMaps/Secrets (for example the IAM DB auth RDS CA ConfigMap), which
   # would not exist yet during a hook on fresh installs or first enablement.
   #
-  # Wave-1 upgrades still require the migration to complete before service
-  # Deployments roll; see RUNBOOK-wave1-block-scope.md. Infra may opt into a
-  # hook only if every Job dependency is pre-existing or rendered as an earlier
-  # hook with a lower hook weight.
+  # The wave1 *_branch shadow tables are deprecated in v0.15 (no v0.15 binary
+  # reads or writes them) but are only dropped by a v0.16 migration; see
+  # coprocessor/fhevm-engine/db-migration/DEPRECATIONS.md. This release
+  # therefore needs no ordering between the migration Job and the service
+  # Deployments. Infra may opt into a hook only if every Job dependency is
+  # pre-existing or rendered as an earlier hook with a lower hook weight.
   annotations: {}
   # annotations:
   #   "helm.sh/hook": "pre-upgrade"
