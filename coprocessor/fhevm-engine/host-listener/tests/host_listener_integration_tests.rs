@@ -14,7 +14,6 @@ use alloy::rpc::types::anvil::{ReorgOptions, TransactionData};
 use alloy::rpc::types::BlockNumberOrTag;
 use alloy::rpc::types::{Filter, TransactionRequest};
 use alloy::signers::local::PrivateKeySigner;
-use alloy::sol;
 use bigdecimal::BigDecimal;
 use fhevm_engine_common::chain_id::ChainId;
 use futures_util::future::try_join_all;
@@ -40,48 +39,19 @@ use host_listener::database::tfhe_event_propagate::{
     Database, ProducerBlock, ToType,
 };
 
-// contracts are compiled in build.rs/build_contract() using solc
-// json are generated in build.rs/build_contract() using solc
-sol!(
-    #[sol(rpc)]
-    #[derive(Debug, serde::Serialize, serde::Deserialize)]
-    FHEVMExecutorTest,
-    "artifacts/FHEVMExecutorTest.sol/FHEVMExecutorTest.json"
-);
-
-sol!(
-    #[sol(rpc)]
-    #[derive(Debug, serde::Serialize, serde::Deserialize)]
-    ACLTest,
-    "artifacts/ACLTest.sol/ACLTest.json"
-);
-
-sol!(
-    #[sol(rpc)]
-    #[derive(Debug, serde::Serialize, serde::Deserialize)]
-    KMSGenerationTest,
-    "artifacts/KMSGenerationTest.sol/KMSGenerationTest.json"
-);
-
-sol!(
-    #[sol(rpc)]
-    #[derive(Debug, serde::Serialize, serde::Deserialize)]
-    ProtocolConfigTest,
-    "artifacts/ProtocolConfigTest.sol/ProtocolConfigTest.json"
-);
-
-use crate::ACLTest::ACLTestInstance;
-use crate::FHEVMExecutorTest::FHEVMExecutorTestInstance;
-use crate::KMSGenerationTest::KMSGenerationTestInstance;
-use crate::ProtocolConfigTest::ProtocolConfigTestInstance;
+mod common;
+use common::{
+    allowed_request, delegate_for_user_decryption_request, fhe_add_request,
+    trivial_encrypt_request, RawLog, RawLogInstance,
+};
 
 const NB_EVENTS_PER_WALLET: i64 = 50;
 
 async fn emit_events<P, N>(
     wallets: &[EthereumWallet],
     url: &str,
-    tfhe_contract: FHEVMExecutorTestInstance<P, N>,
-    acl_contract: ACLTestInstance<P, N>,
+    tfhe_contract: RawLogInstance<P, N>,
+    acl_contract: RawLogInstance<P, N>,
     reorg: bool,
     nb_events_per_wallet: i64,
 ) where
@@ -107,21 +77,28 @@ async fn emit_events<P, N>(
                     .connect_ws(WsConnect::new(url.to_string()))
                     .await
                     .unwrap();
+                let caller = provider
+                    .signer_addresses()
+                    .next()
+                    .expect("anvil signer available");
                 let to_type: ToType = 4_u8;
                 let pt = U256::from(UNIQUE_INT.fetch_add(1, Ordering::SeqCst));
-                let tfhe_txn_req = tfhe_contract
-                    .trivialEncrypt(pt, to_type)
-                    .into_transaction_request();
+                let tfhe_txn_req = trivial_encrypt_request(
+                    &tfhe_contract,
+                    caller,
+                    pt,
+                    to_type,
+                );
                 let pending_txn = provider
                     .send_transaction(tfhe_txn_req.clone())
                     .await
                     .unwrap();
                 let receipt = pending_txn.get_receipt().await.unwrap();
                 assert!(receipt.status());
-                let add: Vec<_> = provider.signer_addresses().collect();
-                let acl_txn_req = acl_contract
-                    .allow(pt.into(), add[0])
-                    .into_transaction_request();
+                // Mock quirk: allow() used plaintext-as-handle, not the
+                // trivialEncrypt result handle.
+                let acl_txn_req =
+                    allowed_request(&acl_contract, caller, caller, pt.into());
                 if reorg_point && i_wallet == 0 {
                     // ensure no event is lost also on losing chain to facilitate the test assert
                     tokio::time::sleep(tokio::time::Duration::from_secs(5))
@@ -194,10 +171,10 @@ struct Setup {
     args: Args,
     anvil: AnvilInstance,
     wallets: Vec<EthereumWallet>,
-    acl_contract: ACLTestInstance<SetupProvider>,
-    tfhe_contract: FHEVMExecutorTestInstance<SetupProvider>,
-    kms_generation_contract: KMSGenerationTestInstance<SetupProvider>,
-    protocol_config_contract: ProtocolConfigTestInstance<SetupProvider>,
+    acl_contract: RawLogInstance<SetupProvider>,
+    tfhe_contract: RawLogInstance<SetupProvider>,
+    kms_generation_contract: RawLogInstance<SetupProvider>,
+    protocol_config_contract: RawLogInstance<SetupProvider>,
     db_pool: sqlx::Pool<sqlx::Postgres>,
     _test_instance: test_harness::instance::DBInstance, // maintain db alive
     health_check_url: String,
@@ -238,12 +215,10 @@ async fn setup_with_block_time(
         .connect_ws(WsConnect::new(url.clone()))
         .await?;
 
-    let tfhe_contract = FHEVMExecutorTest::deploy(provider.clone()).await?;
-    let acl_contract = ACLTest::deploy(provider.clone()).await?;
-    let kms_generation_contract =
-        KMSGenerationTest::deploy(provider.clone()).await?;
-    let protocol_config_contract =
-        ProtocolConfigTest::deploy(provider.clone()).await?;
+    let tfhe_contract = RawLog::deploy(provider.clone()).await?;
+    let acl_contract = RawLog::deploy(provider.clone()).await?;
+    let kms_generation_contract = RawLog::deploy(provider.clone()).await?;
+    let protocol_config_contract = RawLog::deploy(provider.clone()).await?;
     let args = Args {
         url,
         initial_block_time: 1,
@@ -499,29 +474,38 @@ async fn emit_dependent_burst_seeded(
         .unwrap_or_else(|| trivial_encrypt_handle(U256::from(seed), 4_u8));
 
     if input_handle.is_none() {
-        let trivial_tx = setup
-            .tfhe_contract
-            .trivialEncrypt(U256::from(seed), 4_u8)
-            .into_transaction_request();
+        let trivial_tx = trivial_encrypt_request(
+            &setup.tfhe_contract,
+            signer_address,
+            U256::from(seed),
+            4_u8,
+        );
         pending.push(provider.send_transaction(trivial_tx).await?);
-        let allow_trivial_tx = setup
-            .acl_contract
-            .allow(current, signer_address)
-            .into_transaction_request();
+        let allow_trivial_tx = allowed_request(
+            &setup.acl_contract,
+            signer_address,
+            signer_address,
+            current,
+        );
         pending.push(provider.send_transaction(allow_trivial_tx).await?);
     }
 
     for _ in 0..depth {
         let next = fhe_add_handle(current, current, 0_u8);
-        let add_tx = setup
-            .tfhe_contract
-            .fheAdd(current, current, FixedBytes::<1>::from([0_u8]))
-            .into_transaction_request();
+        let add_tx = fhe_add_request(
+            &setup.tfhe_contract,
+            signer_address,
+            current,
+            current,
+            FixedBytes::<1>::from([0_u8]),
+        );
         pending.push(provider.send_transaction(add_tx).await?);
-        let allow_tx = setup
-            .acl_contract
-            .allow(next, signer_address)
-            .into_transaction_request();
+        let allow_tx = allowed_request(
+            &setup.acl_contract,
+            signer_address,
+            signer_address,
+            next,
+        );
         pending.push(provider.send_transaction(allow_tx).await?);
         current = next;
     }
@@ -3137,7 +3121,7 @@ const NB_DELEGATION_PER_WALLET: usize = 15;
 async fn emit_delegations<P, N>(
     wallets: &[EthereumWallet],
     url: &str,
-    acl_contract: ACLTestInstance<P, N>,
+    acl_contract: RawLogInstance<P, N>,
 ) where
     P: Clone + alloy::providers::Provider<N> + 'static,
     N: Clone
@@ -3161,15 +3145,19 @@ async fn emit_delegations<P, N>(
                     .connect_ws(WsConnect::new(url.to_string()))
                     .await
                     .unwrap();
-                let acl_txn_req = acl_contract
-                    .delegateForUserDecryption(
-                        delegate,
-                        contract_address,
-                        delegation_counter,
-                        0,
-                        expiration_date,
-                    )
-                    .into_transaction_request();
+                let delegator = provider
+                    .signer_addresses()
+                    .next()
+                    .expect("anvil signer available");
+                let acl_txn_req = delegate_for_user_decryption_request(
+                    &acl_contract,
+                    delegator,
+                    delegate,
+                    contract_address,
+                    delegation_counter,
+                    0,
+                    expiration_date,
+                );
                 let pending_txn = provider
                     .send_transaction(acl_txn_req.clone())
                     .await

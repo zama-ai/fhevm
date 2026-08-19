@@ -136,11 +136,9 @@ pub async fn insert_kms_generation_events_tx(
                 .await?;
             }
             _ => {
-                warn!(
-                    ?log,
-                    ?event,
-                    "Unsupported KMSGeneration event type, skipping"
-                );
+                // KMSGenerationEvents has no Debug impl; the raw log already
+                // carries the identifying topics and data.
+                warn!(?log, "Unsupported KMSGeneration event type, skipping");
             }
         }
     }

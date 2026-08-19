@@ -5,7 +5,6 @@ use alloy::node_bindings::Anvil;
 use alloy::primitives::U256;
 use alloy::providers::{Provider, ProviderBuilder, WalletProvider, WsConnect};
 use alloy::signers::local::PrivateKeySigner;
-use alloy::sol;
 use serial_test::serial;
 use tokio::time::sleep;
 
@@ -15,26 +14,8 @@ use host_listener::database::tfhe_event_propagate::Database;
 use host_listener::poller::{run_poller, PollerConfig};
 use test_harness::instance::ImportMode;
 
-sol!(
-    #[sol(rpc)]
-    #[derive(Debug, serde::Serialize, serde::Deserialize)]
-    FHEVMExecutorTest,
-    "artifacts/FHEVMExecutorTest.sol/FHEVMExecutorTest.json"
-);
-
-sol!(
-    #[sol(rpc)]
-    #[derive(Debug, serde::Serialize, serde::Deserialize)]
-    ACLTest,
-    "artifacts/ACLTest.sol/ACLTest.json"
-);
-
-sol!(
-    #[sol(rpc)]
-    #[derive(Debug, serde::Serialize, serde::Deserialize)]
-    KMSGenerationTest,
-    "artifacts/KMSGenerationTest.sol/KMSGenerationTest.json"
-);
+mod common;
+use common::{allowed_request, trivial_encrypt_request, RawLog};
 
 #[tokio::test]
 #[serial(db)]
@@ -111,10 +92,9 @@ async fn poller_catches_up_to_safe_tip(
         .connect_ws(WsConnect::new(ws_url.clone()))
         .await?;
 
-    let tfhe_contract = FHEVMExecutorTest::deploy(provider.clone()).await?;
-    let acl_contract = ACLTest::deploy(provider.clone()).await?;
-    let kms_generation_contract =
-        KMSGenerationTest::deploy(provider.clone()).await?;
+    let tfhe_contract = RawLog::deploy(provider.clone()).await?;
+    let acl_contract = RawLog::deploy(provider.clone()).await?;
+    let kms_generation_contract = RawLog::deploy(provider.clone()).await?;
     let signer_address = provider
         .signer_addresses()
         .next()
@@ -122,9 +102,12 @@ async fn poller_catches_up_to_safe_tip(
 
     let mut receipts: Vec<(u64, EventKind)> = Vec::new();
     for i in 0..3u64 {
-        let tfhe_txn_req = tfhe_contract
-            .trivialEncrypt(U256::from(i + 1), 4_u8)
-            .into_transaction_request();
+        let tfhe_txn_req = trivial_encrypt_request(
+            &tfhe_contract,
+            signer_address,
+            U256::from(i + 1),
+            4_u8,
+        );
         let tfhe_receipt = provider
             .send_transaction(tfhe_txn_req)
             .await?
@@ -138,9 +121,12 @@ async fn poller_catches_up_to_safe_tip(
             EventKind::Tfhe,
         ));
 
-        let acl_txn_req = acl_contract
-            .allow(U256::from(i + 1).into(), signer_address)
-            .into_transaction_request();
+        let acl_txn_req = allowed_request(
+            &acl_contract,
+            signer_address,
+            signer_address,
+            U256::from(i + 1).into(),
+        );
         let acl_receipt = provider
             .send_transaction(acl_txn_req)
             .await?

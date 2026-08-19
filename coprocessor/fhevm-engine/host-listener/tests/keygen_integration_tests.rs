@@ -11,7 +11,6 @@ use alloy::{
     providers::{Provider, ProviderBuilder, WsConnect},
     rpc::types::Filter,
     signers::local::PrivateKeySigner,
-    sol,
 };
 use async_trait::async_trait;
 use fhevm_engine_common::chain_id::ChainId;
@@ -34,11 +33,8 @@ use tokio_util::bytes::{self, Bytes};
 use tracing::{info, Level};
 use tracing_subscriber::fmt::{writer::MakeWriterExt, MakeWriter};
 
-sol!(
-    #[sol(rpc)]
-    KMSGenerationMock,
-    "artifacts/KMSGenerationTest.sol/KMSGenerationTest.json"
-);
+mod common;
+use common::{activate_crs_request, activate_key_request, RawLog};
 
 static TEST_LOGS: OnceLock<Arc<RwLock<String>>> = OnceLock::new();
 
@@ -568,14 +564,14 @@ async fn keygen_ok_simple() -> anyhow::Result<()> {
         .await?;
     let aws_s3_client =
         AwsS3ClientMocked::new(&buckets, &key_types, key_id, false, false);
-    let kms_generation = KMSGenerationMock::deploy(&provider).await?;
+    let kms_generation = RawLog::deploy(&provider).await?;
 
     assert!(has_not_public_key(&env.db_pool, key_id).await?);
     assert!(has_not_server_key(&env.db_pool, key_id).await?);
     assert!(has_not_crs(&env.db_pool, key_id).await?);
 
     let receipt = provider
-        .send_transaction(kms_generation.keygen(1).into_transaction_request())
+        .send_transaction(activate_key_request(&kms_generation))
         .await?
         .get_receipt()
         .await?;
@@ -597,7 +593,7 @@ async fn keygen_ok_simple() -> anyhow::Result<()> {
     assert!(has_server_key(&env.db_pool, key_id).await?);
 
     let receipt = provider
-        .send_transaction(kms_generation.crsgen().into_transaction_request())
+        .send_transaction(activate_crs_request(&kms_generation))
         .await?
         .get_receipt()
         .await?;
@@ -636,18 +632,18 @@ async fn keygen_idempotent_replay() -> anyhow::Result<()> {
         .await?;
     let aws_s3_client =
         AwsS3ClientMocked::new(&buckets, &key_types, key_id, false, false);
-    let kms_generation = KMSGenerationMock::deploy(&provider).await?;
+    let kms_generation = RawLog::deploy(&provider).await?;
     let chain_id = ChainId::try_from(TEST_CHAIN_ID)?;
 
     let keygen_receipt = provider
-        .send_transaction(kms_generation.keygen(1).into_transaction_request())
+        .send_transaction(activate_key_request(&kms_generation))
         .await?
         .get_receipt()
         .await?;
     let keygen_block = keygen_receipt.block_hash.expect("block hash");
 
     let crsgen_receipt = provider
-        .send_transaction(kms_generation.crsgen().into_transaction_request())
+        .send_transaction(activate_crs_request(&kms_generation))
         .await?
         .get_receipt()
         .await?;
@@ -845,14 +841,14 @@ async fn keygen_compromised_key_records_last_error() -> anyhow::Result<()> {
         .await?;
     let aws_s3_client =
         AwsS3ClientMocked::new(&buckets, &key_types, key_id, true, false);
-    let kms_generation = KMSGenerationMock::deploy(&provider).await?;
+    let kms_generation = RawLog::deploy(&provider).await?;
     let chain_id = ChainId::try_from(TEST_CHAIN_ID)?;
 
     assert!(has_not_public_key(&env.db_pool, key_id).await?);
     assert!(has_not_server_key(&env.db_pool, key_id).await?);
 
     let receipt = provider
-        .send_transaction(kms_generation.keygen(1).into_transaction_request())
+        .send_transaction(activate_key_request(&kms_generation))
         .await?
         .get_receipt()
         .await?;
@@ -905,14 +901,14 @@ async fn keygen_bad_key_or_bucket() -> anyhow::Result<()> {
         .await?;
     let aws_s3_client =
         AwsS3ClientMocked::new(&buckets, &key_types, key_id, false, true);
-    let kms_generation = KMSGenerationMock::deploy(&provider).await?;
+    let kms_generation = RawLog::deploy(&provider).await?;
     let chain_id = ChainId::try_from(TEST_CHAIN_ID)?;
 
     assert!(has_not_public_key(&env.db_pool, key_id).await?);
     assert!(has_not_server_key(&env.db_pool, key_id).await?);
 
     let receipt = provider
-        .send_transaction(kms_generation.keygen(1).into_transaction_request())
+        .send_transaction(activate_key_request(&kms_generation))
         .await?
         .get_receipt()
         .await?;
