@@ -3327,8 +3327,8 @@ async fn test_wave1_dual_writes_legacy_and_branch_tables(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use alloy::primitives::Log as EventLog;
     use fhevm_engine_common::types::AllowEvents;
-    use fhevm_host_bindings::fhevm_executor::FHEVMExecutor;
-    use fhevm_host_bindings::fhevm_executor::FHEVMExecutor::FHEVMExecutorEvents;
+    use host_listener::contracts::TfheContract;
+    use host_listener::contracts::TfheContract::TfheContractEvents;
     use host_listener::database::tfhe_event_propagate::{ClearConst, LogTfhe};
     use sqlx::types::time::PrimitiveDateTime;
 
@@ -3350,8 +3350,8 @@ async fn test_wave1_dual_writes_legacy_and_branch_tables(
     let event = LogTfhe {
         event: EventLog {
             address: Address::ZERO,
-            data: FHEVMExecutorEvents::TrivialEncrypt(
-                FHEVMExecutor::TrivialEncrypt {
+            data: TfheContractEvents::TrivialEncrypt(
+                TfheContract::TrivialEncrypt {
                     caller,
                     pt: ClearConst::from_be_slice(&[7u8]),
                     toType: 4u8,
@@ -3425,10 +3425,10 @@ async fn test_wave1_dual_writes_legacy_and_branch_tables(
 async fn test_acl_branch_rows_keep_acl_block_context(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use alloy::primitives::Log as EventLog;
-    use fhevm_host_bindings::acl::ACL;
-    use fhevm_host_bindings::acl::ACL::ACLEvents;
-    use fhevm_host_bindings::fhevm_executor::FHEVMExecutor;
-    use fhevm_host_bindings::fhevm_executor::FHEVMExecutor::FHEVMExecutorEvents;
+    use host_listener::contracts::AclContract;
+    use host_listener::contracts::AclContract::AclContractEvents;
+    use host_listener::contracts::TfheContract;
+    use host_listener::contracts::TfheContract::TfheContractEvents;
     use host_listener::database::tfhe_event_propagate::{ClearConst, LogTfhe};
     use sqlx::types::time::PrimitiveDateTime;
 
@@ -3475,8 +3475,8 @@ async fn test_acl_branch_rows_keep_acl_block_context(
         &LogTfhe {
             event: EventLog {
                 address: Address::ZERO,
-                data: FHEVMExecutorEvents::TrivialEncrypt(
-                    FHEVMExecutor::TrivialEncrypt {
+                data: TfheContractEvents::TrivialEncrypt(
+                    TfheContract::TrivialEncrypt {
                         caller,
                         pt: ClearConst::from_be_slice(&[9u8]),
                         toType: 4u8,
@@ -3501,8 +3501,8 @@ async fn test_acl_branch_rows_keep_acl_block_context(
         &LogTfhe {
             event: EventLog {
                 address: Address::ZERO,
-                data: FHEVMExecutorEvents::TrivialEncrypt(
-                    FHEVMExecutor::TrivialEncrypt {
+                data: TfheContractEvents::TrivialEncrypt(
+                    TfheContract::TrivialEncrypt {
                         caller,
                         pt: ClearConst::from_be_slice(&[10u8]),
                         toType: 4u8,
@@ -3524,17 +3524,21 @@ async fn test_acl_branch_rows_keep_acl_block_context(
 
     let orphan_acl_event = EventLog {
         address: Address::ZERO,
-        data: ACLEvents::AllowedForDecryption(ACL::AllowedForDecryption {
-            caller,
-            handlesList: vec![handle, orphan_only_handle],
-        }),
+        data: AclContractEvents::AllowedForDecryption(
+            AclContract::AllowedForDecryption {
+                caller,
+                handlesList: vec![handle, orphan_only_handle],
+            },
+        ),
     };
     let canonical_acl_event = EventLog {
         address: Address::ZERO,
-        data: ACLEvents::AllowedForDecryption(ACL::AllowedForDecryption {
-            caller,
-            handlesList: vec![handle],
-        }),
+        data: AclContractEvents::AllowedForDecryption(
+            AclContract::AllowedForDecryption {
+                caller,
+                handlesList: vec![handle],
+            },
+        ),
     };
     db.handle_acl_event(
         &mut tx,
@@ -3956,8 +3960,8 @@ async fn test_wave1_branch_write_failure_aborts_dual_write_transaction(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use alloy::primitives::Log as EventLog;
     use fhevm_engine_common::types::AllowEvents;
-    use fhevm_host_bindings::fhevm_executor::FHEVMExecutor;
-    use fhevm_host_bindings::fhevm_executor::FHEVMExecutor::FHEVMExecutorEvents;
+    use host_listener::contracts::TfheContract;
+    use host_listener::contracts::TfheContract::TfheContractEvents;
     use host_listener::database::tfhe_event_propagate::{ClearConst, LogTfhe};
     use sqlx::types::time::PrimitiveDateTime;
 
@@ -3993,8 +3997,8 @@ async fn test_wave1_branch_write_failure_aborts_dual_write_transaction(
     let event = LogTfhe {
         event: EventLog {
             address: Address::ZERO,
-            data: FHEVMExecutorEvents::TrivialEncrypt(
-                FHEVMExecutor::TrivialEncrypt {
+            data: TfheContractEvents::TrivialEncrypt(
+                TfheContract::TrivialEncrypt {
                     caller,
                     pt: ClearConst::from_be_slice(&[5u8]),
                     toType: 4u8,

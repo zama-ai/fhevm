@@ -9,8 +9,8 @@ use crate::utils::{
 use criterion::{
     async_executor::FuturesExecutor, measurement::WallTime, Bencher, Criterion, Throughput,
 };
-use fhevm_host_bindings::fhevm_executor::FHEVMExecutor;
-use fhevm_host_bindings::fhevm_executor::FHEVMExecutor::FHEVMExecutorEvents;
+use host_listener::contracts::TfheContract;
+use host_listener::contracts::TfheContract::TfheContractEvents;
 use std::time::SystemTime;
 use tfhe_worker::tfhe_worker::TIMING;
 use tokio::runtime::Runtime;
@@ -94,8 +94,8 @@ fn next_log_index() -> u64 {
 
 fn log_with_tx(
     tx_hash: host_listener::database::tfhe_event_propagate::Handle,
-    inner: alloy::primitives::Log<FHEVMExecutorEvents>,
-) -> alloy::rpc::types::Log<FHEVMExecutorEvents> {
+    inner: alloy::primitives::Log<TfheContractEvents>,
+) -> alloy::rpc::types::Log<TfheContractEvents> {
     alloy::rpc::types::Log {
         inner,
         block_hash: None,
@@ -136,8 +136,8 @@ async fn counter_increment(
         &mut tx,
         log_with_tx(
             tx_id,
-            tfhe_event(FHEVMExecutorEvents::TrivialEncrypt(
-                FHEVMExecutor::TrivialEncrypt {
+            tfhe_event(TfheContractEvents::TrivialEncrypt(
+                TfheContract::TrivialEncrypt {
                     caller,
                     pt: as_scalar_uint(&bigdecimal::num_bigint::BigInt::from(42_u64)),
                     toType: to_ty(5),
@@ -154,8 +154,8 @@ async fn counter_increment(
         &mut tx,
         log_with_tx(
             tx_id,
-            tfhe_event(FHEVMExecutorEvents::TrivialEncrypt(
-                FHEVMExecutor::TrivialEncrypt {
+            tfhe_event(TfheContractEvents::TrivialEncrypt(
+                TfheContract::TrivialEncrypt {
                     caller,
                     pt: as_scalar_uint(&bigdecimal::num_bigint::BigInt::from(7_u64)),
                     toType: to_ty(5),
@@ -177,7 +177,7 @@ async fn counter_increment(
             &mut tx,
             log_with_tx(
                 tx_id,
-                tfhe_event(FHEVMExecutorEvents::FheAdd(FHEVMExecutor::FheAdd {
+                tfhe_event(TfheContractEvents::FheAdd(TfheContract::FheAdd {
                     caller,
                     lhs: counter,
                     rhs: increment_by,
@@ -252,8 +252,8 @@ async fn tree_reduction(
             &mut tx,
             log_with_tx(
                 tx_id,
-                tfhe_event(FHEVMExecutorEvents::TrivialEncrypt(
-                    FHEVMExecutor::TrivialEncrypt {
+                tfhe_event(TfheContractEvents::TrivialEncrypt(
+                    TfheContract::TrivialEncrypt {
                         caller,
                         pt: as_scalar_uint(&bigdecimal::num_bigint::BigInt::from(1_u64)),
                         toType: to_ty(5),
@@ -283,7 +283,7 @@ async fn tree_reduction(
                 &mut tx,
                 log_with_tx(
                     tx_id,
-                    tfhe_event(FHEVMExecutorEvents::FheAdd(FHEVMExecutor::FheAdd {
+                    tfhe_event(TfheContractEvents::FheAdd(TfheContract::FheAdd {
                         caller,
                         lhs: pair[0],
                         rhs: pair[1],

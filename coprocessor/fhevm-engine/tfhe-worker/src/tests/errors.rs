@@ -2,8 +2,8 @@ use crate::tests::event_helpers::{
     allow_handle, insert_event, insert_trivial_encrypt, next_handle, scalar_flag,
     setup_event_harness, wait_for_error, zero_address, EventHarness, TEST_CHAIN_ID,
 };
-use fhevm_host_bindings::fhevm_executor::FHEVMExecutor;
-use fhevm_host_bindings::fhevm_executor::FHEVMExecutor::FHEVMExecutorEvents;
+use host_listener::contracts::TfheContract;
+use host_listener::contracts::TfheContract::TfheContractEvents;
 use serial_test::serial;
 
 #[tokio::test]
@@ -90,7 +90,7 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
         &listener_db,
         &mut tx,
         tx_id,
-        FHEVMExecutorEvents::FheSub(FHEVMExecutor::FheSub {
+        TfheContractEvents::FheSub(TfheContract::FheSub {
             caller: zero_address(),
             lhs,
             rhs,
@@ -144,7 +144,7 @@ async fn test_type_mismatch_error() -> Result<(), Box<dyn std::error::Error>> {
         &listener_db,
         &mut tx,
         tx_id,
-        FHEVMExecutorEvents::FheAdd(FHEVMExecutor::FheAdd {
+        TfheContractEvents::FheAdd(TfheContract::FheAdd {
             caller: zero_address(),
             lhs,
             rhs,
@@ -196,7 +196,7 @@ async fn test_binary_boolean_inputs_error() -> Result<(), Box<dyn std::error::Er
         &listener_db,
         &mut tx,
         tx_id,
-        FHEVMExecutorEvents::FheAdd(FHEVMExecutor::FheAdd {
+        TfheContractEvents::FheAdd(TfheContract::FheAdd {
             caller: zero_address(),
             lhs,
             rhs,
@@ -246,7 +246,7 @@ async fn test_unary_boolean_inputs_error() -> Result<(), Box<dyn std::error::Err
         &listener_db,
         &mut tx,
         tx_id,
-        FHEVMExecutorEvents::FheNeg(FHEVMExecutor::FheNeg {
+        TfheContractEvents::FheNeg(TfheContract::FheNeg {
             caller: zero_address(),
             ct: input,
             result: output,

@@ -11,7 +11,7 @@ use tracing::Level;
 
 use alloy::primitives::{FixedBytes, Log};
 use bigdecimal::num_bigint::BigInt;
-use fhevm_host_bindings::fhevm_executor::FHEVMExecutor::FHEVMExecutorEvents;
+use host_listener::contracts::TfheContract::TfheContractEvents;
 use host_listener::database::tfhe_event_propagate::{
     ClearConst, Database as ListenerDatabase, Handle, LogTfhe, ProducerBlock, ToType, Transaction,
 };
@@ -188,11 +188,11 @@ pub fn next_handle(counter: &mut u64) -> Handle {
     out
 }
 
-pub fn tfhe_event(data: FHEVMExecutorEvents) -> Log<FHEVMExecutorEvents> {
+pub fn tfhe_event(data: TfheContractEvents) -> Log<TfheContractEvents> {
     let address = "0x0000000000000000000000000000000000000000"
         .parse()
         .unwrap();
-    Log::<FHEVMExecutorEvents> { address, data }
+    Log::<TfheContractEvents> { address, data }
 }
 
 pub async fn listener_event_db(
@@ -213,7 +213,7 @@ pub fn default_dependence_cache_size() -> u16 {
 pub async fn insert_tfhe_event(
     db: &ListenerDatabase,
     tx: &mut Transaction<'_>,
-    log: alloy::rpc::types::Log<FHEVMExecutorEvents>,
+    log: alloy::rpc::types::Log<TfheContractEvents>,
     tx_hash: Handle,
     is_allowed: bool,
 ) -> Result<bool, sqlx::Error> {

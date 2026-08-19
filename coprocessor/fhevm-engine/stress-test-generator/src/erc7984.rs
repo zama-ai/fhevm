@@ -4,9 +4,9 @@ use crate::utils::{
 };
 use alloy_primitives::Address;
 use fhevm_engine_common::types::AllowEvents;
-use fhevm_host_bindings::fhevm_executor::FHEVMExecutor::{self, FHEVMExecutorEvents};
-use host_listener::database::tfhe_event_propagate::{
-    Database as ListenerDatabase, Handle, ScalarByte,
+use host_listener::{
+    contracts::TfheContract::{self, TfheContractEvents},
+    database::tfhe_event_propagate::{Database as ListenerDatabase, Handle, ScalarByte},
 };
 
 /// Implements ERC-7984's confidential transfer function
@@ -69,8 +69,8 @@ pub async fn confidential_transfer_from(
     // transferred = FHE.select(success, amount, FHE.asEuint64(0));
 
     let transferred = next_random_handle(DEF_TYPE);
-    let event = tfhe_event(FHEVMExecutorEvents::FheIfThenElse(
-        FHEVMExecutor::FheIfThenElse {
+    let event = tfhe_event(TfheContractEvents::FheIfThenElse(
+        TfheContract::FheIfThenElse {
             caller,
             control: success,
             ifTrue: e_amount,
@@ -89,7 +89,7 @@ pub async fn confidential_transfer_from(
     */
 
     let ptr = next_random_handle(DEF_TYPE);
-    let event = tfhe_event(FHEVMExecutorEvents::FheAdd(FHEVMExecutor::FheAdd {
+    let event = tfhe_event(TfheContractEvents::FheAdd(TfheContract::FheAdd {
         caller,
         lhs: balance_to,
         rhs: transferred,
@@ -147,7 +147,7 @@ pub async fn try_decrease(
     delta: Handle,
 ) -> Result<(Handle, Handle), Box<dyn std::error::Error>> {
     let success = next_random_handle(FheType::FheBool);
-    let event = tfhe_event(FHEVMExecutorEvents::FheGe(FHEVMExecutor::FheGe {
+    let event = tfhe_event(TfheContractEvents::FheGe(TfheContract::FheGe {
         caller,
         lhs: old_value,
         rhs: delta,
@@ -158,7 +158,7 @@ pub async fn try_decrease(
 
     let result_handle = next_random_handle(DEF_TYPE);
 
-    let event = tfhe_event(FHEVMExecutorEvents::FheSub(FHEVMExecutor::FheSub {
+    let event = tfhe_event(TfheContractEvents::FheSub(TfheContract::FheSub {
         caller,
         lhs: old_value,
         rhs: delta,
@@ -168,8 +168,8 @@ pub async fn try_decrease(
     insert_tfhe_event(tx, db, transaction_id, event, false).await?;
 
     let updated = next_random_handle(DEF_TYPE);
-    let event = tfhe_event(FHEVMExecutorEvents::FheIfThenElse(
-        FHEVMExecutor::FheIfThenElse {
+    let event = tfhe_event(TfheContractEvents::FheIfThenElse(
+        TfheContract::FheIfThenElse {
             caller,
             control: success,
             ifTrue: result_handle,
