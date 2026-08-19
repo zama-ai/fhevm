@@ -332,19 +332,33 @@ gcs:
       ).rejects.toThrow("not supported with blue-green");
     });
 
-    test("rejects non-local gcs.source at resolve", () => {
-      expect(() =>
-        resolveBlueGreenScenario(
-          "/tmp/bg-registry-gcs.yaml",
-          parseBlueGreenScenario(`
+    test("accepts a registry-pinned Green fleet", () => {
+      const resolved = resolveBlueGreenScenario(
+        "/tmp/bg-registry-gcs.yaml",
+        parseBlueGreenScenario(`
 version: 1
 kind: blue-green
 gcs:
   source: { mode: registry, tag: v0.15.0 }
   stackVersion: "0.15.0"
 `),
+      );
+      expect(resolved.gcs.source).toEqual({ mode: "registry", tag: "v0.15.0" });
+    });
+
+    test("rejects an inherited Green fleet", () => {
+      expect(() =>
+        resolveBlueGreenScenario(
+          "/tmp/bg-inherited-gcs.yaml",
+          parseBlueGreenScenario(`
+version: 1
+kind: blue-green
+gcs:
+  source: { mode: inherit }
+  stackVersion: "0.15.0"
+`),
         ),
-      ).toThrow("must be local");
+      ).toThrow("must be local or registry");
     });
 
     test("accepts multiple host chains (multi-chain blue-green)", () => {
