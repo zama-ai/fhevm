@@ -1,7 +1,7 @@
 // The vault module and the SDK sources are loaded lazily, not statically. Their tsconfig-path
 // aliases resolve to real paths outside test-suite/fhevm, so their own dependencies (`@noble/*`,
 // …) only resolve where the SDK's dependency graph is installed — clean-e2e.sh installs it with
-// `npm ci --workspace=@fhevm/sdk…` before the up and re-asserts it after. The src/solana
+// `npm ci --workspace=@fhevm/sdk…` before the up. The src/solana
 // modules are also loaded by the OFFLINE `bun test src` run (through `two-holder-transfer.ts`,
 // whose orchestration test injects fake dependencies), where that graph does not exist; the lazy
 // seam keeps merely importing them dependency-free, the same reason `deposit-arc.scenario.test.ts`

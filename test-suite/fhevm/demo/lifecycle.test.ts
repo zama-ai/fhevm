@@ -330,7 +330,8 @@ describe("demo lifecycle collision policy", () => {
       /if ! \( cd "\$ROOT\/solana\/demo-dapp" && bun install --frozen-lockfile \); then[\s\S]*\( cd "\$ROOT\/solana\/demo-dapp" && bun install --force --no-cache --frozen-lockfile \)\nfi/,
     );
     expect(script).not.toContain("--no-verify");
-    expect(script).toContain('NODE_PATH="$ROOT/solana/demo-dapp/node_modules" bun run demo:seed');
+    expect(script).toContain("bun run demo:seed");
+    expect(script).not.toContain("NODE_PATH=");
   });
 
   test("root package exposes one-command observable start and owned stop", async () => {

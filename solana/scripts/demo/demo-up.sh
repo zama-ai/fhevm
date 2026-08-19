@@ -69,10 +69,7 @@ fi
 
 bash "$ROOT/solana/scripts/demo/deploy-demo-programs.sh"
 
-# Bun resolves the SDK's file-linked build artifacts at their physical source path, outside this
-# package's node_modules tree. Point its fallback lookup at the frozen demo graph so the SDK's own
-# runtime dependencies resolve without requiring an unrelated repository-root install.
-( cd "$FHEVM" && NODE_PATH="$ROOT/solana/demo-dapp/node_modules" bun run demo:seed )
+( cd "$FHEVM" && bun run demo:seed )
 
 CONFIG_PATH="$DEMO_CONFIG_PATH"
 echo
