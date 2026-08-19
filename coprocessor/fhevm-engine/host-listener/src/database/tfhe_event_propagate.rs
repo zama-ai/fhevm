@@ -761,6 +761,171 @@ impl Database {
         Ok(Some(orphaned_hashes))
     }
 
+    /// Retracts bridge/authorization event state observed only on blocks that
+    /// `update_block_as_finalized` just orphaned. Compute-side rows (work,
+    /// ACL, PBS, digests) are deliberately retained — handles are fork-scoped
+    /// by construction, so orphaned compute state is unreferenced on the
+    /// canonical branch and benign. These event tables are different: they are
+    /// keyed by observation block, not by handle preimage, so rows observed
+    /// only on an orphaned fork would stay effective unless removed. Runs in
+    /// the same transaction that marks the branch orphaned and is idempotent;
+    /// if the listener is down, finalization does not advance and catchup
+    /// reruns the retraction when it later orphans the branch.
+    pub async fn retract_orphaned_event_state(
+        &self,
+        tx: &mut Transaction<'_>,
+        orphaned_block_hashes: &[Vec<u8>],
+    ) -> Result<(), SqlxError> {
+        if orphaned_block_hashes.is_empty() {
+            return Ok(());
+        }
+
+        // Confidential bridge: destination-side reorg retraction. The bridge
+        // worker sets `is_associated` in the same transaction as the
+        // ciphertext copy, so a flagged observation in an orphaned block is
+        // the provenance of a materialization that must be retracted — or
+        // re-attributed to a surviving sibling observation, see below (a
+        // fallback-materialized handle is never flagged and its synthetic
+        // compute rows are retained like all compute state). Deleting the
+        // copied `ciphertext_digest` row cancels a not-yet-sent
+        // `addCiphertextMaterial`; an already-sent one cannot be recalled and
+        // re-association after canonical re-inclusion re-sends it, which the
+        // contract's `CoprocessorAlreadyAdded` path treats as benign. The
+        // single DELETE .. RETURNING both removes the orphaned observations
+        // and captures the flag under the row lock, so an association racing
+        // finalization is either retracted or never happens.
+        let retracted_bridged = sqlx::query!(
+            r#"
+            DELETE FROM handle_bridged_events
+            WHERE dst_chain_id = $1
+              AND block_hash = ANY($2::bytea[])
+            RETURNING dst_handle AS "dst_handle!", is_associated AS "is_associated!"
+            "#,
+            self.chain_id.as_i64(),
+            orphaned_block_hashes as _,
+        )
+        .fetch_all(tx.deref_mut())
+        .await?;
+
+        let retracted_dst_handles = retracted_bridged
+            .into_iter()
+            .filter(|row| row.is_associated)
+            .map(|row| row.dst_handle)
+            .collect::<Vec<_>>();
+
+        if !retracted_dst_handles.is_empty() {
+            // The same destination handle can be observed in several blocks
+            // (the HandleBridged event re-included on competing forks). When a
+            // surviving non-orphaned observation exists, the materialized copy
+            // is still canonically justified — deleting it would tear the
+            // ciphertext out from under destination-chain readers until
+            // re-association. Transfer the association flag to one surviving
+            // observation instead (keeping the retraction contract: the copy
+            // is always attributed to a live observation, so a later orphaning
+            // of that block retracts it properly). Only handles with no
+            // surviving observation lose their copy.
+            let transferred = sqlx::query!(
+                r#"
+                UPDATE handle_bridged_events h
+                SET is_associated = TRUE
+                WHERE h.id IN (
+                    SELECT DISTINCT ON (s.dst_handle) s.id
+                    FROM handle_bridged_events s
+                    WHERE s.dst_handle = ANY($1::bytea[])
+                      AND s.dst_chain_id = $2
+                      AND (
+                            s.block_hash = ''::BYTEA
+                            OR NOT EXISTS (
+                                SELECT 1
+                                FROM host_chain_blocks_valid b
+                                WHERE b.chain_id = s.dst_chain_id
+                                  AND b.block_hash = s.block_hash
+                                  AND b.block_status = 'orphaned'
+                            )
+                      )
+                    ORDER BY s.dst_handle, s.id
+                )
+                RETURNING h.dst_handle AS "dst_handle!"
+                "#,
+                &retracted_dst_handles as _,
+                self.chain_id.as_i64(),
+            )
+            .fetch_all(tx.deref_mut())
+            .await?;
+
+            let transferred: std::collections::HashSet<Vec<u8>> =
+                transferred.into_iter().map(|r| r.dst_handle).collect();
+            let orphan_only_handles: Vec<Vec<u8>> = retracted_dst_handles
+                .into_iter()
+                .filter(|h| !transferred.contains(h))
+                .collect();
+
+            if !orphan_only_handles.is_empty() {
+                sqlx::query!(
+                    "DELETE FROM ciphertexts WHERE handle = ANY($1::bytea[])",
+                    &orphan_only_handles as _,
+                )
+                .execute(tx.deref_mut())
+                .await?;
+
+                sqlx::query!(
+                    "DELETE FROM ciphertext_digest
+                     WHERE handle = ANY($1::bytea[]) AND host_chain_id = $2",
+                    &orphan_only_handles as _,
+                    self.chain_id.as_i64(),
+                )
+                .execute(tx.deref_mut())
+                .await?;
+            }
+        }
+
+        // Source-side approvals from orphaned blocks were never consumable
+        // (their read path requires a finalized block); just remove them.
+        sqlx::query!(
+            r#"
+            DELETE FROM bridge_handle_events
+            WHERE src_chain_id = $1
+              AND block_hash = ANY($2::bytea[])
+            "#,
+            self.chain_id.as_i64(),
+            orphaned_block_hashes as _,
+        )
+        .execute(tx.deref_mut())
+        .await?;
+
+        // Fallback-grant observations from orphaned blocks: a canonical
+        // re-inclusion carries (and re-synthesizes from) its own observation
+        // row, so the orphaned row must not stay behind as evidence of a
+        // grant that never happened canonically.
+        sqlx::query!(
+            r#"
+            DELETE FROM fallback_granted_events
+            WHERE dst_chain_id = $1
+              AND block_hash = ANY($2::bytea[])
+            "#,
+            self.chain_id.as_i64(),
+            orphaned_block_hashes as _,
+        )
+        .execute(tx.deref_mut())
+        .await?;
+
+        // Delegation updates observed only on an orphaned fork must not stay
+        // effective for user-decrypt authorization on the canonical branch.
+        sqlx::query!(
+            r#"
+            DELETE FROM delegate_user_decrypt
+            WHERE host_chain_id = $1
+              AND block_hash = ANY($2::bytea[])
+            "#,
+            self.chain_id.as_i64(),
+            orphaned_block_hashes as _,
+        )
+        .execute(tx.deref_mut())
+        .await?;
+
+        Ok(())
+    }
+
     pub async fn mark_block_as_valid(
         &self,
         tx: &mut Transaction<'_>,
@@ -805,14 +970,21 @@ impl Database {
         // loop to sort out. Orphaned rows in the work/ACL tables are left in
         // place (pre-wave1 semantics): handles are fork-scoped by
         // construction, so orphaned state is unreferenced on the canonical
-        // branch and benign.
+        // branch and benign. Bridge/authorization event rows are keyed by
+        // observation block instead and are retracted in the same
+        // transaction.
         if finalized {
-            self.update_block_as_finalized(
-                tx,
-                block_summary.number as i64,
-                &block_summary.hash,
-            )
-            .await?;
+            if let Some(orphaned_hashes) = self
+                .update_block_as_finalized(
+                    tx,
+                    block_summary.number as i64,
+                    &block_summary.hash,
+                )
+                .await?
+            {
+                self.retract_orphaned_event_state(tx, &orphaned_hashes)
+                    .await?;
+            }
         }
         Ok(())
     }

@@ -1016,11 +1016,24 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
             .update_block_as_finalized(&mut tx, block_number, &block_hash)
             .await
         {
-            Ok(Some(_orphaned_hashes)) => {
+            Ok(Some(orphaned_hashes)) => {
                 // Orphaned work/ACL rows are deliberately left in place
                 // (pre-wave1 semantics): handles are fork-scoped by
                 // construction, so orphaned state is unreferenced on the
-                // canonical branch and benign.
+                // canonical branch and benign. Bridge/authorization event
+                // rows are keyed by observation block instead and must be
+                // retracted with the branch that carried them.
+                if let Err(err) = db
+                    .retract_orphaned_event_state(&mut tx, &orphaned_hashes)
+                    .await
+                {
+                    error!(
+                        block_number,
+                        ?err,
+                        "Failed to retract orphaned event state during finalization"
+                    );
+                    return;
+                }
             }
             Ok(None) => {
                 // Finalization refused (missing row / orphaned / parent

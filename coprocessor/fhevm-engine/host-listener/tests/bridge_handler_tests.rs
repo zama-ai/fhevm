@@ -675,7 +675,8 @@ async fn fallback_same_grant_on_sibling_fork_survives_cleanup() {
     assert_trivial_encrypt_operands(&db, dst_handle, 123, 5).await;
 
     // Both durable observations are retained (keyed by block hash); orphaned
-    // rows are deliberately not cleaned up (pre-wave1 semantics).
+    // rows are removed only by the finalization path's
+    // retract_orphaned_event_state, which this test does not run.
     let pool = db.pool().await;
     let observations: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM fallback_granted_events WHERE dst_handle = $1",
@@ -734,4 +735,409 @@ async fn fallback_ignored_when_handle_has_ciphertext() {
     // The fallback was skipped: no synthetic computation or PBS was created.
     assert_eq!(computation_count(&db, dst_handle).await, 0);
     assert_eq!(pbs_count(&db, dst_handle).await, 0);
+}
+
+async fn seed_bridged_observation(
+    db: &Database,
+    dst_handle: &[u8],
+    dst_chain_id: u64,
+    block_hash: &[u8],
+    is_associated: bool,
+) {
+    let pool = db.pool().await;
+    sqlx::query(
+        "INSERT INTO handle_bridged_events
+             (src_handle, dst_handle, dst_chain_id, receiver_dapp, guid,
+              block_number, block_hash, is_associated)
+         VALUES ('\\x01'::bytea, $1, $2, '\\xdb'::bytea, '\\x02'::bytea,
+                 1, $3, $4)",
+    )
+    .bind(dst_handle)
+    .bind(dst_chain_id as i64)
+    .bind(block_hash)
+    .bind(is_associated)
+    .execute(&pool)
+    .await
+    .expect("seed handle_bridged_events");
+}
+
+async fn seed_materialization(db: &Database, handle: &[u8], chain_id: u64) {
+    let pool = db.pool().await;
+    sqlx::query(
+        "INSERT INTO ciphertexts (handle, ciphertext, ciphertext_version, ciphertext_type)
+         VALUES ($1, '\\x11'::bytea, 0, 4)",
+    )
+    .bind(handle)
+    .execute(&pool)
+    .await
+    .expect("seed ciphertexts");
+    sqlx::query(
+        "INSERT INTO ciphertext_digest
+             (handle, ciphertext, ciphertext128, ciphertext128_format, host_chain_id, key_id_gw)
+         VALUES ($1, '\\xa1'::bytea, '\\xb2'::bytea, 11, $2, '\\xc3'::bytea)",
+    )
+    .bind(handle)
+    .bind(chain_id as i64)
+    .execute(&pool)
+    .await
+    .expect("seed ciphertext_digest");
+}
+
+async fn run_orphan_retraction(db: &Database, orphaned_hashes: &[Vec<u8>]) {
+    let mut tx = db
+        .new_transaction()
+        .await
+        .expect("tx")
+        .expect("new_transaction() returns Some on a live stack");
+    db.retract_orphaned_event_state(&mut tx, orphaned_hashes)
+        .await
+        .expect("retraction");
+    tx.commit().await.expect("commit");
+}
+
+async fn count_rows(db: &Database, sql: &str, bind: &[u8]) -> i64 {
+    let pool = db.pool().await;
+    sqlx::query_scalar::<_, i64>(sql)
+        .bind(bind)
+        .fetch_one(&pool)
+        .await
+        .expect("count")
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn reorg_retracts_associated_bridged_handle() {
+    let (db, _inst) = fresh_db(DST_CHAIN_ID).await;
+    let dst_handle = handle_for_chain(DST_CHAIN_ID, 0x33);
+    let orphaned_hash = vec![0x0A; 32];
+
+    // An association performed from a block that is now orphaned: flagged
+    // observation plus the copied ciphertext and publication-queue digest.
+    seed_bridged_observation(
+        &db,
+        dst_handle.as_slice(),
+        DST_CHAIN_ID,
+        &orphaned_hash,
+        true,
+    )
+    .await;
+    seed_materialization(&db, dst_handle.as_slice(), DST_CHAIN_ID).await;
+
+    run_orphan_retraction(&db, &[orphaned_hash]).await;
+
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM handle_bridged_events WHERE dst_handle = $1",
+            dst_handle.as_slice(),
+        )
+        .await,
+        0,
+        "orphaned observation should be deleted"
+    );
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM ciphertexts WHERE handle = $1",
+            dst_handle.as_slice(),
+        )
+        .await,
+        0,
+        "copied ciphertext should be retracted"
+    );
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM ciphertext_digest WHERE handle = $1",
+            dst_handle.as_slice(),
+        )
+        .await,
+        0,
+        "copied digest should be retracted (cancels unsent publication)"
+    );
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn reorg_keeps_unassociated_and_canonical_bridge_state() {
+    let (db, _inst) = fresh_db(DST_CHAIN_ID).await;
+    let orphaned_hash = vec![0x0A; 32];
+    let canonical_hash = vec![0x0B; 32];
+
+    // Unflagged observation in the orphaned block whose handle was
+    // materialized by another path (fallback): the observation row goes,
+    // the materialization stays.
+    let fallback_handle = handle_for_chain(DST_CHAIN_ID, 0x44);
+    seed_bridged_observation(
+        &db,
+        fallback_handle.as_slice(),
+        DST_CHAIN_ID,
+        &orphaned_hash,
+        false,
+    )
+    .await;
+    seed_materialization(&db, fallback_handle.as_slice(), DST_CHAIN_ID).await;
+
+    // Association from a block that is NOT orphaned: fully untouched.
+    let canonical_handle = handle_for_chain(DST_CHAIN_ID, 0x55);
+    seed_bridged_observation(
+        &db,
+        canonical_handle.as_slice(),
+        DST_CHAIN_ID,
+        &canonical_hash,
+        true,
+    )
+    .await;
+    seed_materialization(&db, canonical_handle.as_slice(), DST_CHAIN_ID).await;
+
+    // Source-side approval observed in the orphaned block: removed; one in
+    // the canonical block: kept.
+    let pool = db.pool().await;
+    for (seed, hash) in [(0x66u8, &orphaned_hash), (0x77u8, &canonical_hash)] {
+        sqlx::query(
+            "INSERT INTO bridge_handle_events
+                 (src_handle, dst_chain_id, src_chain_id, sender_dapp, guid,
+                  block_number, block_hash)
+             VALUES ($1, 1, $2, '\\xda'::bytea, '\\x03'::bytea, 1, $3)",
+        )
+        .bind(vec![seed; 32])
+        .bind(DST_CHAIN_ID as i64)
+        .bind(hash)
+        .execute(&pool)
+        .await
+        .expect("seed bridge_handle_events");
+    }
+
+    // Fallback-grant observations and delegation updates: the orphaned-block
+    // rows must be retracted, the canonical-block rows kept.
+    for (seed, hash) in [(0x88u8, &orphaned_hash), (0x99u8, &canonical_hash)] {
+        sqlx::query(
+            "INSERT INTO fallback_granted_events
+                 (dst_chain_id, dst_handle, plaintext, block_number, block_hash)
+             VALUES ($1, $2, '\\x2a'::bytea, 1, $3)",
+        )
+        .bind(DST_CHAIN_ID as i64)
+        .bind(vec![seed; 32])
+        .bind(hash)
+        .execute(&pool)
+        .await
+        .expect("seed fallback_granted_events");
+        sqlx::query(
+            "INSERT INTO delegate_user_decrypt
+                 (delegator, delegate, contract_address, delegation_counter,
+                  old_expiration_date, new_expiration_date, host_chain_id,
+                  block_number, block_hash, on_gateway, reorg_out)
+             VALUES ($1, '\\xde'::bytea, '\\xc0'::bytea, 1, 0, 42, $2, 1, $3, FALSE, FALSE)",
+        )
+        .bind(vec![seed; 20])
+        .bind(DST_CHAIN_ID as i64)
+        .bind(hash)
+        .execute(&pool)
+        .await
+        .expect("seed delegate_user_decrypt");
+    }
+
+    run_orphan_retraction(&db, &[orphaned_hash]).await;
+
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM handle_bridged_events WHERE dst_handle = $1",
+            fallback_handle.as_slice(),
+        )
+        .await,
+        0,
+        "orphaned unflagged observation should be deleted"
+    );
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM ciphertexts WHERE handle = $1",
+            fallback_handle.as_slice(),
+        )
+        .await,
+        1,
+        "fallback materialization must not be retracted"
+    );
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM handle_bridged_events WHERE dst_handle = $1",
+            canonical_handle.as_slice(),
+        )
+        .await,
+        1,
+        "canonical observation must survive"
+    );
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM ciphertexts WHERE handle = $1",
+            canonical_handle.as_slice(),
+        )
+        .await,
+        1,
+        "canonical association must survive"
+    );
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM bridge_handle_events WHERE src_handle = $1",
+            vec![0x66u8; 32].as_slice(),
+        )
+        .await,
+        0,
+        "orphaned source approval should be deleted"
+    );
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM bridge_handle_events WHERE src_handle = $1",
+            vec![0x77u8; 32].as_slice(),
+        )
+        .await,
+        1,
+        "canonical source approval must survive"
+    );
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM fallback_granted_events WHERE dst_handle = $1",
+            vec![0x88u8; 32].as_slice(),
+        )
+        .await,
+        0,
+        "orphaned fallback grant observation should be deleted"
+    );
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM fallback_granted_events WHERE dst_handle = $1",
+            vec![0x99u8; 32].as_slice(),
+        )
+        .await,
+        1,
+        "canonical fallback grant observation must survive"
+    );
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM delegate_user_decrypt WHERE delegator = $1",
+            vec![0x88u8; 20].as_slice(),
+        )
+        .await,
+        0,
+        "orphaned delegation update should be deleted"
+    );
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM delegate_user_decrypt WHERE delegator = $1",
+            vec![0x99u8; 20].as_slice(),
+        )
+        .await,
+        1,
+        "canonical delegation update must survive"
+    );
+}
+
+/// The same destination handle observed on two forks: retracting the fork
+/// that performed the association must not delete the copy while the sibling
+/// observation survives — the flag transfers to the sibling instead. Once the
+/// sibling's block orphans too, the copy is retracted for real.
+#[tokio::test]
+#[serial(db)]
+async fn reorg_transfers_association_to_surviving_sibling() {
+    let (db, _inst) = fresh_db(DST_CHAIN_ID).await;
+    let dst_handle = handle_for_chain(DST_CHAIN_ID, 0x88);
+    let first_hash = vec![0x0C; 32];
+    let second_hash = vec![0x0D; 32];
+
+    // The association was performed from the first fork's observation; the
+    // sibling fork carries the same event, unflagged.
+    seed_bridged_observation(
+        &db,
+        dst_handle.as_slice(),
+        DST_CHAIN_ID,
+        &first_hash,
+        true,
+    )
+    .await;
+    seed_bridged_observation(
+        &db,
+        dst_handle.as_slice(),
+        DST_CHAIN_ID,
+        &second_hash,
+        false,
+    )
+    .await;
+    seed_materialization(&db, dst_handle.as_slice(), DST_CHAIN_ID).await;
+
+    run_orphan_retraction(&db, &[first_hash]).await;
+
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM handle_bridged_events
+             WHERE dst_handle = $1 AND is_associated",
+            dst_handle.as_slice(),
+        )
+        .await,
+        1,
+        "association flag must transfer to the surviving sibling"
+    );
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM ciphertexts WHERE handle = $1",
+            dst_handle.as_slice(),
+        )
+        .await,
+        1,
+        "copy must survive while a sibling observation remains"
+    );
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM ciphertext_digest WHERE handle = $1",
+            dst_handle.as_slice(),
+        )
+        .await,
+        1,
+        "digest must survive while a sibling observation remains"
+    );
+
+    // The sibling's block orphans in a later round: now the copy goes.
+    run_orphan_retraction(&db, &[second_hash]).await;
+
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM handle_bridged_events WHERE dst_handle = $1",
+            dst_handle.as_slice(),
+        )
+        .await,
+        0,
+        "no observation may remain after both forks orphan"
+    );
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM ciphertexts WHERE handle = $1",
+            dst_handle.as_slice(),
+        )
+        .await,
+        0,
+        "copy must be retracted once no observation survives"
+    );
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM ciphertext_digest WHERE handle = $1",
+            dst_handle.as_slice(),
+        )
+        .await,
+        0,
+        "digest must be retracted once no observation survives"
+    );
 }
