@@ -178,10 +178,11 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
         conflict_cols: &[],
     },
     // ---------------------------------------------------------------------
-    // Deprecated wave1 branch-context state: no v0.15 binary reads or writes
-    // these, so no gcs.* duplicate is created; a v0.16 migration drops them
-    // (see db-migration/DEPRECATIONS.md). Remove these entries together with
-    // that migration.
+    // Deprecated wave1 branch-context state: no v0.15 binary references
+    // these directly (legacy-table mirror triggers still write some of them
+    // DB-side), so no gcs.* duplicate is created; a v0.16 migration drops
+    // them (see db-migration/DEPRECATIONS.md). Remove these entries together
+    // with that migration.
     // ---------------------------------------------------------------------
     CoprocessorTable {
         name: "computations_branch",
