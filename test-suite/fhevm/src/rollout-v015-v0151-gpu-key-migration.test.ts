@@ -50,12 +50,12 @@ describe("RFC 029 rollout gates", () => {
     expect(versions.baseline.GATEWAY_VERSION).toBe("v0.14.0-10");
   });
 
-  test("forces Blue to legacy and leaves the safeguard off Green", () => {
+  test("starts the real 0.14 to 0.15 hop with both fleets forced to legacy", () => {
     const scenario = parseBlueGreenScenario(adoptionScenario("v0.14.0-10"), "generated RFC 029 adoption scenario");
     expect(scenario.bcs?.env?.FORCE_LEGACY_SERVER_KEY).toBe("true");
-    expect(scenario.gcs.env?.FORCE_LEGACY_SERVER_KEY).toBeUndefined();
+    expect(scenario.gcs.env?.FORCE_LEGACY_SERVER_KEY).toBe("true");
     expect(scenario.gcs.deferredStart).toBe(true);
-    expect(scenario.gcs.stackVersion).toBe("0.15.1");
+    expect(scenario.gcs.stackVersion).toBe("0.15.0");
     expect(scenario.hostChains).toHaveLength(2);
     expect(scenario.kms).toEqual({ mode: "threshold", parties: 4, threshold: 1, fheParams: "Test" });
   });

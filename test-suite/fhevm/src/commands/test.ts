@@ -924,9 +924,18 @@ const runBlueGreenProfile = async (
     if (version !== predecessorVersion) {
       throw new Error(`${db}.versioning = "${version}", expected "${predecessorVersion}" (prior test residue?)`);
     }
-    const rows = await psqlQuery(db, "SELECT count(*) FROM upgrade_state;");
-    if (rows !== "0") {
-      throw new Error(`${db}.upgrade_state has ${rows} rows, expected 0 (prior test residue?)`);
+    const priorUpgrade = await psqlQuery(
+      db,
+      "SELECT count(*) || '|' || COALESCE(bool_and(" +
+        "stack_role='GCS' AND state='LIVE' AND status='completed' AND " +
+        "version=(SELECT stack_version FROM versioning WHERE singleton=TRUE)), TRUE) " +
+        "FROM upgrade_state;",
+    );
+    const [priorRows, priorCompleted] = priorUpgrade.split("|");
+    if (!((priorRows === "0" || priorRows === String(state.scenario.hostChains.length)) && priorCompleted === "t")) {
+      throw new Error(
+        `${db}.upgrade_state = "${priorUpgrade}", expected empty or one completed live row per host chain`,
+      );
     }
     const schema = await psqlQuery(
       db,
@@ -937,7 +946,8 @@ const runBlueGreenProfile = async (
     }
   }
   console.log(
-    `OK:   ${opCount} DB(s) at ${predecessorVersion}, empty upgrade_state, gcs-${gcsStackVersion} schema present`,
+    `OK:   ${opCount} DB(s) at ${predecessorVersion}, clean/completed prior upgrade state, ` +
+      `gcs-${gcsStackVersion} schema present`,
   );
 
   const defaultHostKey = defaultHostChainKey(state.scenario.hostChains);

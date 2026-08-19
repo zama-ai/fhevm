@@ -12,6 +12,7 @@ import {
   applyVersionLock as applyStackVersionLock,
   refreshDiscovery as refreshStackDiscovery,
   up,
+  restagePromotedGreen as restageStackPromotedGreen,
   startDeferredGreen as startStackDeferredGreen,
   upgradeThresholdKmsOperator,
   upgradeThresholdKmsNode,
@@ -92,6 +93,8 @@ export type RolloutRunContext = {
   upgradeRuntimeGroup(group: string, options?: RolloutRuntimeUpgradeOptions): Promise<void>;
   /** Starts a Green fleet after prerequisite material has converged on Blue. */
   startDeferredGreen(): Promise<void>;
+  /** Re-homes the promoted Green as Blue and prepares a newer deferred Green fleet. */
+  restagePromotedGreen(options: { stackVersion: string; env?: Record<string, string>; args?: Record<string, string[]> }): Promise<void>;
   resolveVersionLock(name: string, options: RolloutLockOptions): Promise<string>;
   writeVersionLock(name: string, options: RolloutLockOptions): Promise<string>;
 };
@@ -431,6 +434,10 @@ export const createRolloutContext = (
     async startDeferredGreen() {
       await startStackDeferredGreen();
       await receipt.record("start-green", "started deferred Green fleet", { docker: true });
+    },
+    async restagePromotedGreen(options) {
+      await restageStackPromotedGreen(options);
+      await receipt.record("restage-green", `restaged promoted fleet before v${options.stackVersion}`, { docker: true });
     },
     async resolveVersionLock(name, options) {
       const target = options.target ?? ROLLOUT_TARGET;

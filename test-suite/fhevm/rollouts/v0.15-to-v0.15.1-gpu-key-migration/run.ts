@@ -22,7 +22,7 @@ import {
   assertLocalConnectorUpgrade,
   assertOperatorMaterialAgreement,
 } from "../v0.14-to-v0.15-gpu-key-migration/checks";
-import { migrationPhaseVersions, migrationVersions, versionSources } from "./versions";
+import { coprocessorVersionKeys, migrationPhaseVersions, migrationVersions, versionSources } from "./versions";
 
 const CONNECTOR_PARTIES = 4;
 const OPERATOR_COUNT = 2;
@@ -124,8 +124,10 @@ bcs:
 gcs:
   source:
     mode: local
-  stackVersion: "0.15.1"
+  stackVersion: "0.15.0"
   deferredStart: true
+  env:
+    FORCE_LEGACY_SERVER_KEY: "true"
 ${kmsTopology}
 `;
 
@@ -305,6 +307,18 @@ const assertGreenSafeguard = async () => {
       const green = `${prefix}gcs-${worker}`;
       if (await forcesLegacyServerKey(green)) {
         throw new Error(`${green} must not receive the force-legacy safeguard`);
+      }
+    }
+  }
+};
+
+const assertGreenForcedLegacy = async () => {
+  for (let operator = 0; operator < OPERATOR_COUNT; operator += 1) {
+    const prefix = operator === 0 ? "coprocessor-" : `coprocessor${operator}-`;
+    for (const worker of KEY_WORKERS) {
+      const green = `${prefix}gcs-${worker}`;
+      if (!(await forcesLegacyServerKey(green))) {
+        throw new Error(`${green} is not forced to use legacy material`);
       }
     }
   }
@@ -562,34 +576,34 @@ export const reconstructMigrated015Fixture = async (ctx: RolloutRunContext): Pro
   logPhase("05 upgrade listener-core before the 0.15 coprocessor fleet");
   await ctx.upgradeRuntimeGroup("listener-core", { lockFile: listenerCoreLock });
 
-  logPhase("06 reconstruct active 0.15 workers and pin them to legacy material");
-  await ctx.upgradeRuntimeGroup("coprocessor", {
+  logPhase("06 start local 0.15 Green with the legacy-material safeguard");
+  await ctx.applyVersionLock("RFC 029 0.15 Green runtime metadata", {
     lockFile: blueLock,
-    bcsTag: versions.blueTag,
-    bcsCompatTag: "v0.15.0",
+    allowedVersionKeys: [...coprocessorVersionKeys],
   });
+  await ctx.startDeferredGreen();
   await assertActiveSafeguard();
-  await assertActiveImageTag(versions.blueTag);
+  await assertGreenForcedLegacy();
+  await assertGreenWorkersParked();
+
+  logPhase("07 cut over from 0.14 Blue to 0.15 Green");
+  await ctx.test("blue-green", { parallel: false });
+
+  logPhase("08 re-home promoted 0.15 as Blue and prepare deferred 0.15.1 Green");
+  await ctx.restagePromotedGreen({ stackVersion: "0.15.1" });
+  await assertActiveSafeguard();
+  await assertActiveImageTag("gcs-0.15.0");
   await assertGreenAbsent();
   await ctx.test("input-proof-compute-decrypt", { parallel: false });
-  // The preceding rollout already proved the 0.14 -> 0.15 cutover. This fixture
-  // swaps in that exact 0.15 fleet, so mirror the version marker written by the
-  // proven cutover before testing the separate 0.15 -> 0.15.1 boundary.
   for (let operator = 0; operator < OPERATOR_COUNT; operator += 1) {
     const database = coprocessorDatabaseName(operator);
-    const version = await sqlScalar(
-      database,
-      "WITH updated AS (" +
-        "UPDATE versioning SET stack_version = 'v0.15.0', updated_at = NOW() " +
-        "WHERE singleton = TRUE RETURNING stack_version" +
-        ") SELECT stack_version FROM updated;",
-    );
+    const version = await sqlScalar(database, "SELECT stack_version FROM versioning WHERE singleton = TRUE;");
     if (version !== "v0.15.0") {
-      throw new Error(`${database} did not reconstruct the proven v0.15.0 stack marker`);
+      throw new Error(`${database} did not retain the promoted v0.15.0 stack marker`);
     }
   }
 
-  logPhase("07 request compressed material for the existing active Test key");
+  logPhase("09 request compressed material for the existing active Test key");
   const keyIdHex = await sqlScalar(
     coprocessorDatabaseName(0),
     "SELECT encode(key_id, 'hex') FROM keys ORDER BY sequence_number DESC LIMIT 1;",
@@ -605,7 +619,7 @@ export const reconstructMigrated015Fixture = async (ctx: RolloutRunContext): Pro
     `npx hardhat task:triggerKeygen --params-type ${paramsType} --existing-key-id ${keyId} --use-internal-proxy-address true`,
   );
 
-  logPhase("08 wait until KMS and every active operator expose identical material");
+  logPhase("10 wait until KMS and every active operator expose identical material");
   await waitUntil("every KMS operator serves both representations under the original key ID", async () => {
     const legacy = await kmsPublicMaterialDigests("ServerKey", keyIdHex);
     if (new Set(legacy).size !== 1) {
@@ -662,7 +676,7 @@ export const reconstructMigrated015Fixture = async (ctx: RolloutRunContext): Pro
 export default async function runMigrationAndAdoption(ctx: RolloutRunContext) {
   const continuityContract = await reconstructMigrated015Fixture(ctx);
 
-  logPhase("09 deploy 0.15.1 Green only after every Blue database has applied material");
+  logPhase("11 deploy 0.15.1 Green only after every Blue database has applied material");
   const greenStartedAt = new Date().toISOString();
   await ctx.startDeferredGreen();
   await assertActiveSafeguard();
@@ -671,11 +685,11 @@ export default async function runMigrationAndAdoption(ctx: RolloutRunContext) {
   await assertWorkerRepresentation("Green", EAGER_KEY_WORKERS, "compressed-xof", greenStartedAt);
   await ctx.test("input-proof-compute-decrypt", { parallel: false });
 
-  logPhase("10 run the existing blue-green failure, retry, unanimity, and cutover battery");
+  logPhase("12 run the existing blue-green failure, retry, unanimity, and cutover battery");
   await ctx.test("blue-green", { blueGreenPredecessorVersion: "v0.15.0", parallel: false });
   await assertWorkerRepresentation("Green", ["tfhe-worker"], "compressed-xof", greenStartedAt);
 
-  logPhase("11 verify post-cutover protocol paths with compressed material");
+  logPhase("13 verify post-cutover protocol paths with compressed material");
   await runKeyContinuity("reuse", continuityContract);
   await ctx.test("rollout-standard", { parallel: false });
   await ctx.test("public-decryption", { parallel: false });
