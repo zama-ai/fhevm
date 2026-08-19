@@ -104,6 +104,12 @@ pub struct SolanaAbiSchema {
     });
 }
 
+// Compiles the Anvil mock contracts under contracts/ for the integration
+// tests. The event/type sources they import are symlinks into
+// host-contracts/contracts/; the Rust event bindings themselves are NOT
+// generated here — they live in the committed host-contracts/rust_bindings
+// crate, refreshed with `make -C host-contracts update-bindings` (CI's
+// check-bindings target catches drift).
 fn compile_test_contracts() {
     println!("cargo:rerun-if-env-changed=HOST_LISTENER_SKIP_TEST_CONTRACTS");
     // Image builds compile bins, not tests. The Anvil mocks symlink into
@@ -113,6 +119,23 @@ fn compile_test_contracts() {
             "cargo::warning=skipping test-contract solc (HOST_LISTENER_SKIP_TEST_CONTRACTS is set)"
         );
         return;
+    }
+    // Also skip when the symlink targets are absent (fs::metadata follows
+    // symlinks), so builds without host-contracts sources don't panic on
+    // dangling links even when the env var above was forgotten.
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let symlinked_sources = [
+        "contracts/ACLEvents.sol",
+        "contracts/FHEEvents.sol",
+        "contracts/shared/FheType.sol",
+    ];
+    for source in symlinked_sources {
+        if fs::metadata(manifest_dir.join(source)).is_err() {
+            println!(
+                "cargo::warning=skipping test-contract solc ({source} does not resolve; host-contracts sources are absent)"
+            );
+            return;
+        }
     }
 
     let paths =

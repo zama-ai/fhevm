@@ -26,6 +26,11 @@ COPY solana/runtime-tests ./solana/runtime-tests
 
 WORKDIR /app/coprocessor/fhevm-engine
 
+# host-listener is a dependency of stress-test-generator; its build.rs would
+# otherwise compile the Anvil mock contracts, which symlink into the un-copied
+# host-contracts/contracts/. Same opt-out as the host-listener Dockerfile.
+ENV HOST_LISTENER_SKIP_TEST_CONTRACTS=1
+
 # Build stress_generator binary
 # NOTE: We use a cache mount for the target directory to enable incremental compilation.
 # Because cache mounts are NOT committed to the image layer, we must copy the binary
