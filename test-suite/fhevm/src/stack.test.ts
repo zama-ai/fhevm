@@ -7,6 +7,7 @@ import {
   previewStateFromBundle,
   removeRuntimeUpgradeOverrides,
   resolveUpgradePlan,
+  restagePromotedGreen,
   startDeferredGreen,
 } from "./flow/up-flow";
 import { presetBundle } from "./resolve/target";
@@ -289,5 +290,104 @@ describe("stack", () => {
     if (saved?.scenario.kind === "blue-green") {
       expect(saved.scenario.gcs.deferredStart).toBe(false);
     }
+  });
+
+  test("re-homes a promoted local Green before staging the next Green version", async () => {
+    const state: State = {
+      target: "latest-main",
+      lockPath: "/tmp/lock.json",
+      versions: presetBundle("latest-main", "abcdef0", "lock.json"),
+      overrides: [],
+      scenario: {
+        ...blueGreenScenario,
+        gcs: {
+          ...blueGreenScenario.gcs,
+          deferredStart: false,
+          env: { FORCE_LEGACY_SERVER_KEY: "true" },
+        },
+      },
+      completedSteps: ["base", "coprocessor"],
+      updatedAt: "2026-07-14T00:00:00.000Z",
+    };
+    const generated: string[] = [];
+    const removed: string[][] = [];
+    const saved: State[] = [];
+    const started: string[][] = [];
+    const operations = {
+      async loadState() { return state; },
+      async generateRuntime(next: State) {
+        if (next.scenario.kind === "blue-green") {
+          generated.push(`${next.scenario.gcs.stackVersion}:${next.scenario.gcs.deferredStart}`);
+        }
+      },
+      async maybeBuild() {},
+      async composeUp(_component: string, services: string[] = []) { started.push(services); },
+      async waitForContainer() {},
+      async waitForCoprocessorServices() {},
+      async multiChainComposeUp() {},
+      async postBootHealthGate() {},
+      async removeContainers(containers: string[]) { removed.push(containers); },
+      async saveState(next: State) { saved.push(next); },
+    };
+
+    await restagePromotedGreen({ stackVersion: "0.15.1" }, operations);
+
+    expect(generated).toEqual(["0.15.0:true", "0.15.1:true"]);
+    expect(started[0]?.some((service) => service.includes("-gcs-"))).toBe(false);
+    expect(removed[0]).toContain("coprocessor-tfhe-worker");
+    expect(removed[1]).toContain("coprocessor-gcs-tfhe-worker");
+    expect(saved).toHaveLength(1);
+    const next = saved[0]?.scenario;
+    expect(next?.kind).toBe("blue-green");
+    if (next?.kind === "blue-green") {
+      expect(next.bcs.source).toEqual({
+        mode: "registry",
+        tag: "gcs-0.15.0",
+        compatTag: "v0.15.0",
+      });
+      expect(next.bcs.env.FORCE_LEGACY_SERVER_KEY).toBe("true");
+      expect(next.gcs.stackVersion).toBe("0.15.1");
+      expect(next.gcs.deferredStart).toBe(true);
+      expect(next.gcs.env.FORCE_LEGACY_SERVER_KEY).toBeUndefined();
+    }
+  });
+
+  test("restores the promoted Green definition when Blue re-homing fails", async () => {
+    const state: State = {
+      target: "latest-main",
+      lockPath: "/tmp/lock.json",
+      versions: presetBundle("latest-main", "abcdef0", "lock.json"),
+      overrides: [],
+      scenario: {
+        ...blueGreenScenario,
+        gcs: { ...blueGreenScenario.gcs, deferredStart: false },
+      },
+      completedSteps: ["base", "coprocessor"],
+      updatedAt: "2026-07-14T00:00:00.000Z",
+    };
+    const generatedDeferredStates: boolean[] = [];
+    let saves = 0;
+    const operations = {
+      async loadState() { return state; },
+      async generateRuntime(next: State) {
+        if (next.scenario.kind === "blue-green") {
+          generatedDeferredStates.push(next.scenario.gcs.deferredStart);
+        }
+      },
+      async maybeBuild() {},
+      async composeUp() {},
+      async waitForContainer() {},
+      async waitForCoprocessorServices() {},
+      async multiChainComposeUp() {},
+      async postBootHealthGate() { throw new Error("replacement Blue unhealthy"); },
+      async removeContainers() {},
+      async saveState() { saves += 1; },
+    };
+
+    await expect(restagePromotedGreen({ stackVersion: "0.15.1" }, operations)).rejects.toThrow(
+      "replacement Blue unhealthy",
+    );
+    expect(generatedDeferredStates).toEqual([true, false]);
+    expect(saves).toBe(0);
   });
 });

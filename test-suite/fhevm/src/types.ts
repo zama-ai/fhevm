@@ -275,6 +275,7 @@ export type CleanOptions = {
 };
 
 export type TestOptions = {
+  blueGreenPredecessorVersion?: string;
   grep?: string;
   network: string;
   verbose: boolean;

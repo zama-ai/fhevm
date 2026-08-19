@@ -1774,6 +1774,108 @@ export const startDeferredGreen = async (operations: DeferredGreenOperations = d
   }
 };
 
+export type RestageDeferredGreenOptions = {
+  stackVersion: string;
+  env?: Record<string, string>;
+  args?: Record<string, string[]>;
+};
+
+/**
+ * Re-homes a promoted local Green fleet into the Blue service slots, then
+ * prepares a newer deferred Green fleet without replacing the databases.
+ */
+export const restagePromotedGreen = async (
+  options: RestageDeferredGreenOptions,
+  operations: DeferredGreenOperations = deferredGreenOperations,
+) => {
+  const state = await operations.loadState();
+  if (!state || state.scenario.kind !== "blue-green" || state.scenario.gcs.deferredStart) {
+    throw new PreflightError("restagePromotedGreen requires a started Green fleet in a Blue-Green scenario");
+  }
+  if (state.scenario.gcs.source.mode !== "local") {
+    throw new PreflightError("restagePromotedGreen requires the promoted Green fleet to use local images");
+  }
+  if (options.stackVersion === state.scenario.gcs.stackVersion) {
+    throw new PreflightError("restagePromotedGreen requires a different next Green stack version");
+  }
+
+  const scenario = state.scenario;
+  const currentStackVersion = scenario.gcs.stackVersion;
+  const promotedBlue = {
+    source: {
+      mode: "registry" as const,
+      tag: `gcs-${currentStackVersion}`,
+      compatTag: `v${currentStackVersion}`,
+    },
+    env: scenario.gcs.env,
+    args: scenario.gcs.args,
+  };
+  const transitionState: State = {
+    ...state,
+    scenario: {
+      ...scenario,
+      bcs: promotedBlue,
+      gcs: { ...scenario.gcs, deferredStart: true },
+    },
+  };
+  const blueServices = blueGreenServiceNames(transitionState, { includeMigration: false });
+  const oldBlueServices = blueGreenServiceNames(state, { includeMigration: false, includeDeferredGreen: true })
+    .filter((service) => !service.includes("-gcs-"));
+  const promotedGreenServices = blueGreenServiceNames(state, {
+    includeMigration: false,
+    includeDeferredGreen: true,
+  }).filter((service) => service.includes("-gcs-"));
+  const extraBlueByChain = extraHostChains(transitionState).map((chain) => ({
+    chain,
+    services: listenerContainersForChain(transitionState, chain.key),
+  }));
+  const extraPromotedGreen = extraHostChains(state).flatMap((chain) =>
+    listenerContainersForChain(state, chain.key).map((service) => service.replace(/^(coprocessor\d*)-/, "$1-gcs-")),
+  );
+
+  try {
+    await operations.removeContainers(oldBlueServices);
+    await operations.generateRuntime(transitionState, stackSpecForState(transitionState));
+    await operations.composeUp("coprocessor", blueServices, { noDeps: true });
+    await operations.waitForCoprocessorServices(transitionState, true);
+    for (const { chain, services } of extraBlueByChain) {
+      await operations.multiChainComposeUp(coprocessorHostKey(chain.key), services);
+      for (const service of services) {
+        await operations.waitForContainer(service, "running");
+      }
+    }
+    await operations.postBootHealthGate([...blueServices, ...extraBlueByChain.flatMap(({ services }) => services)]);
+  } catch (error) {
+    await operations.removeContainers(blueServices);
+    await operations.generateRuntime(state, stackSpecForState(state));
+    throw error;
+  }
+
+  const nextState: State = {
+    ...transitionState,
+    scenario: {
+      ...scenario,
+      bcs: promotedBlue,
+      gcs: {
+        source: { mode: "local" },
+        stackVersion: options.stackVersion,
+        deferredStart: true,
+        env: options.env ?? {},
+        args: options.args ?? {},
+      },
+    },
+  };
+  try {
+    await operations.generateRuntime(nextState, stackSpecForState(nextState));
+    await operations.saveState(nextState);
+  } catch (error) {
+    await operations.removeContainers(blueServices);
+    await operations.generateRuntime(state, stackSpecForState(state));
+    throw error;
+  }
+  await operations.removeContainers([...promotedGreenServices, ...extraPromotedGreen]);
+};
+
 type ThresholdKmsNodeUpgradeOperations = {
   composeUp: typeof composeUp;
   ensureRuntimeArtifacts: typeof ensureRuntimeArtifacts;
