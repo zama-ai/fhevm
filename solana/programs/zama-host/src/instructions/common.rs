@@ -234,16 +234,15 @@ pub(super) fn read_canonical_encrypted_value(info: &AccountInfo) -> Result<Encry
     Ok(value)
 }
 
-/// Persistent input authorization: the account must be a canonical program-owned
-/// `EncryptedValue`, `handle` must be its *current* handle (for this chain),
-/// and `subject` must be a current allowed member.
+/// Persistent input authorization over an already-decoded canonical `EncryptedValue` (the
+/// caller's decode-once cache owns the decode): `handle` must be its *current* handle (for this
+/// chain), and `subject` must be a current allowed member.
 pub(super) fn assert_encrypted_value_subject_allowed(
-    info: &AccountInfo,
+    value: &EncryptedValue,
     handle: [u8; 32],
     chain_id: u64,
     subject: Pubkey,
 ) -> Result<()> {
-    let value = read_canonical_encrypted_value(info)?;
     assert_handle_for_chain(value.current_handle, chain_id)?;
     require!(
         value.current_handle == handle,

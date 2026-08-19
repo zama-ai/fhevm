@@ -107,7 +107,7 @@ pub fn fhe_execute<'info>(
     let subject = ctx.accounts.compute_subject.key();
     let clock = Clock::get()?;
     let previous_bank_hash = previous_bank_hash(clock.slot)?;
-    let persistent_anchor_bytes = collect_persistent_anchor_bytes(&account_table, &args)?;
+    let persistent_anchor_bytes = collect_persistent_anchor_bytes(&mut account_table, &args)?;
     let handle_context = ExecutionHandleContext {
         derivation: HandleDerivationContext {
             chain_id: ctx.accounts.host_config.chain_id,
@@ -150,7 +150,7 @@ pub(in crate::instructions) fn step_output(step: &FheExecuteStep) -> &FheExecute
 /// `leaf_count` advances whenever an outgoing handle is sealed, so returning to an
 /// earlier content-addressed handle cannot replay a previous random seed.
 fn collect_persistent_anchor_bytes(
-    table: &ExecutionAccountTable<'_, '_>,
+    table: &mut ExecutionAccountTable<'_, '_>,
     args: &FheExecuteArgs,
 ) -> Result<Vec<u8>> {
     let mut anchor_bytes = Vec::with_capacity(args.steps.len() * 73);
@@ -160,10 +160,11 @@ fn collect_persistent_anchor_bytes(
             ..
         } = step_output(step)
         {
-            let account = table.account(u16::from(*output_encrypted_value_index))?;
+            let index = u16::from(*output_encrypted_value_index);
+            let account = table.account(index)?;
             anchor_bytes.extend_from_slice(account.key().as_ref());
             if account.owner == &crate::ID {
-                let value = read_canonical_encrypted_value(account)?;
+                let value = table.canonical_encrypted_value(index)?;
                 anchor_bytes.push(1);
                 anchor_bytes.extend_from_slice(&value.current_handle);
                 anchor_bytes.extend_from_slice(&value.leaf_count.to_le_bytes());
@@ -248,8 +249,12 @@ impl<'info> ExecutionState<'_, '_, 'info> {
         handle: [u8; 32],
         encrypted_value_index: u16,
     ) -> Result<ResolvedOperand> {
-        let value_info = self.table.account(encrypted_value_index)?;
-        assert_encrypted_value_subject_allowed(value_info, handle, self.chain_id, self.subject)?;
+        let chain_id = self.chain_id;
+        let subject = self.subject;
+        let value = self
+            .table
+            .canonical_encrypted_value(encrypted_value_index)?;
+        assert_encrypted_value_subject_allowed(value, handle, chain_id, subject)?;
         Ok(ResolvedOperand::encrypted(handle, false))
     }
 
@@ -515,7 +520,7 @@ fn bind_execution_output<'info>(
         // Update: the execution's declared previous state must match the stored
         // state exactly, so indexers can reconstruct the appended MMR leaves
         // from instruction data alone. `output_subjects` may replace the audience.
-        let mut value = read_canonical_encrypted_value(output_info)?;
+        let mut value = table.take_canonical_encrypted_value(output_encrypted_value_index)?;
         validate_persistent_output_previous_state(&value, previous_state)?;
         if output_subjects
             .iter()
@@ -727,7 +732,7 @@ mod tests {
         let owner = crate::ID;
         let account = AccountInfo::new(&key, false, true, &mut lamports, &mut data, &owner, false);
         let accounts = [account];
-        let table = ExecutionAccountTable::new(&accounts).unwrap();
+        let mut table = ExecutionAccountTable::new(&accounts).unwrap();
         let args = FheExecuteArgs {
             account_count: 1,
             dictionary: Vec::new(),
@@ -748,7 +753,7 @@ mod tests {
                 },
             }],
         };
-        collect_persistent_anchor_bytes(&table, &args).unwrap()
+        collect_persistent_anchor_bytes(&mut table, &args).unwrap()
     }
 
     #[test]

@@ -27,12 +27,15 @@
 mod accounts;
 mod acl;
 mod builder;
+mod cost;
 mod cpi;
 mod execution;
 #[cfg(test)]
 mod heap_budget;
+mod heap_tally;
 mod lower;
 mod operand;
+mod ops;
 #[cfg(test)]
 mod tests;
 mod types;
@@ -48,7 +51,12 @@ pub use acl::{
     BoundedU64UpperBound, Domain, EncryptedValueId, EncryptedValueLabel, Output, PersistentOutput,
     PersistentOutputBinding,
 };
-pub use builder::{FheExecutionBuilder, MAX_ON_CHAIN_EXECUTION_STEPS};
+pub use builder::FheExecutionBuilder;
+pub use cost::{
+    instruction_trace_floor, FheExecutionCost, APP_HEAP_RESERVE_BYTES, BUILD_HEAP_BUDGET_BYTES,
+    CPIS_PER_PERSISTENT_CREATE, CPI_INSTRUCTION_DATA_LIMIT, PROGRAM_HEAP_BYTES,
+    TRANSACTION_INSTRUCTION_TRACE_LIMIT,
+};
 #[cfg(feature = "cpi")]
 pub use cpi::ExecutionCpiAccounts;
 pub use execution::FheExecution;
@@ -80,14 +88,32 @@ pub enum FheExecutionBuildError {
     /// Use the producer returned by that step for the new value, or consume the
     /// old persistent value before writing the account.
     PersistentOperandWrittenEarlier,
-    /// More steps were added than the host accepts (`MAX_FHE_EXECUTION_STEPS`).
+    /// More steps were added than the host accepts (`MAX_FHE_EXECUTION_STEPS`) — the one step
+    /// ceiling, on-chain and off. The heap no longer bounds the step count by itself: the
+    /// builder's own budget ([`ExceedsBuildHeapBudget`](Self::ExceedsBuildHeapBudget)) holds
+    /// every admitted shape inside the fixed 32 KB region, which cannot be raised (DD-046).
     TooManySteps,
-    /// More steps were added than a program can build and invoke on Anchor's default 32 KB heap
-    /// (`MAX_ON_CHAIN_EXECUTION_STEPS`). Only ever returned on-chain: the build and the packet come out of
-    /// one bump region that is never freed, so past this count the allocator aborts the instruction
-    /// with no error of its own. Build such an execution off-chain, or install a larger heap and enable
-    /// the crate's `raised-heap` feature.
-    TooManyStepsForDefaultHeap,
+    /// The step's persistent creates and events would push the transaction past Solana's
+    /// 64-instruction trace even in the minimal wrapper — one app instruction invoking
+    /// `fhe_execute` once — so the execution could never land. Three system CPIs per created
+    /// output is the binding term: at most 20 creates fit one execution. Split the creates
+    /// across executions, or update existing accounts instead (updates cost no CPI). See
+    /// [`instruction_trace_floor`].
+    ExceedsInstructionTraceLimit,
+    /// The serialized `fhe_execute` packet exceeds the 10 KiB the runtime allows a CPI to
+    /// carry ([`CPI_INSTRUCTION_DATA_LIMIT`]), and the packet always travels by CPI — so the
+    /// runtime would reject the invoke. Verified-input attestations are the heavy term
+    /// (roughly 1 KiB each at maximum size); split them across executions.
+    ExceedsCpiInstructionDataLimit,
+    /// Building, serializing, and invoking this execution would request more of the program's
+    /// fixed, never-freeing 32 KB heap than the builder's budget
+    /// ([`BUILD_HEAP_BUDGET_BYTES`]) — on-chain it would abort the instruction with no error
+    /// at all once the region ran out. The builder tallies every byte it asks the allocator
+    /// for and charges the invoke-side account tables up front (both validated byte-for-byte
+    /// against a counting allocator), so this fires exactly when the instruction cannot
+    /// survive. Fewer persistent outputs, narrower subject lists, or fewer embedded
+    /// attestations shrink the shape; splitting the work across executions always works.
+    ExceedsBuildHeapBudget,
     /// `finish` was called with no steps; the host rejects empty executions.
     EmptySteps,
     /// `finish` was called on an execution with a rand step but no persistent output;

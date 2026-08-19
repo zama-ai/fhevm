@@ -98,40 +98,20 @@ impl ExecutionAccountMeta {
         }
     }
 
-    /// Widens this entry so it also satisfies `required`, returning the record that undoes it.
-    /// The record lives next to the mutation on purpose: it is only complete because `promote`
-    /// does exactly two things — OR the flags and append purposes — so anything added here has to
-    /// be added to [`ExecutionAccountMeta::demote`] in the same edit.
-    pub(crate) fn promote(&mut self, required: Self) -> MetaPromotion {
-        let undo = MetaPromotion {
-            was_writable: self.is_writable,
-            was_signer: self.is_signer,
-            purposes_len: self.purposes.len(),
-        };
-        self.is_writable |= required.is_writable;
-        self.is_signer |= required.is_signer;
-        for purpose in required.purposes {
-            if !self.purposes.contains(&purpose) {
-                self.purposes.push(purpose);
-            }
-        }
-        undo
+    /// Same predicate as [`ExecutionAccountRequirement::requires_dynamic_account`], on the
+    /// stored meta directly so resolution never clones a purposes table just to ask.
+    pub(crate) fn requires_dynamic_account(&self) -> bool {
+        self.purposes
+            .iter()
+            .any(|purpose| *purpose != ExecutionAccountPurpose::PersistentOutputAuthority)
     }
 
-    /// Restores the entry to what it was before the [`MetaPromotion`] was taken.
-    pub(crate) fn demote(&mut self, undo: MetaPromotion) {
-        self.is_writable = undo.was_writable;
-        self.is_signer = undo.was_signer;
-        self.purposes.truncate(undo.purposes_len);
+    /// Same predicate as [`ExecutionAccountRequirement::requires_output_authority`], on the
+    /// stored meta directly.
+    pub(crate) fn requires_output_authority(&self) -> bool {
+        self.purposes
+            .contains(&ExecutionAccountPurpose::PersistentOutputAuthority)
     }
-}
-
-/// What one [`ExecutionAccountMeta::promote`] changed, small enough to record without allocating.
-#[derive(Debug)]
-pub(crate) struct MetaPromotion {
-    was_writable: bool,
-    was_signer: bool,
-    purposes_len: usize,
 }
 
 impl From<&ExecutionAccountMeta> for ExecutionAccountRequirement {
@@ -242,8 +222,17 @@ pub(crate) fn resolve_execution_accounts<'info>(
     dynamic_accounts: impl IntoIterator<Item = AccountInfo<'info>>,
     output_authorities: impl IntoIterator<Item = AccountInfo<'info>>,
 ) -> std::result::Result<ResolvedExecutionAccounts<'info>, ExecutionAccountResolutionError> {
-    let dynamic_accounts = dynamic_accounts.into_iter().collect::<Vec<_>>();
-    let output_authorities = output_authorities.into_iter().collect::<Vec<_>>();
+    // Collected into tables sized from the counts the execution itself requires (a successful
+    // resolution supplies exactly those), never from the caller's iterator hint: on the
+    // never-freeing bump heap these tables are part of what `build()` admitted against the
+    // budget, so their size has to be the exact function of shape that
+    // `FheExecutionCost::invoke_heap_bytes` charged.
+    let mut dynamic_accounts_table = Vec::with_capacity(execution.cost.dynamic_accounts);
+    dynamic_accounts_table.extend(dynamic_accounts);
+    let dynamic_accounts = dynamic_accounts_table;
+    let mut output_authorities_table = Vec::with_capacity(execution.cost.output_authorities);
+    output_authorities_table.extend(output_authorities);
+    let output_authorities = output_authorities_table;
 
     for (index, account) in dynamic_accounts.iter().enumerate() {
         let pubkey = account.key();
@@ -253,9 +242,12 @@ pub(crate) fn resolve_execution_accounts<'info>(
         {
             return Err(ExecutionAccountResolutionError::DuplicateDynamicAccount { pubkey });
         }
+        // Read off the stored metas directly: the requirement view clones its purposes table
+        // per item, which would put an untallied allocation inside every comparison here.
         let Some(required) = execution
-            .dynamic_account_requirements()
-            .find(|required| required.pubkey() == pubkey)
+            .remaining_accounts
+            .iter()
+            .find(|meta| meta.pubkey == pubkey)
         else {
             return Err(ExecutionAccountResolutionError::UnexpectedDynamicAccount { pubkey });
         };
@@ -289,32 +281,35 @@ pub(crate) fn resolve_execution_accounts<'info>(
         }
     }
 
-    let mut accounts = Vec::new();
-    for required in execution.dynamic_account_requirements() {
+    // One resolved slot per remaining account (validation above rejected anything else), and
+    // requirement views are built only on error paths, where their clone aborts the
+    // instruction anyway.
+    let mut accounts = Vec::with_capacity(execution.remaining_accounts.len());
+    for required in &execution.remaining_accounts {
         let account = if required.requires_output_authority() {
             output_authorities
                 .iter()
-                .find(|candidate| candidate.key() == required.pubkey())
+                .find(|candidate| candidate.key() == required.pubkey)
                 .cloned()
                 .ok_or(ExecutionAccountResolutionError::MissingOutputAuthority {
                     authority: ExecutionOutputAuthorityRequirement {
-                        pubkey: required.pubkey(),
+                        pubkey: required.pubkey,
                     },
                 })?
         } else if required.requires_dynamic_account() {
             dynamic_accounts
                 .iter()
-                .find(|candidate| candidate.key() == required.pubkey())
+                .find(|candidate| candidate.key() == required.pubkey)
                 .cloned()
                 .ok_or_else(|| ExecutionAccountResolutionError::MissingDynamicAccount {
-                    requirement: required.clone(),
+                    requirement: ExecutionAccountRequirement::from(required),
                 })?
         } else {
             continue;
         };
-        if required.is_writable() && !account.is_writable {
+        if required.is_writable && !account.is_writable {
             return Err(ExecutionAccountResolutionError::DynamicAccountNotWritable {
-                requirement: required,
+                requirement: ExecutionAccountRequirement::from(required),
             });
         }
         accounts.push(account);
