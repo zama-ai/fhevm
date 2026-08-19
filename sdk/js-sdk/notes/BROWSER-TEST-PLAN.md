@@ -38,7 +38,7 @@ with a focus on multi-threaded WASM execution.
 - Keep Vitest for unit/Node tests; Playwright for browser integration tests
 - **1 page = 1 test**: each test scenario is a standalone HTML page with its own script
 - An index page lists all tests for manual browsing
-- Separate npm scripts: `test:browser` (automated), `test:browser:manual` (dev server)
+- Separate npm scripts: `test:browser-smoke` (automated), `test:browser-smoke:manual` (dev server)
 
 ## Test Scenarios
 
@@ -80,7 +80,7 @@ If this passes, the SDK works in the browser.
 Browser tests live in a dedicated, self-contained directory, fully isolated from the SDK source:
 
 ```
-test/browser/
+test/browser-smoke/
 ├── index.html              # Links to all test pages (for manual browsing)
 ├── vite.config.ts          # Vite dev server config (COOP/COEP headers)
 ├── playwright.config.ts    # Playwright config (browsers, timeouts)
@@ -99,8 +99,8 @@ test/browser/
 
 For visual debugging and performance inspection:
 
-- Run `npm run test:browser:manual` to start the Vite dev server
-- Open `http://localhost:3333/test/browser/index.html` in Safari or Chrome
+- Run `npm run test:browser-smoke:manual` to start the Vite dev server
+- Open `http://localhost:3333/test/browser-smoke/index.html` in Safari or Chrome
 - The index page lists all test scenarios as clickable links
 - Each test page displays a minimal, text-only view of:
   - Each test step as it executes (WASM loading, worker init, encrypt, decrypt)

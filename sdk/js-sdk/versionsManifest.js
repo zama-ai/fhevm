@@ -48,16 +48,17 @@ export const TFHE_MANIFEST = Object.freeze([
 export const KMS_MANIFEST = Object.freeze([
   Object.freeze({ version: '0.13.10', tags: Object.freeze(['prod', 'dev']) }),
   Object.freeze({ version: '0.13.20-0', tags: Object.freeze(['prod', 'dev']) }),
+  Object.freeze({ version: '0.14.0-1', tags: Object.freeze(['prod', 'dev']) }),
 ]);
 
 export const WASM_DEFAULT_VERSIONS = Object.freeze({
   prod: Object.freeze({
     tfhe: '1.6.2',
-    tkms: '0.13.20-0',
+    tkms: '0.14.0-1',
   }),
   dev: Object.freeze({
     tfhe: '1.6.2',
-    tkms: '0.13.20-0',
+    tkms: '0.14.0-1',
   }),
 });
 

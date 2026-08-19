@@ -354,6 +354,17 @@ export function typeNameFromFheTypeName(fheType: FheType): ValueTypeName {
   return fheType.substring(1) as ValueTypeName;
 }
 
+/**
+ * Resolves a raw type name to its clear `ValueTypeName`, accepting FHE type
+ * aliases ("ebool", "euint8", ...) in addition to clear-value names
+ * ("bool", "uint8", ...). Non-FHE type names are returned unchanged.
+ * @example resolveRawValueTypeName('euint8') // 'uint8'
+ * @example resolveRawValueTypeName('uint8') // 'uint8' (unchanged)
+ */
+export function resolveRawValueTypeName(type: string): string {
+  return isFheType(type) ? typeNameFromFheTypeName(type) : type;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Solidity primitive type names
 ////////////////////////////////////////////////////////////////////////////////
@@ -478,7 +489,7 @@ export function asClearValueType<etype extends FheType>(
     case 'euint32': {
       assertIsUintNumber(value, {
         ...options,
-        max: MAX_UINT_FOR_TYPE[fheTypeName],
+        max: MAX_UINT_FOR_TYPE[typeNameFromFheTypeName(fheTypeName)],
       });
       return value as ClearValueType<etype>;
     }
@@ -487,7 +498,7 @@ export function asClearValueType<etype extends FheType>(
     case 'euint256': {
       assertIsUintBigInt(value, {
         ...options,
-        max: MAX_UINT_FOR_TYPE[fheTypeName],
+        max: MAX_UINT_FOR_TYPE[typeNameFromFheTypeName(fheTypeName)],
       });
       return value as ClearValueType<etype>;
     }

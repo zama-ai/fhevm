@@ -6,6 +6,7 @@ import type { TypedValue } from '../../types/primitives.js';
 import { toFhevmHandle } from '../../handle/FhevmHandle.js';
 import { publicDecrypt as publicDecrypt_ } from '../../kms/publicDecrypt.js';
 import { clearValueToTypedValue } from '../../handle/ClearValue.js';
+import { initPublicAction } from '../../runtime/CoreFhevm-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -24,8 +25,10 @@ export async function decryptPublicValue(
 ): Promise<DecryptPublicValueReturnType> {
   const handle = toFhevmHandle(parameters.encryptedValue);
 
+  const fhevmContext = await initPublicAction(fhevm);
+
   const originToken = Symbol('decryptPublicValues');
-  const res = await publicDecrypt_(fhevm, { ...parameters, handles: [handle], originToken });
+  const res = await publicDecrypt_(fhevm, { ...parameters, handles: [handle], originToken, fhevmContext });
 
   return clearValueToTypedValue(res.orderedClearValues[0], originToken);
 }

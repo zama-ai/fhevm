@@ -247,7 +247,12 @@ async function _initTkmsModule(cfg: ResolvedTkmsModuleConfig): Promise<KmsLibApi
 
   const input: TkmsLibInitAsyncParameters = { module_or_path: wasmModule };
 
-  await kmsLib.initAsync(input);
+  try {
+    await kmsLib.initAsync(input);
+  } catch (e) {
+    cfg.logger?.error?.(`Failed to instantiate tkms WASM module (version=${cfg.version}).`, e);
+    throw e;
+  }
 
   // Note: init_panic_hook is not exposed by kms_lib
   const wasmInfo = kmsLib.getWasmInfo();

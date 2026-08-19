@@ -31,7 +31,6 @@
 //     decrypt the same handle via the SDK and assert the known plaintext;
 //     wallet-owned handles (`userAddress` = a contract) cannot be decrypted
 //     through the public SDK, so those positives assert `succeeded` only.
-
 import { expect } from 'chai';
 import { TypedDataEncoder } from 'ethers';
 import type { Signer, TypedDataDomain } from 'ethers';
@@ -110,11 +109,16 @@ export interface UnifiedDecryptRequest {
  *  - `erc1271`: `ownerSigner` (an owner key) signs; `userAddress` is the smart-wallet
  *     address, so the KMS/relayer verify via the wallet's `isValidSignature`.
  *  - `empty`: no signature (`0x`) — the Safe `approveHash` / `signedMessages` flow.
+ *  - `raw`: a pre-built signature blob forwarded verbatim — Safe multisig
+ *     concatenations (see `buildSafeMultisigSignature` in
+ *     test/erc1271UserDecryption/safe.ts) and deliberately malformed blobs for
+ *     negatives.
  */
 export type SignMode =
   | { readonly kind: 'eoa'; readonly signer: Signer }
   | { readonly kind: 'erc1271'; readonly ownerSigner: Signer }
-  | { readonly kind: 'empty' };
+  | { readonly kind: 'empty' }
+  | { readonly kind: 'raw'; readonly signature: string };
 
 export interface PostResult {
   readonly httpStatus: number;
@@ -191,8 +195,7 @@ export function chainIdFromHandle(ctHandle: string): number {
  * chain. Backdating by a small margin absorbs clock skew in both directions
  * without materially shortening the (days-long) validity windows used in tests.
  */
-export const backdatedStartTimestamp = (marginSeconds = 60): number =>
-  Math.floor(Date.now() / 1000) - marginSeconds;
+export const backdatedStartTimestamp = (marginSeconds = 60): number => Math.floor(Date.now() / 1000) - marginSeconds;
 
 function domainOf(cfg: UnifiedConfig, chainId: number): TypedDataDomain {
   return {
@@ -229,17 +232,50 @@ function requestChainId(req: UnifiedDecryptRequest): number {
 
 /**
  * Compute the EIP-712 digest that both `ecrecover` and ERC-1271
- * `isValidSignature` receive. Exposed so Safe-style mocks can pre-approve it via
- * `approveHash(digest)` before an empty-signature request.
+ * `isValidSignature` receive. Mock wallets pre-approve it directly via
+ * `approveHash(digest)`; a real Safe verifies over its SafeMessage RE-HASH of
+ * this digest, so Safe owners sign (and Safe approvals target) the wrapped
+ * hash instead — see test/erc1271UserDecryption/safe.ts.
  */
 export function computeUnifiedDigest(cfg: UnifiedConfig, req: UnifiedDecryptRequest): string {
   const chainId = requestChainId(req);
   return TypedDataEncoder.hash(domainOf(cfg, chainId), UNIFIED_USER_DECRYPT_TYPES, messageOf(req));
 }
 
+/**
+ * One 65-byte {r,s,v} signature part of a Safe-style multisig blob, keyed by
+ * the owner address the wallet will attribute it to (lowercase hex).
+ */
+export interface SignaturePart {
+  readonly address: string;
+  readonly signature: string;
+}
+
+/**
+ * Sort parts ascending by owner address — Safe's canonical encoding, where the
+ * ordering doubles as dedup. Code-point comparison on lowercase fixed-length
+ * hex equals numeric address order (deliberately NOT localeCompare, whose ICU
+ * collation is locale-dependent).
+ */
+export function sortSignatureParts(parts: readonly SignaturePart[]): SignaturePart[] {
+  return [...parts].sort((a, b) => (a.address < b.address ? -1 : 1));
+}
+
+/**
+ * Concatenate 65-byte parts into one blob, optionally followed by trailing
+ * bytes (raw hex, no `0x`) — Safe ignores anything past the static
+ * `threshold * 65` section, so valid blobs need not be a multiple of 65 bytes.
+ */
+export function concatSignatureParts(parts: readonly SignaturePart[], trailingHex = ''): string {
+  return `0x${parts.map((p) => p.signature.slice(2)).join('')}${trailingHex}`;
+}
+
 async function signRequest(cfg: UnifiedConfig, req: UnifiedDecryptRequest, mode: SignMode): Promise<string> {
   if (mode.kind === 'empty') {
     return '0x';
+  }
+  if (mode.kind === 'raw') {
+    return ensure0x(mode.signature);
   }
   if (mode.kind === 'eoa') {
     // 'eoa' means "the user signs for themselves" — a mismatched signer would
@@ -321,6 +357,10 @@ export async function submitUnifiedRequest(
   const envelope = buildEnvelope(req, signature);
 
   const url = `${relayerBaseUrl(cfg.relayerUrl)}/v3/user-decrypt`;
+  // Log the route we drive. The SDK client logs its own (legacy `/v2`) calls,
+  // so without this a reader sees only `/v2` in the output and cannot tell
+  // which component issued what.
+  console.log(`[unified] POST ${url}`);
   const resp = await fetch(url, {
     method: 'POST',
     headers: httpHeaders(cfg, true),
@@ -426,9 +466,7 @@ export function isSignatureRejection(post: PostResult): boolean {
   const err = (post.raw as { error?: { details?: Array<{ field?: string; issue?: string }> } }).error;
   return (err?.details ?? []).some(
     (d) =>
-      d.field === 'signature' &&
-      typeof d.issue === 'string' &&
-      d.issue.toLowerCase().includes('signature is invalid'),
+      d.field === 'signature' && typeof d.issue === 'string' && d.issue.toLowerCase().includes('signature is invalid'),
   );
 }
 
@@ -438,7 +476,22 @@ export function isSignatureRejection(post: PostResult): boolean {
  * negatives whose cause is a per-handle ownership/delegation ACL failure —
  * pinning the reason so the test cannot pass on an unintended failure.
  */
-export function expectRelayerAclRejection(poll: PollResult | undefined): void {
+/**
+ * Distinguish "no verdict yet" from "wrong verdict".
+ *
+ * Bare `expected 'pending' to equal 'failed'` reads as a wrong outcome when the
+ * job simply never went terminal — a request accepted on-chain instead of
+ * rejected stays non-terminal until the relayer's own `user_decrypt_timeout`
+ * (30m default) reaps it, far beyond any budget here.
+ */
+function assertReachedTerminalState(poll: PollResult | undefined): void {
+  if (poll?.status === 'pending') {
+    expect.fail(`no verdict within the poll budget — the job never went terminal. Raw: ${JSON.stringify(poll?.raw)}`);
+  }
+}
+
+export function expectRelayerAclRejection(poll: PollResult | undefined, messagePattern?: RegExp): void {
+  assertReachedTerminalState(poll);
   expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('failed');
   expect(poll?.errorLabel, JSON.stringify(poll?.raw)).to.equal('not_allowed_on_host_acl');
 }
@@ -463,6 +516,7 @@ export function expectStuckAtKms(poll: PollResult | undefined): void {
  * unrelated simulation failure.
  */
 export function expectGatewayRevert(poll: PollResult | undefined, messagePattern: RegExp): void {
+  assertReachedTerminalState(poll);
   expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('failed');
   const message = ((poll?.raw as { error?: { message?: string } })?.error?.message ?? '') as string;
   expect(message, JSON.stringify(poll?.raw)).to.match(messagePattern);
@@ -474,10 +528,6 @@ export function directHandle(ctHandle: string, contractAddress: string, userAddr
 }
 
 /** Build a delegated handle entry (`ownerAddress` is the delegator). */
-export function delegatedHandle(
-  ctHandle: string,
-  contractAddress: string,
-  ownerAddress: string,
-): UnifiedHandleEntry {
+export function delegatedHandle(ctHandle: string, contractAddress: string, ownerAddress: string): UnifiedHandleEntry {
   return { ctHandle, contractAddress, ownerAddress };
 }

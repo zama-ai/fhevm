@@ -1,15 +1,18 @@
 import type { UintNumber } from '../../../types/primitives.js';
 import type {
+  FetchFeaturesParameters,
+  FetchFeaturesReturnType,
   FetchFheEncryptionKeyBytesParameters,
   FetchFheEncryptionKeyBytesReturnType,
   FetchFheEncryptionKeySourceParameters,
   RelayerClient,
+  RelayerClientWithRuntime,
   RelayerModuleFactory,
 } from '../types.js';
 import { createDeadbeefBytes } from '../../../base/bytes.js';
 import { fetchUserDecrypt } from './fetchUserDecrypt.js';
 import { fetchPublicDecrypt } from './fetchPublicDecrypt.js';
-import { fetchDelegatedUserDecrypt } from './fetchDelegatedUserDecrypt.js';
+import { fetchDelegatedUserDecrypt } from './fetchDelegatedUserDecryptV1.js';
 import { fetchCoprocessorSignatures } from './fetchCoprocessorSignatures.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -49,6 +52,14 @@ export const relayerModule: RelayerModuleFactory = () => {
       fetchPublicDecrypt,
       fetchUserDecrypt,
       fetchDelegatedUserDecrypt,
+      fetchFeatures: (
+        _relayerClient: RelayerClientWithRuntime,
+        _parameters: FetchFeaturesParameters,
+      ): Promise<FetchFeaturesReturnType> => {
+        return Promise.resolve({
+          relayerSupportsV3UserDecryptRoute: true,
+        });
+      },
     }),
   });
 };

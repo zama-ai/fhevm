@@ -1,3 +1,4 @@
+import { canUseUnifiedDecryptionPermit } from '@fhevm/sdk/actions/base';
 import { defineFhevmChain } from '@fhevm/sdk/chains';
 import { createFhevmClient, hasFhevmRuntimeConfig, setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
 import { createFhevmCleartextClient } from '@fhevm/sdk/ethers/cleartext';
@@ -27,6 +28,17 @@ export class FhevmSdk implements SdkInstance {
   constructor(fullClient: FhevmClient, auth: Auth | undefined) {
     this.#fullClient = fullClient;
     this.#auth = auth;
+  }
+
+  /**
+   * Escape hatch exposing the underlying `@fhevm/sdk` client for suites that
+   * must exercise raw client actions the `SdkInstance` interface does not
+   * cover — e.g. the ERC-1271 SDK-client-gap tests, which drive
+   * `signDecryptionPermit` / `parseSignedDecryptionPermit` directly to pin the
+   * SDK's current signature-shape limitations.
+   */
+  get rawClient(): FhevmClient {
+    return this.#fullClient;
   }
 
   getUserDecryptErrorMessage(parameters: {
@@ -147,6 +159,13 @@ export class FhevmSdk implements SdkInstance {
     return true;
   }
 
+  /**
+   * Decrypt one handle through the LEGACY permit path (v1 permit -> relayer
+   * `/v2`). Kept legacy deliberately: this helper is shared by suites that run
+   * against older protocol versions, so it must not require the unified route.
+   * Suites asserting the UNIFIED (v3) envelope must not treat a pass here as
+   * evidence that v3 works — use `userDecryptSingleHandleUnified` for that.
+   */
   async userDecryptSingleHandle(parameters: {
     readonly handle: string;
     readonly contractAddress: string;
@@ -163,7 +182,7 @@ export class FhevmSdk implements SdkInstance {
       transportKeyPair = await this.#fullClient.generateTransportKeyPair();
     }
 
-    const signedPermit = await this.#fullClient.signDecryptionPermit({
+    const signedPermit = await this.#fullClient.signLegacyDecryptionPermit({
       contractAddresses: [contractAddress],
       durationSeconds: 10 * 24 * 3600, // 10 days
       startTimestamp: parameters.startTimestamp ?? Math.floor(Date.now() / 1000),
@@ -185,6 +204,44 @@ export class FhevmSdk implements SdkInstance {
     return res.value;
   }
 
+  /**
+   * Decrypt one handle through the UNIFIED permit path (v3). Same assertion as
+   * `userDecryptSingleHandle`, but built on `signUnifiedDecryptionPermit`, so a
+   * pass proves the v3 envelope works end to end through the public SDK — the
+   * claim the legacy helper cannot support. Returns `undefined` when the
+   * relayer does not advertise the v3 route, letting callers skip rather than
+   * fail on a deployment that legitimately has no unified endpoint.
+   */
+  async userDecryptSingleHandleUnified(parameters: {
+    readonly handle: string;
+    readonly contractAddress: string;
+    readonly signer: Signer & { readonly address: string };
+  }): Promise<ClearValueType | undefined> {
+    if (!(await canUseUnifiedDecryptionPermit(this.#fullClient))) {
+      return undefined;
+    }
+    const { handle, contractAddress, signer } = parameters;
+    const transportKeyPair = await this.#fullClient.generateTransportKeyPair();
+
+    const signedPermit = await this.#fullClient.signUnifiedDecryptionPermit({
+      contractAddresses: [contractAddress],
+      durationSeconds: 10 * 24 * 3600,
+      startTimestamp: Math.floor(Date.now() / 1000),
+      transportKeyPair,
+      signer,
+      signerAddress: signer.address,
+    });
+
+    const res = await this.#fullClient.decryptValue({
+      contractAddress,
+      transportKeyPair,
+      signedPermit,
+      encryptedValue: handle,
+    });
+
+    return typeof res.value === 'number' ? BigInt(res.value) : res.value;
+  }
+
   async delegatedUserDecryptSingleHandle(parameters: {
     readonly handle: string;
     readonly contractAddress: string;
@@ -202,7 +259,7 @@ export class FhevmSdk implements SdkInstance {
       transportKeyPair = await this.#fullClient.generateTransportKeyPair();
     }
 
-    const signedPermit = await this.#fullClient.signDecryptionPermit({
+    const signedPermit = await this.#fullClient.signLegacyDecryptionPermit({
       contractAddresses: [contractAddress],
       durationSeconds: 10 * 24 * 3600, // 10 days
       startTimestamp: parameters.startTimestamp ?? Math.floor(Date.now() / 1000),

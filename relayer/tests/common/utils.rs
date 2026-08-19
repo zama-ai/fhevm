@@ -28,6 +28,182 @@ use user_decryption_signature::{compute_user_decrypt_digest, default_user_decryp
 
 use super::test_schema::TestSchema;
 
+/// The config every integration test starts from.
+// This module is compiled into each test binary separately, and only some of them name this
+// constant, so the rest would see it as dead code under `-D warnings`.
+#[allow(dead_code)]
+pub const TEST_CONFIG_PATH: &str = "tests/relayer-test-config.yaml";
+
+/// Gateway contract addresses the mocks and [`TEST_CONFIG_PATH`] agree on.
+const TEST_INPUT_VERIFICATION_ADDRESS: &str = "0xe61cff9c581c7c91aef682c2c10e8632864339ab";
+
+/// Host-chain mock server, with every response the relayer needs to boot already registered.
+///
+/// Held by the test setup: dropping it shuts the listener down.
+#[allow(dead_code)]
+pub struct HostMock {
+    pub port: u16,
+    pub server: MockServer,
+    handle: MockServerHandle,
+}
+
+impl HostMock {
+    /// Start a host-chain mock on `port` and register the responses every test relies on:
+    /// ACL allow-all for the configured host chains, plus the `KMSGeneration` / `ProtocolConfig`
+    /// getters the `/v2/keyurl` poller reads. `settings` is only read for contract addresses, so
+    /// it can be an unwired copy of the test config.
+    #[allow(dead_code)]
+    pub async fn start(port: u16, settings: &Settings) -> anyhow::Result<Self> {
+        tracing::debug!("Creating Host chain MockServer on port {}", port);
+        let config = MockConfig {
+            port,
+            ..MockConfig::new()
+        };
+        let server = MockServer::new(config);
+        let handle = server
+            .clone()
+            .start()
+            .await
+            .context("Failed to start host mock server")?;
+
+        register_default_host_acl_allow_all(&server, &settings.host_chains);
+
+        // The relayer gates startup on the `/v2/keyurl` poller's first successful poll, so these
+        // have to answer before it boots.
+        let kms_generation_addr = Address::from_str(&settings.keyurl.kms_generation_address)
+            .expect("Invalid kms_generation_address in test config");
+        let protocol_config_addr = Address::from_str(&settings.protocol_config.address)
+            .expect("Invalid protocol_config address in test config");
+        register_default_keyurl_poller_responses(
+            &server,
+            kms_generation_addr,
+            protocol_config_addr,
+        );
+
+        Ok(HostMock {
+            port,
+            server,
+            handle,
+        })
+    }
+}
+
+/// Gateway-chain mock server with the FHEVM patterns wired.
+///
+/// Held by the test setup: dropping it shuts the listener down.
+#[allow(dead_code)]
+pub struct GatewayMock {
+    pub port: u16,
+    pub fhevm: FhevmMockWrapper,
+    handle: MockServerHandle,
+}
+
+impl GatewayMock {
+    /// Start a gateway-chain mock on `port`. The FHEVM patterns are registered before the server
+    /// starts listening, so the relayer cannot observe a half-configured gateway.
+    #[allow(dead_code)]
+    pub async fn start(port: u16) -> anyhow::Result<Self> {
+        tracing::debug!("Creating Gateway chain MockServer on port {}", port);
+        let config = MockConfig {
+            port,
+            ..MockConfig::new()
+        };
+        let server = MockServer::new(config);
+
+        let fhevm = FhevmMockWrapper::new(
+            server.clone(),
+            Address::from_str(TEST_DECRYPTION_ADDRESS).expect("Invalid decryption address"),
+            Address::from_str(TEST_INPUT_VERIFICATION_ADDRESS)
+                .expect("Invalid input verification address"),
+        );
+
+        let handle = server
+            .start()
+            .await
+            .context("Failed to start gateway mock server")?;
+
+        Ok(GatewayMock {
+            port,
+            fhevm,
+            handle,
+        })
+    }
+}
+
+/// Point `settings` at the mock servers and the isolated test schema.
+///
+/// HTTP and metrics bind to port 0; the actually-bound addresses come back through
+/// [`spawn_relayer`]. DB pools are kept small so parallel tests don't exhaust a CI Postgres.
+#[allow(dead_code)]
+pub fn wire_settings_to_mocks(
+    settings: &mut Settings,
+    host_port: u16,
+    gateway_port: u16,
+    database_url: String,
+) {
+    settings.storage.app_pool.max_connections = 2;
+    settings.storage.app_pool.min_connections = 0;
+    // Cron pool kept small — expiry worker is disabled by default.
+    // Minimum allowed value is 1 connection.
+    settings.storage.cron_pool.max_connections = 1;
+    settings.storage.cron_pool.min_connections = 0;
+    settings.storage.sql_database_url = database_url;
+
+    settings.http.endpoint = Some("0.0.0.0:0".to_string());
+    settings.metrics.endpoint = "0.0.0.0:0".to_string();
+
+    settings.gateway.blockchain_rpc.http_url = format!("http://localhost:{}", gateway_port);
+    settings.gateway.blockchain_rpc.read_http_url = format!("http://localhost:{}", gateway_port);
+    let ws_url = format!("ws://localhost:{}", gateway_port);
+    for listener in &mut settings.gateway.listener_pool.listeners {
+        listener.url = ws_url.clone();
+    }
+
+    for hc in &mut settings.host_chains {
+        hc.url = format!("http://localhost:{}", host_port);
+    }
+    settings.protocol_config.ethereum_http_rpc_url = format!("http://localhost:{}", host_port);
+}
+
+/// Spawn the relayer and wait for it to echo its settings back.
+///
+/// The echo is the startup handshake: receiving it means every startup gate passed, and the
+/// returned settings carry the actually-bound HTTP / metrics addresses.
+#[allow(dead_code)]
+pub async fn spawn_relayer(
+    settings: Settings,
+    cancellation_token: CancellationToken,
+) -> anyhow::Result<(JoinHandle<()>, Settings)> {
+    let (settings_tx, settings_rx) = oneshot::channel::<Settings>();
+
+    let relayer_handle = tokio::spawn(async move {
+        match run_fhevm_relayer(settings, cancellation_token, Some(settings_tx)).await {
+            Ok(()) => tracing::debug!("Relayer service exited normally"),
+            Err(e) => tracing::error!("Relayer service error: {:#}", e),
+        }
+    });
+
+    let updated_settings = settings_rx
+        .await
+        .context("Failed to receive settings from relayer")?;
+
+    tracing::debug!("Relayer service started successfully with actual ports");
+
+    Ok((relayer_handle, updated_settings))
+}
+
+/// Read the actually-bound HTTP port out of the settings echoed by [`spawn_relayer`].
+#[allow(dead_code)]
+pub fn http_port_of(settings: &Settings) -> anyhow::Result<u16> {
+    settings
+        .http
+        .endpoint
+        .as_ref()
+        .and_then(|endpoint| endpoint.rsplit(':').next())
+        .and_then(|port| port.parse::<u16>().ok())
+        .context("Failed to parse HTTP port from settings")
+}
+
 /// Per-test isolated setup with own ports, database, and mock servers
 #[allow(dead_code)]
 pub struct TestSetup {
@@ -35,8 +211,8 @@ pub struct TestSetup {
     pub host_server: MockServer,
     pub settings: Settings,
     pub http_port: u16,
-    host_handle: MockServerHandle,
-    gateway_handle: MockServerHandle,
+    host: HostMock,
+    gateway: GatewayMock,
     cancellation_token: CancellationToken,
     relayer_handle: JoinHandle<()>,
     test_schema: TestSchema,
@@ -129,56 +305,6 @@ impl TestSetup {
             gateway_port
         );
 
-        // Create temporary config file from example
-        let temp_config_dir = TempDir::new()?;
-        let temp_config_path = temp_config_dir.path().join("test_config.yaml");
-        std::fs::copy("tests/relayer-test-config.yaml", &temp_config_path)
-            .context("Failed to copy config file")?;
-
-        // Configuration constants
-        let decryption_addr: alloy::primitives::Address =
-            "0xB8Ae44365c45A7C5256b14F607CaE23BC040c354"
-                .parse()
-                .expect("Invalid decryption address");
-        let input_verification_addr: alloy::primitives::Address =
-            "0xe61cff9c581c7c91aef682c2c10e8632864339ab"
-                .parse()
-                .expect("Invalid input verification address");
-
-        // Create and start Host chain mock server
-        tracing::debug!("Creating Host chain MockServer on port {}", host_port);
-        let host_config = MockConfig {
-            port: host_port,
-            ..MockConfig::new()
-        };
-        let host_server = MockServer::new(host_config);
-        let host_server_clone = host_server.clone();
-        let host_handle = host_server
-            .start()
-            .await
-            .context("Failed to start host mock server")?;
-
-        // Create Gateway chain mock server
-        tracing::debug!("Creating Gateway chain MockServer on port {}", gateway_port);
-        let gateway_config = MockConfig {
-            port: gateway_port,
-            ..MockConfig::new()
-        };
-        let gateway_server = MockServer::new(gateway_config);
-
-        // Configure FHEVM patterns BEFORE starting the server
-        let fhevm_wrapper = FhevmMockWrapper::new(
-            gateway_server.clone(),
-            decryption_addr,
-            input_verification_addr,
-        );
-
-        // Start Gateway chain mock server
-        let gateway_handle = gateway_server
-            .start()
-            .await
-            .context("Failed to start gateway mock server")?;
-
         // Create settings from config file (default or custom)
         let config_path_str = config_path.map(|p| p.to_string_lossy().to_string());
         let mut settings =
@@ -187,139 +313,41 @@ impl TestSetup {
         // Initialize tracing once with settings
         init_tracing_once(&settings.log);
 
-        // Keep test pools small to avoid exhausting CI Postgres.
-        settings.storage.app_pool.max_connections = 2;
-        settings.storage.app_pool.min_connections = 0;
+        let host = HostMock::start(host_port, &settings).await?;
+        let gateway = GatewayMock::start(gateway_port).await?;
 
-        // Cron pool kept small — expiry worker is disabled by default
-        // Minimum allowed value is 1 connection
-        settings.storage.cron_pool.max_connections = 1;
-        settings.storage.cron_pool.min_connections = 0;
-
-        // Configure to use isolated test schema
-        settings.storage.sql_database_url = test_schema.database_url();
-
-        // Configure with dynamic ports (use :0 for automatic allocation for relayer HTTP/metrics)
-        settings.http.endpoint = Some("0.0.0.0:0".to_string());
-        settings.gateway.blockchain_rpc.http_url = format!("http://localhost:{}", gateway_port);
-        settings.gateway.blockchain_rpc.read_http_url =
-            format!("http://localhost:{}", gateway_port);
-        settings.metrics.endpoint = "0.0.0.0:0".to_string();
-
-        // Update listener pool URLs to use the mock server
-        let ws_url = format!("ws://localhost:{}", gateway_port);
-        for listener in &mut settings.gateway.listener_pool.listeners {
-            listener.url = ws_url.clone();
-        }
-
-        // Wire host chain URLs to the host mock server
-        for hc in &mut settings.host_chains {
-            hc.url = format!("http://localhost:{}", host_port);
-        }
-
-        // Wire protocol_config URL to the host mock server
-        settings.protocol_config.ethereum_http_rpc_url = format!("http://localhost:{}", host_port);
-
-        // Register default ACL allow-all pattern on host mock
-        register_default_host_acl_allow_all(&host_server_clone, &settings.host_chains);
-
-        // Register KMSGeneration / ProtocolConfig getter responses so the /v2/keyurl poller's
-        // startup fetch succeeds (the relayer gates startup on the first successful poll).
-        let kms_generation_addr = Address::from_str(&settings.keyurl.kms_generation_address)
-            .expect("Invalid kms_generation_address in test config");
-        let protocol_config_addr = Address::from_str(&settings.protocol_config.address)
-            .expect("Invalid protocol_config address in test config");
-        register_default_keyurl_poller_responses(
-            &host_server_clone,
-            kms_generation_addr,
-            protocol_config_addr,
+        wire_settings_to_mocks(
+            &mut settings,
+            host_port,
+            gateway_port,
+            test_schema.database_url(),
         );
 
         // Start relayer service with isolated settings
         let cancellation_token = CancellationToken::new();
-        let relayer_token = cancellation_token.clone();
+        let (relayer_handle, settings) =
+            spawn_relayer(settings, cancellation_token.clone()).await?;
 
-        // Create a new settings instance for the relayer since Settings doesn't implement Clone
-        let mut relayer_settings =
-            Settings::new(config_path_str.clone()).expect("Failed to load configuration");
-        relayer_settings.storage.app_pool.max_connections =
-            settings.storage.app_pool.max_connections;
-        relayer_settings.storage.cron_pool.max_connections =
-            settings.storage.cron_pool.max_connections;
-        relayer_settings.storage.app_pool.min_connections =
-            settings.storage.app_pool.min_connections;
-        relayer_settings.storage.cron_pool.min_connections =
-            settings.storage.cron_pool.min_connections;
-        relayer_settings.storage.sql_database_url = settings.storage.sql_database_url.clone();
-        relayer_settings.http.endpoint = settings.http.endpoint.clone();
-        relayer_settings.gateway.blockchain_rpc.http_url =
-            settings.gateway.blockchain_rpc.http_url.clone();
-        relayer_settings.gateway.blockchain_rpc.read_http_url =
-            settings.gateway.blockchain_rpc.read_http_url.clone();
-        relayer_settings.metrics.endpoint = settings.metrics.endpoint.clone();
-
-        // Wire relayer host chain URLs to the host mock server
-        for hc in &mut relayer_settings.host_chains {
-            hc.url = format!("http://localhost:{}", host_port);
-        }
-
-        // Wire relayer protocol_config URL to the host mock server
-        relayer_settings.protocol_config.ethereum_http_rpc_url =
-            format!("http://localhost:{}", host_port);
-
-        // Update relayer listener pool URLs to use the mock server
-        for listener in &mut relayer_settings.gateway.listener_pool.listeners {
-            listener.url = ws_url.clone();
-        }
-
-        // Create a channel to receive settings with actual ports
-        let (settings_tx, settings_rx) = oneshot::channel::<Settings>();
-
-        // Spawn relayer in background task - it will run until cancellation
-        let relayer_handle = tokio::spawn(async move {
-            match run_fhevm_relayer(relayer_settings, relayer_token, Some(settings_tx)).await {
-                Ok(()) => tracing::debug!("Relayer service exited normally"),
-                Err(e) => tracing::error!("Relayer service error: {}", e),
-            }
-        });
-
-        // Wait to receive settings with actual ports (this confirms servers are ready)
-        let updated_settings = settings_rx
-            .await
-            .context("Failed to receive settings from relayer")?;
-
-        tracing::debug!("Relayer service started successfully with actual ports");
-
-        // Extract actual HTTP port from the updated settings
-        let http_port = updated_settings
-            .http
-            .endpoint
-            .as_ref()
-            .and_then(|endpoint| endpoint.rsplit(':').next())
-            .and_then(|port| port.parse::<u16>().ok())
-            .context("Failed to parse HTTP port from settings")?;
+        let http_port = http_port_of(&settings)?;
 
         tracing::info!(
             "Isolated test setup complete with actual ports - gateway: {}, http: {}, metrics: {}",
             gateway_port,
-            updated_settings
+            settings
                 .http
                 .endpoint
                 .as_ref()
                 .unwrap_or(&"none".to_string()),
-            updated_settings.metrics.endpoint
+            settings.metrics.endpoint
         );
 
-        // Update the settings with actual values
-        settings = updated_settings;
-
         Ok(TestSetup {
-            fhevm_mock: fhevm_wrapper,
-            host_server: host_server_clone,
+            fhevm_mock: gateway.fhevm.clone(),
+            host_server: host.server.clone(),
             settings,
             http_port,
-            host_handle,
-            gateway_handle,
+            host,
+            gateway,
             cancellation_token,
             relayer_handle,
             test_schema,
@@ -335,9 +363,9 @@ impl TestSetup {
             tracing::error!("Test relayer task failed: {}", e);
         }
 
-        // Mock servers will shutdown when handles are dropped
-        drop(self.host_handle);
-        drop(self.gateway_handle);
+        // Mock servers will shutdown when their handles are dropped
+        drop(self.host);
+        drop(self.gateway);
 
         // Clean up test schema
         if let Err(e) = self.test_schema.cleanup().await {
@@ -593,7 +621,7 @@ pub fn create_timeout_test_config(
 /// Get a free port by binding to port 0
 /// This is needed for mock servers that don't support dynamic port allocation yet
 #[allow(dead_code)]
-fn get_free_port() -> anyhow::Result<u16> {
+pub fn get_free_port() -> anyhow::Result<u16> {
     let listener = TcpListener::bind("127.0.0.1:0").context("Failed to bind to free port")?;
     let port = listener
         .local_addr()
@@ -1013,9 +1041,15 @@ pub const TEST_KEYURL_STORAGE_PREFIX: &str = "PUB-p1";
 /// The full object URL the poller reconstructs for a given `segment` (`PublicKey` / `CRS`) and id:
 /// `{storage_url}/{storage_prefix}/{segment}/{id_hex}` (id as 32-byte big-endian, lowercase hex).
 #[allow(dead_code)]
-pub fn test_keyurl_expected_url(segment: &str, id: u64) -> String {
-    let id_hex = hex::encode(U256::from(id).to_be_bytes::<32>());
+pub fn test_keyurl_expected_url(segment: &str, id: U256) -> String {
+    let id_hex = hex::encode(id.to_be_bytes::<32>());
     format!("{TEST_KEYURL_STORAGE_URL}/{TEST_KEYURL_STORAGE_PREFIX}/{segment}/{id_hex}")
+}
+
+/// The served `dataId` for a given on-chain id: `0x`-prefixed 32-byte big-endian, lowercase hex.
+#[allow(dead_code)]
+pub fn test_keyurl_expected_data_id(id: U256) -> String {
+    format!("0x{}", hex::encode(id.to_be_bytes::<32>()))
 }
 
 /// Register a single `eth_call` response keyed by destination address and 4-byte selector.

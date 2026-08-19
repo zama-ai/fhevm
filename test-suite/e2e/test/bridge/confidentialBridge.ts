@@ -23,19 +23,28 @@ const USE_REAL_LZ = (process.env.BRIDGE_REAL_LZ || '').toLowerCase() === 'true';
 
 const BRIDGE_SEND_ABI = [
   'function send(uint32 dstEid, bytes32 dstApp, bytes payload, bytes32[] handleList, uint64 lzComposeGas) payable',
+  'function quote(uint32 dstEid, address srcApp, bytes32 dstApp, bytes payload, bytes32[] handleList, uint64 lzComposeGas) view returns (tuple(uint256 nativeFee, uint256 lzTokenFee) fee)',
 ];
 const LZ_COMPOSE_GAS = 1_000_000n;
-const DECRYPT_TIMEOUT_MS = 180_000;
+const DECRYPT_TIMEOUT_MS = USE_REAL_LZ ? 420_000 : 180_000;
 
 // Per-chain bridge/endpoint addresses: primary chain uses unindexed vars, others HOST_CHAIN_<i>_*.
 const bridgeAddrFor = (i: number) =>
-  (i === 0 ? process.env.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS : process.env[`HOST_CHAIN_${i}_CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS`]) || undefined;
+  (i === 0
+    ? process.env.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS
+    : process.env[`HOST_CHAIN_${i}_CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS`]) || undefined;
 const endpointAddrFor = (i: number) =>
   (i === 0 ? process.env.LZ_ENDPOINT_ADDRESS : process.env[`HOST_CHAIN_${i}_LZ_ENDPOINT_ADDRESS`]) || undefined;
+// LayerZero endpoint id of a chain. On real networks the EID differs from the chain id (e.g.
+// sepolia=40161, amoy=40267); the mock endpoint used in CI is wired with eid == chainId, so we
+// fall back to chainId when LZ_EID / HOST_CHAIN_<i>_LZ_EID is unset.
+const eidFor = (i: number) =>
+  Number((i === 0 ? process.env.LZ_EID : process.env[`HOST_CHAIN_${i}_LZ_EID`]) ?? HOST_CHAINS[i].chainId);
 
 /** Everything needed to act as a source or destination of a bridge transfer on one chain. */
 interface BridgeEnd {
   cfg: ChainConfig;
+  eid: number;
   bridge: string;
   endpoint: string;
   app: ethers.Contract;
@@ -68,9 +77,7 @@ const publicDecrypt = (end: BridgeEnd, handle: string) =>
 
 const userDecrypt = (end: BridgeEnd, handle: string) =>
   pollDecrypt(async () =>
-    BigInt(
-      await end.instance.userDecryptSingleHandle({ handle, contractAddress: end.appAddr, signer: end.alice }),
-    ),
+    BigInt(await end.instance.userDecryptSingleHandle({ handle, contractAddress: end.appAddr, signer: end.alice })),
   );
 
 /** True if publicDecrypt rejects the handle now (no public-decrypt ACL yet, or no ciphertext). */
@@ -134,9 +141,14 @@ describe('Confidential Bridge', function () {
     const fromBlock = await getProvider(dst.cfg).getBlockNumber();
     const dstApp = ethers.zeroPadValue(dst.appAddr, 32);
     const bridgeContract = new ethers.Contract(src.bridge, BRIDGE_SEND_ABI, src.alice);
+    // Address the destination by its LayerZero endpoint id (== chainId under the mock).
+    const dstEid = dst.eid;
+    // The bridge requires msg.value to exactly equal the quoted native fee (no refund path).
+    // The mock endpoint quotes to 0, so this preserves the previous value: 0 behaviour in CI.
+    const { nativeFee } = await bridgeContract.quote(dstEid, src.alice.address, dstApp, payload, handles, LZ_COMPOSE_GAS);
     const sendReceipt = await sendWithNonceRetry(src.alice, () =>
-      bridgeContract.send(dst.cfg.chainId, dstApp, payload, handles, LZ_COMPOSE_GAS, {
-        value: 0,
+      bridgeContract.send(dstEid, dstApp, payload, handles, LZ_COMPOSE_GAS, {
+        value: nativeFee,
         gasLimit: 5_000_000,
       }),
     );
@@ -172,6 +184,7 @@ describe('Confidential Bridge', function () {
       const app = await deployContract('BridgeApp', alice);
       return {
         cfg,
+        eid: eidFor(i),
         bridge: addrs[i].bridge!,
         endpoint: addrs[i].endpoint!,
         app,
@@ -275,7 +288,9 @@ describe('Confidential Bridge', function () {
     const srcHandle = await mint(host, 13);
     // Deliver lzReceive only: the handle associates, but onConfidentialBridgeReceived (makePubliclyDecryptable) hasn't run.
     const { dstHandles, ctx, compose } = await bridge(host, chainB, [srcHandle], '0x', true);
-    expect(await notPubliclyDecryptable(chainB, dstHandles[0]), 'not decryptable before the compose leg').to.equal(true);
+    expect(await notPubliclyDecryptable(chainB, dstHandles[0]), 'not decryptable before the compose leg').to.equal(
+      true,
+    );
 
     // Now run the compose leg -> onConfidentialBridgeReceived -> makePubliclyDecryptable -> decryptable.
     await relayCompose(ctx, compose!);
@@ -296,7 +311,10 @@ describe('Confidential Bridge', function () {
     // persistent stack. Both setters are owner-gated; the e2e env carries the deployer (ACL owner) key.
     const endpoint = new ethers.Contract(
       chainB.endpoint,
-      ['function defaultReceiveLibrary(uint32) view returns (address)', 'function setDefaultReceiveLibrary(uint32,address,uint256)'],
+      [
+        'function defaultReceiveLibrary(uint32) view returns (address)',
+        'function setDefaultReceiveLibrary(uint32,address,uint256)',
+      ],
       owner,
     );
     if ((await endpoint.defaultReceiveLibrary(FAKE_EID)) === ethers.ZeroAddress) {
@@ -311,7 +329,12 @@ describe('Confidential Bridge', function () {
     // Forging the delivery leaves the handle unassociated (no ciphertext) while onConfidentialBridgeReceived still grants
     // on-chain public ACL — the exact state the fallback exists to rescue.
     const srcHandle = await mint(host, 0); // value irrelevant: it's never bridged/associated
-    const ctx = { srcEndpoint: host.endpoint, dstEndpoint: chainB.endpoint, dstBridge: chainB.bridge, dstSigner: chainB.alice };
+    const ctx = {
+      srcEndpoint: host.endpoint,
+      dstEndpoint: chainB.endpoint,
+      dstBridge: chainB.bridge,
+      dstSigner: chainB.alice,
+    };
     const [dstHandle] = await forgeDelivery(ctx, {
       srcEid: FAKE_EID,
       dstEid: Number(chainB.cfg.chainId),
@@ -325,7 +348,11 @@ describe('Confidential Bridge', function () {
     expect(await notPubliclyDecryptable(chainB, dstHandle), 'no ciphertext before the fallback grant').to.equal(true);
 
     // Governance (the ACL owner) grants the plaintext fallback; the coprocessor materializes it.
-    const bridge = new ethers.Contract(chainB.bridge, ['function grantFallbackPlaintext(bytes32 dstHandle, uint256 plaintext)'], owner);
+    const bridge = new ethers.Contract(
+      chainB.bridge,
+      ['function grantFallbackPlaintext(bytes32 dstHandle, uint256 plaintext)'],
+      owner,
+    );
     await (await bridge.grantFallbackPlaintext(dstHandle, value)).wait();
 
     expect(await publicDecrypt(chainB, dstHandle)).to.equal(value);

@@ -19,7 +19,7 @@ use fhevm_host_bindings::acl::ACL::ACLInstance;
 use kms_worker::core::{
     Config, DbEventPicker, DbKmsResponsePublisher, KmsWorker,
     event_processor::{
-        CiphertextManager, DbContextManager, DbEventProcessor, DecryptionProcessor,
+        CiphertextManager, DbContextManager, DbEventProcessor, DecryptionProcessor, HostRpcClient,
         KMSGenerationProcessor, KmsClient, ProtocolConfigProcessor,
     },
 };
@@ -58,12 +58,12 @@ where
     let event_picker = DbEventPicker::connect(db.clone(), &config).await?;
 
     let context_manager = DbContextManager::new(db.clone(), &config, provider.clone());
-    let decryption_processor = DecryptionProcessor::new(
-        &config,
-        provider.clone(),
-        acl_contracts_mock,
-        ciphertext_manager,
-    );
+    let host_clients = acl_contracts_mock
+        .into_iter()
+        .map(|(chain_id, acl)| (chain_id, HostRpcClient::new(chain_id, acl)))
+        .collect();
+    let decryption_processor =
+        DecryptionProcessor::new(&config, provider.clone(), host_clients, ciphertext_manager);
     let kms_generation_processor = KMSGenerationProcessor::new(&config);
     let protocol_config_processor = ProtocolConfigProcessor::new(&config, provider.clone());
     let event_processor = DbEventProcessor::new(
