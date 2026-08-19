@@ -263,6 +263,11 @@ fi
 # Prove both runtimes resolve the SDK and its dependencies through the symlink.
 ( cd "$FHEVM" && node --input-type=module -e "await import('@fhevm/sdk/solana')" )
 ( cd "$FHEVM" && bun -e "await import('@fhevm/sdk/solana')" )
+# The test-suite and demo dapp also reach the SDK *sources* through the @sdk-src tsconfig alias
+# (see test-suite/fhevm/src/solana/lazy-modules.ts), whose runtime dependencies resolve only from
+# the workspace graph installed above. Prove that path too, so a broken source graph fails here
+# instead of deep into the scenario suite.
+( cd "$FHEVM" && bun -e "await import('@sdk-src/solana/proof.js')" )
 
 trap cleanup_native_rust_builder_aliases EXIT
 ensure_native_rust_builders
