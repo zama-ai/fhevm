@@ -18,7 +18,6 @@ use fhevm_engine_common::utils::{to_hex, HeartBeat};
 use prometheus::{register_int_counter_vec, IntCounterVec};
 use sqlx::postgres::PgConnectOptions;
 use sqlx::postgres::PgPoolOptions;
-use sqlx::Acquire;
 use sqlx::Error as SqlxError;
 use sqlx::{PgPool, Postgres};
 use std::collections::HashSet;
@@ -487,7 +486,22 @@ impl Database {
     ) -> Result<u64, SqlxError> {
         let lock_key = slow_lane_reset_advisory_lock_key(self.chain_id);
         let mut connection = self.pool().await.acquire().await?;
-        let mut tx = connection.begin().await?;
+        // Fenced like every other write on this struct (see `new_transaction`): takes the
+        // shared cutover lock and stops on a retired stack. This already held its own
+        // `pg_try_advisory_xact_lock` for the slow-lane reset; that key is unrelated to the
+        // cutover key, so the two coexist.
+        let Some(mut tx) =
+            fhevm_engine_common::versioning::begin_write_guarded_conn(
+                &mut connection,
+                self.gcs_mode,
+                fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
+            )
+            .await?
+            .into_tx()
+        else {
+            info!("Cutover completed — skipping slow-lane promotion on retired stack");
+            return Ok(0);
+        };
         let lock_acquired = sqlx::query_scalar!(
             r#"SELECT pg_try_advisory_xact_lock($1) AS "lock_acquired!""#,
             lock_key
