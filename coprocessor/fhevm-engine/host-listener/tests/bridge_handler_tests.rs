@@ -13,7 +13,8 @@ use host_listener::cmd::block_history::BlockSummary;
 use host_listener::contracts::BridgeContract;
 use host_listener::contracts::BridgeContract::BridgeContractEvents;
 use host_listener::database::ingest::{
-    ingest_block_logs, BlockLogs, IngestOptions,
+    ingest_block_logs, synthesize_finalized_fallback_grants, BlockLogs,
+    IngestOptions,
 };
 use host_listener::database::tfhe_event_propagate::Database;
 
@@ -382,7 +383,9 @@ async fn ingest_fallback_block(
     block_number: u64,
 ) {
     let block_hash = FixedBytes::from([block_number as u8; 32]);
-    ingest_fallback_block_at(db, events, block_number, block_hash).await
+    // Finalized: these tests exercise the inline (finalized-block) synthesis
+    // path; deferred synthesis has its own tests below.
+    ingest_fallback_block_at(db, events, block_number, block_hash, true).await
 }
 
 /// Like `ingest_fallback_block` but with an explicit block hash, so tests can
@@ -392,6 +395,7 @@ async fn ingest_fallback_block_at(
     events: &[(FixedBytes<32>, U256, u8)],
     block_number: u64,
     block_hash: FixedBytes<32>,
+    finalized: bool,
 ) {
     let logs = events
         .iter()
@@ -421,7 +425,7 @@ async fn ingest_fallback_block_at(
             timestamp: BLOCK_TIMESTAMP,
         },
         catchup: false,
-        finalized: false,
+        finalized,
     };
     let options = IngestOptions {
         dependence_by_connexity: false,
@@ -459,20 +463,6 @@ async fn computation_count(db: &Database, handle: FixedBytes<32>) -> i64 {
     let pool = db.pool().await;
     sqlx::query_scalar(
         "SELECT COUNT(*) FROM computations WHERE output_handle = $1",
-    )
-    .bind(handle.as_slice())
-    .fetch_one(&pool)
-    .await
-    .unwrap()
-}
-
-async fn branch_computation_count(
-    db: &Database,
-    handle: FixedBytes<32>,
-) -> i64 {
-    let pool = db.pool().await;
-    sqlx::query_scalar(
-        "SELECT COUNT(*) FROM computations_branch WHERE output_handle = $1",
     )
     .bind(handle.as_slice())
     .fetch_one(&pool)
@@ -653,12 +643,11 @@ async fn fallback_duplicates_in_one_block_use_first_event() {
     assert_trivial_encrypt_operands(&db, dst_handle, 111, 5).await;
 }
 
-/// The same grant transaction observed on two sibling fork blocks: each
-/// observation synthesizes into its own branch context (the legacy row is
-/// shared via ON CONFLICT), so cleaning up the orphaned fork leaves the
-/// canonical fork's materialization intact. Before this fix the second
-/// observation was suppressed by the first's rows and cleanup erased the
-/// grant permanently.
+/// The same grant transaction observed on two sibling fork blocks, neither
+/// final yet: only observations are recorded (synthesis is finality-gated).
+/// When the canonical sibling finalizes, the fork is orphaned and its
+/// observation retracted, and the surviving grant materializes — all in one
+/// transaction, exactly as the finalization loop drives it.
 #[tokio::test]
 #[serial(db)]
 async fn fallback_same_grant_on_sibling_fork_survives_cleanup() {
@@ -673,6 +662,7 @@ async fn fallback_same_grant_on_sibling_fork_survives_cleanup() {
         &[(dst_handle, U256::from(123_u64), 0x77)],
         BLOCK_NUMBER,
         fork_hash,
+        false,
     )
     .await;
     ingest_fallback_block_at(
@@ -680,30 +670,11 @@ async fn fallback_same_grant_on_sibling_fork_survives_cleanup() {
         &[(dst_handle, U256::from(123_u64), 0x77)],
         BLOCK_NUMBER,
         canonical_hash,
+        false,
     )
     .await;
 
-    // One legacy row (shared), one branch row per observed context.
-    assert_eq!(computation_count(&db, dst_handle).await, 1);
-    assert_eq!(
-        branch_computation_count(&db, dst_handle).await,
-        2,
-        "each fork context must carry its own branch row"
-    );
-
-    // The fork orphans; its context-keyed state is cleaned up.
-    run_bridge_cleanup(&db, &[fork_hash.to_vec()]).await;
-
-    assert_eq!(
-        computation_count(&db, dst_handle).await,
-        1,
-        "the grant must survive on the canonical fork"
-    );
-    assert_eq!(branch_computation_count(&db, dst_handle).await, 1);
-    assert_trivial_encrypt_operands(&db, dst_handle, 123, 5).await;
-
-    // The durable observation for the canonical block survives; the
-    // orphaned one is gone.
+    // Both durable observations recorded, nothing materialized pre-finality.
     let pool = db.pool().await;
     let observations: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM fallback_granted_events WHERE dst_handle = $1",
@@ -712,64 +683,49 @@ async fn fallback_same_grant_on_sibling_fork_survives_cleanup() {
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(observations, 1);
-}
+    assert_eq!(observations, 2);
+    assert_eq!(computation_count(&db, dst_handle).await, 0);
 
-/// Below FHEVM_BRANCH_ACTIVATION_BLOCK ingestion writes legacy state only —
-/// per-node dual-write start times would otherwise key branch rows
-/// divergently across operators during a rolling upgrade. At and above the
-/// activation height, branch rows appear.
-#[tokio::test]
-#[serial(db)]
-async fn branch_writes_gated_by_activation_height() {
-    std::env::set_var("FHEVM_BRANCH_ACTIVATION_BLOCK", "100");
-    // Database::new reads the env at construction.
-    let (mut db, _inst) = fresh_db(DST_CHAIN_ID).await;
-    std::env::remove_var("FHEVM_BRANCH_ACTIVATION_BLOCK");
-    assert_eq!(db.branch_activation_block, 100);
-
-    // The fallback synthesis drives the ordinary computation/pbs insert
-    // paths, so it exercises the gates end-to-end.
-    let below = fallback_dst_handle(DST_CHAIN_ID, 5);
-    ingest_fallback_block(&mut db, &[(below, U256::from(7_u64), 0x31)], 50)
-        .await;
-    assert_eq!(
-        computation_count(&db, below).await,
-        1,
-        "legacy write must happen below the activation height"
-    );
-    assert_eq!(
-        branch_computation_count(&db, below).await,
-        0,
-        "no branch computation row below the activation height"
-    );
-    let pool = db.pool().await;
-    let branch_pbs: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM pbs_computations_branch WHERE handle = $1",
+    // The canonical sibling finalizes: orphan the fork, retract its
+    // observation, synthesize the surviving grant.
+    let mut tx = db
+        .new_transaction()
+        .await
+        .expect("tx")
+        .expect("new_transaction() returns Some on a live stack");
+    let orphaned = db
+        .update_block_as_finalized(
+            &mut tx,
+            BLOCK_NUMBER as i64,
+            &canonical_hash,
+        )
+        .await
+        .expect("finalize")
+        .expect("finalization accepted");
+    db.retract_orphaned_event_state(&mut tx, &orphaned)
+        .await
+        .expect("retraction");
+    synthesize_finalized_fallback_grants(
+        &db,
+        &mut tx,
+        BLOCK_NUMBER as i64,
+        &canonical_hash,
     )
-    .bind(below.as_slice())
+    .await
+    .expect("synthesis");
+    tx.commit().await.expect("commit");
+
+    // The fork observation is gone, the canonical grant is materialized.
+    let observations: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM fallback_granted_events WHERE dst_handle = $1",
+    )
+    .bind(dst_handle.as_slice())
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(
-        branch_pbs, 0,
-        "no branch pbs row below the activation height"
-    );
-    assert_eq!(
-        pbs_count(&db, below).await,
-        1,
-        "legacy pbs row still written"
-    );
-
-    let above = fallback_dst_handle(DST_CHAIN_ID, 4);
-    ingest_fallback_block(&mut db, &[(above, U256::from(8_u64), 0x32)], 150)
-        .await;
-    assert_eq!(computation_count(&db, above).await, 1);
-    assert_eq!(
-        branch_computation_count(&db, above).await,
-        1,
-        "branch rows resume at the activation height"
-    );
+    assert_eq!(observations, 1);
+    assert_eq!(computation_count(&db, dst_handle).await, 1);
+    assert_trivial_encrypt_operands(&db, dst_handle, 123, 5).await;
 }
 
 /// A different grant (different transaction) for an already-granted handle
@@ -794,7 +750,6 @@ async fn fallback_different_grant_across_blocks_keeps_first() {
     .await;
 
     assert_eq!(computation_count(&db, dst_handle).await, 1);
-    assert_eq!(branch_computation_count(&db, dst_handle).await, 1);
     assert_trivial_encrypt_operands(&db, dst_handle, 111, 5).await;
 }
 
@@ -822,9 +777,6 @@ async fn fallback_ignored_when_handle_has_ciphertext() {
     assert_eq!(pbs_count(&db, dst_handle).await, 0);
 }
 
-/// Seeds a bridge observation row directly, bypassing ingestion, so the
-/// association flag and block hash can be controlled.
-#[allow(clippy::too_many_arguments)]
 async fn seed_bridged_observation(
     db: &Database,
     dst_handle: &[u8],
@@ -871,15 +823,15 @@ async fn seed_materialization(db: &Database, handle: &[u8], chain_id: u64) {
     .expect("seed ciphertext_digest");
 }
 
-async fn run_bridge_cleanup(db: &Database, orphaned_hashes: &[Vec<u8>]) {
+async fn run_orphan_retraction(db: &Database, orphaned_hashes: &[Vec<u8>]) {
     let mut tx = db
         .new_transaction()
         .await
         .expect("tx")
         .expect("new_transaction() returns Some on a live stack");
-    db.cleanup_orphaned_branch_state(&mut tx, orphaned_hashes)
+    db.retract_orphaned_event_state(&mut tx, orphaned_hashes)
         .await
-        .expect("cleanup");
+        .expect("retraction");
     tx.commit().await.expect("commit");
 }
 
@@ -911,7 +863,7 @@ async fn reorg_retracts_associated_bridged_handle() {
     .await;
     seed_materialization(&db, dst_handle.as_slice(), DST_CHAIN_ID).await;
 
-    run_bridge_cleanup(&db, &[orphaned_hash]).await;
+    run_orphan_retraction(&db, &[orphaned_hash]).await;
 
     assert_eq!(
         count_rows(
@@ -996,7 +948,36 @@ async fn reorg_keeps_unassociated_and_canonical_bridge_state() {
         .expect("seed bridge_handle_events");
     }
 
-    run_bridge_cleanup(&db, &[orphaned_hash]).await;
+    // Fallback-grant observations and delegation updates: the orphaned-block
+    // rows must be retracted, the canonical-block rows kept.
+    for (seed, hash) in [(0x88u8, &orphaned_hash), (0x99u8, &canonical_hash)] {
+        sqlx::query(
+            "INSERT INTO fallback_granted_events
+                 (dst_chain_id, dst_handle, plaintext, block_number, block_hash)
+             VALUES ($1, $2, '\\x2a'::bytea, 1, $3)",
+        )
+        .bind(DST_CHAIN_ID as i64)
+        .bind(vec![seed; 32])
+        .bind(hash)
+        .execute(&pool)
+        .await
+        .expect("seed fallback_granted_events");
+        sqlx::query(
+            "INSERT INTO delegate_user_decrypt
+                 (delegator, delegate, contract_address, delegation_counter,
+                  old_expiration_date, new_expiration_date, host_chain_id,
+                  block_number, block_hash, on_gateway, reorg_out)
+             VALUES ($1, '\\xde'::bytea, '\\xc0'::bytea, 1, 0, 42, $2, 1, $3, FALSE, FALSE)",
+        )
+        .bind(vec![seed; 20])
+        .bind(DST_CHAIN_ID as i64)
+        .bind(hash)
+        .execute(&pool)
+        .await
+        .expect("seed delegate_user_decrypt");
+    }
+
+    run_orphan_retraction(&db, &[orphaned_hash]).await;
 
     assert_eq!(
         count_rows(
@@ -1058,6 +1039,46 @@ async fn reorg_keeps_unassociated_and_canonical_bridge_state() {
         1,
         "canonical source approval must survive"
     );
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM fallback_granted_events WHERE dst_handle = $1",
+            vec![0x88u8; 32].as_slice(),
+        )
+        .await,
+        0,
+        "orphaned fallback grant observation should be deleted"
+    );
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM fallback_granted_events WHERE dst_handle = $1",
+            vec![0x99u8; 32].as_slice(),
+        )
+        .await,
+        1,
+        "canonical fallback grant observation must survive"
+    );
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM delegate_user_decrypt WHERE delegator = $1",
+            vec![0x88u8; 20].as_slice(),
+        )
+        .await,
+        0,
+        "orphaned delegation update should be deleted"
+    );
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM delegate_user_decrypt WHERE delegator = $1",
+            vec![0x99u8; 20].as_slice(),
+        )
+        .await,
+        1,
+        "canonical delegation update must survive"
+    );
 }
 
 /// The same destination handle observed on two forks: retracting the fork
@@ -1092,7 +1113,7 @@ async fn reorg_transfers_association_to_surviving_sibling() {
     .await;
     seed_materialization(&db, dst_handle.as_slice(), DST_CHAIN_ID).await;
 
-    run_bridge_cleanup(&db, &[first_hash]).await;
+    run_orphan_retraction(&db, &[first_hash]).await;
 
     assert_eq!(
         count_rows(
@@ -1127,7 +1148,7 @@ async fn reorg_transfers_association_to_surviving_sibling() {
     );
 
     // The sibling's block orphans in a later round: now the copy goes.
-    run_bridge_cleanup(&db, &[second_hash]).await;
+    run_orphan_retraction(&db, &[second_hash]).await;
 
     assert_eq!(
         count_rows(
@@ -1159,4 +1180,125 @@ async fn reorg_transfers_association_to_surviving_sibling() {
         0,
         "digest must be retracted once no observation survives"
     );
+}
+
+/// A fallback grant in a not-yet-final block records its observation but must
+/// NOT materialize: synthesis is finality-gated (a fork-only materialization
+/// cannot be retracted once the compute pipeline runs and would leave
+/// fleet-divergent ciphertext bytes behind). Finalization then synthesizes it,
+/// idempotently.
+#[tokio::test]
+#[serial(db)]
+async fn fallback_synthesis_deferred_until_finality() {
+    let (mut db, _inst) = fresh_db(DST_CHAIN_ID).await;
+    let dst_handle = fallback_dst_handle(DST_CHAIN_ID, 5);
+    let block_hash = FixedBytes::from([0xAB; 32]);
+
+    ingest_fallback_block_at(
+        &mut db,
+        &[(dst_handle, U256::from(123_u64), 0x77)],
+        BLOCK_NUMBER,
+        block_hash,
+        false,
+    )
+    .await;
+
+    // Observation recorded, nothing materialized.
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM fallback_granted_events WHERE dst_handle = $1",
+            dst_handle.as_slice(),
+        )
+        .await,
+        1,
+        "observation must be recorded at ingest"
+    );
+    assert_eq!(
+        computation_count(&db, dst_handle).await,
+        0,
+        "synthesis must be deferred for a not-yet-final block"
+    );
+    assert_eq!(pbs_count(&db, dst_handle).await, 0);
+
+    // The block finalizes: the deferred grant materializes.
+    for _round in 0..2 {
+        // Second round proves idempotence.
+        let mut tx = db
+            .new_transaction()
+            .await
+            .expect("tx")
+            .expect("new_transaction() returns Some on a live stack");
+        synthesize_finalized_fallback_grants(
+            &db,
+            &mut tx,
+            BLOCK_NUMBER as i64,
+            &block_hash,
+        )
+        .await
+        .expect("synthesis");
+        tx.commit().await.expect("commit");
+
+        assert_eq!(computation_count(&db, dst_handle).await, 1);
+        assert_eq!(pbs_count(&db, dst_handle).await, 1);
+        let pool = db.pool().await;
+        let chains: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM dependence_chain")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(chains, 1, "the synthetic op gets a dependence chain row");
+    }
+}
+
+/// A fallback grant observed only on a fork that orphans is never
+/// materialized: the retraction removes the observation before the block
+/// could ever finalize, and deferred synthesis finds nothing.
+#[tokio::test]
+#[serial(db)]
+async fn fallback_on_orphaned_fork_is_never_synthesized() {
+    let (mut db, _inst) = fresh_db(DST_CHAIN_ID).await;
+    let dst_handle = fallback_dst_handle(DST_CHAIN_ID, 5);
+    let fork_hash = FixedBytes::from([0xF1; 32]);
+
+    ingest_fallback_block_at(
+        &mut db,
+        &[(dst_handle, U256::from(123_u64), 0x77)],
+        BLOCK_NUMBER,
+        fork_hash,
+        false,
+    )
+    .await;
+    assert_eq!(computation_count(&db, dst_handle).await, 0);
+
+    // The fork orphans: the observation is retracted.
+    run_orphan_retraction(&db, &[fork_hash.to_vec()]).await;
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM fallback_granted_events WHERE dst_handle = $1",
+            dst_handle.as_slice(),
+        )
+        .await,
+        0,
+        "orphaned observation must be retracted"
+    );
+
+    // Even if synthesis were attempted for that block, nothing materializes.
+    let mut tx = db
+        .new_transaction()
+        .await
+        .expect("tx")
+        .expect("new_transaction() returns Some on a live stack");
+    synthesize_finalized_fallback_grants(
+        &db,
+        &mut tx,
+        BLOCK_NUMBER as i64,
+        &fork_hash,
+    )
+    .await
+    .expect("synthesis");
+    tx.commit().await.expect("commit");
+    assert_eq!(computation_count(&db, dst_handle).await, 0);
+    assert_eq!(pbs_count(&db, dst_handle).await, 0);
 }
