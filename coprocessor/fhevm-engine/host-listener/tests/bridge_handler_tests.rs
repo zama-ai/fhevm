@@ -694,7 +694,11 @@ async fn fallback_same_grant_on_sibling_fork_survives_cleanup() {
         .expect("tx")
         .expect("new_transaction() returns Some on a live stack");
     let orphaned = db
-        .update_block_as_finalized(&mut tx, BLOCK_NUMBER as i64, &canonical_hash)
+        .update_block_as_finalized(
+            &mut tx,
+            BLOCK_NUMBER as i64,
+            &canonical_hash,
+        )
         .await
         .expect("finalize")
         .expect("finalization accepted");
