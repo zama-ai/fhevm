@@ -2171,7 +2171,15 @@ export const reseedDemo = async ({
       );
       await runStreaming(["bun", "run", "demo:seed"], {
         cwd: path.join(REPO_ROOT, "test-suite/fhevm"),
-        env,
+        env: {
+          ...env,
+          // Unlike `demo up`, reseed skips the installs that rebuild the SDK
+          // workspace graph, so that graph may have been pruned since the boot
+          // (e.g. an unrelated repository-root npm ci). Keep the frozen
+          // demo-dapp graph as a resolution fallback for the SDK sources'
+          // runtime dependencies.
+          NODE_PATH: path.join(REPO_ROOT, "solana/demo-dapp/node_modules"),
+        },
       });
       const faucet = await startOwnedProcess(
         "faucet",
