@@ -65,6 +65,7 @@ primitives = { path = "../../../listener/crates/shared/primitives" }
 alloy = { workspace = true, features = ["node-bindings"] }
 anyhow = { workspace = true }
 aws-smithy-mocks = "0.1.1"
+fhevm_host_bindings = { path = "../../../host-contracts/rust_bindings", default-features = false }
 serial_test = { workspace = true }
 test-harness = { path = "../test-harness" }
 tracing-test = { workspace = true }
@@ -73,11 +74,6 @@ tracing-test = { workspace = true }
 [dev-dependencies.host-listener]
 path = "."
 features = ["test_bypass_key_extraction"]
-
-[build-dependencies]
-foundry-compilers = { workspace = true }
-foundry-compilers-artifacts = "0.13"
-semver = { workspace = true }
 
 [lints]
 workspace = true
