@@ -75,6 +75,10 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     /// @param limit    The violated bound: the maximum allowed.
     error FHECollectionSizeInvalid(uint256 size, uint256 limit);
 
+    /// @notice Returned when an operand's boundary-bit position would fall
+    ///         outside the result-handle preimage word (position >= 256).
+    error BoundaryBitPositionOverflow(uint256 position);
+
     /**
      * @param userAddress       Address of the user.
      * @param contractAddress   Contract address.
@@ -160,6 +164,10 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
 
     /// Maximum set size for narrow types (Uint8/Uint16/Uint32) in collection operations.
     /// Wide types (Uint64 and above) use a smaller limit because each element costs more HCU.
+    /// Both caps must stay <= 255 so that every operand's boundary bit fits the
+    /// result-handle preimage word even in the value+set _naryOp overload, where
+    /// positions run 1..length; _boundaryBitCapGuard fails the build past that
+    /// width, and _consumeOperand reverts at runtime as a backstop.
     uint256 private constant FHE_COLLECTION_NARROW_MAX_SIZE = 100;
     uint256 private constant FHE_COLLECTION_WIDE_MAX_SIZE = 60;
 
@@ -179,7 +187,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {}
 
     /**
-     * @notice Re-initializes the contract from V4.
+     * @notice Re-initializes the contract from V5.
      * @dev Define a `reinitializeVX` function once the contract needs to be upgraded.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
@@ -759,7 +767,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @return result   Result value of the target type.
      */
     function cast(bytes32 ct, FheType toType) public virtual returns (bytes32 result) {
-        if (!ACL.isAllowed(ct, msg.sender)) revert ACLNotAllowed(ct, msg.sender);
+        uint256 boundaryBits = _consumeOperand(ct, 0);
         uint256 supportedTypesInput = (1 << uint8(FheType.Bool)) +
             (1 << uint8(FheType.Uint8)) +
             (1 << uint8(FheType.Uint16)) +
@@ -784,17 +792,15 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
                 Operators.cast,
                 ct,
                 toType,
-                _oneOperandBoundaryBit(ct),
+                boundaryBits,
                 ACL,
                 block.chainid,
                 blockhash(block.number - 1),
                 block.timestamp
             )
         );
-        result = _appendMetadataToPrehandle(result, toType);
+        result = _mintHandle(result, toType);
         HCU_LIMIT.checkHCUForCast(toType, ct, result, msg.sender);
-        _markMinted(result);
-        ACL.allowTransient(result, msg.sender);
         emit Cast(msg.sender, ct, toType, result);
     }
 
@@ -827,10 +833,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
                 block.timestamp
             )
         );
-        result = _appendMetadataToPrehandle(result, toType);
+        result = _mintHandle(result, toType);
         HCU_LIMIT.checkHCUForTrivialEncrypt(toType, result, msg.sender);
-        _markMinted(result);
-        ACL.allowTransient(result, msg.sender);
         emit TrivialEncrypt(msg.sender, pt, toType, result);
     }
 
@@ -970,9 +974,11 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     ///      the layout-compatibility concerns that make namespaced slots
     ///      (ERC-7201) necessary for persistent storage; only collision with
     ///      another transient use of THIS contract would matter, and there is
-    ///      none. Handles cannot collide with hand-picked constant slots
-    ///      either: byte 21 of every handle is 0xff and bytes 22-31 carry
-    ///      chain id, type and version, so no handle is a small integer.
+    ///      none. The written slots cannot collide with hand-picked constant
+    ///      slots either: _markMinted only ever stores computation handles,
+    ///      and _appendMetadataToPrehandle stamps every one of them with 0xff
+    ///      in byte 21 and the (nonzero) chain id in bytes 22-29, so no
+    ///      written slot is a small integer.
     ///      Any future transient state added here must use a keccak-derived
     ///      namespaced slot.
     function _markMinted(bytes32 handle) internal virtual {
@@ -996,24 +1002,77 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         }
     }
 
-    function _unaryOp(Operators op, bytes32 ct) internal virtual returns (bytes32 result) {
+    /// @dev Single choke point for producing a computation handle: appends
+    ///      the metadata bytes to the prehandle, records the mint in
+    ///      transient storage and grants the transient ACL allowance. Every
+    ///      handle this executor derives MUST be produced through this
+    ///      function so that no derivation site can forget _markMinted
+    ///      (verifyInput deliberately does not mint: a verified input is not
+    ///      derived here). Minting runs BEFORE the caller's HCU_LIMIT check,
+    ///      as was already the case for every op whose HCU is charged by the
+    ///      external wrapper; this is safe because an HCU revert unwinds the
+    ///      transient mark and the ACL allowance atomically (both halves
+    ///      pinned by test_HCURevertUnwindsMintAndAllowance). For cast, trivialEncrypt
+    ///      and the rand ops this changed which error surfaces when both the
+    ///      ACL is paused and the HCU budget is exceeded: EnforcedPause now
+    ///      precedes the HCU error, matching all other ops.
+    function _mintHandle(bytes32 prehandle, FheType handleType) internal virtual returns (bytes32 result) {
+        result = _appendMetadataToPrehandle(prehandle, handleType);
+        _markMinted(result);
+        ACL.allowTransient(result, msg.sender);
+    }
+
+    /// @dev Single choke point for consuming an encrypted operand: performs
+    ///      the mandatory ACL check and returns the operand's boundary bit
+    ///      already shifted to its position in the result-handle preimage.
+    ///      Coupling the two means a derivation site that forgets the
+    ///      boundary bit also forgets the ACL check, which the ACL revert
+    ///      tests catch. Scalar operands must not go through here: they are
+    ///      not ACL-checked and contribute a zero bit.
+    ///
+    ///      A bit past the preimage word would be dropped silently (EVM SHL
+    ///      with a shift >= 256 yields 0), so positions past 255 revert. This
+    ///      is unreachable today — operand counts are capped far below by
+    ///      FHE_COLLECTION_*_MAX_SIZE — but keeps a future cap raise or new
+    ///      collection op from reopening the representation-mixing alias.
+    ///
+    ///      Positions are caller-supplied and MUST be distinct per derivation
+    ///      (a duplicated position merges two operands' bits and reopens the
+    ///      alias for that op); any new op must join the boundary-bit rotation
+    ///      tests in fhevmExecutor.t.sol, which pin each operand's position by
+    ///      rotating a single minted operand through every slot.
+    function _consumeOperand(bytes32 ct, uint256 position) internal view virtual returns (uint256 shiftedBit) {
         if (!ACL.isAllowed(ct, msg.sender)) revert ACLNotAllowed(ct, msg.sender);
+        if (position >= 256) revert BoundaryBitPositionOverflow(position);
+        shiftedBit = _oneOperandBoundaryBit(ct) << position;
+    }
+
+    /// @dev Compile-time cap guard: fixed array lengths must be constant-
+    ///      evaluable, so these declarations fail the build ("arithmetic error
+    ///      when computing constant value") if a collection cap is ever raised
+    ///      past 255 — the largest boundary-bit position the preimage word can
+    ///      hold in the value+set _naryOp overload. Never called.
+    function _boundaryBitCapGuard() private pure {
+        uint256[255 - FHE_COLLECTION_NARROW_MAX_SIZE] memory narrowHeadroom;
+        uint256[255 - FHE_COLLECTION_WIDE_MAX_SIZE] memory wideHeadroom;
+        (narrowHeadroom, wideHeadroom);
+    }
+
+    function _unaryOp(Operators op, bytes32 ct) internal virtual returns (bytes32 result) {
+        uint256 boundaryBits = _consumeOperand(ct, 0);
         result = keccak256(
             abi.encodePacked(
                 COMPUTATION_DOMAIN_SEPARATOR,
                 op,
                 ct,
-                _oneOperandBoundaryBit(ct),
+                boundaryBits,
                 ACL,
                 block.chainid,
                 blockhash(block.number - 1),
                 block.timestamp
             )
         );
-        FheType typeCt = _typeOf(ct);
-        result = _appendMetadataToPrehandle(result, typeCt);
-        _markMinted(result);
-        ACL.allowTransient(result, msg.sender);
+        result = _mintHandle(result, _typeOf(ct));
     }
 
     function _binaryOp(
@@ -1026,13 +1085,10 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         /// @dev at the moment at most only right operand of binary ops can be scalar, so we enforce `scalar` to be bool
         _checkBoolean(scalar);
 
-        if (!ACL.isAllowed(lhs, msg.sender)) revert ACLNotAllowed(lhs, msg.sender);
+        uint256 boundaryBits = _consumeOperand(lhs, 0);
         if (scalar == 0x00) {
-            if (!ACL.isAllowed(rhs, msg.sender)) revert ACLNotAllowed(rhs, msg.sender);
-
-            FheType rhsType = _typeOf(rhs);
-            FheType lhsType = _typeOf(lhs);
-            if (lhsType != rhsType) revert IncompatibleTypes();
+            boundaryBits |= _consumeOperand(rhs, 1);
+            if (_typeOf(lhs) != _typeOf(rhs)) revert IncompatibleTypes();
         }
         result = keccak256(
             abi.encodePacked(
@@ -1041,16 +1097,14 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
                 lhs,
                 rhs,
                 scalar,
-                _oneOperandBoundaryBit(lhs) | (scalar == 0x00 ? _oneOperandBoundaryBit(rhs) << 1 : 0),
+                boundaryBits,
                 ACL,
                 block.chainid,
                 blockhash(block.number - 1),
                 block.timestamp
             )
         );
-        result = _appendMetadataToPrehandle(result, resultType);
-        _markMinted(result);
-        ACL.allowTransient(result, msg.sender);
+        result = _mintHandle(result, resultType);
     }
 
     function _mulDivOp(
@@ -1065,9 +1119,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             revert InvalidMulDivScalarByte();
         }
 
-        if (!ACL.isAllowed(factor1, msg.sender)) revert ACLNotAllowed(factor1, msg.sender);
+        uint256 boundaryBits = _consumeOperand(factor1, 0);
         if (scalarByte == FHE_MUL_DIV_FACTOR2_ENCRYPTED) {
-            if (!ACL.isAllowed(factor2, msg.sender)) revert ACLNotAllowed(factor2, msg.sender);
+            boundaryBits |= _consumeOperand(factor2, 1);
             // resultType == _typeOf(factor1) (set by the caller's _verifyAndReturnType).
             if (resultType != _typeOf(factor2)) revert IncompatibleTypes();
         }
@@ -1079,17 +1133,14 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
                 factor2,
                 divisor,
                 scalarByte,
-                _oneOperandBoundaryBit(factor1) |
-                    (scalarByte == FHE_MUL_DIV_FACTOR2_ENCRYPTED ? _oneOperandBoundaryBit(factor2) << 1 : 0),
+                boundaryBits,
                 ACL,
                 block.chainid,
                 blockhash(block.number - 1),
                 block.timestamp
             )
         );
-        result = _appendMetadataToPrehandle(result, resultType);
-        _markMinted(result);
-        ACL.allowTransient(result, msg.sender);
+        result = _mintHandle(result, resultType);
     }
 
     function _ternaryOp(
@@ -1098,9 +1149,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         bytes32 middle,
         bytes32 rhs
     ) internal virtual returns (bytes32 result) {
-        if (!ACL.isAllowed(lhs, msg.sender)) revert ACLNotAllowed(lhs, msg.sender);
-        if (!ACL.isAllowed(middle, msg.sender)) revert ACLNotAllowed(middle, msg.sender);
-        if (!ACL.isAllowed(rhs, msg.sender)) revert ACLNotAllowed(rhs, msg.sender);
+        uint256 boundaryBits = _consumeOperand(lhs, 0);
+        boundaryBits |= _consumeOperand(middle, 1);
+        boundaryBits |= _consumeOperand(rhs, 2);
 
         FheType lhsType = _typeOf(lhs);
         FheType middleType = _typeOf(middle);
@@ -1117,18 +1168,14 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
                 lhs,
                 middle,
                 rhs,
-                _oneOperandBoundaryBit(lhs) |
-                    (_oneOperandBoundaryBit(middle) << 1) |
-                    (_oneOperandBoundaryBit(rhs) << 2),
+                boundaryBits,
                 ACL,
                 block.chainid,
                 blockhash(block.number - 1),
                 block.timestamp
             )
         );
-        result = _appendMetadataToPrehandle(result, middleType);
-        _markMinted(result);
-        ACL.allowTransient(result, msg.sender);
+        result = _mintHandle(result, middleType);
     }
 
     function _naryOp(
@@ -1138,9 +1185,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     ) internal virtual returns (bytes32 result) {
         uint256 boundaryBits;
         for (uint256 i = 0; i < values.length; i++) {
-            if (!ACL.isAllowed(values[i], msg.sender)) revert ACLNotAllowed(values[i], msg.sender);
+            boundaryBits |= _consumeOperand(values[i], i);
             if (_typeOf(values[i]) != resultType) revert IncompatibleTypes();
-            if (i < 256) boundaryBits |= _oneOperandBoundaryBit(values[i]) << i;
         }
         result = keccak256(
             abi.encodePacked(
@@ -1155,9 +1201,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
                 block.timestamp
             )
         );
-        result = _appendMetadataToPrehandle(result, resultType);
-        _markMinted(result);
-        ACL.allowTransient(result, msg.sender);
+        result = _mintHandle(result, resultType);
     }
 
     function _naryOp(
@@ -1166,13 +1210,11 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         bytes32[] calldata values,
         FheType resultType
     ) internal virtual returns (bytes32 result) {
-        if (!ACL.isAllowed(value, msg.sender)) revert ACLNotAllowed(value, msg.sender);
+        uint256 boundaryBits = _consumeOperand(value, 0);
         FheType valueType = _typeOf(value);
-        uint256 boundaryBits = _oneOperandBoundaryBit(value);
         for (uint256 i = 0; i < values.length; i++) {
-            if (!ACL.isAllowed(values[i], msg.sender)) revert ACLNotAllowed(values[i], msg.sender);
+            boundaryBits |= _consumeOperand(values[i], i + 1);
             if (_typeOf(values[i]) != valueType) revert IncompatibleTypes();
-            if (i < 255) boundaryBits |= _oneOperandBoundaryBit(values[i]) << (i + 1);
         }
         result = keccak256(
             abi.encodePacked(
@@ -1188,9 +1230,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
                 block.timestamp
             )
         );
-        result = _appendMetadataToPrehandle(result, resultType);
-        _markMinted(result);
-        ACL.allowTransient(result, msg.sender);
+        result = _mintHandle(result, resultType);
     }
 
     function _generateSeed() internal virtual returns (bytes16 seed) {
@@ -1222,10 +1262,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         /// @dev Unsupported erandom type.
         if ((1 << uint8(randType)) & supportedTypes == 0) revert UnsupportedType();
         result = keccak256(abi.encodePacked(COMPUTATION_DOMAIN_SEPARATOR, Operators.fheRand, randType, seed));
-        result = _appendMetadataToPrehandle(result, randType);
+        result = _mintHandle(result, randType);
         HCU_LIMIT.checkHCUForFheRand(randType, result, msg.sender);
-        _markMinted(result);
-        ACL.allowTransient(result, msg.sender);
     }
 
     function _generateRandBounded(
@@ -1246,10 +1284,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         result = keccak256(
             abi.encodePacked(COMPUTATION_DOMAIN_SEPARATOR, Operators.fheRandBounded, upperBound, randType, seed)
         );
-        result = _appendMetadataToPrehandle(result, randType);
+        result = _mintHandle(result, randType);
         HCU_LIMIT.checkHCUForFheRandBounded(randType, result, msg.sender);
-        _markMinted(result);
-        ACL.allowTransient(result, msg.sender);
     }
 
     /**
