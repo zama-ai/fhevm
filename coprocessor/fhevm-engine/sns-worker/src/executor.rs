@@ -237,16 +237,6 @@ pub(crate) async fn run_loop(
         // Continue looping until the service is cancelled or a critical error occurs
         update_last_active(last_active_at.clone()).await;
 
-        // GCS gating: park while the dry-run flag is unset (pre-activation or after rollback). No-op for BCS.
-        if mode.gcs_mode() && start_block_state.load(Ordering::SeqCst) == GCS_NOT_ACTIVATED {
-            debug!("GCS not activated (or rolled back); sns-worker paused, re-checking shortly");
-            tokio::select! {
-                _ = token.cancelled() => return Ok(()),
-                _ = tokio::time::sleep(Duration::from_secs(5)) => {}
-            }
-            continue;
-        }
-
         let latest_keys = get_keyset(pool.clone(), keys_cache.clone()).await?;
         if let Some((key_id_gw, keyset)) = latest_keys {
             let key_changed = keys
@@ -266,6 +256,17 @@ pub(crate) async fn run_loop(
             tokio::time::sleep(Duration::from_secs(5)).await;
             if token.is_cancelled() {
                 return Ok(());
+            }
+            continue;
+        }
+
+        // Validate and cache the key before parking Green. This proves that the
+        // deferred worker can serve after cutover without processing any task early.
+        if mode.gcs_mode() && start_block_state.load(Ordering::SeqCst) == GCS_NOT_ACTIVATED {
+            debug!("GCS not activated (or rolled back); sns-worker paused, re-checking shortly");
+            tokio::select! {
+                _ = token.cancelled() => return Ok(()),
+                _ = tokio::time::sleep(Duration::from_secs(5)) => {}
             }
             continue;
         }
