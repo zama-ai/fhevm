@@ -195,7 +195,7 @@ jobs:
           - .github/workflows/coprocessor-docker-build.yml
           - coprocessor/fhevm-engine/tfhe-worker/**
           - coprocessor/fhevm-engine/Cargo.*
-          - host-contracts/rust_bindings/**
+
 
   check-changes-tx-sender:
     uses: ./.github/workflows/check-changes-for-docker-build.yml

@@ -10,8 +10,8 @@ use bigdecimal::num_bigint::BigInt;
 use criterion::{
     async_executor::FuturesExecutor, measurement::WallTime, Bencher, Criterion, Throughput,
 };
-use fhevm_host_bindings::fhevm_executor::FHEVMExecutor;
-use fhevm_host_bindings::fhevm_executor::FHEVMExecutor::FHEVMExecutorEvents;
+use host_listener::contracts::TfheContract;
+use host_listener::contracts::TfheContract::TfheContractEvents;
 use host_listener::database::tfhe_event_propagate::{
     Database as ListenerDatabase, Handle, Transaction,
 };
@@ -203,8 +203,8 @@ fn next_log_index() -> u64 {
 
 fn log_with_tx(
     tx_hash: host_listener::database::tfhe_event_propagate::Handle,
-    inner: alloy::primitives::Log<FHEVMExecutorEvents>,
-) -> alloy::rpc::types::Log<FHEVMExecutorEvents> {
+    inner: alloy::primitives::Log<TfheContractEvents>,
+) -> alloy::rpc::types::Log<TfheContractEvents> {
     alloy::rpc::types::Log {
         inner,
         block_hash: None,
@@ -227,7 +227,7 @@ async fn insert_event(
     listener_db: &ListenerDatabase,
     tx: &mut Transaction<'_>,
     tx_id: Handle,
-    event: FHEVMExecutorEvents,
+    event: TfheContractEvents,
     is_allowed: bool,
 ) -> Result<(), sqlx::Error> {
     utils::insert_tfhe_event(
@@ -254,7 +254,7 @@ async fn insert_trivial_encrypt(
         listener_db,
         tx,
         tx_id,
-        FHEVMExecutorEvents::TrivialEncrypt(FHEVMExecutor::TrivialEncrypt {
+        TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
             caller,
             pt: as_scalar_uint(&BigInt::from(value)),
             toType: to_ty(to_type),
@@ -380,7 +380,7 @@ async fn schedule_dex(
                     &listener_db,
                     &mut tx,
                     tx_id,
-                    FHEVMExecutorEvents::Cast(FHEVMExecutor::Cast {
+                    TfheContractEvents::Cast(TfheContract::Cast {
                         caller,
                         ct: pending_1_in,
                         toType: to_ty(6),
@@ -394,7 +394,7 @@ async fn schedule_dex(
                     &listener_db,
                     &mut tx,
                     tx_id,
-                    FHEVMExecutorEvents::FheMul(FHEVMExecutor::FheMul {
+                    TfheContractEvents::FheMul(TfheContract::FheMul {
                         caller,
                         lhs: big_pending_1_in,
                         rhs: scalar_u128_handle(total_dex_token_0_out),
@@ -409,7 +409,7 @@ async fn schedule_dex(
                     &listener_db,
                     &mut tx,
                     tx_id,
-                    FHEVMExecutorEvents::FheDiv(FHEVMExecutor::FheDiv {
+                    TfheContractEvents::FheDiv(TfheContract::FheDiv {
                         caller,
                         lhs: mul_temp,
                         rhs: scalar_u128_handle(total_dex_token_1_in),
@@ -424,7 +424,7 @@ async fn schedule_dex(
                     &listener_db,
                     &mut tx,
                     tx_id,
-                    FHEVMExecutorEvents::Cast(FHEVMExecutor::Cast {
+                    TfheContractEvents::Cast(TfheContract::Cast {
                         caller,
                         ct: big_amount_0_out,
                         toType: to_ty(5),
@@ -439,7 +439,7 @@ async fn schedule_dex(
                     &listener_db,
                     &mut tx,
                     tx_id,
-                    FHEVMExecutorEvents::FheGe(FHEVMExecutor::FheGe {
+                    TfheContractEvents::FheGe(TfheContract::FheGe {
                         caller,
                         lhs: current_dex_balance_0,
                         rhs: amount_0_out,
@@ -456,7 +456,7 @@ async fn schedule_dex(
                         &listener_db,
                         &mut tx,
                         tx_id,
-                        FHEVMExecutorEvents::FheAdd(FHEVMExecutor::FheAdd {
+                        TfheContractEvents::FheAdd(TfheContract::FheAdd {
                             caller,
                             lhs: old_balance_0,
                             rhs: amount_0_out,
@@ -471,7 +471,7 @@ async fn schedule_dex(
                         &listener_db,
                         &mut tx,
                         tx_id,
-                        FHEVMExecutorEvents::FheIfThenElse(FHEVMExecutor::FheIfThenElse {
+                        TfheContractEvents::FheIfThenElse(TfheContract::FheIfThenElse {
                             caller,
                             control: has_enough_funds_handle_0,
                             ifTrue: new_to_amount_target_handle_0,
@@ -486,7 +486,7 @@ async fn schedule_dex(
                         &listener_db,
                         &mut tx,
                         tx_id,
-                        FHEVMExecutorEvents::FheSub(FHEVMExecutor::FheSub {
+                        TfheContractEvents::FheSub(TfheContract::FheSub {
                             caller,
                             lhs: current_dex_balance_0,
                             rhs: amount_0_out,
@@ -501,7 +501,7 @@ async fn schedule_dex(
                         &listener_db,
                         &mut tx,
                         tx_id,
-                        FHEVMExecutorEvents::FheIfThenElse(FHEVMExecutor::FheIfThenElse {
+                        TfheContractEvents::FheIfThenElse(TfheContract::FheIfThenElse {
                             caller,
                             control: has_enough_funds_handle_0,
                             ifTrue: new_from_amount_target_handle_0,
@@ -520,7 +520,7 @@ async fn schedule_dex(
                         &listener_db,
                         &mut tx,
                         tx_id,
-                        FHEVMExecutorEvents::Cast(FHEVMExecutor::Cast {
+                        TfheContractEvents::Cast(TfheContract::Cast {
                             caller,
                             ct: has_enough_funds_handle_0,
                             toType: to_ty(5),
@@ -534,7 +534,7 @@ async fn schedule_dex(
                         &listener_db,
                         &mut tx,
                         tx_id,
-                        FHEVMExecutorEvents::FheMul(FHEVMExecutor::FheMul {
+                        TfheContractEvents::FheMul(TfheContract::FheMul {
                             caller,
                             lhs: amount_0_out,
                             rhs: cast_has_enough_funds_handle_0,
@@ -549,7 +549,7 @@ async fn schedule_dex(
                         &listener_db,
                         &mut tx,
                         tx_id,
-                        FHEVMExecutorEvents::FheAdd(FHEVMExecutor::FheAdd {
+                        TfheContractEvents::FheAdd(TfheContract::FheAdd {
                             caller,
                             lhs: old_balance_0,
                             rhs: select_amount_handle_0,
@@ -564,7 +564,7 @@ async fn schedule_dex(
                         &listener_db,
                         &mut tx,
                         tx_id,
-                        FHEVMExecutorEvents::FheSub(FHEVMExecutor::FheSub {
+                        TfheContractEvents::FheSub(TfheContract::FheSub {
                             caller,
                             lhs: current_dex_balance_0,
                             rhs: select_amount_handle_0,
@@ -586,7 +586,7 @@ async fn schedule_dex(
                     &listener_db,
                     &mut tx,
                     tx_id,
-                    FHEVMExecutorEvents::Cast(FHEVMExecutor::Cast {
+                    TfheContractEvents::Cast(TfheContract::Cast {
                         caller,
                         ct: pending_0_in,
                         toType: to_ty(6),
@@ -600,7 +600,7 @@ async fn schedule_dex(
                     &listener_db,
                     &mut tx,
                     tx_id,
-                    FHEVMExecutorEvents::FheMul(FHEVMExecutor::FheMul {
+                    TfheContractEvents::FheMul(TfheContract::FheMul {
                         caller,
                         lhs: big_pending_0_in,
                         rhs: scalar_u128_handle(total_dex_token_1_out),
@@ -615,7 +615,7 @@ async fn schedule_dex(
                     &listener_db,
                     &mut tx,
                     tx_id,
-                    FHEVMExecutorEvents::FheDiv(FHEVMExecutor::FheDiv {
+                    TfheContractEvents::FheDiv(TfheContract::FheDiv {
                         caller,
                         lhs: mul_temp,
                         rhs: scalar_u128_handle(total_dex_token_0_in),
@@ -630,7 +630,7 @@ async fn schedule_dex(
                     &listener_db,
                     &mut tx,
                     tx_id,
-                    FHEVMExecutorEvents::Cast(FHEVMExecutor::Cast {
+                    TfheContractEvents::Cast(TfheContract::Cast {
                         caller,
                         ct: big_amount_1_out,
                         toType: to_ty(5),
@@ -645,7 +645,7 @@ async fn schedule_dex(
                     &listener_db,
                     &mut tx,
                     tx_id,
-                    FHEVMExecutorEvents::FheGe(FHEVMExecutor::FheGe {
+                    TfheContractEvents::FheGe(TfheContract::FheGe {
                         caller,
                         lhs: current_dex_balance_1,
                         rhs: amount_1_out,
@@ -662,7 +662,7 @@ async fn schedule_dex(
                         &listener_db,
                         &mut tx,
                         tx_id,
-                        FHEVMExecutorEvents::FheAdd(FHEVMExecutor::FheAdd {
+                        TfheContractEvents::FheAdd(TfheContract::FheAdd {
                             caller,
                             lhs: old_balance_1,
                             rhs: amount_1_out,
@@ -677,7 +677,7 @@ async fn schedule_dex(
                         &listener_db,
                         &mut tx,
                         tx_id,
-                        FHEVMExecutorEvents::FheIfThenElse(FHEVMExecutor::FheIfThenElse {
+                        TfheContractEvents::FheIfThenElse(TfheContract::FheIfThenElse {
                             caller,
                             control: has_enough_funds_handle_1,
                             ifTrue: new_to_amount_target_handle_1,
@@ -692,7 +692,7 @@ async fn schedule_dex(
                         &listener_db,
                         &mut tx,
                         tx_id,
-                        FHEVMExecutorEvents::FheSub(FHEVMExecutor::FheSub {
+                        TfheContractEvents::FheSub(TfheContract::FheSub {
                             caller,
                             lhs: current_dex_balance_1,
                             rhs: amount_1_out,
@@ -707,7 +707,7 @@ async fn schedule_dex(
                         &listener_db,
                         &mut tx,
                         tx_id,
-                        FHEVMExecutorEvents::FheIfThenElse(FHEVMExecutor::FheIfThenElse {
+                        TfheContractEvents::FheIfThenElse(TfheContract::FheIfThenElse {
                             caller,
                             control: has_enough_funds_handle_1,
                             ifTrue: new_from_amount_target_handle_1,
@@ -726,7 +726,7 @@ async fn schedule_dex(
                         &listener_db,
                         &mut tx,
                         tx_id,
-                        FHEVMExecutorEvents::Cast(FHEVMExecutor::Cast {
+                        TfheContractEvents::Cast(TfheContract::Cast {
                             caller,
                             ct: has_enough_funds_handle_1,
                             toType: to_ty(5),
@@ -740,7 +740,7 @@ async fn schedule_dex(
                         &listener_db,
                         &mut tx,
                         tx_id,
-                        FHEVMExecutorEvents::FheMul(FHEVMExecutor::FheMul {
+                        TfheContractEvents::FheMul(TfheContract::FheMul {
                             caller,
                             lhs: amount_1_out,
                             rhs: cast_has_enough_funds_handle_1,
@@ -755,7 +755,7 @@ async fn schedule_dex(
                         &listener_db,
                         &mut tx,
                         tx_id,
-                        FHEVMExecutorEvents::FheAdd(FHEVMExecutor::FheAdd {
+                        TfheContractEvents::FheAdd(TfheContract::FheAdd {
                             caller,
                             lhs: old_balance_1,
                             rhs: select_amount_handle_1,
@@ -770,7 +770,7 @@ async fn schedule_dex(
                         &listener_db,
                         &mut tx,
                         tx_id,
-                        FHEVMExecutorEvents::FheSub(FHEVMExecutor::FheSub {
+                        TfheContractEvents::FheSub(TfheContract::FheSub {
                             caller,
                             lhs: current_dex_balance_1,
                             rhs: select_amount_handle_1,
@@ -893,7 +893,7 @@ async fn schedule_dex(
                     &listener_db,
                     &mut tx,
                     tx_id,
-                    FHEVMExecutorEvents::FheGe(FHEVMExecutor::FheGe {
+                    TfheContractEvents::FheGe(TfheContract::FheGe {
                         caller,
                         lhs: from_balance_0,
                         rhs: amount_0,
@@ -908,7 +908,7 @@ async fn schedule_dex(
                     &listener_db,
                     &mut tx,
                     tx_id,
-                    FHEVMExecutorEvents::FheAdd(FHEVMExecutor::FheAdd {
+                    TfheContractEvents::FheAdd(TfheContract::FheAdd {
                         caller,
                         lhs: current_dex_balance_0,
                         rhs: amount_0,
@@ -923,7 +923,7 @@ async fn schedule_dex(
                     &listener_db,
                     &mut tx,
                     tx_id,
-                    FHEVMExecutorEvents::FheIfThenElse(FHEVMExecutor::FheIfThenElse {
+                    TfheContractEvents::FheIfThenElse(TfheContract::FheIfThenElse {
                         caller,
                         control: has_enough_funds_handle_0,
                         ifTrue: new_to_amount_target_handle_0,
@@ -939,7 +939,7 @@ async fn schedule_dex(
                     &listener_db,
                     &mut tx,
                     tx_id,
-                    FHEVMExecutorEvents::FheGe(FHEVMExecutor::FheGe {
+                    TfheContractEvents::FheGe(TfheContract::FheGe {
                         caller,
                         lhs: from_balance_1,
                         rhs: amount_1,
@@ -954,7 +954,7 @@ async fn schedule_dex(
                     &listener_db,
                     &mut tx,
                     tx_id,
-                    FHEVMExecutorEvents::FheAdd(FHEVMExecutor::FheAdd {
+                    TfheContractEvents::FheAdd(TfheContract::FheAdd {
                         caller,
                         lhs: current_dex_balance_1,
                         rhs: amount_1,
@@ -969,7 +969,7 @@ async fn schedule_dex(
                     &listener_db,
                     &mut tx,
                     tx_id,
-                    FHEVMExecutorEvents::FheIfThenElse(FHEVMExecutor::FheIfThenElse {
+                    TfheContractEvents::FheIfThenElse(TfheContract::FheIfThenElse {
                         caller,
                         control: has_enough_funds_handle_1,
                         ifTrue: new_to_amount_target_handle_1,
@@ -986,7 +986,7 @@ async fn schedule_dex(
                     &listener_db,
                     &mut tx,
                     tx_id,
-                    FHEVMExecutorEvents::FheGe(FHEVMExecutor::FheGe {
+                    TfheContractEvents::FheGe(TfheContract::FheGe {
                         caller,
                         lhs: from_balance_0,
                         rhs: amount_0,
@@ -1001,7 +1001,7 @@ async fn schedule_dex(
                     &listener_db,
                     &mut tx,
                     tx_id,
-                    FHEVMExecutorEvents::Cast(FHEVMExecutor::Cast {
+                    TfheContractEvents::Cast(TfheContract::Cast {
                         caller,
                         ct: has_enough_funds_handle_0,
                         toType: to_ty(5),
@@ -1015,7 +1015,7 @@ async fn schedule_dex(
                     &listener_db,
                     &mut tx,
                     tx_id,
-                    FHEVMExecutorEvents::FheMul(FHEVMExecutor::FheMul {
+                    TfheContractEvents::FheMul(TfheContract::FheMul {
                         caller,
                         lhs: amount_0,
                         rhs: cast_has_enough_funds_handle_0,
@@ -1030,7 +1030,7 @@ async fn schedule_dex(
                     &listener_db,
                     &mut tx,
                     tx_id,
-                    FHEVMExecutorEvents::FheAdd(FHEVMExecutor::FheAdd {
+                    TfheContractEvents::FheAdd(TfheContract::FheAdd {
                         caller,
                         lhs: current_dex_balance_0,
                         rhs: select_amount_handle_0,
@@ -1046,7 +1046,7 @@ async fn schedule_dex(
                     &listener_db,
                     &mut tx,
                     tx_id,
-                    FHEVMExecutorEvents::FheGe(FHEVMExecutor::FheGe {
+                    TfheContractEvents::FheGe(TfheContract::FheGe {
                         caller,
                         lhs: from_balance_1,
                         rhs: amount_1,
@@ -1061,7 +1061,7 @@ async fn schedule_dex(
                     &listener_db,
                     &mut tx,
                     tx_id,
-                    FHEVMExecutorEvents::Cast(FHEVMExecutor::Cast {
+                    TfheContractEvents::Cast(TfheContract::Cast {
                         caller,
                         ct: has_enough_funds_handle_1,
                         toType: to_ty(5),
@@ -1075,7 +1075,7 @@ async fn schedule_dex(
                     &listener_db,
                     &mut tx,
                     tx_id,
-                    FHEVMExecutorEvents::FheMul(FHEVMExecutor::FheMul {
+                    TfheContractEvents::FheMul(TfheContract::FheMul {
                         caller,
                         lhs: amount_1,
                         rhs: cast_has_enough_funds_handle_1,
@@ -1090,7 +1090,7 @@ async fn schedule_dex(
                     &listener_db,
                     &mut tx,
                     tx_id,
-                    FHEVMExecutorEvents::FheAdd(FHEVMExecutor::FheAdd {
+                    TfheContractEvents::FheAdd(TfheContract::FheAdd {
                         caller,
                         lhs: current_dex_balance_1,
                         rhs: select_amount_handle_1,
@@ -1108,7 +1108,7 @@ async fn schedule_dex(
                 &listener_db,
                 &mut tx,
                 tx_id,
-                FHEVMExecutorEvents::FheSub(FHEVMExecutor::FheSub {
+                TfheContractEvents::FheSub(TfheContract::FheSub {
                     caller,
                     lhs: new_current_balance_0,
                     rhs: current_dex_balance_0,
@@ -1123,7 +1123,7 @@ async fn schedule_dex(
                 &listener_db,
                 &mut tx,
                 tx_id,
-                FHEVMExecutorEvents::FheSub(FHEVMExecutor::FheSub {
+                TfheContractEvents::FheSub(TfheContract::FheSub {
                     caller,
                     lhs: new_current_balance_1,
                     rhs: current_dex_balance_1,
@@ -1138,7 +1138,7 @@ async fn schedule_dex(
                 &listener_db,
                 &mut tx,
                 tx_id,
-                FHEVMExecutorEvents::FheAdd(FHEVMExecutor::FheAdd {
+                TfheContractEvents::FheAdd(TfheContract::FheAdd {
                     caller,
                     lhs: to_balance_0,
                     rhs: sent_0_handle,
@@ -1153,7 +1153,7 @@ async fn schedule_dex(
                 &listener_db,
                 &mut tx,
                 tx_id,
-                FHEVMExecutorEvents::FheAdd(FHEVMExecutor::FheAdd {
+                TfheContractEvents::FheAdd(TfheContract::FheAdd {
                     caller,
                     lhs: to_balance_1,
                     rhs: sent_1_handle,
@@ -1168,7 +1168,7 @@ async fn schedule_dex(
                 &listener_db,
                 &mut tx,
                 tx_id,
-                FHEVMExecutorEvents::FheAdd(FHEVMExecutor::FheAdd {
+                TfheContractEvents::FheAdd(TfheContract::FheAdd {
                     caller,
                     lhs: total_dex_token_0_in,
                     rhs: sent_0_handle,
@@ -1183,7 +1183,7 @@ async fn schedule_dex(
                 &listener_db,
                 &mut tx,
                 tx_id,
-                FHEVMExecutorEvents::FheAdd(FHEVMExecutor::FheAdd {
+                TfheContractEvents::FheAdd(TfheContract::FheAdd {
                     caller,
                     lhs: total_dex_token_1_in,
                     rhs: sent_1_handle,

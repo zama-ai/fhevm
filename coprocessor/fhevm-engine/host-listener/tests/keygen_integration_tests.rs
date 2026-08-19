@@ -1,17 +1,23 @@
-mod common;
-
 use std::{
     collections::HashMap,
     sync::{Arc, OnceLock, RwLock},
     time::Duration,
 };
 
-use alloy::primitives::{Address, BlockHash, U256};
+use alloy::{
+    network::EthereumWallet,
+    node_bindings::{Anvil, AnvilInstance},
+    primitives::{Address, BlockHash, U256},
+    providers::{Provider, ProviderBuilder, WsConnect},
+    rpc::types::Filter,
+    signers::local::PrivateKeySigner,
+};
 use async_trait::async_trait;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::utils::DatabaseURL;
-use host_listener::cmd::block_history::BlockSummary;
-use host_listener::database::ingest::IngestOptions;
+use host_listener::database::ingest::{
+    ingest_block_logs, BlockLogs, IngestOptions,
+};
 use host_listener::database::tfhe_event_propagate::Database;
 use host_listener::kms_generation::aws_s3::AwsS3Interface;
 use host_listener::kms_generation::{
@@ -27,10 +33,8 @@ use tokio_util::bytes::{self, Bytes};
 use tracing::{info, Level};
 use tracing_subscriber::fmt::{writer::MakeWriterExt, MakeWriter};
 
-use common::{
-    activate_crs_log, activate_key_log, block_summary, ingest_logs,
-    tx_hash_for, KMS_ADDRESS,
-};
+mod common;
+use common::{activate_crs_request, activate_key_request, RawLog};
 
 static TEST_LOGS: OnceLock<Arc<RwLock<String>>> = OnceLock::new();
 
@@ -96,9 +100,11 @@ impl<'a> MakeWriter<'a> for Writer {
 }
 
 struct TestEnvironment {
+    wallet: EthereumWallet,
     _test_instance: Option<test_harness::instance::DBInstance>,
     database_url: DatabaseURL,
     db_pool: Pool<Postgres>,
+    anvil: AnvilInstance,
     test_logs: TestLogs,
 }
 
@@ -136,10 +142,16 @@ impl TestEnvironment {
 
         seed_test_rows(&db_pool).await?;
 
+        let anvil = Anvil::new().block_time(1).chain_id(TEST_CHAIN_ID).spawn();
+        let signer: PrivateKeySigner = anvil.keys()[0].clone().into();
+        let wallet = signer.into();
+
         Ok(Self {
+            wallet,
             database_url,
             db_pool,
             _test_instance: test_instance,
+            anvil,
             test_logs,
         })
     }
@@ -405,26 +417,47 @@ async fn materialize_kms_generation_steps(
     Ok(())
 }
 
-async fn process_and_finalize_logs(
+async fn process_and_finalize_logs_at_block<P>(
+    provider: &P,
     db: &mut Database,
     kms_address: Address,
     aws_s3_client: &AwsS3ClientMocked,
-    logs: Vec<alloy::rpc::types::Log>,
-    summary: BlockSummary,
+    block_hash: BlockHash,
     materializer_steps: usize,
-) -> anyhow::Result<()> {
-    let _ = kms_address;
-    ingest_logs(
-        db,
+) -> anyhow::Result<()>
+where
+    P: Provider<alloy::network::Ethereum>,
+{
+    let block = provider
+        .get_block_by_hash(block_hash)
+        .await?
+        .expect("block exists");
+    let filter = Filter::new().at_block_hash(block_hash).address(kms_address);
+    let logs = provider.get_logs(&filter).await?;
+    let block_logs = BlockLogs {
+        summary: block.header.into(),
+        catchup: false,
+        finalized: false,
         logs,
-        summary,
-        false,
-        IngestOptions {
-            dependence_by_connexity: false,
-            dependence_cross_block: true,
-            dependent_ops_max_per_chain: 0,
-            is_protocol_config_listener: true,
-        },
+    };
+    let chain_id = ChainId::try_from(TEST_CHAIN_ID)?;
+    let options = IngestOptions {
+        dependence_by_connexity: false,
+        dependence_cross_block: true,
+        dependent_ops_max_per_chain: 0,
+        is_protocol_config_listener: true,
+    };
+
+    ingest_block_logs(
+        chain_id,
+        db,
+        &block_logs,
+        &None,
+        &None,
+        &Some(kms_address),
+        &None,
+        &None,
+        options,
     )
     .await?;
 
@@ -432,7 +465,7 @@ async fn process_and_finalize_logs(
         .new_transaction()
         .await?
         .expect("new_transaction() returns Some on a live stack");
-    db.mark_block_as_valid(&mut tx, &summary, true, 0, 0)
+    db.mark_block_as_valid(&mut tx, &block_logs.summary, true, 0, 0)
         .await?;
     tx.commit().await?;
 
@@ -525,22 +558,33 @@ async fn keygen_ok_simple() -> anyhow::Result<()> {
     let key_id = U256::from(TEST_KEY_ID);
 
     let env = TestEnvironment::new().await?;
+    let provider = ProviderBuilder::new()
+        .wallet(env.wallet.clone())
+        .connect_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+        .await?;
     let aws_s3_client =
         AwsS3ClientMocked::new(&buckets, &key_types, key_id, false, false);
+    let kms_generation = RawLog::deploy(&provider).await?;
 
     assert!(has_not_public_key(&env.db_pool, key_id).await?);
     assert!(has_not_server_key(&env.db_pool, key_id).await?);
     assert!(has_not_crs(&env.db_pool, key_id).await?);
 
+    let receipt = provider
+        .send_transaction(activate_key_request(&kms_generation))
+        .await?
+        .get_receipt()
+        .await?;
+    assert!(receipt.status());
+
     let chain_id = ChainId::try_from(TEST_CHAIN_ID)?;
     let mut database = Database::new(&env.database_url, chain_id, 10).await?;
-    let key_summary = block_summary(10);
-    process_and_finalize_logs(
+    process_and_finalize_logs_at_block(
+        &provider,
         &mut database,
-        KMS_ADDRESS,
+        *kms_generation.address(),
         &aws_s3_client,
-        vec![activate_key_log(tx_hash_for(10), 0)],
-        key_summary,
+        receipt.block_hash.expect("receipt has block hash"),
         MATERIALIZER_ACTIVATION_STEPS,
     )
     .await?;
@@ -548,13 +592,19 @@ async fn keygen_ok_simple() -> anyhow::Result<()> {
     assert!(has_public_key(&env.db_pool, key_id).await?);
     assert!(has_server_key(&env.db_pool, key_id).await?);
 
-    let crs_summary = block_summary(11);
-    process_and_finalize_logs(
+    let receipt = provider
+        .send_transaction(activate_crs_request(&kms_generation))
+        .await?
+        .get_receipt()
+        .await?;
+    assert!(receipt.status());
+
+    process_and_finalize_logs_at_block(
+        &provider,
         &mut database,
-        KMS_ADDRESS,
+        *kms_generation.address(),
         &aws_s3_client,
-        vec![activate_crs_log(tx_hash_for(11), 0)],
-        crs_summary,
+        receipt.block_hash.expect("receipt has block hash"),
         MATERIALIZER_ACTIVATION_STEPS,
     )
     .await?;
@@ -576,33 +626,41 @@ async fn keygen_idempotent_replay() -> anyhow::Result<()> {
     let key_id = U256::from(TEST_KEY_ID);
 
     let env = TestEnvironment::new().await?;
+    let provider = ProviderBuilder::new()
+        .wallet(env.wallet.clone())
+        .connect_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+        .await?;
     let aws_s3_client =
         AwsS3ClientMocked::new(&buckets, &key_types, key_id, false, false);
+    let kms_generation = RawLog::deploy(&provider).await?;
     let chain_id = ChainId::try_from(TEST_CHAIN_ID)?;
-    let key_summary = block_summary(10);
-    let crs_summary = block_summary(11);
-    let keygen_block = key_summary.hash;
-    let crsgen_block = crs_summary.hash;
+
+    let keygen_receipt = provider
+        .send_transaction(activate_key_request(&kms_generation))
+        .await?
+        .get_receipt()
+        .await?;
+    let keygen_block = keygen_receipt.block_hash.expect("block hash");
+
+    let crsgen_receipt = provider
+        .send_transaction(activate_crs_request(&kms_generation))
+        .await?
+        .get_receipt()
+        .await?;
+    let crsgen_block = crsgen_receipt.block_hash.expect("block hash");
 
     let mut database = Database::new(&env.database_url, chain_id, 10).await?;
-    process_and_finalize_logs(
-        &mut database,
-        KMS_ADDRESS,
-        &aws_s3_client,
-        vec![activate_key_log(tx_hash_for(10), 0)],
-        key_summary,
-        MATERIALIZER_ACTIVATION_STEPS,
-    )
-    .await?;
-    process_and_finalize_logs(
-        &mut database,
-        KMS_ADDRESS,
-        &aws_s3_client,
-        vec![activate_crs_log(tx_hash_for(11), 0)],
-        crs_summary,
-        MATERIALIZER_ACTIVATION_STEPS,
-    )
-    .await?;
+    for block_hash in [keygen_block, crsgen_block] {
+        process_and_finalize_logs_at_block(
+            &provider,
+            &mut database,
+            *kms_generation.address(),
+            &aws_s3_client,
+            block_hash,
+            MATERIALIZER_ACTIVATION_STEPS,
+        )
+        .await?;
+    }
 
     assert_eq!(
         key_activation_count_for_block(&env.db_pool, chain_id, keygen_block)
@@ -615,24 +673,17 @@ async fn keygen_idempotent_replay() -> anyhow::Result<()> {
         1,
     );
 
-    process_and_finalize_logs(
-        &mut database,
-        KMS_ADDRESS,
-        &aws_s3_client,
-        vec![activate_key_log(tx_hash_for(10), 0)],
-        key_summary,
-        MATERIALIZER_ACTIVATION_STEPS,
-    )
-    .await?;
-    process_and_finalize_logs(
-        &mut database,
-        KMS_ADDRESS,
-        &aws_s3_client,
-        vec![activate_crs_log(tx_hash_for(11), 0)],
-        crs_summary,
-        MATERIALIZER_ACTIVATION_STEPS,
-    )
-    .await?;
+    for block_hash in [keygen_block, crsgen_block] {
+        process_and_finalize_logs_at_block(
+            &provider,
+            &mut database,
+            *kms_generation.address(),
+            &aws_s3_client,
+            block_hash,
+            MATERIALIZER_ACTIVATION_STEPS,
+        )
+        .await?;
+    }
 
     assert_eq!(
         key_activation_count_for_block(&env.db_pool, chain_id, keygen_block)
@@ -784,22 +835,33 @@ async fn keygen_compromised_key_records_last_error() -> anyhow::Result<()> {
     let key_id = U256::from(TEST_KEY_ID);
 
     let env = TestEnvironment::new().await?;
+    let provider = ProviderBuilder::new()
+        .wallet(env.wallet.clone())
+        .connect_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+        .await?;
     let aws_s3_client =
         AwsS3ClientMocked::new(&buckets, &key_types, key_id, true, false);
+    let kms_generation = RawLog::deploy(&provider).await?;
     let chain_id = ChainId::try_from(TEST_CHAIN_ID)?;
 
     assert!(has_not_public_key(&env.db_pool, key_id).await?);
     assert!(has_not_server_key(&env.db_pool, key_id).await?);
 
-    let summary = block_summary(10);
-    let block_hash = summary.hash;
+    let receipt = provider
+        .send_transaction(activate_key_request(&kms_generation))
+        .await?
+        .get_receipt()
+        .await?;
+    assert!(receipt.status());
+    let block_hash = receipt.block_hash.expect("receipt has block hash");
+
     let mut database = Database::new(&env.database_url, chain_id, 16).await?;
-    process_and_finalize_logs(
+    process_and_finalize_logs_at_block(
+        &provider,
         &mut database,
-        KMS_ADDRESS,
+        *kms_generation.address(),
         &aws_s3_client,
-        vec![activate_key_log(tx_hash_for(10), 0)],
-        summary,
+        block_hash,
         1,
     )
     .await?;
@@ -833,20 +895,32 @@ async fn keygen_bad_key_or_bucket() -> anyhow::Result<()> {
     let key_id = U256::from(TEST_KEY_ID);
 
     let env = TestEnvironment::new().await?;
+    let provider = ProviderBuilder::new()
+        .wallet(env.wallet.clone())
+        .connect_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+        .await?;
     let aws_s3_client =
         AwsS3ClientMocked::new(&buckets, &key_types, key_id, false, true);
+    let kms_generation = RawLog::deploy(&provider).await?;
     let chain_id = ChainId::try_from(TEST_CHAIN_ID)?;
 
     assert!(has_not_public_key(&env.db_pool, key_id).await?);
     assert!(has_not_server_key(&env.db_pool, key_id).await?);
 
+    let receipt = provider
+        .send_transaction(activate_key_request(&kms_generation))
+        .await?
+        .get_receipt()
+        .await?;
+    assert!(receipt.status());
+
     let mut database = Database::new(&env.database_url, chain_id, 16).await?;
-    process_and_finalize_logs(
+    process_and_finalize_logs_at_block(
+        &provider,
         &mut database,
-        KMS_ADDRESS,
+        *kms_generation.address(),
         &aws_s3_client,
-        vec![activate_key_log(tx_hash_for(10), 0)],
-        block_summary(10),
+        receipt.block_hash.expect("receipt has block hash"),
         MATERIALIZER_ACTIVATION_STEPS,
     )
     .await?;

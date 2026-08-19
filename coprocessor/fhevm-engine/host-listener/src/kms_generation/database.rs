@@ -7,9 +7,9 @@ use tracing::{error, info};
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::db_keys::write_large_object_in_chunks_tx;
 
+use crate::contracts::KMSGeneration;
 use crate::kms_generation::key_id_to_database_bytes;
 use crate::kms_generation::sks_key::PreparedServerKey;
-use fhevm_host_bindings::kms_generation::KMSGeneration;
 
 const CHUNK_SIZE: usize = 128 * 1024 * 1024; // 128MB
 

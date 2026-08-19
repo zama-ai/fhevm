@@ -1,18 +1,21 @@
-mod common;
+use std::time::Duration;
 
+use alloy::network::EthereumWallet;
+use alloy::node_bindings::Anvil;
+use alloy::primitives::U256;
+use alloy::providers::{Provider, ProviderBuilder, WalletProvider, WsConnect};
+use alloy::signers::local::PrivateKeySigner;
 use serial_test::serial;
+use tokio::time::sleep;
 
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::utils::DatabaseURL;
-use host_listener::database::ingest::IngestOptions;
 use host_listener::database::tfhe_event_propagate::Database;
+use host_listener::poller::{run_poller, PollerConfig};
 use test_harness::instance::ImportMode;
 
-use alloy::primitives::{FixedBytes, U256};
-use common::{
-    allowed_log, block_summary, caller_at, ingest_logs, trivial_encrypt_log,
-    tx_hash_for,
-};
+mod common;
+use common::{allowed_request, trivial_encrypt_request, RawLog};
 
 #[tokio::test]
 #[serial(db)]
@@ -43,6 +46,12 @@ async fn poller_state_round_trip() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EventKind {
+    Tfhe,
+    Acl,
+}
+
 #[tokio::test]
 #[serial(db)]
 async fn poller_catches_up_to_safe_tip(
@@ -53,7 +62,7 @@ async fn poller_catches_up_to_safe_tip(
     let chain_id = ChainId::try_from(42_u64).unwrap();
 
     let db_url: DatabaseURL = db_instance.db_url.clone();
-    let mut db = Database::new(&db_url, chain_id, 128).await?;
+    let db = Database::new(&db_url, chain_id, 128).await?;
     let pool = db.pool.read().await.clone();
     sqlx::query("DELETE FROM host_listener_poller_state WHERE chain_id = $1")
         .bind(chain_id.as_i64())
@@ -70,37 +79,139 @@ async fn poller_catches_up_to_safe_tip(
         .execute(&pool)
         .await?;
 
-    let latest_block = 5u64;
-    let finality_lag = 2u64;
-    let safe_tip = latest_block.saturating_sub(finality_lag);
-    let caller = caller_at(0);
-    let options = IngestOptions {
-        dependence_by_connexity: false,
-        dependence_cross_block: true,
-        dependent_ops_max_per_chain: 0,
-        is_protocol_config_listener: true,
-    };
+    // Spin up a local chain and emit events so the poller starts behind the head.
+    let anvil = Anvil::new().chain_id(chain_id.as_u64()).spawn();
+    let ws_url = anvil.ws_endpoint();
+    let http_url = anvil.endpoint();
 
-    let mut expected_tfhe = 0i64;
-    let mut expected_acl = 0i64;
-    for i in 1..=latest_block {
-        let pt = U256::from(i);
-        let handle = FixedBytes::<32>::from(pt.to_be_bytes());
-        let tx_hash = tx_hash_for(i);
-        let logs = vec![
-            trivial_encrypt_log(caller, pt, 4_u8, handle, tx_hash, 0),
-            allowed_log(caller, caller, handle, tx_hash, 1),
-        ];
-        if i <= safe_tip {
-            ingest_logs(&mut db, logs, block_summary(i), true, options.clone())
-                .await?;
-            expected_tfhe += 1;
-            expected_acl += 1;
-        }
+    let signer: PrivateKeySigner = anvil.first_key().clone().into();
+    let wallet = EthereumWallet::new(signer);
+
+    let provider = ProviderBuilder::new()
+        .wallet(wallet.clone())
+        .connect_ws(WsConnect::new(ws_url.clone()))
+        .await?;
+
+    let tfhe_contract = RawLog::deploy(provider.clone()).await?;
+    let acl_contract = RawLog::deploy(provider.clone()).await?;
+    let kms_generation_contract = RawLog::deploy(provider.clone()).await?;
+    let signer_address = provider
+        .signer_addresses()
+        .next()
+        .expect("anvil provides at least one signer");
+
+    let mut receipts: Vec<(u64, EventKind)> = Vec::new();
+    for i in 0..3u64 {
+        let tfhe_txn_req = trivial_encrypt_request(
+            &tfhe_contract,
+            signer_address,
+            U256::from(i + 1),
+            4_u8,
+        );
+        let tfhe_receipt = provider
+            .send_transaction(tfhe_txn_req)
+            .await?
+            .get_receipt()
+            .await?;
+        assert!(tfhe_receipt.status());
+        receipts.push((
+            tfhe_receipt
+                .block_number
+                .expect("trivialEncrypt block number"),
+            EventKind::Tfhe,
+        ));
+
+        let acl_txn_req = allowed_request(
+            &acl_contract,
+            signer_address,
+            signer_address,
+            U256::from(i + 1).into(),
+        );
+        let acl_receipt = provider
+            .send_transaction(acl_txn_req)
+            .await?
+            .get_receipt()
+            .await?;
+        assert!(acl_receipt.status());
+        receipts.push((
+            acl_receipt.block_number.expect("allow block number"),
+            EventKind::Acl,
+        ));
     }
 
+    let latest_block = provider.get_block_number().await?;
+    let finality_lag = 2u64;
+    let safe_tip = latest_block.saturating_sub(finality_lag);
+
+    let expected_tfhe = receipts
+        .iter()
+        .filter(|(block, kind)| *block <= safe_tip && *kind == EventKind::Tfhe)
+        .count() as i64;
+    let expected_acl = receipts
+        .iter()
+        .filter(|(block, kind)| *block <= safe_tip && *kind == EventKind::Acl)
+        .count() as i64;
     assert!(expected_tfhe > 0, "no finalized TFHE events to ingest");
     assert!(expected_acl > 0, "no finalized ACL events to ingest");
+
+    let config = PollerConfig {
+        url: http_url,
+        acl_address: *acl_contract.address(),
+        tfhe_address: *tfhe_contract.address(),
+        kms_generation_address: Some(*kms_generation_contract.address()),
+        protocol_config_address: Some(alloy::primitives::Address::ZERO),
+        confidential_bridge_address: None,
+        database_url: db_url.clone(),
+        finality_lag,
+        batch_size: 2,
+        poll_interval: Duration::from_millis(200),
+        retry_interval: Duration::from_millis(200),
+        service_name: String::new(),
+        max_http_retries: 0,
+        rpc_compute_units_per_second: 1000,
+        health_port: 18081,
+        seed_start_block: Some(0),
+        dependence_cache_size: 10_000,
+        dependence_by_connexity: false,
+        dependence_cross_block: false,
+        dependent_ops_max_per_chain: 0,
+        gcs_mode: false,
+        canonical_protocol_config_chain_id: Some(chain_id.as_u64()),
+    };
+
+    let poller_handle = tokio::spawn(run_poller(config));
+
+    // Wait for the poller to advance to the safe tip.
+    let mut attempts = 0;
+    loop {
+        let anchor = sqlx::query_scalar::<_, i64>(
+            "SELECT last_caught_up_block FROM host_listener_poller_state \
+             WHERE chain_id = $1",
+        )
+        .bind(chain_id.as_i64())
+        .fetch_optional(&pool)
+        .await?;
+
+        if anchor.map(|a| a as u64) == Some(safe_tip) {
+            break;
+        }
+
+        attempts += 1;
+        if attempts > 100 {
+            poller_handle.abort();
+            panic!(
+                "host listener poller did not reach safe tip {safe_tip} (latest block \
+                 {latest_block})"
+            );
+        }
+
+        sleep(Duration::from_millis(100)).await;
+    }
+
+    // Allow the last ingest transaction to complete before stopping the task.
+    sleep(Duration::from_millis(200)).await;
+    poller_handle.abort();
+    let _ = poller_handle.await;
 
     let computations_count = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM computations_branch",

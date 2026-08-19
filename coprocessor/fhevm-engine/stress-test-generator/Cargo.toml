@@ -54,7 +54,6 @@ chrono = { version = "0.4.41", features = ["serde"] }
 fhevm-engine-common = { path = "../fhevm-engine-common" }
 scheduler   = { path = "../scheduler" }
 host-listener= { path = "../host-listener" }
-fhevm_host_bindings = { path = "../../../host-contracts/rust_bindings", default-features = false }
 zkproof-worker = { path = "../zkproof-worker" }
 test-harness  = { path = "../test-harness" }
 tfhe-worker = { path = "../tfhe-worker" }

@@ -1,162 +1,138 @@
 #![allow(dead_code)]
 
-use alloy::primitives::{
-    address, keccak256, Address, Bytes, FixedBytes, Log as PrimitiveLog, U256,
-};
+use alloy::network::Network;
+use alloy::primitives::{keccak256, Address, Bytes, FixedBytes, LogData, U256};
+use alloy::providers::Provider;
+use alloy::rpc::types::TransactionRequest;
+use alloy::sol;
 use alloy::sol_types::SolEvent;
-use fhevm_host_bindings::acl::ACL::{Allowed, DelegatedForUserDecryption};
-use fhevm_host_bindings::fhe_events::FHEEvents::{
-    FheAdd, FheType, TrivialEncrypt,
-};
 use fhevm_host_bindings::kms_generation::IKMSGeneration::{KeyDigest, KeyType};
-use fhevm_host_bindings::kms_generation::KMSGeneration::{
-    ActivateCrs, ActivateKey,
+use host_listener::contracts::AclContract::{
+    Allowed, DelegatedForUserDecryption,
 };
-use host_listener::cmd::block_history::BlockSummary;
-use host_listener::database::ingest::{
-    ingest_block_logs, BlockLogs, IngestOptions,
-};
-use host_listener::database::tfhe_event_propagate::Database;
+use host_listener::contracts::KMSGeneration::{ActivateCrs, ActivateKey};
+use host_listener::contracts::TfheContract::{FheAdd, TrivialEncrypt};
 
-pub const ACL_ADDRESS: Address =
-    address!("0x000000000000000000000000000000000000ac11");
-pub const TFHE_ADDRESS: Address =
-    address!("0x0000000000000000000000000000000000007fe0");
-pub const KMS_ADDRESS: Address =
-    address!("0x00000000000000000000000000000000000004d5");
-pub const PROTOCOL_CONFIG_ADDRESS: Address =
-    address!("0x000000000000000000000000000000000000c0f1");
+sol!(
+    #[sol(rpc)]
+    RawLog,
+    "tests/fixtures/RawLog.json"
+);
 
-pub const BLOCK_TIMESTAMP: u64 = 1_700_000_000;
-pub const NB_SYNTHETIC_CALLERS: usize = 15;
+pub use RawLog::RawLogInstance;
+
 pub const TEST_KEY_ID: u64 = 16;
 pub const KEY_BYTES: &[u8] = b"key_bytes";
 pub const CRS_DIGEST: &[u8] = b"9\xf1\xe6\"\xf9L\xe2\xd9(\xf7DlBNZzg\xe1\xc8\x94\x0f\xa6\x95\xacJ\x8b\xc0\xdc\x86\xd0\x93$";
 
-pub fn caller_at(index: usize) -> Address {
-    let mut bytes = [0u8; 20];
-    bytes[19] = (index + 1) as u8;
-    Address::from_slice(&bytes)
+pub fn emit_log_request<P, N>(
+    emitter: &RawLogInstance<P, N>,
+    log_data: LogData,
+) -> TransactionRequest
+where
+    P: Provider<N>,
+    N: Network<TransactionRequest = TransactionRequest>,
+{
+    emitter
+        .emitLog(log_data.topics().to_vec(), log_data.data.clone())
+        .into_transaction_request()
 }
 
-pub fn synthetic_callers() -> Vec<Address> {
-    (0..NB_SYNTHETIC_CALLERS).map(caller_at).collect()
+pub fn mock_trivial_encrypt_result(pt: U256, to_type: u8) -> FixedBytes<32> {
+    let mut payload = Vec::with_capacity(
+        "trivialEncrypt".len() + std::mem::size_of::<[u8; 32]>() + 1,
+    );
+    payload.extend_from_slice(b"trivialEncrypt");
+    payload.extend_from_slice(&pt.to_be_bytes::<32>());
+    payload.push(to_type);
+    keccak256(&payload)
 }
 
-pub fn block_hash_for(number: u64) -> FixedBytes<32> {
-    let mut hash = [0u8; 32];
-    hash[24..32].copy_from_slice(&number.to_be_bytes());
-    FixedBytes::from(hash)
+pub fn mock_fhe_add_result(
+    lhs: FixedBytes<32>,
+    rhs: FixedBytes<32>,
+    scalar_byte: FixedBytes<1>,
+) -> FixedBytes<32> {
+    let mut payload = Vec::with_capacity("fheAdd".len() + 32 + 32 + 1);
+    payload.extend_from_slice(b"fheAdd");
+    payload.extend_from_slice(lhs.as_slice());
+    payload.extend_from_slice(rhs.as_slice());
+    payload.extend_from_slice(scalar_byte.as_slice());
+    keccak256(&payload)
 }
 
-pub fn tx_hash_for(seed: u64) -> FixedBytes<32> {
-    let mut hash = [0x11u8; 32];
-    hash[24..32].copy_from_slice(&seed.to_be_bytes());
-    FixedBytes::from(hash)
-}
-
-pub fn parent_hash_for(number: u64) -> FixedBytes<32> {
-    if number == 0 {
-        FixedBytes::ZERO
-    } else {
-        block_hash_for(number - 1)
-    }
-}
-
-pub fn block_summary(number: u64) -> BlockSummary {
-    BlockSummary {
-        number,
-        hash: block_hash_for(number),
-        parent_hash: parent_hash_for(number),
-        timestamp: BLOCK_TIMESTAMP + number,
-    }
-}
-
-pub fn default_ingest_options() -> IngestOptions {
-    IngestOptions {
-        dependence_by_connexity: false,
-        dependence_cross_block: true,
-        dependent_ops_max_per_chain: 0,
-        is_protocol_config_listener: true,
-    }
-}
-
-pub fn rpc_log(
-    address: Address,
-    data: alloy::primitives::LogData,
-    tx_hash: FixedBytes<32>,
-    log_index: u64,
-) -> alloy::rpc::types::Log {
-    alloy::rpc::types::Log {
-        inner: PrimitiveLog { address, data },
-        transaction_hash: Some(tx_hash),
-        log_index: Some(log_index),
-        ..Default::default()
-    }
-}
-
-pub fn trivial_encrypt_log(
+pub fn trivial_encrypt_request<P, N>(
+    emitter: &RawLogInstance<P, N>,
     caller: Address,
     pt: U256,
     to_type: u8,
-    result: FixedBytes<32>,
-    tx_hash: FixedBytes<32>,
-    log_index: u64,
-) -> alloy::rpc::types::Log {
+) -> TransactionRequest
+where
+    P: Provider<N>,
+    N: Network<TransactionRequest = TransactionRequest>,
+{
     let event = TrivialEncrypt {
         caller,
         pt,
-        toType: FheType::from_underlying(to_type).into(),
-        result,
+        toType: to_type,
+        result: mock_trivial_encrypt_result(pt, to_type),
     };
-    rpc_log(TFHE_ADDRESS, event.encode_log_data(), tx_hash, log_index)
+    emit_log_request(emitter, event.encode_log_data())
 }
 
-pub fn allowed_log(
+pub fn allowed_request<P, N>(
+    emitter: &RawLogInstance<P, N>,
     caller: Address,
     account: Address,
     handle: FixedBytes<32>,
-    tx_hash: FixedBytes<32>,
-    log_index: u64,
-) -> alloy::rpc::types::Log {
+) -> TransactionRequest
+where
+    P: Provider<N>,
+    N: Network<TransactionRequest = TransactionRequest>,
+{
     let event = Allowed {
         caller,
         account,
         handle,
     };
-    rpc_log(ACL_ADDRESS, event.encode_log_data(), tx_hash, log_index)
+    emit_log_request(emitter, event.encode_log_data())
 }
 
-pub fn fhe_add_log(
+pub fn fhe_add_request<P, N>(
+    emitter: &RawLogInstance<P, N>,
     caller: Address,
     lhs: FixedBytes<32>,
     rhs: FixedBytes<32>,
-    scalar_byte: u8,
-    result: FixedBytes<32>,
-    tx_hash: FixedBytes<32>,
-    log_index: u64,
-) -> alloy::rpc::types::Log {
+    scalar_byte: FixedBytes<1>,
+) -> TransactionRequest
+where
+    P: Provider<N>,
+    N: Network<TransactionRequest = TransactionRequest>,
+{
     let event = FheAdd {
         caller,
         lhs,
         rhs,
-        scalarByte: FixedBytes::<1>::from([scalar_byte]),
-        result,
+        scalarByte: scalar_byte,
+        result: mock_fhe_add_result(lhs, rhs, scalar_byte),
     };
-    rpc_log(TFHE_ADDRESS, event.encode_log_data(), tx_hash, log_index)
+    emit_log_request(emitter, event.encode_log_data())
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn delegated_for_user_decryption_log(
+pub fn delegate_for_user_decryption_request<P, N>(
+    emitter: &RawLogInstance<P, N>,
     delegator: Address,
     delegate: Address,
     contract_address: Address,
     delegation_counter: u64,
     old_expiration_date: u64,
     new_expiration_date: u64,
-    tx_hash: FixedBytes<32>,
-    log_index: u64,
-) -> alloy::rpc::types::Log {
+) -> TransactionRequest
+where
+    P: Provider<N>,
+    N: Network<TransactionRequest = TransactionRequest>,
+{
     let event = DelegatedForUserDecryption {
         delegator,
         delegate,
@@ -165,7 +141,7 @@ pub fn delegated_for_user_decryption_log(
         oldExpirationDate: old_expiration_date,
         newExpirationDate: new_expiration_date,
     };
-    rpc_log(ACL_ADDRESS, event.encode_log_data(), tx_hash, log_index)
+    emit_log_request(emitter, event.encode_log_data())
 }
 
 pub fn kms_storage_urls() -> Vec<String> {
@@ -174,15 +150,14 @@ pub fn kms_storage_urls() -> Vec<String> {
         .collect()
 }
 
-pub fn key_digest_bytes() -> Bytes {
-    keccak256(KEY_BYTES).to_vec().into()
-}
-
-pub fn activate_key_log(
-    tx_hash: FixedBytes<32>,
-    log_index: u64,
-) -> alloy::rpc::types::Log {
-    let digest = key_digest_bytes();
+pub fn activate_key_request<P, N>(
+    emitter: &RawLogInstance<P, N>,
+) -> TransactionRequest
+where
+    P: Provider<N>,
+    N: Network<TransactionRequest = TransactionRequest>,
+{
+    let digest = Bytes::from(keccak256(KEY_BYTES).to_vec());
     let event = ActivateKey {
         keyId: U256::from(TEST_KEY_ID),
         kmsNodeStorageUrls: kms_storage_urls(),
@@ -197,44 +172,20 @@ pub fn activate_key_log(
             },
         ],
     };
-    rpc_log(KMS_ADDRESS, event.encode_log_data(), tx_hash, log_index)
+    emit_log_request(emitter, event.encode_log_data())
 }
 
-pub fn activate_crs_log(
-    tx_hash: FixedBytes<32>,
-    log_index: u64,
-) -> alloy::rpc::types::Log {
+pub fn activate_crs_request<P, N>(
+    emitter: &RawLogInstance<P, N>,
+) -> TransactionRequest
+where
+    P: Provider<N>,
+    N: Network<TransactionRequest = TransactionRequest>,
+{
     let event = ActivateCrs {
         crsId: U256::from(TEST_KEY_ID),
         kmsNodeStorageUrls: kms_storage_urls(),
         crsDigest: Bytes::from(CRS_DIGEST.to_vec()),
     };
-    rpc_log(KMS_ADDRESS, event.encode_log_data(), tx_hash, log_index)
-}
-
-pub async fn ingest_logs(
-    db: &mut Database,
-    logs: Vec<alloy::rpc::types::Log>,
-    summary: BlockSummary,
-    finalized: bool,
-    options: IngestOptions,
-) -> Result<(), sqlx::Error> {
-    let block_logs = BlockLogs {
-        logs,
-        summary,
-        catchup: false,
-        finalized,
-    };
-    ingest_block_logs(
-        db.chain_id,
-        db,
-        &block_logs,
-        &Some(ACL_ADDRESS),
-        &Some(TFHE_ADDRESS),
-        &Some(KMS_ADDRESS),
-        &Some(PROTOCOL_CONFIG_ADDRESS),
-        &None,
-        options,
-    )
-    .await
+    emit_log_request(emitter, event.encode_log_data())
 }
