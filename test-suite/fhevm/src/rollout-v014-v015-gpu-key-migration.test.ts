@@ -6,12 +6,18 @@ import {
   assertLocalConnectorUpgrade,
   assertOperatorMaterialAgreement,
 } from "../rollouts/v0.14-to-v0.15-gpu-key-migration/checks";
-import { migrationScenario } from "../rollouts/v0.14-to-v0.15-gpu-key-migration/run";
+import {
+  gatewayContractUpgradePlan,
+  hostContractUpgradePlan,
+  migrationScenario,
+} from "../rollouts/v0.14-to-v0.15-gpu-key-migration/run";
 import {
   connectorVersionKeys,
   coprocessorVersionKeys,
+  listenerCoreVersionKeys,
   migrationPhaseVersions,
   migrationVersions,
+  relayerVersionKeys,
 } from "../rollouts/v0.14-to-v0.15-gpu-key-migration/versions";
 import { parseBlueGreenScenario } from "./scenario/resolve";
 
@@ -31,13 +37,16 @@ const material = (overrides: Partial<OperatorMaterial> = {}): OperatorMaterial =
 
 describe("RFC 029 rollout gates", () => {
   test("uses the last published 0.14 images to create the legacy-key baseline", () => {
-    const versions = migrationVersions({});
+    const versions = migrationVersions();
     expect(versions.baselineTag).toBe("v0.14.0-10");
     expect(versions.baseline.HOST_VERSION).toBe("v0.14.0-9");
     expect(versions.baseline.GATEWAY_VERSION).toBe("v0.14.0-10");
+    expect(versions.baseline.RELAYER_VERSION).toBe("v0.14.0-4");
+    expect(versions.baseline.RELAYER_MIGRATE_VERSION).toBe("v0.14.0-4");
+    expect(versions.baseline.LISTENER_CORE_VERSION).toBe("v0.14.0-10");
   });
 
-  test("boots 0.14 Blue and defers 0.15 Green with the legacy safeguard", () => {
+  test("boots 0.14 Blue and defers the locally built 0.15 Green with the legacy safeguard", () => {
     const scenario = parseBlueGreenScenario(
       migrationScenario("v0.14.0-10"),
       "generated RFC 029 migration scenario",
@@ -53,7 +62,7 @@ describe("RFC 029 rollout gates", () => {
 
   test("changes only the intended deployment unit in each version lock", () => {
     const baseline: Record<string, string> = {
-      ...migrationVersions({}).baseline,
+      ...migrationVersions().baseline,
       LISTENER_CORE_VERSION: "baseline-listener",
       RELAYER_VERSION: "baseline-relayer",
       TEST_SUITE_VERSION: "baseline-test-suite",
@@ -61,20 +70,40 @@ describe("RFC 029 rollout gates", () => {
     const target = {
       ...baseline,
       CORE_VERSION: "main-core",
+      GATEWAY_VERSION: "main-gateway",
       HOST_VERSION: "main-host",
       ...Object.fromEntries(connectorVersionKeys.map((key) => [key, `main-${key}`])),
       ...Object.fromEntries(coprocessorVersionKeys.map((key) => [key, `main-${key}`])),
+      ...Object.fromEntries(relayerVersionKeys.map((key) => [key, `main-${key}`])),
+      ...Object.fromEntries(listenerCoreVersionKeys.map((key) => [key, `main-${key}`])),
     };
     const phases = migrationPhaseVersions(baseline, target);
 
+    expect(phases.contract.GATEWAY_VERSION).toBe("main-gateway");
     expect(phases.contract.HOST_VERSION).toBe("main-host");
+    expect(phases.contract.RELAYER_VERSION).toBe("baseline-relayer");
     expect(phases.contract.CONNECTOR_KMS_WORKER_VERSION).toBe(baseline.CONNECTOR_KMS_WORKER_VERSION);
     expect(phases.contract.COPROCESSOR_TFHE_WORKER_VERSION).toBe(baseline.COPROCESSOR_TFHE_WORKER_VERSION);
+    expect(phases.relayer.RELAYER_VERSION).toBe("main-RELAYER_VERSION");
+    expect(phases.relayer.CORE_VERSION).toBe(baseline.CORE_VERSION);
     expect(phases.connector.CONNECTOR_KMS_WORKER_VERSION).toBe("main-CONNECTOR_KMS_WORKER_VERSION");
     expect(phases.connector.CORE_VERSION).toBe("main-core");
     expect(phases.connector.COPROCESSOR_TFHE_WORKER_VERSION).toBe(baseline.COPROCESSOR_TFHE_WORKER_VERSION);
-    expect(phases.contract.RELAYER_VERSION).toBe("baseline-relayer");
+    expect(phases.listenerCore.LISTENER_CORE_VERSION).toBe("main-LISTENER_CORE_VERSION");
+    expect(phases.listenerCore.COPROCESSOR_TFHE_WORKER_VERSION).toBe(
+      baseline.COPROCESSOR_TFHE_WORKER_VERSION,
+    );
     expect(phases.connector.TEST_SUITE_VERSION).toBe("baseline-test-suite");
+  });
+
+  test("upgrades every changed 0.15 contract in dependency order", () => {
+    expect(gatewayContractUpgradePlan).toEqual([
+      ["task:upgradeDecryption", "Decryption"],
+      ["task:upgradeCiphertextCommits", "CiphertextCommits"],
+      ["task:upgradeInputVerification", "InputVerification"],
+      ["task:upgradeGatewayConfig", "GatewayConfig"],
+    ]);
+    expect(hostContractUpgradePlan).toEqual([["task:upgradeKMSGeneration", "KMSGeneration"]]);
   });
 
   test("blocks a mixed connector deployment", () => {

@@ -419,6 +419,48 @@ gcs:
     });
   });
 
+  test("blue-green can run Green from a published image tag", async () => {
+    const blueGreenScenario = resolveBlueGreenScenario(
+      path.join("/tmp", "blue-green-registry-gcs.yaml"),
+      parseBlueGreenScenario(`
+version: 1
+kind: blue-green
+hostChains:
+  - key: host
+    chainId: "12345"
+    rpcPort: 8545
+  - key: chain-b
+    chainId: "67890"
+    rpcPort: 8547
+bcs:
+  source: { mode: registry, tag: v0.14.0-10 }
+gcs:
+  source: { mode: registry, tag: target-sha }
+  stackVersion: "0.15.0"
+`),
+    );
+    const bgState: State = { ...state, scenario: blueGreenScenario };
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor-chain-b.0"), "\n");
+      await generateComposeOverrides(bgState, stackSpecForState(bgState));
+      const primary = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { image?: string; build?: unknown }>;
+      };
+      const secondary = YAML.parse(await readFile(composePath("coprocessor-chain-b"), "utf8")) as {
+        services: Record<string, { image?: string; build?: unknown }>;
+      };
+
+      expect(primary.services["coprocessor-db-migration"]?.image).toEndWith(":target-sha");
+      expect(primary.services["coprocessor-db-migration"]?.build).toBeUndefined();
+      expect(primary.services["coprocessor-gcs-host-listener"]?.image).toEndWith(":target-sha");
+      expect(primary.services["coprocessor-gcs-host-listener"]?.build).toBeUndefined();
+      expect(secondary.services["coprocessor-gcs-host-listener-chain-b"]?.image).toEndWith(":target-sha");
+      expect(secondary.services["coprocessor-gcs-host-listener-chain-b"]?.build).toBeUndefined();
+    });
+  });
+
   test("deferred Green is omitted from startup until explicitly requested", () => {
     const deferredScenario = resolveBlueGreenScenario(
       path.join("/tmp", "blue-green-deferred-test.yaml"),
