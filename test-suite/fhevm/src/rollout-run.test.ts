@@ -4,8 +4,10 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import {
+  failureDiagnosticContainerNames,
   diagnosticLogArgs,
   diagnosticLogOutput,
+  createRolloutReceipt,
   kmsConnectorPartyIds,
   receiptJsonlPath,
   receiptMarkdownPath,
@@ -73,12 +75,18 @@ const fakeContext = () => {
     async upgradeKmsNodes(nodeIds, options) {
       calls.push(`upgrade-kms-nodes:${nodeIds.join(",")}:${options.lockFile}`);
     },
+    async upgradeKmsOperators(operatorIds, options) {
+      calls.push(`upgrade-kms-operators:${operatorIds.join(",")}:${options.lockFile}`);
+    },
     async withRequiredKmsNode(nodeId, task) {
       calls.push(`require-kms-node:${nodeId}`);
       await task();
     },
     async upgradeRuntimeGroup(group, options = {}) {
       calls.push(`upgrade:${group}:${options.lockFile ?? ""}`);
+    },
+    async startDeferredGreen() {
+      calls.push("start-green");
     },
     async resolveVersionLock(name, options) {
       calls.push(`resolve-lock:${name}:${options.versions.CORE_VERSION ?? ""}`);
@@ -281,6 +289,25 @@ describe("rollout runbook", () => {
     ).toEqual([1, 3, 4]);
   });
 
+  test("retains runtime logs needed to diagnose rollout traffic failures", () => {
+    expect(
+      failureDiagnosticContainerNames([
+        { image: "image", imageId: "id", name: "fhevm-relayer", state: "running" },
+        { image: "image", imageId: "id", name: "coprocessor-gcs-tfhe-worker", state: "running" },
+        { image: "image", imageId: "id", name: "coprocessor1-gcs-zkproof-worker", state: "running" },
+        { image: "image", imageId: "id", name: "coprocessor-sns-worker", state: "exited" },
+        { image: "image", imageId: "id", name: "kms-core-2", state: "running" },
+        { image: "image", imageId: "id", name: "host-node", state: "running" },
+      ]),
+    ).toEqual([
+      "fhevm-relayer",
+      "coprocessor-gcs-tfhe-worker",
+      "coprocessor1-gcs-zkproof-worker",
+      "coprocessor-sns-worker",
+      "kms-core-2",
+    ]);
+  });
+
   test("records a failed required Docker snapshot before rejecting it", async () => {
     await withTempStateDir(async () => {
       const { createRolloutReceipt } = await import("./commands/rollout-receipt");
@@ -350,6 +377,48 @@ describe("rollout runbook", () => {
       expect(entry.kind).toBe("upgrade-kms-node-failed");
       expect(entry.details).toMatchObject({ error: "readiness failed", nodeId: 2 });
       expect(entry.containers[0]).toMatchObject({ imageId: "sha256:target", name: "kms-core-2" });
+    });
+  });
+
+  test("records one paired KMS operator failure and never advances", async () => {
+    await withTempStateDir(async (stateDir) => {
+      const versions = presetBundle("latest-main", "abcdef0", "baseline.json");
+      await saveState({
+        target: "latest-main",
+        lockPath: "/tmp/baseline.json",
+        requiresGitHub: true,
+        versions,
+        overrides: [],
+        scenario: testDefaultScenario({
+          kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" },
+        }),
+        completedSteps: ["base"],
+        updatedAt: "2026-07-14T00:00:00.000Z",
+      });
+      const lockFile = path.join(stateDir, "target.json");
+      await writeJson(lockFile, versions);
+      const receipt = createRolloutReceipt({
+        async inspectContainers() {
+          return {
+            containers: [{ image: "core", imageId: "sha256:core", name: "kms-core", state: "running" }],
+          };
+        },
+      });
+      await receipt.start("rollout.ts");
+      const calls: number[] = [];
+      const context = createRolloutContext(receipt, {
+        async upgradeThresholdKmsOperator(operatorId) {
+          calls.push(operatorId);
+          throw new Error("pair readiness failed");
+        },
+      });
+
+      await expect(context.upgradeKmsOperators([1, 2], { lockFile })).rejects.toThrow("pair readiness failed");
+      expect(calls).toEqual([1]);
+      const entries = (await Bun.file(receiptJsonlPath()).text()).trim().split("\n").map((line) => JSON.parse(line));
+      expect(entries.map(({ kind, details }) => [kind, details.operatorId])).toEqual([
+        ["upgrade-kms-operator-failed", 1],
+      ]);
     });
   });
 

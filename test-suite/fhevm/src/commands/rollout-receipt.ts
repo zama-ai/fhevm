@@ -171,6 +171,13 @@ select ext_job_id, req_status, err_reason, accepted, created_at, updated_at
 from input_proof_req
 order by updated_at desc
 limit 20;
+
+select relname as table_name, n_live_tup as estimated_rows
+from pg_stat_user_tables
+where relname ilike '%decrypt%'
+   or relname ilike '%request%'
+   or relname ilike '%response%'
+order by relname;
 `,
   coprocessor: `
 select table_name
@@ -198,7 +205,43 @@ union all
 select 'crsgen_requests', status, count(*) from crsgen_requests group by status
 union all
 select 'crsgen_responses', status, count(*) from crsgen_responses group by status
+union all
+select 'public_decryption_requests', status, count(*) from public_decryption_requests group by status
+union all
+select 'public_decryption_responses', status, count(*) from public_decryption_responses group by status
+union all
+select 'user_decryption_requests', status, count(*) from user_decryption_requests group by status
+union all
+select 'user_decryption_responses', status, count(*) from user_decryption_responses group by status
 order by table_name, status;
+
+select 'public_decryption_requests' as table_name, encode(decryption_id, 'hex') as decryption_id,
+       status, created_at, updated_at
+from public_decryption_requests
+order by updated_at desc
+limit 10;
+
+select 'public_decryption_responses' as table_name, encode(decryption_id, 'hex') as decryption_id,
+       status, created_at, updated_at
+from public_decryption_responses
+order by updated_at desc
+limit 10;
+
+select 'user_decryption_requests' as table_name, encode(decryption_id, 'hex') as decryption_id,
+       status, created_at, updated_at
+from user_decryption_requests
+order by updated_at desc
+limit 10;
+
+select 'user_decryption_responses' as table_name, encode(decryption_id, 'hex') as decryption_id,
+       status, created_at, updated_at
+from user_decryption_responses
+order by updated_at desc
+limit 10;
+
+select * from last_block_polled order by 1;
+
+select * from last_block_polled_by_chain order by 1;
 `,
 };
 
@@ -212,12 +255,21 @@ export const kmsConnectorPartyIds = (containerNames: string[]) =>
     ),
   ].sort((a, b) => a - b);
 
+export const failureDiagnosticContainerNames = (containers: ReceiptContainer[]) =>
+  containers
+    .map((container) => container.name)
+    .filter(
+      (name) =>
+        /^kms-core(?:-|$)/.test(name) ||
+        /^kms-connector(?:-|$)/.test(name) ||
+        name === "fhevm-relayer" ||
+        /^coprocessor\d*(?:-gcs)?-(?:tfhe|zkproof|sns)-worker$/.test(name),
+    );
+
 const collectFailureDiagnostics = async (containers: ReceiptContainer[]) => {
   const sections: DiagnosticSection[] = [];
-  const kmsContainers = containers
-    .map((container) => container.name)
-    .filter((name) => /^kms-core(?:-|$)/.test(name) || /^kms-connector(?:-|$)/.test(name));
-  sections.push(...(await Promise.all(kmsContainers.map(containerLogs))));
+  const diagnosticContainers = failureDiagnosticContainerNames(containers);
+  sections.push(...(await Promise.all(diagnosticContainers.map(containerLogs))));
   const connectorParties = kmsConnectorPartyIds(containers.map((container) => container.name));
   for (const party of connectorParties) {
     sections.push(await psql("coprocessor-and-kms-db", kmsConnectorDbName(party), diagnosticSql.kmsConnector));

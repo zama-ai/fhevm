@@ -36,7 +36,7 @@ export type OverrideGroup = (typeof OVERRIDE_GROUPS)[number];
 export type CoprocessorInstanceSource =
   | { mode: "inherit" }
   | { mode: "local" }
-  | { mode: "registry"; tag: string };
+  | { mode: "registry"; tag: string; compatTag?: string };
 
 export type CoprocessorScenarioInstance = {
   index: number;
@@ -139,6 +139,8 @@ export type BlueGreenScenario = {
   gcs: {
     source?: CoprocessorInstanceSource;
     stackVersion: string;
+    /** Generate Green services now, but do not start them until the rollout explicitly releases them. */
+    deferredStart?: boolean;
     env?: Record<string, string>;
     args?: Record<string, string[]>;
   };
@@ -164,7 +166,7 @@ export type ResolvedBlueGreenScenario = {
     threshold: number;
   };
   bcs: ResolvedBlueGreenScenarioFleet;
-  gcs: ResolvedBlueGreenScenarioFleet & { stackVersion: string };
+  gcs: ResolvedBlueGreenScenarioFleet & { stackVersion: string; deferredStart: boolean };
   kms: ResolvedKmsTopology;
 };
 
@@ -227,6 +229,11 @@ export type BuiltImage = {
   instanceIndex?: number;
 };
 
+export type KmsConnectorPartyDeployment = {
+  locallyBuilt: boolean;
+  versions: Record<string, string>;
+};
+
 export type State = {
   target: VersionTarget;
   lockPath: string;
@@ -234,6 +241,8 @@ export type State = {
   versions: VersionBundle;
   /** Per-node threshold KMS core versions while a rollout is intentionally mixed. */
   kmsCoreVersionByNodeId?: Record<string, string>;
+  /** Per-party Connector deployment while a threshold KMS rollout is intentionally mixed. */
+  kmsConnectorDeploymentByNodeId?: Record<string, KmsConnectorPartyDeployment>;
   overrides: LocalOverride[];
   scenario: ResolvedScenario;
   scenarioSourcePath?: string;

@@ -332,19 +332,33 @@ gcs:
       ).rejects.toThrow("not supported with blue-green");
     });
 
-    test("rejects non-local gcs.source at resolve", () => {
-      expect(() =>
-        resolveBlueGreenScenario(
-          "/tmp/bg-registry-gcs.yaml",
-          parseBlueGreenScenario(`
+    test("accepts a registry-pinned Green fleet", () => {
+      const resolved = resolveBlueGreenScenario(
+        "/tmp/bg-registry-gcs.yaml",
+        parseBlueGreenScenario(`
 version: 1
 kind: blue-green
 gcs:
   source: { mode: registry, tag: v0.15.0 }
   stackVersion: "0.15.0"
 `),
+      );
+      expect(resolved.gcs.source).toEqual({ mode: "registry", tag: "v0.15.0" });
+    });
+
+    test("rejects an inherited Green fleet", () => {
+      expect(() =>
+        resolveBlueGreenScenario(
+          "/tmp/bg-inherited-gcs.yaml",
+          parseBlueGreenScenario(`
+version: 1
+kind: blue-green
+gcs:
+  source: { mode: inherit }
+  stackVersion: "0.15.0"
+`),
         ),
-      ).toThrow("must be local");
+      ).toThrow("must be local or registry");
     });
 
     test("accepts multiple host chains (multi-chain blue-green)", () => {
@@ -374,7 +388,7 @@ gcs:
         bcsTag: "1a3646e",
       });
       if (resolved.kind === "blue-green") {
-        expect(resolved.bcs.source).toEqual({ mode: "registry", tag: "1a3646e" });
+        expect(resolved.bcs.source).toEqual({ mode: "registry", tag: "1a3646e", compatTag: "v0.14.0-7" });
       }
     });
 
@@ -385,7 +399,7 @@ gcs:
         bcsTag: "1a3646e87b1234567890abcdef1234567890abcd",
       });
       if (resolved.kind === "blue-green") {
-        expect(resolved.bcs.source).toEqual({ mode: "registry", tag: "1a3646e" });
+        expect(resolved.bcs.source).toEqual({ mode: "registry", tag: "1a3646e", compatTag: "v0.14.0-7" });
       }
     });
 
@@ -396,7 +410,7 @@ gcs:
         bcsTag: "1A3646E87b1234567890AbCdEf1234567890abcd",
       });
       if (resolved.kind === "blue-green") {
-        expect(resolved.bcs.source).toEqual({ mode: "registry", tag: "1a3646e" });
+        expect(resolved.bcs.source).toEqual({ mode: "registry", tag: "1a3646e", compatTag: "v0.14.0-7" });
       }
     });
 
