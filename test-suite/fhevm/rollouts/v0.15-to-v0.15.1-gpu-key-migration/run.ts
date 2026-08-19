@@ -12,12 +12,7 @@ import {
   MINIO_EXTERNAL_URL,
   TEST_SUITE_CONTAINER,
 } from "../../src/layout";
-import {
-  kmsConnectorDbName,
-  kmsConnectorPrefix,
-  kmsPartyIds,
-  kmsPublicPrefix,
-} from "../../src/kms-party";
+import { kmsConnectorDbName, kmsConnectorPrefix, kmsPartyIds, kmsPublicPrefix } from "../../src/kms-party";
 import { hostReachableRpcUrl } from "../../src/utils/fs";
 import { run, runStreaming } from "../../src/utils/process";
 import {
@@ -33,6 +28,7 @@ const CONNECTOR_PARTIES = 4;
 const OPERATOR_COUNT = 2;
 const CONNECTOR_SERVICES = ["db-migration", "gw-listener", "kms-worker", "tx-sender"] as const;
 const KEY_WORKERS = ["tfhe-worker", "zkproof-worker", "sns-worker"] as const;
+const EAGER_KEY_WORKERS = ["zkproof-worker", "sns-worker"] as const;
 const ACTIVE_MIGRATION_SERVICES = ["host-listener", "host-listener-poller", "host-listener-consumer", ...KEY_WORKERS];
 
 const logPhase = (label: string) => console.log(`\n[GPU key migration] ${label}`);
@@ -160,22 +156,24 @@ const connectorObservation = async (party: number): Promise<ConnectorObservation
   };
 };
 
-const connectorObservations = () =>
-  Promise.all(kmsPartyIds(CONNECTOR_PARTIES).map(connectorObservation));
+const connectorObservations = () => Promise.all(kmsPartyIds(CONNECTOR_PARTIES).map(connectorObservation));
 
-const waitForConnectorBoundary = (
-  party: number,
-  deploymentBoundary: number,
-  expectedImages: readonly string[],
-) =>
-  waitUntil(`KMS operator ${party} listener crossed the deployment boundary`, async () => {
-    try {
-      assertConnectorMigrationReady([await connectorObservation(party)], deploymentBoundary, expectedImages);
-      return true;
-    } catch {
-      return false;
-    }
-  }, 300);
+const waitForConnectorBoundary = (party: number, deploymentBoundary: number, expectedImages: readonly string[]) =>
+  waitUntil(
+    `KMS operator ${party} listener crossed the deployment boundary`,
+    async () => {
+      try {
+        assertConnectorMigrationReady([await connectorObservation(party)], deploymentBoundary, expectedImages);
+        return true;
+      } catch (error) {
+        if (error instanceof Error && error.message.includes("listener cursor is before deployment block")) {
+          return false;
+        }
+        throw error;
+      }
+    },
+    300,
+  );
 
 const assertKmsCoreVersions = async (parties: readonly number[], expectedVersion: string) => {
   for (const party of parties) {
@@ -187,23 +185,42 @@ const assertKmsCoreVersions = async (parties: readonly number[], expectedVersion
   }
 };
 
-const kmsPublicMaterialDigests = async (
+function kmsPublicMaterialDigests(type: "ServerKey" | "CompressedXofKeySet", keyId: string): Promise<string[]>;
+function kmsPublicMaterialDigests(
+  type: "CompressedXofKeySet",
+  keyId: string,
+  missingIsPending: true,
+): Promise<string[] | undefined>;
+async function kmsPublicMaterialDigests(
   type: "ServerKey" | "CompressedXofKeySet",
   keyId: string,
-) =>
-  Promise.all(
+  missingIsPending = false,
+): Promise<string[] | undefined> {
+  const responses = await Promise.all(
     kmsPartyIds(CONNECTOR_PARTIES).map(async (party) => {
-      const response = await fetch(
-        `${MINIO_EXTERNAL_URL}/kms-public/${kmsPublicPrefix(party)}/${type}/${keyId}`,
-      );
-      if (!response.ok) {
-        throw new Error(
-          `KMS operator ${party} does not serve ${type}/${keyId}: HTTP ${response.status}`,
-        );
-      }
-      return createHash("sha256").update(Buffer.from(await response.arrayBuffer())).digest("hex");
+      const response = await fetch(`${MINIO_EXTERNAL_URL}/kms-public/${kmsPublicPrefix(party)}/${type}/${keyId}`);
+      return { party, response };
     }),
   );
+  const failures = responses.filter(({ response }) => !response.ok);
+  if (failures.length) {
+    if (missingIsPending && failures.every(({ response }) => response.status === 404)) {
+      return undefined;
+    }
+    throw new Error(
+      failures
+        .map(({ party, response }) => `KMS operator ${party} does not serve ${type}/${keyId}: HTTP ${response.status}`)
+        .join("; "),
+    );
+  }
+  return Promise.all(
+    responses.map(async ({ response }) =>
+      createHash("sha256")
+        .update(Buffer.from(await response.arrayBuffer()))
+        .digest("hex"),
+    ),
+  );
+}
 
 const operatorMaterial = async (
   operator: number,
@@ -252,9 +269,7 @@ const operatorMaterial = async (
 
 const forcesLegacyServerKey = async (container: string): Promise<boolean> => {
   const result = await run(["docker", "inspect", "--format", "{{range .Config.Env}}{{println .}}{{end}}", container]);
-  return result.stdout
-    .split("\n")
-    .some((line) => line === "FORCE_LEGACY_SERVER_KEY=true");
+  return result.stdout.split("\n").some((line) => line === "FORCE_LEGACY_SERVER_KEY=true");
 };
 
 const assertActiveSafeguard = async () => {
@@ -297,18 +312,16 @@ const assertGreenSafeguard = async () => {
 
 const assertGreenAbsent = async () => {
   const result = await run(["docker", "ps", "-a", "--format", "{{.Names}}"]);
-  const greenContainers = result.stdout
-    .split("\n")
-    .filter((name) => /^coprocessor\d*-gcs-/.test(name));
+  const greenContainers = result.stdout.split("\n").filter((name) => /^coprocessor\d*-gcs-/.test(name));
   if (greenContainers.length) {
     throw new Error(`Green containers started before material convergence: ${greenContainers.join(", ")}`);
   }
 };
 
-const restartActiveKeyWorkers = async () => {
+const restartActiveKeyWorkers = async (role: "Active" | "Green") => {
   const workers = Array.from({ length: OPERATOR_COUNT }, (_, operator) => {
     const prefix = operator === 0 ? "coprocessor-" : `coprocessor${operator}-`;
-    return KEY_WORKERS.map((worker) => `${prefix}${worker}`);
+    return KEY_WORKERS.map((worker) => `${prefix}${role === "Green" ? "gcs-" : ""}${worker}`);
   }).flat();
   await runStreaming(["docker", "restart", ...workers]);
   for (const worker of workers) {
@@ -318,20 +331,28 @@ const restartActiveKeyWorkers = async () => {
 
 const assertWorkerRepresentation = async (
   role: "Active" | "Green",
+  workers: readonly (typeof KEY_WORKERS)[number][],
   representation: "legacy" | "compressed-xof",
   since: string,
 ) => {
   for (let operator = 0; operator < OPERATOR_COUNT; operator += 1) {
     const prefix = operator === 0 ? "coprocessor-" : `coprocessor${operator}-`;
-    for (const worker of KEY_WORKERS) {
+    for (const worker of workers) {
       const container = `${prefix}${role === "Green" ? "gcs-" : ""}${worker}`;
-      await waitUntil(`${container} loaded ${representation}`, async () => {
-        const result = await run(["docker", "logs", "--since", since, container], { allowFailure: true });
-        const logs = `${result.stdout}\n${result.stderr}`;
-        return logs.split("\n").some((line) =>
-          line.includes("server_key_representation") && line.includes(representation)
-        );
-      }, 300);
+      await waitUntil(
+        `${container} loaded ${representation}`,
+        async () => {
+          const result = await run(["docker", "logs", "--since", since, container]);
+          const logs = `${result.stdout}\n${result.stderr}`;
+          const representationLines = logs.split("\n").filter((line) => line.includes("server_key_representation"));
+          if (representationLines.length === 0) return false;
+          if (representationLines.some((line) => !line.includes(representation))) {
+            throw new Error(`${container} loaded the wrong server key representation`);
+          }
+          return true;
+        },
+        300,
+      );
     }
   }
 };
@@ -353,33 +374,43 @@ const assertGreenWorkersParked = async () => {
   }
 };
 
-const upgradeKmsGeneration = async (ctx: RolloutRunContext, targetLock: string) => {
-  await ctx.snapshotContracts("host");
-  await ctx.applyVersionLock("RFC 029 host contract source", {
-    lockFile: targetLock,
-    allowedVersionKeys: ["HOST_VERSION"],
-    overrides: [{ group: "host-contracts" }],
-  });
-  await ctx.runHostContractTask(
-    [
-      "npx hardhat task:upgradeKMSGeneration",
-      "--current-implementation previous-contracts/KMSGeneration.sol:KMSGeneration",
-      "--new-implementation contracts/KMSGeneration.sol:KMSGeneration",
-      "--verify-contract false",
-      "--use-internal-proxy-address true",
-    ].join(" "),
-  );
-};
+const contractUpgradeCommand = (task: string, contract: string) =>
+  [
+    `npx hardhat ${task}`,
+    `--current-implementation previous-contracts/${contract}.sol:${contract}`,
+    `--new-implementation contracts/${contract}.sol:${contract}`,
+    "--verify-contract false",
+    "--use-internal-proxy-address true",
+  ].join(" ");
 
-type MigratedStack = {
-  continuityContract: string;
-  preMigrationHandles: string[];
+export const gatewayContractUpgradePlan = [
+  ["task:upgradeDecryption", "Decryption"],
+  ["task:upgradeCiphertextCommits", "CiphertextCommits"],
+  ["task:upgradeInputVerification", "InputVerification"],
+  ["task:upgradeGatewayConfig", "GatewayConfig"],
+] as const;
+
+export const hostContractUpgradePlan = [["task:upgradeKMSGeneration", "KMSGeneration"]] as const;
+
+const upgradeContracts = async (ctx: RolloutRunContext, targetLock: string) => {
+  await ctx.snapshotContracts("gateway");
+  await ctx.snapshotContracts("host");
+  await ctx.applyVersionLock("RFC 029 contract sources", {
+    lockFile: targetLock,
+    allowedVersionKeys: ["GATEWAY_VERSION", "HOST_VERSION"],
+    overrides: [{ group: "gateway-contracts" }, { group: "host-contracts" }],
+  });
+
+  for (const [task, contract] of gatewayContractUpgradePlan) {
+    await ctx.runGatewayContractTask(contractUpgradeCommand(task, contract));
+  }
+  for (const [task, contract] of hostContractUpgradePlan) {
+    await ctx.runHostContractTask(contractUpgradeCommand(task, contract));
+  }
 };
 
 /** Reconstructs the migrated 0.15 state proven by the preceding rollout PR. */
-export const reconstructMigrated015Fixture = async (
-  ctx: RolloutRunContext,
-): Promise<MigratedStack> => {
+export const reconstructMigrated015Fixture = async (ctx: RolloutRunContext): Promise<string> => {
   const versions = migrationVersions();
   const baselineLock = await ctx.resolveVersionLock("rfc029-00-baseline", {
     versions: versions.baseline,
@@ -396,11 +427,19 @@ export const reconstructMigrated015Fixture = async (
     versions: phaseVersions.contract,
     sources: versionSources,
   });
-  const connectorLock = await ctx.writeVersionLock("rfc029-02-kms", {
+  const relayerLock = await ctx.writeVersionLock("rfc029-02-relayer", {
+    versions: phaseVersions.relayer,
+    sources: versionSources,
+  });
+  const connectorLock = await ctx.writeVersionLock("rfc029-03-kms", {
     versions: phaseVersions.connector,
     sources: versionSources,
   });
-  const blueLock = await ctx.writeVersionLock("rfc029-03-blue", {
+  const listenerCoreLock = await ctx.writeVersionLock("rfc029-04-listener-core", {
+    versions: phaseVersions.listenerCore,
+    sources: versionSources,
+  });
+  const blueLock = await ctx.writeVersionLock("rfc029-05-blue", {
     versions: phaseVersions.blue,
     sources: versionSources,
   });
@@ -431,17 +470,6 @@ export const reconstructMigrated015Fixture = async (
   if (!continuityContract) {
     throw new Error("pre-migration key continuity probe did not return its contract address");
   }
-  const preMigrationHandles = await Promise.all(
-    Array.from({ length: OPERATOR_COUNT }, (_, operator) =>
-      sqlScalar(
-        coprocessorDatabaseName(operator),
-        "SELECT encode(handle, 'hex') FROM ciphertexts ORDER BY created_at LIMIT 1;",
-      ),
-    ),
-  );
-  if (preMigrationHandles.some((handle) => !handle)) {
-    throw new Error("baseline traffic did not create a ciphertext on every operator");
-  }
 
   const originalKeyStates = await Promise.all(
     Array.from({ length: OPERATOR_COUNT }, (_, operator) =>
@@ -449,8 +477,15 @@ export const reconstructMigrated015Fixture = async (
     ),
   );
 
-  logPhase("01 upgrade KMSGeneration to 0.15 without invoking migration");
-  await upgradeKmsGeneration(ctx, contractLock);
+  logPhase("01 upgrade every changed Gateway and Host contract without invoking migration");
+  await upgradeContracts(ctx, contractLock);
+  await ctx.test("input-proof-compute-decrypt", { parallel: false });
+  await ctx.test("public-decryption", { parallel: false });
+  await ctx.test("user-decryption", { parallel: false });
+
+  logPhase("02 upgrade Relayer after contracts and before runtime consumers");
+  await ctx.upgradeRuntimeGroup("relayer", { lockFile: relayerLock });
+  await ctx.test("input-proof-compute-decrypt", { parallel: false });
   const state = await ctx.readState();
   const hostKey = defaultHostChainKey(state.scenario.hostChains);
   const hostChain = state.scenario.hostChains.find((chain) => chain.key === hostKey);
@@ -467,7 +502,7 @@ export const reconstructMigrated015Fixture = async (
   };
   const deploymentBoundary = await currentHostBlock();
 
-  logPhase("02 upgrade one KMS operator to 0.15 and prove a mixed fleet blocks the request");
+  logPhase("03 upgrade one KMS Core and Connector pair and prove a mixed fleet blocks migration");
   const baselineConnectorImages = (await connectorObservation(1)).images;
   await ctx.upgradeKmsOperators([1], {
     lockFile: connectorLock,
@@ -492,7 +527,7 @@ export const reconstructMigrated015Fixture = async (
     throw new Error("connector gate accepted a mixed connector deployment");
   }
 
-  logPhase("03 upgrade every remaining KMS operator to 0.15 and establish listener boundaries");
+  logPhase("04 upgrade every remaining KMS operator to 0.15 and establish listener boundaries");
   for (const operator of [2, 3, 4]) {
     await ctx.upgradeKmsOperators([operator], {
       lockFile: connectorLock,
@@ -505,16 +540,29 @@ export const reconstructMigrated015Fixture = async (
   const expectedConnectorImages = (await connectorObservation(1)).images;
   assertLocalConnectorUpgrade(baselineConnectorImages, expectedConnectorImages);
   const migrationBoundary = await mineHostBlock();
-  await waitUntil("all connector listeners reached the migration boundary", async () => {
-    try {
-      assertConnectorMigrationReady(await connectorObservations(), migrationBoundary, expectedConnectorImages);
-      return true;
-    } catch {
-      return false;
-    }
-  }, 300);
+  await waitUntil(
+    "all connector listeners reached the migration boundary",
+    async () => {
+      try {
+        assertConnectorMigrationReady(await connectorObservations(), migrationBoundary, expectedConnectorImages);
+        return true;
+      } catch (error) {
+        if (error instanceof Error && error.message.includes("listener cursor is before deployment block")) {
+          return false;
+        }
+        throw error;
+      }
+    },
+    300,
+  );
+  await ctx.test("input-proof-compute-decrypt", { parallel: false });
+  await ctx.test("public-decryption", { parallel: false });
+  await ctx.test("user-decryption", { parallel: false });
 
-  logPhase("04 reconstruct active 0.15 workers and pin them to legacy material");
+  logPhase("05 upgrade listener-core before the 0.15 coprocessor fleet");
+  await ctx.upgradeRuntimeGroup("listener-core", { lockFile: listenerCoreLock });
+
+  logPhase("06 reconstruct active 0.15 workers and pin them to legacy material");
   await ctx.upgradeRuntimeGroup("coprocessor", {
     lockFile: blueLock,
     bcsTag: versions.blueTag,
@@ -525,37 +573,38 @@ export const reconstructMigrated015Fixture = async (
   await assertGreenAbsent();
   await ctx.test("input-proof-compute-decrypt", { parallel: false });
 
-  logPhase("05 request compressed material for the existing active Test key");
+  logPhase("07 request compressed material for the existing active Test key");
   const keyIdHex = await sqlScalar(
     coprocessorDatabaseName(0),
     "SELECT encode(key_id, 'hex') FROM keys ORDER BY sequence_number DESC LIMIT 1;",
   );
   const keyId = BigInt(`0x${keyIdHex}`).toString();
   const legacyKmsDigests = await kmsPublicMaterialDigests("ServerKey", keyIdHex);
+  if (new Set(legacyKmsDigests).size !== 1) {
+    throw new Error("KMS operators disagree on the existing ServerKey material before migration");
+  }
   const migrationRequestBoundary = await currentHostBlock();
   const paramsType = state.scenario.kms.fheParams === "Test" ? 1 : 0;
   await ctx.runHostContractTask(
     `npx hardhat task:triggerKeygen --params-type ${paramsType} --existing-key-id ${keyId} --use-internal-proxy-address true`,
   );
 
-  logPhase("06 wait until KMS and every active operator expose identical material");
-  await waitUntil(
-    "every KMS operator serves both representations under the original key ID",
-    async () => {
-      try {
-        const [legacy, compressed] = await Promise.all([
-          kmsPublicMaterialDigests("ServerKey", keyIdHex),
-          kmsPublicMaterialDigests("CompressedXofKeySet", keyIdHex),
-        ]);
-        return (
-          legacy.every((digest, index) => digest === legacyKmsDigests[index]) &&
-          new Set(compressed).size === 1
-        );
-      } catch {
-        return false;
-      }
-    },
-  );
+  logPhase("08 wait until KMS and every active operator expose identical material");
+  await waitUntil("every KMS operator serves both representations under the original key ID", async () => {
+    const legacy = await kmsPublicMaterialDigests("ServerKey", keyIdHex);
+    if (new Set(legacy).size !== 1) {
+      throw new Error("KMS operators serve different ServerKey material");
+    }
+    if (!legacy.every((digest, index) => digest === legacyKmsDigests[index])) {
+      throw new Error("KMS migration changed the existing ServerKey material");
+    }
+    const compressed = await kmsPublicMaterialDigests("CompressedXofKeySet", keyIdHex, true);
+    if (!compressed) return false;
+    if (new Set(compressed).size !== 1) {
+      throw new Error("KMS operators serve different CompressedXofKeySet material");
+    }
+    return true;
+  });
   let materialRows: OperatorMaterial[] = [];
   await waitUntil("all operators applied identical compressed material", async () => {
     const rows = await Promise.all(
@@ -565,12 +614,8 @@ export const reconstructMigrated015Fixture = async (
     );
     if (rows.some((row) => !row)) return false;
     materialRows = rows as OperatorMaterial[];
-    try {
-      assertOperatorMaterialAgreement(materialRows);
-      return true;
-    } catch {
-      return false;
-    }
+    assertOperatorMaterialAgreement(materialRows);
+    return true;
   });
   assertOperatorMaterialAgreement(materialRows);
   for (let operator = 0; operator < OPERATOR_COUNT; operator += 1) {
@@ -578,7 +623,7 @@ export const reconstructMigrated015Fixture = async (
     if (migrated !== originalKeyStates[operator]) {
       throw new Error(`operator ${operator} changed existing key identity or legacy bytes: ${migrated}`);
     }
-    if (materialRows[operator]?.keyId !== migrated.split("|")[0]) {
+    if (materialRows[operator]?.existingKeyId !== migrated.split("|")[0]) {
       throw new Error(`operator ${operator} applied material to a different key ID`);
     }
   }
@@ -588,41 +633,34 @@ export const reconstructMigrated015Fixture = async (
   // Publication is passive: the active workers must still compute successfully after every
   // database contains the compressed representation, including after restarts.
   const activeRestartedAt = new Date().toISOString();
-  await restartActiveKeyWorkers();
+  await restartActiveKeyWorkers("Active");
   await assertActiveSafeguard();
+  await assertWorkerRepresentation("Active", EAGER_KEY_WORKERS, "legacy", activeRestartedAt);
   await ctx.test("input-proof-compute-decrypt", { parallel: false });
-  await assertWorkerRepresentation("Active", "legacy", activeRestartedAt);
-
-  return { continuityContract, preMigrationHandles };
+  await assertWorkerRepresentation("Active", ["tfhe-worker"], "legacy", activeRestartedAt);
+  await ctx.test("public-decryption", { parallel: false });
+  await ctx.test("user-decryption", { parallel: false });
+  return continuityContract;
 };
 
 export default async function runMigrationAndAdoption(ctx: RolloutRunContext) {
-  const { continuityContract, preMigrationHandles } = await reconstructMigrated015Fixture(ctx);
+  const continuityContract = await reconstructMigrated015Fixture(ctx);
 
-  logPhase("07 deploy 0.15.1 Green only after every Blue database has applied material");
+  logPhase("09 deploy 0.15.1 Green only after every Blue database has applied material");
   const greenStartedAt = new Date().toISOString();
   await ctx.startDeferredGreen();
   await assertActiveSafeguard();
   await assertGreenSafeguard();
   await assertGreenWorkersParked();
+  await assertWorkerRepresentation("Green", EAGER_KEY_WORKERS, "compressed-xof", greenStartedAt);
   await ctx.test("input-proof-compute-decrypt", { parallel: false });
+  await assertWorkerRepresentation("Green", ["tfhe-worker"], "compressed-xof", greenStartedAt);
 
-  logPhase("08 run the existing blue-green failure, retry, unanimity, and cutover battery");
+  logPhase("10 run the existing blue-green failure, retry, unanimity, and cutover battery");
   await ctx.test("blue-green", { parallel: false });
-  await assertWorkerRepresentation("Green", "compressed-xof", greenStartedAt);
 
-  logPhase("09 verify preserved history and post-cutover protocol paths");
+  logPhase("11 verify post-cutover protocol paths with compressed material");
   await runKeyContinuity("reuse", continuityContract);
-  for (let operator = 0; operator < OPERATOR_COUNT; operator += 1) {
-    const handle = preMigrationHandles[operator]!;
-    const present = await sqlScalar(
-      coprocessorDatabaseName(operator),
-      `SELECT EXISTS (SELECT 1 FROM ciphertexts WHERE handle=decode('${handle}', 'hex'))::int;`,
-    );
-    if (present !== "1") {
-      throw new Error(`operator ${operator} lost pre-migration ciphertext ${handle}`);
-    }
-  }
   await ctx.test("rollout-standard", { parallel: false });
   await ctx.test("public-decryption", { parallel: false });
   await ctx.test("user-decryption", { parallel: false });

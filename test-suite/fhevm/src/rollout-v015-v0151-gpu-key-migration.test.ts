@@ -6,12 +6,18 @@ import {
   assertLocalConnectorUpgrade,
   assertOperatorMaterialAgreement,
 } from "../rollouts/v0.14-to-v0.15-gpu-key-migration/checks";
-import { adoptionScenario } from "../rollouts/v0.15-to-v0.15.1-gpu-key-migration/run";
+import {
+  adoptionScenario,
+  gatewayContractUpgradePlan,
+  hostContractUpgradePlan,
+} from "../rollouts/v0.15-to-v0.15.1-gpu-key-migration/run";
 import {
   connectorVersionKeys,
   coprocessorVersionKeys,
+  listenerCoreVersionKeys,
   migrationPhaseVersions,
   migrationVersions,
+  relayerVersionKeys,
 } from "../rollouts/v0.15-to-v0.15.1-gpu-key-migration/versions";
 import { parseBlueGreenScenario } from "./scenario/resolve";
 
@@ -45,16 +51,23 @@ describe("RFC 029 rollout gates", () => {
   });
 
   test("forces Blue to legacy and leaves the safeguard off Green", () => {
-    const scenario = parseBlueGreenScenario(
-      adoptionScenario("v0.14.0-10"),
-      "generated RFC 029 adoption scenario",
-    );
+    const scenario = parseBlueGreenScenario(adoptionScenario("v0.14.0-10"), "generated RFC 029 adoption scenario");
     expect(scenario.bcs?.env?.FORCE_LEGACY_SERVER_KEY).toBe("true");
     expect(scenario.gcs.env?.FORCE_LEGACY_SERVER_KEY).toBeUndefined();
     expect(scenario.gcs.deferredStart).toBe(true);
     expect(scenario.gcs.stackVersion).toBe("0.15.1");
     expect(scenario.hostChains).toHaveLength(2);
     expect(scenario.kms).toEqual({ mode: "threshold", parties: 4, threshold: 1, fheParams: "Test" });
+  });
+
+  test("uses the proven contract upgrade order", () => {
+    expect(gatewayContractUpgradePlan).toEqual([
+      ["task:upgradeDecryption", "Decryption"],
+      ["task:upgradeCiphertextCommits", "CiphertextCommits"],
+      ["task:upgradeInputVerification", "InputVerification"],
+      ["task:upgradeGatewayConfig", "GatewayConfig"],
+    ]);
+    expect(hostContractUpgradePlan).toEqual([["task:upgradeKMSGeneration", "KMSGeneration"]]);
   });
 
   test("changes only the intended deployment unit in each version lock", () => {
@@ -68,80 +81,77 @@ describe("RFC 029 rollout gates", () => {
       ...baseline,
       CORE_VERSION: "main-core",
       HOST_VERSION: "main-host",
+      GATEWAY_VERSION: "main-gateway",
       ...Object.fromEntries(connectorVersionKeys.map((key) => [key, `main-${key}`])),
+      ...Object.fromEntries(relayerVersionKeys.map((key) => [key, `main-${key}`])),
+      ...Object.fromEntries(listenerCoreVersionKeys.map((key) => [key, `main-${key}`])),
       ...Object.fromEntries(coprocessorVersionKeys.map((key) => [key, `main-${key}`])),
     };
     const phases = migrationPhaseVersions(baseline, target, "v0.15.0-0");
 
     expect(phases.contract.HOST_VERSION).toBe("main-host");
+    expect(phases.contract.GATEWAY_VERSION).toBe("main-gateway");
+    expect(phases.contract.RELAYER_VERSION).toBe(baseline.RELAYER_VERSION);
     expect(phases.contract.CONNECTOR_KMS_WORKER_VERSION).toBe(baseline.CONNECTOR_KMS_WORKER_VERSION);
     expect(phases.contract.COPROCESSOR_TFHE_WORKER_VERSION).toBe(baseline.COPROCESSOR_TFHE_WORKER_VERSION);
+    expect(phases.relayer.RELAYER_VERSION).toBe("main-RELAYER_VERSION");
+    expect(phases.relayer.CONNECTOR_KMS_WORKER_VERSION).toBe(baseline.CONNECTOR_KMS_WORKER_VERSION);
     expect(phases.connector.CONNECTOR_KMS_WORKER_VERSION).toBe("main-CONNECTOR_KMS_WORKER_VERSION");
     expect(phases.connector.CORE_VERSION).toBe("main-core");
     expect(phases.connector.COPROCESSOR_TFHE_WORKER_VERSION).toBe(baseline.COPROCESSOR_TFHE_WORKER_VERSION);
+    expect(phases.listenerCore.LISTENER_CORE_VERSION).toBe("main-LISTENER_CORE_VERSION");
+    expect(phases.listenerCore.COPROCESSOR_TFHE_WORKER_VERSION).toBe(baseline.COPROCESSOR_TFHE_WORKER_VERSION);
     expect(phases.blue.COPROCESSOR_TFHE_WORKER_VERSION).toBe("v0.15.0-0");
     expect(phases.blue.CORE_VERSION).toBe("main-core");
-    expect(phases.blue.LISTENER_CORE_VERSION).toBe("baseline-listener");
-    expect(phases.contract.RELAYER_VERSION).toBe("baseline-relayer");
+    expect(phases.blue.LISTENER_CORE_VERSION).toBe("main-LISTENER_CORE_VERSION");
     expect(phases.connector.TEST_SUITE_VERSION).toBe("baseline-test-suite");
   });
 
   test("blocks a mixed connector deployment", () => {
     expect(() =>
-      assertConnectorMigrationReady([
-        { cursor: 100, hasMigrationSchema: true, images: ["repo:target|sha-a", "repo:target|sha-b"], party: 1 },
-        { cursor: 100, hasMigrationSchema: false, images: ["repo:legacy|sha-c", "repo:target|sha-b"], party: 2 },
-      ], 90, ["repo:target|sha-a", "repo:target|sha-b"]),
+      assertConnectorMigrationReady(
+        [
+          { cursor: 100, hasMigrationSchema: true, images: ["repo:target|sha-a", "repo:target|sha-b"], party: 1 },
+          { cursor: 100, hasMigrationSchema: false, images: ["repo:legacy|sha-c", "repo:target|sha-b"], party: 2 },
+        ],
+        90,
+        ["repo:target|sha-a", "repo:target|sha-b"],
+      ),
     ).toThrow("connector service images differ across parties");
   });
 
   test("requires the first connector party to run newly built local images", () => {
-    expect(() =>
-      assertLocalConnectorUpgrade(
-        ["repo:legacy|sha-a"],
-        ["repo:target|sha-b"],
-      ),
-    ).toThrow("locally built image");
-    expect(() =>
-      assertLocalConnectorUpgrade(
-        ["repo:legacy|sha-a"],
-        ["repo:fhevm-local|sha-b"],
-      ),
-    ).not.toThrow();
+    expect(() => assertLocalConnectorUpgrade(["repo:legacy|sha-a"], ["repo:target|sha-b"])).toThrow(
+      "locally built image",
+    );
+    expect(() => assertLocalConnectorUpgrade(["repo:legacy|sha-a"], ["repo:fhevm-local|sha-b"])).not.toThrow();
   });
 
   test("blocks a connector behind the deployment boundary", () => {
     expect(() =>
-      assertConnectorMigrationReady([
-        { cursor: 89, hasMigrationSchema: true, images: ["repo:target|sha-a"], party: 1 },
-        { cursor: 100, hasMigrationSchema: true, images: ["repo:target|sha-a"], party: 2 },
-      ], 90, ["repo:target|sha-a"]),
+      assertConnectorMigrationReady(
+        [
+          { cursor: 89, hasMigrationSchema: true, images: ["repo:target|sha-a"], party: 1 },
+          { cursor: 100, hasMigrationSchema: true, images: ["repo:target|sha-a"], party: 2 },
+        ],
+        90,
+        ["repo:target|sha-a"],
+      ),
     ).toThrow("listener cursor is before deployment block");
   });
 
   test("blocks incomplete or disagreeing operator material", () => {
     expect(() =>
-      assertOperatorMaterialAgreement([
-        material(),
-        material({ compressed: false, operator: 1, status: "ready" }),
-      ]),
+      assertOperatorMaterialAgreement([material(), material({ compressed: false, operator: 1, status: "ready" })]),
     ).toThrow("operator 1 is incomplete");
-    expect(() =>
-      assertOperatorMaterialAgreement([
-        material(),
-        material({ digest: "bb", operator: 1 }),
-      ]),
-    ).toThrow("applied material differs across operators");
-    expect(() =>
-      assertOperatorMaterialAgreement([
-        material(),
-        material({ keyId: "03", operator: 1 }),
-      ]),
-    ).toThrow("applied material differs across operators");
-    expect(() =>
-      assertOperatorMaterialAgreement([
-        material({ storedMatchesVerified: false }),
-      ]),
-    ).toThrow("stored bytes differ from the verified download");
+    expect(() => assertOperatorMaterialAgreement([material(), material({ digest: "bb", operator: 1 })])).toThrow(
+      "applied material differs across operators",
+    );
+    expect(() => assertOperatorMaterialAgreement([material(), material({ keyId: "03", operator: 1 })])).toThrow(
+      "applied material differs across operators",
+    );
+    expect(() => assertOperatorMaterialAgreement([material({ storedMatchesVerified: false })])).toThrow(
+      "stored bytes differ from the verified download",
+    );
   });
 });
