@@ -572,6 +572,20 @@ export const reconstructMigrated015Fixture = async (ctx: RolloutRunContext): Pro
   await assertActiveImageTag(versions.blueTag);
   await assertGreenAbsent();
   await ctx.test("input-proof-compute-decrypt", { parallel: false });
+  // The preceding rollout already proved the 0.14 -> 0.15 cutover. This fixture
+  // swaps in that exact 0.15 fleet, so mirror the version marker written by the
+  // proven cutover before testing the separate 0.15 -> 0.15.1 boundary.
+  for (let operator = 0; operator < OPERATOR_COUNT; operator += 1) {
+    const database = coprocessorDatabaseName(operator);
+    const version = await sqlScalar(
+      database,
+      "UPDATE versioning SET stack_version = 'v0.15.0', updated_at = NOW() " +
+        "WHERE singleton = TRUE RETURNING stack_version;",
+    );
+    if (version !== "v0.15.0") {
+      throw new Error(`${database} did not reconstruct the proven v0.15.0 stack marker`);
+    }
+  }
 
   logPhase("07 request compressed material for the existing active Test key");
   const keyIdHex = await sqlScalar(
@@ -654,10 +668,10 @@ export default async function runMigrationAndAdoption(ctx: RolloutRunContext) {
   await assertGreenWorkersParked();
   await assertWorkerRepresentation("Green", EAGER_KEY_WORKERS, "compressed-xof", greenStartedAt);
   await ctx.test("input-proof-compute-decrypt", { parallel: false });
-  await assertWorkerRepresentation("Green", ["tfhe-worker"], "compressed-xof", greenStartedAt);
 
   logPhase("10 run the existing blue-green failure, retry, unanimity, and cutover battery");
-  await ctx.test("blue-green", { parallel: false });
+  await ctx.test("blue-green", { blueGreenPredecessorVersion: "v0.15.0", parallel: false });
+  await assertWorkerRepresentation("Green", ["tfhe-worker"], "compressed-xof", greenStartedAt);
 
   logPhase("11 verify post-cutover protocol paths with compressed material");
   await runKeyContinuity("reuse", continuityContract);
