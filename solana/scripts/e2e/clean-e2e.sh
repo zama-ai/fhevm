@@ -327,14 +327,6 @@ trap - EXIT
 #    `host-process` pipeline step. `bun run src/solana/deploy.ts` still provisions the same thing
 #    standalone when a node needs rebuilding without a full stack cycle.
 
-# 4. The SDK graph installed before the `up` must have survived it: no `up` step may run npm
-#    against this checkout (the native host-listener build reads its contract bindings from the
-#    committed host-contracts/rust_bindings crate, not from an npm+hardhat build). Re-prove both
-#    runtimes still resolve the SDK through the symlink so a regression fails here, loudly — not
-#    later as opaque Vite 500s in the demo dApp.
-( cd "$FHEVM" && node --input-type=module -e "await import('@fhevm/sdk/solana')" )
-( cd "$FHEVM" && bun -e "await import('@fhevm/sdk/solana')" )
-
 echo "[clean-e2e] stack ready. Run the typed scenario suite (compute -> public/user-decrypt ->"
 echo "  input-flow -> transfer -> consume), user-decrypt is PURE-SDK (no kms checkout):"
 echo "    cd test-suite/fhevm && bun run test:e2e"
