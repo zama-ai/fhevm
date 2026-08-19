@@ -353,22 +353,40 @@ const assertGreenWorkersParked = async () => {
   }
 };
 
-const upgradeKmsGeneration = async (ctx: RolloutRunContext, targetLock: string) => {
+const contractUpgradeCommand = (task: string, contract: string) =>
+  [
+    `npx hardhat ${task}`,
+    `--current-implementation previous-contracts/${contract}.sol:${contract}`,
+    `--new-implementation contracts/${contract}.sol:${contract}`,
+    "--verify-contract false",
+    "--use-internal-proxy-address true",
+  ].join(" ");
+
+export const gatewayContractUpgradePlan = [
+  ["task:upgradeDecryption", "Decryption"],
+  ["task:upgradeCiphertextCommits", "CiphertextCommits"],
+  ["task:upgradeInputVerification", "InputVerification"],
+  ["task:upgradeGatewayConfig", "GatewayConfig"],
+] as const;
+
+export const hostContractUpgradePlan = [["task:upgradeKMSGeneration", "KMSGeneration"]] as const;
+
+const upgradeContracts = async (ctx: RolloutRunContext, targetLock: string) => {
+  await ctx.snapshotContracts("gateway");
   await ctx.snapshotContracts("host");
-  await ctx.applyVersionLock("RFC 029 host contract source", {
+  await ctx.applyVersionLock("RFC 029 contract sources", {
     lockFile: targetLock,
-    allowedVersionKeys: ["HOST_VERSION"],
-    overrides: [{ group: "host-contracts" }],
+    allowedVersionKeys: ["GATEWAY_VERSION", "HOST_VERSION"],
+    overrides: [{ group: "gateway-contracts" }, { group: "host-contracts" }],
   });
-  await ctx.runHostContractTask(
-    [
-      "npx hardhat task:upgradeKMSGeneration",
-      "--current-implementation previous-contracts/KMSGeneration.sol:KMSGeneration",
-      "--new-implementation contracts/KMSGeneration.sol:KMSGeneration",
-      "--verify-contract false",
-      "--use-internal-proxy-address true",
-    ].join(" "),
-  );
+
+  // Upgrade consumers of the removed priority-coprocessor getters before GatewayConfig removes them.
+  for (const [task, contract] of gatewayContractUpgradePlan) {
+    await ctx.runGatewayContractTask(contractUpgradeCommand(task, contract));
+  }
+  for (const [task, contract] of hostContractUpgradePlan) {
+    await ctx.runHostContractTask(contractUpgradeCommand(task, contract));
+  }
 };
 
 export default async function runMigration(ctx: RolloutRunContext) {
@@ -388,8 +406,16 @@ export default async function runMigration(ctx: RolloutRunContext) {
     versions: phaseVersions.contract,
     sources: versionSources,
   });
-  const connectorLock = await ctx.writeVersionLock("rfc029-02-kms", {
+  const relayerLock = await ctx.writeVersionLock("rfc029-02-relayer", {
+    versions: phaseVersions.relayer,
+    sources: versionSources,
+  });
+  const connectorLock = await ctx.writeVersionLock("rfc029-03-kms", {
     versions: phaseVersions.connector,
+    sources: versionSources,
+  });
+  const listenerCoreLock = await ctx.writeVersionLock("rfc029-04-listener-core", {
+    versions: phaseVersions.listenerCore,
     sources: versionSources,
   });
   const scenario = path.join(ctx.stateDir(), "rollout", "rfc029-v014-to-v015.yaml");
@@ -421,8 +447,15 @@ export default async function runMigration(ctx: RolloutRunContext) {
     ),
   );
 
-  logPhase("01 upgrade KMSGeneration to 0.15 without invoking migration");
-  await upgradeKmsGeneration(ctx, contractLock);
+  logPhase("01 upgrade every changed Gateway and Host contract without invoking migration");
+  await upgradeContracts(ctx, contractLock);
+  await ctx.test("input-proof-compute-decrypt", { parallel: false });
+  await ctx.test("public-decryption", { parallel: false });
+  await ctx.test("user-decryption", { parallel: false });
+
+  logPhase("02 upgrade Relayer after contracts and before runtime consumers");
+  await ctx.upgradeRuntimeGroup("relayer", { lockFile: relayerLock });
+  await ctx.test("input-proof-compute-decrypt", { parallel: false });
   const state = await ctx.readState();
   const hostKey = defaultHostChainKey(state.scenario.hostChains);
   const hostChain = state.scenario.hostChains.find((chain) => chain.key === hostKey);
@@ -439,7 +472,7 @@ export default async function runMigration(ctx: RolloutRunContext) {
   };
   const deploymentBoundary = await currentHostBlock();
 
-  logPhase("02 upgrade one KMS Core and Connector pair and prove a mixed fleet blocks migration");
+  logPhase("03 upgrade one KMS Core and Connector pair and prove a mixed fleet blocks migration");
   const baselineConnectorImages = (await connectorObservation(1)).images;
   await ctx.upgradeKmsOperators([1], {
     lockFile: connectorLock,
@@ -464,7 +497,7 @@ export default async function runMigration(ctx: RolloutRunContext) {
     throw new Error("connector gate accepted a mixed connector deployment");
   }
 
-  logPhase("03 upgrade every remaining KMS operator to 0.15 and establish listener boundaries");
+  logPhase("04 upgrade every remaining KMS operator to 0.15 and establish listener boundaries");
   for (const operator of [2, 3, 4]) {
     await ctx.upgradeKmsOperators([operator], {
       lockFile: connectorLock,
@@ -488,16 +521,22 @@ export default async function runMigration(ctx: RolloutRunContext) {
       throw error;
     }
   }, 300);
+  await ctx.test("input-proof-compute-decrypt", { parallel: false });
+  await ctx.test("public-decryption", { parallel: false });
+  await ctx.test("user-decryption", { parallel: false });
 
-  logPhase("04 start 0.15 Green, still forced to use the legacy representation");
+  logPhase("05 upgrade listener-core before the 0.15 coprocessor fleet");
+  await ctx.upgradeRuntimeGroup("listener-core", { lockFile: listenerCoreLock });
+
+  logPhase("06 start 0.15 Green, still forced to use the legacy representation");
   await ctx.startDeferredGreen();
   await assertGreenForcedLegacy();
   await assertGreenWorkersParked();
 
-  logPhase("05 cut over from 0.14 Blue to 0.15 Green through the existing Blue/Green flow");
+  logPhase("07 cut over from 0.14 Blue to 0.15 Green through the existing Blue/Green flow");
   await ctx.test("blue-green", { parallel: false });
 
-  logPhase("06 request compressed material for the existing active Test key");
+  logPhase("08 request compressed material for the existing active Test key");
   const keyIdHex = await sqlScalar(
     coprocessorDatabaseName(0),
     "SELECT encode(key_id, 'hex') FROM keys ORDER BY sequence_number DESC LIMIT 1;",
@@ -513,7 +552,7 @@ export default async function runMigration(ctx: RolloutRunContext) {
     `npx hardhat task:triggerKeygen --params-type ${paramsType} --existing-key-id ${keyId} --use-internal-proxy-address true`,
   );
 
-  logPhase("07 wait until KMS and every 0.15 operator expose identical material");
+  logPhase("09 wait until KMS and every 0.15 operator expose identical material");
   await waitUntil(
     "every KMS operator serves both representations under the original key ID",
     async () => {
@@ -568,7 +607,7 @@ export default async function runMigration(ctx: RolloutRunContext) {
   await ctx.test("input-proof-compute-decrypt", { parallel: false });
   await assertWorkerRepresentation("Green", ["tfhe-worker"], "legacy", activeRestartedAt);
 
-  logPhase("08 verify normal 0.15 encryption and decryption remain functional");
+  logPhase("10 verify normal 0.15 encryption and decryption remain functional");
   await ctx.test("public-decryption", { parallel: false });
   await ctx.test("user-decryption", { parallel: false });
 }

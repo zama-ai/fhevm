@@ -7,6 +7,10 @@ export const connectorVersionKeys = [
   "CONNECTOR_TX_SENDER_VERSION",
 ] as const;
 
+export const relayerVersionKeys = ["RELAYER_VERSION", "RELAYER_MIGRATE_VERSION"] as const;
+
+export const listenerCoreVersionKeys = ["LISTENER_CORE_VERSION"] as const;
+
 export const coprocessorVersionKeys = [
   "COPROCESSOR_DB_MIGRATION_VERSION",
   "COPROCESSOR_HOST_LISTENER_VERSION",
@@ -36,14 +40,23 @@ export const migrationPhaseVersions = (
 ) => {
   const contract: Record<string, string> = {
     ...baseline,
+    GATEWAY_VERSION: requiredVersion(target, "GATEWAY_VERSION"),
     HOST_VERSION: requiredVersion(target, "HOST_VERSION"),
   };
-  const connector: Record<string, string> = {
+  const relayer: Record<string, string> = {
     ...contract,
+    ...Object.fromEntries(relayerVersionKeys.map((key) => [key, requiredVersion(target, key)])),
+  };
+  const connector: Record<string, string> = {
+    ...relayer,
     CORE_VERSION: requiredVersion(target, "CORE_VERSION"),
     ...Object.fromEntries(connectorVersionKeys.map((key) => [key, requiredVersion(target, key)])),
   };
-  return { contract, connector };
+  const listenerCore: Record<string, string> = {
+    ...connector,
+    ...Object.fromEntries(listenerCoreVersionKeys.map((key) => [key, requiredVersion(target, key)])),
+  };
+  return { contract, relayer, connector, listenerCore };
 };
 
 export const migrationVersions = (env: Env = process.env): MigrationVersions => {
@@ -51,12 +64,16 @@ export const migrationVersions = (env: Env = process.env): MigrationVersions => 
   // v0.14.0-10 did not publish a host-contracts image; that component remained on v0.14.0-9.
   const hostTag = env.RFC029_BASELINE_HOST_TAG?.trim() || "v0.14.0-9";
   const kmsCoreTag = env.RFC029_KMS_CORE_TAG?.trim() || "v0.14.0-1";
+  const relayerTag = env.RFC029_BASELINE_RELAYER_TAG?.trim() || "v0.14.0-4";
   return {
     baselineTag: releaseTag,
     baseline: {
       GATEWAY_VERSION: releaseTag,
       HOST_VERSION: hostTag,
       CORE_VERSION: kmsCoreTag,
+      RELAYER_VERSION: relayerTag,
+      RELAYER_MIGRATE_VERSION: relayerTag,
+      LISTENER_CORE_VERSION: releaseTag,
       ...Object.fromEntries(connectorVersionKeys.map((key) => [key, releaseTag])),
       ...Object.fromEntries(coprocessorVersionKeys.map((key) => [key, releaseTag])),
     },
