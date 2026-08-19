@@ -186,8 +186,8 @@ pub async fn execute_verify_proofs_loop(
     info!(gpu_enabled, conf = %conf, "Starting with config");
 
     // DB key cache is shared amongst all workers
-    let db_key_cache =
-        DbKeyCache::new(MAX_CACHED_KEYS).map_err(|err| ExecutionError::Other(err.into()))?;
+    let db_key_cache = DbKeyCache::new_from_env(MAX_CACHED_KEYS)
+        .map_err(|err| ExecutionError::Other(err.into()))?;
 
     let host_chain_cache = Arc::new(
         HostChainsCache::load(&pool_mngr.pool())

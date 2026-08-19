@@ -1,25 +1,16 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO prep_keygen_requests(\n            prep_keygen_id, params_type, extra_data, otlp_context, created_at, already_sent, status\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7)",
+  "query": "INSERT INTO keygen_requests(\n            prep_keygen_id, key_id, existing_key_id, extra_data, created_at, otlp_context, already_sent, status\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING",
   "describe": {
     "columns": [],
     "parameters": {
       "Left": [
         "Bytea",
-        {
-          "Custom": {
-            "name": "params_type",
-            "kind": {
-              "Enum": [
-                "Default",
-                "Test"
-              ]
-            }
-          }
-        },
+        "Bytea",
         "Bytea",
         "Bytea",
         "Timestamptz",
+        "Bytea",
         "Bool",
         {
           "Custom": {
@@ -39,5 +30,5 @@
     },
     "nullable": []
   },
-  "hash": "8a3986b69586643ba83662e4d65c477dd89f7904ee107431ed0bd9dda16dc950"
+  "hash": "fa9aee567750fd21f4fbca5b67575d1c40c28218d2d9cf095e702bf77263169e"
 }

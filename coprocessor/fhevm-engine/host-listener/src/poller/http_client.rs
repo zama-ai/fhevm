@@ -87,6 +87,15 @@ impl HttpChainClient {
             .context("Failed to get latest block number")
     }
 
+    pub async fn finalized_block_number(&self) -> Result<u64> {
+        self.provider
+            .get_block(BlockId::finalized())
+            .await
+            .context("Failed to get finalized block")?
+            .map(|block| block.header.number)
+            .ok_or_else(|| anyhow!("Finalized block not found"))
+    }
+
     pub async fn logs_for_block(&self, block: u64) -> Result<Vec<Log>> {
         let filter = Self::build_filter(block, &self.addresses);
         self.provider
