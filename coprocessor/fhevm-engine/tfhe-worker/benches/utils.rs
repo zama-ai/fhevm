@@ -13,8 +13,8 @@ use alloy::primitives::{FixedBytes, Log};
 use bigdecimal::num_bigint::BigInt;
 use host_listener::contracts::TfheContract::TfheContractEvents;
 use host_listener::database::tfhe_event_propagate::{
-    uniform_allowed_outputs, ClearConst, Database as ListenerDatabase, Handle, LogTfhe,
-    ToType, Transaction,
+    uniform_allowed_outputs, ClearConst, Database as ListenerDatabase, Handle, LogTfhe, ToType,
+    Transaction,
 };
 use sqlx::types::time::PrimitiveDateTime;
 use sqlx::PgPool;

@@ -4,8 +4,8 @@ use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::types::AllowEvents;
 use host_listener::contracts::TfheContract::TfheContractEvents;
 use host_listener::database::tfhe_event_propagate::{
-    uniform_allowed_outputs, ClearConst, Database as ListenerDatabase, Handle, LogTfhe,
-    ToType, Transaction,
+    uniform_allowed_outputs, ClearConst, Database as ListenerDatabase, Handle, LogTfhe, ToType,
+    Transaction,
 };
 use sqlx::types::time::PrimitiveDateTime;
 

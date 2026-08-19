@@ -19,8 +19,8 @@ use crate::contracts::{
 };
 use crate::database::dependence_chains::dependence_chains;
 use crate::database::tfhe_event_propagate::{
-    acl_result_handles, tfhe_result_handles, Chain, ChainHash, Database,
-    LogTfhe,
+    acl_result_handles, tfhe_result_handles, uniform_allowed_outputs, Chain,
+    ChainHash, Database, LogTfhe,
 };
 use crate::kms_generation::insert_kms_generation_events_tx;
 use crate::kms_generation::metrics::KMS_EVENT_DECODE_FAIL_COUNTER;
@@ -983,24 +983,23 @@ pub async fn synthesize_finalized_fallback_grants(
         // block timestamp, which host_chain_blocks_valid does not record. It
         // only feeds scheduling hints (schedule_order, chain last_updated_at),
         // never consensus-compared data.
+        let event = alloy::primitives::Log {
+            address: Address::ZERO,
+            data: TfheContract::TfheContractEvents::TrivialEncrypt(
+                TfheContract::TrivialEncrypt {
+                    caller: Address::ZERO,
+                    pt: alloy::primitives::U256::from_be_slice(&plaintext),
+                    toType: handle_bytes[30],
+                    result: alloy::primitives::FixedBytes::from(handle_bytes),
+                },
+            ),
+        };
         logs.push(LogTfhe {
-            event: alloy::primitives::Log {
-                address: Address::ZERO,
-                data: TfheContract::TfheContractEvents::TrivialEncrypt(
-                    TfheContract::TrivialEncrypt {
-                        caller: Address::ZERO,
-                        pt: alloy::primitives::U256::from_be_slice(&plaintext),
-                        toType: handle_bytes[30],
-                        result: alloy::primitives::FixedBytes::from(
-                            handle_bytes,
-                        ),
-                    },
-                ),
-            },
-            transaction_hash,
             // Forced allowed, exactly like inline synthesis: governance
             // ensures the handle is in the ACL.
-            is_allowed: true,
+            allowed_outputs: uniform_allowed_outputs(&event, true),
+            event,
+            transaction_hash,
             block_number: block_number as u64,
             block_hash: *block_hash,
             block_timestamp: PrimitiveDateTime::new(
@@ -1023,7 +1022,9 @@ pub async fn synthesize_finalized_fallback_grants(
     let chains =
         dependence_chains(&mut logs, &db.dependence_chain, false, false).await;
     for log in &logs {
-        let dst_handle = tfhe_result_handle(&log.event)
+        let dst_handle = tfhe_result_handles(&log.event)
+            .into_iter()
+            .next()
             .expect("synthetic TrivialEncrypt has a result handle");
         db.insert_tfhe_event(tx, log).await?;
         db.insert_pbs_computations(
