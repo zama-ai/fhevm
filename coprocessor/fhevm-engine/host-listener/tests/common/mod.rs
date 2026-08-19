@@ -12,7 +12,6 @@ use host_listener::contracts::AclContract::{
 };
 use host_listener::contracts::KMSGeneration::{ActivateCrs, ActivateKey};
 use host_listener::contracts::TfheContract::{FheAdd, TrivialEncrypt};
-use host_listener::kms_generation::{digest_crs, digest_key};
 
 sol!(
     #[sol(rpc)]
@@ -24,6 +23,19 @@ pub use RawLog::RawLogInstance;
 
 pub const TEST_KEY_ID: u64 = 16;
 pub const KEY_BYTES: &[u8] = b"key_bytes";
+// Independent known vectors from the retired KMSGenerationTest.sol fixture.
+// Do not compute these via digest_key / digest_crs — that would make keygen
+// tests tautological if the hash algorithm regresses.
+pub const KEY_DIGEST: &[u8] = &[
+    0x5d, 0xe8, 0xc3, 0xa0, 0x65, 0xd7, 0x48, 0xb7, 0xb7, 0xaf, 0x29, 0x1f,
+    0xc3, 0x0c, 0x52, 0x85, 0x00, 0x6d, 0xaf, 0xbe, 0xad, 0x9e, 0xd5, 0x1e,
+    0xb7, 0xd4, 0xdd, 0xeb, 0x4e, 0xb2, 0x4a, 0x56,
+];
+pub const CRS_DIGEST: &[u8] = &[
+    0x39, 0xf1, 0xe6, 0x22, 0xf9, 0x4c, 0xe2, 0xd9, 0x28, 0xf7, 0x44, 0x6c,
+    0x42, 0x4e, 0x5a, 0x7a, 0x67, 0xe1, 0xc8, 0x94, 0x0f, 0xa6, 0x95, 0xac,
+    0x4a, 0x8b, 0xc0, 0xdc, 0x86, 0xd0, 0x93, 0x24,
+];
 
 pub fn emit_log_request<P, N>(
     emitter: &RawLogInstance<P, N>,
@@ -157,7 +169,7 @@ where
     P: Provider<N>,
     N: Network<TransactionRequest = TransactionRequest>,
 {
-    let digest = Bytes::from(digest_key(KEY_BYTES).to_vec());
+    let digest = Bytes::from(KEY_DIGEST.to_vec());
     let event = ActivateKey {
         keyId: U256::from(TEST_KEY_ID),
         kmsNodeStorageUrls: kms_storage_urls(),
@@ -185,7 +197,7 @@ where
     let event = ActivateCrs {
         crsId: U256::from(TEST_KEY_ID),
         kmsNodeStorageUrls: kms_storage_urls(),
-        crsDigest: Bytes::from(digest_crs(KEY_BYTES).to_vec()),
+        crsDigest: Bytes::from(CRS_DIGEST.to_vec()),
     };
     emit_log_request(emitter, event.encode_log_data())
 }

@@ -17,6 +17,7 @@ use crate::kms_generation::database::{
     mark_key_activation_error, set_ready_crs_activation,
     set_ready_key_activation, PendingCrsActivation, PendingKeyActivation,
 };
+use crate::kms_generation::digest::{digest_crs, digest_key};
 use crate::kms_generation::metrics::{
     ACTIVATE_CRS_FAIL_COUNTER, ACTIVATE_CRS_SUCCESS_COUNTER,
     ACTIVATE_KEY_FAIL_COUNTER, ACTIVATE_KEY_SUCCESS_COUNTER,
@@ -31,8 +32,6 @@ pub(crate) mod database;
 pub(crate) mod digest;
 pub(crate) mod metrics;
 pub(crate) mod sks_key;
-
-pub use digest::{digest_crs, digest_key};
 
 pub type KeyId = Uint<256, 4>;
 

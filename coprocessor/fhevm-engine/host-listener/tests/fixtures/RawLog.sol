@@ -2,6 +2,12 @@
 pragma solidity ^0.8.24;
 
 /// Test fixture: emit an already-encoded EVM log. Not a host-contract stand-in.
+///
+/// Regenerating `RawLog.json` (alloy `sol!` artifact, solc 0.8.28):
+///   solc --optimize --optimize-runs 200 --abi --bin --bin-runtime --overwrite \
+///     -o /tmp/rawlog tests/fixtures/RawLog.sol
+/// Then wrap ABI + bytecode + deployedBytecode as
+/// `{ "abi", "bytecode": { "object" }, "deployedBytecode": { "object" } }`.
 contract RawLog {
     function emitLog(bytes32[] calldata topics, bytes calldata data) external {
         uint256 n = topics.length;
