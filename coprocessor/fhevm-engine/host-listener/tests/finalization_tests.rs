@@ -156,8 +156,8 @@ async fn finalization_stops_batch_at_fetch_failure() {
 }
 
 /// Pruning removes only old finalized rows that nothing references: rows
-/// referenced by branch state, orphaned markers, and everything within the
-/// retention window stay.
+/// referenced by bridge/fallback state, orphaned markers, and everything
+/// within the retention window stay.
 #[tokio::test]
 #[serial(db)]
 async fn prune_keeps_referenced_orphaned_and_recent_rows() {
@@ -170,23 +170,21 @@ async fn prune_keeps_referenced_orphaned_and_recent_rows() {
     seed_block(&db, 300, &old_orphaned, &b32(0), "orphaned").await;
     seed_block(&db, 19_000, &recent, &b32(0), "finalized").await;
 
-    // Branch state referencing block 200 as producer.
+    // Fallback-grant observation referencing block 200 by hash.
     let pool = db.pool().await;
     sqlx::query(
-        "INSERT INTO computations_branch
-             (output_handle, dependencies, fhe_operation, is_scalar,
-              dependence_chain_id, transaction_id, is_allowed, created_at,
-              schedule_order, is_completed, host_chain_id, block_number,
-              producer_block_hash)
-         VALUES ($1, '{}', 0, FALSE, '\\x01', '\\x02', TRUE, NOW(), NOW(),
-                 FALSE, $2, 200, $3)",
+        "INSERT INTO fallback_granted_events
+             (dst_chain_id, dst_handle, plaintext, block_number, block_hash,
+              transaction_id)
+         VALUES ($1, $2, $3, 200, $4, NULL)",
     )
-    .bind(vec![0x55u8; 32])
     .bind(CHAIN_ID as i64)
+    .bind(vec![0x55u8; 32])
+    .bind(vec![0u8; 32])
     .bind(&old_ref)
     .execute(&pool)
     .await
-    .expect("seed computations_branch");
+    .expect("seed fallback_granted_events");
 
     // Retention window is 10_000 blocks below the finalized head (20_000):
     // rows below 10_000 are candidates.
@@ -200,7 +198,7 @@ async fn prune_keeps_referenced_orphaned_and_recent_rows() {
     assert_eq!(
         block_status(&db, &old_ref).await.as_deref(),
         Some("finalized"),
-        "rows referenced by branch state must survive"
+        "rows referenced by bridge/fallback state must survive"
     );
     assert_eq!(
         block_status(&db, &old_orphaned).await.as_deref(),
