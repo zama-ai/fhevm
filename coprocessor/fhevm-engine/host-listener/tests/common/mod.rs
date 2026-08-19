@@ -12,6 +12,7 @@ use host_listener::contracts::AclContract::{
 };
 use host_listener::contracts::KMSGeneration::{ActivateCrs, ActivateKey};
 use host_listener::contracts::TfheContract::{FheAdd, TrivialEncrypt};
+use host_listener::kms_generation::{digest_crs, digest_key};
 
 sol!(
     #[sol(rpc)]
@@ -23,7 +24,6 @@ pub use RawLog::RawLogInstance;
 
 pub const TEST_KEY_ID: u64 = 16;
 pub const KEY_BYTES: &[u8] = b"key_bytes";
-pub const CRS_DIGEST: &[u8] = b"9\xf1\xe6\"\xf9L\xe2\xd9(\xf7DlBNZzg\xe1\xc8\x94\x0f\xa6\x95\xacJ\x8b\xc0\xdc\x86\xd0\x93$";
 
 pub fn emit_log_request<P, N>(
     emitter: &RawLogInstance<P, N>,
@@ -157,7 +157,7 @@ where
     P: Provider<N>,
     N: Network<TransactionRequest = TransactionRequest>,
 {
-    let digest = Bytes::from(keccak256(KEY_BYTES).to_vec());
+    let digest = Bytes::from(digest_key(KEY_BYTES).to_vec());
     let event = ActivateKey {
         keyId: U256::from(TEST_KEY_ID),
         kmsNodeStorageUrls: kms_storage_urls(),
@@ -185,7 +185,7 @@ where
     let event = ActivateCrs {
         crsId: U256::from(TEST_KEY_ID),
         kmsNodeStorageUrls: kms_storage_urls(),
-        crsDigest: Bytes::from(CRS_DIGEST.to_vec()),
+        crsDigest: Bytes::from(digest_crs(KEY_BYTES).to_vec()),
     };
     emit_log_request(emitter, event.encode_log_data())
 }
