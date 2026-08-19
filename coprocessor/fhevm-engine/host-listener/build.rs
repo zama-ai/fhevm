@@ -104,10 +104,17 @@ pub struct SolanaAbiSchema {
     });
 }
 
-fn main() {
-    println!("cargo::warning=build.rs run ...");
-    generate_solana_abi_schema_hashes();
-    // build tests contracts
+fn compile_test_contracts() {
+    println!("cargo:rerun-if-env-changed=HOST_LISTENER_SKIP_TEST_CONTRACTS");
+    // Image builds compile bins, not tests. The Anvil mocks symlink into
+    // host-contracts/, which Docker no longer copies, so skip solc there.
+    if env::var_os("HOST_LISTENER_SKIP_TEST_CONTRACTS").is_some() {
+        println!(
+            "cargo::warning=skipping test-contract solc (HOST_LISTENER_SKIP_TEST_CONTRACTS is set)"
+        );
+        return;
+    }
+
     let paths =
         ProjectPathsConfig::hardhat(Path::new(env!("CARGO_MANIFEST_DIR")))
             .unwrap();
@@ -126,4 +133,10 @@ fn main() {
         eprintln!("{output}");
     }
     assert!(!output.has_compiler_errors());
+}
+
+fn main() {
+    println!("cargo::warning=build.rs run ...");
+    generate_solana_abi_schema_hashes();
+    compile_test_contracts();
 }

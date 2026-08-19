@@ -50,6 +50,10 @@ COPY .git/HEAD ./coprocessor/fhevm-engine/BUILD_ID
 
 WORKDIR /app/coprocessor/fhevm-engine
 
+# Bins do not consume the Anvil mock artifacts; skip that solc pass so this
+# image does not need host-contracts Solidity sources.
+ENV HOST_LISTENER_SKIP_TEST_CONTRACTS=1
+
 # Build host_listener binary
 # NOTE: We use a cache mount for the target directory to enable incremental compilation.
 # Because cache mounts are NOT committed to the image layer, we must copy the binary

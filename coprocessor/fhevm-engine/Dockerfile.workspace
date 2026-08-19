@@ -81,6 +81,10 @@ COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
 
 WORKDIR /app/coprocessor/fhevm-engine
 
+# Bins do not consume the Anvil mock artifacts; skip that solc pass so this
+# image does not need host-contracts Solidity sources.
+ENV HOST_LISTENER_SKIP_TEST_CONTRACTS=1
+
 # Compiled stack version; unset => baseline (0.14.0), GCS build passes a newer one.
 ARG BUILD_STACK_VERSION
 
