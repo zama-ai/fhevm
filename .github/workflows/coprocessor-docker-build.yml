@@ -162,8 +162,7 @@ jobs:
           - .github/workflows/coprocessor-docker-build.yml
           - coprocessor/fhevm-engine/host-listener/**
           - coprocessor/fhevm-engine/Cargo.*
-          - host-contracts/contracts/*Events.sol
-          - host-contracts/contracts/shared/**
+          - host-contracts/rust_bindings/**
 
   check-changes-sns-worker:
     uses: ./.github/workflows/check-changes-for-docker-build.yml
