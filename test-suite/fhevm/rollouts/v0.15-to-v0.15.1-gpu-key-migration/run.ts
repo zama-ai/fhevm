@@ -579,8 +579,10 @@ export const reconstructMigrated015Fixture = async (ctx: RolloutRunContext): Pro
     const database = coprocessorDatabaseName(operator);
     const version = await sqlScalar(
       database,
-      "UPDATE versioning SET stack_version = 'v0.15.0', updated_at = NOW() " +
-        "WHERE singleton = TRUE RETURNING stack_version;",
+      "WITH updated AS (" +
+        "UPDATE versioning SET stack_version = 'v0.15.0', updated_at = NOW() " +
+        "WHERE singleton = TRUE RETURNING stack_version" +
+        ") SELECT stack_version FROM updated;",
     );
     if (version !== "v0.15.0") {
       throw new Error(`${database} did not reconstruct the proven v0.15.0 stack marker`);
