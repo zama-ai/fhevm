@@ -175,10 +175,8 @@ jobs:
             echo "COMMIT_HASH=$(git rev-parse HEAD)";
           } >> "${GITHUB_ENV}"
 
-      - name: Install rust # zizmor: ignore[superfluous-actions]
-        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203
-        with:
-          toolchain: nightly
+      - name: Install Rust nightly
+        run: rustup toolchain install nightly --profile minimal --no-self-update
 
       - name: Install cargo dependencies
         run: |
