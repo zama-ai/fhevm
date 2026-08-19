@@ -349,16 +349,33 @@ pub async fn ingest_block_logs(
                         block_hash.as_ref(),
                     )
                     .await?;
+                    // Materialization is finality-gated: once the async
+                    // compute pipeline picks up the synthetic computation its
+                    // ciphertext cannot be retracted on a reorg, and whether
+                    // those bytes or a later bridge copy win the copy's
+                    // ON CONFLICT would then depend on per-node fork
+                    // visibility — a fleet consensus hazard. The observation
+                    // above is durable either way; synthesis for a
+                    // not-yet-final block happens when the block finalizes
+                    // (see `synthesize_finalized_fallback_grants`).
+                    if !block_logs.finalized {
+                        info!(
+                            dst_handle = ?dst_handle,
+                            block_number,
+                            "Deferring FallbackGrantedPlaintext synthesis until finality"
+                        );
+                        continue;
+                    }
                     // The contract specifies that if multiple fallback events
                     // are emitted for the same handle, only the first one is
                     // the source of truth: skip duplicates within this block
                     // and grants from a different transaction. The SAME grant
                     // re-observed in another block context (fork sibling or
-                    // canonical re-inclusion after a reorg) is synthesized
-                    // again for its own context, so cleanup of one fork never
-                    // erases the grant from the surviving fork. A handle
-                    // materialized by a bridge association (ciphertext copy
-                    // without a computations row) also stays write-once.
+                    // canonical re-inclusion after a reorg) is re-synthesized
+                    // idempotently (every insert no-ops on its conflict key).
+                    // A handle materialized by a bridge association
+                    // (ciphertext copy without a computations row) also stays
+                    // write-once.
                     let first_in_block =
                         seen_fallback_handles.insert(dst_handle.to_vec());
                     if !first_in_block
@@ -893,6 +910,157 @@ async fn notify_coprocessor_upgrade_proposed(
     Ok(())
 }
 
+/// Synthesizes the pending fallback-grant materializations for a block that
+/// just finalized. Ingest records every `FallbackGrantedPlaintext`
+/// observation durably but defers the synthetic TrivialEncrypt for
+/// not-yet-final blocks: once the async compute pipeline materializes a
+/// ciphertext it cannot be retracted on a reorg, and whether the fallback
+/// bytes or a later bridge copy win the copy's ON CONFLICT would then depend
+/// on per-node fork visibility — a fleet consensus hazard. Finalized blocks
+/// are fleet-uniform, so synthesizing here is safe.
+///
+/// Idempotent: the computation insert no-ops on
+/// `(output_handle, transaction_id)`, the PBS insert on its own key, and
+/// `fallback_grant_conflicts` keeps the contract's first-grant-wins
+/// semantics across transactions and against bridge-copied handles.
+///
+/// The synthetic op is dependency-free, so its dependence chain is a
+/// singleton; the cross-block producer cache is deliberately not primed
+/// (consumers in blocks ingested before finality already treated the handle
+/// as an external producer).
+///
+/// Like every finality-gated feature (state-hash stamping, the bridge
+/// src-finality gate, KMS activations), this runs only where finalization
+/// runs: a consumer-mode (broker-fed) ingest must be paired with a
+/// finalizing listener/poller or deferred grants never materialize.
+pub async fn synthesize_finalized_fallback_grants(
+    db: &Database,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    block_number: i64,
+    block_hash: &BlockHash,
+) -> Result<(), sqlx::Error> {
+    use sqlx::Row;
+    let rows = sqlx::query(
+        "SELECT dst_handle, plaintext, transaction_id, created_at
+           FROM fallback_granted_events
+          WHERE dst_chain_id = $1 AND block_hash = $2
+          ORDER BY id",
+    )
+    .bind(db.chain_id.as_i64())
+    .bind(block_hash.as_slice())
+    .fetch_all(&mut **tx)
+    .await?;
+    if rows.is_empty() {
+        return Ok(());
+    }
+    let mut logs: Vec<LogTfhe> = Vec::with_capacity(rows.len());
+    for (row_index, row) in rows.into_iter().enumerate() {
+        let dst_handle: Vec<u8> = row.get("dst_handle");
+        let plaintext: Vec<u8> = row.get("plaintext");
+        let transaction_id: Option<Vec<u8>> = row.get("transaction_id");
+        let created_at: OffsetDateTime = row.get("created_at");
+        let Ok(handle_bytes) = <[u8; 32]>::try_from(dst_handle.as_slice())
+        else {
+            warn!(?dst_handle, "Skipping fallback grant with malformed handle");
+            continue;
+        };
+        // Re-validated at synthesis time so a rule tightened between
+        // observation and finality is enforced.
+        if !is_valid_fallback_dst_handle(&handle_bytes, db.chain_id) {
+            continue;
+        }
+        let transaction_hash = transaction_id
+            .as_deref()
+            .and_then(|t| <[u8; 32]>::try_from(t).ok())
+            .map(alloy::primitives::FixedBytes::from);
+        if db
+            .fallback_grant_conflicts(tx, &handle_bytes, &transaction_hash)
+            .await?
+        {
+            warn!(
+                dst_handle = ?handle_bytes,
+                "Skipping finalized FallbackGrantedPlaintext: dstHandle is already materialized"
+            );
+            continue;
+        }
+        // `created_at` (the observation's ingest time) stands in for the
+        // block timestamp, which host_chain_blocks_valid does not record. It
+        // only feeds scheduling hints (schedule_order, chain last_updated_at),
+        // never consensus-compared data.
+        logs.push(LogTfhe {
+            event: alloy::primitives::Log {
+                address: Address::ZERO,
+                data: TfheContract::TfheContractEvents::TrivialEncrypt(
+                    TfheContract::TrivialEncrypt {
+                        caller: Address::ZERO,
+                        pt: alloy::primitives::U256::from_be_slice(&plaintext),
+                        toType: handle_bytes[30],
+                        result: alloy::primitives::FixedBytes::from(
+                            handle_bytes,
+                        ),
+                    },
+                ),
+            },
+            transaction_hash,
+            // Forced allowed, exactly like inline synthesis: governance
+            // ensures the handle is in the ACL.
+            is_allowed: true,
+            block_number: block_number as u64,
+            block_hash: *block_hash,
+            block_timestamp: PrimitiveDateTime::new(
+                created_at.date(),
+                created_at.time(),
+            ),
+            tx_depth_size: 0,
+            dependence_chain: Default::default(),
+            // Deterministic (ORDER BY id = observation order); a real index
+            // also keeps ensure_logs_order from warning on every pass.
+            log_index: Some(row_index as u64),
+        });
+    }
+    if logs.is_empty() {
+        return Ok(());
+    }
+    let block_timestamp = logs[0].block_timestamp;
+    // Dependency-free singletons: connexity/cross-block grouping options
+    // cannot change the outcome, so neither flag is threaded through here.
+    let chains =
+        dependence_chains(&mut logs, &db.dependence_chain, false, false).await;
+    for log in &logs {
+        let dst_handle = tfhe_result_handle(&log.event)
+            .expect("synthetic TrivialEncrypt has a result handle");
+        db.insert_tfhe_event(tx, log).await?;
+        db.insert_pbs_computations(
+            tx,
+            &[dst_handle.to_vec()],
+            log.transaction_hash.map(|h| h.to_vec()),
+            block_number as u64,
+        )
+        .await?;
+        info!(
+            dst_handle = ?dst_handle,
+            block_number,
+            "Synthesized finalized FallbackGrantedPlaintext"
+        );
+    }
+    let summary = BlockSummary {
+        number: block_number as u64,
+        hash: *block_hash,
+        // Only `hash` and `number` are read by update_dependence_chain.
+        parent_hash: BlockHash::ZERO,
+        timestamp: 0,
+    };
+    db.update_dependence_chain(
+        tx,
+        chains,
+        block_timestamp,
+        &summary,
+        &HashSet::new(),
+    )
+    .await?;
+    Ok(())
+}
+
 pub async fn update_finalized_blocks(
     db: &mut Database,
     log_iter: &mut InfiniteLogIter,
@@ -1031,6 +1199,24 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
                         block_number,
                         ?err,
                         "Failed to retract orphaned event state during finalization"
+                    );
+                    return;
+                }
+                // The block just became final: materialize its deferred
+                // fallback grants in the same transaction, so the synthesis
+                // is atomic with the finalization it is gated on.
+                if let Err(err) = synthesize_finalized_fallback_grants(
+                    db,
+                    &mut tx,
+                    block_number,
+                    &block_hash,
+                )
+                .await
+                {
+                    error!(
+                        block_number,
+                        ?err,
+                        "Failed to synthesize finalized fallback grants"
                     );
                     return;
                 }
