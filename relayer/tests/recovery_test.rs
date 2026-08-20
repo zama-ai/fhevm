@@ -23,8 +23,8 @@ use anyhow::{bail, Context};
 use alloy::primitives::{Address, Bytes, B256};
 use common::test_schema::TestSchema;
 use common::utils::{
-    get_free_port, http_port_of, random_handle, spawn_relayer, wire_settings_to_mocks, GatewayMock,
-    HostMock, TEST_CONFIG_PATH,
+    http_port_of, random_handle, spawn_relayer, wire_settings_to_mocks, GatewayMock, HostMock,
+    TEST_CONFIG_PATH,
 };
 use ethereum_rpc_mock::{fhevm::UserDecryptKind, SubscriptionTarget};
 use fhevm_relayer::config::settings::{Settings, StorageConfig};
@@ -62,9 +62,9 @@ impl RecoveryTestSetup {
             .expect("Failed to load configuration");
         init_tracing_once(&settings.log);
 
-        let host = HostMock::start(get_free_port()?, &settings).await?;
-        let broken_gateway = GatewayMock::start(get_free_port()?).await?;
-        let working_gateway = GatewayMock::start(get_free_port()?).await?;
+        let host = HostMock::start(&settings).await?;
+        let broken_gateway = GatewayMock::start().await?;
+        let working_gateway = GatewayMock::start().await?;
 
         tracing::info!(
             "Setting up recovery test - broken gateway: {}, working gateway: {}, host: {}, schema: {}",

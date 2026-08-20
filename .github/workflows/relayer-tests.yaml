@@ -111,12 +111,20 @@ jobs:
         run: make clippy
 
   integration-test:
-    name: relayer-test/integration-test (bpr)
+    name: relayer-test/integration-test-${{ matrix.shard }} (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-rust-files == 'true' }}
     permissions:
       contents: 'read' # Required to checkout repository code
     runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
+    strategy:
+      fail-fast: false
+      # cargo runs test binaries one after another, so the long-running groups
+      # set the floor for the whole suite. One shard per job overlaps them.
+      # The shards are defined in relayer/Makefile and together cover every
+      # group, which `make test-groups-check` ties to every test file.
+      matrix:
+        shard: [fast, slow]
     services:
       postgres:
         image: cgr.dev/zama.ai/postgres:17.9@sha256:d42847b7c5f9ece73655164588b2387dcd5fadd618ea64761c19d3484498cef0
@@ -190,4 +198,4 @@ jobs:
 
       - name: Run tests
         working-directory: relayer
-        run: RUST_BACKTRACE=full make test-integration
+        run: RUST_BACKTRACE=full make test-integration-${{ matrix.shard }}

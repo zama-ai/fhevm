@@ -397,6 +397,14 @@ PATTERN_input-proof            := input_proof_v*_test
 group_pattern = $(or $(PATTERN_$(1)),$(subst -,_,$(1))_test)
 GROUP_PATTERNS := $(foreach g,$(GROUPS),$(call group_pattern,$(g)))
 
+# CI shards. cargo runs test binaries one after another, so a group long enough
+# to dominate a full run has to move to its own CI job to overlap with the rest.
+# SLOW_GROUPS names those; the fast shard is the complement, so a group added to
+# GROUPS lands in a shard without being named here and cannot fall between them.
+SLOW_GROUPS := listener-redundancy
+FAST_GROUPS := $(filter-out $(SLOW_GROUPS),$(GROUPS))
+group_args = $(foreach g,$(1),--test '$(call group_pattern,$(g))')
+
 TEST_FEATURES := integration-tests
 
 # Hand the tests the connection details derived from the compose file, so the
@@ -405,9 +413,12 @@ TEST_FEATURES := integration-tests
 TEST_DATABASE_URL ?= $(DATABASE_URL)
 export TEST_DATABASE_URL
 
-# Serial by default so local runs match CI (bounded Postgres connections).
-# Override for a faster inner loop: make test-group GROUP=public-decrypt TEST_THREADS=8
-TEST_THREADS ?= 1
+# Concurrent tests within a test binary. Each test holds about three Postgres
+# connections, so the ceiling is the server's max_connections. CI runs on a
+# 4-CPU runner against a Postgres service with the default limit of 100, which
+# 8 stays well inside. Local Postgres allows 500 (dev/docker-compose.yaml), so
+# a larger override is available here: make test-integration TEST_THREADS=32
+TEST_THREADS ?= 8
 # Substring filters for `test-group`: CASE selects, SKIP excludes.
 CASE ?=
 SKIP ?=
@@ -417,9 +428,16 @@ test: test-unit test-integration ## Run the full suite, exactly as CI runs it
 test-unit: ## Run unit tests from src/ (no Postgres needed)
 	@$(CARGO_TEST) --lib
 
-test-integration: _check-postgres ## Run all integration tests (mock RPC crate + every group)
+test-integration: test-integration-fast test-integration-slow ## Run all integration tests (mock RPC crate + every group)
+
+test-integration-fast: _check-postgres ## CI shard: the mock RPC crate and every group except the long-running ones
 	@$(CARGO_TEST) --manifest-path $(MOCK_RPC_MANIFEST) -- --test-threads=$(TEST_THREADS)
-	@$(CARGO_TEST) --features $(TEST_FEATURES) --test '*' -- --test-threads=$(TEST_THREADS)
+	@$(CARGO_TEST) --features $(TEST_FEATURES) $(call group_args,$(FAST_GROUPS)) \
+	  -- --test-threads=$(TEST_THREADS)
+
+test-integration-slow: _check-postgres ## CI shard: the long-running groups only
+	@$(CARGO_TEST) --features $(TEST_FEATURES) $(call group_args,$(SLOW_GROUPS)) \
+	  -- --test-threads=$(TEST_THREADS)
 
 test-build: ## Compile every test binary without running it (no Postgres — uses sqlx offline data)
 	@echo "Building all test binaries..."
