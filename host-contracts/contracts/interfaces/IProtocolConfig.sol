@@ -676,6 +676,13 @@ interface IProtocolConfig {
     function getMpcThresholdForContext(uint256 kmsContextId) external view returns (uint256);
 
     /**
+     * @notice Returns the maximum allowed KMS signer-set size, which is also the upper bound enforced
+     *         on every per-context threshold at registration time.
+     * @return The maximum number of KMS signers.
+     */
+    function getMaxKmsSigners() external pure returns (uint256);
+
+    /**
      * @notice Returns the contract version.
      * @return The version string.
      */

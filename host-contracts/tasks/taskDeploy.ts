@@ -10,7 +10,7 @@ import { buildCanonicalUpgradeProposal, readCanonicalSnapshot } from './protocol
 import { assertContractMatchesVersionPrefix } from './utils/contractVersion';
 import { formatError } from './utils/formatError';
 import { CRS_COUNTER_BASE, KEY_COUNTER_BASE } from './utils/kmsGenerationConstants';
-import { getRequiredEnvVar } from './utils/loadVariables';
+import { getRequiredCountEnvVar, getRequiredEnvVar } from './utils/loadVariables';
 import { buildCanonicalSnapshotEnv, readCanonicalSnapshotFromEnv } from './utils/protocolConfigCanonicalEnv';
 import { executeUpgradeProposal, printUpgradeProposal, verifyProposalImplementation } from './utils/upgradeProposal';
 
@@ -371,8 +371,8 @@ task('task:deployInputVerifier')
     const initialThreshold = +getRequiredEnvVar('COPROCESSOR_THRESHOLD');
 
     let initialSigners: string[] = [];
-    const numSigners = getRequiredEnvVar('NUM_COPROCESSORS');
-    for (let idx = 0; idx < +numSigners; idx++) {
+    const numSigners = getRequiredCountEnvVar('NUM_COPROCESSORS');
+    for (let idx = 0; idx < numSigners; idx++) {
       if (!taskArguments.useAddress) {
         const privKeySigner = getRequiredEnvVar(`PRIVATE_KEY_COPROCESSOR_ACCOUNT_${idx}`);
         const inputSigner = new ethers.Wallet(privKeySigner).connect(ethers.provider);
@@ -538,7 +538,7 @@ export function buildKmsNodeParams(): {
   caCert: string;
   storagePrefix: string;
 }[] {
-  const numNodes = +getRequiredEnvVar('NUM_KMS_NODES');
+  const numNodes = getRequiredCountEnvVar('NUM_KMS_NODES');
   const nodes: {
     txSenderAddress: string;
     signerAddress: string;

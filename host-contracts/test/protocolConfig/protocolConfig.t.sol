@@ -479,6 +479,13 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         protocolConfig.getMpcThresholdForContext(contextId);
     }
 
+    /// @dev The cap is driven by the one-byte signature-count field of the decryption proof format.
+    function test_getMaxKmsSigners() public {
+        _setupDefault();
+
+        assertEq(protocolConfig.getMaxKmsSigners(), type(uint8).max);
+    }
+
     // -----------------------------------------------------------------------
     // Init tests
     // -----------------------------------------------------------------------
