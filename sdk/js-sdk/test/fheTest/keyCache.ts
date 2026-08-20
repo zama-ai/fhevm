@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-const KEYS_DIR = resolve(__dirname, '.keys');
+const KEYS_DIR = resolve(import.meta.dirname, '.keys');
 
 export type CachedFheEncryptionKeyBytes = FheEncryptionKeyBytes & {
   readonly chain: FheTestChainName;
