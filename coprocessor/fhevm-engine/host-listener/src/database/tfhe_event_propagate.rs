@@ -18,7 +18,6 @@ use fhevm_engine_common::utils::{to_hex, HeartBeat};
 use prometheus::{register_int_counter_vec, IntCounterVec};
 use sqlx::postgres::PgConnectOptions;
 use sqlx::postgres::PgPoolOptions;
-use sqlx::Acquire;
 use sqlx::Error as SqlxError;
 use sqlx::{PgPool, Postgres};
 use std::collections::HashSet;
@@ -58,21 +57,6 @@ static SLOW_LANE_MARKED_CHAINS_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(
     },
 );
 
-/// ACL events whose handle could not be resolved to a ciphertext-producer
-/// block on the current branch (nor to branchless/legacy state). These are
-/// keyed branchless rather than guessing the ACL-event block; a non-zero rate
-/// indicates branch metadata is missing or inconsistent, and should alert.
-static UNRESOLVED_PRODUCER_BLOCK_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(
-    || {
-        register_int_counter_vec!(
-        "host_listener_unresolved_producer_block_total",
-        "ACL-event handles that could not be resolved to a ciphertext producer block and were keyed branchless",
-        &["chain_id"]
-    )
-    .expect("host-listener unresolved-producer-block metric must register")
-    },
-);
-
 #[derive(Clone, Debug)]
 pub struct Chain {
     pub hash: ChainHash,
@@ -90,15 +74,6 @@ pub type ChainCache = Arc<RwLock<lru::LruCache<Handle, ChainHash>>>;
 pub type OrderedChains = Vec<Chain>;
 
 const MINIMUM_BUCKET_CACHE_SIZE: u16 = 16;
-/// Depth bound for the producer-resolution ancestry walk. Fork
-/// disambiguation only matters above finality; anything deeper resolves via
-/// finalization status. Far above any real finality lag.
-const ANCESTRY_WALK_DEPTH: i64 = 1024;
-/// Reorgs orphaning blocks closer than this to the branch activation height
-/// keep their legacy rows (see the straddle guard in
-/// `cleanup_orphaned_branch_state`). Generously above any real finality lag,
-/// since reorgs cannot be deeper than finality.
-const BRANCH_ACTIVATION_STRADDLE_WINDOW: i64 = 128;
 /// Finalized `host_chain_blocks_valid` rows older than this many blocks
 /// below the finalized head are eligible for pruning (when unreferenced).
 const BLOCKS_VALID_RETENTION: i64 = 10_000;
@@ -112,142 +87,11 @@ const MAX_RETRY_ON_UNKNOWN_ERROR: usize = 5;
 // short wait in case the database had a short issue
 const RECONNECTION_DELAY: Duration = Duration::from_millis(100);
 
-struct ComputationBranchRow<'a> {
-    chain_id: i64,
-    output_handle: &'a [u8],
-    dependencies: &'a [Vec<u8>],
-    fhe_operation: i16,
-    is_scalar: bool,
-    dependence_chain_id: &'a [u8],
-    transaction_id: Option<Vec<u8>>,
-    is_allowed: bool,
-    schedule_order: PrimitiveDateTime,
-    producer_block: ProducerBlock,
-}
-
-async fn insert_computation_branch_row(
-    tx: &mut Transaction<'_>,
-    row: ComputationBranchRow<'_>,
-) -> Result<bool, SqlxError> {
-    let done = sqlx::query!(
-        r#"
-        INSERT INTO computations_branch (
-            output_handle,
-            dependencies,
-            fhe_operation,
-            is_scalar,
-            dependence_chain_id,
-            transaction_id,
-            is_allowed,
-            created_at,
-            schedule_order,
-            is_completed,
-            host_chain_id,
-            block_number,
-            producer_block_hash
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9, $10, $11, $12)
-        ON CONFLICT (output_handle, transaction_id, producer_block_hash) DO NOTHING
-        "#,
-        row.output_handle,
-        row.dependencies,
-        row.fhe_operation,
-        row.is_scalar,
-        row.dependence_chain_id,
-        row.transaction_id,
-        row.is_allowed,
-        row.schedule_order,
-        !row.is_allowed,
-        row.chain_id,
-        row.producer_block.number as i64,
-        row.producer_block.hash,
-    )
-    .execute(tx.deref_mut())
-    .await?;
-    Ok(done.rows_affected() > 0)
-}
-
-async fn insert_pbs_computation_branch_row(
-    tx: &mut Transaction<'_>,
-    chain_id: i64,
-    handle: &[u8],
-    transaction_id: Option<Vec<u8>>,
-    block_number: i64,
-    block_hash: &[u8],
-    producer_block_hash: &[u8],
-) -> Result<bool, SqlxError> {
-    let done = sqlx::query!(
-        "INSERT INTO pbs_computations_branch(handle, transaction_id, host_chain_id, block_number, block_hash, producer_block_hash)
-         VALUES($1, $2, $3, $4, $5, $6)
-         ON CONFLICT DO NOTHING;",
-        handle,
-        transaction_id,
-        chain_id,
-        block_number,
-        block_hash,
-        producer_block_hash,
-    )
-    .execute(tx.deref_mut())
-    .await?;
-    Ok(done.rows_affected() > 0)
-}
-
-struct AllowedHandleBranchRow<'a> {
-    chain_id: i64,
-    handle: &'a [u8],
-    account_address: &'a str,
-    event_type: i16,
-    transaction_id: Option<Vec<u8>>,
-    producer_block: &'a ProducerBlock,
-    acl_block_number: u64,
-    acl_block_hash: &'a [u8],
-}
-
-struct AllowedHandleInsert<'a> {
+struct AllowedHandleInsert {
     handle: Vec<u8>,
     account_address: String,
     event_type: AllowEvents,
     transaction_id: Option<Vec<u8>>,
-    producer_block: &'a ProducerBlock,
-    acl_block_number: u64,
-    acl_block_hash: &'a [u8],
-}
-
-async fn insert_allowed_handle_branch_row(
-    tx: &mut Transaction<'_>,
-    row: AllowedHandleBranchRow<'_>,
-) -> Result<bool, SqlxError> {
-    let done = sqlx::query!(
-        "INSERT INTO allowed_handles_branch(handle, account_address, event_type, transaction_id, host_chain_id, block_number, block_hash, producer_block_hash)
-         VALUES($1, $2, $3, $4, $5, $6, $7, $8)
-         ON CONFLICT DO NOTHING;",
-        row.handle,
-        row.account_address,
-        row.event_type,
-        row.transaction_id,
-        row.chain_id,
-        row.acl_block_number as i64,
-        row.acl_block_hash,
-        row.producer_block.hash,
-    )
-    .execute(tx.deref_mut())
-    .await?;
-    Ok(done.rows_affected() > 0)
-}
-
-#[derive(Clone, Debug)]
-pub struct ProducerBlock {
-    hash: Vec<u8>,
-    number: u64,
-}
-
-impl ProducerBlock {
-    pub fn new(hash: &[u8], number: u64) -> Self {
-        Self {
-            hash: hash.to_vec(),
-            number,
-        }
-    }
 }
 
 type DbErrorCode = std::borrow::Cow<'static, str>;
@@ -315,14 +159,6 @@ pub struct Database {
     /// When true, every connection in this pool sets
     /// `search_path = gcs,public` so writes resolve to the GCS schema.
     gcs_mode: bool,
-    /// Host-chain height at which wave-1 branch dual-writes activate
-    /// (`FHEVM_BRANCH_ACTIVATION_BLOCK`, default 0 = from genesis). Below
-    /// it, ingestion writes legacy state only and producers resolve as
-    /// branchless. Set to a fleet-common height above the rolling upgrade's
-    /// completion so branch-row keying is deterministic across operators
-    /// that upgrade at different times; the wave-2 cutover
-    /// (`FHEVM_BRANCH_CUTOVER_BLOCK`) must be >= this height.
-    pub branch_activation_block: u64,
 }
 
 #[derive(Debug)]
@@ -340,34 +176,6 @@ pub struct LogTfhe {
 }
 
 pub type Transaction<'l> = sqlx::Transaction<'l, Postgres>;
-
-fn parse_branch_activation_block() -> u64 {
-    const ENV_VAR: &str = "FHEVM_BRANCH_ACTIVATION_BLOCK";
-
-    match std::env::var(ENV_VAR) {
-        Ok(value) => match value.parse::<u64>() {
-            Ok(block) => block,
-            Err(err) => {
-                error!(
-                    env_var = ENV_VAR,
-                    value = %value,
-                    error = %err,
-                    "Invalid branch activation block configuration"
-                );
-                std::process::exit(1);
-            }
-        },
-        Err(std::env::VarError::NotPresent) => 0,
-        Err(err) => {
-            error!(
-                env_var = ENV_VAR,
-                error = %err,
-                "Invalid branch activation block configuration"
-            );
-            std::process::exit(1);
-        }
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StatsForConsumer {
@@ -401,7 +209,6 @@ impl Database {
                 .unwrap()
                 .into(),
             )));
-        let branch_activation_block = parse_branch_activation_block();
         let db = Database {
             url: url.clone(),
             chain_id,
@@ -410,67 +217,8 @@ impl Database {
             dependence_chain: bucket_cache,
             tick: HeartBeat::default(),
             gcs_mode,
-            branch_activation_block,
         };
-        // Wave-1 deploy safety: a binary may start before the branch-context
-        // migration has applied (e.g. a rolling deploy where the db-migration
-        // Job is still running). Wait for the branch schema rather than
-        // crash-looping on `*_branch` / `parent_hash` writes. Returns instantly
-        // once present, which is always the case after the runbook's
-        // migrate-first step and in tests (migrations run before construction).
-        db.wait_for_branch_schema().await?;
         Ok(db)
-    }
-
-    /// Block until the wave-1 branch-context schema is present (the `*_branch`
-    /// tables, `coprocessor_settlement`, and `host_chain_blocks_valid.parent_hash`).
-    /// This degrades a pre-migration start to a bounded wait instead of a
-    /// crash-loop. Bounded so a genuinely-absent migration surfaces as an error
-    /// (→ restart) rather than hanging forever.
-    pub async fn wait_for_branch_schema(&self) -> Result<()> {
-        const MAX_ATTEMPTS: u32 = 60; // ~2 minutes at one poll / 2s
-        const POLL_INTERVAL: Duration = Duration::from_secs(2);
-        for attempt in 0..MAX_ATTEMPTS {
-            // Wait between polls, but not before the first one.
-            if attempt > 0 {
-                tokio::time::sleep(POLL_INTERVAL).await;
-            }
-            let pool = self.pool().await;
-            let ready: bool = sqlx::query_scalar!(
-                r#"
-                SELECT (
-                    to_regclass('public.computations_branch') IS NOT NULL
-                    AND to_regclass('public.ciphertexts_branch') IS NOT NULL
-                    AND to_regclass('public.coprocessor_settlement') IS NOT NULL
-                    AND EXISTS (
-                        SELECT 1
-                        FROM information_schema.columns
-                        WHERE table_name = 'host_chain_blocks_valid'
-                          AND column_name = 'parent_hash'
-                    )
-                ) AS "ready!"
-                "#,
-            )
-            .fetch_one(&pool)
-            .await?;
-            if ready {
-                if attempt > 0 {
-                    info!(
-                        attempt,
-                        "Branch-context schema present; proceeding."
-                    );
-                }
-                return Ok(());
-            }
-            warn!(
-                attempt,
-                "Branch-context (wave1) schema not yet present; waiting before ingesting..."
-            );
-        }
-        anyhow::bail!(
-            "branch-context (wave1) schema not present after waiting; \
-             is the db-migration job complete?"
-        );
     }
 
     pub(crate) fn record_slow_lane_marked_chains(&self, count: u64) {
@@ -487,7 +235,22 @@ impl Database {
     ) -> Result<u64, SqlxError> {
         let lock_key = slow_lane_reset_advisory_lock_key(self.chain_id);
         let mut connection = self.pool().await.acquire().await?;
-        let mut tx = connection.begin().await?;
+        // Fenced like every other write on this struct (see `new_transaction`): takes the
+        // shared cutover lock and stops on a retired stack. This already held its own
+        // `pg_try_advisory_xact_lock` for the slow-lane reset; that key is unrelated to the
+        // cutover key, so the two coexist.
+        let Some(mut tx) =
+            fhevm_engine_common::versioning::begin_write_guarded_conn(
+                &mut connection,
+                self.gcs_mode,
+                fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
+            )
+            .await?
+            .into_tx()
+        else {
+            info!("Cutover completed — skipping slow-lane promotion on retired stack");
+            return Ok(0);
+        };
         let lock_acquired = sqlx::query_scalar!(
             r#"SELECT pg_try_advisory_xact_lock($1) AS "lock_acquired!""#,
             lock_key
@@ -708,59 +471,15 @@ impl Database {
     ) -> Result<bool, SqlxError> {
         let is_scalar = !scalar_byte.is_zero();
         let output_handle = result.to_vec();
-        // Below the fleet-common activation height only legacy state is
-        // written: per-node dual-write start times would otherwise key branch
-        // rows divergently across operators during a rolling upgrade.
-        if log.block_number < self.branch_activation_block {
-            return self
-                .insert_computation_legacy_row(
-                    tx,
-                    &output_handle,
-                    &dependencies,
-                    fhe_operation,
-                    is_scalar,
-                    log,
-                )
-                .await;
-        }
-        // Wave-1 producer writes require the branch row so wave-2 consumers have
-        // complete block-scoped state; branch write failures abort this ingest
-        // transaction and are retried with the rest of the event.
-        let inserted = insert_computation_branch_row(
+        self.insert_computation_legacy_row(
             tx,
-            ComputationBranchRow {
-                chain_id: self.chain_id.as_i64(),
-                output_handle: &output_handle,
-                dependencies: &dependencies,
-                fhe_operation: fhe_operation as i16,
-                is_scalar,
-                dependence_chain_id: log.dependence_chain.as_slice(),
-                transaction_id: log.transaction_hash.map(|txh| txh.to_vec()),
-                is_allowed: log.is_allowed,
-                schedule_order: log.block_timestamp.saturating_add(
-                    TimeDuration::microseconds(log.tx_depth_size as i64),
-                ),
-                producer_block: ProducerBlock {
-                    hash: log.block_hash.to_vec(),
-                    number: log.block_number,
-                },
-            },
+            &output_handle,
+            &dependencies,
+            fhe_operation,
+            is_scalar,
+            log,
         )
-        .await?;
-        // Wave-1 dual-write: the legacy pipeline still executes from the
-        // legacy tables, so every branch row is mirrored there until the
-        // block-scoped readers take over in wave 2.
-        let legacy_inserted = self
-            .insert_computation_legacy_row(
-                tx,
-                &output_handle,
-                &dependencies,
-                fhe_operation,
-                is_scalar,
-                log,
-            )
-            .await?;
-        Ok(inserted || legacy_inserted)
+        .await
     }
 
     async fn insert_computation_legacy_row(
@@ -1056,7 +775,17 @@ impl Database {
         Ok(Some(orphaned_hashes))
     }
 
-    pub async fn cleanup_orphaned_branch_state(
+    /// Retracts bridge/authorization event state observed only on blocks that
+    /// `update_block_as_finalized` just orphaned. Compute-side rows (work,
+    /// ACL, PBS, digests) are deliberately retained — handles are fork-scoped
+    /// by construction, so orphaned compute state is unreferenced on the
+    /// canonical branch and benign. These event tables are different: they are
+    /// keyed by observation block, not by handle preimage, so rows observed
+    /// only on an orphaned fork would stay effective unless removed. Runs in
+    /// the same transaction that marks the branch orphaned and is idempotent;
+    /// if the listener is down, finalization does not advance and catchup
+    /// reruns the retraction when it later orphans the branch.
+    pub async fn retract_orphaned_event_state(
         &self,
         tx: &mut Transaction<'_>,
         orphaned_block_hashes: &[Vec<u8>],
@@ -1065,409 +794,14 @@ impl Database {
             return Ok(());
         }
 
-        // This cleanup is part of the same finalization transaction that marks
-        // blocks orphaned. Once host_chain_blocks_valid exposes an orphaned
-        // branch, branch-scoped rows for that branch should no longer be
-        // visible to readers. If the listener is down, finalization does not
-        // advance; catchup reruns this idempotent cleanup when it later marks
-        // the branch orphaned.
-        //
-        // Capture producer tuples whose ciphertext bytes were actually
-        // produced on an orphaned branch. ACL/PBS rows can now be orphaned by
-        // their event block while still referencing a canonical producer; those
-        // should not delete the canonical ciphertext bytes. Rows that reference
-        // an orphaned producer still drive byte cleanup, even when their own
-        // event block is not in the orphaned set.
-        let orphaned_ciphertext_pairs = sqlx::query!(
-            r#"
-            SELECT handle AS "handle!", producer_block_hash AS "producer_block_hash!"
-             FROM (
-                SELECT output_handle AS handle, producer_block_hash
-                FROM computations_branch
-                WHERE host_chain_id = $1
-                  AND producer_block_hash = ANY($2::bytea[])
-                UNION
-                SELECT handle, producer_block_hash
-                FROM pbs_computations_branch
-                WHERE host_chain_id = $1
-                  AND producer_block_hash = ANY($2::bytea[])
-                UNION
-                SELECT handle, producer_block_hash
-                FROM ciphertext_digest_branch
-                WHERE host_chain_id = $1
-                  AND producer_block_hash = ANY($2::bytea[])
-             ) orphaned_pairs
-            "#,
-            self.chain_id.as_i64(),
-            orphaned_block_hashes as _,
-        )
-        .fetch_all(tx.deref_mut())
-        .await?;
-
-        let orphaned_ciphertext_handles: Vec<Vec<u8>> =
-            orphaned_ciphertext_pairs
-                .iter()
-                .map(|row| row.handle.clone())
-                .collect();
-        let orphaned_ciphertext_hashes: Vec<Vec<u8>> =
-            orphaned_ciphertext_pairs
-                .iter()
-                .map(|row| row.producer_block_hash.clone())
-                .collect();
-
-        let orphaned_legacy_computation_handles = sqlx::query!(
-            r#"
-            SELECT DISTINCT output_handle AS "handle!"
-             FROM computations_branch
-             WHERE host_chain_id = $1
-               AND producer_block_hash = ANY($2::bytea[])
-            "#,
-            self.chain_id.as_i64(),
-            orphaned_block_hashes as _,
-        )
-        .fetch_all(tx.deref_mut())
-        .await?
-        .into_iter()
-        .map(|row| row.handle)
-        .collect::<Vec<_>>();
-
-        let orphaned_legacy_pbs_handles = sqlx::query!(
-            r#"
-            SELECT DISTINCT handle AS "handle!"
-             FROM pbs_computations_branch
-             WHERE host_chain_id = $1
-               AND (
-                    block_hash = ANY($2::bytea[])
-                    OR producer_block_hash = ANY($2::bytea[])
-               )
-            "#,
-            self.chain_id.as_i64(),
-            orphaned_block_hashes as _,
-        )
-        .fetch_all(tx.deref_mut())
-        .await?
-        .into_iter()
-        .map(|row| row.handle)
-        .collect::<Vec<_>>();
-
-        let orphaned_allowed_rows = sqlx::query!(
-            r#"
-            SELECT DISTINCT handle AS "handle!", account_address AS "account_address!", event_type AS "event_type!"
-             FROM allowed_handles_branch
-             WHERE host_chain_id = $1
-               AND (
-                    block_hash = ANY($2::bytea[])
-                    OR producer_block_hash = ANY($2::bytea[])
-               )
-            "#,
-            self.chain_id.as_i64(),
-            orphaned_block_hashes as _,
-        )
-        .fetch_all(tx.deref_mut())
-        .await?;
-        let orphaned_allowed_handles = orphaned_allowed_rows
-            .iter()
-            .map(|row| row.handle.clone())
-            .collect::<Vec<_>>();
-        let orphaned_allowed_accounts = orphaned_allowed_rows
-            .iter()
-            .map(|row| row.account_address.clone())
-            .collect::<Vec<_>>();
-        let orphaned_allowed_event_types = orphaned_allowed_rows
-            .iter()
-            .map(|row| row.event_type)
-            .collect::<Vec<_>>();
-
-        if !orphaned_ciphertext_pairs.is_empty() {
-            // This removes only DB branch state and materialized DB bytes. S3
-            // objects are not branch-addressed in the wave-1 path, so orphaned
-            // objects are left as harmless garbage and no longer selected once
-            // their branch rows are removed.
-            sqlx::query!(
-                r#"
-                DELETE FROM ciphertexts_branch
-                WHERE (handle, producer_block_hash) IN (
-                    SELECT * FROM UNNEST($1::bytea[], $2::bytea[])
-                )
-                "#,
-                &orphaned_ciphertext_handles as _,
-                &orphaned_ciphertext_hashes as _,
-            )
-            .execute(tx.deref_mut())
-            .await?;
-
-            sqlx::query!(
-                r#"
-                DELETE FROM ciphertexts128_branch
-                WHERE (handle, producer_block_hash) IN (
-                    SELECT * FROM UNNEST($1::bytea[], $2::bytea[])
-                )
-                "#,
-                &orphaned_ciphertext_handles as _,
-                &orphaned_ciphertext_hashes as _,
-            )
-            .execute(tx.deref_mut())
-            .await?;
-        }
-
-        sqlx::query!(
-            r#"
-            DELETE FROM delegate_user_decrypt
-            WHERE host_chain_id = $1
-              AND block_hash = ANY($2::bytea[])
-            "#,
-            self.chain_id.as_i64(),
-            orphaned_block_hashes as _,
-        )
-        .execute(tx.deref_mut())
-        .await?;
-
-        sqlx::query!(
-            r#"
-            DELETE FROM ciphertext_digest_branch
-             WHERE host_chain_id = $1
-               AND (
-                    block_hash = ANY($2::bytea[])
-                    OR producer_block_hash = ANY($2::bytea[])
-               )
-            "#,
-            self.chain_id.as_i64(),
-            orphaned_block_hashes as _,
-        )
-        .execute(tx.deref_mut())
-        .await?;
-
-        sqlx::query!(
-            r#"
-            DELETE FROM allowed_handles_branch
-             WHERE host_chain_id = $1
-               AND (
-                    block_hash = ANY($2::bytea[])
-                    OR producer_block_hash = ANY($2::bytea[])
-               )
-            "#,
-            self.chain_id.as_i64(),
-            orphaned_block_hashes as _,
-        )
-        .execute(tx.deref_mut())
-        .await?;
-
-        sqlx::query!(
-            r#"
-            DELETE FROM pbs_computations_branch
-             WHERE host_chain_id = $1
-               AND (
-                    block_hash = ANY($2::bytea[])
-                    OR producer_block_hash = ANY($2::bytea[])
-               )
-            "#,
-            self.chain_id.as_i64(),
-            orphaned_block_hashes as _,
-        )
-        .execute(tx.deref_mut())
-        .await?;
-
-        sqlx::query!(
-            r#"
-            DELETE FROM computations_branch
-             WHERE host_chain_id = $1
-               AND producer_block_hash = ANY($2::bytea[])
-            "#,
-            self.chain_id.as_i64(),
-            orphaned_block_hashes as _,
-        )
-        .execute(tx.deref_mut())
-        .await?;
-
-        // Activation-boundary straddle guard: a transaction included on a
-        // fork block >= FHEVM_BRANCH_ACTIVATION_BLOCK writes branch rows,
-        // while its canonical re-inclusion BELOW the activation height writes
-        // legacy-only. Orphaning the fork then removes the handle's only
-        // branch context, and the NOT EXISTS guards below would delete the
-        // legacy rows the canonical below-activation inclusion depends on.
-        // For reorgs near the boundary, skip the legacy deletions entirely —
-        // a small, bounded residue of dead legacy rows (same accepted class
-        // as the retained ciphertext bytes) instead of permanent loss.
-        let near_activation_boundary = self.branch_activation_block > 0
-            && sqlx::query_scalar::<_, bool>(
-                "SELECT EXISTS(
-                     SELECT 1 FROM host_chain_blocks_valid
-                     WHERE chain_id = $1
-                       AND block_hash = ANY($2::bytea[])
-                       AND block_number < $3
-                 )",
-            )
-            .bind(self.chain_id.as_i64())
-            .bind(orphaned_block_hashes)
-            .bind(
-                (self.branch_activation_block as i64)
-                    .saturating_add(BRANCH_ACTIVATION_STRADDLE_WINDOW),
-            )
-            .fetch_one(tx.deref_mut())
-            .await?;
-        if near_activation_boundary {
-            tracing::warn!(
-                chain_id = self.chain_id.as_i64(),
-                activation = self.branch_activation_block,
-                "Reorg near the branch activation boundary: keeping legacy rows"
-            );
-        }
-
-        // Wave-1 dual-write: legacy readers are still live. Remove legacy
-        // computation/ACL/PBS/digest rows only when no retained branch context
-        // remains for the same logical work, i.e. only for handles that existed
-        // solely on the now-orphaned fork (NOT EXISTS guard). Legacy ciphertext
-        // bytes (`ciphertexts`/`ciphertexts128`) are intentionally NOT deleted
-        // here.
-        if near_activation_boundary {
-            // Legacy deletions skipped (see the straddle guard above).
-        } else if !orphaned_legacy_computation_handles.is_empty() {
-            sqlx::query!(
-                r#"
-                DELETE FROM computations c
-                WHERE c.host_chain_id = $1
-                  AND c.output_handle = ANY($2::bytea[])
-                  AND NOT EXISTS (
-                      SELECT 1
-                      FROM computations_branch b
-                      WHERE b.host_chain_id = c.host_chain_id
-                        AND b.output_handle = c.output_handle
-                  )
-                "#,
-                self.chain_id.as_i64(),
-                &orphaned_legacy_computation_handles as _,
-            )
-            .execute(tx.deref_mut())
-            .await?;
-        }
-
-        if !near_activation_boundary && !orphaned_legacy_pbs_handles.is_empty()
-        {
-            // Ordering contract with sns-worker: pbs_computations rows (an
-            // sns provenance witness) are deleted BEFORE ciphertext_digest
-            // rows. The sns batch transaction holds FOR UPDATE locks on the
-            // pbs rows it is processing (work acquisition) and
-            // enqueue_upload_task takes FOR KEY SHARE on the pbs row before
-            // inserting a digest row, so this DELETE orders against any
-            // in-flight digest insert: either it waits and the digest DELETE
-            // below removes the just-committed row, or — because the digest
-            // mirror triggers take advisory stripe locks in the opposite
-            // order on both sides — Postgres resolves the collision as a
-            // deadlock and aborts one transaction whole. Both outcomes
-            // converge: an aborted finalization pass re-runs from scratch
-            // (nothing was committed, blocks stay pending), an aborted sns
-            // batch is re-fetched, and a later witness read sees the
-            // committed deletion and skips. With the opposite delete order, a
-            // digest row inserted by a concurrent sns transaction would be
-            // silently resurrected after this cleanup commits and drive a
-            // phantom addCiphertextMaterial publication.
-            sqlx::query!(
-                r#"
-                DELETE FROM pbs_computations p
-                WHERE p.host_chain_id = $1
-                  AND p.handle = ANY($2::bytea[])
-                  AND NOT EXISTS (
-                      SELECT 1
-                      FROM pbs_computations_branch b
-                      WHERE b.host_chain_id = p.host_chain_id
-                        AND b.handle = p.handle
-                  )
-                "#,
-                self.chain_id.as_i64(),
-                &orphaned_legacy_pbs_handles as _,
-            )
-            .execute(tx.deref_mut())
-            .await?;
-
-            sqlx::query!(
-                r#"
-                DELETE FROM ciphertext_digest d
-                WHERE d.host_chain_id = $1
-                  AND d.handle = ANY($2::bytea[])
-                  AND NOT EXISTS (
-                      SELECT 1
-                      FROM pbs_computations_branch p
-                      WHERE p.host_chain_id = d.host_chain_id
-                        AND p.handle = d.handle
-                  )
-                "#,
-                self.chain_id.as_i64(),
-                &orphaned_legacy_pbs_handles as _,
-            )
-            .execute(tx.deref_mut())
-            .await?;
-        }
-
-        if !near_activation_boundary && !orphaned_allowed_rows.is_empty() {
-            sqlx::query!(
-                r#"
-                DELETE FROM allowed_handles a
-                USING (
-                    SELECT *
-                    FROM UNNEST($2::bytea[], $3::text[], $4::int2[])
-                        AS row(handle, account_address, event_type)
-                ) orphaned
-                WHERE a.host_chain_id = $1
-                  AND a.handle = orphaned.handle
-                  AND a.account_address = orphaned.account_address
-                  AND a.event_type = orphaned.event_type
-                  AND NOT EXISTS (
-                      SELECT 1
-                      FROM allowed_handles_branch b
-                      WHERE b.host_chain_id = a.host_chain_id
-                        AND b.handle = a.handle
-                        AND b.account_address = a.account_address
-                        AND b.event_type = a.event_type
-                  )
-                "#,
-                self.chain_id.as_i64(),
-                &orphaned_allowed_handles as _,
-                &orphaned_allowed_accounts as _,
-                &orphaned_allowed_event_types as _,
-            )
-            .execute(tx.deref_mut())
-            .await?;
-        }
-
-        // Sweep ciphertexts_branch / ciphertexts128_branch again to catch any
-        // rows inserted by in-flight workers that raced finalization while
-        // producer-row deletes held locks.
-        if !orphaned_ciphertext_pairs.is_empty() {
-            sqlx::query!(
-                r#"
-                DELETE FROM ciphertexts_branch
-                WHERE (handle, producer_block_hash) IN (
-                    SELECT * FROM UNNEST($1::bytea[], $2::bytea[])
-                )
-                "#,
-                &orphaned_ciphertext_handles as _,
-                &orphaned_ciphertext_hashes as _,
-            )
-            .execute(tx.deref_mut())
-            .await?;
-
-            sqlx::query!(
-                r#"
-                DELETE FROM ciphertexts128_branch
-                WHERE (handle, producer_block_hash) IN (
-                    SELECT * FROM UNNEST($1::bytea[], $2::bytea[])
-                )
-                "#,
-                &orphaned_ciphertext_handles as _,
-                &orphaned_ciphertext_hashes as _,
-            )
-            .execute(tx.deref_mut())
-            .await?;
-        }
-
         // Confidential bridge: destination-side reorg retraction. The bridge
         // worker sets `is_associated` in the same transaction as the
         // ciphertext copy, so a flagged observation in an orphaned block is
         // the provenance of a materialization that must be retracted — or
         // re-attributed to a surviving sibling observation, see below (a
-        // fallback-materialized handle is never flagged and its state is
-        // compute-pipeline state, cleaned above). Deleting the copied
-        // `ciphertext_digest` row cancels a not-yet-sent
+        // fallback-materialized handle is never flagged and its synthetic
+        // compute rows are retained like all compute state). Deleting the
+        // copied `ciphertext_digest` row cancels a not-yet-sent
         // `addCiphertextMaterial`; an already-sent one cannot be recalled and
         // re-association after canonical re-inclusion re-sends it, which the
         // contract's `CoprocessorAlreadyAdded` path treats as benign. The
@@ -1573,14 +907,28 @@ impl Database {
         .execute(tx.deref_mut())
         .await?;
 
-        // Fallback-grant observations from orphaned blocks: the grant's
-        // synthetic computation rows are context-keyed and cleaned above; a
-        // canonical re-inclusion carries (and re-synthesizes from) its own
-        // observation row.
+        // Fallback-grant observations from orphaned blocks: a canonical
+        // re-inclusion carries (and re-synthesizes from) its own observation
+        // row, so the orphaned row must not stay behind as evidence of a
+        // grant that never happened canonically.
         sqlx::query!(
             r#"
             DELETE FROM fallback_granted_events
             WHERE dst_chain_id = $1
+              AND block_hash = ANY($2::bytea[])
+            "#,
+            self.chain_id.as_i64(),
+            orphaned_block_hashes as _,
+        )
+        .execute(tx.deref_mut())
+        .await?;
+
+        // Delegation updates observed only on an orphaned fork must not stay
+        // effective for user-decrypt authorization on the canonical branch.
+        sqlx::query!(
+            r#"
+            DELETE FROM delegate_user_decrypt
+            WHERE host_chain_id = $1
               AND block_hash = ANY($2::bytea[])
             "#,
             self.chain_id.as_i64(),
@@ -1629,13 +977,16 @@ impl Database {
         .execute(tx.deref_mut())
         .await?;
 
-        // 2. Finalize this block or orphan the competing observed branch, then
-        // clean branch-scoped computations/ACL/PBS/digest/bytes for that
-        // orphan branch in the same transaction. This path just recorded the
-        // block it finalizes (ingestion of a finalized block), so a linkage
-        // refusal (None) means the recorded row genuinely contradicts the
-        // finalized predecessor: skip cleanup and leave it for the
-        // finalization loop to sort out.
+        // 2. Finalize this block or orphan the competing observed branch. This
+        // path just recorded the block it finalizes (ingestion of a finalized
+        // block), so a linkage refusal (None) means the recorded row genuinely
+        // contradicts the finalized predecessor: leave it for the finalization
+        // loop to sort out. Orphaned rows in the work/ACL tables are left in
+        // place (pre-wave1 semantics): handles are fork-scoped by
+        // construction, so orphaned state is unreferenced on the canonical
+        // branch and benign. Bridge/authorization event rows are keyed by
+        // observation block instead and are retracted in the same
+        // transaction.
         if finalized {
             if let Some(orphaned_hashes) = self
                 .update_block_as_finalized(
@@ -1645,7 +996,7 @@ impl Database {
                 )
                 .await?
             {
-                self.cleanup_orphaned_branch_state(tx, &orphaned_hashes)
+                self.retract_orphaned_event_state(tx, &orphaned_hashes)
                     .await?;
             }
         }
@@ -1808,8 +1159,7 @@ impl Database {
     /// so it grew without bound (and with it every ancestry probe). Rows are
     /// deleted only when they are (a) finalized, (b) older than
     /// [`BLOCKS_VALID_RETENTION`] blocks below the finalized head, and
-    /// (c) referenced by NO branch, bridge or fallback state — so producer
-    /// resolution (which matches old producers by finalization status),
+    /// (c) referenced by NO bridge, fallback or KMS-activation state — so
     /// orphan guards (orphaned rows are never pruned) and bridge/fallback
     /// readiness checks are unaffected by construction. Most blocks carry no
     /// FHE activity, so in steady state nearly everything old is prunable.
@@ -1833,50 +1183,6 @@ impl Database {
                 WHERE c.chain_id = $1
                   AND c.block_status = 'finalized'
                   AND c.block_number < $2
-                  AND NOT EXISTS (
-                      SELECT 1 FROM computations_branch r
-                      WHERE r.host_chain_id = $1
-                        AND r.producer_block_hash = c.block_hash
-                  )
-                  AND NOT EXISTS (
-                      SELECT 1 FROM pbs_computations_branch r
-                      WHERE r.host_chain_id = $1
-                        AND r.producer_block_hash = c.block_hash
-                  )
-                  AND NOT EXISTS (
-                      SELECT 1 FROM pbs_computations_branch r
-                      WHERE r.host_chain_id = $1 AND r.block_hash = c.block_hash
-                  )
-                  AND NOT EXISTS (
-                      SELECT 1 FROM allowed_handles_branch r
-                      WHERE r.host_chain_id = $1
-                        AND r.producer_block_hash = c.block_hash
-                  )
-                  AND NOT EXISTS (
-                      SELECT 1 FROM allowed_handles_branch r
-                      WHERE r.host_chain_id = $1 AND r.block_hash = c.block_hash
-                  )
-                  AND NOT EXISTS (
-                      SELECT 1 FROM ciphertext_digest_branch r
-                      WHERE r.host_chain_id = $1
-                        AND r.producer_block_hash = c.block_hash
-                  )
-                  AND NOT EXISTS (
-                      SELECT 1 FROM ciphertext_digest_branch r
-                      WHERE r.host_chain_id = $1 AND r.block_hash = c.block_hash
-                  )
-                  -- ciphertexts(128)_branch have no hash-leading index; probe
-                  -- through their block_number partial indexes instead.
-                  AND NOT EXISTS (
-                      SELECT 1 FROM ciphertexts_branch r
-                      WHERE r.block_number = c.block_number
-                        AND r.producer_block_hash = c.block_hash
-                  )
-                  AND NOT EXISTS (
-                      SELECT 1 FROM ciphertexts128_branch r
-                      WHERE r.block_number = c.block_number
-                        AND r.producer_block_hash = c.block_hash
-                  )
                   AND NOT EXISTS (
                       SELECT 1 FROM bridge_handle_events r
                       WHERE r.block_hash = c.block_hash
@@ -1972,142 +1278,6 @@ impl Database {
         }
     }
 
-    async fn resolve_handle_producer_block(
-        &self,
-        tx: &mut Transaction<'_>,
-        handle: &[u8],
-        current_block_hash: &[u8],
-        current_parent_hash: &[u8],
-        current_block_number: u64,
-    ) -> Result<ProducerBlock, SqlxError> {
-        // Pre-activation blocks carry no branch rows by construction:
-        // resolve as branchless without querying, deterministically across
-        // operators regardless of when each node started dual-writing.
-        if current_block_number < self.branch_activation_block {
-            return Ok(ProducerBlock {
-                hash: Vec::new(),
-                number: current_block_number,
-            });
-        }
-        // The recursive walk disambiguates producers among live forks, so it
-        // only needs to cover the un-finalized region near the head; it is
-        // depth-bounded (ANCESTRY_WALK_DEPTH blocks, far above any real
-        // finality lag) so its cost no longer grows with recorded chain
-        // history. Producers below that window sit on the finalized chain by
-        // construction — exactly one non-orphaned row per height — and are
-        // matched by finalization status directly. A pending block older than
-        // the window (finalization stalled for >1024 blocks) would be
-        // unresolvable here, but such a chain is already outside operating
-        // limits.
-        let producer_row = sqlx::query!(
-            r#"
-            WITH RECURSIVE ancestry(block_number, block_hash, parent_hash) AS (
-                SELECT $2::BIGINT, $3::BYTEA, $4::BYTEA
-                UNION ALL
-                SELECT parent.block_number, parent.block_hash, parent.parent_hash
-                FROM host_chain_blocks_valid parent
-                JOIN ancestry child
-                  ON parent.chain_id = $1
-                 AND parent.block_hash = child.parent_hash
-                 AND parent.block_number = child.block_number - 1
-                WHERE child.block_number > GREATEST($2::BIGINT - $6::BIGINT, 0)
-                  AND parent.block_status <> 'orphaned'
-            )
-            SELECT c.producer_block_hash, c.block_number
-            FROM computations_branch c
-            WHERE c.host_chain_id = $1
-              AND c.output_handle = $5
-              AND (
-                    EXISTS (
-                        SELECT 1
-                        FROM ancestry a
-                        WHERE c.producer_block_hash = a.block_hash
-                          AND c.block_number IS NOT DISTINCT FROM a.block_number
-                    )
-                    OR EXISTS (
-                        SELECT 1
-                        FROM host_chain_blocks_valid f
-                        WHERE f.chain_id = $1
-                          AND f.block_hash = c.producer_block_hash
-                          AND f.block_number = c.block_number
-                          AND f.block_status = 'finalized'
-                    )
-              )
-            ORDER BY c.block_number DESC
-            LIMIT 1
-            "#,
-            self.chain_id.as_i64(),
-            current_block_number as i64,
-            current_block_hash,
-            current_parent_hash,
-            handle,
-            ANCESTRY_WALK_DEPTH,
-        )
-        .fetch_optional(tx.deref_mut())
-        .await?;
-
-        if let Some(row) = producer_row {
-            return Ok(ProducerBlock {
-                hash: row.producer_block_hash,
-                number: row.block_number.unwrap_or(0).max(0) as u64,
-            });
-        }
-
-        let has_branchless_ciphertext = sqlx::query_scalar!(
-            r#"
-            SELECT EXISTS(
-                SELECT 1
-                FROM ciphertexts_branch
-                WHERE handle = $1
-                  AND producer_block_hash = ''::BYTEA
-            ) AS "exists!"
-            "#,
-            handle,
-        )
-        .fetch_one(tx.deref_mut())
-        .await?;
-        if has_branchless_ciphertext {
-            return Ok(ProducerBlock {
-                hash: Vec::new(),
-                number: current_block_number,
-            });
-        }
-
-        let has_legacy_ciphertext = sqlx::query_scalar!(
-            r#"
-            SELECT EXISTS(
-                SELECT 1
-                FROM ciphertexts
-                WHERE handle = $1
-            ) AS "exists!"
-            "#,
-            handle,
-        )
-        .fetch_one(tx.deref_mut())
-        .await?;
-        if has_legacy_ciphertext {
-            return Ok(ProducerBlock {
-                hash: Vec::new(),
-                number: current_block_number,
-            });
-        }
-
-        let chain_id_label = self.chain_id.as_i64().to_string();
-        UNRESOLVED_PRODUCER_BLOCK_TOTAL
-            .with_label_values(&[chain_id_label.as_str()])
-            .inc();
-        error!(
-            handle = %to_hex(handle),
-            block_number = current_block_number,
-            acl_block_hash = %to_hex(current_block_hash),
-            "Could not resolve handle producer block for ACL event; keying branchless instead of the ACL block"
-        );
-        Ok(ProducerBlock {
-            hash: Vec::new(),
-            number: current_block_number,
-        })
-    }
-
     /// Handles all types of ACL events
     #[tracing::instrument(skip_all, fields(txn_id = tracing::field::Empty))]
     pub async fn handle_acl_event(
@@ -2120,7 +1290,6 @@ impl Database {
         let data = &event.data;
         let block_number = block_summary.number;
         let block_hash = block_summary.hash.as_slice();
-        let parent_hash = block_summary.parent_hash.as_slice();
         telemetry::record_short_hex_if_some(
             &tracing::Span::current(),
             "txn_id",
@@ -2144,16 +1313,6 @@ impl Database {
         match data {
             AclContractEvents::Allowed(allowed) => {
                 let handle = allowed.handle.to_vec();
-                let producer_block = self
-                    .resolve_handle_producer_block(
-                        tx,
-                        &handle,
-                        block_hash,
-                        parent_hash,
-                        block_number,
-                    )
-                    .await?;
-
                 inserted |= self
                     .insert_allowed_handle_resolved(
                         tx,
@@ -2162,20 +1321,17 @@ impl Database {
                             account_address: allowed.account.to_string(),
                             event_type: AllowEvents::AllowedAccount,
                             transaction_id: transaction_hash.clone(),
-                            producer_block: &producer_block,
-                            acl_block_number: block_number,
-                            acl_block_hash: block_hash,
                         },
+                        block_number,
                     )
                     .await?;
 
                 inserted |= self
                     .insert_pbs_computations_resolved(
                         tx,
-                        &[(handle, producer_block)],
+                        &[handle],
                         transaction_hash,
                         block_number,
-                        block_hash,
                     )
                     .await?;
             }
@@ -2185,23 +1341,12 @@ impl Database {
                     .iter()
                     .map(|h| h.to_vec())
                     .collect::<Vec<_>>();
-                let mut pbs_handles = Vec::with_capacity(handles.len());
 
-                for handle in handles.clone() {
+                for handle in &handles {
                     info!(
-                        handle = to_hex(&handle),
+                        handle = to_hex(handle),
                         "Allowed for public decryption"
                     );
-                    let producer_block = self
-                        .resolve_handle_producer_block(
-                            tx,
-                            &handle,
-                            block_hash,
-                            parent_hash,
-                            block_number,
-                        )
-                        .await?;
-
                     inserted |= self
                         .insert_allowed_handle_resolved(
                             tx,
@@ -2210,22 +1355,18 @@ impl Database {
                                 account_address: "".to_string(),
                                 event_type: AllowEvents::AllowedForDecryption,
                                 transaction_id: transaction_hash.clone(),
-                                producer_block: &producer_block,
-                                acl_block_number: block_number,
-                                acl_block_hash: block_hash,
                             },
+                            block_number,
                         )
                         .await?;
-                    pbs_handles.push((handle, producer_block));
                 }
 
                 inserted |= self
                     .insert_pbs_computations_resolved(
                         tx,
-                        &pbs_handles,
+                        &handles,
                         transaction_hash.clone(),
                         block_number,
-                        block_hash,
                     )
                     .await?;
             }
@@ -2453,23 +1594,12 @@ impl Database {
         handles: &[Vec<u8>],
         transaction_id: Option<Vec<u8>>,
         block_number: u64,
-        producer_block_hash: &[u8],
     ) -> Result<bool, SqlxError> {
-        let producer_block = ProducerBlock {
-            hash: producer_block_hash.to_vec(),
-            number: block_number,
-        };
-        let handles = handles
-            .iter()
-            .cloned()
-            .map(|handle| (handle, producer_block.clone()))
-            .collect::<Vec<_>>();
         self.insert_pbs_computations_resolved(
             tx,
-            &handles,
+            handles,
             transaction_id,
             block_number,
-            producer_block_hash,
         )
         .await
     }
@@ -2477,29 +1607,12 @@ impl Database {
     async fn insert_pbs_computations_resolved(
         &self,
         tx: &mut Transaction<'_>,
-        handles: &[(Vec<u8>, ProducerBlock)],
+        handles: &[Vec<u8>],
         transaction_id: Option<Vec<u8>>,
         acl_block_number: u64,
-        acl_block_hash: &[u8],
     ) -> Result<bool, SqlxError> {
         let mut inserted = false;
-        for (handle, producer_block) in handles {
-            // Below the activation height only legacy state is written (see
-            // Database::branch_activation_block).
-            if acl_block_number >= self.branch_activation_block {
-                inserted |= insert_pbs_computation_branch_row(
-                    tx,
-                    self.chain_id.as_i64(),
-                    handle,
-                    transaction_id.clone(),
-                    acl_block_number as i64,
-                    acl_block_hash,
-                    &producer_block.hash,
-                )
-                .await?;
-            }
-            // Wave-1 dual-write: keep feeding the legacy sns-worker until
-            // wave 2 switches it to the branch tables.
+        for handle in handles {
             let query = sqlx::query!(
                 "INSERT INTO pbs_computations(handle, transaction_id, host_chain_id, block_number) VALUES($1, $2, $3, $4)
                  ON CONFLICT DO NOTHING;",
@@ -2589,25 +1702,19 @@ impl Database {
     /// 1. a computation exists for the handle from a DIFFERENT transaction —
     ///    an earlier, different grant (first-wins per the contract) or a real
     ///    computation owns the handle;
-    /// 2. this exact (handle, transaction, block) context was already
-    ///    synthesized — pure re-observation, the pipeline inserts would all
-    ///    no-op;
-    /// 3. the handle has a ciphertext but no computation at all — a bridge
+    /// 2. the handle has a ciphertext but no computation at all — a bridge
     ///    association copied the real ciphertext (which writes no
     ///    computations row) and a real association always beats the fallback.
     ///
-    /// Crucially, the SAME grant re-observed in a different block (fork
-    /// sibling or canonical re-inclusion after a reorg) is NOT suppressed:
-    /// it creates a branch computation row for its own context while the
-    /// legacy insert no-ops (ON CONFLICT (output_handle, transaction_id)),
-    /// so reorg cleanup of one fork can never erase the grant from the
-    /// surviving fork.
+    /// The SAME grant re-observed (fork sibling or canonical re-inclusion
+    /// after a reorg) is NOT suppressed: the synthesis pipeline's inserts all
+    /// no-op on conflict (ON CONFLICT (output_handle, transaction_id)), so
+    /// re-observation is idempotent.
     pub async fn fallback_grant_conflicts(
         &self,
         tx: &mut Transaction<'_>,
         dst_handle: &[u8],
         transaction_hash: &Option<Handle>,
-        block_hash: &[u8],
     ) -> Result<bool, SqlxError> {
         let transaction_id = transaction_hash.as_ref().map(|h| h.to_vec());
         let conflicts = sqlx::query_scalar!(
@@ -2617,12 +1724,6 @@ impl Database {
                     SELECT 1 FROM computations
                     WHERE output_handle = $1
                       AND transaction_id IS DISTINCT FROM $2
-                )
-                OR EXISTS(
-                    SELECT 1 FROM computations_branch
-                    WHERE output_handle = $1
-                      AND transaction_id IS NOT DISTINCT FROM $2
-                      AND producer_block_hash = $3
                 )
                 OR (
                     NOT EXISTS(
@@ -2636,7 +1737,6 @@ impl Database {
             "#,
             dst_handle,
             transaction_id as _,
-            block_hash,
         )
         .fetch_one(tx.deref_mut())
         .await?;
@@ -2651,7 +1751,7 @@ impl Database {
         account_address: String,
         event_type: AllowEvents,
         transaction_id: Option<Vec<u8>>,
-        producer_block: ProducerBlock,
+        block_number: u64,
     ) -> Result<bool, SqlxError> {
         self.insert_allowed_handle_resolved(
             tx,
@@ -2660,10 +1760,8 @@ impl Database {
                 account_address,
                 event_type,
                 transaction_id,
-                producer_block: &producer_block,
-                acl_block_number: producer_block.number,
-                acl_block_hash: &producer_block.hash,
             },
+            block_number,
         )
         .await
     }
@@ -2671,31 +1769,9 @@ impl Database {
     async fn insert_allowed_handle_resolved(
         &self,
         tx: &mut Transaction<'_>,
-        insert: AllowedHandleInsert<'_>,
+        insert: AllowedHandleInsert,
+        block_number: u64,
     ) -> Result<bool, SqlxError> {
-        // Below the activation height only legacy state is written (see
-        // Database::branch_activation_block).
-        let branch_inserted =
-            if insert.acl_block_number >= self.branch_activation_block {
-                insert_allowed_handle_branch_row(
-                    tx,
-                    AllowedHandleBranchRow {
-                        chain_id: self.chain_id.as_i64(),
-                        handle: &insert.handle,
-                        account_address: &insert.account_address,
-                        event_type: insert.event_type as i16,
-                        transaction_id: insert.transaction_id.clone(),
-                        producer_block: insert.producer_block,
-                        acl_block_number: insert.acl_block_number,
-                        acl_block_hash: insert.acl_block_hash,
-                    },
-                )
-                .await?
-            } else {
-                false
-            };
-        // Wave-1 dual-write: keep feeding the legacy readers until wave 2
-        // switches them to the branch tables.
         let query = sqlx::query!(
             "INSERT INTO allowed_handles(handle, account_address, event_type, transaction_id, host_chain_id, block_number) VALUES($1, $2, $3, $4, $5, $6)
                     ON CONFLICT DO NOTHING;",
@@ -2704,11 +1780,10 @@ impl Database {
             insert.event_type as i16,
             insert.transaction_id,
             self.chain_id.as_i64(),
-            insert.acl_block_number as i64
+            block_number as i64
         );
-        let legacy_inserted =
-            query.execute(tx.deref_mut()).await?.rows_affected() > 0;
-        Ok(branch_inserted || legacy_inserted)
+        let inserted = query.execute(tx.deref_mut()).await?.rows_affected() > 0;
+        Ok(inserted)
     }
 
     async fn record_transaction_begin(
