@@ -1480,37 +1480,6 @@ async fn assert_bcs_ciphertexts_uploaded(tx: &mut Transaction<'_, Postgres>) -> 
     })
 }
 
-/// Cutover routine — run once every GCS row is `UpgradeAuthorized`, from the
-/// unanimity handler or from `reconcile`. Idempotent via the under-lock re-read.
-///
-/// Runs atomically inside one transaction holding `pg_advisory_xact_lock(CUTOVER_LOCK_ID)`
-/// in exclusive mode. The exclusive lock blocks until every BCS write tx
-/// (which takes the same lock in shared mode at the top of each tx) has
-/// committed, and conversely prevents any new BCS write tx from starting
-/// until cutover commits.
-///
-/// Sequence:
-///   0. `assert_bcs_ciphertexts_uploaded` with no lock held, so an attempt that is only
-///      going to defer never queues the whole fleet behind the exclusive lock first.
-///      Nothing here may take a row or table lock: requesting the advisory lock while
-///      holding one inverts the order the host-listener uses (advisory shared, then
-///      `upgrade_state`) and deadlocks against activation.
-///   1. Take the exclusive advisory lock, then `authorized_stack_version`: read every GCS
-///      chain row; no-op unless `UpgradeAuthorized`, else take its `version`. A plain read
-///      suffices under the lock — activation and other controllers are excluded by it, and
-///      every ungated FSM update is guarded on an earlier state.
-///   2. UPDATE `versioning` to the new stack_version.
-///   3. Snapshot the handles BCS already committed on-chain.
-///   4. `revert_bcs_state`: delete blue's in-window rows, host chains then the
-///      gateway/input side, and the dependence chains left with no computations.
-///   5. Merge every `gcs.<table>` marked [`CoprocessorTable::is_merged`] into
-///      `public`, then restore the snapshotted `txn_is_sent` flags.
-///   6. DROP SCHEMA gcs CASCADE.
-///   7. Mark the GCS rows LIVE/completed.
-///   8. NOTIFY every service that the live stack version changed.
-///
-/// After commit, any BCS write tx that was waiting on the shared lock
-/// acquires it, re-reads its FSM state, sees `PAUSED`, and exits cleanly.
 /// Tables that hold one row per ciphertext handle, in delete-safe order.
 ///
 /// Both synthetic cleanups sweep these: the Gateway input's handles come from
@@ -1774,6 +1743,41 @@ async fn delete_gcs_synthetic_inputs(tx: &mut Transaction<'_, Postgres>) -> Resu
     Ok(())
 }
 
+/// Cutover routine — run once every GCS row is `UpgradeAuthorized`, from the
+/// unanimity handler or from `reconcile`. Idempotent via the under-lock re-read.
+///
+/// Runs atomically inside one transaction holding `pg_advisory_xact_lock(CUTOVER_LOCK_ID)`
+/// in exclusive mode. The exclusive lock blocks until every BCS write tx
+/// (which takes the same lock in shared mode at the top of each tx) has
+/// committed, and conversely prevents any new BCS write tx from starting
+/// until cutover commits.
+///
+/// Sequence:
+///   0. `assert_bcs_ciphertexts_uploaded` with no lock held, so an attempt that is only
+///      going to defer never queues the whole fleet behind the exclusive lock first.
+///      Nothing here may take a row or table lock: requesting the advisory lock while
+///      holding one inverts the order the host-listener uses (advisory shared, then
+///      `upgrade_state`) and deadlocks against activation.
+///   1. Take the exclusive advisory lock, then `authorized_stack_version`: read every GCS
+///      chain row; no-op unless `UpgradeAuthorized`, else take its `version`. A plain read
+///      suffices under the lock — activation and other controllers are excluded by it, and
+///      every ungated FSM update is guarded on an earlier state.
+///   2. UPDATE `versioning` to the new stack_version.
+///   3. Snapshot the handles BCS already committed on-chain.
+///   4. `revert_bcs_state`: delete blue's in-window rows, host chains then the
+///      gateway/input side, and the dependence chains left with no computations.
+///   5. `delete_gcs_synthetic_ops` + `delete_gcs_synthetic_inputs`: drop the synthetic work
+///      injected to anchor dry-run consensus, so it never merges into `public`.
+///   6. Merge every `gcs.<table>` marked [`CoprocessorTable::is_merged`] into
+///      `public`, then restore the snapshotted `txn_is_sent` flags.
+///   7. DROP SCHEMA gcs CASCADE.
+///   8. Mark the GCS rows LIVE/completed.
+///   9. NOTIFY every service that the live stack version changed.
+///
+/// After commit, any BCS write tx that was waiting on the shared lock acquires it,
+/// re-reads the bumped `versioning` row, finds its own binary older, and stops (see
+/// `begin_write_guarded`). It is not the FSM that retires blue: no `BCS` row exists in
+/// `upgrade_state`, since activation only ever inserts `GCS` rows.
 pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     info!("execute_cutover() starting");
 
@@ -1842,21 +1846,16 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     //    blue's head start. Must stay ahead of the merge.
     revert_bcs_state(&mut tx).await?;
 
-    // 5. Merge the GCS-canonical tables back into public before dropping the schema.
-    //    Each merge lets the GCS rows win on PK collisions (GCS is the canonical
-    //    writer for its dry-run window), then the committed flags snapshotted in
-    //    step 3 are put back.
-    // 3a. Drop the GCS stack's synthetic Gateway input before anything merges:
-    //     it exists only to anchor dry-run consensus and must not become live data.
-    // 3a. Drop the GCS stack's synthetic work before anything merges: it exists only to anchor
-    //     dry-run consensus and must not become live data. Host ops first, so their by-handle
-    //     sweep runs before the Gateway input's temp table shadows the name.
+    // 5. Drop the GCS stack's synthetic work before anything merges: it exists only to anchor
+    //    dry-run consensus and must not become live data. Host ops before the Gateway input,
+    //    so each by-handle sweep finishes with its own temp table before the next is created.
     delete_gcs_synthetic_ops(&mut tx).await?;
     delete_gcs_synthetic_inputs(&mut tx).await?;
 
-    // 3. Merge the GCS-canonical tables back into public before dropping the
-    //    schema. Each merge lets the GCS rows win on PK collisions (GCS is the
-    //    canonical writer for its dry-run window).
+    // 6. Merge the GCS-canonical tables back into public before dropping the schema.
+    //    Each merge lets the GCS rows win on PK collisions (GCS is the canonical
+    //    writer for its dry-run window), then the committed flags snapshotted in
+    //    step 3 are put back.
     info!(stack_version, "cutover: merging gcs tables into public");
     for table in COPROCESSOR_TABLES {
         if !table.is_merged() {
@@ -1881,13 +1880,13 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
         "cutover: preserved txn_is_sent for already-committed handles"
     );
 
-    // 6. Drop the gcs schema (and everything in it) now that its data has been
+    // 7. Drop the gcs schema (and everything in it) now that its data has been
     //    merged back into public.
     let drop_sql = format!("DROP SCHEMA {GCS_SCHEMA_QUOTED} CASCADE");
     sqlx::query(&drop_sql).execute(&mut *tx).await?;
     info!(schema = GCS_SCHEMA_QUOTED, "dropped gcs schema");
 
-    // 7. Flip every chain's FSM row.
+    // 8. Flip every chain's FSM row.
     sqlx::query!(
         "UPDATE public.upgrade_state
          SET state = 'LIVE', status = 'completed', updated_at = NOW()
@@ -1896,7 +1895,7 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     .execute(&mut *tx)
     .await?;
 
-    // 8. Notify every service that the live stack version changed. Queued in
+    // 9. Notify every service that the live stack version changed. Queued in
     //    the SAME transaction as the `versioning` UPDATE above, so the notify
     //    is atomic with the version bump — it is only delivered if the cutover
     //    commits. On receipt, each service re-evaluates its mode (the green
