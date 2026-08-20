@@ -22,7 +22,11 @@ endif
 
 MOCK_RPC_MANIFEST := test-support/ethereum_rpc_mock/Cargo.toml
 COMPOSE_FILE := dev/docker-compose.yaml
-DATABASE_URL := postgresql://postgres:postgres@localhost:5433/relayer_db
+# Postgres connection details are read from the compose file that creates the
+# database, so the port and name are never written down twice.
+DB_PORT := $(shell awk -F'"' '/"[0-9]+:5432"/ {split($$2,p,":"); print p[1]; exit}' $(COMPOSE_FILE))
+DB_NAME := $(shell awk '/POSTGRES_DB:/ {print $$2; exit}' $(COMPOSE_FILE))
+DATABASE_URL := postgresql://postgres:postgres@localhost:$(DB_PORT)/$(DB_NAME)
 
 # Docker image defaults (override on CLI: make docker-build TAG=v0.9.0-rc.1)
 DOCKER_REGISTRY ?= ghcr.io/zama-ai/console
@@ -64,8 +68,7 @@ _check-docker:
 
 _check-postgres: _check-docker
 ifndef CI
-	@docker compose -f $(COMPOSE_FILE) ps --status running 2>/dev/null | grep -q postgres || { \
-		echo "$(RED)Error: Postgres is not running. Run: make db-start$(RESET)"; exit 1; }
+	@$(MAKE) --no-print-directory db-probe
 endif
 
 _check-cargo-watch:
@@ -107,7 +110,7 @@ _clean-profraw:
 _db-wait:
 	@echo "Waiting for Postgres to accept connections..."
 	@for i in $$(seq 1 30); do \
-		docker compose -f $(COMPOSE_FILE) exec -T postgres pg_isready -U postgres >/dev/null 2>&1 && { \
+		$(MAKE) --no-print-directory db-probe >/dev/null 2>&1 && { \
 			echo "$(GREEN)Postgres is ready$(RESET)"; exit 0; }; \
 		sleep 1; \
 	done; \
@@ -292,12 +295,21 @@ db-stop: _check-docker ## Stop local Postgres (preserves data)
 db-destroy: _check-docker ## Stop local Postgres and wipe all data
 	@docker compose -f $(COMPOSE_FILE) down -v
 
+db-probe: _check-docker ## Verify Postgres answers on the port the relayer and tests connect to
+	@test -n "$(DB_PORT)" -a -n "$(DB_NAME)" || { \
+		echo "$(RED)Error: could not read the Postgres port and database name from $(COMPOSE_FILE)$(RESET)"; exit 1; }
+	@published=$$(docker compose -f $(COMPOSE_FILE) port postgres 5432 2>/dev/null | sed 's/.*://'); \
+		test "$$published" = "$(DB_PORT)" || { \
+			echo "$(RED)Error: Postgres is published on port $${published:-<none>}, not $(DB_PORT).$(RESET)"; \
+			echo "  Start it with: make db-start"; exit 1; }
+	@docker compose -f $(COMPOSE_FILE) exec -T postgres pg_isready -U postgres -q >/dev/null 2>&1 || { \
+		echo "$(RED)Error: Postgres is published on $(DB_PORT) but not serving yet. Inspect with: make db-logs$(RESET)"; exit 1; }
+	@echo "$(GREEN)Postgres ready on port $(DB_PORT) (database: $(DB_NAME))$(RESET)"
+
 db-status: _check-docker ## Show Postgres container status and test connection
 	@docker compose -f $(COMPOSE_FILE) ps
 	@echo ""
-	@docker compose -f $(COMPOSE_FILE) exec -T postgres pg_isready -U postgres 2>/dev/null \
-		&& echo "$(GREEN)Connection: OK$(RESET)" \
-		|| echo "$(RED)Connection: FAILED$(RESET)"
+	@$(MAKE) --no-print-directory db-probe
 
 db-logs: _check-docker ## Tail Postgres container logs
 	@docker compose -f $(COMPOSE_FILE) logs -f postgres
@@ -313,7 +325,7 @@ db-reset: _check-docker ## Wipe database and re-run migrations from scratch
 	@$(MAKE) db-migrate
 
 db-shell: _check-postgres ## Open psql shell into local database
-	@docker compose -f $(COMPOSE_FILE) exec postgres psql -U postgres -d relayer_db
+	@docker compose -f $(COMPOSE_FILE) exec postgres psql -U postgres -d $(DB_NAME)
 
 # ---------------------------------------------------------------------------
 ##@ Database - sqlx-cli
@@ -366,30 +378,87 @@ health: ## Check relayer health endpoints (requires running relayer)
 # ---------------------------------------------------------------------------
 ##@ Testing
 # ---------------------------------------------------------------------------
-test-unit: ## Run unit tests (no Postgres needed)
+# A group is either an API flow (public-decrypt) or a cross-cutting feature the
+# flows share (listener-redundancy). Group names carry no endpoint version;
+# test file names do, so that retiring a version is a file deletion rather than
+# surgery inside a file. A group name maps to tests/<group>_test.rs with dashes
+# turned into underscores, unless PATTERN_<group> below widens it to a glob.
+GROUPS := user-decrypt delegated-user-decrypt public-decrypt input-proof \
+          admin-endpoint health keyurl keyurl-poller recovery \
+          schema-isolation threshold-resolver listener-redundancy common
+
+# Versioned endpoints span more than one test binary. cargo's --test accepts
+# globs, so one group still selects every version of its flow.
+PATTERN_user-decrypt           := user_decrypt_v*_test
+PATTERN_delegated-user-decrypt := delegated_user_decrypt_v*_test
+PATTERN_public-decrypt         := public_decrypt_v*_test
+PATTERN_input-proof            := input_proof_v*_test
+
+group_pattern = $(or $(PATTERN_$(1)),$(subst -,_,$(1))_test)
+GROUP_PATTERNS := $(foreach g,$(GROUPS),$(call group_pattern,$(g)))
+
+TEST_FEATURES := integration-tests
+
+# Hand the tests the connection details derived from the compose file, so the
+# fallback baked into tests/common/test_schema.rs is never the deciding value.
+# CI sets TEST_DATABASE_URL itself; ?= leaves that in place.
+TEST_DATABASE_URL ?= $(DATABASE_URL)
+export TEST_DATABASE_URL
+
+# Serial by default so local runs match CI (bounded Postgres connections).
+# Override for a faster inner loop: make test-group GROUP=public-decrypt TEST_THREADS=8
+TEST_THREADS ?= 1
+# Substring filters for `test-group`: CASE selects, SKIP excludes.
+CASE ?=
+SKIP ?=
+
+test: test-unit test-integration ## Run the full suite, exactly as CI runs it
+
+test-unit: ## Run unit tests from src/ (no Postgres needed)
 	@$(CARGO_TEST) --lib
 
-test-integration-mock-rpc: ## Run tests with ethereum_rpc_mock (no Postgres needed)
-	@$(CARGO_TEST) --manifest-path $(MOCK_RPC_MANIFEST) --lib
+test-integration: _check-postgres ## Run all integration tests (mock RPC crate + every group)
+	@$(CARGO_TEST) --manifest-path $(MOCK_RPC_MANIFEST) -- --test-threads=$(TEST_THREADS)
+	@$(CARGO_TEST) --features $(TEST_FEATURES) --test '*' -- --test-threads=$(TEST_THREADS)
 
-test-build: ## Build all test binaries (no Postgres needed — uses sqlx offline data)
+test-build: ## Compile every test binary without running it (no Postgres — uses sqlx offline data)
 	@echo "Building all test binaries..."
 	@$(CARGO_TEST) --lib --no-run
 	@$(CARGO_TEST) --manifest-path $(MOCK_RPC_MANIFEST) --no-run
-	@$(CARGO_TEST) --features integration-tests --test '*' --no-run
+	@$(CARGO_TEST) --features $(TEST_FEATURES) --test '*' --no-run
 
-test-run: _check-postgres ## Run pre-built test binaries
-	@echo "Running pre-built test binaries..."
-	@$(CARGO_TEST) --manifest-path $(MOCK_RPC_MANIFEST) -- --test-threads=1
-	@$(CARGO_TEST) --features integration-tests --test '*' -- --test-threads=1
+test-group: _check-postgres ## Run one group: GROUP=public-decrypt [CASE=acl] [SKIP=timeout]
+	@test -n "$(GROUP)" || { \
+	  printf '$(RED)GROUP is required.$(RESET)\n'; \
+	  printf '  make test-group GROUP=<name> [CASE=<substring>] [SKIP=<substring>]\n\n'; \
+	  $(MAKE) --no-print-directory test-groups; exit 1; }
+	@echo "$(GROUPS)" | tr ' ' '\n' | grep -qx -- "$(GROUP)" || { \
+	  printf '$(RED)Unknown group: $(GROUP)$(RESET)\n\n'; \
+	  $(MAKE) --no-print-directory test-groups; exit 1; }
+	@$(CARGO_TEST) --features $(TEST_FEATURES) --test '$(call group_pattern,$(GROUP))' $(CASE) \
+	  -- --test-threads=$(TEST_THREADS) $(if $(SKIP),--skip $(SKIP))
 
-test-long-running: _check-postgres ## Run long-running redundancy tests (requires --features long-running-tests)
-	@echo "Running long-running redundancy tests..."
-	@$(CARGO_TEST) --features long-running-tests test_listener_redundancy -- --test-threads=1
+test-groups: ## List the group names accepted by 'make test-group GROUP=...'
+	@echo "$(GROUPS)" | tr ' ' '\n' | sort | sed 's/^/  /'
 
-test-all: test-build test-run test-long-running ## Build and run all tests including long-running (unit + integration + long-running)
-
-test-all-no-long-running: test-build test-run ## Build and run all tests except long-running tests (unit + integration only)
+test-groups-check: ## Fail if a test file belongs to no group, or a group matches no file
+	@status=0; \
+	for p in $(GROUP_PATTERNS); do \
+		ls tests/$$p.rs >/dev/null 2>&1 || { \
+			echo "$(RED)Group pattern matches no test file: tests/$$p.rs$(RESET)"; status=1; }; \
+	done; \
+	covered=$$(for p in $(GROUP_PATTERNS); do ls tests/$$p.rs 2>/dev/null; done | sort -u); \
+	for f in tests/*.rs; do \
+		echo "$$covered" | grep -qx -- "$$f" || { \
+			echo "$(RED)Test file belongs to no group: $$f$(RESET)"; status=1; }; \
+	done; \
+	if [ "$$status" -ne 0 ]; then \
+		echo "  Every tests/*.rs is a cargo test binary and must be reachable from"; \
+		echo "  GROUPS, or CI will not run it."; \
+		echo "  Add the group to GROUPS in this Makefile (and PATTERN_<group> if versioned)."; \
+		exit 1; \
+	fi; \
+	echo "$(GREEN)All $(words $(GROUPS)) groups resolve, and every test file belongs to one$(RESET)"
 
 # ---------------------------------------------------------------------------
 ##@ Testing - Coverage
@@ -402,31 +471,6 @@ test-coverage-report-html: _check-coverage-tools  ## Run unit tests with coverag
 test-coverage-report-cmdline: _check-coverage-tools ## Run unit tests with coverage summary
 	@$(CARGO_LLVM_COV) --lib --json --no-cfg-coverage | jq -r -f coverage-format.jq | awk -F'\t' '{printf "%-70s %s\n", $$1, $$2}'
 	@$(MAKE) _clean-profraw
-
-test-health-endpoints: _check-postgres ## Run health endpoint tests
-	@$(CARGO_TEST) --test health_tests -- --test-threads=1
-
-# ---------------------------------------------------------------------------
-##@ Testing - Smoke V2
-# ---------------------------------------------------------------------------
-
-test-smoke-ok-all-v2: _check-postgres ## Run smoke test on ok (happy path) for v2 endpoints (user-decrypt, public-decrypt, input-proof)
-	@echo "Building v2 tests..."
-	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --features integration-tests --test public_decrypt_v2_test --test user_decrypt_v2_test --test input_proof_v2_test --no-run
-	@echo "Running v2 tests..."
-	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --features integration-tests --test public_decrypt_v2_test test_success_single_request -- --test-threads=4
-	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --features integration-tests --test user_decrypt_v2_test test_success_single_request -- --test-threads=4
-	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --features integration-tests --test input_proof_v2_test test_success_single_request -- --test-threads=4
-
-test-smoke-ok-input-proof-v2: _check-postgres ## Run smoke test on ok (happy path) for input-proof v2
-	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --features integration-tests --test input_proof_v2_test test_success_single_request -- --test-threads=4
-
-test-smoke-ok-user-decrypt-v2: _check-postgres ## Run smoke test on ok (happy path) for user-decrypt v2
-	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --features integration-tests --test user_decrypt_v2_test test_success_single_request -- --test-threads=4
-
-test-smoke-ok-public-decrypt-v2: _check-postgres ## Run smoke test on ok (happy path) for public-decrypt v2
-	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --features integration-tests --test public_decrypt_v2_test test_success_single_request -- --test-threads=4
-
 
 # ---------------------------------------------------------------------------
 ##@ Workflows
