@@ -11,6 +11,7 @@ const validEnvironment = (): Record<string, string> => ({
   UD_HANDLE: hex32("1"),
   UD_SECRET_KEY: hex32("2"),
   UD_CONTEXT_ID: hex32("3"),
+  UD_EPOCH_ID: hex32("8"),
   UD_ALLOWED_DOMAIN_KEYS: hex32("4"),
   UD_ACL_VALUE_KEY: hex32("5"),
   UD_VERIFYING_PROGRAM_ID: hex32("6"),
@@ -52,8 +53,8 @@ describe("solana-current-user-decrypt", () => {
       allowedAclDomainKeys: [hex32("4")],
       trust: {
         kmsContextId: hex32("3"),
-        // Absent from the environment, the epoch defaults to the zero id.
-        kmsEpochId: hex32("0"),
+        // Required, never defaulted: only the pair the deployed configuration declares is served.
+        kmsEpochId: hex32("8"),
         fheParameter: "test",
         // Party ids follow the registry order — the same assumption the EVM SDK path makes.
         kmsSigners: [
@@ -75,7 +76,7 @@ describe("solana-current-user-decrypt", () => {
     });
   });
 
-  test("honors the optional epoch, parameter and duration overrides", async () => {
+  test("honors the epoch, parameter and duration values", async () => {
     let received: unknown;
     await runSolanaCurrentUserDecrypt(
       {

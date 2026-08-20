@@ -30,6 +30,7 @@ export type { SolanaUserDecryptRecovery, SolanaUserDecryptRejection } from './fa
 export {
   generateSolanaTransportKeyPair,
   solanaUserDecryptLink,
+  solanaUserDecryptRequestHalf,
   verifySolanaUserDecryptPlaintexts,
   verifySolanaUserDecryptResponse,
 } from './response.js';

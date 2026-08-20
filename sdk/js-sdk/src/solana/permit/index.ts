@@ -46,14 +46,22 @@ export {
   verifySolanaPermitSignature,
 } from './envelope.js';
 
-export { SOLANA_SIGN_OFFCHAIN_MESSAGE_FEATURE, SolanaPermitChannelError, signSolanaPermit } from './channel.js';
-export { solanaPermitWalletFromSecretKey } from './headlessWallet.js';
-export type {
-  SolanaPermitChannelFailure,
-  SolanaPermitWallet,
-  SolanaSignOffchainMessageFeature,
-  SolanaSignedPermit,
+export {
+  SOLANA_OFFCHAIN_MESSAGE_VERSION,
+  SOLANA_SIGN_OFFCHAIN_MESSAGE_FEATURE,
+  SolanaPermitChannelError,
+  signSolanaPermit,
 } from './channel.js';
+export { solanaPermitWalletFromSecretKey } from './headlessWallet.js';
+export type { SolanaPermitChannelFailure, SolanaPermitWallet, SolanaSignedPermit } from './channel.js';
+// The channel speaks the Wallet Standard's own types; they are re-exported so a caller assembling
+// a SolanaPermitWallet — or a test wallet — names the same contract without a second import path.
+export type {
+  SolanaSignOffchainMessageFeature,
+  SolanaSignOffchainMessageInput,
+  SolanaSignOffchainMessageOutput,
+} from '@solana/wallet-standard-features';
+export type { WalletAccount } from '@wallet-standard/base';
 
 export { PERMIT_START_GRANULARITY_SECONDS, normalizeSolanaPermitStart } from './start.js';
 

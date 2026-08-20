@@ -12,9 +12,12 @@
 // keeps the two from drifting apart.
 
 import type { SolanaPermitWallet } from './channel.js';
+import type { WalletAccount } from '@wallet-standard/base';
+import type { SolanaSignOffchainMessageInput, SolanaSignOffchainMessageOutput } from '@solana/wallet-standard-features';
+import { base58 } from '@scure/base';
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { PERMIT_ENVELOPE_PREAMBLE, PERMIT_ENVELOPE_SIGNER_COUNT, PERMIT_ENVELOPE_VERSION } from './envelope.js';
-import { SOLANA_SIGN_OFFCHAIN_MESSAGE_FEATURE } from './channel.js';
+import { SOLANA_OFFCHAIN_MESSAGE_VERSION, SOLANA_SIGN_OFFCHAIN_MESSAGE_FEATURE } from './channel.js';
 
 /**
  * Builds a conforming permit wallet from an ed25519 secret key.
@@ -30,25 +33,84 @@ import { SOLANA_SIGN_OFFCHAIN_MESSAGE_FEATURE } from './channel.js';
 export function solanaPermitWalletFromSecretKey(secretKey: Uint8Array): SolanaPermitWallet {
   const seed = seedOf(secretKey);
   const publicKey = ed25519.getPublicKey(seed);
+  // A full Wallet Standard account: the key is what signing reads, the rest is the account's own
+  // paperwork — its base58 address, the chains a Solana key serves on, the one feature it backs.
+  const account: WalletAccount = {
+    address: base58.encode(publicKey),
+    publicKey,
+    chains: ['solana:mainnet', 'solana:devnet', 'solana:testnet', 'solana:localnet'],
+    features: [SOLANA_SIGN_OFFCHAIN_MESSAGE_FEATURE],
+  };
+
+  // The wallet's half of the official feature, exactly as a real one implements it: one result per
+  // input, each carrying the full envelope this wallet constructed and signed. Inputs a real
+  // wallet would refuse — an account it does not hold, a version it did not declare, a signer set
+  // that is not the single account — are refused here too, so a caller wired wrongly fails against
+  // this wallet the way it would fail against a hardware one.
+  // The version and signer set are the caller's claims, so they arrive widened and are checked at
+  // runtime — the input type alone would make a wrongly-wired caller unrepresentable, and this
+  // wallet exists to refuse one the way a hardware wallet would.
+  const signOne = ({
+    messageVersion,
+    account: requested,
+    message,
+    requiredSigners,
+  }: Omit<SolanaSignOffchainMessageInput, 'messageVersion'> & {
+    readonly messageVersion: number;
+  }): SolanaSignOffchainMessageOutput => {
+    if (messageVersion !== SOLANA_OFFCHAIN_MESSAGE_VERSION) {
+      throw new Error(`this wallet signs offchain message version ${SOLANA_OFFCHAIN_MESSAGE_VERSION} only`);
+    }
+    if (!bytesEqual(requested.publicKey, publicKey)) {
+      throw new Error('this wallet does not hold the requested account');
+    }
+    const [soleSigner] = requiredSigners;
+    if (requiredSigners.length !== 1 || soleSigner === undefined || !bytesEqual(soleSigner, publicKey)) {
+      throw new Error('this wallet signs single-signer envelopes over its own key only');
+    }
+    const text = new TextEncoder().encode(message);
+    const envelope = new Uint8Array(PERMIT_ENVELOPE_PREAMBLE.length + 2 + publicKey.length + text.length);
+    envelope.set(PERMIT_ENVELOPE_PREAMBLE, 0);
+    envelope[PERMIT_ENVELOPE_PREAMBLE.length] = PERMIT_ENVELOPE_VERSION;
+    envelope[PERMIT_ENVELOPE_PREAMBLE.length + 1] = PERMIT_ENVELOPE_SIGNER_COUNT;
+    envelope.set(publicKey, PERMIT_ENVELOPE_PREAMBLE.length + 2);
+    envelope.set(text, PERMIT_ENVELOPE_PREAMBLE.length + 2 + publicKey.length);
+    return {
+      signedOffchainMessage: envelope,
+      signature: ed25519.sign(envelope, seed),
+      signatureType: 'ed25519',
+    };
+  };
 
   return {
-    publicKey,
+    account,
     features: {
       [SOLANA_SIGN_OFFCHAIN_MESSAGE_FEATURE]: {
-        signOffchainMessage: ({ message }: { readonly message: string }) => {
-          // The wallet's half of the sRFC-38 contract: wrap the content in the envelope, then sign.
-          const text = new TextEncoder().encode(message);
-          const envelope = new Uint8Array(PERMIT_ENVELOPE_PREAMBLE.length + 2 + publicKey.length + text.length);
-          envelope.set(PERMIT_ENVELOPE_PREAMBLE, 0);
-          envelope[PERMIT_ENVELOPE_PREAMBLE.length] = PERMIT_ENVELOPE_VERSION;
-          envelope[PERMIT_ENVELOPE_PREAMBLE.length + 1] = PERMIT_ENVELOPE_SIGNER_COUNT;
-          envelope.set(publicKey, PERMIT_ENVELOPE_PREAMBLE.length + 2);
-          envelope.set(text, PERMIT_ENVELOPE_PREAMBLE.length + 2 + publicKey.length);
-          return Promise.resolve({ signature: ed25519.sign(envelope, seed) });
-        },
+        version: '1.0.0',
+        supportedMessageVersions: [SOLANA_OFFCHAIN_MESSAGE_VERSION],
+        signOffchainMessage: (...inputs: readonly SolanaSignOffchainMessageInput[]) =>
+          Promise.resolve(inputs.map(signOne)),
       },
     },
   };
+}
+
+/**
+ * Plain byte equality over public keys, mutable or read-only; nothing here is secret.
+ *
+ * @param a - One key.
+ * @param b - The other.
+ */
+function bytesEqual(a: ArrayLike<number>, b: ArrayLike<number>): boolean {
+  if (a.length !== b.length) {
+    return false;
+  }
+  for (let index = 0; index < a.length; index += 1) {
+    if (a[index] !== b[index]) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /**

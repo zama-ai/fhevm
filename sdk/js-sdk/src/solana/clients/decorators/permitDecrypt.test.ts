@@ -9,6 +9,7 @@
 
 import type { FhevmSolanaChain } from '../../../core/types/fhevmSolanaChain.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { base58 } from '@scure/base';
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { asBytes32Hex, hexToBytes32 } from '../../../core/base/bytes.js';
 import {
@@ -48,24 +49,40 @@ const trust = {
 
 const USER_SEED = new Uint8Array(32).fill(0x07);
 const USER_PUBKEY = ed25519.getPublicKey(USER_SEED);
+/** The full Wallet Standard account the conforming wallet below selects. */
+const USER_ACCOUNT = {
+  address: base58.encode(USER_PUBKEY),
+  publicKey: USER_PUBKEY,
+  chains: ['solana:localnet'],
+  features: [SOLANA_SIGN_OFFCHAIN_MESSAGE_FEATURE],
+} as const;
 
-/** The conforming wallet: wraps the handed text in its own envelope, then signs. */
+/**
+ * The conforming wallet, in the official feature shape: for each handed text it wraps the content
+ * in its own envelope, signs it, and returns one result carrying the signed bytes verbatim.
+ */
 function conformingWallet() {
-  const signOffchainMessage = vi.fn(({ message }: { message: string }) => {
-    const text = new TextEncoder().encode(message);
-    const envelope = new Uint8Array(PERMIT_ENVELOPE_PREAMBLE.length + 2 + USER_PUBKEY.length + text.length);
-    envelope.set(PERMIT_ENVELOPE_PREAMBLE, 0);
-    envelope[PERMIT_ENVELOPE_PREAMBLE.length] = PERMIT_ENVELOPE_VERSION;
-    envelope[PERMIT_ENVELOPE_PREAMBLE.length + 1] = PERMIT_ENVELOPE_SIGNER_COUNT;
-    envelope.set(USER_PUBKEY, PERMIT_ENVELOPE_PREAMBLE.length + 2);
-    envelope.set(text, PERMIT_ENVELOPE_PREAMBLE.length + 2 + USER_PUBKEY.length);
-    return Promise.resolve({ signature: ed25519.sign(envelope, USER_SEED) });
-  });
+  const signOffchainMessage = vi.fn((...inputs: readonly { readonly message: string }[]) =>
+    Promise.resolve(
+      inputs.map(({ message }) => {
+        const text = new TextEncoder().encode(message);
+        const envelope = new Uint8Array(PERMIT_ENVELOPE_PREAMBLE.length + 2 + USER_PUBKEY.length + text.length);
+        envelope.set(PERMIT_ENVELOPE_PREAMBLE, 0);
+        envelope[PERMIT_ENVELOPE_PREAMBLE.length] = PERMIT_ENVELOPE_VERSION;
+        envelope[PERMIT_ENVELOPE_PREAMBLE.length + 1] = PERMIT_ENVELOPE_SIGNER_COUNT;
+        envelope.set(USER_PUBKEY, PERMIT_ENVELOPE_PREAMBLE.length + 2);
+        envelope.set(text, PERMIT_ENVELOPE_PREAMBLE.length + 2 + USER_PUBKEY.length);
+        return { signedOffchainMessage: envelope, signature: ed25519.sign(envelope, USER_SEED) };
+      }),
+    ),
+  );
   return {
     signOffchainMessage,
     wallet: {
-      publicKey: USER_PUBKEY,
-      features: { [SOLANA_SIGN_OFFCHAIN_MESSAGE_FEATURE]: { signOffchainMessage } },
+      account: USER_ACCOUNT,
+      features: {
+        [SOLANA_SIGN_OFFCHAIN_MESSAGE_FEATURE]: { supportedMessageVersions: [1], signOffchainMessage },
+      },
     },
   };
 }

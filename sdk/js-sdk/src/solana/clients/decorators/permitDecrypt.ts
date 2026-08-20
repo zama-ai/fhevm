@@ -131,7 +131,7 @@ export function solanaPermitDecryptActions(
         invalidationWatermark: parameters.invalidationWatermark ?? 0n,
       });
       const fields = decodeSolanaPermitFields({
-        userPubkey: parameters.wallet.publicKey,
+        userPubkey: Uint8Array.from(parameters.wallet.account.publicKey),
         transportKey: keyPair.publicKeyBytes,
         allowedAclDomainKeys: (parameters.allowedAclDomainKeys ?? chain.fhevm.acl.domainKeys).map((key) =>
           hexToBytes32(key),

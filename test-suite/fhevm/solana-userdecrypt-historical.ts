@@ -5,10 +5,10 @@
 // update mid-flight.
 //
 // Env: UD_RELAYER_URL, UD_RPC_URL, UD_PROOF_SERVICE_URL, UD_CONTRACTS_CHAIN_ID, UD_HANDLE,
-// UD_SECRET_KEY, UD_CONTEXT_ID, UD_ALLOWED_DOMAIN_KEYS, UD_ACL_VALUE_KEY,
+// UD_SECRET_KEY, UD_CONTEXT_ID, UD_EPOCH_ID, UD_ALLOWED_DOMAIN_KEYS, UD_ACL_VALUE_KEY,
 // UD_VERIFYING_PROGRAM_ID, UD_KMS_SIGNERS, UD_GATEWAY_CHAIN_ID, UD_GATEWAY_DECRYPTION_CONTRACT,
-// UD_EXPECTED; optional: UD_SUBJECT (defaults to the signer), UD_EPOCH_ID (zero), UD_FHE_PARAMETER
-// ("test"), UD_DURATION_SECONDS ("3600").
+// UD_EXPECTED; optional: UD_SUBJECT (defaults to the signer), UD_FHE_PARAMETER ("test"),
+// UD_DURATION_SECONDS ("3600").
 import {
   createFhevmDecryptClient,
   defineFhevmSolanaChain,
@@ -55,7 +55,9 @@ const client = createFhevmDecryptClient({
   trust: {
     kmsSigners,
     kmsContextId: reqEnv('UD_CONTEXT_ID') as Bytes32Hex,
-    kmsEpochId: (process.env.UD_EPOCH_ID ?? `0x${'0'.repeat(64)}`) as Bytes32Hex,
+    // Required, no zero fallback: the Connector only serves the pair the deployed protocol
+    // configuration declares, so a guessed epoch fails before the request reaches KMS.
+    kmsEpochId: reqEnv('UD_EPOCH_ID') as Bytes32Hex,
     fheParameter: process.env.UD_FHE_PARAMETER ?? 'test',
     gatewayEip712Domain: {
       name: 'Decryption',

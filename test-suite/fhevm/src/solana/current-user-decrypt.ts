@@ -74,8 +74,6 @@ const evmAddress = (value: string, name: string): string => {
   return value;
 };
 
-const ZERO_EPOCH = `0x${"0".repeat(64)}`;
-
 // The source-file SDK dependency exports types from generated `_types`, which is absent in clean
 // CLI checkouts. Keep this structural seam narrow; the real vertical checks the public SDK call.
 const runPublicSdkUserDecrypt: CurrentUserDecryptSdkCall = async (input) => {
@@ -144,7 +142,9 @@ export const runSolanaCurrentUserDecrypt = async (
     trust: {
       kmsSigners,
       kmsContextId: bytes32Hex(required(environment, "UD_CONTEXT_ID"), "UD_CONTEXT_ID"),
-      kmsEpochId: bytes32Hex(environment.UD_EPOCH_ID ?? ZERO_EPOCH, "UD_EPOCH_ID"),
+      // Required, no zero fallback: the Connector only serves the pair the deployed protocol
+      // configuration declares, so a guessed epoch fails before the request reaches KMS.
+      kmsEpochId: bytes32Hex(required(environment, "UD_EPOCH_ID"), "UD_EPOCH_ID"),
       fheParameter: environment.UD_FHE_PARAMETER ?? "test",
       gatewayEip712Domain: {
         name: "Decryption",

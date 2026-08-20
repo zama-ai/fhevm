@@ -9,7 +9,7 @@
 import { getAddressEncoder } from "@solana/kit";
 
 import { SOLANA_DEFAULT_PUBLIC_DECRYPT_CONTEXT } from "../../../src/layout";
-import { readGatewayBootstrapInputs } from "../../../src/solana/addresses";
+import { bytes32HexFromId, readActiveKmsPair, readGatewayBootstrapInputs } from "../../../src/solana/addresses";
 import type { FheVerticalConfig } from "../../../src/solana/fhe-vertical";
 import {
   createProvisioningContext,
@@ -40,10 +40,15 @@ export const verticalSetup = async (): Promise<VerticalTestSetup> => {
   const context = createProvisioningContext(env.rpcUrl, env.wsUrl);
   const wallet = await generateSolanaKeypair();
   await context.airdropSol(wallet.signer.address, 10n);
-  // The permit path's trust inputs, read live from the gateway; party ids follow this registry
-  // order. The epoch id has no Solana-side source yet and rides as zero; the local stack runs the
-  // test FHE parameter set.
-  const gateway = await readGatewayBootstrapInputs({ gatewayRpcUrl: env.gatewayRpcUrl });
+  // The permit path's trust inputs, read live from the deployed stack: the signer set and
+  // Decryption contract from the gateway (party ids follow this registry order), the active KMS
+  // context/epoch pair from the primary host chain's ProtocolConfig — the same source the KMS
+  // Connector validates each permit's signed pair against. The local stack runs the test FHE
+  // parameter set.
+  const [gateway, kmsPair] = await Promise.all([
+    readGatewayBootstrapInputs({ gatewayRpcUrl: env.gatewayRpcUrl }),
+    readActiveKmsPair({ hostRpcUrl: env.hostRpcUrl }),
+  ]);
   const hex20 = (bytes: Uint8Array): `0x${string}` => `0x${Buffer.from(bytes).toString("hex")}` as `0x${string}`;
   const config: FheVerticalConfig = {
     relayerUrl: env.relayerUrl,
@@ -53,10 +58,10 @@ export const verticalSetup = async (): Promise<VerticalTestSetup> => {
     // deployed host actually signs for.
     chainId: await readHostChainId(context),
     publicDecryptContextId: SOLANA_DEFAULT_PUBLIC_DECRYPT_CONTEXT,
-    userDecryptContextId: env.userDecryptContextId,
+    userDecryptContextId: env.userDecryptContextId ?? kmsPair.kmsContextId.toString(),
     verifyingProgramId: env.aclProgram,
     kmsSigners: gateway.kmsSigners.map(hex20),
-    kmsEpochId: `0x${"0".repeat(64)}`,
+    kmsEpochId: bytes32HexFromId(kmsPair.kmsEpochId),
     fheParameter: "test",
     gatewayChainId: gateway.gatewayChainId.toString(),
     gatewayDecryptionContract: hex20(gateway.decryptionContract),

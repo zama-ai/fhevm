@@ -33,6 +33,28 @@ import { bytes32ToHandle } from '../../core/handle/FhevmHandle.js';
 import { bytesToHexNo0x, isBytes32 } from '../../core/base/bytes.js';
 import { isomorphicCompileWasmFromBase64 } from '../../core/base/wasm.js';
 import { remove0x } from '../../core/base/string.js';
+import { toChecksummedAddress } from '../../core/base/address.js';
+import { PERMIT_KMS_ROUTING_VERSION, encodeSolanaKmsRouting } from '../permit/index.js';
+
+/**
+ * The EIP-55 form of a configured EVM address, for the blob's checksum-validating parser.
+ *
+ * The blob refuses anything but EIP-55 mixed case ("Bad address checksum"), while configuration
+ * produced from on-chain bytes is naturally all-lowercase — a valid address the parser would
+ * reject. Only the case-insensitive spellings are re-encoded here: all-lowercase and all-uppercase
+ * carry no checksum to preserve. A mixed-case spelling claims a checksum and passes through
+ * untouched, so a wrong claim is still refused by the blob — re-encoding it would erase the typo
+ * protection EIP-55 exists for. A string that is not a 20-byte 0x-hex also passes through, to be
+ * refused by the blob's parser rather than mapped to a second error shape here.
+ */
+function eip55Normalized(address: string): string {
+  const hexNo0x = remove0x(address);
+  const caseless = hexNo0x === hexNo0x.toLowerCase() || hexNo0x === hexNo0x.toUpperCase();
+  if (!caseless) {
+    return address;
+  }
+  return toChecksummedAddress(`0x${hexNo0x.toLowerCase()}`) ?? address;
+}
 
 /** One lazy initialization of the vendored blob, shared by every entry point of this module. */
 let initialized: Promise<void> | undefined;
@@ -158,6 +180,47 @@ export async function solanaUserDecryptLink(inputs: SolanaUserDecryptLinkInputs)
 }
 
 /**
+ * The request half of the link contract, in the blob's request shape — from the client's own link
+ * inputs, none of them from the response.
+ *
+ * The EVM-shaped fields are zeroed, not read on this path: the recipient is the raw ed25519 key
+ * passed alongside, and the link is the Solana binding computed from the explicit arguments plus
+ * the handles and transport key here. The KMS route is not one of the zeroed fields: the blob
+ * compares it against the route the response carries before any signature is checked, so it must
+ * be the exact bytes the permit signed — rebuilt from the signed link inputs, never copied from
+ * the response, or the comparison would be the response agreeing with itself.
+ *
+ * Exported so it can be pinned directly: the committed vectors carry no signcrypted shares, so no
+ * test reaches the blob's route comparison through a full verification.
+ *
+ * @param link - The client's own request fields.
+ * @throws SolanaPermitError - If the ids are not the widths the routing version admits.
+ */
+export function solanaUserDecryptRequestHalf(link: SolanaUserDecryptLinkInputs): {
+  readonly signature: undefined;
+  readonly client_address: string;
+  readonly enc_key: string;
+  readonly ciphertext_handles: readonly string[];
+  readonly eip712_verifying_contract: string;
+  readonly extra_data: string;
+} {
+  return {
+    signature: undefined,
+    client_address: '0x0000000000000000000000000000000000000000',
+    enc_key: bytesToHexNo0x(link.transportKey),
+    ciphertext_handles: link.handles.map((handle) => bytesToHexNo0x(handle)),
+    eip712_verifying_contract: '0x0000000000000000000000000000000000000000',
+    extra_data: bytesToHexNo0x(
+      encodeSolanaKmsRouting({
+        version: PERMIT_KMS_ROUTING_VERSION,
+        kmsContextId: link.kmsContextId,
+        kmsEpochId: link.kmsEpochId,
+      }),
+    ),
+  };
+}
+
+/**
  * Verifies the KMS response and returns the plaintexts, or refuses the whole response.
  *
  * All or nothing: a share whose link does not match the recomputed one is discarded, and if what
@@ -189,24 +252,15 @@ export async function verifySolanaUserDecryptResponse(response: {
   await ensureInit();
 
   // The trust anchor: the registered signer set, from configuration the caller read on chain. A
-  // key carried inside the response acts only under its binding to one of these addresses.
+  // key carried inside the response acts only under its binding to one of these addresses. The
+  // addresses are EIP-55-normalized at this crossing: on-chain reads produce lowercase, which the
+  // blob's checksum-validating parser would refuse as a valid address spelled without a checksum.
   const client = new_solana_client(
-    response.signers.map((signer) => new_server_id_addr(signer.partyId, signer.address)),
+    response.signers.map((signer) => new_server_id_addr(signer.partyId, eip55Normalized(signer.address))),
     response.fheParameter,
   );
 
-  // The request half of the link contract, in the blob's request shape. The EVM-shaped fields are
-  // zeroed, not read on this path: the recipient is the raw ed25519 key below, and the link is the
-  // Solana binding computed from the explicit arguments plus the handles and transport key here —
-  // every one of them the client's own, none of them from the response.
-  const request = {
-    signature: undefined,
-    client_address: '0x0000000000000000000000000000000000000000',
-    enc_key: bytesToHexNo0x(response.link.transportKey),
-    ciphertext_handles: response.link.handles.map((handle) => bytesToHexNo0x(handle)),
-    eip712_verifying_contract: '0x0000000000000000000000000000000000000000',
-    extra_data: '00',
-  };
+  const request = solanaUserDecryptRequestHalf(response.link);
 
   const aggResp = response.shares.map((share) => ({
     signature: remove0x(share.signature),
@@ -302,7 +356,9 @@ function gatewayDomainWasmArg(domain: SolanaGatewayEip712Domain): {
     name: domain.name,
     version: domain.version,
     chain_id: chainId,
-    verifying_contract: domain.verifyingContract,
+    // EIP-55-normalized at this crossing, like the signer set: the blob's domain parser refuses a
+    // lowercase spelling of a valid contract address as a bad checksum.
+    verifying_contract: eip55Normalized(domain.verifyingContract),
     salt: null,
   };
 }

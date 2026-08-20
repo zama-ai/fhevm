@@ -61,8 +61,8 @@ describe('a headless wallet', () => {
   });
 
   it('accepts the 64-byte Solana keypair form, and derives the same account', () => {
-    expect(solanaPermitWalletFromSecretKey(KEYPAIR_64).publicKey).toEqual(PUBKEY);
-    expect(solanaPermitWalletFromSecretKey(SEED).publicKey).toEqual(PUBKEY);
+    expect(solanaPermitWalletFromSecretKey(KEYPAIR_64).account.publicKey).toEqual(PUBKEY);
+    expect(solanaPermitWalletFromSecretKey(SEED).account.publicKey).toEqual(PUBKEY);
   });
 
   it('refuses a 64-byte key whose public half is not the seed`s', () => {
