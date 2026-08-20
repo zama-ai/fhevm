@@ -294,7 +294,7 @@ async fn assert_not_retired(conn: &mut PgConnection) -> Result<(), sqlx::Error> 
 /// stale binary can neither read nor write through it.
 ///
 /// Cost: one extra round-trip per transaction (a single indexed singleton read).
-pub async fn begin_guarded_pool(
+pub(crate) async fn begin_guarded_pool(
     pool: &Pool<Postgres>,
 ) -> Result<Transaction<'static, Postgres>, sqlx::Error> {
     let mut tx = pool.begin().await?;
@@ -303,7 +303,7 @@ pub async fn begin_guarded_pool(
 }
 
 /// Like [`begin_guarded_pool`] but begins on an already-acquired connection.
-pub async fn begin_guarded_conn(
+pub(crate) async fn begin_guarded_conn(
     conn: &mut PgConnection,
 ) -> Result<Transaction<'_, Postgres>, sqlx::Error> {
     let mut tx = conn.begin().await?;
