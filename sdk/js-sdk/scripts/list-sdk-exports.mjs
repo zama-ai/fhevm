@@ -2,8 +2,24 @@
 // Lists all publicly exported names from each @fhevm/sdk entry point defined in src/package.json
 
 import { readFileSync } from 'fs';
-import { join, dirname } from 'path';
+import { join, dirname, basename } from 'path';
 import { fileURLToPath } from 'url';
+
+const args = process.argv.slice(2);
+
+if (args.includes('--help') || args.includes('-h')) {
+  console.log(`Usage: ${basename(fileURLToPath(import.meta.url))} [options]
+
+Lists all publicly exported names from each @fhevm/sdk entry point
+defined in src/package.json.
+
+Options:
+  --functions-only   Only list exported functions (omit types, interfaces, etc.)
+  -h, --help         Show this help message`);
+  process.exit(0);
+}
+
+const functionsOnly = args.includes('--functions-only');
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -51,15 +67,19 @@ for (const [entryPoint, conditions] of Object.entries(pkg.exports)) {
   }
 
   const names = extractExports(content);
-  if (names.length === 0) continue;
+  const entries = names.map((name) => {
+    const isType = /^[A-Z]/.test(name) || content.includes(`export type { ${name}`) || content.includes(`export type {${name}`);
+    const tag = isType && !content.match(new RegExp(`export\\s+(?:async\\s+)?(?:function|const|let|var)\\s+${name}`)) ? 'type' : 'fn  ';
+    return { name, tag };
+  }).filter((entry) => !functionsOnly || entry.tag === 'fn  ');
+
+  if (names.length === 0 || entries.length === 0) continue;
 
   anyOutput = true;
   const label = entryPoint === '.' ? '@fhevm/sdk' : `@fhevm/sdk/${entryPoint.replace(/^\.\//, '')}`;
   console.log(`\n${label}`);
-  for (const name of names) {
-    const isType = /^[A-Z]/.test(name) || content.includes(`export type { ${name}`) || content.includes(`export type {${name}`);
-    const tag = isType && !content.match(new RegExp(`export\\s+(?:async\\s+)?(?:function|const|let|var)\\s+${name}`)) ? 'type' : 'fn  ';
-    console.log(`  ${tag}  ${name}`);
+  for (const { name, tag } of entries) {
+    console.log(functionsOnly ? `  ${name}` : `  ${tag}  ${name}`);
   }
 }
 
