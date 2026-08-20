@@ -26,6 +26,8 @@ library ZamaConfig {
             config = _getEthereumConfig();
         } else if (block.chainid == 11155111) {
             config = _getSepoliaConfig();
+        } else if (block.chainid == 137) {
+            config = _getPolygonConfig();
         } else if (block.chainid == 80002) {
             config = _getPolygonAmoyConfig();
         } else if (block.chainid == 31337) {
@@ -48,7 +50,9 @@ library ZamaConfig {
     }
 
     function getPolygonCoprocessorConfig() internal view returns (CoprocessorConfig memory config) {
-        if (block.chainid == 80002) {
+        if (block.chainid == 137) {
+            config = _getPolygonConfig();
+        } else if (block.chainid == 80002) {
             config = _getPolygonAmoyConfig();
         } else if (block.chainid == 31337) {
             config = _getLocalConfig();
@@ -58,7 +62,7 @@ library ZamaConfig {
     }
 
     function getConfidentialProtocolId() internal view returns (uint256) {
-        if (block.chainid == 1) {
+        if (block.chainid == 1 || block.chainid == 137) {
             return _getZamaMainnetProtocolId();
         } else if (block.chainid == 11155111 || block.chainid == 80002) {
             return _getZamaTestnetProtocolId();
@@ -109,6 +113,15 @@ library ZamaConfig {
                 ACLAddress: 0xD99Cb9Fc3c42c87f2A4A12e8Fd60318d6bDdf985,
                 CoprocessorAddress: 0x89420269f61e4db00545cd99da0aEcA7fF0912f9,
                 KMSVerifierAddress: 0xCD1D89E311bce4C8DEa9a0857a0c9A4E153D4041
+            });
+    }
+
+    function _getPolygonConfig() private pure returns (CoprocessorConfig memory) {
+        return
+            CoprocessorConfig({
+                ACLAddress: 0x6737F17e31cf26a1b62fb0362acC5a16CB156F49,
+                CoprocessorAddress: 0xAB0075E77fe06083f52bdf10e2ccDB3712483057,
+                KMSVerifierAddress: 0x14e609595474874Dd6b6128376E336EfADfdBE37
             });
     }
 
