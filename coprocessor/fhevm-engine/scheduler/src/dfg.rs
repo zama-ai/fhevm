@@ -40,20 +40,26 @@ impl std::fmt::Debug for ExecNode {
     }
 }
 
+/// Outputs of one operation can have different permissions, so each handle
+/// carries its own.
+#[derive(Clone, Debug)]
+pub struct DFGOutput {
+    pub handle: Handle,
+    pub is_allowed: bool,
+}
+
 #[derive(Debug)]
 pub struct DFGOp {
-    pub output_handle: Handle,
+    pub outputs: Vec<DFGOutput>,
     pub fhe_op: SupportedFheOperations,
     pub inputs: Vec<DFGTaskInput>,
-    pub is_allowed: bool,
 }
 impl Default for DFGOp {
     fn default() -> Self {
         DFGOp {
-            output_handle: vec![],
+            outputs: vec![],
             fhe_op: SupportedFheOperations::FheTrivialEncrypt,
             inputs: vec![],
-            is_allowed: false,
         }
     }
 }
@@ -161,12 +167,17 @@ pub fn build_component_nodes(
     mut operations: Vec<DFGOp>,
     transaction_id: &Handle,
 ) -> ComponentNodes {
-    operations.sort_by_key(|o| o.output_handle.clone());
+    if operations.iter().any(|o| o.outputs.is_empty()) {
+        return Err(SchedulerError::DataflowGraphError.into());
+    }
+    operations.sort_by_key(|o| o.outputs[0].handle.clone());
     let mut graph: Dag<(bool, usize), OpEdge> = Dag::default();
     let mut produced_handles: HashMap<Handle, usize> = HashMap::new();
     let mut components: Vec<ComponentNode> = vec![];
     for (index, op) in operations.iter().enumerate() {
-        produced_handles.insert(op.output_handle.clone(), index);
+        for o in op.outputs.iter() {
+            produced_handles.insert(o.handle.clone(), index);
+        }
     }
     let mut dependence_pairs = vec![];
     // Determine dependences within this graph
@@ -182,7 +193,9 @@ pub fn build_component_nodes(
                 DFGTaskInput::Value(_) | DFGTaskInput::Compressed(_) => {}
             }
         }
-        let node_idx = graph.add_node((op.is_allowed, index)).index();
+        let node_idx = graph
+            .add_node((op.outputs.iter().any(|o| o.is_allowed), index))
+            .index();
         if index != node_idx {
             return Err(SchedulerError::DataflowGraphError.into());
         }
@@ -197,7 +210,13 @@ pub fn build_component_nodes(
     // Prune unneeded branches from the graph
     let unneeded: Vec<(Handle, Handle)> = finalize(&mut graph)
         .into_iter()
-        .map(|i| (operations[i].output_handle.clone(), transaction_id.clone()))
+        .flat_map(|i| {
+            operations[i]
+                .outputs
+                .iter()
+                .map(|o| (o.handle.clone(), transaction_id.clone()))
+                .collect::<Vec<_>>()
+        })
         .collect();
     // Partition the graph and extract sequential components
     let mut execution_graph: Dag<ExecNode, ()> = Dag::default();
@@ -234,7 +253,9 @@ impl ComponentNode {
         // Gather all handles produced within the transaction
         let mut produced_handles: HashMap<Handle, usize> = HashMap::new();
         for (index, op) in operations.iter().enumerate() {
-            produced_handles.insert(op.output_handle.clone(), index);
+            for o in op.outputs.iter() {
+                produced_handles.insert(o.handle.clone(), index);
+            }
         }
         let mut dependence_pairs = vec![];
         for (index, op) in operations.iter_mut().enumerate() {
@@ -254,18 +275,19 @@ impl ComponentNode {
                     DFGTaskInput::Value(_) | DFGTaskInput::Compressed(_) => {}
                 }
             }
-            self.results.push(op.output_handle.clone());
-            if !op.is_allowed {
-                self.intermediate_handles.push(op.output_handle.clone());
+            for o in op.outputs.iter() {
+                self.results.push(o.handle.clone());
+                if !o.is_allowed {
+                    self.intermediate_handles.push(o.handle.clone());
+                }
             }
             let node_idx = self
                 .graph
                 .add_node(
-                    op.output_handle.clone(),
+                    op.outputs.clone(),
                     (op.fhe_op as i16).into(),
                     std::mem::take(&mut op.inputs),
-                    op.is_allowed,
-                )
+                )?
                 .index();
             if index != node_idx {
                 return Err(SchedulerError::DataflowGraphError.into());
@@ -434,11 +456,13 @@ impl DFComponentGraph {
                     error!(target: "scheduler", { transaction_id = ?hex::encode(tx.transaction_id.clone()) },
 		       "Transaction is part of a dependence cycle");
                     for (_, op) in tx.graph.graph.node_references() {
-                        self.results.push(DFGTxResult {
-                            transaction_id: tx.transaction_id.clone(),
-                            handle: op.result_handle.to_vec(),
-                            compressed_ct: Err(SchedulerError::CyclicDependence.into()),
-                        });
+                        for h in op.handles().iter() {
+                            self.results.push(DFGTxResult {
+                                transaction_id: tx.transaction_id.clone(),
+                                handle: h.clone(),
+                                compressed_ct: Err(SchedulerError::CyclicDependence.into()),
+                            });
+                        }
                     }
                 }
             }
@@ -557,11 +581,13 @@ impl DFComponentGraph {
 
             // Add error results for all operations in this transaction
             for (_idx, op) in tx_node.graph.graph.node_references() {
-                self.results.push(DFGTxResult {
-                    transaction_id: tx_node.transaction_id.clone(),
-                    handle: op.result_handle.to_vec(),
-                    compressed_ct: Err(SchedulerError::MissingInputs.into()),
-                });
+                for h in op.handles().iter() {
+                    self.results.push(DFGTxResult {
+                        transaction_id: tx_node.transaction_id.clone(),
+                        handle: h.clone(),
+                        compressed_ct: Err(SchedulerError::MissingInputs.into()),
+                    });
+                }
             }
 
             // Push all dependent transactions onto the stack
@@ -617,15 +643,22 @@ pub struct DFGResult {
 pub type OpEdge = u8;
 pub struct OpNode {
     opcode: i32,
-    result_handle: Handle,
+    outputs: Vec<DFGOutput>,
     inputs: Vec<DFGTaskInput>,
-    is_allowed: bool,
+}
+impl OpNode {
+    pub fn handles(&self) -> Vec<Handle> {
+        self.outputs.iter().map(|o| o.handle.clone()).collect()
+    }
+    pub fn is_needed(&self) -> bool {
+        self.outputs.iter().any(|o| o.is_allowed)
+    }
 }
 impl std::fmt::Debug for OpNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("OpNode")
             .field("OP", &self.opcode)
-            .field("Result handle", &format_args!("{:?}", self.result_handle))
+            .field("Outputs", &format_args!("{:?}", self.outputs))
             .finish()
     }
 }
@@ -657,17 +690,19 @@ pub struct DFGraph {
 impl DFGraph {
     pub fn add_node(
         &mut self,
-        rh: Handle,
+        outputs: Vec<DFGOutput>,
         opcode: i32,
         inputs: Vec<DFGTaskInput>,
-        is_allowed: bool,
-    ) -> NodeIndex {
-        self.graph.add_node(OpNode {
+    ) -> Result<NodeIndex> {
+        // The scheduler indexes outputs[0] directly.
+        if outputs.is_empty() {
+            return Err(SchedulerError::DataflowGraphError.into());
+        }
+        Ok(self.graph.add_node(OpNode {
             opcode,
-            result_handle: rh,
+            outputs,
             inputs,
-            is_allowed,
-        })
+        }))
     }
     pub fn add_dependence(
         &mut self,

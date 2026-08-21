@@ -15,14 +15,16 @@ use daggy::{
 use fhevm_engine_common::common::FheOperation;
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::perform_fhe_operation;
-use fhevm_engine_common::types::{get_ct_type, Handle, SupportedFheCiphertexts};
+use fhevm_engine_common::types::{
+    get_ct_type, Handle, SupportedFheCiphertexts, SupportedFheOperations,
+};
 use fhevm_engine_common::utils::HeartBeat;
 use std::collections::HashMap;
 use tfhe::ReRandomizationContext;
 use tokio::task::JoinSet;
 use tracing::{error, info, warn};
 
-use super::{DFComponentGraph, DFGraph, OpNode};
+use super::{DFComponentGraph, DFGOutput, DFGraph, OpNode};
 
 const OPERATION_RERANDOMISATION_DOMAIN_SEPARATOR: [u8; 8] = *b"TFHE_Rrd";
 const COMPACT_PUBLIC_ENCRYPTION_DOMAIN_SEPARATOR: [u8; 8] = *b"TFHE_Enc";
@@ -303,11 +305,10 @@ fn execute_partition(
                             error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
                             continue;
                         };
-                        if node.is_allowed {
-                            res.insert(
-                                node.result_handle.clone(),
-                                Err(SchedulerError::MissingInputs.into()),
-                            );
+                        if node.is_needed() {
+                            for h in node.handles() {
+                                res.insert(h, Err(SchedulerError::MissingInputs.into()));
+                            }
                         }
                     }
                     continue 'tx;
@@ -335,11 +336,10 @@ fn execute_partition(
                     error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
                     continue;
                 };
-                if node.is_allowed {
-                    res.insert(
-                        node.result_handle.clone(),
-                        Err(SchedulerError::CyclicDependence.into()),
-                    );
+                if node.is_needed() {
+                    for h in node.handles() {
+                        res.insert(h, Err(SchedulerError::CyclicDependence.into()));
+                    }
                 }
             }
             continue 'tx;
@@ -354,41 +354,66 @@ fn execute_partition(
             match result {
                 Ok(result) => {
                     let nidx = NodeIndex::new(result.0);
-                    if result.1.is_ok() {
-                        for edge in edges.edges_directed(nidx, Direction::Outgoing) {
-                            let child_index = edge.target();
-                            let Some(child_node) = dfg.graph.node_weight_mut(child_index) else {
-                                error!(target: "scheduler", {index = ?child_index.index() }, "Wrong dataflow graph index");
-                                continue;
-                            };
-                            // Update input of consumers
-                            if let Ok(ref res) = result.1 {
-                                child_node.inputs[*edge.weight() as usize] =
-                                    DFGTaskInput::Compressed(res.clone());
-                            }
-                        }
-                    }
-                    // Update partition's outputs (allowed handles only)
-                    let Some(node) = dfg.graph.node_weight_mut(nidx) else {
+                    let Some(node) = dfg.graph.node_weight(nidx) else {
                         error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
                         continue;
                     };
-                    res.insert(
-                        node.result_handle.clone(),
-                        result.1.map(|v| TaskResult {
-                            compressed_ct: v,
-                            is_allowed: node.is_allowed,
-                            transaction_id: tid.clone(),
-                        }),
-                    );
+                    let outputs = node.outputs.clone();
+                    let producer_handles = node.handles();
+                    match result.1 {
+                        Ok(vec_res) => match validate_results(&outputs, &vec_res) {
+                            Ok(()) => {
+                                // Route each validated output to the consumers that depend on it.
+                                for edge in edges.edges_directed(nidx, Direction::Outgoing) {
+                                    let child_index = edge.target();
+                                    let input_idx = *edge.weight() as usize;
+                                    let Some(child_node) = dfg.graph.node_weight_mut(child_index)
+                                    else {
+                                        error!(target: "scheduler", {index = ?child_index.index() }, "Wrong dataflow graph index");
+                                        continue;
+                                    };
+                                    let dep_handle = match child_node.inputs.get(input_idx) {
+                                        Some(DFGTaskInput::Dependence(dh)) => dh.clone(),
+                                        _ => continue,
+                                    };
+                                    let Some(out_idx) =
+                                        producer_handles.iter().position(|h| h == &dep_handle)
+                                    else {
+                                        error!(target: "scheduler",
+                                        { handle = ?hex::encode(&dep_handle) },
+                                        "Consumer dependence handle not found in producer outputs - graph inconsistency");
+                                        continue;
+                                    };
+                                    child_node.inputs[input_idx] =
+                                        DFGTaskInput::Compressed(vec_res[out_idx].clone());
+                                }
+                                for (o, ct) in outputs.into_iter().zip(vec_res) {
+                                    res.insert(
+                                        o.handle,
+                                        Ok(TaskResult {
+                                            compressed_ct: ct,
+                                            is_allowed: o.is_allowed,
+                                            transaction_id: tid.clone(),
+                                        }),
+                                    );
+                                }
+                            }
+                            Err(error) => {
+                                error!(target: "scheduler", { error = %error },
+                                    "Dispatch result does not match the operation's declared outputs");
+                                fan_out_error(&producer_handles, error.into(), &mut res);
+                            }
+                        },
+                        Err(e) => fan_out_error(&producer_handles, e, &mut res),
+                    }
                 }
                 Err(e) => {
                     let Some(node) = dfg.graph.node_weight(*nidx) else {
                         error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
                         continue;
                     };
-                    if node.is_allowed {
-                        res.insert(node.result_handle.clone(), Err(e));
+                    if node.is_needed() {
+                        fan_out_error(&node.handles(), e, &mut res);
                     }
                 }
             }
@@ -411,35 +436,37 @@ fn try_execute_node(
     if !node.check_ready_inputs(tx_inputs) {
         return Err(SchedulerError::SchedulerError.into());
     }
+    let handle = hex::encode(&node.outputs[0].handle);
+    let outputs = node.outputs.len();
     let mut cts = Vec::with_capacity(node.inputs.len());
     for i in std::mem::take(&mut node.inputs) {
         match i {
             DFGTaskInput::Value(v) => {
                 if !matches!(v, SupportedFheCiphertexts::Scalar(_)) {
-                    error!(target: "scheduler", { handle = ?hex::encode(&node.result_handle) },
-			   "Consensus risk: non-scalar uncompressed ciphertext");
+                    error!(target: "scheduler",
+                        { handle = ?handle, outputs },
+                        "Consensus risk: non-scalar uncompressed ciphertext");
                 }
                 cts.push(v);
             }
             DFGTaskInput::Compressed(cct) => {
-                let decompressed = SupportedFheCiphertexts::decompress(
-		    cct.ct_type,
-		    &cct.ct_bytes,
-		    gpu_idx,
-		)
-		    .map_err(|e| {
-			error!(
-			    target: "scheduler",
-			    { handle = ?hex::encode(&node.result_handle), ct_type = cct.ct_type, error = ?e },
-			    "Error while decompressing op input"
-			);
-			telemetry::set_current_span_error(&e);
-			SchedulerError::DecompressionError
-		    })?;
+                let decompressed =
+                    SupportedFheCiphertexts::decompress(cct.ct_type, &cct.ct_bytes, gpu_idx)
+                        .map_err(|e| {
+                            error!(
+                                target: "scheduler",
+                                { handle = ?handle, outputs, ct_type = cct.ct_type, error = ?e },
+                                "Error while decompressing op input"
+                            );
+                            telemetry::set_current_span_error(&e);
+                            SchedulerError::DecompressionError
+                        })?;
                 cts.push(decompressed);
             }
             DFGTaskInput::Dependence(_) => {
-                error!(target: "scheduler", { handle = ?hex::encode(&node.result_handle) }, "Computation missing inputs");
+                error!(target: "scheduler",
+                    { handle = ?handle, outputs },
+                    "Computation missing inputs");
                 return Err(SchedulerError::MissingInputs.into());
             }
         }
@@ -449,8 +476,9 @@ fn try_execute_node(
         let _guard = tracing::info_span!("rerandomise_op_inputs").entered();
         let started_at = std::time::Instant::now();
         if let Err(e) = re_randomise_operation_inputs(&mut cts, node.opcode, cpk) {
-            error!(target: "scheduler", { handle = ?hex::encode(&node.result_handle), error = ?e },
-                   "Error while re-randomising operation inputs");
+            error!(target: "scheduler",
+                { handle = ?handle, outputs, error = ?e },
+                "Error while re-randomising operation inputs");
             telemetry::set_current_span_error(&e);
             return Err(SchedulerError::ReRandomisationError.into());
         }
@@ -458,9 +486,10 @@ fn try_execute_node(
         RERAND_LATENCY_BATCH_HISTOGRAM.observe(elapsed.as_secs_f64());
     }
     let opcode = node.opcode;
-    let output_type = get_ct_type(&node.result_handle).map_err(|e| {
-        error!(target: "scheduler", { handle = ?hex::encode(&node.result_handle), error = ?e },
-               "Invalid result handle: cannot read type byte");
+    let output_type = get_ct_type(&node.outputs[0].handle).map_err(|e| {
+        error!(target: "scheduler",
+            { handle = ?handle, outputs, error = ?e },
+            "Invalid result handle: cannot read type byte");
         telemetry::set_current_span_error(&e);
         SchedulerError::SchedulerError
     })?;
@@ -483,8 +512,9 @@ fn try_execute_node(
                 .or_else(|| e.downcast_ref::<String>().cloned())
                 .unwrap_or_else(|| "unknown panic payload".to_string());
             eprintln!("Panic while executing operation: {msg}");
-            error!(target: "scheduler", { handle = ?hex::encode(&node.result_handle), msg },
-               "Panic while executing operation");
+            error!(target: "scheduler",
+                { handle = ?handle, outputs, msg },
+                "Panic while executing operation");
             telemetry::set_current_span_error(&msg);
             Err(SchedulerError::ExecutionPanic(msg).into())
         }
@@ -492,7 +522,90 @@ fn try_execute_node(
     }
 }
 
-type OpResult = Result<CompressedCiphertext>;
+/// Ok payload length matches the op's output handle count (1 or N).
+type OpResult = Result<Vec<CompressedCiphertext>>;
+
+/// Checks that the operation produced what its handles asked for. Runs before
+/// anything is routed, so a bad result fails the whole group rather than
+/// half-updating the graph.
+fn validate_results(
+    outputs: &[DFGOutput],
+    results: &[CompressedCiphertext],
+) -> std::result::Result<(), SchedulerError> {
+    if results.len() != outputs.len() {
+        return Err(SchedulerError::MultiOutputFailure(format!(
+            "produced {} ciphertexts for {} handles",
+            results.len(),
+            outputs.len()
+        )));
+    }
+    for (index, (output, ct)) in outputs.iter().zip(results).enumerate() {
+        let asked_for = get_ct_type(&output.handle).map_err(|_| {
+            SchedulerError::MultiOutputFailure(format!("output {index} has an invalid handle"))
+        })?;
+        if ct.ct_type != asked_for {
+            return Err(SchedulerError::MultiOutputFailure(format!(
+                "output {index} has type {} but was asked for {asked_for}",
+                ct.ct_type
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Fan one error out to every output handle so siblings of a multi-output op share
+/// the same worker classification. Typed `SchedulerError` is cloned; anything else
+/// is wrapped in `MultiOutputFailure`.
+fn fan_out_error(
+    handles: &[Handle],
+    err: anyhow::Error,
+    res: &mut HashMap<Handle, Result<TaskResult>>,
+) {
+    if handles.is_empty() {
+        return;
+    }
+    if handles.len() == 1 {
+        res.insert(handles[0].clone(), Err(err));
+        return;
+    }
+    if let Some(sched) = err.downcast_ref::<SchedulerError>() {
+        let cloned = sched.clone();
+        for h in handles {
+            res.insert(h.clone(), Err(cloned.clone().into()));
+        }
+        return;
+    }
+    let err_msg = format!("{}", err);
+    for h in handles {
+        res.insert(
+            h.clone(),
+            Err(SchedulerError::MultiOutputFailure(err_msg.clone()).into()),
+        );
+    }
+}
+
+fn compress_single(
+    ct: SupportedFheCiphertexts,
+    txn_id_short: &str,
+    op_name: &str,
+) -> Result<CompressedCiphertext> {
+    let _guard = tracing::info_span!(
+        "compress_ciphertext",
+        txn_id = %txn_id_short,
+        ct_type = ct.type_name(),
+        operation = op_name,
+        compressed_size = tracing::field::Empty,
+    )
+    .entered();
+    let ct_type = ct.type_num();
+    let ct_bytes = ct.compress().map_err(|e| {
+        telemetry::set_current_span_error(&e);
+        anyhow::Error::from(e)
+    })?;
+    tracing::Span::current().record("compressed_size", ct_bytes.len() as i64);
+    Ok(CompressedCiphertext { ct_type, ct_bytes })
+}
+
 fn run_computation(
     operation: i32,
     inputs: Vec<SupportedFheCiphertexts>,
@@ -502,33 +615,48 @@ fn run_computation(
     output_type: i16,
 ) -> (usize, OpResult) {
     let txn_id_short = telemetry::short_hex_id(transaction_id);
-    let op = FheOperation::try_from(operation);
-    match op {
-        Ok(FheOperation::FheGetCiphertext) => {
-            // Compression span (no FHE here)
-            let _guard = tracing::info_span!(
-                "compress_ciphertext",
+
+    // Multi-output ops dispatch through a separate impl that returns Vec.
+    if let Ok(sup_op) = SupportedFheOperations::try_from(operation as i16) {
+        if sup_op.is_multi_output() {
+            let op_name = format!("{:?}", sup_op);
+            let _fhe_guard = tracing::info_span!(
+                "fhe_operation_multi_output",
                 txn_id = %txn_id_short,
-                ct_type = inputs[0].type_name(),
-                operation = "FheGetCiphertext",
-                compressed_size = tracing::field::Empty,
+                operation = %op_name,
+                operation_code = operation as i64,
             )
             .entered();
 
-            let ct_type = inputs[0].type_num();
-            let compressed = inputs[0].compress();
-            match compressed {
-                Ok(ct_bytes) => {
-                    tracing::Span::current().record("compressed_size", ct_bytes.len() as i64);
-                    (
-                        graph_node_index,
-                        Ok(CompressedCiphertext { ct_type, ct_bytes }),
-                    )
+            let result = fhevm_engine_common::tfhe_ops::perform_multi_output_fhe_operation(
+                operation as i16,
+                &inputs,
+                gpu_idx,
+            );
+
+            return match result {
+                Ok(results) => {
+                    let compressed: Result<Vec<CompressedCiphertext>> = results
+                        .into_iter()
+                        .map(|r| compress_single(r, &txn_id_short, &op_name))
+                        .collect();
+                    (graph_node_index, compressed)
                 }
-                Err(error) => {
-                    telemetry::set_current_span_error(&error);
-                    (graph_node_index, Err(error.into()))
+                Err(e) => {
+                    telemetry::set_current_span_error(&e);
+                    (graph_node_index, Err(e.into()))
                 }
+            };
+        }
+    }
+
+    let op = FheOperation::try_from(operation);
+    match op {
+        Ok(FheOperation::FheGetCiphertext) => {
+            let ct = inputs.into_iter().next().unwrap();
+            match compress_single(ct, &txn_id_short, "FheGetCiphertext") {
+                Ok(cc) => (graph_node_index, Ok(vec![cc])),
+                Err(e) => (graph_node_index, Err(e)),
             }
         }
         Ok(fhe_op) => {
@@ -550,33 +678,10 @@ fn run_computation(
             let result = perform_fhe_operation(operation as i16, &inputs, gpu_idx, output_type);
 
             match result {
-                Ok(result) => {
-                    // Compression span
-                    let _guard = tracing::info_span!(
-                        "compress_ciphertext",
-                        txn_id = %txn_id_short,
-                        ct_type = result.type_name(),
-                        operation = op_name,
-                        compressed_size = tracing::field::Empty,
-                    )
-                    .entered();
-                    let ct_type = result.type_num();
-                    let compressed = result.compress();
-                    match compressed {
-                        Ok(ct_bytes) => {
-                            tracing::Span::current()
-                                .record("compressed_size", ct_bytes.len() as i64);
-                            (
-                                graph_node_index,
-                                Ok(CompressedCiphertext { ct_type, ct_bytes }),
-                            )
-                        }
-                        Err(error) => {
-                            telemetry::set_current_span_error(&error);
-                            (graph_node_index, Err(error.into()))
-                        }
-                    }
-                }
+                Ok(result) => match compress_single(result, &txn_id_short, op_name) {
+                    Ok(cc) => (graph_node_index, Ok(vec![cc])),
+                    Err(e) => (graph_node_index, Err(e)),
+                },
                 Err(e) => {
                     telemetry::set_current_span_error(&e);
                     (graph_node_index, Err(e.into()))
@@ -584,5 +689,55 @@ fn run_computation(
             }
         }
         Err(e) => (graph_node_index, Err(e.into())),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn output(type_byte: u8) -> DFGOutput {
+        let mut handle = vec![0u8; 32];
+        handle[30] = type_byte;
+        DFGOutput {
+            handle,
+            is_allowed: true,
+        }
+    }
+
+    fn ct(ct_type: i16) -> CompressedCiphertext {
+        CompressedCiphertext {
+            ct_type,
+            ct_bytes: vec![],
+        }
+    }
+
+    #[test]
+    fn accepts_matching_count_and_types() {
+        let outputs = [output(4), output(5), output(4)];
+        let results = [ct(4), ct(5), ct(4)];
+        assert!(validate_results(&outputs, &results).is_ok());
+    }
+
+    #[test]
+    fn rejects_a_count_mismatch() {
+        let outputs = [output(4), output(4)];
+        assert!(validate_results(&outputs, &[ct(4)]).is_err());
+        assert!(validate_results(&outputs[..1], &[ct(4), ct(4)]).is_err());
+    }
+
+    #[test]
+    fn rejects_a_wrong_type_at_the_last_output() {
+        let outputs = [output(4), output(5)];
+        assert!(validate_results(&outputs, &[ct(4), ct(4)]).is_err());
+    }
+
+    #[test]
+    fn rejects_an_invalid_handle() {
+        let outputs = [DFGOutput {
+            handle: vec![0u8; 8],
+            is_allowed: true,
+        }];
+        assert!(validate_results(&outputs, &[ct(4)]).is_err());
     }
 }

@@ -11,7 +11,8 @@ use fhevm_engine_common::database::{
 };
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::{
-    AllowEvents, SchedulePriority, SupportedFheOperations,
+    is_valid_multi_output_arity, AllowEvents, SchedulePriority,
+    SupportedFheOperations, MAX_MULTI_OUTPUT_ARITY,
 };
 use fhevm_engine_common::utils::DatabaseURL;
 use fhevm_engine_common::utils::{to_hex, HeartBeat};
@@ -165,7 +166,8 @@ pub struct Database {
 pub struct LogTfhe {
     pub event: Log<TfheContractEvents>,
     pub transaction_hash: Option<TransactionHash>,
-    pub is_allowed: bool,
+    /// The output handles of this event that are allowed.
+    pub allowed_outputs: HashSet<Handle>,
     pub block_number: u64,
     pub block_hash: BlockHash,
     pub block_timestamp: PrimitiveDateTime,
@@ -431,6 +433,8 @@ impl Database {
             dependencies,
             fhe_operation,
             scalar_byte,
+            None,
+            0,
             log,
         )
         .await
@@ -454,9 +458,53 @@ impl Database {
             dependencies,
             fhe_operation,
             scalar_byte,
+            None,
+            0,
             log,
         )
         .await
+    }
+
+    // N rows sharing `group_id`, with `output_index` 0..N-1.
+    // Infrastructure for future multi-output ops; no callers in this PR.
+    #[allow(clippy::too_many_arguments, dead_code)]
+    async fn insert_multi_output_computation(
+        &self,
+        tx: &mut Transaction<'_>,
+        results: &[&Handle],
+        dependencies: &[&Handle],
+        fhe_operation: FheOperation,
+        scalar_byte: &FixedBytes<1>,
+        log: &LogTfhe,
+    ) -> Result<bool, SqlxError> {
+        let dependencies =
+            dependencies.iter().map(|d| d.to_vec()).collect::<Vec<_>>();
+        if !is_valid_multi_output_arity(results.len()) {
+            warn!(target: "host_listener",
+                arity = results.len(),
+                max = MAX_MULTI_OUTPUT_ARITY,
+                "unsupported multi-output arity; skipping event");
+            return Ok(false);
+        }
+        let group_id = results[0].to_vec();
+        let mut any_inserted = false;
+        for (idx, result) in results.iter().enumerate() {
+            let output_index = idx as i16;
+            let inserted = self
+                .insert_computation_inner(
+                    tx,
+                    result,
+                    dependencies.clone(),
+                    fhe_operation,
+                    scalar_byte,
+                    Some(&group_id),
+                    output_index,
+                    log,
+                )
+                .await?;
+            any_inserted = any_inserted || inserted;
+        }
+        Ok(any_inserted)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -467,6 +515,8 @@ impl Database {
         dependencies: Vec<Vec<u8>>,
         fhe_operation: FheOperation,
         scalar_byte: &FixedBytes<1>,
+        group_id: Option<&[u8]>,
+        output_index: i16,
         log: &LogTfhe,
     ) -> Result<bool, SqlxError> {
         let is_scalar = !scalar_byte.is_zero();
@@ -477,11 +527,14 @@ impl Database {
             &dependencies,
             fhe_operation,
             is_scalar,
+            group_id,
+            output_index,
             log,
         )
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn insert_computation_legacy_row(
         &self,
         tx: &mut Transaction<'_>,
@@ -489,11 +542,15 @@ impl Database {
         dependencies: &[Vec<u8>],
         fhe_operation: FheOperation,
         is_scalar: bool,
+        group_id: Option<&[u8]>,
+        output_index: i16,
         log: &LogTfhe,
     ) -> Result<bool, SqlxError> {
         // Schema isolation handles BCS/GCS routing at the connection layer
         // (`search_path = gcs,public` for GCS, default `public` for BCS), so
         // this INSERT references `computations` unqualified.
+        let group_id_vec = group_id.map(|g| g.to_vec());
+        let output_allowed = log.is_output_allowed(output_handle);
         let query = sqlx::query!(
             r#"
             INSERT INTO computations (
@@ -508,9 +565,11 @@ impl Database {
                 schedule_order,
                 is_completed,
                 host_chain_id,
-                block_number
+                block_number,
+                group_id,
+                output_index
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9, $10, $11)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9, $10, $11, $12, $13)
             ON CONFLICT (output_handle, transaction_id) DO NOTHING
             "#,
             output_handle,
@@ -519,14 +578,16 @@ impl Database {
             is_scalar,
             log.dependence_chain.to_vec(),
             log.transaction_hash.map(|txh| txh.to_vec()),
-            log.is_allowed,
+            output_allowed,
             log.block_timestamp
                 .saturating_add(TimeDuration::microseconds(
                     log.tx_depth_size as i64
                 )),
-            !log.is_allowed,
+            !output_allowed,
             self.chain_id.as_i64(),
-            log.block_number as i64
+            log.block_number as i64,
+            group_id_vec,
+            output_index,
         );
         query
             .execute(tx.deref_mut())
@@ -561,6 +622,9 @@ impl Database {
         let insert_computation_bytes = |tx, result, dependencies_handles, dependencies_bytes, scalar_byte| {
             self.insert_computation_bytes(tx, result, dependencies_handles, dependencies_bytes, fhe_operation, scalar_byte, log)
         };
+        // TODO: when adding a multi-output op, define a closure mirroring the two above,
+        // backed by `self.insert_multi_output_computation(...)`, which writes N rows
+        // sharing `group_id`.
 
         // Record the transaction if this is a computation event
         if !matches!(
@@ -1992,7 +2056,28 @@ pub fn event_name(op: &TfheContractEvents) -> &'static str {
     }
 }
 
-pub fn tfhe_result_handle(op: &TfheContractEvents) -> Option<Handle> {
+/// Gives every output the same permission, for callers that have no per-output
+/// permission of their own.
+pub fn uniform_allowed_outputs(
+    event: &Log<TfheContractEvents>,
+    is_allowed: bool,
+) -> HashSet<Handle> {
+    if is_allowed {
+        tfhe_result_handles(event).into_iter().collect()
+    } else {
+        HashSet::new()
+    }
+}
+
+impl LogTfhe {
+    fn is_output_allowed(&self, output_handle: &[u8]) -> bool {
+        self.allowed_outputs
+            .iter()
+            .any(|h| h.as_slice() == output_handle)
+    }
+}
+
+pub fn tfhe_result_handles(op: &TfheContractEvents) -> Vec<Handle> {
     use TfheContract as C;
     use TfheContractEvents as E;
     match op {
@@ -2025,9 +2110,9 @@ pub fn tfhe_result_handle(op: &TfheContractEvents) -> Option<Handle> {
         | E::TrivialEncrypt(C::TrivialEncrypt { result, .. })
         | E::FheSum(C::FheSum { result, .. })
         | E::FheIsIn(C::FheIsIn { result, .. })
-        | E::FheMulDiv(C::FheMulDiv { result, .. }) => Some(*result),
+        | E::FheMulDiv(C::FheMulDiv { result, .. }) => vec![*result],
 
-        E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => None,
+        E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => vec![],
     }
 }
 

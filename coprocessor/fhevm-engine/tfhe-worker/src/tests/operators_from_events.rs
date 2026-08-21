@@ -229,6 +229,18 @@ fn binary_op_to_event(
     }
 }
 
+#[test]
+fn typed_handles_stay_distinct() {
+    const N: usize = 1000;
+    let handles: std::collections::HashSet<Handle> =
+        (0..N).map(|_| next_handle_with_type(0)).collect();
+    assert_eq!(
+        handles.len(),
+        N,
+        "next_handle_with_type produced duplicates"
+    );
+}
+
 #[tokio::test]
 #[serial(db)]
 async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Error>> {
@@ -246,9 +258,9 @@ async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Err
         if op.bits > 256 {
             continue;
         }
-        let lhs_handle = next_handle();
-        let rhs_handle = next_handle();
-        let output_handle = next_handle();
+        let lhs_handle = next_handle_with_type(op.input_types);
+        let rhs_handle = next_handle_with_type(op.input_types);
+        let output_handle = next_handle_with_type(op.expected_output_type);
         let transaction_id = next_handle();
 
         let lhs_bytes = as_scalar_uint(&op.lhs);
@@ -347,9 +359,9 @@ async fn test_fhe_binary_operands_events_panic() -> Result<(), Box<dyn std::erro
         if op.bits > 256 {
             continue;
         }
-        let lhs_handle = next_handle();
-        let rhs_handle = next_handle();
-        let output_handle = next_handle();
+        let lhs_handle = next_handle_with_type(op.input_types);
+        let rhs_handle = next_handle_with_type(op.input_types);
+        let output_handle = next_handle_with_type(op.expected_output_type);
         let transaction_id = next_handle();
 
         let lhs_bytes = as_scalar_uint(&op.lhs);
@@ -466,8 +478,8 @@ async fn test_fhe_unary_operands_events() -> Result<(), Box<dyn std::error::Erro
         if op.bits > 256 {
             continue;
         }
-        let input_handle = next_handle();
-        let output_handle = next_handle();
+        let input_handle = next_handle_with_type(op.operand_types);
+        let output_handle = next_handle_with_type(op.operand_types);
         let transaction_id = next_handle();
 
         let inp_bytes = as_scalar_uint(&op.inp);
@@ -544,8 +556,8 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
 
     let transaction_id = next_handle();
     let fhe_bool_type = 0;
-    let false_handle = next_handle();
-    let true_handle = next_handle();
+    let false_handle = next_handle_with_type(fhe_bool_type);
+    let true_handle = next_handle_with_type(fhe_bool_type);
     let caller = zero_address();
 
     let mut tx = listener_db
@@ -593,8 +605,8 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
         };
 
         for test_value in [false, true] {
-            let left_handle = next_handle();
-            let right_handle = next_handle();
+            let left_handle = next_handle_with_type(*input_types);
+            let right_handle = next_handle_with_type(*input_types);
             let transaction_id = next_handle();
             let mut tx = listener_db
                 .new_transaction()
@@ -630,7 +642,7 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
             .await?;
             allow_handle(&listener_db, &mut tx, &right_handle).await?;
 
-            let output_handle = next_handle();
+            let output_handle = next_handle_with_type(*input_types);
             let (expected_result, input_handle) = if test_value {
                 (&left_input, &true_handle)
             } else {
@@ -701,8 +713,8 @@ async fn test_fhe_cast_events() -> Result<(), Box<dyn std::error::Error>> {
     let mut cases = vec![];
     for type_from in supported_types() {
         for type_to in supported_types() {
-            let input_handle = next_handle();
-            let output_handle = next_handle();
+            let input_handle = next_handle_with_type(*type_from);
+            let output_handle = next_handle_with_type(*type_to);
             let transaction_id = next_handle();
             let input = 7;
             let output = if *type_to == fhe_bool || *type_from == fhe_bool {
@@ -828,7 +840,7 @@ async fn test_op_trivial_encrypt() -> Result<(), Box<dyn std::error::Error>> {
             BigInt::from(1) << 255
         };
 
-        let output = next_handle();
+        let output = next_handle_with_type(fhe_type);
         insert_event(
             &listener_db,
             &mut tx,
@@ -896,7 +908,7 @@ async fn test_fhe_sum_events() -> Result<(), Box<dyn std::error::Error>> {
         let tx_id = next_handle();
         let handle_a = next_handle_with_type(fhe_type);
         let handle_b = next_handle_with_type(fhe_type);
-        let output = next_handle();
+        let output = next_handle_with_type(fhe_type);
 
         let mut tx = listener_db
             .new_transaction()
@@ -970,7 +982,7 @@ async fn test_fhe_is_in_events() -> Result<(), Box<dyn std::error::Error>> {
         for &(value, expected) in test_values {
             let tx_id = next_handle();
             let value_handle = next_handle_with_type(fhe_type);
-            let output = next_handle();
+            let output = next_handle_with_type(0);
 
             let mut tx = listener_db
                 .new_transaction()

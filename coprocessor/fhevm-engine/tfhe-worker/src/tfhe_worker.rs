@@ -15,7 +15,7 @@ use itertools::Itertools;
 use lazy_static::lazy_static;
 use prometheus::{register_histogram, register_int_counter, Histogram, IntCounter};
 use scheduler::dfg::types::{CompressedCiphertext, DFGTxInput, SchedulerError};
-use scheduler::dfg::{build_component_nodes, ComponentNode, DFComponentGraph, DFGOp};
+use scheduler::dfg::{build_component_nodes, ComponentNode, DFComponentGraph, DFGOp, DFGOutput};
 use scheduler::dfg::{scheduler::Scheduler, types::DFGTaskInput};
 use sqlx::types::Uuid;
 use sqlx::{postgres::PgListener, query, Postgres};
@@ -572,7 +572,9 @@ SELECT
   c.is_allowed,
   c.dependence_chain_id,
   c.transaction_id,
-  c.schedule_order
+  c.schedule_order,
+  c.group_id,
+  c.output_index
 FROM computations c
 WHERE c.transaction_id IN (
     SELECT DISTINCT
@@ -624,12 +626,35 @@ WHERE c.transaction_id IN (
         let mut transactions: Vec<ComponentNode> = vec![];
         for (transaction_id, txwork) in work_by_transaction.iter() {
             let transaction_id: &Vec<u8> = transaction_id;
-            let mut ops = vec![];
+
+            // Reassemble multi-output ops: group by group_id (or output_handle for singletons).
+            let mut group_order: Vec<Vec<u8>> = Vec::new();
+            let mut by_group: HashMap<Vec<u8>, Vec<&_>> = HashMap::new();
             for w in txwork {
-                let fhe_op: SupportedFheOperations = match w.fhe_operation.try_into() {
-                    Ok(op) => op,
-                    Err(e) => {
-                        error!(target: "tfhe_worker", { output_handle = ?w.output_handle, transaction_id = ?hex::encode(transaction_id), error = %e, }, "invalid FHE operation ");
+                let key = w
+                    .group_id
+                    .clone()
+                    .unwrap_or_else(|| w.output_handle.clone());
+                if !by_group.contains_key(&key) {
+                    group_order.push(key.clone());
+                }
+                by_group.entry(key).or_default().push(w);
+            }
+
+            let mut ops = vec![];
+            for key in group_order.iter() {
+                let mut group_rows = by_group.remove(key).expect("group key present");
+                group_rows.sort_by_key(|w| w.output_index);
+                // Op-level fields are identical across the group.
+                let first = group_rows[0];
+                // Results bind to handles by position, so a group not starting at
+                // index 0 is malformed. Error every handle rather than panicking.
+                if first.output_index != 0 {
+                    error!(target: "tfhe_worker",
+                        { output_handle = ?first.output_handle, transaction_id = ?hex::encode(transaction_id), output_index = first.output_index },
+                        "multi-output primary row missing");
+                    let e = SchedulerError::DataflowGraphError;
+                    for w in group_rows.iter() {
                         set_computation_error(
                             &w.output_handle,
                             transaction_id,
@@ -638,15 +663,38 @@ WHERE c.transaction_id IN (
                             deps_chain_mngr,
                         )
                         .await?;
+                    }
+                    continue;
+                }
+                let fhe_op_raw = first.fhe_operation;
+                let dependencies = &first.dependencies;
+                let is_scalar = first.is_scalar;
+
+                let fhe_op: SupportedFheOperations = match fhe_op_raw.try_into() {
+                    Ok(op) => op,
+                    Err(e) => {
+                        error!(target: "tfhe_worker", { output_handle = ?first.output_handle, transaction_id = ?hex::encode(transaction_id), error = %e, }, "invalid FHE operation");
+                        for w in group_rows.iter() {
+                            set_computation_error(
+                                &w.output_handle,
+                                transaction_id,
+                                &e,
+                                trx,
+                                deps_chain_mngr,
+                            )
+                            .await?;
+                        }
                         continue;
                     }
                 };
-                let mut inputs: Vec<DFGTaskInput> = Vec::with_capacity(w.dependencies.len());
-                let mut this_comp_inputs: Vec<Vec<u8>> = Vec::with_capacity(w.dependencies.len());
-                let mut is_scalar_op_vec: Vec<bool> = Vec::with_capacity(w.dependencies.len());
-                for (idx, dh) in w.dependencies.iter().enumerate() {
+                let mut inputs: Vec<DFGTaskInput> = Vec::with_capacity(dependencies.len());
+                let mut this_comp_inputs: Vec<Vec<u8>> =
+                    Vec::with_capacity(dependencies.len());
+                let mut is_scalar_op_vec: Vec<bool> =
+                    Vec::with_capacity(dependencies.len());
+                for (idx, dh) in dependencies.iter().enumerate() {
                     let is_operand_scalar =
-                        fhe_op.is_operand_scalar(w.is_scalar, idx, w.dependencies.len());
+                        fhe_op.is_operand_scalar(is_scalar, idx, dependencies.len());
                     is_scalar_op_vec.push(is_operand_scalar);
                     this_comp_inputs.push(dh.clone());
                     if is_operand_scalar {
@@ -657,23 +705,61 @@ WHERE c.transaction_id IN (
                         inputs.push(DFGTaskInput::Dependence(dh.clone()));
                     }
                 }
-                check_fhe_operand_types(w.fhe_operation.into(), &this_comp_inputs, &is_scalar_op_vec)?;
+                check_fhe_operand_types(
+                    fhe_op_raw.into(),
+                    &this_comp_inputs,
+                    &is_scalar_op_vec,
+                )
+                .map_err(CoprocessorError::FhevmError)?;
+
+                let outputs: Vec<DFGOutput> = group_rows
+                    .iter()
+                    .map(|w| DFGOutput {
+                        handle: w.output_handle.clone(),
+                        is_allowed: w.is_allowed,
+                    })
+                    .collect();
+                let any_allowed = outputs.iter().any(|o| o.is_allowed);
+
                 ops.push(DFGOp {
-                    output_handle: w.output_handle.clone(),
+                    outputs,
                     fhe_op,
                     inputs,
-                    is_allowed: w.is_allowed,
                 });
-                if w.schedule_order < earliest_schedule_order && w.is_allowed {
+
+                if any_allowed {
                     // Only account for allowed to avoid case of reorg
                     // where trivial encrypts will be in collision in
                     // the same transaction and old ones are re-used
-                    earliest_schedule_order = w.schedule_order;
+                    for w in group_rows.iter() {
+                        if w.schedule_order < earliest_schedule_order {
+                            earliest_schedule_order = w.schedule_order;
+                        }
+                    }
                 }
             }
-            let (mut components, _) = build_component_nodes(ops, transaction_id)
-                .map_err(|e| CoprocessorError::Other(e.into()))?;
-            transactions.append(&mut components);
+            match build_component_nodes(ops, transaction_id) {
+                Ok((mut components, _)) => transactions.append(&mut components),
+                Err(e) => {
+                    error!(target: "tfhe_worker",
+                        { transaction_id = ?hex::encode(transaction_id), error = %e },
+                        "failed to build component nodes; marking transaction rows errored");
+                    let sched_err = e
+                        .downcast_ref::<SchedulerError>()
+                        .cloned()
+                        .unwrap_or(SchedulerError::DataflowGraphError);
+                    for w in txwork {
+                        set_computation_error(
+                            &w.output_handle,
+                            transaction_id,
+                            &sched_err,
+                            trx,
+                            deps_chain_mngr,
+                        )
+                        .await?;
+                    }
+                }
+            }
         }
         Ok::<_, CoprocessorError>((transactions, earliest_schedule_order))
     }

@@ -1,6 +1,6 @@
 use crate::tests::event_helpers::{
-    allow_handle, insert_event, insert_trivial_encrypt, next_handle, scalar_flag,
-    setup_event_harness, wait_for_error, zero_address, EventHarness, TEST_CHAIN_ID,
+    allow_handle, insert_event, insert_trivial_encrypt, next_handle, next_handle_with_type,
+    scalar_flag, setup_event_harness, wait_for_error, zero_address, EventHarness, TEST_CHAIN_ID,
 };
 use host_listener::contracts::TfheContract;
 use host_listener::contracts::TfheContract::TfheContractEvents;
@@ -79,13 +79,13 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
         .await?
         .expect("new_transaction() returns Some on a live stack");
 
-    let lhs = next_handle();
-    let rhs = next_handle();
+    let lhs = next_handle_with_type(4);
+    let rhs = next_handle_with_type(5);
     // lhs is uint32 (type 4), rhs is uint64 (type 5)
     insert_trivial_encrypt(&listener_db, &mut tx, tx_id, 10, 4, lhs, false).await?;
     insert_trivial_encrypt(&listener_db, &mut tx, tx_id, 20, 5, rhs, false).await?;
 
-    let output = next_handle();
+    let output = next_handle_with_type(4);
     insert_event(
         &listener_db,
         &mut tx,
@@ -133,13 +133,13 @@ async fn test_type_mismatch_error() -> Result<(), Box<dyn std::error::Error>> {
         .await?
         .expect("new_transaction() returns Some on a live stack");
 
-    let lhs = next_handle();
-    let rhs = next_handle();
+    let lhs = next_handle_with_type(2);
+    let rhs = next_handle_with_type(3);
     // lhs is uint8 (type 2), rhs is uint16 (type 3)
     insert_trivial_encrypt(&listener_db, &mut tx, tx_id, 1, 2, lhs, false).await?;
     insert_trivial_encrypt(&listener_db, &mut tx, tx_id, 1, 3, rhs, false).await?;
 
-    let output = next_handle();
+    let output = next_handle_with_type(2);
     insert_event(
         &listener_db,
         &mut tx,
@@ -185,13 +185,13 @@ async fn test_binary_boolean_inputs_error() -> Result<(), Box<dyn std::error::Er
         .await?
         .expect("new_transaction() returns Some on a live stack");
 
-    let lhs = next_handle();
-    let rhs = next_handle();
+    let lhs = next_handle_with_type(0);
+    let rhs = next_handle_with_type(0);
     insert_trivial_encrypt(&listener_db, &mut tx, tx_id, 1, 0, lhs, false).await?;
     insert_trivial_encrypt(&listener_db, &mut tx, tx_id, 0, 0, rhs, false).await?;
 
     // FheAdd on bool inputs → UnsupportedFheTypes
-    let output = next_handle();
+    let output = next_handle_with_type(0);
     insert_event(
         &listener_db,
         &mut tx,
@@ -237,11 +237,11 @@ async fn test_unary_boolean_inputs_error() -> Result<(), Box<dyn std::error::Err
         .await?
         .expect("new_transaction() returns Some on a live stack");
 
-    let input = next_handle();
+    let input = next_handle_with_type(0);
     insert_trivial_encrypt(&listener_db, &mut tx, tx_id, 1, 0, input, false).await?;
 
     // FheNeg on bool input → UnsupportedFheTypes
-    let output = next_handle();
+    let output = next_handle_with_type(0);
     insert_event(
         &listener_db,
         &mut tx,

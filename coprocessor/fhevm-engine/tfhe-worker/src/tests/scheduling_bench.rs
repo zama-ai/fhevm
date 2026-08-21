@@ -1,6 +1,7 @@
 use crate::tests::event_helpers::{
-    allow_handle, decrypt_handles, insert_event, insert_trivial_encrypt, next_handle, scalar_flag,
-    scalar_u128_handle, setup_event_harness, wait_until_computed, zero_address,
+    allow_handle, decrypt_handles, insert_event, insert_trivial_encrypt, next_handle,
+    next_handle_with_type, scalar_flag, scalar_u128_handle, setup_event_harness,
+    wait_until_computed, zero_address,
 };
 use host_listener::contracts::TfheContract;
 use host_listener::contracts::TfheContract::TfheContractEvents;
@@ -28,14 +29,14 @@ async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
 
     for _ in 0..num_samples {
         let tx_id = next_handle();
-        let bals = next_handle();
-        let trxa = next_handle();
-        let bald = next_handle();
+        let bals = next_handle_with_type(5);
+        let trxa = next_handle_with_type(5);
+        let bald = next_handle_with_type(5);
         insert_trivial_encrypt(&harness.listener_db, &mut tx, tx_id, 100, 5, bals, false).await?;
         insert_trivial_encrypt(&harness.listener_db, &mut tx, tx_id, 10, 5, trxa, false).await?;
         insert_trivial_encrypt(&harness.listener_db, &mut tx, tx_id, 20, 5, bald, false).await?;
 
-        let has_funds = next_handle();
+        let has_funds = next_handle_with_type(0);
         insert_event(
             &harness.listener_db,
             &mut tx,
@@ -53,7 +54,7 @@ async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
         allow_handle(&harness.listener_db, &mut tx, &has_funds).await?;
         output_handles.push(has_funds);
 
-        let new_to_target = next_handle();
+        let new_to_target = next_handle_with_type(5);
         insert_event(
             &harness.listener_db,
             &mut tx,
@@ -71,7 +72,7 @@ async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
         allow_handle(&harness.listener_db, &mut tx, &new_to_target).await?;
         output_handles.push(new_to_target);
 
-        let new_to = next_handle();
+        let new_to = next_handle_with_type(5);
         insert_event(
             &harness.listener_db,
             &mut tx,
@@ -89,7 +90,7 @@ async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
         allow_handle(&harness.listener_db, &mut tx, &new_to).await?;
         output_handles.push(new_to);
 
-        let new_from_target = next_handle();
+        let new_from_target = next_handle_with_type(5);
         insert_event(
             &harness.listener_db,
             &mut tx,
@@ -107,7 +108,7 @@ async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
         allow_handle(&harness.listener_db, &mut tx, &new_from_target).await?;
         output_handles.push(new_from_target);
 
-        let new_from = next_handle();
+        let new_from = next_handle_with_type(5);
         insert_event(
             &harness.listener_db,
             &mut tx,
@@ -158,14 +159,14 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
 
     for _ in 0..num_samples {
         let tx_id = next_handle();
-        let bals = next_handle();
-        let trxa = next_handle();
-        let bald = next_handle();
+        let bals = next_handle_with_type(5);
+        let trxa = next_handle_with_type(5);
+        let bald = next_handle_with_type(5);
         insert_trivial_encrypt(&harness.listener_db, &mut tx, tx_id, 100, 5, bals, false).await?;
         insert_trivial_encrypt(&harness.listener_db, &mut tx, tx_id, 10, 5, trxa, false).await?;
         insert_trivial_encrypt(&harness.listener_db, &mut tx, tx_id, 20, 5, bald, false).await?;
 
-        let has_funds = next_handle();
+        let has_funds = next_handle_with_type(0);
         insert_event(
             &harness.listener_db,
             &mut tx,
@@ -183,7 +184,7 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
         allow_handle(&harness.listener_db, &mut tx, &has_funds).await?;
         output_handles.push(has_funds);
 
-        let cast_funds = next_handle();
+        let cast_funds = next_handle_with_type(5);
         insert_event(
             &harness.listener_db,
             &mut tx,
@@ -200,7 +201,7 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
         allow_handle(&harness.listener_db, &mut tx, &cast_funds).await?;
         output_handles.push(cast_funds);
 
-        let selected = next_handle();
+        let selected = next_handle_with_type(5);
         insert_event(
             &harness.listener_db,
             &mut tx,
@@ -218,7 +219,7 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
         allow_handle(&harness.listener_db, &mut tx, &selected).await?;
         output_handles.push(selected);
 
-        let new_to = next_handle();
+        let new_to = next_handle_with_type(5);
         insert_event(
             &harness.listener_db,
             &mut tx,
@@ -236,7 +237,7 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
         allow_handle(&harness.listener_db, &mut tx, &new_to).await?;
         output_handles.push(new_to);
 
-        let new_from = next_handle();
+        let new_from = next_handle_with_type(5);
         insert_event(
             &harness.listener_db,
             &mut tx,
@@ -286,17 +287,17 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
     let caller = zero_address();
 
     let init_tx = next_handle();
-    let mut bald = next_handle();
+    let mut bald = next_handle_with_type(5);
     insert_trivial_encrypt(&harness.listener_db, &mut tx, init_tx, 20, 5, bald, true).await?;
 
     for _ in 0..num_samples {
         let tx_id = next_handle();
-        let bals = next_handle();
-        let trxa = next_handle();
+        let bals = next_handle_with_type(5);
+        let trxa = next_handle_with_type(5);
         insert_trivial_encrypt(&harness.listener_db, &mut tx, tx_id, 100, 5, bals, false).await?;
         insert_trivial_encrypt(&harness.listener_db, &mut tx, tx_id, 10, 5, trxa, false).await?;
 
-        let has_funds = next_handle();
+        let has_funds = next_handle_with_type(0);
         insert_event(
             &harness.listener_db,
             &mut tx,
@@ -314,7 +315,7 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
         allow_handle(&harness.listener_db, &mut tx, &has_funds).await?;
         output_handles.push(has_funds);
 
-        let cast_funds = next_handle();
+        let cast_funds = next_handle_with_type(5);
         insert_event(
             &harness.listener_db,
             &mut tx,
@@ -331,7 +332,7 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
         allow_handle(&harness.listener_db, &mut tx, &cast_funds).await?;
         output_handles.push(cast_funds);
 
-        let selected = next_handle();
+        let selected = next_handle_with_type(5);
         insert_event(
             &harness.listener_db,
             &mut tx,
@@ -349,7 +350,7 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
         allow_handle(&harness.listener_db, &mut tx, &selected).await?;
         output_handles.push(selected);
 
-        let new_to = next_handle();
+        let new_to = next_handle_with_type(5);
         insert_event(
             &harness.listener_db,
             &mut tx,
@@ -367,7 +368,7 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
         allow_handle(&harness.listener_db, &mut tx, &new_to).await?;
         output_handles.push(new_to);
 
-        let new_from = next_handle();
+        let new_from = next_handle_with_type(5);
         insert_event(
             &harness.listener_db,
             &mut tx,
@@ -418,13 +419,13 @@ async fn counter_increment() -> Result<(), Box<dyn std::error::Error>> {
         .expect("new_transaction() returns Some on a live stack");
     let tx_id = next_handle();
 
-    let mut counter = next_handle();
+    let mut counter = next_handle_with_type(5);
     insert_trivial_encrypt(&harness.listener_db, &mut tx, tx_id, 42, 5, counter, false).await?;
 
     let caller = zero_address();
     let mut output_handles = Vec::with_capacity(num_samples);
     for _ in 0..num_samples {
-        let new_counter = next_handle();
+        let new_counter = next_handle_with_type(5);
         insert_event(
             &harness.listener_db,
             &mut tx,
@@ -474,19 +475,19 @@ async fn tree_reduction() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut level_inputs = Vec::with_capacity(num_comps_at_level * 2);
     for _ in 0..num_comps_at_level {
-        let lhs = next_handle();
-        let rhs = next_handle();
+        let lhs = next_handle_with_type(5);
+        let rhs = next_handle_with_type(5);
         insert_trivial_encrypt(&harness.listener_db, &mut tx, tx_id, 1, 5, lhs, false).await?;
         insert_trivial_encrypt(&harness.listener_db, &mut tx, tx_id, 1, 5, rhs, false).await?;
         level_inputs.push(lhs);
         level_inputs.push(rhs);
     }
 
-    let mut last_output = next_handle();
+    let mut last_output = next_handle_with_type(5);
     for _ in 0..num_levels {
         let mut level_outputs = Vec::with_capacity(num_comps_at_level);
         for i in 0..num_comps_at_level {
-            let out = next_handle();
+            let out = next_handle_with_type(5);
             insert_event(
                 &harness.listener_db,
                 &mut tx,
