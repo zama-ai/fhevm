@@ -79,11 +79,15 @@ export function resolveEnvironment(name: string): { chains: ChainConfig[]; gatew
   if (!def) {
     throw new Error(`--environment must be one of: ${SUPPORTED_ENVIRONMENTS.join(', ')}`);
   }
-  const chains = def.chains.map((c) => ({
-    chainId: c.chainId,
-    rpcUrl: resolveEnvRpc(c.rpcUrlEnv, c.label, c.defaultRpcUrl),
-    fallbackBlockTimeSeconds: c.fallbackBlockTimeSeconds,
-  }));
+  // Local e2e chains are scenario-defined (1..N), so the test passes them as JSON.
+  const chains =
+    name === 'local' && process.env.LOCAL_HOST_CHAINS
+      ? (JSON.parse(process.env.LOCAL_HOST_CHAINS) as ChainConfig[])
+      : def.chains.map((c) => ({
+          chainId: c.chainId,
+          rpcUrl: resolveEnvRpc(c.rpcUrlEnv, c.label, c.defaultRpcUrl),
+          fallbackBlockTimeSeconds: c.fallbackBlockTimeSeconds,
+        }));
   const gateway = {
     rpcUrl: resolveEnvRpc(def.gateway.rpcUrlEnv, def.gateway.label, def.gateway.defaultRpcUrl),
     fallbackBlockTimeSeconds: def.gateway.fallbackBlockTimeSeconds,
@@ -252,7 +256,7 @@ function bufferShortageHint(leadSeconds: number, bufferSeconds: number): string 
   return `lead ${formatDuration(lead)}, need ${formatDuration(bufferSeconds)}, short by ${formatDuration(shortBy)}`;
 }
 
-export function printCoprocessorUpgradeProposal(proposal: CoprocessorUpgradeProposal): void {
+export function printCoprocessorUpgradeProposal(proposal: CoprocessorUpgradeProposal, target?: string): void {
   const { inputs } = proposal;
   console.log('# proposeCoprocessorUpgrade — computed block windows');
   console.log('');
@@ -329,6 +333,9 @@ export function printCoprocessorUpgradeProposal(proposal: CoprocessorUpgradeProp
     console.log(`    ${s.label.padEnd(15)}: ${isoUtc(s.ts)} (${tag})`);
   }
   console.log('');
-  console.log('## Calldata');
-  console.log(proposal.calldata);
+  console.log('## Aragon proposal action');
+  console.log(
+    `  target   : ${target ?? '<unresolved — set PROTOCOL_CONFIG_CONTRACT_ADDRESS or pass --use-internal-proxy-address>'}`,
+  );
+  console.log(`  calldata : ${proposal.calldata}`);
 }

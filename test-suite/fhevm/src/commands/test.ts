@@ -7,9 +7,10 @@ import { runKmsGenerationAbortProfile } from "./kms-generation-abort";
 import { runKmsContextSwitchProfile } from "./kms-context-switch";
 import { DRIFT_CLEANUP_SQL, DRIFT_INSTALL_SQL, parseDriftInstanceIndex, parsePositiveInteger } from "../drift";
 import { PreflightError, formatCliError } from "../errors";
+import { runContractTask } from "../flow/contracts";
 import { dockerInspect } from "../flow/readiness";
 import { pause, shellEscape, unpause } from "../flow/up-flow";
-import { hostReachableRpcUrl, readEnvFile, withHexPrefix } from "../utils/fs";
+import { hostReachableRpcUrl, readEnvFile } from "../utils/fs";
 import { run, runWithHeartbeat } from "../utils/process";
 import { loadState } from "../state/state";
 import { topologyForState } from "../stack-spec/stack-spec";
@@ -19,7 +20,6 @@ import {
   DEFAULT_POSTGRES_DB,
   DEFAULT_POSTGRES_PASSWORD,
   DEFAULT_POSTGRES_USER,
-  defaultHostChainKey,
   envPath,
   HEAVY_TEST_PROFILES,
   LIGHT_TEST_PROFILES,
@@ -762,19 +762,6 @@ const localDbMigrationImageRef = (state: Pick<State, "overrides" | "builtImages"
 // Blue-Green upgrade E2E
 // ============================================================================
 
-/** Reads deployer PK from host-sc env and ProtocolConfig address from test-suite env. */
-const readBlueGreenOnChainCreds = async (): Promise<{ deployerPk: string; protocolConfig: string }> => {
-  const [hostSc, testSuite] = await Promise.all([
-    readEnvFile(envPath("host-sc")),
-    readEnvFile(envPath("test-suite")),
-  ]);
-  const deployerPk = hostSc.DEPLOYER_PRIVATE_KEY;
-  const protocolConfig = testSuite.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
-  if (!deployerPk) throw new Error("DEPLOYER_PRIVATE_KEY missing from host-sc env");
-  if (!protocolConfig) throw new Error("PROTOCOL_CONFIG_CONTRACT_ADDRESS missing from test-suite env");
-  return { deployerPk: withHexPrefix(deployerPk), protocolConfig };
-};
-
 const psqlQuery = async (database: string, query: string): Promise<string> =>
   scalarQuery(database, query, postgresRuntime());
 
@@ -937,16 +924,9 @@ const runBlueGreenProfile = async (
   }
   console.log(`OK:   ${opCount} DB(s) at v0.14, empty upgrade_state, gcs-${gcsStackVersion} schema present`);
 
-  const defaultHostKey = defaultHostChainKey(state.scenario.hostChains);
-  const hostRpcUrl = hostReachableRpcUrl(state.discovery!.endpoints.hosts[defaultHostKey]!.http);
   const gatewayRpcUrl = hostReachableRpcUrl(state.discovery!.endpoints.gateway.http);
-  const { deployerPk, protocolConfig } = await readBlueGreenOnChainCreds();
 
-  // One ChainUpgradeWindow per host chain, each off that chain's own current
-  // block. Single-chain yields a one-element array, as before.
   const hostChains = state.scenario.hostChains;
-  const hostChainRpc = (key: string) =>
-    hostReachableRpcUrl(state.discovery!.endpoints.hosts[key]!.http);
   const testSuiteEnv = await readEnvFile(envPath("test-suite"));
   const erc20Grep = TEST_GREP.erc20;
   if (!erc20Grep) {
@@ -986,39 +966,38 @@ const runBlueGreenProfile = async (
     chainExtraExecArgs(0),
   );
   const blueGreenTrafficStreams = Math.max(MIN_BLUE_GREEN_TRAFFIC_STREAMS, trafficTargets.length);
-  const buildWindowArray = async (startOffset: number, endOffset: number): Promise<string> => {
-    const tuples: string[] = [];
-    for (const chain of hostChains) {
-      const block = Number(
-        (await run(["cast", "block-number", "--rpc-url", hostChainRpc(chain.key)])).stdout.trim(),
-      );
-      tuples.push(`(${chain.chainId},${block + startOffset},${block + endOffset})`);
-    }
-    return `[${tuples.join(",")}]`;
-  };
+  // Host chains for the proposal task (read via LOCAL_HOST_CHAINS), so single- and
+  // multi-chain scenarios both work. Same per-chain internal RPCs the traffic uses.
+  const localHostChains = JSON.stringify(
+    hostChains.map((_chain, index) => ({
+      chainId: Number(chainEnvValue(index, "CHAIN_ID_HOST", "CHAIN_ID")),
+      rpcUrl: chainEnvValue(index, "RPC_URL", "RPC_URL"),
+      fallbackBlockTimeSeconds: 1,
+    })),
+  );
 
   // Host chains stay quiet (no non-trivial FHE op) while [3/11] anchors the Gateway
   // track with one input. Cutover needs at least one non-trivial host anchor, so the
   // controller withholds the hosts and commitment_timeout rolls back every row — the
   // rollback this asserts. A regression that notified quiet hosts would cut over.
   console.log(`\n[2/11] failed upgrade: Gateway input, hosts quiet (no non-trivial host → no cutover)`);
-  const failGwBlock = Number((await run(
-    ["cast", "block-number", "--rpc-url", gatewayRpcUrl],
-  )).stdout.trim());
-  const failGwStartBlock = failGwBlock + 10;
-  const failWindows = await buildWindowArray(15, 45);
-  await run([
-    "cast", "send", protocolConfig,
-    "--rpc-url", hostRpcUrl,
-    "--private-key", deployerPk,
-    "proposeCoprocessorUpgrade(uint256,string,(uint64,uint64,uint64)[],uint64)",
-    "1", gcsVersionLive,
-    failWindows,
-    String(failGwStartBlock),
-  ]);
-  console.log(
-    `OK:   activation emitted (windows=${failWindows} gw_start=${failGwStartBlock})`,
+  const failStartTime = new Date(Date.now() + 30_000).toISOString();
+  await runContractTask(
+    "host-sc",
+    "host-sc-deploy",
+    'LOCAL_HOST_RPC_URL="$RPC_URL" npx hardhat task:proposeCoprocessorUpgrade ' +
+      '--environment local --start-time "$PROPOSE_START_TIME" --duration 60s --buffer 10s ' +
+      '--proposal-id 1 --software-version "$PROPOSE_SW_VERSION" --use-internal-proxy-address true',
+    {
+      env: {
+        LOCAL_GATEWAY_RPC_URL: state.discovery!.endpoints.gateway.http,
+        LOCAL_HOST_CHAINS: localHostChains,
+        PROPOSE_START_TIME: failStartTime,
+        PROPOSE_SW_VERSION: gcsVersionLive,
+      },
+    },
   );
+  console.log(`OK:   activation emitted via task (proposalId=1, version=${gcsVersionLive}, start=${failStartTime})`);
 
   console.log(`\n[3/11] failed upgrade: wait for GCS DryRunStarted, then submit a Gateway-only input proof`);
   for (const db of operatorDatabases) {
@@ -1037,6 +1016,17 @@ const runBlueGreenProfile = async (
         )) === "ready",
     });
   }
+  // Wait for the Gateway tip to reach gw_start_block so the input lands in the window
+  // and anchors the GW track.
+  const failGwStartBlock = Number(
+    await psqlQuery(operatorDatabases[0]!, "SELECT gw_start_block FROM upgrade_state WHERE stack_role='GCS' LIMIT 1;"),
+  );
+  await waitUntil({
+    label: `gateway tip reaches window start ${failGwStartBlock}`,
+    timeoutSecs: 120,
+    check: async () =>
+      Number((await run(["cast", "block-number", "--rpc-url", gatewayRpcUrl])).stdout.trim()) >= failGwStartBlock,
+  });
   // Verify one Gateway input inside the window. Host chains get no non-trivial FHE
   // op, so cutover must be withheld and the window must time out (asserted in [4/11]).
   await run(gatewayInputProbeArgv);
@@ -1126,23 +1116,25 @@ const runBlueGreenProfile = async (
     console.log(`OK:   ${db}  pre-cutover ciphertexts=${count} (sample handle recorded)`);
   }
 
-  console.log(`\n[6/11] propose upgrade on-chain (ProtocolConfig.proposeCoprocessorUpgrade)`);
-  const gwBlock = Number((await run(
-    ["cast", "block-number", "--rpc-url", gatewayRpcUrl],
-  )).stdout.trim());
-  const gwStartBlock = gwBlock + 10;
-  // A wide window per chain so real dry-run traffic on every chain lands inside it.
-  const okWindows = await buildWindowArray(30, 230);
-  await run([
-    "cast", "send", protocolConfig,
-    "--rpc-url", hostRpcUrl,
-    "--private-key", deployerPk,
-    "proposeCoprocessorUpgrade(uint256,string,(uint64,uint64,uint64)[],uint64)",
-    "2", gcsVersionLive,
-    okWindows,
-    String(gwStartBlock),
-  ]);
-  console.log(`OK:   activation emitted (windows=${okWindows} gw_start=${gwStartBlock})`);
+  console.log(`\n[6/11] propose upgrade via task:proposeCoprocessorUpgrade`);
+  // Exercise the EOA task on the success path (a longer window with real traffic).
+  const proposeStartTime = new Date(Date.now() + 30_000).toISOString();
+  await runContractTask(
+    "host-sc",
+    "host-sc-deploy",
+    'LOCAL_HOST_RPC_URL="$RPC_URL" npx hardhat task:proposeCoprocessorUpgrade ' +
+      '--environment local --start-time "$PROPOSE_START_TIME" --duration 5m --buffer 10s ' +
+      '--proposal-id 2 --software-version "$PROPOSE_SW_VERSION" --use-internal-proxy-address true',
+    {
+      env: {
+        LOCAL_GATEWAY_RPC_URL: state.discovery!.endpoints.gateway.http,
+        LOCAL_HOST_CHAINS: localHostChains,
+        PROPOSE_START_TIME: proposeStartTime,
+        PROPOSE_SW_VERSION: gcsVersionLive,
+      },
+    },
+  );
+  console.log(`OK:   activation emitted via task (proposalId=2, version=${gcsVersionLive}, start=${proposeStartTime})`);
 
   console.log(`\n[7/11] wait for GCS DryRunStarted per operator`);
   for (const db of operatorDatabases) {
