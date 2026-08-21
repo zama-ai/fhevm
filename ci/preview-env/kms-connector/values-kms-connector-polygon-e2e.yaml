@@ -1,0 +1,27 @@
+# ADDITIVE overlay for each kms-connector-<i> release, passed as an EXTRA `-f`
+# AFTER values-kms-connector-e2e.yaml ONLY when deploy_polygon=true (see
+# preview-env-deploy.yml). Re-adds the Polygon host chain to the kms-worker's
+# hostChains so the KMS can verify ACL permissions for Polygon ciphertexts (the
+# base file pins hostChains to ETH only).
+#
+# The chart already exposes Polygon natively (commonConfig.polygonUrl/
+# polygonChainId + the KMS_CONNECTOR_POLYGON_* env the kms-worker sets). The
+# Polygon ACL is a plain string (no configMapKeyRef support in this chart), so it
+# is injected via --set-string commonConfig.polygonContractAddresses.acl in the
+# workflow, exactly like the ETH ACL.
+#
+# hostChains is a LIST -> Helm replaces it wholesale, so this repeats the ETH
+# entry from the base file.
+commonConfig:
+  polygonUrl: "http://anvil-host-polygon-anvil-node:8545"
+  polygonChainId: "80002"
+
+kmsConnectorKmsWorker:
+  config:
+    hostChains:
+      - url: "$(KMS_CONNECTOR_ETHEREUM_URL)"
+        chainId: "$(KMS_CONNECTOR_ETHEREUM_CHAIN_ID)"
+        aclAddress: "$(KMS_CONNECTOR_ETHEREUM_ACL_ADDRESS)"
+      - url: "$(KMS_CONNECTOR_POLYGON_URL)"
+        chainId: "$(KMS_CONNECTOR_POLYGON_CHAIN_ID)"
+        aclAddress: "$(KMS_CONNECTOR_POLYGON_ACL_ADDRESS)"
