@@ -174,19 +174,22 @@ pub const SOLANA_EXTRA_DATA_VERSION_CONTEXT_ONLY: u8 = 0x01;
 /// `extraData` version byte carrying the KMS context id PLUS the MMR-proof tail
 /// (`acl_value_key ‖ proof_slot ‖ mmr_proof_len ‖ mmr_proof_bytes`).
 ///
-/// DEVIATION FROM THE REFERENCE DESIGN: the reference design carried `aclValueKey` / `mmrProof` /
-/// `proofSlot` as typed `UserDecryptionRequestSolanaPayload` fields (RFC-021-style). Adding those
-/// fields is a `gateway-contracts` Solidity + codegen change, and this workstream is scoped to
-/// `kms-connector/` + `sdk/js-sdk/` only (gateway-contracts is owned by a different, in-flight
-/// workstream and is not even read-only-listed here). Packing the MMR tail into the existing
-/// `extraData` blob — versioned so a `v0x01` (context-only) request is unambiguous from a `v0x03`
-/// (MMR-proof) request — reuses the one Solana-specific "escape hatch" field the gateway interface
-/// already has, at zero gateway-contracts cost. `mmr_proof_bytes` is still committed **verbatim**
-/// into the [`SOLANA_USER_DECRYPT_DOMAIN_TAG`] request commitment, so the signature-binding property is
-/// unaffected by this transport choice; only the origin of `acl_value_key` / `proof_slot` /
-/// `mmr_proof_bytes` on the decode side differs from the reference (extraData here, typed fields
-/// there). If/when `gateway-contracts` grows the typed fields, this module's signing-message builder is
-/// unchanged and only [`parse_solana_user_decrypt_extra_data`] (and its call site) should move.
+/// TEMPORARY PROOF CARRIER, OWNED BY PUBLIC DECRYPT. The gateway interface has no typed fields
+/// for a public-decrypt inclusion proof, so the proof travels in this versioned `extraData`
+/// container. This is transitional support for one flow, not protocol surface:
+///
+/// - Removal condition: typed proof carriage for public decrypt — a `gateway-contracts`
+///   interface change, owned outside this workstream. Once the gateway carries the proof in
+///   typed fields, this container, its strict parser and its encoders are deleted; the
+///   container must not outlive that change.
+/// - Until then it must not be torn down either: there is no live on-chain "is public" flag,
+///   so a Solana public decrypt without this carrier fails closed — silently, for every
+///   request. `kms-worker/tests/solana_public_decrypt_carrier.rs` pins the carrier and the
+///   full public-decrypt path from outside the modules scheduled for rewrite.
+///
+/// The v0 user-decrypt path still routes its historical/public proof tail through this
+/// container; that use is deleted together with the rest of the v0 protocol and places no
+/// constraint on the container's future.
 pub const SOLANA_EXTRA_DATA_VERSION_MMR_PROOF: u8 = 0x03;
 
 /// The Solana user-decrypt auth fields carried in `extraData`, beyond the typed gateway fields.
@@ -209,6 +212,9 @@ pub struct SolanaUserDecryptExtraData {
 /// Returns `None` unless the blob is exactly the proof-tail version and its length prefix matches
 /// the full body. Public decrypt uses this strict form because a missing or malformed proof must
 /// fail closed instead of silently routing to a no-proof path.
+///
+/// Part of the temporary proof carrier — see [`SOLANA_EXTRA_DATA_VERSION_MMR_PROOF`] for its
+/// ownership, status and removal condition.
 ///
 /// The client-side encoder is `buildSolanaUserDecryptMmrProofExtraData` in
 /// `sdk/js-sdk/src/core/coprocessor/SolanaUserDecrypt-p.ts` — a hand-mirrored codec across
