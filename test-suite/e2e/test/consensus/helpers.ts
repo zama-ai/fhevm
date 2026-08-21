@@ -363,7 +363,8 @@ export function attestationMetadataFromWgetHeaders(headers: string): CiphertextA
 /**
  * RFC-023's raw-signature prehash.  `handle` and context are absent from the
  * S3 JSON header, so recovering this signature is the only way the readiness
- * gate can prove the metadata belongs to the terminal object it just HEADed.
+ * gate can prove the metadata belongs to the terminal object it just
+ * fetched with HEAD.
  */
 export function rfc023AttestationPrehash(
   metadata: Pick<

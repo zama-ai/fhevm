@@ -372,6 +372,89 @@ async fn late_allow_propagates_at_finality_and_retracts_on_orphan() {
     assert_eq!(leftovers, 0, "applied and orphaned records both cleaned up");
 }
 
+/// An allow can be observed BEFORE its computation row exists (catchup
+/// re-ingesting a missed earlier block, finality-gated synthesis): the
+/// record must survive until the row appears, and the next matured sweep
+/// must then apply it.
+#[tokio::test]
+#[serial(db)]
+async fn late_allow_recorded_before_row_applies_once_row_appears() {
+    use host_listener::cmd::block_history::BlockSummary;
+
+    let (db, _inst) = fresh_db(CHAIN_ID).await;
+    let (a1, b2) = (b32(0xA1), b32(0xB2));
+    let handle = b32(0x79);
+    let pool = db.pool().await;
+
+    seed_block(&db, 1, &a1, &b32(0xA0), "finalized").await;
+    // The allow-observing block is ingested ALREADY FINAL (catchup path).
+    seed_block(&db, 2, &b2, &a1, "finalized").await;
+
+    // Record with NO computation row present: must still be recorded.
+    let summary = BlockSummary {
+        number: 2,
+        hash: alloy::primitives::FixedBytes::from_slice(&b2),
+        parent_hash: alloy::primitives::FixedBytes::from_slice(&a1),
+        timestamp: 0,
+    };
+    let mut tx = db.new_transaction().await.expect("tx").expect("live stack");
+    let recorded = db
+        .record_late_allows(&mut tx, &summary, std::slice::from_ref(&handle))
+        .await
+        .expect("record");
+    assert_eq!(recorded, 1, "allow without a row yet is still recorded");
+    // A sweep before the row exists must keep the record and change nothing.
+    db.apply_matured_late_allows(&mut tx)
+        .await
+        .expect("early sweep");
+    tx.commit().await.expect("commit");
+    let kept: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM late_allow_propagation")
+            .fetch_one(&pool)
+            .await
+            .expect("count");
+    assert_eq!(
+        kept, 1,
+        "matured-but-unmatched record is kept, not consumed"
+    );
+
+    // The computation row arrives later (out-of-order ingestion).
+    sqlx::query(
+        "INSERT INTO computations
+             (output_handle, dependencies, fhe_operation, is_scalar,
+              transaction_id, is_allowed, is_completed, host_chain_id,
+              block_number, operand_boundary_mask)
+         VALUES ($1, '{}', 0, false, $2, false, true, $3, 1, $4)",
+    )
+    .bind(&handle)
+    .bind(b32(0xAC))
+    .bind(CHAIN_ID as i64)
+    .bind(vec![0u8; 32])
+    .execute(&pool)
+    .await
+    .expect("late computation row");
+
+    // The next sweep (any ingest or finalization pass) applies and consumes.
+    let mut tx = db.new_transaction().await.expect("tx").expect("live stack");
+    db.apply_matured_late_allows(&mut tx).await.expect("sweep");
+    tx.commit().await.expect("commit");
+
+    let (is_allowed, is_completed): (bool, bool) = sqlx::query_as(
+        "SELECT is_allowed, is_completed FROM computations WHERE output_handle = $1",
+    )
+    .bind(&handle)
+    .fetch_one(&pool)
+    .await
+    .expect("row");
+    assert!(is_allowed && !is_completed, "late row flipped and reset");
+    let leftovers: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM late_allow_propagation")
+            .fetch_one(&pool)
+            .await
+            .expect("count");
+    assert_eq!(leftovers, 0, "consumed once matched");
+}
+
 /// A same-block allow is already stamped on the row at ingest; it must not
 /// be recorded as a late allow.
 #[tokio::test]

@@ -68,6 +68,7 @@ async fn setup_test_app_existing_db() -> Result<TestInstance, Box<dyn std::error
 async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) {
     let ecfg = EnvConfig::new();
     let args: Args = Args {
+        max_batch_ttl_secs: 300,
         run_bg_worker: true,
         worker_polling_interval_ms: 1000,
         bridge_polling_interval_ms: 1000,

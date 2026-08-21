@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE computations\n            SET is_allowed = true\n            WHERE output_handle = ANY($1::bytea[])\n              AND is_allowed = false\n            RETURNING dependence_chain_id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "dependence_chain_id",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "ByteaArray"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "e72b7cb80c006e73fffb3ecf873848205336352371b4ad4ad1aa37d354207b2b"
+}

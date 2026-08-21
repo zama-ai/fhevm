@@ -184,9 +184,10 @@ impl<'a> Scheduler<'a> {
                 }
                 let (sks, cpk) = self.get_keys(DeviceSelection::RoundRobin)?;
                 let parent_span = tracing::Span::current();
+                let heartbeat = self.activity_heartbeat.clone();
                 set.spawn_blocking(move || {
                     let span_guard = parent_span.enter();
-                    let result = execute_partition(args, index, 0, sks, cpk);
+                    let result = execute_partition(args, index, 0, sks, cpk, heartbeat);
                     drop(span_guard);
                     result
                 });
@@ -238,9 +239,11 @@ impl<'a> Scheduler<'a> {
                     }
                     let (sks, cpk) = self.get_keys(DeviceSelection::RoundRobin)?;
                     let parent_span = tracing::Span::current();
+                    let heartbeat = self.activity_heartbeat.clone();
                     set.spawn_blocking(move || {
                         let span_guard = parent_span.enter();
-                        let result = execute_partition(args, dependent_task_index, 0, sks, cpk);
+                        let result =
+                            execute_partition(args, dependent_task_index, 0, sks, cpk, heartbeat);
                         drop(span_guard);
                         result
                     });
@@ -290,6 +293,7 @@ fn execute_partition(
     #[cfg(not(feature = "gpu"))] sks: tfhe::ServerKey,
     #[cfg(feature = "gpu")] sks: tfhe::CudaServerKey,
     cpk: tfhe::CompactPublicKey,
+    activity_heartbeat: HeartBeat,
 ) -> PartitionResult {
     tfhe::set_server_key(sks);
     let mut res: HashMap<Handle, Result<TaskResult>> = HashMap::with_capacity(transactions.len());
@@ -360,6 +364,11 @@ fn execute_partition(
                 continue;
             };
             let result = try_execute_node(node, nidx.index(), tx_inputs, gpu_idx, &tid, &cpk);
+            // Per-op progress tick: a partition can legitimately run longer
+            // than both the heartbeat freshness window and the in-flight
+            // batch TTL; liveness must track op completions, not partition
+            // completions, so only a genuinely wedged op exhausts the TTL.
+            activity_heartbeat.update();
             match result {
                 Ok((node_index, op_result)) => {
                     let nidx = NodeIndex::new(node_index);
@@ -390,7 +399,11 @@ fn execute_partition(
                             // granted a persistent allowance first (transient
                             // allowances are transaction-scoped), so
                             // cross-transaction consumers need no separate
-                            // tracking.
+                            // tracking. `computations.is_allowed` tracks
+                            // that on-chain fact even for an allow observed
+                            // in a later block: the listener propagates
+                            // finalized late allows back onto earlier rows
+                            // (`apply_matured_late_allows`).
                             let forwarded = if is_allowed {
                                 match compress_output(&working, &tid, opcode) {
                                     Ok(compressed_ct) => {

@@ -46,21 +46,8 @@ impl Drop for InFlightWorkGuard {
     }
 }
 
-/// Default for `max_batch_ttl`; override with
-/// `TFHE_WORKER_MAX_BATCH_TTL_SECS`. Must exceed the worst legitimate
-/// single-batch wall time.
-const DEFAULT_MAX_BATCH_TTL: Duration = Duration::from_secs(300);
-
-fn max_batch_ttl_from_env() -> Duration {
-    std::env::var("TFHE_WORKER_MAX_BATCH_TTL_SECS")
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .map(Duration::from_secs)
-        .unwrap_or(DEFAULT_MAX_BATCH_TTL)
-}
-
 impl HealthCheck {
-    pub fn new(database_url: DatabaseURL) -> Self {
+    pub fn new(database_url: DatabaseURL, max_batch_ttl: Duration) -> Self {
         // A lazy pool is used to avoid blocking the main thread during initialization or bad database URL
         Self {
             database_url,
@@ -68,7 +55,7 @@ impl HealthCheck {
             activity_heartbeat: HeartBeat::new(),
             in_flight_work: Arc::new(AtomicUsize::new(0)),
             work_started_at: Arc::new(Mutex::new(None)),
-            max_batch_ttl: max_batch_ttl_from_env(),
+            max_batch_ttl,
         }
     }
 
@@ -158,7 +145,7 @@ mod tests {
             activity_heartbeat: HeartBeat::with_elapsed_secs(30),
             in_flight_work: Arc::new(AtomicUsize::new(0)),
             work_started_at: Arc::new(Mutex::new(None)),
-            max_batch_ttl: DEFAULT_MAX_BATCH_TTL,
+            max_batch_ttl: Duration::from_secs(300),
         }
     }
 

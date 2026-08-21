@@ -19,7 +19,7 @@ use scheduler::dfg::{build_component_nodes, ComponentNode, DFComponentGraph, DFG
 use scheduler::dfg::{scheduler::Scheduler, types::DFGTaskInput};
 use sqlx::types::Uuid;
 use sqlx::{postgres::PgListener, query, Postgres};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -28,7 +28,6 @@ use tracing::{debug, error, info, warn, Instrument};
 
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
 
-#[derive(sqlx::FromRow)]
 struct WorkItem {
     output_handle: Vec<u8>,
     dependencies: Vec<Vec<u8>>,
@@ -38,9 +37,14 @@ struct WorkItem {
     transaction_id: Vec<u8>,
     schedule_order: PrimitiveDateTime,
     /// Authoritative, listener-derived executor `boundaryBits`. Nullable at
-    /// the schema level only for pre-blue-green historical rows; pending work
-    /// without it must never be scheduled.
+    /// the schema level for rows written by a pre-mask listener; for those
+    /// legacy rows the worker falls back to the pre-mask inference (an
+    /// operand is transaction-local iff this transaction produced it).
     operand_boundary_mask: Option<Vec<u8>>,
+    /// The chain this row is filed under. May differ from the locked chain
+    /// for rows retained from a fork sibling (`ON CONFLICT .. DO NOTHING`);
+    /// such rows are loaded as recompute-only producers, never as work.
+    dependence_chain_id: Option<Vec<u8>>,
 }
 
 const OPERAND_BOUNDARY_MASK_BYTES: usize = 32;
@@ -91,6 +95,282 @@ mod operand_boundary_mask_tests {
         assert!(operand_is_boundary(None, 0).is_err());
         assert!(operand_is_boundary(Some(&mask[..31]), 0).is_err());
     }
+
+    /// 32-byte handle with the FheType byte (index 30) set to euint64 and a
+    /// distinguishing id in the last byte.
+    fn handle(id: u8) -> Vec<u8> {
+        let mut h = vec![0_u8; 32];
+        h[30] = 5; // FheUint64
+        h[31] = id;
+        h
+    }
+
+    fn mask_with_bits(bits: &[usize]) -> Vec<u8> {
+        let mut mask = vec![0_u8; OPERAND_BOUNDARY_MASK_BYTES];
+        for bit in bits {
+            mask[OPERAND_BOUNDARY_MASK_BYTES - 1 - bit / 8] |= 1 << (bit % 8);
+        }
+        mask
+    }
+
+    fn work_item(
+        output: Vec<u8>,
+        deps: Vec<Vec<u8>>,
+        mask: Option<Vec<u8>>,
+        dcid: Option<Vec<u8>>,
+        is_allowed: bool,
+    ) -> WorkItem {
+        WorkItem {
+            output_handle: output,
+            dependencies: deps,
+            fhe_operation: SupportedFheOperations::FheAdd as i16,
+            is_scalar: false,
+            is_allowed,
+            transaction_id: vec![0xAA; 32],
+            schedule_order: PrimitiveDateTime::MIN,
+            operand_boundary_mask: mask,
+            dependence_chain_id: dcid,
+        }
+    }
+
+    fn input_kinds(op: &DFGOp) -> Vec<&'static str> {
+        op.inputs
+            .iter()
+            .map(|i| match i {
+                DFGTaskInput::LocalDependence(_) => "local",
+                DFGTaskInput::BoundaryDependence(_) => "boundary",
+                DFGTaskInput::Value(_) => "value",
+                DFGTaskInput::Compressed(_) => "compressed",
+            })
+            .collect()
+    }
+
+    #[test]
+    fn null_mask_derives_boundary_bits_from_transaction_membership() {
+        let dcid = Some(vec![0xD1; 32]);
+        // producer of handle(1) is in the transaction; handle(9) is not.
+        let txwork = vec![
+            work_item(
+                handle(1),
+                vec![handle(8), handle(9)],
+                None,
+                dcid.clone(),
+                true,
+            ),
+            work_item(
+                handle(2),
+                vec![handle(1), handle(9)],
+                None,
+                dcid.clone(),
+                true,
+            ),
+        ];
+        let prepared = prepare_transaction_ops(&txwork, dcid.as_deref()).expect("prepared");
+        assert_eq!(prepared.ops.len(), 2);
+        let consumer = prepared
+            .ops
+            .iter()
+            .find(|op| op.output_handle == handle(2))
+            .expect("consumer op");
+        // handle(1) is produced by this transaction -> local; handle(9) is
+        // not -> canonical persisted form.
+        assert_eq!(input_kinds(consumer), ["local", "boundary"]);
+    }
+
+    #[test]
+    fn invalid_content_is_terminal_not_deferred() {
+        let dcid = Some(vec![0xD1; 32]);
+        let txwork = vec![work_item(
+            handle(1),
+            vec![handle(8), handle(9)],
+            Some(mask_with_bits(&[0, 1])),
+            dcid.clone(),
+            true,
+        )];
+        let mut bad_op = work_item(
+            handle(2),
+            vec![],
+            Some(mask_with_bits(&[])),
+            dcid.clone(),
+            true,
+        );
+        bad_op.fhe_operation = 127; // unknown opcode
+        let mut txwork = txwork;
+        txwork.push(bad_op);
+        let prepared = prepare_transaction_ops(&txwork, dcid.as_deref()).expect("prepared");
+        // The valid row still schedules; the invalid one is reported for a
+        // terminal error, exactly like the executor's own validation.
+        assert_eq!(prepared.ops.len(), 1);
+        assert_eq!(prepared.invalid_rows.len(), 1);
+        assert_eq!(prepared.invalid_rows[0].0, handle(2));
+    }
+
+    #[test]
+    fn invalid_producer_drains_its_local_consumers() {
+        let dcid = Some(vec![0xD1; 32]);
+        let mut bad_producer = work_item(
+            handle(1),
+            vec![],
+            Some(mask_with_bits(&[])),
+            dcid.clone(),
+            true,
+        );
+        bad_producer.fhe_operation = 127; // unknown opcode
+        let txwork = vec![
+            bad_producer,
+            // bit-0 consumer of the invalid producer: can never obtain the
+            // obligated raw bytes, so it must drain with it.
+            work_item(
+                handle(2),
+                vec![handle(1), handle(9)],
+                Some(mask_with_bits(&[1])),
+                dcid.clone(),
+                true,
+            ),
+            // transitively blocked second-level consumer
+            work_item(
+                handle(3),
+                vec![handle(2), handle(9)],
+                Some(mask_with_bits(&[1])),
+                dcid.clone(),
+                true,
+            ),
+            // independent op: still schedulable
+            work_item(
+                handle(4),
+                vec![handle(8), handle(9)],
+                Some(mask_with_bits(&[0, 1])),
+                dcid.clone(),
+                true,
+            ),
+        ];
+        let prepared = prepare_transaction_ops(&txwork, dcid.as_deref()).expect("prepared");
+        assert_eq!(prepared.ops.len(), 1);
+        assert_eq!(prepared.ops[0].output_handle, handle(4));
+        let mut errored: Vec<Vec<u8>> = prepared
+            .invalid_rows
+            .iter()
+            .map(|(h, _)| h.clone())
+            .collect();
+        errored.sort();
+        let mut expected = [handle(1), handle(2), handle(3)];
+        expected.sort();
+        assert_eq!(errored, expected, "producer and both consumers drain");
+    }
+
+    #[test]
+    fn foreign_invalid_content_defers_instead_of_erroring() {
+        let ours = vec![0xD1; 32];
+        let theirs = vec![0xD2; 32];
+        let mut foreign_bad = work_item(
+            handle(1),
+            vec![],
+            Some(mask_with_bits(&[])),
+            Some(theirs),
+            true,
+        );
+        // Content judgments are binary-relative during rolling upgrades: a
+        // foreign row we cannot parse must never be stamped is_error.
+        foreign_bad.fhe_operation = 127;
+        let txwork = vec![
+            foreign_bad,
+            work_item(
+                handle(2),
+                vec![handle(1), handle(9)],
+                Some(mask_with_bits(&[1])),
+                Some(ours.clone()),
+                true,
+            ),
+        ];
+        assert!(prepare_transaction_ops(&txwork, Some(&ours)).is_err());
+    }
+
+    #[test]
+    fn malformed_mask_defers_the_transaction() {
+        let dcid = Some(vec![0xD1; 32]);
+        let txwork = vec![work_item(
+            handle(1),
+            vec![handle(8), handle(9)],
+            Some(vec![0_u8; 31]), // wrong length
+            dcid.clone(),
+            true,
+        )];
+        assert!(prepare_transaction_ops(&txwork, dcid.as_deref()).is_err());
+    }
+
+    #[test]
+    fn foreign_local_producer_joins_as_recompute_only() {
+        let ours = vec![0xD1; 32];
+        let theirs = vec![0xD2; 32];
+        // handle(1): retained fork-sibling row (other chain), itself
+        // consuming two persisted operands. handle(2): our consumer, taking
+        // handle(1) as a transaction-local (bit 0) operand.
+        let txwork = vec![
+            work_item(
+                handle(1),
+                vec![handle(8), handle(9)],
+                Some(mask_with_bits(&[0, 1])),
+                Some(theirs),
+                true,
+            ),
+            work_item(
+                handle(2),
+                vec![handle(1), handle(9)],
+                Some(mask_with_bits(&[1])),
+                Some(ours.clone()),
+                true,
+            ),
+        ];
+        let prepared = prepare_transaction_ops(&txwork, Some(&ours)).expect("prepared");
+        assert_eq!(prepared.ops.len(), 2);
+        let foreign = prepared
+            .ops
+            .iter()
+            .find(|op| op.output_handle == handle(1))
+            .expect("foreign producer joined the graph");
+        // Recompute-only: never eligible for results or persistence, even
+        // though its own row is allowed.
+        assert!(!foreign.is_allowed);
+        assert_eq!(input_kinds(foreign), ["boundary", "boundary"]);
+        let ours_op = prepared
+            .ops
+            .iter()
+            .find(|op| op.output_handle == handle(2))
+            .expect("owned consumer");
+        assert!(ours_op.is_allowed);
+        assert_eq!(input_kinds(ours_op), ["local", "boundary"]);
+        // Foreign rows never anchor the batch's schedule order.
+        assert_eq!(
+            prepared.earliest_owned_allowed,
+            Some(PrimitiveDateTime::MIN)
+        );
+    }
+
+    #[test]
+    fn unneeded_foreign_rows_stay_out_of_the_graph() {
+        let ours = vec![0xD1; 32];
+        let theirs = vec![0xD2; 32];
+        let txwork = vec![
+            // Fork-sibling row nothing owned depends on.
+            work_item(
+                handle(1),
+                vec![handle(8), handle(9)],
+                Some(mask_with_bits(&[0, 1])),
+                Some(theirs),
+                true,
+            ),
+            work_item(
+                handle(2),
+                vec![handle(8), handle(9)],
+                Some(mask_with_bits(&[0, 1])),
+                Some(ours.clone()),
+                true,
+            ),
+        ];
+        let prepared = prepare_transaction_ops(&txwork, Some(&ours)).expect("prepared");
+        assert_eq!(prepared.ops.len(), 1);
+        assert_eq!(prepared.ops[0].output_handle, handle(2));
+    }
 }
 
 lazy_static! {
@@ -100,6 +380,11 @@ lazy_static! {
 lazy_static! {
     static ref WORKER_ERRORS_COUNTER: IntCounter =
         register_int_counter!("coprocessor_worker_errors", "worker errors encountered").unwrap();
+    static ref DEFERRED_TRANSACTIONS_COUNTER: IntCounter = register_int_counter!(
+        "coprocessor_worker_deferred_transactions",
+        "transactions left pending because their work rows could not be interpreted"
+    )
+    .unwrap();
     static ref WORK_ITEMS_POLL_COUNTER: IntCounter = register_int_counter!(
         "coprocessor_work_items_polls",
         "times work items are polled from database"
@@ -336,6 +621,24 @@ async fn tfhe_worker_cycle(
         .instrument(loop_span.clone())
         .await?;
         if has_more_work {
+            if transactions.is_empty() {
+                // Rows were loaded but nothing was schedulable: every
+                // transaction deferred (uninterpretable rows) or drained
+                // (terminal stamps written above). Persist the stamps —
+                // the no-work branch below would drop them with the
+                // transaction — release the chain WITHOUT retiring it (it
+                // still has pending rows), and wait for the normal
+                // poll/notify cadence instead of re-querying the same rows
+                // in a zero-backoff spin (unbounded when DCID locking is
+                // disabled, where parking is a no-op). The global
+                // no-progress counter is deliberately untouched: it gates
+                // the acquire_early_lock escalation, which must not be
+                // reachable through wedged chains alone.
+                trx.commit().await?;
+                dcid_mngr.release_current_lock(false, None).await?;
+                immediately_poll_more_work = false;
+                continue;
+            }
             // We've fetched work, so we'll poll again without waiting
             // for a notification after this cycle.
             immediately_poll_more_work = true;
@@ -640,7 +943,8 @@ async fn query_for_work<'a>(
     // Schema isolation: BCS connects with `search_path = public`, GCS with
     // `search_path = gcs,public`. Unqualified `computations` therefore
     // resolves to the stack's own schema. No table-name swaps needed in code.
-    let the_work = sqlx::query_as::<_, WorkItem>(
+    let the_work = sqlx::query_as!(
+        WorkItem,
         "
 -- Acquire all computations from a transaction set
 SELECT
@@ -651,7 +955,8 @@ SELECT
   c.is_allowed,
   c.transaction_id,
   c.schedule_order,
-  c.operand_boundary_mask
+  c.operand_boundary_mask,
+  c.dependence_chain_id
 FROM computations c
 WHERE c.transaction_id IN (
     SELECT DISTINCT
@@ -667,15 +972,18 @@ WHERE c.transaction_id IN (
       LIMIT $2
     ) as c_schedule_order
   )
-  -- The transaction-id expansion above is only a convenience for loading
-  -- non-allowed intermediates. Re-apply ownership here: a fork-exposed DB
-  -- can retain a stale row with the same transaction hash in another DCID,
-  -- and it must not enter this worker's graph.
-  AND ($1::bytea IS NULL OR c.dependence_chain_id = $1)
+  -- The transaction-id expansion deliberately loads ALL rows of a selected
+  -- transaction, including rows a fork-exposed DB retained under another
+  -- chain (`ON CONFLICT .. DO NOTHING` keeps the sibling's row when a handle
+  -- collides across replacement blocks). Ownership is re-applied in code:
+  -- rows of another chain are recompute-only producers for this chain's
+  -- consumers — a boundary bit 0 obligates raw in-transaction bytes, which
+  -- must be recomputed, never read back through the persisted round-trip —
+  -- and are excluded from results, persistence and completion.
         ",
+        dependence_chain_id.as_deref(),
+        transaction_batch_size as i32,
     )
-    .bind(dependence_chain_id.as_deref())
-    .bind(transaction_batch_size as i32)
     .fetch_all(trx.as_mut())
     .instrument(s_work.clone())
     .await
@@ -699,7 +1007,7 @@ WHERE c.transaction_id IN (
 				    locking = ?locking_reason }, "Processing work items");
     let s_prep = tracing::info_span!("prepare_dataflow_graphs", work_items = the_work.len());
     let (transactions, earliest_schedule_order) = async {
-        let mut earliest_schedule_order = the_work.first().unwrap().schedule_order;
+        let mut earliest_schedule_order = PrimitiveDateTime::MAX;
         // Partition work directly by transaction
         let work_by_transaction: HashMap<Handle, Vec<_>> = the_work
             .into_iter()
@@ -708,129 +1016,269 @@ WHERE c.transaction_id IN (
         let mut transactions: Vec<ComponentNode> = vec![];
         for (transaction_id, txwork) in work_by_transaction.iter() {
             let transaction_id: &Vec<u8> = transaction_id;
-            let mut ops = vec![];
-            'operations: for w in txwork {
-                // A nullable column allows blue-green replacement without an
-                // unsafe semantic backfill, but it is never valid for work
-                // selected by this binary. Validate it before considering
-                // any operation so a malformed row fails closed.
-                let operand_boundary_mask = w.operand_boundary_mask.as_deref();
-                if let Err(e) = operand_is_boundary(operand_boundary_mask, 0) {
-                    set_computation_error(
-                        &w.output_handle,
-                        transaction_id,
-                        &e,
-                        trx,
-                        deps_chain_mngr,
-                    )
-                    .await?;
-                    continue;
-                }
-                let fhe_op: SupportedFheOperations = match w.fhe_operation.try_into() {
-                    Ok(op) => op,
-                    Err(e) => {
-                        error!(target: "tfhe_worker", { output_handle = ?w.output_handle, transaction_id = ?hex::encode(transaction_id), error = %e, }, "invalid FHE operation ");
-                        set_computation_error(
-                            &w.output_handle,
-                            transaction_id,
-                            &e,
-                            trx,
-                            deps_chain_mngr,
-                        )
-                        .await?;
-                        continue;
-                    }
-                };
-                let mut inputs: Vec<DFGTaskInput> = Vec::with_capacity(w.dependencies.len());
-                let mut this_comp_inputs: Vec<Vec<u8>> = Vec::with_capacity(w.dependencies.len());
-                let mut is_scalar_op_vec: Vec<bool> = Vec::with_capacity(w.dependencies.len());
-                for (idx, dh) in w.dependencies.iter().enumerate() {
-                    let is_operand_scalar =
-                        fhe_op.is_operand_scalar(w.is_scalar, idx, w.dependencies.len());
-                    is_scalar_op_vec.push(is_operand_scalar);
-                    this_comp_inputs.push(dh.clone());
-                    if is_operand_scalar {
-                        inputs.push(DFGTaskInput::Value(SupportedFheCiphertexts::Scalar(
-                            dh.clone(),
-                        )));
-                    } else {
-                        match operand_is_boundary(operand_boundary_mask, idx) {
-                            Ok(true) => inputs.push(DFGTaskInput::BoundaryDependence(dh.clone())),
-                            Ok(false) => inputs.push(DFGTaskInput::LocalDependence(dh.clone())),
-                            Err(e) => {
-                                set_computation_error(
-                                    &w.output_handle,
-                                    transaction_id,
-                                    &e,
-                                    trx,
-                                    deps_chain_mngr,
-                                )
-                                .await?;
-                                continue 'operations;
-                            }
-                        }
-                    }
-                }
-                if let Err(e) =
-                    check_fhe_operand_types(w.fhe_operation.into(), &this_comp_inputs, &is_scalar_op_vec)
-                {
-                    let error = std::io::Error::other(format!("invalid FHE operands: {e}"));
-                    set_computation_error(
-                        &w.output_handle,
-                        transaction_id,
-                        &error,
-                        trx,
-                        deps_chain_mngr,
-                    )
-                    .await?;
-                    continue;
-                }
-                ops.push(DFGOp {
-                    output_handle: w.output_handle.clone(),
-                    fhe_op,
-                    inputs,
-                    is_allowed: w.is_allowed,
-                });
-                if w.schedule_order < earliest_schedule_order && w.is_allowed {
-                    // Only account for allowed to avoid case of reorg
-                    // where trivial encrypts will be in collision in
-                    // the same transaction and old ones are re-used
-                    earliest_schedule_order = w.schedule_order;
-                }
-            }
-            let operation_handles: Vec<_> = ops
-                .iter()
-                .map(|op| op.output_handle.clone())
-                .collect();
-            let (mut components, _) = match build_component_nodes(ops, transaction_id) {
-                Ok(components) => components,
-                Err(e) => {
-                    // A malformed transaction-local graph cannot be safely
-                    // partially scheduled. Mark its remaining operations
-                    // terminal so this DCID cannot restart the entire worker
-                    // cycle forever; unrelated transactions continue below.
-                    let error_message = format!("invalid transaction graph: {e}");
-                    for output_handle in operation_handles {
-                        let error = std::io::Error::other(error_message.clone());
-                        set_computation_error(
-                            &output_handle,
-                            transaction_id,
-                            &error,
-                            trx,
-                            deps_chain_mngr,
-                        )
-                        .await?;
-                    }
+            let prepared = match prepare_transaction_ops(txwork, dependence_chain_id.as_deref()) {
+                Ok(prepared) => prepared,
+                Err(reason) => {
+                    defer_transaction(transaction_id, &reason);
                     continue;
                 }
             };
+            for (output_handle, error_message) in &prepared.invalid_rows {
+                let error = std::io::Error::other(error_message.clone());
+                set_computation_error(output_handle, transaction_id, &error, trx, deps_chain_mngr)
+                    .await?;
+            }
+            if prepared.ops.is_empty() {
+                continue;
+            }
+            let (mut components, _) = match build_component_nodes(prepared.ops, transaction_id) {
+                Ok(components) => components,
+                Err(e) => {
+                    // A dangling local dependence or otherwise malformed
+                    // transaction-local graph means this binary cannot
+                    // interpret the rows, not that the computation failed:
+                    // defer instead of destroying the rows, and let the
+                    // alert below surface the wedge. Unrelated transactions
+                    // continue.
+                    defer_transaction(transaction_id, &format!("invalid transaction graph: {e}"));
+                    continue;
+                }
+            };
+            if let Some(order) = prepared.earliest_owned_allowed {
+                earliest_schedule_order = earliest_schedule_order.min(order);
+            }
             transactions.append(&mut components);
         }
         Ok::<_, CoprocessorError>((transactions, earliest_schedule_order))
     }
     .instrument(s_prep)
     .await?;
+    // `true` even when `transactions` is empty (everything deferred or
+    // drained as invalid): the caller's no-work branch marks the chain
+    // processed — which would silently retire a chain that still has
+    // pending rows — and drops the transaction WITHOUT committing, rolling
+    // back any terminal error stamps written above. The caller
+    // distinguishes the empty case itself: it commits the stamps, releases
+    // the chain un-retired, and backs off to the normal poll cadence.
     Ok((transactions, earliest_schedule_order, true))
+}
+
+/// Ops of one transaction, ready for `build_component_nodes`.
+struct PreparedTransaction {
+    ops: Vec<DFGOp>,
+    /// Earliest `schedule_order` among the owned, allowed rows; `None` when
+    /// the transaction contributes no schedulable work of its own.
+    earliest_owned_allowed: Option<PrimitiveDateTime>,
+    /// OWNED rows whose content is deterministically invalid (unknown
+    /// opcode, operand-type mismatch) — plus their owned transaction-local
+    /// consumers, transitively, which are equally uncomputable (their
+    /// obligated raw producer can never exist). The executor validates
+    /// content before minting, so these cannot come from ordered ingestion
+    /// of a healthy chain, and retrying can never succeed: they are marked
+    /// terminally errored, DRAINING the chain, unlike interpretation-layer
+    /// states, which defer. Content judgments are binary-relative during a
+    /// rolling upgrade (an old binary may reject an opcode a new one
+    /// understands), so rows of another chain are never judged here: a
+    /// foreign row with uninterpretable content defers the transaction
+    /// instead.
+    invalid_rows: Vec<(Vec<u8>, String)>,
+}
+
+/// Fail-closed deferral: the transaction's rows are left pending untouched,
+/// so the chain retries (and re-alerts) on a later cycle. Deferral is
+/// reserved for rows this binary cannot interpret; failures of the
+/// computation itself still set `is_error` through `set_computation_error`.
+fn defer_transaction(transaction_id: &[u8], reason: &str) {
+    DEFERRED_TRANSACTIONS_COUNTER.inc();
+    error!(
+        target: "tfhe_worker",
+        transaction_id = %hex::encode(transaction_id),
+        reason,
+        "deferring transaction with uninterpretable work rows"
+    );
+}
+
+/// Builds the dataflow ops for one transaction's loaded rows.
+///
+/// Rows filed under the locked chain are the schedulable work. Rows of the
+/// same transaction retained under another chain (fork siblings kept by
+/// `ON CONFLICT .. DO NOTHING`) join the graph only when an owned consumer
+/// reaches them through a transaction-local (boundary bit 0) dependence:
+/// bit 0 obligates the consumer to the raw in-transaction bytes, so the
+/// producer is recomputed here — byte-identical by construction, since a
+/// colliding handle proves identical sourcing — instead of read back
+/// through the bit-inexact persisted round-trip. Such foreign rows are
+/// forced `is_allowed = false` so they can never reach results,
+/// persistence or completion, which stay owned by their own chain.
+///
+/// `Err(reason)` defers the whole transaction (see `defer_transaction`):
+/// partially scheduling a transaction would leave consumers of the skipped
+/// rows dangling.
+fn prepare_transaction_ops(
+    txwork: &[WorkItem],
+    locked_dependence_chain_id: Option<&[u8]>,
+) -> Result<PreparedTransaction, String> {
+    // Handles produced by ANY row of this transaction, either fork spelling.
+    let produced: HashSet<&[u8]> = txwork.iter().map(|w| w.output_handle.as_slice()).collect();
+    let rows_by_handle: HashMap<&[u8], &WorkItem> = txwork
+        .iter()
+        .map(|w| (w.output_handle.as_slice(), w))
+        .collect();
+    let row_is_owned = |w: &WorkItem| match locked_dependence_chain_id {
+        None => true,
+        Some(dcid) => w.dependence_chain_id.as_deref() == Some(dcid),
+    };
+    // The executor's boundary bit for one operand. Legacy rows (written by a
+    // pre-mask listener) carry no mask; for those, fall back to the pre-mask
+    // inference this worker used before masks existed: an operand this
+    // transaction produced is transaction-local, anything else is consumed
+    // in its canonical persisted form.
+    let operand_boundary = |w: &WorkItem, idx: usize, dh: &[u8]| -> Result<bool, String> {
+        match w.operand_boundary_mask.as_deref() {
+            Some(mask) => operand_is_boundary(Some(mask), idx).map_err(|e| e.to_string()),
+            None => Ok(!produced.contains(dh)),
+        }
+    };
+
+    let mut included: HashSet<&[u8]> = HashSet::new();
+    let mut queue: VecDeque<&WorkItem> = VecDeque::new();
+    for w in txwork.iter().filter(|w| row_is_owned(w)) {
+        if included.insert(w.output_handle.as_slice()) {
+            queue.push_back(w);
+        }
+    }
+
+    let mut ops: Vec<DFGOp> = vec![];
+    let mut earliest_owned_allowed: Option<PrimitiveDateTime> = None;
+    let mut invalid_rows: Vec<(Vec<u8>, String)> = vec![];
+    while let Some(w) = queue.pop_front() {
+        let owned = row_is_owned(w);
+        let fhe_op: SupportedFheOperations = match w.fhe_operation.try_into() {
+            Ok(op) => op,
+            Err(e) => {
+                if !owned {
+                    return Err(format!(
+                        "foreign row 0x{} carries uninterpretable content: invalid FHE operation: {e}",
+                        hex::encode(&w.output_handle)
+                    ));
+                }
+                invalid_rows.push((
+                    w.output_handle.clone(),
+                    format!("invalid FHE operation: {e}"),
+                ));
+                continue;
+            }
+        };
+        let mut inputs: Vec<DFGTaskInput> = Vec::with_capacity(w.dependencies.len());
+        let mut this_comp_inputs: Vec<Vec<u8>> = Vec::with_capacity(w.dependencies.len());
+        let mut is_scalar_op_vec: Vec<bool> = Vec::with_capacity(w.dependencies.len());
+        for (idx, dh) in w.dependencies.iter().enumerate() {
+            let is_operand_scalar =
+                fhe_op.is_operand_scalar(w.is_scalar, idx, w.dependencies.len());
+            is_scalar_op_vec.push(is_operand_scalar);
+            this_comp_inputs.push(dh.clone());
+            if is_operand_scalar {
+                inputs.push(DFGTaskInput::Value(SupportedFheCiphertexts::Scalar(
+                    dh.clone(),
+                )));
+            } else if operand_boundary(w, idx, dh)? {
+                inputs.push(DFGTaskInput::BoundaryDependence(dh.clone()));
+            } else {
+                inputs.push(DFGTaskInput::LocalDependence(dh.clone()));
+                if !included.contains(dh.as_slice()) {
+                    if let Some(producer) = rows_by_handle.get(dh.as_slice()) {
+                        included.insert(producer.output_handle.as_slice());
+                        queue.push_back(producer);
+                    }
+                    // No row at all for a transaction-local producer: leave
+                    // the dependence dangling so build_component_nodes
+                    // defers this transaction. Ingestion writes a producer
+                    // row for every bit-0 operand atomically with the
+                    // consumer's, so this indicates deleted or corrupted
+                    // state, never a schedulable one.
+                }
+            }
+        }
+        if let Err(e) =
+            check_fhe_operand_types(w.fhe_operation.into(), &this_comp_inputs, &is_scalar_op_vec)
+        {
+            if !owned {
+                return Err(format!(
+                    "foreign row 0x{} carries uninterpretable content: invalid FHE operands: {e}",
+                    hex::encode(&w.output_handle)
+                ));
+            }
+            invalid_rows.push((
+                w.output_handle.clone(),
+                format!("invalid FHE operands: {e}"),
+            ));
+            continue;
+        }
+        ops.push(DFGOp {
+            output_handle: w.output_handle.clone(),
+            fhe_op,
+            inputs,
+            // Foreign rows are recompute-only producers, whatever their own
+            // row says: results, persistence and completion belong to the
+            // chain that owns them.
+            is_allowed: owned && w.is_allowed,
+        });
+        if owned && w.is_allowed {
+            // Only account for owned allowed rows to avoid the reorg case
+            // where colliding trivial encrypts of a fork sibling would
+            // drag the batch's schedule anchor backwards.
+            earliest_owned_allowed = Some(match earliest_owned_allowed {
+                Some(current) => current.min(w.schedule_order),
+                None => w.schedule_order,
+            });
+        }
+    }
+    // Uncomputability propagates through transaction-local dependences: a
+    // consumer whose bit-0 producer is terminally errored can never obtain
+    // the obligated raw bytes, so it drains with the producer instead of
+    // deferring forever behind a dangling dependence. Owned consumers are
+    // errored; foreign ones are dropped from the graph without judgment
+    // (their own chain owns their fate).
+    let mut uncomputable: HashSet<Vec<u8>> = invalid_rows
+        .iter()
+        .map(|(handle, _)| handle.clone())
+        .collect();
+    loop {
+        let mut progressed = false;
+        let mut index = 0;
+        while index < ops.len() {
+            let blocked = ops[index].inputs.iter().any(|input| match input {
+                DFGTaskInput::LocalDependence(dh) => uncomputable.contains(dh),
+                _ => false,
+            });
+            if blocked {
+                let op = ops.remove(index);
+                // Ownership derived from the row itself, so no parallel
+                // bookkeeping can drift out of alignment with `ops`.
+                let owned = rows_by_handle
+                    .get(op.output_handle.as_slice())
+                    .is_some_and(|row| row_is_owned(row));
+                uncomputable.insert(op.output_handle.clone());
+                if owned {
+                    invalid_rows.push((
+                        op.output_handle,
+                        "transaction-local producer is terminally errored".to_string(),
+                    ));
+                }
+                progressed = true;
+            } else {
+                index += 1;
+            }
+        }
+        if !progressed {
+            break;
+        }
+    }
+    Ok(PreparedTransaction {
+        ops,
+        earliest_owned_allowed,
+        invalid_rows,
+    })
 }
 
 #[tracing::instrument(name = "build_and_execute", skip_all)]

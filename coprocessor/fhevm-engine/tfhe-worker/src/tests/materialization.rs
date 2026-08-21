@@ -14,7 +14,8 @@ use serial_test::serial;
 /// together (on chain they could never collide). What this pins instead:
 /// both sourcing shapes compute correctly through the scheduler — a
 /// cross-transaction boundary consumer (canonical decompression path) and a
-/// local recompute whose add reads its in-transaction trivials raw — and
+/// local recompute whose add reads its in-transaction trivial encrypts
+/// raw — and
 /// deterministic trivial encrypts persist byte-identical ciphertexts from
 /// either transaction.
 #[tokio::test]
@@ -95,12 +96,10 @@ async fn boundary_and_local_sourcing_both_compute_and_persist(
     let fetch = |handle: Vec<u8>| {
         let pool = pool.clone();
         async move {
-            sqlx::query_scalar::<_, Vec<u8>>(
-                "SELECT ciphertext FROM ciphertexts WHERE handle = $1",
-            )
-            .bind(handle)
-            .fetch_one(&pool)
-            .await
+            sqlx::query_scalar::<_, Vec<u8>>("SELECT ciphertext FROM ciphertexts WHERE handle = $1")
+                .bind(handle)
+                .fetch_one(&pool)
+                .await
         }
     };
 
@@ -121,11 +120,7 @@ async fn boundary_and_local_sourcing_both_compute_and_persist(
     assert!(!from_boundaries.is_empty());
     assert!(!from_local.is_empty());
 
-    let plaintexts = decrypt_handles(
-        &pool,
-        &[combined_from_boundaries, combined_locally],
-    )
-    .await?;
+    let plaintexts = decrypt_handles(&pool, &[combined_from_boundaries, combined_locally]).await?;
     assert_eq!(plaintexts[0].value, "12");
     assert_eq!(plaintexts[1].value, "12");
     Ok(())

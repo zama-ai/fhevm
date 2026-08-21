@@ -14,3 +14,7 @@ CREATE TABLE late_allow_propagation (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (host_chain_id, block_hash, handle)
 );
+
+-- Supports the retention prune (by block_number) without scanning the PK.
+CREATE INDEX idx_late_allow_propagation_block_number
+    ON late_allow_propagation (host_chain_id, block_number);

@@ -694,6 +694,13 @@ pub async fn ingest_block_logs(
         allow_event_count,
     )
     .await?;
+    // Sweep matured records every ingest, AFTER this block's validity row
+    // exists: catchup ingests blocks already-finalized (they never take the
+    // pending -> finalized transition that sweeps in the finalization
+    // loop), so a catchup block's own records mature in this very
+    // transaction; a record can also mature before its computation row
+    // arrives out of order and is picked up here once the row lands.
+    db.apply_matured_late_allows(&mut tx).await?;
     if at_least_one_insertion {
         db.update_dependence_chain(
             &mut tx,
@@ -1329,15 +1336,13 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
                     return;
                 }
                 // The block's persistent allows are now final: propagate the
-                // late ones to computation rows from earlier blocks, in the
-                // same transaction as the finalization gating them.
-                if let Err(err) =
-                    db.apply_finalized_late_allows(&mut tx, &block_hash).await
-                {
+                // matured late ones to their computation rows, in the same
+                // transaction as the finalization gating them.
+                if let Err(err) = db.apply_matured_late_allows(&mut tx).await {
                     error!(
                         block_number,
                         ?err,
-                        "Failed to apply finalized late allows"
+                        "Failed to apply matured late allows"
                     );
                     return;
                 }

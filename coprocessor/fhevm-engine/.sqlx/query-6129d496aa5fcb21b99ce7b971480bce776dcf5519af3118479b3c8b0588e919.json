@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM late_allow_propagation lap\n            WHERE lap.host_chain_id = $1\n              AND (\n                  (\n                      lap.block_number < $2\n                      AND EXISTS (\n                          SELECT 1 FROM computations c\n                          WHERE c.output_handle = lap.handle\n                      )\n                      AND NOT EXISTS (\n                          SELECT 1 FROM computations c\n                          WHERE c.output_handle = lap.handle\n                            AND c.is_allowed = false\n                      )\n                  )\n                  OR lap.block_number < $3\n              )\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6129d496aa5fcb21b99ce7b971480bce776dcf5519af3118479b3c8b0588e919"
+}

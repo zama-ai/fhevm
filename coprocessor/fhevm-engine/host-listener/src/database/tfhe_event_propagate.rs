@@ -818,8 +818,16 @@ impl Database {
     /// source of that flag at ingest). The allowance is NOT applied here:
     /// this block may still be orphaned, and orphaned `allowed_handles` rows
     /// are deliberately retained, so application waits for finality
-    /// (`apply_finalized_late_allows`) and orphaning retracts the record
+    /// (`apply_matured_late_allows`) and orphaning retracts the record
     /// (`retract_orphaned_event_state`).
+    ///
+    /// A record is skipped only when the handle already has an allowed
+    /// computation row (the same-block case: ACL events are processed after
+    /// the block's compute inserts). In particular an allow observed BEFORE
+    /// its computation row exists — out-of-order or catchup ingestion — is
+    /// still recorded, and stays recorded until the row appears; records
+    /// whose handle never gains a row (e.g. allows on verified-input
+    /// handles) are dropped by the retention prune.
     pub async fn record_late_allows(
         &self,
         tx: &mut Transaction<'_>,
@@ -840,6 +848,10 @@ impl Database {
                 WHERE c.output_handle = h.handle
                   AND c.is_allowed = false
             )
+            OR NOT EXISTS (
+                SELECT 1 FROM computations c
+                WHERE c.output_handle = h.handle
+            )
             ON CONFLICT DO NOTHING
             "#,
             self.chain_id.as_i64(),
@@ -859,25 +871,41 @@ impl Database {
         Ok(recorded)
     }
 
-    /// Applies the late allows recorded for a block that just became final:
-    /// flips `is_allowed` on the earlier computation rows, repairs rows a
-    /// pre-mask binary completed without persisting (this binary never
-    /// completes non-allowed rows, so completed-but-unpersisted can only be
-    /// legacy state) by resetting them to pending for a deterministic
+    /// Applies every late allow whose observing block is FINAL: flips
+    /// `is_allowed` on the handle's computation rows, resets
+    /// completed-but-unpersisted rows to pending for a deterministic
     /// recompute, and re-arms the owning chains so the work is re-acquired.
-    pub async fn apply_finalized_late_allows(
+    ///
+    /// This is a sweep over MATURED records rather than a per-block apply,
+    /// so it covers every path a block reaches finality through: the
+    /// pending -> finalized transition in update_finalized_blocks_aux, AND
+    /// blocks ingested already-finalized by catchup, which never take that
+    /// transition. It is called from both places; a record whose
+    /// computation row has not been ingested yet is applied by a later
+    /// sweep once the row exists (only consumed records are deleted).
+    pub async fn apply_matured_late_allows(
         &self,
         tx: &mut Transaction<'_>,
-        block_hash: &BlockHash,
     ) -> Result<(), SqlxError> {
+        // Consume records whose block is final and whose handle has a
+        // computation row to act on; keep matured records that are still
+        // waiting for their row (out-of-order ingestion). No pre-check is
+        // needed: with the table empty — the steady state — this DELETE is
+        // a single probe of the (host_chain_id, ..) primary-key prefix.
         let handles: Vec<Vec<u8>> = sqlx::query!(
             r#"
-            DELETE FROM late_allow_propagation
-            WHERE host_chain_id = $1 AND block_hash = $2
-            RETURNING handle AS "handle!"
+            DELETE FROM late_allow_propagation lap
+            USING host_chain_blocks_valid b
+            WHERE lap.host_chain_id = $1
+              AND b.chain_id = lap.host_chain_id
+              AND b.block_hash = lap.block_hash
+              AND b.block_status = 'finalized'
+              AND EXISTS (
+                  SELECT 1 FROM computations c WHERE c.output_handle = lap.handle
+              )
+            RETURNING lap.handle AS "handle!"
             "#,
             self.chain_id.as_i64(),
-            block_hash.as_slice(),
         )
         .fetch_all(tx.deref_mut())
         .await?
@@ -904,10 +932,14 @@ impl Database {
         .fetch_all(tx.deref_mut())
         .await?;
 
-        // Legacy repair: a pre-mask worker marked non-allowed rows completed
-        // without persisting their ciphertext. Now that the handle is
-        // allowed, such a row must recompute (deterministically) so the
-        // result actually persists for its cross-transaction consumers.
+        // The NORMAL late-allow path, not a legacy repair: the listener
+        // inserts every non-allowed row with is_completed = NOT is_allowed
+        // (see insert_computation), so a late-allowed row is always
+        // completed-but-unpersisted and must reset to pending so the
+        // deterministic recompute actually persists the ciphertext its
+        // cross-transaction consumers need. Rows with is_error = true stay
+        // excluded on purpose: content errors are terminal and a late allow
+        // must not silently resurrect them (they surface via the flip log).
         let reset = sqlx::query!(
             r#"
             UPDATE computations c
@@ -940,47 +972,56 @@ impl Database {
 
         // Re-arm the owning chains: the listener convention for adding work
         // to an existing chain (a live worker's release respects a
-        // listener-set 'updated'). A missing chain row means it was pruned
-        // after settling; that needs operator attention, so warn rather
-        // than resurrect a chain whose scheduling context is gone.
-        let rearmed = sqlx::query!(
+        // listener-set 'updated'). Chains already 'updated' keep their FIFO
+        // position (re-stamping last_updated_at would push a busy chain to
+        // the back of the acquisition order on every sweep).
+        // One statement re-arms and reports: the CTE updates only chains
+        // not already queued (preserving their FIFO position and avoiding a
+        // lock race with a live worker's release), while the outer read
+        // names every chain that exists so the pruned ones — which need
+        // operator attention, since their scheduling context is gone — can
+        // be listed in the warn.
+        let existing = sqlx::query!(
             r#"
-            UPDATE dependence_chain
-            SET status = 'updated', last_updated_at = NOW()
-            WHERE dependence_chain_id = ANY($1::bytea[])
-              AND status <> 'updated'
+            WITH rearmed AS (
+                UPDATE dependence_chain
+                SET status = 'updated', last_updated_at = NOW()
+                WHERE dependence_chain_id = ANY($1::bytea[])
+                  AND status <> 'updated'
+                RETURNING dependence_chain_id
+            )
+            SELECT
+                dc.dependence_chain_id,
+                (dc.dependence_chain_id IN (
+                    SELECT r.dependence_chain_id FROM rearmed r
+                )) AS "rearmed!"
+            FROM dependence_chain dc
+            WHERE dc.dependence_chain_id = ANY($1::bytea[])
             "#,
             &chain_ids,
         )
-        .execute(tx.deref_mut())
-        .await?
-        .rows_affected();
+        .fetch_all(tx.deref_mut())
+        .await?;
         info!(
             handles = handles.len(),
             chains = chain_ids.len(),
-            rearmed,
+            rearmed = existing.iter().filter(|row| row.rearmed).count(),
             "Applied finalized late allows"
         );
-        if (rearmed as usize) < chain_ids.len() {
-            // Some chains were already 'updated' (benign) or pruned (needs
-            // attention); disambiguating costs another query only when the
-            // counts disagree.
-            let existing = sqlx::query!(
-                r#"
-                SELECT count(*) AS "count!" FROM dependence_chain
-                WHERE dependence_chain_id = ANY($1::bytea[])
-                "#,
-                &chain_ids,
-            )
-            .fetch_one(tx.deref_mut())
-            .await?
-            .count;
-            if (existing as usize) < chain_ids.len() {
-                warn!(
-                    missing = chain_ids.len() - existing as usize,
-                    "Late allow flipped rows on pruned chains; their recompute needs manual re-arming"
-                );
-            }
+        if existing.len() < chain_ids.len() {
+            let existing: HashSet<&Vec<u8>> = existing
+                .iter()
+                .map(|row| &row.dependence_chain_id)
+                .collect();
+            let pruned: Vec<String> = chain_ids
+                .iter()
+                .filter(|id| !existing.contains(id))
+                .map(|id| to_hex(id))
+                .collect();
+            warn!(
+                ?pruned,
+                "Late allow flipped rows on pruned chains; their recompute needs manual re-arming"
+            );
         }
         // Wake an idle worker for the re-armed work.
         sqlx::query!("SELECT pg_notify('work_available', '')")
@@ -1392,6 +1433,41 @@ impl Database {
             return Ok(0);
         }
         let pool = self.pool.read().await.clone();
+        // Late-allow record retention, two horizons:
+        // - Standard horizon: drop records whose handle's rows are all
+        //   allowed already (nothing left to repair). Records with a live
+        //   non-allowed row are kept for the sweep to consume.
+        // - Extended horizon: records with NO computations row at all are
+        //   usually allows on verified-input handles (no row by design),
+        //   but can also be waiting on a deep backfill to deliver the row,
+        //   so they get a longer grace period before expiring.
+        sqlx::query!(
+            r#"
+            DELETE FROM late_allow_propagation lap
+            WHERE lap.host_chain_id = $1
+              AND (
+                  (
+                      lap.block_number < $2
+                      AND EXISTS (
+                          SELECT 1 FROM computations c
+                          WHERE c.output_handle = lap.handle
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1 FROM computations c
+                          WHERE c.output_handle = lap.handle
+                            AND c.is_allowed = false
+                      )
+                  )
+                  OR lap.block_number < $3
+              )
+            "#,
+            self.chain_id.as_i64(),
+            prune_below,
+            last_finalized_block
+                .saturating_sub(BLOCKS_VALID_RETENTION.saturating_mul(4)),
+        )
+        .execute(&pool)
+        .await?;
         let deleted = sqlx::query!(
             r#"
             DELETE FROM host_chain_blocks_valid b
@@ -1424,6 +1500,15 @@ impl Database {
                   AND NOT EXISTS (
                       SELECT 1 FROM kms_crs_activation_events r
                       WHERE r.chain_id = $1 AND r.block_hash = c.block_hash
+                  )
+                  -- A late-allow record is consumable only while its
+                  -- observing block's row exists (the sweep joins on it);
+                  -- pruning the anchor first would strand the record
+                  -- forever. Records themselves expire above, so this
+                  -- guard is temporary per block.
+                  AND NOT EXISTS (
+                      SELECT 1 FROM late_allow_propagation r
+                      WHERE r.host_chain_id = $1 AND r.block_hash = c.block_hash
                   )
                 ORDER BY c.block_number ASC
                 LIMIT $3
