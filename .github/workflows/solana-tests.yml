@@ -119,6 +119,13 @@ jobs:
               - .github/workflows/solana-tests.yml
               - sdk/js-sdk/src/solana/**
               - sdk/js-sdk/src/core/coprocessor/**
+              # The decryption-request budget parity test reads these three contracts at test
+              # time; js-sdk-tests.yml does not trigger on gateway-contracts, so without them a
+              # width-table drift would surface only at merge-to-main.
+              - sdk/js-sdk/src/core/handle/**
+              - gateway-contracts/contracts/Decryption.sol
+              - gateway-contracts/contracts/shared/FheType.sol
+              - gateway-contracts/contracts/libraries/FHETypeBitSizes.sol
               - solana/test-fixtures/user-decrypt/**
 
   # Pure grep/sed, no toolchain, half a minute: its own job so it runs for every tree it sweeps,
@@ -289,7 +296,7 @@ jobs:
       # js-sdk-tests.yml and carries EVM-side tests this workflow has no business gating on.
       - name: Run the Solana user-decrypt unit tests (incl. the committed byte vectors)
         working-directory: sdk/js-sdk
-        run: npx vitest run --config src/vitest.config.ts src/core/coprocessor/SolanaUserDecrypt src/solana
+        run: npx vitest run --config src/vitest.config.ts src/core/handle src/solana
 
   build-and-test:
     name: solana-tests/build-and-test

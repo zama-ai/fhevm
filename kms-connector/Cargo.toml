@@ -20,8 +20,8 @@ tx-sender.path = "crates/tx-sender"
 connector-utils.path = "crates/utils"
 fhevm_gateway_bindings = { path = "../gateway-contracts/rust_bindings", default-features = false }
 fhevm_host_bindings = { path = "../host-contracts/rust_bindings", default-features = false }
-kms-grpc = { git = "https://github.com/zama-ai/kms.git", rev = "68ba21ba13f5063c729952a0fa0359c0e577db8d", default-features = true }
-bc2wrap = { git = "https://github.com/zama-ai/kms.git", rev = "68ba21ba13f5063c729952a0fa0359c0e577db8d", default-features = true }
+kms-grpc = { git = "https://github.com/zama-ai/kms.git", rev = "024279f8e7681b4657abe4902a61ed05e76d8e77", default-features = true }
+bc2wrap = { git = "https://github.com/zama-ai/kms.git", rev = "024279f8e7681b4657abe4902a61ed05e76d8e77", default-features = true }
 tfhe = { version = "=1.6.2", default-features = false }
 user-decryption-signature = { path = "../shared/user-decryption-signature", default-features = false }
 ciphertext-attestation = { path = "../shared/ciphertext-attestation" }
@@ -32,7 +32,18 @@ zama-solana-request = { path = "../solana/crates/zama-solana-request" }
 #####################################################################
 #                       External dependencies                       #
 #####################################################################
-actix-web = "=4.11.0"
+# The default feature set minus "http2": the only actix consumer is the internal monitoring/health
+# server, which does not need HTTP/2, and the feature pulls in the h2 0.3 line — unpatchable for
+# RUSTSEC-2026-0258 until actix-http moves to h2 0.4.
+actix-web = { version = "=4.11.0", default-features = false, features = [
+    "macros",
+    "compress-brotli",
+    "compress-gzip",
+    "compress-zstd",
+    "cookies",
+    "unicode",
+    "compat",
+] }
 borsh = { version = "=1.5.7", default-features = false, features = ["derive"] }
 alloy = { version = "=2.2.0", default-features = false, features = [
     "essentials",

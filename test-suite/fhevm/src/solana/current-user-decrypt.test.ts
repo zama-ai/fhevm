@@ -5,12 +5,19 @@ import { runSolanaCurrentUserDecrypt, type CurrentUserDecryptDependencies } from
 const hex32 = (byte: string) => `0x${byte.repeat(64)}`;
 const validEnvironment = (): Record<string, string> => ({
   UD_RELAYER_URL: "http://127.0.0.1:3000",
+  UD_RPC_URL: "http://127.0.0.1:8899",
+  UD_PROOF_SERVICE_URL: "http://127.0.0.1:8080",
   UD_CONTRACTS_CHAIN_ID: "9223372036854788153",
   UD_HANDLE: hex32("1"),
   UD_SECRET_KEY: hex32("2"),
   UD_CONTEXT_ID: hex32("3"),
+  UD_EPOCH_ID: hex32("8"),
   UD_ALLOWED_DOMAIN_KEYS: hex32("4"),
   UD_ACL_VALUE_KEY: hex32("5"),
+  UD_VERIFYING_PROGRAM_ID: hex32("6"),
+  UD_KMS_SIGNERS: "0x0000000000000000000000000000000000000001,0x0000000000000000000000000000000000000002",
+  UD_GATEWAY_CHAIN_ID: "31337",
+  UD_GATEWAY_DECRYPTION_CONTRACT: "0x00000000000000000000000000000000000000aa",
   UD_EXPECTED: "42",
 });
 
@@ -29,22 +36,67 @@ describe("solana-current-user-decrypt", () => {
     }
   });
 
-  test("passes the current handle and ACL value key to the SDK and returns the expected plaintext", async () => {
+  test("passes the permit-path inputs to the SDK and returns the expected plaintext", async () => {
     let received: unknown;
     const value = await runSolanaCurrentUserDecrypt(validEnvironment(), {
       userDecrypt: async (input) => {
-        received = input.request;
+        received = input;
         return [{ value: 42n }];
       },
     });
 
     expect(value).toBe(42n);
     expect(received).toMatchObject({
-      handles: [hex32("1")],
+      rpcUrl: "http://127.0.0.1:8899",
+      proofServiceUrl: "http://127.0.0.1:8080",
+      verifyingProgramId: hex32("6"),
       allowedAclDomainKeys: [hex32("4")],
-      aclValueKey: Uint8Array.from(Buffer.from("5".repeat(64), "hex")),
+      trust: {
+        kmsContextId: hex32("3"),
+        // Required, never defaulted: only the pair the deployed configuration declares is served.
+        kmsEpochId: hex32("8"),
+        fheParameter: "test",
+        // Party ids follow the registry order — the same assumption the EVM SDK path makes.
+        kmsSigners: [
+          { partyId: 1, address: "0x0000000000000000000000000000000000000001" },
+          { partyId: 2, address: "0x0000000000000000000000000000000000000002" },
+        ],
+        gatewayEip712Domain: {
+          name: "Decryption",
+          version: "1",
+          chainId: 31337n,
+          verifyingContract: "0x00000000000000000000000000000000000000aa",
+        },
+      },
+      request: {
+        handle: Uint8Array.from(Buffer.from("1".repeat(64), "hex")),
+        encryptedValueId: Uint8Array.from(Buffer.from("5".repeat(64), "hex")),
+        durationSeconds: 3600n,
+      },
     });
-    expect(received).not.toHaveProperty("mmrProof");
+  });
+
+  test("honors the epoch, parameter and duration values", async () => {
+    let received: unknown;
+    await runSolanaCurrentUserDecrypt(
+      {
+        ...validEnvironment(),
+        UD_EPOCH_ID: hex32("7"),
+        UD_FHE_PARAMETER: "default",
+        UD_DURATION_SECONDS: "60",
+      },
+      {
+        userDecrypt: async (input) => {
+          received = input;
+          return [{ value: 42n }];
+        },
+      },
+    );
+
+    expect(received).toMatchObject({
+      trust: { kmsEpochId: hex32("7"), fheParameter: "default" },
+      request: { durationSeconds: 60n },
+    });
   });
 
   test("rejects an empty SDK result", async () => {

@@ -23,11 +23,7 @@
 import os from "node:os";
 import path from "node:path";
 
-import {
-  COPROCESSOR_DB_CONTAINER,
-  SOLANA_ACL_PROGRAM,
-  SOLANA_DEFAULT_USER_DECRYPT_CONTEXT,
-} from "../../src/layout";
+import { COPROCESSOR_DB_CONTAINER, SOLANA_ACL_PROGRAM } from "../../src/layout";
 
 export type Capabilities = {
   /** Can fund actors with SOL (local validator airdrop). Local: true. Devnet/mainnet: false. */
@@ -46,12 +42,18 @@ export type TestEnv = {
   readonly relayerUrl: string;
   readonly proofServiceUrl: string;
   readonly gatewayRpcUrl: string;
+  /** Primary EVM host chain RPC — where the deployed `ProtocolConfig` declares the active KMS pair. */
+  readonly hostRpcUrl: string;
   /** RFC-021 Solana host chain id (9223372036854788153); the high bit marks it a Solana chain. */
   readonly chainId: bigint;
   /** zama-host program id as a bytes32 hex — the Solana ACL identity. */
   readonly aclProgram: `0x${string}`;
-  /** KMS/gateway user-decrypt context id, as an unsigned decimal string. */
-  readonly userDecryptContextId: string;
+  /**
+   * KMS/gateway user-decrypt context id override, as an unsigned decimal string. There is no
+   * static default: when absent, helpers read the active pair from the deployed `ProtocolConfig`
+   * (`readActiveKmsPair`) so the permit names a pair the Connector actually serves.
+   */
+  readonly userDecryptContextId: string | undefined;
   /** Docker container name of the coprocessor+KMS Postgres (for ciphertext-materialization waits). */
   readonly coprocessorDbContainer: string;
   readonly roots: { readonly deployerKeypairPath: string };
@@ -64,6 +66,7 @@ type TestEnvOverrides = {
   relayerUrl: string;
   proofServiceUrl: string;
   gatewayRpcUrl: string;
+  hostRpcUrl: string;
   chainId: string;
   aclProgram: string;
   userDecryptContextId: string;
@@ -80,9 +83,9 @@ const LOCAL_DEFAULTS = {
   relayerUrl: "http://127.0.0.1:3000",
   proofServiceUrl: "http://127.0.0.1:8088",
   gatewayRpcUrl: "http://127.0.0.1:8546",
+  hostRpcUrl: "http://127.0.0.1:8545",
   chainId: "9223372036854788153",
   aclProgram: SOLANA_ACL_PROGRAM,
-  userDecryptContextId: SOLANA_DEFAULT_USER_DECRYPT_CONTEXT,
   coprocessorDbContainer: COPROCESSOR_DB_CONTAINER,
 } as const;
 
@@ -123,6 +126,7 @@ const envOverrides = (env: NodeJS.ProcessEnv): Partial<TestEnvOverrides> => {
     ...pick("relayerUrl", "SOLANA_RELAYER_URL"),
     ...pick("proofServiceUrl", "PROOF_SERVICE_URL"),
     ...pick("gatewayRpcUrl", "GW_RPC"),
+    ...pick("hostRpcUrl", "HOST_RPC"),
     ...pick("chainId", "SOLANA_HOST_CHAIN_ID"),
     ...pick("aclProgram", "SOLANA_ACL_PROGRAM"),
     ...pick("userDecryptContextId", "SOLANA_UD_CONTEXT_ID"),
@@ -146,9 +150,13 @@ export const resolveEnv = (
     relayerUrl: merged.relayerUrl,
     proofServiceUrl: merged.proofServiceUrl,
     gatewayRpcUrl: merged.gatewayRpcUrl,
+    hostRpcUrl: merged.hostRpcUrl,
     chainId: solanaChainId(merged.chainId),
     aclProgram: bytes32Hex(merged.aclProgram),
-    userDecryptContextId: decimalString(merged.userDecryptContextId, "userDecryptContextId"),
+    userDecryptContextId:
+      merged.userDecryptContextId === undefined
+        ? undefined
+        : decimalString(merged.userDecryptContextId, "userDecryptContextId"),
     coprocessorDbContainer: merged.coprocessorDbContainer,
     roots: { deployerKeypairPath },
     capabilities: CAPABILITIES_BY_SOURCE[source],

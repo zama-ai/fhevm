@@ -546,6 +546,7 @@ where
         // cannot have been substituted. Both captured before the request is handed to authorization.
         let solana_identity: SolanaPubkeyBytes = *permit.user_pubkey().as_bytes();
         let seal_target = Bytes::copy_from_slice(permit.transport_key().as_bytes());
+        let verifying_program_id = *permit.verifying_program_id().as_bytes();
 
         // One authorization funnel: signature, window, deployment, KMS-pair servability, the atomic
         // snapshot, and every per-entry rule. The KMS-pair seam is the connector's existing context
@@ -575,6 +576,7 @@ where
         Ok(UserDecryptionExtraData::new_solana(
             solana_identity,
             seal_target,
+            verifying_program_id,
         ))
     }
 
@@ -754,6 +756,7 @@ where
             let client_address = user_decrypt_data.client_address;
             let enc_key = user_decrypt_data.public_key.to_vec();
             let solana_pubkey = user_decrypt_data.solana_pubkey;
+            let solana_verifying_program_id = user_decrypt_data.solana_verifying_program_id;
             let user_decryption_request = UserDecryptionRequest {
                 request_id,
                 client_address,
@@ -765,6 +768,7 @@ where
                 epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
                 context_id: parsed_extra_data.context_id.map(u256_to_request_id),
                 solana_pubkey,
+                solana_verifying_program_id,
             };
 
             Ok(user_decryption_request.into())
@@ -829,6 +833,9 @@ pub struct UserDecryptionExtraData {
     pub public_key: Bytes,
     /// The exact Solana user identity (RFC-021). Unset for EVM requests.
     pub solana_pubkey: Option<Vec<u8>>,
+    /// The program id of the Solana host deployment the permit is signed for. Unset for EVM
+    /// requests.
+    pub solana_verifying_program_id: Option<Vec<u8>>,
 }
 
 impl UserDecryptionExtraData {
@@ -837,16 +844,22 @@ impl UserDecryptionExtraData {
             client_address: user_address.to_checksum(None),
             public_key,
             solana_pubkey: None,
+            solana_verifying_program_id: None,
         }
     }
 
     /// RFC-021: the KMS identifies a Solana user by the 32-byte ed25519 pubkey, not by an
     /// EVM address, so `client_address` stays empty and the identity travels typed.
-    pub fn new_solana(identity: [u8; 32], public_key: Bytes) -> Self {
+    pub fn new_solana(
+        identity: [u8; 32],
+        public_key: Bytes,
+        verifying_program_id: [u8; 32],
+    ) -> Self {
         Self {
             client_address: String::new(),
             public_key,
             solana_pubkey: Some(identity.to_vec()),
+            solana_verifying_program_id: Some(verifying_program_id.to_vec()),
         }
     }
 }
@@ -1980,15 +1993,19 @@ mod tests {
 
         assert_eq!(data.client_address, address.to_checksum(None));
         assert_eq!(data.solana_pubkey, None);
+        assert_eq!(data.solana_verifying_program_id, None);
     }
 
     #[test]
     fn solana_extra_data_uses_only_the_typed_pubkey() {
         let identity = [0x33; 32];
-        let data = UserDecryptionExtraData::new_solana(identity, Bytes::from_static(&[0x44]));
+        let program_id = [0x55; 32];
+        let data =
+            UserDecryptionExtraData::new_solana(identity, Bytes::from_static(&[0x44]), program_id);
 
         assert!(data.client_address.is_empty());
         assert_eq!(data.solana_pubkey, Some(identity.to_vec()));
+        assert_eq!(data.solana_verifying_program_id, Some(program_id.to_vec()));
     }
 
     #[tokio::test]

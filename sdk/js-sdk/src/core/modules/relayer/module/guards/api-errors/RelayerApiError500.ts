@@ -18,7 +18,7 @@ export function assertIsRelayerApiError500(
 ): asserts value is RelayerApiError500 {
   type T = RelayerApiError500;
   assertRecordStringProperty(value, 'label' satisfies keyof T, name, {
-    expectedValue: 'internal_server_error' satisfies T['label'],
+    expectedValue: ['internal_server_error' satisfies T['label'], 'host_acl_failed' satisfies T['label']],
     ...options,
   });
   assertRecordStringProperty(value, 'message' satisfies keyof T, name, options);

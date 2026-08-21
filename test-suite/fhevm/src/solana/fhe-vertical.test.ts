@@ -14,9 +14,16 @@ import { fetchHistoricalAccessProof, type FheVerticalConfig } from "./fhe-vertic
 const CONFIG: FheVerticalConfig = {
   relayerUrl: "http://relayer:3000",
   proofServiceUrl: "http://proof:8080/",
+  rpcUrl: "http://rpc:8899",
   chainId: 1n,
   publicDecryptContextId: `0x${"00".repeat(32)}`,
   userDecryptContextId: "0",
+  verifyingProgramId: `0x${"22".repeat(32)}`,
+  kmsSigners: [`0x${"01".repeat(20)}`],
+  kmsEpochId: `0x${"00".repeat(32)}`,
+  fheParameter: "test",
+  gatewayChainId: "31337",
+  gatewayDecryptionContract: `0x${"aa".repeat(20)}`,
 };
 
 const ENCRYPTED_VALUE = address("11111111111111111111111111111111");

@@ -111,6 +111,8 @@
     "@scure/base": "1.2.6",
     "@solana/kit": "6.10.0",
     "@solana/program-client-core": "6.10.0",
+    "@solana/wallet-standard-features": "^1.4.0",
+    "@wallet-standard/base": "^1.1.1",
     "wasm-feature-detect": "^1.8.0"
   },
   "repository": {

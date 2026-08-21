@@ -10,6 +10,13 @@ import {
   createTransactionSignerFromWalletAccount,
 } from "@solana/wallet-account-signer";
 import type { UiWalletAccount } from "@wallet-standard/react";
+import {
+  SolanaSignOffchainMessage,
+  type SolanaSignOffchainMessageFeature,
+} from "@solana/wallet-standard-features";
+import { getWalletAccountFeature } from "@wallet-standard/ui";
+import { getWalletAccountForUiWalletAccount_DO_NOT_USE_OR_YOU_WILL_BE_FIRED } from "@wallet-standard/ui-registry";
+import { solanaPermitWalletFromSecretKey, type SolanaPermitWallet } from "@fhevm/sdk/solana";
 
 import { demoApiFetch, demoFaucetFetch } from "./demoAuthorization";
 import { parseDemoConfig, parseDemoConfigResponse, type DemoConfig } from "./demoConfig";
@@ -20,6 +27,13 @@ export type DemoSession = {
   readonly config: DemoConfig;
   readonly signer: TransactionSigner;
   readonly signMessageExact: (message: Uint8Array) => Promise<Uint8Array>;
+  /**
+   * The wallet a user-decrypt permit is signed through, when this session kind can provide one.
+   * The burner session always can; a wallet-standard session can when the connected wallet
+   * exposes `solana:signOffchainMessage` — absent that feature this is `undefined`, and reveals
+   * refuse with a clear message instead of falling back to raw message signing.
+   */
+  readonly permitWallet: SolanaPermitWallet | undefined;
   readonly wallet:
     | { readonly kind: "burner"; readonly name: "Demo wallet" }
     | { readonly kind: "wallet-standard"; readonly name: string; readonly accountKey: string };
@@ -201,6 +215,26 @@ const signatureForExactMessage = async (
   return readExactMessageSignature(message, signed, signer.address);
 };
 
+/**
+ * The permit adapter: the SDK's `SolanaPermitWallet` from the selected `UiWalletAccount`, when the
+ * wallet backs the one permit channel.
+ *
+ * The account object handed to the SDK is the wallet's own registered `WalletAccount` — reached
+ * through the same registry accessor the official `@solana/wallet-account-signer` bridges through —
+ * never a rebuilt lookalike, because wallets recognize their accounts by identity. A wallet whose
+ * account does not list `solana:signOffchainMessage` yields `undefined`: reveals then refuse with
+ * a clear message instead of falling back to raw message signing.
+ */
+export const permitWalletFromWalletAccount = (account: UiWalletAccount): SolanaPermitWallet | undefined => {
+  if (!account.features.includes(SolanaSignOffchainMessage)) return undefined;
+  const feature = getWalletAccountFeature(
+    account,
+    SolanaSignOffchainMessage,
+  ) as SolanaSignOffchainMessageFeature[typeof SolanaSignOffchainMessage];
+  const walletAccount = getWalletAccountForUiWalletAccount_DO_NOT_USE_OR_YOU_WILL_BE_FIRED(account);
+  return { account: walletAccount, features: { [SolanaSignOffchainMessage]: feature } };
+};
+
 export const assertWalletAccountCapabilities = (account: UiWalletAccount, walletName: string): void => {
   if (!account.chains.includes("solana:localnet")) {
     throw new Error(
@@ -211,7 +245,7 @@ export const assertWalletAccountCapabilities = (account: UiWalletAccount, wallet
     throw new Error(`${walletName} does not support transaction signing`);
   }
   if (!account.features.includes("solana:signMessage")) {
-    throw new Error(`${walletName} does not support message signing required for private balance reveals`);
+    throw new Error(`${walletName} does not support message signing`);
   }
 };
 
@@ -241,6 +275,9 @@ export const connectWalletSession = async (
       return signature;
     },
     wallet: { kind: "wallet-standard", name: walletName, accountKey },
+    // The permit channel is exclusively `solana:signOffchainMessage`: a wallet that backs it signs
+    // permits through the adapter above; one that does not gets a clear refusal at reveal time.
+    permitWallet: permitWalletFromWalletAccount(account),
     isActive,
     assertActive,
   };
@@ -272,6 +309,8 @@ export const connectDemoSession = async (isActive: () => boolean = () => true): 
       return new Uint8Array(signature);
     },
     wallet: { kind: "burner", name: "Demo wallet" },
+    // The burner key doubles as a conforming sRFC-38 wallet: the permit path's one channel.
+    permitWallet: solanaPermitWalletFromSecretKey(Uint8Array.from(aliceKeypair)),
     isActive,
     assertActive,
   };

@@ -4,11 +4,8 @@ import path from "node:path";
 
 import { address, getAddressEncoder } from "@solana/kit";
 
-import {
-  REPO_ROOT,
-  SOLANA_ACL_PROGRAM,
-  SOLANA_DEFAULT_USER_DECRYPT_CONTEXT,
-} from "../layout";
+import { REPO_ROOT, SOLANA_ACL_PROGRAM } from "../layout";
+import { bytes32HexFromId, readActiveKmsPair, readGatewayBootstrapInputs } from "./addresses";
 import { runSolanaCurrentUserDecrypt } from "./current-user-decrypt";
 import {
   createConfidentialMint,
@@ -31,10 +28,12 @@ export const SOLANA_TWO_HOLDER_TRANSFER_DESCRIPTION =
   "Transfer an SDK-encrypted euint64 between two real Solana holders and decrypt both latest balances.";
 
 const RPC_URL = "http://127.0.0.1:8899";
+const PROOF_SERVICE_URL = "http://127.0.0.1:8088";
+const GATEWAY_RPC_URL = "http://127.0.0.1:8546";
+const HOST_RPC_URL = "http://127.0.0.1:8545";
 const WS_URL = "ws://127.0.0.1:8900";
 const RELAYER_URL = "http://127.0.0.1:3000";
 const ACL_PROGRAM = SOLANA_ACL_PROGRAM;
-const DEFAULT_USER_DECRYPT_CONTEXT = SOLANA_DEFAULT_USER_DECRYPT_CONTEXT;
 const SDK_WORKER = path.join(REPO_ROOT, "test-suite/fhevm/solana-two-holder-transfer.ts");
 const CLI_DIR = path.join(REPO_ROOT, "test-suite/fhevm");
 const SIGNATURE = /^[1-9A-HJ-NP-Za-km-z]{87,88}$/;
@@ -57,8 +56,16 @@ export type TwoHolderConfig = {
   readonly rpcUrl: string;
   readonly wsUrl: string;
   readonly relayerUrl: string;
+  readonly proofServiceUrl: string;
+  readonly gatewayRpcUrl: string;
+  readonly hostRpcUrl: string;
   readonly aclProgram: string;
-  readonly userDecryptContext: string;
+  /**
+   * Explicit user-decrypt context override as bytes32 hex. When absent, the decrypts use the
+   * active KMS context read live from the deployed `ProtocolConfig` — the pair the KMS Connector
+   * actually serves.
+   */
+  readonly userDecryptContext: string | undefined;
 };
 
 export type TwoHolderDependencies = {
@@ -97,12 +104,10 @@ export const parseTransferWorkerResult = (output: string): void => {
   }
 };
 
-export const solanaUserDecryptContext = (
-  decimal = process.env.SOLANA_UD_CONTEXT_ID ?? DEFAULT_USER_DECRYPT_CONTEXT,
-): string => {
-  if (!/^\d+$/.test(decimal)) throw new Error("SOLANA_UD_CONTEXT_ID must be an unsigned decimal integer");
+export const solanaUserDecryptContext = (decimal: string): string => {
+  if (!/^\d+$/.test(decimal)) throw new Error("user-decrypt context id must be an unsigned decimal integer");
   const value = BigInt(decimal);
-  if (value >= 1n << 256n) throw new Error("SOLANA_UD_CONTEXT_ID must fit in 32 bytes");
+  if (value >= 1n << 256n) throw new Error("user-decrypt context id must fit in 32 bytes");
   return `0x${value.toString(16).padStart(64, "0")}`;
 };
 
@@ -110,8 +115,11 @@ const resolveConfig = (config: Partial<TwoHolderConfig>): TwoHolderConfig => ({
   rpcUrl: config.rpcUrl ?? RPC_URL,
   wsUrl: config.wsUrl ?? WS_URL,
   relayerUrl: config.relayerUrl ?? RELAYER_URL,
+  proofServiceUrl: config.proofServiceUrl ?? PROOF_SERVICE_URL,
+  gatewayRpcUrl: config.gatewayRpcUrl ?? GATEWAY_RPC_URL,
+  hostRpcUrl: config.hostRpcUrl ?? HOST_RPC_URL,
   aclProgram: config.aclProgram ?? ACL_PROGRAM,
-  userDecryptContext: config.userDecryptContext ?? solanaUserDecryptContext(),
+  userDecryptContext: config.userDecryptContext,
 });
 
 export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig> = {}): TwoHolderDependencies => {
@@ -190,19 +198,36 @@ export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig>
       });
       parseTransferWorkerResult(result.stdout);
     },
-    decrypt: (scenario, holder, state, expected) =>
-      runSolanaCurrentUserDecrypt({
+    decrypt: async (scenario, holder, state, expected) => {
+      // The permit path's trust inputs, read live from the deployed stack: signer set and
+      // Decryption contract from the gateway (party ids follow this registry order inside the
+      // runner), the active KMS context/epoch pair from the primary host chain's ProtocolConfig —
+      // the same source the KMS Connector validates each permit's signed pair against.
+      const [gateway, kmsPair] = await Promise.all([
+        readGatewayBootstrapInputs({ gatewayRpcUrl: cfg.gatewayRpcUrl }),
+        readActiveKmsPair({ hostRpcUrl: cfg.hostRpcUrl }),
+      ]);
+      const hex20 = (bytes: Uint8Array): string => `0x${Buffer.from(bytes).toString("hex")}`;
+      return runSolanaCurrentUserDecrypt({
         UD_RELAYER_URL: cfg.relayerUrl,
+        UD_RPC_URL: cfg.rpcUrl,
+        UD_PROOF_SERVICE_URL: cfg.proofServiceUrl,
         UD_CONTRACTS_CHAIN_ID: state.chainId,
         UD_HANDLE: state.currentHandle,
         UD_SECRET_KEY: holder.secretKey,
-        UD_CONTEXT_ID: cfg.userDecryptContext,
+        UD_CONTEXT_ID: cfg.userDecryptContext ?? bytes32HexFromId(kmsPair.kmsContextId),
+        UD_EPOCH_ID: bytes32HexFromId(kmsPair.kmsEpochId),
         UD_ALLOWED_DOMAIN_KEYS: `0x${Buffer.from(getAddressEncoder().encode(address(scenario.mint))).toString("hex")}`,
         // The env var and the v3 request field keep the wire name `aclValueKey`; what the probe
         // reports is the encrypted value ID it derives.
         UD_ACL_VALUE_KEY: state.encryptedValueId,
+        UD_VERIFYING_PROGRAM_ID: cfg.aclProgram,
+        UD_KMS_SIGNERS: gateway.kmsSigners.map(hex20).join(","),
+        UD_GATEWAY_CHAIN_ID: gateway.gatewayChainId.toString(),
+        UD_GATEWAY_DECRYPTION_CONTRACT: hex20(gateway.decryptionContract),
         UD_EXPECTED: expected.toString(),
-      }),
+      });
+    },
     async cleanup() {
       if (scenarioDir) await fs.rm(scenarioDir, { recursive: true, force: true });
       scenarioDir = undefined;

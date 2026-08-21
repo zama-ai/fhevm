@@ -401,7 +401,7 @@ export type RelayerApiError429 = {
  * Status: 500
  */
 export type RelayerApiError500 = {
-  label: 'internal_server_error';
+  label: 'internal_server_error' | 'host_acl_failed';
   message: string;
 };
 
