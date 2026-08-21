@@ -16,14 +16,16 @@ library ZamaConfig {
 
     /**
      * @notice Returns the Zama coprocessor config for the current chain, routed by `block.chainid`.
-     * @dev    Supports all networks where the Zama protocol is deployed: Ethereum mainnet (chainId = 1),
-     *         Sepolia (chainId = 11155111), Polygon Amoy (chainId = 80002), and the local
-     *         Hardhat/Anvil network (chainId = 31337).
+     * @dev    Supports all networks where the Zama protocol is deployed: Ethereum mainnet (chainId = 1)
+     *         Polygon (chainId = 137), Sepolia (chainId = 11155111), Polygon Amoy (chainId = 80002)
+     *         and the local Hardhat/Anvil network (chainId = 31337).
      *         Reverts with {ZamaProtocolUnsupported} on any other chain.
      */
     function getCoprocessorConfig() internal view returns (CoprocessorConfig memory config) {
         if (block.chainid == 1) {
             config = _getEthereumConfig();
+        } else if (block.chainid == 137) {
+            config = _getPolygonConfig();
         } else if (block.chainid == 11155111) {
             config = _getSepoliaConfig();
         } else if (block.chainid == 80002) {
@@ -48,7 +50,9 @@ library ZamaConfig {
     }
 
     function getPolygonCoprocessorConfig() internal view returns (CoprocessorConfig memory config) {
-        if (block.chainid == 80002) {
+        if (block.chainid == 137) {
+            config = _getPolygonConfig();
+        } else if (block.chainid == 80002) {
             config = _getPolygonAmoyConfig();
         } else if (block.chainid == 31337) {
             config = _getLocalConfig();
@@ -58,7 +62,7 @@ library ZamaConfig {
     }
 
     function getConfidentialProtocolId() internal view returns (uint256) {
-        if (block.chainid == 1) {
+        if (block.chainid == 1 || block.chainid == 137) {
             return _getZamaMainnetProtocolId();
         } else if (block.chainid == 11155111 || block.chainid == 80002) {
             return _getZamaTestnetProtocolId();
@@ -110,6 +114,16 @@ library ZamaConfig {
             });
     }
 
+    /// @dev chainid == 1
+    function _getPolygonConfig() private pure returns (CoprocessorConfig memory) {
+        return
+            CoprocessorConfig({
+                ACLAddress: 0x6737F17e31cf26a1b62fb0362acC5a16CB156F49,
+                CoprocessorAddress: 0xAB0075E77fe06083f52bdf10e2ccDB3712483057,
+                KMSVerifierAddress: 0x14e609595474874Dd6b6128376E336EfADfdBE37
+            });
+    }
+
     /// @dev chainid == 31337
     function _getLocalProtocolId() private pure returns (uint256) {
         return type(uint256).max;
@@ -145,7 +159,7 @@ abstract contract ZamaEthereumConfig {
 /**
  * @title   ZamaPolygonConfig.
  * @dev     This contract can be inherited by a contract wishing to use the FHEVM contracts provided by Zama
- *          on the Polygon amoy (testnet) network (chainId = 80002) and later on Polygon mainnet.
+ *          on the Polygon (mainnet) network (chainId = 137) and on the Polygon amoy (testnet) network (chainId = 80002).
  *          Other providers may offer similar contracts deployed at different addresses.
  *          If you wish to use them, you should rely on the instructions from these providers.
  */
@@ -164,7 +178,8 @@ abstract contract ZamaPolygonConfig {
  * @dev     This contract can be inherited by a contract wishing to use the FHEVM contracts provided by Zama
  *          on any supported network. The coprocessor configuration is selected automatically from
  *          `block.chainid` at construction time, so a single implementation can be deployed on the
- *          Ethereum (mainnet) network (chainId = 1), the Sepolia (testnet) network (chainId = 11155111),
+ *          Ethereum (mainnet) network (chainId = 1), the Polygon (mainnet) network (chainId = 137),
+ *          the Sepolia (testnet) network (chainId = 11155111),
  *          the Polygon Amoy (testnet) network (chainId = 80002), or a local network (chainId = 31337).
  *          Other providers may offer similar contracts deployed at different addresses.
  *          If you wish to use them, you should rely on the instructions from these providers.
