@@ -72,6 +72,22 @@ contract MultiChainConfigTest is Test {
         assertTrue(testFhevmContract.confidentialProtocolId() == 10001);
     }
 
+    function test_ZamaMultiChainConfigPolygonMainnet() public {
+        vm.chainId(137);
+
+        TestFHEVMContract testFhevmContract = new TestFHEVMContract();
+        CoprocessorConfig memory cfg = testFhevmContract.getCoprocessorConfig();
+        // chainid == 137
+        CoprocessorConfig memory polygonCfg = ZamaConfig.getCoprocessorConfig();
+
+        assertTrue(cfg.ACLAddress == 0x6737F17e31cf26a1b62fb0362acC5a16CB156F49);
+        assertTrue(cfg.CoprocessorAddress == 0xAB0075E77fe06083f52bdf10e2ccDB3712483057);
+        assertTrue(cfg.KMSVerifierAddress == 0x14e609595474874Dd6b6128376E336EfADfdBE37);
+
+        _assertConfigEq(cfg, polygonCfg);
+        assertTrue(testFhevmContract.confidentialProtocolId() == 1);
+    }
+
     function test_ZamaMultiChainConfigPolygonAmoy() public {
         vm.chainId(80002);
 
@@ -117,7 +133,7 @@ contract MultiChainConfigTest is Test {
     function test_ZamaMultiChainConfigMatchesPolygonFamilyGetter() public {
         TestContract testContract = new TestContract();
 
-        uint256[2] memory chainIds = [uint256(80002), 31337];
+        uint256[3] memory chainIds = [uint256(137), 80002, 31337];
         for (uint256 i = 0; i < chainIds.length; i++) {
             vm.chainId(chainIds[i]);
             _assertConfigEq(testContract.getCoprocessorConfig(), testContract.getPolygonCoprocessorConfig());

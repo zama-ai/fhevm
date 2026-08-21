@@ -26,6 +26,31 @@ contract PolygonConfigTest is Test {
         vm.warp(1_000_000);
     }
 
+    function test_ZamaConfigPolygonMainnet() public {
+        vm.chainId(137);
+
+        TestFHEVMContract testFhevmContract = new TestFHEVMContract();
+        CoprocessorConfig memory cfg = testFhevmContract.getCoprocessorConfig();
+        // chainid == 137
+        CoprocessorConfig memory polygonCfg = ZamaConfig.getPolygonCoprocessorConfig();
+
+        assertTrue(cfg.ACLAddress == 0x6737F17e31cf26a1b62fb0362acC5a16CB156F49);
+        assertTrue(cfg.CoprocessorAddress == 0xAB0075E77fe06083f52bdf10e2ccDB3712483057);
+        assertTrue(cfg.KMSVerifierAddress == 0x14e609595474874Dd6b6128376E336EfADfdBE37);
+
+        assertTrue(cfg.ACLAddress == polygonCfg.ACLAddress);
+        assertTrue(cfg.CoprocessorAddress == polygonCfg.CoprocessorAddress);
+        assertTrue(cfg.KMSVerifierAddress == polygonCfg.KMSVerifierAddress);
+    }
+
+    function test_ZamaProtocolIdPolygonMainnet() public {
+        vm.chainId(137);
+
+        TestFHEVMContract testFhevmContract = new TestFHEVMContract();
+        assertTrue(testFhevmContract.confidentialProtocolId() == 1);
+        assertTrue(testFhevmContract.confidentialProtocolId() == ZamaConfig.getConfidentialProtocolId());
+    }
+
     function test_ZamaConfigPolygonAmoy() public {
         vm.chainId(80002);
 
