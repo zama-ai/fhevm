@@ -126,6 +126,15 @@ contract EthereumConfigTest is Test {
         testContract.getEthereumCoprocessorConfig();
     }
 
+    function test_ZamaConfigGetEthereumCoprocessorConfigPolygonMainnetSeparation() public {
+        vm.chainId(137);
+
+        TestContract testContract = new TestContract();
+
+        vm.expectRevert(abi.encodeWithSelector(ZamaConfig.ZamaProtocolUnsupported.selector));
+        testContract.getEthereumCoprocessorConfig();
+    }
+
     function test_ZamaConfigGetConfidentialProtocolIdUnknownChainId() public {
         vm.chainId(123);
 
