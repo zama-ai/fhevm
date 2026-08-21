@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH inserted AS (\n            INSERT INTO block_manifest_state (\n                generation,\n                host_chain_id,\n                block_number,\n                block_hash,\n                parent_block_hash,\n                publication_cadence\n            )\n            SELECT $4,\n                   child.chain_id,\n                   child.block_number,\n                   child.block_hash,\n                   child.parent_hash,\n                   $3\n              FROM host_chain_blocks_valid child\n             WHERE child.chain_id = $1\n               AND child.parent_hash = $2\n               AND child.block_status <> 'orphaned'\n               AND OCTET_LENGTH(child.parent_hash) = 32\n            ON CONFLICT (generation, host_chain_id, block_hash) DO NOTHING\n            RETURNING 1\n        )\n        SELECT COUNT(*) AS \"inserted!\" FROM inserted\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "inserted!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "ca994bd2cac29c7bd367e916c152a6c19c2082bd936fb28cf803e6fd4c9adcb7"
+}

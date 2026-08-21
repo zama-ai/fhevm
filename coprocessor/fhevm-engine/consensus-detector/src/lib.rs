@@ -52,6 +52,7 @@ use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn, Level};
 
+pub mod manifest_consensus;
 pub mod s3;
 pub mod state_hash;
 
@@ -86,15 +87,20 @@ const FHE_TRIVIAL_ENCRYPT_OPCODE: i16 = 24;
 /// exactly one) gives robustness if a single block stalls on one operator.
 const MAX_ANCHOR_CANDIDATES: i64 = 8;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Config {
     pub service_name: String,
     pub database_url: DatabaseURL,
     pub database_pool_size: u32,
+    /// False for the live Blue stack (`public`), true for Green
+    /// (`"gcs-<version>",public`).
+    pub gcs_mode: bool,
     /// On-chain `GatewayConfig` contract address. Queried at startup to
     /// resolve the operator S3 buckets.
     pub gateway_config_address: Address,
     pub log_level: Level,
+    pub metrics_addr: Option<String>,
+    pub gauge_update_interval_secs: Option<u32>,
     /// Fallback poll interval used while waiting for notifications so a missed
     /// NOTIFY (e.g. dropped connection) still gets re-checked eventually.
     pub poll_interval: Duration,
@@ -104,12 +110,17 @@ pub struct Config {
     /// Hard cap on how long we wait for unanimity before giving up and
     /// emitting `unanimity_consensus_timeout`.
     pub commitment_timeout: Duration,
-    /// This operator's S3 bucket. `None` disables GCS uploads (read-only).
+    /// This operator's S3 bucket. `None` represents the explicit CLI value
+    /// `--my-bucket=none` and disables uploads and manifest work.
     pub my_bucket: Option<String>,
     /// S3 endpoint override (e.g. `http://minio:9000`).
     pub s3_endpoint: Option<String>,
     /// Max pending blocks processed per state_hash pass.
     pub state_hash_batch_limit: i64,
+    /// Generation-scoped manifest publication.
+    pub manifest_consensus: manifest_consensus::Config,
+    /// Signer used for this generation's immutable manifests.
+    pub manifest_signer: Option<fhevm_engine_common::types::CoproSigner>,
 }
 
 impl Default for Config {
@@ -118,14 +129,19 @@ impl Default for Config {
             service_name: "consensus-detector".to_owned(),
             database_url: DatabaseURL::default(),
             database_pool_size: 4,
+            gcs_mode: false,
             gateway_config_address: Address::ZERO,
             log_level: Level::INFO,
+            metrics_addr: None,
+            gauge_update_interval_secs: None,
             poll_interval: Duration::from_secs(30),
             commitment_poll_interval: Duration::from_secs(5),
             commitment_timeout: Duration::from_secs(60),
             my_bucket: None,
             s3_endpoint: None,
             state_hash_batch_limit: 256,
+            manifest_consensus: manifest_consensus::Config::default(),
+            manifest_signer: None,
         }
     }
 }
@@ -740,6 +756,7 @@ where
         payload = raw_payload,
         "new_operator_added received (placeholder — operator set refresh not yet wired)"
     );
+
     // Suppress unused-variable warnings without dropping the wiring.
     let _ = (s3_urls, s3_service);
     Ok(())
@@ -819,6 +836,8 @@ where
         "starting consensus-detector"
     );
 
+    fhevm_engine_common::metrics_server::spawn(config.metrics_addr.clone(), cancel.child_token());
+
     let s3_service = S3Service::new(provider, config.gateway_config_address);
     let urls = s3_service.refresh_signer_urls().await?;
     if urls.is_empty() {
@@ -837,12 +856,14 @@ where
         .timeout(Duration::from_secs(5))
         .build()?;
 
-    // GCS upload only when --my-bucket is set.
+    let s3_client = Arc::new(build_s3_client(&config).await);
+
+    // GCS upload only when --my-bucket names a real bucket.
     let s3 = if config.my_bucket.is_none() {
-        info!("--my-bucket not set; GCS upload disabled");
+        info!("--my-bucket=none; GCS upload disabled");
         None
     } else {
-        Some(Arc::new(build_s3_client(&config).await))
+        Some(Arc::clone(&s3_client))
     };
     {
         let pool = pool.clone();
@@ -863,6 +884,14 @@ where
             }
         });
     }
+
+    manifest_consensus::start(
+        &config,
+        pool.clone(),
+        Arc::clone(&s3_client),
+        cancel.clone(),
+    )
+    .await?;
 
     let channels = [
         NEW_BLOCK_CHANNEL,

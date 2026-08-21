@@ -39,6 +39,7 @@ use fhevm_engine_common::{
     utils::{to_hex, DatabaseURL},
     versioning::{run_stack_version_listener, StackMode},
 };
+use sha3::{Digest, Keccak256};
 use sqlx::{Postgres, Transaction};
 use thiserror::Error;
 use tokio::{
@@ -67,6 +68,10 @@ pub(crate) const S3_FORMAT_VERSION_V1: i16 = 1;
 pub(crate) const CURRENT_S3_FORMAT_VERSION: i16 = S3_FORMAT_VERSION_V1;
 pub(crate) const S3_FORMAT_VERSION_LEGACY: i16 = S3_FORMAT_VERSION_V0;
 pub type InternalEvents = Option<tokio::sync::mpsc::Sender<&'static str>>;
+
+pub(crate) fn compute_ciphertext_digest(ciphertext: &[u8]) -> Vec<u8> {
+    Keccak256::digest(ciphertext).to_vec()
+}
 
 #[cfg(feature = "gpu")]
 type ServerKey = tfhe::CudaServerKey;
@@ -310,8 +315,9 @@ impl std::fmt::Debug for HandleItem {
 impl HandleItem {
     /// Enqueues the upload task into the database
     ///
-    /// If inserted into the `ciphertext_digest` table means that the both (ct64 and ct128)
-    /// ciphertexts are ready to be uploaded to S3.
+    /// Persists both computed digests and enqueues the handle for upload.
+    /// Digest presence does not imply S3 availability; that is recorded by the
+    /// explicit verification witness after upload postflight succeeds.
     ///
     /// Returns `false` (and inserts nothing) when the handle's provenance is
     /// gone: reorg cleanup deletes the `pbs_computations` row of handles that
@@ -366,42 +372,67 @@ impl HandleItem {
             return Ok(false);
         }
 
-        if self.ct128.is_empty() {
-            sqlx::query(
-                "INSERT INTO ciphertext_digest
-                    (host_chain_id, key_id_gw, handle, transaction_id)
-                VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
-            )
-            .bind(self.host_chain_id.as_i64())
-            .bind(&self.key_id_gw)
-            .bind(&self.handle)
-            .bind(&self.transaction_id)
-            .execute(db_txn.as_mut())
-            .await?;
-        } else if self.ct128.format() == Ciphertext128Format::Unknown {
+        if self.ct64_compressed.is_empty() || self.ct128.is_empty() {
+            return Err(ExecutionError::InternalError(format!(
+                "completed SNS conversion is missing ciphertext bytes, host_chain_id: {}, handle: {}",
+                self.host_chain_id.as_i64(),
+                to_hex(&self.handle),
+            )));
+        }
+        if self.ct128.format() == Ciphertext128Format::Unknown {
             return Err(ExecutionError::InvalidCiphertext128Format(format!(
                 "non-empty ct128 has unknown format, host_chain_id: {}, handle: {}",
                 self.host_chain_id.as_i64(),
                 to_hex(&self.handle),
             )));
-        } else {
-            let ct128_format: i16 = self.ct128.format().into();
-            sqlx::query(
-                "INSERT INTO ciphertext_digest (
-                    host_chain_id, key_id_gw, handle, transaction_id, ciphertext128_format
-                )
-                VALUES ($1, $2, $3, $4, $5)
-                ON CONFLICT (handle) DO UPDATE
-                SET ciphertext128_format = EXCLUDED.ciphertext128_format
-                WHERE ciphertext_digest.ciphertext128 IS NULL",
+        }
+
+        let ct64_digest = compute_ciphertext_digest(&self.ct64_compressed);
+        let ct128_digest = compute_ciphertext_digest(self.ct128.bytes());
+        let ct128_format: i16 = self.ct128.format().into();
+        sqlx::query(
+            "INSERT INTO ciphertext_digest (
+                host_chain_id, key_id_gw, handle, transaction_id,
+                ciphertext, ciphertext128, ciphertext128_format
             )
-            .bind(self.host_chain_id.as_i64())
-            .bind(&self.key_id_gw)
-            .bind(&self.handle)
-            .bind(&self.transaction_id)
-            .bind(ct128_format)
-            .execute(db_txn.as_mut())
-            .await?;
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (handle) DO UPDATE
+            SET ciphertext = COALESCE(ciphertext_digest.ciphertext, EXCLUDED.ciphertext),
+                ciphertext128 = COALESCE(ciphertext_digest.ciphertext128, EXCLUDED.ciphertext128),
+                ciphertext128_format = COALESCE(
+                    ciphertext_digest.ciphertext128_format,
+                    EXCLUDED.ciphertext128_format
+                )
+            WHERE ciphertext_digest.ciphertext IS NULL
+               OR ciphertext_digest.ciphertext128 IS NULL
+               OR ciphertext_digest.ciphertext128_format IS NULL",
+        )
+        .bind(self.host_chain_id.as_i64())
+        .bind(&self.key_id_gw)
+        .bind(&self.handle)
+        .bind(&self.transaction_id)
+        .bind(&ct64_digest)
+        .bind(&ct128_digest)
+        .bind(ct128_format)
+        .execute(db_txn.as_mut())
+        .await?;
+
+        let stored: (Option<Vec<u8>>, Option<Vec<u8>>, Option<i16>) = sqlx::query_as(
+            "SELECT ciphertext, ciphertext128, ciphertext128_format
+               FROM ciphertext_digest
+              WHERE handle = $1",
+        )
+        .bind(&self.handle)
+        .fetch_one(db_txn.as_mut())
+        .await?;
+        if stored.0.as_deref() != Some(ct64_digest.as_slice())
+            || stored.1.as_deref() != Some(ct128_digest.as_slice())
+            || stored.2 != Some(ct128_format)
+        {
+            return Err(ExecutionError::InternalError(format!(
+                "computed ciphertext digest mismatch for handle {}",
+                to_hex(&self.handle),
+            )));
         }
 
         Ok(true)
@@ -418,11 +449,16 @@ impl HandleItem {
 
         let result = sqlx::query!(
             "UPDATE ciphertext_digest
-            SET ciphertext = $1,
-                ciphertext128 = $2,
-                ciphertext128_format = $3,
-                s3_format_version = $4
-            WHERE handle = $5",
+            SET ciphertext = COALESCE(ciphertext, $1),
+                ciphertext128 = COALESCE(ciphertext128, $2),
+                ciphertext128_format = COALESCE(ciphertext128_format, $3),
+                s3_format_version = $4,
+                s3_publication_verified_at = NOW(),
+                s3_publication_verified_digest = $1
+            WHERE handle = $5
+              AND (ciphertext IS NULL OR ciphertext = $1)
+              AND (ciphertext128 IS NULL OR ciphertext128 = $2)
+              AND (ciphertext128_format IS NULL OR ciphertext128_format = $3)",
             &ct64_digest,
             &ct128_digest,
             format,

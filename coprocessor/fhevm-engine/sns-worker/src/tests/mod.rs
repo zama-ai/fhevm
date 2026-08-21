@@ -2,8 +2,8 @@ use crate::{
     executor::{garbage_collect, query_sns_tasks, Order},
     keyset::fetch_client_key,
     squash_noise::safe_deserialize,
-    Config, DBConfig, S3Config, S3MigrationMode, S3RetryPolicy, SchedulePolicy,
-    DEFAULT_S3_MIGRATION_MAX_RETRIES,
+    BigCiphertext, Ciphertext128Format, Config, DBConfig, S3Config, S3MigrationMode, S3RetryPolicy,
+    SchedulePolicy, DEFAULT_S3_MIGRATION_MAX_RETRIES,
 };
 use alloy::signers::local::PrivateKeySigner;
 use alloy_primitives::{B256, U256};
@@ -368,11 +368,15 @@ async fn enqueue_upload_task_skips_after_reorg_cleanup() {
 
     // Acquire the task the same way the worker does, then release the lock.
     let mut trx = pool.begin().await.unwrap();
-    let task = query_sns_tasks(&mut trx, 1, Order::Asc, &key_id_gw)
+    let mut task = query_sns_tasks(&mut trx, 1, Order::Asc, &key_id_gw)
         .await
         .unwrap()
         .expect("one task")
         .remove(0);
+    task.ct128 = Arc::new(BigCiphertext::new(
+        vec![0xCD; 32],
+        Ciphertext128Format::CompressedOnCpu,
+    ));
     trx.rollback().await.unwrap();
 
     // Live provenance: the digest row is enqueued.
@@ -387,6 +391,38 @@ async fn enqueue_upload_task_skips_after_reorg_cleanup() {
             .unwrap()
     };
     assert_eq!(digest_rows().await, 1);
+    let stored_digests: (Option<Vec<u8>>, Option<Vec<u8>>, Option<i16>) = sqlx::query_as(
+        "SELECT ciphertext, ciphertext128, ciphertext128_format
+           FROM ciphertext_digest
+          WHERE handle = $1",
+    )
+    .bind(&handle)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        stored_digests,
+        (
+            Some(crate::compute_ciphertext_digest(&task.ct64_compressed)),
+            Some(crate::compute_ciphertext_digest(task.ct128.bytes())),
+            Some(i16::from(Ciphertext128Format::CompressedOnCpu)),
+        )
+    );
+
+    let mut conflicting_task = task.clone();
+    conflicting_task.ct128 = Arc::new(BigCiphertext::new(
+        vec![0xCE; 32],
+        Ciphertext128Format::CompressedOnCpu,
+    ));
+    let mut trx = pool.begin().await.unwrap();
+    let error = conflicting_task
+        .enqueue_upload_task(&mut trx)
+        .await
+        .expect_err("computed digest must be initial-only");
+    assert!(error
+        .to_string()
+        .contains("computed ciphertext digest mismatch"));
+    trx.rollback().await.unwrap();
 
     // Simulate the reorg cleanup for an orphan-only handle.
     for sql in [

@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE versioning\n           SET generation = GREATEST(\n                   generation,\n                   COALESCE((SELECT MAX(generation) FROM generation_history), 0)\n               ) + 1,\n               updated_at = NOW()\n         WHERE singleton = TRUE\n     RETURNING generation\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "generation",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "10a6df9c4e8a8035e964ff8c35e9023438d08b1f10371833fba89908c835495b"
+}

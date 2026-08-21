@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO generation_block_window (\n                generation, host_chain_id, start_block, consensus_deadline_block\n            )\n            VALUES ($1, $2, $3, $4)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6788bcabfd5863a0e630c8227147e3ddfad727ea1e5fb65af1f997e3b999fdd0"
+}

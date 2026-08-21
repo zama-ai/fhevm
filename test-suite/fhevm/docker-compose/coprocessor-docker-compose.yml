@@ -224,6 +224,8 @@ services:
       - --gw-url=${GATEWAY_WS_URL}
       - --gateway-config-address=${GATEWAY_CONFIG_ADDRESS}
       - --my-bucket=${BUCKET_NAME}
+      - --signer-type=private-key
+      - --private-key=${TX_SENDER_PRIVATE_KEY}
     depends_on:
       coprocessor-db-migration:
         condition: service_completed_successfully

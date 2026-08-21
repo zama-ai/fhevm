@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO generation_history (\n            generation, proposal_id, proposal_block, stack_version, outcome\n        )\n        VALUES ($1, $2, $3, $4, 'pending')\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6026482343be7a74c904efb8304bd452b1b9af416f7fe9a3dccf23b41a10c531"
+}

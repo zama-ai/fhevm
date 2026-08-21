@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DISTINCT publication_block_number, publication_block_hash\n          FROM block_manifest\n         WHERE publisher = $1\n           AND generation = $7\n           AND version = $2\n           AND coprocessor_context_id = $3\n           AND host_chain_id = $4\n           AND publication_block_number >= $5\n           AND manifest_source = 'local'\n         ORDER BY publication_block_number, publication_block_hash\n         LIMIT $6\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "publication_block_number",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "publication_block_hash",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int2",
+        "Bytea",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "7679faa12b9a3454ddaf114c17db984979a96ac43aeb4627eaaff972e7bbf280"
+}
