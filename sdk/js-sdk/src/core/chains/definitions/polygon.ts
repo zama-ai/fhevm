@@ -1,20 +1,21 @@
+import type { FhevmChain } from '../../types/fhevmChain.js';
 import { defineFhevmChain } from '../utils.js';
 
-export const mainnet = /*#__PURE__*/ defineFhevmChain({
-  id: 1,
+export const polygon: FhevmChain = /*#__PURE__*/ defineFhevmChain({
+  id: 137,
   fhevm: {
     contracts: {
       acl: {
-        address: '0xcA2E8f1F656CD25C01F05d0b243Ab1ecd4a8ffb6',
+        address: '0x6737F17e31cf26a1b62fb0362acC5a16CB156F49',
       },
       inputVerifier: {
-        address: '0xCe0FC2e05CFff1B719EFF7169f7D80Af770c8EA2',
+        address: '0xf40BD204B035522EaAc8E5afAdc55113Acac96ca',
       },
       kmsVerifier: {
-        address: '0x77627828a55156b04Ac0DC0eb30467f1a552BB03',
+        address: '0x14e609595474874Dd6b6128376E336EfADfdBE37',
       },
       protocolConfig: {
-        address: '0xD8236B57394f90726b26aB25D38CeAC776E1a7C4',
+        address: '0x17f62Ab3A1Ea519703cD597410147A30Fa1a7f1e',
       },
     },
     relayerUrl: 'https://relayer.mainnet.zama.org',
