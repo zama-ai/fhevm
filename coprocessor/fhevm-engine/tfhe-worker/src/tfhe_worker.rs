@@ -421,13 +421,14 @@ mod operand_boundary_mask_tests {
         args
     }
 
-    /// Fairness regression: a chain whose whole window defers (here: a
-    /// malformed mask) must not stay at the front of oldest-first
-    /// acquisition. query_for_work parks it until its lock TTL, so the next
-    /// acquisition reaches the younger chain, the deferring rows stay
-    /// unstamped, and the parked chain remains work-stealable after expiry.
+    /// Fairness regression: a chain whose whole window defers must not stay
+    /// at the front of oldest-first acquisition. query_for_work rotates it
+    /// to the FIFO back (status 'updated', fresh last_updated_at, no
+    /// worker_id), so the next acquisition reaches the younger chain, the
+    /// deferring rows stay unstamped, and the chain remains immediately
+    /// reachable by a listener re-arm or the escalation path.
     #[tokio::test]
-    async fn drained_chain_is_parked_and_does_not_starve_younger_chains(
+    async fn deferring_chain_rotates_behind_younger_chains(
     ) -> Result<(), Box<dyn std::error::Error>> {
         let db = setup_test_db(ImportMode::None).await?;
         let pool = PgPoolOptions::new()
@@ -503,18 +504,18 @@ mod operand_boundary_mask_tests {
         assert!(more, "drained batch still reports work available");
         assert!(nodes.is_empty(), "older chain's window fully defers");
 
-        // Quarantined, not starved-behind or destroyed: the older chain is
-        // parked ('processing' with an unexpired lock) and its rows carry
-        // no terminal stamps.
-        let (status, lock_live): (String, bool) = sqlx::query_as(
-            "SELECT status, lock_expires_at > NOW() FROM dependence_chain
+        // Rotated, not wedged or destroyed: the older chain is back to
+        // 'updated' with no owner and a fresh FIFO position, and its rows
+        // carry no terminal stamps.
+        let (status, owner_cleared): (String, bool) = sqlx::query_as(
+            "SELECT status, worker_id IS NULL FROM dependence_chain
              WHERE dependence_chain_id = $1",
         )
         .bind(&old_chain)
         .fetch_one(&pool)
         .await?;
-        assert_eq!(status, "processing");
-        assert!(lock_live, "parked lock keeps the chain quarantined");
+        assert_eq!(status, "updated");
+        assert!(owner_cleared, "rotation releases ownership");
         let is_error: bool =
             sqlx::query_scalar("SELECT is_error FROM computations WHERE output_handle = $1")
                 .bind(handle(0x51))
@@ -545,6 +546,104 @@ mod operand_boundary_mask_tests {
         .fetch_one(&pool)
         .await?;
         assert_eq!(status, "processing");
+        Ok(())
+    }
+
+    /// A drain-only window (every row terminally stamped, nothing deferred)
+    /// must NOT rotate: the chain stays owned, the next cycle finds the
+    /// window empty and retires it through the normal no-work path.
+    #[tokio::test]
+    async fn drain_only_chain_retires_without_rotation() -> Result<(), Box<dyn std::error::Error>> {
+        let db = setup_test_db(ImportMode::None).await?;
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(db.db_url())
+            .await?;
+
+        let chain = vec![0x33_u8; 32];
+        sqlx::query(
+            "INSERT INTO dependence_chain (dependence_chain_id, status) VALUES ($1, 'updated')",
+        )
+        .bind(&chain)
+        .execute(&pool)
+        .await?;
+        // Unknown opcode: deterministically invalid content, terminally
+        // stamped rather than deferred.
+        sqlx::query(
+            r#"
+            INSERT INTO computations (
+                output_handle, dependencies, fhe_operation, is_scalar,
+                dependence_chain_id, transaction_id, is_allowed,
+                host_chain_id, operand_boundary_mask
+            ) VALUES ($1, '{}', 127, false, $2, $3, true, 1, $4)
+            "#,
+        )
+        .bind(handle(0x91))
+        .bind(&chain)
+        .bind([0xC1_u8; 32])
+        .bind(vec![0_u8; 32])
+        .execute(&pool)
+        .await?;
+
+        let args = test_args("10", db.db_url());
+        let health_check = crate::health_check::HealthCheck::new(
+            db.db_url().to_owned().into(),
+            Duration::from_secs(300),
+        );
+        let mut locks = dependence_chain::LockMngr::new_with_conf(
+            Uuid::new_v4(),
+            pool.clone(),
+            30,
+            false,
+            None,
+            None,
+            None,
+        );
+        let mut no_progress_cycles = 0;
+        let mut cooldown = DeferredTransactionCooldown::new();
+
+        let mut trx = pool.begin().await?;
+        let (nodes, _, more) = query_for_work(
+            &args,
+            &health_check,
+            &mut trx,
+            &mut locks,
+            &mut no_progress_cycles,
+            &mut cooldown,
+        )
+        .await?;
+        trx.commit().await?;
+        assert!(more && nodes.is_empty(), "window drains terminally");
+        let is_error: bool =
+            sqlx::query_scalar("SELECT is_error FROM computations WHERE output_handle = $1")
+                .bind(handle(0x91))
+                .fetch_one(&pool)
+                .await?;
+        assert!(is_error, "invalid content is stamped, not deferred");
+        let status: String = sqlx::query_scalar(
+            "SELECT status FROM dependence_chain WHERE dependence_chain_id = $1",
+        )
+        .bind(&chain)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(
+            status, "processing",
+            "drain-only keeps ownership for retirement"
+        );
+
+        // Next cycle: nothing pending -> the no-work path retires the chain.
+        let mut trx = pool.begin().await?;
+        let (nodes, _, more) = query_for_work(
+            &args,
+            &health_check,
+            &mut trx,
+            &mut locks,
+            &mut no_progress_cycles,
+            &mut cooldown,
+        )
+        .await?;
+        trx.commit().await?;
+        assert!(nodes.is_empty() && !more, "empty window reports no work");
         Ok(())
     }
 
@@ -888,16 +987,19 @@ async fn tfhe_worker_cycle(
                 // transaction deferred (uninterpretable rows) or drained
                 // (terminal stamps written above). Persist the stamps —
                 // the no-work branch below would drop them with the
-                // transaction. query_for_work already quarantined the
-                // source: with locking the chain is parked until its lock
-                // TTL, without it the deferred transactions entered the
-                // cooldown, so an immediate re-poll makes progress on the
-                // NEXT chain/window rather than spinning on this one. The
+                // transaction. query_for_work already rotated a deferring
+                // chain to the FIFO back (or cooled the transactions, in
+                // lockless mode), and the pace falls back to the normal
+                // poll/notify cadence: an unconditional immediate re-poll
+                // would hot-loop when everything reachable defers (more
+                // wedged chains than fit one lock TTL, or a lockless
+                // backlog past the cooldown cap). New real work still
+                // wakes the worker instantly via work_available. The
                 // global no-progress counter is deliberately untouched: it
                 // gates the acquire_early_lock escalation, which must not
                 // be reachable through wedged chains alone.
                 trx.commit().await?;
-                immediately_poll_more_work = true;
+                immediately_poll_more_work = false;
                 continue;
             }
             // We've fetched work, so we'll poll again without waiting
@@ -1280,8 +1382,9 @@ WHERE c.transaction_id IN (
     info!(target: "tfhe_worker", { count = the_work.len(), dcid = ?dependence_chain_id.as_ref().map(hex::encode),
 				    locking = ?locking_reason }, "Processing work items");
     let s_prep = tracing::info_span!("prepare_dataflow_graphs", work_items = the_work.len());
-    let (transactions, earliest_schedule_order) = async {
+    let (transactions, earliest_schedule_order, any_deferred) = async {
         let mut earliest_schedule_order = PrimitiveDateTime::MAX;
+        let mut any_deferred = false;
         // Partition work directly by transaction
         let work_by_transaction: HashMap<Handle, Vec<_>> = the_work
             .into_iter()
@@ -1294,6 +1397,7 @@ WHERE c.transaction_id IN (
                 Ok(prepared) => prepared,
                 Err(reason) => {
                     defer_transaction(transaction_id, &reason);
+                    any_deferred = true;
                     if quarantine_deferred {
                         deferred_cooldown.quarantine(transaction_id);
                     }
@@ -1318,6 +1422,7 @@ WHERE c.transaction_id IN (
                     // alert below surface the wedge. Unrelated transactions
                     // continue.
                     defer_transaction(transaction_id, &format!("invalid transaction graph: {e}"));
+                    any_deferred = true;
                     if quarantine_deferred {
                         deferred_cooldown.quarantine(transaction_id);
                     }
@@ -1329,20 +1434,33 @@ WHERE c.transaction_id IN (
             }
             transactions.append(&mut components);
         }
-        Ok::<_, CoprocessorError>((transactions, earliest_schedule_order))
+        Ok::<_, CoprocessorError>((transactions, earliest_schedule_order, any_deferred))
     }
     .instrument(s_prep)
     .await?;
-    if transactions.is_empty() {
-        // Nothing schedulable in a non-empty window: quarantine the chain
-        // until its lock TTL expires, so oldest-first acquisition moves on
-        // to younger chains instead of re-acquiring this one after every
-        // poll (a single worker would otherwise starve every younger chain
-        // behind one uninterpretable one). The chain stays 'processing'
-        // with pending rows and is work-stolen for a retry after expiry.
-        // No-op with locking disabled, where the transaction cooldown
-        // above rotates the window instead.
-        deps_chain_mngr.park_current_lock();
+    if transactions.is_empty() && any_deferred {
+        // Deferrals in a non-empty window: rotate the chain to the BACK of
+        // the acquisition FIFO (status 'updated', last_updated_at now), so
+        // oldest-first acquisition moves on to younger chains instead of
+        // re-acquiring this one after every poll — a single worker would
+        // otherwise starve every younger chain behind one uninterpretable
+        // one. Rotation rather than a kept-'processing' park: it stays
+        // reachable by the escalation path and by a listener re-arm
+        // immediately (a parked row's worker_id would block both until the
+        // lock TTL). No-op with locking disabled, where the transaction
+        // cooldown above rotates the window instead.
+        //
+        // Drain-only windows (every row terminally stamped, nothing
+        // deferred) deliberately do NOT rotate: the next cycle finds the
+        // window empty and retires the chain through the normal
+        // no-work path.
+        let now = {
+            let offset = time::OffsetDateTime::now_utc();
+            PrimitiveDateTime::new(offset.date(), offset.time())
+        };
+        deps_chain_mngr
+            .release_current_lock(false, Some(now))
+            .await?;
     }
     // `true` even when `transactions` is empty (everything deferred or
     // drained as invalid): the caller's no-work branch marks the chain
@@ -1423,8 +1541,11 @@ impl DeferredTransactionCooldown {
         if self.until.len() > DEFERRED_TRANSACTION_COOLDOWN_CAP {
             let mut deadlines: Vec<std::time::Instant> = self.until.values().copied().collect();
             deadlines.sort_unstable();
+            // Keep entries at or above the boundary deadline: ties keep the
+            // map slightly over cap rather than re-admitting still-hot
+            // transactions to the window early.
             let cutoff = deadlines[self.until.len() - DEFERRED_TRANSACTION_COOLDOWN_CAP];
-            self.until.retain(|_, until| *until > cutoff);
+            self.until.retain(|_, until| *until >= cutoff);
         }
     }
 
