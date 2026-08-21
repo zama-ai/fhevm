@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE computations c\n            SET is_completed = false, completed_at = NULL\n            WHERE c.output_handle = ANY($1::bytea[])\n              AND c.is_allowed = true\n              AND c.is_completed = true\n              AND c.is_error = false\n              AND NOT EXISTS (\n                  SELECT 1 FROM ciphertexts ct WHERE ct.handle = c.output_handle\n              )\n            RETURNING c.dependence_chain_id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "dependence_chain_id",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "ByteaArray"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "492cbbb06d4b1d6b4259775a2fef280d9e575f8b44af8cf5567f6d7b0e436b26"
+}

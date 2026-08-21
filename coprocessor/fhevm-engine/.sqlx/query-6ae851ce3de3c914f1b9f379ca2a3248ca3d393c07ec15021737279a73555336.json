@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM host_chain_blocks_valid b\n            WHERE b.ctid IN (\n                SELECT c.ctid\n                FROM host_chain_blocks_valid c\n                WHERE c.chain_id = $1\n                  AND c.block_status = 'finalized'\n                  AND c.block_number < $2\n                  AND NOT EXISTS (\n                      SELECT 1 FROM bridge_handle_events r\n                      WHERE r.block_hash = c.block_hash\n                  )\n                  AND NOT EXISTS (\n                      SELECT 1 FROM handle_bridged_events r\n                      WHERE r.block_hash = c.block_hash\n                  )\n                  AND NOT EXISTS (\n                      SELECT 1 FROM fallback_granted_events r\n                      WHERE r.block_hash = c.block_hash\n                  )\n                  -- KMS key/CRS activation staging joins the finalized row by\n                  -- (chain_id, block_hash) when a 'ready' event activates;\n                  -- pruning it would strand the activation forever. Small\n                  -- tables, guarded unconditionally.\n                  AND NOT EXISTS (\n                      SELECT 1 FROM kms_key_activation_events r\n                      WHERE r.chain_id = $1 AND r.block_hash = c.block_hash\n                  )\n                  AND NOT EXISTS (\n                      SELECT 1 FROM kms_crs_activation_events r\n                      WHERE r.chain_id = $1 AND r.block_hash = c.block_hash\n                  )\n                  -- A late-allow record is consumable only while its\n                  -- observing block's row exists (the sweep joins on it);\n                  -- pruning the anchor first would strand the record\n                  -- forever. Records themselves expire above, so this\n                  -- guard is temporary per block.\n                  AND NOT EXISTS (\n                      SELECT 1 FROM late_allow_propagation r\n                      WHERE r.host_chain_id = $1 AND r.block_hash = c.block_hash\n                  )\n                ORDER BY c.block_number ASC\n                LIMIT $3\n            )\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6ae851ce3de3c914f1b9f379ca2a3248ca3d393c07ec15021737279a73555336"
+}

@@ -45,6 +45,14 @@ pub type ToType = u8;
 pub type ScalarByte = FixedBytes<1>;
 pub type ClearConst = Uint<256, 4>;
 pub type ChainHash = TransactionHash;
+/// The executor's `uint256 boundaryBits`, stored in the ABI's canonical
+/// big-endian byte order. Bit `i` is at `mask[31 - i / 8] & (1 << (i % 8))`.
+///
+/// This is authoritative execution metadata, not a scheduler hint: it says
+/// whether the encrypted operand at dependency position `i` was minted by an
+/// earlier successful executor operation in the *same* EVM transaction.
+pub type OperandBoundaryMask = [u8; 32];
+pub const OPERAND_BOUNDARY_MASK_BYTES: usize = 32;
 
 static SLOW_LANE_MARKED_CHAINS_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(
     || {
@@ -173,6 +181,17 @@ pub struct LogTfhe {
     pub dependence_chain: TransactionHash,
     // global index per block (not by tx)
     pub log_index: Option<u64>,
+    /// The exact operand-origin bits folded into this operation's result
+    /// handle by `FHEVMExecutor`. Computation rows must carry this value;
+    /// `None` is only valid before ordered block ingestion derives it (or for
+    /// non-computation events such as `VerifyInput`).
+    pub operand_boundary_mask: Option<OperandBoundaryMask>,
+    /// Whether this event is an actual executor operation whose result is
+    /// marked in executor transient storage. Bridge fallback synthesis emits
+    /// a `TrivialEncrypt`-shaped computation row but did not execute the
+    /// executor, so its result must never become a same-transaction minted
+    /// operand for a later real executor operation.
+    pub is_executor_minted: bool,
 }
 
 pub type Transaction<'l> = sqlx::Transaction<'l, Postgres>;
@@ -491,6 +510,12 @@ impl Database {
         is_scalar: bool,
         log: &LogTfhe,
     ) -> Result<bool, SqlxError> {
+        let operand_boundary_mask = log.operand_boundary_mask.as_ref().ok_or_else(|| {
+            SqlxError::Protocol(
+                "refusing computation insert without authoritative operand boundary mask"
+                    .into(),
+            )
+        })?;
         // Schema isolation handles BCS/GCS routing at the connection layer
         // (`search_path = gcs,public` for GCS, default `public` for BCS), so
         // this INSERT references `computations` unqualified.
@@ -508,17 +533,18 @@ impl Database {
                 schedule_order,
                 is_completed,
                 host_chain_id,
-                block_number
+                block_number,
+                operand_boundary_mask
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9, $10, $11)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9, $10, $11, $12)
             ON CONFLICT (output_handle, transaction_id) DO NOTHING
             "#,
             output_handle,
-            dependencies,
+            dependencies as _,
             fhe_operation as i16,
             is_scalar,
             log.dependence_chain.to_vec(),
-            log.transaction_hash.map(|txh| txh.to_vec()),
+            log.transaction_hash.map(|txh| txh.to_vec()) as _,
             log.is_allowed,
             log.block_timestamp
                 .saturating_add(TimeDuration::microseconds(
@@ -526,7 +552,8 @@ impl Database {
                 )),
             !log.is_allowed,
             self.chain_id.as_i64(),
-            log.block_number as i64
+            log.block_number as i64,
+            operand_boundary_mask.as_slice(),
         );
         query
             .execute(tx.deref_mut())
@@ -785,6 +812,224 @@ impl Database {
     /// the same transaction that marks the branch orphaned and is idempotent;
     /// if the listener is down, finalization does not advance and catchup
     /// reruns the retraction when it later orphans the branch.
+    /// Records a "late allow": a persistent ACL allowance observed in this
+    /// block for a handle whose computation row predates it (so the row was
+    /// stamped `is_allowed = false` — same-block ACL events are the only
+    /// source of that flag at ingest). The allowance is NOT applied here:
+    /// this block may still be orphaned, and orphaned `allowed_handles` rows
+    /// are deliberately retained, so application waits for finality
+    /// (`apply_matured_late_allows`) and orphaning retracts the record
+    /// (`retract_orphaned_event_state`).
+    ///
+    /// A record is skipped only when the handle already has an allowed
+    /// computation row (the same-block case: ACL events are processed after
+    /// the block's compute inserts). In particular an allow observed BEFORE
+    /// its computation row exists — out-of-order or catchup ingestion — is
+    /// still recorded, and stays recorded until the row appears; records
+    /// whose handle never gains a row (e.g. allows on verified-input
+    /// handles) are dropped by the retention prune.
+    pub async fn record_late_allows(
+        &self,
+        tx: &mut Transaction<'_>,
+        block_summary: &BlockSummary,
+        allowed_handles: &[Vec<u8>],
+    ) -> Result<u64, SqlxError> {
+        if allowed_handles.is_empty() {
+            return Ok(0);
+        }
+        let recorded = sqlx::query!(
+            r#"
+            INSERT INTO late_allow_propagation
+                (host_chain_id, block_hash, block_number, handle)
+            SELECT $1, $2, $3, h.handle
+            FROM unnest($4::bytea[]) AS h(handle)
+            WHERE EXISTS (
+                SELECT 1 FROM computations c
+                WHERE c.output_handle = h.handle
+                  AND c.is_allowed = false
+            )
+            OR NOT EXISTS (
+                SELECT 1 FROM computations c
+                WHERE c.output_handle = h.handle
+            )
+            ON CONFLICT DO NOTHING
+            "#,
+            self.chain_id.as_i64(),
+            block_summary.hash.as_slice(),
+            block_summary.number as i64,
+            allowed_handles as _,
+        )
+        .execute(tx.deref_mut())
+        .await?
+        .rows_affected();
+        if recorded > 0 {
+            info!(
+                block_number = block_summary.number,
+                recorded, "Recorded late allows for propagation at finality"
+            );
+        }
+        Ok(recorded)
+    }
+
+    /// Applies every late allow whose observing block is FINAL: flips
+    /// `is_allowed` on the handle's computation rows, resets
+    /// completed-but-unpersisted rows to pending for a deterministic
+    /// recompute, and re-arms the owning chains so the work is re-acquired.
+    ///
+    /// This is a sweep over MATURED records rather than a per-block apply,
+    /// so it covers every path a block reaches finality through: the
+    /// pending -> finalized transition in update_finalized_blocks_aux, AND
+    /// blocks ingested already-finalized by catchup, which never take that
+    /// transition. It is called from both places; a record whose
+    /// computation row has not been ingested yet is applied by a later
+    /// sweep once the row exists (only consumed records are deleted).
+    pub async fn apply_matured_late_allows(
+        &self,
+        tx: &mut Transaction<'_>,
+    ) -> Result<(), SqlxError> {
+        // Consume records whose block is final and whose handle has a
+        // computation row to act on; keep matured records that are still
+        // waiting for their row (out-of-order ingestion). No pre-check is
+        // needed: with the table empty — the steady state — this DELETE is
+        // a single probe of the (host_chain_id, ..) primary-key prefix.
+        let handles: Vec<Vec<u8>> = sqlx::query!(
+            r#"
+            DELETE FROM late_allow_propagation lap
+            USING host_chain_blocks_valid b
+            WHERE lap.host_chain_id = $1
+              AND b.chain_id = lap.host_chain_id
+              AND b.block_hash = lap.block_hash
+              AND b.block_status = 'finalized'
+              AND EXISTS (
+                  SELECT 1 FROM computations c WHERE c.output_handle = lap.handle
+              )
+            RETURNING lap.handle AS "handle!"
+            "#,
+            self.chain_id.as_i64(),
+        )
+        .fetch_all(tx.deref_mut())
+        .await?
+        .into_iter()
+        .map(|row| row.handle)
+        .collect();
+        if handles.is_empty() {
+            return Ok(());
+        }
+
+        // The allowance attaches to the handle on-chain, and equal handles
+        // carry byte-identical results by construction, so every row of the
+        // handle flips — fork spellings included.
+        let flipped = sqlx::query!(
+            r#"
+            UPDATE computations
+            SET is_allowed = true
+            WHERE output_handle = ANY($1::bytea[])
+              AND is_allowed = false
+            RETURNING dependence_chain_id
+            "#,
+            &handles,
+        )
+        .fetch_all(tx.deref_mut())
+        .await?;
+
+        // The NORMAL late-allow path, not a legacy repair: the listener
+        // inserts every non-allowed row with is_completed = NOT is_allowed
+        // (see insert_computation), so a late-allowed row is always
+        // completed-but-unpersisted and must reset to pending so the
+        // deterministic recompute actually persists the ciphertext its
+        // cross-transaction consumers need. Rows with is_error = true stay
+        // excluded on purpose: content errors are terminal and a late allow
+        // must not silently resurrect them (they surface via the flip log).
+        let reset = sqlx::query!(
+            r#"
+            UPDATE computations c
+            SET is_completed = false, completed_at = NULL
+            WHERE c.output_handle = ANY($1::bytea[])
+              AND c.is_allowed = true
+              AND c.is_completed = true
+              AND c.is_error = false
+              AND NOT EXISTS (
+                  SELECT 1 FROM ciphertexts ct WHERE ct.handle = c.output_handle
+              )
+            RETURNING c.dependence_chain_id
+            "#,
+            &handles,
+        )
+        .fetch_all(tx.deref_mut())
+        .await?;
+
+        let mut chain_ids: Vec<Vec<u8>> = flipped
+            .into_iter()
+            .map(|row| row.dependence_chain_id)
+            .chain(reset.into_iter().map(|row| row.dependence_chain_id))
+            .flatten()
+            .collect();
+        chain_ids.sort();
+        chain_ids.dedup();
+        if chain_ids.is_empty() {
+            return Ok(());
+        }
+
+        // Re-arm the owning chains: the listener convention for adding work
+        // to an existing chain (a live worker's release respects a
+        // listener-set 'updated'). Chains already 'updated' keep their FIFO
+        // position (re-stamping last_updated_at would push a busy chain to
+        // the back of the acquisition order on every sweep).
+        // One statement re-arms and reports: the CTE updates only chains
+        // not already queued (preserving their FIFO position and avoiding a
+        // lock race with a live worker's release), while the outer read
+        // names every chain that exists so the pruned ones — which need
+        // operator attention, since their scheduling context is gone — can
+        // be listed in the warn.
+        let existing = sqlx::query!(
+            r#"
+            WITH rearmed AS (
+                UPDATE dependence_chain
+                SET status = 'updated', last_updated_at = NOW()
+                WHERE dependence_chain_id = ANY($1::bytea[])
+                  AND status <> 'updated'
+                RETURNING dependence_chain_id
+            )
+            SELECT
+                dc.dependence_chain_id,
+                (dc.dependence_chain_id IN (
+                    SELECT r.dependence_chain_id FROM rearmed r
+                )) AS "rearmed!"
+            FROM dependence_chain dc
+            WHERE dc.dependence_chain_id = ANY($1::bytea[])
+            "#,
+            &chain_ids,
+        )
+        .fetch_all(tx.deref_mut())
+        .await?;
+        info!(
+            handles = handles.len(),
+            chains = chain_ids.len(),
+            rearmed = existing.iter().filter(|row| row.rearmed).count(),
+            "Applied finalized late allows"
+        );
+        if existing.len() < chain_ids.len() {
+            let existing: HashSet<&Vec<u8>> = existing
+                .iter()
+                .map(|row| &row.dependence_chain_id)
+                .collect();
+            let pruned: Vec<String> = chain_ids
+                .iter()
+                .filter(|id| !existing.contains(id))
+                .map(|id| to_hex(id))
+                .collect();
+            warn!(
+                ?pruned,
+                "Late allow flipped rows on pruned chains; their recompute needs manual re-arming"
+            );
+        }
+        // Wake an idle worker for the re-armed work.
+        sqlx::query!("SELECT pg_notify('work_available', '')")
+            .fetch_all(tx.deref_mut())
+            .await?;
+        Ok(())
+    }
+
     pub async fn retract_orphaned_event_state(
         &self,
         tx: &mut Transaction<'_>,
@@ -808,6 +1053,20 @@ impl Database {
         // single DELETE .. RETURNING both removes the orphaned observations
         // and captures the flag under the row lock, so an association racing
         // finalization is either retracted or never happens.
+        // Late-allow records are keyed by the observing block: an orphaned
+        // observation must never flip canonical rows at finality.
+        sqlx::query!(
+            r#"
+            DELETE FROM late_allow_propagation
+            WHERE host_chain_id = $1
+              AND block_hash = ANY($2::bytea[])
+            "#,
+            self.chain_id.as_i64(),
+            orphaned_block_hashes as _,
+        )
+        .execute(tx.deref_mut())
+        .await?;
+
         let retracted_bridged = sqlx::query!(
             r#"
             DELETE FROM handle_bridged_events
@@ -1174,6 +1433,41 @@ impl Database {
             return Ok(0);
         }
         let pool = self.pool.read().await.clone();
+        // Late-allow record retention, two horizons:
+        // - Standard horizon: drop records whose handle's rows are all
+        //   allowed already (nothing left to repair). Records with a live
+        //   non-allowed row are kept for the sweep to consume.
+        // - Extended horizon: records with NO computations row at all are
+        //   usually allows on verified-input handles (no row by design),
+        //   but can also be waiting on a deep backfill to deliver the row,
+        //   so they get a longer grace period before expiring.
+        sqlx::query!(
+            r#"
+            DELETE FROM late_allow_propagation lap
+            WHERE lap.host_chain_id = $1
+              AND (
+                  (
+                      lap.block_number < $2
+                      AND EXISTS (
+                          SELECT 1 FROM computations c
+                          WHERE c.output_handle = lap.handle
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1 FROM computations c
+                          WHERE c.output_handle = lap.handle
+                            AND c.is_allowed = false
+                      )
+                  )
+                  OR lap.block_number < $3
+              )
+            "#,
+            self.chain_id.as_i64(),
+            prune_below,
+            last_finalized_block
+                .saturating_sub(BLOCKS_VALID_RETENTION.saturating_mul(4)),
+        )
+        .execute(&pool)
+        .await?;
         let deleted = sqlx::query!(
             r#"
             DELETE FROM host_chain_blocks_valid b
@@ -1206,6 +1500,15 @@ impl Database {
                   AND NOT EXISTS (
                       SELECT 1 FROM kms_crs_activation_events r
                       WHERE r.chain_id = $1 AND r.block_hash = c.block_hash
+                  )
+                  -- A late-allow record is consumable only while its
+                  -- observing block's row exists (the sweep joins on it);
+                  -- pruning the anchor first would strand the record
+                  -- forever. Records themselves expire above, so this
+                  -- guard is temporary per block.
+                  AND NOT EXISTS (
+                      SELECT 1 FROM late_allow_propagation r
+                      WHERE r.host_chain_id = $1 AND r.block_hash = c.block_hash
                   )
                 ORDER BY c.block_number ASC
                 LIMIT $3
@@ -2221,6 +2524,231 @@ pub fn tfhe_inputs_handle(op: &TfheContractEvents) -> Vec<Handle> {
 
         E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => vec![],
     }
+}
+
+/// Returns every encrypted executor operand together with its position in the
+/// `dependencies` vector stored for the computation. The position is also the
+/// bit position used by `FHEVMExecutor`'s `boundaryBits` preimage. Plaintext
+/// scalar positions are intentionally absent, and therefore retain their
+/// required zero bit.
+///
+/// Keep this in lock-step with both `insert_tfhe_event` and the executor's
+/// `_oneOperandBoundaryBit` callers. In particular, `FheMulDiv` always has a
+/// scalar divisor at position 2, and binary scalar operations have a scalar
+/// right operand at position 1.
+pub fn tfhe_encrypted_operand_positions(
+    op: &TfheContractEvents,
+) -> Vec<(usize, Handle)> {
+    use TfheContract as C;
+    use TfheContractEvents as E;
+
+    match op {
+        E::Cast(C::Cast { ct, .. })
+        | E::FheNeg(C::FheNeg { ct, .. })
+        | E::FheNot(C::FheNot { ct, .. }) => vec![(0, *ct)],
+
+        E::FheAdd(C::FheAdd {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheBitAnd(C::FheBitAnd {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheBitOr(C::FheBitOr {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheBitXor(C::FheBitXor {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheDiv(C::FheDiv {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheMax(C::FheMax {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheMin(C::FheMin {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheMul(C::FheMul {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheRem(C::FheRem {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheRotl(C::FheRotl {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheRotr(C::FheRotr {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheShl(C::FheShl {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheShr(C::FheShr {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheSub(C::FheSub {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheEq(C::FheEq {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheGe(C::FheGe {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheGt(C::FheGt {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheLe(C::FheLe {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheLt(C::FheLt {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheNe(C::FheNe {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        }) => {
+            let mut operands = vec![(0, *lhs)];
+            if scalarByte.const_is_zero() {
+                operands.push((1, *rhs));
+            }
+            operands
+        }
+
+        E::FheIfThenElse(C::FheIfThenElse {
+            control,
+            ifTrue,
+            ifFalse,
+            ..
+        }) => vec![(0, *control), (1, *ifTrue), (2, *ifFalse)],
+
+        E::FheRand(_) | E::FheRandBounded(_) | E::TrivialEncrypt(_) => {
+            vec![]
+        }
+
+        E::FheSum(C::FheSum { values, .. }) => {
+            values.iter().copied().enumerate().collect()
+        }
+
+        E::FheIsIn(C::FheIsIn { value, values, .. }) => {
+            let mut operands =
+                Vec::with_capacity(values.len().saturating_add(1));
+            operands.push((0, *value));
+            operands.extend(
+                values
+                    .iter()
+                    .copied()
+                    .enumerate()
+                    .map(|(i, value)| (i.saturating_add(1), value)),
+            );
+            operands
+        }
+
+        E::FheMulDiv(C::FheMulDiv {
+            factor1,
+            factor2,
+            scalarByte,
+            ..
+        }) => {
+            let mut operands = vec![(0, *factor1)];
+            if !fhe_mul_div_factor2_is_scalar(scalarByte) {
+                operands.push((1, *factor2));
+            }
+            operands
+        }
+
+        E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => vec![],
+    }
+}
+
+/// Reconstructs the exact `uint256 boundaryBits` value committed by the
+/// executor for one operation. `was_minted` must represent successful prior
+/// executor operations in this transaction, in log order.
+///
+/// The executor only has 256 bits of provenance. Current collection events
+/// are bounded below that limit; reject a larger event rather than silently
+/// inventing a sourcing rule that its handle does not commit to.
+pub fn operand_boundary_mask_from_minted<F>(
+    op: &TfheContractEvents,
+    mut was_minted: F,
+) -> Result<OperandBoundaryMask, String>
+where
+    F: FnMut(&Handle) -> bool,
+{
+    let mut mask = [0_u8; OPERAND_BOUNDARY_MASK_BYTES];
+    for (position, handle) in tfhe_encrypted_operand_positions(op) {
+        if position >= OPERAND_BOUNDARY_MASK_BYTES * 8 {
+            return Err(format!(
+                "operation has encrypted operand at position {position}, beyond executor boundaryBits"
+            ));
+        }
+        if !was_minted(&handle) {
+            // Match `uint256` ABI byte order: Solidity bit 0 is the least
+            // significant bit of the final byte.
+            let byte_index = OPERAND_BOUNDARY_MASK_BYTES - 1 - position / 8;
+            mask[byte_index] |= 1 << (position % 8);
+        }
+    }
+    Ok(mask)
 }
 
 /// `fheMulDiv` `scalarByte` bit 1 — factor2 is a plaintext scalar (bit 0 is the

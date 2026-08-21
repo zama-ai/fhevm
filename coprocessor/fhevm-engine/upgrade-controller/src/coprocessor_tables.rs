@@ -154,6 +154,17 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
         duplicated: true,
         conflict_cols: &[],
     },
+    // Late-allow records the GCS host-listener writes and CONSUMES
+    // (apply sweeps DELETE..RETURNING at ingest/finalization): without a
+    // gcs.* duplicate, a dry-run finalization would consume records the
+    // canonical BCS stack still needs. Isolation-only, like
+    // allowed_handles: public holds the canonical rows, re-derived by the
+    // always-live blue stack, so the duplicate is dropped at cutover.
+    CoprocessorTable {
+        name: "late_allow_propagation",
+        duplicated: true,
+        conflict_cols: &[],
+    },
     // Written by the GCS host-listener kms_generation module during the dry-run.
     CoprocessorTable {
         name: "kms_key_activation_events",

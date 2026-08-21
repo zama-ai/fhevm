@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO late_allow_propagation\n                (host_chain_id, block_hash, block_number, handle)\n            SELECT $1, $2, $3, h.handle\n            FROM unnest($4::bytea[]) AS h(handle)\n            WHERE EXISTS (\n                SELECT 1 FROM computations c\n                WHERE c.output_handle = h.handle\n                  AND c.is_allowed = false\n            )\n            OR NOT EXISTS (\n                SELECT 1 FROM computations c\n                WHERE c.output_handle = h.handle\n            )\n            ON CONFLICT DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Int8",
+        "ByteaArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f8fc91a73fcb095c5ad8ba3af223e1889a6cd5a004767d34820ca4e47bce6e58"
+}

@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM late_allow_propagation lap\n            USING host_chain_blocks_valid b\n            WHERE lap.host_chain_id = $1\n              AND b.chain_id = lap.host_chain_id\n              AND b.block_hash = lap.block_hash\n              AND b.block_status = 'finalized'\n              AND EXISTS (\n                  SELECT 1 FROM computations c WHERE c.output_handle = lap.handle\n              )\n            RETURNING lap.handle AS \"handle!\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "handle!",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "bdad4d0e7a1d51c43e658d787ba10101345ba02c95c08678d25360361dd4fcaf"
+}

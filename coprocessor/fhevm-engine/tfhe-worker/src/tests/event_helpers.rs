@@ -4,7 +4,8 @@ use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::types::AllowEvents;
 use host_listener::contracts::TfheContract::TfheContractEvents;
 use host_listener::database::tfhe_event_propagate::{
-    ClearConst, Database as ListenerDatabase, Handle, LogTfhe, ToType, Transaction,
+    operand_boundary_mask_from_minted, ClearConst, Database as ListenerDatabase, Handle, LogTfhe,
+    ToType, Transaction,
 };
 use sqlx::types::time::PrimitiveDateTime;
 
@@ -119,6 +120,21 @@ pub async fn insert_event(
     is_allowed: bool,
 ) -> Result<(), sqlx::Error> {
     let log = log_with_tx(tx_id, tfhe_event(event));
+    // Fixtures insert one event at a time rather than using ordered block
+    // ingestion. Reconstruct the same transaction-local minted set from rows
+    // already staged in this transaction so their masks remain authoritative.
+    let previously_minted = sqlx::query_scalar::<_, Vec<u8>>(
+        "SELECT output_handle FROM computations WHERE transaction_id = $1",
+    )
+    .bind(tx_id.to_vec())
+    .fetch_all(&mut **tx)
+    .await?
+    .into_iter()
+    .collect::<std::collections::HashSet<_>>();
+    let operand_boundary_mask = operand_boundary_mask_from_minted(&log.inner.data, |handle| {
+        previously_minted.contains(handle.as_slice())
+    })
+    .map_err(sqlx::Error::Protocol)?;
     let event = LogTfhe {
         event: log.inner,
         transaction_hash: Some(tx_id),
@@ -129,6 +145,8 @@ pub async fn insert_event(
         dependence_chain: tx_id,
         tx_depth_size: 0,
         log_index: log.log_index,
+        operand_boundary_mask: Some(operand_boundary_mask),
+        is_executor_minted: true,
     };
     listener_db.insert_tfhe_event(tx, &event).await?;
     Ok(())

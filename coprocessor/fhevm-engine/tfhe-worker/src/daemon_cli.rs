@@ -125,6 +125,13 @@ pub struct Args {
     #[arg(long, default_value = "0.2:5.0:0.05", value_parser = clap::value_parser!(MetricsConfig))]
     pub metric_fhe_batch_latency: MetricsConfig,
 
+    /// Liveness override budget for one in-flight worker batch, in seconds:
+    /// a batch older than this stops keeping the pod alive, so a genuinely
+    /// wedged execution is eventually restarted while per-op progress ticks
+    /// keep legitimate long batches healthy.
+    #[arg(long, env = "TFHE_WORKER_MAX_BATCH_TTL_SECS", default_value_t = 300)]
+    pub max_batch_ttl_secs: u64,
+
     /// Print the compiled-in coprocessor stack version and exit.
     #[arg(long)]
     pub stack_version: bool,

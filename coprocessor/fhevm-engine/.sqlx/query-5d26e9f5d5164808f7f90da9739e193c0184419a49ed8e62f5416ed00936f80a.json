@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM late_allow_propagation\n            WHERE host_chain_id = $1\n              AND block_hash = ANY($2::bytea[])\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "ByteaArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5d26e9f5d5164808f7f90da9739e193c0184419a49ed8e62f5416ed00936f80a"
+}
