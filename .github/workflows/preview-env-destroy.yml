@@ -33,6 +33,17 @@ on:
         required: true
         type: string
 
+# Serialize teardowns of the same env so overlapping triggers (a PR `closed`
+# firing alongside an `unlabeled`, or a manual dispatch for the same namespace)
+# don't race helm uninstall / namespace delete against each other. Keyed like
+# preview-env-deploy.yml: PR number for pull_request events, the pasted
+# namespace for workflow_dispatch. cancel-in-progress is false on purpose -
+# interrupting a teardown mid-uninstall could strand Crossplane finalizers and
+# leak AWS resources, so queue the next run instead of cancelling the current.
+concurrency:
+  group: preview-env-destroy-${{ github.event.pull_request.number || inputs.namespace || github.run_id }}
+  cancel-in-progress: false
+
 permissions: {}
 
 jobs:
