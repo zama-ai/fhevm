@@ -216,6 +216,7 @@ services:
   coprocessor-consensus-detector:
     container_name: coprocessor-consensus-detector
     image: ghcr.io/zama-ai/fhevm/coprocessor/consensus-detector:${COPROCESSOR_CONSENSUS_DETECTOR_VERSION}
+    platform: linux/amd64
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
     command:
@@ -231,6 +232,7 @@ services:
   coprocessor-upgrade-controller:
     container_name: coprocessor-upgrade-controller
     image: ghcr.io/zama-ai/fhevm/coprocessor/upgrade-controller:${COPROCESSOR_UPGRADE_CONTROLLER_VERSION}
+    platform: linux/amd64
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
     command:
