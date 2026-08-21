@@ -1,45 +1,58 @@
 /**
  * The `kms-context-switch` acceptance profile for `fhevm-cli test`.
  *
- * Drives the ProtocolConfig KMS-context lifecycle flows end to end on a threshold-mode cluster and
- * proves the KMS reacts to the emitted events:
- *   1. NewKmsContext — broadcast `defineNewKmsContextAndEpoch` (same committee, so no new signing
- *      keys are needed; on a spare-core cluster, a node swap with the dropped node's tx-sender
- *      stopped first), wait for the new context to become the on-chain active one, then decrypt.
- *   2. NewKmsEpoch — broadcast `defineNewEpochForCurrentKmsContext` (same context, new epoch), wait
- *      for the new epoch to activate, then decrypt again.
- *   3. Destruction (same-committee clusters only) — the switch and rotation each retire a
- *      still-live-but-no-longer-current entry (the baseline context, the switch's epoch). Destroy
- *      each via `destroyKmsContext` / `destroyKmsEpoch` and prove: the current context/epoch cannot
- *      be destroyed and unknown / already-destroyed ids revert; `KmsContextDestroyed` /
- *      `KmsEpochDestroyed` fire and the target stops reading valid without moving the active pointer
- *      (destroying a context also stops its epochs reading valid: `isValidEpochForContext` requires
- *      a valid context, so the contract needs no per-epoch loop); every party's connector forwards
- *      `DestroyMpcContext` / `DestroyMpcEpoch` to its core and invalidates its validation cache; and
- *      the current context/epoch keeps serving. Skipped on a node swap: the retired context's
- *      committee differs from the current party set, so dropped / spare nodes can't decommission it
- *      (the KMS "at least one must remain" guard).
- *   4. Recovery + abort (same-committee clusters only) — two independent checks:
- *      a) one more context switch after the destroy must still reshare and activate, so destroying
- *         retired material never strands the next switch;
- *      b) an epoch rotation stalled by stopping one node's tx-sender stays Pending. While it is
- *         Pending, a second lifecycle op reverts `KmsLifecycleOperationInFlight`; `destroyKmsEpoch`
- *         cancels it, which leaves the previous epoch current again; and with the node back, a
- *         fresh rotation off that epoch activates normally.
+ * Runs the ProtocolConfig KMS-context lifecycle end to end on a threshold-mode cluster and checks
+ * that the KMS reacts to each emitted event. The cluster topology selects one of two variants:
  *
- * Activation is not automatic: the KMS cores must reshare and the connectors must submit
- * `confirmKmsContextCreation` / `confirmEpochActivation` for `getCurrentKmsContextAndEpoch` to
- * advance. If that never happens the ids stay put and the profile fails with the last-read state —
- * so this doubles as the discovery test for whether the cluster reshares at all. Threshold-only:
- * the switch tasks act on the host ProtocolConfig.
+ *   - Same-committee (parties == committeeSize): each context switch reshares to the same
+ *     committee, so no new signing keys are needed. Runs steps 1–4 below.
+ *   - Node swap (parties > committeeSize, i.e. the cluster has a spare core): the switch drops
+ *     one committee node and promotes the spare. Runs steps 1 and 2, skips 3 and 4 (see step 3),
+ *     and instead ends by proving the promoted spare serves in the 2t+1 decryption quorum.
  *
- * App-level checkpoints: the transitions must stay transparent to a normal encrypted-input flow,
- * not only to the dedicated user-decryption probe — so the input-proof smoke runs at baseline,
- * while the switch is pending (the previous context must keep serving during the reshare), and
- * after each transition.
+ *   1. Context switch (NewKmsContext). Broadcast `defineNewKmsContextAndEpoch`. In the node-swap
+ *      variant the dropped node's tx-sender is stopped before the broadcast — a node that cannot
+ *      transact must not block its own replacement. Wait until the new context becomes the active
+ *      one on chain, then decrypt.
+ *   2. Epoch rotation (NewKmsEpoch). Broadcast `defineNewEpochForCurrentKmsContext` (same context,
+ *      new epoch). Wait until the new epoch activates, then decrypt again.
+ *   3. Destruction (same-committee clusters only). Steps 1 and 2 leave two entries that are still
+ *      live but no longer current: the baseline context and the epoch from step 1. Destroy them
+ *      with `destroyKmsContext` / `destroyKmsEpoch` and check:
+ *        - the current context and epoch cannot be destroyed;
+ *        - unknown ids and already-destroyed ids revert;
+ *        - `KmsContextDestroyed` / `KmsEpochDestroyed` emitted;
+ *        - the destroyed target becomes invalid, and the active context/epoch does not move;
+ *        - destroying a context also invalidates its epochs (`isValidEpochForContext` requires a
+ *          valid context, so the contract needs no per-epoch write);
+ *        - every party's connector forwards `DestroyMpcContext` / `DestroyMpcEpoch` to its core
+ *          and invalidates its validation cache;
+ *        - the current context/epoch keeps serving.
+ *      This step is skipped on a node swap. The retired context's committee is not the current
+ *      party set, so the dropped node and the promoted spare cannot decommission it: the KMS
+ *      rejects a destroy that would leave a node with no context.
+ *   4. Recovery and abort (same-committee clusters only). Two independent checks:
+ *      a) A context switch must still work after a destroy. That is, destroying a context must
+ *         never leave the system stuck and unable to reshare and activate a new one.
+ *      b) A stuck epoch rotation can be aborted and retried. Stop one node's tx-sender and start
+ *         a rotation: the new epoch reshares but stays Pending. While it is Pending, any other
+ *         lifecycle operation reverts with `KmsLifecycleOperationInFlight`. `destroyKmsEpoch`
+ *         aborts the Pending epoch, so the previous epoch is current again. Restart the node and
+ *         rotate again: the fresh rotation activates normally.
  *
- * Disruptive + single-run: it advances the KMS context/epoch and destroys the retired ones, so it
- * expects a pristine stack — re-up between runs
+ * Activation is not automatic. The KMS cores must reshare, and the connectors must submit
+ * `confirmKmsContextCreation` / `confirmEpochActivation`, before `getCurrentKmsContextAndEpoch`
+ * advances. If that never happens, the ids stay put and the profile fails with the last-read
+ * state. This makes the profile also the discovery test for whether the cluster reshares at all.
+ * Threshold-only: the switch tasks act on the host ProtocolConfig.
+ *
+ * App-level checkpoints: every transition must stay invisible to a normal encrypted-input flow,
+ * not only to the dedicated user-decryption probe. The input-proof smoke therefore runs at
+ * baseline, while a switch is pending (the previous context must keep serving during the
+ * reshare), and after each transition.
+ *
+ * Disruptive and single-run: the profile advances the KMS context/epoch and destroys the retired
+ * ones, so it expects a pristine stack. Re-up between runs
  * (`fhevm-cli down && fhevm-cli up --scenario four-party-threshold-kms`).
  */
 import { PreflightError } from "../errors";
@@ -130,13 +143,14 @@ const committeeSwapPlan = (kms: State["scenario"]["kms"]) => {
 
 /**
  * NewKmsContext step. On a cluster with a spare core this is a genuine node swap: the new context
- * drops a committee node and promotes the spare, keeping n = committeeSize. The dropped node's
- * tx-sender is stopped before the broadcast, so the switch must complete on the n − t
- * previous-side quorum without its confirmation — a node that cannot transact must not veto its
- * own removal. The rest of the node stays up because the reshare still needs its core (the KMS
- * core cannot yet reshare around an absent outgoing party); upgrade to a full party stop once it
- * can. Without a spare it is a same-committee reshare. Activation gates on ALL new-committee
- * signers, so the context id only advances once the spare has reshared and confirmed.
+ * drops one committee node and promotes the spare, so n stays committeeSize. The dropped node's
+ * tx-sender is stopped before the broadcast. The switch must then complete on the n − t quorum of
+ * the previous committee, without the dropped node's confirmation — a node that cannot transact
+ * must not veto its own removal. The rest of the dropped node stays up, because the reshare still
+ * needs its core (the KMS core cannot yet reshare around an absent outgoing party); upgrade to a
+ * full party stop once it can. Without a spare, this is a same-committee reshare. Activation
+ * waits for ALL new-committee signers, so the context id only advances once the spare has
+ * reshared and confirmed.
  */
 const switchKmsContext = async (
   state: State,
@@ -176,11 +190,11 @@ const switchKmsContext = async (
   });
   await waitForContainer("gateway-sc-context-switch", "complete");
 
-  // In-flight transparency: while the new context is PENDING (the cores are resharing), the
-  // previous context keeps serving — app flows and user decryption must work unchanged. Racy by
-  // nature: if activation completes mid-probe the checks must still pass (that is the invariant).
-  // The gateway is pre-registered with the pending context before this probe so a fresh SDK client
-  // cannot observe the new active host context before the gateway accepts it.
+  // While the new context is Pending (the cores are resharing), the previous context keeps
+  // serving: app flows and user decryption must work unchanged. The probe is racy by nature — if
+  // activation completes mid-probe, the checks must still pass. The gateway was pre-registered
+  // with the pending context above, so a fresh SDK client cannot see the new host context before
+  // the gateway accepts it.
   await runSmoke("kms-context-switch: input-proof while the switch is pending (previous context serving)");
   if (!(await runDecryption("kms-context-switch: decrypt while the switch is pending (previous context serving)"))) {
     throw new PreflightError(
@@ -215,10 +229,10 @@ const switchKmsContext = async (
 };
 
 /**
- * Conclusive proof a swapped-in spare holds a working reshared key: drop the top `t` continuing
- * members so the live committee is exactly the 2t+1 quorum INCLUDING the spare, then decrypt — it
- * must use the spare. Restores the stopped members afterwards. Runs last, on an otherwise healthy
- * cluster.
+ * Proves the promoted spare holds a working reshared key. Stop `t` of the continuing members, so
+ * the live committee is exactly the 2t+1 quorum and that quorum must include the spare. Then
+ * decrypt: it cannot succeed without the spare's share. Restarts the stopped members afterwards.
+ * Runs last, on an otherwise healthy cluster.
  */
 const proveSpareInQuorum = async (state: State, runDecryption: DecryptionRunner) => {
   const { kms } = state.scenario;
@@ -247,8 +261,8 @@ type DestroyTarget = { rpcUrl: string; protocolConfig: string; owner: Owner };
 type DestroyIds = {
   oldContextId: bigint;
   // The epoch that belongs to the retired context (its baseline epoch). Destroying the context
-  // decommissions this epoch in KMS Core — DestroyMpcContext returns its id — and the connector
-  // then invalidates it in the epoch cache, so it must flip to invalid without a separate destroy.
+  // decommissions this epoch in KMS Core: DestroyMpcContext returns its id, and the connector
+  // then marks it invalid in the epoch cache. So it must turn invalid without a separate destroy.
   contextEpochId: bigint;
   oldEpochId: bigint;
   current: ContextAndEpoch;
@@ -276,17 +290,18 @@ const assertCurrentUnchanged = async (
 };
 
 /**
- * Context/epoch destruction. The switch + rotation leave two retired-but-live entries: the baseline
- * context (superseded by the switch) and the switch's epoch (superseded by the rotation, still under
- * the current context). This destroys each and proves every layer retires it:
- *   - reverts: only the ACL owner may destroy (a non-owner is rejected); the current context and
- *     epoch cannot be destroyed, nor can unknown ids, nor can an already-destroyed context/epoch
- *     be destroyed twice;
- *   - on-chain: `KmsContextDestroyed` / `KmsEpochDestroyed` fire, the target stops reading valid, and
- *     the active pointer does not move;
- *   - connector + KMS Core: every party marks its destroy request `completed` (forwarded
- *     `DestroyMpcContext` / `DestroyMpcEpoch` to its core) and flips the validation-cache row to
- *     invalid — a context destroy also cascades to its epoch (returned by DestroyMpcContext);
+ * Context/epoch destruction. The switch and the rotation leave two entries that are retired but
+ * still live: the baseline context (replaced by the switch) and the switch's epoch (replaced by
+ * the rotation, still under the current context). This destroys both and checks that every layer
+ * retires them:
+ *   - reverts: only the ACL owner may destroy; the current context and epoch cannot be destroyed;
+ *     unknown ids revert; a destroyed context/epoch cannot be destroyed twice;
+ *   - on-chain: `KmsContextDestroyed` / `KmsEpochDestroyed` fire, the target becomes invalid, and
+ *     the active context/epoch does not move;
+ *   - connector + KMS Core: every party forwards `DestroyMpcContext` / `DestroyMpcEpoch` to its
+ *     core (its destroy request ends `completed`) and marks the target invalid in its validation
+ *     cache. A context destroy also invalidates the context's epoch, whose id DestroyMpcContext
+ *     returns;
  *   - app: the current context/epoch keeps serving user decryption and the input-proof flow.
  */
 const destroyContextAndEpoch = async (
@@ -304,8 +319,8 @@ const destroyContextAndEpoch = async (
     keccakTopic("KmsEpochDestroyed(uint256)"),
   ]);
 
-  // Reverts first, while everything is still live: destroying the current context/epoch would strand
-  // live decryptions, and unknown ids were never issued.
+  // Check the reverts first, while everything is still live. Destroying the current context/epoch
+  // would strand live decryptions, and unknown ids were never issued.
   const unknownId = (1n << 255n).toString();
   await expectRevert(
     rpcUrl, protocolConfig, owner,
@@ -373,9 +388,9 @@ const destroyContextAndEpoch = async (
     // Postgres renders boolean::text as 'true'/'false' (not the 't'/'f' psql shows for the raw type).
     columnQuery("kms_context", "id", "is_valid", oldContextId), ["false"],
   );
-  // #696: DestroyMpcContext returns the epoch ids it decommissioned; the connector invalidates them.
-  // The retired context's epoch must therefore flip to invalid off the back of the context destroy,
-  // without a separate destroyKmsEpoch call.
+  // DestroyMpcContext returns the epoch ids it decommissioned, and the connector invalidates
+  // them. The retired context's epoch must therefore turn invalid from the context
+  // destroy alone, with no separate destroyKmsEpoch call.
   await pollConnectors(
     parties, "destroyed context cascaded to its epoch in the validation cache",
     columnQuery("kms_epoch", "id", "is_valid", contextEpochId), ["false"],
@@ -443,12 +458,12 @@ const destroyContextAndEpoch = async (
 };
 
 /**
- * Aborts a stuck same-context epoch rotation and recovers, exercising the single-in-flight guard and the
- * Pending-epoch destroy. Stopping one committee node's tx-sender starves the rotation of its final
- * activation confirmation (activation needs every signer), so the epoch reshares but stays Pending
- * under the still-Active context — the case destroyKmsEpoch now settles. While it is Pending, any
- * new lifecycle op reverts KmsLifecycleOperationInFlight; destroying the Pending epoch clears it; and
- * once the node is back a fresh rotation activates. Same-committee clusters only.
+ * Aborts a stuck epoch rotation and recovers from it. Stopping one committee node's tx-sender
+ * blocks that node's activation confirmation, and activation needs every signer. The new epoch
+ * therefore reshares but stays Pending under the still-Active context. This checks three things:
+ * while the rotation is Pending, any new lifecycle operation reverts with
+ * KmsLifecycleOperationInFlight; destroying the Pending epoch aborts the rotation; and once the
+ * node is back, a fresh rotation activates normally. Same-committee clusters only.
  */
 const abortStuckRotation = async (
   state: State,
@@ -483,8 +498,8 @@ const abortStuckRotation = async (
       );
     }
 
-    // Single in-flight: a new lifecycle op while this epoch is Pending must revert. This also proves
-    // the epoch really is Pending (in flight), which no view exposes directly.
+    // Single in-flight: a new lifecycle operation must revert while this epoch is Pending. This
+    // also proves the epoch really is Pending, which no view exposes directly.
     await expectRevert(
       rpcUrl, configAddress, owner,
       "open a second lifecycle op while a rotation is in flight",
@@ -496,11 +511,11 @@ const abortStuckRotation = async (
       `[kms-context-switch] rotation stuck Pending (epoch ${pendingEpochId}); a second lifecycle op reverts KmsLifecycleOperationInFlight and the active pointer held`,
     );
 
-    // A stuck rotation is one that reshared but never activated (the node down blocks the final
-    // confirmation). Wait for the reshare to finish on every party so the epoch's material exists
-    // before we abort — otherwise destroyKmsEpoch races the reshare and a core has nothing to delete.
-    // `new_kms_epoch.status = completed` is exactly that signal: a DB trigger sets it when the core's
-    // epoch result lands, independently of whether the tx-sender got the activation confirmation out.
+    // A stuck rotation has reshared but never activated (the stopped node blocks the final
+    // confirmation). Wait until every party finishes the reshare before aborting; otherwise
+    // destroyKmsEpoch races the reshare and a core has nothing to delete.
+    // `new_kms_epoch.status = completed` is exactly that signal: a DB trigger sets it when the
+    // core's epoch result lands, regardless of whether the activation confirmation went out.
     await pollConnectors(
       parties, "stalled rotation finished resharing (ready to abort)",
       columnQuery("new_kms_epoch", "epoch_id", "status", pendingEpochId), ["completed"],
@@ -587,11 +602,11 @@ export const runKmsContextSwitchProfile = async (
   const isSwap = committeeSwapPlan(state.scenario.kms).isSwap;
 
   // 3) Destruction (same-committee clusters only). Destroying the retired context/epoch expects
-  //    every party to decommission it — but in a node swap the retired context's committee differs
-  //    from the current party set, so the dropped node (and the promoted spare) legitimately cannot:
-  //    the KMS core's "at least one context/epoch must remain" guard rejects a destroy that would
-  //    leave them empty, so their connector rows end `failed`, not `completed`. The destroy feature
-  //    is exercised on the non-swap scenario; the swap scenario's job is the node-swap switch itself.
+  //    every party to decommission it. In a node swap the retired context's committee is not the
+  //    current party set, so the dropped node and the promoted spare legitimately cannot: the KMS
+  //    core rejects a destroy that would leave a node with no context/epoch, and their connector
+  //    rows end `failed` instead of `completed`. Destruction is therefore exercised on the
+  //    non-swap scenario; the swap scenario's job is the node-swap switch itself.
   if (!isSwap) {
     const owner = await loadHostOwner();
     await destroyContextAndEpoch(
@@ -607,10 +622,10 @@ export const runKmsContextSwitchProfile = async (
       runSmoke,
     );
 
-    // 3b) Destroying the retired context must not stall the next switch. The connector
-    //     reads the previous key/CRS material via getCrsMaterials, which resolves the context that
-    //     material was generated under — the one just destroyed. Prove the switch still reshare
-    //     and activates end to end.
+    // 3b) A context switch must still work after a destroy. The connector reads the previous
+    //     key/CRS material via getCrsMaterials, which resolves the context that material was
+    //     generated under — the context just destroyed. Check the switch still reshares and
+    //     activates end to end.
     console.log(
       "[kms-context-switch] broadcasting a second switch after the destroy (a destroyed context must not stall the next switch)…",
     );
@@ -625,13 +640,14 @@ export const runKmsContextSwitchProfile = async (
       `[kms-context-switch] post-destroy switch activated: contextId ${afterEpoch.contextId} -> ${afterDestroySwitch.contextId} (epochId=${afterDestroySwitch.epochId})`,
     );
 
-    // 3c) Abort a stuck same-context epoch rotation: prove the single-in-flight guard reverts a second op and
-    //     that destroying the Pending epoch settles it, then that a fresh rotation recovers.
+    // 3c) Abort a stuck epoch rotation. Check that the single-in-flight guard reverts a second
+    //     operation, that destroying the Pending epoch aborts the rotation, and that a fresh
+    //     rotation then activates.
     await abortStuckRotation(state, { rpcUrl, configAddress, where }, owner, afterDestroySwitch, runDecryption);
   }
 
-  // 4) Node swap only: prove the promoted spare actually holds a working reshared key (runs last so
-  //    the earlier steps see a healthy cluster and the stopped member is restored at the end).
+  // 4) Node swap only: prove the promoted spare actually holds a working reshared key. Runs last,
+  //    so the earlier steps see a healthy cluster.
   if (isSwap) {
     await proveSpareInQuorum(state, runDecryption);
   }
