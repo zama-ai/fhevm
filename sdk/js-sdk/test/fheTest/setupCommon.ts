@@ -315,7 +315,7 @@ let _chainDefaults: Partial<Record<FheTestChainName, ChainDefaults>> | undefined
 
 function loadChainDefaults(): Partial<Record<FheTestChainName, ChainDefaults>> {
   if (_chainDefaults === undefined) {
-    const p = resolve(__dirname, '../chains/chain-defaults.json');
+    const p = resolve(import.meta.dirname, '../chains/chain-defaults.json');
     _chainDefaults = JSON.parse(readFileSync(p, 'utf-8')) as Partial<Record<FheTestChainName, ChainDefaults>>;
   }
   return _chainDefaults;
@@ -534,7 +534,7 @@ export function prepareChains(): FheTestBaseEnv[] {
 }
 
 function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
-  const testDir = resolve(__dirname, '..');
+  const testDir = resolve(import.meta.dirname, '..');
   const isLocalstack = chainName.startsWith('localstack');
   const envFilename = isLocalCleartextChain(chainName)
     ? '.env.localcleartext'
