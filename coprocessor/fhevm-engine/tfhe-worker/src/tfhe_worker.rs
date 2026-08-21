@@ -87,7 +87,11 @@ mod operand_boundary_mask_tests {
     use super::*;
 
     #[test]
-    fn boundary_mask_is_big_endian_and_null_fails_closed() {
+    fn boundary_mask_is_big_endian_and_null_is_rejected_by_the_low_level_check() {
+        // NOTE: only this low-level accessor rejects a missing mask; the
+        // worker itself never calls it with None — legacy NULL-mask rows
+        // take the derive-on-read fallback in prepare_transaction_ops
+        // (operand is transaction-local iff this transaction produced it).
         let mut mask = [0_u8; OPERAND_BOUNDARY_MASK_BYTES];
         mask[OPERAND_BOUNDARY_MASK_BYTES - 1] = 0b10;
         assert!(!operand_is_boundary(Some(&mask), 0).expect("valid mask"));
@@ -371,6 +375,262 @@ mod operand_boundary_mask_tests {
         assert_eq!(prepared.ops.len(), 1);
         assert_eq!(prepared.ops[0].output_handle, handle(2));
     }
+
+    use sqlx::postgres::PgPoolOptions;
+    use test_harness::instance::{setup_test_db, ImportMode};
+
+    async fn seed_computation(
+        pool: &sqlx::PgPool,
+        output_handle: &[u8],
+        dependencies: Vec<Vec<u8>>,
+        mask: Vec<u8>,
+        dcid: Option<&[u8]>,
+        transaction_id: &[u8],
+        schedule_age_secs: i64,
+    ) {
+        sqlx::query(
+            r#"
+            INSERT INTO computations (
+                output_handle, dependencies, fhe_operation, is_scalar,
+                dependence_chain_id, transaction_id, is_allowed,
+                schedule_order, host_chain_id, operand_boundary_mask
+            ) VALUES ($1, $2, $3, false, $4, $5, true,
+                      NOW() - make_interval(secs => $6), 1, $7)
+            "#,
+        )
+        .bind(output_handle)
+        .bind(dependencies)
+        .bind(SupportedFheOperations::FheNot as i16)
+        .bind(dcid)
+        .bind(transaction_id)
+        .bind(schedule_age_secs as f64)
+        .bind(mask)
+        .execute(pool)
+        .await
+        .expect("seed computation");
+    }
+
+    fn test_args(batch_size: &str, db_url: &str) -> crate::daemon_cli::Args {
+        use clap::Parser;
+        let mut args = crate::daemon_cli::Args::parse_from([
+            "tfhe-worker",
+            "--work-items-batch-size",
+            batch_size,
+        ]);
+        args.database_url = Some(db_url.to_owned().into());
+        args
+    }
+
+    /// Fairness regression: a chain whose whole window defers (here: a
+    /// malformed mask) must not stay at the front of oldest-first
+    /// acquisition. query_for_work parks it until its lock TTL, so the next
+    /// acquisition reaches the younger chain, the deferring rows stay
+    /// unstamped, and the parked chain remains work-stealable after expiry.
+    #[tokio::test]
+    async fn drained_chain_is_parked_and_does_not_starve_younger_chains(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let db = setup_test_db(ImportMode::None).await?;
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(db.db_url())
+            .await?;
+
+        let old_chain = vec![0x11_u8; 32];
+        let young_chain = vec![0x22_u8; 32];
+        for (chain, age_secs) in [(&old_chain, 120_f64), (&young_chain, 1_f64)] {
+            sqlx::query(
+                "INSERT INTO dependence_chain (dependence_chain_id, status, last_updated_at)
+                 VALUES ($1, 'updated', NOW() - make_interval(secs => $2))",
+            )
+            .bind(chain)
+            .bind(age_secs)
+            .execute(&pool)
+            .await?;
+        }
+        // Older chain: a bit-0 (transaction-local) consumer whose producer
+        // row does not exist — the dangling-local-producer state the code
+        // classifies as uninterpretable — so its whole window defers.
+        // Younger chain: a valid boundary consumer.
+        seed_computation(
+            &pool,
+            &handle(0x51),
+            vec![handle(0x50)],
+            mask_with_bits(&[]),
+            Some(&old_chain),
+            &[0xA1_u8; 32],
+            120,
+        )
+        .await;
+        seed_computation(
+            &pool,
+            &handle(0x61),
+            vec![handle(0x60)],
+            mask_with_bits(&[0]),
+            Some(&young_chain),
+            &[0xA2_u8; 32],
+            1,
+        )
+        .await;
+
+        let args = test_args("10", db.db_url());
+        let health_check = crate::health_check::HealthCheck::new(
+            db.db_url().to_owned().into(),
+            Duration::from_secs(300),
+        );
+        let mut locks = dependence_chain::LockMngr::new_with_conf(
+            Uuid::new_v4(),
+            pool.clone(),
+            30,
+            false,
+            None,
+            None,
+            None,
+        );
+        let mut no_progress_cycles = 0;
+        let mut cooldown = DeferredTransactionCooldown::new();
+
+        let mut trx = pool.begin().await?;
+        let (nodes, _, more) = query_for_work(
+            &args,
+            &health_check,
+            &mut trx,
+            &mut locks,
+            &mut no_progress_cycles,
+            &mut cooldown,
+        )
+        .await?;
+        trx.commit().await?;
+        assert!(more, "drained batch still reports work available");
+        assert!(nodes.is_empty(), "older chain's window fully defers");
+
+        // Quarantined, not starved-behind or destroyed: the older chain is
+        // parked ('processing' with an unexpired lock) and its rows carry
+        // no terminal stamps.
+        let (status, lock_live): (String, bool) = sqlx::query_as(
+            "SELECT status, lock_expires_at > NOW() FROM dependence_chain
+             WHERE dependence_chain_id = $1",
+        )
+        .bind(&old_chain)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(status, "processing");
+        assert!(lock_live, "parked lock keeps the chain quarantined");
+        let is_error: bool =
+            sqlx::query_scalar("SELECT is_error FROM computations WHERE output_handle = $1")
+                .bind(handle(0x51))
+                .fetch_one(&pool)
+                .await?;
+        assert!(!is_error, "deferred rows are never terminally stamped");
+
+        // The very next acquisition reaches the younger chain.
+        let mut trx = pool.begin().await?;
+        let (nodes, _, _) = query_for_work(
+            &args,
+            &health_check,
+            &mut trx,
+            &mut locks,
+            &mut no_progress_cycles,
+            &mut cooldown,
+        )
+        .await?;
+        trx.commit().await?;
+        assert!(
+            !nodes.is_empty(),
+            "younger chain schedules instead of starving behind the parked one"
+        );
+        let status: String = sqlx::query_scalar(
+            "SELECT status FROM dependence_chain WHERE dependence_chain_id = $1",
+        )
+        .bind(&young_chain)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(status, "processing");
+        Ok(())
+    }
+
+    /// Fairness regression for the lockless fallback: the deferred
+    /// transaction enters the cooldown, so the next window slice reaches
+    /// the younger transaction instead of repeating the same batch forever.
+    #[tokio::test]
+    async fn cooldown_rotates_deferring_transactions_when_locking_disabled(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let db = setup_test_db(ImportMode::None).await?;
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(db.db_url())
+            .await?;
+
+        // Older transaction: dangling bit-0 producer -> defers.
+        seed_computation(
+            &pool,
+            &handle(0x71),
+            vec![handle(0x70)],
+            mask_with_bits(&[]),
+            None,
+            &[0xB1_u8; 32],
+            120,
+        )
+        .await;
+        seed_computation(
+            &pool,
+            &handle(0x81),
+            vec![handle(0x80)],
+            mask_with_bits(&[0]),
+            None,
+            &[0xB2_u8; 32],
+            1,
+        )
+        .await;
+
+        // Window of one: without the cooldown the older, deferring
+        // transaction would occupy it on every poll.
+        let args = test_args("1", db.db_url());
+        let health_check = crate::health_check::HealthCheck::new(
+            db.db_url().to_owned().into(),
+            Duration::from_secs(300),
+        );
+        let mut locks = dependence_chain::LockMngr::new_with_conf(
+            Uuid::new_v4(),
+            pool.clone(),
+            30,
+            true, // locking disabled
+            None,
+            None,
+            None,
+        );
+        let mut no_progress_cycles = 0;
+        let mut cooldown = DeferredTransactionCooldown::new();
+
+        let mut trx = pool.begin().await?;
+        let (nodes, _, _) = query_for_work(
+            &args,
+            &health_check,
+            &mut trx,
+            &mut locks,
+            &mut no_progress_cycles,
+            &mut cooldown,
+        )
+        .await?;
+        trx.commit().await?;
+        assert!(nodes.is_empty(), "oldest transaction defers");
+
+        let mut trx = pool.begin().await?;
+        let (nodes, _, _) = query_for_work(
+            &args,
+            &health_check,
+            &mut trx,
+            &mut locks,
+            &mut no_progress_cycles,
+            &mut cooldown,
+        )
+        .await?;
+        trx.commit().await?;
+        assert!(
+            !nodes.is_empty(),
+            "cooldown rotates the window to the younger transaction"
+        );
+        Ok(())
+    }
 }
 
 lazy_static! {
@@ -536,6 +796,7 @@ async fn tfhe_worker_cycle(
     }
     let mut immediately_poll_more_work = false;
     let mut no_progress_cycles = 0;
+    let mut deferred_cooldown = DeferredTransactionCooldown::new();
     loop {
         // GCS gating: skip the iteration entirely until the activation
         // watcher has populated `start_block` in `upgrade_state` for
@@ -617,6 +878,7 @@ async fn tfhe_worker_cycle(
             &mut trx,
             &mut dcid_mngr,
             &mut no_progress_cycles,
+            &mut deferred_cooldown,
         )
         .instrument(loop_span.clone())
         .await?;
@@ -626,17 +888,16 @@ async fn tfhe_worker_cycle(
                 // transaction deferred (uninterpretable rows) or drained
                 // (terminal stamps written above). Persist the stamps —
                 // the no-work branch below would drop them with the
-                // transaction — release the chain WITHOUT retiring it (it
-                // still has pending rows), and wait for the normal
-                // poll/notify cadence instead of re-querying the same rows
-                // in a zero-backoff spin (unbounded when DCID locking is
-                // disabled, where parking is a no-op). The global
-                // no-progress counter is deliberately untouched: it gates
-                // the acquire_early_lock escalation, which must not be
-                // reachable through wedged chains alone.
+                // transaction. query_for_work already quarantined the
+                // source: with locking the chain is parked until its lock
+                // TTL, without it the deferred transactions entered the
+                // cooldown, so an immediate re-poll makes progress on the
+                // NEXT chain/window rather than spinning on this one. The
+                // global no-progress counter is deliberately untouched: it
+                // gates the acquire_early_lock escalation, which must not
+                // be reachable through wedged chains alone.
                 trx.commit().await?;
-                dcid_mngr.release_current_lock(false, None).await?;
-                immediately_poll_more_work = false;
+                immediately_poll_more_work = true;
                 continue;
             }
             // We've fetched work, so we'll poll again without waiting
@@ -896,6 +1157,7 @@ async fn query_for_work<'a>(
     trx: &mut sqlx::Transaction<'a, Postgres>,
     deps_chain_mngr: &mut dependence_chain::LockMngr,
     no_progress_cycles: &mut u32,
+    deferred_cooldown: &mut DeferredTransactionCooldown,
 ) -> Result<(Vec<ComponentNode>, PrimitiveDateTime, bool), CoprocessorError> {
     let s_dcid = tracing::info_span!(
         "query_dependence_chain",
@@ -937,6 +1199,12 @@ async fn query_for_work<'a>(
                 .unwrap_or_else(|| "none".to_string()),
         ),
     );
+    let quarantine_deferred = !deps_chain_mngr.enabled();
+    let cooled_transactions: Vec<Vec<u8>> = if quarantine_deferred {
+        deferred_cooldown.active()
+    } else {
+        vec![]
+    };
     let s_work = tracing::info_span!("query_work_items", count = tracing::field::Empty);
     let transaction_batch_size = args.work_items_batch_size;
     let started_at = SystemTime::now();
@@ -968,6 +1236,11 @@ WHERE c.transaction_id IN (
         AND is_error = FALSE
         AND is_allowed = TRUE
         AND ($1::bytea IS NULL OR dependence_chain_id = $1)
+        -- Lockless fallback fairness: transactions this worker deferred
+        -- stay out of the window for a cooldown, or they would occupy the
+        -- oldest-first window forever and starve younger work. Empty with
+        -- DCID locking enabled, where the chain is parked instead.
+        AND NOT (transaction_id = ANY($3::bytea[]))
       ORDER BY schedule_order ASC
       LIMIT $2
     ) as c_schedule_order
@@ -983,6 +1256,7 @@ WHERE c.transaction_id IN (
         ",
         dependence_chain_id.as_deref(),
         transaction_batch_size as i32,
+        &cooled_transactions,
     )
     .fetch_all(trx.as_mut())
     .instrument(s_work.clone())
@@ -1020,6 +1294,9 @@ WHERE c.transaction_id IN (
                 Ok(prepared) => prepared,
                 Err(reason) => {
                     defer_transaction(transaction_id, &reason);
+                    if quarantine_deferred {
+                        deferred_cooldown.quarantine(transaction_id);
+                    }
                     continue;
                 }
             };
@@ -1041,6 +1318,9 @@ WHERE c.transaction_id IN (
                     // alert below surface the wedge. Unrelated transactions
                     // continue.
                     defer_transaction(transaction_id, &format!("invalid transaction graph: {e}"));
+                    if quarantine_deferred {
+                        deferred_cooldown.quarantine(transaction_id);
+                    }
                     continue;
                 }
             };
@@ -1053,13 +1333,25 @@ WHERE c.transaction_id IN (
     }
     .instrument(s_prep)
     .await?;
+    if transactions.is_empty() {
+        // Nothing schedulable in a non-empty window: quarantine the chain
+        // until its lock TTL expires, so oldest-first acquisition moves on
+        // to younger chains instead of re-acquiring this one after every
+        // poll (a single worker would otherwise starve every younger chain
+        // behind one uninterpretable one). The chain stays 'processing'
+        // with pending rows and is work-stolen for a retry after expiry.
+        // No-op with locking disabled, where the transaction cooldown
+        // above rotates the window instead.
+        deps_chain_mngr.park_current_lock();
+    }
     // `true` even when `transactions` is empty (everything deferred or
     // drained as invalid): the caller's no-work branch marks the chain
     // processed — which would silently retire a chain that still has
     // pending rows — and drops the transaction WITHOUT committing, rolling
     // back any terminal error stamps written above. The caller
-    // distinguishes the empty case itself: it commits the stamps, releases
-    // the chain un-retired, and backs off to the normal poll cadence.
+    // distinguishes the empty case itself: it commits the stamps and moves
+    // straight on to the next chain (or the next window slice, in
+    // lockless mode).
     Ok((transactions, earliest_schedule_order, true))
 }
 
@@ -1096,6 +1388,58 @@ fn defer_transaction(transaction_id: &[u8], reason: &str) {
         reason,
         "deferring transaction with uninterpretable work rows"
     );
+}
+
+/// How long a deferred transaction stays out of the work window when DCID
+/// locking is disabled. With locking enabled the owning chain is parked
+/// until its lock TTL instead, which quarantines at the right granularity,
+/// so this only paces the lockless fallback mode.
+const DEFERRED_TRANSACTION_COOLDOWN: Duration = Duration::from_secs(60);
+/// Upper bound on remembered transactions: expired entries are pruned on
+/// every use, and past the cap the soonest-expiring entries are dropped
+/// first, so a pathological backlog cannot grow the map without bound.
+const DEFERRED_TRANSACTION_COOLDOWN_CAP: usize = 4096;
+
+/// In-memory quarantine for transactions this worker could not interpret,
+/// used only with DCID locking disabled: the work window selects the oldest
+/// pending transactions, so without a cooldown the same deferring
+/// transactions would fill every window and starve younger work forever.
+/// In-memory on purpose — deferral is interpretation-relative to this
+/// binary, so the state must not outlive the process.
+pub(crate) struct DeferredTransactionCooldown {
+    until: HashMap<Vec<u8>, std::time::Instant>,
+}
+
+impl DeferredTransactionCooldown {
+    pub(crate) fn new() -> Self {
+        Self {
+            until: HashMap::new(),
+        }
+    }
+
+    fn prune(&mut self) {
+        let now = std::time::Instant::now();
+        self.until.retain(|_, until| *until > now);
+        if self.until.len() > DEFERRED_TRANSACTION_COOLDOWN_CAP {
+            let mut deadlines: Vec<std::time::Instant> = self.until.values().copied().collect();
+            deadlines.sort_unstable();
+            let cutoff = deadlines[self.until.len() - DEFERRED_TRANSACTION_COOLDOWN_CAP];
+            self.until.retain(|_, until| *until > cutoff);
+        }
+    }
+
+    fn quarantine(&mut self, transaction_id: &[u8]) {
+        self.prune();
+        self.until.insert(
+            transaction_id.to_vec(),
+            std::time::Instant::now() + DEFERRED_TRANSACTION_COOLDOWN,
+        );
+    }
+
+    fn active(&mut self) -> Vec<Vec<u8>> {
+        self.prune();
+        self.until.keys().cloned().collect()
+    }
 }
 
 /// Builds the dataflow ops for one transaction's loaded rows.

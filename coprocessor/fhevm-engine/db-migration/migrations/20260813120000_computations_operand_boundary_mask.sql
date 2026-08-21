@@ -5,7 +5,9 @@
 --
 -- The column remains nullable only because blue-green replacement does not
 -- semantically backfill pre-existing rows. New listener inserts always write
--- exactly 32 bytes and the new worker rejects pending NULL rows fail-closed.
+-- exactly 32 bytes; for legacy NULL rows the worker falls back to the
+-- pre-mask inference (an operand is transaction-local iff the same
+-- transaction produced it).
 -- `NOT VALID` avoids scanning historical rows while still enforcing the
 -- invariant for all new writes.
 ALTER TABLE computations
