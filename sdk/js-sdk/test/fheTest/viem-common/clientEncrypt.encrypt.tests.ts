@@ -2,6 +2,7 @@ import type { EncryptedValue } from '@fhevm/sdk/types';
 import type { FhevmModuleVersions } from '../../../src/core/types/moduleVersions.js';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
+import { globalFheEncryptionKeyCache } from '../../../src/core/key/FheEncryptionKeyCache-p.js';
 import {
   getViemEncryptClientOptions,
   getViemTestConfig,
@@ -108,5 +109,65 @@ export function defineClientEncryptEncryptTests(parameters: {
         );
       });
     }
+
+    it('should allow deterministic encryption', async () => {
+      // The global FHE public-key/CRS cache is keyed by relayer URL only, not
+      // by TFHE version (see FheEncryptionKeyCache-p.ts). Earlier tests in this
+      // file already populated it using the chain's naturally-resolved TFHE
+      // version (e.g. '1.5.3', which lacks `build_with_proof_packed_seeded`).
+      // Forcing '1.6.2' below without evicting that stale entry would make
+      // `buildWithProofPacked` throw "TfheVersion mismatch". Evict before (to
+      // force a fresh fetch/deserialize against '1.6.2') and after (so later
+      // tests/files re-fetch against whatever version they naturally resolve).
+      const relayerUrl = config.fhevmChain.fhevm.relayerUrl;
+      globalFheEncryptionKeyCache.remove(relayerUrl);
+
+      try {
+        const client = parameters.createFhevmEncryptClient({
+          chain: config.fhevmChain,
+          publicClient: config.publicClient,
+          options: getViemEncryptClientOptions(config, { tfhe: '1.6.2', checkCompatibility: 'off' }),
+        });
+        await client.ready;
+
+        const value = { type: 'uint64', value: 100 };
+
+        /// multiple encryptions of the same value should compute unique handles
+        let result = await client.encryptValue({
+          contractAddress: config.fheTestAddress,
+          userAddress: config.account.address,
+          value,
+        });
+        let result2 = await client.encryptValue({
+          contractAddress: config.fheTestAddress,
+          userAddress: config.account.address,
+          value,
+        });
+
+        expect(result.encryptedValue).not.toBe(result2.encryptedValue);
+        expect(result.inputProof).not.toBe(result2.inputProof);
+
+        /// BUT! using the same seed we can compute the same handle
+        const seed = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+        result = await client.encryptValue({
+          contractAddress: config.fheTestAddress,
+          userAddress: config.account.address,
+          value,
+          seed,
+        });
+
+        // run encryption again with the same seed
+        result2 = await client.encryptValue({
+          contractAddress: config.fheTestAddress,
+          userAddress: config.account.address,
+          value,
+          seed,
+        });
+
+        expect(result.encryptedValue).toBe(result2.encryptedValue);
+      } finally {
+        globalFheEncryptionKeyCache.remove(relayerUrl);
+      }
+    });
   });
 }

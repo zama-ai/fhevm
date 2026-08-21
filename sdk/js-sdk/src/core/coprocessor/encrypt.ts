@@ -22,6 +22,7 @@ type Parameters = {
   readonly values: readonly TypedValue[];
   readonly fhevmContext: FhevmClientFrozenContext;
   readonly options?: RelayerInputProofOptions | undefined;
+  readonly seed?: Uint8Array | undefined;
 };
 
 type ReturnType = {

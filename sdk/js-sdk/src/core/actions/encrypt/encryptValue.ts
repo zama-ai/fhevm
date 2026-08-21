@@ -18,6 +18,14 @@ export type EncryptValueParameters = {
   readonly contractAddress: string;
   readonly userAddress: string;
   readonly options?: RelayerInputProofOptions | undefined;
+  /**
+   * Optional, at least 16 bytes. Makes encryption deterministic: the same `seed` +
+   * the same `value` always produce byte-identical ciphertext, regardless of
+   * `contractAddress`/`userAddress`. Reusing a `seed` across values you intend to
+   * keep confidential from each other creates a plaintext-equality oracle that
+   * spans contracts and users — see docs/encryption.md#deterministic-encryption.
+   */
+  readonly seed?: Uint8Array | undefined;
 };
 
 export type EncryptValueReturnType = {
@@ -31,7 +39,7 @@ export async function encryptValue(
   fhevm: Fhevm<FhevmChain, WithEncrypt>,
   parameters: EncryptValueParameters,
 ): Promise<EncryptValueReturnType> {
-  const { contractAddress, userAddress, options } = parameters;
+  const { contractAddress, userAddress, options, seed } = parameters;
 
   // Validates `value`
   const values = toArray(parameters.value).map((v) =>
@@ -49,6 +57,7 @@ export async function encryptValue(
     values,
     fhevmContext,
     options,
+    seed,
   });
 
   return {
