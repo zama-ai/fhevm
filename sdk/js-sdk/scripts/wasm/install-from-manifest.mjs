@@ -9,11 +9,18 @@ import { BUILD_PROFILES, KMS_MANIFEST, TFHE_MANIFEST } from '../../versionsManif
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const sdkRoot = resolve(scriptDir, '../..');
 
+// tfhe-rs 1.7.0 split the client-only wasm build into its own npm package
+// (`tfhe-client`); versions below that ship the wasm under `tfhe`.
+function tfhePackageNameForVersion(version) {
+  const [major, minor] = version.split('-', 1)[0].split('.').map(Number);
+  return major > 1 || (major === 1 && minor >= 7) ? 'tfhe-client' : 'tfhe';
+}
+
 const INSTALLERS = Object.freeze({
   tfhe: Object.freeze({
     displayName: 'TFHE',
     manifest: TFHE_MANIFEST,
-    packageName: 'tfhe',
+    packageName: tfhePackageNameForVersion,
     script: resolve(scriptDir, 'tfhe/install-tfhe.sh'),
     destinationRoot: resolve(sdkRoot, 'src/wasm/tfhe'),
   }),
@@ -158,16 +165,20 @@ function normalizeSource(source) {
   return pathToFileURL(isAbsolute(path) ? path : resolve(sdkRoot, path)).href;
 }
 
+function packageNameForEntry(installer, entry) {
+  return typeof installer.packageName === 'function' ? installer.packageName(entry.version) : installer.packageName;
+}
+
 function sourceForEntry(installer, entry) {
   if (entry.source !== undefined && typeof entry.source !== 'string') {
     fail(`${installer.displayName} v${entry.version} source must be a string when provided.`);
   }
 
-  return normalizeSource(entry.source ?? `${installer.packageName}@${entry.version}`);
+  return normalizeSource(entry.source ?? `${packageNameForEntry(installer, entry)}@${entry.version}`);
 }
 
 function defaultSourceForEntry(installer, entry) {
-  return `${installer.packageName}@${entry.version}`;
+  return `${packageNameForEntry(installer, entry)}@${entry.version}`;
 }
 
 function installerArgs(lib, installer, entry, args) {

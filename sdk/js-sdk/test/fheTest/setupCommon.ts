@@ -8,11 +8,11 @@ import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { mnemonicToAccount } from 'viem/accounts';
 import { localcleartext } from '../chains/localcleartext.js';
-import { localstack } from '../chains/localstack.js';
 import { localstack_v11 } from '../chains/localstack_v11.js';
 import { localstack_v12 } from '../chains/localstack_v12.js';
 import { localstack_v13 } from '../chains/localstack_v13.js';
 import { localstack_v14 } from '../chains/localstack_v14.js';
+import { localstack } from '../chains/localstack.js';
 import { devnet } from '../chains/devnet.js';
 import { polygon_devnet } from '../chains/polygon_devnet.js';
 import { ingen_trex_cleartext } from '../chains/ingen_trex_cleartext.js';
@@ -29,15 +29,15 @@ export const FHE_TEST_CHAIN_NAMES = [
   'testnet',
   'mainnet',
   'devnet',
-  'localcleartext',
   'localcleartext_legacy',
   'localcleartext_v12',
   'localcleartext_v13',
-  'localstack',
+  'localcleartext',
   'localstack_v11',
   'localstack_v12',
   'localstack_v13',
   'localstack_v14',
+  'localstack',
   'polygon_devnet',
   'ingen_trex_cleartext',
   'hoodi_cleartext',
@@ -90,22 +90,30 @@ export function isRealDeployedChain(chainName: FheTestChainName): boolean {
 }
 
 /**
- * Protocol era (the minor version of the protocol: 11, 12, 13, 14) a test
+ * Protocol era (the minor version of the protocol: 11, 12, 13, 14, 15) a test
  * chain runs on, derived from its name. Used to gate migration tests that only
  * make sense on chains at or above a given protocol version.
  *
  * `localstack` (latest) tracks the newest protocol (v0.14 era today).
  */
-export function protocolEraOf(chainName: FheTestChainName): 11 | 12 | 13 | 14 {
+export function protocolEraOf(chainName: FheTestChainName): 11 | 12 | 13 | 14 | 15 {
   if (chainName === 'localstack_v11') {
     return 11;
   }
   if (chainName === 'localstack_v12' || chainName === 'localcleartext_v12') {
     return 12;
   }
-  if (chainName === 'localstack' || chainName === 'localstack_v14') {
+  if (chainName === 'localstack_v13' || chainName === 'localcleartext_v13') {
+    return 13;
+  }
+  if (chainName === 'localstack_v14') {
     return 14;
   }
+
+  if (chainName === 'localstack') {
+    return 14; // TODO: upgrade me to 15
+  }
+
   return 13;
 }
 
@@ -117,15 +125,15 @@ const PROTOCOL_VERSION_BY_CHAIN: Readonly<Record<FheTestChainName, ProtocolVersi
   sepolia: '0.13.0',
   testnet: '0.13.0',
   mainnet: '0.11.0',
-  localcleartext: '0.13.0',
   localcleartext_legacy: '0.12.0',
   localcleartext_v12: '0.12.0',
   localcleartext_v13: '0.13.0',
-  localstack: '0.14.0',
+  localcleartext: '0.13.0',
   localstack_v11: '0.11.0',
   localstack_v12: '0.12.0',
   localstack_v13: '0.13.0',
   localstack_v14: '0.14.0',
+  localstack: '0.14.0', // TODO: upgrade me to '0.15.0'
   devnet: '0.14.0',
   polygon_devnet: '0.13.0',
   ingen_trex_cleartext: '0.12.0',
@@ -140,25 +148,25 @@ export function getExpectedProtocolVersion(chainName: FheTestChainName): Protoco
 // TFHE wasm version per chain
 // ---------------------------------------------------------------------------
 
-export type TfheVersion = '1.5.3' | '1.6.2';
+export type TfheVersion = '1.5.3' | '1.6.2' | '1.7.0';
 
 const TFHE_VERSION_BY_CHAIN: Readonly<Record<FheTestChainName, TfheVersion | undefined>> = {
   sepolia: '1.5.3',
   testnet: '1.5.3', // alias for sepolia
   mainnet: '1.5.3',
+  devnet: '1.6.2',
+  polygon_devnet: '1.6.2',
+  ingen_trex_cleartext: undefined,
+  hoodi_cleartext: undefined,
   localcleartext: undefined,
   localcleartext_legacy: undefined,
   localcleartext_v12: undefined,
   localcleartext_v13: undefined,
   localstack_v11: '1.5.3',
   localstack_v12: '1.5.3',
-  devnet: '1.6.2',
-  polygon_devnet: '1.6.2',
-  ingen_trex_cleartext: undefined,
-  hoodi_cleartext: undefined,
-  localstack: '1.6.2',
   localstack_v13: '1.6.2',
   localstack_v14: '1.6.2',
+  localstack: '1.6.2', // TODO: upgrade me to '1.7.0'
 };
 
 /** Returns the TFHE wasm version for a given test chain, or `undefined` for cleartext chains. */

@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Installs one npm `tfhe` release into the SDK wasm tree.
+# Installs one npm `tfhe`/`tfhe-client` release into the SDK wasm tree.
 #
 # 1. Normalize the requested version and resolve the `src/wasm/tfhe/vX.Y.Z` destination.
-# 2. Create a temporary npm project and install `tfhe@X.Y.Z` or the source spec passed by `--source`.
+# 2. Create a temporary npm project and install `tfhe@X.Y.Z` (or `tfhe-client@X.Y.Z` for
+#    X.Y.Z >= 1.7.0, which is where the client-only wasm build split into its own
+#    package) or the source spec passed by `--source`.
 # 3. Copy upstream `tfhe.js`, `tfhe.d.ts`, `tfhe_bg.wasm`, and wasm declarations when present.
 # 4. Run `build-tfhe.ts` to generate SDK `tfhe.js`, `tfhe-worker.mjs`, `startWorkers.js`, and type checks.
 # 5. Run `wasm-to-base64.build.mjs` to generate `tfhe_bg.wasm.base64.js` and `.d.ts`.
@@ -14,7 +16,8 @@ usage() {
 Usage:
   scripts/wasm/tfhe/install-tfhe.sh <version> [--source <npm-spec>] [--force|-y]
 
-Installs tfhe@<version> or <npm-spec> into a temporary npm project, then creates:
+Installs tfhe@<version> (tfhe-client@<version> for versions >= 1.7.0) or <npm-spec>
+into a temporary npm project, then creates:
   src/wasm/tfhe/v<version>/
 
 The destination contains at least:
@@ -92,7 +95,24 @@ done
 
 version="${version_arg#v}"
 version_dir="v${version}"
-install_spec="${source_spec:-tfhe@${version}}"
+
+# tfhe-rs 1.7.0 split the client-only wasm build into its own npm package
+# (`tfhe-client`); versions below that ship the wasm under `tfhe`.
+core_version="${version%%-*}"
+IFS=. read -r version_major version_minor _ <<< "$core_version"
+version_major="${version_major:-0}"
+version_minor="${version_minor:-0}"
+
+npm_package="tfhe"
+if [ "$version_major" -gt 1 ] || { [ "$version_major" -eq 1 ] && [ "$version_minor" -ge 7 ]; }; then
+  npm_package="tfhe-client"
+fi
+
+install_spec="${source_spec:-${npm_package}@${version}}"
+src_pkg_name="tfhe"
+if [ -z "$source_spec" ]; then
+  src_pkg_name="$npm_package"
+fi
 
 script_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 sdk_root="$(CDPATH= cd -- "${script_dir}/../../.." && pwd)"
@@ -145,8 +165,8 @@ EOF
 echo "      installing ${install_spec}"
 "$npm_bin" install --silent --no-fund --no-audit --no-save "$install_spec" --prefix "$tmp_dir"
 
-src_pkg="${tmp_dir}/node_modules/tfhe"
-[ -d "$src_pkg" ] || die "tfhe package not found at ${src_pkg} after installing ${install_spec}. Local package specs must resolve to a package named 'tfhe'."
+src_pkg="${tmp_dir}/node_modules/${src_pkg_name}"
+[ -d "$src_pkg" ] || die "tfhe package not found at ${src_pkg} after installing ${install_spec}. Local package specs must resolve to a package named '${src_pkg_name}'."
 [ -f "${src_pkg}/tfhe.js" ] || die "expected ${src_pkg}/tfhe.js"
 [ -f "${src_pkg}/tfhe_bg.wasm" ] || die "expected ${src_pkg}/tfhe_bg.wasm"
 

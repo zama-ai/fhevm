@@ -38,6 +38,7 @@
 export const TFHE_MANIFEST = Object.freeze([
   Object.freeze({ version: '1.5.3', tags: Object.freeze(['prod', 'dev']) }),
   Object.freeze({ version: '1.6.2', tags: Object.freeze(['prod', 'dev']) }),
+  Object.freeze({ version: '1.7.0', tags: Object.freeze(['prod', 'dev']) }),
   Object.freeze({
     version: '1.6.0-dev',
     tags: Object.freeze(['dev']),
@@ -53,11 +54,11 @@ export const KMS_MANIFEST = Object.freeze([
 
 export const WASM_DEFAULT_VERSIONS = Object.freeze({
   prod: Object.freeze({
-    tfhe: '1.6.2',
+    tfhe: '1.7.0',
     tkms: '0.14.0-1',
   }),
   dev: Object.freeze({
-    tfhe: '1.6.2',
+    tfhe: '1.7.0',
     tkms: '0.14.0-1',
   }),
 });

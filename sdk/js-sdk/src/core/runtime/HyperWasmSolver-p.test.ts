@@ -240,10 +240,28 @@ describe('HyperWasmSolver', () => {
       },
       {
         protocolContext: makeProtocolContext({
-          protocolVersion: { version: '0.14.0', comparator: 'gt' },
+          protocolVersion: { version: '0.15.0', comparator: 'eq' },
+          pubKeyCrsVersion: { version: '1.6.1', comparator: 'eq' },
+        }),
+        tfhe: '1.7.0',
+        kms: '0.14.0-1',
+      },
+      {
+        protocolContext: makeProtocolContext({
+          protocolVersion: { version: '0.15.0', comparator: 'eq' },
+          pubKeyCrsVersion: { version: '1.4.0-alpha.3', comparator: 'eq' },
+        }),
+        tfhe: '1.7.0',
+        kms: '0.14.0-1',
+      },
+      {
+        // Strictly above 0.15.0 with no upper bound still resolves uniquely:
+        // there is no tier above the last one.
+        protocolContext: makeProtocolContext({
+          protocolVersion: { version: '0.15.0', comparator: 'gt' },
           pubKeyCrsVersion: { version: '1.6.1', comparator: 'gt' },
         }),
-        tfhe: '1.6.2',
+        tfhe: '1.7.0',
         kms: '0.14.0-1',
       },
     ] as const satisfies ReadonlyArray<{
@@ -274,6 +292,12 @@ describe('HyperWasmSolver', () => {
         // Spans both the 0.13.x and the 0.14.x tiers, so it does not imply
         // either tier's bounded protocol interval.
         protocolVersion: { version: '0.13.0', comparator: 'gt' },
+        pubKeyCrsVersion: { version: '1.6.1', comparator: 'gt' },
+      }),
+      makeProtocolContext({
+        // Spans both the 0.14.x tier and the unbounded 0.15.x+ tier, so it
+        // does not imply either tier's protocol interval.
+        protocolVersion: { version: '0.14.0', comparator: 'gt' },
         pubKeyCrsVersion: { version: '1.6.1', comparator: 'gt' },
       }),
     ] as const satisfies readonly FhevmProtocolContext[];
@@ -349,14 +373,25 @@ describe('HyperWasmSolver', () => {
     expect(hyperWasmResolveTkmsModuleVersion(parameters, protocolContext)).toBe('0.14.0-1');
   });
 
+  it('maps protocol versions from 0.15.0 to the current TFHE canonical version', () => {
+    const parameters = makeParameters({});
+    const protocolContext = makeProtocolContext({
+      protocolVersion: { version: '0.15.0', comparator: 'eq' },
+      pubKeyCrsVersion: { version: '1.6.1', comparator: 'eq' },
+    });
+
+    expect(hyperWasmResolveTfheModuleVersion(parameters, protocolContext)).toBe('1.7.0');
+    expect(hyperWasmResolveTkmsModuleVersion(parameters, protocolContext)).toBe('0.14.0-1');
+  });
+
   it('uses bounded protocol-context comparators when they are enough to select WASM versions', () => {
     const parameters = makeParameters({});
 
     const newerContext = makeProtocolContext({
-      protocolVersion: { version: '0.14.0', comparator: 'gt' },
+      protocolVersion: { version: '0.15.0', comparator: 'gt' },
       pubKeyCrsVersion: { version: '1.6.1', comparator: 'gt' },
     });
-    expect(hyperWasmResolveTfheModuleVersion(parameters, newerContext)).toBe('1.6.2');
+    expect(hyperWasmResolveTfheModuleVersion(parameters, newerContext)).toBe('1.7.0');
     expect(hyperWasmResolveTkmsModuleVersion(parameters, newerContext)).toBe('0.14.0-1');
 
     const olderContext = makeProtocolContext({

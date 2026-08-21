@@ -67,8 +67,10 @@ const HYPER_WASM_SOLVER_CONFIG = {
    * full allowlist for explicit module-version compatibility checks.
    */
   compatibilityRules: [
+    //
+    // protocol.version <= 0.12.x
+    //
     {
-      // protocol.version <= 0.12.x
       protocol: { upperBound: { version: '0.13.0', comparator: 'lt' } },
       // pubKeyCrs.version <= 1.5.x (ex: mainnet 1.4.0-alpha.3)
       pubKeyCrs: { version: '1.6.0', comparator: 'lt' },
@@ -81,8 +83,11 @@ const HYPER_WASM_SOLVER_CONFIG = {
         compatible: ['0.13.10'],
       },
     },
+
+    //
+    // 0.13.0 <= protocol.version < 0.14.0
+    //
     {
-      // 0.13.0 <= protocol.version < 0.14.0
       protocol: {
         lowerBound: { version: '0.13.0', comparator: 'ge' },
         upperBound: { version: '0.14.0', comparator: 'lt' },
@@ -99,7 +104,6 @@ const HYPER_WASM_SOLVER_CONFIG = {
       },
     },
     {
-      // 0.13.0 <= protocol.version < 0.14.0
       protocol: {
         lowerBound: { version: '0.13.0', comparator: 'ge' },
         upperBound: { version: '0.14.0', comparator: 'lt' },
@@ -115,9 +119,15 @@ const HYPER_WASM_SOLVER_CONFIG = {
         compatible: ['0.13.10', '0.13.20-0'],
       },
     },
+
+    //
+    // 0.14.0 <= protocol.version < 0.15.0
+    //
     {
-      // protocol.version >= 0.14.0
-      protocol: { lowerBound: { version: '0.14.0', comparator: 'ge' } },
+      protocol: {
+        lowerBound: { version: '0.14.0', comparator: 'ge' },
+        upperBound: { version: '0.15.0', comparator: 'lt' },
+      },
       // pubKeyCrs.version <= 1.5.x (ex: mainnet 1.4.0-alpha.3)
       pubKeyCrs: { version: '1.6.0', comparator: 'lt' },
       tfhe: {
@@ -130,8 +140,10 @@ const HYPER_WASM_SOLVER_CONFIG = {
       },
     },
     {
-      // protocol.version >= 0.14.0
-      protocol: { lowerBound: { version: '0.14.0', comparator: 'ge' } },
+      protocol: {
+        lowerBound: { version: '0.14.0', comparator: 'ge' },
+        upperBound: { version: '0.15.0', comparator: 'lt' },
+      },
       // pubKeyCrs.version >= 1.6.0 (ex: localstack_v13)
       pubKeyCrs: { version: '1.6.0', comparator: 'ge' },
       tfhe: {
@@ -140,6 +152,36 @@ const HYPER_WASM_SOLVER_CONFIG = {
       },
       kms: {
         canonical: '0.14.0-1',
+        compatible: ['0.13.10', '0.13.20-0', '0.14.0-1'],
+      },
+    },
+
+    //
+    // protocol.version >= 0.15.0
+    //
+    {
+      protocol: { lowerBound: { version: '0.15.0', comparator: 'ge' } },
+      // pubKeyCrs.version <= 1.5.x (ex: mainnet 1.4.0-alpha.3)
+      pubKeyCrs: { version: '1.6.0', comparator: 'lt' },
+      tfhe: {
+        canonical: '1.7.0',
+        compatible: ['1.5.3', '1.6.2', '1.7.0'],
+      },
+      kms: {
+        canonical: '0.14.0-1', // TODO: change kms version once we have a new release of tkms that is in sync with tfhe 1.7.0, and edit matrix.json
+        compatible: ['0.13.10', '0.13.20-0', '0.14.0-1'],
+      },
+    },
+    {
+      protocol: { lowerBound: { version: '0.15.0', comparator: 'ge' } },
+      // pubKeyCrs.version >= 1.6.0 (ex: localstack_v13)
+      pubKeyCrs: { version: '1.6.0', comparator: 'ge' },
+      tfhe: {
+        canonical: '1.7.0',
+        compatible: ['1.6.2', '1.7.0'],
+      },
+      kms: {
+        canonical: '0.14.0-1', // TODO: change kms version once we have a new release of tkms that is in sync with tfhe 1.7.0, and edit matrix.json
         compatible: ['0.13.10', '0.13.20-0', '0.14.0-1'],
       },
     },
