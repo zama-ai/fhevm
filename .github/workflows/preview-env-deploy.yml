@@ -470,11 +470,12 @@ jobs:
           fi
           kubectl create namespace "${NAMESPACE}"
 
-      - name: Grant coprocessor-dev-access RBAC on preview namespace
+      - name: Grant dev-access groups RBAC on preview namespace
         run: |
           kubectl create rolebinding fhevm-ci-dev-binding \
             --clusterrole=admin \
             --group=coprocessor-dev-access \
+            --group=kms-dev-access \
             -n "${NAMESPACE}" \
             --dry-run=client -o yaml | kubectl apply -f -
 
