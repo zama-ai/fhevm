@@ -519,7 +519,7 @@ impl Database {
         // Schema isolation handles BCS/GCS routing at the connection layer
         // (`search_path = gcs,public` for GCS, default `public` for BCS), so
         // this INSERT references `computations` unqualified.
-        let query = sqlx::query(
+        let query = sqlx::query!(
             r#"
             INSERT INTO computations (
                 output_handle,
@@ -539,22 +539,22 @@ impl Database {
             VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9, $10, $11, $12)
             ON CONFLICT (output_handle, transaction_id) DO NOTHING
             "#,
-        )
-        .bind(output_handle)
-        .bind(dependencies)
-        .bind(fhe_operation as i16)
-        .bind(is_scalar)
-        .bind(log.dependence_chain.to_vec())
-        .bind(log.transaction_hash.map(|txh| txh.to_vec()))
-        .bind(log.is_allowed)
-        .bind(
+            output_handle,
+            dependencies as _,
+            fhe_operation as i16,
+            is_scalar,
+            log.dependence_chain.to_vec(),
+            log.transaction_hash.map(|txh| txh.to_vec()) as _,
+            log.is_allowed,
             log.block_timestamp
-                .saturating_add(TimeDuration::microseconds(log.tx_depth_size as i64)),
-        )
-        .bind(!log.is_allowed)
-        .bind(self.chain_id.as_i64())
-        .bind(log.block_number as i64)
-        .bind(operand_boundary_mask.as_slice());
+                .saturating_add(TimeDuration::microseconds(
+                    log.tx_depth_size as i64
+                )),
+            !log.is_allowed,
+            self.chain_id.as_i64(),
+            log.block_number as i64,
+            operand_boundary_mask.as_slice(),
+        );
         query
             .execute(tx.deref_mut())
             .await
@@ -812,6 +812,183 @@ impl Database {
     /// the same transaction that marks the branch orphaned and is idempotent;
     /// if the listener is down, finalization does not advance and catchup
     /// reruns the retraction when it later orphans the branch.
+    /// Records a "late allow": a persistent ACL allowance observed in this
+    /// block for a handle whose computation row predates it (so the row was
+    /// stamped `is_allowed = false` — same-block ACL events are the only
+    /// source of that flag at ingest). The allowance is NOT applied here:
+    /// this block may still be orphaned, and orphaned `allowed_handles` rows
+    /// are deliberately retained, so application waits for finality
+    /// (`apply_finalized_late_allows`) and orphaning retracts the record
+    /// (`retract_orphaned_event_state`).
+    pub async fn record_late_allows(
+        &self,
+        tx: &mut Transaction<'_>,
+        block_summary: &BlockSummary,
+        allowed_handles: &[Vec<u8>],
+    ) -> Result<u64, SqlxError> {
+        if allowed_handles.is_empty() {
+            return Ok(0);
+        }
+        let recorded = sqlx::query!(
+            r#"
+            INSERT INTO late_allow_propagation
+                (host_chain_id, block_hash, block_number, handle)
+            SELECT $1, $2, $3, h.handle
+            FROM unnest($4::bytea[]) AS h(handle)
+            WHERE EXISTS (
+                SELECT 1 FROM computations c
+                WHERE c.output_handle = h.handle
+                  AND c.is_allowed = false
+            )
+            ON CONFLICT DO NOTHING
+            "#,
+            self.chain_id.as_i64(),
+            block_summary.hash.as_slice(),
+            block_summary.number as i64,
+            allowed_handles as _,
+        )
+        .execute(tx.deref_mut())
+        .await?
+        .rows_affected();
+        if recorded > 0 {
+            info!(
+                block_number = block_summary.number,
+                recorded, "Recorded late allows for propagation at finality"
+            );
+        }
+        Ok(recorded)
+    }
+
+    /// Applies the late allows recorded for a block that just became final:
+    /// flips `is_allowed` on the earlier computation rows, repairs rows a
+    /// pre-mask binary completed without persisting (this binary never
+    /// completes non-allowed rows, so completed-but-unpersisted can only be
+    /// legacy state) by resetting them to pending for a deterministic
+    /// recompute, and re-arms the owning chains so the work is re-acquired.
+    pub async fn apply_finalized_late_allows(
+        &self,
+        tx: &mut Transaction<'_>,
+        block_hash: &BlockHash,
+    ) -> Result<(), SqlxError> {
+        let handles: Vec<Vec<u8>> = sqlx::query!(
+            r#"
+            DELETE FROM late_allow_propagation
+            WHERE host_chain_id = $1 AND block_hash = $2
+            RETURNING handle AS "handle!"
+            "#,
+            self.chain_id.as_i64(),
+            block_hash.as_slice(),
+        )
+        .fetch_all(tx.deref_mut())
+        .await?
+        .into_iter()
+        .map(|row| row.handle)
+        .collect();
+        if handles.is_empty() {
+            return Ok(());
+        }
+
+        // The allowance attaches to the handle on-chain, and equal handles
+        // carry byte-identical results by construction, so every row of the
+        // handle flips — fork spellings included.
+        let flipped = sqlx::query!(
+            r#"
+            UPDATE computations
+            SET is_allowed = true
+            WHERE output_handle = ANY($1::bytea[])
+              AND is_allowed = false
+            RETURNING dependence_chain_id
+            "#,
+            &handles,
+        )
+        .fetch_all(tx.deref_mut())
+        .await?;
+
+        // Legacy repair: a pre-mask worker marked non-allowed rows completed
+        // without persisting their ciphertext. Now that the handle is
+        // allowed, such a row must recompute (deterministically) so the
+        // result actually persists for its cross-transaction consumers.
+        let reset = sqlx::query!(
+            r#"
+            UPDATE computations c
+            SET is_completed = false, completed_at = NULL
+            WHERE c.output_handle = ANY($1::bytea[])
+              AND c.is_allowed = true
+              AND c.is_completed = true
+              AND c.is_error = false
+              AND NOT EXISTS (
+                  SELECT 1 FROM ciphertexts ct WHERE ct.handle = c.output_handle
+              )
+            RETURNING c.dependence_chain_id
+            "#,
+            &handles,
+        )
+        .fetch_all(tx.deref_mut())
+        .await?;
+
+        let mut chain_ids: Vec<Vec<u8>> = flipped
+            .into_iter()
+            .map(|row| row.dependence_chain_id)
+            .chain(reset.into_iter().map(|row| row.dependence_chain_id))
+            .flatten()
+            .collect();
+        chain_ids.sort();
+        chain_ids.dedup();
+        if chain_ids.is_empty() {
+            return Ok(());
+        }
+
+        // Re-arm the owning chains: the listener convention for adding work
+        // to an existing chain (a live worker's release respects a
+        // listener-set 'updated'). A missing chain row means it was pruned
+        // after settling; that needs operator attention, so warn rather
+        // than resurrect a chain whose scheduling context is gone.
+        let rearmed = sqlx::query!(
+            r#"
+            UPDATE dependence_chain
+            SET status = 'updated', last_updated_at = NOW()
+            WHERE dependence_chain_id = ANY($1::bytea[])
+              AND status <> 'updated'
+            "#,
+            &chain_ids,
+        )
+        .execute(tx.deref_mut())
+        .await?
+        .rows_affected();
+        info!(
+            handles = handles.len(),
+            chains = chain_ids.len(),
+            rearmed,
+            "Applied finalized late allows"
+        );
+        if (rearmed as usize) < chain_ids.len() {
+            // Some chains were already 'updated' (benign) or pruned (needs
+            // attention); disambiguating costs another query only when the
+            // counts disagree.
+            let existing = sqlx::query!(
+                r#"
+                SELECT count(*) AS "count!" FROM dependence_chain
+                WHERE dependence_chain_id = ANY($1::bytea[])
+                "#,
+                &chain_ids,
+            )
+            .fetch_one(tx.deref_mut())
+            .await?
+            .count;
+            if (existing as usize) < chain_ids.len() {
+                warn!(
+                    missing = chain_ids.len() - existing as usize,
+                    "Late allow flipped rows on pruned chains; their recompute needs manual re-arming"
+                );
+            }
+        }
+        // Wake an idle worker for the re-armed work.
+        sqlx::query!("SELECT pg_notify('work_available', '')")
+            .fetch_all(tx.deref_mut())
+            .await?;
+        Ok(())
+    }
+
     pub async fn retract_orphaned_event_state(
         &self,
         tx: &mut Transaction<'_>,
@@ -835,6 +1012,20 @@ impl Database {
         // single DELETE .. RETURNING both removes the orphaned observations
         // and captures the flag under the row lock, so an association racing
         // finalization is either retracted or never happens.
+        // Late-allow records are keyed by the observing block: an orphaned
+        // observation must never flip canonical rows at finality.
+        sqlx::query!(
+            r#"
+            DELETE FROM late_allow_propagation
+            WHERE host_chain_id = $1
+              AND block_hash = ANY($2::bytea[])
+            "#,
+            self.chain_id.as_i64(),
+            orphaned_block_hashes as _,
+        )
+        .execute(tx.deref_mut())
+        .await?;
+
         let retracted_bridged = sqlx::query!(
             r#"
             DELETE FROM handle_bridged_events

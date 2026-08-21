@@ -625,6 +625,15 @@ pub async fn ingest_block_logs(
             );
         }
     }
+    // Same-block allows were already stamped onto this block's computation
+    // rows above; whatever still has a non-allowed row is a LATE allow for
+    // an earlier block's computation. Record it for application at finality
+    // (this block may still be orphaned).
+    let late_allow_handles: Vec<Vec<u8>> = is_allowed.iter().cloned().collect();
+    at_least_one_insertion |= db
+        .record_late_allows(&mut tx, &block_logs.summary, &late_allow_handles)
+        .await?
+        > 0;
 
     let mut slow_dep_chain_ids: HashSet<ChainHash> = HashSet::new();
     if slow_lane_enabled {
@@ -1316,6 +1325,19 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
                         block_number,
                         ?err,
                         "Failed to synthesize finalized fallback grants"
+                    );
+                    return;
+                }
+                // The block's persistent allows are now final: propagate the
+                // late ones to computation rows from earlier blocks, in the
+                // same transaction as the finalization gating them.
+                if let Err(err) =
+                    db.apply_finalized_late_allows(&mut tx, &block_hash).await
+                {
+                    error!(
+                        block_number,
+                        ?err,
+                        "Failed to apply finalized late allows"
                     );
                     return;
                 }
