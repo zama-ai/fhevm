@@ -571,6 +571,116 @@ pub fn create_timeout_test_config(
     Ok(temp_config_path)
 }
 
+/// Create a config file with custom optimistic user-decryption wait-window settings.
+///
+/// The shared test config pins `user_decrypt_additional_shares: 0`, which turns the
+/// window off for every other test. Tests that exercise the window override the two
+/// knobs here instead of moving that global default. The share threshold is left at
+/// the configured value (9), so the emitted share count is what varies.
+#[allow(dead_code)]
+pub fn create_user_decrypt_wait_config(
+    temp_dir: &TempDir,
+    additional_shares: u32,
+    additional_shares_timeout_secs: u32,
+) -> anyhow::Result<std::path::PathBuf> {
+    let temp_config_path = temp_dir.path().join("user_decrypt_wait.yaml");
+
+    // Read the default config
+    let config_content = std::fs::read_to_string("tests/relayer-test-config.yaml")
+        .context("Failed to read default config")?;
+
+    // Parse YAML as a generic value
+    let mut config: serde_yaml::Value =
+        serde_yaml::from_str(&config_content).context("Failed to parse YAML config")?;
+
+    // Override the optimistic wait window
+    if let Some(gateway) = config.get_mut("gateway") {
+        if let Some(contracts) = gateway.get_mut("contracts") {
+            contracts["user_decrypt_additional_shares"] =
+                serde_yaml::Value::Number(serde_yaml::Number::from(additional_shares));
+            contracts["user_decrypt_additional_shares_timeout_secs"] =
+                serde_yaml::Value::Number(serde_yaml::Number::from(additional_shares_timeout_secs));
+        }
+    }
+
+    // Serialize back to YAML and write to temp file
+    let modified_content =
+        serde_yaml::to_string(&config).context("Failed to serialize modified config")?;
+
+    std::fs::write(&temp_config_path, modified_content).context("Failed to write temp config")?;
+
+    Ok(temp_config_path)
+}
+
+/// Scrape the relayer's own Prometheus endpoint and return the exposition text.
+///
+/// The endpoint is bound to `0.0.0.0:0` in tests, so only the port is usable.
+#[allow(dead_code)]
+pub async fn scrape_metrics(metrics_endpoint: &str) -> anyhow::Result<String> {
+    let port = metrics_endpoint
+        .rsplit(':')
+        .next()
+        .context("Metrics endpoint carries no port")?;
+    let body = reqwest::get(format!("http://127.0.0.1:{}/metrics", port))
+        .await
+        .context("Failed to scrape metrics endpoint")?
+        .text()
+        .await
+        .context("Failed to read metrics body")?;
+    Ok(body)
+}
+
+/// Read one sample out of Prometheus exposition text.
+///
+/// `selector` is the full sample name including its label set, e.g.
+/// `relayer_request_cache_total{req_type="user_decrypt",result="miss"}`.
+/// A sample that has never been recorded is absent from the output rather than
+/// zero, so absence is reported as `0.0`.
+#[allow(dead_code)]
+pub fn metric_sample(text: &str, selector: &str) -> f64 {
+    text.lines()
+        .filter(|line| !line.starts_with('#'))
+        .find_map(|line| {
+            line.strip_prefix(selector)
+                .and_then(|rest| rest.strip_prefix(' '))
+                .and_then(|value| value.trim().parse::<f64>().ok())
+        })
+        .unwrap_or(0.0)
+}
+
+/// Cumulative observation count and total of the spare-shares histogram.
+///
+/// The Prometheus registry is a process-global `OnceLock`, so these values
+/// carry every observation made by every earlier test in the same binary.
+/// Assert on the delta across a request, never on the absolute value —
+/// otherwise the assertion passes alone and breaks as the suite grows.
+#[allow(dead_code)]
+pub async fn spare_shares_count_and_sum(metrics_endpoint: &str) -> (f64, f64) {
+    let text = scrape_metrics(metrics_endpoint).await.unwrap_or_default();
+    (
+        metric_sample(
+            &text,
+            r#"relayer_user_decrypt_spare_shares_count{req_type="user_decrypt"}"#,
+        ),
+        metric_sample(
+            &text,
+            r#"relayer_user_decrypt_spare_shares_sum{req_type="user_decrypt"}"#,
+        ),
+    )
+}
+
+/// Cumulative POST deduplication counter for one request type and outcome.
+///
+/// Process-global like the histogram above: compare deltas, not absolutes.
+#[allow(dead_code)]
+pub async fn request_cache_total(metrics_endpoint: &str, req_type: &str, result: &str) -> f64 {
+    let text = scrape_metrics(metrics_endpoint).await.unwrap_or_default();
+    metric_sample(
+        &text,
+        &format!(r#"relayer_request_cache_total{{req_type="{req_type}",result="{result}"}}"#),
+    )
+}
+
 /// Get a free port by binding to port 0
 /// This is needed for mock servers that don't support dynamic port allocation yet
 #[allow(dead_code)]

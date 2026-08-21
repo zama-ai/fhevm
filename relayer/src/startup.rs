@@ -140,7 +140,7 @@ pub async fn run_fhevm_relayer(
             &settings.http,
             Arc::clone(&orchestrator),
             repositories.clone(),
-            settings.gateway.contracts.user_decrypt_shares_threshold,
+            &settings.gateway.contracts,
             bouncer_throttlers,
             host_chain_id_checker,
         )
@@ -212,6 +212,8 @@ fn ensure_global_init(settings: &Settings) -> anyhow::Result<&'static Registry> 
                 .retry_after_raw_eta_histogram_bucket
                 .clone(),
         );
+        metrics::init_request_cache_metrics(&registry);
+        metrics::init_user_decrypt_metrics(&registry);
 
         registry
     });

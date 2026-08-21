@@ -16,7 +16,10 @@ use crate::http::utils::bounce_check;
 use crate::http::{parse_and_validate, AppResponse};
 use crate::logging::InputProofStep;
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
-use crate::metrics::{observe_raw_eta_seconds, HttpApiVersion, RetryAfterRequestType};
+use crate::metrics::{
+    increment_request_cache, observe_raw_eta_seconds, HttpApiVersion, RequestCacheResult,
+    RetryAfterRequestType,
+};
 use crate::orchestrator::ContentHasher;
 use crate::orchestrator::Orchestrator;
 use crate::store::sql::models::req_status_enum_model::ReqStatus;
@@ -229,6 +232,7 @@ impl InputProofHandler {
 
         // Only dispatch event for new requests (deduplication)
         if matches!(insert_result, InputProofInsertResult::Inserted { .. }) {
+            increment_request_cache(RetryAfterRequestType::InputProof, RequestCacheResult::Miss);
             let event_data = InputProofEventData::ReqRcvdFromUser {
                 input_proof_request: request_data,
             };
@@ -252,6 +256,7 @@ impl InputProofHandler {
                 "Dispatched event to orchestrator"
             );
         } else {
+            increment_request_cache(RetryAfterRequestType::InputProof, RequestCacheResult::Hit);
             info!(
                 step = %InputProofStep::DedupHit,
                 req_id = %request_id,
