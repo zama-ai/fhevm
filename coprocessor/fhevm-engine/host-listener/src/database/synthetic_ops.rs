@@ -67,6 +67,8 @@ use fhevm_engine_common::types::{
     COMPUTED_HANDLE_INDEX_MARKER, HANDLE_VERSION,
 };
 
+use tracing::info;
+
 use crate::contracts::{AclContract, TfheContract};
 use crate::database::tfhe_event_propagate::{ClearConst, Handle};
 
@@ -81,7 +83,7 @@ const SYNTHETIC_TXN_DOMAIN: &[u8] = b"FHEVM_BLUE_GREEN_SYNTHETIC_TXN_V1";
 /// plain arithmetic type, so `A + B` is a genuine non-trivial op.
 const SYNTHETIC_FHE_TYPE: u8 = 5;
 
-/// Plaintext operands. Any fixed values work; these are recognisable in logs.
+/// Plaintext operands. Any fixed values work; these are recognizable in logs.
 const SYNTHETIC_PLAINTEXT_A: u64 = 0xA;
 const SYNTHETIC_PLAINTEXT_B: u64 = 0xB;
 
@@ -285,6 +287,59 @@ pub fn synthetic_logs(
         handle: handles.c,
     }
     .encode_log_data();
+
+    info!(
+        event = "TrivialEncrypt",
+        contract = ?tfhe_address,
+        log_index = log_index_base,
+        result = ?handles.a,
+        pt = SYNTHETIC_PLAINTEXT_A,
+        fhe_type = SYNTHETIC_FHE_TYPE,
+        block_number,
+        chain_id = ctx.chain_id,
+        txn_hash = ?txn_hash,
+        "synthetic log injected"
+    );
+    info!(
+        event = "TrivialEncrypt",
+        contract = ?tfhe_address,
+        log_index = log_index_base + 1,
+        result = ?handles.b,
+        pt = SYNTHETIC_PLAINTEXT_B,
+        fhe_type = SYNTHETIC_FHE_TYPE,
+        block_number,
+        chain_id = ctx.chain_id,
+        txn_hash = ?txn_hash,
+        "synthetic log injected"
+    );
+    info!(
+        event = "FheAdd",
+        contract = ?tfhe_address,
+        log_index = log_index_base + 2,
+        lhs = ?handles.a,
+        rhs = ?handles.b,
+        result = ?handles.c,
+        // Non-scalar: both operands are ciphertexts, which is what makes this the
+        // consensus probe rather than a deterministic trivial encryption.
+        scalar = false,
+        fhe_type = SYNTHETIC_FHE_TYPE,
+        block_number,
+        chain_id = ctx.chain_id,
+        txn_hash = ?txn_hash,
+        "synthetic log injected"
+    );
+    info!(
+        event = "Allowed",
+        contract = ?acl_address,
+        log_index = log_index_base + 3,
+        handle = ?handles.c,
+        account = ?caller,
+        fhe_type = SYNTHETIC_FHE_TYPE,
+        block_number,
+        chain_id = ctx.chain_id,
+        txn_hash = ?txn_hash,
+        "synthetic log injected"
+    );
 
     vec![
         rpc_log(
