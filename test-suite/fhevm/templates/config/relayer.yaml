@@ -94,6 +94,12 @@ gateway:
       retry:
         max_attempts: 45
         retry_interval_ms: 2000
+      # Per-bucket S3 attestation HEAD request timeout.
+      head_timeout_ms: 5000
+      # Overall budget for one request's readiness check: all handles, all retries.
+      request_timeout_ms: 100000
+      # Coprocessor registry snapshot refresh interval.
+      registry_refresh_ms: 60000
     public_decrypt:
       max_concurrency: 250
       capacity: 11000
@@ -109,6 +115,9 @@ gateway:
   contracts:
     decryption_address: "0xF0bFB159C7381F7CB332586004d8247252C5b816"
     input_verification_address: "0x3b12Fc766Eb598b285998877e8E90F3e43a1F8d2"
+    # GatewayConfig: Coprocessor registry (signers, S3 buckets, majority
+    # threshold) for the off-chain ciphertext-attestation readiness check.
+    gateway_config_address: "0x576Ea67208b146E63C5255d0f90104E25e3e04c7"
     user_decrypt_shares_threshold: 1 # KMS centralized mode
 log:
   format: "compact" # compact, pretty, or json

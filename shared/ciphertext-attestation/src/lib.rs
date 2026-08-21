@@ -27,6 +27,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod consensus;
 pub mod sign;
+pub mod tracker;
 
 /// Domain separator for the canonical signed payload. Scopes the keccak hash to
 /// "FHEVM CT Attestation" and prevents collisions with any other hash computed
@@ -68,6 +69,11 @@ pub fn s3_ct64_key(handle: &[u8], coprocessor_context_id: U256) -> String {
         hex::encode(handle)
     )
 }
+
+/// Coprocessor context id for RFC-023 V1 deployments. Consensus-critical global state: it is
+/// signed into the attestation payload and baked into the object URL, so it is a wire-format
+/// constant, not per-service config. Retires when `GatewayConfig` gains Coprocessor contexts.
+pub const COPROCESSOR_CONTEXT_ID_V1: U256 = U256::ONE;
 
 /// Versioned encoding of the attestation. The version byte is part of the signed
 /// payload, so a stripped or downgraded `version` field flips signature recovery

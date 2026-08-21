@@ -108,6 +108,12 @@ gateway:
       retry:
         max_attempts: 75
         retry_interval_ms: 3000
+      # Per-bucket S3 attestation HEAD request timeout.
+      head_timeout_ms: 5000
+      # Overall budget for one request's readiness check: all handles, all retries.
+      request_timeout_ms: 240000
+      # Coprocessor registry snapshot refresh interval.
+      registry_refresh_ms: 60000
     public_decrypt:
       max_concurrency: 250
       capacity: 11000
@@ -119,6 +125,9 @@ gateway:
   contracts:
     decryption_address: "0xB8Ae44365c45A7C5256b14F607CaE23BC040c354"
     input_verification_address: "0xE61cff9C581c7c91AEF682c2C10e8632864339ab"
+    # GatewayConfig: Coprocessor registry (signers, S3 buckets, majority
+    # threshold) for the off-chain ciphertext-attestation readiness check.
+    gateway_config_address: "0x576Ea67208b146E63C5255d0f90104E25e3e04c7"
     user_decrypt_shares_threshold: 9
   # Retry configuration for gateway events arriving before gw_reference_id is stored.
   # This is a workaround for the race condition where send_raw_transaction_sync has high latency.
@@ -215,7 +224,7 @@ metrics:
     [1, 2, 5, 10, 20, 30, 60, 120, 300, 600, 1200, 2400]
 
 storage:
-  sql_database_url: "postgresql://postgres:postgres@localhost:5433/relayer_db"
+  sql_database_url: "postgresql://postgres:postgres@localhost:15433/relayer_db"
   app_pool:
     max_connections: 10
     min_connections: 2

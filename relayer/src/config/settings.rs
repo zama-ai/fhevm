@@ -60,6 +60,7 @@ impl GatewayConfig {
     pub fn validate(&self) -> Result<(), AppConfigError> {
         self.blockchain_rpc.validate()?;
         self.contracts.validate()?;
+        self.readiness_checker.gw_ciphertext_check.validate()?;
         self.readiness_checker.public_decrypt.validate()?;
         self.readiness_checker.user_decrypt.validate()?;
         self.tx_engine
@@ -289,6 +290,46 @@ pub struct HostAclCheckConfig {
 #[derive(Debug, Deserialize, Clone)]
 pub struct GwCiphertextCheckConfig {
     pub retry: RetrySettings,
+    /// Per-bucket S3 attestation `HEAD` request timeout, in milliseconds.
+    pub head_timeout_ms: u64,
+    /// Overall budget for one request's readiness check: every handle, every retry.
+    ///
+    /// `retry.max_attempts * retry.retry_interval_ms` bounds only the *sleeping* between attempts.
+    /// Since the check moved off-chain an attempt is no longer a single fast `eth_call` — it is a
+    /// bucket fan-out that can wait out `head_timeout_ms` per unresponsive Coprocessor — so the
+    /// wall clock needs its own bound. Whichever of the two limits is reached first ends the check.
+    pub request_timeout_ms: u64,
+    /// Coprocessor registry snapshot refresh interval, in milliseconds.
+    pub registry_refresh_ms: u64,
+}
+
+impl GwCiphertextCheckConfig {
+    pub fn validate(&self) -> Result<(), AppConfigError> {
+        if self.head_timeout_ms == 0 {
+            return Err(AppConfigError::Config(
+                "gw_ciphertext_check.head_timeout_ms must be greater than 0".to_string(),
+            ));
+        }
+        if self.request_timeout_ms == 0 {
+            return Err(AppConfigError::Config(
+                "gw_ciphertext_check.request_timeout_ms must be greater than 0".to_string(),
+            ));
+        }
+        // A budget below one probe's timeout can expire before any bucket has had the chance to
+        // answer, so every request would fail closed on the clock rather than on the attestations.
+        if self.request_timeout_ms < self.head_timeout_ms {
+            return Err(AppConfigError::Config(format!(
+                "gw_ciphertext_check.request_timeout_ms ({}) must be at least head_timeout_ms ({})",
+                self.request_timeout_ms, self.head_timeout_ms
+            )));
+        }
+        if self.registry_refresh_ms == 0 {
+            return Err(AppConfigError::Config(
+                "gw_ciphertext_check.registry_refresh_ms must be greater than 0".to_string(),
+            ));
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -538,6 +579,9 @@ pub struct RetrySettings {
 pub struct ContractConfig {
     pub decryption_address: String,
     pub input_verification_address: String,
+    /// `GatewayConfig` contract, source of the Coprocessor registry (signers, S3 buckets and
+    /// majority threshold) used by the off-chain ciphertext-attestation readiness check.
+    pub gateway_config_address: String,
     /// Number of shares required for user decryption threshold consensus
     pub user_decrypt_shares_threshold: u32,
 }
@@ -693,6 +737,10 @@ impl Settings {
             (
                 "input_verification",
                 &self.gateway.contracts.input_verification_address,
+            ),
+            (
+                "gateway_config",
+                &self.gateway.contracts.gateway_config_address,
             ),
             ("protocol_config", &self.protocol_config.address),
             (
@@ -976,6 +1024,107 @@ mod tests {
 
         // Verify the value was parsed correctly (value from local.yaml.example)
         assert_eq!(settings.gateway.contracts.user_decrypt_shares_threshold, 9);
+    }
+
+    #[test]
+    fn test_gateway_config_address_is_required() {
+        // Without the GatewayConfig address there is no Coprocessor registry at all, so startup
+        // must fail rather than silently degrade the readiness gate.
+        assert_field_is_required("gateway.contracts.gateway_config_address");
+    }
+
+    /// Asserts that dropping `field` from the example config makes deserialization fail.
+    ///
+    /// Every off-chain attestation-readiness setting is explicit config with no silent fallback,
+    /// so a deployment that forgets one fails at startup instead of running on a guessed value.
+    fn assert_field_is_required(field: &str) {
+        let config_path = ConfigBuilder::from_example()
+            .expect("Failed to load example config")
+            .remove_field(field)
+            .to_temp_file()
+            .expect("Failed to create temp config file");
+
+        let config = Config::builder()
+            .add_source(File::from(config_path.as_path()).format(FileFormat::Yaml))
+            .build()
+            .expect("Failed to build config");
+
+        let result: Result<Settings, _> = config.try_deserialize();
+
+        assert!(
+            result.is_err(),
+            "Configuration parsing should fail when {field} is missing"
+        );
+
+        let error_msg = format!("{}", result.unwrap_err());
+        let leaf = field.rsplit('.').next().unwrap_or(field);
+        assert!(
+            error_msg.contains(leaf) || error_msg.contains("missing field"),
+            "Error should mention the missing {leaf} field, got: {error_msg}"
+        );
+    }
+
+    #[test]
+    fn test_gw_ciphertext_check_head_timeout_is_required() {
+        assert_field_is_required("gateway.readiness_checker.gw_ciphertext_check.head_timeout_ms");
+    }
+
+    #[test]
+    fn test_gw_ciphertext_check_registry_refresh_is_required() {
+        assert_field_is_required(
+            "gateway.readiness_checker.gw_ciphertext_check.registry_refresh_ms",
+        );
+    }
+
+    #[test]
+    fn test_gw_ciphertext_check_request_timeout_is_required() {
+        assert_field_is_required(
+            "gateway.readiness_checker.gw_ciphertext_check.request_timeout_ms",
+        );
+    }
+
+    #[test]
+    fn test_gw_ciphertext_check_rejects_zero_timeouts() {
+        let mut ct_check = GwCiphertextCheckConfig {
+            retry: RetrySettings {
+                max_attempts: 3,
+                retry_interval_ms: 100,
+            },
+            head_timeout_ms: 0,
+            request_timeout_ms: 240_000,
+            registry_refresh_ms: 60_000,
+        };
+        assert!(ct_check.validate().is_err());
+
+        ct_check.head_timeout_ms = 5_000;
+        ct_check.request_timeout_ms = 0;
+        assert!(ct_check.validate().is_err());
+
+        ct_check.request_timeout_ms = 240_000;
+        ct_check.registry_refresh_ms = 0;
+        assert!(ct_check.validate().is_err());
+
+        ct_check.registry_refresh_ms = 60_000;
+        assert!(ct_check.validate().is_ok());
+    }
+
+    #[test]
+    fn test_gw_ciphertext_check_rejects_budget_below_one_probe() {
+        // A request budget under a single bucket's HEAD timeout expires before any Coprocessor can
+        // answer, so every request would fail on the clock rather than on the attestations.
+        let mut ct_check = GwCiphertextCheckConfig {
+            retry: RetrySettings {
+                max_attempts: 3,
+                retry_interval_ms: 100,
+            },
+            head_timeout_ms: 5_000,
+            request_timeout_ms: 4_999,
+            registry_refresh_ms: 60_000,
+        };
+        assert!(ct_check.validate().is_err());
+
+        ct_check.request_timeout_ms = 5_000;
+        assert!(ct_check.validate().is_ok());
     }
 
     #[test]
@@ -1457,6 +1606,16 @@ mod tests {
 
         // contracts: YAML has threshold=9, env has 5
         assert_eq!(settings.gateway.contracts.user_decrypt_shares_threshold, 5);
+        assert_eq!(
+            settings.gateway.contracts.gateway_config_address,
+            "0x1C5d0A5B44e0B3D1A3d1c05A0f5aC2C2b64f1d3C"
+        );
+
+        // gw_ciphertext_check: YAML has 5000/240000/60000, env has 7000/300000/90000
+        let ct_check = &settings.gateway.readiness_checker.gw_ciphertext_check;
+        assert_eq!(ct_check.head_timeout_ms, 7000);
+        assert_eq!(ct_check.request_timeout_ms, 300000);
+        assert_eq!(ct_check.registry_refresh_ms, 90000);
 
         // copro_kms_backoff_intervals: env overrides to different values
         assert_eq!(

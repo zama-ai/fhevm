@@ -24,6 +24,7 @@ jobs:
     outputs:
       # Each output indicates if a specific crate was modified
       changes-ciphertext-attestation: ${{ steps.filter.outputs.ciphertext-attestation }}
+      changes-ciphertext-attestation-client: ${{ steps.filter.outputs.ciphertext-attestation-client }}
       changes-user-decryption-signature: ${{ steps.filter.outputs.user-decryption-signature }}
       changes-gateway-contracts-bindings: ${{ steps.filter.outputs.gateway-contracts-bindings }}
       changes-host-contracts-bindings: ${{ steps.filter.outputs.host-contracts-bindings }}
@@ -38,6 +39,12 @@ jobs:
         filters: |
           ciphertext-attestation:
             - shared/ciphertext-attestation/**
+          ciphertext-attestation-client:
+            # The client crate depends on ciphertext-attestation and the gateway bindings by
+            # path, so changes to either must re-run it too.
+            - shared/ciphertext-attestation-client/**
+            - shared/ciphertext-attestation/**
+            - gateway-contracts/rust_bindings/**
           user-decryption-signature:
             - shared/user-decryption-signature/**
           gateway-contracts-bindings:
@@ -88,6 +95,17 @@ jobs:
     defaults:
       run:
         working-directory: shared/ciphertext-attestation
+    steps: *shared-crate-test-steps
+
+  test-ciphertext-attestation-client:
+    name: test-ciphertext-attestation-client
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.changes-ciphertext-attestation-client == 'true' }}
+    permissions: *shared-crate-test-permissions
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: shared/ciphertext-attestation-client
     steps: *shared-crate-test-steps
 
   test-gateway-contracts-bindings:

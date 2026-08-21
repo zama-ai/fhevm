@@ -93,6 +93,9 @@ configmapFiles:
             retry: {max_attempts: 3, retry_interval_ms: 1000}
           gw_ciphertext_check:
             retry: {max_attempts: 75, retry_interval_ms: 3000}
+            head_timeout_ms: 5000
+            request_timeout_ms: 240000
+            registry_refresh_ms: 60000
           public_decrypt: {max_concurrency: 250, capacity: 11000, safety_margin: 1000}
           user_decrypt: {max_concurrency: 250, capacity: 11000, safety_margin: 1000}
         contracts:
@@ -202,6 +205,10 @@ env:
     valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: decryption.address}}
   - name: APP_GATEWAY__CONTRACTS__INPUT_VERIFICATION_ADDRESS
     valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: input_verification.address}}
+  # GatewayConfig: Coprocessor registry (signers, S3 buckets, majority
+  # threshold) for the off-chain ciphertext-attestation readiness check.
+  - name: APP_GATEWAY__CONTRACTS__GATEWAY_CONFIG_ADDRESS
+    valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: gateway_config.address}}
 
   # --- keyurl (KMSGeneration poller) ---
   # The relayer polls KMSGeneration on-chain for the active key/CRS ids and
