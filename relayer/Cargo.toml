@@ -11,7 +11,6 @@ path = "src/lib.rs"
 [features]
 default = []
 tracing-chrome = ["dep:tracing-chrome"]
-long-running-tests = []
 integration-tests = ["dep:ethereum_rpc_mock"]
 
 [dependencies]

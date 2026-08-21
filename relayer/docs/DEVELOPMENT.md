@@ -33,9 +33,20 @@ Run `make help` for the full list of available targets.
 ## Running tests
 
 ```bash
-make test-unit                    # Fast unit tests (no Postgres required)
-make test-all-no-long-running     # Full suite (requires Postgres)
+make test          # Full suite, exactly as CI runs it (requires Postgres)
+make test-unit     # Unit tests from src/ only (no Postgres required)
 ```
+
+Tests are split into groups, one per test binary. A group is either an API flow (`public-decrypt`) or a cross-cutting feature the flows share (`listener-redundancy`). While working on one, run just that group:
+
+```bash
+make test-groups                                    # List the available group names
+make test-group GROUP=public-decrypt                # One group, all its cases
+make test-group GROUP=public-decrypt CASE=acl       # Only cases matching a substring
+make test-group GROUP=public-decrypt SKIP=timeout   # Everything except the slow timeout cases
+```
+
+Tests run serially by default so local runs match CI, which has a bounded Postgres connection pool. Each test uses its own isolated schema, so raising the thread count is safe locally: append `TEST_THREADS=8` to any of the commands above.
 
 ## Local Stack
 
