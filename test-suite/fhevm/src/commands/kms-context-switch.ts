@@ -12,16 +12,20 @@
  *      still-live-but-no-longer-current entry (the baseline context, the switch's epoch). Destroy
  *      each via `destroyKmsContext` / `destroyKmsEpoch` and prove: the current context/epoch cannot
  *      be destroyed and unknown / already-destroyed ids revert; `KmsContextDestroyed` /
- *      `KmsEpochDestroyed` fire and the target stops reading valid without moving the active pointer;
- *      every party's connector forwards `DestroyMpcContext` / `DestroyMpcEpoch` to its core and
- *      invalidates its validation cache; and the current context/epoch keeps serving. Skipped on a
- *      node swap: the retired context's committee differs from the current party set, so dropped /
- *      spare nodes can't decommission it (the KMS "at least one must remain" guard).
- *   4. Recovery + abort (same-committee clusters only) — a further context switch after the destroy
- *      must still reshare and activate (a destroyed context must not strand the next switch); and a
- *      same-context epoch rotation stalled with a node down stays Pending, so a second lifecycle op reverts
- *      `KmsLifecycleOperationInFlight`, `destroyKmsEpoch` aborts the Pending epoch, and a fresh
- *      rotation then recovers.
+ *      `KmsEpochDestroyed` fire and the target stops reading valid without moving the active pointer
+ *      (destroying a context also stops its epochs reading valid: `isValidEpochForContext` requires
+ *      a valid context, so the contract needs no per-epoch loop); every party's connector forwards
+ *      `DestroyMpcContext` / `DestroyMpcEpoch` to its core and invalidates its validation cache; and
+ *      the current context/epoch keeps serving. Skipped on a node swap: the retired context's
+ *      committee differs from the current party set, so dropped / spare nodes can't decommission it
+ *      (the KMS "at least one must remain" guard).
+ *   4. Recovery + abort (same-committee clusters only) — two independent checks:
+ *      a) one more context switch after the destroy must still reshare and activate, so destroying
+ *         retired material never strands the next switch;
+ *      b) an epoch rotation stalled by stopping one node's tx-sender stays Pending. While it is
+ *         Pending, a second lifecycle op reverts `KmsLifecycleOperationInFlight`; `destroyKmsEpoch`
+ *         cancels it, which leaves the previous epoch current again; and with the node back, a
+ *         fresh rotation off that epoch activates normally.
  *
  * Activation is not automatic: the KMS cores must reshare and the connectors must submit
  * `confirmKmsContextCreation` / `confirmEpochActivation` for `getCurrentKmsContextAndEpoch` to
@@ -495,6 +499,8 @@ const abortStuckRotation = async (
     // A stuck rotation is one that reshared but never activated (the node down blocks the final
     // confirmation). Wait for the reshare to finish on every party so the epoch's material exists
     // before we abort — otherwise destroyKmsEpoch races the reshare and a core has nothing to delete.
+    // `new_kms_epoch.status = completed` is exactly that signal: a DB trigger sets it when the core's
+    // epoch result lands, independently of whether the tx-sender got the activation confirmation out.
     await pollConnectors(
       parties, "stalled rotation finished resharing (ready to abort)",
       columnQuery("new_kms_epoch", "epoch_id", "status", pendingEpochId), ["completed"],
