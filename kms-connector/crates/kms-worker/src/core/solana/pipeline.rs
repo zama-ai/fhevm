@@ -50,7 +50,7 @@ use super::scope::check_scope;
 use super::snapshot::{HostSnapshot, HostStateReader, plan_first_read, plan_second_read};
 use super::watermark::{check_not_invalidated, check_window, read_watermark};
 use crate::core::solana_acl::{HandleBytes, SolanaPubkeyBytes};
-use zama_solana_permit::{KmsRouting, PermitError, verify_signature};
+use zama_solana_permit::{KmsRouting, PermitError, PermitFields, verify_signature};
 
 /// Everything authorization needs that is neither the request nor chain state.
 #[derive(Clone, Copy, Debug)]
@@ -60,6 +60,11 @@ pub struct AuthorizationContext<'a> {
     /// The wall-clock second the validity window is evaluated at. A parameter rather than a
     /// call to the clock, so that every window test states its own time.
     pub now_unix_seconds: u64,
+    /// The gateway event's typed declaration of the signed ACL-scope list's length. The gateway
+    /// bounded it (<= 10) before the fee without reading the opaque payload; authorization
+    /// admits the request only when it equals the signed list's actual length, which is what
+    /// makes the gateway's bound a bound on the signed list.
+    pub declared_acl_domain_key_count: u8,
 }
 
 /// One entry as authorization resolved it.
@@ -132,6 +137,24 @@ pub fn check_signature(request: &SolanaUserDecryptRequest) -> Result<(), Authori
     })
 }
 
+/// The gateway declaration rule on its own: the event's typed `allowedAclDomainKeyCount` must be
+/// the signed ACL-scope list's actual length.
+///
+/// The gateway enforced its pre-fee scope bound on the declaration alone — it never reads the
+/// opaque payload — so this equality is the step that turns that bound into a bound on the list
+/// the permit actually signs. A mismatch is wrong forever (no observation changes either side),
+/// hence terminal.
+pub fn check_acl_domain_key_count(
+    declared: u8,
+    permit: &PermitFields,
+) -> Result<(), AuthorizationFailure> {
+    let actual = permit.allowed_acl_domain_keys().as_slice().len();
+    if usize::from(declared) != actual {
+        return Err(AuthorizationFailure::AclDomainKeyCountMismatch { declared, actual });
+    }
+    Ok(())
+}
+
 /// Authorizes one request, or says why not.
 ///
 /// Generic over the two seams that are not pure functions — the state reader and the KMS pair
@@ -153,6 +176,7 @@ where
 
     // Everything that needs no state, first: a request that fails any of these costs no RPC.
     check_signature(request)?;
+    check_acl_domain_key_count(context.declared_acl_domain_key_count, permit)?;
     check_window(
         permit.start_timestamp(),
         permit.duration_seconds(),

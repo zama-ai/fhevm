@@ -149,7 +149,7 @@ impl DbEventPicker {
                 RETURNING req.decryption_id, ct_handles, user_address, public_key, extra_data,
                 signature, handle_owner_addresses, handle_contract_addresses, allowed_contracts,
                 start_timestamp, duration_seconds,
-                solana_identity, solana_nonce, solana_allowed_acl_domain_keys,
+                host_kind, host_payload,
                 tx_hash, already_sent, error_counter, created_at, otlp_context
             ",
         )

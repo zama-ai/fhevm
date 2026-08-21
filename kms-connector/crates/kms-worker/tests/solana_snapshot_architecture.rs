@@ -29,7 +29,7 @@ use kms_worker::core::solana::{
     failure::{AuthorizationFailure, FailureClass},
     handle_binding::{HandleBindingFailure, check_handle_binding},
     pipeline::{AuthorizationContext, authorize_request},
-    request::AccessEvidence,
+    request::{AccessEvidence, SolanaUserDecryptRequest},
     scope::{ScopeFailure, check_scope},
     snapshot::{
         HostSnapshot, SnapshotAccount, SnapshotError, SnapshotKeys, multiple_accounts_request_body,
@@ -49,10 +49,14 @@ fn direct_scenario() -> (Wallet, EncryptedValueAccountFixture, [u8; 32]) {
     (wallet, encrypted_value_account, handle)
 }
 
-fn context<'a>(deployment: &'a DeploymentIdentity) -> AuthorizationContext<'a> {
+fn context<'a>(
+    deployment: &'a DeploymentIdentity,
+    request: &SolanaUserDecryptRequest,
+) -> AuthorizationContext<'a> {
     AuthorizationContext {
         deployment,
         now_unix_seconds: NOW_INSIDE_WINDOW,
+        declared_acl_domain_key_count: declared_acl_domain_key_count(request),
     }
 }
 
@@ -70,7 +74,7 @@ async fn authorizing_a_direct_request_reads_host_state_once() {
     let reader = ScriptedReader::constant(world);
     let deployment = deployment();
 
-    authorize_request(&reader, &ServableKmsPair, context(&deployment), &request)
+    authorize_request(&reader, &ServableKmsPair, context(&deployment, &request), &request)
         .await
         .expect("a live handle owned by the signer authorizes");
 
@@ -105,7 +109,7 @@ async fn authorizing_a_delegated_request_reads_host_state_twice_and_never_more()
     let reader = ScriptedReader::scripted(vec![world.clone(), world.clone(), world]);
     let deployment = deployment();
 
-    authorize_request(&reader, &ServableKmsPair, context(&deployment), &request)
+    authorize_request(&reader, &ServableKmsPair, context(&deployment, &request), &request)
         .await
         .expect("a live delegation authorizes a delegated entry");
 
@@ -136,7 +140,7 @@ async fn the_second_read_carries_over_every_key_of_the_first() {
     let reader = ScriptedReader::constant(world);
     let deployment = deployment();
 
-    authorize_request(&reader, &ServableKmsPair, context(&deployment), &request)
+    authorize_request(&reader, &ServableKmsPair, context(&deployment, &request), &request)
         .await
         .expect("a live delegation authorizes a delegated entry");
 
@@ -205,7 +209,7 @@ async fn a_delegated_entry_plans_both_of_its_delegation_rows() {
     let reader = ScriptedReader::constant(world);
     let deployment = deployment();
 
-    authorize_request(&reader, &ServableKmsPair, context(&deployment), &request)
+    authorize_request(&reader, &ServableKmsPair, context(&deployment, &request), &request)
         .await
         .expect("one entry stands on its app row, the other on the wildcard row");
 
@@ -244,7 +248,7 @@ async fn every_account_key_is_planned_before_the_first_read() {
 
     let planned = kms_worker::core::solana::snapshot::plan_first_read(&request, &deployment);
 
-    authorize_request(&reader, &ServableKmsPair, context(&deployment), &request)
+    authorize_request(&reader, &ServableKmsPair, context(&deployment, &request), &request)
         .await
         .expect("a live handle owned by the signer authorizes");
 
@@ -303,7 +307,7 @@ async fn a_slot_change_between_the_two_reads_does_not_fail_the_request() {
     let reader = ScriptedReader::scripted(vec![world.clone(), world.at(101)]);
     let deployment = deployment();
 
-    let authorized = authorize_request(&reader, &ServableKmsPair, context(&deployment), &request)
+    let authorized = authorize_request(&reader, &ServableKmsPair, context(&deployment, &request), &request)
         .await
         .expect("the deciding observation is the second read, not an agreement of the two");
 
@@ -336,7 +340,7 @@ async fn a_deciding_read_older_than_the_discovery_read_is_refused_transiently() 
     let reader = ScriptedReader::scripted(vec![world.clone(), world.at(99)]);
     let deployment = deployment();
 
-    let failure = authorize_request(&reader, &ServableKmsPair, context(&deployment), &request)
+    let failure = authorize_request(&reader, &ServableKmsPair, context(&deployment, &request), &request)
         .await
         .expect_err("a deciding read behind the discovery read decides nothing");
 
@@ -374,7 +378,7 @@ async fn two_reads_at_the_same_slot_authorize() {
     let authorized = authorize_request(
         &ScriptedReader::constant(world),
         &ServableKmsPair,
-        context(&deployment),
+        context(&deployment, &request),
         &request,
     )
     .await
@@ -445,7 +449,7 @@ async fn the_deciding_state_of_a_delegated_request_is_the_second_reads() {
     let reader = ScriptedReader::scripted(vec![first, second]);
     let deployment = deployment();
 
-    let failure = authorize_request(&reader, &ServableKmsPair, context(&deployment), &request)
+    let failure = authorize_request(&reader, &ServableKmsPair, context(&deployment, &request), &request)
         .await
         .expect_err("the handle is no longer current at the deciding observation");
 
@@ -633,7 +637,7 @@ async fn an_accepted_request_records_its_observation_point() {
     let reader = ScriptedReader::constant(world);
     let deployment = deployment();
 
-    let authorized = authorize_request(&reader, &ServableKmsPair, context(&deployment), &request)
+    let authorized = authorize_request(&reader, &ServableKmsPair, context(&deployment, &request), &request)
         .await
         .expect("a live handle owned by the signer authorizes");
 

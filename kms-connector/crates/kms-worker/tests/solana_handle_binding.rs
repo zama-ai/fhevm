@@ -65,10 +65,12 @@ fn historical(proof: MmrProof) -> AccessEvidence {
 
 fn context<'a>(
     deployment: &'a kms_worker::core::solana::deployment::DeploymentIdentity,
+    request: &SolanaUserDecryptRequest,
 ) -> AuthorizationContext<'a> {
     AuthorizationContext {
         deployment,
         now_unix_seconds: NOW_INSIDE_WINDOW,
+        declared_acl_domain_key_count: declared_acl_domain_key_count(request),
     }
 }
 
@@ -516,7 +518,7 @@ async fn a_verifying_proof_is_accepted_whatever_count_the_request_claims() {
     let reader = ScriptedReader::constant(world);
     let deployment = deployment();
 
-    authorize_request(&reader, &ServableKmsPair, context(&deployment), &request)
+    authorize_request(&reader, &ServableKmsPair, context(&deployment, &request), &request)
         .await
         .expect("a proof that verifies is accepted whatever count accompanies it");
 }
@@ -552,7 +554,7 @@ async fn a_failed_inclusion_is_classified_by_the_claimed_count() {
     let reader = ScriptedReader::constant(world);
     let deployment = deployment();
 
-    let failure = authorize_request(&reader, &ServableKmsPair, context(&deployment), &request)
+    let failure = authorize_request(&reader, &ServableKmsPair, context(&deployment, &request), &request)
         .await
         .expect_err("a merged-away proof does not verify");
 

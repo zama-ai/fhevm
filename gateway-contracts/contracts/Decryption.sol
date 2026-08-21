@@ -163,6 +163,16 @@ contract Decryption is
     uint8 internal constant MAX_SOLANA_USER_DECRYPT_HANDLES = 33;
 
     /**
+     * @notice The `hostKind` value of a Solana host chain in the host-generic `userDecryptionRequest`.
+     * @dev The host-kind inventory mirrors the protocol's attestation-type dispatch; 0 is
+     * reserved, 1 names the EVM hosts (not served by the host-generic entry today — the EVM route is the
+     * unified `userDecryptionRequest`). The gateway consumes the value in exactly two places —
+     * the served-inventory admission check (`_isServedHostKind`) and the Solana handle-count
+     * cap; everywhere else it is forwarded verbatim for the host's KMS Connector to dispatch on.
+     */
+    uint8 internal constant HOST_KIND_SOLANA = 2;
+
+    /**
      * @notice The hash of the EIP712Domain structure typed data definition.
      */
     bytes32 private constant DOMAIN_TYPE_HASH =
@@ -757,77 +767,135 @@ contract Decryption is
     }
 
     /**
-     * @notice See {IDecryption-userDecryptionRequestSolana}.
+     * @notice See {IDecryption-userDecryptionRequest} (host-generic overload).
      */
-    function userDecryptionRequestSolana(
-        HandleEntry[] calldata handles,
-        UserDecryptionRequestSolanaPayload calldata payload
+    function userDecryptionRequest(
+        bytes32[] calldata ctHandles,
+        RequestValiditySeconds calldata requestValidity,
+        bytes calldata publicKey,
+        uint8 allowedAclDomainKeyCount,
+        uint8 hostKind,
+        bytes calldata extraData,
+        bytes calldata hostPayload
     ) external virtual whenNotPaused {
-        if (handles.length == 0) {
+        // The dispatch discriminator is read before anything else, mirroring the KMS
+        // Connector's own order: a request naming a host this entry does not serve has no
+        // field the rest of the admission may interpret, so it is refused here — before the
+        // fee — instead of burning the fee and dying terminally in the host's Connector.
+        if (!_isServedHostKind(hostKind)) {
+            revert HostKindNotServed(hostKind);
+        }
+        if (ctHandles.length == 0) {
             revert EmptyHandles();
         }
-        // The KMS Connector reads one atomic account snapshot per request; a longer list could
-        // never be authorized, so it is refused here, before the fee is collected.
-        if (handles.length > MAX_SOLANA_USER_DECRYPT_HANDLES) {
-            revert SolanaHandlesMaxLengthExceeded(MAX_SOLANA_USER_DECRYPT_HANDLES, handles.length);
+        // The entry's own scope bound, host-agnostic: the exact rule the EVM paths apply to
+        // `allowedContracts`. The list itself is signed inside the opaque `hostPayload`, which
+        // this contract never reads, so what is bounded here — before the fee — is its declared
+        // length; zero is valid (permissive mode). The declaration cannot lie usefully: the
+        // host's Connector admits a request only when it equals the signed list's actual length.
+        if (allowedAclDomainKeyCount > MAX_USER_DECRYPT_CONTRACT_ADDRESSES) {
+            revert ContractAddressesMaxLengthExceeded(MAX_USER_DECRYPT_CONTRACT_ADDRESSES, allowedAclDomainKeyCount);
         }
-        // The Solana ACL is enforced off-gateway by the KMS Connector against the on-chain Solana
-        // ACL; an empty domain-key list is valid (permissive mode), only the upper bound is enforced.
-        if (payload.allowedAclDomainKeys.length > MAX_USER_DECRYPT_CONTRACT_ADDRESSES) {
-            revert ContractAddressesMaxLengthExceeded(
-                MAX_USER_DECRYPT_CONTRACT_ADDRESSES,
-                payload.allowedAclDomainKeys.length
-            );
+        // The cap is Solana's, not the entry's: Solana's KMS Connector reads one atomic account
+        // snapshot per request, so a longer list could never be authorized and is refused here,
+        // before the fee. The `hostKind` gate is not skippable — the served-inventory check
+        // above already refused every other value — and stays written so a future host kind
+        // brings its own bound instead of inheriting Solana's.
+        if (hostKind == HOST_KIND_SOLANA && ctHandles.length > MAX_SOLANA_USER_DECRYPT_HANDLES) {
+            revert SolanaHandlesMaxLengthExceeded(MAX_SOLANA_USER_DECRYPT_HANDLES, ctHandles.length);
         }
-        _checkUserDecryptionRequestValiditySeconds(payload.requestValidity);
+        _checkUserDecryptionRequestValiditySeconds(requestValidity);
 
-        uint256 contextId = _extractContextId(payload.extraData);
+        uint256 contextId = _extractHostGenericKmsRoutingContextId(extraData);
 
         _collectUserDecryptionFee(msg.sender);
 
-        _executeUserDecryptionRequestSolana(handles, payload, contextId);
+        _executeHostGenericUserDecryptionRequest(
+            ctHandles,
+            requestValidity,
+            publicKey,
+            allowedAclDomainKeyCount,
+            hostKind,
+            extraData,
+            hostPayload,
+            contextId
+        );
     }
 
     /**
-     * @notice Executes the post-validation body of `userDecryptionRequestSolana`: extracts and
-     * conformance-checks the handles, fetches the SNS ciphertexts, updates storage, and emits the
-     * `UserDecryptionRequestSolana` event.
+     * @notice The inventory of `hostKind` values the host-generic `userDecryptionRequest`
+     * serves. This is the admission dictionary: a value outside it reverts at the entry,
+     * before the fee. Adding a host chain extends this function together with its
+     * `HOST_KIND_*` constant; nothing else in the entry dispatches on the value.
+     * @dev 0 is reserved and 1 (EVM) is known but deliberately absent: EVM user decryption
+     * travels the unified `userDecryptionRequest`, never this entry.
+     */
+    function _isServedHostKind(uint8 hostKind) internal pure virtual returns (bool) {
+        return hostKind == HOST_KIND_SOLANA;
+    }
+
+    /**
+     * @notice Executes the post-validation body of the host-generic `userDecryptionRequest`:
+     * conformance-checks the handles, fetches the SNS ciphertexts, updates storage, and emits
+     * the host-generic `UserDecryptionRequest` event.
      * @dev Mirrors `_executeUnifiedUserDecryptionRequest` and reuses the shared `userDecryptionCounter`
      * and `userDecryptionPayloads`/`decryptionContextId` storage, so the response handler
-     * (`userDecryptionResponse`) is oblivious to the request's host chain — only the request-side
-     * authorization (ed25519, Solana ACL) differs, and that lives in the KMS Connector.
+     * (`userDecryptionResponse`) is oblivious to the request's host chain — the host-side
+     * authorization lives in the host's KMS Connector, fed by the opaque `hostPayload` this
+     * function forwards verbatim.
      */
-    function _executeUserDecryptionRequestSolana(
-        HandleEntry[] calldata handles,
-        UserDecryptionRequestSolanaPayload calldata payload,
+    function _executeHostGenericUserDecryptionRequest(
+        bytes32[] calldata ctHandles,
+        RequestValiditySeconds calldata requestValidity,
+        bytes calldata publicKey,
+        uint8 allowedAclDomainKeyCount,
+        uint8 hostKind,
+        bytes calldata extraData,
+        bytes calldata hostPayload,
         uint256 contextId
     ) internal virtual {
-        bytes32[] memory ctHandles = _extractCtHandlesCheckConformanceHandleEntry(handles);
+        uint256 userDecryptionId;
+        // Scoped so the validation temporaries are off the stack before the eight-argument
+        // emit — this is what keeps the function under Solidity's stack-depth limit without
+        // `viaIR` now that the request travels as loose typed fields instead of one struct.
+        {
+            bytes32[] memory ctHandlesMem = ctHandles;
+            _checkCtHandlesConformanceHostChain(ctHandlesMem);
 
-        // Reverts on any unknown handle.
-        SnsCiphertextMaterial[] memory snsCtMaterials = CIPHERTEXT_COMMITS.getSnsCiphertextMaterials(ctHandles);
+            // Reverts on any unknown handle.
+            SnsCiphertextMaterial[] memory snsCtMaterials = CIPHERTEXT_COMMITS.getSnsCiphertextMaterials(ctHandlesMem);
 
-        // TODO: remove when batched decryption requests with different keys is supported by the
-        // KMS (see https://github.com/zama-ai/fhevm-internal/issues/376).
-        _checkCtMaterialKeyIds(snsCtMaterials);
+            // TODO: remove when batched decryption requests with different keys is supported by the
+            // KMS (see https://github.com/zama-ai/fhevm-internal/issues/376).
+            _checkCtMaterialKeyIds(snsCtMaterials);
 
-        DecryptionStorage storage $ = _getDecryptionStorage();
+            DecryptionStorage storage $ = _getDecryptionStorage();
 
-        // Reuses the shared `userDecryptionCounter` so IDs are stable across EVM and Solana paths
-        // (`userDecryptionResponse` is oblivious to which path a request came from).
-        $.userDecryptionCounter++;
-        uint256 userDecryptionId = $.userDecryptionCounter;
+            // Reuses the shared `userDecryptionCounter` so IDs are stable across every request path
+            // (`userDecryptionResponse` is oblivious to which path a request came from).
+            $.userDecryptionCounter++;
+            userDecryptionId = $.userDecryptionCounter;
 
-        // The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
-        $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(payload.publicKey, ctHandles);
+            // The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
+            $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandlesMem);
 
-        // Pin the KMS context at request time. See `decryptionContextId` storage docs.
-        $.decryptionContextId[userDecryptionId] = contextId;
+            // Pin the KMS context at request time. See `decryptionContextId` storage docs.
+            $.decryptionContextId[userDecryptionId] = contextId;
+        }
 
-        // Single emission: unlike the EVM path there is no pre-0.15 Solana consumer to keep on the
-        // deprecated `SnsCiphertextMaterial[]` shape, so this event is handles-only from the start
+        // Single emission: there is no pre-0.15 consumer of this entry to keep on the deprecated
+        // `SnsCiphertextMaterial[]` shape, so this event is handles-only from the start
         // (consumers resolve materials off-chain from the signed S3 attestations, RFC-023 Part 2).
-        emit UserDecryptionRequestSolana(userDecryptionId, handles, payload);
+        emit UserDecryptionRequest(
+            userDecryptionId,
+            ctHandles,
+            requestValidity,
+            publicKey,
+            allowedAclDomainKeyCount,
+            hostKind,
+            extraData,
+            hostPayload
+        );
     }
 
     /**
@@ -1049,6 +1117,29 @@ contract Decryption is
                     Strings.toString(PATCH_VERSION)
                 )
             );
+    }
+
+    /**
+     * @notice Extracts the KMS context id from a host-generic request's `extraData`, which must be
+     * exactly the signed KMS routing form: version `0x02` ‖ contextId(32) ‖ epochId(32),
+     * 65 bytes. KMS routing is host-agnostic, and the host-generic entry has no other legal
+     * use of `extraData` — everything host-specific rides in the opaque `hostPayload` — so
+     * any other version or length is refused at admission, before the fee, instead of dying
+     * in a Connector after it.
+     */
+    function _extractHostGenericKmsRoutingContextId(
+        bytes calldata extraData
+    ) internal view virtual returns (uint256 contextId) {
+        if (extraData.length != 65 || uint8(extraData[0]) != 2) {
+            revert KmsRoutingMalformed(extraData);
+        }
+
+        contextId = uint256(bytes32(extraData[1:33]));
+        // Reject the all-zeros payload: contextId 0 is reserved for the pre-pinning legacy
+        // fallback and must not be reachable from caller-supplied extraData.
+        if (contextId == 0) {
+            revert InvalidNullContextId();
+        }
     }
 
     /**
@@ -1329,19 +1420,21 @@ contract Decryption is
      * @param ctHandles The list of ciphertext handles
      */
     function _checkCtHandlesConformancePublic(bytes32[] memory ctHandles) internal view virtual {
+        _checkCtHandlesBitBudget(ctHandles);
+    }
+
+    /**
+     * @notice The request bit budget, in one place for every decryption path: sums the FHE-type
+     * widths of the handles (reverting on an invalid or unpriced type) and reverts when the sum
+     * exceeds `MAX_DECRYPTION_REQUEST_BITS`.
+     */
+    function _checkCtHandlesBitBudget(bytes32[] memory ctHandles) internal pure virtual {
         uint256 totalBitSize = 0;
         for (uint256 i = 0; i < ctHandles.length; i++) {
-            bytes32 ctHandle = ctHandles[i];
-
-            // Extract the FHE type from the ciphertext handle
-            FheType fheType = HandleOps.extractFheType(ctHandle);
-
-            // Add the bit size of the FHE type to the total bit size
-            // This reverts if the FHE type is invalid or not supported.
-            totalBitSize += FHETypeBitSizes.getBitSize(fheType);
+            // Reverts if the FHE type is invalid or not supported.
+            totalBitSize += FHETypeBitSizes.getBitSize(HandleOps.extractFheType(ctHandles[i]));
         }
 
-        // Revert if the total bit size exceeds the maximum allowed.
         if (totalBitSize > MAX_DECRYPTION_REQUEST_BITS) {
             revert MaxDecryptionRequestBitSizeExceeded(MAX_DECRYPTION_REQUEST_BITS, totalBitSize);
         }
@@ -1418,30 +1511,36 @@ contract Decryption is
         HandleEntry[] calldata handles
     ) internal view virtual returns (bytes32[] memory ctHandles) {
         ctHandles = new bytes32[](handles.length);
+        for (uint256 i = 0; i < handles.length; i++) {
+            ctHandles[i] = handles[i].handle;
+        }
+        _checkCtHandlesConformanceHostChain(ctHandles);
+    }
 
-        uint256 chainId = HandleOps.extractChainId(handles[0].handle);
+    /**
+     * @notice The shared conformance core for every entry-shaped user decryption path: one
+     * registered host chain across the batch (derived from the first handle), a priced FHE type
+     * for every handle, and the request bit budget. Shape-specific extractors reduce their
+     * entries to `bytes32[]` and delegate here, so the checks cannot drift between paths.
+     * @dev For Solana requests this is the bit budget's ONE enforcer: the KMS Connector
+     * deliberately holds no copy of the width table, so the typed `ctHandles` must keep flowing
+     * through this check (and the Connector authorizes the opaque payload's handle list only
+     * when it matches the typed one) — otherwise the Connector has to take the check back.
+     */
+    function _checkCtHandlesConformanceHostChain(bytes32[] memory ctHandles) internal view virtual {
+        uint256 chainId = HandleOps.extractChainId(ctHandles[0]);
         if (!GATEWAY_CONFIG.isHostChainRegistered(chainId)) {
             revert IGatewayConfig.HostChainNotRegistered(chainId);
         }
 
-        uint256 totalBitSize = 0;
-        for (uint256 i = 0; i < handles.length; i++) {
-            bytes32 ctHandle = handles[i].handle;
-
-            uint256 handleChainId = HandleOps.extractChainId(ctHandle);
+        for (uint256 i = 0; i < ctHandles.length; i++) {
+            uint256 handleChainId = HandleOps.extractChainId(ctHandles[i]);
             if (handleChainId != chainId) {
-                revert CtHandleChainIdDiffersFromContractChainId(ctHandle, handleChainId, chainId);
+                revert CtHandleChainIdDiffersFromContractChainId(ctHandles[i], handleChainId, chainId);
             }
-
-            FheType fheType = HandleOps.extractFheType(ctHandle);
-            totalBitSize += FHETypeBitSizes.getBitSize(fheType);
-
-            ctHandles[i] = ctHandle;
         }
 
-        if (totalBitSize > MAX_DECRYPTION_REQUEST_BITS) {
-            revert MaxDecryptionRequestBitSizeExceeded(MAX_DECRYPTION_REQUEST_BITS, totalBitSize);
-        }
+        _checkCtHandlesBitBudget(ctHandles);
     }
 
     /**

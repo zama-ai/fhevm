@@ -13,10 +13,11 @@
 //! (EVM and Solana alike) already runs before this ACL check. `HandleMaterialCommitmentWitness`
 //! and `verify_material_commitment` are deleted, not reimplemented.
 //!
-//! What remains here: the delegation witness (untouched — a Solana-specific feature with no
-//! `EncryptedValue` equivalent) and the shared pubkey/handle byte types + verifier used by both
-//! the delegation path and the [`super::solana_encrypted_value_acl`] current/historical/public
-//! decrypt paths.
+//! What remains here: the delegation witness and its layout decoder (a Solana-specific feature
+//! with no `EncryptedValue` equivalent, decoded from the snapshot by [`super::solana::delegation`]),
+//! and the shared pubkey/handle byte types + the verifier that [`super::solana_encrypted_value_acl`]
+//! uses for the current/historical/public decrypt paths. Delegation freshness is decided against
+//! the observed snapshot by [`super::solana::delegation`], not by a standalone verifier here.
 
 use sha2::{Digest, Sha256};
 use solana_pubkey::Pubkey;
@@ -54,20 +55,6 @@ pub struct SolanaAclVerifier {
 pub enum SolanaAclVerificationError {
     #[error("ACL account is not owned by the configured ZamaHost program")]
     InvalidAccountOwner,
-    #[error(
-        "delegation account is not the canonical PDA for the delegator, delegate, and encrypted value account authority"
-    )]
-    NonCanonicalDelegation,
-    #[error("delegation bump does not match the canonical PDA bump")]
-    DelegationBumpMismatch,
-    #[error(
-        "delegation account data does not match the requested delegator, delegate, or encrypted value account authority"
-    )]
-    DelegationMismatch,
-    #[error("delegation counter does not match the signed request")]
-    DelegationCounterMismatch,
-    #[error("delegation is revoked, expired, or newer than the observed slot")]
-    DelegationNotActive,
     #[error("account data length does not match the expected Anchor layout")]
     AccountDataLengthMismatch,
     #[error("account discriminator does not match the expected Anchor account type")]
@@ -95,65 +82,6 @@ pub enum SolanaAclVerificationError {
 impl SolanaAclVerifier {
     pub fn new(host_program_id: SolanaPubkeyBytes) -> Self {
         Self { host_program_id }
-    }
-
-    /// Verifies a user-decryption delegation: `delegator` granted `delegate` standing authority
-    /// over `encrypted_value_account_authority`, active as of `observed_slot`. Untouched by the RFC-024 `EncryptedValue`
-    /// migration — delegation is orthogonal to the encrypted value account ACL check, which the caller runs
-    /// separately (with `delegator` as the subject) via [`super::solana_encrypted_value_acl`].
-    pub fn verify_delegation(
-        &self,
-        delegation: &UserDecryptionDelegationWitness,
-        delegator: SolanaPubkeyBytes,
-        delegate: SolanaPubkeyBytes,
-        encrypted_value_account_authority: SolanaPubkeyBytes,
-        expected_delegation_counter: u64,
-        observed_slot: u64,
-    ) -> Result<(), SolanaAclVerificationError> {
-        if delegation.owner != self.host_program_id {
-            return Err(SolanaAclVerificationError::InvalidAccountOwner);
-        }
-        if delegator == [0; 32]
-            || delegate == [0; 32]
-            || encrypted_value_account_authority == [0; 32]
-            || delegate == WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY
-            || delegator == delegate
-            || delegator == encrypted_value_account_authority
-            || delegate == encrypted_value_account_authority
-        {
-            return Err(SolanaAclVerificationError::DelegationMismatch);
-        }
-        if delegation.delegator != delegator
-            || delegation.delegate != delegate
-            || delegation.encrypted_value_account_authority != encrypted_value_account_authority
-        {
-            return Err(SolanaAclVerificationError::DelegationMismatch);
-        }
-        if delegation.delegation_counter != expected_delegation_counter
-            || expected_delegation_counter == 0
-        {
-            return Err(SolanaAclVerificationError::DelegationCounterMismatch);
-        }
-        if delegation.revoked
-            || delegation.expiration_slot < observed_slot
-            || delegation.last_update_slot > observed_slot
-        {
-            return Err(SolanaAclVerificationError::DelegationNotActive);
-        }
-
-        let (expected_key, expected_bump) = user_decryption_delegation_address(
-            self.host_program_id,
-            delegator,
-            delegate,
-            encrypted_value_account_authority,
-        );
-        if delegation.account_key != expected_key {
-            return Err(SolanaAclVerificationError::NonCanonicalDelegation);
-        }
-        if delegation.bump != expected_bump {
-            return Err(SolanaAclVerificationError::DelegationBumpMismatch);
-        }
-        Ok(())
     }
 }
 
@@ -332,15 +260,6 @@ mod tests {
     }
 
     #[test]
-    fn verifies_delegation() {
-        let verifier = SolanaAclVerifier::new(HOST_PROGRAM_ID);
-        assert_eq!(
-            verifier.verify_delegation(&delegation(), OWNER, DELEGATE, AUTHORITY, 9, OBSERVED_SLOT),
-            Ok(())
-        );
-    }
-
-    #[test]
     fn decodes_anchor_delegation_account_data() {
         let delegation = delegation();
         let decoded = decode_user_decryption_delegation_witness(
@@ -350,66 +269,6 @@ mod tests {
         )
         .expect("delegation decodes");
         assert_eq!(decoded, delegation);
-    }
-
-    #[test]
-    fn rejects_invalid_delegation_witnesses() {
-        let verifier = SolanaAclVerifier::new(HOST_PROGRAM_ID);
-
-        let mut wrong_delegate = delegation();
-        wrong_delegate.delegate = [6; 32];
-        assert_eq!(
-            verifier.verify_delegation(
-                &wrong_delegate,
-                OWNER,
-                DELEGATE,
-                AUTHORITY,
-                9,
-                OBSERVED_SLOT
-            ),
-            Err(SolanaAclVerificationError::DelegationMismatch)
-        );
-
-        let mut wildcard_delegate = delegation();
-        wildcard_delegate.delegate = WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY;
-        let (account_key, bump) = user_decryption_delegation_address(
-            HOST_PROGRAM_ID,
-            wildcard_delegate.delegator,
-            wildcard_delegate.delegate,
-            wildcard_delegate.encrypted_value_account_authority,
-        );
-        wildcard_delegate.account_key = account_key;
-        wildcard_delegate.bump = bump;
-        assert_eq!(
-            verifier.verify_delegation(
-                &wildcard_delegate,
-                OWNER,
-                WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
-                AUTHORITY,
-                9,
-                OBSERVED_SLOT
-            ),
-            Err(SolanaAclVerificationError::DelegationMismatch)
-        );
-
-        let mut wrong_pda = delegation();
-        wrong_pda.account_key = [14; 32];
-        assert_eq!(
-            verifier.verify_delegation(&wrong_pda, OWNER, DELEGATE, AUTHORITY, 9, OBSERVED_SLOT),
-            Err(SolanaAclVerificationError::NonCanonicalDelegation)
-        );
-
-        assert_eq!(
-            verifier.verify_delegation(&delegation(), OWNER, DELEGATE, AUTHORITY, 8, OBSERVED_SLOT),
-            Err(SolanaAclVerificationError::DelegationCounterMismatch)
-        );
-
-        let mut revoked = delegation();
-        revoked.revoked = true;
-        assert_eq!(
-            verifier.verify_delegation(&revoked, OWNER, DELEGATE, AUTHORITY, 9, OBSERVED_SLOT),
-            Err(SolanaAclVerificationError::DelegationNotActive)
-        );
     }
 
     #[test]

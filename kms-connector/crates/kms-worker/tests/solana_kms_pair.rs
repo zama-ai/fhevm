@@ -72,10 +72,12 @@ fn scenario() -> (Wallet, EncryptedValueAccountFixture, [u8; 32]) {
 
 fn context<'a>(
     deployment: &'a kms_worker::core::solana::deployment::DeploymentIdentity,
+    request: &kms_worker::core::solana::request::SolanaUserDecryptRequest,
 ) -> AuthorizationContext<'a> {
     AuthorizationContext {
         deployment,
         now_unix_seconds: NOW_INSIDE_WINDOW,
+        declared_acl_domain_key_count: declared_acl_domain_key_count(request),
     }
 }
 
@@ -96,7 +98,7 @@ async fn authorize_with<V: KmsPairValidator>(
     let reader = ScriptedReader::constant(world);
     let deployment = deployment();
 
-    let outcome = authorize_request(&reader, validator, context(&deployment), &request)
+    let outcome = authorize_request(&reader, validator, context(&deployment, &request), &request)
         .await
         .map(|_| ());
     (outcome, reader.call_count())
