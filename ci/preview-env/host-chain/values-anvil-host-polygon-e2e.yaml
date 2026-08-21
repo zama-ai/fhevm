@@ -15,6 +15,10 @@ network:
   # Polygon Amoy chain id. Mimics Amoy without forking its state.
   chainId: "80002"
   accounts: "120"
+  # Match the ETH host (values-anvil-host-e2e.yaml): a 1-slot epoch keeps anvil's
+  # `finalized` tag right behind head instead of ~32 slots back, so components
+  # that gate on finality don't stall on the Polygon chain.
+  slotsInAnEpoch: "1"
   mnemonic: "test test test test test test test test test test test junk"
 port: 8545
 storage:

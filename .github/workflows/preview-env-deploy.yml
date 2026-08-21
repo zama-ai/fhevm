@@ -1052,18 +1052,11 @@ jobs:
           # startup with "ProtocolConfig address is not configured".
           protocol_config=$(kubectl get configmap host-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.protocol_config\.address}')
           acl=$(kubectl get configmap host-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.acl\.address}')
-          kms_verifier=$(kubectl get configmap host-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.kms_verifier\.address}' 2>/dev/null || echo "")
           require_nonempty "gw-sc-addresses[decryption.address]" "${decryption}"
           require_nonempty "gw-sc-addresses[gateway_config.address]" "${gateway_config}"
           require_nonempty "host-sc-addresses[kms_generation.address]" "${kms_generation}"
           require_nonempty "host-sc-addresses[protocol_config.address]" "${protocol_config}"
           require_nonempty "host-sc-addresses[acl.address]" "${acl}"
-          kms_verifier_args=()
-          if [[ -n "${kms_verifier}" ]]; then
-            kms_verifier_args=(--set-string "commonConfig.ethereumContractAddresses.kmsVerifier=${kms_verifier}")
-          else
-            echo "::warning::host-sc-addresses[kms_verifier.address] is empty - leaving kms-connector's kmsVerifier at the chart's zero-address default"
-          fi
           # deploy_polygon: add the Polygon host chain to the kms-worker's
           # hostChains (overlay) + inject its ACL (plain string, no configMapKeyRef
           # support in this chart) so the KMS can verify Polygon ciphertext ACLs.
@@ -1083,7 +1076,6 @@ jobs:
               --set-string "commonConfig.ethereumContractAddresses.kmsGeneration=${kms_generation}" \
               --set-string "commonConfig.ethereumContractAddresses.acl=${acl}" \
               --set-string "commonConfig.ethereumContractAddresses.protocolConfig=${protocol_config}" \
-              "${kms_verifier_args[@]}" \
               --set-string "commonConfig.databaseUrl=postgresql://zama:zama@postgres-connector-${i}:5432/connector" \
               --set-string "kmsConnectorKmsWorker.config.kmsCoreEndpoints=http://kms-core-${i}-core-${i}:50100" \
               --set-string "kmsConnectorTxSender.wallet.secret.name=kms-connector-tx-sender-${i}" \

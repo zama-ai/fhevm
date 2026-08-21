@@ -222,11 +222,6 @@ snsWorker:
     - event_ciphertext_computed
     - --pg-notify-channel
     - event_ciphertext128_computed
-  # The sns-worker binary now unconditionally constructs a ciphertext-
-  # attestation signer. Value below is a default: the workflow overrides it.
-  wallet:
-    enabled: true
-    secret: {value: "0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a"}
   # SnS (switch-and-squash) is the most memory-heavy step - it loads the SnS key
   # and squashes ct64 -> ct128 before commit to the gateway. Chart default 512Mi
   # OOMs here. Pinned to the hpc7a `coprocessor` nodepool with dev-like sizing

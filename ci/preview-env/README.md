@@ -216,7 +216,7 @@ self-contained `hostListener`. Per party `i`:
 
 ## Multichain: second Polygon host chain (`deploy_polygon`)
 
-`pr-preview-deploy.yml` takes a `deploy_polygon` input (default `false`) that adds a
+`preview-env-deploy.yml` takes a `deploy_polygon` input (default `false`) that adds a
 **second host chain — Polygon Amoy (chainId `80002`)** alongside the ETH one. It is a
 fresh local `anvil` (**not** a fork of live Amoy, and no `--fork`): nothing in the stack
 depends on Polygon consensus, only on a standard EVM JSON-RPC/WS endpoint, so a plain
