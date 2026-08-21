@@ -1,0 +1,73 @@
+# `listener` chart overlay for the SECOND (Polygon) host chain, one release PER
+# COPROCESSOR PARTY (listener-polygon-<i>), deployed only when deploy_polygon=true.
+# Companion to values-listener-e2e.yaml (the ETH producer); see its header for the
+# producer -> Redis -> consumer flow.
+#
+# Publishes Polygon events (chain_id 80002) to the SAME per-party Redis the ETH
+# listener uses (coprocessor-redis-<i>); the coprocessor's polygon
+# host-listener-consumer (chains[] entry, --chain-id 80002) filters its own topic
+# out of that shared broker, so no extra Redis is needed. Uses its OWN cursor DB
+# (postgres-listener-polygon-<i>) so its schema/migrations never collide with the
+# ETH listener's postgres-listener-<i>.
+#
+# Deployed as (per party i, see preview-env-deploy.yml):
+#   helm upgrade --install listener-polygon-<i> <listener chart> -n <ns> -f this-file \
+#     --set-string "image.tag=${LISTENER_VERSION}" \
+#     --set-string "env[0].value=postgresql://zama:zama@postgres-listener-polygon-<i>:5432/listener?sslmode=disable" \
+#     --set-string "env[1].value=redis://coprocessor-redis-<i>-master:6379"
+image:
+  repository: hub.zama.org/ghcr/zama-ai/fhevm/listener/listener-core
+  tag: "cc8fc16-dev"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets:
+  - name: registry-credentials
+
+externalSecret:
+  enabled: true
+
+serviceAccount:
+  create: true
+
+commonConfig:
+  broker:
+    broker_type: redis
+
+# env[0]=cursor DB, env[1]=broker URL; both overridden per party via --set-string.
+env:
+  - {name: APP_DATABASE__DB_URL, value: "postgresql://zama:zama@postgres-listener-polygon-1:5432/listener?sslmode=disable"}
+  - {name: APP_BROKER__BROKER_URL, value: "redis://coprocessor-redis-1-master:6379"}
+
+listeners:
+  - name: polygon
+    config:
+      broker:
+        ensure_publish: true
+      blockchain:
+        # Polygon host anvil (matches values-anvil-host-polygon-e2e.yaml and the
+        # coprocessor polygon chains[] entry). Must equal the consumer's --chain-id.
+        chain_id: 80002
+        rpc_url: "http://anvil-host-polygon-anvil-node:8545"
+        network: polygon
+        # Single-node anvil never reorgs - treat blocks as final immediately.
+        finality_depth: 0
+        strategy:
+          block_start_on_first_start: "current"
+          compute_block: true
+          compute_block_allow_skipping: true
+
+resources:
+  requests:
+    cpu: "500m"
+    memory: 1Gi
+  limits:
+    cpu: "1"
+    memory: 2Gi
+
+nodeSelector:
+  karpenter.sh/nodepool: zws-pool
+tolerations:
+  - key: "karpenter.sh/nodepool"
+    operator: "Equal"
+    value: "zws-pool"
+    effect: "NoSchedule"

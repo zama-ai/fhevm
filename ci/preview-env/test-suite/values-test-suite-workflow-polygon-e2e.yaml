@@ -1,33 +1,29 @@
-# common chart overlay for the AUTOMATED e2e relayer-sdk test-suite run in the
-# fhevm e2e preview namespace. Companion to values-test-suite-workflow-e2e.yaml
-# (the @fhevm/sdk run): this file is a near-duplicate that runs the SAME e2e DAG
-# but with RELAYER_SDK_VERSION set, so instance.ts uses @zama-fhe/relayer-sdk
-# instead of @fhevm/sdk.
+# common chart overlay for the AUTOMATED e2e test-suite run against the SECOND
+# (Polygon) host chain, deployed only when deploy_polygon=true (and automated
+# tests are on). Companion to values-test-suite-workflow-e2e.yaml (the ETH
+# @fhevm/sdk run): same DAG, but every host-side address/RPC/chain-id points at
+# the Polygon deployment and hardhat runs with `-n polygonAmoy`.
 #
-# Deployed as its OWN helm release (test-suite-workflow-relayer), one after the
-# fhevm-sdk release, by preview-env-deploy.yml. It intentionally declares NO RBAC:
-# it reuses the workflow-runner ServiceAccount/Role/RoleBinding created by the
-# fhevm-sdk release (values-test-suite-workflow-e2e.yaml), which always deploys
-# first into the same namespace. Running the two suites as separate, sequential
-# releases avoids them contending on the shared contracts/KMS/relayer at once.
+# Deployed as its OWN helm release (test-suite-workflow-polygon), after the
+# ETH @fhevm/sdk release. It declares NO RBAC: it reuses the workflow-runner
+# ServiceAccount/Role/RoleBinding created by values-test-suite-workflow-e2e.yaml,
+# which always deploys first into the same namespace.
 #
-# One dynamic bit is patched with yq at deploy time (see preview-env-deploy.yml):
+# One dynamic bit is patched with yq at deploy time (preview-env-deploy.yml):
 #   - the run-test image tag (per-PR short-SHA / pinned test_suite tag)
-# There is no RoleBinding here, so no namespace placeholder to patch.
-fullnameOverride: test-suite-workflow-relayer
+fullnameOverride: test-suite-workflow-polygon
 
-# Raw K8s objects applied verbatim by the common chart (rendered through `tpl`,
-# hence the {{`{{...}}`}} escaping below to emit literal Argo placeholders).
 additionalResources:
   - enabled: true
     object:
       apiVersion: argoproj.io/v1alpha1
       kind: Workflow
       metadata:
-        name: e2e-test-suite-relayer-sdk
+        name: e2e-test-suite-polygon
         labels:
           app: fhevm-test-suite
-          sdk: relayer-sdk
+          sdk: fhevm-sdk
+          host-chain: polygon
       spec:
         serviceAccountName: workflow-runner
         activeDeadlineSeconds: 7800  # 130m
@@ -193,19 +189,13 @@ additionalResources:
               command: ["/bin/bash", "-c"]
               source: |
 
-                  # contracts/E2ECoprocessorConfigLocal.sol ships with placeholder
-                  # addresses that DefaultCoprocessorConfig.getConfig() only uses
-                  # off-chainid-31337 (our "staging" chain is 12345), so they MUST
-                  # be sed-patched to the real per-namespace deployment addresses,
-                  # exactly like values-test-suite-e2e.yaml does for the idle Job.
+                  # Patch E2ECoprocessorConfigLocal.sol with the real POLYGON
+                  # deployment addresses (same mechanism as the ETH workflow, but
+                  # the env below points at polygon-sc-addresses).
                   CONFIG_SOL=/app/test-suite/e2e/contracts/E2ECoprocessorConfigLocal.sol
                   echo "Patching E2ECoprocessorConfigLocal.sol with real deployment addresses..."
                   sed -i "s|ACLAddress: 0x[0-9a-fA-F]*,|ACLAddress: ${ACL_CONTRACT_ADDRESS},|g" "$CONFIG_SOL"
                   sed -i "s|CoprocessorAddress: 0x[0-9a-fA-F]*,|CoprocessorAddress: ${FHEVM_EXECUTOR_CONTRACT_ADDRESS},|g" "$CONFIG_SOL"
-                  # KMSVerifierAddress is the LAST field of the struct literal at
-                  # v0.13.0 (followed by a newline + "});", not a comma), so the
-                  # pattern must NOT anchor on a trailing comma or it silently keeps
-                  # the placeholder - see values-test-suite-e2e.yaml's note.
                   sed -i "s|KMSVerifierAddress: 0x[0-9a-fA-F]*|KMSVerifierAddress: ${KMS_VERIFIER_CONTRACT_ADDRESS}|g" "$CONFIG_SOL"
                   cat "$CONFIG_SOL"
 
@@ -219,7 +209,9 @@ additionalResources:
                   echo "=========================================="
 
                   start_time=$(date +%s)
-                  ./run-tests.sh -g "{{`{{inputs.parameters.test-command}}`}}"
+                  # -n polygonAmoy: hardhat.config's polygonAmoy network (chainId
+                  # 80002) reads RPC_URL below (POLYGON_AMOY_RPC_URL || RPC_URL).
+                  ./run-tests.sh -n polygonAmoy -g "{{`{{inputs.parameters.test-command}}`}}"
                   test_exit=$?
                   end_time=$(date +%s)
                   duration=$((end_time - start_time))
@@ -233,8 +225,6 @@ additionalResources:
                   fi
                   echo "=========================================="
 
-                  # Result JSON for the summary-report step (read back by Argo via
-                  # the output parameter path above).
                   mkdir -p /tmp/artifacts
                   cat > /tmp/artifacts/{{`{{inputs.parameters.test-name}}`}}.json << EOF
                   {
@@ -248,19 +238,18 @@ additionalResources:
 
                   exit $test_exit
               env:
-                # No HARDHAT_NETWORK/NETWORK: run-tests.sh and hardhat.config.ts
-                # both default to "staging" (chainId 12345), matching this preview.
                 - name: MNEMONIC
                   value: "test test test test test test test test test test test junk"
                 - name: CHAIN_ID_GATEWAY
                   value: "54321"
+                # Polygon host chain.
                 - name: CHAIN_ID_HOST
-                  value: "12345"
+                  value: "80002"
                 - name: RPC_URL
-                  value: "http://anvil-host-anvil-node:8545"
+                  value: "http://anvil-host-polygon-anvil-node:8545"
                 - name: GATEWAY_RPC_URL
                   value: "http://anvil-gateway-anvil-node:8546"
-                # GATEWAY contracts (gw-sc-addresses configmap)
+                # GATEWAY contracts (shared, gw-sc-addresses configmap)
                 - name: DECRYPTION_ADDRESS
                   valueFrom:
                     configMapKeyRef:
@@ -276,42 +265,40 @@ additionalResources:
                     configMapKeyRef:
                       name: gw-sc-addresses
                       key: ciphertext_commits.address
-                # HOST contracts (host-sc-addresses configmap)
+                # POLYGON host contracts (polygon-sc-addresses configmap)
                 - name: KMS_VERIFIER_CONTRACT_ADDRESS
                   valueFrom:
                     configMapKeyRef:
-                      name: host-sc-addresses
+                      name: polygon-sc-addresses
                       key: kms_verifier.address
                 - name: ACL_CONTRACT_ADDRESS
                   valueFrom:
                     configMapKeyRef:
-                      name: host-sc-addresses
+                      name: polygon-sc-addresses
                       key: acl.address
                 - name: INPUT_VERIFIER_CONTRACT_ADDRESS
                   valueFrom:
                     configMapKeyRef:
-                      name: host-sc-addresses
+                      name: polygon-sc-addresses
                       key: input_verifier.address
                 - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
                   valueFrom:
                     configMapKeyRef:
-                      name: host-sc-addresses
+                      name: polygon-sc-addresses
                       key: fhevm_executor.address
                 - name: HCU_LIMIT_CONTRACT_ADDRESS
                   valueFrom:
                     configMapKeyRef:
-                      name: host-sc-addresses
+                      name: polygon-sc-addresses
                       key: hcu_limit.address
-                # Required by the @fhevm/sdk code path (instance.ts requireEnv).
                 - name: PROTOCOL_CONFIG_CONTRACT_ADDRESS
                   valueFrom:
                     configMapKeyRef:
-                      name: host-sc-addresses
+                      name: polygon-sc-addresses
                       key: protocol_config.address
-                # See values-test-suite-workflow-e2e.yaml for the full rationale: account
-                # #9 deploys/keygen's and STAYS the ACL owner (no ownership transfer), so
-                # this.deployer (#9) == ACL.owner() (#9) and every HCU block-cap subtest
-                # passes (owner != alice/#0, so the non-owner reject reverts).
+                # Account #9 deploys/owns the Polygon host contracts too (see
+                # values-host-contracts-polygon-e2e.yaml), so deployer == ACL owner
+                # and HCU block-cap subtests behave as on ETH.
                 - name: DEPLOYER_PRIVATE_KEY
                   value: "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"
                 # Gateway-chain deployer (Hardhat account #0), separate from the host
@@ -321,12 +308,6 @@ additionalResources:
                   value: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
                 - name: RELAYER_URL
                   value: "http://relayer:3000/v2"
-                # Non-empty => instance.ts uses the @zama-fhe/relayer-sdk code path.
-                # Patched at deploy time to the workflow's resolved relayer_sdk_version
-                # (dispatch input, else env.RELAYER_SDK_VERSION); this literal is only
-                # the standalone-apply fallback.
-                - name: RELAYER_SDK_VERSION
-                  value: "0.4.4"
               resources:
                 requests:
                   memory: "1Gi"
@@ -362,7 +343,7 @@ additionalResources:
                 echo '{{`{{inputs.parameters.test-result-8}}`}}' > /mnt/results/negative-acl.json
 
                 echo "=========================================="
-                echo "FHEVM TEST SUITE SUMMARY REPORT"
+                echo "FHEVM TEST SUITE SUMMARY REPORT (POLYGON)"
                 echo "=========================================="
                 echo "Report generated: $(date -u)"
                 echo
