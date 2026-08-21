@@ -146,12 +146,12 @@ pub struct WireRequest {
     pub signature: String,
     /// Handle entries, in request order.
     pub handles: Vec<WireHandleEntry>,
-    /// The same request as its canonical `hostPayload` bytes, hex — the exact blob the
-    /// gateway event carries opaquely. Derived from the fields above by the canonical
+    /// The same request as its canonical bytes, hex — the exact blob the gateway event
+    /// carries opaquely as `solanaRequest`. Derived from the fields above by the canonical
     /// codec and re-verified in BOTH directions by every consumer (decode(hex) == fields,
     /// encode(fields) == hex), so the byte layout cannot drift from the typed form in any
     /// implementation that runs this set.
-    pub host_payload: String,
+    pub solana_request: String,
 }
 
 /// The eight signed permit fields, in transport form. Field names and encodings match the permit
@@ -181,8 +181,9 @@ pub struct WirePermit {
 pub struct WireHandleEntry {
     /// Ciphertext handle, hex.
     pub handle: String,
-    /// Ciphertext owner, hex: the signer for a direct entry, the delegator for a delegated one.
-    pub owner: String,
+    /// Subject, hex: the pubkey whose encrypted value this entry asks to decrypt — the
+    /// requester itself for a direct entry, the delegator for a delegated one.
+    pub subject: String,
     /// Encrypted value account identity, hex.
     pub encrypted_value_id: String,
     /// The leaf count the access proof was built against, decimal string; `"0"` in current mode.

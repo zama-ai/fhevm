@@ -37,7 +37,8 @@ use crate::http::endpoints::v2::types::{
     },
 };
 use crate::http::endpoints::v3::types::{
-    AttestedUserDecryptRequestJson, Eip712UnifiedUserDecryptPayloadJson,
+    AttestedUserDecryptRequestJson, Eip712UnifiedUserDecryptPayloadJson, SolanaHandleJson,
+    SolanaSrfc38UserDecryptPayloadJson, SolanaUserDecryptRequestJson,
 };
 use crate::http::openapi::expected_labels::{
     has_details, labels_for_status, to_pascal_case, ERROR_LABEL_DEFS,
@@ -180,7 +181,13 @@ components(
     // V2 response wrappers (failed POST, per-status-code GET)
     schemas(RelayerV2ResponseFailed, V2StatusQueued, V2StatusFailed),
     // v3 User Decrypt types (unified EIP-712)
-    schemas(AttestedUserDecryptRequestJson, Eip712UnifiedUserDecryptPayloadJson),
+    schemas(
+        AttestedUserDecryptRequestJson,
+        Eip712UnifiedUserDecryptPayloadJson,
+        SolanaUserDecryptRequestJson,
+        SolanaSrfc38UserDecryptPayloadJson,
+        SolanaHandleJson
+    ),
     // Common types
     schemas(crate::http::endpoints::common::types::HandleContractPairJson, crate::http::endpoints::common::types::RequestValidityJson),
     schemas(crate::http::endpoints::common::types::HandleEntryJson, crate::http::endpoints::common::types::RequestValiditySecondsJson),

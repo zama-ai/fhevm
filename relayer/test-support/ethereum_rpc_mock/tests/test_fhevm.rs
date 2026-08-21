@@ -80,8 +80,10 @@ async fn create_user_decrypt_transaction(
     _user: alloy::primitives::Address,
     nonce: u64,
 ) -> Result<Bytes, Box<dyn std::error::Error>> {
-    // Create call data with just the function selector - mock only needs selector to match patterns
-    let mut call_data = Decryption::userDecryptionRequest_1Call::SELECTOR.to_vec();
+    // Create call data with just the function selector - mock only needs selector to match patterns.
+    // This is a `UserDecryptKind::Direct` request, which both callers register the mock against, so
+    // the selector must be the Direct overload (`_2Call`) for those patterns to fire.
+    let mut call_data = Decryption::userDecryptionRequest_2Call::SELECTOR.to_vec();
     call_data.extend_from_slice(&[0; 32]); // Add some padding data
 
     let mut tx = TxEip1559 {

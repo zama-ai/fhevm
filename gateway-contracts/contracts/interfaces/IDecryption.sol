@@ -231,33 +231,26 @@ interface IDecryption {
     );
 
     /**
-     * @notice Emitted for a host-generic user decryption request: the fields the gateway
-     * itself consumes are typed, everything host-specific rides in one opaque `hostPayload`.
+     * @notice Emitted for a Solana user decryption request: the fields the gateway itself
+     * consumes are typed, everything else rides in one opaque `solanaRequest`.
      * This event is the complete input of the host's KMS Connector authorization — for Solana,
      * the permit is reconstructed from it alone — so its shape is a cross-repository contract:
      * a form change here is a protocol change, deliberately pinned by tests.
      * @param decryptionId The decryption request ID (shared counter with every other path).
      * @param ctHandles The requested ciphertext handles, in request order. The order and count
      * are load-bearing: the KMS response linker binds them, and the Connector authorizes the
-     * `hostPayload`'s own handle list only if it matches this one exactly. As with the EVM
+     * `solanaRequest`'s own handle list only if it matches this one exactly. As with the EVM
      * unified event, consumers resolve ciphertext materials off-chain from the signed S3
      * attestations (RFC-023 Part 2).
      * @param requestValidity The permit validity window, gateway-checked at admission.
      * @param publicKey The transport public key the plaintext will be sealed to, in the one
      * representation the whole chain carries (the serialized ML-KEM container). Typed because
      * the gateway's own response path validates against it.
-     * @param allowedAclDomainKeyCount The declared length of the signed ACL-scope list inside
-     * `hostPayload`. Typed because the gateway enforces the scope's upper bound on it before
-     * the fee (the exact rule the EVM paths apply to `allowedContracts`); the Connector
-     * authorizes the payload's own signed list only if its actual length equals this
-     * declaration.
-     * @param hostKind The host-kind dispatch value (see `HOST_KIND_SOLANA`), forwarded
-     * verbatim; each host's Connector selects its own requests by it.
      * @param extraData The signed KMS routing bytes (version `0x02` ‖ contextId ‖ epochId).
      * Typed because the gateway pins the KMS context at request time.
-     * @param hostPayload The host-specific request material (for Solana: permit fields,
-     * per-handle authorization evidence, the user's signature), in the canonical serialization
-     * owned by the protocol's normative fixtures. The gateway never interprets it.
+     * @param solanaRequest The Solana request material — permit fields, per-handle
+     * authorization evidence, the user's signature — in the canonical serialization owned by
+     * the protocol's normative fixtures. The gateway never interprets it.
      * @dev Shares its name with the other user-decryption request events via Solidity event
      * overloading — the distinct parameter list produces a distinct `topic0`.
      */
@@ -266,10 +259,8 @@ interface IDecryption {
         bytes32[] ctHandles,
         RequestValiditySeconds requestValidity,
         bytes publicKey,
-        uint8 allowedAclDomainKeyCount,
-        uint8 hostKind,
         bytes extraData,
-        bytes hostPayload
+        bytes solanaRequest
     );
 
     /**
@@ -397,16 +388,6 @@ interface IDecryption {
      * @param extraData The malformed routing bytes as received.
      */
     error KmsRoutingMalformed(bytes extraData);
-
-    /**
-     * @notice Error indicating that a host-generic user decryption request names a `hostKind`
-     * outside the entry's served inventory — an unknown value, the reserved 0, or a known kind
-     * this entry deliberately does not serve (EVM travels the unified `userDecryptionRequest`).
-     * Refused at admission, before the fee: no KMS Connector would ever serve the request, so
-     * admitting it could only burn the fee.
-     * @param hostKind The host kind as received.
-     */
-    error HostKindNotServed(uint8 hostKind);
 
     /**
      * @notice Error indicating that the start timestamp of a user decryption request has been set in the future.
@@ -599,43 +580,38 @@ interface IDecryption {
     ) external;
 
     /**
-     * @notice Requests a user decryption in the host-generic form: the gateway takes typed
-     * only what it consumes itself, and carries the rest as one opaque payload. A further
-     * host chain adds a Connector branch and a payload specification, not a gateway change.
-     * @dev The gateway's validation is host-agnostic with one named exception: the
+     * @notice Requests a Solana user decryption: the gateway takes typed only what it consumes
+     * itself, and carries the rest as one opaque request blob.
+     * @dev Everything the gateway validates it validates without reading the blob: the
      * authoritative `block.timestamp` validity-window check, the strict KMS routing form of
-     * `extraData`, the conformance/bit-budget check over `ctHandles`, the `CiphertextCommits`
-     * lookup by exact handle, and the fee — all before the event. The exception is the
-     * Solana handle-count cap, applied when `hostKind` names a Solana host (its Connector
-     * authorizes against one atomic account snapshot; a longer list could never be
-     * authorized, so it is refused before the fee). Host authorization (for Solana: permit
-     * reconstruction, ed25519 verification, ACL/MMR evidence, delegation policy) terminates
-     * at the host's KMS Connector; the gateway MUST NOT interpret `hostPayload`, and nothing
-     * in this contract reads a byte of it.
+     * `extraData`, the conformance/bit-budget check over `ctHandles`, the handle-count cap
+     * (Solana's Connector authorizes against one atomic account snapshot, so a longer list
+     * could never be authorized and is refused before the fee), the `CiphertextCommits` lookup
+     * by exact handle, and the fee — all before the event. Host authorization — permit
+     * reconstruction, ed25519 verification, ACL/MMR evidence, delegation policy — terminates at
+     * the KMS Connector; the gateway MUST NOT interpret `solanaRequest`, and nothing in this
+     * contract reads a byte of it.
+     *
+     * There is deliberately no host-kind discriminator and no declared ACL-scope length. Both
+     * would be self-declarations about a blob this contract cannot read: a truthful one adds
+     * nothing the Connector does not already check against the signature, and a false one is
+     * refused there anyway. Gateway user decryption is expected to be retired before a second
+     * non-EVM host exists, so the entry names its one host outright.
      * @param ctHandles The requested handles, in request order.
      * @param requestValidity The permit validity window (startTimestamp + durationSeconds).
      * @param publicKey The transport public key, consumed by the gateway's response path.
-     * @param allowedAclDomainKeyCount The declared length of the signed ACL-scope list inside
-     * `hostPayload`, so the gateway can enforce the scope's upper bound before the fee without
-     * reading the payload (the exact rule the EVM paths apply to `allowedContracts`). Zero =
-     * permissive mode. The declaration cannot lie usefully: the host's Connector admits a
-     * request only when it equals the signed list's actual length.
-     * @param hostKind The host-kind dispatch value (see `HOST_KIND_SOLANA`); forwarded
-     * verbatim, consumed by the gateway only for the Solana handle-count cap.
      * @param extraData The signed KMS routing bytes: version `0x02` ‖ contextId ‖ epochId,
      * 65 bytes exactly; any other version or length is refused at admission.
-     * @param hostPayload The host-specific request material, opaque to the gateway. Its
-     * canonical serialization is owned by the protocol's normative fixtures; the Connector
-     * rejects a payload whose handle list does not match `ctHandles` exactly.
+     * @param solanaRequest The Solana request material, opaque to the gateway. Its canonical
+     * serialization is owned by the protocol's normative fixtures; the Connector rejects a
+     * request whose handle list does not match `ctHandles` exactly.
      */
     function userDecryptionRequest(
         bytes32[] calldata ctHandles,
         RequestValiditySeconds calldata requestValidity,
         bytes calldata publicKey,
-        uint8 allowedAclDomainKeyCount,
-        uint8 hostKind,
         bytes calldata extraData,
-        bytes calldata hostPayload
+        bytes calldata solanaRequest
     ) external;
 
     /**

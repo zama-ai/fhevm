@@ -39,7 +39,7 @@ impl ComputeCalldata {
     pub fn user_decryption_req(
         user_decrypt_request: UserDecryptRequest,
     ) -> Result<Bytes, EventProcessingError> {
-        let kind = user_decrypt_request.attestation_kind();
+        let kind = user_decrypt_request.request_kind();
 
         let calldata = match user_decrypt_request {
             UserDecryptRequest::LegacyDirect {
@@ -61,7 +61,7 @@ impl ComputeCalldata {
                     startTimestamp: request_validity.start_timestamp,
                     durationDays: request_validity.duration_days,
                 };
-                let call = Decryption::userDecryptionRequest_1Call::new((
+                let call = Decryption::userDecryptionRequest_2Call::new((
                     pairs,
                     validity,
                     contracts_info,
@@ -70,7 +70,7 @@ impl ComputeCalldata {
                     signature,
                     extra_data,
                 ));
-                Decryption::userDecryptionRequest_1Call::abi_encode(&call)
+                Decryption::userDecryptionRequest_2Call::abi_encode(&call)
             }
             UserDecryptRequest::LegacyDelegated {
                 ct_handle_contract_pairs,
@@ -128,7 +128,7 @@ impl ComputeCalldata {
                     startTimestamp: request_validity.start_timestamp,
                     durationSeconds: request_validity.duration_seconds,
                 };
-                let call = Decryption::userDecryptionRequest_0Call::new((
+                let call = Decryption::userDecryptionRequest_1Call::new((
                     handle_entries,
                     user_address,
                     public_key,
@@ -137,50 +137,36 @@ impl ComputeCalldata {
                     signature,
                     extra_data,
                 ));
-                Decryption::userDecryptionRequest_0Call::abi_encode(&call)
+                Decryption::userDecryptionRequest_1Call::abi_encode(&call)
             }
-            UserDecryptRequest::SolanaUnifiedV1 {
-                handles,
-                user_identity,
-                allowed_acl_domain_keys,
+            UserDecryptRequest::SolanaSrfc38V1 {
+                ct_handles,
                 request_validity,
-                nonce,
-                signature,
                 public_key,
                 extra_data,
+                solana_request,
             } => {
-                // `HandleEntry` carries two EVM addresses per handle that have no Solana meaning:
-                // the ACL scope travels in `allowedAclDomainKeys` and the subject is derived from
-                // `userIdentity`. The SDK fills both with the caller's derived client id so they
-                // parse as 20-byte addresses, and this arm forwards them unchanged — the gateway
-                // ABI is shared with the EVM arm, so dropping the fields is an ABI change
-                // (proposed to the decryption-envelope rework, fhevm-internal#1689).
-                let handle_entries: Vec<Decryption::HandleEntry> = handles
+                // The Solana overload: the gateway takes only what it consumes itself (handles,
+                // validity window, transport key, KMS routing) and carries everything else as
+                // one opaque `solanaRequest` the builder already serialized. The gateway never
+                // reads a byte of it; each KMS party's connector decodes it and verifies the
+                // ed25519 signature off-chain.
+                let ct_handles: Vec<FixedBytes<32>> = ct_handles
                     .iter()
-                    .map(|h| Decryption::HandleEntry {
-                        handle: h.ct_handle.into(),
-                        contractAddress: h.contract_address,
-                        ownerAddress: h.owner_address,
-                    })
+                    .map(|handle| FixedBytes::<32>::from(handle.to_be_bytes::<32>()))
                     .collect();
                 let validity = IDecryption::RequestValiditySeconds {
                     startTimestamp: request_validity.start_timestamp,
                     durationSeconds: request_validity.duration_seconds,
                 };
-                // The ed25519 auth fields travel as typed payload fields; `extraData` is
-                // context-only. The KMS Connector verifies the ed25519 signature off-chain.
-                let payload = IDecryption::UserDecryptionRequestSolanaPayload {
-                    userIdentity: user_identity,
-                    publicKey: public_key,
-                    allowedAclDomainKeys: allowed_acl_domain_keys,
-                    requestValidity: validity,
-                    nonce,
-                    extraData: extra_data,
-                    signature,
-                };
-                let call =
-                    Decryption::userDecryptionRequestSolanaCall::new((handle_entries, payload));
-                Decryption::userDecryptionRequestSolanaCall::abi_encode(&call)
+                let call = Decryption::userDecryptionRequest_0Call::new((
+                    ct_handles,
+                    validity,
+                    public_key,
+                    extra_data,
+                    solana_request,
+                ));
+                Decryption::userDecryptionRequest_0Call::abi_encode(&call)
             }
         };
 
@@ -276,5 +262,51 @@ mod solana_calldata_tests {
         assert_eq!(decoded.userAddress, user);
         assert_eq!(decoded.contractChainId, U256::from(chain_id));
         assert_eq!(decoded.ciphertextWithZKProof, Bytes::from(vec![1, 2, 3]));
+    }
+
+    #[test]
+    fn the_solana_arm_encodes_the_solana_overload() {
+        // The Solana arm must select the Solana `userDecryptionRequest` overload and place the
+        // pre-computed pieces in the right slots — the connector-auth vectors cover the request
+        // bytes, this covers where they land in the gateway calldata.
+        let solana_request = Bytes::from(vec![0x01, 0xaa, 0xbb, 0xcc]);
+        let mut extra = vec![0x02u8];
+        extra.extend_from_slice(&[0u8; 64]);
+        let extra_data = Bytes::from(extra);
+        let public_key = Bytes::from(vec![0u8; 869]);
+
+        let request = crate::core::event::UserDecryptRequest::SolanaSrfc38V1 {
+            ct_handles: vec![U256::from_be_bytes::<32>([0x11; 32])],
+            request_validity: crate::core::event::RequestValiditySeconds {
+                start_timestamp: U256::from(1_700_000_000u64),
+                duration_seconds: U256::from(604_800u64),
+            },
+            public_key: public_key.clone(),
+            extra_data: extra_data.clone(),
+            solana_request: solana_request.clone(),
+        };
+
+        let calldata =
+            ComputeCalldata::user_decryption_req(request).expect("encode solana calldata");
+
+        assert_eq!(
+            calldata[0..4],
+            Decryption::userDecryptionRequest_0Call::SELECTOR,
+            "calldata must select the host-generic userDecryptionRequest overload"
+        );
+        let decoded = Decryption::userDecryptionRequest_0Call::abi_decode_raw(&calldata[4..])
+            .expect("decode host-generic calldata");
+        assert_eq!(decoded.ctHandles, vec![FixedBytes::<32>::from([0x11; 32])]);
+        assert_eq!(decoded.publicKey, public_key);
+        assert_eq!(decoded.extraData, extra_data);
+        assert_eq!(decoded.solanaRequest, solana_request);
+        assert_eq!(
+            decoded.requestValidity.startTimestamp,
+            U256::from(1_700_000_000u64)
+        );
+        assert_eq!(
+            decoded.requestValidity.durationSeconds,
+            U256::from(604_800u64)
+        );
     }
 }

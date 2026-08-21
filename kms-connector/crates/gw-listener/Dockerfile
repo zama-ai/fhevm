@@ -44,12 +44,14 @@ COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
 COPY host-contracts/rust_bindings ./host-contracts/rust_bindings
 COPY shared ./shared
 COPY kms-connector ./kms-connector
-# kms-worker depends on zama-solana-acl and zama-solana-permit via
-# `../solana/crates/*` (see kms-connector/Cargo.toml). The crates are
+# kms-worker depends on zama-solana-acl, zama-solana-permit and zama-solana-request
+# via `../solana/crates/*` (see kms-connector/Cargo.toml). The crates are
 # standalone (no workspace inheritance), so copying just them satisfies the
-# path dependencies.
+# path dependencies. Keep this list in step with those path dependencies: a
+# missing one fails here, in the image build, and nowhere earlier.
 COPY solana/crates/zama-solana-acl ./solana/crates/zama-solana-acl
 COPY solana/crates/zama-solana-permit ./solana/crates/zama-solana-permit
+COPY solana/crates/zama-solana-request ./solana/crates/zama-solana-request
 
 # Build with improved caching. The build scripts shell out to git for version
 # metadata; the build context may come from a git worktree (where .git is a
