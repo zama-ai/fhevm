@@ -2985,6 +2985,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "endpoint"
+version = "0.15.0"
+dependencies = [
+ "anyhow",
+ "connector-utils",
+ "humantime-serde",
+ "serde",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "enum-ordinalize"
 version = "4.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
