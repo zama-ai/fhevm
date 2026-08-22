@@ -1480,37 +1480,217 @@ async fn assert_bcs_ciphertexts_uploaded(tx: &mut Transaction<'_, Postgres>) -> 
     })
 }
 
-/// Cutover routine — run once every GCS row is `UpgradeAuthorized`, from the
-/// unanimity handler or from `reconcile`. Idempotent via the under-lock re-read.
+/// Tables that hold one row per ciphertext handle, in delete-safe order.
 ///
-/// Runs atomically inside one transaction holding `pg_advisory_xact_lock(CUTOVER_LOCK_ID)`
-/// in exclusive mode. The exclusive lock blocks until every BCS write tx
-/// (which takes the same lock in shared mode at the top of each tx) has
-/// committed, and conversely prevents any new BCS write tx from starting
-/// until cutover commits.
+/// Both synthetic cleanups sweep these: the Gateway input's handles come from
+/// `verify_proofs.handles`, the host ops' from `computations.output_handle`. Anything missing
+/// here survives the merge and becomes live production data - the concrete failure being the
+/// newly-live green transaction-sender publishing a ciphertext digest for a handle that exists
+/// on no chain.
 ///
-/// Sequence:
-///   0. `assert_bcs_ciphertexts_uploaded` with no lock held, so an attempt that is only
-///      going to defer never queues the whole fleet behind the exclusive lock first.
-///      Nothing here may take a row or table lock: requesting the advisory lock while
-///      holding one inverts the order the host-listener uses (advisory shared, then
-///      `upgrade_state`) and deadlocks against activation.
-///   1. Take the exclusive advisory lock, then `authorized_stack_version`: read every GCS
-///      chain row; no-op unless `UpgradeAuthorized`, else take its `version`. A plain read
-///      suffices under the lock — activation and other controllers are excluded by it, and
-///      every ungated FSM update is guarded on an earlier state.
-///   2. UPDATE `versioning` to the new stack_version.
-///   3. Snapshot the handles BCS already committed on-chain.
-///   4. `revert_bcs_state`: delete blue's in-window rows, host chains then the
-///      gateway/input side, and the dependence chains left with no computations.
-///   5. Merge every `gcs.<table>` marked [`CoprocessorTable::is_merged`] into
-///      `public`, then restore the snapshotted `txn_is_sent` flags.
-///   6. DROP SCHEMA gcs CASCADE.
-///   7. Mark the GCS rows LIVE/completed.
-///   8. NOTIFY every service that the live stack version changed.
+/// `ciphertexts128*` are included because the sns-worker may already have squashed a synthetic
+/// handle; `pbs_computations*` because that is the sns queue and is keyed on `handle`, not on
+/// `transaction_id`.
+const SYNTHETIC_HANDLE_TABLES: &[&str] = &[
+    "ciphertext_digest",
+    "ciphertext_digest_branch",
+    "pbs_computations",
+    "pbs_computations_branch",
+    "ciphertexts128",
+    "ciphertexts128_branch",
+    "ciphertexts",
+    "ciphertexts_branch",
+    "allowed_handles",
+    "allowed_handles_branch",
+    "input_handles",
+];
+
+/// Delete every row in [`SYNTHETIC_HANDLE_TABLES`] whose handle is in `handle_source`, a
+/// already-populated temp table with a single `handle BYTEA` column.
 ///
-/// After commit, any BCS write tx that was waiting on the shared lock
-/// acquires it, re-reads its FSM state, sees `PAUSED`, and exits cleanly.
+/// Logs the statement text, the row count and `marker` per table, so the cutover log carries an
+/// auditable record of exactly what was removed. The SQL is logged as sent, with its bind
+/// parameters reported separately - building an interpolated string just to log it would invite
+/// exactly the injection-shaped mistake that binds exist to prevent.
+async fn delete_synthetic_rows_by_handle(
+    tx: &mut Transaction<'_, Postgres>,
+    handle_source: &str,
+    marker: &str,
+) -> Result<u64, Error> {
+    let mut total = 0u64;
+    for table in SYNTHETIC_HANDLE_TABLES {
+        let sql = format!(
+            "DELETE FROM {GCS_SCHEMA_QUOTED}.{table} \
+             WHERE handle IN (SELECT handle FROM {handle_source})"
+        );
+        let deleted = sqlx::query(&sql).execute(&mut **tx).await?.rows_affected();
+        total = total.saturating_add(deleted);
+        if deleted > 0 {
+            info!(table, deleted, marker, sql = %sql, "cutover: deleted synthetic rows by handle");
+        }
+    }
+    Ok(total)
+}
+
+/// Delete the synthetic FHE work the GCS host-listener injected into each host chain's dry-run
+/// window, together with every ciphertext derived from it, before the merge carries `gcs.*` into
+/// `public`.
+///
+/// Keyed on `upgrade_state.synthetic_txn_hash`, written by the injector at `start_block + 1`.
+/// `computations.transaction_id` *is* the log's transaction hash, so that column is the join key
+/// on the computation side, and the handles it yields drive the by-handle sweep.
+///
+/// Runs inside the cutover transaction and before the merge loop, so it is atomic with the
+/// cutover: if the cutover rolls back, so does this.
+async fn delete_gcs_synthetic_ops(tx: &mut Transaction<'_, Postgres>) -> Result<(), Error> {
+    // Snapshot the markers so they can be logged and reused; one per host chain that reached its
+    // injection block. A window that never got that far has NULL and contributes nothing.
+    let markers: Vec<(i64, Vec<u8>)> = sqlx::query_as(
+        "SELECT host_chain_id, synthetic_txn_hash
+           FROM upgrade_state
+          WHERE stack_role = 'GCS'
+            AND synthetic_txn_hash IS NOT NULL
+          ORDER BY host_chain_id",
+    )
+    .fetch_all(&mut **tx)
+    .await?;
+
+    if markers.is_empty() {
+        info!("cutover: no synthetic host ops recorded — nothing to delete");
+        return Ok(());
+    }
+
+    let hashes: Vec<Vec<u8>> = markers.iter().map(|(_, h)| h.clone()).collect();
+    for (host_chain_id, hash) in &markers {
+        info!(
+            host_chain_id,
+            synthetic_txn_hash = %hex_encode(hash),
+            "cutover: deleting synthetic host ops for chain"
+        );
+    }
+
+    // Resolve the handles from BOTH computation tables before deleting anything: the legacy and
+    // branch forms are written together, but a reorg can leave a handle in only one of them.
+    let snapshot_sql = format!(
+        "CREATE TEMP TABLE synthetic_op_handles ON COMMIT DROP AS
+         SELECT DISTINCT output_handle AS handle
+           FROM {GCS_SCHEMA_QUOTED}.computations
+          WHERE transaction_id = ANY($1::bytea[])
+          UNION
+         SELECT DISTINCT output_handle AS handle
+           FROM {GCS_SCHEMA_QUOTED}.computations_branch
+          WHERE transaction_id = ANY($1::bytea[])"
+    );
+    sqlx::query(&snapshot_sql)
+        .bind(&hashes)
+        .execute(&mut **tx)
+        .await?;
+    let handle_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM synthetic_op_handles")
+        .fetch_one(&mut **tx)
+        .await?;
+    info!(
+        handle_count,
+        sql = %snapshot_sql,
+        "cutover: resolved synthetic op handles"
+    );
+
+    // Snapshot the dependence chains before the computations that reference them are gone,
+    // otherwise there is nothing left to identify them by.
+    let chains_sql = format!(
+        "CREATE TEMP TABLE synthetic_op_chains ON COMMIT DROP AS
+         SELECT DISTINCT dependence_chain_id
+           FROM {GCS_SCHEMA_QUOTED}.computations
+          WHERE transaction_id = ANY($1::bytea[])
+            AND dependence_chain_id IS NOT NULL"
+    );
+    sqlx::query(&chains_sql)
+        .bind(&hashes)
+        .execute(&mut **tx)
+        .await?;
+
+    let by_handle = delete_synthetic_rows_by_handle(tx, "synthetic_op_handles", "host_ops").await?;
+
+    // Computations after their ciphertexts, so a failure part-way leaves the marker and the
+    // computations in place to retry from rather than orphaning ciphertexts.
+    let mut computation_rows = 0u64;
+    for table in ["computations", "computations_branch"] {
+        let sql = format!(
+            "DELETE FROM {GCS_SCHEMA_QUOTED}.{table} WHERE transaction_id = ANY($1::bytea[])"
+        );
+        let deleted = sqlx::query(&sql)
+            .bind(&hashes)
+            .execute(&mut **tx)
+            .await?
+            .rows_affected();
+        computation_rows = computation_rows.saturating_add(deleted);
+        if deleted > 0 {
+            info!(table, deleted, sql = %sql, "cutover: deleted synthetic computations");
+        }
+    }
+
+    // The telemetry row for the transaction. Keyed `id`, NOT `transaction_id` - the column name
+    // differs from every other table here, which is exactly why this delete is separate.
+    let txn_sql =
+        format!("DELETE FROM {GCS_SCHEMA_QUOTED}.transactions WHERE id = ANY($1::bytea[])");
+    let txn_deleted = sqlx::query(&txn_sql)
+        .bind(&hashes)
+        .execute(&mut **tx)
+        .await?
+        .rows_affected();
+    computation_rows = computation_rows.saturating_add(txn_deleted);
+    if txn_deleted > 0 {
+        info!(
+            table = "transactions",
+            deleted = txn_deleted,
+            sql = %txn_sql,
+            "cutover: deleted synthetic transaction telemetry"
+        );
+    }
+
+    // Dependence chains last, and only those no computation still references. The NOT EXISTS
+    // spans `public` as well as the GCS schema because this runs pre-merge: a chain id can be
+    // shared with work that is staying.
+    let orphan_sql = format!(
+        "DELETE FROM {GCS_SCHEMA_QUOTED}.dependence_chain d
+          WHERE d.dependence_chain_id IN (SELECT dependence_chain_id FROM synthetic_op_chains)
+            AND NOT EXISTS (
+                SELECT 1 FROM {GCS_SCHEMA_QUOTED}.computations c
+                 WHERE c.dependence_chain_id = d.dependence_chain_id)
+            AND NOT EXISTS (
+                SELECT 1 FROM {GCS_SCHEMA_QUOTED}.computations_branch c
+                 WHERE c.dependence_chain_id = d.dependence_chain_id)
+            AND NOT EXISTS (
+                SELECT 1 FROM public.computations c
+                 WHERE c.dependence_chain_id = d.dependence_chain_id)
+            AND NOT EXISTS (
+                SELECT 1 FROM public.computations_branch c
+                 WHERE c.dependence_chain_id = d.dependence_chain_id)"
+    );
+    let chains_deleted = sqlx::query(&orphan_sql)
+        .execute(&mut **tx)
+        .await?
+        .rows_affected();
+    info!(
+        chains_deleted,
+        sql = %orphan_sql,
+        "cutover: deleted orphaned synthetic dependence chains"
+    );
+
+    // Clear the markers so a later attempt cannot match this window's work.
+    sqlx::query(
+        "UPDATE upgrade_state SET synthetic_txn_hash = NULL, updated_at = NOW()
+          WHERE stack_role = 'GCS' AND synthetic_txn_hash IS NOT NULL",
+    )
+    .execute(&mut **tx)
+    .await?;
+
+    info!(
+        chains = markers.len(),
+        by_handle, computation_rows, chains_deleted, "cutover: synthetic host ops removed"
+    );
+    Ok(())
+}
+
 /// Delete the synthetic Gateway input the GCS gw-listener injected for consensus anchoring,
 /// and everything derived from it, before the merge carries `gcs.*` into `public`.
 ///
@@ -1545,27 +1725,7 @@ async fn delete_gcs_synthetic_inputs(tx: &mut Transaction<'_, Postgres>) -> Resu
         .execute(&mut **tx)
         .await?;
 
-    // Every table the verified input fans out into. `ciphertexts128*` are included because the
-    // sns-worker may already have produced a 128-bit form for the synthetic handle.
-    for table in [
-        "ciphertexts",
-        "ciphertexts_branch",
-        "ciphertexts128",
-        "ciphertexts128_branch",
-        "ciphertext_digest",
-        "ciphertext_digest_branch",
-        "pbs_computations",
-        "pbs_computations_branch",
-        "input_handles",
-    ] {
-        let sql = format!(
-            "DELETE FROM {GCS_SCHEMA_QUOTED}.{table}              WHERE handle IN (SELECT handle FROM synthetic_input_handles)"
-        );
-        let deleted = sqlx::query(&sql).execute(&mut **tx).await?.rows_affected();
-        if deleted > 0 {
-            info!(table, deleted, "cutover: deleted synthetic input rows");
-        }
-    }
+    delete_synthetic_rows_by_handle(tx, "synthetic_input_handles", "gw_input").await?;
 
     // The `verify_proofs` row last, so a failure above leaves the marker in place for a retry
     // rather than orphaning the derived rows.
@@ -1583,6 +1743,41 @@ async fn delete_gcs_synthetic_inputs(tx: &mut Transaction<'_, Postgres>) -> Resu
     Ok(())
 }
 
+/// Cutover routine — run once every GCS row is `UpgradeAuthorized`, from the
+/// unanimity handler or from `reconcile`. Idempotent via the under-lock re-read.
+///
+/// Runs atomically inside one transaction holding `pg_advisory_xact_lock(CUTOVER_LOCK_ID)`
+/// in exclusive mode. The exclusive lock blocks until every BCS write tx
+/// (which takes the same lock in shared mode at the top of each tx) has
+/// committed, and conversely prevents any new BCS write tx from starting
+/// until cutover commits.
+///
+/// Sequence:
+///   0. `assert_bcs_ciphertexts_uploaded` with no lock held, so an attempt that is only
+///      going to defer never queues the whole fleet behind the exclusive lock first.
+///      Nothing here may take a row or table lock: requesting the advisory lock while
+///      holding one inverts the order the host-listener uses (advisory shared, then
+///      `upgrade_state`) and deadlocks against activation.
+///   1. Take the exclusive advisory lock, then `authorized_stack_version`: read every GCS
+///      chain row; no-op unless `UpgradeAuthorized`, else take its `version`. A plain read
+///      suffices under the lock — activation and other controllers are excluded by it, and
+///      every ungated FSM update is guarded on an earlier state.
+///   2. UPDATE `versioning` to the new stack_version.
+///   3. Snapshot the handles BCS already committed on-chain.
+///   4. `revert_bcs_state`: delete blue's in-window rows, host chains then the
+///      gateway/input side, and the dependence chains left with no computations.
+///   5. `delete_gcs_synthetic_ops` + `delete_gcs_synthetic_inputs`: drop the synthetic work
+///      injected to anchor dry-run consensus, so it never merges into `public`.
+///   6. Merge every `gcs.<table>` marked [`CoprocessorTable::is_merged`] into
+///      `public`, then restore the snapshotted `txn_is_sent` flags.
+///   7. DROP SCHEMA gcs CASCADE.
+///   8. Mark the GCS rows LIVE/completed.
+///   9. NOTIFY every service that the live stack version changed.
+///
+/// After commit, any BCS write tx that was waiting on the shared lock acquires it,
+/// re-reads the bumped `versioning` row, finds its own binary older, and stops (see
+/// `begin_write_guarded`). It is not the FSM that retires blue: no `BCS` row exists in
+/// `upgrade_state`, since activation only ever inserts `GCS` rows.
 pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     info!("execute_cutover() starting");
 
@@ -1651,17 +1846,16 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     //    blue's head start. Must stay ahead of the merge.
     revert_bcs_state(&mut tx).await?;
 
-    // 5. Merge the GCS-canonical tables back into public before dropping the schema.
+    // 5. Drop the GCS stack's synthetic work before anything merges: it exists only to anchor
+    //    dry-run consensus and must not become live data. Host ops before the Gateway input,
+    //    so each by-handle sweep finishes with its own temp table before the next is created.
+    delete_gcs_synthetic_ops(&mut tx).await?;
+    delete_gcs_synthetic_inputs(&mut tx).await?;
+
+    // 6. Merge the GCS-canonical tables back into public before dropping the schema.
     //    Each merge lets the GCS rows win on PK collisions (GCS is the canonical
     //    writer for its dry-run window), then the committed flags snapshotted in
     //    step 3 are put back.
-    // 3a. Drop the GCS stack's synthetic Gateway input before anything merges:
-    //     it exists only to anchor dry-run consensus and must not become live data.
-    delete_gcs_synthetic_inputs(&mut tx).await?;
-
-    // 3. Merge the GCS-canonical tables back into public before dropping the
-    //    schema. Each merge lets the GCS rows win on PK collisions (GCS is the
-    //    canonical writer for its dry-run window).
     info!(stack_version, "cutover: merging gcs tables into public");
     for table in COPROCESSOR_TABLES {
         if !table.is_merged() {
@@ -1686,13 +1880,13 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
         "cutover: preserved txn_is_sent for already-committed handles"
     );
 
-    // 6. Drop the gcs schema (and everything in it) now that its data has been
+    // 7. Drop the gcs schema (and everything in it) now that its data has been
     //    merged back into public.
     let drop_sql = format!("DROP SCHEMA {GCS_SCHEMA_QUOTED} CASCADE");
     sqlx::query(&drop_sql).execute(&mut *tx).await?;
     info!(schema = GCS_SCHEMA_QUOTED, "dropped gcs schema");
 
-    // 7. Flip every chain's FSM row.
+    // 8. Flip every chain's FSM row.
     sqlx::query!(
         "UPDATE public.upgrade_state
          SET state = 'LIVE', status = 'completed', updated_at = NOW()
@@ -1701,7 +1895,7 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     .execute(&mut *tx)
     .await?;
 
-    // 8. Notify every service that the live stack version changed. Queued in
+    // 9. Notify every service that the live stack version changed. Queued in
     //    the SAME transaction as the `versioning` UPDATE above, so the notify
     //    is atomic with the version bump — it is only delivered if the cutover
     //    commits. On receipt, each service re-evaluates its mode (the green
@@ -1869,7 +2063,13 @@ async fn rollback_dry_run(
            SET state = 'PAUSED', status = 'failed',
                last_error = 'unanimity_consensus_timeout',
                host_consensus_reached = FALSE, gw_consensus_reached = FALSE,
-               gw_dry_run_started = FALSE, updated_at = NOW()
+               gw_dry_run_started = FALSE,
+               -- Cleared with the latches: the rolled-back window's schema is dropped, and the
+               -- next attempt injects at a different block (or fork) and so derives a different
+               -- hash. A stale marker would leave cutover matching nothing while the real rows
+               -- merged through.
+               synthetic_txn_hash = NULL,
+               updated_at = NOW()
          WHERE u.stack_role = 'GCS'
            AND u.state IN ('UpgradeActivated', 'DryRunStarted')
            AND u.proposal_id = $1
@@ -2447,6 +2647,118 @@ mod tests {
             p.block_hash,
             "0xabc0000000000000000000000000000000000000000000000000000000000001"
         );
+    }
+
+    /// Every statement in the synthetic cleanups must be valid against the *real* GCS schema.
+    ///
+    /// This is the test that matters: the deletes are `format!`-built and reference eleven
+    /// by-handle tables plus three keyed on the transaction, and a single wrong column name is a
+    /// hard SQL error that aborts the whole cutover. Only executing them against actual cloned
+    /// tables proves the names are right. It already caught `transactions`, whose key is `id` and
+    /// not `transaction_id` like every other table in the sweep.
+    #[tokio::test]
+    async fn synthetic_cleanups_run_against_the_real_gcs_schema() {
+        let (_instance, pool) = test_pool().await;
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+
+        let txn_hash = vec![0xABu8; 32];
+        let handle = vec![0xCDu8; 32];
+        let chain_id = vec![0xEFu8; 32];
+
+        // A GCS window that reached its injection block, so the cleanup has a marker to act on.
+        sqlx::query(
+            "INSERT INTO upgrade_state (
+                 stack_role, state, status, proposal_id, version, start_block, end_block,
+                 host_chain_id, proposal_block, synthetic_txn_hash, updated_at
+             ) VALUES ('GCS', 'UpgradeAuthorized', 'in_progress', $1, '0.15.0', 100, 200,
+                       12345, 100, $2, NOW())",
+        )
+        .bind(vec![7u8; 32])
+        .bind(&txn_hash)
+        .execute(&pool)
+        .await
+        .expect("seed upgrade_state");
+
+        // Synthetic work in the GCS schema, reachable exactly the way the cleanup walks it:
+        // computations -> output_handle -> the by-handle tables, plus a dependence chain.
+        let seed = format!(
+            "INSERT INTO {GCS_SCHEMA_QUOTED}.dependence_chain
+                  (dependence_chain_id, status, last_updated_at)
+                  VALUES ($3, 'processed', NOW());
+             INSERT INTO {GCS_SCHEMA_QUOTED}.computations
+                  (tenant_id, output_handle, transaction_id, dependencies, fhe_operation,
+                   is_completed, is_scalar, host_chain_id, dependence_chain_id)
+                  VALUES (1, $2, $1, ARRAY[$2], 1, true, false, 12345, $3);
+             INSERT INTO {GCS_SCHEMA_QUOTED}.ciphertexts
+                  (handle, ciphertext, ciphertext_version, ciphertext_type)
+                  VALUES ($2, '\\x01'::bytea, 0, 5);
+             INSERT INTO {GCS_SCHEMA_QUOTED}.input_handles (handle, block_number)
+                  VALUES ($2, 101);
+             INSERT INTO {GCS_SCHEMA_QUOTED}.transactions (id, chain_id, block_number)
+                  VALUES ($1, 12345, 101);"
+        );
+        sqlx::raw_sql(
+            &seed
+                .replace("$1", &format!("'\\x{}'::bytea", hex_encode(&txn_hash)))
+                .replace("$2", &format!("'\\x{}'::bytea", hex_encode(&handle)))
+                .replace("$3", &format!("'\\x{}'::bytea", hex_encode(&chain_id))),
+        )
+        .execute(&pool)
+        .await
+        .expect("seed synthetic work");
+
+        // Run both cleanups in one transaction, exactly as execute_cutover does — this also
+        // exercises the two temp tables coexisting in the same transaction.
+        let mut tx = pool.begin().await.expect("begin");
+        delete_gcs_synthetic_ops(&mut tx)
+            .await
+            .expect("delete_gcs_synthetic_ops");
+        delete_gcs_synthetic_inputs(&mut tx)
+            .await
+            .expect("delete_gcs_synthetic_inputs");
+        tx.commit().await.expect("commit");
+
+        // Nothing synthetic may survive into the merge.
+        for (table, column, value) in [
+            ("computations", "transaction_id", &txn_hash),
+            ("transactions", "id", &txn_hash),
+            ("ciphertexts", "handle", &handle),
+            ("input_handles", "handle", &handle),
+            ("dependence_chain", "dependence_chain_id", &chain_id),
+        ] {
+            let sql =
+                format!("SELECT COUNT(*) FROM {GCS_SCHEMA_QUOTED}.{table} WHERE {column} = $1");
+            let remaining: i64 = sqlx::query_scalar(&sql)
+                .bind(value)
+                .fetch_one(&pool)
+                .await
+                .unwrap_or_else(|e| panic!("count {table}: {e}"));
+            assert_eq!(remaining, 0, "{table}.{column} still holds synthetic rows");
+        }
+
+        // The marker is cleared, so a later attempt cannot match this window's work.
+        let marker: Option<Vec<u8>> = sqlx::query_scalar(
+            "SELECT synthetic_txn_hash FROM upgrade_state WHERE stack_role = 'GCS'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("read marker");
+        assert!(marker.is_none(), "synthetic_txn_hash was not cleared");
+    }
+
+    /// With no marker recorded the cleanup must be a clean no-op, not an error: a window that
+    /// never reached `start_block + 1` has no synthetic work at all.
+    #[tokio::test]
+    async fn synthetic_ops_cleanup_without_marker_is_a_noop() {
+        let (_instance, pool) = test_pool().await;
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+        seed_gcs_row(&pool, "UpgradeAuthorized", "in_progress").await;
+
+        let mut tx = pool.begin().await.expect("begin");
+        delete_gcs_synthetic_ops(&mut tx)
+            .await
+            .expect("no-op must not error");
+        tx.commit().await.expect("commit");
     }
 
     /// A trigger can only be created on a table that exists in the GCS schema, i.e. one
