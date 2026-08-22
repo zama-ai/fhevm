@@ -31,9 +31,10 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
             created_at,
             schedule_order,
             is_completed,
-            host_chain_id
+            host_chain_id,
+            operand_boundary_mask
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW(), $8, $9)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW(), $8, $9, $10)
         "#,
     )
     .bind(&output_handle)
@@ -45,6 +46,10 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
     .bind(true)
     .bind(false)
     .bind(TEST_CHAIN_ID as i64)
+    // This fixture bypasses ordered listener ingestion. Its invalid opcode
+    // has no operands, so the executor-compatible authoritative mask is the
+    // all-zero uint256 value.
+    .bind(vec![0_u8; 32])
     .execute(&pool)
     .await?;
 
