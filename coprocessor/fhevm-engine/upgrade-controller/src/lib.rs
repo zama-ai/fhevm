@@ -381,9 +381,7 @@ fn spawn_gcs_dry_run_readiness(
 /// their polling interval, which was observed as a 60s stall between the host-listener ingesting
 /// synthetic ops and the tfhe-worker acquiring the dependence chain.
 ///
-/// Only the legacy tables carry a trigger. The host-listener writes the legacy and `_branch`
-/// forms in the same transaction, so one notification per channel already wakes the worker, and
-/// a second trigger would only add duplicate wake-ups.
+/// One trigger per channel is enough; a second would only add duplicate wake-ups.
 ///
 /// The functions themselves live in `public` and are shared, so they are referenced
 /// schema-qualified rather than relying on the connection's `search_path`.
@@ -990,8 +988,8 @@ async fn transition_to_gw_dry_run_started(
 /// ahead of GCS, so results GCS never ingested would otherwise survive the merge and
 /// leave each operator with a different set. Rather than diff the two stacks handle by
 /// handle, drop blue's whole in-window output — ciphertexts plus the `computations` /
-/// `pbs_computations` rows behind them, in both their legacy and `*_branch` form — and
-/// let the merge re-establish green's copy from `gcs.*`. What green never ingested stays
+/// `pbs_computations` rows behind them — and let the merge re-establish green's copy
+/// from `gcs.*`. What green never ingested stays
 /// deleted and is re-derived from the chain once green is live.
 ///
 /// MUST run inside the cutover transaction and *before* [`merge_gcs_table`]: the
@@ -1022,11 +1020,10 @@ async fn delete_bcs_chains_leftovers(tx: &mut Transaction<'_, Postgres>) -> Resu
 
 /// Delete one host-chain's in-window BCS rows, per [`delete_bcs_chains_leftovers`].
 ///
-/// Every table is cleared in both its legacy and its `*_branch` form
-/// ([`CIPHERTEXT_TABLES`], [`COMPUTATION_TABLES`], [`PBS_COMPUTATION_TABLES`], plus
-/// `ciphertext_digest_branch`). The branch tables are the canonical ones once the
-/// branch-context migration completes, so leaving blue's in-window rows there would
-/// reintroduce exactly the per-operator divergence these deletes exist to prevent.
+/// Clears [`CIPHERTEXT_TABLES`], [`PBS_COMPUTATION_TABLES`] and [`COMPUTATION_TABLES`].
+/// The deprecated `*_branch` mirrors are deliberately left alone: nothing in this stack
+/// reads them, and the mirror triggers on the legacy tables keep them following along
+/// DB-side.
 ///
 /// Statement order is load-bearing: the ciphertext deletes reach their rows through the
 /// computation tables, so those are cleared last.
@@ -1077,35 +1074,6 @@ async fn delete_bcs_chain_leftovers(
             start_block, pbs_table, deleted, "delete_bcs_leftovers: deleted BCS-leftover pbs rows"
         );
     }
-
-    // `ciphertext_digest_branch`, whose legacy sibling is deliberately left alone (the
-    // `txn_is_sent` restore in `execute_cutover` reads `public.ciphertext_digest`, and
-    // what happens to already-published handles is still an open decision).
-    //
-    // The `pbs_computations_branch` delete above already drops the digest rows sharing
-    // its branch context, via the `mirror_ciphertext_digest_pbs_context` trigger, so
-    // this is usually a no-op. It stays explicit so cutover does not depend on a
-    // trigger defined in an unrelated migration for its own correctness.
-    //
-    // Branchless rows carry `block_number IS NULL` (enforced by
-    // `ciphertext_digest_branch_producer_block_number_check`) and are the mirror of
-    // `public.ciphertext_digest`; `block_number >= $2` skips them, so the two stay in
-    // sync.
-    let deleted_digests = sqlx::query!(
-        "DELETE FROM public.ciphertext_digest_branch d
-          WHERE d.host_chain_id = $1 AND d.block_number >= $2",
-        chain_id,
-        start_block,
-    )
-    .execute(&mut **tx)
-    .await?
-    .rows_affected();
-    info!(
-        host_chain_id = chain_id,
-        start_block,
-        deleted_digests,
-        "delete_bcs_leftovers: deleted BCS-leftover ciphertext_digest_branch rows"
-    );
 
     // Last: the ciphertext deletes above reach their rows through these tables.
     //
@@ -1488,20 +1456,20 @@ async fn assert_bcs_ciphertexts_uploaded(tx: &mut Transaction<'_, Postgres>) -> 
 /// newly-live green transaction-sender publishing a ciphertext digest for a handle that exists
 /// on no chain.
 ///
-/// `ciphertexts128*` are included because the sns-worker may already have squashed a synthetic
-/// handle; `pbs_computations*` because that is the sns queue and is keyed on `handle`, not on
+/// `ciphertexts128` is included because the sns-worker may already have squashed a synthetic
+/// handle; `pbs_computations` because that is the sns queue and is keyed on `handle`, not on
 /// `transaction_id`.
+///
+/// The deprecated `*_branch` mirrors are absent on purpose, and their absence is not a gap.
+/// They are classified `duplicated = false`, so `create_gcs_tables` never clones them and
+/// `gcs.<table>_branch` does not exist: naming one here is not an extra row deleted, it is a
+/// `relation does not exist` that aborts the whole cutover transaction.
 const SYNTHETIC_HANDLE_TABLES: &[&str] = &[
     "ciphertext_digest",
-    "ciphertext_digest_branch",
     "pbs_computations",
-    "pbs_computations_branch",
     "ciphertexts128",
-    "ciphertexts128_branch",
     "ciphertexts",
-    "ciphertexts_branch",
     "allowed_handles",
-    "allowed_handles_branch",
     "input_handles",
 ];
 
@@ -1569,16 +1537,11 @@ async fn delete_gcs_synthetic_ops(tx: &mut Transaction<'_, Postgres>) -> Result<
         );
     }
 
-    // Resolve the handles from BOTH computation tables before deleting anything: the legacy and
-    // branch forms are written together, but a reorg can leave a handle in only one of them.
+    // Resolve the handles before the deletes below make them unreachable.
     let snapshot_sql = format!(
         "CREATE TEMP TABLE synthetic_op_handles ON COMMIT DROP AS
          SELECT DISTINCT output_handle AS handle
            FROM {GCS_SCHEMA_QUOTED}.computations
-          WHERE transaction_id = ANY($1::bytea[])
-          UNION
-         SELECT DISTINCT output_handle AS handle
-           FROM {GCS_SCHEMA_QUOTED}.computations_branch
           WHERE transaction_id = ANY($1::bytea[])"
     );
     sqlx::query(&snapshot_sql)
@@ -1612,20 +1575,21 @@ async fn delete_gcs_synthetic_ops(tx: &mut Transaction<'_, Postgres>) -> Result<
 
     // Computations after their ciphertexts, so a failure part-way leaves the marker and the
     // computations in place to retry from rather than orphaning ciphertexts.
-    let mut computation_rows = 0u64;
-    for table in ["computations", "computations_branch"] {
-        let sql = format!(
-            "DELETE FROM {GCS_SCHEMA_QUOTED}.{table} WHERE transaction_id = ANY($1::bytea[])"
+    let comp_sql = format!(
+        "DELETE FROM {GCS_SCHEMA_QUOTED}.computations WHERE transaction_id = ANY($1::bytea[])"
+    );
+    let mut computation_rows = sqlx::query(&comp_sql)
+        .bind(&hashes)
+        .execute(&mut **tx)
+        .await?
+        .rows_affected();
+    if computation_rows > 0 {
+        info!(
+            table = "computations",
+            deleted = computation_rows,
+            sql = %comp_sql,
+            "cutover: deleted synthetic computations"
         );
-        let deleted = sqlx::query(&sql)
-            .bind(&hashes)
-            .execute(&mut **tx)
-            .await?
-            .rows_affected();
-        computation_rows = computation_rows.saturating_add(deleted);
-        if deleted > 0 {
-            info!(table, deleted, sql = %sql, "cutover: deleted synthetic computations");
-        }
     }
 
     // The telemetry row for the transaction. Keyed `id`, NOT `transaction_id` - the column name
@@ -1657,13 +1621,7 @@ async fn delete_gcs_synthetic_ops(tx: &mut Transaction<'_, Postgres>) -> Result<
                 SELECT 1 FROM {GCS_SCHEMA_QUOTED}.computations c
                  WHERE c.dependence_chain_id = d.dependence_chain_id)
             AND NOT EXISTS (
-                SELECT 1 FROM {GCS_SCHEMA_QUOTED}.computations_branch c
-                 WHERE c.dependence_chain_id = d.dependence_chain_id)
-            AND NOT EXISTS (
                 SELECT 1 FROM public.computations c
-                 WHERE c.dependence_chain_id = d.dependence_chain_id)
-            AND NOT EXISTS (
-                SELECT 1 FROM public.computations_branch c
                  WHERE c.dependence_chain_id = d.dependence_chain_id)"
     );
     let chains_deleted = sqlx::query(&orphan_sql)
@@ -1694,8 +1652,8 @@ async fn delete_gcs_synthetic_ops(tx: &mut Transaction<'_, Postgres>) -> Result<
 /// Delete the synthetic Gateway input the GCS gw-listener injected for consensus anchoring,
 /// and everything derived from it, before the merge carries `gcs.*` into `public`.
 ///
-/// Why this is mandatory: `verify_proofs`, `ciphertexts`, `ciphertexts_branch`,
-/// `ciphertext_digest`, `input_handles` and `pbs_computations` are all merged at cutover. Left
+/// Why this is mandatory: `verify_proofs`, `ciphertexts`, `ciphertext_digest`,
+/// `input_handles` and `pbs_computations` are all merged at cutover. Left
 /// alone, the synthetic input's handles become live production rows, and the now-live green
 /// `transaction-sender` starts trying to publish ciphertext digests for a handle that belongs
 /// to no contract on any chain.
@@ -3508,12 +3466,8 @@ mod tests {
         assert!(!host_reached(&pool, 1).await);
     }
 
-    /// Blue's in-window rows for one handle, dual-written to the legacy and the branch
-    /// form of every table cutover clears. `producer_block_hash` is non-empty so the
-    /// rows carry a real branch context (a branchless `''` row is the legacy mirror and
-    /// is deliberately left alone).
+    /// Blue's in-window rows for one handle, in every table cutover clears.
     async fn seed_bcs_handle(pool: &Pool<Postgres>, handle: &[u8], block: i64, ct_byte: u8) {
-        let branch = &[0x11u8; 32][..];
         sqlx::query(
             "INSERT INTO computations
                 (output_handle, dependencies, fhe_operation,
@@ -3526,18 +3480,6 @@ mod tests {
         .await
         .expect("seed computation");
         sqlx::query(
-            "INSERT INTO computations_branch
-                (output_handle, dependencies, fhe_operation,
-                 is_scalar, is_completed, host_chain_id, block_number, producer_block_hash)
-             VALUES ($1, ARRAY[]::bytea[], 0, false, TRUE, 1, $2, $3)",
-        )
-        .bind(handle)
-        .bind(block)
-        .bind(branch)
-        .execute(pool)
-        .await
-        .expect("seed computations_branch");
-        sqlx::query(
             "INSERT INTO ciphertexts (handle, ciphertext, ciphertext_version, ciphertext_type)
              VALUES ($1, $2, 0, 0)",
         )
@@ -3546,21 +3488,6 @@ mod tests {
         .execute(pool)
         .await
         .expect("seed ciphertext");
-        // `block_number` is NOT NULL exactly for a non-empty producer_block_hash
-        // (`ciphertexts_branch_producer_block_number_check`).
-        sqlx::query(
-            "INSERT INTO ciphertexts_branch
-                (handle, ciphertext, ciphertext_version, ciphertext_type,
-                 producer_block_hash, block_number)
-             VALUES ($1, $2, 0, 0, $3, $4)",
-        )
-        .bind(handle)
-        .bind(&[ct_byte][..])
-        .bind(branch)
-        .bind(block)
-        .execute(pool)
-        .await
-        .expect("seed ciphertexts_branch");
         sqlx::query(
             "INSERT INTO pbs_computations
                 (handle, is_completed, host_chain_id, block_number)
@@ -3571,59 +3498,26 @@ mod tests {
         .execute(pool)
         .await
         .expect("seed pbs_computation");
-        sqlx::query(
-            "INSERT INTO pbs_computations_branch
-                (handle, is_completed, host_chain_id, block_number,
-                 producer_block_hash, block_hash)
-             VALUES ($1, TRUE, 1, $2, $3, $3)",
-        )
-        .bind(handle)
-        .bind(block)
-        .bind(branch)
-        .execute(pool)
-        .await
-        .expect("seed pbs_computations_branch");
-        // After the pbs branch row: its INSERT trigger rebuilds digest branch rows from
-        // `public.ciphertext_digest`, which this handle has none of, so it is a no-op.
-        sqlx::query(
-            "INSERT INTO ciphertext_digest_branch
-                (handle, host_chain_id, block_number, producer_block_hash, block_hash)
-             VALUES ($1, 1, $2, $3, $3)",
-        )
-        .bind(handle)
-        .bind(block)
-        .bind(branch)
-        .execute(pool)
-        .await
-        .expect("seed ciphertext_digest_branch");
     }
 
-    /// Every table cutover clears, in both forms: legacy first, then `*_branch`.
-    async fn leftover_counts(pool: &Pool<Postgres>, handle: &[u8]) -> [i64; 8] {
-        let row: (i64, i64, i64, i64, i64, i64, i64, i64) = sqlx::query_as(
+    /// Every table cutover clears.
+    async fn leftover_counts(pool: &Pool<Postgres>, handle: &[u8]) -> [i64; 3] {
+        let row: (i64, i64, i64) = sqlx::query_as(
             "SELECT (SELECT COUNT(*) FROM ciphertexts WHERE handle = $1),
                     (SELECT COUNT(*) FROM computations WHERE output_handle = $1),
-                    (SELECT COUNT(*) FROM pbs_computations WHERE handle = $1),
-                    (SELECT COUNT(*) FROM ciphertexts_branch WHERE handle = $1),
-                    (SELECT COUNT(*) FROM computations_branch WHERE output_handle = $1),
-                    (SELECT COUNT(*) FROM pbs_computations_branch WHERE handle = $1),
-                    (SELECT COUNT(*) FROM ciphertext_digest_branch
-                      WHERE handle = $1 AND block_number IS NOT NULL),
-                    (SELECT COUNT(*) FROM ciphertext_digest_branch
-                      WHERE handle = $1 AND block_number IS NULL)",
+                    (SELECT COUNT(*) FROM pbs_computations WHERE handle = $1)",
         )
         .bind(handle)
         .fetch_one(pool)
         .await
         .expect("leftover counts");
-        [row.0, row.1, row.2, row.3, row.4, row.5, row.6, row.7]
+        [row.0, row.1, row.2]
     }
 
     /// Cutover backfill, eager case: every in-window row blue wrote (block 160 <
-    /// `end_block` 200) is deleted — ciphertext, `computations`, `pbs_computations`, and
-    /// the `*_branch` form of each — and only what green also holds in `gcs.*` comes back
-    /// with the merge. A handle GCS never ingested therefore ends up gone, to be
-    /// re-derived from the chain.
+    /// `end_block` 200) is deleted — ciphertext, `computations`, `pbs_computations` — and
+    /// only what green also holds in `gcs.*` comes back with the merge. A handle GCS never
+    /// ingested therefore ends up gone, to be re-derived from the chain.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn cutover_backfill_deletes_bcs_leftovers_eager() {
         let (_instance, pool) = test_pool().await;
@@ -3671,62 +3565,21 @@ mod tests {
             .await
             .expect("seed gcs pbs_computation");
 
-        // Green's branch-form copies of the same handle, on the same branch context blue
-        // used, so the merge restores exactly the rows the deletes removed.
-        let branch = &[0x11u8; 32][..];
-        for sql in [
-            format!(
-                "INSERT INTO {GCS_SCHEMA_QUOTED}.computations_branch
-                    (output_handle, dependencies, fhe_operation, is_scalar,
-                     is_completed, host_chain_id, block_number, producer_block_hash)
-                 VALUES ($1, ARRAY[]::bytea[], 0, false, TRUE, 1, 150, $2)"
-            ),
-            format!(
-                "INSERT INTO {GCS_SCHEMA_QUOTED}.ciphertexts_branch
-                    (handle, ciphertext, ciphertext_version, ciphertext_type,
-                     producer_block_hash, block_number)
-                 VALUES ($1, '\\x01'::bytea, 0, 0, $2, 150)"
-            ),
-            format!(
-                "INSERT INTO {GCS_SCHEMA_QUOTED}.pbs_computations_branch
-                    (handle, is_completed, host_chain_id, block_number,
-                     producer_block_hash, block_hash)
-                 VALUES ($1, TRUE, 1, 150, $2, $2)"
-            ),
-            format!(
-                "INSERT INTO {GCS_SCHEMA_QUOTED}.ciphertext_digest_branch
-                    (handle, host_chain_id, block_number, producer_block_hash, block_hash)
-                 VALUES ($1, 1, 150, $2, $2)"
-            ),
-        ] {
-            sqlx::query(&sql)
-                .bind(ingested)
-                .bind(branch)
-                .execute(&pool)
-                .await
-                .expect("seed gcs branch row");
-        }
-
         execute_cutover(&pool).await.expect("cutover succeeds");
 
-        // Leftover (no gcs row): every legacy and branch row deleted, so the green stack
-        // re-derives the handle from the chain. The branch tables are the canonical ones
-        // after the branch-context migration, so a survivor there would be exactly the
-        // per-operator divergence the deletes exist to prevent.
+        // Leftover (no gcs row): every row deleted, so the green stack re-derives the
+        // handle from the chain instead of inheriting blue's copy.
         assert_eq!(
             leftover_counts(&pool, leftover).await,
-            [0; 8],
-            "a BCS leftover GCS never ingested must be deleted from both the legacy and \
-             the branch tables, not inherited by green"
+            [0; 3],
+            "a BCS leftover GCS never ingested must be deleted, not inherited by green"
         );
 
-        // Green's rows come back for the handle it ingested. The digest branch row is
-        // restored on its real branch context; the branchless (`block_number IS NULL`)
-        // slot stays empty because nothing wrote `public.ciphertext_digest`.
+        // Green's rows come back for the handle it ingested.
         assert_eq!(
             leftover_counts(&pool, ingested).await,
-            [1, 1, 1, 1, 1, 1, 1, 0],
-            "a handle GCS ingested must be restored by the merge in both forms"
+            [1, 1, 1],
+            "a handle GCS ingested must be restored by the merge"
         );
     }
 
