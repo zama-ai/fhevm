@@ -519,7 +519,7 @@ impl Database {
         // Schema isolation handles BCS/GCS routing at the connection layer
         // (`search_path = gcs,public` for GCS, default `public` for BCS), so
         // this INSERT references `computations` unqualified.
-        let query = sqlx::query(
+        let query = sqlx::query!(
             r#"
             INSERT INTO computations (
                 output_handle,
@@ -539,22 +539,22 @@ impl Database {
             VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9, $10, $11, $12)
             ON CONFLICT (output_handle, transaction_id) DO NOTHING
             "#,
-        )
-        .bind(output_handle)
-        .bind(dependencies)
-        .bind(fhe_operation as i16)
-        .bind(is_scalar)
-        .bind(log.dependence_chain.to_vec())
-        .bind(log.transaction_hash.map(|txh| txh.to_vec()))
-        .bind(log.is_allowed)
-        .bind(
+            output_handle,
+            dependencies as _,
+            fhe_operation as i16,
+            is_scalar,
+            log.dependence_chain.to_vec(),
+            log.transaction_hash.map(|txh| txh.to_vec()) as _,
+            log.is_allowed,
             log.block_timestamp
-                .saturating_add(TimeDuration::microseconds(log.tx_depth_size as i64)),
-        )
-        .bind(!log.is_allowed)
-        .bind(self.chain_id.as_i64())
-        .bind(log.block_number as i64)
-        .bind(operand_boundary_mask.as_slice());
+                .saturating_add(TimeDuration::microseconds(
+                    log.tx_depth_size as i64
+                )),
+            !log.is_allowed,
+            self.chain_id.as_i64(),
+            log.block_number as i64,
+            operand_boundary_mask.as_slice(),
+        );
         query
             .execute(tx.deref_mut())
             .await

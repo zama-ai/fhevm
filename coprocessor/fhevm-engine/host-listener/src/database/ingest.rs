@@ -1115,7 +1115,9 @@ pub async fn synthesize_finalized_fallback_grants(
     if logs.is_empty() {
         return Ok(());
     }
-    // Computation inserts are fail-closed on a missing mask, so derive it
+    // LISTENER-side computation inserts are fail-closed on a missing mask
+    // (insert_computation rejects None; the worker's derive-on-read fallback
+    // exists only for rows written by pre-mask binaries), so derive it
     // here too. Synthesized `TrivialEncrypt` rows carry no encrypted
     // operands, so every derived mask is empty; deriving rather than
     // hardcoding keeps this path honest if the shape ever changes.
