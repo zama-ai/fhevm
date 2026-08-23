@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.build.json",
+  "include": ["pkg/ts/**/*.ts"],
+  "exclude": [
+    "pkg/ts/**/*.bench.ts",
+    "pkg/ts/**/*.bench-d.ts",
+    "pkg/ts/**/*.test.ts",
+    "pkg/ts/**/*.test-d.ts",
+    "ts/vitest.config.ts"
+  ]
+}

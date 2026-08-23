@@ -1,0 +1,14 @@
+node_modules
+dependencies
+*.tsbuildinfo
+cache
+pkg/ts/_cjs
+pkg/ts/_esm
+pkg/ts/_types
+out
+tarball
+test/ts/.vitest-cache
+test/ts/node_modules
+.deploy-config
+broadcast
+.tmp-localhost
