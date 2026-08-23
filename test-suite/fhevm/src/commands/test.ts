@@ -14,6 +14,7 @@ import { hostReachableRpcUrl, readEnvFile, withHexPrefix } from "../utils/fs";
 import { composeEnv, run, runWithHeartbeat } from "../utils/process";
 import { loadState } from "../state/state";
 import { topologyForState } from "../stack-spec/stack-spec";
+import { serviceNameList } from "../generate/compose";
 import {
   COPROCESSOR_DB_CONTAINER,
   PROJECT,
@@ -68,6 +69,7 @@ const timedLabel = (label: string, started: number) =>
 const TEST_PROFILE_NAMES = [
   ...Object.keys(TEST_GREP),
   "blue-green",
+  "rolling-upgrade",
   "ciphertext-drift",
   "ciphertext-drift-auto-recovery",
   "coprocessor-db-state-revert",
@@ -129,6 +131,9 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "blue-green":
     "Run the Blue-Green upgrade end-to-end (fires proposeCoprocessorUpgrade on-chain, waits for cutover, " +
     "asserts final state). Requires `--scenario blue-green*`.",
+  "rolling-upgrade":
+    "Check that coprocessors on the same consensus version keep processing while one is removed. " +
+    "Requires `--scenario rolling-upgrade`.",
   "ciphertext-drift": "Run ciphertext drift detection checks (requires 2+ coprocessors).",
   "ciphertext-drift-auto-recovery":
     "Run ciphertext drift auto-recovery checks — services self-recover (requires 2+ coprocessors).",
@@ -904,7 +909,12 @@ type TrafficStream = {
  */
 const TRAFFIC_MAX_RETRIES = 3;
 const TRAFFIC_RETRY_BACKOFF_MS = 2000;
-const startContinuousErc20Traffic = (targets: TrafficTarget[], streams: number): TrafficStream => {
+const startContinuousErc20Traffic = (
+  targets: TrafficTarget[],
+  streams: number,
+  // Names the stream in its log lines, so concurrent streams stay distinguishable.
+  tag = "traffic",
+): TrafficStream => {
   if (targets.length === 0 || streams < targets.length) {
     throw new Error("ERC-20 traffic requires at least one stream target per host chain");
   }
@@ -919,7 +929,7 @@ const startContinuousErc20Traffic = (targets: TrafficTarget[], streams: number):
     const target = targets[streamIdx % targets.length]!;
     while (!stopped) {
       counter.iterations += 1;
-      const label = `[traffic ${target.label} s${streamIdx}#${counter.iterations}]`;
+      const label = `[${tag} ${target.label} s${streamIdx}#${counter.iterations}]`;
       let result = await run(target.argv, { allowFailure: true });
       for (let attempt = 1; attempt <= TRAFFIC_MAX_RETRIES && result.code !== 0 && !stopped; attempt += 1) {
         counter.retries += 1;
@@ -967,17 +977,195 @@ const startContinuousErc20Traffic = (targets: TrafficTarget[], streams: number):
   };
 };
 
+/** Wait until nothing is left in flight, so later growth can only come from new work. */
+const waitForQuietPipeline = async (database: string): Promise<void> => {
+  const deadline = Date.now() + 300_000;
+  while (Date.now() < deadline) {
+    const pending = Number(
+      await psqlQuery(database, "SELECT count(*) FROM computations WHERE NOT is_completed;"),
+    );
+    if (pending === 0) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+  }
+  throw new Error(`${database} still has work in flight after 300s`);
+};
+
+/** Wait until the database reports more completed computations than `from`. */
+const waitForCompletedGrowth = async (
+  database: string,
+  from: number,
+  errored: Promise<never>,
+): Promise<number> => {
+  const deadline = Date.now() + 300_000;
+  while (Date.now() < deadline) {
+    const completed = Number(
+      await psqlQuery(database, "SELECT count(*) FROM computations WHERE is_completed = TRUE;"),
+    );
+    if (Number.isSafeInteger(completed) && completed > from) {
+      return completed;
+    }
+    await Promise.race([
+      errored,
+      new Promise((resolve) => setTimeout(resolve, 3000)),
+    ]);
+  }
+  throw new Error(`no new completed computations in ${database} within 300s`);
+};
+
 /**
- * Runs the Blue-Green upgrade end-to-end against a stack booted via
- * `./fhevm-cli up --scenario blue-green*`. Fires the on-chain proposal, sends
- * traffic via `./fhevm-cli test erc20`, waits for cutover, and asserts final
- * state in every operator's database.
- *
- * Runs a failed upgrade first: an empty window (no non-trivial FHE op) never
- * anchors, so the detector's commitment_timeout forces a rollback; the phase
- * asserts the reset (PAUSED/failed, latches cleared, schema recreated empty,
- * versioning untouched) and the successful flow then reruns over the residue.
+ * Two coprocessors on the same consensus version must both stay live and keep
+ * processing while one of them is removed. This is a release that does not
+ * change consensus, so no upgrade proposal is involved.
  */
+const runRollingUpgradeProfile = async (
+  state: State,
+  options: Pick<TestOptions, "network" | "noHardhatCompile">,
+): Promise<boolean> => {
+  const topology = topologyForState(state);
+  if (topology.count < 2) {
+    throw new PreflightError(
+      "the rolling-upgrade profile needs at least 2 coprocessors; use `--scenario rolling-upgrade`",
+    );
+  }
+
+  const started = Date.now();
+  return runLogged("rolling-upgrade", started, async () => {
+    const operatorDatabases = Array.from({ length: topology.count }, (_, index) =>
+      coprocessorDatabaseName(index),
+    );
+
+    console.log(`\n[1/5] every coprocessor is live on the same consensus version`);
+    const consensusVersions = await Promise.all(
+      operatorDatabases.map((db) =>
+        psqlQuery(db, "SELECT consensus_version FROM versioning WHERE singleton = TRUE;"),
+      ),
+    );
+    const [firstConsensus] = consensusVersions;
+    for (const [index, consensus] of consensusVersions.entries()) {
+      if (consensus !== firstConsensus) {
+        throw new Error(
+          `${operatorDatabases[index]} is on consensus ${consensus}, expected ${firstConsensus}`,
+        );
+      }
+    }
+    for (const db of operatorDatabases) {
+      const rows = await psqlQuery(db, "SELECT count(*) FROM upgrade_state;");
+      if (rows !== "0") {
+        throw new Error(`${db}.upgrade_state has ${rows} rows; a rolling upgrade proposes nothing`);
+      }
+    }
+    console.log(`OK:   ${topology.count} coprocessor(s) on consensus ${firstConsensus}`);
+
+    const hostChains = state.scenario.hostChains;
+    const testSuiteEnv = await readEnvFile(envPath("test-suite"));
+    const erc20Grep = TEST_GREP.erc20;
+    if (!erc20Grep) {
+      throw new Error("rolling-upgrade profile requires the ERC-20 test grep");
+    }
+    const chainEnvValue = (index: number, primaryName: string, indexedSuffix: string): string => {
+      const key = index === 0 ? primaryName : `HOST_CHAIN_${index}_${indexedSuffix}`;
+      const value = testSuiteEnv[key];
+      if (!value) {
+        throw new Error(`rolling-upgrade traffic target is missing ${key}`);
+      }
+      return value;
+    };
+    const chainExtraExecArgs = (index: number): string[] =>
+      [
+        ["RPC_URL", chainEnvValue(index, "RPC_URL", "RPC_URL")],
+        ["CHAIN_ID_HOST", chainEnvValue(index, "CHAIN_ID_HOST", "CHAIN_ID")],
+        ["ACL_CONTRACT_ADDRESS", chainEnvValue(index, "ACL_CONTRACT_ADDRESS", "ACL_CONTRACT_ADDRESS")],
+        ["KMS_VERIFIER_CONTRACT_ADDRESS", chainEnvValue(index, "KMS_VERIFIER_CONTRACT_ADDRESS", "KMS_VERIFIER_CONTRACT_ADDRESS")],
+        ["INPUT_VERIFIER_CONTRACT_ADDRESS", chainEnvValue(index, "INPUT_VERIFIER_CONTRACT_ADDRESS", "INPUT_VERIFIER_CONTRACT_ADDRESS")],
+        ["FHEVM_EXECUTOR_CONTRACT_ADDRESS", chainEnvValue(index, "FHEVM_EXECUTOR_CONTRACT_ADDRESS", "FHEVM_EXECUTOR_CONTRACT_ADDRESS")],
+        ["PROTOCOL_CONFIG_CONTRACT_ADDRESS", chainEnvValue(index, "PROTOCOL_CONFIG_CONTRACT_ADDRESS", "PROTOCOL_CONFIG_CONTRACT_ADDRESS")],
+      ].flatMap(([name, value]) => ["-e", `${name}=${value}`]);
+    const trafficTargets: TrafficTarget[] = hostChains.map((chain, index) => ({
+      label: chain.key,
+      argv: buildTestContainerArgs(
+        runTestsArgs({ ...options, verbose: false, parallel: false, grep: erc20Grep }),
+        chainExtraExecArgs(index),
+      ),
+    }));
+
+    console.log(`\n[2/5] run traffic with every coprocessor up`);
+    // Drain first: work left by an earlier test would otherwise finish during this
+    // run and look like traffic being processed.
+    await waitForQuietPipeline(operatorDatabases[0]!);
+    const completedAtStart = Number(
+      await psqlQuery(
+        operatorDatabases[0]!,
+        "SELECT count(*) FROM computations WHERE is_completed = TRUE;",
+      ),
+    );
+    const traffic = startContinuousErc20Traffic(trafficTargets, Math.max(2, trafficTargets.length));
+    const completedBefore = await waitForCompletedGrowth(
+      operatorDatabases[0]!,
+      completedAtStart,
+      traffic.errored,
+    );
+    console.log(`OK:   ${completedBefore} completed computation(s), up from ${completedAtStart}`);
+
+    console.log(`\n[3/5] remove the last coprocessor while traffic keeps running`);
+    const removedIndex = topology.count - 1;
+    const removedPrefix = removedIndex === 0 ? "coprocessor-" : `coprocessor${removedIndex}-`;
+    const removed = serviceNameList(state, "coprocessor").filter(
+      (name) => name.startsWith(removedPrefix) && !name.endsWith("db-migration"),
+    );
+    if (removed.length === 0) {
+      throw new Error(`no containers found for coprocessor ${removedIndex}`);
+    }
+    await run(["docker", "stop", ...removed]);
+    console.log(`OK:   stopped ${removed.length} container(s) of coprocessor ${removedIndex}`);
+
+    // Always put the removed coprocessor back, so a failure here does not leave
+    // the stack short of a coprocessor.
+    try {
+      console.log(`\n[4/5] the remaining coprocessor keeps processing`);
+      const completedAfter = await waitForCompletedGrowth(
+        operatorDatabases[0]!,
+        completedBefore,
+        traffic.errored,
+      );
+      const stats = await traffic.stop();
+      console.log(
+        `OK:   ${completedAfter} completed computation(s) after removal ` +
+          `(${stats.iterations} traffic run(s), ${stats.failures} failure(s))`,
+      );
+
+      // A replaced coprocessor rejoins on its own: the listener catches up on the
+      // blocks it missed and the workers drain the backlog. Without this a rolling
+      // upgrade would leave the fleet permanently short of an operator.
+      console.log(`\n[5/5] the removed coprocessor rejoins and catches up`);
+      await run(["docker", "start", ...removed]);
+      const removedDatabase = coprocessorDatabaseName(removedIndex);
+      const target = Number(
+        await psqlQuery(operatorDatabases[0]!, "SELECT count(*) FROM computations;"),
+      );
+      await waitUntil({
+        label: `${removedDatabase}  caught up to ${target} computation(s)`,
+        timeoutSecs: 300,
+        check: async () =>
+          (await psqlQuery(
+            removedDatabase,
+            `SELECT CASE WHEN count(*) >= ${target}
+                          AND count(*) FILTER (WHERE NOT is_completed) = 0
+                         THEN 'ready' ELSE 'waiting' END
+               FROM computations;`,
+          )) === "ready",
+      });
+      console.log(`OK:   coprocessor ${removedIndex} drained ${target} computation(s)`);
+      return true;
+    } finally {
+      await traffic.stop().catch(() => undefined);
+      await run(["docker", "start", ...removed]).catch(() => undefined);
+    }
+  });
+};
+
+/** Run one failed blue/green upgrade, then a successful one. */
 const runBlueGreenProfile = async (
   state: State,
   options: Pick<TestOptions, "network" | "noHardhatCompile">,
@@ -989,14 +1177,21 @@ const runBlueGreenProfile = async (
     );
   }
 
-  const gcsStackVersion = state.scenario.gcs.stackVersion;
-  const gcsVersionLive = `v${gcsStackVersion}`;
   const opCount = state.scenario.topology.count;
 
   const operatorDatabases: string[] = [];
   for (let index = 0; index < opCount; index += 1) {
     operatorDatabases.push(coprocessorDatabaseName(index));
   }
+  const activeConsensusVersion = Number(
+    await psqlQuery(operatorDatabases[0], "SELECT consensus_version FROM versioning WHERE singleton = TRUE;"),
+  );
+  if (!Number.isSafeInteger(activeConsensusVersion) || activeConsensusVersion < 0) {
+    throw new Error(`invalid active consensus version ${activeConsensusVersion}`);
+  }
+  const gcsConsensusVersion = activeConsensusVersion + 1;
+  // The proposal carries one string: the consensus version, written as N.0.0.
+  const gcsSoftwareVersion = `${gcsConsensusVersion}.0.0`;
 
   const MIN_BLUE_GREEN_TRAFFIC_STREAMS = 2;
   const CROSS_CUTOVER_CHAIN_DEPTH = 5;
@@ -1004,10 +1199,18 @@ const runBlueGreenProfile = async (
   console.log(`\n==== blue-green E2E: ${opCount} operator(s) ====`);
 
   console.log(`\n[1/11] verify initial state`);
+  const preUpgradeVersions = new Map<string, string>();
   for (const db of operatorDatabases) {
-    const version = await psqlQuery(db, "SELECT stack_version FROM versioning;");
-    if (version !== "v0.14") {
-      throw new Error(`${db}.versioning = "${version}", expected "v0.14" (prior test residue?)`);
+    // Kept so the failed upgrade can be shown to leave it alone.
+    preUpgradeVersions.set(db, await psqlQuery(db, "SELECT stack_version FROM versioning;"));
+    const dbConsensus = Number(
+      await psqlQuery(db, "SELECT consensus_version FROM versioning WHERE singleton = TRUE;"),
+    );
+    if (dbConsensus !== activeConsensusVersion) {
+      throw new Error(
+        `${db}.versioning consensus ${dbConsensus} does not match operator 0 consensus ` +
+          `${activeConsensusVersion}`,
+      );
     }
     const rows = await psqlQuery(db, "SELECT count(*) FROM upgrade_state;");
     if (rows !== "0") {
@@ -1015,13 +1218,16 @@ const runBlueGreenProfile = async (
     }
     const schema = await psqlQuery(
       db,
-      `SELECT nspname FROM pg_namespace WHERE nspname='gcs-${gcsStackVersion}';`,
+      `SELECT nspname FROM pg_namespace WHERE nspname='gcs-${gcsConsensusVersion}';`,
     );
-    if (schema !== `gcs-${gcsStackVersion}`) {
-      throw new Error(`${db} missing schema "gcs-${gcsStackVersion}" (GCS upgrade-controller didn't create it)`);
+    if (schema !== `gcs-${gcsConsensusVersion}`) {
+      throw new Error(`${db} missing schema "gcs-${gcsConsensusVersion}" (GCS upgrade-controller didn't create it)`);
     }
   }
-  console.log(`OK:   ${opCount} DB(s) at v0.14, empty upgrade_state, gcs-${gcsStackVersion} schema present`);
+  console.log(
+    `OK:   ${opCount} DB(s) at consensus ${activeConsensusVersion}, empty upgrade_state, ` +
+      `gcs-${gcsConsensusVersion} schema present`,
+  );
 
   const defaultHostKey = defaultHostChainKey(state.scenario.hostChains);
   const hostRpcUrl = hostReachableRpcUrl(state.discovery!.endpoints.hosts[defaultHostKey]!.http);
@@ -1100,12 +1306,13 @@ const runBlueGreenProfile = async (
     "--rpc-url", hostRpcUrl,
     "--private-key", deployerPk,
     "proposeCoprocessorUpgrade(uint256,string,(uint64,uint64,uint64)[],uint64)",
-    "1", gcsVersionLive,
+    "1", gcsSoftwareVersion,
     failWindows,
     String(failGwStartBlock),
   ]);
   console.log(
-    `OK:   activation emitted (windows=${failWindows} gw_start=${failGwStartBlock})`,
+    `OK:   activation emitted (softwareVersion=${gcsSoftwareVersion} windows=${failWindows} ` +
+      `gw_start=${failGwStartBlock})`,
   );
 
   console.log(`\n[3/11] failed upgrade: wait for GCS DryRunStarted, then submit a Gateway-only input proof`);
@@ -1161,34 +1368,36 @@ const runBlueGreenProfile = async (
       );
     }
     const version = await psqlQuery(db, "SELECT stack_version FROM versioning;");
-    if (version !== "v0.14") {
-      throw new Error(`${db}.versioning = "${version}" after failed upgrade, expected "v0.14"`);
+    if (version !== preUpgradeVersions.get(db)) {
+      throw new Error(
+        `${db}.versioning "${version}" changed after failed upgrade; ` +
+          `expected "${preUpgradeVersions.get(db)}"`,
+      );
     }
     const schema = await psqlQuery(
       db,
-      `SELECT nspname FROM pg_namespace WHERE nspname='gcs-${gcsStackVersion}';`,
+      `SELECT nspname FROM pg_namespace WHERE nspname='gcs-${gcsConsensusVersion}';`,
     );
-    if (schema !== `gcs-${gcsStackVersion}`) {
-      throw new Error(`${db} missing schema "gcs-${gcsStackVersion}" after rollback`);
+    if (schema !== `gcs-${gcsConsensusVersion}`) {
+      throw new Error(`${db} missing schema "gcs-${gcsConsensusVersion}" after rollback`);
     }
-    const residue = await psqlQuery(
+    const remainingRows = await psqlQuery(
       db,
-      `SELECT (SELECT count(*) FROM "gcs-${gcsStackVersion}".computations) + ` +
-        `(SELECT count(*) FROM "gcs-${gcsStackVersion}".state_hash);`,
+      `SELECT (SELECT count(*) FROM "gcs-${gcsConsensusVersion}".computations) + ` +
+        `(SELECT count(*) FROM "gcs-${gcsConsensusVersion}".state_hash);`,
     );
-    if (residue !== "0") {
-      throw new Error(`${db} gcs schema not reset: ${residue} residual computations/state_hash rows`);
+    if (remainingRows !== "0") {
+      throw new Error(`${db} gcs schema still has ${remainingRows} rows`);
     }
-    console.log(`OK:   ${db}  PAUSED/failed, latches cleared, v0.14 kept, gcs schema recreated empty`);
+    console.log(
+      `OK:   ${db} failed upgrade cleared; version kept; GCS schema empty`,
+    );
   }
   const reenabled = await setSyntheticOps(true);
   console.log(`OK:   recreated ${reenabled.length} GCS host-listener service(s) with synthetic ops enabled`);
 
-  // Deploy ERC20 + mint before the proposal so the balance handle lands in
-  // public.ciphertexts with block_number < start_block. Transfers during the
-  // dry-run window will force GCS's tfhe-worker to fall back to
-  // public.ciphertexts for this handle.
-  console.log(`\n[5/11] cross-cutover setup: deploy ERC20 + mint (pre-cutover)`);
+  // Create the encrypted balance before the proposal so green must read it.
+  console.log(`\n[5/11] cross-cutover setup: deploy ERC20 + mint, and build a backlog`);
   const setupResult = await run(["./fhevm-cli", "test", "cross-cutover-setup"], { allowFailure: true });
   if (setupResult.code !== 0) {
     throw new Error("cross-cutover setup failed — see log above");
@@ -1216,6 +1425,35 @@ const runBlueGreenProfile = async (
     console.log(`OK:   ${db}  pre-cutover ciphertexts=${count} (sample handle recorded)`);
   }
 
+  // A real upgrade will not find the pipeline idle. Leave work queued before the
+  // proposal so the cutover has a backlog to drain, and [11/11] can tell whether
+  // any of it was stranded.
+  // Left running on purpose: stopping it would wait for the erc20 script to finish,
+  // and that waits for its own computations, so the backlog would drain before the
+  // proposal. It is stopped with the main traffic once cutover completes.
+  const backlog = startContinuousErc20Traffic(trafficTargets, trafficTargets.length, "backlog");
+  await Promise.race([
+    waitUntil({
+      label: `${operatorDatabases[0]}  work in flight`,
+      timeoutSecs: 180,
+      check: async () =>
+        Number(
+          await psqlQuery(
+            operatorDatabases[0]!,
+            "SELECT count(*) FROM computations WHERE NOT is_completed;",
+          ),
+        ) > 0,
+    }),
+    backlog.errored,
+  ]);
+  const backlogDepth = Number(
+    await psqlQuery(
+      operatorDatabases[0]!,
+      "SELECT count(*) FROM computations WHERE NOT is_completed;",
+    ),
+  );
+  console.log(`OK:   ${backlogDepth} computation(s) in flight, kept running into the proposal`);
+
   console.log(`\n[6/11] propose upgrade on-chain (ProtocolConfig.proposeCoprocessorUpgrade)`);
   const gwBlock = Number((await run(
     ["cast", "block-number", "--rpc-url", gatewayRpcUrl],
@@ -1228,11 +1466,14 @@ const runBlueGreenProfile = async (
     "--rpc-url", hostRpcUrl,
     "--private-key", deployerPk,
     "proposeCoprocessorUpgrade(uint256,string,(uint64,uint64,uint64)[],uint64)",
-    "2", gcsVersionLive,
+    "2", gcsSoftwareVersion,
     okWindows,
     String(gwStartBlock),
   ]);
-  console.log(`OK:   activation emitted (windows=${okWindows} gw_start=${gwStartBlock})`);
+  console.log(
+    `OK:   activation emitted (softwareVersion=${gcsSoftwareVersion} windows=${okWindows} ` +
+      `gw_start=${gwStartBlock})`,
+  );
 
   console.log(`\n[7/11] wait for GCS DryRunStarted per operator`);
   for (const db of operatorDatabases) {
@@ -1258,6 +1499,7 @@ const runBlueGreenProfile = async (
   );
   const traffic = startContinuousErc20Traffic(trafficTargets, blueGreenTrafficStreams);
   let trafficStats: { iterations: number; retries: number; failures: number };
+  let backlogStats: { iterations: number; retries: number; failures: number };
   try {
     // The chain is a stress signal — a fence hit mid-transfer is expected; [11/11] verifies actual transferCount.
     const chainPromise = (async () => {
@@ -1290,14 +1532,14 @@ const runBlueGreenProfile = async (
     })();
     await Promise.race([chainPromise, traffic.errored]);
 
-    console.log(`\n[9/11] wait for cutover (versioning=${gcsVersionLive} per operator)`);
+    console.log(`\n[9/11] wait for cutover (versioning=${gcsSoftwareVersion} per operator)`);
     for (const db of operatorDatabases) {
       await Promise.race([
         waitUntil({
-          label: `${db}  versioning=${gcsVersionLive}`,
+          label: `${db}  versioning=${gcsSoftwareVersion}`,
           timeoutSecs: 300,
           check: async () =>
-            (await psqlQuery(db, "SELECT stack_version FROM versioning;")) === gcsVersionLive,
+            (await psqlQuery(db, "SELECT stack_version FROM versioning;")) === gcsSoftwareVersion,
         }),
         traffic.errored,
       ]);
@@ -1336,6 +1578,7 @@ const runBlueGreenProfile = async (
     }
   } finally {
     trafficStats = await traffic.stop();
+    backlogStats = await backlog.stop();
   }
 
   console.log(`\n[11/11] stop background traffic + cross-cutover verify + continuity check`);
@@ -1348,6 +1591,35 @@ const runBlueGreenProfile = async (
       `${trafficStats.failures} erc20 iteration(s) failed even after retry — ` +
         "the upgraded stack dropped traffic across cutover.",
     );
+  }
+
+  if (backlogStats.failures > 0) {
+    throw new Error(
+      `${backlogStats.failures} backlog iteration(s) failed even after retry — ` +
+        "work queued before the proposal did not survive the cutover.",
+    );
+  }
+
+  // The backlog from [5/11] crossed the cutover. Every operator must finish it:
+  // work stranded by the schema merge would sit here unfinished forever.
+  for (const db of operatorDatabases) {
+    await waitUntil({
+      label: `${db}  backlog of ${backlogDepth} drained`,
+      timeoutSecs: 300,
+      check: async () =>
+        (await psqlQuery(
+          db,
+          "SELECT count(*) FROM computations WHERE NOT is_completed AND NOT is_error;",
+        )) === "0",
+    });
+    const errored = await psqlQuery(
+      db,
+      "SELECT count(*) FROM computations WHERE is_error;",
+    );
+    if (errored !== "0") {
+      throw new Error(`${db} has ${errored} errored computation(s) after cutover`);
+    }
+    console.log(`OK:   ${db}  no work left in flight, no errors`);
   }
 
   // TODO(fhevm-internal#1567): re-enable once RFC-023 lands — wait for the post-cutover
@@ -1665,6 +1937,9 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     }
     if (name === "blue-green") {
       return runBlueGreenProfile(state, options);
+    }
+    if (name === "rolling-upgrade") {
+      return runRollingUpgradeProfile(state, options);
     }
     if (name === "coprocessor-db-state-revert") {
       return runDbStateRevert(state, options);

@@ -411,9 +411,8 @@ gcs:
       expect(doc.services["coprocessor-gcs-upgrade-controller"]?.container_name).toBe(
         "coprocessor-gcs-upgrade-controller",
       );
-      // GCS builds from local HEAD compiled at the newer version (build arg enables the override feature).
+      // Green uses the local build.
       expect(doc.services["coprocessor-gcs-host-listener"]?.build).toBeDefined();
-      expect(doc.services["coprocessor-gcs-host-listener"]?.build?.args?.BUILD_STACK_VERSION).toBe("0.15.0");
       // GCS reuses BCS's db-migration — no `coprocessor-gcs-db-migration`.
       expect(doc.services["coprocessor-gcs-db-migration"]).toBeUndefined();
     });
@@ -560,6 +559,7 @@ gcs:
             image?: string;
             build?: { args?: Record<string, string> } | undefined;
             environment?: Record<string, string>;
+            depends_on?: Record<string, unknown>;
           }
         >;
       };
@@ -575,6 +575,12 @@ gcs:
       // db-migration is force-local so GCS gets the v0.14 schema.
       expect(doc.services["coprocessor-db-migration"]?.build).toBeDefined();
       expect(doc.services["coprocessor-db-migration"]?.image).not.toContain(":v0.13.0");
+      // The BCS release creates the database first; the HEAD migration runs after it.
+      expect(doc.services["coprocessor-bcs-db-migration"]?.image).toContain(":v0.13.0");
+      expect(doc.services["coprocessor-bcs-db-migration"]?.build).toBeUndefined();
+      expect(doc.services["coprocessor-db-migration"]?.depends_on).toMatchObject({
+        "coprocessor-bcs-db-migration": { condition: "service_completed_successfully" },
+      });
       expect(doc.services["coprocessor-gcs-tfhe-worker"]?.build).toBeDefined();
       expect(
         doc.services["coprocessor-host-listener"]?.environment
@@ -623,7 +629,7 @@ gcs:
       expect(bcsCommand).toContain("--bucket-name-ct128=coproc-0");
       expect(bcsCommand).toContain("--bucket-name-ct64=coproc-0");
       expect(bcsCommand).not.toContain("--bucket-name=coproc-0");
-      // GCS builds from the working tree, so it keeps the modern flag.
+      // Green uses the local command-line flags.
       const gcsCommand = doc.services["coprocessor-gcs-sns-worker"]?.command ?? [];
       expect(gcsCommand).toContain("--bucket-name=coproc-0");
       expect(gcsCommand.filter((arg) => arg.startsWith("--bucket-name-"))).toEqual([]);
