@@ -38,8 +38,8 @@ task(
   .addParam('duration', 'Evaluation window length (e.g. 30s, 30m, 2h, 1d, or a bare integer of seconds)')
   .addParam('buffer', 'DAO lead time required between now and startBlock (same format as --duration)')
   .addParam('proposalId', 'Coprocessor upgrade proposal id (positive integer, decimal or 0x-hex)')
-  .addParam('softwareVersion', 'Coprocessor software version string (e.g. v0.14.0)')
-  .setAction(async function ({ environment, startTime, duration, buffer, proposalId, softwareVersion }): Promise<void> {
+  .addParam('softwareVersion', 'Coprocessor consensus version (e.g. 1.0.0)')
+  .setAction(async function ({ environment, startTime, duration, buffer, proposalId, softwareVersion }): Promise {
     const inputs = parseCoprocessorUpgradeInputs({
       environment,
       startTime,
@@ -69,7 +69,7 @@ task(
   .addParam('duration', 'Evaluation window length (e.g. 30s, 30m, 2h, 1d, or a bare integer of seconds)')
   .addParam('buffer', 'DAO lead time required between now and startBlock (same format as --duration)')
   .addParam('proposalId', 'Coprocessor upgrade proposal id (positive integer, decimal or 0x-hex)')
-  .addParam('softwareVersion', 'Coprocessor software version string (e.g. v0.14.0)')
+  .addParam('softwareVersion', 'Coprocessor consensus version (e.g. 1.0.0)')
   .addOptionalParam(
     'useInternalProxyAddress',
     'Resolve the ProtocolConfig address from the /addresses directory instead of the environment',

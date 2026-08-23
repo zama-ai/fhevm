@@ -7,6 +7,7 @@ import {
   type GatewayReport,
   type HostReport,
   PROPOSE_UPGRADE_ABI,
+  assertSoftwareVersion,
   bufferViolations,
   encodeProposeCoprocessorUpgrade,
   parseCoprocessorUpgradeInputs,
@@ -65,7 +66,7 @@ describe('prepareCoprocessorUpgrade task utils', function () {
     it('encodes calldata that decodes back to the supplied windows (DAO path)', function () {
       const inputs = {
         proposalId: 7n,
-        softwareVersion: 'v0.14.0',
+        softwareVersion: '1.0.0',
       } as CoprocessorUpgradeInputs;
       const host = [makeHostReport(11155111, 1000, 1150), makeHostReport(80002, 5000, 6200)];
       const gateway = makeGatewayReport(9000);
@@ -75,7 +76,8 @@ describe('prepareCoprocessorUpgrade task utils', function () {
       const iface = new Interface(PROPOSE_UPGRADE_ABI);
       const decoded = iface.decodeFunctionData('proposeCoprocessorUpgrade', calldata);
       expect(decoded[0]).to.equal(7n);
-      expect(decoded[1]).to.equal('v0.14.0');
+      // The software version is the consensus version, so there is no separate arg.
+      expect(decoded[1]).to.equal('1.0.0');
       expect(decoded[2].length).to.equal(2);
       expect(decoded[2][0][0]).to.equal(11155111n);
       expect(decoded[2][0][1]).to.equal(1000n);
@@ -84,6 +86,19 @@ describe('prepareCoprocessorUpgrade task utils', function () {
       expect(decoded[2][1][1]).to.equal(5000n);
       expect(decoded[2][1][2]).to.equal(6200n);
       expect(decoded[3]).to.equal(9000n);
+    });
+  });
+
+  describe('assertSoftwareVersion', function () {
+    it('accepts a consensus version', function () {
+      expect(assertSoftwareVersion('1.0.0')).to.equal('1.0.0');
+      expect(assertSoftwareVersion('  42.0.0  ')).to.equal('42.0.0');
+    });
+
+    it('refuses anything the coprocessors would refuse', function () {
+      for (const bad of ['1', '1.0', '1.2.3', '1.0.1', 'v1.0.0', '01.0.0', '0.0.0', '', '1.0.0+cpv1']) {
+        expect(() => assertSoftwareVersion(bad), bad).to.throw();
+      }
     });
   });
 
@@ -118,12 +133,13 @@ describe('prepareCoprocessorUpgrade task utils', function () {
         duration: '30m',
         buffer: '1h',
         proposalId: '5',
-        softwareVersion: 'v0.14.0',
+        softwareVersion: '1.0.0',
       });
       expect(inputs.environment).to.equal('testnet');
       expect(inputs.durationSeconds).to.equal(1800);
       expect(inputs.bufferSeconds).to.equal(3600);
       expect(inputs.proposalId).to.equal(5n);
+      expect(inputs.softwareVersion).to.equal('1.0.0');
       expect(inputs.hostChains.map((c) => c.chainId)).to.deep.equal([11155111, 80002]);
       expect(inputs.gateway.rpcUrl).to.equal('https://gw.testnet.invalid');
     });
@@ -136,7 +152,7 @@ describe('prepareCoprocessorUpgrade task utils', function () {
           duration: '30m',
           buffer: '1h',
           proposalId: '1',
-          softwareVersion: 'v0.14.0',
+          softwareVersion: '1.0.0',
         }),
       ).to.throw(/--environment must be one of/);
     });
@@ -150,9 +166,25 @@ describe('prepareCoprocessorUpgrade task utils', function () {
           duration: '30m',
           buffer: '1h',
           proposalId: '0',
-          softwareVersion: 'v0.14.0',
+          softwareVersion: '1.0.0',
         }),
       ).to.throw(/must be > 0/);
+    });
+
+    it('rejects software versions outside the allowed range', function () {
+      process.env.RPC_URL_GATEWAY_TESTNET = 'https://gw.testnet.invalid';
+      const raw = {
+        environment: 'testnet',
+        startTime: '2026-07-01T12:00:00Z',
+        duration: '30m',
+        buffer: '1h',
+        proposalId: '1',
+        softwareVersion: '0.0.0',
+      };
+      expect(() => parseCoprocessorUpgradeInputs(raw)).to.throw(/1.0.0 and 4294967295.0.0/);
+      expect(() => parseCoprocessorUpgradeInputs({ ...raw, softwareVersion: '4294967296.0.0' })).to.throw(
+        /1.0.0 and 4294967295.0.0/,
+      );
     });
   });
 

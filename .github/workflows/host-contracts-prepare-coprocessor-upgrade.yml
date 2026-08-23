@@ -48,7 +48,7 @@ on:
         required: true
         type: string
       software-version:
-        description: "Coprocessor software version (e.g. v0.14.0)"
+        description: "Consensus protocol version, as in 1.0.0"
         required: true
         type: string
 
