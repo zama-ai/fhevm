@@ -943,6 +943,22 @@ async fn notify_coprocessor_upgrade_proposed(
     event: &ProtocolConfig::CoprocessorUpgradeProposed,
     proposal_block: i64,
 ) -> Result<(), sqlx::Error> {
+    // The software version is the consensus version.
+    let consensus_version =
+        match fhevm_engine_common::versioning::parse_software_version(
+            &event.softwareVersion,
+        ) {
+            Ok(version) => Some(i64::from(version)),
+            Err(error) => {
+                warn!(
+                    proposal_id = %event.proposalId,
+                    error,
+                    "Rejecting CoprocessorUpgradeProposed: cannot read the software version"
+                );
+                return Ok(());
+            }
+        };
+
     let listener_chain_id = chain_id.as_u64();
     let Ok(listener_chain_id_i64) = i64::try_from(listener_chain_id) else {
         warn!(
@@ -1058,10 +1074,11 @@ async fn notify_coprocessor_upgrade_proposed(
         Option<i64>,
         Option<String>,
         Option<i64>,
+        Option<i64>,
     );
     let existing: Vec<ExistingWindow> = sqlx::query_as(
         "SELECT status, proposal_id, proposal_block, host_chain_id,
-                start_block, end_block, version, gw_start_block
+                start_block, end_block, version, gw_start_block, consensus_version
            FROM upgrade_state
           WHERE stack_role = 'GCS'
           ORDER BY host_chain_id
@@ -1072,7 +1089,7 @@ async fn notify_coprocessor_upgrade_proposed(
 
     let same_attempt = !existing.is_empty()
         && existing.iter().all(
-            |(_, existing_id, existing_block, _, _, _, _, _)| {
+            |(_, existing_id, existing_block, _, _, _, _, _, _)| {
                 existing_id.as_deref() == Some(&proposal_id_bytes[..])
                     && *existing_block == Some(proposal_block)
             },
@@ -1090,6 +1107,7 @@ async fn notify_coprocessor_upgrade_proposed(
                         existing_end,
                         existing_version,
                         existing_gw_start,
+                        _,
                     ),
                     (chain, start, end),
                 )| {
@@ -1102,10 +1120,25 @@ async fn notify_coprocessor_upgrade_proposed(
                 },
             );
         if same_windows {
+            // A 0.14 listener writes these rows too, without a consensus version.
+            // Fill it in, or the proposal cannot cut over. Drop this after 0.15.
+            let filled = sqlx::query(
+                "UPDATE upgrade_state
+                    SET consensus_version = $1
+                  WHERE stack_role = 'GCS'
+                    AND proposal_id = $2
+                    AND consensus_version IS DISTINCT FROM $1",
+            )
+            .bind(consensus_version)
+            .bind(&proposal_id_bytes[..])
+            .execute(&mut **tx)
+            .await?
+            .rows_affected();
             debug!(
                 proposal_id = %proposal_id_hex,
                 proposal_block,
-                "Ignoring exact replay of CoprocessorUpgradeProposed"
+                filled,
+                "Ignoring repeated CoprocessorUpgradeProposed event"
             );
         } else {
             warn!(
@@ -1119,7 +1152,7 @@ async fn notify_coprocessor_upgrade_proposed(
 
     let can_replace = existing.is_empty()
         || existing.iter().all(
-            |(status, existing_id, existing_block, _, _, _, _, _)| {
+            |(status, existing_id, existing_block, _, _, _, _, _, _)| {
                 existing_block.is_none_or(|block| proposal_block > block)
                     && (status == "failed"
                         || (status == "completed"
@@ -1144,19 +1177,20 @@ async fn notify_coprocessor_upgrade_proposed(
         sqlx::query(
             r#"
             INSERT INTO upgrade_state (
-                stack_role, state, status, proposal_id, version,
+                stack_role, state, status, proposal_id, version, consensus_version,
                 start_block, end_block, gw_start_block, host_chain_id,
                 host_consensus_reached, gw_consensus_reached,
                 gw_dry_run_started, proposal_block, last_error, updated_at
             )
             VALUES (
-                'GCS', 'UpgradeActivated', 'in_progress', $1, $2,
-                $3, $4, $5, $6, FALSE, FALSE, FALSE, $7, NULL, NOW()
+                'GCS', 'UpgradeActivated', 'in_progress', $1, $2, $3,
+                $4, $5, $6, $7, FALSE, FALSE, FALSE, $8, NULL, NOW()
             )
             "#,
         )
         .bind(&proposal_id_bytes[..])
         .bind(&event.softwareVersion)
+        .bind(consensus_version)
         .bind(start_block)
         .bind(end_block)
         .bind(gw_start_block)
@@ -1168,10 +1202,11 @@ async fn notify_coprocessor_upgrade_proposed(
 
     info!(
         proposal_id = %proposal_id_hex,
-        software_version = %event.softwareVersion,
+        event.softwareVersion,
+        consensus_version,
         chains = windows.len(),
         gw_start_block = event.gwStartBlock,
-        "Persisted CoprocessorUpgradeProposed atomically, emitting pg_notify('event_upgrade_activated')"
+        "Saved CoprocessorUpgradeProposed"
     );
 
     // One wake-up for the complete proposal; the controller reconciles from
@@ -1922,7 +1957,7 @@ mod tests {
 
         let event = ProtocolConfig::CoprocessorUpgradeProposed {
             proposalId: U256::from(2u64),
-            softwareVersion: "v2".to_string(),
+            softwareVersion: "7.0.0".to_string(),
             chainUpgradeWindows: vec![ProtocolConfig::ChainUpgradeWindow {
                 chainId: 1,
                 startBlock: 100,
@@ -1991,7 +2026,7 @@ mod tests {
 
         let event = ProtocolConfig::CoprocessorUpgradeProposed {
             proposalId: U256::from(2u64),
-            softwareVersion: "v2".to_string(),
+            softwareVersion: "7.0.0".to_string(),
             chainUpgradeWindows: vec![
                 ProtocolConfig::ChainUpgradeWindow {
                     chainId: 1,
@@ -2086,7 +2121,7 @@ mod tests {
 
         let event = ProtocolConfig::CoprocessorUpgradeProposed {
             proposalId: U256::from(2u64),
-            softwareVersion: "v2".to_string(),
+            softwareVersion: "7.0.0".to_string(),
             chainUpgradeWindows: vec![ProtocolConfig::ChainUpgradeWindow {
                 chainId: 1,
                 startBlock: 300,
@@ -2154,7 +2189,7 @@ mod tests {
 
         let event = ProtocolConfig::CoprocessorUpgradeProposed {
             proposalId: U256::from(1u64),
-            softwareVersion: "v1".to_string(),
+            softwareVersion: "7.0.0".to_string(),
             chainUpgradeWindows: vec![ProtocolConfig::ChainUpgradeWindow {
                 chainId: 1,
                 startBlock: 100,
@@ -2217,7 +2252,7 @@ mod tests {
 
         let same_id = ProtocolConfig::CoprocessorUpgradeProposed {
             proposalId: U256::from(1u64),
-            softwareVersion: "v2".to_string(),
+            softwareVersion: "7.0.0".to_string(),
             chainUpgradeWindows: vec![ProtocolConfig::ChainUpgradeWindow {
                 chainId: 1,
                 startBlock: 300,
@@ -2265,7 +2300,7 @@ mod tests {
 
         let other_id = ProtocolConfig::CoprocessorUpgradeProposed {
             proposalId: U256::from(2u64),
-            softwareVersion: "v3".to_string(),
+            softwareVersion: "7.0.0".to_string(),
             chainUpgradeWindows: vec![ProtocolConfig::ChainUpgradeWindow {
                 chainId: 1,
                 startBlock: 500,
@@ -2323,7 +2358,7 @@ mod tests {
 
         let event = ProtocolConfig::CoprocessorUpgradeProposed {
             proposalId: U256::from(2u64),
-            softwareVersion: "v2".to_string(),
+            softwareVersion: "7.0.0".to_string(),
             chainUpgradeWindows: vec![
                 ProtocolConfig::ChainUpgradeWindow {
                     chainId: 1,
@@ -2400,7 +2435,7 @@ mod tests {
         // Replay the older proposal 1 from an earlier block (50).
         let event = ProtocolConfig::CoprocessorUpgradeProposed {
             proposalId: U256::from(1u64),
-            softwareVersion: "v1".to_string(),
+            softwareVersion: "7.0.0".to_string(),
             chainUpgradeWindows: vec![ProtocolConfig::ChainUpgradeWindow {
                 chainId: 1,
                 startBlock: 10,
