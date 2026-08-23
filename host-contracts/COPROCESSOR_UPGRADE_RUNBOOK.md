@@ -1,35 +1,72 @@
 # Coprocessor upgrade runbook
 
-This runbook covers the preparation of a `proposeCoprocessorUpgrade` proposal for the Aragon DAO. It applies whenever the coprocessor requires an on-chain upgrade proposal.
+Use this guide for an upgrade that increases `CONSENSUS_PROTOCOL_VERSION`.
+Use a normal rolling deployment when that value does not change.
 
 ## What this produces
 
-A hex string (calldata) intended for submission as the action of an Aragon DAO proposal calling `ProtocolConfig.proposeCoprocessorUpgrade(...)`. The DAO votes; on approval, the upgrade window opens across all host chains and the gateway.
+The workflow creates the calldata for
+`ProtocolConfig.proposeCoprocessorUpgrade(...)`. Add this calldata to the
+Aragon DAO proposal. When the proposal passes, the upgrade window opens.
 
 ## Prerequisites
 
-- The new coprocessor version is built and the release tag is known (e.g. `v0.14.0`).
-- The wall-clock start time for the dry-run evaluation window has been finalized.
-- The start time is far enough in the future for the DAO to vote first (the `--buffer` value, typically `2h` on mainnet).
+- Build the new coprocessor release.
+- Check that its `CONSENSUS_PROTOCOL_VERSION` is one more than the active value
+  in the `versioning` table.
+- Choose the start time and length of the test window.
+- Leave enough time for the DAO vote. Use `--buffer` for this delay.
+
+## Required rollout order
+
+1. Deploy `ProtocolConfig` with support for
+   `proposeCoprocessorUpgrade`.
+2. Deploy listeners and controllers that support
+   `CoprocessorUpgradeProposed`.
+3. Check that every green binary has the consensus version used in the proposal.
+4. Submit the proposal.
+5. Complete the cutover, check the new version, and stop the old fleet. A restarted
+   service from this scheme onwards exits because its consensus version is too old; one
+   from before it exits because the stored version is now higher than its release.
+
+## The consensus version
+
+The proposal carries one version: the consensus protocol version, written as `N.0.0`.
+
+```
+--software-version 1.0.0   ->   softwareVersion "1.0.0"
+```
+
+What you pass is what goes on chain.
+
+**Raise it by one** for an upgrade the fleet must cut over to: new key parameters, the GPU
+feature, a randomization change, or a change to the scheduling logic. **Leave it alone** for
+a plain release, which then rolls out without a cutover.
+
+`softwareVersion` is not the software release. It is written this way so that a service from
+before this scheme, which compares releases, still sees a higher number and stops working.
+
+Only a consensus version above the active one cuts over, and only the version the proposal
+names can do it. Raise it by one and run each upgrade separately.
 
 ## Step 1 — Run the workflow
 
 Navigate to **Actions** → **host-contracts-prepare-coprocessor-upgrade** → **Run workflow** and provide:
 
-| Input                | Value                                        |
-| -------------------- | -------------------------------------------- |
-| **Environment**      | `devnet`, `testnet`, or `mainnet`.           |
-| **Start time**       | ISO 8601 UTC, e.g. `2026-07-01T12:00:00Z`.   |
-| **Duration**         | Window length, e.g. `30m`.                   |
-| **Buffer**           | DAO lead time, e.g. `2h`.                    |
-| **Proposal id**      | Any positive integer (operator-chosen).      |
-| **Software version** | The coprocessor release tag, e.g. `v0.14.0`. |
+| Input                 | Value                                      |
+| --------------------- | ------------------------------------------ |
+| **Environment**       | `devnet`, `testnet`, or `mainnet`.         |
+| **Start time**        | ISO 8601 UTC, e.g. `2026-07-01T12:00:00Z`. |
+| **Duration**          | Window length, e.g. `30m`.                 |
+| **Buffer**            | DAO lead time, e.g. `2h`.                  |
+| **Proposal id**       | Any positive integer (operator-chosen).    |
+| **Consensus version** | The binary's `CONSENSUS_PROTOCOL_VERSION`. |
 
 Click **Run workflow** and wait for completion.
 
 ## Step 2 — Copy the calldata
 
-Open the logs of the **"Prepare upgrade proposal"** step. Scroll to the end. The last block under `## Calldata` is a hex string starting with `0xccbf8199…`.
+Open the **Prepare upgrade proposal** logs. Copy the value under `## Calldata`.
 Copy the entire string.
 
 ## Step 3 — Submit to the DAO
@@ -44,7 +81,9 @@ Create a new proposal with:
 - **Target contract**: the `ProtocolConfig` on the host chain (Ethereum for mainnet, Sepolia for testnet).
 - **Calldata**: the hex string copied in Step 2.
 
-Once the DAO vote passes and the proposal executes, the on-chain `proposeCoprocessorUpgrade` event fires and the upgrade window opens.
+After the vote passes, `CoprocessorUpgradeProposed` opens the upgrade window.
+Cutover starts only when the proposal's consensus version matches the green
+binaries and is above the active one.
 
 ## Failure modes
 
@@ -67,7 +106,7 @@ npx hardhat task:prepareCoprocessorUpgrade \
   --duration 30m \
   --buffer 1h \
   --proposal-id 1 \
-  --software-version v0.14.0
+  --software-version 1.0.0
 ```
 
 Output and calldata are identical to the workflow run. The task exits non-zero (and prints the
@@ -88,7 +127,8 @@ cd host-contracts
 DEPLOYER_PRIVATE_KEY=0x... npx hardhat --network sepolia task:proposeCoprocessorUpgrade \
   --environment devnet \
   --start-time "$(date -u -v+2H '+%Y-%m-%dT%H:%M:%SZ')" \
-  --duration 30m --buffer 1h --proposal-id 1 --software-version v0.14.0 \
+  --duration 30m --buffer 1h --proposal-id 1 \
+  --software-version 1.0.0 \
   --use-internal-proxy-address
 ```
 

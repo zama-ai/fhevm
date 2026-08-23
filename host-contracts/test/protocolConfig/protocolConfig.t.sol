@@ -3013,7 +3013,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     }
 
     function _defaultSoftwareVersion() internal pure returns (string memory) {
-        return "v0.14.0";
+        return "1.0.0";
     }
 
     function _defaultGwStartBlock() internal pure returns (uint64) {
@@ -3024,30 +3024,24 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         return 1;
     }
 
-    function test_proposeCoprocessorUpgrade_singleChain() public {
+    function test_proposeCoprocessorUpgrade_emitsProposal() public {
         _setupDefault();
-        ChainUpgradeWindow[] memory windows = _makeChainUpgradeWindows(1);
-        uint64 gwStart = _defaultGwStartBlock();
-        string memory version = _defaultSoftwareVersion();
-        uint256 proposalId = _defaultProposalId();
+        ChainUpgradeWindow[] memory windows = _makeChainUpgradeWindows(2);
 
         vm.expectEmit(true, false, false, true, address(protocolConfig));
-        emit IProtocolConfig.CoprocessorUpgradeProposed(proposalId, version, windows, gwStart);
+        emit IProtocolConfig.CoprocessorUpgradeProposed(
+            _defaultProposalId(),
+            _defaultSoftwareVersion(),
+            windows,
+            _defaultGwStartBlock()
+        );
         vm.prank(owner);
-        protocolConfig.proposeCoprocessorUpgrade(proposalId, version, windows, gwStart);
-    }
-
-    function test_proposeCoprocessorUpgrade_multiChain() public {
-        _setupDefault();
-        ChainUpgradeWindow[] memory windows = _makeChainUpgradeWindows(3);
-        uint64 gwStart = _defaultGwStartBlock();
-        string memory version = _defaultSoftwareVersion();
-        uint256 proposalId = _defaultProposalId();
-
-        vm.expectEmit(true, false, false, true, address(protocolConfig));
-        emit IProtocolConfig.CoprocessorUpgradeProposed(proposalId, version, windows, gwStart);
-        vm.prank(owner);
-        protocolConfig.proposeCoprocessorUpgrade(proposalId, version, windows, gwStart);
+        protocolConfig.proposeCoprocessorUpgrade(
+            _defaultProposalId(),
+            _defaultSoftwareVersion(),
+            windows,
+            _defaultGwStartBlock()
+        );
     }
 
     function test_revertCoprocessor_InvalidProposalId() public {

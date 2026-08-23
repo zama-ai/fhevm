@@ -19,6 +19,20 @@ export const PROPOSE_UPGRADE_ABI = [
   'function proposeCoprocessorUpgrade(uint256 proposalId, string softwareVersion, tuple(uint64 chainId, uint64 startBlock, uint64 endBlock)[] chainUpgradeWindows, uint64 gwStartBlock)',
 ];
 
+// The software version is the consensus protocol version, written as N.0.0. Reject
+// anything else here rather than after a DAO vote: the coprocessors refuse it too.
+export function assertSoftwareVersion(value: string): string {
+  const version = value.trim();
+  if (!/^(0|[1-9]\d*)\.0\.0$/.test(version)) {
+    throw new Error('--software-version must be a consensus version, as in 1.0.0');
+  }
+  const consensusVersion = BigInt(version.slice(0, version.indexOf('.')));
+  if (consensusVersion <= 0n || consensusVersion > 0xffff_ffffn) {
+    throw new Error('--software-version must be between 1.0.0 and 4294967295.0.0');
+  }
+  return version;
+}
+
 export interface GatewayConfig {
   rpcUrl: string;
   fallbackBlockTimeSeconds: number;
@@ -109,9 +123,7 @@ export function parseCoprocessorUpgradeInputs(raw: RawCoprocessorUpgradeParams):
     throw new Error('--proposal-id must be > 0 (contract rejects 0)');
   }
 
-  if (raw.softwareVersion.trim() === '') {
-    throw new Error('--software-version is required');
-  }
+  const softwareVersion = assertSoftwareVersion(raw.softwareVersion);
 
   return {
     environment: raw.environment,
@@ -121,7 +133,7 @@ export function parseCoprocessorUpgradeInputs(raw: RawCoprocessorUpgradeParams):
     hostChains,
     gateway,
     proposalId,
-    softwareVersion: raw.softwareVersion,
+    softwareVersion,
   };
 }
 
