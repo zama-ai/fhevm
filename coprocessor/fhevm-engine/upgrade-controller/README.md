@@ -4,11 +4,9 @@
 
 Run the E2E test with the `--override` option.
 
-Before running it, make sure that the compiled-in `stack_version` in `fhevm-engine-common` is set to:
-
-```text
-0.14.0
-```
+Before running it, make sure the compiled-in `CONSENSUS_PROTOCOL_VERSION` in
+`fhevm-engine-common` equals the active `versioning.consensus_version` in the
+database. The role is decided by the consensus version, not by `stack_version`.
 
 This makes the E2E coprocessor stack run in the **BCS** role.
 
@@ -23,9 +21,9 @@ SELECT * FROM versioning;
 Expected result:
 
 ```text
- singleton | stack_version |          updated_at           
------------+---------------+-------------------------------
- t         | v0.14         | 2026-07-02 05:40:42.664428+00
+ singleton | stack_version | consensus_version |          updated_at
+-----------+---------------+-------------------+-------------------------------
+ t         | v0.14         |                 0 | 2026-07-02 05:40:42.664428+00
 (1 row)
 ```
 
@@ -49,11 +47,10 @@ Expected result:
 
 To run the **GCS** stack from source:
 
-1. Update the compiled-in `stack_version` in `fhevm-engine-common` to:
-
-   ```text
-   0.15.0
-   ```
+1. Make sure `CONSENSUS_PROTOCOL_VERSION` in `fhevm-engine-common` is one above
+   the active `versioning.consensus_version` in the database, so the services
+   classify themselves as the green candidate. Blue/green mode is decided by
+   this value, not by `stack_version`.
 
 2. Rebuild the entire workspace.
 
@@ -61,7 +58,7 @@ To run the **GCS** stack from source:
 
    * `upgrade-controller`
    * `consensus-detector`
-   
+
 You can create a helper script, for example:
 
 ```bash
@@ -72,21 +69,18 @@ You can create a helper script, for example:
 
 ## 3. Activate the Upgrade
 
-Once both **BCS** and **GCS** are set up, activate the upgrade by emitting the `event_upgrade_activated` notification:
+Once both **BCS** and **GCS** are set up, propose the upgrade on-chain. The
+host-listener ingests the event, writes the `upgrade_state` rows, and notifies
+the controller. The consensus version must be the GCS build's
+`CONSENSUS_PROTOCOL_VERSION`, and the windows must cover every configured host
+chain:
 
-```sql
-SELECT pg_notify(
-    'event_upgrade_activated',
-    json_build_object(
-        'proposal_id',        '0x' || lpad(to_hex(nextval('upgrade_proposal_counter')), 64, '0'),
-        'chain_id',           12345,
-        'start_block',        (SELECT COALESCE(MAX(block_number), 0) + 30 FROM public.host_chain_blocks_valid),
-        'end_block',          (SELECT COALESCE(MAX(block_number), 0) + 230 FROM public.host_chain_blocks_valid),
-        'gw_start_block',     (SELECT COALESCE(MAX(last_block_num), 0) + 10 FROM public.gw_listener_last_block),
-        'ciphertext_version', 1,
-        'version',            'v0.15.0'
-    )::text
-);
+```bash
+cast send $PROTOCOL_CONFIG \
+    --rpc-url $HOST_RPC_URL \
+    --private-key $DEPLOYER_PK \
+    "proposeCoprocessorUpgrade(uint256,string,(uint64,uint64,uint64)[],uint64)" \
+    1 "1.0.0" "[(12345,$START_BLOCK,$END_BLOCK)]" $GW_START_BLOCK
 ```
 
 ### Checkpoint: Verify `upgrade_state`
@@ -100,8 +94,8 @@ Expected result after start_block is reached and the readiness check is done:
 ```text
  stack_role |      state       |   status    |                            proposal_id                             | version | start_block | end_block | gw_start_block | last_error |          updated_at           | gw_dry_run_started 
 ------------+------------------+-------------+--------------------------------------------------------------------+---------+-------------+-----------+----------------+------------+-------------------------------+--------------------
- BCS        | UpgradeActivated | in_progress | \x0000000000000000000000000000000000000000000000000000000000000001 | v0.15.0 |       10499 |     10699 |          10478 |            | 2026-07-02 08:27:49.377294+00 | f
- GCS        | DryRunStarted    | in_progress | \x0000000000000000000000000000000000000000000000000000000000000001 | v0.15.0 |       10499 |     10699 |          10478 |            | 2026-07-02 08:28:18.975754+00 | t
+ BCS        | UpgradeActivated | in_progress | \x0000000000000000000000000000000000000000000000000000000000000001 | 1.0.0 |       10499 |     10699 |          10478 |            | 2026-07-02 08:27:49.377294+00 | f
+ GCS        | DryRunStarted    | in_progress | \x0000000000000000000000000000000000000000000000000000000000000001 | 1.0.0 |       10499 |     10699 |          10478 |            | 2026-07-02 08:28:18.975754+00 | t
 (2 rows)
 ```
 
@@ -137,7 +131,7 @@ Expected result:
 Check the GCS ciphertexts:
 
 ```sql
-SELECT count(*) FROM "gcs-0.15.0".ciphertexts;
+SELECT count(*) FROM "gcs-1".ciphertexts;
 ```
 
 Expected result:
@@ -157,11 +151,11 @@ Once `end_block` is reached, the cutover is executed automatically.
 
 During cutover:
 
-* the `"gcs-0.15.0"` namespace is merged into the `"public"` namespace
-* the `"gcs-0.15.0"` namespace is dropped
+* the `"gcs-1"` namespace is merged into the `"public"` namespace
+* the `"gcs-1"` namespace is dropped
 * GCS becomes `LIVE`
 * BCS becomes `PAUSED`
-* Check for "Error in background worker, retrying shortly","error":"Coprocessor db error: Configuration(StaleStackError { binary: \"0.14.0\", live: \"v0.15.0\" })"}}" in *BCS* workers
+* BCS workers stop writing: their consensus version is now behind the active one
 
 ### Checkpoint: Verify Final `upgrade_state`
 
@@ -174,8 +168,8 @@ Expected result:
 ```text
  stack_role | state  |  status   |                            proposal_id                             | version | start_block | end_block | gw_start_block | last_error |          updated_at          | gw_dry_run_started 
 ------------+--------+-----------+--------------------------------------------------------------------+---------+-------------+-----------+----------------+------------+------------------------------+--------------------
- GCS        | LIVE   | completed | \x0000000000000000000000000000000000000000000000000000000000000001 | v0.15.0 |       10499 |     10699 |          10478 |            | 2026-07-02 08:31:39.03538+00 | t
- BCS        | PAUSED | completed | \x0000000000000000000000000000000000000000000000000000000000000001 | v0.15.0 |       10499 |     10699 |          10478 |            | 2026-07-02 08:31:39.03538+00 | f
+ GCS        | LIVE   | completed | \x0000000000000000000000000000000000000000000000000000000000000001 | 1.0.0 |       10499 |     10699 |          10478 |            | 2026-07-02 08:31:39.03538+00 | t
+ BCS        | PAUSED | completed | \x0000000000000000000000000000000000000000000000000000000000000001 | 1.0.0 |       10499 |     10699 |          10478 |            | 2026-07-02 08:31:39.03538+00 | f
 (2 rows)
 ```
 
@@ -183,7 +177,7 @@ Expected result:
 
 ```
 coprocessor# select * from versioning;
- singleton | stack_version |          updated_at          
------------+---------------+------------------------------
- t         | v0.15.0       | 2026-07-02 08:31:39.03538+00
+ singleton | stack_version | consensus_version |          updated_at
+-----------+---------------+-------------------+------------------------------
+ t         | 1.0.0         |                 1 | 2026-07-02 08:31:39.03538+00
 ```
