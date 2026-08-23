@@ -95,6 +95,7 @@ async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) {
         processed_dcid_ttl_sec: 0,
         dcid_max_no_progress_cycles: 2,
         dcid_ignore_dependency_count_threshold: 100,
+        dcid_stale_gate_age_secs: 300.0,
         drift_revert_watcher_timeouts: Default::default(),
         stack_version: false,
     };

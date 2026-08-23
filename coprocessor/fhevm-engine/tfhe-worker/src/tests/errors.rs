@@ -1,6 +1,6 @@
 use crate::tests::event_helpers::{
-    allow_handle, insert_event, insert_trivial_encrypt, next_handle, scalar_flag,
-    setup_event_harness, wait_for_error, zero_address, EventHarness, TEST_CHAIN_ID,
+    allow_handle, insert_event, insert_trivial_encrypt, next_handle, next_handle_with_type,
+    scalar_flag, setup_event_harness, wait_for_error, zero_address, EventHarness, TEST_CHAIN_ID,
 };
 use host_listener::contracts::TfheContract;
 use host_listener::contracts::TfheContract::TfheContractEvents;
@@ -271,6 +271,96 @@ async fn test_unary_boolean_inputs_error() -> Result<(), Box<dyn std::error::Err
     assert!(
         error_msg.contains("UnsupportedFheTypes"),
         "expected UnsupportedFheTypes error, got: {error_msg}"
+    );
+    Ok(())
+}
+
+/// A cross-transaction consumer of a terminally-errored producer must drain
+/// terminally itself instead of deferring as MissingInputs forever: the
+/// producer's bytes can never exist (re-execution of a deterministic error
+/// fails identically), so retrying the consumer re-anchors its chain without
+/// ever making progress.
+#[tokio::test]
+#[serial(db)]
+async fn errored_producer_drains_cross_transaction_consumer(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let EventHarness {
+        app: _app,
+        pool,
+        listener_db,
+    } = setup_event_harness().await?;
+
+    // Producer transaction: FheSub on mismatched types (uint32 + uint64)
+    // fails deterministically at execution time.
+    let producer_tx = next_handle();
+    let mut tx = listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
+    let lhs = next_handle();
+    let rhs = next_handle();
+    insert_trivial_encrypt(&listener_db, &mut tx, producer_tx, 10, 4, lhs, false).await?;
+    insert_trivial_encrypt(&listener_db, &mut tx, producer_tx, 20, 5, rhs, false).await?;
+    let producer = next_handle_with_type(5);
+    insert_event(
+        &listener_db,
+        &mut tx,
+        producer_tx,
+        TfheContractEvents::FheSub(TfheContract::FheSub {
+            caller: zero_address(),
+            lhs,
+            rhs,
+            scalarByte: scalar_flag(false),
+            result: producer,
+        }),
+        true,
+    )
+    .await?;
+    allow_handle(&listener_db, &mut tx, &producer).await?;
+    tx.commit().await?;
+    let (is_error, msg) = wait_for_error(&pool, producer.as_ref(), producer_tx.as_ref()).await?;
+    assert!(
+        is_error,
+        "expected producer to fail terminally, last_error_message={msg:?}"
+    );
+
+    // Consumer transaction: boundary-consumes the errored producer's handle
+    // (not minted here, so its mask bit obligates the canonical persisted
+    // form — which will never exist).
+    let consumer_tx = next_handle();
+    let mut tx = listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
+    let local = next_handle();
+    insert_trivial_encrypt(&listener_db, &mut tx, consumer_tx, 1, 5, local, false).await?;
+    let consumer = next_handle_with_type(5);
+    insert_event(
+        &listener_db,
+        &mut tx,
+        consumer_tx,
+        TfheContractEvents::FheAdd(TfheContract::FheAdd {
+            caller: zero_address(),
+            lhs: producer,
+            rhs: local,
+            scalarByte: scalar_flag(false),
+            result: consumer,
+        }),
+        true,
+    )
+    .await?;
+    allow_handle(&listener_db, &mut tx, &consumer).await?;
+    tx.commit().await?;
+
+    let (is_error, msg) = wait_for_error(&pool, consumer.as_ref(), consumer_tx.as_ref()).await?;
+    assert!(
+        is_error,
+        "expected consumer of a dead boundary input to drain terminally, last_error_message={msg:?}"
+    );
+    let error_msg = msg.as_deref().unwrap_or("");
+    assert!(
+        error_msg.contains("dead boundary input"),
+        "expected dead-boundary-input error, got: {error_msg}"
     );
     Ok(())
 }

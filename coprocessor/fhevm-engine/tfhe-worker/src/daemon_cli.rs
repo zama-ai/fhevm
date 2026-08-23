@@ -107,6 +107,15 @@ pub struct Args {
     #[arg(long, value_parser = clap::value_parser!(u32), default_value_t = 100)]
     pub dcid_ignore_dependency_count_threshold: u32,
 
+    /// Minimum age (seconds) of an unowned, dependency-gated dependence
+    /// chain before the idle-time repair acquisition may pick it up. The
+    /// repair path only takes chains whose gate is provably stale (every
+    /// producer chain processed or gone, count never decremented); this age
+    /// gate additionally keeps it from racing a listener transaction
+    /// mid-arm.
+    #[arg(long, default_value_t = 300.0)]
+    pub dcid_stale_gate_age_secs: f64,
+
     /// Log level for the application
     #[arg(
         long,

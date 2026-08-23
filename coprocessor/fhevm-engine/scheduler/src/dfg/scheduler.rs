@@ -175,6 +175,13 @@ impl<'a> Scheduler<'a> {
                         .graph
                         .node_weight_mut(*nidx)
                         .ok_or(SchedulerError::DataflowGraphError)?;
+                    // Skip transactions that cannot complete because of
+                    // missing dependences — same skip as the dependent
+                    // loop below; pre-poisoned nodes are ready by
+                    // construction and would otherwise execute here.
+                    if tx.is_uncomputable {
+                        continue;
+                    }
                     args.push((
                         std::mem::take(&mut tx.graph),
                         std::mem::take(&mut tx.inputs),
