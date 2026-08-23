@@ -161,21 +161,38 @@ async fn create_database(
         .connect(db_url)
         .await?;
 
+    if !matches!(&mode, ImportMode::SkipMigrations) {
+        sqlx::query(
+            "CREATE TABLE public._fhevm_versioning_bootstrap (
+                singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+        )
+        .execute(&pool)
+        .await?;
+        sqlx::query("INSERT INTO public._fhevm_versioning_bootstrap (singleton) VALUES (TRUE)")
+            .execute(&pool)
+            .await?;
+    }
+
     match mode {
         ImportMode::SkipMigrations => {
             info!("Skipping migrations");
         }
         ImportMode::None => {
             sqlx::migrate!("./migrations").run(&pool).await?;
+            fhevm_engine_common::versioning::bootstrap_versioning(&pool).await?;
             info!("No keys imported");
         }
         ImportMode::WithKeysNoSns => {
             sqlx::migrate!("./migrations").run(&pool).await?;
+            fhevm_engine_common::versioning::bootstrap_versioning(&pool).await?;
             info!("Creating test keys, without SnS key...");
             setup_test_key(&pool, false).await?;
         }
         ImportMode::WithAllKeys => {
             sqlx::migrate!("./migrations").run(&pool).await?;
+            fhevm_engine_common::versioning::bootstrap_versioning(&pool).await?;
             info!("Creating test keys with all keys...");
             setup_test_key(&pool, true).await?;
         }
