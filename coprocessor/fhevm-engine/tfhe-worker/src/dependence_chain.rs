@@ -381,7 +381,11 @@ impl LockMngr {
             // back-to-back, throttled only once repairs stop finding work.
             self.last_stale_probe_at = None;
         }
-        Ok(self.note_acquisition(row, started_at, "Acquired lock on stranded DCID (repair path)"))
+        Ok(self.note_acquisition(
+            row,
+            started_at,
+            "Acquired lock on stranded DCID (repair path)",
+        ))
     }
 
     /// Release all locks held by this worker
@@ -746,8 +750,12 @@ async fn delete_old_processed_dependence_chains(
     .await?;
 
     let elapsed = started_at.elapsed().map(|d| d.as_secs_f64()).unwrap_or(0.0);
-    info!(rows_deleted = result.rows_affected(), query_elapsed = %elapsed, threshold_sec, 
-        "Deleted old processed dependence chains");
+    info!(
+        rows_deleted = result.rows_affected(),
+        query_elapsed = %elapsed,
+        threshold_sec,
+        "Deleted old processed dependence chains"
+    );
 
     Ok(result.rows_affected())
 }

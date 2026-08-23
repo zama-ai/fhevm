@@ -184,7 +184,13 @@ mod operand_boundary_mask_tests {
         // bytes, so it drains terminally instead of deferring forever.
         let producer = WorkItem {
             is_error: true,
-            ..work_item(handle(1), vec![], Some(mask_with_bits(&[])), dcid.clone(), true)
+            ..work_item(
+                handle(1),
+                vec![],
+                Some(mask_with_bits(&[])),
+                dcid.clone(),
+                true,
+            )
         };
         // operand 0 = handle(1): transaction-local (bit clear);
         // operand 1 = handle(9): boundary (bit set), sourced from DB.
@@ -243,9 +249,7 @@ mod operand_boundary_mask_tests {
         // transaction-local consumer.
         let producer = WorkItem {
             is_error: true,
-            error_message: Some(
-                "Coprocessor scheduler error: ExecutionPanic(\"oom\")".to_string(),
-            ),
+            error_message: Some("Coprocessor scheduler error: ExecutionPanic(\"oom\")".to_string()),
             ..work_item(
                 handle(1),
                 vec![handle(7), handle(8)],
@@ -262,9 +266,13 @@ mod operand_boundary_mask_tests {
             true,
         );
         let txwork = vec![producer, consumer];
-        let prepared = prepare_transaction_ops(&txwork, dcid.as_deref(), &HashSet::new())
-            .expect("prepared");
-        assert_eq!(prepared.ops.len(), 2, "producer retries, consumer schedules");
+        let prepared =
+            prepare_transaction_ops(&txwork, dcid.as_deref(), &HashSet::new()).expect("prepared");
+        assert_eq!(
+            prepared.ops.len(),
+            2,
+            "producer retries, consumer schedules"
+        );
         assert!(prepared.invalid_rows.is_empty());
     }
 
@@ -288,7 +296,8 @@ mod operand_boundary_mask_tests {
                 true,
             ),
         ];
-        let prepared = prepare_transaction_ops(&txwork, dcid.as_deref(), &HashSet::new()).expect("prepared");
+        let prepared =
+            prepare_transaction_ops(&txwork, dcid.as_deref(), &HashSet::new()).expect("prepared");
         assert_eq!(prepared.ops.len(), 2);
         let consumer = prepared
             .ops
@@ -320,7 +329,8 @@ mod operand_boundary_mask_tests {
         bad_op.fhe_operation = 127; // unknown opcode
         let mut txwork = txwork;
         txwork.push(bad_op);
-        let prepared = prepare_transaction_ops(&txwork, dcid.as_deref(), &HashSet::new()).expect("prepared");
+        let prepared =
+            prepare_transaction_ops(&txwork, dcid.as_deref(), &HashSet::new()).expect("prepared");
         // The valid row still schedules; the invalid one is reported for a
         // terminal error, exactly like the executor's own validation.
         assert_eq!(prepared.ops.len(), 1);
@@ -367,7 +377,8 @@ mod operand_boundary_mask_tests {
                 true,
             ),
         ];
-        let prepared = prepare_transaction_ops(&txwork, dcid.as_deref(), &HashSet::new()).expect("prepared");
+        let prepared =
+            prepare_transaction_ops(&txwork, dcid.as_deref(), &HashSet::new()).expect("prepared");
         assert_eq!(prepared.ops.len(), 1);
         assert_eq!(prepared.ops[0].output_handle, handle(4));
         let mut errored: Vec<Vec<u8>> = prepared
@@ -444,7 +455,8 @@ mod operand_boundary_mask_tests {
                 true,
             ),
         ];
-        let prepared = prepare_transaction_ops(&txwork, Some(&ours), &HashSet::new()).expect("prepared");
+        let prepared =
+            prepare_transaction_ops(&txwork, Some(&ours), &HashSet::new()).expect("prepared");
         assert_eq!(prepared.ops.len(), 2);
         let foreign = prepared
             .ops
@@ -490,7 +502,8 @@ mod operand_boundary_mask_tests {
                 true,
             ),
         ];
-        let prepared = prepare_transaction_ops(&txwork, Some(&ours), &HashSet::new()).expect("prepared");
+        let prepared =
+            prepare_transaction_ops(&txwork, Some(&ours), &HashSet::new()).expect("prepared");
         assert_eq!(prepared.ops.len(), 1);
         assert_eq!(prepared.ops[0].output_handle, handle(2));
     }
@@ -617,7 +630,7 @@ mod operand_boundary_mask_tests {
             &mut locks,
             &mut no_progress_cycles,
             &mut cooldown,
-          false,
+            false,
         )
         .await?;
         trx.commit().await?;
@@ -652,7 +665,7 @@ mod operand_boundary_mask_tests {
             &mut locks,
             &mut no_progress_cycles,
             &mut cooldown,
-          false,
+            false,
         )
         .await?;
         trx.commit().await?;
@@ -731,7 +744,7 @@ mod operand_boundary_mask_tests {
             &mut locks,
             &mut no_progress_cycles,
             &mut cooldown,
-          false,
+            false,
         )
         .await?;
         trx.commit().await?;
@@ -762,7 +775,7 @@ mod operand_boundary_mask_tests {
             &mut locks,
             &mut no_progress_cycles,
             &mut cooldown,
-          false,
+            false,
         )
         .await?;
         trx.commit().await?;
@@ -831,7 +844,7 @@ mod operand_boundary_mask_tests {
             &mut locks,
             &mut no_progress_cycles,
             &mut cooldown,
-          false,
+            false,
         )
         .await?;
         trx.commit().await?;
@@ -845,7 +858,7 @@ mod operand_boundary_mask_tests {
             &mut locks,
             &mut no_progress_cycles,
             &mut cooldown,
-          false,
+            false,
         )
         .await?;
         trx.commit().await?;
@@ -1974,7 +1987,10 @@ fn prepare_transaction_ops(
     // are the exception: they re-execute, and success heals them.
     let stamp_is_terminal =
         |w: &WorkItem| w.is_error && !stamp_is_retryable(w.error_message.as_deref());
-    for w in txwork.iter().filter(|w| row_is_owned(w) && !stamp_is_terminal(w)) {
+    for w in txwork
+        .iter()
+        .filter(|w| row_is_owned(w) && !stamp_is_terminal(w))
+    {
         if included.insert(w.output_handle.as_slice()) {
             queue.push_back(w);
         }
