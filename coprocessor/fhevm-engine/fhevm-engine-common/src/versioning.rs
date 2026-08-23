@@ -1,13 +1,8 @@
-//! Stack-version detection that decides whether a service runs in GCS (green)
-//! mode, replacing the deprecated `--gcs-mode` CLI flag.
-//!
-//! Each binary is compiled with a [`crate::STACK_VERSION`]. On startup a
-//! service compares it against the live `versioning.stack_version` singleton
-//! row: a binary strictly newer than the live stack is the incoming green
-//! deployment and runs in GCS mode; an equal-or-older binary is the live
-//! (blue) stack and runs normally.
+//! Decides whether a service is live, green or retired by comparing its
+//! consensus version with the active one in the database.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::cmp::Ordering as CmpOrdering;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -16,137 +11,271 @@ use sqlx::{Connection, PgConnection, Pool, Postgres, Transaction};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
-use crate::STACK_VERSION;
+use crate::CONSENSUS_PROTOCOL_VERSION;
 
-/// pg_notify channel emitted by the upgrade-controller during `execute_cutover`,
-/// inside the same transaction that bumps `versioning.stack_version` (so the
-/// notification is atomic with the version change — it is only delivered if the
-/// cutover commits).
-///
-/// Every service listens on this channel. When an upgrade is active, a service
-/// re-runs [`resolve_gcs_mode`] and transitions its runtime mode:
-///   - binary version now == table version AND it was in GCS mode → leave GCS
-///     mode (the green stack becomes live), or
-///   - binary version != table version AND it was not in GCS mode → pause into
-///     no-op mode (the retired blue stack stops processing).
+/// Database channel sent after a cutover changes the active version.
 pub const EVENT_STACK_VERSION_UPGRADED: &str = "event_stack_version_upgraded";
 
-/// Parse a `vMAJOR.MINOR[.PATCH]` string into a comparable tuple, tolerating a
-/// leading `v`/`V`, a missing patch component, and any pre-release/build
-/// suffix (e.g. `v0.14.0-rc1`). Non-numeric components parse as 0.
-fn parse_version(s: &str) -> (u64, u64, u64) {
-    let s = s.trim();
-    let s = s.strip_prefix(['v', 'V']).unwrap_or(s);
-    let core = s.split(['-', '+']).next().unwrap_or(s);
-    let mut parts = core.split('.').map(|p| p.parse::<u64>().unwrap_or(0));
-    (
-        parts.next().unwrap_or(0),
-        parts.next().unwrap_or(0),
-        parts.next().unwrap_or(0),
-    )
-}
-
-/// True iff this binary's [`STACK_VERSION`] is strictly newer than `live`.
-pub fn binary_is_newer_than(live: &str) -> bool {
-    parse_version(STACK_VERSION) > parse_version(live)
-}
-
-/// True iff this binary's [`STACK_VERSION`] equals `live` (same major.minor.patch).
-pub fn binary_matches(live: &str) -> bool {
-    parse_version(STACK_VERSION) == parse_version(live)
-}
-
-/// True iff this binary's [`STACK_VERSION`] is strictly older than `live` — i.e.
-/// it belongs to a retired stack that should no longer touch the database.
-pub fn binary_is_older_than(live: &str) -> bool {
-    parse_version(STACK_VERSION) < parse_version(live)
-}
-
-/// Runtime stack mode, shared between a service's work loop and the
-/// version-upgrade listener ([`run_stack_version_listener`]).
+/// Write a consensus version the way a proposal carries it: 1 becomes "1.0.0".
 ///
-/// Initialized from the startup [`resolve_gcs_mode`] result. A service reads
-/// [`StackMode::is_paused`] at the top of its work loop (skipping work when
-/// paused) and [`StackMode::gcs_mode`] wherever it needs the current routing.
+/// Cutover stores this, and a pre-0.15 service compares it with its own release to see
+/// whether it has been replaced. Because it grows with the consensus version, each
+/// cutover stores a higher value than the last.
+pub fn format_consensus_version(consensus_version: u32) -> String {
+    format!("{consensus_version}.0.0")
+}
+
+/// Read the consensus version out of a proposal's software version: "1.0.0" gives 1.
+///
+/// Only `N.0.0` is accepted. Anything else is refused rather than guessed at, because a
+/// version we read wrongly would run the wrong upgrade.
+pub fn parse_software_version(raw: &str) -> Result<u32, String> {
+    let raw = raw.trim();
+    let mut parts = raw.split('.');
+    let (Some(major), Some("0"), Some("0"), None) =
+        (parts.next(), parts.next(), parts.next(), parts.next())
+    else {
+        return Err(format!(
+            "software version {raw:?} must be a consensus version, as in \"1.0.0\""
+        ));
+    };
+    if major.len() > 1 && major.starts_with('0') {
+        return Err(format!("software version {raw:?} has a leading zero"));
+    }
+    if !major.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(format!("software version {raw:?} is not a number"));
+    }
+    let consensus = major
+        .parse::<u32>()
+        .map_err(|_| format!("software version {raw:?} is too large"))?;
+    if consensus == 0 {
+        return Err(format!("software version {raw:?} must be at least 1"));
+    }
+    Ok(consensus)
+}
+
+/// Current role of a running service.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum RuntimeStackMode {
+    Live = 0,
+    Candidate = 1,
+    Retired = 2,
+}
+
+/// Set the versions for a new database.
+///
+/// The migration script creates a one-time marker before the first migration.
+/// This function requires that marker and removes it after a successful update.
+pub async fn bootstrap_versioning(pool: &Pool<Postgres>) -> anyhow::Result<()> {
+    let mut transaction = pool.begin().await?;
+    let has_bootstrap_intent: bool =
+        sqlx::query_scalar("SELECT to_regclass('public._fhevm_versioning_bootstrap') IS NOT NULL")
+            .fetch_one(&mut *transaction)
+            .await?;
+    anyhow::ensure!(
+        has_bootstrap_intent,
+        "cannot set initial versions: this is not a new database"
+    );
+
+    sqlx::query("LOCK TABLE public._fhevm_versioning_bootstrap IN ACCESS EXCLUSIVE MODE")
+        .execute(&mut *transaction)
+        .await?;
+    let bootstrap_intent_rows: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM public._fhevm_versioning_bootstrap")
+            .fetch_one(&mut *transaction)
+            .await?;
+    anyhow::ensure!(
+        bootstrap_intent_rows == 1,
+        "cannot set initial versions: expected one setup marker, found {bootstrap_intent_rows}"
+    );
+
+    let (live_stack_version, live_consensus_version): (String, i64) = sqlx::query_as(
+        "SELECT stack_version, consensus_version
+         FROM versioning
+         WHERE singleton = TRUE
+         FOR UPDATE",
+    )
+    .fetch_one(&mut *transaction)
+    .await?;
+
+    let has_upgrade_history: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM upgrade_state)")
+            .fetch_one(&mut *transaction)
+            .await?;
+    anyhow::ensure!(
+        !has_upgrade_history,
+        "cannot set initial versions: upgrade history already exists"
+    );
+
+    let compiled_consensus_version = i64::from(CONSENSUS_PROTOCOL_VERSION);
+    anyhow::ensure!(
+        compiled_consensus_version >= live_consensus_version,
+        "cannot lower the consensus version from {live_consensus_version} to {compiled_consensus_version}"
+    );
+
+    let stored_version = format_consensus_version(CONSENSUS_PROTOCOL_VERSION);
+    let result = sqlx::query(
+        "UPDATE versioning
+         SET stack_version = $1, consensus_version = $2, updated_at = NOW()
+         WHERE singleton = TRUE",
+    )
+    .bind(&stored_version)
+    .bind(compiled_consensus_version)
+    .execute(&mut *transaction)
+    .await?;
+
+    anyhow::ensure!(result.rows_affected() == 1, "versioning row is missing");
+    sqlx::query("DROP TABLE public._fhevm_versioning_bootstrap")
+        .execute(&mut *transaction)
+        .await?;
+    transaction.commit().await?;
+
+    tracing::info!(
+        previous_stack_version = live_stack_version,
+        previous_consensus_version = live_consensus_version,
+        stack_version = stored_version,
+        consensus_version = CONSENSUS_PROTOCOL_VERSION,
+        "set initial database versions"
+    );
+    Ok(())
+}
+
+/// Choose a service role from its version and the active version.
+pub fn classify_consensus_version(binary: u32, live: i64) -> anyhow::Result<RuntimeStackMode> {
+    let live = u32::try_from(live)
+        .map_err(|_| anyhow::anyhow!("invalid active consensus version: {live}"))?;
+    match binary.cmp(&live) {
+        CmpOrdering::Less => Ok(RuntimeStackMode::Retired),
+        CmpOrdering::Equal => Ok(RuntimeStackMode::Live),
+        // Any newer consensus version runs green. One that skips ahead also runs
+        // green: nothing refuses it, but operators on different versions write to
+        // different schemas, never agree, and the attempt times out.
+        CmpOrdering::Greater => {
+            if live.checked_add(1) != Some(binary) {
+                warn!(
+                    binary,
+                    live,
+                    expected = live.saturating_add(1),
+                    "consensus version skips ahead of the active one; only the version \
+                     the proposal names can cut over"
+                );
+            }
+            Ok(RuntimeStackMode::Candidate)
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct StackMode {
-    gcs_mode: AtomicBool,
-    paused: AtomicBool,
+    state: AtomicU8,
 }
 
 impl StackMode {
-    /// Create shared state seeded with the startup-resolved `gcs_mode`.
     pub fn new(gcs_mode: bool) -> Arc<Self> {
         Arc::new(Self {
-            gcs_mode: AtomicBool::new(gcs_mode),
-            paused: AtomicBool::new(false),
+            state: AtomicU8::new(if gcs_mode {
+                RuntimeStackMode::Candidate as u8
+            } else {
+                RuntimeStackMode::Live as u8
+            }),
         })
     }
 
-    /// Whether the service is currently the green (GCS) stack.
-    pub fn gcs_mode(&self) -> bool {
-        self.gcs_mode.load(Ordering::SeqCst)
+    fn set(&self, state: RuntimeStackMode) {
+        self.state.store(state as u8, Ordering::SeqCst);
     }
 
-    /// Whether the service has been paused into no-op mode (retired blue stack).
+    pub fn state(&self) -> RuntimeStackMode {
+        match self.state.load(Ordering::SeqCst) {
+            0 => RuntimeStackMode::Live,
+            1 => RuntimeStackMode::Candidate,
+            2 => RuntimeStackMode::Retired,
+            value => panic!("invalid runtime stack mode {value}"),
+        }
+    }
+
+    pub fn gcs_mode(&self) -> bool {
+        self.state() == RuntimeStackMode::Candidate
+    }
+
     pub fn is_paused(&self) -> bool {
-        self.paused.load(Ordering::SeqCst)
+        self.state() == RuntimeStackMode::Retired
     }
 }
 
-/// Re-read `versioning.stack_version` and apply the cutover transition rules to
-/// `mode`:
-///   - binary == live AND currently in GCS mode → leave GCS mode (become live);
-///   - binary != live AND not in GCS mode → pause into no-op mode;
-///   - otherwise no change.
+/// Update the service role from the active consensus version.
 pub async fn reconcile_stack_mode(pool: &Pool<Postgres>, mode: &StackMode) -> anyhow::Result<()> {
-    let row: Option<(String,)> =
-        sqlx::query_as("SELECT stack_version FROM versioning WHERE singleton = TRUE")
+    let row: Option<(i64,)> =
+        sqlx::query_as("SELECT consensus_version FROM versioning WHERE singleton = TRUE")
             .fetch_optional(pool)
             .await?;
     let Some((live,)) = row else {
-        warn!("versioning row missing during reconcile; leaving stack mode unchanged");
-        return Ok(());
+        return Err(anyhow::anyhow!(
+            "cannot update service role: versioning row is missing"
+        ));
     };
 
-    let matches = binary_matches(&live);
-    let gcs_mode = mode.gcs_mode();
-    if matches && gcs_mode {
-        mode.gcs_mode.store(false, Ordering::SeqCst);
-        info!(
-            binary_stack_version = STACK_VERSION,
-            live_stack_version = %live,
-            "stack version matches live; leaving GCS mode (now live stack)"
-        );
-    } else if !matches && !gcs_mode {
-        mode.paused.store(true, Ordering::SeqCst);
-        info!(
-            binary_stack_version = STACK_VERSION,
-            live_stack_version = %live,
-            "stack version no longer matches live; pausing into no-op mode"
-        );
-    } else {
-        info!(
-            binary_stack_version = STACK_VERSION,
-            live_stack_version = %live,
-            matches,
-            gcs_mode,
-            "stack-version-upgraded received; no mode change"
-        );
+    match classify_consensus_version(CONSENSUS_PROTOCOL_VERSION, live)? {
+        RuntimeStackMode::Candidate => {
+            mode.set(RuntimeStackMode::Candidate);
+            info!(
+                binary_consensus_version = CONSENSUS_PROTOCOL_VERSION,
+                live_consensus_version = live,
+                "service is green"
+            );
+        }
+        RuntimeStackMode::Live => {
+            mode.set(RuntimeStackMode::Live);
+            info!(
+                binary_consensus_version = CONSENSUS_PROTOCOL_VERSION,
+                live_consensus_version = live,
+                "service is live"
+            );
+        }
+        RuntimeStackMode::Retired => {
+            mode.set(RuntimeStackMode::Retired);
+            info!(
+                binary_consensus_version = CONSENSUS_PROTOCOL_VERSION,
+                live_consensus_version = live,
+                "service is retired"
+            );
+        }
     }
     Ok(())
 }
 
-/// Listen for [`EVENT_STACK_VERSION_UPGRADED`] and call [`reconcile_stack_mode`]
-/// on every notification. Runs until `cancel` fires; logs and retries on
-/// listener errors. Spawn this once per service after startup.
+/// Keep the service role in sync with the database.
 pub async fn run_stack_version_listener(
     pool: Pool<Postgres>,
     mode: Arc<StackMode>,
     cancel: CancellationToken,
 ) -> anyhow::Result<()> {
-    let mut listener = PgListener::connect_with(&pool).await?;
+    // Retry the whole connect + listen cycle so the service role never freezes.
+    loop {
+        if let Err(e) = listen_for_version_changes(&pool, &mode, &cancel).await {
+            warn!(error = %e, "version listener failed; reconnecting");
+        } else {
+            return Ok(());
+        }
+        tokio::select! {
+            _ = cancel.cancelled() => return Ok(()),
+            _ = tokio::time::sleep(Duration::from_secs(5)) => {}
+        }
+    }
+}
+
+async fn listen_for_version_changes(
+    pool: &Pool<Postgres>,
+    mode: &StackMode,
+    cancel: &CancellationToken,
+) -> anyhow::Result<()> {
+    let mut listener = PgListener::connect_with(pool).await?;
     listener.listen(EVENT_STACK_VERSION_UPGRADED).await?;
+    // Update once before waiting in case the service missed a notification.
+    reconcile_stack_mode(pool, mode).await?;
+    let mut poll = tokio::time::interval(Duration::from_secs(30));
+    poll.tick().await;
     info!(
         channel = EVENT_STACK_VERSION_UPGRADED,
         "stack-version-upgraded listener started"
@@ -154,31 +283,23 @@ pub async fn run_stack_version_listener(
     loop {
         tokio::select! {
             _ = cancel.cancelled() => return Ok(()),
-            recv = listener.recv() => match recv {
-                Ok(_) => {
-                    if let Err(e) = reconcile_stack_mode(&pool, &mode).await {
-                        warn!(error = %e, "failed to reconcile stack mode after version upgrade");
-                    }
+            recv = listener.recv() => {
+                // A receive error means the connection is broken; rebuild it.
+                recv?;
+                if let Err(e) = reconcile_stack_mode(pool, mode).await {
+                    warn!(error = %e, "failed to update service role");
                 }
-                Err(e) => {
-                    warn!(error = %e, "stack-version listener recv error; sleeping before retry");
-                    tokio::time::sleep(Duration::from_secs(1)).await;
+            },
+            _ = poll.tick() => {
+                if let Err(e) = reconcile_stack_mode(pool, mode).await {
+                    warn!(error = %e, "failed to update service role");
                 }
-            }
+            },
         }
     }
 }
 
-/// Decide whether this binary should run in GCS (green) mode by comparing its
-/// compiled-in [`STACK_VERSION`] against the live `versioning.stack_version`
-/// row.
-///
-/// Opens a short-lived connection with the default `public` search_path, so it
-/// works before the service's main pool — whose search_path may be pinned to
-/// `gcs,public` — is built. If the `versioning` row is missing — or the table
-/// itself does not exist yet (a fresh deploy where the db-migration Job has not
-/// finished) — the service defaults to non-GCS (blue) mode rather than failing
-/// startup, so it does not CrashLoop waiting on migration ordering.
+/// Return whether this service should run as green.
 pub async fn resolve_gcs_mode(database_url: &str) -> anyhow::Result<bool> {
     // Route through `connect_options_for_database_url` so that when AWS IAM auth is
     // enabled we connect with a freshly minted IAM token instead of the raw,
@@ -190,38 +311,49 @@ pub async fn resolve_gcs_mode(database_url: &str) -> anyhow::Result<bool> {
     )
     .await?;
     let mut conn = PgConnection::connect_with(&options).await?;
-    let live = live_stack_version(&mut conn).await?;
+    // While the setup marker exists the versions are not final yet. Starting now
+    // could pick the wrong role, so fail and let the next start see the result.
+    let setup_in_progress: bool =
+        sqlx::query_scalar("SELECT to_regclass('public._fhevm_versioning_bootstrap') IS NOT NULL")
+            .fetch_one(&mut conn)
+            .await?;
+    if setup_in_progress {
+        let _ = conn.close().await;
+        return Err(anyhow::anyhow!(
+            "database setup is still in progress; retry startup once it completes"
+        ));
+    }
+    let live = live_consensus_version(&mut conn).await?;
     let _ = conn.close().await;
 
     let live = match live {
         Some(v) => v,
         None => {
-            warn!(
-                binary_stack_version = STACK_VERSION,
-                "versioning table is empty or not yet created; defaulting to non-GCS (blue) mode"
-            );
-            return Ok(false);
+            return Err(anyhow::anyhow!(
+                "active consensus version is missing; run database migrations first"
+            ));
         }
     };
 
-    let gcs_mode = binary_is_newer_than(&live);
+    let runtime_mode = classify_consensus_version(CONSENSUS_PROTOCOL_VERSION, live)?;
+    let gcs_mode = match runtime_mode {
+        RuntimeStackMode::Candidate => true,
+        RuntimeStackMode::Live => false,
+        RuntimeStackMode::Retired => {
+            return Err(anyhow::anyhow!(
+                "this service uses consensus version {}, but the active version is {live}",
+                CONSENSUS_PROTOCOL_VERSION
+            ));
+        }
+    };
     info!(
-        binary_stack_version = STACK_VERSION,
-        live_stack_version = %live,
+        binary_consensus_version = CONSENSUS_PROTOCOL_VERSION,
+        live_consensus_version = live,
+        ?runtime_mode,
         gcs_mode,
-        "resolved gcs_mode from versioning table"
+        "set service role from consensus version"
     );
     Ok(gcs_mode)
-}
-
-/// Error returned by [`begin_guarded_pool`] / [`begin_guarded_conn`] when this
-/// binary belongs to a retired stack — its [`STACK_VERSION`] is strictly older
-/// than the live `versioning.stack_version`.
-#[derive(Debug, thiserror::Error)]
-#[error("stack version {binary} is older than live stack {live}; access denied (retired stack)")]
-pub struct StaleStackError {
-    pub binary: &'static str,
-    pub live: String,
 }
 
 /// Fail unless the GCS schema exists.
@@ -310,94 +442,45 @@ fn is_undefined_table(err: &sqlx::Error) -> bool {
     matches!(err, sqlx::Error::Database(db) if db.code().as_deref() == Some("42P01"))
 }
 
-/// Fetch the live stack version singleton, or `None` if the `versioning` row is
-/// absent (fresh/unseeded DB). Shared by the retirement checks below.
-///
-/// A missing `versioning` *table* (SQLSTATE 42P01) is treated the same as a
-/// missing row — `None`, not an error — so a service that starts before the
-/// db-migration Job has created the table does not fail (see [`resolve_gcs_mode`]
-/// and [`assert_not_retired`], which read this as "unseeded → blue / not-retired").
-async fn live_stack_version(conn: &mut PgConnection) -> Result<Option<String>, sqlx::Error> {
-    let row: Option<(String,)> = match sqlx::query_as(
-        "SELECT stack_version FROM versioning WHERE singleton = TRUE",
-    )
-    .fetch_optional(conn)
-    .await
-    {
-        Ok(row) => row,
-        Err(err) if is_undefined_table(&err) => {
-            warn!(
-                    binary_stack_version = STACK_VERSION,
-                    "versioning table does not exist yet (migrations not applied?); treating as unseeded"
+fn is_undefined_column(err: &sqlx::Error) -> bool {
+    matches!(err, sqlx::Error::Database(db) if db.code().as_deref() == Some("42703"))
+}
+
+/// Read the active consensus version. Return `None` before migrations finish.
+async fn live_consensus_version(conn: &mut PgConnection) -> Result<Option<i64>, sqlx::Error> {
+    let row: Option<(i64,)> =
+        match sqlx::query_as("SELECT consensus_version FROM versioning WHERE singleton = TRUE")
+            .fetch_optional(conn)
+            .await
+        {
+            Ok(row) => row,
+            Err(err) if is_undefined_table(&err) || is_undefined_column(&err) => {
+                warn!(
+                    binary_consensus_version = CONSENSUS_PROTOCOL_VERSION,
+                    "active consensus version is not available yet"
                 );
-            None
-        }
-        Err(err) => return Err(err),
-    };
+                None
+            }
+            Err(err) => return Err(err),
+        };
     Ok(row.map(|(v,)| v))
 }
 
-/// Re-read the live stack version on `conn` and report whether this binary
-/// belongs to a retired stack (its [`STACK_VERSION`] is strictly older than the
-/// live `versioning.stack_version`). A missing `versioning` row is treated as
-/// not-retired, mirroring [`resolve_gcs_mode`]'s permissive default so a
-/// fresh/unseeded DB is not locked out.
-///
-/// This is the single source of truth for "should this stack stop touching the
-/// DB" — the same fence used by [`assert_not_retired`], [`resolve_gcs_mode`], and
-/// [`reconcile_stack_mode`]. Read it *after* taking the shared cutover lock (see
-/// [`cutover_gate`]) to close the begin-time TOCTOU window.
+/// Return whether this service is older than the active consensus version.
+/// Errors when the version is unavailable: a write guard must not fail open.
 pub async fn is_retired(conn: &mut PgConnection) -> Result<bool, sqlx::Error> {
-    Ok(live_stack_version(conn)
-        .await?
-        .is_some_and(|live| binary_is_older_than(&live)))
+    let Some(live) = live_consensus_version(conn).await? else {
+        return Err(sqlx::Error::Configuration(
+            "active consensus version is missing; refusing writes".into(),
+        ));
+    };
+    Ok(i64::from(CONSENSUS_PROTOCOL_VERSION) < live)
 }
 
-/// Re-read the live stack version on `conn` and fail if this binary is strictly
-/// older (a retired stack). A missing `versioning` row is permissive, mirroring
-/// [`resolve_gcs_mode`]'s default, so a fresh/unseeded DB is not locked out.
-async fn assert_not_retired(conn: &mut PgConnection) -> Result<(), sqlx::Error> {
-    if let Some(live) = live_stack_version(conn).await? {
-        if binary_is_older_than(&live) {
-            return Err(sqlx::Error::Configuration(Box::new(StaleStackError {
-                binary: STACK_VERSION,
-                live,
-            })));
-        }
-    }
-    Ok(())
-}
-
-/// Begin a transaction on `pool` whose first action asserts this binary is not a
-/// retired stack (see [`assert_not_retired`]). On rejection the just-opened
-/// transaction is dropped (and thus rolled back) before it is returned, so a
-/// stale binary can neither read nor write through it.
-///
-/// Cost: one extra round-trip per transaction (a single indexed singleton read).
-pub(crate) async fn begin_guarded_pool(
-    pool: &Pool<Postgres>,
-) -> Result<Transaction<'static, Postgres>, sqlx::Error> {
-    let mut tx = pool.begin().await?;
-    assert_not_retired(&mut tx).await?;
-    Ok(tx)
-}
-
-/// Like [`begin_guarded_pool`] but begins on an already-acquired connection.
-pub(crate) async fn begin_guarded_conn(
-    conn: &mut PgConnection,
-) -> Result<Transaction<'_, Postgres>, sqlx::Error> {
-    let mut tx = conn.begin().await?;
-    assert_not_retired(&mut tx).await?;
-    Ok(tx)
-}
-
-/// PostgreSQL advisory-lock key serializing writes against cutover and rollback.
-/// The upgrade-controller takes the **exclusive** form; every guarded write
-/// transaction takes the **shared** form via [`cutover_gate`]. Chosen to be
-/// recognizable in logs (`0x4648_4556_4355_5456` ~ ASCII "FHEVCUTV").
+/// Lock used to keep writes from crossing a cutover or rollback.
 pub const CUTOVER_LOCK_ID: i64 = 0x4648_4556_4355_5456;
 
-/// Result of opening a guarded write transaction.
+/// Result of starting a protected write.
 pub enum WriteGuard<'a> {
     Proceed(Transaction<'a, Postgres>),
     Stop,
@@ -433,28 +516,23 @@ enum GateBlock {
 ///
 /// Takes the **shared** advisory lock on `tx`, then checks the stack state while
 /// ordered against controller changes, which take the **exclusive** form.
-/// Returns `Stop` when cutover has retired a BCS writer and `Skip` when rollback
+/// Returns `Stop` when cutover has retired this writer and `Skip` when rollback
 /// has paused derived GCS writes. The caller rolls back either blocked
 /// transaction before returning it.
 ///
-/// Why the lock, not just [`begin_guarded_pool`]'s BEGIN-time check:
-/// `assert_not_retired` runs only at BEGIN, so a transaction opened before
-/// cutover could otherwise commit *after* it (a time-of-check/time-of-use gap),
-/// injecting stale-format rows into the live green tables. The shared lock closes
-/// that window: either this tx holds the shared lock and cutover's exclusive
-/// request blocks until it commits, or cutover already committed and this check
-/// observes the bumped `versioning` and aborts. Shared locks are mutually
-/// compatible, so this does **not** serialize BCS worker replicas against each
-/// other — only against the one-shot cutover.
+/// Why the lock and not a check at BEGIN: a transaction opened before cutover
+/// could otherwise commit *after* it, injecting stale-format rows into the live
+/// tables. The shared lock closes that window: either this tx holds it and
+/// cutover's exclusive request waits for the commit, or cutover already
+/// committed and the check below sees the new consensus version and aborts.
+/// Shared locks are mutually compatible, so replicas are not serialized against
+/// each other — only against the one-shot cutover.
 ///
 /// GCS-mode (green) writers also take the shared lock: their writes land in the
 /// `gcs` schema, which cutover merges and rollback resets. Without the lock a
-/// green write could be lost during cutover or land in the recreated schema after
-/// rollback. Holding the shared lock makes either exclusive request wait until
-/// the write commits. Raw ingestion continues after rollback, while derived
-/// workers skip when the GCS row is `PAUSED`. GCS writers skip only the
-/// [`is_retired`] re-check because a green binary is newer than the live stack
-/// and cannot be retired.
+/// green write could be lost during cutover or land in the recreated schema
+/// after rollback. Raw ingestion continues after rollback, while derived workers
+/// skip when the GCS row is `PAUSED`.
 async fn cutover_gate(
     tx: &mut Transaction<'_, Postgres>,
     gcs_mode: bool,
@@ -464,6 +542,12 @@ async fn cutover_gate(
         .bind(CUTOVER_LOCK_ID)
         .execute(&mut **tx)
         .await?;
+
+    // Check again after taking the lock because a cutover may have just finished.
+    if is_retired(tx).await? {
+        return Ok(Some(GateBlock::Stop));
+    }
+
     if gcs_mode {
         if rollback_policy == GcsRollbackPolicy::Skip {
             let paused: bool = sqlx::query_scalar(
@@ -475,26 +559,23 @@ async fn cutover_gate(
         }
         return Ok(None);
     }
-    Ok(is_retired(tx).await?.then_some(GateBlock::Stop))
+    Ok(None)
 }
 
 /// Begin a **write** transaction fenced against cutover and rollback, in one call.
 ///
-/// Combines [`begin_guarded_pool`] (BEGIN-time `assert_not_retired`) with
-/// [`cutover_gate`] (shared advisory lock plus the relevant state check). Returns
-/// [`WriteGuard::Stop`] for a retired BCS stack and [`WriteGuard::Skip`] for a
+/// Returns [`WriteGuard::Stop`] for a retired stack and [`WriteGuard::Skip`] for a
 /// derived GCS write after rollback.
 ///
-/// Use this for every BCS or GCS write transaction. Keep [`begin_guarded_pool`]
-/// for **read-only** transactions: reads cannot corrupt merged or reset state,
-/// so they should not take the shared lock, which would delay cutover or
-/// rollback behind every in-flight read.
+/// Use this for every BCS or GCS write transaction. Read-only transactions should
+/// not take the shared lock, which would delay cutover or rollback behind every
+/// in-flight read.
 pub async fn begin_write_guarded(
     pool: &Pool<Postgres>,
     gcs_mode: bool,
     rollback_policy: GcsRollbackPolicy,
 ) -> Result<WriteGuard<'static>, sqlx::Error> {
-    let mut tx = begin_guarded_pool(pool).await?;
+    let mut tx = pool.begin().await?;
     match cutover_gate(&mut tx, gcs_mode, rollback_policy).await? {
         None => Ok(WriteGuard::Proceed(tx)),
         Some(block) => {
@@ -507,14 +588,13 @@ pub async fn begin_write_guarded(
     }
 }
 
-/// Like [`begin_write_guarded`] but begins on an already-acquired connection
-/// (mirrors [`begin_guarded_conn`]).
+/// Like [`begin_write_guarded`] but begins on an already-acquired connection.
 pub async fn begin_write_guarded_conn(
     conn: &mut PgConnection,
     gcs_mode: bool,
     rollback_policy: GcsRollbackPolicy,
 ) -> Result<WriteGuard<'_>, sqlx::Error> {
-    let mut tx = begin_guarded_conn(conn).await?;
+    let mut tx = conn.begin().await?;
     match cutover_gate(&mut tx, gcs_mode, rollback_policy).await? {
         None => Ok(WriteGuard::Proceed(tx)),
         Some(block) => {
@@ -529,23 +609,115 @@ pub async fn begin_write_guarded_conn(
 
 #[cfg(test)]
 mod tests {
-    use super::parse_version;
+    use super::{
+        classify_consensus_version, format_consensus_version, parse_software_version,
+        RuntimeStackMode,
+    };
 
     #[test]
-    fn parses_loose_versions() {
-        assert_eq!(parse_version("v0.13"), (0, 13, 0));
-        assert_eq!(parse_version("v0.14.0"), (0, 14, 0));
-        assert_eq!(parse_version("0.14.2"), (0, 14, 2));
-        assert_eq!(parse_version("v1.2.3-rc1"), (1, 2, 3));
+    fn reads_a_consensus_version() {
+        assert_eq!(parse_software_version("1.0.0").unwrap(), 1);
+        assert_eq!(parse_software_version("42.0.0").unwrap(), 42);
+        assert_eq!(parse_software_version("  7.0.0  ").unwrap(), 7);
+        assert_eq!(parse_software_version("4294967295.0.0").unwrap(), u32::MAX);
     }
 
     #[test]
-    fn orders_versions() {
-        assert!(parse_version("v0.14.0") > parse_version("v0.13"));
-        assert!(parse_version("v0.14.1") > parse_version("v0.14"));
-        // Missing patch component pads to 0, so these compare equal.
-        assert_eq!(parse_version("v0.14.0"), parse_version("v0.14"));
-        assert!(parse_version("v0.14.0") <= parse_version("v0.14.0"));
-        assert!(parse_version("v0.13") <= parse_version("v0.14.0"));
+    fn refuses_a_software_version_it_cannot_read() {
+        for raw in [
+            "",
+            "   ",
+            "0.0.0",   // 0 means "not set yet"
+            "1.0",     // too few parts
+            "1",       // too few parts
+            "1.0.0.0", // too many parts
+            "1.2.3",   // only N.0.0 is a consensus version
+            "1.0.1",
+            "v1.0.0",     // no prefix
+            "01.0.0",     // leading zero
+            "1.0.0+cpv1", // no extra text
+            "x.0.0",
+            "4294967296.0.0", // above u32
+        ] {
+            assert!(
+                parse_software_version(raw).is_err(),
+                "expected {raw:?} to be refused"
+            );
+        }
+    }
+
+    #[test]
+    fn stores_a_version_that_grows_with_the_consensus_version() {
+        assert_eq!(format_consensus_version(1), "1.0.0");
+        assert_eq!(format_consensus_version(2), "2.0.0");
+        // What we store round-trips back to the version it came from.
+        for consensus in [1_u32, 2, 9, 10, u32::MAX] {
+            assert_eq!(
+                parse_software_version(&format_consensus_version(consensus)).unwrap(),
+                consensus
+            );
+        }
+    }
+
+    /// A copy of the released 0.14 comparator. Those services are already deployed and
+    /// decide whether they have been replaced by comparing their own release with what
+    /// cutover stores, so this copy must not be changed.
+    fn released_0_14_parse_version(s: &str) -> (u64, u64, u64) {
+        let s = s.trim();
+        let s = s.strip_prefix(['v', 'V']).unwrap_or(s);
+        let core = s.split(['-', '+']).next().unwrap_or(s);
+        let mut parts = core.split('.').map(|p| p.parse::<u64>().unwrap_or(0));
+        (
+            parts.next().unwrap_or(0),
+            parts.next().unwrap_or(0),
+            parts.next().unwrap_or(0),
+        )
+    }
+
+    #[test]
+    fn what_we_store_replaces_a_0_14_service() {
+        // 0.14 stops working once the stored version is above its own.
+        let deployed = released_0_14_parse_version("0.14.0");
+        for consensus in [1_u32, 2, 3] {
+            let stored = released_0_14_parse_version(&format_consensus_version(consensus));
+            assert!(
+                stored > deployed,
+                "{} must replace 0.14.0",
+                format_consensus_version(consensus)
+            );
+        }
+        // A version it cannot read counts as 0.0.0, which would leave it running.
+        assert_eq!(released_0_14_parse_version("not-a-version"), (0, 0, 0));
+        assert!(released_0_14_parse_version("not-a-version") < deployed);
+    }
+
+    #[test]
+    fn classifies_consensus_relationships() {
+        assert_eq!(
+            classify_consensus_version(7, 7).unwrap(),
+            RuntimeStackMode::Live
+        );
+        assert_eq!(
+            classify_consensus_version(8, 7).unwrap(),
+            RuntimeStackMode::Candidate
+        );
+        assert_eq!(
+            classify_consensus_version(6, 7).unwrap(),
+            RuntimeStackMode::Retired
+        );
+    }
+
+    #[test]
+    fn runs_green_on_any_newer_consensus_version() {
+        // A skipped version still runs green; the cutover check refuses it.
+        assert_eq!(
+            classify_consensus_version(9, 7).unwrap(),
+            RuntimeStackMode::Candidate
+        );
+    }
+
+    #[test]
+    fn rejects_an_unreadable_active_consensus_version() {
+        assert!(classify_consensus_version(2, -1).is_err());
     }
 }

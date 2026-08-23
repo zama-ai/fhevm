@@ -24,56 +24,35 @@ pub mod common {
     tonic::include_proto!("fhevm.common");
 }
 
-/// Single source of truth for the coprocessor stack version.
-///
-/// The fleet-wide stack version. Baseline is the hard-coded value below; only
-/// with the `stack-version-override` feature does it come from the build-time
-/// `BUILD_STACK_VERSION` env (defaulted by build.rs). The blue-green GCS image
-/// builds with the feature + a newer version; release builds omit the feature
-/// and cannot be overridden. Deliberately NOT a crate `CARGO_PKG_VERSION`
-/// (those diverge per-worker across the workspace).
-///
-/// Exposed as a macro (not a `const`) so it embeds inside `concat!` — e.g. the
-/// versioned GCS schema name in `database.rs` — while staying single-sourced.
-/// `env!` keeps the override a compile-time literal.
-#[cfg(feature = "stack-version-override")]
-macro_rules! stack_version {
-    () => {
-        env!("BUILD_STACK_VERSION")
-    };
-}
-#[cfg(not(feature = "stack-version-override"))]
-macro_rules! stack_version {
-    () => {
-        "0.14.0"
-    };
-}
-pub(crate) use stack_version;
-
-/// Version string of the coprocessor stack this binary belongs to. Shared by
-/// every service that links this crate, compared against
-/// `versioning.stack_version`, written into the singleton at cutover, and
-/// surfaced in upgrade notifications. The leading-`v` prefix is optional; the
-/// parser in `versioning::parse_version` tolerates its absence.
-pub const STACK_VERSION: &str = stack_version!();
+/// Release version shared by all services. Change it every release.
+/// Nothing compares it, so it never decides blue/green mode.
+pub const STACK_VERSION: &str = "0.15.0";
 
 pub const CIPHERTEXT_VERSION: i16 = 0;
 
 pub const HANDLE_VERSION: i16 = 0;
 
-/// If `--stack-version` appears in the process arguments, prints the
-/// compiled-in coprocessor [`STACK_VERSION`] to stdout and exits with status 0.
+// Decides blue/green mode. Raise it by one when a release changes the results
+// operators must agree on:
+//   - new key parameters
+//   - the GPU feature is turned on
+//   - randomization changes
+//   - the scheduling logic changes
+// Leave it as is for every other release, which then rolls out without a cutover.
+// A macro because the schema name needs it in `concat!`.
+macro_rules! consensus_protocol_version {
+    () => {
+        1
+    };
+}
+pub(crate) use consensus_protocol_version;
+
+pub const CONSENSUS_PROTOCOL_VERSION: u32 = consensus_protocol_version!();
+
+/// Print [`STACK_VERSION`] and exit when `--stack-version` is present.
 ///
-/// Call this *before* clap parsing. It scans argv directly rather than reading
-/// a parsed flag so it short-circuits like clap's built-in `--version`: it
-/// prints and exits even when a service's other required flags are absent
-/// (e.g. `consensus-detector --stack-version` with no `--gw-url`). Each service
-/// still declares a `--stack-version` clap field so the flag is documented in
-/// `--help`.
-///
-/// `--version` reports the per-crate `CARGO_PKG_VERSION` (which diverges across
-/// the workspace); `--stack-version` reports the single fleet-wide value used
-/// for blue/green cutover decisions.
+/// Call this before clap parsing so the flag works without other required
+/// arguments.
 pub fn handle_stack_version_flag() {
     if std::env::args().any(|arg| arg == "--stack-version") {
         println!("{STACK_VERSION}");
