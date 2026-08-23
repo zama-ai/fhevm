@@ -204,6 +204,14 @@ async fn setup_test_app_custom_docker() -> Result<TestInstance, Box<dyn std::err
 
     println!("Running migrations...");
     sqlx::migrate!("./migrations").run(&pool).await?;
+    // Match the database to this build so the worker runs live, not green.
+    sqlx::query(
+        "UPDATE versioning SET stack_version = $1, consensus_version = $2 WHERE singleton = TRUE",
+    )
+    .bind(fhevm_engine_common::STACK_VERSION)
+    .bind(i64::from(fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION))
+    .execute(&pool)
+    .await?;
     println!("Creating test keys");
     setup_test_key(&pool, false).await?;
     println!("DB prepared");

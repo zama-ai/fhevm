@@ -15,6 +15,7 @@ mod scheduling_bench;
 mod shared_db;
 mod test_cases;
 mod utils;
+mod versioning;
 
 use test_harness::db_utils::setup_test_key as setup_test_key_in_db;
 

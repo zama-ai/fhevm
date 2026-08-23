@@ -368,6 +368,7 @@ async fn test_worker_recovers_after_backend_termination() {
         conf,
         Arc::new(RwLock::new(SystemTime::now())),
         Arc::new(AtomicI64::new(-1)),
+        fhevm_engine_common::versioning::StackMode::new(false),
     ));
 
     // Process one proof so the worker is fully up and running.
