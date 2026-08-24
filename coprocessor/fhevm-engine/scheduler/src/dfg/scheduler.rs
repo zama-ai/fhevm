@@ -608,9 +608,7 @@ fn compress_output(
     // alone. AssertUnwindSafe is sound because the caller's error path
     // forwards nothing and drops `working`, so no state that crossed the
     // unwind boundary is observed afterwards.
-    let compressed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        working.compress()
-    }));
+    let compressed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| working.compress()));
     let ct_bytes = match compressed {
         Ok(compress_result) => compress_result.inspect_err(|error| {
             telemetry::set_current_span_error(error);
