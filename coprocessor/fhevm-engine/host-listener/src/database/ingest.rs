@@ -1070,23 +1070,48 @@ pub async fn synthesize_finalized_fallback_grants(
             );
             continue;
         }
+        // The computation row needs a transaction id (NOT NULL, part of the
+        // primary key), but `fallback_granted_events.transaction_id` is
+        // nullable and None is a normal value here. A grant observed without
+        // one gets the deterministic zero sentinel: for a synthesized row
+        // the id is bookkeeping — the handle and its bytes are what
+        // consensus sees — and dropping the grant instead would trade a
+        // block wedge for a silent per-handle liveness hole.
+        let transaction_hash =
+            transaction_hash.or(Some(alloy::primitives::FixedBytes::ZERO));
         // `created_at` (the observation's ingest time) stands in for the
         // block timestamp, which host_chain_blocks_valid does not record. It
         // only feeds scheduling hints (schedule_order, chain last_updated_at),
         // never consensus-compared data.
+        let data = TfheContract::TfheContractEvents::TrivialEncrypt(
+            TfheContract::TrivialEncrypt {
+                caller: Address::ZERO,
+                pt: alloy::primitives::U256::from_be_slice(&plaintext),
+                toType: handle_bytes[30],
+                result: alloy::primitives::FixedBytes::from(handle_bytes),
+            },
+        );
+        // Derived per event from its shape with an EMPTY minted set, NOT
+        // through the block-level derivation:
+        // `fallback_granted_events.transaction_id` is nullable and None is a
+        // normal value on this path (tolerated by the conflict check and the
+        // pbs insert below), while the block-level pass fail-closes on a
+        // missing transaction hash — one NULL row would wedge the
+        // finalization loop forever to compute a value that cannot depend on
+        // the missing input. The empty closure is correct by construction,
+        // not just for today's shape: the executor never ran
+        // (`is_executor_minted: false`), so nothing synthesized can be a
+        // transaction-local operand — the TrivialEncrypt has no encrypted
+        // operands and derives the all-zero mask, and if the synthesized
+        // shape ever gained one, every bit would correctly derive as
+        // boundary.
+        let operand_boundary_mask =
+            operand_boundary_mask_from_minted(&data, |_| false)
+                .map_err(sqlx::Error::Protocol)?;
         logs.push(LogTfhe {
             event: alloy::primitives::Log {
                 address: Address::ZERO,
-                data: TfheContract::TfheContractEvents::TrivialEncrypt(
-                    TfheContract::TrivialEncrypt {
-                        caller: Address::ZERO,
-                        pt: alloy::primitives::U256::from_be_slice(&plaintext),
-                        toType: handle_bytes[30],
-                        result: alloy::primitives::FixedBytes::from(
-                            handle_bytes,
-                        ),
-                    },
-                ),
+                data,
             },
             transaction_hash,
             // Forced allowed, exactly like inline synthesis: governance
@@ -1103,8 +1128,7 @@ pub async fn synthesize_finalized_fallback_grants(
             // Deterministic (ORDER BY id = observation order); a real index
             // also keeps ensure_logs_order from warning on every pass.
             log_index: Some(row_index as u64),
-            // Derived below, exactly as ordered block ingestion does.
-            operand_boundary_mask: None,
+            operand_boundary_mask: Some(operand_boundary_mask),
             // Synthesized by the listener from a finalized bridge grant; the
             // executor never ran, so `_markMinted` never recorded this
             // handle and it must not become a same-transaction minted
@@ -1115,13 +1139,6 @@ pub async fn synthesize_finalized_fallback_grants(
     if logs.is_empty() {
         return Ok(());
     }
-    // LISTENER-side computation inserts are fail-closed on a missing mask
-    // (insert_computation rejects None; the worker's derive-on-read fallback
-    // exists only for rows written by pre-mask binaries), so derive it
-    // here too. Synthesized `TrivialEncrypt` rows carry no encrypted
-    // operands, so every derived mask is empty; deriving rather than
-    // hardcoding keeps this path honest if the shape ever changes.
-    populate_operand_boundary_masks(&mut logs)?;
     let block_timestamp = logs[0].block_timestamp;
     // Dependency-free singletons: connexity/cross-block grouping options
     // cannot change the outcome, so neither flag is threaded through here.
