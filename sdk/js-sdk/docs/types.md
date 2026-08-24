@@ -127,22 +127,31 @@ held internally and is never exposed on the object:
 ```ts
 type TransportKeyPair = {
   readonly publicKey: BytesHex; // safe to share; bound into the permit
-  readonly tkmsVersion: TkmsVersion;
+  readonly tkmsVersion: string | undefined;
 };
 ```
 
-`serializeTransportKeyPair` produces `{ publicKey, privateKey }` for storage
-(treat it as a secret); `parseTransportKeyPair` restores it. See
+`tkmsVersion` is populated on a freshly `generateTransportKeyPair()`-created
+pair, but is `undefined` on one restored via `parseTransportKeyPair` unless it
+was carried through serialization — the version is otherwise resolved
+dynamically against the client's current protocol context when the key pair is
+used.
+
+`serializeTransportKeyPair` (async) produces `{ publicKey, privateKey,
+tkmsVersion? }` for storage (treat it as a secret); `parseTransportKeyPair`
+restores it. See
 [Decryption → Persisting a session](decryption.md#persisting-a-session).
 
 ## `SignedDecryptionPermit`
 
-The EIP-712 permit produced by `signDecryptionPermit`. It is a union over the
-protocol version, but every variant shares this surface:
+The EIP-712 permit produced by `signLegacyDecryptionPermit` (V1) or
+`signUnifiedDecryptionPermit` (V2) — inspect `version` (`1` or `2`) to tell
+them apart. Every variant shares this surface:
 
 ```ts
 type SignedDecryptionPermit = {
-  readonly signature: BytesHex;
+  readonly version: 1 | 2;
+  readonly signature: BytesHex; // Bytes65Hex on V1; may carry an ERC-1271 blob on V2
   readonly signerAddress: string; // checksummed
   readonly encryptedDataOwnerAddress: string; // whose values it decrypts
   readonly transportPublicKey: BytesHex;

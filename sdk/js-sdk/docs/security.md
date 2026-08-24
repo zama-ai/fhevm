@@ -49,6 +49,14 @@ So even when the ACL grants permission, the user must explicitly opt in to each
 decryption by signing with their wallet. No one can decrypt a user's data without
 their wallet signature.
 
+The signer doesn't have to be a plain EOA. If `signerAddress` is a
+smart-contract wallet (e.g. a Safe), the SDK verifies the signature via
+ERC-1271 (`isValidSignature`) instead of `ecrecover` before it's sent to the
+Zama Protocol — a precautionary, client-side check only. The Zama Protocol
+remains the authoritative verifier and re-checks the same way; the SDK's check
+just fails fast on a signature it can already tell is invalid, throwing an
+`Erc1271VerificationError` subtype (see [Error handling](error-handling.md)).
+
 ## How decryption works
 
 The Zama Protocol uses a **distributed key management** system — no single server

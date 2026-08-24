@@ -77,11 +77,11 @@ both are needed.
 ## Signing is per-call, not per-client
 
 Neither factory takes a `signer` or `walletClient`. A client is read-only. When
-an operation needs a signature — only [`signDecryptionPermit`](decryption.md)
-does — you pass the signer to that method:
+an operation needs a signature — only signing a
+[decryption permit](decryption.md) does — you pass the signer to that method:
 
 ```ts
-await client.signDecryptionPermit({
+await client.signLegacyDecryptionPermit({
   /* … */
   signerAddress: await signer.getAddress(),
   signer, // ethers Signer, or a viem Account / WalletClient
