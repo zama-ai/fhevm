@@ -28,11 +28,11 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
 
     string private constant CONTRACT_NAME = "ProtocolConfig";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 2;
+    uint256 private constant MINOR_VERSION = 3;
     uint256 private constant PATCH_VERSION = 0;
 
-    /// @dev Shared between `initializeFromEmptyProxy`, `initializeFromCanonical`, and `reinitializeV2`.
-    uint64 private constant REINITIALIZER_VERSION = 3;
+    /// @dev Shared between `initializeFromEmptyProxy`, `initializeFromCanonical`, and `reinitializeV3`.
+    uint64 private constant REINITIALIZER_VERSION = 4;
 
     /// @notice Upper bound on the KMS committee size and on every per-context threshold.
     /// @dev Driven by the proof format consumed in
@@ -241,45 +241,12 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     }
 
     /**
-     * @notice Re-initializes the contract from V1.
+     * @notice Re-initializes the contract from V2.
      * @dev Define a `reinitializeVX` function once the contract needs to be upgraded.
-     * @param kmsNodeParams The existing context's KMS node set, used to recompute the anchor hash.
-     * @param softwareVersion The KMS software version expected for the context.
-     * @param pcrValues Accepted enclave PCR values for the context.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV2(
-        KmsNodeParams[] calldata kmsNodeParams,
-        string calldata softwareVersion,
-        PcrValues[] calldata pcrValues
-    ) public virtual reinitializer(REINITIALIZER_VERSION) {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-
-        // Bring the existing context into the epoch-lifecycle shape: active context + first epoch.
-        $.epochCounter = EPOCH_COUNTER_BASE;
-        uint256 contextId = $.currentKmsContextId;
-
-        KmsThresholds memory thresholds = KmsThresholds({
-            publicDecryption: $.publicDecryptionThresholdForContext[contextId],
-            userDecryption: $.userDecryptionThresholdForContext[contextId],
-            kmsGen: $.kmsGenThresholdForContext[contextId],
-            mpc: $.mpcThresholdForContext[contextId]
-        });
-        $.latestActiveKmsContextId = contextId;
-        $.contextState[contextId] = ContextState.Active;
-        uint256 epochId = ++$.epochCounter;
-        _activateEpoch(epochId, contextId);
-
-        // Backfill the anchor the pre-epoch version never recorded.
-        $.contextAnchors[contextId] = KmsContextAnchor({
-            emissionBlockNumber: block.number,
-            contextInfoHash: keccak256(abi.encode(kmsNodeParams, thresholds, softwareVersion, pcrValues))
-        });
-        // Emit the genesis NewKmsContext the pre-epoch version never recorded. KMS-connectors will consider KMS_CONTEXT_COUNTER_BASE as sentinel/zero value
-        // and avoid triggering the context switch.
-        emit NewKmsContext(contextId, KMS_CONTEXT_COUNTER_BASE, kmsNodeParams, thresholds, softwareVersion, pcrValues);
-    }
+    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     // -----------------------------------------------------------------------------------------
     // State-changing functions

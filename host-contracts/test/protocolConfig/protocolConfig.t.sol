@@ -16,7 +16,6 @@ import {UUPSUpgradeableEmptyProxy} from "@fhevm-host-contracts/contracts/shared/
 import {ACLOwnable} from "@fhevm-host-contracts/contracts/shared/ACLOwnable.sol";
 import {KMS_CONTEXT_COUNTER_BASE, EPOCH_COUNTER_BASE, PREP_KEYGEN_COUNTER_BASE, KEY_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
 import {protocolConfigAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
-import {ProtocolConfigV010TestDouble} from "./ProtocolConfigV010TestDouble.sol";
 
 contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     KMSGeneration internal kmsGeneration;
@@ -494,7 +493,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _setupDefault();
 
         // Version and current context.
-        assertEq(protocolConfig.getVersion(), "ProtocolConfig v0.2.0");
+        assertEq(protocolConfig.getVersion(), "ProtocolConfig v0.3.0");
         uint256 contextId = protocolConfig.getCurrentKmsContextId();
         assertEq(contextId, KMS_CONTEXT_COUNTER_BASE + 1);
         assertEq(protocolConfig.getCurrentKmsContextId(), contextId);
@@ -2491,89 +2490,9 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         vm.prank(owner);
         protocolConfig.upgradeToAndCall(newImpl, "");
 
-        assertEq(protocolConfig.getVersion(), "ProtocolConfig v0.3.0");
+        assertEq(protocolConfig.getVersion(), "ProtocolConfig v0.4.0");
         // State preserved across upgrade.
         assertTrue(protocolConfig.isValidKmsContext(protocolConfig.getCurrentKmsContextId()));
-    }
-
-    // -----------------------------------------------------------------------
-    // reinitializeV2 upgrade continuity
-    // -----------------------------------------------------------------------
-
-    /// @dev Upgrades an empty proxy INTO the pre-epoch v0.1.0 storage double, then INTO the real
-    ///      ProtocolConfig via reinitializeV2, asserting the migration brings the pre-existing context
-    ///      into the epoch-lifecycle shape (active context + first epoch + backfilled anchor) and emits
-    ///      the genesis NewKmsContext with the KMS_CONTEXT_COUNTER_BASE sentinel previousContextId.
-    function test_reinitializeV2MigratesPreEpochContext() public {
-        _setupEmptyProxy();
-
-        KmsNodeParams[] memory nodes = _makeKmsNodeParams(3);
-        IProtocolConfig.KmsThresholds memory thresholds = IProtocolConfig.KmsThresholds({
-            publicDecryption: 1,
-            userDecryption: 2,
-            kmsGen: 3,
-            mpc: 2
-        });
-        PcrValues[] memory pcrValues = new PcrValues[](1);
-        pcrValues[0] = PcrValues({
-            pcr0: abi.encodePacked(uint256(1)),
-            pcr1: abi.encodePacked(uint256(2)),
-            pcr2: abi.encodePacked(uint256(3))
-        });
-        string memory softwareVersion = "kms-v1";
-        uint256 existingContextId = KMS_CONTEXT_COUNTER_BASE + 1;
-
-        // Stage 1: seed the proxy with the pre-epoch v0.1.0 storage layout. Its initializer seeds the
-        // counter to BASE then increments to the first context (existingContextId).
-        address v010Impl = address(new ProtocolConfigV010TestDouble());
-        vm.prank(owner);
-        EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(
-            v010Impl,
-            abi.encodeCall(ProtocolConfigV010TestDouble.initializeFromEmptyProxy, (nodes, thresholds))
-        );
-
-        // Stage 2: upgrade into the real ProtocolConfig via reinitializeV2. The genesis NewKmsContext
-        // must carry the KMS_CONTEXT_COUNTER_BASE sentinel as previousContextId so connectors do NOT
-        // treat the migration as a context switch. Deploy the impl BEFORE pranking so the prank lands
-        // on upgradeToAndCall, not the CREATE.
-        address realImpl = address(new ProtocolConfig());
-        vm.expectEmit(true, true, false, true, protocolConfigAdd);
-        emit IProtocolConfig.NewKmsContext(
-            existingContextId,
-            KMS_CONTEXT_COUNTER_BASE,
-            nodes,
-            thresholds,
-            softwareVersion,
-            pcrValues
-        );
-        vm.prank(owner);
-        EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(
-            realImpl,
-            abi.encodeCall(ProtocolConfig.reinitializeV2, (nodes, softwareVersion, pcrValues))
-        );
-        protocolConfig = ProtocolConfig(protocolConfigAdd);
-
-        // Existing context is now Active and resolves as the live context.
-        (uint256 activeContextId, uint256 activeEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
-        assertEq(activeContextId, existingContextId);
-        assertEq(protocolConfig.getCurrentKmsContextId(), existingContextId);
-        assertTrue(protocolConfig.isValidKmsContext(existingContextId));
-
-        // The first epoch is opened and active.
-        assertEq(activeEpochId, EPOCH_COUNTER_BASE + 1);
-        assertTrue(protocolConfig.isValidEpochForContext(existingContextId, EPOCH_COUNTER_BASE + 1));
-
-        // The anchor the pre-epoch version never recorded is backfilled.
-        (uint256 emissionBlockNumber, bytes32 contextInfoHash) = protocolConfig.getKmsContextAnchor(existingContextId);
-        assertEq(emissionBlockNumber, block.number);
-        assertEq(contextInfoHash, keccak256(abi.encode(nodes, thresholds, softwareVersion, pcrValues)));
-
-        // Node/threshold storage written under the v0.1.0 layout is readable through the new getters,
-        // proving the namespaced storage slot lines up across the upgrade.
-        assertEq(protocolConfig.getKmsGenThreshold(), 3);
-        assertEq(protocolConfig.getUserDecryptionThreshold(), 2);
-        assertEq(protocolConfig.getKmsSignersForContext(existingContextId).length, 3);
-        assertTrue(protocolConfig.isKmsSignerForContext(existingContextId, vm.addr(kmsPk0)));
     }
 
     // -----------------------------------------------------------------------

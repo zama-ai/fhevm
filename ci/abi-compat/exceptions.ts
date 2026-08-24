@@ -39,6 +39,9 @@ export const ABI_COMPAT_EXCEPTIONS: Partial<Record<PackageName, Partial<Record<s
     ],
     InputVerification: ["error NotCustodianSigner(address)", "error NotCustodianTxSender(address)"],
     GatewayConfig: [
+      // AddHostChain now indexes the chain ID so listeners can filter on it, which changes the
+      // event signature. Nothing off-chain subscribes to it.
+      "event AddHostChain((uint256,address,address,string,string))",
       "event InitializeGatewayConfig((string,string),(uint256,uint256,uint256,uint256,uint256),(address,address,string,string)[],(address,address,string)[],(address,address,bytes)[])",
       "event UpdateKmsNodes((address,address,string,string)[],uint256,uint256,uint256,uint256)",
       "function getPublicDecryptionThreshold() returns (uint256)",

@@ -589,11 +589,6 @@ export function buildProtocolConfigContextArgs(): [ReturnType, ReturnType, strin
   return [buildKmsNodeParams(), buildKmsThresholds(), getRequiredEnvVar('KMS_SOFTWARE_VERSION'), buildPcrValues()];
 }
 
-// Reinitialize recovers the thresholds from storage, so it omits them from the argument tuple.
-export function buildProtocolConfigReinitializeArgs(): [ReturnType, string, ReturnType] {
-  return [buildKmsNodeParams(), getRequiredEnvVar('KMS_SOFTWARE_VERSION'), buildPcrValues()];
-}
-
 task('task:assertProtocolConfigReady').setAction(async function (_, hre) {
   const parsedEnv = readHostEnv();
   const protocolConfigAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
