@@ -116,17 +116,17 @@ Reading public values works on every client, including the base client. Construc
 
 ## Import paths
 
-| Path                         | What it provides                                   |
-| ---------------------------- | -------------------------------------------------- |
-| `@fhevm/sdk/ethers`          | Client factories and runtime config (ethers.js v6) |
-| `@fhevm/sdk/viem`            | Client factories and runtime config (viem)         |
-| `@fhevm/sdk/chains`          | Chain definitions (`mainnet`, `sepolia`)           |
-| `@fhevm/sdk/types`           | Public TypeScript types and helpers                |
-| `@fhevm/sdk/actions/base`    | Base actions (standalone functions)                |
-| `@fhevm/sdk/actions/encrypt` | Encrypt actions                                    |
-| `@fhevm/sdk/actions/decrypt` | Decrypt actions                                    |
-| `@fhevm/sdk/actions/chain`   | Permit, key, and serialization actions             |
-| `@fhevm/sdk/actions/host`    | Host contract read actions                         |
+| Path                         | What it provides                                    |
+| ---------------------------- | --------------------------------------------------- |
+| `@fhevm/sdk/ethers`          | Client factories and runtime config (ethers.js v6)  |
+| `@fhevm/sdk/viem`            | Client factories and runtime config (viem)          |
+| `@fhevm/sdk/chains`          | Chain definitions (`mainnet`, `sepolia`, `polygon`) |
+| `@fhevm/sdk/types`           | Public TypeScript types and helpers                 |
+| `@fhevm/sdk/actions/base`    | Base actions (standalone functions)                 |
+| `@fhevm/sdk/actions/encrypt` | Encrypt actions                                     |
+| `@fhevm/sdk/actions/decrypt` | Decrypt actions                                     |
+| `@fhevm/sdk/actions/chain`   | Permit, key, and serialization actions              |
+| `@fhevm/sdk/actions/host`    | Host contract read actions                          |
 
 ## Browser requirements
 
