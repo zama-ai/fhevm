@@ -2141,7 +2141,13 @@ fn prepare_transaction_ops(
         while index < ops.len() {
             let blocked = ops[index].inputs.iter().any(|input| match input {
                 DFGTaskInput::LocalDependence(dh) => uncomputable.contains(dh),
-                _ => false,
+                // Boundary operands are deliberately not consulted here:
+                // dead boundary inputs are judged against the database
+                // (query_dead_boundary_handles) and drained before this
+                // loop, not through the transaction-local propagation.
+                DFGTaskInput::BoundaryDependence(_)
+                | DFGTaskInput::Value(_)
+                | DFGTaskInput::Compressed(_) => false,
             });
             if blocked {
                 let op = ops.remove(index);
