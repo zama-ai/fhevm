@@ -561,11 +561,7 @@ fn try_execute_node(
     });
     match result {
         Err(e) => {
-            let msg = e
-                .downcast_ref::<&str>()
-                .map(|s| s.to_string())
-                .or_else(|| e.downcast_ref::<String>().cloned())
-                .unwrap_or_else(|| "unknown panic payload".to_string());
+            let msg = panic_message(e);
             eprintln!("Panic while executing operation: {msg}");
             error!(target: "scheduler", { handle = ?hex::encode(&node.result_handle), msg },
                "Panic while executing operation");
@@ -574,6 +570,13 @@ fn try_execute_node(
         }
         Ok(r) => Ok(r),
     }
+}
+
+fn panic_message(e: Box<dyn std::any::Any + Send>) -> String {
+    e.downcast_ref::<&str>()
+        .map(|s| s.to_string())
+        .or_else(|| e.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "unknown panic payload".to_string())
 }
 
 type OpResult = Result<SupportedFheCiphertexts>;
@@ -598,9 +601,28 @@ fn compress_output(
     )
     .entered();
     let ct_type = working.type_num();
-    let ct_bytes = working.compress().inspect_err(|error| {
-        telemetry::set_current_span_error(error);
-    })?;
+    // Compression panics get the same per-op containment as op execution
+    // (on main, compression ran inside run_computation's catch_unwind; it
+    // must not regress into a whole-partition abort now that it lives
+    // here): the panic becomes an ExecutionPanic result for this handle
+    // alone. AssertUnwindSafe is sound because the caller's error path
+    // forwards nothing and drops `working`, so no state that crossed the
+    // unwind boundary is observed afterwards.
+    let compressed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        working.compress()
+    }));
+    let ct_bytes = match compressed {
+        Ok(compress_result) => compress_result.inspect_err(|error| {
+            telemetry::set_current_span_error(error);
+        })?,
+        Err(e) => {
+            let msg = panic_message(e);
+            error!(target: "scheduler", { txn_id = %telemetry::short_hex_id(transaction_id), msg },
+                "Panic while compressing operation output");
+            telemetry::set_current_span_error(&msg);
+            return Err(SchedulerError::ExecutionPanic(msg).into());
+        }
+    };
     tracing::Span::current().record("compressed_size", ct_bytes.len() as i64);
     Ok(CompressedCiphertext { ct_type, ct_bytes })
 }
