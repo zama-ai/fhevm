@@ -39,7 +39,7 @@ task(
   .addParam('buffer', 'DAO lead time required between now and startBlock (same format as --duration)')
   .addParam('proposalId', 'Coprocessor upgrade proposal id (positive integer, decimal or 0x-hex)')
   .addParam('softwareVersion', 'Coprocessor consensus version (e.g. 1.0.0)')
-  .setAction(async function ({ environment, startTime, duration, buffer, proposalId, softwareVersion }): Promise {
+  .setAction(async function ({ environment, startTime, duration, buffer, proposalId, softwareVersion }): Promise<void> {
     const inputs = parseCoprocessorUpgradeInputs({
       environment,
       startTime,
