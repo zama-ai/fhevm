@@ -264,13 +264,12 @@ async fn publish_user_decryption_v2<'e>(
     .map_err(anyhow::Error::from)
 }
 
-/// Persists a host-generic V2 user-decryption request into the shared
-/// `user_decryption_requests` table. Only the fields the gateway itself consumed are typed
-/// columns (`ct_handles`, `public_key`, `extra_data`, validity window); the host-kind
-/// discriminator goes to `host_kind` and everything host-specific to the opaque `host_payload`.
+/// Persists a Solana user-decryption request into the shared `user_decryption_requests` table.
+/// Only the fields the gateway itself consumed are typed columns (`ct_handles`, `public_key`,
+/// `extra_data`, validity window); everything else goes to the opaque `solana_request`.
 /// The EVM-shaped columns are placeholders on this path (zero `user_address`, empty
-/// `handle_*`/`allowed_contracts`, NULL `signature`); the row reader identifies a V2 row by
-/// `host_kind IS NOT NULL` and never reads them.
+/// `handle_*`/`allowed_contracts`, NULL `signature`); the row reader identifies a Solana row by
+/// `solana_request IS NOT NULL` and never reads them.
 async fn publish_user_decryption_v3<'e>(
     executor: impl PgExecutor<'e>,
     request: UserDecryptionRequestV3,
@@ -291,10 +290,7 @@ async fn publish_user_decryption_v3<'e>(
         .try_into()
         .map_err(|_| anyhow!("V2 durationSeconds does not fit in i64"))?;
 
-    let host_kind = i16::from(request.hostKind);
-    let allowed_acl_domain_key_count = i16::from(request.allowedAclDomainKeyCount);
-
-    // EVM-shaped placeholders: unused on the V2 path (the reader keys on `host_kind`).
+    // EVM-shaped placeholders: unused on the Solana path (the reader keys on `solana_request`).
     let zero_user_address = [0u8; 20];
     let empty_addresses: Vec<Vec<u8>> = Vec::new();
 
@@ -302,10 +298,9 @@ async fn publish_user_decryption_v3<'e>(
         "INSERT INTO user_decryption_requests(
             decryption_id, ct_handles, user_address, public_key, extra_data, tx_hash,
             created_at, otlp_context, handle_owner_addresses, handle_contract_addresses,
-            allowed_contracts, start_timestamp, duration_seconds, host_kind, host_payload,
-            allowed_acl_domain_key_count
+            allowed_contracts, start_timestamp, duration_seconds, solana_request
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
         ON CONFLICT DO NOTHING",
         request.decryptionId.as_le_slice(),
         &ct_handles,
@@ -320,9 +315,7 @@ async fn publish_user_decryption_v3<'e>(
         &empty_addresses,
         start_timestamp,
         duration_seconds,
-        host_kind,
-        request.hostPayload.as_ref(),
-        allowed_acl_domain_key_count,
+        request.solanaRequest.as_ref(),
     )
     .execute(executor)
     .await

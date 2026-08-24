@@ -163,16 +163,6 @@ contract Decryption is
     uint8 internal constant MAX_SOLANA_USER_DECRYPT_HANDLES = 33;
 
     /**
-     * @notice The `hostKind` value of a Solana host chain in the host-generic `userDecryptionRequest`.
-     * @dev The host-kind inventory mirrors the protocol's attestation-type dispatch; 0 is
-     * reserved, 1 names the EVM hosts (not served by the host-generic entry today — the EVM route is the
-     * unified `userDecryptionRequest`). The gateway consumes the value in exactly two places —
-     * the served-inventory admission check (`_isServedHostKind`) and the Solana handle-count
-     * cap; everywhere else it is forwarded verbatim for the host's KMS Connector to dispatch on.
-     */
-    uint8 internal constant HOST_KIND_SOLANA = 2;
-
-    /**
      * @notice The hash of the EIP712Domain structure typed data definition.
      */
     bytes32 private constant DOMAIN_TYPE_HASH =
@@ -773,91 +763,48 @@ contract Decryption is
         bytes32[] calldata ctHandles,
         RequestValiditySeconds calldata requestValidity,
         bytes calldata publicKey,
-        uint8 allowedAclDomainKeyCount,
-        uint8 hostKind,
         bytes calldata extraData,
-        bytes calldata hostPayload
+        bytes calldata solanaRequest
     ) external virtual whenNotPaused {
-        // The dispatch discriminator is read before anything else, mirroring the KMS
-        // Connector's own order: a request naming a host this entry does not serve has no
-        // field the rest of the admission may interpret, so it is refused here — before the
-        // fee — instead of burning the fee and dying terminally in the host's Connector.
-        if (!_isServedHostKind(hostKind)) {
-            revert HostKindNotServed(hostKind);
-        }
         if (ctHandles.length == 0) {
             revert EmptyHandles();
         }
-        // The entry's own scope bound, host-agnostic: the exact rule the EVM paths apply to
-        // `allowedContracts`. The list itself is signed inside the opaque `hostPayload`, which
-        // this contract never reads, so what is bounded here — before the fee — is its declared
-        // length; zero is valid (permissive mode). The declaration cannot lie usefully: the
-        // host's Connector admits a request only when it equals the signed list's actual length.
-        if (allowedAclDomainKeyCount > MAX_USER_DECRYPT_CONTRACT_ADDRESSES) {
-            revert ContractAddressesMaxLengthExceeded(MAX_USER_DECRYPT_CONTRACT_ADDRESSES, allowedAclDomainKeyCount);
-        }
-        // The cap is Solana's, not the entry's: Solana's KMS Connector reads one atomic account
-        // snapshot per request, so a longer list could never be authorized and is refused here,
-        // before the fee. The `hostKind` gate is not skippable — the served-inventory check
-        // above already refused every other value — and stays written so a future host kind
-        // brings its own bound instead of inheriting Solana's.
-        if (hostKind == HOST_KIND_SOLANA && ctHandles.length > MAX_SOLANA_USER_DECRYPT_HANDLES) {
+        // Solana's KMS Connector reads one atomic account snapshot per request, so a longer
+        // list could never be authorized and is refused here, before the fee.
+        if (ctHandles.length > MAX_SOLANA_USER_DECRYPT_HANDLES) {
             revert SolanaHandlesMaxLengthExceeded(MAX_SOLANA_USER_DECRYPT_HANDLES, ctHandles.length);
         }
         _checkUserDecryptionRequestValiditySeconds(requestValidity);
 
-        uint256 contextId = _extractHostGenericKmsRoutingContextId(extraData);
+        uint256 contextId = _extractSolanaKmsRoutingContextId(extraData);
 
         _collectUserDecryptionFee(msg.sender);
 
-        _executeHostGenericUserDecryptionRequest(
-            ctHandles,
-            requestValidity,
-            publicKey,
-            allowedAclDomainKeyCount,
-            hostKind,
-            extraData,
-            hostPayload,
-            contextId
-        );
+        _executeSolanaUserDecryptionRequest(ctHandles, requestValidity, publicKey, extraData, solanaRequest, contextId);
     }
 
     /**
-     * @notice The inventory of `hostKind` values the host-generic `userDecryptionRequest`
-     * serves. This is the admission dictionary: a value outside it reverts at the entry,
-     * before the fee. Adding a host chain extends this function together with its
-     * `HOST_KIND_*` constant; nothing else in the entry dispatches on the value.
-     * @dev 0 is reserved and 1 (EVM) is known but deliberately absent: EVM user decryption
-     * travels the unified `userDecryptionRequest`, never this entry.
-     */
-    function _isServedHostKind(uint8 hostKind) internal pure virtual returns (bool) {
-        return hostKind == HOST_KIND_SOLANA;
-    }
-
-    /**
-     * @notice Executes the post-validation body of the host-generic `userDecryptionRequest`:
+     * @notice Executes the post-validation body of the Solana `userDecryptionRequest`:
      * conformance-checks the handles, fetches the SNS ciphertexts, updates storage, and emits
-     * the host-generic `UserDecryptionRequest` event.
+     * the Solana `UserDecryptionRequest` event.
      * @dev Mirrors `_executeUnifiedUserDecryptionRequest` and reuses the shared `userDecryptionCounter`
      * and `userDecryptionPayloads`/`decryptionContextId` storage, so the response handler
      * (`userDecryptionResponse`) is oblivious to the request's host chain — the host-side
-     * authorization lives in the host's KMS Connector, fed by the opaque `hostPayload` this
+     * authorization lives in the KMS Connector, fed by the opaque `solanaRequest` this
      * function forwards verbatim.
      */
-    function _executeHostGenericUserDecryptionRequest(
+    function _executeSolanaUserDecryptionRequest(
         bytes32[] calldata ctHandles,
         RequestValiditySeconds calldata requestValidity,
         bytes calldata publicKey,
-        uint8 allowedAclDomainKeyCount,
-        uint8 hostKind,
         bytes calldata extraData,
-        bytes calldata hostPayload,
+        bytes calldata solanaRequest,
         uint256 contextId
     ) internal virtual {
         uint256 userDecryptionId;
-        // Scoped so the validation temporaries are off the stack before the eight-argument
-        // emit — this is what keeps the function under Solidity's stack-depth limit without
-        // `viaIR` now that the request travels as loose typed fields instead of one struct.
+        // Scoped so the validation temporaries are off the stack before the emit — this is what
+        // keeps the function under Solidity's stack-depth limit without `viaIR` now that the
+        // request travels as loose typed fields instead of one struct.
         {
             bytes32[] memory ctHandlesMem = ctHandles;
             _checkCtHandlesConformanceHostChain(ctHandlesMem);
@@ -886,16 +833,7 @@ contract Decryption is
         // Single emission: there is no pre-0.15 consumer of this entry to keep on the deprecated
         // `SnsCiphertextMaterial[]` shape, so this event is handles-only from the start
         // (consumers resolve materials off-chain from the signed S3 attestations, RFC-023 Part 2).
-        emit UserDecryptionRequest(
-            userDecryptionId,
-            ctHandles,
-            requestValidity,
-            publicKey,
-            allowedAclDomainKeyCount,
-            hostKind,
-            extraData,
-            hostPayload
-        );
+        emit UserDecryptionRequest(userDecryptionId, ctHandles, requestValidity, publicKey, extraData, solanaRequest);
     }
 
     /**
@@ -1120,14 +1058,13 @@ contract Decryption is
     }
 
     /**
-     * @notice Extracts the KMS context id from a host-generic request's `extraData`, which must be
+     * @notice Extracts the KMS context id from a Solana request's `extraData`, which must be
      * exactly the signed KMS routing form: version `0x02` ‖ contextId(32) ‖ epochId(32),
-     * 65 bytes. KMS routing is host-agnostic, and the host-generic entry has no other legal
-     * use of `extraData` — everything host-specific rides in the opaque `hostPayload` — so
-     * any other version or length is refused at admission, before the fee, instead of dying
-     * in a Connector after it.
+     * 65 bytes. This entry has no other legal use of `extraData` — everything Solana-specific
+     * rides in the opaque `solanaRequest` — so any other version or length is refused at
+     * admission, before the fee, instead of dying in the Connector after it.
      */
-    function _extractHostGenericKmsRoutingContextId(
+    function _extractSolanaKmsRoutingContextId(
         bytes calldata extraData
     ) internal view virtual returns (uint256 contextId) {
         if (extraData.length != 65 || uint8(extraData[0]) != 2) {

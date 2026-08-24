@@ -17,9 +17,11 @@
 //! in a catch-all arm that silently picks someone else's retry policy.
 //!
 //! What lives above this module: the permit canon itself (the `zama-solana-permit` crate —
-//! typed form, canonical text, envelope, signature) and the ACL model (the
-//! `zama-solana-acl` crate — account layout, encrypted value IDs, leaf commitments, MMR). Neither
-//! is reimplemented here; this module is the host policy that consumes both.
+//! typed form, canonical text, envelope, signature), the request canon (the
+//! `zama-solana-request` crate — the wire form and the one encoder/decoder the relayer and
+//! this connector share), and the ACL model (the `zama-solana-acl` crate — account layout,
+//! encrypted value IDs, leaf commitments, MMR). None is reimplemented here; this module is
+//! the host policy that consumes all three.
 
 //! # What this module replaces
 //!
@@ -50,12 +52,12 @@ pub mod deployment;
 /// Encrypted value account resolution: presence, ownership, type, identity binding, and the
 /// authority and domain the account carries.
 pub mod encrypted_value_account;
+/// Parity between the gateway event's typed fields and the signed request they carry.
+pub mod event_parity;
 /// Failure taxonomy and the terminal / transient / retryable classification.
 pub mod failure;
 /// Handle binding: current membership and historical inclusion proofs.
 pub mod handle_binding;
-/// The canonical `hostPayload` byte layout and its parity with the event's typed handles.
-pub mod host_payload;
 /// KMS context/epoch servability.
 pub mod kms_pair;
 /// The authorization pipeline.

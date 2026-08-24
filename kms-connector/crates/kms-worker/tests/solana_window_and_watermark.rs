@@ -22,7 +22,6 @@ mod solana_support;
 use kms_worker::core::solana::{
     failure::{AuthorizationFailure, FailureClass},
     pipeline::{AuthorizationContext, authorize_request},
-    request::SolanaUserDecryptRequest,
     snapshot::{SYSTEM_PROGRAM_ID, SnapshotAccount, SnapshotKeys},
     watermark::{
         WatermarkFailure, WindowFailure, check_not_invalidated, check_window,
@@ -43,12 +42,10 @@ fn watermark_in(world: &World, user: [u8; 32]) -> Result<u64, WatermarkFailure> 
 fn context_at<'a>(
     deployment: &'a kms_worker::core::solana::deployment::DeploymentIdentity,
     now: u64,
-    request: &SolanaUserDecryptRequest,
 ) -> AuthorizationContext<'a> {
     AuthorizationContext {
         deployment,
         now_unix_seconds: now,
-        declared_acl_domain_key_count: declared_acl_domain_key_count(request),
     }
 }
 
@@ -357,7 +354,7 @@ async fn the_watermark_is_keyed_by_the_signer_not_the_handle_owner() {
     authorize_request(
         &reader,
         &ServableKmsPair,
-        context_at(&deployment, NOW_INSIDE_WINDOW, &request),
+        context_at(&deployment, NOW_INSIDE_WINDOW),
         &request,
     )
     .await
@@ -385,7 +382,7 @@ async fn a_revocation_by_the_signer_stops_a_delegated_request() {
     let failure = authorize_request(
         &reader,
         &ServableKmsPair,
-        context_at(&deployment, NOW_INSIDE_WINDOW, &request),
+        context_at(&deployment, NOW_INSIDE_WINDOW),
         &request,
     )
     .await
@@ -419,7 +416,7 @@ async fn a_prefunded_invalidation_address_does_not_deny_service() {
     authorize_request(
         &reader,
         &ServableKmsPair,
-        context_at(&deployment, NOW_INSIDE_WINDOW, &request),
+        context_at(&deployment, NOW_INSIDE_WINDOW),
         &request,
     )
     .await
@@ -446,7 +443,7 @@ async fn a_permit_that_expired_before_processing_is_refused() {
     let failure = authorize_request(
         &reader,
         &ServableKmsPair,
-        context_at(&deployment, DEFAULT_START + DEFAULT_DURATION + 1, &request),
+        context_at(&deployment, DEFAULT_START + DEFAULT_DURATION + 1),
         &request,
     )
     .await

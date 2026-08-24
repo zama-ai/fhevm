@@ -381,6 +381,7 @@ test-build: ## Build all test binaries (no Postgres needed — uses sqlx offline
 	@$(CARGO_TEST) --features integration-tests --test user_decrypt_v2_test --no-run
 	@$(CARGO_TEST) --features integration-tests --test delegated_user_decrypt_v2_test --no-run
 	@$(CARGO_TEST) --features integration-tests --test user_decrypt_v3_test --no-run
+	@$(CARGO_TEST) --features integration-tests --test solana_v0_teardown --no-run
 	@$(CARGO_TEST) --features integration-tests --test health_tests --no-run
 	@$(CARGO_TEST) --features integration-tests --test keyurl_test --no-run
 
@@ -392,6 +393,14 @@ test-run: _check-postgres ## Run pre-built test binaries
 	@$(CARGO_TEST) --features integration-tests --test user_decrypt_v2_test -- --test-threads=1
 	@$(CARGO_TEST) --features integration-tests --test delegated_user_decrypt_v2_test -- --test-threads=1
 	@$(CARGO_TEST) --features integration-tests --test user_decrypt_v3_test -- --test-threads=1
+	# The v0 teardown grep gate. It does not touch the database, but it lives with the other
+	# integration binaries so the whole tree is run from one list.
+	#
+	# `solana_host_payload_parity` used to sit here too. It pinned the relayer's own encoder
+	# against the connector-auth vectors, back when the relayer and the connector each had one.
+	# They now share `zama-solana-request`, so the vectors pin that one implementation from the
+	# connector suite instead, and the relayer half had nothing left to assert.
+	@$(CARGO_TEST) --features integration-tests --test solana_v0_teardown -- --test-threads=1
 	@$(CARGO_TEST) --features integration-tests --test health_tests -- --test-threads=1
 	@$(CARGO_TEST) --features integration-tests --test keyurl_test -- --test-threads=1
 

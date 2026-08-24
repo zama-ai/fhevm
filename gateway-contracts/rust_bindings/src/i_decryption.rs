@@ -79,7 +79,7 @@ interface IDecryption {
     event UserDecryptionRequest(uint256 indexed decryptionId, SnsCiphertextMaterial[] snsCtMaterials, HandleEntry[] handles, UserDecryptionRequestPayload payload);
     event UserDecryptionRequest(uint256 indexed decryptionId, bytes32[] ctHandles, address userAddress, bytes publicKey, bytes extraData);
     event UserDecryptionRequest(uint256 indexed decryptionId, HandleEntry[] handles, UserDecryptionRequestPayload payload);
-    event UserDecryptionRequest(uint256 indexed decryptionId, bytes32[] ctHandles, RequestValiditySeconds requestValidity, bytes publicKey, uint8 allowedAclDomainKeyCount, uint8 hostKind, bytes extraData, bytes hostPayload);
+    event UserDecryptionRequest(uint256 indexed decryptionId, bytes32[] ctHandles, RequestValiditySeconds requestValidity, bytes publicKey, bytes extraData, bytes solanaRequest);
     event UserDecryptionResponse(uint256 indexed decryptionId, uint256 indexShare, bytes userDecryptedShare, bytes signature, bytes extraData);
     event UserDecryptionResponseThresholdReached(uint256 indexed decryptionId);
 
@@ -94,7 +94,7 @@ interface IDecryption {
     function isUserDecryptionReady(address userAddress, CtHandleContractPair[] memory ctHandleContractPairs, bytes memory extraData) external view returns (bool);
     function publicDecryptionRequest(bytes32[] memory ctHandles, bytes memory extraData) external;
     function publicDecryptionResponse(uint256 decryptionId, bytes memory decryptedResult, bytes memory signature, bytes memory extraData) external;
-    function userDecryptionRequest(bytes32[] memory ctHandles, RequestValiditySeconds memory requestValidity, bytes memory publicKey, uint8 allowedAclDomainKeyCount, uint8 hostKind, bytes memory extraData, bytes memory hostPayload) external;
+    function userDecryptionRequest(bytes32[] memory ctHandles, RequestValiditySeconds memory requestValidity, bytes memory publicKey, bytes memory extraData, bytes memory solanaRequest) external;
     function userDecryptionRequest(HandleEntry[] memory handles, address userAddress, bytes memory publicKey, address[] memory allowedContracts, RequestValiditySeconds memory requestValidity, bytes memory signature, bytes memory extraData) external;
     function userDecryptionRequest(CtHandleContractPair[] memory ctHandleContractPairs, RequestValidity memory requestValidity, ContractsInfo memory contractsInfo, address userAddress, bytes memory publicKey, bytes memory signature, bytes memory extraData) external;
     function userDecryptionResponse(uint256 decryptionId, bytes memory userDecryptedShare, bytes memory signature, bytes memory extraData) external;
@@ -502,22 +502,12 @@ interface IDecryption {
         "internalType": "bytes"
       },
       {
-        "name": "allowedAclDomainKeyCount",
-        "type": "uint8",
-        "internalType": "uint8"
-      },
-      {
-        "name": "hostKind",
-        "type": "uint8",
-        "internalType": "uint8"
-      },
-      {
         "name": "extraData",
         "type": "bytes",
         "internalType": "bytes"
       },
       {
-        "name": "hostPayload",
+        "name": "solanaRequest",
         "type": "bytes",
         "internalType": "bytes"
       }
@@ -1181,25 +1171,13 @@ interface IDecryption {
         "internalType": "bytes"
       },
       {
-        "name": "allowedAclDomainKeyCount",
-        "type": "uint8",
-        "indexed": false,
-        "internalType": "uint8"
-      },
-      {
-        "name": "hostKind",
-        "type": "uint8",
-        "indexed": false,
-        "internalType": "uint8"
-      },
-      {
         "name": "extraData",
         "type": "bytes",
         "indexed": false,
         "internalType": "bytes"
       },
       {
-        "name": "hostPayload",
+        "name": "solanaRequest",
         "type": "bytes",
         "indexed": false,
         "internalType": "bytes"
@@ -7198,9 +7176,9 @@ event UserDecryptionRequest(uint256 indexed decryptionId, HandleEntry[] handles,
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `UserDecryptionRequest(uint256,bytes32[],(uint256,uint256),bytes,uint8,uint8,bytes,bytes)` and selector `0x81ac59152baa6cf909638f1e820865fc765e025036fb2590a62272ed8ee21777`.
+    /**Event with signature `UserDecryptionRequest(uint256,bytes32[],(uint256,uint256),bytes,bytes,bytes)` and selector `0xaa48abd801afddf5400cc26de8bc9ab3cdaebaef43490703585c749a5cdb9c0e`.
 ```solidity
-event UserDecryptionRequest(uint256 indexed decryptionId, bytes32[] ctHandles, RequestValiditySeconds requestValidity, bytes publicKey, uint8 allowedAclDomainKeyCount, uint8 hostKind, bytes extraData, bytes hostPayload);
+event UserDecryptionRequest(uint256 indexed decryptionId, bytes32[] ctHandles, RequestValiditySeconds requestValidity, bytes publicKey, bytes extraData, bytes solanaRequest);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -7221,13 +7199,9 @@ event UserDecryptionRequest(uint256 indexed decryptionId, bytes32[] ctHandles, R
         #[allow(missing_docs)]
         pub publicKey: alloy::sol_types::private::Bytes,
         #[allow(missing_docs)]
-        pub allowedAclDomainKeyCount: u8,
-        #[allow(missing_docs)]
-        pub hostKind: u8,
-        #[allow(missing_docs)]
         pub extraData: alloy::sol_types::private::Bytes,
         #[allow(missing_docs)]
-        pub hostPayload: alloy::sol_types::private::Bytes,
+        pub solanaRequest: alloy::sol_types::private::Bytes,
     }
     #[allow(
         non_camel_case_types,
@@ -7245,8 +7219,6 @@ event UserDecryptionRequest(uint256 indexed decryptionId, bytes32[] ctHandles, R
                 >,
                 RequestValiditySeconds,
                 alloy::sol_types::sol_data::Bytes,
-                alloy::sol_types::sol_data::Uint<8>,
-                alloy::sol_types::sol_data::Uint<8>,
                 alloy::sol_types::sol_data::Bytes,
                 alloy::sol_types::sol_data::Bytes,
             );
@@ -7257,11 +7229,11 @@ event UserDecryptionRequest(uint256 indexed decryptionId, bytes32[] ctHandles, R
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Uint<256>,
             );
-            const SIGNATURE: &'static str = "UserDecryptionRequest(uint256,bytes32[],(uint256,uint256),bytes,uint8,uint8,bytes,bytes)";
+            const SIGNATURE: &'static str = "UserDecryptionRequest(uint256,bytes32[],(uint256,uint256),bytes,bytes,bytes)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                129u8, 172u8, 89u8, 21u8, 43u8, 170u8, 108u8, 249u8, 9u8, 99u8, 143u8,
-                30u8, 130u8, 8u8, 101u8, 252u8, 118u8, 94u8, 2u8, 80u8, 54u8, 251u8,
-                37u8, 144u8, 166u8, 34u8, 114u8, 237u8, 142u8, 226u8, 23u8, 119u8,
+                170u8, 72u8, 171u8, 216u8, 1u8, 175u8, 221u8, 245u8, 64u8, 12u8, 194u8,
+                109u8, 232u8, 188u8, 154u8, 179u8, 205u8, 174u8, 186u8, 239u8, 67u8,
+                73u8, 7u8, 3u8, 88u8, 92u8, 116u8, 154u8, 92u8, 219u8, 156u8, 14u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -7275,10 +7247,8 @@ event UserDecryptionRequest(uint256 indexed decryptionId, bytes32[] ctHandles, R
                     ctHandles: data.0,
                     requestValidity: data.1,
                     publicKey: data.2,
-                    allowedAclDomainKeyCount: data.3,
-                    hostKind: data.4,
-                    extraData: data.5,
-                    hostPayload: data.6,
+                    extraData: data.3,
+                    solanaRequest: data.4,
                 }
             }
             #[inline]
@@ -7308,19 +7278,11 @@ event UserDecryptionRequest(uint256 indexed decryptionId, bytes32[] ctHandles, R
                     <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
                         &self.publicKey,
                     ),
-                    <alloy::sol_types::sol_data::Uint<
-                        8,
-                    > as alloy_sol_types::SolType>::tokenize(
-                        &self.allowedAclDomainKeyCount,
-                    ),
-                    <alloy::sol_types::sol_data::Uint<
-                        8,
-                    > as alloy_sol_types::SolType>::tokenize(&self.hostKind),
                     <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
                         &self.extraData,
                     ),
                     <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.hostPayload,
+                        &self.solanaRequest,
                     ),
                 )
             }
@@ -9580,9 +9542,9 @@ function publicDecryptionResponse(uint256 decryptionId, bytes memory decryptedRe
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `userDecryptionRequest(bytes32[],(uint256,uint256),bytes,uint8,uint8,bytes,bytes)` and selector `0x4f532763`.
+    /**Function with signature `userDecryptionRequest(bytes32[],(uint256,uint256),bytes,bytes,bytes)` and selector `0x20c157b3`.
 ```solidity
-function userDecryptionRequest(bytes32[] memory ctHandles, RequestValiditySeconds memory requestValidity, bytes memory publicKey, uint8 allowedAclDomainKeyCount, uint8 hostKind, bytes memory extraData, bytes memory hostPayload) external;
+function userDecryptionRequest(bytes32[] memory ctHandles, RequestValiditySeconds memory requestValidity, bytes memory publicKey, bytes memory extraData, bytes memory solanaRequest) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -9596,15 +9558,11 @@ function userDecryptionRequest(bytes32[] memory ctHandles, RequestValiditySecond
         #[allow(missing_docs)]
         pub publicKey: alloy::sol_types::private::Bytes,
         #[allow(missing_docs)]
-        pub allowedAclDomainKeyCount: u8,
-        #[allow(missing_docs)]
-        pub hostKind: u8,
-        #[allow(missing_docs)]
         pub extraData: alloy::sol_types::private::Bytes,
         #[allow(missing_docs)]
-        pub hostPayload: alloy::sol_types::private::Bytes,
+        pub solanaRequest: alloy::sol_types::private::Bytes,
     }
-    ///Container type for the return parameters of the [`userDecryptionRequest(bytes32[],(uint256,uint256),bytes,uint8,uint8,bytes,bytes)`](userDecryptionRequest_0Call) function.
+    ///Container type for the return parameters of the [`userDecryptionRequest(bytes32[],(uint256,uint256),bytes,bytes,bytes)`](userDecryptionRequest_0Call) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct userDecryptionRequest_0Return {}
@@ -9625,8 +9583,6 @@ function userDecryptionRequest(bytes32[] memory ctHandles, RequestValiditySecond
                 >,
                 RequestValiditySeconds,
                 alloy::sol_types::sol_data::Bytes,
-                alloy::sol_types::sol_data::Uint<8>,
-                alloy::sol_types::sol_data::Uint<8>,
                 alloy::sol_types::sol_data::Bytes,
                 alloy::sol_types::sol_data::Bytes,
             );
@@ -9637,8 +9593,6 @@ function userDecryptionRequest(bytes32[] memory ctHandles, RequestValiditySecond
                 >,
                 <RequestValiditySeconds as alloy::sol_types::SolType>::RustType,
                 alloy::sol_types::private::Bytes,
-                u8,
-                u8,
                 alloy::sol_types::private::Bytes,
                 alloy::sol_types::private::Bytes,
             );
@@ -9662,10 +9616,8 @@ function userDecryptionRequest(bytes32[] memory ctHandles, RequestValiditySecond
                         value.ctHandles,
                         value.requestValidity,
                         value.publicKey,
-                        value.allowedAclDomainKeyCount,
-                        value.hostKind,
                         value.extraData,
-                        value.hostPayload,
+                        value.solanaRequest,
                     )
                 }
             }
@@ -9678,10 +9630,8 @@ function userDecryptionRequest(bytes32[] memory ctHandles, RequestValiditySecond
                         ctHandles: tuple.0,
                         requestValidity: tuple.1,
                         publicKey: tuple.2,
-                        allowedAclDomainKeyCount: tuple.3,
-                        hostKind: tuple.4,
-                        extraData: tuple.5,
-                        hostPayload: tuple.6,
+                        extraData: tuple.3,
+                        solanaRequest: tuple.4,
                     }
                 }
             }
@@ -9737,8 +9687,6 @@ function userDecryptionRequest(bytes32[] memory ctHandles, RequestValiditySecond
                 >,
                 RequestValiditySeconds,
                 alloy::sol_types::sol_data::Bytes,
-                alloy::sol_types::sol_data::Uint<8>,
-                alloy::sol_types::sol_data::Uint<8>,
                 alloy::sol_types::sol_data::Bytes,
                 alloy::sol_types::sol_data::Bytes,
             );
@@ -9750,8 +9698,8 @@ function userDecryptionRequest(bytes32[] memory ctHandles, RequestValiditySecond
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "userDecryptionRequest(bytes32[],(uint256,uint256),bytes,uint8,uint8,bytes,bytes)";
-            const SELECTOR: [u8; 4] = [79u8, 83u8, 39u8, 99u8];
+            const SIGNATURE: &'static str = "userDecryptionRequest(bytes32[],(uint256,uint256),bytes,bytes,bytes)";
+            const SELECTOR: [u8; 4] = [32u8, 193u8, 87u8, 179u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -9770,19 +9718,11 @@ function userDecryptionRequest(bytes32[] memory ctHandles, RequestValiditySecond
                     <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
                         &self.publicKey,
                     ),
-                    <alloy::sol_types::sol_data::Uint<
-                        8,
-                    > as alloy_sol_types::SolType>::tokenize(
-                        &self.allowedAclDomainKeyCount,
-                    ),
-                    <alloy::sol_types::sol_data::Uint<
-                        8,
-                    > as alloy_sol_types::SolType>::tokenize(&self.hostKind),
                     <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
                         &self.extraData,
                     ),
                     <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.hostPayload,
+                        &self.solanaRequest,
                     ),
                 )
             }
@@ -10497,9 +10437,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
             [4u8, 111u8, 158u8, 179u8],
             [9u8, 0u8, 204u8, 105u8],
             [13u8, 142u8, 110u8, 44u8],
+            [32u8, 193u8, 87u8, 179u8],
             [64u8, 20u8, 196u8, 205u8],
             [65u8, 11u8, 240u8, 186u8],
-            [79u8, 83u8, 39u8, 99u8],
             [88u8, 245u8, 184u8, 171u8],
             [111u8, 137u8, 19u8, 188u8],
             [118u8, 34u8, 126u8, 237u8],
@@ -10515,9 +10455,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
             ::core::stringify!(userDecryptionResponse),
             ::core::stringify!(getDecryptionConsensusTxSenders),
             ::core::stringify!(getVersion),
+            ::core::stringify!(userDecryptionRequest_0),
             ::core::stringify!(isPublicDecryptionReady),
             ::core::stringify!(isUserDecryptionReady_0),
-            ::core::stringify!(userDecryptionRequest_0),
             ::core::stringify!(isDecryptionDone),
             ::core::stringify!(publicDecryptionResponse),
             ::core::stringify!(isDelegatedUserDecryptionReady),
@@ -10533,9 +10473,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
             <userDecryptionResponseCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getDecryptionConsensusTxSendersCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getVersionCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <userDecryptionRequest_0Call as alloy_sol_types::SolCall>::SIGNATURE,
             <isPublicDecryptionReadyCall as alloy_sol_types::SolCall>::SIGNATURE,
             <isUserDecryptionReady_0Call as alloy_sol_types::SolCall>::SIGNATURE,
-            <userDecryptionRequest_0Call as alloy_sol_types::SolCall>::SIGNATURE,
             <isDecryptionDoneCall as alloy_sol_types::SolCall>::SIGNATURE,
             <publicDecryptionResponseCall as alloy_sol_types::SolCall>::SIGNATURE,
             <isDelegatedUserDecryptionReadyCall as alloy_sol_types::SolCall>::SIGNATURE,
@@ -10673,6 +10613,17 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                     getVersion
                 },
                 {
+                    fn userDecryptionRequest_0(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IDecryptionCalls> {
+                        <userDecryptionRequest_0Call as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IDecryptionCalls::userDecryptionRequest_0)
+                    }
+                    userDecryptionRequest_0
+                },
+                {
                     fn isPublicDecryptionReady(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IDecryptionCalls> {
@@ -10693,17 +10644,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                             .map(IDecryptionCalls::isUserDecryptionReady_0)
                     }
                     isUserDecryptionReady_0
-                },
-                {
-                    fn userDecryptionRequest_0(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IDecryptionCalls> {
-                        <userDecryptionRequest_0Call as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IDecryptionCalls::userDecryptionRequest_0)
-                    }
-                    userDecryptionRequest_0
                 },
                 {
                     fn isDecryptionDone(
@@ -10858,6 +10798,17 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                     getVersion
                 },
                 {
+                    fn userDecryptionRequest_0(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IDecryptionCalls> {
+                        <userDecryptionRequest_0Call as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IDecryptionCalls::userDecryptionRequest_0)
+                    }
+                    userDecryptionRequest_0
+                },
+                {
                     fn isPublicDecryptionReady(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IDecryptionCalls> {
@@ -10878,17 +10829,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                             .map(IDecryptionCalls::isUserDecryptionReady_0)
                     }
                     isUserDecryptionReady_0
-                },
-                {
-                    fn userDecryptionRequest_0(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IDecryptionCalls> {
-                        <userDecryptionRequest_0Call as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IDecryptionCalls::userDecryptionRequest_0)
-                    }
-                    userDecryptionRequest_0
                 },
                 {
                     fn isDecryptionDone(
@@ -12451,11 +12391,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 94u8, 196u8, 60u8, 116u8, 192u8, 188u8, 44u8, 198u8, 8u8, 178u8,
             ],
             [
-                129u8, 172u8, 89u8, 21u8, 43u8, 170u8, 108u8, 249u8, 9u8, 99u8, 143u8,
-                30u8, 130u8, 8u8, 101u8, 252u8, 118u8, 94u8, 2u8, 80u8, 54u8, 251u8,
-                37u8, 144u8, 166u8, 34u8, 114u8, 237u8, 142u8, 226u8, 23u8, 119u8,
-            ],
-            [
                 142u8, 212u8, 250u8, 184u8, 177u8, 208u8, 80u8, 103u8, 108u8, 215u8,
                 215u8, 217u8, 250u8, 68u8, 141u8, 93u8, 34u8, 17u8, 51u8, 117u8, 250u8,
                 184u8, 173u8, 77u8, 198u8, 144u8, 229u8, 69u8, 147u8, 197u8, 39u8, 191u8,
@@ -12464,6 +12399,11 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 155u8, 176u8, 136u8, 165u8, 63u8, 31u8, 225u8, 62u8, 200u8, 79u8, 160u8,
                 161u8, 215u8, 181u8, 120u8, 181u8, 137u8, 225u8, 147u8, 38u8, 139u8,
                 170u8, 204u8, 197u8, 226u8, 63u8, 122u8, 183u8, 133u8, 170u8, 61u8, 174u8,
+            ],
+            [
+                170u8, 72u8, 171u8, 216u8, 1u8, 175u8, 221u8, 245u8, 64u8, 12u8, 194u8,
+                109u8, 232u8, 188u8, 154u8, 179u8, 205u8, 174u8, 186u8, 239u8, 67u8,
+                73u8, 7u8, 3u8, 88u8, 92u8, 116u8, 154u8, 92u8, 219u8, 156u8, 14u8,
             ],
             [
                 199u8, 30u8, 50u8, 200u8, 15u8, 49u8, 9u8, 198u8, 115u8, 169u8, 173u8,
@@ -12492,9 +12432,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
             ::core::stringify!(PublicDecryptionRequest_0),
             ::core::stringify!(PublicDecryptionResponseCall),
             ::core::stringify!(UserDecryptionResponse),
-            ::core::stringify!(UserDecryptionRequest_4),
             ::core::stringify!(UserDecryptionRequest_3),
             ::core::stringify!(PublicDecryptionRequest_1),
+            ::core::stringify!(UserDecryptionRequest_4),
             ::core::stringify!(UserDecryptionRequest_2),
             ::core::stringify!(PublicDecryptionResponse),
             ::core::stringify!(UserDecryptionResponseThresholdReached),
@@ -12506,9 +12446,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
             <PublicDecryptionRequest_0 as alloy_sol_types::SolEvent>::SIGNATURE,
             <PublicDecryptionResponseCall as alloy_sol_types::SolEvent>::SIGNATURE,
             <UserDecryptionResponse as alloy_sol_types::SolEvent>::SIGNATURE,
-            <UserDecryptionRequest_4 as alloy_sol_types::SolEvent>::SIGNATURE,
             <UserDecryptionRequest_3 as alloy_sol_types::SolEvent>::SIGNATURE,
             <PublicDecryptionRequest_1 as alloy_sol_types::SolEvent>::SIGNATURE,
+            <UserDecryptionRequest_4 as alloy_sol_types::SolEvent>::SIGNATURE,
             <UserDecryptionRequest_2 as alloy_sol_types::SolEvent>::SIGNATURE,
             <PublicDecryptionResponse as alloy_sol_types::SolEvent>::SIGNATURE,
             <UserDecryptionResponseThresholdReached as alloy_sol_types::SolEvent>::SIGNATURE,
@@ -13061,20 +13001,16 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             >,
             requestValidity: <RequestValiditySeconds as alloy::sol_types::SolType>::RustType,
             publicKey: alloy::sol_types::private::Bytes,
-            allowedAclDomainKeyCount: u8,
-            hostKind: u8,
             extraData: alloy::sol_types::private::Bytes,
-            hostPayload: alloy::sol_types::private::Bytes,
+            solanaRequest: alloy::sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<&P, userDecryptionRequest_0Call, N> {
             self.call_builder(
                 &userDecryptionRequest_0Call {
                     ctHandles,
                     requestValidity,
                     publicKey,
-                    allowedAclDomainKeyCount,
-                    hostKind,
                     extraData,
-                    hostPayload,
+                    solanaRequest,
                 },
             )
         }

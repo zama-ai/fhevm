@@ -455,6 +455,7 @@ jobs:
                 {label: "solana-ed25519-instruction", paths: ["/crates/solana-ed25519-instruction/"]},
                 {label: "zama-fhe", paths: ["/crates/zama-fhe/"]},
                 {label: "zama-solana-permit", paths: ["/crates/zama-solana-permit/", "/test-fixtures/permit/"]},
+                {label: "zama-solana-request", paths: ["/crates/zama-solana-request/"]},
                 {label: "zama-host", paths: ["/programs/zama-host/"]},
                 {label: "confidential-token", paths: ["/programs/confidential-token/"]},
                 {label: "confidential-batcher", paths: ["/programs/confidential-batcher/"]},

@@ -133,7 +133,7 @@ impl ReadinessChecker {
             // RFC-021 Solana: the host-chain ACL is enforced off-gateway by the KMS Connector
             // (`solana_acl` reads the on-chain Solana ACL at confirmed commitment), so the relayer
             // performs no EVM-style host ACL check here.
-            UserDecryptRequest::SolanaUnifiedV1 { .. } => Ok(()),
+            UserDecryptRequest::SolanaSrfc38V1 { .. } => Ok(()),
         };
         result.map_err(|e| match &e {
             HostAclError::NotAllowed { .. } => ReadinessCheckError::NotAllowedOnHostAcl(e),

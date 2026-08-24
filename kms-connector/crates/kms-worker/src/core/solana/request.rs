@@ -1,100 +1,27 @@
 //! The normalized user-decryption request and its strict decoding.
 //!
 //! Transport carries whatever the sender chose; this module is the boundary where that
-//! becomes typed. The pattern mirrors the permit crate: a wire type whose widths are
-//! `Vec<u8>` because a wrong width has to be representable somewhere, and a validated type
-//! with no public constructor, so "authorize a request nobody validated" is not expressible.
+//! becomes typed. The wire form itself is not defined here — it is the shared canon in
+//! `zama-solana-request`, which the relayer fills in and this connector reads, so the two
+//! cannot hold different opinions about the layout. What is local is the validated type: it
+//! has no public constructor, so "authorize a request nobody validated" is not expressible.
 //!
 //! Two absences are deliberate and are the whole of rule h6 on the request side: no
 //! `encrypted_value_account_authority` field and no `acl_domain` field, in either the wire form or the validated
 //! form. Both are properties of the handle's encrypted value account, and the only way to learn
 //! either is to read and validate that account. A request cannot name them, so a substituted
-//! authority is not a check that can be forgotten — it is a value that does not exist.
-//!
-//! # The authority is not a request field
-//!
-//! Naming the authority in a request must stay a compile error, because the delegated branch
-//! is looked up by it: a request that could name one could name an authority the signer does
-//! hold a delegation for, against an encrypted value account belonging to somebody else.
-//!
-//! ```compile_fail
-//! use kms_worker::core::solana::request::SolanaHandleEntryWire;
-//!
-//! let entry = SolanaHandleEntryWire {
-//!     handle: vec![0; 32],
-//!     owner: vec![0; 32],
-//!     encrypted_value_id: vec![0; 32],
-//!     proof_leaf_count: 0,
-//!     access_proof: Vec::new(),
-//!     encrypted_value_account_authority: vec![0; 32],
-//! };
-//! ```
-//!
-//! The same literal without that field compiles. The pair matters: a `compile_fail` example
-//! passes when compilation fails for *any* reason, so on its own it would also pass on a typo.
-//!
-//! ```
-//! use kms_worker::core::solana::request::SolanaHandleEntryWire;
-//!
-//! let entry = SolanaHandleEntryWire {
-//!     handle: vec![0; 32],
-//!     owner: vec![0; 32],
-//!     encrypted_value_id: vec![0; 32],
-//!     proof_leaf_count: 0,
-//!     access_proof: Vec::new(),
-//! };
-//! ```
+//! authority is not a check that can be forgotten — it is a value that does not exist. The
+//! wire half of that guarantee is pinned by the compile-fail pair in `zama-solana-request`.
 
 use crate::core::solana_acl::{HandleBytes, SolanaPubkeyBytes};
 use borsh::BorshDeserialize;
 use zama_solana_acl::MmrProof;
-use zama_solana_permit::{PermitFields, PermitWireFields, Signature};
+use zama_solana_permit::{PermitFields, Signature};
 
-/// Upper bound on `MmrProof::siblings` accepted from an untrusted request, matching the
-/// MMR's `u64` height ceiling. Bounds the decode-time allocation.
-pub const MAX_ACCESS_PROOF_SIBLINGS: usize = 64;
-
-/// Upper bound on handle entries accepted from a request.
-///
-/// Every rule is evaluated against one atomic `getMultipleAccounts` snapshot, and a standard
-/// Solana RPC node serves at most 100 accounts per call. The worst-case request needs three
-/// accounts per entry — the encrypted value account plus the two delegation rows — and the signer's
-/// invalidation record on top: `3 * N + 1 <= 100` gives 33. The Gateway entry point enforces
-/// the same cap at admission, before the fee, so a request that exists as an event already
-/// satisfies it; this bound keeps the snapshot's readability a property of this module rather
-/// than an assumption about the contract version upstream.
-pub const MAX_REQUEST_HANDLES: usize = 33;
-
-/// The request as it arrives: permit fields, the signature over their envelope, and the
-/// handle entries.
-#[derive(Clone, PartialEq, Eq, Debug, Default)]
-pub struct SolanaUserDecryptRequestWire {
-    /// The eight signed permit fields, in transport form.
-    pub permit: PermitWireFields,
-    /// Claimed Ed25519 signature over the reconstructed envelope.
-    pub signature: Vec<u8>,
-    /// Handle entries, in request order.
-    pub handles: Vec<SolanaHandleEntryWire>,
-}
-
-/// One handle entry as it arrives. None of these fields are signed: they are evidence,
-/// self-authenticating against host state, and a substituted value can fail the request but
-/// never widen access.
-#[derive(Clone, PartialEq, Eq, Debug, Default)]
-pub struct SolanaHandleEntryWire {
-    /// Claimed 32-byte ciphertext handle.
-    pub handle: Vec<u8>,
-    /// Claimed 32-byte ciphertext owner: the signer for a direct entry, the delegator for a
-    /// delegated one.
-    pub owner: Vec<u8>,
-    /// Claimed 32-byte encrypted value account identity.
-    pub encrypted_value_id: Vec<u8>,
-    /// The `leaf_count` the access proof was built against; 0 in current mode. Diagnostic
-    /// only — it classifies an already-failed inclusion check and never decides one.
-    pub proof_leaf_count: u64,
-    /// Empty for current access; otherwise borsh `MmrProof`.
-    pub access_proof: Vec<u8>,
-}
+pub use zama_solana_request::{
+    MAX_ACCESS_PROOF_SIBLINGS, MAX_REQUEST_HANDLES, SolanaHandleEntryWire,
+    SolanaUserDecryptRequestWire,
+};
 
 /// How an entry claims access to its handle. The mode is per entry: one request freely
 /// mixes both.
@@ -112,7 +39,7 @@ pub enum AccessEvidence {
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct SolanaHandleEntry {
     handle: HandleBytes,
-    owner: SolanaPubkeyBytes,
+    subject: SolanaPubkeyBytes,
     encrypted_value_id: [u8; 32],
     proof_leaf_count: u64,
     access: AccessEvidence,
@@ -124,10 +51,11 @@ impl SolanaHandleEntry {
         self.handle
     }
 
-    /// The ciphertext owner, which selects the direct or delegated branch and, in both,
-    /// names the subject whose access is then proven.
-    pub fn owner(&self) -> SolanaPubkeyBytes {
-        self.owner
+    /// The subject: the pubkey whose encrypted value is being requested. It selects the direct
+    /// or delegated branch — equal to the requester in the first, the delegator in the second —
+    /// and in both it is the access that must be proven.
+    pub fn subject(&self) -> SolanaPubkeyBytes {
+        self.subject
     }
 
     /// The encrypted value account this entry qualifies under.
@@ -236,7 +164,7 @@ fn decode_entry(
 ) -> Result<SolanaHandleEntry, RequestFormError> {
     Ok(SolanaHandleEntry {
         handle: entry_identity(index, EntryField::Handle, &entry.handle)?,
-        owner: entry_identity(index, EntryField::Owner, &entry.owner)?,
+        subject: entry_identity(index, EntryField::Subject, &entry.subject)?,
         encrypted_value_id: entry_identity(
             index,
             EntryField::EncryptedValueId,
@@ -356,8 +284,8 @@ pub enum RequestFormError {
 pub enum EntryField {
     /// The ciphertext handle.
     Handle,
-    /// The ciphertext owner.
-    Owner,
+    /// The subject whose encrypted value is requested.
+    Subject,
     /// The encrypted value account identity.
     EncryptedValueId,
 }

@@ -5006,6 +5006,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "zama-solana-request"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "thiserror 2.0.18",
+ "zama-solana-permit",
+]
+
+[[package]]
 name = "zama-solana-runtime-tests"
 version = "0.1.0"
 dependencies = [

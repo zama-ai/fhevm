@@ -42,7 +42,6 @@ use kms_worker::core::solana::{
     encrypted_value_account::EncryptedValueAccountFailure,
     failure::{AuthorizationFailure, FailureClass as ConnectorClass},
     handle_binding::HandleBindingFailure,
-    host_payload::{decode_host_payload, encode_host_payload},
     kms_pair::{KmsPairFailure, KmsPairValidator},
     pipeline::{AuthorizationContext, authorize_request},
     request::{
@@ -63,6 +62,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use zama_solana_acl::{MmrProof, historical_access_leaf_commitment};
 use zama_solana_permit::PermitWireFields;
+use zama_solana_request::{decode_solana_request, encode_solana_request};
 
 /// Setting this rewrites the committed file from the in-memory build.
 const UPDATE_ENV: &str = "ZAMA_UPDATE_CONNECTOR_AUTH_VECTORS";
@@ -1369,7 +1369,7 @@ fn record_of(scenario: &Scenario) -> ConnectorAuthVector {
                 .iter()
                 .map(|entry| WireHandleEntry {
                     handle: to_hex(&entry.handle),
-                    owner: to_hex(&entry.owner),
+                    subject: to_hex(&entry.subject),
                     encrypted_value_id: to_hex(&entry.encrypted_value_id),
                     proof_leaf_count: entry.proof_leaf_count.to_string(),
                     access_proof: to_hex(&entry.access_proof),
@@ -1378,8 +1378,8 @@ fn record_of(scenario: &Scenario) -> ConnectorAuthVector {
             // The canonical bytes of the same request: what the gateway event carries
             // opaquely. Recorded from the canonical encoder so every consumer of this set
             // can verify its own codec in both directions against the typed fields above.
-            host_payload: to_hex(
-                &encode_host_payload(&scenario.request).expect("the scenario request serializes"),
+            solana_request: to_hex(
+                &encode_solana_request(&scenario.request).expect("the scenario request serializes"),
             ),
         },
         observation: Observation {
@@ -1495,9 +1495,6 @@ fn rule_name(failure: &AuthorizationFailure) -> &'static str {
         AuthorizationFailure::SignatureMismatch | AuthorizationFailure::UnusableUserPubkey => {
             panic!("the permit set covers the signature rule")
         }
-        AuthorizationFailure::AclDomainKeyCountMismatch { .. } => {
-            panic!("every record is replayed with the honest declaration; this rule cannot fire")
-        }
         AuthorizationFailure::Deployment(deployment) => match deployment {
             DeploymentFailure::ProgramIdMismatch { .. } => rule::DEPLOYMENT_PROGRAM_MISMATCH,
             DeploymentFailure::ChainIdMismatch { .. } => rule::DEPLOYMENT_CHAIN_ID_MISMATCH,
@@ -1601,7 +1598,7 @@ async fn replay(record: &ConnectorAuthVector, file: &ConnectorAuthVectorFile) ->
             .iter()
             .map(|entry| SolanaHandleEntryWire {
                 handle: from_hex(&entry.handle).expect("hex"),
-                owner: from_hex(&entry.owner).expect("hex"),
+                subject: from_hex(&entry.subject).expect("hex"),
                 encrypted_value_id: from_hex(&entry.encrypted_value_id).expect("hex"),
                 proof_leaf_count: entry.proof_leaf_count.parse().expect("decimal"),
                 access_proof: from_hex(&entry.access_proof).expect("hex"),
@@ -1610,19 +1607,19 @@ async fn replay(record: &ConnectorAuthVector, file: &ConnectorAuthVectorFile) ->
     };
 
     // The record's canonical bytes and its typed fields must be the same request under the
-    // canonical codec, in both directions — this is what freezes the hostPayload layout for
-    // every implementation that consumes this set.
-    let recorded_payload = from_hex(&record.request.host_payload).expect("hex");
+    // canonical codec, in both directions — this is what freezes the layout for every
+    // implementation that consumes this set.
+    let recorded_request = from_hex(&record.request.solana_request).expect("hex");
     assert_eq!(
-        encode_host_payload(&wire).expect("the typed fields serialize"),
-        recorded_payload,
-        "record {}: the typed fields do not encode to the recorded hostPayload bytes",
+        encode_solana_request(&wire).expect("the typed fields serialize"),
+        recorded_request,
+        "record {}: the typed fields do not encode to the recorded bytes",
         record.name
     );
     assert_eq!(
-        decode_host_payload(&recorded_payload).expect("the recorded hostPayload decodes"),
+        decode_solana_request(&recorded_request).expect("the recorded bytes decode"),
         wire,
-        "record {}: the recorded hostPayload bytes do not decode to the typed fields",
+        "record {}: the recorded bytes do not decode to the typed fields",
         record.name
     );
 
@@ -1665,7 +1662,6 @@ async fn replay(record: &ConnectorAuthVector, file: &ConnectorAuthVectorFile) ->
         // The vectors predate the gateway's typed declaration and do not probe it: every record
         // is replayed with the honest declaration (the signed list's actual length), so the
         // declaration rule never decides a vector's outcome.
-        declared_acl_domain_key_count: declared_acl_domain_key_count(&request),
     };
     match authorize_request(
         &reader,

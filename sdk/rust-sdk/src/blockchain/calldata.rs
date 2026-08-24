@@ -4,8 +4,14 @@ use crate::Result;
 use crate::decryption::user::UserDecryptRequest;
 use alloy::primitives::{Address, Bytes, FixedBytes, U256};
 use alloy::sol_types::SolCall;
+// The legacy overload — `(CtHandleContractPair[], RequestValidity, ContractsInfo, address,
+// bytes, bytes, bytes)` — is the one this SDK builds. The alias is pinned by the selector test
+// below rather than by the `_N` suffix alone: alloy numbers overloads by their position in the
+// generated bindings, so adding or removing any `userDecryptionRequest` overload renumbers the
+// rest. A silently renumbered alias still compiles whenever two overloads happen to accept the
+// same argument shape, and would then encode calldata for the wrong function.
 use fhevm_gateway_bindings::decryption::Decryption::{
-    publicDecryptionRequestCall, userDecryptionRequest_1Call as userDecryptionRequestCall,
+    publicDecryptionRequestCall, userDecryptionRequest_2Call as userDecryptionRequestCall,
 };
 use fhevm_gateway_bindings::decryption::IDecryption::ContractsInfo;
 use fhevm_gateway_bindings::input_verification::InputVerification;
@@ -67,4 +73,39 @@ pub fn verify_proof_req(
     };
     let calldata = request_call.abi_encode();
     Ok(Bytes::from(calldata))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The gateway has three `userDecryptionRequest` overloads, and alloy tells them apart only
+    /// by a positional `_N` suffix. This SDK targets the legacy one; the suffix that names it
+    /// moves whenever an overload is added or removed upstream, and a moved suffix does not
+    /// necessarily break the build — two overloads can accept argument shapes close enough to
+    /// still typecheck. What cannot silently move is the selector, so that is what is pinned.
+    ///
+    /// The value below is the one in `gateway-contracts/selectors.txt` for
+    /// `userDecryptionRequest((bytes32,address)[],(uint256,uint256),(uint256,address[]),address,bytes,bytes,bytes)`.
+    /// A mismatch here means the alias now names a different function and the SDK is encoding
+    /// calldata nobody will execute.
+    #[test]
+    fn user_decryption_alias_names_the_legacy_overload() {
+        assert_eq!(
+            userDecryptionRequestCall::SELECTOR,
+            [0xf1, 0xb5, 0x7a, 0xdb],
+            "the userDecryptionRequest alias no longer selects the legacy overload"
+        );
+    }
+
+    /// The same pin for the public-decryption call, which is not overloaded today but shares the
+    /// generated-bindings surface and would be renamed by the same class of upstream change.
+    #[test]
+    fn public_decryption_call_selector_is_pinned() {
+        assert_eq!(
+            publicDecryptionRequestCall::SELECTOR,
+            [0xd8, 0x99, 0x8f, 0x45],
+            "the publicDecryptionRequest selector changed"
+        );
+    }
 }

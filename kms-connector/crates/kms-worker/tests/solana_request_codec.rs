@@ -1,28 +1,27 @@
-//! The canonical `hostPayload` layout and its parity with the event's typed handles.
+//! The canonical `solanaRequest` layout and its parity with the event's typed handles.
 //!
-//! The gateway's host-generic entry carries everything host-specific as one opaque blob;
+//! The gateway's Solana entry carries everything but its own four fields as one opaque blob;
 //! this suite pins the blob's Rust side from the outside: the round trip through the
 //! canonical bytes, the strictness of the decoder (one version, no trailing bytes, no
 //! length lies), the fact that every wire field reaches the bytes (a field the encoder
 //! forgot would round-trip fine on the reference fixture and corrupt real requests
-//! silently), and the parity rule that admits a payload only when its handle list is
+//! silently), and the parity rule that admits a request only when its handle list is
 //! exactly the event's typed one.
 //!
 //! Why parity is load-bearing: the gateway enforces the bit budget on the TYPED handles,
-//! and the KMS response linker binds their exact order and count. A payload free to name
+//! and the KMS response linker binds their exact order and count. A blob free to name
 //! other handles would be budgeted on one list and authorized on another.
 
 mod solana_support;
 
-use kms_worker::core::solana::host_payload::{
-    HOST_PAYLOAD_VERSION, HostPayloadError, check_handle_list_parity, decode_host_payload,
-    encode_host_payload,
-};
-use kms_worker::core::solana::request::SolanaUserDecryptRequestWire;
 use kms_worker::core::solana_acl::HandleBytes;
 use solana_support::{
     DOMAIN, EncryptedValueAccountFixture, FHE_TYPE_UINT64, PermitBuilder, RequestBuilder, Wallet,
     handle,
+};
+use zama_solana_request::{
+    SOLANA_REQUEST_VERSION, SolanaRequestDecodeError, SolanaUserDecryptRequestWire,
+    check_handle_list_parity, decode_solana_request, encode_solana_request,
 };
 
 /// A reference request exercising the whole width of the wire form: two entries, one
@@ -65,16 +64,16 @@ fn typed_handles(wire: &SolanaUserDecryptRequestWire) -> Vec<HandleBytes> {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn a_host_payload_roundtrips_through_its_canonical_bytes() {
+fn a_request_roundtrips_through_its_canonical_bytes() {
     let wire = reference_wire();
 
-    let bytes = encode_host_payload(&wire).expect("the wire request serializes");
+    let bytes = encode_solana_request(&wire).expect("the wire request serializes");
     assert_eq!(
-        bytes[0], HOST_PAYLOAD_VERSION,
+        bytes[0], SOLANA_REQUEST_VERSION,
         "the payload leads with its version"
     );
 
-    let decoded = decode_host_payload(&bytes).expect("the canonical bytes decode");
+    let decoded = decode_solana_request(&bytes).expect("the canonical bytes decode");
     assert_eq!(decoded, wire, "the round trip is exact");
 }
 
@@ -84,7 +83,7 @@ fn a_host_payload_roundtrips_through_its_canonical_bytes() {
 #[test]
 fn every_wire_field_reaches_the_canonical_bytes() {
     let base = reference_wire();
-    let baseline = encode_host_payload(&base).expect("the base wire serializes");
+    let baseline = encode_solana_request(&base).expect("the base wire serializes");
 
     let mut variants: Vec<(&str, SolanaUserDecryptRequestWire)> = Vec::new();
 
@@ -129,8 +128,8 @@ fn every_wire_field_reaches_the_canonical_bytes() {
     variants.push(("entry.handle", wire));
 
     let mut wire = base.clone();
-    wire.handles[0].owner[0] ^= 1;
-    variants.push(("entry.owner", wire));
+    wire.handles[0].subject[0] ^= 1;
+    variants.push(("entry.subject", wire));
 
     let mut wire = base.clone();
     wire.handles[0].encrypted_value_id[0] ^= 1;
@@ -145,13 +144,13 @@ fn every_wire_field_reaches_the_canonical_bytes() {
     variants.push(("entry.access_proof", wire));
 
     for (field, variant) in variants {
-        let bytes = encode_host_payload(&variant).expect("every variant serializes");
+        let bytes = encode_solana_request(&variant).expect("every variant serializes");
         assert_ne!(
             bytes, baseline,
             "changing {field} left the canonical bytes unchanged"
         );
         assert_eq!(
-            decode_host_payload(&bytes).expect("every variant decodes"),
+            decode_solana_request(&bytes).expect("every variant decodes"),
             variant,
             "the round trip of the {field} variant is exact"
         );
@@ -163,32 +162,33 @@ fn every_wire_field_reaches_the_canonical_bytes() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn a_host_payload_of_an_unknown_version_is_rejected() {
-    let mut bytes = encode_host_payload(&reference_wire()).expect("the reference wire serializes");
+fn a_request_of_an_unknown_version_is_rejected() {
+    let mut bytes =
+        encode_solana_request(&reference_wire()).expect("the reference wire serializes");
     bytes[0] = 0x02;
     assert_eq!(
-        decode_host_payload(&bytes),
-        Err(HostPayloadError::UnknownVersion {
+        decode_solana_request(&bytes),
+        Err(SolanaRequestDecodeError::UnknownVersion {
             version: Some(0x02)
         })
     );
 
     assert_eq!(
-        decode_host_payload(&[]),
-        Err(HostPayloadError::UnknownVersion { version: None })
+        decode_solana_request(&[]),
+        Err(SolanaRequestDecodeError::UnknownVersion { version: None })
     );
 }
 
 #[test]
-fn a_truncated_host_payload_is_rejected() {
-    let bytes = encode_host_payload(&reference_wire()).expect("the reference wire serializes");
+fn a_truncated_request_is_rejected() {
+    let bytes = encode_solana_request(&reference_wire()).expect("the reference wire serializes");
 
     for cut in [1usize, bytes.len() / 2, bytes.len() - 1] {
         assert!(
             matches!(
-                decode_host_payload(&bytes[..cut]),
-                Err(HostPayloadError::MalformedBody { .. })
-                    | Err(HostPayloadError::UnknownVersion { .. })
+                decode_solana_request(&bytes[..cut]),
+                Err(SolanaRequestDecodeError::MalformedBody { .. })
+                    | Err(SolanaRequestDecodeError::UnknownVersion { .. })
             ),
             "a payload cut to {cut} byte(s) must not decode"
         );
@@ -197,12 +197,13 @@ fn a_truncated_host_payload_is_rejected() {
 
 #[test]
 fn trailing_bytes_after_the_body_are_rejected() {
-    let mut bytes = encode_host_payload(&reference_wire()).expect("the reference wire serializes");
+    let mut bytes =
+        encode_solana_request(&reference_wire()).expect("the reference wire serializes");
     bytes.push(0);
 
     assert_eq!(
-        decode_host_payload(&bytes),
-        Err(HostPayloadError::TrailingBytes { trailing: 1 })
+        decode_solana_request(&bytes),
+        Err(SolanaRequestDecodeError::TrailingBytes { trailing: 1 })
     );
 }
 
@@ -211,7 +212,7 @@ fn trailing_bytes_after_the_body_are_rejected() {
 #[test]
 fn a_length_lie_inside_the_body_is_rejected() {
     let wire = reference_wire();
-    let bytes = encode_host_payload(&wire).expect("the wire request serializes");
+    let bytes = encode_solana_request(&wire).expect("the wire request serializes");
 
     // The first field after the version byte is the user pubkey, a borsh Vec<u8> whose
     // 4-byte little-endian length prefix sits right behind the version. Inflate it.
@@ -220,8 +221,8 @@ fn a_length_lie_inside_the_body_is_rejected() {
 
     assert!(
         matches!(
-            decode_host_payload(&lied),
-            Err(HostPayloadError::MalformedBody { .. })
+            decode_solana_request(&lied),
+            Err(SolanaRequestDecodeError::MalformedBody { .. })
         ),
         "a length lie must fail the decode, not read past the field"
     );
@@ -260,7 +261,7 @@ fn an_extra_typed_handle_is_rejected() {
 
     assert_eq!(
         check_handle_list_parity(&ct_handles, &wire),
-        Err(HostPayloadError::HandleListMismatch {
+        Err(SolanaRequestDecodeError::HandleListMismatch {
             payload_handles: 2,
             event_handles: 3,
         })
@@ -275,7 +276,7 @@ fn an_omitted_typed_handle_is_rejected() {
 
     assert_eq!(
         check_handle_list_parity(&ct_handles, &wire),
-        Err(HostPayloadError::HandleListMismatch {
+        Err(SolanaRequestDecodeError::HandleListMismatch {
             payload_handles: 2,
             event_handles: 1,
         })
@@ -304,7 +305,7 @@ fn a_duplicate_count_mismatch_is_rejected() {
 
     assert_eq!(
         check_handle_list_parity(&ct_handles, &wire),
-        Err(HostPayloadError::HandleListMismatch {
+        Err(SolanaRequestDecodeError::HandleListMismatch {
             payload_handles: 2,
             event_handles: 3,
         })
