@@ -1,5 +1,6 @@
 pub mod arbitrum;
 pub mod ciphertext_checker;
+pub mod handled_events;
 pub mod input_handlers;
 pub mod public_decrypt_handler;
 pub mod throttlers;
@@ -12,6 +13,7 @@ pub use user_decrypt_handler::GatewayHandler as UserDecryptGatewayHandler;
 
 use crate::config::settings::{ListenerType, Settings};
 use crate::gateway::arbitrum::transaction::tx_processor::GatewayTxProcessor;
+use crate::gateway::handled_events::HandledEvents;
 use crate::gateway::throttlers::GatewayThrottlers;
 use crate::host::{HostAclChecker, ThresholdResolver};
 use crate::orchestrator::{HealthCheck, Orchestrator};
@@ -22,13 +24,12 @@ use crate::readiness::{
 use crate::store::sql::repositories::Repositories;
 use alloy::primitives::Address;
 use arbitrum::{
-    event_deduplicator::EventDeduplicator,
     transaction::{
         helper::GatewayTransactionEngine, TransactionHelper as GatewayTransactionHelper,
     },
     ArbitrumListener, PollingListener,
 };
-use std::{str::FromStr, sync::Arc};
+use std::{str::FromStr, sync::Arc, time::Duration};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
@@ -126,7 +127,7 @@ pub async fn initialize_gateway(
             .user_decrypt_readiness_worker,
         readiness_checker.clone(),
         orchestrator.clone(),
-        dequeue_shutdown,
+        dequeue_shutdown.clone(),
     )
     .await?;
 
@@ -185,11 +186,14 @@ pub async fn initialize_gateway(
         gateway_tx_helper.clone() as Arc<dyn HealthCheck>,
     );
 
-    // Create shared event deduplicator
+    // Every listener hands its logs to one place, so a log seen by several instances is
+    // dispatched once and the cursor only passes events that have been handled.
     let pool_config = &settings.gateway.listener_pool;
-    let deduplicator = Arc::new(EventDeduplicator::new(
-        pool_config.dedup_ttl_seconds,
-        pool_config.dedup_max_capacity,
+    let handled_events = Arc::new(HandledEvents::new(
+        Duration::from_secs(pool_config.dedup_ttl_seconds),
+        pool_config.dedup_max_capacity as u64,
+        repositories.chain_cursor.clone(),
+        orchestrator.clone(),
     ));
 
     // Count only WebSocket listeners for stagger calculation
@@ -227,9 +231,7 @@ pub async fn initialize_gateway(
                 let listener = Arc::new(
                     ArbitrumListener::new(
                         settings.gateway.clone(),
-                        orchestrator.clone(),
-                        repositories.block_number.clone(),
-                        deduplicator.clone(),
+                        handled_events.clone(),
                         ws_instance_idx,
                         url.clone(),
                         num_ws_listeners,
@@ -287,9 +289,8 @@ pub async fn initialize_gateway(
                 let listener = Arc::new(
                     PollingListener::new(
                         settings.gateway.clone(),
-                        orchestrator.clone(),
-                        repositories.block_number.clone(),
-                        deduplicator.clone(),
+                        repositories.chain_cursor.clone(),
+                        handled_events.clone(),
                         instance_id,
                         url.clone(),
                         intake_shutdown.clone(),

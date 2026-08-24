@@ -22,9 +22,9 @@ pub struct Orchestrator {
     /// protocol has no RAII guard and dropping after the RPC leaves the socket loses the
     /// hash that detects a duplicate send.
     inflight_sends: TaskTracker,
-    /// Every other detached task - per-event dispatch and per-readiness-check. Neither
-    /// leaves an effect outside this process that a wait could protect, so shutdown abandons
-    /// them: the count is reported, never drained.
+    /// Every other detached task - per-event dispatch and per-readiness-check. Both are
+    /// resumable from what Postgres and the chain cursor already hold, so shutdown abandons
+    /// them rather than waiting: the count is reported, never drained.
     detached_tasks: TaskTracker,
     /// Sticky readiness flag for `/healthz`: once shutdown starts, the relayer must stop
     /// looking healthy to the load balancer even if every dependency check still passes.
@@ -155,6 +155,23 @@ impl Orchestrator {
     #[instrument(skip_all, fields(event_type=%(event.event_name()), job_id=?event.job_id()))]
     pub async fn dispatch_event(&self, event: RelayerEvent) -> Result<(), Error> {
         self.event_dispatcher.dispatch_event(event).await
+    }
+
+    /// Dispatch and wait for every subscribed handler to finish (see
+    /// `TokioEventDispatcher::dispatch_event_and_wait`).
+    pub async fn dispatch_event_and_wait(&self, event: RelayerEvent) -> Result<(), Error> {
+        self.event_dispatcher.dispatch_event_and_wait(event).await
+    }
+
+    /// Spawn a detached task tracked exactly like a dispatch handler, so shutdown abandons
+    /// it the same way. For work that must outlive the call that started it but has no
+    /// place in the named-task JoinSet - `handled_events`' dispatch-then-complete follow-up
+    /// being the case this exists for.
+    pub fn spawn_detached<F>(&self, future: F)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        self.detached_tasks.spawn(future);
     }
 
     pub fn register_handler(&self, event_ids: &[u8], handler: Arc<dyn EventHandler<RelayerEvent>>) {

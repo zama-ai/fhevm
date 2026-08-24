@@ -49,11 +49,10 @@ use std::sync::OnceLock;
 static GLOBAL_REGISTRY: OnceLock<Registry> = OnceLock::new();
 
 // Shutdown exists to hand the dispatcher over, not to save in-flight work: a request left
-// `queued` is recovered at the next start, and a gateway event that dies mid-handling is lost
-// exactly as a hard kill would lose it - which the commit after this one fixes by holding the
-// block cursor. What recovery cannot do is order the handover, so shutdown settles the one
-// effect that leaves the process - an outbound transaction - and abandons everything else.
-// Its duration is handover latency, and
+// `queued` is recovered at the next start, and an event whose handlers have not returned is
+// re-read from the chain because its block cursor never advanced. What recovery cannot do is
+// order the handover, so shutdown settles the one effect that leaves the process - an
+// outbound transaction - and abandons everything else. Its duration is handover latency, and
 // the total must stay below the pod's `terminationGracePeriodSeconds` (the Kubernetes SIGKILL
 // deadline), which gitops leaves unset, so the Kubernetes default of 30s applies.
 
@@ -364,6 +363,7 @@ fn ensure_global_init(settings: &Settings) -> anyhow::Result<&'static Registry> 
         metrics::init_statuses_metrics(&registry, settings.metrics.clone());
         metrics::init_db_metrics(&registry, settings.metrics.clone());
         metrics::init_queue_metrics(&registry);
+        metrics::init_listener_metrics(&registry);
         metrics::init_signature_precheck_metrics(&registry);
         metrics::init_retry_after_metrics(
             &registry,

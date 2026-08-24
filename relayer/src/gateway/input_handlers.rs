@@ -33,7 +33,7 @@ use crate::{
 use std::str::FromStr;
 use std::time::Duration;
 
-use alloy::primitives::{Address, FixedBytes, TxHash};
+use alloy::primitives::{Address, TxHash};
 
 use alloy::sol_types::SolEvent;
 use async_trait::async_trait;
@@ -73,7 +73,8 @@ impl InputProofGatewayHandler {
                 InputProofEventId::RespRcvdFromGw.into(),
                 // NOTE: We don't use Failed Event Id here, to allow notifying users
                 InputProofEventId::InternalFailure.into(),
-                GatewayChainEventId::EventLogRcvd.into(),
+                GatewayChainEventId::VerifyProofResponse.into(),
+                GatewayChainEventId::RejectProofResponse.into(),
             ],
             handler.clone() as Arc<dyn EventHandler<RelayerEvent>>,
         );
@@ -102,35 +103,27 @@ impl EventHandler<RelayerEvent> for InputProofGatewayHandler {
                 }
             },
 
-            RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd {
+            RelayerEventData::GatewayChain(GatewayChainEventData::VerifyProofResponse {
                 ref log,
                 tx_hash,
             }) => {
-                if let Some(topic0) = log.topic0() {
-                    let topic0_fixed = FixedBytes::<32>::from_slice(topic0.as_slice());
-
-                    match topic0_fixed {
-                        InputVerification::VerifyProofResponse::SIGNATURE_HASH => {
-                            debug!(
-                                step = %InputProofStep::GwEventReceived,
-                                "Observed gateway input-proof accept response"
-                            );
-                            self.complete_proof_verification(event.clone(), log, *tx_hash)
-                                .await
-                        }
-                        InputVerification::RejectProofResponse::SIGNATURE_HASH => {
-                            debug!(
-                                step = %InputProofStep::GwEventReceived,
-                                "Observed gateway input-proof reject response"
-                            );
-                            self.reject_proof_verification(event.clone(), log, *tx_hash)
-                                .await
-                        }
-                        _ => return,
-                    }
-                } else {
-                    return;
-                }
+                debug!(
+                    step = %InputProofStep::GwEventReceived,
+                    "Observed gateway input-proof accept response"
+                );
+                self.complete_proof_verification(event.clone(), log, *tx_hash)
+                    .await
+            }
+            RelayerEventData::GatewayChain(GatewayChainEventData::RejectProofResponse {
+                ref log,
+                tx_hash,
+            }) => {
+                debug!(
+                    step = %InputProofStep::GwEventReceived,
+                    "Observed gateway input-proof reject response"
+                );
+                self.reject_proof_verification(event.clone(), log, *tx_hash)
+                    .await
             }
             _ => return,
         };

@@ -413,7 +413,7 @@ BINS_health                 := health_test
 BINS_keyurl                 := keyurl_test
 BINS_keyurl-poller          := keyurl_poller_test
 # Surviving a stop is one behaviour, so its tests run as one group.
-BINS_restart                := shutdown_test recovery_test
+BINS_restart                := shutdown_test handled_events_test recovery_test
 BINS_schema-isolation       := schema_isolation_test
 BINS_threshold-resolver     := threshold_resolver_test
 BINS_listener-redundancy    := listener_redundancy_test

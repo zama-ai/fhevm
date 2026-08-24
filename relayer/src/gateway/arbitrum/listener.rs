@@ -2,19 +2,17 @@ use tracing::{debug, error, info, warn};
 
 use crate::{
     config::settings::GatewayConfig,
-    core::event::{ApiCategory, ApiVersion, GatewayChainEventData, RelayerEvent, RelayerEventData},
-    core::job_id::INTERNAL_EVENT_JOB_ID,
-    gateway::arbitrum::event_deduplicator::{EventDeduplicator, EventKey},
+    gateway::arbitrum::bindings::gateway_chain_event_for_log,
+    gateway::handled_events::{EventKey, HandledEvents, ObservedEvent},
     logging::ListenerStep,
-    orchestrator::{HealthCheck, Orchestrator},
-    store::sql::repositories::block_number_repo::BlockNumberRepository,
+    orchestrator::HealthCheck,
 };
 use alloy::{
     network::AnyNetwork,
     primitives::Address,
     providers::{Provider, ProviderBuilder, WsConnect},
     pubsub::{Subscription, SubscriptionStream},
-    rpc::types::{BlockNumberOrTag, Filter, Log},
+    rpc::types::{Filter, Log},
     transports::ws::WebSocketConfig,
 };
 use async_trait::async_trait;
@@ -34,9 +32,7 @@ enum RecycleReason {
 
 pub struct ArbitrumListener {
     gateway_config: GatewayConfig,
-    orchestrator: Arc<Orchestrator>,
-    block_number_repo: Arc<BlockNumberRepository>,
-    deduplicator: Arc<EventDeduplicator>,
+    handled_events: Arc<HandledEvents>,
     instance_id: usize,
     /// Instance-specific WebSocket URL
     ws_url: String,
@@ -47,12 +43,9 @@ pub struct ArbitrumListener {
 }
 
 impl ArbitrumListener {
-    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         gateway_config: GatewayConfig,
-        orchestrator: Arc<Orchestrator>,
-        block_number_repo: Arc<BlockNumberRepository>,
-        deduplicator: Arc<EventDeduplicator>,
+        handled_events: Arc<HandledEvents>,
         instance_id: usize,
         ws_url: String,
         num_listeners: usize,
@@ -60,9 +53,7 @@ impl ArbitrumListener {
     ) -> anyhow::Result<Self> {
         Ok(Self {
             gateway_config,
-            orchestrator,
-            block_number_repo,
-            deduplicator,
+            handled_events,
             instance_id,
             ws_url,
             num_listeners,
@@ -77,122 +68,6 @@ impl ArbitrumListener {
             _ = tokio::time::sleep(dur) => false,
             _ = self.shutdown.cancelled() => true,
         }
-    }
-
-    async fn fetch_block_hash_from_rpc(
-        &self,
-        block_number_for_hash_lookup: u64,
-        provider: &Arc<dyn Provider<AnyNetwork> + Send + Sync>,
-    ) -> anyhow::Result<String> {
-        match provider
-            .get_block_by_number(BlockNumberOrTag::Number(block_number_for_hash_lookup))
-            .await
-        {
-            Ok(Some(block)) => {
-                let block_hash_from_rpc = block.header.hash;
-                Ok(format!("{:#x}", block_hash_from_rpc))
-            }
-            Ok(None) => Err(anyhow::anyhow!(
-                "Block {} not found - invalid config block number",
-                block_number_for_hash_lookup
-            )),
-            Err(e) => Err(anyhow::anyhow!(
-                "Failed to fetch block {}: {}",
-                block_number_for_hash_lookup,
-                e
-            )),
-        }
-    }
-
-    async fn resolve_starting_block(
-        &self,
-        provider: &Arc<dyn Provider<AnyNetwork> + Send + Sync>,
-    ) -> anyhow::Result<u64> {
-        let block_info_from_db = self
-            .block_number_repo
-            .get_last_block_info(self.instance_id)
-            .await?;
-
-        let block_number = match (
-            self.gateway_config.listener_pool.last_block_number,
-            block_info_from_db,
-        ) {
-            // Config takes precedence
-            (Some(block_number_from_cfg), Some(block_info_from_db)) => {
-                if block_info_from_db.block_number != block_number_from_cfg {
-                    info!(
-                        "Starting from config block {} (overriding database block {})",
-                        block_number_from_cfg, block_info_from_db.block_number
-                    );
-                    let block_hash_from_rpc = self
-                        .fetch_block_hash_from_rpc(block_number_from_cfg, provider)
-                        .await?;
-                    self.block_number_repo
-                        .update_block_info(
-                            block_number_from_cfg,
-                            block_hash_from_rpc,
-                            self.instance_id,
-                        )
-                        .await?;
-                } else {
-                    info!(
-                        "Starting from config block {} (matches database)",
-                        block_number_from_cfg
-                    );
-                }
-                block_number_from_cfg
-            }
-
-            // Config with no DB record
-            (Some(block_number_from_cfg), None) => {
-                info!(
-                    "Starting from config block {} (initializing database)",
-                    block_number_from_cfg
-                );
-                let block_hash_from_rpc = self
-                    .fetch_block_hash_from_rpc(block_number_from_cfg, provider)
-                    .await?;
-                self.block_number_repo
-                    .insert_initial_block_info(
-                        block_number_from_cfg,
-                        block_hash_from_rpc,
-                        self.instance_id,
-                    )
-                    .await?;
-                block_number_from_cfg
-            }
-
-            // No config, use existing DB
-            (None, Some(block_info_from_db)) => {
-                info!(
-                    "Starting from database block {} (resuming)",
-                    block_info_from_db.block_number
-                );
-                block_info_from_db.block_number
-            }
-
-            // Fresh start: no config, no DB
-            (None, None) => {
-                let current_block_from_rpc = provider.get_block_number().await?;
-                info!(
-                    "Starting from current chain block {} (first run)",
-                    current_block_from_rpc
-                );
-                let block_hash_from_rpc = self
-                    .fetch_block_hash_from_rpc(current_block_from_rpc, provider)
-                    .await?;
-                self.block_number_repo
-                    .insert_initial_block_info(
-                        current_block_from_rpc,
-                        block_hash_from_rpc,
-                        self.instance_id,
-                    )
-                    .await?;
-                current_block_from_rpc
-            }
-        };
-
-        Ok(block_number)
     }
 
     pub async fn run(&self) -> anyhow::Result<()> {
@@ -277,39 +152,9 @@ impl ArbitrumListener {
                 }
             };
 
-            // Determine starting block
-            let starting_block = match last_processed_block {
-                Some(block) => block + 1,
-                None => match self.resolve_starting_block(&provider).await {
-                    Ok(block) => block,
-                    Err(e) => {
-                        consecutive_failures += 1;
-                        warn!(
-                            step = %ListenerStep::ProviderRetrying,
-                            instance_id = self.instance_id,
-                            error = %e,
-                            attempt = consecutive_failures,
-                            max_attempts = max_attempts,
-                            "Failed to resolve starting block"
-                        );
-                        if self
-                            .sleep_or_shutdown(Duration::from_millis(retry_interval))
-                            .await
-                        {
-                            info!(
-                                instance_id = self.instance_id,
-                                "Listener stopping (shutdown)"
-                            );
-                            return Ok(());
-                        }
-                        continue;
-                    }
-                },
-            };
-
             // Create subscription (retry on failure)
             let sub = match self
-                .create_subscription(&provider, &contract_addresses, starting_block)
+                .create_subscription(&provider, &contract_addresses)
                 .await
             {
                 Ok(s) => s,
@@ -342,7 +187,7 @@ impl ArbitrumListener {
             info!(
                 step = %ListenerStep::SubscriptionActive,
                 instance_id = self.instance_id,
-                starting_block = starting_block,
+                last_block = ?last_processed_block,
                 "Subscription active, listening for events"
             );
             let mut subscription = sub.into_stream();
@@ -432,13 +277,20 @@ impl ArbitrumListener {
                                 .transaction_hash
                                 .expect("Event log must have transaction hash");
 
-                            // Extract event details for logging
-                            let block_number = event_log.block_number.unwrap_or(0);
-                            let block_hash = event_log
-                                .block_hash
-                                .map(|h| format!("{:#x}", h))
-                                .unwrap_or_else(|| "0x0".to_string());
-                            let log_index = event_log.log_index.unwrap_or(0);
+                            // Coordinates identify the event, so a log without them cannot
+                            // be tracked: two such logs would share a key and the second
+                            // would count as a duplicate.
+                            let (Some(block_number), Some(block_hash), Some(log_index)) = (
+                                event_log.block_number,
+                                event_log.block_hash,
+                                event_log.log_index,
+                            ) else {
+                                warn!(
+                                    instance_id = self.instance_id,
+                                    "Event log missing block coordinates, skipping"
+                                );
+                                continue;
+                            };
 
                             // Extract topics for logging
                             let topic0 = event_log
@@ -452,25 +304,6 @@ impl ArbitrumListener {
                                 .map(|t| format!("{:#x}", t))
                                 .unwrap_or_else(|| "none".to_string());
 
-                            // Create deduplication key
-                            let dedup_key = EventKey {
-                                block_number,
-                                block_hash: event_log.block_hash.unwrap_or_default(),
-                                log_index,
-                            };
-
-                            // Check deduplication - skip if already processed
-                            if !self.deduplicator.try_insert(dedup_key).await {
-                                debug!(
-                                    step = %ListenerStep::EventDuplicate,
-                                    instance_id = self.instance_id,
-                                    block_number = block_number,
-                                    log_index = log_index,
-                                    "Duplicate event skipped"
-                                );
-                                continue;
-                            }
-
                             debug!(
                                 step = %ListenerStep::EventReceived,
                                 instance_id = self.instance_id,
@@ -482,52 +315,37 @@ impl ArbitrumListener {
                                 "Event received"
                             );
 
-                            let event = RelayerEvent::new(
-                                INTERNAL_EVENT_JOB_ID,
-                                ApiVersion {
-                                    category: ApiCategory::PRODUCTION,
-                                    number: 1,
-                                },
-                                RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd {
-                                    log: event_log.clone(),
-                                    tx_hash,
-                                }),
-                            );
-                            self.orchestrator
-                                .dispatch_event(event)
-                                .await
-                                .unwrap_or_else(|e| {
-                                    error!(error = %e, "dispatching event");
-                                });
-
-                            if event_log.block_number.is_some() {
-                                // Update last_block for reconnection tracking
-                                *last_block = Some(block_number);
-
-                                // Update block progress - log error but don't stop processing
-                                match self
-                                    .block_number_repo
-                                    .update_block_info(block_number, block_hash.clone(), self.instance_id)
-                                    .await
-                                {
-                                    Ok(_) => {
-                                        debug!(
-                                            step = %ListenerStep::BlockProgressUpdated,
-                                            instance_id = self.instance_id,
-                                            block_number = block_number,
-                                            "Block progress updated"
-                                        );
-                                    }
-                                    Err(e) => {
-                                        warn!(
-                                            step = %ListenerStep::BlockUpdateFailed,
-                                            instance_id = self.instance_id,
-                                            block_number = block_number,
-                                            error = %e,
-                                            "Failed to update block progress"
-                                        );
-                                    }
+                            let events = match gateway_chain_event_for_log(event_log.clone(), tx_hash) {
+                                Some(gateway_event) => vec![ObservedEvent {
+                                    key: EventKey {
+                                        block_number,
+                                        block_hash,
+                                        log_index,
+                                    },
+                                    event: gateway_event,
+                                }],
+                                None => {
+                                    debug!(
+                                        step = %ListenerStep::EventUnroutable,
+                                        instance_id = self.instance_id,
+                                        block_number = block_number,
+                                        log_index = log_index,
+                                        topic0 = %topic0,
+                                        "Unroutable gateway event"
+                                    );
+                                    Vec::new()
                                 }
+                            };
+
+                            // Tracked in memory only, for the reconnection logs: a
+                            // subscription cannot attest to a range, so it carries no
+                            // cursor and passes no marker.
+                            *last_block = Some(block_number);
+
+                            if !events.is_empty() {
+                                self.handled_events
+                                    .record_and_dispatch(events, None, self.instance_id)
+                                    .await;
                             }
                         }
                         None => {
@@ -550,16 +368,17 @@ impl ArbitrumListener {
         }
     }
 
-    /// Creates a log subscription for the given provider and starting block.
+    /// Creates a log subscription for the given provider.
+    ///
+    /// The filter carries no `fromBlock`: `eth_subscribe` has no such parameter, and alloy
+    /// shares this `Filter` type with `eth_getLogs`, so setting one would compile and do
+    /// nothing.
     async fn create_subscription(
         &self,
         provider: &Arc<dyn Provider<AnyNetwork> + Send + Sync>,
         contract_addresses: &[Address],
-        starting_block: u64,
     ) -> anyhow::Result<Subscription<Log>> {
-        let filter = Filter::new()
-            .from_block(BlockNumberOrTag::Number(starting_block))
-            .address(contract_addresses.to_vec());
+        let filter = Filter::new().address(contract_addresses.to_vec());
 
         provider
             .subscribe_logs(&filter)

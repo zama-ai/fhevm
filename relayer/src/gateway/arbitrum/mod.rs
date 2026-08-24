@@ -1,4 +1,3 @@
-pub mod event_deduplicator;
 pub mod listener;
 pub mod polling_listener;
 pub mod transaction;
