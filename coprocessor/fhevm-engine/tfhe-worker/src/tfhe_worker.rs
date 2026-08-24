@@ -1191,15 +1191,13 @@ async fn tfhe_worker_cycle(
         }
 
         // Rotation state for a failed batch: `build_transaction_graph_and_execute`
-        // drains `transactions`, so collect the lockless quarantine keys first.
-        let lockless_batch_transaction_ids: Vec<Vec<u8>> = if dcid_mngr.enabled() {
-            vec![]
-        } else {
-            transactions
-                .iter()
-                .map(|t| t.transaction_id.clone())
-                .collect()
-        };
+        // drains `transactions`, so collect the transaction ids first — they
+        // key the lockless quarantine and identify the failing batch in the
+        // rotation alert.
+        let batch_transaction_ids: Vec<Vec<u8>> = transactions
+            .iter()
+            .map(|t| t.transaction_id.clone())
+            .collect();
         let mut tx_graph = match build_transaction_graph_and_execute(
             &mut transactions,
             db_key_cache.clone(),
@@ -1226,6 +1224,9 @@ async fn tfhe_worker_cycle(
                     && consecutive_batch_failures < 2 =>
             {
                 consecutive_batch_failures += 1;
+                let dependence_chain_id = dcid_mngr
+                    .get_current_lock()
+                    .map(|lock| hex::encode(lock.dependence_chain_id));
                 // A chain-specific batch-execution failure (a panic inside an
                 // FHE op, a scheduler error) must not abort the cycle loop:
                 // the restart path re-runs release_all_owned_locks, which puts
@@ -1252,7 +1253,13 @@ async fn tfhe_worker_cycle(
                 // chains the guard above stops matching and the error
                 // propagates to the run loop's log-and-retry instead.
                 WORKER_ERRORS_COUNTER.inc();
-                error!(target: "tfhe_worker", { error = %cycle_error },
+                error!(target: "tfhe_worker",
+                    { error = %cycle_error,
+                      dependence_chain_id = ?dependence_chain_id,
+                      transaction_ids = ?batch_transaction_ids
+                          .iter()
+                          .map(hex::encode)
+                          .collect::<Vec<_>>() },
                     "batch execution failed; rotating dependence chain to the back of the FIFO");
                 drop(trx);
                 let now = {
@@ -1275,8 +1282,10 @@ async fn tfhe_worker_cycle(
                 }
                 // Lockless fallback: no chain to rotate; quarantine the
                 // batch's transactions so the oldest-first window moves on.
-                for transaction_id in &lockless_batch_transaction_ids {
-                    deferred_cooldown.quarantine(transaction_id);
+                if !dcid_mngr.enabled() {
+                    for transaction_id in &batch_transaction_ids {
+                        deferred_cooldown.quarantine(transaction_id);
+                    }
                 }
                 // Keep the backoff the cycle-restart path used to provide:
                 // retryable DB errors (deadlocks, pool timeouts) surface
