@@ -436,16 +436,12 @@ impl BlockchainConfig {
                 "chain_id must be strictly positive".to_string(),
             ));
         }
-        if self.cleaner.blocks_to_keep < 2 {
+        // Static floor, deliberately decoupled from finality_depth: the finality
+        // boundary can move at runtime, so retention must not depend on it.
+        if self.cleaner.blocks_to_keep < 999 {
             return Err(ConfigError::Validation(format!(
-                "cleaner.blocks_to_keep ({}) must be >= 2 for reorg checking",
+                "cleaner.blocks_to_keep ({}) must be >= 999",
                 self.cleaner.blocks_to_keep
-            )));
-        }
-        if self.cleaner.blocks_to_keep <= self.finality_depth {
-            return Err(ConfigError::Validation(format!(
-                "cleaner.blocks_to_keep ({}) must be greater than finality_depth ({})",
-                self.cleaner.blocks_to_keep, self.finality_depth
             )));
         }
         self.strategy.validate()?;
@@ -930,9 +926,9 @@ mod tests {
             chain_id: 1,
             rpc_url: "https://rpc.example.com".to_string(),
             network: "test".to_string(),
-            finality_depth: 0,
+            finality_depth: default_finality_depth(),
             cleaner: CleanerConfig {
-                blocks_to_keep: 1,
+                blocks_to_keep: 998,
                 ..Default::default()
             },
             strategy: StrategyConfig::default(),
@@ -940,7 +936,27 @@ mod tests {
         };
         let result = config.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("must be >= 2"));
+        assert!(result.unwrap_err().to_string().contains("must be >= 999"));
+    }
+
+    #[test]
+    fn test_blocks_to_keep_independent_of_finality_depth() {
+        // Retention no longer depends on finality_depth: a finality depth far
+        // above blocks_to_keep must not fail validation.
+        let config = BlockchainConfig {
+            r#type: "evm".to_string(),
+            chain_id: 1,
+            rpc_url: "https://rpc.example.com".to_string(),
+            network: "test".to_string(),
+            finality_depth: 5000,
+            cleaner: CleanerConfig {
+                blocks_to_keep: 999,
+                ..Default::default()
+            },
+            strategy: StrategyConfig::default(),
+            catchup: CatchupConfig::default(),
+        };
+        assert!(config.validate().is_ok());
     }
 
     #[test]
