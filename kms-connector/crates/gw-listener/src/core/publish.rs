@@ -14,7 +14,8 @@ use connector_utils::{
 use fhevm_gateway_bindings::decryption::Decryption::{
     PublicDecryptionRequest_1 as PublicDecryptionRequest,
     UserDecryptionRequest_2 as UserDecryptionRequest,
-    UserDecryptionRequest_3 as UserDecryptionRequestV2, UserDecryptionRequestSolana,
+    UserDecryptionRequest_3 as UserDecryptionRequestV2,
+    UserDecryptionRequest_4 as UserDecryptionRequestV3,
 };
 use fhevm_host_bindings::{
     kms_generation::KMSGeneration::{
@@ -95,8 +96,8 @@ async fn publish_event_inner<'e>(
         ProtocolEventKind::UserDecryptionV2(e) => {
             publish_user_decryption_v2(executor, e, tx_hash, created_at, otlp_ctx).await
         }
-        ProtocolEventKind::UserDecryptionSolana(e) => {
-            publish_user_decryption_solana(executor, e, tx_hash, created_at, otlp_ctx).await
+        ProtocolEventKind::UserDecryptionV3(e) => {
+            publish_user_decryption_v3(executor, e, tx_hash, created_at, otlp_ctx).await
         }
         ProtocolEventKind::PrepKeygen(e) => {
             let params_type: ParamsTypeDb = e.paramsType.try_into()?;
@@ -263,80 +264,65 @@ async fn publish_user_decryption_v2<'e>(
     .map_err(anyhow::Error::from)
 }
 
-/// Persists a Solana user-decryption request (RFC-021) into the shared `user_decryption_requests`
-/// table. The ed25519 auth fields are written as TYPED columns (`solana_identity`, `solana_nonce`,
-/// `solana_allowed_acl_domain_keys`) — there is no `0x03` extraData blob anywhere; `extra_data`
-/// carries only the KMS context (v0x01). The EVM-shaped columns are placeholders for Solana rows:
-/// the worker keys on the typed columns + the handle bytes32, never on `user_address` /
-/// `allowed_contracts`. The row reader identifies a Solana row by `solana_identity IS NOT NULL`.
-async fn publish_user_decryption_solana<'e>(
+/// Persists a host-generic V2 user-decryption request into the shared
+/// `user_decryption_requests` table. Only the fields the gateway itself consumed are typed
+/// columns (`ct_handles`, `public_key`, `extra_data`, validity window); the host-kind
+/// discriminator goes to `host_kind` and everything host-specific to the opaque `host_payload`.
+/// The EVM-shaped columns are placeholders on this path (zero `user_address`, empty
+/// `handle_*`/`allowed_contracts`, NULL `signature`); the row reader identifies a V2 row by
+/// `host_kind IS NOT NULL` and never reads them.
+async fn publish_user_decryption_v3<'e>(
     executor: impl PgExecutor<'e>,
-    request: UserDecryptionRequestSolana,
+    request: UserDecryptionRequestV3,
     tx_hash: Option<FixedBytes<32>>,
     created_at: DateTime<Utc>,
     otlp_ctx: PropagationContext,
 ) -> anyhow::Result<PgQueryResult> {
-    let payload = &request.payload;
+    let ct_handles: Vec<Vec<u8>> = request.ctHandles.iter().map(|h| h.to_vec()).collect();
 
-    let mut ct_handles: Vec<Vec<u8>> = Vec::with_capacity(request.handles.len());
-    let mut handle_owner_addresses: Vec<Vec<u8>> = Vec::with_capacity(request.handles.len());
-    let mut handle_contract_addresses: Vec<Vec<u8>> = Vec::with_capacity(request.handles.len());
-    for handle in &request.handles {
-        ct_handles.push(handle.handle.to_vec());
-        handle_owner_addresses.push(handle.ownerAddress.to_vec());
-        handle_contract_addresses.push(handle.contractAddress.to_vec());
-    }
-
-    let start_timestamp: i64 = payload
+    let start_timestamp: i64 = request
         .requestValidity
         .startTimestamp
         .try_into()
-        .map_err(|_| anyhow!("Solana startTimestamp does not fit in i64"))?;
-    let duration_seconds: i64 = payload
+        .map_err(|_| anyhow!("V2 startTimestamp does not fit in i64"))?;
+    let duration_seconds: i64 = request
         .requestValidity
         .durationSeconds
         .try_into()
-        .map_err(|_| anyhow!("Solana durationSeconds does not fit in i64"))?;
+        .map_err(|_| anyhow!("V2 durationSeconds does not fit in i64"))?;
 
-    let solana_identity = payload.userIdentity.0.to_vec();
-    let solana_nonce = payload.nonce.0.to_vec();
-    let solana_allowed_acl_domain_keys: Vec<Vec<u8>> = payload
-        .allowedAclDomainKeys
-        .iter()
-        .map(|k| k.0.to_vec())
-        .collect();
+    let host_kind = i16::from(request.hostKind);
+    let allowed_acl_domain_key_count = i16::from(request.allowedAclDomainKeyCount);
 
-    // EVM-shaped columns: zero `user_address` placeholder; empty `allowed_contracts` (Solana scope
-    // lives in `solana_allowed_acl_domain_keys`). The worker never reads these on the Solana path.
+    // EVM-shaped placeholders: unused on the V2 path (the reader keys on `host_kind`).
     let zero_user_address = [0u8; 20];
-    let allowed_contracts: Vec<Vec<u8>> = Vec::new();
+    let empty_addresses: Vec<Vec<u8>> = Vec::new();
 
     sqlx::query!(
         "INSERT INTO user_decryption_requests(
             decryption_id, ct_handles, user_address, public_key, extra_data, tx_hash,
             created_at, otlp_context, handle_owner_addresses, handle_contract_addresses,
-            allowed_contracts, start_timestamp, duration_seconds, signature,
-            solana_identity, solana_nonce, solana_allowed_acl_domain_keys
+            allowed_contracts, start_timestamp, duration_seconds, host_kind, host_payload,
+            allowed_acl_domain_key_count
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
         ON CONFLICT DO NOTHING",
         request.decryptionId.as_le_slice(),
         &ct_handles,
         zero_user_address.as_slice(),
-        payload.publicKey.as_ref(),
-        payload.extraData.as_ref(),
+        request.publicKey.as_ref(),
+        request.extraData.as_ref(),
         tx_hash.map(|h| h.to_vec()),
         created_at,
         bc2wrap::serialize(&otlp_ctx)?,
-        &handle_owner_addresses,
-        &handle_contract_addresses,
-        &allowed_contracts,
+        &empty_addresses,
+        &empty_addresses,
+        &empty_addresses,
         start_timestamp,
         duration_seconds,
-        payload.signature.as_ref(),
-        solana_identity.as_slice(),
-        solana_nonce.as_slice(),
-        &solana_allowed_acl_domain_keys,
+        host_kind,
+        request.hostPayload.as_ref(),
+        allowed_acl_domain_key_count,
     )
     .execute(executor)
     .await

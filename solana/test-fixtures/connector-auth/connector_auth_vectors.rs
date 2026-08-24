@@ -146,6 +146,12 @@ pub struct WireRequest {
     pub signature: String,
     /// Handle entries, in request order.
     pub handles: Vec<WireHandleEntry>,
+    /// The same request as its canonical `hostPayload` bytes, hex — the exact blob the
+    /// gateway event carries opaquely. Derived from the fields above by the canonical
+    /// codec and re-verified in BOTH directions by every consumer (decode(hex) == fields,
+    /// encode(fields) == hex), so the byte layout cannot drift from the typed form in any
+    /// implementation that runs this set.
+    pub host_payload: String,
 }
 
 /// The eight signed permit fields, in transport form. Field names and encodings match the permit

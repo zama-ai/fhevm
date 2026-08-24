@@ -9,7 +9,7 @@ use tracing::info;
 
 /// 32-byte ABI-encoded ERC-1271 magic value `0x1626ba7e` (`bytes4` left-aligned in a 32-byte
 /// word). Push as a host-chain mock response to make the RFC-012 `isValidSignature` check pass
-/// in `DecryptionProcessor::check_user_decryption_request_v2`.
+/// in `DecryptionProcessor::check_user_decryption_request_unified`.
 pub fn erc1271_magic_response() -> Vec<u8> {
     let mut word = vec![0u8; 32];
     word[..4].copy_from_slice(&[0x16, 0x26, 0xba, 0x7e]);

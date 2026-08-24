@@ -87,7 +87,7 @@ where
                 ProtocolEventKind::PublicDecryption(_)
                 | ProtocolEventKind::UserDecryption(_)
                 | ProtocolEventKind::UserDecryptionV2(_)
-                | ProtocolEventKind::UserDecryptionSolana(_),
+                | ProtocolEventKind::UserDecryptionV3(_),
             ) if event.error_counter as u16 >= self.max_decryption_attempts => {
                 error!(
                     "{}. Maximum number of decryption attempts reached: {}",
@@ -182,8 +182,8 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                     .await
             }
             ProtocolEventKind::UserDecryptionV2(req) => {
-                // The RFC016 event carries the full payload, so unlike the legacy path we don't
-                // need to re-fetch the transaction calldata. EVM-only (Solana is its own arm below).
+                // The RFC016 EVM event carries the full payload, so unlike the legacy path we
+                // don't need to re-fetch the transaction calldata.
                 self.decryption_processor
                     .check_user_decryption_request_v2(req)
                     .await
@@ -201,22 +201,22 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                     )
                     .await
             }
-            ProtocolEventKind::UserDecryptionSolana(req) => {
-                // RFC-021: the ed25519 auth fields are typed on the event. The check verifies the
-                // ed25519 binding + Solana ACL before the typed pubkey is sent to KMS.
-                self.decryption_processor
-                    .check_user_decryption_request_solana(req)
+            ProtocolEventKind::UserDecryptionV3(req) => {
+                // Host-generic V2 (Solana today): the whole permit and per-handle evidence ride
+                // in the opaque `hostPayload`. The check decodes it, holds its handle list to the
+                // typed `ctHandles`, and authorizes through the connector pipeline; it returns the
+                // KMS-request identity data built from the decoded permit.
+                let user_decrypt_data = self
+                    .decryption_processor
+                    .check_user_decryption_request_v3(req)
                     .await
                     .map_err(RequestCheckError::record)?;
-                let payload = &req.payload;
-                let handles: Vec<B256> = req.handles.iter().map(|h| h.handle).collect();
-                let user_decrypt_data =
-                    DecryptionProcessor::<GP, HP, C>::user_decryption_extra_data_for_solana(req);
+                let handles: Vec<B256> = req.ctHandles.clone();
                 self.decryption_processor
                     .prepare_decryption_request(
                         req.decryptionId,
                         &handles,
-                        &payload.extraData,
+                        &req.extraData,
                         Some(user_decrypt_data),
                     )
                     .await

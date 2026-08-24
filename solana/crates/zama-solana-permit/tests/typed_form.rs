@@ -406,25 +406,40 @@ fn accepted_window_can_never_overflow_when_summed() {
 // Transport key
 // ---------------------------------------------------------------------------
 
-/// The single accepted length is what fixes the key variant, because the permit
-/// carries no variant field. A well-formed key of the deprecated larger variant is
-/// therefore rejected — not because its bytes are wrong, but because its length is
-/// the variant declaration.
+/// The single accepted length is what fixes both the key variant and its
+/// representation, because the permit carries no field for either. The accepted
+/// length is the tfhe safe-serialized `UnifiedPublicEncKey::MlKem512` container —
+/// what a KMS user-decryption request actually carries — so the most dangerous
+/// near-miss is the bare 800-byte encapsulation key: the representation this permit
+/// once accepted, and byte-for-byte the payload of the accepted container.
 #[test]
-fn decode_rejects_transport_key_of_the_larger_variant_length() {
+fn decode_rejects_the_bare_key_of_the_accepted_variant() {
     let wire = PermitWireFields {
-        // 1568 bytes is the public key size of the deprecated larger ML-KEM variant.
-        // Only the length is normative here, so filler of that length is the exact
-        // test input.
-        transport_key: transport_key_bytes_of_len(1568),
+        transport_key: transport_key_bytes_of_len(800),
         ..reference_wire()
     };
-    expect_rejected(&wire, PermitError::TransportKeyLength { len: 1568 });
+    expect_rejected(&wire, PermitError::TransportKeyLength { len: 800 });
+}
+
+/// A well-formed key of the deprecated larger ML-KEM variant is rejected — not
+/// because its bytes are wrong, but because its length is the variant declaration.
+/// Both of its shapes are refused: the bare 1568-byte encapsulation key, and the
+/// roughly 1637-byte safe-serialized container (only "not 869" is normative here, so
+/// filler of those lengths is the exact test input).
+#[test]
+fn decode_rejects_transport_key_of_the_larger_variant_length() {
+    for len in [1568usize, 1637] {
+        let wire = PermitWireFields {
+            transport_key: transport_key_bytes_of_len(len),
+            ..reference_wire()
+        };
+        expect_rejected(&wire, PermitError::TransportKeyLength { len });
+    }
 }
 
 #[test]
 fn decode_rejects_transport_key_of_any_other_length() {
-    for len in [0usize, 1, 32, 799, 801, 1600] {
+    for len in [0usize, 1, 32, 868, 870, 1600] {
         let wire = PermitWireFields {
             transport_key: transport_key_bytes_of_len(len),
             ..reference_wire()

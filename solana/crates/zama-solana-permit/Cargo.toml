@@ -26,3 +26,6 @@ ed25519-dalek = { version = "2.2", default-features = false, features = ["alloc"
 # Vector runner: reads the shared normative records.
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# The fixture generator plays the deployer: chain ids are derived from genesis
+# hashes by the deployment-time zama-solana-chain-id-v1 rule, which is SHA-256.
+sha2 = { version = "0.10", default-features = false }

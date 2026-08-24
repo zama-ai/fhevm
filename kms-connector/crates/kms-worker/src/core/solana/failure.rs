@@ -46,6 +46,18 @@ pub enum AuthorizationFailure {
     /// The signature does not verify over the locally reconstructed envelope.
     #[error("permit signature does not verify over the reconstructed envelope")]
     SignatureMismatch,
+    /// The gateway event's typed declaration of the ACL-scope list's length is not the signed
+    /// list's actual length. The gateway bounded the declaration before the fee without reading
+    /// the opaque payload; this equality is what makes that bound a bound on the signed list.
+    #[error(
+        "the event declares {declared} ACL domain key(s) but the signed permit carries {actual}"
+    )]
+    AclDomainKeyCountMismatch {
+        /// The event's typed declaration.
+        declared: u8,
+        /// The signed list's actual length.
+        actual: usize,
+    },
     /// The permit's user pubkey is not a usable verifying key.
     #[error("permit names a user pubkey that is not a usable Ed25519 key")]
     UnusableUserPubkey,
@@ -125,7 +137,9 @@ impl AuthorizationFailure {
     pub fn class(&self) -> FailureClass {
         match self {
             Self::Form(source) => source.class(),
-            Self::SignatureMismatch | Self::UnusableUserPubkey => FailureClass::Terminal,
+            Self::SignatureMismatch
+            | Self::UnusableUserPubkey
+            | Self::AclDomainKeyCountMismatch { .. } => FailureClass::Terminal,
             Self::Deployment(source) => source.class(),
             Self::Window(source) => source.class(),
             Self::Watermark(source) => source.class(),

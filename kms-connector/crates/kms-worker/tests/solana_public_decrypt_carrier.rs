@@ -27,12 +27,13 @@ use connector_utils::types::solana_extra_data::{
 };
 use kms_worker::core::event_processor::{
     ProcessingError,
-    solana_user_decrypt::{SolanaHost, check_solana_handles_public_decrypt},
+    solana_public_decrypt::{SolanaHost, check_solana_handles_public_decrypt},
 };
+use kms_worker::core::solana::snapshot::RpcHostStateReader;
 use kms_worker::core::solana_v2_fetcher::SolanaV2Fetcher;
 use mocktail::server::MockServer;
 use solana_pubkey::Pubkey;
-use solana_support::{EncryptedValueAccountFixture, PROGRAM_ID};
+use solana_support::{EncryptedValueAccountFixture, deployment};
 use zama_solana_acl::MmrProof;
 
 /// The `extraData` version byte that carries a public-decrypt proof. A literal, deliberately not
@@ -93,13 +94,7 @@ async fn host_serving(fixture: &EncryptedValueAccountFixture) -> (MockServer, So
     });
     server.start().await.expect("the mock RPC starts");
 
-    let host = SolanaHost {
-        program_id: PROGRAM_ID,
-        fetcher: SolanaV2Fetcher::new(
-            server.base_url().expect("the mock RPC has a URL").clone(),
-            reqwest::Client::new(),
-        ),
-    };
+    let host = host_bound_to(&server);
     (server, host)
 }
 
@@ -109,14 +104,19 @@ async fn host_serving(fixture: &EncryptedValueAccountFixture) -> (MockServer, So
 async fn host_without_accounts() -> (MockServer, SolanaHost) {
     let server = MockServer::new_http("solana-rpc-empty");
     server.start().await.expect("the mock RPC starts");
-    let host = SolanaHost {
-        program_id: PROGRAM_ID,
-        fetcher: SolanaV2Fetcher::new(
-            server.base_url().expect("the mock RPC has a URL").clone(),
-            reqwest::Client::new(),
-        ),
-    };
+    let host = host_bound_to(&server);
     (server, host)
+}
+
+/// Builds a `SolanaHost` bound to a started mock RPC. Public decrypt only reads through the
+/// single-account `fetcher`; the pipeline `reader` and `deployment` are wired for completeness.
+fn host_bound_to(server: &MockServer) -> SolanaHost {
+    let url = server.base_url().expect("the mock RPC has a URL").clone();
+    SolanaHost {
+        deployment: deployment(),
+        reader: RpcHostStateReader::new(url.clone(), reqwest::Client::new()),
+        fetcher: SolanaV2Fetcher::new(url, reqwest::Client::new()),
+    }
 }
 
 /// An encrypted value account whose first leaf seals public-ness of `sealed`, after which the
@@ -232,7 +232,10 @@ async fn the_public_path_accepts_only_its_own_mode_byte() {
         .expect_err("the public path must reject the historical mode byte");
     match err {
         ProcessingError::Irrecoverable(e) => {
-            assert!(e.to_string().contains("requires MMR proof mode"), "got: {e}")
+            assert!(
+                e.to_string().contains("requires MMR proof mode"),
+                "got: {e}"
+            )
         }
         other => panic!("a wrong mode byte must be terminal, got: {other:?}"),
     }

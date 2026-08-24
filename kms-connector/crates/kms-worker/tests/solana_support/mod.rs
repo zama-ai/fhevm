@@ -360,6 +360,14 @@ impl<'a> RequestBuilder<'a> {
     }
 }
 
+/// The event-typed ACL-scope declaration an honest gateway carries for this request: the signed
+/// list's actual length. Scenarios probing the declaration rule itself state a lying value
+/// directly instead of using this.
+pub fn declared_acl_domain_key_count(request: &SolanaUserDecryptRequest) -> u8 {
+    u8::try_from(request.permit().allowed_acl_domain_keys().as_slice().len())
+        .expect("test permits stay under the ACL-scope cap")
+}
+
 // ---------------------------------------------------------------------------
 // Account layouts
 // ---------------------------------------------------------------------------

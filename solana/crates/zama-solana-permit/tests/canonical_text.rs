@@ -56,8 +56,8 @@ fn fixture_acl_domain_pair_has_opposite_byte_and_string_order() {
 const REFERENCE_TEXT: &str = "Zama fhevm Solana user-decrypt permit v1\n\
 User: Dzo7VaLffWBjA59P59wUCbRupUFKLts9BjFeTpM8G2EA\n\
 Verifying program: 6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu\n\
-Chain id: 14211618221876249811\n\
-Transport key (SHAKE-256): 2sHFqXRyGJxtd3iKZUJfdkyz8d9RsfnWwQaEbMETbxUF\n\
+Chain id: 10037641751006774702\n\
+Transport key (SHAKE-256): CvgsmpoXufMbtBHn3zSjKjn6V2b2tNvrL6HJnZdwWnu4\n\
 KMS context: DcvW9UCt85BDoYYoLtJkXamSPU11M6kF6auXdnu5H3BD\n\
 KMS epoch: 93H5dJNEzmALYsPvnAD4zjKgaHjyqKNNovckD9AoPjK7\n\
 Valid from: 2026-01-01T01:03:00Z for 604800 seconds\n\
@@ -69,8 +69,8 @@ ACL domains (2):\n\
 const PERMISSIVE_TEXT: &str = "Zama fhevm Solana user-decrypt permit v1\n\
 User: Dzo7VaLffWBjA59P59wUCbRupUFKLts9BjFeTpM8G2EA\n\
 Verifying program: 6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu\n\
-Chain id: 14211618221876249811\n\
-Transport key (SHAKE-256): 2sHFqXRyGJxtd3iKZUJfdkyz8d9RsfnWwQaEbMETbxUF\n\
+Chain id: 10037641751006774702\n\
+Transport key (SHAKE-256): CvgsmpoXufMbtBHn3zSjKjn6V2b2tNvrL6HJnZdwWnu4\n\
 KMS context: DcvW9UCt85BDoYYoLtJkXamSPU11M6kF6auXdnu5H3BD\n\
 KMS epoch: 93H5dJNEzmALYsPvnAD4zjKgaHjyqKNNovckD9AoPjK7\n\
 Valid from: 2026-01-01T01:03:00Z for 604800 seconds\n\
