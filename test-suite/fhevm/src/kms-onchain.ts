@@ -57,18 +57,19 @@ export const eventLogWord = (receipt: Receipt, topic0: string, eventName: string
   return firstDataWord(log.data);
 };
 
-/** Reads an indexed topic of the receipt event matching `topic0`, or throws. Indexed uint256 args
- * (e.g. ProtocolConfig's `KmsContextDestroyed(uint256 indexed)`) live in `topics`, not `data`. */
-export const eventTopicWord = (receipt: Receipt, topic0: string, topicIndex: number, eventName: string): bigint => {
-  const log = receipt.logs.find((entry) => entry.topics[0]?.toLowerCase() === topic0.toLowerCase());
+/** Reads an indexed topic of the receipt event whose topic0 matches `targetTopic`, or throws.
+ * Indexed uint256 args (e.g. ProtocolConfig's `KmsContextDestroyed(uint256 indexed)`) live in
+ * `topics`, not `data`. */
+export const getEventTopic = (receipt: Receipt, targetTopic: string, topicIndex: number): bigint => {
+  const log = receipt.logs.find((entry) => entry.topics[0]?.toLowerCase() === targetTopic.toLowerCase());
   if (!log) {
     throw new PreflightError(
-      `transaction receipt has no ${eventName} event (topics seen: ${receipt.logs.map((entry) => entry.topics[0]).join(", ") || "none"})`,
+      `transaction receipt has no event with topic ${targetTopic} (topics seen: ${receipt.logs.map((entry) => entry.topics[0]).join(", ") || "none"})`,
     );
   }
   const topic = log.topics[topicIndex];
   if (topic === undefined) {
-    throw new PreflightError(`${eventName} event has no indexed topic at position ${topicIndex}`);
+    throw new PreflightError(`event with topic ${targetTopic} has no indexed topic at position ${topicIndex}`);
   }
   return BigInt(topic);
 };
@@ -131,7 +132,7 @@ export const castSend = async (
 };
 
 /** Asserts an eth_call from the owner to `address` reverts with the given custom error. */
-export const expectRevert = async (
+export const callContractAndExpectRevert = async (
   rpcUrl: string,
   address: string,
   owner: Owner,

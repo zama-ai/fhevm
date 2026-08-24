@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { eventLogWord, eventTopicWord, firstDataWord, parseUintOutput, uint256LeHex } from "./kms-onchain";
+import { eventLogWord, getEventTopic, firstDataWord, parseUintOutput, uint256LeHex } from "./kms-onchain";
 import { uint256ToId } from "./utils/fs";
 
 describe("kms-onchain parseUintOutput", () => {
@@ -79,27 +79,27 @@ describe("kms-onchain eventLogWord", () => {
   });
 });
 
-describe("kms-onchain eventTopicWord", () => {
-  const topic0 = "0xCCCC000000000000000000000000000000000000000000000000000000000000";
+describe("kms-onchain getEventTopic", () => {
+  const topic = "0xCCCC000000000000000000000000000000000000000000000000000000000000";
   // ProtocolConfig's KmsContextDestroyed(uint256 indexed) carries the id in topics[1], not data.
   const receipt = (id: bigint) => ({
     status: "0x1",
-    logs: [{ address: "0x1", topics: [topic0, `0x${uint256ToId(id)}`], data: "0x" }],
+    logs: [{ address: "0x1", topics: [topic, `0x${uint256ToId(id)}`], data: "0x" }],
   });
 
   test("reads the indexed id from topics[1]", () => {
     const contextId = (0x07n << 248n) | 3n;
-    expect(eventTopicWord(receipt(contextId), topic0, 1, "KmsContextDestroyed")).toBe(contextId);
+    expect(getEventTopic(receipt(contextId), topic, 1)).toBe(contextId);
   });
 
   test("throws when the event is missing", () => {
-    expect(() => eventTopicWord({ status: "0x1", logs: [] }, topic0, 1, "KmsContextDestroyed")).toThrow(
-      /no KmsContextDestroyed event/,
+    expect(() => getEventTopic({ status: "0x1", logs: [] }, topic, 1)).toThrow(
+      /no event with topic/,
     );
   });
 
   test("throws when the indexed topic is absent at the given position", () => {
-    const noTopic = { status: "0x1", logs: [{ address: "0x1", topics: [topic0], data: "0x" }] };
-    expect(() => eventTopicWord(noTopic, topic0, 1, "KmsContextDestroyed")).toThrow(/no indexed topic/);
+    const noTopic = { status: "0x1", logs: [{ address: "0x1", topics: [topic], data: "0x" }] };
+    expect(() => getEventTopic(noTopic, topic, 1)).toThrow(/no indexed topic/);
   });
 });

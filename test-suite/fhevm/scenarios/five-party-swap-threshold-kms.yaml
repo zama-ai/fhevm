@@ -1,14 +1,14 @@
 version: 1
 kind: coprocessor-consensus
-name: Node-Swap Threshold KMS
+name: Five-Party Node-Swap Threshold KMS
 description: >
   Like four-party-threshold-kms, but provisions a 5-core cluster with an initial 4-node committee
-  (t=1) and one SPARE core (party 5, peers=None) that boots idle. This is the substrate for a
-  node-swap context switch: a switch defines a new committee {1,2,3,5} (drop node 4, add the
-  spare node 5), keeping n=4 so the threshold stays valid, exercising the KMS core's two-sets
-  resharing with a genuine membership change (node 4 leaves Set 1, node 5 joins Set 2). Slice 1
-  validates the spare boots and the 4-node baseline (kms-generation) works with node 5 idle; the
-  swap orchestration is layered on top once that holds.
+  (t=1) and one SPARE core (party 5, peers=None) that boots idle. This is the substrate for the
+  full kms-context-switch acceptance profile: same-committee switches, epoch rotations, and
+  context/epoch destruction all run on the unchanged {1,2,3,4} committee, and the spare enables
+  the final node-swap switch — a new committee {1,2,3,5} (drop node 4, add the spare node 5),
+  keeping n=4 so the threshold stays valid, exercising the KMS core's two-sets resharing with a
+  genuine membership change (node 4 leaves Set 1, node 5 joins Set 2).
 topology:
   count: 2
   threshold: 2

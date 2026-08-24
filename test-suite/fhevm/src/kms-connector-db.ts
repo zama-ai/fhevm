@@ -37,31 +37,39 @@ const byteaLiteral = (id: bigint) => `decode('${uint256LeHex(id)}','hex')`;
 export const columnQuery = (table: string, idColumn: string, column: string, id: bigint) =>
   `SELECT COALESCE((SELECT ${column}::text FROM ${table} WHERE ${idColumn} = ${byteaLiteral(id)}), 'missing')`;
 
-/** Polls one query in every party's connector DB until it returns one of `want` everywhere. */
-export const pollConnectors = async (
-  parties: number,
-  label: string,
-  sql: string,
-  want: string[],
+/** Polls `columnValueQuery` in each listed party's connector DB until it returns one of
+ * `expectedValues` everywhere, or throws after the timeout with the last value seen.
+ * `parties` is a party count (poll parties 1..N) or an explicit party-id list — the profiles use a
+ * list when different parties expect different outcomes (e.g. a spare that never held a context).
+ * `checkDescription` names the check in logs and in the timeout error. */
+export const checkConnectorsDbColumn = async (
+  parties: number | number[],
+  checkDescription: string,
+  columnValueQuery: string,
+  expectedValues: string[],
   opts?: { timeoutMs?: number; pollMs?: number },
 ) => {
+  const partyIds = Array.isArray(parties) ? parties : kmsPartyIds(parties);
   const timeoutMs = opts?.timeoutMs ?? CONNECTOR_SETTLE_TIMEOUT_MS;
   const pollMs = opts?.pollMs ?? CONNECTOR_POLL_MS;
-  const finals: string[] = [];
-  for (const party of kmsPartyIds(parties)) {
+  const settledValues: string[] = [];
+  for (const party of partyIds) {
     const dbName = kmsConnectorDbName(party);
     const deadline = Date.now() + timeoutMs;
-    let last = await connectorQuery(dbName, sql);
-    while (!want.includes(last)) {
-      if (Date.now() >= deadline) {
+    let lastValue = await connectorQuery(dbName, columnValueQuery);
+    while (!expectedValues.includes(lastValue)) {
+      const isCheckTimedOut = Date.now() >= deadline;
+      if (isCheckTimedOut) {
         throw new PreflightError(
-          `${label}: db "${dbName}" returned ${JSON.stringify(last)} (wanted one of ${want.join("/")}) after ${timeoutMs / 1000}s — query: ${sql}`,
+          `${checkDescription}: db "${dbName}" returned ${JSON.stringify(lastValue)} (expected one of ${expectedValues.join("/")}) after ${timeoutMs / 1000}s — query: ${columnValueQuery}`,
         );
       }
       await Bun.sleep(pollMs);
-      last = await connectorQuery(dbName, sql);
+      lastValue = await connectorQuery(dbName, columnValueQuery);
     }
-    finals.push(last);
+    settledValues.push(lastValue);
   }
-  console.log(`[connector] check OK on ${parties} db(s): ${label} -> ${finals.join(", ")}`);
+  console.log(
+    `[connector] check OK on ${partyIds.length} db(s) (parties ${partyIds.join(",")}): ${checkDescription} -> ${settledValues.join(", ")}`,
+  );
 };
