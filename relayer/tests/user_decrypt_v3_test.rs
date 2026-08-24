@@ -127,6 +127,75 @@ mod helpers {
         sign_v3_user_decrypt_envelope(&mut envelope, &signer);
         envelope
     }
+
+    /// Build a valid `solana-srfc38-user-decrypt-v1` envelope, signed for real.
+    ///
+    /// The relayer verifies the ed25519 signature before it submits anything, so a random blob
+    /// is not an envelope this endpoint accepts: the wallet key and the signature over the
+    /// reconstructed permit envelope are both genuine. The handle uses `random_handle()` so its
+    /// embedded chain id is a configured host chain and the request survives the early chain-id
+    /// gate; the permit fields are shaped to pass the strict typed pre-check
+    /// (`PermitFields::decode`): a 32-byte identity, an 869-byte transport key, a validity
+    /// window covering now, and a 65-byte `0x02` KMS-routing `extraData`.
+    pub fn create_srfc38_envelope() -> serde_json::Value {
+        use ed25519_dalek::{Signer, SigningKey};
+        use zama_solana_permit::{build_envelope, PermitFields, PermitWireFields};
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        let wallet = SigningKey::from_bytes(&[0x42; 32]);
+        let user_pubkey = wallet.verifying_key().to_bytes();
+        let transport_key = vec![0u8; 869];
+        let allowed_acl_domain_key = [0x05u8; 32];
+        let verifying_program_id = [0x02u8; 32];
+        let chain_id = 0x8000_0000_0000_0000u64 | 1;
+        let mut extra_data = vec![0x02u8];
+        extra_data.extend_from_slice(&[0u8; 64]);
+        let start_timestamp = now - 1;
+        let duration_seconds = 604_800u64;
+
+        let permit = PermitFields::decode(&PermitWireFields {
+            user_pubkey: user_pubkey.to_vec(),
+            transport_key: transport_key.clone(),
+            allowed_acl_domain_keys: vec![allowed_acl_domain_key.to_vec()],
+            start_timestamp,
+            duration_seconds,
+            verifying_program_id: verifying_program_id.to_vec(),
+            chain_id,
+            extra_data: extra_data.clone(),
+        })
+        .expect("the fixture permit passes the typed pre-check");
+        let signature = wallet.sign(&build_envelope(&permit)).to_bytes();
+
+        json!({
+            "attestationType": "solana-srfc38-user-decrypt-v1",
+            "attestedPayload": {
+                "userPubkey": format!("0x{}", hex::encode(user_pubkey)),
+                "transportKey": format!("0x{}", hex::encode(&transport_key)),
+                "allowedAclDomainKeys": [format!("0x{}", hex::encode(allowed_acl_domain_key))],
+                "requestValidity": {
+                    "startTimestamp": start_timestamp.to_string(),
+                    "durationSeconds": duration_seconds.to_string(),
+                },
+                "verifyingProgramId": format!("0x{}", hex::encode(verifying_program_id)),
+                "chainId": chain_id.to_string(),
+                // 65-byte KMS routing: version 0x02 ‖ contextId(32) ‖ epochId(32).
+                "extraData": format!("0x{}", hex::encode(&extra_data)),
+                "handles": [{
+                    "handle": random_handle(),
+                    // The subject of a direct entry is the requester itself.
+                    "subject": format!("0x{}", hex::encode(user_pubkey)),
+                    "encryptedValueId": random_0x_hex(32),
+                    "proofLeafCount": "0",
+                    "accessProof": "0x",
+                }],
+            },
+            "signature": format!("0x{}", hex::encode(signature)),
+        })
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -154,6 +223,58 @@ async fn v3_accepts_direct_handle() {
         "expected 202, got {}: {:?}",
         response.status(),
         response.text().await
+    );
+
+    setup.shutdown().await;
+}
+
+/// v3 accepts a host-generic Solana sRFC-38 request end to end: parsed, dispatched to the Solana
+/// envelope by attestation type, permit pre-checked, canonical host payload built, and enqueued
+/// (202). The ed25519 signature is not verified here — that is the connector's job.
+#[tokio::test]
+async fn v3_accepts_solana_srfc38_request() {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let payload = helpers::create_srfc38_envelope();
+
+    let response = reqwest::Client::new()
+        .post(helpers::v3_user_decrypt_post_url(&setup))
+        .header("Content-Type", "application/json")
+        .timeout(std::time::Duration::from_secs(10))
+        .json(&payload)
+        .send()
+        .await
+        .expect("POST failed");
+
+    assert_eq!(
+        response.status(),
+        reqwest::StatusCode::ACCEPTED,
+        "expected 202, got {}: {:?}",
+        response.status(),
+        response.text().await
+    );
+
+    setup.shutdown().await;
+}
+
+/// v3 refuses a Solana sRFC-38 payload carrying a stray field: the strict `deny_unknown_fields`
+/// envelope rejects the retired EVM `userAddress` / ed25519 `nonce` shapes at the HTTP boundary.
+#[tokio::test]
+async fn v3_rejects_solana_srfc38_with_stray_field() {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let mut payload = helpers::create_srfc38_envelope();
+    payload["attestedPayload"]["nonce"] = json!("0x00");
+
+    let response = reqwest::Client::new()
+        .post(helpers::v3_user_decrypt_post_url(&setup))
+        .json(&payload)
+        .send()
+        .await
+        .expect("POST failed");
+
+    assert!(
+        response.status().is_client_error(),
+        "expected a 4xx rejection for a stray field, got {}",
+        response.status()
     );
 
     setup.shutdown().await;

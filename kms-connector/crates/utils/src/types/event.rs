@@ -39,12 +39,6 @@ use sqlx::{
 use std::fmt::Display;
 use tracing::{info, warn};
 
-/// The `hostKind` value naming a Solana host in the host-generic `userDecryptionRequest`.
-/// Mirrors `HOST_KIND_SOLANA` from `gateway-contracts/contracts/Decryption.sol`: the gateway
-/// forwards the value verbatim for the host's KMS Connector to dispatch on, and this is the
-/// one value this connector serves on that path.
-pub const HOST_KIND_SOLANA: u8 = 2;
-
 /// The events emitted by the Zama Protocol which are monitored by the KMS Connector.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ProtocolEvent {
@@ -175,11 +169,9 @@ pub enum ProtocolEventKind {
     /// signed fields, signature) directly in the event, so processing does not need to re-fetch
     /// calldata.
     UserDecryptionV2(UserDecryptionRequestV2),
-    /// Host-generic `UserDecryptionRequestV3` event: typed handles, validity window, transport
-    /// key and KMS routing that the gateway itself consumes, plus a `hostKind` discriminator and
-    /// one opaque `hostPayload` the gateway never interprets. Carries Solana user-decrypt
-    /// requests today; the host authorization is reconstructed from `hostPayload` by the host's
-    /// KMS Connector.
+    /// Solana `UserDecryptionRequest` event: typed handles, validity window, transport key and
+    /// KMS routing that the gateway itself consumes, plus one opaque `solanaRequest` it never
+    /// interprets. The whole authorization is reconstructed from that blob by this connector.
     UserDecryptionV3(UserDecryptionRequestV3),
     PrepKeygen(PrepKeygenRequest),
     Keygen(KeygenRequest),
@@ -209,9 +201,8 @@ impl std::fmt::Debug for ProtocolEventKind {
                 .field("ctHandles", &e.ctHandles)
                 .field("requestValidity", &e.requestValidity)
                 .field("publicKey", &e.publicKey)
-                .field("hostKind", &e.hostKind)
                 .field("extraData", &e.extraData)
-                .field("hostPayload", &e.hostPayload)
+                .field("solanaRequest", &e.solanaRequest)
                 .finish(),
             Self::PrepKeygen(e) => f.debug_tuple("PrepKeygen").field(e).finish(),
             Self::Keygen(e) => f.debug_tuple("Keygen").field(e).finish(),
@@ -246,9 +237,8 @@ impl PartialEq for ProtocolEventKind {
                     && a.ctHandles == b.ctHandles
                     && a.requestValidity == b.requestValidity
                     && a.publicKey == b.publicKey
-                    && a.hostKind == b.hostKind
                     && a.extraData == b.extraData
-                    && a.hostPayload == b.hostPayload
+                    && a.solanaRequest == b.solanaRequest
             }
             (Self::PrepKeygen(a), Self::PrepKeygen(b)) => a == b,
             (Self::Keygen(a), Self::Keygen(b)) => a == b,
@@ -320,24 +310,17 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     let public_key: Vec<u8> = row.try_get("public_key")?;
     let extra_data: Vec<u8> = row.try_get("extra_data")?;
 
-    // `host_kind IS NOT NULL` identifies a host-generic V2 row (Solana today). It is checked
-    // first because the V2 event has no top-level `signature`/owner/contract columns — those
-    // live inside the opaque `host_payload` — so a V2 row must not fall into the EVM branches.
-    let host_kind: Option<i16> = match row.try_get::<Option<i16>, _>("host_kind") {
+    // `solana_request IS NOT NULL` identifies a Solana row. It is checked first because such a
+    // row has no top-level `signature`/subject/contract columns — those live inside the opaque
+    // blob — so it must not fall into the EVM branches.
+    let solana_request: Option<Vec<u8>> = match row.try_get::<Option<Vec<u8>>, _>("solana_request")
+    {
         Ok(v) => v,
         Err(sqlx::Error::ColumnNotFound(_)) => None,
         Err(e) => return Err(anyhow::Error::from(e)),
     };
 
-    if let Some(host_kind) = host_kind {
-        let host_kind = u8::try_from(host_kind)
-            .map_err(|_| anyhow!("host_kind {host_kind} does not fit in a u8"))?;
-        let host_payload: Vec<u8> = row.try_get("host_payload")?;
-        let allowed_acl_domain_key_count: i16 = row.try_get("allowed_acl_domain_key_count")?;
-        let allowed_acl_domain_key_count = u8::try_from(allowed_acl_domain_key_count)
-            .map_err(|_| {
-                anyhow!("allowed_acl_domain_key_count {allowed_acl_domain_key_count} does not fit in a u8")
-            })?;
+    if let Some(solana_request) = solana_request {
         let start_timestamp: i64 = row.try_get("start_timestamp")?;
         let duration_seconds: i64 = row.try_get("duration_seconds")?;
         let request_validity = RequestValiditySeconds {
@@ -353,10 +336,8 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
                 ctHandles: ct_handles,
                 requestValidity: request_validity,
                 publicKey: public_key.into(),
-                allowedAclDomainKeyCount: allowed_acl_domain_key_count,
-                hostKind: host_kind,
                 extraData: extra_data.into(),
-                hostPayload: host_payload.into(),
+                solanaRequest: solana_request.into(),
             }),
             tx_hash: tx_hash_from_row(row),
             already_sent: row.try_get::<bool, _>("already_sent")?,
@@ -960,26 +941,27 @@ mod decryption_event_tests {
     use super::*;
 
     #[test]
-    fn decodes_host_generic_v2_user_decryption_event() {
+    // The name deliberately avoids the retired v0 module's token, which `solana_v0_teardown`
+    // greps the whole tree for — including test names and the comments next to them.
+    fn decodes_the_solana_request_event() {
         let decryption_id = U256::from(7);
+        let solana_request = alloy::primitives::Bytes::from_static(&[0x01, 0x02, 0x03]);
         let event = UserDecryptionRequestV3 {
             decryptionId: decryption_id,
             ctHandles: Vec::new(),
             requestValidity: RequestValiditySeconds::default(),
             publicKey: Default::default(),
-            allowedAclDomainKeyCount: 0,
-            hostKind: 2,
             extraData: Default::default(),
-            hostPayload: Default::default(),
+            solanaRequest: solana_request.clone(),
         };
 
         let decoded = ProtocolEventKind::try_from(DecryptionEvents::UserDecryptionRequest_4(event))
-            .expect("host-generic V2 user-decryption events must be accepted");
+            .expect("Solana user-decryption events must be accepted");
 
         match decoded {
             ProtocolEventKind::UserDecryptionV3(event) => {
                 assert_eq!(event.decryptionId, decryption_id);
-                assert_eq!(event.hostKind, 2);
+                assert_eq!(event.solanaRequest, solana_request);
             }
             other => panic!("unexpected event: {other:?}"),
         }

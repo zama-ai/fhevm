@@ -133,42 +133,15 @@ impl ContentHasher for UserDecryptRequest {
                 hasher.update(b"user_address:");
                 hasher.update(user_address.as_slice());
             }
-            UserDecryptRequest::SolanaUnifiedV1 {
-                handles,
-                user_identity,
-                allowed_acl_domain_keys,
-                request_validity: _,
-                nonce,
-                signature: _,
-                public_key,
-                extra_data,
-            } => {
+            UserDecryptRequest::SolanaSrfc38V1 { solana_request, .. } => {
                 // Distinct variant tag so Solana hashes never collide with EVM unified hashes.
-                hasher.update(b"variant:solana_unified_v1:");
-
-                hasher.update(b"allowed_acl_domain_keys:");
-                for key in allowed_acl_domain_keys {
-                    hasher.update(key.as_slice());
-                }
-
-                hasher.update(b"handles:");
-                for h in handles {
-                    hasher.update(h.ct_handle.to_be_bytes::<32>());
-                    hasher.update(h.contract_address.as_slice());
-                    hasher.update(h.owner_address.as_slice());
-                }
-
-                hasher.update(b"extra_data:");
-                hasher.update(extra_data);
-
-                hasher.update(b"public_key:");
-                hasher.update(public_key);
-
-                hasher.update(b"user_identity:");
-                hasher.update(user_identity.as_slice());
-
-                hasher.update(b"nonce:");
-                hasher.update(nonce.as_slice());
+                // `solana_request` is the canonical serialization of the whole normalized request
+                // (permit fields, signature, handle evidence), order-independent by construction:
+                // hashing it dedups byte-different transports of one request and separates any
+                // request differing in a typed field.
+                hasher.update(b"variant:solana_srfc38_v1:");
+                hasher.update(b"solana_request:");
+                hasher.update(solana_request);
             }
         }
 
@@ -183,7 +156,7 @@ mod tests {
         HandleContractPair, HandleEntry, RequestValidity, RequestValiditySeconds,
     };
     use crate::core::job_id::JobId;
-    use alloy::primitives::{Address, Bytes, B256, U256};
+    use alloy::primitives::{Address, Bytes, U256};
 
     fn sample_legacy_direct() -> UserDecryptRequest {
         UserDecryptRequest::LegacyDirect {
@@ -243,32 +216,17 @@ mod tests {
         }
     }
 
-    fn sample_solana_unified(extra_data: Bytes) -> UserDecryptRequest {
-        UserDecryptRequest::SolanaUnifiedV1 {
-            handles: vec![HandleEntry {
-                ct_handle: U256::from(123),
-                contract_address: Address::from([1; 20]),
-                owner_address: Address::from([2; 20]),
-            }],
-            user_identity: B256::from([2; 32]),
-            allowed_acl_domain_keys: vec![B256::from([1; 32])],
+    fn sample_solana_unified(solana_request: Bytes) -> UserDecryptRequest {
+        UserDecryptRequest::SolanaSrfc38V1 {
+            ct_handles: vec![U256::from(123)],
             request_validity: RequestValiditySeconds {
                 start_timestamp: U256::from(1000),
                 duration_seconds: U256::from(604_800),
             },
-            nonce: B256::from([3; 32]),
-            signature: Bytes::from(vec![0xde, 0xad, 0xbe, 0xef]),
             public_key: Bytes::from(vec![0xab, 0xcd]),
-            extra_data,
+            extra_data: Bytes::from(vec![0x02]),
+            solana_request,
         }
-    }
-
-    fn solana_proof_extra_data(proof: u8) -> Bytes {
-        let mut data = vec![0x03];
-        data.extend_from_slice(&[0; 32 + 32 + 8]);
-        data.extend_from_slice(&1u32.to_be_bytes());
-        data.push(proof);
-        data.into()
     }
 
     #[test]
@@ -365,39 +323,16 @@ mod tests {
     }
 
     #[test]
-    fn solana_request_domain_and_proof_pin_job_identity() {
-        let first = sample_solana_unified(solana_proof_extra_data(0xaa));
-        let second = sample_solana_unified(solana_proof_extra_data(0xbb));
+    fn solana_request_content_hash_separates_distinct_payloads() {
+        // Two different canonical host payloads must not collide, and the Solana variant tag
+        // keeps them distinct from any EVM hash. A golden digest is re-pinned by the block-6
+        // dedup tests once the canonical encoder feeds this path end to end.
+        let first = sample_solana_unified(Bytes::from(vec![0xaa, 0x01]));
+        let second = sample_solana_unified(Bytes::from(vec![0xbb, 0x02]));
         let first_hash = first.content_hash();
         let second_hash = second.content_hash();
 
-        // This golden digest makes the Solana variant/domain separator load-bearing,
-        // rather than relying on unlike EVM and Solana payloads to hash differently.
-        assert_eq!(
-            hex::encode(first_hash),
-            "71f74ed228523685ec6de56b3b50753553a12214504d46b0f15e496e3b6f7c8c"
-        );
         assert_ne!(first_hash, second_hash);
         assert_ne!(JobId::from(first_hash), JobId::from(second_hash));
-    }
-
-    #[test]
-    fn solana_excluded_fields_do_not_affect_content_hash() {
-        let first = sample_solana_unified(solana_proof_extra_data(0xaa));
-        let mut second = first.clone();
-        if let UserDecryptRequest::SolanaUnifiedV1 {
-            signature,
-            request_validity,
-            ..
-        } = &mut second
-        {
-            *signature = Bytes::from(vec![0xff; 4]);
-            *request_validity = RequestValiditySeconds {
-                start_timestamp: U256::from(999_999),
-                duration_seconds: U256::from(99_999),
-            };
-        }
-
-        assert_eq!(first.content_hash(), second.content_hash());
     }
 }

@@ -12,6 +12,7 @@
 #   - host-contracts/
 #   - library-solidity/
 #   - shared/
+#   - solana/crates/ (path dependencies of the relayer: permit, acl, request)
 #   - test-suite/
 #   - package.json, package-lock.json
 #   - .git/ (used for build metadata in some Dockerfiles)

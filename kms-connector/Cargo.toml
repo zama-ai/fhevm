@@ -27,6 +27,7 @@ user-decryption-signature = { path = "../shared/user-decryption-signature", defa
 ciphertext-attestation = { path = "../shared/ciphertext-attestation" }
 zama-solana-acl = { path = "../solana/crates/zama-solana-acl" }
 zama-solana-permit = { path = "../solana/crates/zama-solana-permit" }
+zama-solana-request = { path = "../solana/crates/zama-solana-request" }
 
 #####################################################################
 #                       External dependencies                       #

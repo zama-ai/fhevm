@@ -109,14 +109,14 @@ enum Wrapper {
 
 impl Wrapper {
     fn entry(self) -> SolanaHandleEntryWire {
-        let (tag, owner_tag) = match self {
+        let (tag, subject_tag) = match self {
             Self::First => (0x10, 0x71),
             Self::Second => (0x20, 0x72),
         };
         SolanaHandleEntryWire {
             handle: handle(tag, FHE_TYPE_UINT64).to_vec(),
-            owner: [owner_tag; 32].to_vec(),
-            encrypted_value_id: [owner_tag ^ 0xff; 32].to_vec(),
+            subject: [subject_tag; 32].to_vec(),
+            encrypted_value_id: [subject_tag ^ 0xff; 32].to_vec(),
             proof_leaf_count: 0,
             access_proof: Vec::new(),
         }

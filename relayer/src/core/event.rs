@@ -6,12 +6,16 @@ use crate::http::endpoints::v2::types::{
 };
 use crate::http::endpoints::v3::types::{
     AttestedUserDecryptRequestJson, Eip712UnifiedUserDecryptPayloadJson,
+    SolanaUserDecryptRequestJson,
 };
-use crate::http::utils::validations::{
-    V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1, V3_ATTESTATION_TYPE_SOLANA_ED25519_V2,
+use crate::http::utils::validations::V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1;
+use zama_solana_request::{
+    encode_solana_request, SolanaHandleEntryWire, SolanaUserDecryptRequestWire,
+    MAX_ACCESS_PROOF_SIBLINGS, MAX_REQUEST_HANDLES,
 };
+
 use crate::orchestrator::traits::Event;
-use alloy::primitives::{Address, Bytes, FixedBytes, TxHash, B256};
+use alloy::primitives::{Address, Bytes, FixedBytes, TxHash};
 use alloy::{primitives::U256, rpc::types::Log};
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
@@ -497,33 +501,37 @@ pub enum UserDecryptRequest {
         public_key: Bytes,
         extra_data: Bytes,
     },
-    /// Unified Solana ed25519 user-decryption (attestation_type
-    /// `"solana-ed25519-user-decrypt-v2"`, RFC-021): maps to
-    /// `userDecryptionRequestSolana(HandleEntry[], UserDecryptionRequestSolanaPayload)`.
-    /// The ed25519 auth fields (`user_identity`, `nonce`, `allowed_acl_domain_keys`) are 32-byte
-    /// Solana pubkeys carried as typed fields rather than packed into `extra_data`; `extra_data`
-    /// carries only the KMS context. `signature` is the ed25519 signature, verified off-chain by
-    /// the KMS Connector. `allowed_acl_domain_keys` may be empty (permissive mode).
-    SolanaUnifiedV1 {
-        handles: Vec<HandleEntry>,
-        user_identity: B256,
-        allowed_acl_domain_keys: Vec<B256>,
+    /// Host-generic Solana user-decryption (attestation_type
+    /// `"solana-srfc38-user-decrypt-v1"`): maps to the gateway
+    /// `userDecryptionRequest(bytes32[] ctHandles, RequestValiditySeconds, bytes publicKey,
+    /// bytes extraData, bytes solanaRequest)` overload.
+    /// Everything Solana-specific — the permit fields, the ed25519 signature, and the
+    /// per-handle access evidence — is serialized into the opaque `solana_request` by the
+    /// builder (canonical `0x01 ‖ borsh(body)`); the gateway never reads it, and each KMS
+    /// party's connector decodes it and verifies the signature off-chain. The fields below are
+    /// exactly what the gateway calldata consumes.
+    SolanaSrfc38V1 {
+        /// The ciphertext handles, in request order (the gateway's typed `bytes32[]`).
+        ct_handles: Vec<U256>,
+        /// The permit validity window, gateway-checked at admission.
         request_validity: RequestValiditySeconds,
-        nonce: B256,
-        signature: Bytes,
+        /// The transport (re-encryption) public key the gateway's response path validates against.
         public_key: Bytes,
+        /// The signed KMS routing bytes (version `0x02` ‖ contextId ‖ epochId).
         extra_data: Bytes,
+        /// The canonical opaque request blob (`0x01 ‖ borsh(body)`).
+        solana_request: Bytes,
     },
 }
 
 impl UserDecryptRequest {
     /// Short label for logs / metrics. Matches the serde tag values.
-    pub fn attestation_kind(&self) -> &'static str {
+    pub fn request_kind(&self) -> &'static str {
         match self {
             UserDecryptRequest::LegacyDirect { .. } => "legacy_direct",
             UserDecryptRequest::LegacyDelegated { .. } => "legacy_delegated",
             UserDecryptRequest::Eip712UnifiedV1 { .. } => "eip712_unified_v1",
-            UserDecryptRequest::SolanaUnifiedV1 { .. } => "solana_unified_v1",
+            UserDecryptRequest::SolanaSrfc38V1 { .. } => "solana_srfc38_v1",
         }
     }
 
@@ -531,7 +539,7 @@ impl UserDecryptRequest {
     pub fn is_unified(&self) -> bool {
         matches!(
             self,
-            UserDecryptRequest::Eip712UnifiedV1 { .. } | UserDecryptRequest::SolanaUnifiedV1 { .. }
+            UserDecryptRequest::Eip712UnifiedV1 { .. } | UserDecryptRequest::SolanaSrfc38V1 { .. }
         )
     }
 
@@ -549,10 +557,10 @@ impl UserDecryptRequest {
                 .iter()
                 .map(|p| &p.ct_handle)
                 .collect(),
-            UserDecryptRequest::Eip712UnifiedV1 { handles, .. }
-            | UserDecryptRequest::SolanaUnifiedV1 { handles, .. } => {
+            UserDecryptRequest::Eip712UnifiedV1 { handles, .. } => {
                 handles.iter().map(|h| &h.ct_handle).collect()
             }
+            UserDecryptRequest::SolanaSrfc38V1 { ct_handles, .. } => ct_handles.iter().collect(),
         }
     }
 }
@@ -775,16 +783,15 @@ impl TryFrom<AttestedUserDecryptRequestJson> for UserDecryptRequest {
             "Converting AttestedUserDecryptRequestJson to UserDecryptRequest"
         );
 
-        // `attestation_type` (validated at the HTTP layer) selects the gateway overload: EVM
-        // EIP-712 -> `userDecryptionRequest`, Solana ed25519 (RFC-021) -> `userDecryptionRequestSolana`.
-        // `signature`, `publicKey` and `extraData` are forwarded verbatim (opaque to the relayer);
-        // the relayer never verifies the signature — each KMS party's connector does. The Solana auth
-        // fields travel as typed `solana*` values, not packed into `extraData`.
+        // This envelope is the EVM EIP-712 unified path. `signature`, `publicKey` and `extraData`
+        // are forwarded verbatim (opaque to the relayer); the relayer never verifies the
+        // signature — the gateway does, on-chain. Solana requests arrive in their own envelope
+        // (`SolanaUserDecryptRequestJson`) and are dispatched at the HTTP handler.
         let payload_inner = value.attested_payload;
 
-        // Handles are shared across both unified paths. On Solana the per-handle EVM
-        // contract/owner addresses are placeholders (the ACL is enforced off-gateway via the typed
-        // `solana_allowed_acl_domain_keys`); the handle bytes are authoritative on both paths.
+        // The EVM unified path: each handle carries its EVM contract/owner addresses, which feed
+        // the gateway's per-handle ACL on the decryption call. Solana requests ride their own
+        // envelope and never reach this prelude.
         let mut handles = Vec::with_capacity(payload_inner.handles.len());
         for entry in &payload_inner.handles {
             let ct_handle = if let Some(rest) = entry.ct_handle.strip_prefix("0x") {
@@ -818,14 +825,6 @@ impl TryFrom<AttestedUserDecryptRequestJson> for UserDecryptRequest {
         // only by the HTTP-layer validator — the conversion must never default a request it
         // doesn't recognize onto the EVM arm (DD-027: validation is per-protocol).
         match value.attestation_type.as_str() {
-            V3_ATTESTATION_TYPE_SOLANA_ED25519_V2 => solana_unified_v1(
-                payload_inner,
-                handles,
-                request_validity,
-                signature,
-                public_key,
-                extra_data,
-            ),
             V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1 => eip712_unified_v1(
                 payload_inner,
                 handles,
@@ -835,55 +834,183 @@ impl TryFrom<AttestedUserDecryptRequestJson> for UserDecryptRequest {
                 extra_data,
             ),
             other => Err(anyhow::anyhow!(
-                "Unsupported attestationType {other:?}; expected {V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1:?} or {V3_ATTESTATION_TYPE_SOLANA_ED25519_V2:?}"
+                "AttestedUserDecryptRequestJson carries a non-EVM attestationType {other:?}; \
+                 expected {V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1:?} (Solana requests use their own envelope)"
             )),
         }
     }
 }
 
-/// Builds the Solana ed25519 variant of the unified request. The three `solana*` payload fields
-/// are required by this protocol and only read here; the EVM-shaped `userAddress`,
-/// `allowedContracts`, and per-handle addresses stay untouched wire placeholders (removing them
-/// from the Solana wire shape is a v3 wire change, proposed to the decryption-envelope rework).
-fn solana_unified_v1(
-    payload: Eip712UnifiedUserDecryptPayloadJson,
-    handles: Vec<HandleEntry>,
-    request_validity: RequestValiditySeconds,
-    signature: Bytes,
-    public_key: Bytes,
-    extra_data: Bytes,
-) -> Result<UserDecryptRequest, anyhow::Error> {
-    let user_identity =
-        B256::from_str(payload.solana_user_identity.as_deref().ok_or_else(|| {
-            anyhow::anyhow!(
-                "solanaUserIdentity is required for the Solana ed25519 attestation type"
-            )
-        })?)
-        .map_err(|e| anyhow::anyhow!("Failed to parse solanaUserIdentity: {}", e))?;
+impl TryFrom<SolanaUserDecryptRequestJson> for UserDecryptRequest {
+    type Error = anyhow::Error;
 
-    let nonce = B256::from_str(payload.solana_nonce.as_deref().ok_or_else(|| {
-        anyhow::anyhow!("solanaNonce is required for the Solana ed25519 attestation type")
-    })?)
-    .map_err(|e| anyhow::anyhow!("Failed to parse solanaNonce: {}", e))?;
+    fn try_from(value: SolanaUserDecryptRequestJson) -> Result<Self, Self::Error> {
+        use borsh::BorshDeserialize;
+        use zama_solana_permit::{
+            verify_signature, PermitFields, PermitWireFields, Signature, SIGNATURE_LEN,
+        };
 
-    let allowed_acl_domain_keys = payload
-        .solana_allowed_acl_domain_keys
-        .unwrap_or_default()
-        .iter()
-        .map(|k| B256::from_str(k))
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| anyhow::anyhow!("Failed to parse solanaAllowedAclDomainKeys: {}", e))?;
+        info!(
+            attestation_type = %value.attestation_type,
+            "Converting SolanaUserDecryptRequestJson to UserDecryptRequest"
+        );
 
-    Ok(UserDecryptRequest::SolanaUnifiedV1 {
-        handles,
-        user_identity,
-        allowed_acl_domain_keys,
-        request_validity,
-        nonce,
-        signature,
-        public_key,
-        extra_data,
-    })
+        let payload = value.attested_payload;
+
+        // The eight signed permit fields in transport form. Running the connector's own strict
+        // decode here IS the r1–r2 pre-check: a request the relayer accepts is one the connector
+        // will not reject on form (same crate, so never softer or harder).
+        let permit = PermitWireFields {
+            user_pubkey: parse_0x_hex(&payload.user_pubkey, "userPubkey")?,
+            transport_key: parse_0x_hex(&payload.transport_key, "transportKey")?,
+            allowed_acl_domain_keys: payload
+                .allowed_acl_domain_keys
+                .iter()
+                .map(|k| parse_0x_hex(k, "allowedAclDomainKeys"))
+                .collect::<Result<Vec<_>, _>>()?,
+            start_timestamp: parse_decimal_u64(
+                &payload.request_validity.start_timestamp,
+                "startTimestamp",
+            )?,
+            duration_seconds: parse_decimal_u64(
+                &payload.request_validity.duration_seconds,
+                "durationSeconds",
+            )?,
+            verifying_program_id: parse_0x_hex(
+                &payload.verifying_program_id,
+                "verifyingProgramId",
+            )?,
+            chain_id: parse_decimal_u64(&payload.chain_id, "chainId")?,
+            extra_data: parse_0x_hex(&payload.extra_data, "extraData")?,
+        };
+        let permit_fields = PermitFields::decode(&permit)
+            .map_err(|e| anyhow::anyhow!("Solana permit failed the typed pre-check: {e}"))?;
+
+        let signature = parse_0x_hex(&value.signature, "signature")?;
+        let signature_bytes: [u8; SIGNATURE_LEN] =
+            signature.as_slice().try_into().map_err(|_| {
+                anyhow::anyhow!(
+                    "Solana ed25519 signature is {} bytes, expected {SIGNATURE_LEN}",
+                    signature.len()
+                )
+            })?;
+
+        // The signature, verified here rather than only in the connector.
+        //
+        // On the EVM paths this parity comes from the gateway contract itself: it checks the
+        // EIP-712 signature inside the transaction, so a bad signature reverts and the fee is
+        // never collected. The host-generic entry cannot do that — the permit rides inside a
+        // field the contract never reads — so an unverified request would be paid for, submitted,
+        // and then die terminally in the connector with the fee already spent.
+        //
+        // This does not move the trust: each KMS party's connector verifies independently and
+        // that check stays mandatory. What it buys is refusing garbage before it costs a gateway
+        // transaction. `verify_signature` reconstructs the signed envelope from the typed fields,
+        // so what is checked here is the text the wallet actually displayed, and it reports a
+        // structurally unusable pubkey (non-canonical or small-order) as its own failure rather
+        // than as an ordinary mismatch.
+        verify_signature(&permit_fields, &Signature::new(signature_bytes))
+            .map_err(|e| anyhow::anyhow!("Solana permit signature is not valid: {e}"))?;
+
+        if payload.handles.is_empty() {
+            anyhow::bail!("Solana user-decryption request names no handles");
+        }
+        if payload.handles.len() > MAX_REQUEST_HANDLES {
+            anyhow::bail!(
+                "Solana user-decryption request names {} handles, exceeding the cap of {}",
+                payload.handles.len(),
+                MAX_REQUEST_HANDLES
+            );
+        }
+
+        let mut ct_handles = Vec::with_capacity(payload.handles.len());
+        let mut handle_wires = Vec::with_capacity(payload.handles.len());
+        for (index, entry) in payload.handles.iter().enumerate() {
+            let handle = parse_0x_hex_32(&entry.handle, "handle", index)?;
+            let subject = parse_0x_hex_32(&entry.subject, "subject", index)?;
+            let encrypted_value_id =
+                parse_0x_hex_32(&entry.encrypted_value_id, "encryptedValueId", index)?;
+            let proof_leaf_count = parse_decimal_u64(&entry.proof_leaf_count, "proofLeafCount")?;
+            let access_proof = parse_0x_hex(&entry.access_proof, "accessProof")?;
+
+            // accessProof form check, identical to the connector's decode so the two agree on
+            // which proofs are well-formed: empty = current mode; else a strict borsh MMR proof,
+            // no trailing bytes, at most 64 siblings. The bytes are forwarded verbatim.
+            if !access_proof.is_empty() {
+                let mut remaining = access_proof.as_slice();
+                let proof =
+                    zama_solana_acl::MmrProof::deserialize(&mut remaining).map_err(|_| {
+                        anyhow::anyhow!("entry {index} accessProof does not decode as an MMR proof")
+                    })?;
+                if !remaining.is_empty() {
+                    anyhow::bail!(
+                        "entry {index} accessProof carries {} trailing byte(s)",
+                        remaining.len()
+                    );
+                }
+                if proof.siblings.len() > MAX_ACCESS_PROOF_SIBLINGS {
+                    anyhow::bail!(
+                        "entry {index} accessProof carries {} siblings, exceeding the cap of {}",
+                        proof.siblings.len(),
+                        MAX_ACCESS_PROOF_SIBLINGS
+                    );
+                }
+            }
+
+            ct_handles.push(U256::from_be_bytes::<32>(handle));
+            handle_wires.push(SolanaHandleEntryWire {
+                handle: handle.to_vec(),
+                subject: subject.to_vec(),
+                encrypted_value_id: encrypted_value_id.to_vec(),
+                proof_leaf_count,
+                access_proof,
+            });
+        }
+
+        // The same wire form the connector decodes, through the same crate: the relayer
+        // cannot produce a request shaped differently from the one that will be read.
+        let wire = SolanaUserDecryptRequestWire {
+            permit: permit.clone(),
+            signature,
+            handles: handle_wires,
+        };
+        let solana_request = encode_solana_request(&wire)?;
+        let request_validity = RequestValiditySeconds {
+            start_timestamp: U256::from(permit.start_timestamp),
+            duration_seconds: U256::from(permit.duration_seconds),
+        };
+        let public_key = Bytes::from(permit.transport_key.clone());
+        let extra_data = Bytes::from(permit.extra_data.clone());
+
+        Ok(UserDecryptRequest::SolanaSrfc38V1 {
+            ct_handles,
+            request_validity,
+            public_key,
+            extra_data,
+            solana_request: Bytes::from(solana_request),
+        })
+    }
+}
+
+/// Parses a `0x`-hex string (the `0x` prefix optional) into bytes, naming the field on failure.
+fn parse_0x_hex(value: &str, field: &str) -> Result<Vec<u8>, anyhow::Error> {
+    let stripped = value.strip_prefix("0x").unwrap_or(value);
+    hex::decode(stripped).map_err(|e| anyhow::anyhow!("Failed to parse {field} as 0x-hex: {e}"))
+}
+
+/// Parses a `0x`-hex string that must decode to exactly 32 bytes.
+fn parse_0x_hex_32(value: &str, field: &str, index: usize) -> Result<[u8; 32], anyhow::Error> {
+    let bytes = parse_0x_hex(value, field)?;
+    let len = bytes.len();
+    <[u8; 32]>::try_from(bytes.as_slice())
+        .map_err(|_| anyhow::anyhow!("entry {index} field {field} is {len} bytes, expected 32"))
+}
+
+/// Parses a decimal string into a `u64`, naming the field on failure.
+fn parse_decimal_u64(value: &str, field: &str) -> Result<u64, anyhow::Error> {
+    value
+        .parse::<u64>()
+        .map_err(|e| anyhow::anyhow!("Failed to parse {field} as a u64: {e}"))
 }
 
 /// Builds the EVM EIP-712 variant of the unified request. Any `solana*` payload fields are
@@ -1237,80 +1364,246 @@ mod tests {
         assert_eq!(request.solana_user_address, None);
     }
 
-    /// A Solana-attestationType v3 envelope routes to the `SolanaUnifiedV1` core variant (and hence
-    /// the gateway `userDecryptionRequestSolana` calldata), carrying the ed25519 auth fields
-    /// (identity, nonce, allowed ACL domain keys) as TYPED values and forwarding `signature` +
-    /// context-only `extraData` unchanged. The EVM-shaped fields are placeholders.
+    /// A `solana-srfc38-user-decrypt-v1` envelope routes to the host-generic `SolanaSrfc38V1`
+    /// variant: the permit passes the typed pre-check, the whole request (permit, signature,
+    /// per-handle evidence) is serialized into the opaque `host_payload`, and the fields the
+    /// gateway calldata consumes are derived from the permit — the transport key as `publicKey`,
+    /// the signed KMS routing as `extraData`, the handle list as `ctHandles`.
     #[test]
-    fn solana_attested_user_decrypt_routes_to_typed_solana_unified() {
-        use crate::http::endpoints::common::types::{HandleEntryJson, RequestValiditySecondsJson};
-        use crate::http::endpoints::v3::types::Eip712UnifiedUserDecryptPayloadJson;
-
-        // 64-byte ed25519 signature (128 hex chars), forwarded opaquely.
-        let signature_hex = format!("0x{}", "ab".repeat(64));
-        // Context-only extraData (v0x01: version ‖ contextId(32)) — no Solana auth data here.
-        let mut extra = vec![0x01u8];
-        extra.extend_from_slice(&[0u8; 32]);
-        let extra_data_hex = format!("0x{}", hex::encode(&extra));
-        let public_key_hex = "0x04b8e5d3".to_string();
-        let identity_hex = format!("0x{}", "07".repeat(32));
-        let nonce_hex = format!("0x{}", "09".repeat(32));
-        let domain_key_hex = format!("0x{}", "05".repeat(32));
-
-        let json = AttestedUserDecryptRequestJson {
-            attestation_type: "solana-ed25519-user-decrypt-v2".to_string(),
-            attested_payload: Eip712UnifiedUserDecryptPayloadJson {
-                version: "2.0".to_string(),
-                r#type: "user_decryption".to_string(),
-                handles: vec![HandleEntryJson {
-                    ct_handle: format!("0x{}", "11".repeat(32)),
-                    contract_address: "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d".to_string(),
-                    owner_address: "0x12B064FB845C1cc05e9493856a1D637a73e944bE".to_string(),
-                }],
-                // EVM-shaped fields are placeholders for Solana; the typed `solana*` fields below
-                // carry the real auth data.
-                user_address: "0x12B064FB845C1cc05e9493856a1D637a73e944bE".to_string(),
-                allowed_contracts: vec![],
-                request_validity: RequestValiditySecondsJson {
-                    start_timestamp: "1700000000".to_string(),
-                    duration_seconds: "604800".to_string(),
-                },
-                public_key: public_key_hex.clone(),
-                extra_data: extra_data_hex.clone(),
-                solana_user_identity: Some(identity_hex.clone()),
-                solana_nonce: Some(nonce_hex.clone()),
-                solana_allowed_acl_domain_keys: Some(vec![domain_key_hex.clone()]),
-            },
-            signature: signature_hex.clone(),
-        };
+    fn solana_permit_user_decrypt_routes_to_host_generic() {
+        let json = solana_envelope(valid_solana_payload());
 
         let request = UserDecryptRequest::try_from(json).expect("Solana envelope should convert");
 
         match request {
-            UserDecryptRequest::SolanaUnifiedV1 {
-                signature,
-                extra_data,
+            UserDecryptRequest::SolanaSrfc38V1 {
+                ct_handles,
                 public_key,
-                user_identity,
-                nonce,
-                allowed_acl_domain_keys,
+                extra_data,
+                solana_request,
                 ..
             } => {
-                assert_eq!(signature, Bytes::from_str(&signature_hex).unwrap());
+                assert_eq!(ct_handles, vec![U256::from_be_bytes::<32>([0x11; 32])]);
+                // `publicKey` is the transport key verbatim (869 bytes).
+                assert_eq!(public_key.len(), 869);
+                // `extraData` is the signed KMS routing form (v0x02, 65 bytes).
+                assert_eq!(extra_data.len(), 65);
+                assert_eq!(extra_data[0], 0x02);
+                // The whole request is serialized into the opaque blob.
                 assert_eq!(
-                    extra_data,
-                    Bytes::from_str(&extra_data_hex).unwrap(),
-                    "extraData is context-only (no Solana auth data)"
+                    solana_request[0], 0x01,
+                    "the request blob leads with its version byte"
                 );
-                assert_eq!(public_key, Bytes::from_str(&public_key_hex).unwrap());
-                assert_eq!(user_identity, B256::from_str(&identity_hex).unwrap());
-                assert_eq!(nonce, B256::from_str(&nonce_hex).unwrap());
-                assert_eq!(
-                    allowed_acl_domain_keys,
-                    vec![B256::from_str(&domain_key_hex).unwrap()]
-                );
+                assert!(solana_request.len() > 1);
             }
-            other => panic!("expected SolanaUnifiedV1, got {}", other.attestation_kind()),
+            other => panic!("expected SolanaSrfc38V1, got {}", other.request_kind()),
+        }
+    }
+
+    /// The wallet every Solana fixture is signed by: a fixed seed, so the pubkey and every
+    /// signature derived from it are stable across runs.
+    fn solana_test_wallet() -> ed25519_dalek::SigningKey {
+        ed25519_dalek::SigningKey::from_bytes(&[0x42; 32])
+    }
+
+    /// That wallet's pubkey in the payload's hex form.
+    fn solana_test_user_pubkey() -> String {
+        format!(
+            "0x{}",
+            hex::encode(solana_test_wallet().verifying_key().to_bytes())
+        )
+    }
+
+    /// A valid reference Solana payload as the typed JSON struct (pre-conversion).
+    fn valid_solana_payload(
+    ) -> crate::http::endpoints::v3::types::SolanaSrfc38UserDecryptPayloadJson {
+        use crate::http::endpoints::common::types::RequestValiditySecondsJson;
+        use crate::http::endpoints::v3::types::{
+            SolanaHandleJson, SolanaSrfc38UserDecryptPayloadJson,
+        };
+        SolanaSrfc38UserDecryptPayloadJson {
+            user_pubkey: solana_test_user_pubkey(),
+            transport_key: format!("0x{}", "00".repeat(869)),
+            allowed_acl_domain_keys: vec![format!("0x{}", "05".repeat(32))],
+            request_validity: RequestValiditySecondsJson {
+                start_timestamp: "1700000000".to_string(),
+                duration_seconds: "604800".to_string(),
+            },
+            verifying_program_id: format!("0x{}", "02".repeat(32)),
+            chain_id: (0x8000_0000_0000_0000u64 | 1).to_string(),
+            extra_data: format!("0x02{}{}", "0a".repeat(32), "0b".repeat(32)),
+            handles: vec![SolanaHandleJson {
+                handle: format!("0x{}", "11".repeat(32)),
+                subject: solana_test_user_pubkey(),
+                encrypted_value_id: format!("0x{}", "22".repeat(32)),
+                proof_leaf_count: "0".to_string(),
+                access_proof: "0x".to_string(),
+            }],
+        }
+    }
+
+    /// Wraps a payload in its envelope, signing it as the wallet would.
+    ///
+    /// The signature is computed over the envelope rebuilt from the payload's own permit
+    /// fields, so a test that mutates a permit field gets a signature over the mutated permit
+    /// — the mutation is then rejected for its own reason rather than for a stale signature.
+    /// A payload whose permit does not decode at all cannot be signed; it gets a placeholder,
+    /// which is harmless because such a payload is refused by the decode that runs first.
+    fn solana_envelope(
+        payload: crate::http::endpoints::v3::types::SolanaSrfc38UserDecryptPayloadJson,
+    ) -> crate::http::endpoints::v3::types::SolanaUserDecryptRequestJson {
+        use ed25519_dalek::Signer;
+        use zama_solana_permit::{build_envelope, PermitFields, PermitWireFields};
+
+        let hex_field = |value: &str| parse_0x_hex(value, "fixture").unwrap_or_default();
+        let wire = PermitWireFields {
+            user_pubkey: hex_field(&payload.user_pubkey),
+            transport_key: hex_field(&payload.transport_key),
+            allowed_acl_domain_keys: payload
+                .allowed_acl_domain_keys
+                .iter()
+                .map(|key| hex_field(key))
+                .collect(),
+            start_timestamp: payload
+                .request_validity
+                .start_timestamp
+                .parse()
+                .unwrap_or_default(),
+            duration_seconds: payload
+                .request_validity
+                .duration_seconds
+                .parse()
+                .unwrap_or_default(),
+            verifying_program_id: hex_field(&payload.verifying_program_id),
+            chain_id: payload.chain_id.parse().unwrap_or_default(),
+            extra_data: hex_field(&payload.extra_data),
+        };
+
+        let signature = match PermitFields::decode(&wire) {
+            Ok(fields) => hex::encode(
+                solana_test_wallet()
+                    .sign(&build_envelope(&fields))
+                    .to_bytes(),
+            ),
+            Err(_) => "ab".repeat(64),
+        };
+
+        crate::http::endpoints::v3::types::SolanaUserDecryptRequestJson {
+            attestation_type: "solana-srfc38-user-decrypt-v1".to_string(),
+            attested_payload: payload,
+            signature: format!("0x{signature}"),
+        }
+    }
+
+    #[test]
+    fn solana_builder_rejects_a_malformed_access_proof() {
+        // The access-proof form check mirrors the connector's decode: three arbitrary bytes are
+        // not a borsh MMR proof.
+        let mut payload = valid_solana_payload();
+        payload.handles[0].access_proof = "0xffffff".to_string();
+        let error = UserDecryptRequest::try_from(solana_envelope(payload))
+            .expect_err("a malformed access proof must be rejected");
+        assert!(
+            error
+                .to_string()
+                .contains("does not decode as an MMR proof"),
+            "got: {error}"
+        );
+    }
+
+    /// A permit that is well formed in every typed respect but carries a signature from another
+    /// wallet is refused by the relayer, before any gateway transaction exists.
+    ///
+    /// This is the check the EVM paths get from the gateway contract, which verifies EIP-712
+    /// inside the transaction and reverts — refunding the fee — when it fails. The host-generic
+    /// entry cannot: the permit rides in a field the contract never reads. Without this, a
+    /// forged request would be paid for, submitted, and then die terminally in the connector
+    /// with the fee already spent.
+    #[test]
+    fn solana_builder_rejects_a_signature_from_another_wallet() {
+        use ed25519_dalek::Signer;
+        use zama_solana_permit::{build_envelope, PermitFields, PermitWireFields};
+
+        let payload = valid_solana_payload();
+        let mut envelope = solana_envelope(payload.clone());
+
+        // A different wallet signs the very same envelope: the bytes are a genuine ed25519
+        // signature, just not the one the named user could have produced.
+        let stranger = ed25519_dalek::SigningKey::from_bytes(&[0x99; 32]);
+        let wire = PermitWireFields {
+            user_pubkey: parse_0x_hex(&payload.user_pubkey, "fixture").expect("hex"),
+            transport_key: parse_0x_hex(&payload.transport_key, "fixture").expect("hex"),
+            allowed_acl_domain_keys: payload
+                .allowed_acl_domain_keys
+                .iter()
+                .map(|key| parse_0x_hex(key, "fixture").expect("hex"))
+                .collect(),
+            start_timestamp: payload
+                .request_validity
+                .start_timestamp
+                .parse()
+                .expect("u64"),
+            duration_seconds: payload
+                .request_validity
+                .duration_seconds
+                .parse()
+                .expect("u64"),
+            verifying_program_id: parse_0x_hex(&payload.verifying_program_id, "fixture")
+                .expect("hex"),
+            chain_id: payload.chain_id.parse().expect("u64"),
+            extra_data: parse_0x_hex(&payload.extra_data, "fixture").expect("hex"),
+        };
+        let fields = PermitFields::decode(&wire).expect("the reference permit decodes");
+        envelope.signature = format!(
+            "0x{}",
+            hex::encode(stranger.sign(&build_envelope(&fields)).to_bytes())
+        );
+
+        let error = UserDecryptRequest::try_from(envelope)
+            .expect_err("a signature from another wallet must be rejected");
+        assert!(
+            error.to_string().contains("signature is not valid"),
+            "got: {error}"
+        );
+    }
+
+    #[test]
+    fn solana_builder_rejects_a_wrong_length_transport_key() {
+        // r1 (permit typed pre-check): the transport key length is fixed at 869; a shorter key has
+        // no typed form and is rejected by the same permit decode the connector runs.
+        let mut payload = valid_solana_payload();
+        payload.transport_key = format!("0x{}", "00".repeat(800));
+        let error = UserDecryptRequest::try_from(solana_envelope(payload))
+            .expect_err("a wrong-length transport key must fail the pre-check");
+        assert!(
+            error.to_string().contains("typed pre-check"),
+            "got: {error}"
+        );
+    }
+
+    #[test]
+    fn solana_payload_denies_unknown_and_evm_fields() {
+        use crate::http::endpoints::v3::types::SolanaUserDecryptRequestJson;
+
+        // The Solana payload is strict: a stray field — including the EVM `userAddress` or the
+        // retired `nonce` — is refused at deserialization, not silently ignored.
+        let base = serde_json::to_value(valid_solana_payload()).unwrap();
+        for forbidden in ["userAddress", "nonce", "solanaNonce", "allowedContracts"] {
+            let mut payload = base.clone();
+            payload
+                .as_object_mut()
+                .unwrap()
+                .insert(forbidden.to_string(), serde_json::json!("0x00"));
+            let envelope = serde_json::json!({
+                "attestationType": "solana-srfc38-user-decrypt-v1",
+                "attestedPayload": payload,
+                "signature": format!("0x{}", "ab".repeat(64)),
+            });
+            let parsed: Result<SolanaUserDecryptRequestJson, _> = serde_json::from_value(envelope);
+            assert!(
+                parsed.is_err(),
+                "the Solana payload must reject the stray field `{forbidden}`"
+            );
         }
     }
 
@@ -1341,9 +1634,6 @@ mod tests {
                 },
                 public_key: "0x04b8e5d3".to_string(),
                 extra_data: format!("0x{}", hex::encode(&extra)),
-                solana_user_identity: Some(format!("0x{}", "07".repeat(32))),
-                solana_nonce: Some(format!("0x{}", "09".repeat(32))),
-                solana_allowed_acl_domain_keys: Some(vec![format!("0x{}", "05".repeat(32))]),
             },
             signature: format!("0x{}", "ab".repeat(64)),
         }
@@ -1359,7 +1649,7 @@ mod tests {
                 .expect_err("an unknown attestation type has no arm to route to");
         let message = error.to_string();
         assert!(
-            message.contains("Unsupported attestationType"),
+            message.contains("non-EVM attestationType"),
             "unexpected rejection reason: {message}"
         );
     }
@@ -1384,7 +1674,7 @@ mod tests {
                     vec![CONTRACT_ADDRESS.parse::<Address>().unwrap()]
                 );
             }
-            other => panic!("expected Eip712UnifiedV1, got {}", other.attestation_kind()),
+            other => panic!("expected Eip712UnifiedV1, got {}", other.request_kind()),
         }
     }
 

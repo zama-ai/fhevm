@@ -1242,10 +1242,13 @@ components:
     AttestedUserDecryptRequestJson:
       type: object
       description: |-
-        v3 user-decrypt request envelope. The relayer dispatches strictly by
-        `attestationType`; the currently supported value is
-        `"eip712-unified-user-decrypt-v1"`. Adding a Solana attestation later is
-        a one-line widening of the dispatch table, not a v4 bump.
+        The EVM arm of the v3 user-decrypt envelope, selected by
+        `attestationType == "eip712-unified-user-decrypt-v1"`. Its EIP-712 signature is verified on
+        chain by the gateway, so the relayer forwards `signature` and `extraData` verbatim without
+        re-hashing anything.
+
+        Solana requests do not use this shape: they arrive as [`SolanaUserDecryptRequestJson`],
+        which carries no EVM placeholders and is verified by the relayer before submission.
       required:
       - attestationType
       - attestedPayload
@@ -1254,9 +1257,8 @@ components:
         attestationType:
           type: string
           description: |-
-            The attestation/signature scheme used for the `signature` bytes.
-            Must equal `"eip712-unified-user-decrypt-v1"` for the current
-            release.
+            The scheme the `signature` bytes follow. Must equal
+            `"eip712-unified-user-decrypt-v1"` on this arm.
           example: eip712-unified-user-decrypt-v1
         attestedPayload:
           $ref: '#/components/schemas/Eip712UnifiedUserDecryptPayloadJson'
@@ -1321,7 +1323,7 @@ components:
           example: '1'
         extraData:
           type: string
-          description: Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01` (`0x01` + 32-byte contextId), or version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId). contextId must be 0x07-tagged and epochId must be 0x08-tagged (first byte of each).
+          description: Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01` (`0x01` + 32-byte contextId), version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId), or version `0x03` (Solana RFC-021 MMR-proof blob, variable length). contextId must be 0x07-tagged and epochId must be 0x08-tagged (first byte of each).
           example: '0x00'
         handleContractPairs:
           type: array
@@ -1365,7 +1367,7 @@ components:
           - "0x1234567890123456789012345678901234567890"
         extraData:
           type: string
-          description: Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01` (`0x01` + 32-byte contextId), or version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId). contextId must be 0x07-tagged and epochId must be 0x08-tagged (first byte of each).
+          description: Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01` (`0x01` + 32-byte contextId), version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId), or version `0x03` (Solana RFC-021 MMR-proof blob, variable length). contextId must be 0x07-tagged and epochId must be 0x08-tagged (first byte of each).
           example: '0x00'
         handles:
           type: array
@@ -1629,7 +1631,7 @@ components:
           minItems: 1
         extraData:
           type: string
-          description: Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01` (`0x01` + 32-byte contextId), or version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId). contextId must be 0x07-tagged and epochId must be 0x08-tagged (first byte of each).
+          description: Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01` (`0x01` + 32-byte contextId), version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId), or version `0x03` (Solana RFC-021 MMR-proof blob, variable length). contextId must be 0x07-tagged and epochId must be 0x08-tagged (first byte of each).
           example: '0x00'
     PublicDecryptResponseJson:
       type: object
@@ -1745,6 +1747,117 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/FheKeyInfo'
+    SolanaHandleJson:
+      type: object
+      description: |-
+        One Solana handle entry: the handle plus its self-authenticating access evidence. None of
+        these fields are signed — a substituted value can fail the request but never widen access.
+      required:
+      - handle
+      - subject
+      - encryptedValueId
+      - proofLeafCount
+      - accessProof
+      properties:
+        accessProof:
+          type: string
+          description: Empty (`"0x"`) for current access; otherwise the borsh `MmrProof` blob (`0x` + hex).
+        encryptedValueId:
+          type: string
+          description: The 32-byte encrypted value ID naming the `EncryptedValue` account (`0x` + 64 hex).
+        handle:
+          type: string
+          description: The 32-byte ciphertext handle (`0x` + 64 hex).
+        proofLeafCount:
+          type: string
+          description: The `leaf_count` the access proof was built against; `"0"` in current mode (decimal string).
+        subject:
+          type: string
+          description: |-
+            The 32-byte subject: the pubkey whose encrypted value this entry asks to decrypt — the
+            requester itself for a direct entry, the delegator for a delegated one (`0x` + 64 hex).
+      additionalProperties: false
+    SolanaSrfc38UserDecryptPayloadJson:
+      type: object
+      description: |-
+        The Solana-native user-decryption payload: the eight signed permit fields (§3.1) plus the
+        per-handle access evidence. No `userAddress`, no `nonce`, no EVM per-handle addresses.
+      required:
+      - userPubkey
+      - transportKey
+      - allowedAclDomainKeys
+      - requestValidity
+      - verifyingProgramId
+      - chainId
+      - extraData
+      - handles
+      properties:
+        allowedAclDomainKeys:
+          type: array
+          items:
+            type: string
+          description: |-
+            The signed ACL domain-key scope (each a 32-byte pubkey, `0x` + 64 hex). May be empty
+            (permissive mode).
+        chainId:
+          type: string
+          description: The host chain id the handles belong to (decimal string; carries the chain-type high bit).
+        extraData:
+          type: string
+          description: The signed KMS routing bytes (version `0x02` ‖ contextId ‖ epochId), `0x`-hex.
+        handles:
+          type: array
+          items:
+            $ref: '#/components/schemas/SolanaHandleJson'
+          description: One entry per ciphertext handle. Non-empty; the on-chain cap is applied at the gateway.
+        requestValidity:
+          $ref: '#/components/schemas/RequestValiditySecondsJson'
+          description: Validity window (`startTimestamp` + `durationSeconds`), in seconds.
+        transportKey:
+          type: string
+          description: |-
+            The transport (re-encryption) public key: the tfhe safe-serialized ML-KEM-512 container
+            (`0x` + hex). The exact length is enforced downstream by the permit decode.
+        userPubkey:
+          type: string
+          description: |-
+            The requester's 32-byte ed25519 pubkey: the wallet that signs this permit (`0x` + 64
+            hex). Not necessarily the subject of any entry — on a delegated entry the subject is
+            the delegator, and this key is the delegate acting on their behalf.
+        verifyingProgramId:
+          type: string
+          description: The 32-byte Solana program id the permit was signed for (`0x` + 64 hex).
+      additionalProperties: false
+    SolanaUserDecryptRequestJson:
+      type: object
+      description: |-
+        v3 Solana user-decrypt envelope (`solana-srfc38-user-decrypt-v1`). A Solana-native shape
+        with no EVM placeholders: the ed25519 `signature` is the wallet's over the permit fields, and the
+        relayer forwards everything opaquely into the host-generic gateway `userDecryptionRequest`
+        overload (`hostKind = Solana`). The relayer verifies the signature before it submits, and
+        each KMS party's connector verifies it again — that second check is the authorizing one.
+      required:
+      - attestationType
+      - attestedPayload
+      - signature
+      properties:
+        attestationType:
+          type: string
+          description: Must equal `"solana-srfc38-user-decrypt-v1"`.
+          example: solana-srfc38-user-decrypt-v1
+        attestedPayload:
+          $ref: '#/components/schemas/SolanaSrfc38UserDecryptPayloadJson'
+          description: |-
+            The Solana permit fields the `signature` covers, plus the per-handle evidence it
+            deliberately does not: evidence is self-authenticating against host state.
+        signature:
+          type: string
+          description: |-
+            The ed25519 signature over the reconstructed sRFC-38 permit envelope. `0x`-hex.
+            Rejected here if it does not verify, so an unsignable request costs no gateway
+            transaction; the authorizing check remains each connector's own.
+          example: '0xaabbccdd'
+      additionalProperties: false
     UserDecryptPostResponseJson:
       type: object
       required:
@@ -1791,7 +1904,7 @@ components:
           $ref: '#/components/schemas/ChainId'
         extraData:
           type: string
-          description: Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01` (`0x01` + 32-byte contextId), or version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId). contextId must be 0x07-tagged and epochId must be 0x08-tagged (first byte of each).
+          description: Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01` (`0x01` + 32-byte contextId), version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId), or version `0x03` (Solana RFC-021 MMR-proof blob, variable length). contextId must be 0x07-tagged and epochId must be 0x08-tagged (first byte of each).
           example: '0x00'
         handleContractPairs:
           type: array

@@ -24,15 +24,20 @@ RUN --mount=type=bind,source=relayer/Cargo.toml,target=Cargo.toml \
     --mount=type=bind,source=relayer/test-support,target=test-support \
     # Out-of-tree crates the relayer depends on; bound at absolute paths so Cargo
     # can resolve the `../` path dependencies declared in relayer/Cargo.toml.
+    # The solana crates carry no path dependencies of their own and are deliberately
+    # standalone (no workspace inheritance), so the solana workspace root is not needed
+    # here — see the note at the top of each of their manifests.
     --mount=type=bind,source=gateway-contracts/rust_bindings,target=/gateway-contracts/rust_bindings \
     --mount=type=bind,source=host-contracts/rust_bindings,target=/host-contracts/rust_bindings \
     --mount=type=bind,source=shared/user-decryption-signature,target=/shared/user-decryption-signature \
+    --mount=type=bind,source=solana/crates/zama-solana-permit,target=/solana/crates/zama-solana-permit \
+    --mount=type=bind,source=solana/crates/zama-solana-acl,target=/solana/crates/zama-solana-acl \
+    --mount=type=bind,source=solana/crates/zama-solana-request,target=/solana/crates/zama-solana-request \
 #    --mount=type=bind,source=.git/HEAD,target=.git/HEAD \
 #    --mount=type=bind,source=.git/index,target=.git/index \
 #    --mount=type=bind,source=.git/objects,target=.git/objects \
 #    --mount=type=bind,source=.git/refs,target=.git/refs \
     --mount=type=bind,source=relayer/.sqlx,target=.sqlx \
-    --mount=type=bind,source=gateway-contracts/rust_bindings,target=/gateway-contracts/rust_bindings \
     --mount=type=cache,target=/app/target/ \
     --mount=type=cache,target=/usr/local/cargo/registry/ \
     --mount=type=cache,target=/usr/local/cargo/git/ \

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Regenerate the vendored TKMS WASM bindings from a kms checkout. SINGLE producer of
-# sdk/js-sdk/src/wasm/tkms/kms_lib*. See FI#1546.
+# sdk/js-sdk/src/wasm/tkms/kms_lib* and of the linker vector set it is checked against
+# (solana/test-fixtures/user-decrypt/solana_linker_v1.*). See FI#1546.
 #
 # DESIGNED TO BE DELETED: this exists only because the Solana de-signcryption
 # (process_user_decryption_resp_solana / compute_link_solana) is not yet in a published
@@ -145,7 +146,26 @@ kms_base=$BASE_SHA
 tkms_wasm_version=v$VERSION
 EOF
 
-# 6. This is the SOLANA-ONLY blob. It is NOT swapped into the EVM decrypt module: kms
+# 6. Vendor the linker vector set the same build computes links with. Blob and vectors travel
+#    together on purpose: a blob from one kms commit checked against vectors from another is the
+#    exact drift this script exists to prevent. The set carries its own digest file, which the SDK
+#    runner re-checks — the same cross-repository contract the kms-side suites assert.
+VECTORS_SRC="$BUILD_DIR/core/grpc/test-vectors"
+VECTORS_DST="$ROOT/solana/test-fixtures/user-decrypt"
+for vector_file in solana_linker_v1.json solana_linker_v1.sha256; do
+  [ -f "$VECTORS_SRC/$vector_file" ] || {
+    echo "ERROR: kms commit $HEAD_SHA carries no $vector_file — the linker vector set moved or was renamed." >&2
+    exit 1
+  }
+  cp "$VECTORS_SRC/$vector_file" "$VECTORS_DST/$vector_file"
+done
+( cd "$VECTORS_DST" && shasum -a 256 -c solana_linker_v1.sha256 >/dev/null ) || {
+  echo "ERROR: the copied linker vector set does not match its own digest file." >&2
+  exit 1
+}
+echo "[regen] vendored linker vectors: solana/test-fixtures/user-decrypt/solana_linker_v1.json (digest verified)"
+
+# 7. This is the SOLANA-ONLY blob. It is NOT swapped into the EVM decrypt module: kms
 #    `feature/solana` is a newer kms snapshot whose TKMS JS API differs from the EVM-vendored
 #    blob (e.g. `getWasmInfo` removed, `process_user_decryption_resp_from_js` gained a `threshold`
 #    arg), so reusing it for EVM would break the EVM path. Only the Solana de-signcryption path

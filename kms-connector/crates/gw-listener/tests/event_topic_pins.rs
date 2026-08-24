@@ -25,9 +25,12 @@ const USER_DECRYPTION_SUBSCRIBED_SIGS: &[&str] = &[
     // The unified handles-only shape (RFC-023 Part 2); currently rides the positional
     // alias `UserDecryptionRequest_3`.
     "UserDecryptionRequest(uint256,(bytes32,address,address)[],(address,bytes,address[],(uint256,uint256),bytes,bytes))",
-    // The host-generic request event (a `UserDecryptionRequest` overload), the one carrying
-    // Solana requests.
-    "UserDecryptionRequest(uint256,bytes32[],(uint256,uint256),bytes,uint8,uint8,bytes,bytes)",
+    // The Solana request event (a `UserDecryptionRequest` overload). The two `uint8` this
+    // signature used to carry — a host-kind discriminator and a declared ACL-scope length —
+    // were removed from the gateway entry, because neither could say anything about the
+    // opaque blob they traveled with; the reshape moved this topic, which is what this pin
+    // exists to make visible rather than silent.
+    "UserDecryptionRequest(uint256,bytes32[],(uint256,uint256),bytes,bytes,bytes)",
 ];
 
 fn sorted_hashes(sigs: &[&str]) -> Vec<B256> {

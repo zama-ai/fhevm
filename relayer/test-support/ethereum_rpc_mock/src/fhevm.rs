@@ -35,9 +35,9 @@ pub enum UserDecryptKind {
 impl UserDecryptKind {
     fn selector(&self) -> [u8; 4] {
         match self {
-            Self::Direct => Decryption::userDecryptionRequest_1Call::SELECTOR,
+            Self::Direct => Decryption::userDecryptionRequest_2Call::SELECTOR,
             Self::Delegated => Decryption::delegatedUserDecryptionRequestCall::SELECTOR,
-            Self::Unified => Decryption::userDecryptionRequest_0Call::SELECTOR,
+            Self::Unified => Decryption::userDecryptionRequest_1Call::SELECTOR,
         }
     }
 }
@@ -114,8 +114,8 @@ fn assert_user_decrypt_calldata(
     let payload = &data[4..];
     match kind {
         UserDecryptKind::Direct => {
-            let decoded = Decryption::userDecryptionRequest_1Call::abi_decode_raw(payload)
-                .expect("calldata: failed to decode userDecryptionRequest_1Call");
+            let decoded = Decryption::userDecryptionRequest_2Call::abi_decode_raw(payload)
+                .expect("calldata: failed to decode userDecryptionRequest_2Call");
             assert_eq!(
                 decoded.userAddress, expected_user,
                 "calldata.userAddress mismatch (direct)"
@@ -148,8 +148,8 @@ fn assert_user_decrypt_calldata(
             );
         }
         UserDecryptKind::Unified => {
-            let decoded = Decryption::userDecryptionRequest_0Call::abi_decode_raw(payload)
-                .expect("calldata: failed to decode userDecryptionRequest_0Call");
+            let decoded = Decryption::userDecryptionRequest_1Call::abi_decode_raw(payload)
+                .expect("calldata: failed to decode userDecryptionRequest_1Call");
             assert_eq!(
                 decoded.userAddress, expected_user,
                 "calldata.userAddress mismatch (unified)"

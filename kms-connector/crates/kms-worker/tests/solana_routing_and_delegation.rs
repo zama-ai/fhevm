@@ -50,7 +50,6 @@ async fn authorize_in(
     let context = AuthorizationContext {
         deployment: &deployment,
         now_unix_seconds: NOW_INSIDE_WINDOW,
-        declared_acl_domain_key_count: declared_acl_domain_key_count(request),
     };
     let outcome = authorize_request(&reader, &ServableKmsPair, context, request).await;
     (outcome, reader.call_count())
