@@ -38,8 +38,9 @@ npx hardhat test test/consensus/materializationConsensus.ts --network localCopro
 ```
 
 The gate also runs an **aliased-handle** scenario (`AliasFixture.sol`).
-Under the minted-in-transaction handle discriminant (see
-`docs/minted-discriminant-note.md`), sourcing is part of the handle: two
+Under the minted-in-transaction handle discriminant (the executor folds a
+per-operand boundary bit into the result-handle preimage — see
+`FHEVMExecutor.sol`, `_consumeOperand`), sourcing is part of the handle: two
 same-block transactions consuming the same persisted boundaries alias each
 other and must persist identical bytes on every coprocessor, while a
 transaction that recomputes the same inputs locally folds zero boundary bits
