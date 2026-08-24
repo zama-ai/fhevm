@@ -2,16 +2,32 @@ export { setFhevmRuntimeConfig, hasFhevmRuntimeConfig } from './internal/config.
 
 export { createFhevmBaseClient } from './clients/createFhevmBaseClient.js';
 export { createFhevmDecryptClient } from './clients/createFhevmDecryptClient.js';
-export type { FhevmSolanaDecryptClient } from './clients/createFhevmDecryptClient.js';
+export type { FhevmSolanaDecryptClient, FhevmSolanaPermitDecryptClient } from './clients/createFhevmDecryptClient.js';
+export type {
+  SolanaDecryptTrust,
+  SolanaPermitDecryptActions,
+  SolanaSignPermitParameters,
+  SolanaUserDecryptEntry,
+  SolanaUserDecryptParameters,
+} from './clients/decorators/permitDecrypt.js';
+
+// The permit and user-decrypt modules are curated surfaces of their own; they travel whole.
+export * from './permit/index.js';
+export * from './userDecrypt/index.js';
+
+export {
+  SOLANA_ENCRYPTED_VALUE_SEED,
+  decodeSolanaEncryptedValueState,
+  fetchSolanaEncryptedValueState,
+  solanaEncryptedValueAccountAddress,
+} from './encryptedValueAccount.js';
+export type { SolanaEncryptedValueState, SolanaRpc } from './encryptedValueAccount.js';
 export { createFhevmPublicDecryptClient } from './clients/createFhevmPublicDecryptClient.js';
 export type { FhevmSolanaPublicDecryptClient } from './clients/createFhevmPublicDecryptClient.js';
 export { createFhevmEncryptClient } from './clients/createFhevmEncryptClient.js';
 export type { FhevmSolanaEncryptClient } from './clients/createFhevmEncryptClient.js';
 export { clearSolanaEncryptionKeyCache } from './encryptionKeyCache.js';
 
-export { solanaSignerFromSecretKey } from './signer.js';
-export type { SolanaUserDecryptSigner } from './signer.js';
-export { buildSolanaUserDecryptMmrProofExtraData } from '../core/coprocessor/SolanaUserDecrypt-p.js';
 export {
   bytesToHex as solanaProofBytesToHex,
   hexToBytes as solanaProofHexToBytes,
@@ -19,7 +35,7 @@ export {
 } from './proof.js';
 export type { MmrProof } from './proof.js';
 
-export type { SolanaUserDecryptParameters, SolanaUserDecryptResult } from './actions/userDecrypt.js';
+export { buildSolanaPublicDecryptMmrProofExtraData } from './actions/publicDecryptCertificate.js';
 export type {
   SolanaPublicDecryptCertificateClaim,
   SolanaPublicDecryptCertificateParameters,

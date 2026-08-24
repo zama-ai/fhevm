@@ -1,30 +1,26 @@
-import type { SolanaUserDecryptSigner } from '@sdk-src/solana/signer.js';
-import {
-  userDecrypt,
-  type SolanaUserDecryptContext,
-  type SolanaUserDecryptParameters,
-  type SolanaUserDecryptResult,
-} from '@sdk-src/solana/actions/userDecrypt.js';
+// The vault module reaches the SDK through @sdk-src (source-mapped in every consumer's tsconfig),
+// like the rest of src/vault: the published package's types need a built SDK, and the test-suite
+// typechecks these files from a clean checkout.
+import type { FhevmSolanaPermitDecryptClient, SolanaUserDecryptParameters } from '@sdk-src/solana/index.js';
+
+type ClearValues = Awaited<ReturnType<FhevmSolanaPermitDecryptClient['userDecrypt']>>;
 
 /**
- * Decrypts a batch position for its owner. This is a deliberately THIN wrapper over the shared
- * {@link userDecrypt} action: it owns no permit/proof logic, so the pending decrypt-v1 swap
- * (exact-handle signing → reusable permit + unsigned request, #1689) stays contained to
- * `userDecrypt` and this module inherits it without change.
+ * Decrypts a batch position for its owner. This is a deliberately THIN wrapper over the permit
+ * client's `userDecrypt`: it owns no permit/proof logic, so protocol evolution stays contained to
+ * the SDK and this module inherits it without change — exactly as it did across the v0 → permit
+ * swap, where only this file's one line moved.
  *
- * The parameters are `userDecrypt`'s verbatim, so the shape does NOT bake in the current
- * one-handle-per-request limit — when decrypt-v1 allows up to 32 handles, batching a joined amount
- * and a share balance in one request will need no API break here.
- *
- * Supply the `aclValueKey` naming the encrypted value account being decrypted:
- * - the batcher encrypted value accounts `pending_join_value` / `claim_amount_value` — see `pendingJoinValueAccount` /
- *   `claimAmountValueAccount` in `./internal/batcherPdas` — for a pending joined amount or a claimed payout, or
- * - a confidential-token balance encrypted value account (`balance_encrypted_value_address`) for a wrapped balance.
+ * The parameters are `userDecrypt`'s verbatim: a signed permit session plus one entry per handle,
+ * each naming the `EncryptedValue` account its value lives in —
+ * `pendingJoinValueAccount`/`claimAmountValueAccount` (see `./internal/batcherPdas`) for a pending
+ * joined amount or a claimed payout, or a confidential-token balance account's `aclValueKey` for a
+ * wrapped balance. Evidence — the account read, and a historical-access proof when an update
+ * replaced the handle mid-flight — is resolved by the SDK itself.
  */
 export async function decryptPosition(
-  context: SolanaUserDecryptContext,
-  signer: SolanaUserDecryptSigner,
+  client: FhevmSolanaPermitDecryptClient,
   parameters: SolanaUserDecryptParameters,
-): Promise<SolanaUserDecryptResult> {
-  return userDecrypt(context, signer, parameters);
+): Promise<ClearValues> {
+  return client.userDecrypt(parameters);
 }

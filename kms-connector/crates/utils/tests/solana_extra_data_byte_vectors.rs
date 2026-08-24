@@ -2,16 +2,15 @@
 //!
 //! The vectors live in `solana/test-fixtures/user-decrypt/extra_data_v1.json` next to the other
 //! cross-implementation fixture sets and are shared with the TypeScript mirror
-//! (`sdk/js-sdk/src/core/coprocessor/SolanaUserDecrypt-p.test.ts`). They are hand-committed
+//! (`sdk/js-sdk/src/solana/actions/publicDecryptCertificate.test.ts`). They are hand-committed
 //! literals — deliberately few, with no generator: the layouts are frozen behind their version
 //! bytes, so a change that moves these bytes is a protocol change, not a fixture refresh.
 //!
-//! Only the `extraData` half of that fixture set runs here. Its sibling,
-//! `signing_message_v1.json`, pins the retired ed25519 signing message and keeps the TypeScript
-//! mirror as its only consumer until the SDK moves to the host-generic form; the Rust side of
-//! user decrypt is pinned by the connector-auth vectors instead. The carrier itself is owned by
-//! public decrypt now — see the `solana_extra_data` module docs for its status and removal
-//! condition.
+//! The carrier is owned by public decrypt now — see the `solana_extra_data` module docs for its
+//! status and removal condition. The TypeScript mirror runs only the version-0x03 records: the SDK
+//! no longer produces the context-only 0x01 form (that was the retired v0 user-decrypt wire, which
+//! moved to the sRFC-38 permit envelope), so the 0x01 records and the `malformed` section are
+//! pinned by this runner alone.
 
 use connector_utils::types::solana_extra_data::{
     encode_solana_extra_data_context_only, encode_solana_extra_data_mmr_proof,

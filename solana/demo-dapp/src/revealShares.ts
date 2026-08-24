@@ -3,7 +3,7 @@ import {
   createFhevmDecryptClient,
   defineFhevmSolanaChain,
   setFhevmRuntimeConfig,
-  type SolanaUserDecryptSigner,
+  type SolanaDecryptTrust,
 } from '@fhevm/sdk/solana';
 import {
   confidentialBalanceValueAccount,
@@ -13,6 +13,7 @@ import {
 } from './vault/index.js';
 
 import type { DemoSession } from './demoSession';
+import { permitSessionFor } from './permitCache';
 import { recordDecryptionEvidence } from './evidenceStore';
 
 type Bytes32Hex = Parameters<typeof defineFhevmSolanaChain>[0]['fhevm']['acl']['domainKeys'][number];
@@ -42,9 +43,18 @@ const asBytes32BigEndian = (decimal: string): Uint8Array => {
   return bytes;
 };
 
-const userDecryptSigner = (session: DemoSession): SolanaUserDecryptSigner => ({
-  publicKey: new Uint8Array(getAddressEncoder().encode(session.signer.address)),
-  sign: (message) => session.signMessageExact(message),
+/** The trust configuration the seeded demo deployment pins; party ids follow the registry order. */
+const demoTrust = (config: DemoSession['config']): SolanaDecryptTrust => ({
+  kmsSigners: config.kmsSigners.map((address, index) => ({ partyId: index + 1, address })),
+  kmsContextId: handleHex(asBytes32BigEndian(config.userDecryptContextId)) as Bytes32Hex,
+  kmsEpochId: config.kmsEpochId as Bytes32Hex,
+  fheParameter: config.fheParameter,
+  gatewayEip712Domain: {
+    name: 'Decryption',
+    version: '1',
+    chainId: BigInt(config.gatewayChainId),
+    verifyingContract: config.gatewayDecryptionContract,
+  },
 });
 
 /** One-shot exact-handle reveal; the clear balance is never persisted. */
@@ -68,6 +78,9 @@ const revealConfidentialBalance = async (
     fhevm: {
       relayerUrl: session.config.relayerUrl,
       acl: { domainKeys: [encodedDomain] },
+      rpcUrl: session.config.rpcUrl,
+      proofServiceUrl: session.config.proofServiceUrl,
+      verifyingProgramId: session.config.aclProgram as Bytes32Hex,
     },
   });
   const supportsThreads = globalThis.crossOriginIsolated === true && typeof SharedArrayBuffer !== 'undefined';
@@ -75,34 +88,49 @@ const revealConfidentialBalance = async (
     auth: { type: 'ApiKeyHeader', value: 'local' },
     singleThread: !supportsThreads,
   });
-  const signer = userDecryptSigner(session);
-  const client = createFhevmDecryptClient({ chain, signer });
+  // The permit channel is the one way to sign: a session whose wallet does not back the sRFC-38
+  // feature cannot reveal, and says so instead of falling back to raw message signing.
+  const permitWallet = session.permitWallet;
+  if (permitWallet === undefined) {
+    throw new Error(
+      `${session.wallet.name} does not support solana:signOffchainMessage, the only channel a reveal is signed through; connect a wallet that does, or use the demo wallet`,
+    );
+  }
+  const trust = demoTrust(session.config);
+  const client = createFhevmDecryptClient({ chain, trust });
   await client.ready;
   const startedAt = performance.now();
+  // One confirmation per (wallet, domain, KMS route) and validity window: repeated views of the
+  // same private balance reuse the signed permit instead of prompting the wallet again.
+  const permit = await permitSessionFor(
+    {
+      walletAddress: permitWallet.account.address,
+      chainId: session.config.chainId,
+      domainKey: encodedDomain,
+      kmsContextId: trust.kmsContextId,
+      kmsEpochId: trust.kmsEpochId,
+    },
+    () => client.signPermit({ wallet: permitWallet, durationSeconds: 3_600n }),
+  );
   let jobId: string | null = null;
   let queuedAt: number | null = null;
   let responseAt: number | null = null;
-  const [clearValue] = await decryptPosition(
-    { chain, runtime: client.runtime, options: { batchRpcCalls: false } },
-    signer,
-    {
-      handles: [state.currentHandle],
-      aclValueKey: balance.aclValueKey,
-      contextId: asBytes32BigEndian(session.config.userDecryptContextId),
-      options: {
-        timeout: 60_000,
-        onProgress: (progress) => {
-          if (progress.type === 'queued' && progress.method === 'POST') {
-            jobId = progress.jobId;
-            queuedAt = performance.now();
-          } else if (progress.type === 'succeeded') {
-            jobId ??= progress.jobId;
-            responseAt = performance.now();
-          }
-        },
+  const [clearValue] = await decryptPosition(client, {
+    session: permit,
+    entries: [{ handle: state.currentHandle, encryptedValueId: balance.aclValueKey }],
+    options: {
+      timeout: 60_000,
+      onProgress: (progress) => {
+        if (progress.type === 'queued' && progress.method === 'POST') {
+          jobId = progress.jobId;
+          queuedAt = performance.now();
+        } else if (progress.type === 'succeeded') {
+          jobId ??= progress.jobId;
+          responseAt = performance.now();
+        }
       },
     },
-  );
+  });
   if (clearValue === undefined || typeof clearValue.value !== 'bigint') {
     throw new Error(`decrypted ${label} balance is not an integer`);
   }

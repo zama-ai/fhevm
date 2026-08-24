@@ -194,9 +194,11 @@ SENTINEL_FILES=(
 [ -n "${DEAD_SURFACE_EXTRA_SENTINEL_FILE:-}" ] && \
   SENTINEL_FILES+=("${DEAD_SURFACE_EXTRA_SENTINEL_FILE}")
 
-# Check 5's pinned justification prose, as `file|phrase`.
+# Check 5's pinned justification prose, as `file|phrase`. The v0 `actions/userDecrypt.ts` entry
+# died with the file; its successor reuse — the permit's verifying program doubling as the host
+# program id the evidence source derives accounts under — is justified where it happens.
 RETROFIT_JUSTIFICATIONS=(
-  "sdk/js-sdk/src/solana/actions/userDecrypt.ts|reuse the derived"
+  "sdk/js-sdk/src/solana/clients/decorators/permitDecrypt.ts|verifying program IS the host program"
 )
 # The self-test cannot violate check 5 by planting a file — it would have to delete prose from a real
 # one — so it adds an entry through the environment instead. Same code path, both arms.

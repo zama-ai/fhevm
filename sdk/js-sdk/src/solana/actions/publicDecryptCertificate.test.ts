@@ -1,10 +1,14 @@
+import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FhevmRuntime } from '../../core/types/coreFhevmRuntime.js';
 import { RelayerAsyncRequest } from '../../core/modules/relayer/module/RelayerAsyncRequest.js';
-import { buildSolanaUserDecryptMmrProofExtraData } from '../../core/coprocessor/SolanaUserDecrypt-p.js';
 import { bytesToHex } from '../../core/base/bytes.js';
-import { mmrLeafNode, publicDecryptLeafCommitment, type MmrProof } from '../proof.js';
-import { publicDecryptCertificate, type SolanaPublicDecryptCertificateParameters } from './publicDecryptCertificate.js';
+import { hexToBytes, mmrLeafNode, publicDecryptLeafCommitment, type MmrProof } from '../proof.js';
+import {
+  buildSolanaPublicDecryptMmrProofExtraData,
+  publicDecryptCertificate,
+  type SolanaPublicDecryptCertificateParameters,
+} from './publicDecryptCertificate.js';
 
 const handle = new Uint8Array(32);
 handle[22] = 0x80;
@@ -64,7 +68,60 @@ const context = {
 };
 
 const requestExtraData = () =>
-  bytesToHex(buildSolanaUserDecryptMmrProofExtraData(contextId, aclValueKey, 1n, proofBlob()));
+  bytesToHex(buildSolanaPublicDecryptMmrProofExtraData(contextId, aclValueKey, 1n, proofBlob()));
+
+////////////////////////////////////////////////////////////////////////////////
+// The committed carrier byte vectors, run against the carrier's new owner.
+//
+// The fixture is shared with the connector (`solana_extra_data_byte_vectors.rs` runs the same
+// records against the Rust codec), and this runner is what keeps the two hand-mirrored layouts
+// pinned to each other. Only the version-0x03 records run here: the context-only 0x01 form was the
+// v0 user-decrypt wire, which this SDK no longer produces — its Rust half stays pinned by the
+// connector's own runner — and the `malformed` section exercises parsing, which only Rust does.
+////////////////////////////////////////////////////////////////////////////////
+
+/* eslint-disable @typescript-eslint/naming-convention -- the fixture's own field names are snake_case */
+
+interface ExtraDataVectors {
+  readonly schema: string;
+  readonly records: ReadonlyArray<{
+    readonly name: string;
+    readonly input: {
+      readonly context_id_hex: string;
+      readonly acl_value_key_hex?: string;
+      readonly proof_slot?: string;
+      readonly mmr_proof_hex?: string;
+    };
+    readonly blob_hex: string;
+  }>;
+}
+
+/* eslint-enable @typescript-eslint/naming-convention */
+
+describe('committed extraData byte vectors (solana/test-fixtures/user-decrypt)', () => {
+  const extraData = JSON.parse(
+    readFileSync(
+      new URL('../../../../../solana/test-fixtures/user-decrypt/extra_data_v1.json', import.meta.url),
+      'utf8',
+    ),
+  ) as ExtraDataVectors;
+  const proofRecords = extraData.records.filter((record) => record.input.acl_value_key_hex !== undefined);
+
+  it('recognizes the fixture schema and finds the proof-carrying records', () => {
+    expect(extraData.schema).toBe('zama-solana-user-decrypt-extra-data/v1');
+    expect(proofRecords.length).toBeGreaterThan(0);
+  });
+
+  it.each(proofRecords.map((record) => [record.name, record] as const))('extraData blob: %s', (_name, record) => {
+    const blob = buildSolanaPublicDecryptMmrProofExtraData(
+      hexToBytes(`0x${record.input.context_id_hex}`),
+      hexToBytes(`0x${record.input.acl_value_key_hex ?? ''}`),
+      BigInt(record.input.proof_slot ?? '0'),
+      hexToBytes(`0x${record.input.mmr_proof_hex ?? ''}`),
+    );
+    expect(bytesToHex(blob)).toBe(`0x${record.blob_hex}`);
+  });
+});
 const signature = 'ab'.repeat(65);
 const successResult = () => ({ decryptedValue: '00', signatures: [signature], extraData: requestExtraData() });
 
