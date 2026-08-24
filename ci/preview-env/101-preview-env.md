@@ -14,8 +14,9 @@ There are two ways to launch: **from a PR** (add a label) or **manually**
 
 ## Prerequisites
 
-- Membership of the `coprocessor-dev-access` group (grants namespace admin) and
-  Tailscale access to the `zws-dev` cluster — needed to connect afterwards.
+- Membership of the `coprocessor-dev-access` or `kms-dev-access` group (either
+  grants namespace admin) and Tailscale access to the `zws-dev` cluster —
+  needed to connect afterwards.
 - Write access to the PR (to add labels) or to run workflows (for a manual run).
 
 ---
