@@ -85,6 +85,10 @@ use zama_solana_acl::{EncryptedValue, MmrProof};
 /// Transport-blob mode byte for a historical-access MMR proof (see `mmr_proof_bytes`).
 pub const MMR_PROOF_MODE_HISTORICAL: u8 = 0x01;
 /// Transport-blob mode byte for a public-decrypt MMR proof.
+///
+/// Part of the temporary public-decrypt proof carrier (see
+/// `connector_utils::types::solana_extra_data::SOLANA_EXTRA_DATA_VERSION_MMR_PROOF` for its
+/// ownership and removal condition). Outlives the v0 user-decrypt protocol this module hosts.
 pub const MMR_PROOF_MODE_PUBLIC: u8 = 0x02;
 /// Upper bound on `MmrProof::siblings` accepted from an untrusted request, matching the MMR's
 /// `u64` height ceiling (`mmr.rs` iterates heights `0..64`); bounds the decode-time allocation.
@@ -414,6 +418,12 @@ pub async fn check_solana_handles_acl(
 
 /// Solana public-decryption ACL check. There is no live "is public" flag: public-ness is only
 /// provable via a `PublicDecryptLeaf` MMR leaf carried in `extraData`.
+///
+/// Outlives the v0 user-decrypt protocol this module hosts: when the v0 path is deleted, this
+/// entry point and everything it reaches (the account fetch, the proof-blob decoder, the
+/// failure classifier, the mode-byte constants) must be re-homed, not removed — public decrypt
+/// has no other authorization path. `kms-worker/tests/solana_public_decrypt_carrier.rs` pins
+/// this surface from outside the module.
 pub async fn check_solana_handles_public_decrypt(
     host: &SolanaHost,
     handles: &[HandleBytes],
