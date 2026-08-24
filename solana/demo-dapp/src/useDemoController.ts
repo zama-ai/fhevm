@@ -19,6 +19,7 @@ import {
 import { recordTransactionEvidence } from './evidenceStore';
 import { withWalletMutationLock } from './mutationLock';
 import { prepareDemoBatch, prepareDemoDepositBatch, runDemoOperatorAction } from './operatorClient';
+import { clearPermitCache } from './permitCache';
 import {
   findCompletedRedeem,
   findExistingRedeem,
@@ -378,6 +379,7 @@ export function useDemoController() {
     sessionGeneration.current = generation;
     operationInFlight.current = false;
     harvestInFlight.current = false;
+    clearPermitCache();
     dispatch({ type: 'reset', generation, connection: { kind: 'disconnected' } });
   }, []);
 

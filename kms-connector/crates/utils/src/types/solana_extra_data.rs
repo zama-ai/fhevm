@@ -49,8 +49,8 @@ pub struct SolanaExtraData {
 /// Part of the temporary proof carrier — see [`SOLANA_EXTRA_DATA_VERSION_MMR_PROOF`] for its
 /// ownership, status and removal condition.
 ///
-/// The client-side encoder is `buildSolanaUserDecryptMmrProofExtraData` in
-/// `sdk/js-sdk/src/core/coprocessor/SolanaUserDecrypt-p.ts` — a hand-mirrored codec across
+/// The client-side encoder is `buildSolanaPublicDecryptMmrProofExtraData` in
+/// `sdk/js-sdk/src/solana/actions/publicDecryptCertificate.ts` — a hand-mirrored codec across
 /// languages (TypeScript there, Rust here); the two layouts must change together.
 pub fn parse_solana_mmr_proof_extra_data(extra_data: &[u8]) -> Option<SolanaExtraData> {
     if extra_data.len() < 33 || extra_data[0] != SOLANA_EXTRA_DATA_VERSION_MMR_PROOF {

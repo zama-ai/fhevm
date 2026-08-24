@@ -48,12 +48,26 @@ const addressHex = (value: Address): string => hex(addressBytes(value));
 export type FheVerticalConfig = {
   readonly relayerUrl: string;
   readonly proofServiceUrl: string;
+  /** The Solana RPC the SDK's evidence source reads host state through. */
+  readonly rpcUrl: string;
   /** The Solana host chain id (`HostConfig.chain_id`, high bit set). */
   readonly chainId: bigint;
   /** KMS public-decrypt context id, 0x-hex bytes32. */
   readonly publicDecryptContextId: string;
   /** Gateway user-decrypt context id, unsigned decimal string. */
   readonly userDecryptContextId: string;
+  /** The zama-host program id as bytes32 hex — the permit's verifying program. */
+  readonly verifyingProgramId: `0x${string}`;
+  /** The registered KMS signer set (EVM addresses, gateway registry order). */
+  readonly kmsSigners: readonly `0x${string}`[];
+  /** The KMS epoch id permits are minted for, bytes32 hex; zero until an epoch source exists. */
+  readonly kmsEpochId: `0x${string}`;
+  /** The FHE parameter choice the local stack runs. */
+  readonly fheParameter: string;
+  /** The gateway chain id, unsigned decimal string. */
+  readonly gatewayChainId: string;
+  /** The gateway `Decryption` contract — the EIP-712 verifying contract of KMS node signatures. */
+  readonly gatewayDecryptionContract: `0x${string}`;
 };
 
 /** A 32-byte encrypted-value label from a short name, underscore-padded (the house label idiom). */
@@ -378,25 +392,30 @@ export const historicalUserDecryptExpect = async (
     );
   }
   const userDecryptContextIdHex = `0x${BigInt(config.userDecryptContextId).toString(16).padStart(64, "0")}`;
+  // The worker resolves its own evidence — the account read and the access proof — through the
+  // SDK's evidence source; nothing MMR-shaped is handed over anymore. The pre-flight fetch and
+  // verification above stay for DIAGNOSIS: a rotten proof fails here with the leaf named, not
+  // inside the worker as a generic run error.
   await run(["bun", "run", HISTORICAL_USER_DECRYPT_WORKER], {
     cwd: WORKER_DIR,
     env: {
       UD_RELAYER_URL: config.relayerUrl,
+      UD_RPC_URL: config.rpcUrl,
+      UD_PROOF_SERVICE_URL: config.proofServiceUrl,
       UD_CONTRACTS_CHAIN_ID: config.chainId.toString(),
       UD_HANDLE: hex(params.oldHandle),
       UD_SECRET_KEY: params.secretKey,
       UD_CONTEXT_ID: userDecryptContextIdHex,
+      UD_EPOCH_ID: config.kmsEpochId,
       UD_ALLOWED_DOMAIN_KEYS: params.allowedDomainKey,
       UD_ACL_VALUE_KEY: hex(params.target.encryptedValueId),
+      UD_VERIFYING_PROGRAM_ID: config.verifyingProgramId,
+      UD_KMS_SIGNERS: config.kmsSigners.join(","),
+      UD_FHE_PARAMETER: config.fheParameter,
+      UD_GATEWAY_CHAIN_ID: config.gatewayChainId,
+      UD_GATEWAY_DECRYPTION_CONTRACT: config.gatewayDecryptionContract,
+      UD_SUBJECT: addressHex(params.subject),
       UD_EXPECTED: params.expected.toString(),
-      UD_MMR_ENCRYPTED_VALUE_ACCOUNT: addressHex(params.target.encryptedValue),
-      UD_MMR_PEAKS: hexCsv(state.peaks),
-      UD_MMR_LEAF_COUNT: state.leafCount.toString(),
-      UD_MMR_PROOF_SLOT: state.leafCount.toString(),
-      UD_MMR_LEAF_INDEX: params.proof.leafIndex.toString(),
-      UD_MMR_SIBLINGS: hexCsv(params.proof.siblings),
-      UD_MMR_PROOF_BYTES: hex(params.proof.mmrProofBytes),
-      UD_MMR_SUBJECT: addressHex(params.subject),
     },
   });
 };

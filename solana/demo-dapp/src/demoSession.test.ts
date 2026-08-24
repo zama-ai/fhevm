@@ -1,11 +1,16 @@
 import { describe, expect, test } from "vitest";
 import type { UiWalletAccount } from "@wallet-standard/react";
+import type { Wallet, WalletAccount } from "@wallet-standard/base";
+import { SolanaSignOffchainMessage } from "@solana/wallet-standard-features";
+import { getOrCreateUiWalletAccountForStandardWalletAccount_DO_NOT_USE_OR_YOU_WILL_BE_FIRED } from "@wallet-standard/ui-registry";
+import { solanaPermitWalletFromSecretKey } from "@fhevm/sdk/solana";
 
 import {
   assertWalletAccountCapabilities,
   describeWalletError,
   parseDemoConfigResponse,
   parseDemoSessionResponse,
+  permitWalletFromWalletAccount,
   planDemoFunding,
   readExactMessageSignature,
 } from "./demoSession";
@@ -22,6 +27,11 @@ const validResponse = {
     proofServiceUrl: "http://127.0.0.1:8088",
     aclProgram: "0x4cd3022dff504a675caf2d9b4f4014d0b3dc3ea17ffb97ba355cec5a933a30ee",
     userDecryptContextId: "123",
+    kmsSigners: [`0x${"01".repeat(20)}`],
+    kmsEpochId: `0x${"00".repeat(32)}`,
+    fheParameter: "test",
+    gatewayChainId: "31337",
+    gatewayDecryptionContract: `0x${"aa".repeat(20)}`,
     authorityFundingLamports: "1000000",
     hostConfig: "11111111111111111111111111111111",
     kmsContext: "11111111111111111111111111111111",
@@ -109,6 +119,46 @@ describe("planDemoFunding", () => {
   test("funds the requested deposit when it is above the default target", () => {
     expect(planDemoFunding(5_000_000_000n, 900_000_000n, 1_000_000_000n)).toEqual({ usdc: 100 });
     expect(planDemoFunding(5_000_000_000n, 900_000_000n, 800_000_000n)).toEqual({});
+  });
+});
+
+describe("the permit adapter", () => {
+  // The SDK's own headless wallet doubles as the standard wallet under test: its account and
+  // feature object are exactly what a conforming browser wallet registers, so the adapter's output
+  // is checked against real objects rather than shapes invented here.
+  const headless = solanaPermitWalletFromSecretKey(new Uint8Array(32).fill(9));
+  const feature = headless.features[SolanaSignOffchainMessage];
+  const standardAccount: WalletAccount = headless.account;
+  const standardWallet: Wallet = {
+    version: "1.0.0",
+    name: "Fake Phantom",
+    icon: "data:image/svg+xml;base64,",
+    chains: ["solana:localnet"],
+    features: { [SolanaSignOffchainMessage]: feature },
+    accounts: [standardAccount],
+  };
+
+  test("wires the wallet's registered account and feature object through, untouched", () => {
+    const uiAccount = getOrCreateUiWalletAccountForStandardWalletAccount_DO_NOT_USE_OR_YOU_WILL_BE_FIRED(
+      standardWallet,
+      standardAccount,
+    );
+    const permitWallet = permitWalletFromWalletAccount(uiAccount);
+    if (permitWallet === undefined) throw new Error("expected a permit wallet from a conforming account");
+    // Identity, not equality: wallets recognize the accounts they registered, and the SDK hands
+    // the account object back to the feature verbatim.
+    expect(permitWallet.account).toBe(standardAccount);
+    expect(permitWallet.features[SolanaSignOffchainMessage]).toBe(feature);
+  });
+
+  test("yields undefined for an account that does not list the feature — reveals then refuse clearly", () => {
+    const bareAccount: WalletAccount = { ...standardAccount, features: ["solana:signMessage"] };
+    const bareWallet: Wallet = { ...standardWallet, features: {}, accounts: [bareAccount] };
+    const uiAccount = getOrCreateUiWalletAccountForStandardWalletAccount_DO_NOT_USE_OR_YOU_WILL_BE_FIRED(
+      bareWallet,
+      bareAccount,
+    );
+    expect(permitWalletFromWalletAccount(uiAccount)).toBeUndefined();
   });
 });
 

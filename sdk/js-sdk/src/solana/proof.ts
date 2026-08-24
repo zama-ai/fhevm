@@ -51,7 +51,7 @@ function assertLen(bytes: Uint8Array, len: number, name: string): void {
 }
 
 /** Big-endian 8-byte encoding of a `leaf_index`/`u64`. Matches `to_be_bytes()` in Rust. */
-function u64BE(value: bigint): Uint8Array {
+export function u64BE(value: bigint): Uint8Array {
   if (value < 0n || value > 0xffffffffffffffffn) {
     throw new Error(`u64BE: value out of range: ${value}`);
   }
@@ -169,6 +169,45 @@ function requireRemaining(bytes: Uint8Array, offset: number, needed: number, fie
 }
 
 /**
+ * Decodes a bare Borsh `MmrProof` — `leaf_index: u64 LE` then `siblings: Vec<[u8;32]>` — and requires
+ * it to consume the whole input.
+ *
+ * This is the form a user-decrypt `accessProof` carries: no mode byte. Public decrypt prefixes the
+ * mode ({@link decodeMmrProofTransportBlob}) because that path serves two leaf kinds; user decrypt
+ * serves one, and a byte with a single legal value is a byte two implementations can disagree about.
+ *
+ * Strict on purpose, matching the relayer and the Connector: trailing bytes are refused rather than
+ * ignored, so one proof has one encoding.
+ */
+export function decodeMmrProof(mmrProofBytes: Uint8Array): MmrProof {
+  return decodeMmrProofFrom(mmrProofBytes, 0);
+}
+
+/**
+ * Encodes a bare Borsh `MmrProof`, the inverse of {@link decodeMmrProof}.
+ *
+ * @param proof - The proof to serialize.
+ */
+export function encodeMmrProof(proof: MmrProof): Uint8Array {
+  if (proof.siblings.length > MAX_MMR_SIBLINGS) {
+    throw new Error(
+      `Solana MMR proof carries ${proof.siblings.length} siblings, exceeding the cap of ${MAX_MMR_SIBLINGS}`,
+    );
+  }
+  const bytes = new Uint8Array(12 + proof.siblings.length * 32);
+  const view = dataView(bytes);
+  view.setBigUint64(0, proof.leafIndex, true);
+  view.setUint32(8, proof.siblings.length, true);
+  for (const [index, sibling] of proof.siblings.entries()) {
+    if (sibling.length !== 32) {
+      throw new Error(`Solana MMR proof sibling ${index} is ${sibling.length} bytes, expected 32`);
+    }
+    bytes.set(sibling, 12 + index * 32);
+  }
+  return bytes;
+}
+
+/**
  * Decodes `mode || Borsh(MmrProof)` and requires the Borsh proof to consume the full blob.
  * Borsh encodes `MmrProof` as `leaf_index: u64 LE` then `siblings: Vec<[u8;32]>`.
  */
@@ -177,8 +216,12 @@ export function decodeMmrProofTransportBlob(mmrProofBytes: Uint8Array): MmrProof
   if (mode === undefined) {
     throw new Error('Solana MMR-proof blob is empty (missing mode byte)');
   }
+  return { mode, proof: decodeMmrProofFrom(mmrProofBytes, 1) };
+}
+
+function decodeMmrProofFrom(mmrProofBytes: Uint8Array, start: number): MmrProof {
   const view = dataView(mmrProofBytes);
-  let offset = 1;
+  let offset = start;
 
   requireRemaining(mmrProofBytes, offset, 8, 'leaf_index');
   const leafIndex = view.getBigUint64(offset, true);
@@ -207,10 +250,10 @@ export function decodeMmrProofTransportBlob(mmrProofBytes: Uint8Array): MmrProof
 
   const siblings: Uint8Array[] = [];
   for (let i = 0; i < siblingCount; i++) {
-    const start = offset + i * 32;
-    siblings.push(mmrProofBytes.slice(start, start + 32));
+    const siblingStart = offset + i * 32;
+    siblings.push(mmrProofBytes.slice(siblingStart, siblingStart + 32));
   }
-  return { mode, proof: { leafIndex, siblings } };
+  return { leafIndex, siblings };
 }
 
 function popcount64(value: bigint): number {

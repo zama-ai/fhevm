@@ -54,8 +54,12 @@ describe("solana confidential-transfer scenario", () => {
           rpcUrl: env.rpcUrl,
           wsUrl: env.wsUrl,
           relayerUrl: env.relayerUrl,
+          hostRpcUrl: env.hostRpcUrl,
           aclProgram: env.aclProgram,
-          userDecryptContext: solanaUserDecryptContext(env.userDecryptContextId),
+          // Explicit env override only; otherwise the decrypts read the active KMS pair live from
+          // the deployed ProtocolConfig.
+          userDecryptContext:
+            env.userDecryptContextId === undefined ? undefined : solanaUserDecryptContext(env.userDecryptContextId),
         }),
       );
     },

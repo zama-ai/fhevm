@@ -85,6 +85,16 @@ export type SolanaDemoConfig = {
   readonly aclProgram: `0x${string}`;
   /** KMS/gateway user-decrypt context id, unsigned decimal string. */
   readonly userDecryptContextId: string;
+  /** The registered KMS signer set (EVM addresses, gateway registry order); party ids follow it. */
+  readonly kmsSigners: readonly `0x${string}`[];
+  /** The KMS epoch id permits are minted for, bytes32 hex; zero until an epoch source exists. */
+  readonly kmsEpochId: `0x${string}`;
+  /** The FHE parameter choice the local stack runs. */
+  readonly fheParameter: string;
+  /** The gateway chain id, unsigned decimal string. */
+  readonly gatewayChainId: string;
+  /** The gateway `Decryption` contract — the EIP-712 verifying contract of KMS node signatures. */
+  readonly gatewayDecryptionContract: `0x${string}`;
   /**
    * Lamports the settle caller funds the batch authority with (unsigned decimal string). The amount
    * must suffice to cover the rent settle's CPIs charge to this batch's authority; the seed records
@@ -136,6 +146,17 @@ const asString = (value: unknown, field: string): string => {
   return value;
 };
 
+const asEvmAddress = (value: unknown, field: string): `0x${string}` => {
+  const s = asString(value, field);
+  if (!/^0x[0-9a-f]{40}$/i.test(s)) throw new Error(`demo-config: ${field} must be a 20-byte 0x-hex address, got ${s}`);
+  return s as `0x${string}`;
+};
+
+const asEvmAddressArray = (value: unknown, field: string): readonly `0x${string}`[] => {
+  if (!Array.isArray(value) || value.length === 0) throw new Error(`demo-config: ${field} must be a non-empty array`);
+  return value.map((entry, index) => asEvmAddress(entry, `${field}[${index}]`));
+};
+
 const asDecimal = (value: unknown, field: string): string => {
   const s = asString(value, field);
   if (!/^\d+$/.test(s)) throw new Error(`demo-config: ${field} must be an unsigned decimal integer, got ${s}`);
@@ -175,6 +196,11 @@ export const parseDemoConfig = (raw: unknown): SolanaDemoConfig => {
     gatewayRpcUrl: asString(o.gatewayRpcUrl, "gatewayRpcUrl"),
     aclProgram: asBytes32Hex(o.aclProgram, "aclProgram"),
     userDecryptContextId: asDecimal(o.userDecryptContextId, "userDecryptContextId"),
+    kmsSigners: asEvmAddressArray(o.kmsSigners, "kmsSigners"),
+    kmsEpochId: asBytes32Hex(o.kmsEpochId, "kmsEpochId"),
+    fheParameter: asString(o.fheParameter, "fheParameter"),
+    gatewayChainId: asDecimal(o.gatewayChainId, "gatewayChainId"),
+    gatewayDecryptionContract: asEvmAddress(o.gatewayDecryptionContract, "gatewayDecryptionContract"),
     authorityFundingLamports: asDecimal(o.authorityFundingLamports, "authorityFundingLamports"),
     programs: {
       batcher: asAddress(programs.batcher, "programs.batcher"),

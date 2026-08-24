@@ -1,8 +1,11 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   bytesToHex,
+  decodeMmrProof,
   decodeMmrProofTransportBlob,
   deriveEncryptedValueId,
+  encodeMmrProof,
   hexToBytes,
   historicalAccessLeafCommitment,
   MAX_MMR_SIBLINGS,
@@ -192,5 +195,73 @@ describe('mmrVerify against a real 3-leaf MMR (Rust crate vectors)', () => {
     // without domain separation, a historical leaf would prove a public decrypt.
     const proof: MmrProof = { leafIndex: 0n, siblings: [] };
     expect(verifyPublicDecryptProof(account, peaks, leafCount, new Uint8Array(32).fill(0), proof)).toBe(false);
+  });
+});
+
+// The user-decrypt `accessProof` is the bare Borsh proof: no mode byte, and no room for a second
+// encoding of the same proof. Both properties are shared with the relayer and the Connector, which
+// decode the same field through the same rules, so the committed envelope record is read here too.
+describe('the bare accessProof form', () => {
+  const proof: MmrProof = {
+    leafIndex: 3n,
+    siblings: [new Uint8Array(32).fill(0x11), new Uint8Array(32).fill(0x22), new Uint8Array(32).fill(0x33)],
+  };
+
+  it('round-trips through its own encoding', () => {
+    expect(decodeMmrProof(encodeMmrProof(proof))).toEqual(proof);
+  });
+
+  it('is the committed envelope record byte for byte', () => {
+    const fixture = JSON.parse(
+      readFileSync(
+        new URL('../../../../solana/test-fixtures/user-decrypt/relayer_envelope_v1.json', import.meta.url),
+        'utf8',
+      ),
+    ) as { accepted: readonly { name: string; handles: readonly { accessProof: string }[] }[] };
+    const record = fixture.accepted.find((candidate) => candidate.name === 'historical-access-one-handle');
+    expect(record, 'the envelope fixture carries a historical record').toBeDefined();
+    const committed = record?.handles[0]?.accessProof ?? '';
+
+    expect(bytesToHex(encodeMmrProof(proof))).toBe(committed);
+    expect(decodeMmrProof(hexToBytes(committed))).toEqual(proof);
+  });
+
+  it('carries no mode byte, and is not read as if it did', () => {
+    const bare = encodeMmrProof(proof);
+    // The transport form of the same proof is one byte longer. Decoding one as the other must fail
+    // rather than silently reading a shifted leaf index.
+    expect(() => decodeMmrProof(Uint8Array.from([MMR_PROOF_MODE_HISTORICAL, ...bare]))).toThrow();
+    expect(decodeMmrProofTransportBlob(Uint8Array.from([MMR_PROOF_MODE_HISTORICAL, ...bare])).proof).toEqual(proof);
+  });
+
+  it('refuses a trailing byte after the proof', () => {
+    expect(() => decodeMmrProof(Uint8Array.from([...encodeMmrProof(proof), 0x99]))).toThrow(/trailing/);
+  });
+
+  it('refuses a truncated proof', () => {
+    const bare = encodeMmrProof(proof);
+    expect(() => decodeMmrProof(bare.slice(0, bare.length - 1))).toThrow(/truncated/);
+    expect(() => decodeMmrProof(new Uint8Array(4))).toThrow(/truncated/);
+    expect(() => decodeMmrProof(new Uint8Array(0))).toThrow(/truncated/);
+  });
+
+  it('refuses more siblings than the cap, in both directions', () => {
+    const oversized: MmrProof = {
+      leafIndex: 0n,
+      siblings: Array.from({ length: MAX_MMR_SIBLINGS + 1 }, () => new Uint8Array(32)),
+    };
+    expect(() => encodeMmrProof(oversized)).toThrow(/exceeding the cap/);
+
+    // A declared count past the cap is refused before the bytes behind it are read, so a blob
+    // claiming a huge count cannot make the decoder walk it.
+    const declared = new Uint8Array(12);
+    new DataView(declared.buffer).setUint32(8, MAX_MMR_SIBLINGS + 1, true);
+    expect(() => decodeMmrProof(declared)).toThrow(/exceeding the cap/);
+  });
+
+  it('carries an empty sibling list for a lone leaf', () => {
+    const lone: MmrProof = { leafIndex: 0n, siblings: [] };
+    expect(encodeMmrProof(lone)).toHaveLength(12);
+    expect(decodeMmrProof(encodeMmrProof(lone))).toEqual(lone);
   });
 });
