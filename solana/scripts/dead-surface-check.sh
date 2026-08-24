@@ -197,7 +197,6 @@ SENTINEL_FILES=(
 # Check 5's pinned justification prose, as `file|phrase`.
 RETROFIT_JUSTIFICATIONS=(
   "sdk/js-sdk/src/solana/actions/userDecrypt.ts|reuse the derived"
-  "relayer/src/gateway/arbitrum/transaction_calldata.rs|no Solana meaning"
 )
 # The self-test cannot violate check 5 by planting a file — it would have to delete prose from a real
 # one — so it adds an entry through the environment instead. Same code path, both arms.

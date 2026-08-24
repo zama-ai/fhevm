@@ -192,8 +192,10 @@ const config: HardhatUserConfig = {
         enabled: true,
         // 800 -> 200: once the Solana user-decrypt entrypoint and main's contextId validation
         // coexist (sync merge), Decryption.sol exceeds the 24576-byte EIP-170 limit at 800.
+        // 200 -> 150: the host-generic admission checks (served host-kind inventory, declared
+        // ACL-domain-key count) tipped it over again by 28 bytes at 200.
         // Lowering runs (optimize for size) keeps it deployable. Mirror this in foundry.toml.
-        runs: 200,
+        runs: 150,
       },
       evmVersion: 'cancun',
       viaIR: false,

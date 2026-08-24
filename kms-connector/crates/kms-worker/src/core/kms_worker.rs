@@ -6,9 +6,10 @@ use crate::{
         event_processor::{
             CiphertextManager, DbContextManager, DbEventProcessor, DecryptionProcessor,
             EventProcessor, HostChainAclBackend, KMSGenerationProcessor, KmsClient,
-            ProtocolConfigProcessor, solana_user_decrypt::SolanaHost,
+            ProtocolConfigProcessor, solana_public_decrypt::SolanaHost,
         },
         kms_response_publisher::DbKmsResponsePublisher,
+        solana::{deployment::DeploymentIdentity, snapshot::RpcHostStateReader},
         solana_v2_fetcher::SolanaV2Fetcher,
     },
     monitoring::{
@@ -212,10 +213,18 @@ async fn register_host_chain_backends(
                         host_chain.chain_id
                     )
                 })?;
-                HostChainAclBackend::Solana(SolanaHost {
-                    program_id,
+                let deployment = DeploymentIdentity::resolve(program_id, host_chain.chain_id)
+                    .map_err(|e| {
+                        anyhow!(
+                            "Solana host chain {} has an invalid deployment identity: {e}",
+                            host_chain.chain_id
+                        )
+                    })?;
+                HostChainAclBackend::Solana(Box::new(SolanaHost {
+                    deployment,
+                    reader: RpcHostStateReader::new(host_chain.url.clone(), solana_client.clone()),
                     fetcher: SolanaV2Fetcher::new(host_chain.url.clone(), solana_client.clone()),
-                })
+                }))
             }
         };
 
@@ -327,7 +336,9 @@ mod tests {
             Some(HostChainAclBackend::Evm(_))
         ));
         match backends.get(&(SOLANA_CHAIN_TYPE_BIT | 2)) {
-            Some(HostChainAclBackend::Solana(host)) => assert_eq!(host.program_id, [7; 32]),
+            Some(HostChainAclBackend::Solana(host)) => {
+                assert_eq!(host.deployment.program_id(), [7; 32])
+            }
             _ => panic!("the Solana host chain should use the Solana backend"),
         }
     }

@@ -127,6 +127,13 @@ impl RequestCheckError {
         self.kind.inc_metric();
         self.source
     }
+
+    /// Whether this failure is worth retrying. A recoverable/aborted source is transient; an
+    /// irrecoverable one is terminal. Read by the Solana pipeline's KMS-pair adapter to map a
+    /// context-servability outcome onto the pipeline's terminal/transient taxonomy.
+    pub fn is_recoverable(&self) -> bool {
+        !matches!(self.source, ProcessingError::Irrecoverable(_))
+    }
 }
 
 impl From<Erc1271Error> for RequestCheckError {
