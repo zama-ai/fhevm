@@ -48,23 +48,44 @@ impl Drop for FlowLockGuard {
     }
 }
 
+/// Salt XORed into the chain_id to derive the cleaner lock key.
+/// Keeps cleaner mutual exclusion independent from the fetch/reorg lock
+/// (raw chain_id): the cleaner holds its lock across the cron sleep and
+/// must never block or be blocked by the cursor flows.
+const CLEANER_LOCK_SALT: i64 = 0x434C_4541_4E45_5221; // "CLEANER!"
+
 /// Non-blocking distributed lock backed by `pg_try_advisory_lock`.
 ///
 /// Provides mutual exclusion per `chain_id` across all pods sharing the
-/// same PostgreSQL database. The lock key IS the `chain_id`, so different
-/// chains on the same database are completely independent.
+/// same PostgreSQL database. The fetch/reorg lock key IS the `chain_id`
+/// ([`new`](Self::new)); the cleaner uses a salted key
+/// ([`new_cleaner`](Self::new_cleaner)) so the flows never contend.
+/// Different chains on the same database are completely independent.
 ///
-/// Used to prevent concurrent execution of fetch and reorg flows for the
-/// same chain under HPA (Horizontal Pod Autoscaling).
+/// Used to prevent concurrent execution of fetch, reorg, and cleaner flows
+/// for the same chain under HPA (Horizontal Pod Autoscaling).
 #[derive(Clone)]
 pub struct FlowLock {
     client: Arc<PgClient>,
-    chain_id: i64,
+    lock_key: i64,
 }
 
 impl FlowLock {
     pub fn new(client: Arc<PgClient>, chain_id: i64) -> Self {
-        Self { client, chain_id }
+        Self {
+            client,
+            lock_key: chain_id,
+        }
+    }
+
+    /// Lock for the cleaner flow: same mutual-exclusion semantics as
+    /// [`new`](Self::new) but on a salted key, so the cleaner (which holds
+    /// its lock across the cron sleep) never starves the cursor flows.
+    pub fn new_cleaner(client: Arc<PgClient>, chain_id: i64) -> Self {
+        Self {
+            client,
+            lock_key: chain_id ^ CLEANER_LOCK_SALT,
+        }
     }
 
     /// Attempt to acquire the advisory lock (non-blocking).
@@ -77,19 +98,19 @@ impl FlowLock {
         let mut conn = self.client.acquire().await?;
 
         let acquired: bool = sqlx::query_scalar("SELECT pg_try_advisory_lock($1)")
-            .bind(self.chain_id)
+            .bind(self.lock_key)
             .fetch_one(&mut *conn)
             .await?;
 
         if acquired {
-            debug!(chain_id = self.chain_id, "Advisory lock acquired");
+            debug!(lock_key = self.lock_key, "Advisory lock acquired");
             Ok(Some(FlowLockGuard {
                 conn: Some(conn),
-                lock_key: self.chain_id,
+                lock_key: self.lock_key,
             }))
         } else {
             debug!(
-                chain_id = self.chain_id,
+                lock_key = self.lock_key,
                 "Advisory lock held by another session"
             );
             Ok(None)

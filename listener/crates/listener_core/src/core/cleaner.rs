@@ -1,7 +1,5 @@
 use std::time::Duration;
 
-use broker::Publisher;
-use primitives::routing;
 use thiserror::Error;
 use tracing::{error, info};
 
@@ -10,36 +8,44 @@ use primitives::utils::saturating_u64_to_i64;
 use crate::config::config::CleanerConfig;
 use crate::store::repositories::BlockRepository;
 
+/// Errors surfaced by the clean-blocks handler (the cleanup itself swallows
+/// DB errors and skips the iteration).
 #[derive(Error, Debug)]
 pub enum CleanerError {
     #[error("Broker publish error: {message}")]
     BrokerPublishError { message: String },
+    #[error("Advisory lock error: {message}")]
+    AdvisoryLockError { message: String },
 }
 
 #[derive(Clone)]
 pub struct Cleaner {
     blocks: BlockRepository,
-    publisher: Publisher,
     active: bool,
     blocks_to_keep: u64,
     cron_secs: u64,
 }
 
 impl Cleaner {
-    pub fn new(blocks: BlockRepository, publisher: Publisher, config: &CleanerConfig) -> Self {
+    pub fn new(blocks: BlockRepository, config: &CleanerConfig) -> Self {
         Self {
             blocks,
-            publisher,
             active: config.active,
             blocks_to_keep: config.blocks_to_keep,
             cron_secs: config.cron_secs,
         }
     }
 
-    pub async fn run(&self) -> Result<(), CleanerError> {
+    /// Run one cleanup iteration: delete old blocks, then wait `cron_secs`.
+    ///
+    /// Returns whether the loop should be rescheduled (`false` when the
+    /// cleaner is inactive — the loop deliberately ends). The next-iteration
+    /// publish lives in [`CleanerHandler`](crate::core::workers::CleanerHandler)
+    /// so it can happen after the flow lock is released.
+    pub async fn run(&self) -> bool {
         if !self.active {
             info!("Cleaner: inactive — skipping cleanup and not re-triggering");
-            return Ok(());
+            return false;
         }
 
         match self
@@ -84,16 +90,6 @@ impl Cleaner {
 
         tokio::time::sleep(Duration::from_secs(self.cron_secs)).await;
 
-        self.publisher
-            .publish(routing::CLEAN_BLOCKS, &serde_json::Value::Null)
-            .await
-            .map_err(|e| {
-                error!(error = %e, "Cleaner: failed to publish next iteration");
-                CleanerError::BrokerPublishError {
-                    message: format!("Broker publish failed: {}", e),
-                }
-            })?;
-
-        Ok(())
+        true
     }
 }

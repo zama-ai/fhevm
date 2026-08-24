@@ -406,10 +406,11 @@ async fn main() {
 
     let cleaner = Arc::new(Cleaner::new(
         repositories_for_cleaner.blocks,
-        cleaner_publisher,
         &settings.blockchain.cleaner,
     ));
-    let cleaner_handler = CleanerHandler::new(Arc::clone(&cleaner));
+    let cleaner_flow_lock = FlowLock::new_cleaner(Arc::clone(&arc_pg_client), configured_chain_id);
+    let cleaner_handler =
+        CleanerHandler::new(Arc::clone(&cleaner), cleaner_flow_lock, cleaner_publisher);
 
     let catchup_handler = CatchupHandler::new(Arc::clone(&evm_listener), handler_publisher.clone());
     let range_catchup_handler = RangeCatchupHandler::new(Arc::clone(&evm_listener));
