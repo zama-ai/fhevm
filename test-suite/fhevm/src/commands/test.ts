@@ -69,7 +69,6 @@ const timedLabel = (label: string, started: number) =>
 const TEST_PROFILE_NAMES = [
   ...Object.keys(TEST_GREP),
   "blue-green",
-  "rolling-upgrade",
   "ciphertext-drift",
   "ciphertext-drift-auto-recovery",
   "coprocessor-db-state-revert",
@@ -131,9 +130,6 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "blue-green":
     "Run the Blue-Green upgrade end-to-end (fires proposeCoprocessorUpgrade on-chain, waits for cutover, " +
     "asserts final state). Requires `--scenario blue-green*`.",
-  "rolling-upgrade":
-    "Check that coprocessors on the same consensus version keep processing while one is removed. " +
-    "Requires `--scenario rolling-upgrade`.",
   "ciphertext-drift": "Run ciphertext drift detection checks (requires 2+ coprocessors).",
   "ciphertext-drift-auto-recovery":
     "Run ciphertext drift auto-recovery checks — services self-recover (requires 2+ coprocessors).",
@@ -977,194 +973,6 @@ const startContinuousErc20Traffic = (
   };
 };
 
-/** Wait until nothing is left in flight, so later growth can only come from new work. */
-const waitForQuietPipeline = async (database: string): Promise<void> => {
-  const deadline = Date.now() + 300_000;
-  while (Date.now() < deadline) {
-    const pending = Number(
-      await psqlQuery(database, "SELECT count(*) FROM computations WHERE NOT is_completed;"),
-    );
-    if (pending === 0) {
-      return;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 3000));
-  }
-  throw new Error(`${database} still has work in flight after 300s`);
-};
-
-/** Wait until the database reports more completed computations than `from`. */
-const waitForCompletedGrowth = async (
-  database: string,
-  from: number,
-  errored: Promise<never>,
-): Promise<number> => {
-  const deadline = Date.now() + 300_000;
-  while (Date.now() < deadline) {
-    const completed = Number(
-      await psqlQuery(database, "SELECT count(*) FROM computations WHERE is_completed = TRUE;"),
-    );
-    if (Number.isSafeInteger(completed) && completed > from) {
-      return completed;
-    }
-    await Promise.race([
-      errored,
-      new Promise((resolve) => setTimeout(resolve, 3000)),
-    ]);
-  }
-  throw new Error(`no new completed computations in ${database} within 300s`);
-};
-
-/**
- * Two coprocessors on the same consensus version must both stay live and keep
- * processing while one of them is removed. This is a release that does not
- * change consensus, so no upgrade proposal is involved.
- */
-const runRollingUpgradeProfile = async (
-  state: State,
-  options: Pick<TestOptions, "network" | "noHardhatCompile">,
-): Promise<boolean> => {
-  const topology = topologyForState(state);
-  if (topology.count < 2) {
-    throw new PreflightError(
-      "the rolling-upgrade profile needs at least 2 coprocessors; use `--scenario rolling-upgrade`",
-    );
-  }
-
-  const started = Date.now();
-  return runLogged("rolling-upgrade", started, async () => {
-    const operatorDatabases = Array.from({ length: topology.count }, (_, index) =>
-      coprocessorDatabaseName(index),
-    );
-
-    console.log(`\n[1/5] every coprocessor is live on the same consensus version`);
-    const consensusVersions = await Promise.all(
-      operatorDatabases.map((db) =>
-        psqlQuery(db, "SELECT consensus_version FROM versioning WHERE singleton = TRUE;"),
-      ),
-    );
-    const [firstConsensus] = consensusVersions;
-    for (const [index, consensus] of consensusVersions.entries()) {
-      if (consensus !== firstConsensus) {
-        throw new Error(
-          `${operatorDatabases[index]} is on consensus ${consensus}, expected ${firstConsensus}`,
-        );
-      }
-    }
-    for (const db of operatorDatabases) {
-      const rows = await psqlQuery(db, "SELECT count(*) FROM upgrade_state;");
-      if (rows !== "0") {
-        throw new Error(`${db}.upgrade_state has ${rows} rows; a rolling upgrade proposes nothing`);
-      }
-    }
-    console.log(`OK:   ${topology.count} coprocessor(s) on consensus ${firstConsensus}`);
-
-    const hostChains = state.scenario.hostChains;
-    const testSuiteEnv = await readEnvFile(envPath("test-suite"));
-    const erc20Grep = TEST_GREP.erc20;
-    if (!erc20Grep) {
-      throw new Error("rolling-upgrade profile requires the ERC-20 test grep");
-    }
-    const chainEnvValue = (index: number, primaryName: string, indexedSuffix: string): string => {
-      const key = index === 0 ? primaryName : `HOST_CHAIN_${index}_${indexedSuffix}`;
-      const value = testSuiteEnv[key];
-      if (!value) {
-        throw new Error(`rolling-upgrade traffic target is missing ${key}`);
-      }
-      return value;
-    };
-    const chainExtraExecArgs = (index: number): string[] =>
-      [
-        ["RPC_URL", chainEnvValue(index, "RPC_URL", "RPC_URL")],
-        ["CHAIN_ID_HOST", chainEnvValue(index, "CHAIN_ID_HOST", "CHAIN_ID")],
-        ["ACL_CONTRACT_ADDRESS", chainEnvValue(index, "ACL_CONTRACT_ADDRESS", "ACL_CONTRACT_ADDRESS")],
-        ["KMS_VERIFIER_CONTRACT_ADDRESS", chainEnvValue(index, "KMS_VERIFIER_CONTRACT_ADDRESS", "KMS_VERIFIER_CONTRACT_ADDRESS")],
-        ["INPUT_VERIFIER_CONTRACT_ADDRESS", chainEnvValue(index, "INPUT_VERIFIER_CONTRACT_ADDRESS", "INPUT_VERIFIER_CONTRACT_ADDRESS")],
-        ["FHEVM_EXECUTOR_CONTRACT_ADDRESS", chainEnvValue(index, "FHEVM_EXECUTOR_CONTRACT_ADDRESS", "FHEVM_EXECUTOR_CONTRACT_ADDRESS")],
-        ["PROTOCOL_CONFIG_CONTRACT_ADDRESS", chainEnvValue(index, "PROTOCOL_CONFIG_CONTRACT_ADDRESS", "PROTOCOL_CONFIG_CONTRACT_ADDRESS")],
-      ].flatMap(([name, value]) => ["-e", `${name}=${value}`]);
-    const trafficTargets: TrafficTarget[] = hostChains.map((chain, index) => ({
-      label: chain.key,
-      argv: buildTestContainerArgs(
-        runTestsArgs({ ...options, verbose: false, parallel: false, grep: erc20Grep }),
-        chainExtraExecArgs(index),
-      ),
-    }));
-
-    console.log(`\n[2/5] run traffic with every coprocessor up`);
-    // Drain first: work left by an earlier test would otherwise finish during this
-    // run and look like traffic being processed.
-    await waitForQuietPipeline(operatorDatabases[0]!);
-    const completedAtStart = Number(
-      await psqlQuery(
-        operatorDatabases[0]!,
-        "SELECT count(*) FROM computations WHERE is_completed = TRUE;",
-      ),
-    );
-    const traffic = startContinuousErc20Traffic(trafficTargets, Math.max(2, trafficTargets.length));
-    const completedBefore = await waitForCompletedGrowth(
-      operatorDatabases[0]!,
-      completedAtStart,
-      traffic.errored,
-    );
-    console.log(`OK:   ${completedBefore} completed computation(s), up from ${completedAtStart}`);
-
-    console.log(`\n[3/5] remove the last coprocessor while traffic keeps running`);
-    const removedIndex = topology.count - 1;
-    const removedPrefix = removedIndex === 0 ? "coprocessor-" : `coprocessor${removedIndex}-`;
-    const removed = serviceNameList(state, "coprocessor").filter(
-      (name) => name.startsWith(removedPrefix) && !name.endsWith("db-migration"),
-    );
-    if (removed.length === 0) {
-      throw new Error(`no containers found for coprocessor ${removedIndex}`);
-    }
-    await run(["docker", "stop", ...removed]);
-    console.log(`OK:   stopped ${removed.length} container(s) of coprocessor ${removedIndex}`);
-
-    // Always put the removed coprocessor back, so a failure here does not leave
-    // the stack short of a coprocessor.
-    try {
-      console.log(`\n[4/5] the remaining coprocessor keeps processing`);
-      const completedAfter = await waitForCompletedGrowth(
-        operatorDatabases[0]!,
-        completedBefore,
-        traffic.errored,
-      );
-      const stats = await traffic.stop();
-      console.log(
-        `OK:   ${completedAfter} completed computation(s) after removal ` +
-          `(${stats.iterations} traffic run(s), ${stats.failures} failure(s))`,
-      );
-
-      // A replaced coprocessor rejoins on its own: the listener catches up on the
-      // blocks it missed and the workers drain the backlog. Without this a rolling
-      // upgrade would leave the fleet permanently short of an operator.
-      console.log(`\n[5/5] the removed coprocessor rejoins and catches up`);
-      await run(["docker", "start", ...removed]);
-      const removedDatabase = coprocessorDatabaseName(removedIndex);
-      const target = Number(
-        await psqlQuery(operatorDatabases[0]!, "SELECT count(*) FROM computations;"),
-      );
-      await waitUntil({
-        label: `${removedDatabase}  caught up to ${target} computation(s)`,
-        timeoutSecs: 300,
-        check: async () =>
-          (await psqlQuery(
-            removedDatabase,
-            `SELECT CASE WHEN count(*) >= ${target}
-                          AND count(*) FILTER (WHERE NOT is_completed) = 0
-                         THEN 'ready' ELSE 'waiting' END
-               FROM computations;`,
-          )) === "ready",
-      });
-      console.log(`OK:   coprocessor ${removedIndex} drained ${target} computation(s)`);
-      return true;
-    } finally {
-      await traffic.stop().catch(() => undefined);
-      await run(["docker", "start", ...removed]).catch(() => undefined);
-    }
-  });
-};
-
 /** Run one failed blue/green upgrade, then a successful one. */
 const runBlueGreenProfile = async (
   state: State,
@@ -1937,9 +1745,6 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     }
     if (name === "blue-green") {
       return runBlueGreenProfile(state, options);
-    }
-    if (name === "rolling-upgrade") {
-      return runRollingUpgradeProfile(state, options);
     }
     if (name === "coprocessor-db-state-revert") {
       return runDbStateRevert(state, options);
