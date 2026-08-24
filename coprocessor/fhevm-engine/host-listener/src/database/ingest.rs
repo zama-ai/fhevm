@@ -1120,25 +1120,10 @@ async fn notify_coprocessor_upgrade_proposed(
                 },
             );
         if same_windows {
-            // A 0.14 listener writes these rows too, without a consensus version.
-            // Fill it in, or the proposal cannot cut over. Drop this after 0.15.
-            let filled = sqlx::query(
-                "UPDATE upgrade_state
-                    SET consensus_version = $1
-                  WHERE stack_role = 'GCS'
-                    AND proposal_id = $2
-                    AND consensus_version IS DISTINCT FROM $1",
-            )
-            .bind(consensus_version)
-            .bind(&proposal_id_bytes[..])
-            .execute(&mut **tx)
-            .await?
-            .rows_affected();
             debug!(
                 proposal_id = %proposal_id_hex,
                 proposal_block,
-                filled,
-                "Ignoring repeated CoprocessorUpgradeProposed event"
+                "Ignoring exact replay of CoprocessorUpgradeProposed"
             );
         } else {
             warn!(
