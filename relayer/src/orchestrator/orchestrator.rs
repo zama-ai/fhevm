@@ -7,24 +7,57 @@ use crate::orchestrator::TokioEventDispatcher;
 use anyhow::Error;
 use std::collections::HashMap;
 use std::future::Future;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
-use tokio_util::sync::CancellationToken;
-use tracing::{error, instrument};
+use std::time::{Duration, Instant};
+use tokio_util::task::TaskTracker;
+use tracing::{error, info, instrument, warn};
 use uuid::Uuid;
 
 pub struct Orchestrator {
     event_dispatcher: Arc<TokioEventDispatcher>,
     health_checker: Arc<RwLock<HealthChecker>>,
     task_manager: TaskManager,
+    /// Transaction sends, the one class of detached work shutdown waits for: the nonce
+    /// protocol has no RAII guard and dropping after the RPC leaves the socket loses the
+    /// hash that detects a duplicate send.
+    inflight_sends: TaskTracker,
+    /// Every other detached task - per-event dispatch and per-readiness-check. Neither
+    /// leaves an effect outside this process that a wait could protect, so shutdown abandons
+    /// them: the count is reported, never drained.
+    detached_tasks: TaskTracker,
+    /// Sticky readiness flag for `/healthz`: once shutdown starts, the relayer must stop
+    /// looking healthy to the load balancer even if every dependency check still passes.
+    shutting_down: AtomicBool,
 }
 
 impl Orchestrator {
-    pub fn new(event_dispatcher: Arc<TokioEventDispatcher>) -> Arc<Self> {
+    pub fn new(
+        event_dispatcher: Arc<TokioEventDispatcher>,
+        inflight_sends: TaskTracker,
+        detached_tasks: TaskTracker,
+    ) -> Arc<Self> {
         Arc::new(Self {
             event_dispatcher,
             health_checker: Arc::new(RwLock::new(HealthChecker::new())),
             task_manager: TaskManager::new(),
+            inflight_sends,
+            detached_tasks,
+            shutting_down: AtomicBool::new(false),
         })
+    }
+
+    /// Flip `/healthz` to unhealthy regardless of dependency status. Called once, at the
+    /// very start of the shutdown sequence, while the HTTP server keeps serving, so a
+    /// request routed during the propagation window gets a 503 rather than a refused
+    /// connection.
+    pub fn mark_not_ready(&self) {
+        self.shutting_down.store(true, Ordering::Release);
+    }
+
+    /// Whether shutdown has started. Checked by the `/healthz` handler.
+    pub fn is_shutting_down(&self) -> bool {
+        self.shutting_down.load(Ordering::Acquire)
     }
 
     pub fn new_internal_request_id(&self) -> Uuid {
@@ -77,12 +110,46 @@ impl Orchestrator {
             .await
     }
 
-    /// Wait for shutdown signal and gracefully shutdown all tasks
-    pub async fn run_until_shutdown(
-        &self,
-        shutdown_token: CancellationToken,
-    ) -> anyhow::Result<()> {
-        self.task_manager.run_until_shutdown(shutdown_token).await
+    /// Stop accepting new named-task spawns. Call once, before the drain.
+    pub async fn begin_task_drain(&self) {
+        self.task_manager.begin_shutdown().await;
+    }
+
+    /// Wait up to `budget` for the named tasks to exit on their own (the caller must already
+    /// have cancelled whatever drives them); abort any still running once the budget elapses.
+    pub async fn drain_named_tasks(&self, budget: Duration) {
+        self.task_manager.drain_tasks(budget).await;
+    }
+
+    /// Final safety net after the drain: abort anything left tracked.
+    pub async fn finish_task_drain(&self) {
+        self.task_manager.finish_drain().await;
+    }
+
+    /// Wait up to `budget` for in-flight transaction sends to finish. Closing the tracker
+    /// only stops `wait()` from blocking on an empty-but-still-open tracker; it does not
+    /// itself prevent new spawns, so the caller must already have stopped the throttlers
+    /// that feed it. Everything in `detached_tasks` is abandoned, and only counted here.
+    pub async fn drain_inflight_sends(&self, budget: Duration) {
+        self.inflight_sends.close();
+        let start = Instant::now();
+        tokio::select! {
+            _ = self.inflight_sends.wait() => {
+                info!(
+                    elapsed = ?start.elapsed(),
+                    abandoned = self.detached_tasks.len(),
+                    "In-flight transaction sends settled"
+                );
+            }
+            _ = tokio::time::sleep(budget) => {
+                warn!(
+                    ?budget,
+                    remaining = self.inflight_sends.len(),
+                    abandoned = self.detached_tasks.len(),
+                    "Transaction drain timeout, exiting with sends unsettled"
+                );
+            }
+        }
     }
 
     #[instrument(skip_all, fields(event_type=%(event.event_name()), job_id=?event.job_id()))]
@@ -117,8 +184,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_orchestrator() {
-        let pubsub = Arc::new(TokioEventDispatcher::new());
-        let orchestrator = Orchestrator::new(pubsub.clone());
+        let detached_tasks = tokio_util::task::TaskTracker::new();
+        let inflight_sends = tokio_util::task::TaskTracker::new();
+        let pubsub = Arc::new(TokioEventDispatcher::new(detached_tasks.clone()));
+        let orchestrator = Orchestrator::new(pubsub.clone(), inflight_sends, detached_tasks);
 
         let _id = orchestrator.new_internal_request_id();
 

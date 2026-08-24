@@ -3,6 +3,7 @@ use crate::orchestrator::traits::{Event, EventHandler};
 use anyhow::Error;
 use dashmap::DashMap;
 use std::sync::Arc;
+use tokio_util::task::TaskTracker;
 use tracing::{debug, instrument, Instrument};
 
 type EventHandlerMap = Arc<DashMap<u8, Vec<Arc<dyn EventHandler<RelayerEvent>>>>>;
@@ -10,13 +11,17 @@ type EventHandlerMap = Arc<DashMap<u8, Vec<Arc<dyn EventHandler<RelayerEvent>>>>
 pub struct TokioEventDispatcher {
     // (event-type-id) -> EventHandler
     subscribers: EventHandlerMap,
+    /// Tracks the per-(event, handler) dispatch tasks spawned below. Shutdown abandons
+    /// them rather than waiting, so a handler still running at exit is cut short exactly as
+    /// a hard kill would cut it short.
+    detached_tasks: TaskTracker,
 }
 
-#[allow(clippy::new_without_default)]
 impl TokioEventDispatcher {
-    pub fn new() -> Self {
+    pub fn new(detached_tasks: TaskTracker) -> Self {
         Self {
             subscribers: Arc::new(DashMap::new()),
+            detached_tasks,
         }
     }
 
@@ -34,9 +39,9 @@ impl TokioEventDispatcher {
             for handler in handlers {
                 let event = event.clone();
                 let current_span = tracing::Span::current();
-                tokio::spawn(
-                    async move { handler.handle_event(event).instrument(current_span).await },
-                );
+                self.detached_tasks.spawn(async move {
+                    handler.handle_event(event).instrument(current_span).await
+                });
             }
         } else {
             debug!(

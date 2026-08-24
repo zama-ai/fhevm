@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::{fmt, future::Future};
 use tokio::sync::{mpsc, RwLock, Semaphore};
+use tokio_util::sync::CancellationToken;
+use tokio_util::task::TaskTracker;
 use tracing::{error, info, instrument, warn};
 
 /// Queue information for ETA computation (concurrency-based throttler)
@@ -151,6 +153,9 @@ pub struct ReadinessWorker<T> {
     tracker: Arc<RwLock<IndexMap<String, ()>>>,
     // Replaces TPS: Limits how many tasks can run concurrently
     max_parallelism: usize,
+    // Tracks the per-readiness-check task spawned in `run_consumer`, holding its
+    // `OwnedSemaphorePermit`. Shutdown abandons these; see `run_consumer` for why.
+    detached_tasks: TaskTracker,
 }
 
 impl<T> ReadinessSender<T>
@@ -162,6 +167,7 @@ where
         capacity: usize,
         capacity_safety_margin: usize,
         max_parallelism: usize,
+        detached_tasks: TaskTracker,
     ) -> (Self, ReadinessWorker<T>) {
         let (sender, receiver) = mpsc::channel(capacity);
         let tracker = Arc::new(RwLock::new(IndexMap::new()));
@@ -182,6 +188,7 @@ where
             receiver,
             tracker,
             max_parallelism,
+            detached_tasks,
         };
 
         (sender, worker)
@@ -275,7 +282,18 @@ impl<T> ReadinessWorker<T>
 where
     T: ReadinessItem + Send + Sync + 'static,
 {
-    pub async fn run_consumer<F, Fut>(mut self, processor: F)
+    /// Runs the dequeue loop until `shutdown` fires, and cancels the checks already running
+    /// when it does. Driven from the token rather than channel closure: the sender half
+    /// lives in an `Arc` held permanently by the dispatcher and the HTTP router state, so it
+    /// never drops on its own.
+    ///
+    /// A readiness check is a pure external read - host-ACL and gateway `eth_call`s with
+    /// sleeps between them - holding nothing but a permit that releases on drop, so
+    /// cancelling one costs a repeat at the next start and its row stays `queued` for
+    /// recovery. Letting one run on instead would eventually reach its retry budget and
+    /// write a terminal status that recovery cannot pick up: a request that a hard kill
+    /// would have left recoverable.
+    pub async fn run_consumer<F, Fut>(mut self, shutdown: CancellationToken, processor: F)
     where
         F: Fn(T) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = ()> + Send + 'static,
@@ -290,7 +308,21 @@ where
         let semaphore = Arc::new(Semaphore::new(self.max_parallelism));
         let processor = Arc::new(processor);
 
-        while let Some(item) = self.receiver.recv().await {
+        loop {
+            let item = tokio::select! {
+                item = self.receiver.recv() => match item {
+                    Some(item) => item,
+                    None => {
+                        info!("Readiness Worker stopping (All producers dropped).");
+                        break;
+                    }
+                },
+                _ = shutdown.cancelled() => {
+                    info!("Readiness Worker stopping (shutdown).");
+                    break;
+                }
+            };
+
             let id = item.get_id();
 
             // Acquire Permit (Limits Concurrency)
@@ -313,20 +345,19 @@ where
                 metrics::queue::decrement_queue_size(self.readiness_type.as_metrics_type());
             }
 
-            // Process (Isolated)
+            // Process (Isolated), under the same token that stops this loop.
             let proc_clone = processor.clone();
+            let check_shutdown = shutdown.clone();
 
-            tokio::spawn(async move {
-                // Do the work
-                proc_clone(item).await;
+            self.detached_tasks.spawn(async move {
+                // Do the work, unless shutdown cuts it short.
+                check_shutdown.run_until_cancelled(proc_clone(item)).await;
 
                 // CRITICAL: Permit is dropped here automatically.
                 // This releases the slot for the next task in the queue.
                 drop(permit);
             });
         }
-
-        info!("Readiness Worker stopping (All producers dropped).");
     }
 }
 
@@ -372,14 +403,19 @@ mod tests {
     #[tokio::test]
     async fn test_fifo_ordering() {
         init_metrics_once();
-        let (sender, worker) =
-            ReadinessSender::<MockTask>::new(ReadinessThrottlingType::UserDecrypt, 10, 0, 100);
+        let (sender, worker) = ReadinessSender::<MockTask>::new(
+            ReadinessThrottlingType::UserDecrypt,
+            10,
+            0,
+            100,
+            TaskTracker::new(),
+        );
         let processed = Arc::new(Mutex::new(Vec::new()));
         let processed_clone = processed.clone();
 
         tokio::spawn(async move {
             worker
-                .run_consumer(move |task| {
+                .run_consumer(CancellationToken::new(), move |task| {
                     let p = processed_clone.clone();
                     async move {
                         p.lock().unwrap().push(task.id);
@@ -401,8 +437,13 @@ mod tests {
     #[tokio::test]
     async fn test_deduplication() {
         init_metrics_once();
-        let (sender, _worker) =
-            ReadinessSender::<MockTask>::new(ReadinessThrottlingType::UserDecrypt, 10, 0, 100);
+        let (sender, _worker) = ReadinessSender::<MockTask>::new(
+            ReadinessThrottlingType::UserDecrypt,
+            10,
+            0,
+            100,
+            TaskTracker::new(),
+        );
 
         sender.push(MockTask { id: "A".into() }).await.unwrap();
         sender.push(MockTask { id: "A".into() }).await.unwrap();
@@ -414,8 +455,13 @@ mod tests {
     #[tokio::test]
     async fn test_queue_full() {
         init_metrics_once();
-        let (sender, _worker) =
-            ReadinessSender::<MockTask>::new(ReadinessThrottlingType::UserDecrypt, 1, 0, 100);
+        let (sender, _worker) = ReadinessSender::<MockTask>::new(
+            ReadinessThrottlingType::UserDecrypt,
+            1,
+            0,
+            100,
+            TaskTracker::new(),
+        );
 
         assert!(sender.push(MockTask { id: "1".into() }).await.is_ok());
 
@@ -434,6 +480,7 @@ mod tests {
             100,
             0,
             max_parallelism,
+            TaskTracker::new(),
         );
 
         // Counter tracks currently ACTIVE tasks
@@ -445,7 +492,7 @@ mod tests {
 
         tokio::spawn(async move {
             worker
-                .run_consumer(move |_| {
+                .run_consumer(CancellationToken::new(), move |_| {
                     let ac = ac.clone();
                     let ms = ms.clone();
                     async move {
@@ -504,8 +551,13 @@ mod tests {
     async fn test_readiness_headroom() {
         init_metrics_once();
         // Capacity = 10, Safety = 2 -> Soft Limit = 8
-        let (sender, worker) =
-            ReadinessSender::<MockTask>::new(ReadinessThrottlingType::UserDecrypt, 10, 2, 100);
+        let (sender, worker) = ReadinessSender::<MockTask>::new(
+            ReadinessThrottlingType::UserDecrypt,
+            10,
+            2,
+            100,
+            TaskTracker::new(),
+        );
 
         for i in 0..8 {
             sender
@@ -524,7 +576,9 @@ mod tests {
 
         // Drain
         tokio::spawn(async move {
-            worker.run_consumer(|_| async {}).await;
+            worker
+                .run_consumer(CancellationToken::new(), |_| async {})
+                .await;
         });
         sleep(Duration::from_millis(100)).await;
     }

@@ -20,6 +20,7 @@ use alloy::{
 use async_trait::async_trait;
 use futures::StreamExt;
 use std::{str::FromStr, sync::Arc, time::Duration};
+use tokio_util::sync::CancellationToken;
 
 /// Reason why process_events() returned
 enum RecycleReason {
@@ -27,6 +28,8 @@ enum RecycleReason {
     StreamEnded,
     /// Planned connection recycle timer triggered
     RecycleTimer,
+    /// Shutdown was requested
+    ShuttingDown,
 }
 
 pub struct ArbitrumListener {
@@ -39,9 +42,12 @@ pub struct ArbitrumListener {
     ws_url: String,
     /// Total number of listener instances (for staggered recycle timing)
     num_listeners: usize,
+    /// Cancelled when shutdown closes the sources of new work.
+    shutdown: CancellationToken,
 }
 
 impl ArbitrumListener {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         gateway_config: GatewayConfig,
         orchestrator: Arc<Orchestrator>,
@@ -50,6 +56,7 @@ impl ArbitrumListener {
         instance_id: usize,
         ws_url: String,
         num_listeners: usize,
+        shutdown: CancellationToken,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             gateway_config,
@@ -59,7 +66,17 @@ impl ArbitrumListener {
             instance_id,
             ws_url,
             num_listeners,
+            shutdown,
         })
+    }
+
+    /// Sleep for `dur`, returning early if shutdown is requested meanwhile. Returns `true`
+    /// if the sleep was cut short by shutdown.
+    async fn sleep_or_shutdown(&self, dur: Duration) -> bool {
+        tokio::select! {
+            _ = tokio::time::sleep(dur) => false,
+            _ = self.shutdown.cancelled() => true,
+        }
     }
 
     async fn fetch_block_hash_from_rpc(
@@ -208,6 +225,14 @@ impl ArbitrumListener {
         );
 
         loop {
+            if self.shutdown.is_cancelled() {
+                info!(
+                    instance_id = self.instance_id,
+                    "Listener stopping (shutdown)"
+                );
+                return Ok(());
+            }
+
             // Log ERROR continuously when exceeding threshold (fatal state)
             if consecutive_failures >= max_attempts {
                 error!(
@@ -238,7 +263,16 @@ impl ArbitrumListener {
                         max_attempts = max_attempts,
                         "Failed to create provider"
                     );
-                    tokio::time::sleep(Duration::from_millis(retry_interval)).await;
+                    if self
+                        .sleep_or_shutdown(Duration::from_millis(retry_interval))
+                        .await
+                    {
+                        info!(
+                            instance_id = self.instance_id,
+                            "Listener stopping (shutdown)"
+                        );
+                        return Ok(());
+                    }
                     continue;
                 }
             };
@@ -258,7 +292,16 @@ impl ArbitrumListener {
                             max_attempts = max_attempts,
                             "Failed to resolve starting block"
                         );
-                        tokio::time::sleep(Duration::from_millis(retry_interval)).await;
+                        if self
+                            .sleep_or_shutdown(Duration::from_millis(retry_interval))
+                            .await
+                        {
+                            info!(
+                                instance_id = self.instance_id,
+                                "Listener stopping (shutdown)"
+                            );
+                            return Ok(());
+                        }
                         continue;
                     }
                 },
@@ -280,7 +323,16 @@ impl ArbitrumListener {
                         max_attempts = max_attempts,
                         "Failed to subscribe"
                     );
-                    tokio::time::sleep(Duration::from_millis(retry_interval)).await;
+                    if self
+                        .sleep_or_shutdown(Duration::from_millis(retry_interval))
+                        .await
+                    {
+                        info!(
+                            instance_id = self.instance_id,
+                            "Listener stopping (shutdown)"
+                        );
+                        return Ok(());
+                    }
                     continue;
                 }
             };
@@ -312,7 +364,23 @@ impl ArbitrumListener {
                         max_attempts = max_attempts,
                         "WebSocket connection dropped"
                     );
-                    tokio::time::sleep(Duration::from_millis(retry_interval)).await;
+                    if self
+                        .sleep_or_shutdown(Duration::from_millis(retry_interval))
+                        .await
+                    {
+                        info!(
+                            instance_id = self.instance_id,
+                            "Listener stopping (shutdown)"
+                        );
+                        return Ok(());
+                    }
+                }
+                RecycleReason::ShuttingDown => {
+                    info!(
+                        instance_id = self.instance_id,
+                        "Listener stopping (shutdown)"
+                    );
+                    return Ok(());
                 }
                 RecycleReason::RecycleTimer => {
                     // Planned recycle - reconnect immediately without delay
@@ -474,6 +542,9 @@ impl ArbitrumListener {
                         "WebSocket connection recycle timer triggered, reconnecting"
                     );
                     return RecycleReason::RecycleTimer;
+                }
+                _ = self.shutdown.cancelled() => {
+                    return RecycleReason::ShuttingDown;
                 }
             }
         }
