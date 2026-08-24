@@ -58,7 +58,7 @@ export function createFhevmDecryptClient<chain extends FhevmSolanaChain>(paramet
     return c;
   }
   return c.extend((fhevm) => ({
-    actions: solanaPermitDecryptActions(parameters.chain, trust),
+    actions: solanaPermitDecryptActions(parameters.chain, trust, fhevm.runtime),
     runtime: fhevm.runtime,
   }));
 }

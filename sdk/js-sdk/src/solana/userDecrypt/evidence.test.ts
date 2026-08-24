@@ -17,6 +17,7 @@ import { resolveSolanaAccessEvidence } from './index.js';
 
 const handle = (fill: number): Uint8Array => new Uint8Array(32).fill(fill);
 const SUBJECT = handle(0xc1);
+const VALUE_ID = handle(0xe1);
 
 /** A source that answers from the handle it is given, recording what it was asked. */
 function recordingSource(answer?: (request: SolanaHandleRequest) => SolanaAccessEvidence) {
@@ -25,7 +26,7 @@ function recordingSource(answer?: (request: SolanaHandleRequest) => SolanaAccess
       answer?.(request) ?? {
         handle: request.handle,
         subject: request.subject,
-        encryptedValueId: new Uint8Array(32).fill(request.handle[0] ?? 0),
+        encryptedValueId: request.encryptedValueId,
         encryptedValueAccount: new Uint8Array(32).fill(0xea),
         proofLeafCount: 0n,
         accessProof: new Uint8Array(0),
@@ -37,7 +38,7 @@ function recordingSource(answer?: (request: SolanaHandleRequest) => SolanaAccess
 }
 
 const requestsFor = (fills: readonly number[]): readonly SolanaHandleRequest[] =>
-  fills.map((fill) => ({ handle: handle(fill), subject: SUBJECT }));
+  fills.map((fill) => ({ handle: handle(fill), subject: SUBJECT, encryptedValueId: VALUE_ID }));
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -55,7 +56,7 @@ describe('resolving evidence', () => {
   // A duplicate is two entries, not one entry named twice: each occupies a position the linker binds.
   // But it is one fetch — two lookups at different moments could straddle an update and give the two
   // occurrences contradictory evidence about one handle.
-  it('fetches a repeated (handle, subject) once, keeping one entry per occurrence', async () => {
+  it('fetches a repeated (handle, subject, encrypted value id) once, keeping one entry per occurrence', async () => {
     const { resolve, source } = recordingSource();
 
     const resolved = await resolveSolanaAccessEvidence(source, requestsFor([0x01, 0x02, 0x01]));
@@ -92,12 +93,27 @@ describe('resolving evidence', () => {
     const { resolve, source } = recordingSource();
 
     const resolved = await resolveSolanaAccessEvidence(source, [
-      { handle: handle(0x01), subject: SUBJECT },
-      { handle: handle(0x01), subject: delegator },
+      { handle: handle(0x01), subject: SUBJECT, encryptedValueId: VALUE_ID },
+      { handle: handle(0x01), subject: delegator, encryptedValueId: VALUE_ID },
     ]);
 
     expect(resolve).toHaveBeenCalledTimes(2);
     expect(resolved.map((entry) => entry.subject)).toEqual([SUBJECT, delegator]);
+  });
+
+  // The same handle under the same subject can live under two different accounts — two encrypted
+  // value ids are two different questions, and each occurrence must keep the id it was asked with.
+  it('does not share a fetch between the same (handle, subject) under different encrypted value ids', async () => {
+    const otherId = handle(0xe2);
+    const { resolve, source } = recordingSource();
+
+    const resolved = await resolveSolanaAccessEvidence(source, [
+      { handle: handle(0x01), subject: SUBJECT, encryptedValueId: VALUE_ID },
+      { handle: handle(0x01), subject: SUBJECT, encryptedValueId: otherId },
+    ]);
+
+    expect(resolve).toHaveBeenCalledTimes(2);
+    expect(resolved.map((entry) => entry.encryptedValueId)).toEqual([VALUE_ID, otherId]);
   });
 
   // Up to thirty-three handles, each a host read or a proof-service call: one at a time would make
@@ -148,8 +164,8 @@ describe('resolving evidence', () => {
     const { source } = recordingSource();
 
     const resolved = await resolveSolanaAccessEvidence(source, [
-      { handle: handle(0x01), subject: SUBJECT },
-      { handle: handle(0x02), subject: delegator },
+      { handle: handle(0x01), subject: SUBJECT, encryptedValueId: VALUE_ID },
+      { handle: handle(0x02), subject: delegator, encryptedValueId: VALUE_ID },
     ]);
 
     expect(resolved.map((entry) => entry.subject)).toEqual([SUBJECT, delegator]);

@@ -17,6 +17,7 @@
 
 import { getAddressDecoder } from '@solana/kit';
 import { MAX_MMR_SIBLINGS, encodeMmrProof, hexToBytes, type MmrProof } from '../proof.js';
+import { SolanaAccessEvidenceIntegrityError } from './evidence.js';
 import { bytesToHexNo0x } from '../../core/base/bytes.js';
 import { removeSuffix } from '../../core/base/string.js';
 
@@ -96,11 +97,15 @@ export async function fetchSolanaHistoricalAccessProof(
 /**
  * The one place that knows the service's wire shape.
  *
+ * Every refusal here is an integrity error, not a fault: an envelope the service got wrong, a proof
+ * it does not stand behind. The session's retry loop rethrows these rather than spending attempts —
+ * the same answer would come back on every retry.
+ *
  * @param body - The parsed response body.
  */
 function parseAccessProof(body: unknown): SolanaHistoricalAccessProof {
   if (typeof body !== 'object' || body === null || !('mmr_proof' in body)) {
-    throw new Error('the proof-service response is not an MMR-proof envelope');
+    throw new SolanaAccessEvidenceIntegrityError('the proof-service response is not an MMR-proof envelope');
   }
   const wire = body as {
     readonly mmr_proof: { readonly leaf_index: number; readonly siblings: readonly string[] } | null;
@@ -109,17 +114,21 @@ function parseAccessProof(body: unknown): SolanaHistoricalAccessProof {
     readonly status?: string;
   };
   if (!wire.verified || wire.mmr_proof === null) {
-    throw new Error(`the proof service returned an unverified access proof (status "${wire.status ?? '?'}")`);
+    throw new SolanaAccessEvidenceIntegrityError(
+      `the proof service returned an unverified access proof (status "${wire.status ?? '?'}")`,
+    );
   }
   const siblings = wire.mmr_proof.siblings.map((sibling) => {
     const bytes = hexToBytes(sibling);
     if (bytes.length !== 32) {
-      throw new Error(`an access-proof sibling must be 32 bytes, got ${bytes.length}`);
+      throw new SolanaAccessEvidenceIntegrityError(`an access-proof sibling must be 32 bytes, got ${bytes.length}`);
     }
     return bytes;
   });
   if (siblings.length > MAX_MMR_SIBLINGS) {
-    throw new Error(`the access proof carries ${siblings.length} siblings, above the cap of ${MAX_MMR_SIBLINGS}`);
+    throw new SolanaAccessEvidenceIntegrityError(
+      `the access proof carries ${siblings.length} siblings, above the cap of ${MAX_MMR_SIBLINGS}`,
+    );
   }
   const proof: MmrProof = { leafIndex: BigInt(wire.mmr_proof.leaf_index), siblings };
   return { proof, accessProof: encodeMmrProof(proof), leafCount: BigInt(wire.leaf_count) };

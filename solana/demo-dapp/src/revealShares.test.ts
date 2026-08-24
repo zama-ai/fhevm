@@ -28,11 +28,20 @@ vi.mock('./vault/index.js', () => ({
 
 import type { DemoSession } from './demoSession';
 import { readDecryptionEvidence } from './evidenceStore';
+import { clearPermitCache } from './permitCache';
 import { hasConfidentialBalanceAccount, revealClaimedShares } from './revealShares';
 
 /** A sentinel the reveal hands to `signPermit` untouched; nothing in the test signs for real. */
-const PERMIT_WALLET = { publicKey: new Uint8Array(32), features: {} };
-const PERMIT_SESSION = { signedPermit: {}, keyPair: {}, warnings: [] };
+const PERMIT_WALLET = {
+  account: { address: 'A1iceWa11etAddress11111111111111111111111111', publicKey: new Uint8Array(32) },
+  features: {},
+};
+/** The window covers the mocked clock below, so a second reveal may reuse the cached permit. */
+const PERMIT_SESSION = {
+  signedPermit: { fields: { startTimestamp: 1_699_999_000n, durationSeconds: 86_400n } },
+  keyPair: {},
+  warnings: [],
+};
 
 const session = {
   config: {
@@ -64,6 +73,7 @@ const session = {
 describe('confidential balance reveal evidence', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearPermitCache();
     const storage = new Map<string, string>();
     Object.assign(globalThis, {
       localStorage: {
@@ -129,6 +139,19 @@ describe('confidential balance reveal evidence', () => {
       session: PERMIT_SESSION,
       entries: [{ handle: new Uint8Array(32).fill(0x12), encryptedValueId: new Uint8Array(32) }],
     });
+  });
+
+  // One wallet confirmation answers repeated views of the same balance: the permit is cached per
+  // (wallet, domain, KMS route) and reused for its whole validity window.
+  test('reuses one signed permit across two reveals of the same balance', async () => {
+    mocks.decryptPosition.mockResolvedValue([{ value: 72n }]);
+    vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
+
+    await expect(revealClaimedShares(session)).resolves.toEqual({ handle: `0x${'12'.repeat(32)}`, value: 72n });
+    await expect(revealClaimedShares(session)).resolves.toEqual({ handle: `0x${'12'.repeat(32)}`, value: 72n });
+
+    expect(mocks.decryptPosition).toHaveBeenCalledTimes(2);
+    expect(mocks.signPermit).toHaveBeenCalledTimes(1);
   });
 
   // The permit channel is exclusive: a session kind that cannot provide the sRFC-38 wallet is told

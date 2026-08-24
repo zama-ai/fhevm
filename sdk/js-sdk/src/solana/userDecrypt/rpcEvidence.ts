@@ -1,7 +1,7 @@
 // The RPC evidence source: host state for the account, the proof service for a replaced handle.
 //
-// The caller hands in encrypted value *identities* — the 32-byte ids requests carry on the wire —
-// and this source resolves each to the account the id names: the PDA under the host program, the
+// Each request carries its encrypted value *identity* — the 32-byte id requests carry on the wire —
+// and this source resolves it to the account the id names: the PDA under the host program, the
 // same `find_program_address([seed, id], program)` the host and the Connector run. The two values
 // travel together in the evidence because they answer different questions: the id is what the
 // request says, the account pubkey is what the historical-access leaves bind.
@@ -14,10 +14,6 @@
 // built for. A service answer built against any other leaf count is refused as an incoherent
 // snapshot rather than assembled into evidence that contradicts itself; the account moved between
 // the two calls, and the caller's retry re-reads both.
-//
-// The handle-to-id mapping is the caller's knowledge, not this module's: the application read the
-// handle out of that very account before asking to decrypt it, so the mapping arrives as a
-// callback rather than a chain scan.
 //
 // Reads observe the chain at `confirmed` — the same commitment the authorization pipeline reads
 // at; `finalized` would lag the very update whose evidence is being resolved.
@@ -37,18 +33,15 @@ import { unsafeBytesEquals } from '../../core/base/bytes.js';
  * @param config.proofService - Where the standalone proof service lives.
  * @param config.hostProgramId - The 32-byte zama-host program id encrypted value accounts live
  * under; the same deployment identity the permit is signed for.
- * @param config.encryptedValueIdOf - The caller's handle-to-identity knowledge: the 32-byte
- * encrypted value id this request's value lives under.
  */
 export function createSolanaRpcAccessEvidenceSource(config: {
   readonly rpc: SolanaRpc;
   readonly proofService: SolanaAccessProofServiceConfig;
   readonly hostProgramId: Uint8Array;
-  readonly encryptedValueIdOf: (request: SolanaHandleRequest) => Uint8Array | Promise<Uint8Array>;
 }): SolanaAccessEvidenceSource {
   return {
     async resolve(request: SolanaHandleRequest): Promise<SolanaAccessEvidence> {
-      const encryptedValueId = await config.encryptedValueIdOf(request);
+      const encryptedValueId = request.encryptedValueId;
       const accountAddress = await solanaEncryptedValueAccountAddress(config.hostProgramId, encryptedValueId);
       const encryptedValueAccount = new Uint8Array(getAddressEncoder().encode(accountAddress));
       const state = await fetchSolanaEncryptedValueState(config.rpc, accountAddress, { commitment: 'confirmed' });

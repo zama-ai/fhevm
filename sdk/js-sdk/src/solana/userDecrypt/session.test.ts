@@ -17,8 +17,11 @@ import type {
 import type { SolanaPermitFields, SolanaSignedPermit } from '../permit/index.js';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  MAX_SOLANA_USER_DECRYPT_HANDLES,
   SOLANA_USER_DECRYPT_DEFAULT_ATTEMPTS,
   SOLANA_USER_DECRYPT_DEFAULT_RETRY_SECONDS,
+  SolanaAccessEvidenceIntegrityError,
+  SolanaUserDecryptRequestError,
   SolanaUserDecryptRunError,
   runSolanaUserDecrypt,
 } from './index.js';
@@ -74,7 +77,9 @@ const handle = (): Uint8Array => {
   return bytes;
 };
 
-const REQUESTS: readonly SolanaHandleRequest[] = [{ handle: handle(), subject: identity(0x11) }];
+const REQUESTS: readonly SolanaHandleRequest[] = [
+  { handle: handle(), subject: identity(0x11), encryptedValueId: identity(0xe1) },
+];
 
 // The smallest MMR there is — one leaf, no siblings — so the historical evidence below carries a
 // proof the builder actually verifies, not just one it can decode. The leaf binds the account's
@@ -96,6 +101,27 @@ function updatedAfterFirstPass() {
       proofLeafCount: updated ? 1n : 0n,
       accessProof: updated ? HISTORICAL_PROOF : new Uint8Array(0),
       peaks: updated ? HISTORICAL_PEAKS : [],
+    });
+  });
+  return { resolve, source: { resolve } };
+}
+
+/** Evidence that fails a scripted number of times before answering as stable evidence would. */
+function faultyEvidence(failures: number, error: Error) {
+  let failed = 0;
+  const resolve = vi.fn((request: SolanaHandleRequest): Promise<SolanaAccessEvidence> => {
+    if (failed < failures) {
+      failed += 1;
+      return Promise.reject(error);
+    }
+    return Promise.resolve({
+      handle: request.handle,
+      subject: request.subject,
+      encryptedValueId: request.encryptedValueId,
+      encryptedValueAccount: identity(0xea),
+      proofLeafCount: 0n,
+      accessProof: new Uint8Array(0),
+      peaks: [],
     });
   });
   return { resolve, source: { resolve } };
@@ -366,5 +392,135 @@ describe('a request that is never answered', () => {
 
     const signatures = new Set(submit.mock.calls.map((call) => (call[0] as { signature: string }).signature));
     expect(signatures).toEqual(new Set([bytesToHex(permit.signature)]));
+  });
+});
+
+describe('a request refused before the network', () => {
+  // The stateless limits — the handle count, the bit budget, the host chain, the identity widths —
+  // are properties of the request itself. Refusing here costs no host read, no proof-service work
+  // and no submission; waiting for the evidence to say the same thing would just price the refusal.
+  it('is refused on the handle cap without resolving evidence or submitting', async () => {
+    const { resolve, source } = stableEvidence();
+    const { submit, transport } = scriptedTransport([answered]);
+    const { clock, delay } = recordingClock();
+    const overCap = Array.from({ length: MAX_SOLANA_USER_DECRYPT_HANDLES + 1 }, () => ({
+      handle: handle(),
+      subject: identity(0x11),
+      encryptedValueId: identity(0xe1),
+    }));
+
+    await expect(
+      runSolanaUserDecrypt({
+        signedPermit: signedPermit(),
+        requests: overCap,
+        evidence: source,
+        transport,
+        clock,
+      }),
+    ).rejects.toThrow(SolanaUserDecryptRequestError);
+
+    expect(resolve).not.toHaveBeenCalled();
+    expect(submit).not.toHaveBeenCalled();
+    expect(delay).not.toHaveBeenCalled();
+  });
+});
+
+describe('an evidence resolution that fails', () => {
+  it('retries a transient fault on the attempt budget, waiting the growing backoff first', async () => {
+    const fault = new Error('the RPC connection was reset');
+    const { resolve, source } = faultyEvidence(2, fault);
+    const { submit, transport } = scriptedTransport([answered]);
+    const { clock, delay } = recordingClock();
+
+    const result = await runSolanaUserDecrypt({
+      signedPermit: signedPermit(),
+      requests: REQUESTS,
+      evidence: source,
+      transport,
+      clock,
+    });
+
+    // Two failed resolutions and one answered submission: three attempts from the one budget.
+    expect(result).toEqual({ response: 'shares', attempts: 3 });
+    expect(resolve).toHaveBeenCalledTimes(3 * REQUESTS.length);
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(delay.mock.calls).toEqual([
+      [SOLANA_USER_DECRYPT_DEFAULT_RETRY_SECONDS],
+      [SOLANA_USER_DECRYPT_DEFAULT_RETRY_SECONDS * 2],
+    ]);
+  });
+
+  it('reports the fault itself when the budget runs out before evidence ever resolved', async () => {
+    const fault = new Error('the proof service is unreachable');
+    const { source } = faultyEvidence(Number.POSITIVE_INFINITY, fault);
+    const { submit, transport } = scriptedTransport([answered]);
+    const { clock } = recordingClock();
+
+    await expect(
+      runSolanaUserDecrypt({
+        signedPermit: signedPermit(),
+        requests: REQUESTS,
+        evidence: source,
+        transport,
+        clock,
+        attempts: 3,
+      }),
+    ).rejects.toBe(fault);
+
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  // The same answer would come back on every retry: an integrity failure is a source bug, not a
+  // moment, and spending the budget on it would report slowness instead of what it is.
+  it('does not retry evidence wrong on its face', async () => {
+    const integrity = new SolanaAccessEvidenceIntegrityError('the proof-service response is not an MMR-proof envelope');
+    const { resolve, source } = faultyEvidence(Number.POSITIVE_INFINITY, integrity);
+    const { submit, transport } = scriptedTransport([answered]);
+    const { clock, delay } = recordingClock();
+
+    await expect(
+      runSolanaUserDecrypt({
+        signedPermit: signedPermit(),
+        requests: REQUESTS,
+        evidence: source,
+        transport,
+        clock,
+      }),
+    ).rejects.toBe(integrity);
+
+    expect(resolve).toHaveBeenCalledTimes(REQUESTS.length);
+    expect(submit).not.toHaveBeenCalled();
+    expect(delay).not.toHaveBeenCalled();
+  });
+
+  it('does not retry a proof the request builder refuses', async () => {
+    const resolve = vi.fn(
+      (request: SolanaHandleRequest): Promise<SolanaAccessEvidence> =>
+        Promise.resolve({
+          handle: request.handle,
+          subject: request.subject,
+          encryptedValueId: request.encryptedValueId,
+          encryptedValueAccount: identity(0xea),
+          proofLeafCount: 1n,
+          accessProof: new Uint8Array([0xff]),
+          peaks: [],
+        }),
+    );
+    const { submit, transport } = scriptedTransport([answered]);
+    const { clock, delay } = recordingClock();
+
+    await expect(
+      runSolanaUserDecrypt({
+        signedPermit: signedPermit(),
+        requests: REQUESTS,
+        evidence: { resolve },
+        transport,
+        clock,
+      }),
+    ).rejects.toThrow(SolanaUserDecryptRequestError);
+
+    expect(resolve).toHaveBeenCalledTimes(REQUESTS.length);
+    expect(submit).not.toHaveBeenCalled();
+    expect(delay).not.toHaveBeenCalled();
   });
 });

@@ -59,7 +59,9 @@ const handle = (): Uint8Array => {
   return bytes;
 };
 
-const REQUESTS: readonly SolanaHandleRequest[] = [{ handle: handle(), subject: identity(0x11) }];
+const REQUESTS: readonly SolanaHandleRequest[] = [
+  { handle: handle(), subject: identity(0x11), encryptedValueId: identity(0xe1) },
+];
 
 const evidence = {
   resolve: (request: SolanaHandleRequest): Promise<SolanaAccessEvidence> =>

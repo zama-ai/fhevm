@@ -14,6 +14,7 @@
 
 import type { Bytes32Hex } from '../../../core/types/primitives.js';
 import type { ClearValue } from '../../../core/types/encryptedTypes-p.js';
+import type { FhevmRuntime } from '../../../core/types/coreFhevmRuntime.js';
 import type { FhevmSolanaChain } from '../../../core/types/fhevmSolanaChain.js';
 import type { RelayerUserDecryptOptions } from '../../../core/types/relayer.js';
 import type { SolanaPermitWallet } from '../../permit/index.js';
@@ -42,7 +43,7 @@ import {
 import { bytes32ToHandle } from '../../../core/handle/FhevmHandle.js';
 import { bytesToClearValueType } from '../../../core/handle/FheType.js';
 import { createClearValue } from '../../../core/handle/ClearValue.js';
-import { bytesToHexNo0x, hexToBytes32, isBytes32 } from '../../../core/base/bytes.js';
+import { hexToBytes32, isBytes32 } from '../../../core/base/bytes.js';
 
 /** The origin of every clear value this path produces; nothing outside this module can mint one. */
 const SOLANA_PERMIT_USER_DECRYPT_TOKEN = Symbol('fhevm.solana.permit-user-decrypt');
@@ -110,11 +111,14 @@ export type SolanaPermitDecryptActions = {
  * @param chain - Where the deployment is; `rpcUrl`, `proofServiceUrl` and `verifyingProgramId`
  * are required here, unlike on the public-decrypt-only surface.
  * @param trust - Whom to believe; see {@link SolanaDecryptTrust}.
+ * @param runtime - The client runtime; its configured auth reaches every relayer submission,
+ * with per-call options taking precedence — the same merge the public-decrypt action runs.
  * @throws If the chain does not name the endpoints and identity the permit path stands on.
  */
 export function solanaPermitDecryptActions(
   chain: FhevmSolanaChain,
   trust: SolanaDecryptTrust,
+  runtime: FhevmRuntime,
 ): SolanaPermitDecryptActions {
   // Fail at construction, not mid-session: a chain missing a deployment field would otherwise
   // surface as a failure of whichever request first needed it.
@@ -156,16 +160,8 @@ export function solanaPermitDecryptActions(
       const requests: readonly SolanaHandleRequest[] = parameters.entries.map((entry) => ({
         handle: entry.handle,
         subject: entry.subject ?? userPubkey,
+        encryptedValueId: entry.encryptedValueId,
       }));
-
-      // The caller's handle-to-account knowledge, keyed the way the evidence source asks for it.
-      const accountOf = new Map<string, Uint8Array>();
-      for (const [index, entry] of parameters.entries.entries()) {
-        const request = requests[index];
-        if (request !== undefined) {
-          accountOf.set(requestKey(request), entry.encryptedValueId);
-        }
-      }
 
       const plaintexts = await executeSolanaUserDecrypt({
         session: parameters.session,
@@ -175,17 +171,10 @@ export function solanaPermitDecryptActions(
           proofService: { proofServiceUrl },
           // The permit's verifying program IS the host program encrypted value accounts live under.
           hostProgramId: verifyingProgramId,
-          encryptedValueIdOf: (request) => {
-            const encryptedValueId = accountOf.get(requestKey(request));
-            if (encryptedValueId === undefined) {
-              throw new Error('the evidence source was asked about a handle this request never named');
-            }
-            return encryptedValueId;
-          },
         }),
         transport: createSolanaUserDecryptRelayerTransport({
           relayerUrl: chain.fhevm.relayerUrl,
-          options: parameters.options,
+          options: { auth: runtime.config.auth, ...parameters.options },
         }),
         clock: { delay: (seconds) => new Promise((resolve) => setTimeout(resolve, seconds * 1000)) },
         attempts: parameters.attempts,
@@ -231,15 +220,6 @@ function toClearValues(
       originToken: SOLANA_PERMIT_USER_DECRYPT_TOKEN,
     });
   });
-}
-
-/**
- * What makes two entries one question to the evidence source — mirrors its resolution key.
- *
- * @param request - One occurrence.
- */
-function requestKey(request: SolanaHandleRequest): string {
-  return `${bytesToHexNo0x(request.handle)}|${bytesToHexNo0x(request.subject)}`;
 }
 
 /**

@@ -13,6 +13,7 @@ import {
 } from './vault/index.js';
 
 import type { DemoSession } from './demoSession';
+import { permitSessionFor } from './permitCache';
 import { recordDecryptionEvidence } from './evidenceStore';
 
 type Bytes32Hex = Parameters<typeof defineFhevmSolanaChain>[0]['fhevm']['acl']['domainKeys'][number];
@@ -89,15 +90,28 @@ const revealConfidentialBalance = async (
   });
   // The permit channel is the one way to sign: a session whose wallet does not back the sRFC-38
   // feature cannot reveal, and says so instead of falling back to raw message signing.
-  if (session.permitWallet === undefined) {
+  const permitWallet = session.permitWallet;
+  if (permitWallet === undefined) {
     throw new Error(
       `${session.wallet.name} does not support solana:signOffchainMessage, the only channel a reveal is signed through; connect a wallet that does, or use the demo wallet`,
     );
   }
-  const client = createFhevmDecryptClient({ chain, trust: demoTrust(session.config) });
+  const trust = demoTrust(session.config);
+  const client = createFhevmDecryptClient({ chain, trust });
   await client.ready;
   const startedAt = performance.now();
-  const permit = await client.signPermit({ wallet: session.permitWallet, durationSeconds: 3_600n });
+  // One confirmation per (wallet, domain, KMS route) and validity window: repeated views of the
+  // same private balance reuse the signed permit instead of prompting the wallet again.
+  const permit = await permitSessionFor(
+    {
+      walletAddress: permitWallet.account.address,
+      chainId: session.config.chainId,
+      domainKey: encodedDomain,
+      kmsContextId: trust.kmsContextId,
+      kmsEpochId: trust.kmsEpochId,
+    },
+    () => client.signPermit({ wallet: permitWallet, durationSeconds: 3_600n }),
+  );
   let jobId: string | null = null;
   let queuedAt: number | null = null;
   let responseAt: number | null = null;

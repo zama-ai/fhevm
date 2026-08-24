@@ -4,6 +4,7 @@ export {
   MAX_SOLANA_USER_DECRYPT_HANDLES,
   SOLANA_SRFC38_ATTESTATION_TYPE,
   SolanaUserDecryptRequestError,
+  admitSolanaUserDecryptRequest,
   buildSolanaUserDecryptRequest,
   solanaUserDecryptRequestBits,
 } from './request.js';
@@ -14,7 +15,7 @@ export type {
   SolanaUserDecryptRequestJson,
 } from './request.js';
 
-export { resolveSolanaAccessEvidence } from './evidence.js';
+export { SolanaAccessEvidenceIntegrityError, resolveSolanaAccessEvidence } from './evidence.js';
 export type { SolanaAccessEvidence, SolanaAccessEvidenceSource, SolanaHandleRequest } from './evidence.js';
 
 export { executeSolanaUserDecrypt, solanaUserDecryptLinkInputs } from './execute.js';

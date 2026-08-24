@@ -297,6 +297,23 @@ describe('the entry list', () => {
     ]);
   });
 
+  // The wire identity is the triple: the same handle under the same subject can live under two
+  // encrypted value accounts, and collapsing them would answer for an account the caller never named.
+  it('keeps each entry its own encrypted value id, even under one (handle, subject)', () => {
+    const handle = handleOf(EBOOL_TYPE_ID);
+    const firstId = new Uint8Array(32).fill(0xe1);
+    const secondId = new Uint8Array(32).fill(0xe2);
+    const body = buildSolanaUserDecryptRequest({
+      signedPermit: signedPermit(),
+      entries: [entryFor(handle, { encryptedValueId: firstId }), entryFor(handle, { encryptedValueId: secondId })],
+    });
+
+    expect(body.attestedPayload.handles.map((entry) => entry.encryptedValueId)).toEqual([
+      bytesToHex(firstId),
+      bytesToHex(secondId),
+    ]);
+  });
+
   it('names the entry whose subject or value id is not 32 bytes', () => {
     const permit = signedPermit();
     const handle = handleOf(EBOOL_TYPE_ID);

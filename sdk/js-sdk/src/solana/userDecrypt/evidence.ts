@@ -10,7 +10,7 @@
 // service. Both
 // belong to the application's transport, and the request builder must be testable without either.
 
-/** One handle the caller wants decrypted, and whose value it is. */
+/** One handle the caller wants decrypted, whose value it is, and where the value lives. */
 export interface SolanaHandleRequest {
   /** The 32-byte ciphertext handle. */
   readonly handle: Uint8Array;
@@ -19,12 +19,17 @@ export interface SolanaHandleRequest {
    * direct entry, the delegator on a delegated one.
    */
   readonly subject: Uint8Array;
+  /**
+   * The 32-byte encrypted value id — the identity the request carries on the wire. It is the
+   * caller's knowledge: the application read the handle out of the account this id names before
+   * asking to decrypt it. It is part of the request's identity too — the same handle under the same
+   * subject can be asked about under two different accounts, and those are two different questions.
+   */
+  readonly encryptedValueId: Uint8Array;
 }
 
 /** One resolved entry: the handle, its subject, and the evidence that it may be read. */
 export interface SolanaAccessEvidence extends SolanaHandleRequest {
-  /** The 32-byte encrypted value id — the identity the request carries on the wire. */
-  readonly encryptedValueId: Uint8Array;
   /**
    * The 32-byte pubkey of the account itself — the PDA the id names under the host program. Never
    * sent on the wire (the Connector re-derives it from the id); it exists because the
@@ -41,6 +46,19 @@ export interface SolanaAccessEvidence extends SolanaHandleRequest {
    * the same snapshot the proof came from.
    */
   readonly peaks: readonly Uint8Array[];
+}
+
+/**
+ * An evidence answer wrong on its face — malformed bytes, a proof the service itself does not stand
+ * behind — as opposed to a source meeting a bad moment. The distinction is what the session's retry
+ * loop acts on: a fault is retried on the attempt budget, an integrity failure is not, because the
+ * same answer would come back on every retry.
+ */
+export class SolanaAccessEvidenceIntegrityError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SolanaAccessEvidenceIntegrityError';
+  }
 }
 
 /**
@@ -102,13 +120,14 @@ export async function resolveSolanaAccessEvidence(
 }
 
 /**
- * What makes two occurrences the same question: the handle and the subject together. The same
- * handle under two subjects asks about two different pubkeys' access, so it is two fetches.
+ * What makes two occurrences the same question: the handle, the subject and the encrypted value id
+ * together. The same handle under two subjects asks about two different pubkeys' access, and the
+ * same handle under two ids asks about two different accounts — either way it is two fetches.
  *
  * @param request - One occurrence.
  */
 function resolutionKey(request: SolanaHandleRequest): string {
-  return `${hex(request.handle)}|${hex(request.subject)}`;
+  return `${hex(request.handle)}|${hex(request.subject)}|${hex(request.encryptedValueId)}`;
 }
 
 /**

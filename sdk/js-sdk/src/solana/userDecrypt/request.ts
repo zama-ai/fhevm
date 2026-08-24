@@ -17,7 +17,7 @@
 // Everything else — ownership, delegation, the validity window, the revocation watermark — is
 // authorization, and belongs to the Connector against a state snapshot no client can hold.
 
-import type { SolanaAccessEvidence } from './evidence.js';
+import type { SolanaAccessEvidence, SolanaHandleRequest } from './evidence.js';
 import type { SolanaSignedPermit } from '../permit/index.js';
 import {
   MAX_DECRYPTION_REQUEST_BITS,
@@ -134,6 +134,54 @@ function describeRequestFailure(failure: SolanaUserDecryptRequestFailure): strin
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
+ * The admission a request must pass before anything else is spent on it. Every rule here is
+ * checkable from the requests and the permit alone — the handle count cap, the bit budget, each
+ * handle's host chain, the width of each identity field — so a request that can never be submitted
+ * is refused before evidence is fetched for it: no host RPC, no proof-service work, no relayer fee.
+ *
+ * The request builder runs the same rules again over the resolved evidence; running them twice is
+ * cheaper than a seam through which an unadmitted request could reach the wire.
+ *
+ * @param admission.chainId - The one host chain the permit was signed for.
+ * @param admission.requests - The handles, in the order they will be requested.
+ * @throws SolanaUserDecryptRequestError - On the first rule the request breaks.
+ */
+export function admitSolanaUserDecryptRequest(admission: {
+  readonly chainId: bigint;
+  readonly requests: readonly SolanaHandleRequest[];
+}): void {
+  const { chainId, requests } = admission;
+
+  if (requests.length === 0) {
+    throw new SolanaUserDecryptRequestError({ reason: 'no-handles' });
+  }
+
+  // Widths and the budget first, over the whole list: the sum is a property of the request, not of
+  // any one entry, so it is settled before the per-entry rules name individual positions.
+  solanaUserDecryptRequestBits(requests.map((request) => request.handle));
+
+  for (const [index, request] of requests.entries()) {
+    // The handle parses — the width check above proved that much — so this narrowing cannot fail;
+    // it re-states the width failure only to convince the type system, not the reader.
+    if (!isBytes32(request.handle)) {
+      throw new SolanaUserDecryptRequestError({ reason: 'handle-without-a-width', index });
+    }
+    // The chain id the handle embeds must be the one chain the permit was signed for.
+    const embeddedChainId = bytes32ToHandle(request.handle).chainId;
+    if (embeddedChainId !== chainId) {
+      throw new SolanaUserDecryptRequestError({ reason: 'foreign-host-chain', index, chainId: embeddedChainId });
+    }
+
+    if (request.subject.length !== 32) {
+      throw new SolanaUserDecryptRequestError({ reason: 'evidence-field-width', index, field: 'subject' });
+    }
+    if (request.encryptedValueId.length !== 32) {
+      throw new SolanaUserDecryptRequestError({ reason: 'evidence-field-width', index, field: 'encryptedValueId' });
+    }
+  }
+}
+
+/**
  * Assembles the request body for a signed permit and the resolved entries.
  *
  * Duplicates and their order are preserved exactly as given: each occurrence is authorized on its
@@ -152,33 +200,9 @@ export function buildSolanaUserDecryptRequest(request: {
   const { signedPermit, entries } = request;
   const fields = signedPermit.fields;
 
-  if (entries.length === 0) {
-    throw new SolanaUserDecryptRequestError({ reason: 'no-handles' });
-  }
-
-  // Widths and the budget first, over the whole list: the sum is a property of the request, not of
-  // any one entry, so it is settled before the per-entry rules name individual positions.
-  solanaUserDecryptRequestBits(entries.map((entry) => entry.handle));
+  admitSolanaUserDecryptRequest({ chainId: fields.chainId, requests: entries });
 
   for (const [index, entry] of entries.entries()) {
-    // The handle parses — the width check above proved that much — so this narrowing cannot fail;
-    // it re-states the width failure only to convince the type system, not the reader.
-    if (!isBytes32(entry.handle)) {
-      throw new SolanaUserDecryptRequestError({ reason: 'handle-without-a-width', index });
-    }
-    // The chain id the handle embeds must be the one chain the permit was signed for.
-    const embeddedChainId = bytes32ToHandle(entry.handle).chainId;
-    if (embeddedChainId !== fields.chainId) {
-      throw new SolanaUserDecryptRequestError({ reason: 'foreign-host-chain', index, chainId: embeddedChainId });
-    }
-
-    if (entry.subject.length !== 32) {
-      throw new SolanaUserDecryptRequestError({ reason: 'evidence-field-width', index, field: 'subject' });
-    }
-    if (entry.encryptedValueId.length !== 32) {
-      throw new SolanaUserDecryptRequestError({ reason: 'evidence-field-width', index, field: 'encryptedValueId' });
-    }
-
     // The leaf count travels as an unsigned 64-bit decimal; a bigint outside that range has no wire
     // form, and serializing it anyway would put a request on the network only the server can refuse.
     if (entry.proofLeafCount < 0n || entry.proofLeafCount > MAX_PROOF_LEAF_COUNT) {

@@ -118,7 +118,6 @@ function sourceOver(rpc: SolanaRpc) {
     rpc,
     proofService: { proofServiceUrl: 'http://proofs.local' },
     hostProgramId: HOST_PROGRAM_ID,
-    encryptedValueIdOf: () => ENCRYPTED_VALUE_ID,
   });
 }
 
@@ -133,7 +132,11 @@ describe('the RPC evidence source', () => {
     const { rpc, reads } = fixtureRpc();
     proofServiceAnswering(3);
 
-    const evidence = await sourceOver(rpc).resolve({ handle: CURRENT_HANDLE, subject: SUBJECT });
+    const evidence = await sourceOver(rpc).resolve({
+      handle: CURRENT_HANDLE,
+      subject: SUBJECT,
+      encryptedValueId: ENCRYPTED_VALUE_ID,
+    });
 
     expect(evidence).toEqual({
       handle: CURRENT_HANDLE,
@@ -154,7 +157,11 @@ describe('the RPC evidence source', () => {
     const { rpc } = fixtureRpc();
     const { urls } = proofServiceAnswering(3);
 
-    const evidence = await sourceOver(rpc).resolve({ handle: REPLACED_HANDLE, subject: SUBJECT });
+    const evidence = await sourceOver(rpc).resolve({
+      handle: REPLACED_HANDLE,
+      subject: SUBJECT,
+      encryptedValueId: ENCRYPTED_VALUE_ID,
+    });
 
     // The service is asked by the account — the PDA — not by the wire identity.
     expect(urls[0]).toContain(`encrypted_value=${ACCOUNT_ADDRESS}`);
@@ -172,6 +179,8 @@ describe('the RPC evidence source', () => {
     const { rpc } = fixtureRpc();
     proofServiceAnswering(4);
 
-    await expect(sourceOver(rpc).resolve({ handle: REPLACED_HANDLE, subject: SUBJECT })).rejects.toThrow('leaf count');
+    await expect(
+      sourceOver(rpc).resolve({ handle: REPLACED_HANDLE, subject: SUBJECT, encryptedValueId: ENCRYPTED_VALUE_ID }),
+    ).rejects.toThrow('leaf count');
   });
 });
