@@ -198,6 +198,18 @@ jobs:
         working-directory: relayer/relayer-migrate
         run: sqlx migrate run
 
+      - name: Offline query data matches the migrations
+        # The steps above compile with SQLX_OFFLINE, which trusts .sqlx instead of
+        # checking it, so stale data would pass every other check in this workflow.
+        if: matrix.shard == 'fast'
+        working-directory: relayer
+        env:
+          SQLX_OFFLINE: false
+        # DATABASE_URL is passed on the command line because the Makefile derives its
+        # own default from the compose file, which would otherwise win over the
+        # service's port.
+        run: make sqlx-check DATABASE_URL="$DATABASE_URL"
+
       - name: Run tests
         working-directory: relayer
         run: RUST_BACKTRACE=full make test-integration
