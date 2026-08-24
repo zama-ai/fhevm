@@ -277,6 +277,7 @@ pub async fn execute_verify_proofs_loop(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn execute_worker(
     conf: Config,
     pool: sqlx::Pool<sqlx::Postgres>,
