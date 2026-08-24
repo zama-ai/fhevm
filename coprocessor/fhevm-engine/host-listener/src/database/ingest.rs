@@ -70,21 +70,41 @@ fn block_date_time_utc(timestamp: u64) -> PrimitiveDateTime {
 /// particular, bridge fallback synthesis creates a `TrivialEncrypt`-shaped
 /// computation row but did not execute the executor, so it must not mint a
 /// later operand in the same transaction.
+/// Counts fail-closed rejections of operand-origin mask derivation. The
+/// rejected block is retried (and rejected again) on every pass, so a
+/// sustained nonzero rate on this counter means ingestion is STALLED on a
+/// block whose logs the RPC provider serves malformed (missing/duplicate
+/// log metadata) — page on it; the stall does not self-announce otherwise
+/// and never resolves without a healthy refetch or an operator fix.
+static OPERAND_MASK_DERIVATION_REJECTS_COUNTER: std::sync::LazyLock<
+    prometheus::IntCounter,
+> = std::sync::LazyLock::new(|| {
+    prometheus::register_int_counter!(
+        "coprocessor_host_listener_operand_mask_derivation_rejects_counter",
+        "Fail-closed rejections of operand-origin mask derivation (block ingest stalled on malformed provider logs)"
+    )
+    .unwrap()
+});
+
+fn refuse_mask_derivation(reason: &'static str) -> sqlx::Error {
+    OPERAND_MASK_DERIVATION_REJECTS_COUNTER.inc();
+    error!(target: "host_listener", reason, "refusing operand-origin mask derivation; block ingest will stall and retry");
+    sqlx::Error::Protocol(reason.into())
+}
+
 fn populate_operand_boundary_masks(
     logs: &mut [LogTfhe],
 ) -> Result<(), sqlx::Error> {
     let mask_bearing = |log: &LogTfhe| tfhe_result_handle(&log.event).is_some();
     for log in logs.iter().filter(|log| mask_bearing(log)) {
         if log.transaction_hash.is_none() {
-            return Err(sqlx::Error::Protocol(
-                "refusing computation event without transaction hash for operand-origin derivation"
-                    .into(),
+            return Err(refuse_mask_derivation(
+                "refusing computation event without transaction hash for operand-origin derivation",
             ));
         }
         if log.log_index.is_none() {
-            return Err(sqlx::Error::Protocol(
-                "refusing computation event without log index for operand-origin derivation"
-                    .into(),
+            return Err(refuse_mask_derivation(
+                "refusing computation event without log index for operand-origin derivation",
             ));
         }
     }
@@ -99,9 +119,8 @@ fn populate_operand_boundary_masks(
         let log_index =
             log.log_index.expect("validated mask-bearing log index");
         if previous_index == Some(log_index) {
-            return Err(sqlx::Error::Protocol(
-                "refusing duplicate computation log index for operand-origin derivation"
-                    .into(),
+            return Err(refuse_mask_derivation(
+                "refusing duplicate computation log index for operand-origin derivation",
             ));
         }
         previous_index = Some(log_index);
@@ -119,7 +138,11 @@ fn populate_operand_boundary_masks(
         let mask = operand_boundary_mask_from_minted(&log.event, |handle| {
             minted.contains(handle)
         })
-        .map_err(sqlx::Error::Protocol)?;
+        .map_err(|reason| {
+            OPERAND_MASK_DERIVATION_REJECTS_COUNTER.inc();
+            error!(target: "host_listener", %reason, "refusing operand-origin mask derivation; block ingest will stall and retry");
+            sqlx::Error::Protocol(reason)
+        })?;
         log.operand_boundary_mask = Some(mask);
 
         // This happens strictly after the mask above, exactly as the executor
