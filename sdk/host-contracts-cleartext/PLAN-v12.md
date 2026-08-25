@@ -54,13 +54,24 @@ should approve before it happens rather than after.
 
 ### 0.1 Commit v13 — DONE
 
-**Baseline: `f7d27c3fa` — "fix(sdk): improve host-contracts-cleartext v13".** Verified: the v13 working
-tree is clean, and `create2-deploy/` is tracked (20 files), which is what makes Phase 1's single-rsync
-copy correct.
+**Baseline: `6cb31b45a` — "fix(sdk): latest host-contracts-cleartext v13".** This supersedes the earlier
+`f7d27c3fa`: it also carries the Phase 0.3 refactor. Verified at copy time: v13's working tree clean, 237
+files tracked, nothing untracked-but-unignored, and `create2-deploy/` tracked — which is what makes
+Phase 1's single-rsync copy correct.
+
+Why the baseline had to move before Phase 1: with the refactor uncommitted, `git ls-files` would have
+silently skipped three hand-written sources (`internal/contractVersions.ts`,
+`internal/generateContractVersions.ts`, `internal/cli/generateContractVersions.ts`) and produced a v12
+that could not run its own generators. An uncommitted baseline is not a bookkeeping preference.
 
 That commit is the declared baseline: from then on, a hunk in `diff -r v13 v12` is either in the register
-below (Appendix A) or it is a v13 change that was never propagated down. Every line number cited in this
-document is against `f7d27c3fa`; re-derive rather than trust them if v13 moves.
+below (Appendix A) or it is a v13 change that was never propagated down.
+
+**Line numbers in this document are stale, deliberately not chased.** They were accurate against
+`6cb31b45a`; v13 has moved several hundred lines since — the Phase 0.3 refactor, the Phase 5 fixes, and
+the create2 work. Re-deriving them would make them wrong again on the next commit, so treat every `file:NN`
+here as "this file, near here" and locate the symbol by name. The file paths and symbol names are the part
+that is maintained; the numbers were only ever a convenience.
 
 Local commit only — no push, no tag (see the hard constraint above).
 
@@ -161,7 +172,39 @@ Order to do them in — cheapest and least risky first, each independently landa
 
 Together these delete groups D′ and H.3 outright and shrink D, F and G to the protocol delta alone.
 
-#### The one worth doing now most of all
+#### The one worth doing now most of all — PREREQUISITE DONE, UNIFICATION STILL OPEN
+
+**Status: the equivalence is now proved and guarded; the six copies still exist.**
+
+`test/stack-order.test.ts` (in both generations) reads all six sources as text, extracts the order each
+one materializes, and asserts they match — with `pkg/ts/deploy.ts` as the reference. It passes today,
+which is the first time anything has established that the six agree. Verified by injection: swapping
+`HCU_LIMIT` and `PROTOCOL_CONFIG` in `scripts/anvil-lib.sh` fails it with "one of them is deploying the
+wrong implementation behind a proxy". It is byte-identical between generations, because it derives the
+expected order from each package's own `deploy.ts` rather than hardcoding one.
+
+Why this before the refactor, rather than instead of it: **a refactor that merges six copies has to start
+by proving they are equivalent**, or it silently adopts whichever copy the author happened to read. That
+proof did not exist. It does now, and it also keeps them equivalent while the merge is pending — which
+matters because v11 is next.
+
+It passing in v12 is the stronger result: v12's six layers were each hand-edited during the port, and the
+test confirms independently that the six-way edit came out consistent.
+
+Two limits, stated because a green test invites over-reading:
+
+- **It verifies order, not behaviour.** Two layers can agree on the sequence and still pass different
+  initializer arguments. Those arguments are deliberately not unified — they are the documented override
+  point (`FhevmDeploy._fhevmProtocolConfig`) — and stay covered by the deploy tests and
+  `VerifyFhevmDeploy`, which read them back off a live chain.
+- **It is a text scan**, so it is coupled to the shape of the six files. Each extraction is anchored
+  between markers and asserts it found something, so a restructure fails loudly rather than silently
+  matching nothing — but the scan is a stepping stone, not the destination. When one generated table
+  replaces the six, delete this file.
+
+The unification itself is unchanged from the analysis below and still worth doing.
+
+#### The original case for unifying
 
 The stack's shape is described **six** times over — `pkg/ts/deploy.ts`, `pkg/forge/src/FhevmDeploy.sol`,
 `pkg/forge/script/FhevmDeployScript.s.sol`, `pkg/forge/script/DeployLocalStack.s.sol`,
@@ -183,7 +226,22 @@ before it lands pays for it again.** Recommendation: do it before Phase 1. If it
 
 Nothing else in v13 changes for v12's sake.
 
-## Phase 1 — duplicate
+## Phase 1 — duplicate — DONE
+
+**230 files copied**, and `diff -r v13 v12` reports exactly one line: `Only in v13: plans`. The clone
+then passed `install.sh --reset --lockfile=keep`, `lint`, `forge test` 35/35 and the template tests 11/11
+as a standalone package, with `package-lock.json` and `soldeer.lock` byte-identical to v13's.
+
+That green run is the point of the phase: Phase 2 starts from a base known to work, so any later failure
+is attributable to a Phase 2 edit rather than to the copy.
+
+Two expected leftovers of the clone, both removed by Phase 2 group G — worth naming so they are not
+mistaken for problems:
+
+- `internal/constants.ts` still resolves `PREVIOUS_GENERATION_DIR_ABS_PATH` to `../v12`, i.e. **itself**.
+  Running `npm run test:upgrade-e2e` in v12 right now would try to build v12 as its own fixture.
+- `test/ts/upgrade-e2e.test.ts` and `test/ts/vitest.e2e.config.ts` still reference
+  `@fhevm/host-contracts-cleartext-v12`.
 
 Copy the **tracked** v13 tree plus `create2-deploy/`'s sources, and nothing else:
 
@@ -229,7 +287,29 @@ is identical to v13's, so a re-resolve would produce diff noise with no cause be
 harnesses being named the same (`@fhevm/host-contracts-cleartext-dev`) is fine: both are `private: true`
 and there is no workspace above them to collide in.
 
-## Phase 2 — the edit list
+## Phase 2 — the edit list — DONE
+
+All nine groups applied. Verified in v12: `check:vendored` (16 files identical to `v0.12.5`),
+`check:zama-config`, `prettier:check`, `lint`, `forge test` 11/11, template tests 11/11,
+`test:tarball` 17/17 across 7 files, `forge build --sizes` (largest is `CleartextFHEVMExecutor` at
+19,764 B — 4,812 B of margin, comfortably more than v13's), and the full bash deploy path via
+`./scripts/anvil.sh` at **40 passed / 0 failed / 1 skipped** plus the rules 15/17 address check.
+
+Phase 3 regenerated to exactly the expected shape with **zero hand-editing**: 7 contract versions (was
+9), 10 nonces / 8 addresses (was 12/10), 12 interfaces (was 14), `PROXY_COUNT = 7`,
+`ADDRESSED_NONCE_COUNT = 10`. Groups D′ and H.3 required no work at all, as Phase 0.3 predicted.
+
+`diff -r v13 v12` reports 127 differing entries, every one attributable to an Appendix A cause.
+
+**One arity literal the Phase 0.3 item-B sweep missed**, found only by running the v12 deploy:
+`scripts/deploy.sh` derived the ACLOwner address from a hardcoded `START_NONCE + 12`. The sweep's path
+list covered `pkg/forge`, `create2-deploy/script` and `scripts/anvil-lib.sh` — not `deploy.sh` — and its
+regex would not have matched `+ 12` anyway. Fixed in v13 first (rule 20) by reading
+`ADDRESSED_NONCE_COUNT` out of the generated `LocalHostAddresses.sol`, then copied down. It presented as
+`FAIL ACL.owner == ACL_OWNER_ADDRESS` with the *deploy* correct and the *expectation* stale — worth
+remembering as the signature of this class of bug.
+
+### The original edit list
 
 Nine groups, each one a cause. Everything not listed here stays byte-identical (Appendix B).
 
@@ -636,7 +716,71 @@ The corollary is worth knowing before adding any generator: **anything else writ
 directories is deleted on the next build.** `pkg/ts/versions.ts` sits at `pkg/ts/` rather than
 `pkg/ts/artifacts/` for exactly this reason.
 
-## Phase 4 — verify
+## Phase 4 — verify — DONE
+
+Both generations green after the port:
+
+| Gate | v13 | v12 |
+| --- | --- | --- |
+| `lint` (eslint + tsc) | ✅ | ✅ |
+| `forge test` | 42/42 | 18/18 |
+| template + signer tests | 11/11 | 11/11 |
+| `check:vendored` (rule 6) | ✅ 21 files @ `v0.13.2` | ✅ 16 files @ `v0.12.5` |
+| `check:zama-config` (rules 15/17) | ✅ | ✅ |
+| `prettier:check` | ✅ | ✅ |
+| `test:tarball` | 19/19 (9 files) | 17/17 (7 files) |
+| `forge build --sizes` (rule 12) | 22,994 B / 1,582 B margin | 19,764 B / 4,812 B margin |
+| `./scripts/anvil.sh` (bash deploy) | 58 passed / 0 failed | 40 passed / 0 failed |
+
+### The CREATE2 path: verified by test AND by a real run
+
+Both, in the end. The alignment test came first; then `create2-deploy` was changed so a local anvil
+rehearsal needs no keystore, and the full path was actually run.
+
+**Keystore-free on anvil only.** `--account` is now optional, and omitting it uses accounts 0 and 1 of
+anvil's public mnemonic (0 deploys, 1 is the admin, which `--admin` also defaults to). The gate is
+`anvil_nodeInfo` — a method anvil answers and every other node rejects with -32601. Chain id is
+deliberately *not* the test: the documented rehearsal runs on `--chain-id 11155111` (31337 is excluded
+from the allow-list because it is the nonce path's chain) and a fork inherits the upstream id, so a
+31337 check would have missed exactly the case this is for. Plan §12's keystore-only rule still binds
+every other chain, with an explanatory refusal.
+
+Result, in both generations: `--stage all` completes and `verify` reports **"OK — every terminal
+condition met."**
+
+**The run found a bug the test could not.** v12's `compute` died with `panic: array out-of-bounds
+access (0x32)`. The Phase 0.3 item-B sweep had derived every array *size* but left **12 hardcoded loop
+bounds and one index literal** — `for (uint256 i = 0; i < 8; i++)`, `rest[8] = pauserSetAdd`,
+`proxyRoles[8]` — none of which match a `[](N)` or `== N` pattern. In v13 they are all correct **by
+coincidence**, because `_sharedProxyRoles().length` happens to equal 8 and `_allProxyRoles().length` 9.
+In v12 every one of them was wrong.
+
+All 13 now derive from the arrays they walk (`roles.length`, `proxies.length`, `impls.length`,
+`proxyRoles.length`, `m.length`, `shared.length`), fixed in v13 first and ported. This is the third
+distinct sub-class of the same defect — array sizes, then `deploy.sh`'s nonce arithmetic, now loop
+bounds — which is the argument for Phase 0.3's Tier 3: while the stack's shape is written down six
+times, each sweep finds only the spellings it thought to look for.
+
+### Also verified by test
+
+The keystore accounts the testnet driver needs are password-protected, so `deploy-testnet.sh` could not
+be run here. That turned out to be the better outcome: the property actually at risk in H.2 is the
+**four-list index alignment**, and a one-off anvil run would have verified it once and left it unguarded
+afterwards. It is now a test instead — `test/Create2Ordinals.t.sol`, added to v13 first and copied down:
+
+- the two role lists agree, and the longer is the shorter plus ACL
+- no role is left unset (the array sizes are literals, so an assignment can be forgotten)
+- roles and implementation artifacts match a hand-written oracle, position by position
+- every artifact path resolves through `vm.getCode`
+- `initData(i)` covers every position, and out-of-range reverts on both lists
+- the create count tracks the proxy count
+
+7 tests, passing in both generations — 9 positions in v13, 7 in v12. Before this, the only thing that
+caught a partial renumber was an actual deploy reaching `FhevmStatus`/`FhevmVerify`, which needs a funded
+key and a node. A full testnet rehearsal is still worth doing before any real deploy; it is now a
+confirmation rather than the only line of defence.
+
+### The original gate list
 
 In order. Each gate is cheap and each one fails differently, so running them out of order wastes the
 diagnosis.
@@ -689,7 +833,57 @@ stops being something anyone does.
 
 Every hunk must map to an Appendix A row. One that does not is either a missed edit or v13 drift.
 
-## Phase 5 — next: make `updateV12ToV13` fully testable
+## Phase 5 — make `updateV12ToV13` fully testable — DONE
+
+**The upgrade e2e runs and passes.** `npm run test:upgrade-e2e` → 2/2: a v12 stack is deployed at the
+canonical addresses (ACL at `0x50157CFf…`, so v12's own default deploy is landing correctly), then
+upgraded to v13, with the cleartext round-trip surviving the migration. The second test is the one that
+matters most for the port: it resolves the migration config with no operator input, by reading
+`getCurrentKmsContextId` / `getKmsSigners` / `getThreshold` off the **live v12 KMSVerifier** — the three
+reads Phase C predicted would work at `v0.12.5`.
+
+`npm run list:upgrade-ops -- ../v12` now reads the real v12 artifacts and reports **2 materializations,
+5 reinitializations**, in exact agreement with `pkg/ts/upgrade.ts`'s 7 targets and every reinitializer
+version. Three rows confirm Phase 2 decisions independently:
+
+| Row | Confirms |
+| --- | --- |
+| `CleartextArithmetic  CHANGED  - -> reinitializeV2` | group E: v12 has no reinitializer, so v13's `reinitializeV2` op has something to step *from* |
+| `CleartextInputVerifier  same  reinitializeV2 -> reinitializeV2  no op` | the README's worked example — deliberately absent from the op list |
+| `CleartextDB  same  no op` | correctly omitted from the upgrade |
+
+### Three things had to be fixed first, and two were mine
+
+1. **The Phase 0.2 `npm pack` fix had never been applied.** `internal/prepareTestV12Consumer.ts` packed
+   `V12_PACKAGE_ROOT` — the harness root, whose manifest is `private: true`. It now packs
+   `<v12>/pkg`, matching `createPackageTarball.ts`. Identified in this plan and left undone; harmless
+   while v12 was flat, wrong the moment it gained the rule 9 split.
+2. **The Phase 0.3 item-A rename broke the e2e's import.** It asked the v12 fixture for
+   `BootstrapConfigV12`; v12 exports `BootstrapConfig`. Now imported unsuffixed and **aliased at the
+   import site** — which is the right shape for this file, the one place both generations are in scope:
+   the package specifier says which generation it is, and the alias is local.
+3. **`node10-cjs-resolution.test.ts` contradicted `createPackageTarball.ts`.** The latter documents
+   `tarball/` as deliberately shared with the previous generation; the former required exactly one file
+   in it. Its comment already said "pick by name rather than taking the only entry" — but the filter was
+   the name *prefix*, and both generations publish under the same npm name. It now pins the exact
+   `fhevm-host-contracts-cleartext-<version>.tgz` read from the payload manifest, which is a stronger
+   guard than the count ever was: a stale tarball is now a miss instead of a coin flip.
+
+Worth noting that (3) was invisible until this phase: the e2e is the only thing that puts a second
+tarball in that directory, and before v12 existed the e2e always self-skipped. A test that cannot run is
+a test that cannot disagree with its neighbours.
+
+### Verification, both generations
+
+| | v13 | v12 |
+| --- | --- | --- |
+| `forge test` | 42/42 | 18/18 |
+| template + signer tests | 11/11 | 11/11 |
+| vitest suite | 19/19 (9 files) | 17/17 (7 files) |
+| `test:upgrade-e2e` | **2/2** | n/a (rule 21 floor) |
+| `prettier:check`, `lint` | ✅ | ✅ |
+
+### The original readiness notes
 
 Out of scope here, unblocked by it. Once v12 builds and packs, v13's upgrade path stops self-skipping:
 

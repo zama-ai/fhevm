@@ -388,9 +388,12 @@ which means release automation, not hand-copying.
 }
 ```
 
-20. **`v13/` is the reference implementation**, and `v11/` and `v12/` are derived from it. Each is a copy
-    of `v13/` carrying the **smallest possible set of edits**: a divergence is legitimate only when the
-    protocol generation forces it, and anything else is drift.
+20. **`v13/` is the reference implementation**, and every older generation is derived from it. Each is a
+    copy of `v13/` carrying the **smallest possible set of edits**: a divergence is legitimate only when
+    the protocol generation forces it, and anything else is drift.
+
+    Built today: `v13/` and `v12/`. `v11/` is an empty directory — the rule anticipates it, and the
+    manifest in rule 19 is ready for it, but nothing has been derived yet.
 
     This is a different axis from rule 1. Rule 1 makes the fhevm repo the source of truth for the
     _distribution copies_ of one generation; this rule makes `v13/` the source of truth _across_
@@ -413,13 +416,24 @@ which means release automation, not hand-copying.
     The point is reviewability. `diff -r v13 v12` should be short enough to read in full, with every hunk
     attributable to one of the causes above; a diff nobody can read is one nobody can audit. Two
     corollaries follow, and they are what keeps the property from decaying: a change made in `v13/` for a
-    reason that is **not** generation-specific must be propagated to `v11/` and `v12/` rather than left to
-    diverge, and a bug found while working in `v11/` or `v12/` is fixed in `v13/` first and then copied
-    down.
+    reason that is **not** generation-specific must be propagated to every derived generation rather than
+    left to diverge, and a bug found while working in a derived generation is fixed in `v13/` first and
+    then copied down.
 
-21. **The oldest supported generation has no upgrade path.** Today that is `v11/`: there is no cleartext
-    v10 to migrate from, so v11 ships no update function, no upgrade e2e, and no previous-generation
-    fixture. The property follows the floor — if v11 is ever dropped, v12 inherits it.
+    That second half is not ceremony. Deriving v12 surfaced defects that were latent in v13 —
+    hand-copied `getVersion()` strings, a hardcoded ACLOwner nonce, twelve hardcoded loop bounds, and a
+    test that contradicted the tarball directory it read. Each was correct in v13 by coincidence and
+    wrong the moment the stack changed shape. Fixing them in v13 is what stops the next generation
+    inheriting them.
+
+21. **The oldest supported generation has no upgrade path.** The property follows the floor: whichever
+    generation is oldest ships no update function, no upgrade e2e, and no previous-generation fixture,
+    because it has nothing to migrate from.
+
+    **Today that generation is `v12/`.** `v11/` is an empty directory — planned, not built — so v12 is
+    the floor and carries the exemption. When v11 lands, the floor moves to it and v12 gains
+    `updateV11ToV12` plus the fixture and e2e that go with it. Read every "v11" below as "the floor",
+    and note that the concrete file list is the one v12 actually has today.
 
     Note this is a _scope_ decision, not an upstream fact: fhevm does have a 0.10 line (`v0.10.0`,
     `v0.10.1`, `release/0.10.x`, and lines back to 0.7). What does not exist, and is not planned, is a
