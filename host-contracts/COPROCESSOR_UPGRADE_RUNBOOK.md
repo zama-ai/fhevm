@@ -52,14 +52,14 @@ cutover.
 
 Navigate to **Actions** → **host-contracts-prepare-coprocessor-upgrade** → **Run workflow** and provide:
 
-| Input                 | Value                                      |
-| --------------------- | ------------------------------------------ |
-| **Environment**       | `devnet`, `testnet`, or `mainnet`.         |
-| **Start time**        | ISO 8601 UTC, e.g. `2026-07-01T12:00:00Z`. |
-| **Duration**          | Window length, e.g. `30m`.                 |
-| **Buffer**            | DAO lead time, e.g. `2h`.                  |
-| **Proposal id**       | Any positive integer (operator-chosen).    |
-| **Software version**  | The binary's `STACK_VERSION`, e.g. `0.15.0`. |
+| Input                | Value                                        |
+| -------------------- | -------------------------------------------- |
+| **Environment**      | `devnet`, `testnet`, or `mainnet`.           |
+| **Start time**       | ISO 8601 UTC, e.g. `2026-07-01T12:00:00Z`.   |
+| **Duration**         | Window length, e.g. `30m`.                   |
+| **Buffer**           | DAO lead time, e.g. `2h`.                    |
+| **Proposal id**      | Any positive integer (operator-chosen).      |
+| **Software version** | The binary's `STACK_VERSION`, e.g. `0.15.0`. |
 
 Click **Run workflow** and wait for completion.
 
