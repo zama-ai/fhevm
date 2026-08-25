@@ -14,7 +14,6 @@ import { hostReachableRpcUrl, readEnvFile, withHexPrefix } from "../utils/fs";
 import { composeEnv, run, runWithHeartbeat } from "../utils/process";
 import { loadState } from "../state/state";
 import { topologyForState } from "../stack-spec/stack-spec";
-import { serviceNameList } from "../generate/compose";
 import {
   COPROCESSOR_DB_CONTAINER,
   PROJECT,
@@ -264,6 +263,30 @@ const injectCiphertextDrift = async (options: {
       console.log(`[warn] drift cleanup failed: ${formatCliError(error) ?? "unknown error"}`);
     });
   }
+};
+
+/** The release the green binaries were built as, read from a running GCS service. */
+const gcsBinaryRelease = async (): Promise<string> => {
+  const ps = await run(["docker", "ps", "--format", "{{.Names}}"], { allowFailure: true });
+  if (ps.code !== 0) {
+    throw new PreflightError(ps.stderr.trim() || "docker ps failed");
+  }
+  const container = ps.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => /^coprocessor(\d+)?-gcs-upgrade-controller$/.test(line));
+  if (!container) {
+    throw new Error("no GCS upgrade-controller container is running");
+  }
+  const result = await run(
+    ["docker", "exec", container, "/usr/local/bin/upgrade-controller", "--stack-version"],
+    { allowFailure: true },
+  );
+  const release = result.stdout.trim();
+  if (result.code !== 0 || release === "") {
+    throw new Error(`could not read the release from ${container}: ${result.stderr.trim()}`);
+  }
+  return release;
 };
 
 /** Lists running coprocessor gateway-listener containers. */
@@ -999,7 +1022,7 @@ const runBlueGreenProfile = async (
   }
   const gcsConsensusVersion = activeConsensusVersion + 1;
   // The proposal names the release the GCS image was built as.
-  const gcsSoftwareVersion = state.scenario.gcs.stackVersion;
+  const gcsSoftwareVersion = await gcsBinaryRelease();
 
   const MIN_BLUE_GREEN_TRAFFIC_STREAMS = 2;
   const CROSS_CUTOVER_CHAIN_DEPTH = 5;
