@@ -293,6 +293,9 @@ where
     /// recovery. Letting one run on instead would eventually reach its retry budget and
     /// write a terminal status that recovery cannot pick up: a request that a hard kill
     /// would have left recoverable.
+    ///
+    /// An item waiting for a free permit races `shutdown` the same way, with the same outcome:
+    /// its row is untouched and stays recoverable.
     pub async fn run_consumer<F, Fut>(mut self, shutdown: CancellationToken, processor: F)
     where
         F: Fn(T) -> Fut + Send + Sync + 'static,
@@ -328,11 +331,22 @@ where
             // Acquire Permit (Limits Concurrency)
             // This will Wait (Async) if we have reached max_parallelism active tasks.
             // We use acquire_owned to move the permit into the spawned task.
-            let permit = match semaphore.clone().acquire_owned().await {
-                Ok(p) => p,
-                Err(_) => {
-                    // Semaphore closed, shouldn't happen unless we shutdown explicitly.
-                    error!("CRITICAL: Readiness Semaphore closed. Should never happens if not shutting down.");
+            //
+            // Raced against `shutdown`: these checks call providers with no request timeout, so
+            // a stalled endpoint can hold every permit indefinitely, and a bare `.await` here
+            // would ignore shutdown for that whole stretch. The abandoned item keeps its
+            // `queued` row - no permit, no write yet - so recovery picks it up next start.
+            let permit = tokio::select! {
+                acquired = semaphore.clone().acquire_owned() => match acquired {
+                    Ok(p) => p,
+                    Err(_) => {
+                        // Semaphore closed, shouldn't happen unless we shutdown explicitly.
+                        error!("CRITICAL: Readiness Semaphore closed. Should never happens if not shutting down.");
+                        break;
+                    }
+                },
+                _ = shutdown.cancelled() => {
+                    info!(id = %id, "Readiness Worker stopping (shutdown while waiting for a free permit); item left queued for recovery.");
                     break;
                 }
             };
@@ -581,5 +595,71 @@ mod tests {
                 .await;
         });
         sleep(Duration::from_millis(100)).await;
+    }
+
+    // --- Test 6: Shutdown While Waiting For A Permit ---
+    // Regression test for the wedge this fix closes: with every permit held by a check that
+    // never returns, a second item dequeued behind it used to block on `acquire_owned().await`
+    // forever, and shutdown went unnoticed until the holder released its permit on its own.
+    // Needs the default current-thread runtime: on a multi-threaded one the worker could be at
+    // the top of the loop instead, where the older shutdown arm would pass the test for free.
+    #[tokio::test]
+    async fn test_shutdown_while_waiting_for_permit() {
+        init_metrics_once();
+        // Max Parallelism = 1, so item "2" cannot get a permit until item "1" releases one.
+        let (sender, worker) = ReadinessSender::<MockTask>::new(
+            ReadinessThrottlingType::UserDecrypt,
+            10,
+            0,
+            1,
+            TaskTracker::new(),
+        );
+
+        let shutdown = CancellationToken::new();
+        let first_holds_permit = Arc::new(tokio::sync::Notify::new());
+        let second_processed = Arc::new(AtomicUsize::new(0));
+
+        let first_holds_permit_clone = first_holds_permit.clone();
+        let second_processed_clone = second_processed.clone();
+        let shutdown_clone = shutdown.clone();
+
+        let handle = tokio::spawn(async move {
+            worker
+                .run_consumer(shutdown_clone, move |task| {
+                    let first_holds_permit = first_holds_permit_clone.clone();
+                    let second_processed = second_processed_clone.clone();
+                    async move {
+                        if task.id == "1" {
+                            first_holds_permit.notify_one();
+                            // Never completes on its own; only cancellation ends it. Stands in
+                            // for a check whose unbounded RPC call has stalled.
+                            std::future::pending::<()>().await;
+                        } else {
+                            second_processed.fetch_add(1, Ordering::Relaxed);
+                        }
+                    }
+                })
+                .await;
+        });
+
+        sender.push(MockTask { id: "1".into() }).await.unwrap();
+        sender.push(MockTask { id: "2".into() }).await.unwrap();
+
+        // Wait until item "1" has taken the only permit, so item "2" is now parked on
+        // `acquire_owned().await` behind a holder that will never release it voluntarily.
+        first_holds_permit.notified().await;
+
+        shutdown.cancel();
+
+        // Must return promptly: shutdown observed while waiting for the permit, not only at
+        // the top of the loop.
+        tokio::time::timeout(Duration::from_secs(2), handle)
+            .await
+            .expect("run_consumer did not stop when shutdown fired while a permit was held")
+            .unwrap();
+
+        // Item "2" was taken off the channel but never handed a permit, so its processor must
+        // never run -- its row is left exactly as `queued` as if it had never been dequeued.
+        assert_eq!(second_processed.load(Ordering::Relaxed), 0);
     }
 }
