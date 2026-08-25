@@ -24,8 +24,13 @@ pub mod common {
     tonic::include_proto!("fhevm.common");
 }
 
-/// Release version shared by all services. Change it every release.
-/// Nothing compares it, so it never decides blue/green mode.
+/// Version string of the coprocessor stack this binary belongs to. Shared by
+/// every service that links this crate, compared against the release a proposal
+/// names, written into the singleton at cutover, and surfaced in upgrade
+/// notifications. The leading-`v` prefix is optional; the parser in
+/// `versioning::parse_version` tolerates its absence.
+///
+/// Change it every release. It never decides blue/green mode.
 pub const STACK_VERSION: &str = "0.15.0";
 
 pub const CIPHERTEXT_VERSION: i16 = 0;
@@ -49,10 +54,18 @@ pub(crate) use consensus_protocol_version;
 
 pub const CONSENSUS_PROTOCOL_VERSION: u32 = consensus_protocol_version!();
 
-/// Print [`STACK_VERSION`] and exit when `--stack-version` is present.
+/// If `--stack-version` appears in the process arguments, prints the
+/// compiled-in coprocessor [`STACK_VERSION`] to stdout and exits with status 0.
 ///
-/// Call this before clap parsing so the flag works without other required
-/// arguments.
+/// Call this *before* clap parsing. It scans argv directly rather than reading
+/// a parsed flag so it short-circuits like clap's built-in `--version`: it
+/// prints and exits even when a service's other required flags are absent
+/// (e.g. `consensus-detector --stack-version` with no `--gw-url`). Each service
+/// still declares a `--stack-version` clap field so the flag is documented in
+/// `--help`.
+///
+/// `--version` reports the per-crate `CARGO_PKG_VERSION` (which diverges across
+/// the workspace); `--stack-version` reports the single fleet-wide value.
 pub fn handle_stack_version_flag() {
     if std::env::args().any(|arg| arg == "--stack-version") {
         println!("{STACK_VERSION}");

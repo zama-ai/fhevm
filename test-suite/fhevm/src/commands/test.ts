@@ -998,8 +998,8 @@ const runBlueGreenProfile = async (
     throw new Error(`invalid active consensus version ${activeConsensusVersion}`);
   }
   const gcsConsensusVersion = activeConsensusVersion + 1;
-  // The proposal carries one string: the consensus version, written as N.0.0.
-  const gcsSoftwareVersion = `${gcsConsensusVersion}.0.0`;
+  // The proposal names the release the GCS image was built as.
+  const gcsSoftwareVersion = state.scenario.gcs.stackVersion;
 
   const MIN_BLUE_GREEN_TRAFFIC_STREAMS = 2;
   const CROSS_CUTOVER_CHAIN_DEPTH = 5;

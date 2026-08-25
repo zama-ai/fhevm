@@ -174,6 +174,7 @@ topology:
       expect(scenario.name).toBe("Blue-Green Upgrade");
       expect(scenario.bcs.source).toEqual({ mode: "registry", tag: "v0.14.0-7" });
       expect(scenario.gcs.source).toEqual({ mode: "local" });
+      expect(scenario.gcs.stackVersion).toBe("0.15.0");
       expect(scenario.hostChains).toHaveLength(1);
       // Default topology = single-operator dev flow.
       expect(scenario.topology).toEqual({ count: 1, threshold: 1 });
@@ -210,10 +211,23 @@ gcs:
       const parsed = parseBlueGreenScenario(`
 version: 1
 kind: blue-green
-gcs: {}
+gcs:
+  stackVersion: "1.2.3"
 `);
       expect(parsed.bcs).toBeUndefined();
       expect(parsed.gcs.source).toBeUndefined();
+      expect(parsed.gcs.stackVersion).toBe("1.2.3");
+    });
+
+    test("rejects invalid gcs.stackVersion", () => {
+      expect(() =>
+        parseBlueGreenScenario(`
+version: 1
+kind: blue-green
+gcs:
+  stackVersion: "not-a-version"
+`),
+      ).toThrow("gcs.stackVersion must be a semver-like string");
     });
 
     test("rejects missing gcs block", () => {
@@ -271,7 +285,9 @@ gcs:
       });
       expect(resolved.kind).toBe("blue-green");
       // Narrow — hitting this branch is what makes downstream typing safe.
-      if (resolved.kind === "blue-green") expect(resolved.gcs.source.mode).toBe("local");
+      if (resolved.kind === "blue-green") {
+        expect(resolved.gcs.stackVersion).toBe("0.15.0");
+      }
     });
 
     test("--bcs-tag overrides bcs.source to registry mode with the given tag", async () => {

@@ -11,47 +11,29 @@ use sqlx::{Connection, PgConnection, Pool, Postgres, Transaction};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
-use crate::CONSENSUS_PROTOCOL_VERSION;
+use crate::{CONSENSUS_PROTOCOL_VERSION, STACK_VERSION};
 
 /// Database channel sent after a cutover changes the active version.
 pub const EVENT_STACK_VERSION_UPGRADED: &str = "event_stack_version_upgraded";
 
-/// Write a consensus version the way a proposal carries it: 1 becomes "1.0.0".
-///
-/// Cutover stores this, and a pre-0.15 service compares it with its own release to see
-/// whether it has been replaced. Because it grows with the consensus version, each
-/// cutover stores a higher value than the last.
-pub fn format_consensus_version(consensus_version: u32) -> String {
-    format!("{consensus_version}.0.0")
+/// Parse a `vMAJOR.MINOR[.PATCH]` string into a comparable tuple, tolerating a
+/// leading `v`/`V`, a missing patch component, and any pre-release/build
+/// suffix (e.g. `v0.14.0-rc1`). Non-numeric components parse as 0.
+pub fn parse_version(s: &str) -> (u64, u64, u64) {
+    let s = s.trim();
+    let s = s.strip_prefix(['v', 'V']).unwrap_or(s);
+    let core = s.split(['-', '+']).next().unwrap_or(s);
+    let mut parts = core.split('.').map(|p| p.parse::<u64>().unwrap_or(0));
+    (
+        parts.next().unwrap_or(0),
+        parts.next().unwrap_or(0),
+        parts.next().unwrap_or(0),
+    )
 }
 
-/// Read the consensus version out of a proposal's software version: "1.0.0" gives 1.
-///
-/// Only `N.0.0` is accepted. Anything else is refused rather than guessed at, because a
-/// version we read wrongly would run the wrong upgrade.
-pub fn parse_software_version(raw: &str) -> Result<u32, String> {
-    let raw = raw.trim();
-    let mut parts = raw.split('.');
-    let (Some(major), Some("0"), Some("0"), None) =
-        (parts.next(), parts.next(), parts.next(), parts.next())
-    else {
-        return Err(format!(
-            "software version {raw:?} must be a consensus version, as in \"1.0.0\""
-        ));
-    };
-    if major.len() > 1 && major.starts_with('0') {
-        return Err(format!("software version {raw:?} has a leading zero"));
-    }
-    if !major.bytes().all(|b| b.is_ascii_digit()) {
-        return Err(format!("software version {raw:?} is not a number"));
-    }
-    let consensus = major
-        .parse::<u32>()
-        .map_err(|_| format!("software version {raw:?} is too large"))?;
-    if consensus == 0 {
-        return Err(format!("software version {raw:?} must be at least 1"));
-    }
-    Ok(consensus)
+/// True iff this binary's [`STACK_VERSION`] equals `other` (same major.minor.patch).
+pub fn binary_matches(other: &str) -> bool {
+    parse_version(STACK_VERSION) == parse_version(other)
 }
 
 /// Current role of a running service.
@@ -114,7 +96,7 @@ pub async fn bootstrap_versioning(pool: &Pool<Postgres>) -> anyhow::Result<()> {
         "cannot lower the consensus version from {live_consensus_version} to {compiled_consensus_version}"
     );
 
-    let stored_version = format_consensus_version(CONSENSUS_PROTOCOL_VERSION);
+    let stored_version = STACK_VERSION.to_string();
     let result = sqlx::query(
         "UPDATE versioning
          SET stack_version = $1, consensus_version = $2, updated_at = NOW()
@@ -157,7 +139,7 @@ pub fn classify_consensus_version(binary: u32, live: i64) -> anyhow::Result<Runt
                     binary,
                     live,
                     expected = live.saturating_add(1),
-                    "consensus version skips ahead of the active one; only the version \
+                    "consensus version skips ahead of the active one; only the release \
                      the proposal names can cut over"
                 );
             }
@@ -609,54 +591,24 @@ pub async fn begin_write_guarded_conn(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        classify_consensus_version, format_consensus_version, parse_software_version,
-        RuntimeStackMode,
-    };
+    use super::{classify_consensus_version, parse_version, RuntimeStackMode};
+    use crate::STACK_VERSION;
 
     #[test]
-    fn reads_a_consensus_version() {
-        assert_eq!(parse_software_version("1.0.0").unwrap(), 1);
-        assert_eq!(parse_software_version("42.0.0").unwrap(), 42);
-        assert_eq!(parse_software_version("  7.0.0  ").unwrap(), 7);
-        assert_eq!(parse_software_version("4294967295.0.0").unwrap(), u32::MAX);
+    fn parses_loose_versions() {
+        assert_eq!(parse_version("v0.13"), (0, 13, 0));
+        assert_eq!(parse_version("v0.14.0"), (0, 14, 0));
+        assert_eq!(parse_version("0.14.2"), (0, 14, 2));
+        assert_eq!(parse_version("v1.2.3-rc1"), (1, 2, 3));
     }
 
     #[test]
-    fn refuses_a_software_version_it_cannot_read() {
-        for raw in [
-            "",
-            "   ",
-            "0.0.0",   // 0 means "not set yet"
-            "1.0",     // too few parts
-            "1",       // too few parts
-            "1.0.0.0", // too many parts
-            "1.2.3",   // only N.0.0 is a consensus version
-            "1.0.1",
-            "v1.0.0",     // no prefix
-            "01.0.0",     // leading zero
-            "1.0.0+cpv1", // no extra text
-            "x.0.0",
-            "4294967296.0.0", // above u32
-        ] {
-            assert!(
-                parse_software_version(raw).is_err(),
-                "expected {raw:?} to be refused"
-            );
-        }
-    }
-
-    #[test]
-    fn stores_a_version_that_grows_with_the_consensus_version() {
-        assert_eq!(format_consensus_version(1), "1.0.0");
-        assert_eq!(format_consensus_version(2), "2.0.0");
-        // What we store round-trips back to the version it came from.
-        for consensus in [1_u32, 2, 9, 10, u32::MAX] {
-            assert_eq!(
-                parse_software_version(&format_consensus_version(consensus)).unwrap(),
-                consensus
-            );
-        }
+    fn orders_versions() {
+        assert!(parse_version("v0.14.0") > parse_version("v0.13"));
+        assert!(parse_version("v0.14.1") > parse_version("v0.14"));
+        // Missing patch component pads to 0, so these compare equal.
+        assert_eq!(parse_version("v0.14.0"), parse_version("v0.14"));
+        assert!(parse_version("v0.13") <= parse_version("v0.14.0"));
     }
 
     /// A copy of the released 0.14 comparator. Those services are already deployed and
@@ -676,16 +628,12 @@ mod tests {
 
     #[test]
     fn what_we_store_replaces_a_0_14_service() {
-        // 0.14 stops working once the stored version is above its own.
+        // 0.14 stops working once the stored release is above its own.
         let deployed = released_0_14_parse_version("0.14.0");
-        for consensus in [1_u32, 2, 3] {
-            let stored = released_0_14_parse_version(&format_consensus_version(consensus));
-            assert!(
-                stored > deployed,
-                "{} must replace 0.14.0",
-                format_consensus_version(consensus)
-            );
-        }
+        assert!(
+            released_0_14_parse_version(STACK_VERSION) > deployed,
+            "{STACK_VERSION} must replace 0.14.0"
+        );
         // A version it cannot read counts as 0.0.0, which would leave it running.
         assert_eq!(released_0_14_parse_version("not-a-version"), (0, 0, 0));
         assert!(released_0_14_parse_version("not-a-version") < deployed);
@@ -709,7 +657,7 @@ mod tests {
 
     #[test]
     fn runs_green_on_any_newer_consensus_version() {
-        // A skipped version still runs green; the cutover check refuses it.
+        // A version that skips ahead still runs green.
         assert_eq!(
             classify_consensus_version(9, 7).unwrap(),
             RuntimeStackMode::Candidate
