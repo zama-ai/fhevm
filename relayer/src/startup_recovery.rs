@@ -21,8 +21,12 @@ use std::sync::Arc;
 use tracing::{error, info, warn};
 
 /// Initialize metrics gauges from current database state.
-/// Must be called before any operations that modify metrics.
-async fn init_status_counts_from_db(repositories: &Arc<Repositories>) -> anyhow::Result<()> {
+///
+/// A pure read, so it stays ungated and runs early in startup - before the HTTP server binds,
+/// let alone anything that later gates dispatch on the HA lock - or the gauges sit
+/// uninitialised for however long that gate takes to open. Must be called before any
+/// operations that modify metrics.
+pub async fn init_status_counts_from_db(repositories: &Arc<Repositories>) -> anyhow::Result<()> {
     let counts = repositories
         .public_decrypt
         .count_by_status()
@@ -106,8 +110,8 @@ pub async fn recover_incomplete_requests(
 ) -> anyhow::Result<usize> {
     info!("Starting request recovery...");
 
-    // Initialize metrics from DB before any operations that modify them
-    init_status_counts_from_db(repositories).await?;
+    // Status-count metrics are initialized earlier, before the HTTP server binds - see
+    // `init_status_counts_from_db`'s doc comment.
 
     // Reset tx_in_flight to processing
     reset_tx_in_flight_requests(repositories).await?;

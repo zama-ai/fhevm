@@ -425,6 +425,84 @@ impl Default for ShutdownConfig {
     }
 }
 
+/// The session-level Postgres advisory lock that decides which of N HA-replica pods
+/// dispatches. Every field has a serde default so existing config files - which know
+/// nothing about this section - keep deserializing unchanged.
+#[derive(Debug, Deserialize, Clone)]
+pub struct DispatcherLockConfig {
+    /// How often a non-holder retries acquisition. This is the handover latency once a
+    /// second replica exists: the delay between the old holder releasing (or dying) and a
+    /// standby taking over.
+    #[serde(
+        default = "default_dispatcher_lock_poll_interval",
+        deserialize_with = "deserialize_human_duration"
+    )]
+    pub poll_interval: Duration,
+    /// How often the holder confirms its dedicated connection is still alive.
+    #[serde(
+        default = "default_dispatcher_lock_heartbeat_interval",
+        deserialize_with = "deserialize_human_duration"
+    )]
+    pub heartbeat_interval: Duration,
+    /// Bound on each heartbeat/try-lock round trip. sqlx 0.8.6 sets no TCP keepalive, so a
+    /// query on a black-holed socket would otherwise hang out to TCP retransmit timeouts
+    /// (minutes) instead of surfacing as a failure.
+    #[serde(
+        default = "default_dispatcher_lock_heartbeat_timeout",
+        deserialize_with = "deserialize_human_duration"
+    )]
+    pub heartbeat_timeout: Duration,
+    /// Consecutive heartbeat/try-lock failures tolerated before a hard exit. Distinguishes a
+    /// transient hiccup from a genuinely dead connection.
+    #[serde(default = "default_dispatcher_lock_heartbeat_failures_before_exit")]
+    pub heartbeat_failures_before_exit: u32,
+    /// Bound on the initial dedicated-connection connect.
+    #[serde(
+        default = "default_dispatcher_lock_connect_timeout",
+        deserialize_with = "deserialize_human_duration"
+    )]
+    pub connect_timeout: Duration,
+    /// Overrides the schema-derived lock key. Every pod must set the same value - the key is
+    /// database-wide, not schema-scoped, and production runs every pod against `public` with
+    /// no override needed. Only exists for operational escape hatches.
+    #[serde(default)]
+    pub key_override: Option<i32>,
+}
+
+fn default_dispatcher_lock_poll_interval() -> Duration {
+    Duration::from_secs(2)
+}
+
+fn default_dispatcher_lock_heartbeat_interval() -> Duration {
+    Duration::from_secs(5)
+}
+
+fn default_dispatcher_lock_heartbeat_timeout() -> Duration {
+    Duration::from_secs(3)
+}
+
+fn default_dispatcher_lock_heartbeat_failures_before_exit() -> u32 {
+    3
+}
+
+fn default_dispatcher_lock_connect_timeout() -> Duration {
+    Duration::from_secs(5)
+}
+
+impl Default for DispatcherLockConfig {
+    fn default() -> Self {
+        Self {
+            poll_interval: default_dispatcher_lock_poll_interval(),
+            heartbeat_interval: default_dispatcher_lock_heartbeat_interval(),
+            heartbeat_timeout: default_dispatcher_lock_heartbeat_timeout(),
+            heartbeat_failures_before_exit: default_dispatcher_lock_heartbeat_failures_before_exit(
+            ),
+            connect_timeout: default_dispatcher_lock_connect_timeout(),
+            key_override: None,
+        }
+    }
+}
+
 /// Deserializes strings like "30s", "5m", "1d" into std::time::Duration.
 /// 'y' not supported
 fn deserialize_human_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>
@@ -652,6 +730,9 @@ pub struct Settings {
     /// Shutdown sequencing
     #[serde(default)]
     pub shutdown: ShutdownConfig,
+    /// HA dispatcher lock (session-level Postgres advisory lock)
+    #[serde(default)]
+    pub dispatcher_lock: DispatcherLockConfig,
 }
 
 // Error type for application-specific configuration errors

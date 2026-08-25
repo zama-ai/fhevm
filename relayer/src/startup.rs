@@ -38,7 +38,7 @@ use crate::{
     http::endpoints::v2::types::keyurl::KeyUrlResponseJson,
     http::server::run_http_server,
     metrics,
-    orchestrator::{HealthCheck, Orchestrator, TokioEventDispatcher},
+    orchestrator::{DispatcherLock, HealthCheck, Orchestrator, TokioEventDispatcher},
     startup_recovery,
     store::sql::repositories::Repositories,
 };
@@ -110,6 +110,11 @@ pub async fn run_fhevm_relayer(
         detached_tasks.clone(),
     );
 
+    // === Fast Setup Phase ===
+    // Repositories, health-check registration, throttlers, checkers, and the dispatcher
+    // lock's dedicated connection: everything the HTTP bind below needs, and nothing that
+    // touches the gateway or blocks for long.
+
     // Initialize SQL repositories
     let repositories = Arc::new(
         Repositories::new(settings.storage.clone())
@@ -124,8 +129,114 @@ pub async fn run_fhevm_relayer(
         repositories.clone() as Arc<dyn HealthCheck>,
     );
 
+    // Pure read; must run before anything gates on it later, or the gauges sit uninitialised.
+    startup_recovery::init_status_counts_from_db(&repositories)
+        .await
+        .context("Failed to initialize status-count metrics")?;
+
     let (gateway_throttlers, bouncer_throttlers) =
         init_throttlers(&settings, detached_tasks.clone());
+
+    // Build host chain validator from config
+    let host_chain_id_checker = Arc::new(HostChainIdChecker::new(
+        settings.host_chains.iter().map(|hc| hc.chain_id).collect(),
+    ));
+
+    // Build the v3 signature pre-checker. Reuses the host ACL retry policy so transport
+    // failures behave like ACL call failures.
+    let signature_prechecker = Arc::new(UserDecryptSignaturePreChecker::new(
+        &settings.host_chains,
+        &settings.gateway.contracts.decryption_address,
+        settings.user_decrypt_signature_check.erc1271_gas_limit,
+        settings
+            .gateway
+            .readiness_checker
+            .host_acl_check
+            .retry
+            .clone(),
+    )?);
+
+    // Dispatcher lock: one dedicated connection, outside both pools (see
+    // `orchestrator::dispatcher_lock` for why). Connecting and resolving the lock key is a
+    // single fast round trip, so it belongs here; actual acquisition happens in its own
+    // background task, spawned below once the heavy work has registered the rest of the
+    // named tasks.
+    let dispatcher_lock = DispatcherLock::connect(
+        &settings.dispatcher_lock,
+        &settings.storage.sql_database_url,
+    )
+    .await
+    .context("Failed to initialize dispatcher lock")?;
+
+    let mut settings = settings;
+
+    // === Services Phase (bind) ===
+    // Gate startup on the first successful host-chain poll so `/v2/keyurl` always serves a
+    // chain-sourced value; if it keeps failing the relayer exits and is restarted - unchanged
+    // from before this task. What moved is only *when*: this now runs, and the HTTP server
+    // binds, before the heavy work below (`initialize_gateway`, recovery, the 30s cron delay),
+    // so `/healthz` doesn't wait behind work that has nothing to do with serving it.
+    let pending_keyurl_poller = if settings.http.endpoint.is_some() {
+        info!("Starting Relayer HTTP server");
+
+        // `/v2/keyurl` is served from a watch channel in both modes; only `chain` runs a poller.
+        let (initial_keyurl, keyurl_poller) = match &settings.keyurl {
+            KeyUrlConfig::Chain {
+                kms_generation_address,
+                poll_interval_ms,
+            } => {
+                let mut poller = KeyUrlPoller::new(
+                    &settings.protocol_config,
+                    kms_generation_address,
+                    *poll_interval_ms,
+                )
+                .context("Failed to build KeyUrl poller")?;
+                let initial = poller
+                    .initialize()
+                    .await
+                    .context("Failed to initialize /v2/keyurl from host chain")?;
+                (initial, Some(poller))
+            }
+            KeyUrlConfig::Config {
+                fhe_public_key,
+                crs,
+            } => {
+                info!(
+                    "Serving /v2/keyurl from static config; no host-chain KeyUrl poller is started"
+                );
+                (
+                    KeyUrlResponseJson::new(fhe_public_key.clone(), crs.clone()),
+                    None,
+                )
+            }
+        };
+        let (keyurl_tx, keyurl_rx) = tokio::sync::watch::channel(initial_keyurl);
+
+        let addr = run_http_server(
+            &settings,
+            Arc::clone(&orchestrator),
+            repositories.clone(),
+            bouncer_throttlers,
+            host_chain_id_checker,
+            signature_prechecker,
+            keyurl_rx,
+            intake_shutdown.clone(),
+        )
+        .await;
+
+        info!("HTTP server bound to actual address: {}", addr);
+        settings.http.endpoint = Some(addr.to_string());
+
+        // Under `keyurl.source: config` there is no poller to defer; the channel already holds
+        // the value `/v2/keyurl` serves for the process's lifetime.
+        keyurl_poller.map(|poller| (poller, keyurl_tx))
+    } else {
+        None
+    };
+
+    // === Heavy Startup Work ===
+    // Everything here can block for a while (recovery walks the DB, the cron delay is 30s in
+    // production) and now runs after the bind, so `/healthz` is already serving throughout.
 
     // Initialize all gateway components
     gateway::initialize_gateway(
@@ -167,100 +278,37 @@ pub async fn run_fhevm_relayer(
         .await
         .context("Failed to register background workers")?;
 
-    // Build host chain validator from config
-    let host_chain_id_checker = Arc::new(HostChainIdChecker::new(
-        settings.host_chains.iter().map(|hc| hc.chain_id).collect(),
-    ));
+    // Dispatcher lock's poll/heartbeat loop: a named task like the others above, cancelled
+    // with `dequeue_shutdown` and drained the same way. Nothing gates on its state yet.
+    {
+        let lock_for_task = dispatcher_lock.clone();
+        let lock_shutdown = dequeue_shutdown.clone();
+        orchestrator
+            .spawn_task_and_wait_ready(
+                "dispatcher_lock",
+                async move { lock_for_task.run(lock_shutdown).await },
+                async { anyhow::Ok(()) },
+            )
+            .await
+            .context("Failed to start dispatcher lock")?;
+    }
 
-    // Build the v3 signature pre-checker. Reuses the host ACL retry policy so transport
-    // failures behave like ACL call failures.
-    let signature_prechecker = Arc::new(UserDecryptSignaturePreChecker::new(
-        &settings.host_chains,
-        &settings.gateway.contracts.decryption_address,
-        settings.user_decrypt_signature_check.erc1271_gas_limit,
-        settings
-            .gateway
-            .readiness_checker
-            .host_acl_check
-            .retry
-            .clone(),
-    )?);
+    // Spawn the single host-chain KeyUrl poller now the endpoint is serving. Startup is
+    // already gated above, so the readiness future is trivially ready; the task is tracked by
+    // the orchestrator, which stops it with the other sources of new work.
+    if let Some((keyurl_poller, keyurl_tx)) = pending_keyurl_poller {
+        let keyurl_intake_shutdown = intake_shutdown.clone();
+        orchestrator
+            .spawn_task_and_wait_ready(
+                "keyurl_poller",
+                async move { keyurl_poller.run(keyurl_tx, keyurl_intake_shutdown).await },
+                async { anyhow::Ok(()) },
+            )
+            .await
+            .context("Failed to start KeyUrl poller")?;
+    }
 
-    let mut settings = settings;
-
-    // === Services Phase ===
-    // Start HTTP server, metrics server, and initialize handlers
-    if settings.http.endpoint.is_some() {
-        info!("Starting Relayer HTTP server");
-
-        // `/v2/keyurl` is served from a watch channel in both modes; only `chain` runs a poller.
-        let (initial_keyurl, keyurl_poller) = match &settings.keyurl {
-            KeyUrlConfig::Chain {
-                kms_generation_address,
-                poll_interval_ms,
-            } => {
-                let mut poller = KeyUrlPoller::new(
-                    &settings.protocol_config,
-                    kms_generation_address,
-                    *poll_interval_ms,
-                )
-                .context("Failed to build KeyUrl poller")?;
-                // Gate startup on the first successful host-chain poll; if it keeps failing the
-                // relayer exits and is restarted.
-                let initial = poller
-                    .initialize()
-                    .await
-                    .context("Failed to initialize /v2/keyurl from host chain")?;
-                (initial, Some(poller))
-            }
-            KeyUrlConfig::Config {
-                fhe_public_key,
-                crs,
-            } => {
-                info!(
-                    "Serving /v2/keyurl from static config; no host-chain KeyUrl poller is started"
-                );
-                (
-                    KeyUrlResponseJson::new(fhe_public_key.clone(), crs.clone()),
-                    None,
-                )
-            }
-        };
-        let (keyurl_tx, keyurl_rx) = tokio::sync::watch::channel(initial_keyurl);
-
-        let addr = run_http_server(
-            &settings,
-            Arc::clone(&orchestrator),
-            repositories.clone(),
-            bouncer_throttlers,
-            host_chain_id_checker,
-            signature_prechecker,
-            keyurl_rx,
-            intake_shutdown.clone(),
-        )
-        .await;
-
-        info!("HTTP server bound to actual address: {}", addr);
-        settings.http.endpoint = Some(addr.to_string());
-
-        // Spawn the single host-chain KeyUrl poller now the endpoint is serving. Startup is
-        // already gated above, so the readiness future is trivially ready; the task is tracked
-        // by the orchestrator, which stops it with the other sources of new work. Under
-        // `keyurl.source: config` there is no poller at all - the watch channel is seeded from
-        // config at startup - so there is nothing to spawn or to shut down.
-        if let Some(keyurl_poller) = keyurl_poller {
-            let keyurl_intake_shutdown = intake_shutdown.clone();
-            orchestrator
-                .spawn_task_and_wait_ready(
-                    "keyurl_poller",
-                    async move { keyurl_poller.run(keyurl_tx, keyurl_intake_shutdown).await },
-                    async { anyhow::Ok(()) },
-                )
-                .await
-                .context("Failed to start KeyUrl poller")?;
-        }
-    };
-
+    // === Services Phase (metrics) ===
     // Run metrics server
     info!("Starting Relayer metrics server");
     let actual_metrics_addr = metrics::server::run_metrics_server(
@@ -316,6 +364,9 @@ pub async fn run_fhevm_relayer(
     // them is cancel-safe; the shutdown that follows is observable from its log lines, which
     // outlive the metrics endpoint either way.
     //
+    // The dispatcher lock's poll/heartbeat loop is cancelled by `dequeue_shutdown` below and
+    // drained with everything else - it stops polling, but does not release (see Step 4).
+    //
     // TODO(seam): "stop pickup from Postgres" (the activation sweep / 0.5s peek) belongs
     // here too, once that work exists.
     intake_shutdown.cancel();
@@ -331,11 +382,13 @@ pub async fn run_fhevm_relayer(
     // wait on the connections held by the tasks just abandoned, reinstating the wait this
     // sequence removes. `finish_task_drain` is the guard for a task that no predicate above
     // stopped, and warns when it finds one.
-    //
-    // TODO(seam): once the advisory-lock/owner_epoch work lands, "release the dispatcher
-    // lock" is the last thing before returning - releasing it any earlier makes this process
-    // the stalled ex-holder the fence exists to catch.
     orchestrator.finish_task_drain().await;
+
+    // Release the dispatcher lock last, after everything else has stopped: releasing it any
+    // earlier would make this process the stalled ex-holder the (future) fence exists to
+    // catch. The lock's own loop already stopped polling above; this is the one explicit
+    // unlock, not a race with it.
+    dispatcher_lock.release_last().await;
 
     info!("Relayer shutdown complete");
 
@@ -356,6 +409,7 @@ fn ensure_global_init(settings: &Settings) -> anyhow::Result<&'static Registry> 
         metrics::init_db_metrics(&registry, settings.metrics.clone());
         metrics::init_queue_metrics(&registry);
         metrics::init_listener_metrics(&registry);
+        metrics::init_dispatcher_lock_metrics(&registry);
         metrics::init_signature_precheck_metrics(&registry);
         metrics::init_retry_after_metrics(
             &registry,
