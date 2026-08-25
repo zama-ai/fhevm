@@ -23,10 +23,6 @@ on:
     types: [opened, labeled, synchronize, reopened]
   workflow_dispatch:
     inputs:
-      namespace_suffix:
-        description: "Optional fixed suffix for the fhevm-ci-<actor>-<suffix> namespace (e.g. a ticket id). Full namespace is capped at 40 chars. Leave empty to use this run's own id (always unique)."
-        required: false
-        default: ""
       build_images:
         description: "Build fresh images from the selected branch (the branch picked above via 'Use workflow from'). Uncheck to skip building entirely and deploy what the branch's merge-base with main runs."
         required: true

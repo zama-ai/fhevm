@@ -63,9 +63,6 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
 - `observability` — also deploy an in-namespace Prometheus + Grafana + Jaeger
   stack and switch on OTLP tracing in components supporting it (off by
   default; see [Observe your environment](#observe-your-environment)).
-- `namespace_suffix` — fixed suffix for the namespace (e.g. a ticket id);
-  empty ⇒ this run's id (always unique).
-
 **Topology**
 - `nb_kms_core` — number of KMS parties (default `4`).
 - `nb_coprocessor` — number of independent coprocessor stacks (default `1`).
@@ -90,7 +87,7 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
   (`relayer_sdk_version` keeps a real default; emptying it skips the
   relayer-sdk suite.)
 
-- **Namespace:** `fhevm-ci-<actor>-<namespace_suffix | run-id>`.
+- **Namespace:** `fhevm-ci-<actor>-<run-id digest>`
 - **Results:** run summary (deployment plan + e2e report if `automated_tests`).
 - **Teardown:** **manual** — a dispatch env is not tied to a PR, so nothing
   destroys it automatically. Run **preview-env-destroy** with the namespace (see
@@ -181,7 +178,7 @@ gh api --method POST \
   -H "Accept: application/vnd.github+json" \
   /repos/zama-ai/fhevm/actions/workflows/preview-env-destroy.yml/dispatches \
   -f "ref=main" \
-  -f "inputs[namespace]=fhevm-ci-<actor>-<suffix|run_id>"
+  -f "inputs[namespace]=fhevm-ci-<actor>-<run-id digest>"
 ```
 
 **Fallback.** If a run can't reach the cluster, do it yourself:
