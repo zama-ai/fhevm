@@ -154,7 +154,7 @@ During cutover:
 * the `"gcs-1"` namespace is dropped
 * GCS becomes `LIVE`
 * BCS becomes `PAUSED`
-* BCS workers stop writing: their consensus version is now behind the active one
+* Check for "Error in background worker, retrying shortly","error":"Coprocessor db error: Configuration(StaleStackError { binary: \"0.14.0\", live: \"0.15.0\" })"}}" in *BCS* workers
 
 ### Checkpoint: Verify Final `upgrade_state`
 
