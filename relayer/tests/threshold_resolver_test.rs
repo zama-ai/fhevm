@@ -7,16 +7,7 @@ use ethereum_rpc_mock::{MockConfig, MockServer, Response, UsageLimit};
 use fhevm_host_bindings::i_protocol_config::IProtocolConfig;
 use fhevm_relayer::config::settings::{ProtocolConfigSettings, RetrySettings};
 use fhevm_relayer::host::threshold_resolver::ThresholdResolver;
-use std::net::TcpListener;
 use std::str::FromStr;
-
-fn get_free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
-}
 
 const PROTOCOL_CONFIG_ADDR: &str = "0x1234567890123456789012345678901234567890";
 
@@ -57,7 +48,15 @@ fn register_threshold_response(server: &MockServer, threshold: u64, usage: Usage
 
 #[tokio::test]
 async fn context_zero_returns_preseeded_default() {
-    let port = get_free_port();
+    let mock = MockServer::new(MockConfig {
+        port: 0,
+        ..MockConfig::new()
+    });
+
+    register_threshold_response(&mock, 5, UsageLimit::Unlimited);
+
+    let handle = mock.start().await.unwrap();
+    let port = handle.port();
     let config = make_config(port);
 
     let resolver = ThresholdResolver::new(&config, 9u32, 100).await.unwrap();
@@ -68,15 +67,15 @@ async fn context_zero_returns_preseeded_default() {
 
 #[tokio::test]
 async fn fetches_threshold_from_contract() {
-    let port = get_free_port();
     let mock = MockServer::new(MockConfig {
-        port,
+        port: 0,
         ..MockConfig::new()
     });
 
     register_threshold_response(&mock, 5, UsageLimit::Unlimited);
 
-    let _handle = mock.start().await.unwrap();
+    let handle = mock.start().await.unwrap();
+    let port = handle.port();
     let config = make_config(port);
     let resolver = ThresholdResolver::new(&config, 9u32, 100).await.unwrap();
 
@@ -87,16 +86,16 @@ async fn fetches_threshold_from_contract() {
 
 #[tokio::test]
 async fn caches_threshold_permanently() {
-    let port = get_free_port();
     let mock = MockServer::new(MockConfig {
-        port,
+        port: 0,
         ..MockConfig::new()
     });
 
     // Only allow one successful call — second call would fail if not cached
     register_threshold_response(&mock, 7, UsageLimit::Once);
 
-    let _handle = mock.start().await.unwrap();
+    let handle = mock.start().await.unwrap();
+    let port = handle.port();
     let config = make_config(port);
     let resolver = ThresholdResolver::new(&config, 9u32, 100).await.unwrap();
 
@@ -109,9 +108,8 @@ async fn caches_threshold_permanently() {
 
 #[tokio::test]
 async fn retry_succeeds_after_initial_failure() {
-    let port = get_free_port();
     let mock = MockServer::new(MockConfig {
-        port,
+        port: 0,
         ..MockConfig::new()
     });
 
@@ -130,7 +128,8 @@ async fn retry_succeeds_after_initial_failure() {
     );
     register_threshold_response(&mock, 3, UsageLimit::Unlimited);
 
-    let _handle = mock.start().await.unwrap();
+    let handle = mock.start().await.unwrap();
+    let port = handle.port();
     let config = make_config(port);
     let resolver = ThresholdResolver::new(&config, 9u32, 100).await.unwrap();
 
@@ -141,9 +140,8 @@ async fn retry_succeeds_after_initial_failure() {
 
 #[tokio::test]
 async fn all_retries_exhausted_returns_error() {
-    let port = get_free_port();
     let mock = MockServer::new(MockConfig {
-        port,
+        port: 0,
         ..MockConfig::new()
     });
 
@@ -161,7 +159,8 @@ async fn all_retries_exhausted_returns_error() {
         UsageLimit::Unlimited,
     );
 
-    let _handle = mock.start().await.unwrap();
+    let handle = mock.start().await.unwrap();
+    let port = handle.port();
     let config = make_config(port);
     let resolver = ThresholdResolver::new(&config, 9u32, 100).await.unwrap();
 
@@ -175,9 +174,8 @@ async fn all_retries_exhausted_returns_error() {
 
 #[tokio::test]
 async fn failed_fetch_is_not_cached() {
-    let port = get_free_port();
     let mock = MockServer::new(MockConfig {
-        port,
+        port: 0,
         ..MockConfig::new()
     });
 
@@ -200,7 +198,8 @@ async fn failed_fetch_is_not_cached() {
     // Then: success for subsequent calls
     register_threshold_response(&mock, 11, UsageLimit::Unlimited);
 
-    let _handle = mock.start().await.unwrap();
+    let handle = mock.start().await.unwrap();
+    let port = handle.port();
     let config = make_config(port);
     let resolver = ThresholdResolver::new(&config, 9u32, 100).await.unwrap();
 

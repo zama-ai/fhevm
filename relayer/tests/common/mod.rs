@@ -1,3 +1,4 @@
+pub mod flows;
 pub mod redundancy;
 pub mod test_schema;
 pub mod utils;
