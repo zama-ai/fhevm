@@ -835,13 +835,17 @@ impl GatewayHandler {
                 return;
             }
 
+            // Grouped with the ACL failures because they share a shape: a readiness verdict that
+            // is terminal, reached before any gateway transaction, and whose message classifies
+            // the HTTP response — so the reason must be stored verbatim, unprefixed.
             EventProcessingError::NotAllowedOnHostAcl(_)
-            | EventProcessingError::HostAclFailed(_) => {
+            | EventProcessingError::HostAclFailed(_)
+            | EventProcessingError::NoAttestationConsensus { .. } => {
                 let err_reason = error.to_string();
                 error!(
                     job_id = %event.job_id,
                     error = %err_reason,
-                    "Host ACL check failed"
+                    "Readiness check failed terminally"
                 );
 
                 if let RelayerEventData::UserDecrypt(UserDecryptEventData::ReadinessCheckFailed {

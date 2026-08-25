@@ -1,9 +1,7 @@
 use crate::{
     config::settings::AppConfigError,
     gateway::arbitrum::transaction::{engine::GatewayTxnError, fhevm::FhevmError},
-    host::{
-        extra_data::ExtraDataError, redact_alloy_error, threshold_resolver::ThresholdResolverError,
-    },
+    host::{extra_data::ExtraDataError, threshold_resolver::ThresholdResolverError},
     readiness::ReadinessCheckError,
 };
 use serde::{Deserialize, Serialize};
@@ -13,6 +11,12 @@ use thiserror::Error;
 // Standardized timeout error messages
 pub const READINESS_CHECK_TIMEOUT_MSG: &str =
     "Ciphertext not ready for decryption on the gateway chain";
+
+/// Terminal counterpart to [`READINESS_CHECK_TIMEOUT_MSG`]: the Coprocessors were reachable and
+/// did not agree, so waiting cannot make the request ready. A prefix rather than a whole message,
+/// following the host ACL errors, so the per-handle detail survives into the stored reason.
+pub const NO_ATTESTATION_CONSENSUS_PREFIX: &str =
+    "Coprocessors did not reach consensus on the ciphertext material:";
 
 /// Prefix for host ACL not-allowed errors, used for error classification.
 pub const NOT_ALLOWED_ON_HOST_ACL_PREFIX: &str = "Not allowed on host ACL:";
@@ -63,6 +67,9 @@ pub enum EventProcessingError {
     #[error("{}", crate::core::errors::READINESS_CHECK_TIMEOUT_MSG)]
     ReadinessCheckTimedOut,
 
+    #[error("{prefix} {reason}", prefix = crate::core::errors::NO_ATTESTATION_CONSENSUS_PREFIX)]
+    NoAttestationConsensus { reason: String },
+
     #[error("Relayer internal queue is full")]
     QueueFull,
 
@@ -104,8 +111,8 @@ impl From<ReadinessCheckError> for EventProcessingError {
     fn from(e: ReadinessCheckError) -> Self {
         match e {
             ReadinessCheckError::GwTimeout => EventProcessingError::ReadinessCheckTimedOut,
-            ReadinessCheckError::GwContractError(err) => {
-                EventProcessingError::ContractCallFailed(redact_alloy_error(&err))
+            ReadinessCheckError::NoAttestationConsensus(reason) => {
+                EventProcessingError::NoAttestationConsensus { reason }
             }
             ReadinessCheckError::NotAllowedOnHostAcl(err) => {
                 EventProcessingError::NotAllowedOnHostAcl(err.to_string())

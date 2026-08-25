@@ -7,7 +7,6 @@ use crate::{
         },
         job_id::JobId,
     },
-    host::redact_alloy_error,
     orchestrator::Orchestrator,
     readiness::{
         checker::{ReadinessCheckError, ReadinessChecker},
@@ -85,42 +84,32 @@ impl UserDecryptReadinessProcessor {
             return;
         }
 
-        // 2. GATEWAY CIPHERTEXT CHECK
-        // All three attestation types use the same
-        // `isUserDecryptionReady_1((bytes32,address)[], bytes)` overload:
-        // the gateway only verifies that ciphertext material exists for
-        // each handle, so we just need a `HandleContractPair` projection.
+        // 2. CIPHERTEXT ATTESTATION CHECK
+        // All three attestation types collapse to the same per-handle
+        // consensus check: it only asks whether attested ciphertext material
+        // exists, so a `HandleContractPair` projection is enough.
         // For `Eip712UnifiedV1` we drop `owner_address` from each
         // `HandleEntry` — that field only feeds the gateway's per-handle
         // ACL on the decryption call itself.
-        let (pairs, extra_data): (Vec<HandleContractPair>, _) = match &task.request {
+        let pairs: Vec<HandleContractPair> = match &task.request {
             UserDecryptRequest::LegacyDirect {
                 ct_handle_contract_pairs,
-                extra_data,
                 ..
             }
             | UserDecryptRequest::LegacyDelegated {
                 ct_handle_contract_pairs,
-                extra_data,
                 ..
-            } => (ct_handle_contract_pairs.clone(), extra_data.clone()),
-            UserDecryptRequest::Eip712UnifiedV1 {
-                handles,
-                extra_data,
-                ..
-            } => (
-                handles
-                    .iter()
-                    .map(|h| HandleContractPair {
-                        ct_handle: h.ct_handle,
-                        contract_address: h.contract_address,
-                    })
-                    .collect(),
-                extra_data.clone(),
-            ),
+            } => ct_handle_contract_pairs.clone(),
+            UserDecryptRequest::Eip712UnifiedV1 { handles, .. } => handles
+                .iter()
+                .map(|h| HandleContractPair {
+                    ct_handle: h.ct_handle,
+                    contract_address: h.contract_address,
+                })
+                .collect(),
         };
         let result = checker
-            .check_user_decryption_readiness(&task.job_id, &pairs, extra_data)
+            .check_user_decryption_readiness(&task.job_id, &pairs)
             .await;
 
         // 3. DISPATCH RESULT
@@ -159,14 +148,14 @@ impl UserDecryptReadinessProcessor {
                 .await;
             }
 
-            Err(ReadinessCheckError::GwContractError(e)) => {
-                error!(job_id = %task.job_id, error = ?e, "Readiness check contract error");
+            Err(ReadinessCheckError::NoAttestationConsensus(reason)) => {
+                error!(job_id = %task.job_id, %reason, "No Coprocessor attestation consensus");
 
                 Self::dispatch_failure(
                     &dispatcher,
                     &task.request,
                     task.job_id,
-                    EventProcessingError::ContractCallFailed(redact_alloy_error(&e)),
+                    EventProcessingError::NoAttestationConsensus { reason },
                 )
                 .await;
             }
