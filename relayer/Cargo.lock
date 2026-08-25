@@ -2582,6 +2582,8 @@ dependencies = [
  "anyhow",
  "async-trait",
  "fhevm_gateway_bindings",
+ "futures",
+ "futures-util",
  "hex",
  "indexmap 2.14.0",
  "jsonrpsee",

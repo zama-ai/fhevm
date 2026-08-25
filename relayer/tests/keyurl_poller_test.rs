@@ -7,7 +7,6 @@
 
 #![cfg(feature = "integration-tests")]
 
-use std::net::TcpListener;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -30,14 +29,6 @@ const STORAGE_PREFIX: &str = "PUB-p1";
 fn expected_url(segment: &str, id: u64) -> String {
     let id_hex = hex::encode(U256::from(id).to_be_bytes::<32>());
     format!("{STORAGE_URL}/{STORAGE_PREFIX}/{segment}/{id_hex}")
-}
-
-fn get_free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
 }
 
 fn make_config(port: u16, poll_interval_ms: u64) -> (ProtocolConfigSettings, KeyUrlConfig) {
@@ -173,9 +164,8 @@ fn register_static_getters(server: &MockServer) {
 
 #[tokio::test]
 async fn initialize_maps_chain_state_to_response() {
-    let port = get_free_port();
     let mock = MockServer::new(MockConfig {
-        port,
+        port: 0,
         ..MockConfig::new()
     });
 
@@ -190,7 +180,8 @@ async fn initialize_maps_chain_state_to_response() {
         UsageLimit::Unlimited,
     );
     register_static_getters(&mock);
-    let _handle = mock.start().await.unwrap();
+    let handle = mock.start().await.unwrap();
+    let port = handle.port();
 
     let (protocol_config, keyurl) = make_config(port, 12_000);
     let mut poller = KeyUrlPoller::new(&protocol_config, &keyurl).unwrap();
@@ -222,9 +213,8 @@ async fn initialize_maps_chain_state_to_response() {
 
 #[tokio::test]
 async fn run_pushes_updated_value_on_id_change() {
-    let port = get_free_port();
     let mock = MockServer::new(MockConfig {
-        port,
+        port: 0,
         ..MockConfig::new()
     });
 
@@ -245,7 +235,8 @@ async fn run_pushes_updated_value_on_id_change() {
         UsageLimit::Unlimited,
     );
     register_static_getters(&mock);
-    let _handle = mock.start().await.unwrap();
+    let handle = mock.start().await.unwrap();
+    let port = handle.port();
 
     // Seed via the startup fetch (reads key id 3), then run the loop on a short interval.
     let (protocol_config, keyurl) = make_config(port, 100);
