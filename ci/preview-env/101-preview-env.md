@@ -60,9 +60,9 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
   commit's.
 - `automated_tests` — auto-run the e2e DAG and write the report to the run
   summary.
-- `namespace_suffix` — fixed suffix for the namespace (e.g. a ticket id);
-  empty ⇒ this run's id (always unique).
-
+- `observability` — also deploy an in-namespace Prometheus + Grafana + Jaeger
+  stack and switch on OTLP tracing in components supporting it (off by
+  default; see [Observe your environment](#observe-your-environment)).
 **Topology**
 - `nb_kms_core` — number of KMS parties (default `4`).
 - `nb_coprocessor` — number of independent coprocessor stacks (default `1`).
@@ -87,7 +87,7 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
   (`relayer_sdk_version` keeps a real default; emptying it skips the
   relayer-sdk suite.)
 
-- **Namespace:** `fhevm-ci-<actor>-<namespace_suffix | run-id>`.
+- **Namespace:** `fhevm-ci-<actor>-<run-id digest>`
 - **Results:** run summary (deployment plan + e2e report if `automated_tests`).
 - **Teardown:** **manual** — a dispatch env is not tied to a PR, so nothing
   destroys it automatically. Run **preview-env-destroy** with the namespace (see
@@ -127,6 +127,22 @@ tailscale configure kubeconfig tailscale-operator-zws-dev.diplodocus-boa.ts.net
 kubectl get pods -n <namespace>          # e.g. fhevm-ci-alice-1234
 ```
 
+## Observe your environment
+
+Deploy with the `observability` dispatch input set to `true` (off by default,
+manual runs only for now) to get an in-namespace **Prometheus + Grafana +
+Jaeger** stack: Prometheus auto-scrapes every instrumented service in the
+namespace, Jaeger collects OTLP traces, and Grafana is the UI over both.
+Details and design notes: [`README.md`](./README.md#observability-opt-in-observability-dispatch-input).
+
+With Tailscale up (same prerequisites as connecting):
+
+```bash
+kubectl port-forward -n <namespace> svc/grafana 3000:3000     # http://localhost:3000
+kubectl port-forward -n <namespace> svc/prometheus 9090:9090  # http://localhost:9090 (raw PromQL)
+kubectl port-forward -n <namespace> svc/jaeger 16686:16686    # http://localhost:16686 (Jaeger UI)
+```
+
 ## See test results
 
 - **With auto-tests** (`preview-env-e2e-tests` label or `automated_tests=true`):
@@ -162,7 +178,7 @@ gh api --method POST \
   -H "Accept: application/vnd.github+json" \
   /repos/zama-ai/fhevm/actions/workflows/preview-env-destroy.yml/dispatches \
   -f "ref=main" \
-  -f "inputs[namespace]=fhevm-ci-<actor>-<suffix|run_id>"
+  -f "inputs[namespace]=fhevm-ci-<actor>-<run-id digest>"
 ```
 
 **Fallback.** If a run can't reach the cluster, do it yourself:

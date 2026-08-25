@@ -249,24 +249,29 @@ module.exports = async ({ core, context, github }) => {
       .replace(/[^a-z0-9-]/g, '-')
       .replace(/-+/g, '-')
       .replace(/^-+|-+$/g, '');
-  const namespace = isDispatch
-    ? sanitizeNs(`fhevm-ci-${process.env.ACTOR}-${inputs.namespace_suffix || context.runId}`)
-    : sanitizeNs(`fhevm-ci-${context.payload.pull_request.user.login}-${context.payload.pull_request.number}`);
 
-  // AWS limits namespace length to 63 chars. If longer, the enclave nodegroup
-  // silently times out after 20 minutes, so fail fast here with margin.
-  // Format: kms-party-<namespace> + two 6-char Crossplane suffixes
-  const NAMESPACE_MAX = 40;
-  if (namespace.length > NAMESPACE_MAX) {
-    throw new Error(
-      `namespace '${namespace}' is ${namespace.length} chars, max is ${NAMESPACE_MAX}: the derived EKS ` +
-        `nodegroup name (kms-party-<namespace> plus two Crossplane suffixes) would exceed AWS's 63-char ` +
-        `limit and the KMS deploy would time out with no readable error. ` +
-        (isDispatch
-          ? `Pass a shorter namespace_suffix.`
-          : `The PR author's login is too long; deploy via workflow_dispatch with a short namespace_suffix instead.`),
-    );
-  }
+  // AWS limits namespace length. If too long, the enclave nodegroup
+  // silently times out after 20 minutes, so fail fast here
+  const NAMESPACE_MAX = 28;
+
+  // fhevm-ci-<actor>-<suffix>, truncating the ACTOR segment (never the suffix,
+  // which carries the uniqueness) so the result always fits NAMESPACE_MAX.
+  const deriveNamespace = (actor, suffix) => {
+    const suffixNs = sanitizeNs(suffix);
+    const budget = NAMESPACE_MAX - 'fhevm-ci-'.length - 1 - suffixNs.length;
+    const actorNs = sanitizeNs(actor);
+    const actorFit = actorNs.slice(0, Math.max(budget, 1)).replace(/-+$/, '');
+    if (actorFit !== actorNs) {
+      core.warning(`actor '${actorNs}' truncated to '${actorFit}' to keep the namespace under ${NAMESPACE_MAX} chars`);
+    }
+    return `fhevm-ci-${actorFit}-${suffixNs}`;
+  };
+
+  // Dispatch suffix: this run's id in base36 (~7 chars) - unique per run,
+  // deterministic, and short enough to leave the actor a usable budget.
+  const namespace = isDispatch
+    ? deriveNamespace(process.env.ACTOR, Number(context.runId).toString(36))
+    : deriveNamespace(context.payload.pull_request.user.login, context.payload.pull_request.number);
 
   // Summary first, so a failed resolution still shows exactly what it resolved
   // and what it couldn't.

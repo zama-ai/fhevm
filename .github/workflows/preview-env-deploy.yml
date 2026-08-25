@@ -23,10 +23,6 @@ on:
     types: [opened, labeled, synchronize, reopened]
   workflow_dispatch:
     inputs:
-      namespace_suffix:
-        description: "Optional fixed suffix for the fhevm-ci-<actor>-<suffix> namespace (e.g. a ticket id). Full namespace is capped at 40 chars. Leave empty to use this run's own id (always unique)."
-        required: false
-        default: ""
       build_images:
         description: "Build fresh images from the selected branch (the branch picked above via 'Use workflow from'). Uncheck to skip building entirely and deploy what the branch's merge-base with main runs."
         required: true
@@ -37,6 +33,10 @@ on:
         default: "false"
       automated_tests:
         description: "Deploy the Argo Workflow that auto-runs the e2e test DAG (in addition to the idle test-suite Job) and reports pass/fail back to the PR / run summary. Off by default."
+        required: false
+        default: "false"
+      observability:
+        description: "Deploy the in-namespace observability stack (Prometheus + Grafana + Jaeger, see ci/preview-env/observability/) and enable OTLP tracing in components. Off by default."
         required: false
         default: "false"
       host_contracts_version:
@@ -181,7 +181,7 @@ env:
   COMMON_CHART: oci://hub.zama.org/ghcr/zama-zws/helm-charts/common
   COMMON_CHART_VERSION: ${{ inputs.common_chart_version || '0.3.3' }}
   #=====KMS==================================================================
-  KMS_REPO_REF: ${{ inputs.kms_repo_ref || 'd27c3b52aa292f6e06c03c668223d0aac9be22e4' }}
+  KMS_REPO_REF: ${{ inputs.kms_repo_ref || '35edfa2f0656ee266e3299a004a83ac7d4fe2418' }}
   KMS_CORE_TAG: ${{ inputs.kms_core_version || 'd27c3b5' }}
   #=====REDIS================================================================
   REDIS_CHART: oci://hub.zama.org/cgr/zama.ai/iamguarded-charts/redis
@@ -213,6 +213,7 @@ jobs:
       build_images: ${{ steps.check.outputs.build_images }}
       build_test_suite_only: ${{ steps.check.outputs.build_test_suite_only }}
       automated_tests: ${{ steps.check.outputs.automated_tests }}
+      observability: ${{ steps.check.outputs.observability }}
     steps:
       - id: check
         env:
@@ -220,6 +221,7 @@ jobs:
           DISPATCH_BUILD_IMAGES: ${{ inputs.build_images }}
           DISPATCH_BUILD_TEST_SUITE_ONLY: ${{ inputs.build_test_suite_only }}
           DISPATCH_AUTOMATED_TESTS: ${{ inputs.automated_tests }}
+          DISPATCH_OBSERVABILITY: ${{ inputs.observability }}
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: |
           # build_test_suite_only is a dispatch-only knob; label-triggered runs
@@ -228,11 +230,15 @@ jobs:
           # automated_tests defaults off; dispatch reads its input, PR runs opt
           # in via the preview-env-e2e-tests label (handled below).
           echo "automated_tests=false" >> "$GITHUB_OUTPUT"
+          # observability is a dispatch-only knob for now (no PR label), off by
+          # default.
+          echo "observability=false" >> "$GITHUB_OUTPUT"
           if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
             echo "should_deploy=true" >> "$GITHUB_OUTPUT"
             echo "build_images=${DISPATCH_BUILD_IMAGES}" >> "$GITHUB_OUTPUT"
             echo "build_test_suite_only=${DISPATCH_BUILD_TEST_SUITE_ONLY:-false}" >> "$GITHUB_OUTPUT"
             echo "automated_tests=${DISPATCH_AUTOMATED_TESTS:-false}" >> "$GITHUB_OUTPUT"
+            echo "observability=${DISPATCH_OBSERVABILITY:-false}" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           echo "PR labels: $PR_LABELS"
@@ -428,6 +434,10 @@ jobs:
       # Gate for the automated e2e test workflow (see the test-suite-workflow
       # deploy + report steps): dispatch input or the preview-env-e2e-tests label.
       AUTOMATED_TESTS: ${{ needs.check-labels.outputs.automated_tests }}
+      OBSERVABILITY: ${{ needs.check-labels.outputs.observability }}
+      # In-namespace Jaeger's OTLP gRPC endpoint.
+      # Only consumed when OBSERVABILITY is true.
+      OTLP_ENDPOINT: "http://jaeger:4317"
     steps:
       - name: Checkout fhevm
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -498,6 +508,42 @@ jobs:
             --group=kms-dev-access \
             -n "${NAMESPACE}" \
             --dry-run=client -o yaml | kubectl apply -f -
+
+      ######################################################################
+      # OBSERVABILITY (opt-in via the `observability` dispatch input): an
+      # in-namespace Prometheus + Jaeger (OTLP trace collector) + Grafana,
+      # all via the generic `common` chart with official public images.
+      # Public Docker Hub images, so no registry-credentials dependency.
+      ######################################################################
+      - name: Deploy observability stack (Prometheus + Grafana + Jaeger)
+        if: env.OBSERVABILITY == 'true'
+        run: |
+          # Prometheus's RoleBinding SA subject must name the namespace
+          # explicitly - same yq patch as the test-suite-workflow release.
+          prom_values=$(mktemp --suffix=.yaml)
+          cp ci/preview-env/observability/values-prometheus-e2e.yaml "${prom_values}"
+          NS="${NAMESPACE}" yq -i \
+            '(.additionalResources[] | select(.object.kind == "RoleBinding") | .object.subjects[0].namespace) = strenv(NS)' \
+            "${prom_values}"
+          # Launched in parallel, but each PID is waited on individually.
+          pids=()
+          helm upgrade --install prometheus "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
+            -n "${NAMESPACE}" -f "${prom_values}" &
+          pids+=($!)
+          helm upgrade --install jaeger "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
+            -n "${NAMESPACE}" -f ci/preview-env/observability/values-jaeger-e2e.yaml &
+          pids+=($!)
+          helm upgrade --install grafana "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
+            -n "${NAMESPACE}" -f ci/preview-env/observability/values-grafana-e2e.yaml &
+          pids+=($!)
+          rc=0
+          for pid in "${pids[@]}"; do
+            wait "${pid}" || rc=1
+          done
+          if [[ "${rc}" -ne 0 ]]; then
+            echo "::error::at least one observability release failed to install - see the helm output above"
+            exit 1
+          fi
 
       ######################################################################
       # DEDICATED KMS: reuse zama-ai/kms's own deploy pipeline
@@ -611,6 +657,17 @@ jobs:
           # env-var exception.
           TLS: "true"
         run: |
+          # kms-core OTLP tracing: only when the observability stack is
+          # deployed AND the pinned KMS_REPO_REF's deploy.sh already knows the
+          # flag.
+          tracing_args=()
+          if [[ "${OBSERVABILITY}" == "true" ]]; then
+            if grep -q -- "--tracing-endpoint" ci/scripts/lib/common.sh; then
+              tracing_args=(--tracing-endpoint "${OTLP_ENDPOINT}")
+            else
+              echo "::warning::KMS_REPO_REF (${KMS_REPO_REF}) predates deploy.sh's --tracing-endpoint - kms-core traces disabled for this run; bump the pin to enable them"
+            fi
+          fi
           chmod +x ci/scripts/deploy.sh
           ./ci/scripts/deploy.sh \
             --target aws-ci \
@@ -618,7 +675,8 @@ jobs:
             --deployment-type thresholdWithEnclave \
             --tag "${KMS_CORE_TAG}" \
             --num-parties "${NB_KMS_CORE}" \
-            --pcr0 "${PCR0}" --pcr1 "${PCR1}" --pcr2 "${PCR2}"
+            --pcr0 "${PCR0}" --pcr1 "${PCR1}" --pcr2 "${PCR2}" \
+            "${tracing_args[@]}"
 
       - name: Discover KMS party signer addresses (S3 public vault)
         id: kms-identity
@@ -915,6 +973,20 @@ jobs:
             if [[ -z "${privkey}" || "${privkey}" == "null" ]]; then
               echo "::error::no derived coprocessor wallet for party ${i} in coproc_wallets_json=${COPROC_WALLETS_JSON}"; exit 1
             fi
+            # OTLP tracing, only when the observability stack is deployed.
+            tracing=()
+            if [[ "${OBSERVABILITY}" == "true" ]]; then
+              tracing=(
+                --set "commonConfig.tracing.enabled=true"
+                --set-string "commonConfig.tracing.endpoint=${OTLP_ENDPOINT}"
+                --set-string "gwListener.tracing.service=gw-listener-${i}"
+                --set-string "tfheWorker.tracing.service=tfhe-worker-${i}"
+                --set-string "zkProofWorker.tracing.service=zkproof-worker-${i}"
+                --set-string "snsWorker.tracing.service=sns-worker-${i}"
+                --set-string "txSender.tracing.service=tx-sender-${i}"
+                --set-string "hostListenerConsumerShared.tracing.service=host-listener-consumer-${i}"
+              )
+            fi
             helm upgrade --install "coprocessor-${i}" "${COPROCESSOR_CHART}" \
               -n "${NAMESPACE}" -f ci/preview-env/coprocessor/values-coprocessor-e2e.yaml \
               "${polygon_args[@]}" \
@@ -940,7 +1012,8 @@ jobs:
               --set-string "snsWorker.image.tag=$(jq -r .coprocessor_sns_worker <<<"${TAGS_JSON}")" \
               --set-string "tfheWorker.image.tag=$(jq -r .coprocessor_tfhe_worker <<<"${TAGS_JSON}")" \
               --set-string "txSender.image.tag=$(jq -r .coprocessor_tx_sender <<<"${TAGS_JSON}")" \
-              --set-string "zkProofWorker.image.tag=$(jq -r .coprocessor_zkproof_worker <<<"${TAGS_JSON}")"
+              --set-string "zkProofWorker.image.tag=$(jq -r .coprocessor_zkproof_worker <<<"${TAGS_JSON}")" \
+              "${tracing[@]}"
           done
           sleep 60
 
@@ -989,11 +1062,21 @@ jobs:
         # has dbMigration disabled).
         run: |
           for i in $(seq 1 "${NB_COPROCESSOR}"); do
+            # Same OTLP tracing gate as the coprocessor step above.
+            tracing=()
+            if [[ "${OBSERVABILITY}" == "true" ]]; then
+              tracing=(
+                --set "commonConfig.tracing.enabled=true"
+                --set-string "commonConfig.tracing.endpoint=${OTLP_ENDPOINT}"
+                --set-string "hostListenerPollerShared.tracing.service=host-listener-poller-${i}"
+              )
+            fi
             helm upgrade --install "coprocessor-poller-${i}" "${COPROCESSOR_CHART}" \
               -n "${NAMESPACE}" -f ci/preview-env/coprocessor/values-coprocessor-poller-e2e.yaml \
               --set-string "commonConfig.databaseEndpoint.value=postgres-coprocessor-${i}:5432" \
               --set-string "hostListenerPollerShared.serviceAccountName=coprocessor-${i}" \
-              --set-string "hostListenerPollerShared.image.tag=$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")" &
+              --set-string "hostListenerPollerShared.image.tag=$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")" \
+              "${tracing[@]}" &
           done
           wait
 
@@ -1068,6 +1151,14 @@ jobs:
             polygon_args=(-f ci/preview-env/kms-connector/values-kms-connector-polygon-e2e.yaml
               --set-string "commonConfig.polygonContractAddresses.acl=${polygon_acl}")
           fi
+          # OTLP tracing, only when the observability stack is deployed.
+          tracing=()
+          if [[ "${OBSERVABILITY}" == "true" ]]; then
+            tracing=(
+              --set "commonConfig.tracing.enabled=true"
+              --set-string "commonConfig.tracing.endpoint=${OTLP_ENDPOINT}"
+            )
+          fi
           for i in $(seq 1 "${NB_KMS_CORE}"); do
             helm upgrade --install "kms-connector-${i}" "${KMS_CONNECTOR_CHART}" \
               -n "${NAMESPACE}" -f ci/preview-env/kms-connector/values-kms-connector-e2e.yaml \
@@ -1087,7 +1178,8 @@ jobs:
               --set-string "kmsConnectorKmsWorker.image.name=hub.zama.org/ghcr/zama-ai/fhevm/kms-connector/kms-worker" \
               --set-string "kmsConnectorKmsWorker.image.tag=$(jq -r .kms_connector_kms_worker <<<"${TAGS_JSON}")" \
               --set-string "kmsConnectorTxSender.image.name=hub.zama.org/ghcr/zama-ai/fhevm/kms-connector/tx-sender" \
-              --set-string "kmsConnectorTxSender.image.tag=$(jq -r .kms_connector_tx_sender <<<"${TAGS_JSON}")"
+              --set-string "kmsConnectorTxSender.image.tag=$(jq -r .kms_connector_tx_sender <<<"${TAGS_JSON}")" \
+              "${tracing[@]}"
           done
           sleep 60
 
@@ -1295,6 +1387,15 @@ jobs:
             echo "kubectl get pods -n ${NAMESPACE}"
             echo '```'
             echo
+            if [[ "${OBSERVABILITY}" == "true" ]]; then
+              echo "Observability stack deployed (see ci/preview-env/observability/):"
+              echo '```bash'
+              echo "kubectl port-forward -n ${NAMESPACE} svc/grafana 3000:3000     # http://localhost:3000 (anonymous admin)"
+              echo "kubectl port-forward -n ${NAMESPACE} svc/prometheus 9090:9090  # http://localhost:9090"
+              echo "kubectl port-forward -n ${NAMESPACE} svc/jaeger 16686:16686    # http://localhost:16686"
+              echo '```'
+              echo
+            fi
             echo "This environment is **not** tied to a PR, so it is only destroyed"
             echo "manually - see preview-env-destroy.yml or clean up the namespace directly."
           } >> "$GITHUB_STEP_SUMMARY"
