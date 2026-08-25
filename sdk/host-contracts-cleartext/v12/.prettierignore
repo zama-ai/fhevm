@@ -1,0 +1,8 @@
+dependencies
+pkg/src
+pkg/abi
+internal/placeholders
+pkg/templates
+pkg/forge
+*.t.sol
+*.md

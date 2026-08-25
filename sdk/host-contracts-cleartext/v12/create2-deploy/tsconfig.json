@@ -1,0 +1,33 @@
+{
+  "//": [
+    "DRAFT — see README.md. For the editor and for `tsc --noEmit` only.",
+    "",
+    "Nothing is ever built from this: plain `node` runs the .ts files directly by stripping types at",
+    "load. That is what `erasableSyntaxOnly` enforces — it fails the typecheck on anything node",
+    "cannot strip (enum, namespace, parameter properties), so the editor catches it before node does.",
+    "",
+    "`allowImportingTsExtensions` + `noEmit` are the pair that lets the source say `./utils.ts`,",
+    "which is what node requires for relative imports and what tsc would otherwise reject."
+  ],
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["es2023"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "types": ["node"],
+
+    "strict": true,
+    "noUncheckedIndexedAccess": false,
+    "exactOptionalPropertyTypes": false,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+
+    "skipLibCheck": true
+  },
+  "include": ["deploy-testnet.ts", "utils.ts"]
+}

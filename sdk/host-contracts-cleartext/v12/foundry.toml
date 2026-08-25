@@ -1,0 +1,42 @@
+# HARNESS config: forge runs from here and compiles the payload under ./pkg.
+# The payload ships no foundry.toml of its own (RULES.md rule 16) — a consumer's own config, or
+# forge-fhevm's, supplies the remappings. `forge-std/` is aliased in remappings.txt so pkg/forge can use
+# the prefix every Foundry consumer has rather than this project's soldeer-versioned one.
+[profile.default]
+libs = ["dependencies", "node_modules"]
+solc_version = '0.8.24'
+optimizer = true
+optimizer_runs = 800
+evm_version = 'cancun'
+via_ir = false
+src = 'pkg/src'
+out = "out"
+bytecode_hash = "none"
+# The TS tarball-consumer fixtures land under test/ts/node_modules. Foundry sweeps `test/` for
+# sources, so skip them — a consumed package (e.g. the cleartext-v12 fixture) uses its own config
+# remapping that this project does not define, which would otherwise break `forge build`.
+skip = ["test/ts/node_modules/**"]
+# pkg/forge/script/ComputeAddresses.s.sol writes the generated fhevm-config addresses.sol here — step 1
+# of scripts/deploy.sh, and the only filesystem write any script in this package performs. Scoped to that
+# one directory rather than granted project-wide, so no other script or test can reach the rest of the tree.
+fs_permissions = [
+    { access = "read-write", path = "./internal/.deploy-config" },   # nonce path
+    { access = "read-write", path = "./create2-deploy" },      # this path
+]
+
+[lint]
+exclude_lints = [
+    "unsafe-typecast", 
+    "incorrect-shift", 
+    "mixed-case-variable", 
+    "mixed-case-function", 
+    "named-struct-fields", 
+    "screaming-snake-case-const",
+    "pascal-case-struct",
+    "asm-keccak256",
+    "unwrapped-modifier-logic",
+    "unsafe-cheatcode"
+]
+
+[dependencies]
+forge-std = "1.11.0"
