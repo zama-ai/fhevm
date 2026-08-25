@@ -161,14 +161,17 @@ If the protocol minor changed (0.13 → 0.14)
 The config remapping prefix is version-pinned, so find every occurrence rather than trusting a list:
 
 ```sh
-grep -rn 'fhevm-config-' remappings.txt pkg/src
-#   remappings.txt:1:fhevm-config-0.13.0/=internal/placeholders/
-#   pkg/src/addresses/FHEVMHostAddresses.sol:15:} from "fhevm-config-0.13.0/addresses.sol";
+grep -rn --exclude-dir=node_modules --exclude-dir=_cjs --exclude-dir=_esm --exclude-dir=_types \
+  'fhevm-config-' .
 ```
 
-Today that is two places — the harness-side remapping and the payload's import. Both must move
-together; a mismatch fails at compile time, which is the good case. The consuming layer
-(`forge-fhevm`) declares the new prefix for its own consumers — see RULES.md rule 11.
+Sweep the whole tree, not just `remappings.txt` and `pkg/src`: there are **four** executable sites —
+those two plus `internal/constants.ts` (`FHEVM_CONFIG_REMAPPING_PREFIX`) and `scripts/deploy.sh`
+(`CONFIG_PREFIX`) — and two more in prose, the `FOUNDRY_REMAPPINGS=` usage lines in
+`pkg/forge/script/FhevmDeployScript.s.sol` and `VerifyFhevmDeploy.s.sol`. A narrower grep found only the
+first two and left `deploy.sh` pointing at the previous generation, which fails at *run* time rather than
+compile time. The consuming layer (`forge-fhevm`) declares the new prefix for its own consumers — see
+RULES.md rule 11.
 
 ## 6. Re-point the previous generation (V(N-1))
 Re-point the previous generation (V(N-1))

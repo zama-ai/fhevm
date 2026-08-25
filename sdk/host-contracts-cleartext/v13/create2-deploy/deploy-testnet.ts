@@ -71,6 +71,10 @@ export type Stage =
 export type Options = {
   readonly rpcUrl: string;
   readonly account: string;
+  /** How stages sign. Null only for the read-only stages, which sign nothing. */
+  readonly signer: Signer | null;
+  /** Who signs step F on the admin's behalf, when anything does. */
+  readonly adminSigner: Signer | null;
   readonly admin: string;
   readonly deploymentId: string;
   readonly pauser: string | null;
@@ -349,8 +353,12 @@ Usage: node create2-deploy/deploy-testnet.ts --rpc-url URL --account NAME
                                                    --admin 0x... --deployment-id ID [options]
 
   --rpc-url URL        node to deploy to (required)
-  --account NAME       forge keystore account to broadcast from (required)
-  --admin 0x...        final owner of ACLOwner. Mandatory, no default (plan §7)
+  --account NAME       forge keystore account to broadcast from. Required on every chain EXCEPT a
+                       local anvil: omit it there and accounts 0 and 1 of anvil's public mnemonic are
+                       used as deployer and admin, so a rehearsal needs no keystore. The node must
+                       answer anvil_nodeInfo or this is refused — see plan section 12
+  --admin 0x...        final owner of ACLOwner. Mandatory, no default (plan §7) — except under the
+                       anvil default above, where it is anvil account 1
   --deployment-id ID   operator-chosen string; a fresh one gives a disjoint address set (§14.2)
   --pauser 0x...       optional operator pauser, step A' (§6.1)
   --confirmations N    reorg DEPTH floor for the between-stage waits (default 3, §11 R2). This is
@@ -427,6 +435,68 @@ Usage: node create2-deploy/deploy-testnet.ts --rpc-url URL --account NAME
  * report. So the check exists for the error message, not for the failure. Note it deliberately never
  * echoes the value back.
  */
+/**
+ * The mnemonic anvil prints on startup and funds accounts 0..9 from. Hardcoding it is safe precisely
+ * because it is public: every anvil in the world uses it, so it protects nothing and can leak nothing.
+ *
+ * It exists so a LOCAL REHEARSAL needs no keystore. Rehearsing the CREATE2 path is how you find out
+ * that a salt, an ordinal or a stage gate is wrong, and requiring an unlockable keystore for that put
+ * the rehearsal behind a password prompt — which meant it did not get run.
+ */
+const ANVIL_MNEMONIC = 'test test test test test test test test test test test junk';
+
+/** Account 0 deploys; account 1 is the admin that takes root in step F. Matches anvil-config.json. */
+const ANVIL_DEPLOYER_INDEX = 0;
+const ANVIL_ADMIN_INDEX = 1;
+
+/**
+ * How a stage signs: a forge keystore account, or an index into the public anvil mnemonic.
+ *
+ * A tagged union rather than a nullable account name because the two produce DIFFERENT forge flags,
+ * and because it puts the anvil-only restriction in one place — `resolveSigner` is the only thing that
+ * can mint the `anvil` variant, and it refuses unless the node answers `anvil_nodeInfo`.
+ */
+type Signer =
+  { readonly kind: 'keystore'; readonly account: string } | { readonly kind: 'anvil'; readonly index: number };
+
+/**
+ * Flags for `forge script`. Note the PLURAL names: forge takes `--mnemonics` / `--mnemonic-indexes`,
+ * while `cast wallet` takes the singular `--mnemonic` / `--mnemonic-index`. They are not interchangeable,
+ * and passing the wrong pair fails with an unhelpful clap error.
+ */
+function forgeSignerArgs(signer: Signer): string[] {
+  return signer.kind === 'keystore'
+    ? ['--account', signer.account]
+    : ['--mnemonics', ANVIL_MNEMONIC, '--mnemonic-indexes', String(signer.index)];
+}
+
+/** Flags for `cast wallet address` — the singular spellings. */
+function castSignerArgs(signer: Signer): string[] {
+  return signer.kind === 'keystore'
+    ? ['--account', signer.account]
+    : ['--mnemonic', ANVIL_MNEMONIC, '--mnemonic-index', String(signer.index)];
+}
+
+function signerAddress(signer: Signer): string {
+  return captureOrFail('cast', ['wallet', 'address', ...castSignerArgs(signer)]);
+}
+
+function describeSigner(signer: Signer): string {
+  return signer.kind === 'keystore' ? `keystore '${signer.account}'` : `anvil account ${String(signer.index)}`;
+}
+
+/**
+ * Is this RPC an anvil?
+ *
+ * `anvil_nodeInfo` is the discriminator: anvil answers it, and every other node returns JSON-RPC
+ * -32601 "Method not found". Chain id is NOT used — anvil happily runs with any chain id (`--chain-id`,
+ * or a fork inheriting the upstream one), so 31337 both misses forked anvils and could be spoofed by a
+ * private chain configured to claim it.
+ */
+function isAnvil(rpcUrl: string): boolean {
+  return capture('cast', ['rpc', 'anvil_nodeInfo', '--rpc-url', rpcUrl]).ok;
+}
+
 function rejectRawPrivateKey(flag: string, value: string): void {
   if (!/^(0x)?[0-9a-fA-F]{64}$/.test(value)) return;
   fail(
@@ -613,7 +683,7 @@ function resolveOptions(cli: CliArgs, cfg: ConfigFile, configPath: string | null
 
   const rpcUrl = cli.rpcUrl ?? cfg.rpcUrl ?? '';
   const account = cli.account ?? cfg.account ?? '';
-  const admin = cli.admin ?? cfg.admin ?? '';
+  let admin = cli.admin ?? cfg.admin ?? '';
   const deploymentId = cli.deploymentId ?? cfg.deploymentId ?? '';
   const adminAccount = cli.adminAccount ?? cfg.adminAccount ?? null;
 
@@ -623,12 +693,53 @@ function resolveOptions(cli: CliArgs, cfg: ConfigFile, configPath: string | null
       : `Error: ${flag} is required, and "${key}" is not in ${configPath}.`;
 
   if (!rpcUrl) fail(missing('--rpc-url', 'rpcUrl'));
-  if (!account) fail(missing('--account', 'account'));
 
   // Before the value reaches `cast`, which would print it in its own error. See §12.
-  rejectRawPrivateKey('--account', account);
+  if (account) rejectRawPrivateKey('--account', account);
   if (adminAccount !== null) rejectRawPrivateKey('--admin-account', adminAccount);
 
+  // --account is optional in exactly one case: a local anvil, where the funded accounts come from a
+  // mnemonic that is public knowledge. Anywhere else it stays mandatory, and §12's keystone holds —
+  // the deployer key owns ACLOwner until step F, so a testnet run must not accept an unprotected key.
+  //
+  // The probe runs only when the operator has actually omitted --account, so an unreachable node
+  // cannot break the flows that supplied one. Read-only stages sign nothing and skip it entirely.
+  let signer: Signer | null = null;
+  if (account) {
+    signer = { kind: 'keystore', account };
+  } else if (needsChain(stage)) {
+    if (!isAnvil(rpcUrl)) {
+      fail(
+        missing('--account', 'account'),
+        '',
+        `       ${rpcUrl} did not answer anvil_nodeInfo, so it is not an anvil. The keystore-free`,
+        '       default exists only for a local anvil rehearsal, whose funded accounts come from a',
+        '       PUBLIC mnemonic. On any other chain the deployer key owns ACLOwner until step F',
+        '       completes (plan section 12), so it has to be a keystore:',
+        '',
+        '         cast wallet import my-deployer --interactive',
+        '         --account my-deployer',
+      );
+    }
+    signer = { kind: 'anvil', index: ANVIL_DEPLOYER_INDEX };
+  }
+
+  // Step F is sent by the admin. With a keystore that is --admin-account; on anvil it is simply the
+  // next account, so the rehearsal completes unattended instead of stopping to poll for a transaction
+  // no one is going to send.
+  const adminSigner: Signer | null =
+    adminAccount !== null
+      ? { kind: 'keystore', account: adminAccount }
+      : signer?.kind === 'anvil'
+        ? { kind: 'anvil', index: ANVIL_ADMIN_INDEX }
+        : null;
+
+  // --admin is an ADDRESS, and mandatory by plan section 7 — except on the anvil default, where the
+  // only sensible value is the account that adminSigner will sign with. Deriving it keeps the two from
+  // disagreeing, which preflight would otherwise reject.
+  if (!admin && adminSigner?.kind === 'anvil') {
+    admin = signerAddress(adminSigner);
+  }
   if (!admin) fail(missing('--admin', 'admin') + ' (plan section 7)');
   if (!deploymentId) fail(missing('--deployment-id', 'deploymentId') + ' (plan section 14.2)');
 
@@ -645,6 +756,8 @@ function resolveOptions(cli: CliArgs, cfg: ConfigFile, configPath: string | null
   return {
     rpcUrl,
     account,
+    signer,
+    adminSigner,
     admin,
     deploymentId,
     adminAccount,
@@ -749,7 +862,7 @@ function buildContext(opt: Options): Ctx {
     deployer = readJson<Manifest>(join(outDir, 'manifest.json'))?.deployer ?? '';
   }
   if (deployer === '' && needsChain(opt.stage)) {
-    deployer = captureOrFail('cast', ['wallet', 'address', '--account', opt.account]);
+    deployer = opt.signer === null ? '' : signerAddress(opt.signer);
   }
 
   return {
@@ -831,12 +944,28 @@ function generatedConfigEnv(ctx: Ctx): NodeJS.ProcessEnv {
 ////////////////////////////////////////////////////////////////////////////////
 
 function checkChainAllowed(ctx: Ctx): void {
-  if (!ALLOWED_CHAIN_IDS.includes(ctx.chainId)) {
-    fail(
-      `Error: chain id ${ctx.chainId} is not in the testnet allow-list.`,
-      '       This stack derives its KMS/coprocessor keys from a PUBLISHED mnemonic.',
-    );
+  if (ALLOWED_CHAIN_IDS.includes(ctx.chainId)) return;
+
+  // An anvil is exempt whatever chain id it reports, and that is not a hole in the rule — it is the
+  // rule read properly. What the allow-list protects against is BROADCASTING a stack whose KMS keys
+  // come from a published mnemonic onto a network other people use. An anvil is a local sandbox: it
+  // reaches nothing, so there is nothing to protect. A plain `anvil` starts on 31337, which is
+  // excluded from the list for an unrelated reason (it is the nonce path's chain), and requiring
+  // `--chain-id 11155111` just to rehearse was friction with no safety behind it.
+  //
+  // Keyed on `anvil_nodeInfo` rather than on the chain id, so a private chain that simply claims 31337
+  // gets no exemption. A mainnet-FORKED anvil does qualify, and should: it reports chain id 1 while
+  // still being a sandbox that sends nothing to mainnet.
+  if (isAnvil(ctx.opt.rpcUrl)) {
+    say(`  chain id ${ctx.chainId} allowed: the node answers anvil_nodeInfo, so it is a local anvil`);
+    return;
   }
+
+  fail(
+    `Error: chain id ${ctx.chainId} is not in the testnet allow-list, and ${ctx.opt.rpcUrl} is not an anvil.`,
+    '       This stack derives its KMS/coprocessor keys from a PUBLISHED mnemonic, so it may only be',
+    `       broadcast to a testnet (${ALLOWED_CHAIN_IDS.join(', ')}) or to a local anvil.`,
+  );
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -891,7 +1020,7 @@ function checkOutDirIdentity(ctx: Ctx): void {
     fail(
       `Error: '${ctx.opt.deploymentId}' was sealed by a different deployer.`,
       `         sealed:            ${manifest.deployer}`,
-      `         --account ${ctx.opt.account} resolves to ${ctx.deployer}`,
+      `         ${ctx.opt.signer === null ? 'the deployer' : describeSigner(ctx.opt.signer)} resolves to ${ctx.deployer}`,
       '       Every address in this stack derives from the deployer (plan section 5.2), so this is',
       '       a different address set — not a different way of reaching the same one.',
       '       Use the keystore account that sealed it, or start a new deployment with its own',
@@ -930,12 +1059,12 @@ function checkOutDirIdentity(ctx: Ctx): void {
  * before surfacing, on a run that may have started days earlier.
  */
 function checkAdminAccount(ctx: Ctx): void {
-  if (ctx.opt.adminAccount === null) return;
+  if (ctx.opt.adminSigner === null) return;
 
-  const resolved = captureOrFail('cast', ['wallet', 'address', '--account', ctx.opt.adminAccount]);
+  const resolved = signerAddress(ctx.opt.adminSigner);
   if (!sameAddress(resolved, ctx.opt.admin)) {
     fail(
-      `Error: --admin-account '${ctx.opt.adminAccount}' resolves to ${resolved},`,
+      `Error: the admin signer (${describeSigner(ctx.opt.adminSigner)}) resolves to ${resolved},`,
       `       but --admin is ${ctx.opt.admin}.`,
       '       --admin is the address that gets root and is sealed in the manifest; --admin-account',
       '       only signs step F on its behalf. They have to be the same account.',
@@ -1379,9 +1508,12 @@ function reportTxLine(e: JournalEntry): string {
  * Step F is sent by the ADMIN, not the deployer — that inversion is what Ownable2Step is for — so
  * account and sender are parameters rather than constants.
  */
-async function broadcast(ctx: Ctx, target: string, account?: string, sender?: string): Promise<void> {
+async function broadcast(ctx: Ctx, target: string, signer?: Signer, sender?: string): Promise<void> {
   const from = sender ?? ctx.deployer;
-  const key = account ?? ctx.opt.account;
+  const key = signer ?? ctx.opt.signer;
+  if (key === null) {
+    fail(`Error: stage '${ctx.opt.stage}' sends transactions but no signer was resolved.`);
+  }
   const base = [
     'script',
     `${SCRIPT_DIR}/${target}`,
@@ -1429,7 +1561,7 @@ async function broadcast(ctx: Ctx, target: string, account?: string, sender?: st
   //
   // The exit code is captured rather than thrown, so the journal is written even when the stage
   // dies. A half-finished stage is the case the audit trail exists for.
-  const code = run('forge', [...base, '--account', key, '--sender', from, '--slow', '--broadcast'], env);
+  const code = run('forge', [...base, ...forgeSignerArgs(key), '--sender', from, '--slow', '--broadcast'], env);
 
   recordJournal(ctx, target);
   if (code !== 0) {
@@ -1730,11 +1862,11 @@ async function stepFAcceptOwnershipAsAdmin(ctx: Ctx): Promise<void> {
   if (aclOwner === undefined) fail(`Error: no ACL_OWNER in ${manifestPath(ctx)} - run compute first.`);
 
   // Already proved to resolve to --admin, in preflight.
-  if (ctx.opt.adminAccount !== null) {
+  if (ctx.opt.adminSigner !== null) {
     await broadcast(
       ctx,
       'FhevmAcceptOwnershipAsAdmin.s.sol:FhevmAcceptOwnershipAsAdmin',
-      ctx.opt.adminAccount,
+      ctx.opt.adminSigner,
       ctx.opt.admin,
     );
     return;

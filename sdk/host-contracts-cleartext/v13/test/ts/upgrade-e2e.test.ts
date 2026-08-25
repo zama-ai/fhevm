@@ -1,7 +1,11 @@
+// The previous generation, imported from the fixture built by internal/prepareTestV12Consumer.ts.
+// Its exports are UNSUFFIXED — a package is pinned to one generation by its own version, so the
+// specifier is what says which generation this is, not the type name. Aliased on the way in, because
+// this file is the one place where both generations are in scope at once.
 import {
   deploy as deployV12,
   precomputeAddresses as precomputeV12,
-  type BootstrapConfigV12,
+  type BootstrapConfig as BootstrapConfigV12,
 } from '@fhevm/host-contracts-cleartext-v12/ts';
 import { updateV12ToV13 } from '@fhevm/host-contracts-cleartext/ts';
 import { createPublicClient, createWalletClient, http, parseEventLogs, type Address, type Hex } from 'viem';
@@ -314,7 +318,7 @@ test('e2e: updateV12ToV13 with no migration config — defaults resolved from th
         cleartextAddresses: precomputed.cleartextAddresses,
         pauserSetAddress: precomputed.pauserSetAddress,
       },
-      // No config → deployV12 uses DEFAUT_BOOTSTRAP_CONFIG_V12, whose KMS signer set is the package
+      // No config → deployV12 uses DEFAULT_BOOTSTRAP_CONFIG, whose KMS signer set is the package
       // defaults. That is exactly the stack the no-migration upgrade path assumes (and the reason it
       // works: v12's default KMS signers ARE v13's default KMS signers).
     });

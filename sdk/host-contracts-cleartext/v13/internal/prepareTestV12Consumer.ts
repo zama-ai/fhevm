@@ -15,6 +15,17 @@ import { run } from './utils.ts';
 // The sibling cleartext-v12 package. The e2e upgrade test deploys a fresh v12 stack via this package,
 // then upgrades it to v13 via the local (v13) package's `updateV12ToV13`.
 const V12_PACKAGE_ROOT = PREVIOUS_GENERATION_DIR_ABS_PATH;
+
+/**
+ * The previous generation's PAYLOAD, which is what gets packed — not its harness root.
+ *
+ * Every generation now uses the rule 9 split: the harness manifest at the package root is
+ * `private: true` and carries the devDependencies, while the publishable manifest sits in `pkg/`.
+ * Packing the root therefore produces the wrong tarball (or none), and the fixture the e2e imports by
+ * the published name would not exist. `createPackageTarball.ts` packs `PKG_DIR_ABS_PATH` for exactly
+ * this reason; this is the same rule applied to the sibling.
+ */
+const V12_PAYLOAD_DIR = join(V12_PACKAGE_ROOT, 'pkg');
 const V12_TARBALL_DIR = join(PACKAGE_ROOT_ABS_PATH, 'tarball');
 const V12_CONSUMER_PACKAGE_DIR = join(
   PACKAGE_ROOT_ABS_PATH,
@@ -32,7 +43,7 @@ function _packV12(): string {
   // comes from `npm pack --json` below, which makes stale files inert; `clean:tarball-consumer`
   // removes the directory wholesale.
   const result = spawnSync('npm', ['pack', '--json', '--pack-destination', V12_TARBALL_DIR], {
-    cwd: V12_PACKAGE_ROOT,
+    cwd: V12_PAYLOAD_DIR,
     encoding: 'utf8',
     stdio: 'pipe',
   });

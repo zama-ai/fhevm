@@ -11,7 +11,7 @@
 // Built against the real packed artifact in <root>/tarball, not against pkg/ — an `exports`/`files` change
 // that omits the stub has to be caught in the thing that actually gets published.
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -36,20 +36,40 @@ afterAll(() => {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+function readJson<T>(path: string): T | null {
+  try {
+    return JSON.parse(readFileSync(path, 'utf8')) as T;
+  } catch {
+    return null;
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 function _tarballPath(): string {
   if (!existsSync(TARBALL_DIR)) {
     throw new Error(`Missing ${TARBALL_DIR}. Run npm run build (or npm run pack:tarball) first.`);
   }
   const tarballs = readdirSync(TARBALL_DIR).filter((entry) => entry.endsWith('.tgz'));
-  // The directory is shared with the previous generation's tarball during the upgrade e2e, so pick by
-  // name rather than taking the only entry.
-  const own = tarballs.filter((entry) => entry.startsWith('fhevm-host-contracts-cleartext-'));
-  const only = own[0];
-  if (own.length !== 1 || only === undefined) {
-    const found = tarballs.length === 0 ? '(none)' : tarballs.join(', ');
-    throw new Error(`Expected exactly one v13 tarball in ${TARBALL_DIR}, found: ${found}`);
+
+  // Pinned by VERSION, not by name prefix.
+  //
+  // The directory is deliberately shared: the upgrade e2e packs the previous generation's tarball here
+  // too (see internal/createPackageTarball.ts). Every generation publishes under the SAME npm name and
+  // differs only by version, so a name-prefix filter matches both and this threw "expected exactly one"
+  // as soon as the e2e had run. Reading the version out of the payload manifest makes the guard stronger
+  // than the count ever was: it pins the exact artifact this test is supposed to be exercising, so a
+  // stale tarball from an earlier version is a miss rather than a coin flip.
+  const version = readJson<{ version?: string }>(join(PACKAGE_ROOT, 'pkg', 'package.json'))?.version;
+  if (version === undefined) {
+    throw new Error(`Could not read version from ${join(PACKAGE_ROOT, 'pkg', 'package.json')}.`);
   }
-  return join(TARBALL_DIR, only);
+  const expected = `fhevm-host-contracts-cleartext-${version}.tgz`;
+  if (!tarballs.includes(expected)) {
+    const found = tarballs.length === 0 ? '(none)' : tarballs.join(', ');
+    throw new Error(`Missing ${expected} in ${TARBALL_DIR}, found: ${found}. Run npm run pack:tarball.`);
+  }
+  return join(TARBALL_DIR, expected);
 }
 
 /**

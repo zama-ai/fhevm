@@ -205,8 +205,8 @@ contract DeployLocalStack is Script {
      *      permissionless and nothing references their addresses, so unlike phase 1 the nonce they land
      *      at does not matter.
      *
-     *      Each initializer that takes arguments gets its own encoder, because with every op and its
-     *      arguments live in one frame legacy codegen runs out of stack slots, and scripts compile with
+     *      Each initializer that takes arguments gets its own encoder, because with all the ops and
+     *      their arguments live in one frame legacy codegen runs out of stack slots, and scripts compile with
      *      via_ir off.
      */
     function _materialize(address aclOwner) private {

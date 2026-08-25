@@ -210,7 +210,7 @@ contract FhevmStatus is FhevmCreate2Base {
         uint256 live;
         uint256 foreign;
 
-        for (uint256 i = 0; i < 9; i++) {
+        for (uint256 i = 0; i < proxyRoles.length; i++) {
             address slot = _implementationOf(_readManifestAddress(manifest, proxyRoles[i]));
 
             // Before D the slot holds the EMPTY proxy implementation, not zero — an ERC1967Proxy sets

@@ -1,10 +1,15 @@
 # create2-deploy
 
-**A drawing, not a deliverable.** These files exist to make
-[CREATE2_TESTNET_DEPLOY_PLAN.md](../plans/CREATE2_TESTNET_DEPLOY_PLAN.md) concrete enough to argue
-with. The Solidity compiles clean under solc 0.8.24 — but it has never been *run*, against a fork or
-anything else. Nothing here is wired into the build or linted, the directory is outside `pkg/`,
-nothing imports it, and `foundry.toml` grants it no `fs_permissions`.
+**Runs on a local anvil; never yet on a real testnet.** These files started as a drawing to make
+[CREATE2_TESTNET_DEPLOY_PLAN.md](../plans/CREATE2_TESTNET_DEPLOY_PLAN.md) concrete enough to argue with,
+and are now further along than that: the full flow — `compute` through step F and `verify` — has been run
+end to end against a local anvil in both generations, finishing with *"OK — every terminal condition
+met."* See GUIDE.md; no keystore is needed for that.
+
+What is still true: **no real testnet run has happened.** The directory sits outside `pkg/`, nothing
+imports it, and it is not part of `npm run build`. Two things are wired in now — `foundry.toml` grants
+it `fs_permissions` so the manifest can be written, and `test/Create2Ordinals.t.sol` pins the index
+alignment its four role tables depend on.
 
 To check it yourself:
 
@@ -33,17 +38,17 @@ Read it, decide whether the shape is right, then throw it away and write the rea
 | [tsconfig.json](tsconfig.json) | — | editor + `tsc --noEmit` only; nothing is ever built from it |
 | [script/FhevmCreate2Base.s.sol](script/FhevmCreate2Base.s.sol) | §3, §5.4, §9 | env config, role table, salts, initcode, factory call, manifest codec |
 | [script/FhevmComputeCreate2Addresses.s.sol](script/FhevmComputeCreate2Addresses.s.sol) | §5.3 | one **pass** of the three-build pipeline; `FHEVM_PASS=1\|2\|3` |
-| [script/FhevmDeployCreates.s.sol](script/FhevmDeployCreates.s.sol) | §6, §8 | 22 CREATE2s, each gated on `getCode(predicted) != ""` |
+| [script/FhevmDeployCreates.s.sol](script/FhevmDeployCreates.s.sol) | §6, §8 | one CREATE2 per create, each gated on `getCode(predicted) != ""` |
 | [script/FhevmRegisterPausers.s.sol](script/FhevmRegisterPausers.s.sol) | §6.1, §8 | steps A, A′ — the pausers, while the deployer still owns ACL |
 | [script/FhevmOfferACLOwnership.s.sol](script/FhevmOfferACLOwnership.s.sol) | §5.1, §6, §8 | step B — offers ACL to the ACLOwner; ownership does **not** move here |
 | [script/FhevmAcceptACLOwnership.s.sol](script/FhevmAcceptACLOwnership.s.sol) | §6, §8 | step C — where ownership actually moves |
-| [script/FhevmMaterializeStack.s.sol](script/FhevmMaterializeStack.s.sol) | §6, §8 | step D — nine proxies become the real stack, atomically |
+| [script/FhevmMaterializeStack.s.sol](script/FhevmMaterializeStack.s.sol) | §6, §8 | step D — the empty proxies become the real stack, atomically |
 | [script/FhevmOfferACLOwnerToAdmin.s.sol](script/FhevmOfferACLOwnerToAdmin.s.sol) | §7, §8 | step E — the deployer offers up root |
 | [script/FhevmAcceptOwnershipAsAdmin.s.sol](script/FhevmAcceptOwnershipAsAdmin.s.sol) | §7 | step F — the admin accepts. The only script **not** sent by the deployer |
 | [script/FhevmStatus.s.sol](script/FhevmStatus.s.sol) | — | what's done, what's left, and why. Read-only, never reverts |
 | [script/FhevmVerify.s.sol](script/FhevmVerify.s.sol) | §7, §11 R1 | the terminal conditions; reverts non-zero if any is unmet |
 | [script/Interfaces.sol](script/Interfaces.sol) | — | minimal local views so the draft needs only `forge-std` |
-| [script/MaterializeInitData.sol](script/MaterializeInitData.sol) | §10 | step D's nine initializer payloads, from `LocalHostBootstrap` |
+| [script/MaterializeInitData.sol](script/MaterializeInitData.sol) | §10 | step D's initializer payloads, from `LocalHostBootstrap` |
 
 ## Shape of a run
 
@@ -57,7 +62,7 @@ compute          build 1 → PASS=1  → addresses.sol: real ACL, markers elsewh
 
    ⏸  commit and PUSH the seal        ← manual. Lose it and a half-run stack is unfinishable.
 
-creates          22 CREATE2s through 0x4e59…, each `if (predicted.code.length == 0)`
+creates          every CREATE2 through 0x4e59…, each `if (predicted.code.length == 0)`
 pausers          A A′ — must land before C, or `addPauser` is no longer the deployer's to call
 offer-acl        B    — offers only; `ACL.owner()` is still the deployer afterwards
 accept-acl       C    — ownership moves here; every `onlyACLOwner` gate flips
@@ -220,8 +225,8 @@ deployer ⇒ same addresses on every testnet; a different deployer ⇒ a disjoin
 
 **3. Predicate and precondition are different columns.** A predicate that is already true is the
 normal resume case, silent. A precondition that is false is fatal — it means the stack is in a state
-this run did not create, and no retry fixes that. Step D is tri-state on top: all nine ERC-1967 slots
-sealed → skip, all nine empty → run, **anything else → a human decides**, because `ACLOwner.upgrade`
+this run did not create, and no retry fixes that. Step D is tri-state on top: every ERC-1967 slot
+sealed → skip, every one empty → run, **anything else → a human decides**, because `ACLOwner.upgrade`
 is atomic and re-running it against a partial stack reverts permanently.
 
 **3b. The reorg gate is a required env var, not a `sleep`.** Steps A–E each read `FHEVM_MIN_BLOCK`
@@ -293,7 +298,7 @@ A/A′ and B are unordered with respect to each other, and deliberately so — `
 not touch `owner()`, so B leaves `addPauser` exactly as callable as it found it.
 
 **The one gap left is E.** §8 gives it no precondition on D, so the ACLOwner can be offered to the
-admin with all nine proxies still empty. Not unsafe — D is `onlyOwner` on the ACLOwner, so an admin
+admin with every proxy still empty. Not unsafe — D is `onlyOwner` on the ACLOwner, so an admin
 who accepts early can run D themselves — but an out-of-order run can hand over an unmaterialized
 stack, and the hand-over is the point after which fixing anything costs a multisig round-trip.
 `verify` catches it either way.
@@ -316,7 +321,7 @@ lands, the deployer is still root over the stack.
 - ~~**`MaterializeInitData`** is a stub~~ — **done.** Wired to `LocalHostBootstrap` with
   `abi.encodeCall`, the same source and the same encoding as `FhevmDeployScript._materialize`, so
   this path and the TypeScript `deploy()` produce the same stack. It is no longer standalone: it now
-  imports the nine implementations, which is what buys the type-checked arguments.
+  imports the implementations, which is what buys the type-checked arguments.
   §10 is still open — `seal` should record the bootstrap config in the manifest, so what a
   deployment used is a fact on record rather than whatever the build baked in.
 - ~~**`FACTORY_CODEHASH`** is unpinned~~ — **done.** Pinned to
@@ -371,12 +376,12 @@ after two builds, complaining about a path the operator never typed. Giving the 
 root rather than sharing `./internal/.deploy-config` also keeps either path from clobbering the
 other's config.
 
-## Running it (don't, yet)
+## Running it
 
-For the record, the intended invocation:
+A real testnet, which has not been done yet:
 
 ```sh
-./create2-deploy/deploy-testnet.sh \
+node create2-deploy/deploy-testnet.ts \
   --rpc-url        "$SEPOLIA_RPC_URL" \
   --account        fhevm-testnet-deployer \
   --admin          0x… \
@@ -384,7 +389,17 @@ For the record, the intended invocation:
   --confirmations  3
 ```
 
-Chain 31337 is rejected by the allow-list, as it must be: RULES.md rules 15 and 17 require the local
-stack to land on the three `CREATE(deployer, nonce)` addresses `ZamaConfig.sol` compiles into every
-dApp, and you cannot grind CREATE2 salts to hit three specific 20-byte values. `scripts/deploy.sh` is
-untouched and remains the only path for local dev.
+A local anvil rehearsal, which has — see GUIDE.md. `--account` and `--admin` are omitted there, which
+is allowed only because the node answers `anvil_nodeInfo`:
+
+```sh
+anvil --silent &
+node create2-deploy/deploy-testnet.ts --config create2-deploy/anvil-config.json \
+  --out-dir .out-rehearsal --no-confirm --stage all
+```
+
+**This is not the path for local dev.** RULES.md rules 15 and 17 require the local stack to land on the
+three `CREATE(deployer, nonce)` addresses `ZamaConfig.sol` compiles into every dApp, and you cannot
+grind CREATE2 salts to hit three specific 20-byte values. `scripts/deploy.sh` is untouched and remains
+the only path that satisfies those rules. An anvil rehearsal here is for exercising the CREATE2 flow, not
+for standing up a stack a dApp can use.

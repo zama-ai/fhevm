@@ -123,8 +123,8 @@ contract FhevmComputeCreate2Addresses is FhevmCreate2Base {
         // EmptyUUPSProxy is worth keeping on this path too.
         bytes memory sharedProxyCode = _proxyInitCode(impl3, _sharedProxyInitData());
         string[] memory roles = _sharedProxyRoles();
-        address[] memory proxies = new address[](_sharedProxyRoles().length);
-        for (uint256 i = 0; i < 8; i++) {
+        address[] memory proxies = new address[](roles.length);
+        for (uint256 i = 0; i < roles.length; i++) {
             proxies[i] = _predictCreate2Address(roles[i], sharedProxyCode);
         }
 
@@ -140,17 +140,17 @@ contract FhevmComputeCreate2Addresses is FhevmCreate2Base {
         console.log("  impl1 (EmptyUUPSProxyACL)", impl1);
         console.log("  impl3 (EmptyUUPSProxy)   ", impl3);
         console.log("  ACL_ADDRESS             ", aclAdd);
-        for (uint256 i = 0; i < 8; i++) {
+        for (uint256 i = 0; i < roles.length; i++) {
             console.log(string.concat("  ", roles[i]), proxies[i]);
         }
         console.log("  PAUSER_SET_ADDRESS      ", pauserSetAdd);
         console.log("  ACL_OWNER               ", aclOwnerAdd);
 
-        address[] memory rest = new address[](_sharedProxyRoles().length + 1);
-        for (uint256 i = 0; i < 8; i++) {
+        address[] memory rest = new address[](proxies.length + 1);
+        for (uint256 i = 0; i < proxies.length; i++) {
             rest[i] = proxies[i];
         }
-        rest[8] = pauserSetAdd;
+        rest[proxies.length] = pauserSetAdd;
         _writeAddresses(aclAdd, rest);
 
         Pass2 memory p;
@@ -232,9 +232,9 @@ contract FhevmComputeCreate2Addresses is FhevmCreate2Base {
     function _computeImplementations() private view returns (address[] memory impls) {
         string[] memory proxyRoles = _allProxyRoles();
         address[] memory markers = _markerAddresses();
-        impls = new address[](_allProxyRoles().length);
+        impls = new address[](proxyRoles.length);
 
-        for (uint256 i = 0; i < 9; i++) {
+        for (uint256 i = 0; i < impls.length; i++) {
             bytes memory code = _initCode(_implArtifact(i));
 
             // §11 R3: a ~24 KB runtime plus constructor args approaches the EIP-3860 ceiling, and a
@@ -291,10 +291,10 @@ contract FhevmComputeCreate2Addresses is FhevmCreate2Base {
 
         string[] memory roles = _sharedProxyRoles();
         c = string.concat(c, _constant(R_ACL, aclAdd));
-        for (uint256 i = 0; i < 8; i++) {
+        for (uint256 i = 0; i < roles.length; i++) {
             c = string.concat(c, _constant(roles[i], rest[i]));
         }
-        c = string.concat(c, _constant(R_PAUSER_SET, rest[8]));
+        c = string.concat(c, _constant(R_PAUSER_SET, rest[roles.length]));
 
         vm.writeFile(_addressesPath(), c);
     }
@@ -308,7 +308,7 @@ contract FhevmComputeCreate2Addresses is FhevmCreate2Base {
     ///      legitimately-compiled bytecode all the time.
     function _markerAddresses() private pure returns (address[] memory m) {
         m = new address[](_allProxyRoles().length);
-        for (uint256 i = 0; i < 9; i++) {
+        for (uint256 i = 0; i < m.length; i++) {
             m[i] = address(uint160(0xdead0000 + i));
         }
     }
@@ -400,12 +400,14 @@ contract FhevmComputeCreate2Addresses is FhevmCreate2Base {
         vm.serializeAddress(o, R_ACL_OWNER, vm.parseJsonAddress(scratch, ".aclOwnerAdd"));
 
         string[] memory shared = _sharedProxyRoles();
-        for (uint256 i = 0; i < 8; i++) {
+        for (uint256 i = 0; i < shared.length; i++) {
             vm.serializeAddress(o, shared[i], proxies[i]);
         }
-        for (uint256 i = 0; i < 8; i++) {
+        // All but the last, because `out` must be the return of the FINAL serialize call.
+        uint256 last = proxyRoles.length - 1;
+        for (uint256 i = 0; i < last; i++) {
             vm.serializeAddress(o, _implRole(proxyRoles[i]), impls[i]);
         }
-        out = vm.serializeAddress(o, _implRole(proxyRoles[8]), impls[8]);
+        out = vm.serializeAddress(o, _implRole(proxyRoles[last]), impls[last]);
     }
 }

@@ -104,8 +104,9 @@ contract ACLOwner is Ownable2Step {
     /**
      * @notice Generic escape hatch: forward an arbitrary call to `target` with `data`, as this contract.
      * @dev Because this contract is the ACL owner, the forwarded call's `msg.sender` is `ACL.owner()`, so
-     *      any `onlyACLOwner`-gated function on any host contract (e.g. `ProtocolConfig.defineNewKmsContext`,
-     *      `HCULimit.setHCUPerBlock`, ...) can be invoked through here without deploying a new `ACLOwner`.
+     *      any `onlyACLOwner`-gated function on any host contract (e.g. `HCULimit.setHCUPerBlock`,
+     *      `ACL.unpause`, ...) can be invoked through here without deploying a new `ACLOwner`. The example
+     *      is deliberately generation-neutral: the point is the mechanism, not any one callee.
      *      A revert in `target` bubbles up unchanged. Non-payable: host owner-gated methods take no value.
      * @param target The contract to call. Must have deployed code (a low-level call to a codeless address
      *               would silently "succeed").

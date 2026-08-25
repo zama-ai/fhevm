@@ -88,10 +88,18 @@ export DEPLOYER_PRIVATE_KEY="$PRIVATE_KEY"
 
 START_NONCE="$(cast nonce "$DEPLOYER" --rpc-url "$RPC_URL")"
 
-# ACLOwner is created at start nonce + 12, right after PauserSet at +11 (see the nonce layout in
-# pkg/forge/src/../script/ComputeAddresses.s.sol). Computed here rather than read back off the chain: an
-# "expected" value fetched from the thing under test always matches, which is not a check.
-EXPECTED_ACL_OWNER="$(cast compute-address "$DEPLOYER" --nonce "$((START_NONCE + 12))" | awk '{print $NF}')"
+# ACLOwner is created at start nonce + ADDRESSED_NONCE_COUNT — one past the last address any bytecode
+# refers to, i.e. right after PauserSet. Read from the generated LocalHostAddresses.sol rather than
+# written down: it is the one number here that moves when the protocol generation adds or drops a host
+# contract, and a stale literal makes this check compare against an address nothing was deployed to.
+#
+# Computed rather than read back off the chain: an "expected" value fetched from the thing under test
+# always matches, which is not a check.
+ADDRESSED_NONCE_COUNT="$(sed -n 's/^[a-z0-9]* constant ADDRESSED_NONCE_COUNT = \([^;]*\);.*/\1/p' \
+    "$(dirname "$0")/../pkg/forge/src/_internal/LocalHostAddresses.sol")"
+[ -n "$ADDRESSED_NONCE_COUNT" ] || { echo "Error: could not read ADDRESSED_NONCE_COUNT." >&2; exit 1; }
+EXPECTED_ACL_OWNER="$(cast compute-address "$DEPLOYER" \
+    --nonce "$((START_NONCE + ADDRESSED_NONCE_COUNT))" | awk '{print $NF}')"
 
 echo "🔗 rpc      $RPC_URL"
 echo "👤 deployer $DEPLOYER (nonce $START_NONCE)"

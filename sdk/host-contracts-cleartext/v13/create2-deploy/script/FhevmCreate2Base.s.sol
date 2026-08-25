@@ -70,7 +70,8 @@ abstract contract FhevmCreate2Base is Script {
     // Roles (§5.4: `role` is the salt's last field, and the address name)
     // ---------------------------------------------------------------------------------------
     //
-    // creates. The nonce path has 13, because it deploys the implementations inside step 4
+    // One create per entry in _creates(). The nonce path needs fewer, because it deploys the
+    // implementations inside step 4
     // as ordinary CREATEs whose addresses nothing references. Here every create goes through the
     // factory, so every create needs a salt — including the implementations, whose addresses are
     // still referenced by nothing but must be predictable for step D to be assembled offline.
@@ -305,12 +306,12 @@ abstract contract FhevmCreate2Base is Script {
         c[n++] = Create(R_IMPL_EMPTY_ACL, _initCode(A_EMPTY_ACL));
         c[n++] = Create(R_ACL, _proxyInitCode(impl1, _aclProxyInitData(cfg.deployer)));
         c[n++] = Create(R_IMPL_EMPTY_SHARED, _initCode(A_EMPTY_SHARED));
-        for (uint256 i = 0; i < 8; i++) {
+        for (uint256 i = 0; i < shared.length; i++) {
             c[n++] = Create(shared[i], sharedProxyCode);
         }
         c[n++] = Create(R_PAUSER_SET, _initCode(A_PAUSER_SET));
         c[n++] = Create(R_ACL_OWNER, _initCode(A_ACL_OWNER, abi.encode(cfg.deployer, aclAdd)));
-        for (uint256 i = 0; i < 9; i++) {
+        for (uint256 i = 0; i < proxyRoles.length; i++) {
             c[n++] = Create(_implRole(proxyRoles[i]), _initCode(_implArtifact(i)));
         }
 

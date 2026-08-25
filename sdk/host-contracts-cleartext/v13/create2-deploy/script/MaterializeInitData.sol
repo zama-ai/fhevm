@@ -51,8 +51,8 @@ import {LocalHostBootstrap} from "../../pkg/forge/src/_internal/LocalHostBootstr
  * is exactly the kind of thing that deploys, verifies against itself, and fails only when the relayer
  * shows up.
  *
- * Each payload gets its own encoder below. That is not decoration: with every op and its init-args
- * live in one frame, legacy codegen runs out of stack slots ("Stack too deep"), and scripts compile
+ * Each payload gets its own encoder below. That is not decoration: with all the ops and their
+ * init-args live in one frame, legacy codegen runs out of stack slots ("Stack too deep"), and scripts compile
  * with via_ir off — the same reason FhevmDeployScript splits them.
  *
  * Note these payloads are NOT part of any address. They travel as calldata to ACLOwner.upgrade, not

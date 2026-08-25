@@ -94,7 +94,7 @@ $D --stage creates --dry-run
   admin      0x2222…
 
   [done] compute  addresses computed and sealed (no transactions)
-  [done] creates  22 CREATE2s through the factory
+  [done] creates  every CREATE2 through the factory
            block 6240900   ok        0xc1…  EmptyUUPSProxyACL
   [done] A/A'     register the pausers
            block 6240930   REVERTED  0xa1…  addPauser(address)
@@ -158,17 +158,30 @@ $D --stage all --no-git        # this deployment needs no seal at all
 
 ### Why it works the way it does
 
-A bare anvil is enough — no fork needed. anvil pre-deploys the CREATE2 factory at `0x4e59b448…`, and
-it is byte-identical to the one on mainnet, Sepolia, Holesky and base-sepolia, so the §3 code-hash
-gate passes locally exactly as it does on a real chain. What anvil does _not_ give you by default is
-an allow-listed chain id: it starts on 31337, which is deliberately excluded because that is the
-nonce path's chain. `--chain-id 11155111` fixes that. (Forking Sepolia also works and gives you real
-chain state, but nothing here needs it — all 22 contracts are deployed fresh.)
+A bare anvil is enough — no fork needed, and no flags. anvil pre-deploys the CREATE2 factory at
+`0x4e59b448…`, and it is byte-identical to the one on mainnet, Sepolia, Holesky and base-sepolia, so
+the §3 code-hash gate passes locally exactly as it does on a real chain. (Forking Sepolia also works
+and gives you real chain state, but nothing here needs it — every contract is deployed fresh.)
 
-Two things must be arranged before the first run, and neither is test-only. `foundry.toml` needs an
-`fs_permissions` entry or forge refuses to write the manifest at all. And §12 accepts keystore
-accounts only, so anvil's dev keys have to be imported rather than pasted; two of them, because
-`--admin` must differ from the deployer.
+anvil's default chain id, 31337, is not in the §1 allow-list — it is excluded because it is the nonce
+path's chain, not for any safety reason. An anvil is therefore **exempt from the allow-list whatever
+chain id it reports**, detected by `anvil_nodeInfo` rather than by the id itself, so a private chain
+claiming 31337 gets no exemption. What the allow-list protects is broadcasting to a network other
+people use; an anvil reaches nothing. The run says so when the exemption applies, so it is never
+silent.
+
+One thing must be arranged before the first run, and it is not test-only: `foundry.toml` needs an
+`fs_permissions` entry or forge refuses to write the manifest at all.
+
+**No keystore is needed on anvil.** Omit `--account` and the coordinator uses accounts 0 and 1 of
+anvil's public mnemonic — 0 deploys, 1 becomes the admin — and defaults `--admin` to account 1's
+address. §12's keystore-only rule still binds every other chain: the default is granted only when the
+node answers `anvil_nodeInfo`, and refused with an explanation otherwise. Chain id is deliberately NOT
+the test: a mainnet- or Sepolia-forked anvil inherits the upstream id, so checking for 31337 would miss
+exactly the cases that matter — and a private chain claiming 31337 would wrongly pass.
+
+Importing the two dev keys as a keystore still works and is still what a config file records; it is
+simply no longer required.
 
 At run time, `--confirmations 0 --no-finality` is load-bearing rather than cosmetic: anvil mines only
 when a transaction arrives, so a reorg gate waiting for `head + 3` would never be satisfied and the
@@ -226,22 +239,27 @@ Paths are relative to that `foundry.toml`. Check it took:
 forge config | grep -A6 fs_permissions
 ```
 
-**2. Import the two anvil keys — once per machine.**
-
-```sh
-cast wallet private-key --mnemonic "test test test test test test test test test test test junk" --mnemonic-index 0
-cast wallet private-key --mnemonic "test test test test test test test test test test test junk" --mnemonic-index 1
-```
+**2. Nothing to import.** Omit `--account` and `--admin` on anvil; accounts 0 and 1 of the public
+mnemonic are used. To use a keystore anyway (what `anvil-config.json` records):
 
 ```sh
 cast wallet import anvil-deployer --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
 cast wallet import anvil-admin    --private-key 0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
 ```
 
-**3. Start anvil on an allow-listed chain id — leave it running.**
+**3. Start anvil — leave it running.** No flags needed.
 
 ```sh
-anvil --chain-id 11155111 --port 8545
+anvil
+```
+
+
+**Shortest possible rehearsal**, no config file and no keystore — this is the exact command that was
+run to verify the path end to end:
+
+```sh
+anvil --silent &
+node deploy-testnet.ts --config anvil-config.json --out-dir .out-rehearsal --no-confirm --stage all
 ```
 
 **4. Build the command — in a second terminal.**

@@ -86,8 +86,8 @@ import {
  * 1. Nine proxies, not five: v13 adds ProtocolConfig and KMSGeneration, and the
  *    cleartext build adds CleartextArithmetic and CleartextDB.
  *
- * 2. ONE shared EmptyUUPSProxy implementation at nonce+2 serves every other proxy
- *    non-ACL proxies, where forge-fhevm deploys a fresh implementation per
+ * 2. ONE shared EmptyUUPSProxy implementation at nonce+2 serves every
+ *    non-ACL proxy, where forge-fhevm deploys a fresh implementation per
  *    slot. That is what makes the proxy nonces contiguous (+3..+10) instead of
  *    odd-numbered, and it must match ComputeAddresses.s.sol exactly.
  *
@@ -206,8 +206,8 @@ contract FhevmDeployScript is Script {
             console.log("ACL empty proxy:            ", address(aclProxy));
         }
 
-        // nonce+2: the single EmptyUUPSProxy implementation shared by every other proxy
-        // remaining proxies. Deployed once, unlike forge-fhevm's per-slot impl.
+        // nonce+2: the single EmptyUUPSProxy implementation shared by every
+        // remaining proxy. Deployed once, unlike forge-fhevm's per-slot impl.
         EmptyUUPSProxy sharedImpl = new EmptyUUPSProxy();
         console.log("EmptyUUPSProxy shared impl: ", address(sharedImpl));
 
@@ -269,7 +269,7 @@ contract FhevmDeployScript is Script {
      *      creations in step 1 nothing here depends on the nonce they land at.
      *
      *      Each initializer that takes arguments gets its own encoder below. That is not decoration: with
-     *      every op and its init-args live in one frame, legacy codegen runs out of stack slots ("Stack
+     *      all the ops and their init-args live in one frame, legacy codegen runs out of stack slots ("Stack
      *      too deep"), and scripts compile with via_ir off.
      */
     function _materialize(ACLOwner aclOwner) private {

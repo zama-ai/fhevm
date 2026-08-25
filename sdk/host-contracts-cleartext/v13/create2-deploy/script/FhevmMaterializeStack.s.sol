@@ -15,7 +15,7 @@ import {IOwnable2Step, IACLOwner} from "./Interfaces.sol";
  *         in the same call.
  *
  * Atomic by construction, and that is the design, not a convenience. `ACLOwner.upgrade` loops over
- * the ops and reverts as a whole, so the stack is never left half-materialized. Nine separate
+ * the ops and reverts as a whole, so the stack is never left half-materialized. Per-proxy
  * upgrades — which is what the nonce path's forge-fhevm ancestor did, before ACLOwner existed —
  * can fail midway and leave some proxies real and some still empty.
  *
@@ -33,8 +33,8 @@ import {IOwnable2Step, IACLOwner} from "./Interfaces.sol";
  *
  * Note the run state is NOT "slot is zero". An ERC1967Proxy sets its implementation in the
  * constructor, and OpenZeppelin's _setImplementation reverts when that implementation has no code, so
- * a deployed proxy's slot is never zero. Before D, ACL points at EmptyUUPSProxyACL and the other
- * the rest share EmptyUUPSProxy — see _emptyImplRoleFor.
+ * a deployed proxy's slot is never zero. Before D, ACL points at EmptyUUPSProxyACL and the
+ * others share EmptyUUPSProxy — see _emptyImplRoleFor.
  *
  * Mixed is fatal rather than resumable because the atomicity that protects the happy path works
  * against a retry: re-running `upgrade` against a partially-materialized stack hits
@@ -111,11 +111,11 @@ contract FhevmMaterializeStack is FhevmCreate2Base {
      */
     function _buildOps(string memory manifest) private view returns (IACLOwner.Op[] memory ops, uint256 materialized) {
         string[] memory proxyRoles = _allProxyRoles();
-        ops = new IACLOwner.Op[](_allProxyRoles().length);
+        ops = new IACLOwner.Op[](proxyRoles.length);
 
         address cleartextArithmeticAdd = _readManifestAddress(manifest, R_CLEARTEXT_ARITHMETIC);
 
-        for (uint256 i = 0; i < 9; i++) {
+        for (uint256 i = 0; i < proxyRoles.length; i++) {
             address proxy = _readManifestAddress(manifest, proxyRoles[i]);
             address sealedImpl = _readManifestAddress(manifest, _implRole(proxyRoles[i]));
             address live = _implementationOf(proxy);
