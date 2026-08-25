@@ -6,7 +6,6 @@
 use alloy::primitives::{Address, Bytes};
 use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use alloy::rpc::types::Filter;
-use ethereum_rpc_mock::test_utils::get_free_port;
 use ethereum_rpc_mock::{MockConfig, MockServer, SubscriptionTarget};
 use futures_util::StreamExt;
 use std::time::Duration;
@@ -15,9 +14,8 @@ use tokio::time::timeout;
 /// Test: Verify subscription count tracking
 #[tokio::test]
 async fn test_subscription_count_tracking() {
-    let port = get_free_port().unwrap();
     let server = MockServer::new(MockConfig {
-        port,
+        port: 0,
         ..MockConfig::new()
     });
 
@@ -25,6 +23,7 @@ async fn test_subscription_count_tracking() {
     assert_eq!(server.get_log_subscription_count().await, 0);
 
     let handle = server.clone().start().await.unwrap();
+    let port = handle.port();
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     let url = format!("ws://127.0.0.1:{}/ws", port);
@@ -68,13 +67,13 @@ async fn test_subscription_count_tracking() {
 /// Test: SubscriptionTarget::All sends to all subscriptions
 #[tokio::test]
 async fn test_target_all_sends_to_all_subscriptions() {
-    let port = get_free_port().unwrap();
     let server = MockServer::new(MockConfig {
-        port,
+        port: 0,
         ..MockConfig::new()
     });
 
     let handle = server.clone().start().await.unwrap();
+    let port = handle.port();
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     let url = format!("ws://127.0.0.1:{}/ws", port);
@@ -140,13 +139,13 @@ async fn test_target_all_sends_to_all_subscriptions() {
 /// Test: SubscriptionTarget::Only sends to specific indices
 #[tokio::test]
 async fn test_target_only_sends_to_specific_indices() {
-    let port = get_free_port().unwrap();
     let server = MockServer::new(MockConfig {
-        port,
+        port: 0,
         ..MockConfig::new()
     });
 
     let handle = server.clone().start().await.unwrap();
+    let port = handle.port();
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     let url = format!("ws://127.0.0.1:{}/ws", port);
@@ -233,13 +232,13 @@ async fn test_target_only_sends_to_specific_indices() {
 /// Test: SubscriptionTarget::Only([]) sends to no one
 #[tokio::test]
 async fn test_target_empty_sends_to_none() {
-    let port = get_free_port().unwrap();
     let server = MockServer::new(MockConfig {
-        port,
+        port: 0,
         ..MockConfig::new()
     });
 
     let handle = server.clone().start().await.unwrap();
+    let port = handle.port();
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     let url = format!("ws://127.0.0.1:{}/ws", port);
