@@ -51,9 +51,28 @@ impl fmt::Display for TransactionType {
     }
 }
 
+/// Outcome of the compare-and-set that claims the tx-in-flight status transition.
+///
+/// `update_status_to_tx_in_flight` only advances a request's status when it is still in the
+/// status that permits the transition, so at most one caller among concurrent sends for the
+/// same job proceeds. The concurrency it guards against: startup recovery resets every
+/// `tx_in_flight` row back to `processing` and re-dispatches it before it knows whether the
+/// previous owner is still executing that send, so a new pod can end up racing a still-live
+/// send from the pod it is replacing. The CAS decides which of the two actually sends; it
+/// does not detect or prevent the old pod's send from happening at all - that duplicate, if
+/// it occurs, is absorbed downstream (see `on_tx_in_flight`'s callers).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TxClaimOutcome {
+    /// This caller won the claim: it owns the row and must send the transaction.
+    Claimed,
+    /// Another actor already claimed the row; this caller must not send.
+    ClaimLost,
+}
+
 #[async_trait::async_trait]
 pub trait TxLifecycleHooks: Send + Sync {
-    async fn on_tx_in_flight(&self, job_id: &JobId) -> Result<(), EventProcessingError>;
+    async fn on_tx_in_flight(&self, job_id: &JobId)
+        -> Result<TxClaimOutcome, EventProcessingError>;
 
     async fn on_receipt_received(
         &self,
@@ -100,6 +119,24 @@ impl TransactionHelper {
 
         metrics::transaction::transaction_broadcast(tx_metric_type);
         let transaction_start_time = Instant::now();
+
+        // Claim tx_in_flight status before any RPC work, not just before the send: gas
+        // estimation retries against a node that disagrees with the one the winner used
+        // (see `engine.rs`) can fail for a loser uncorrelated with the winner's own send, and
+        // `on_failure` is not claim-guarded (it accepts a row in `processing` or
+        // `tx_in_flight`) - so a claim taken after `prepare_transaction` lets a losing
+        // estimation failure flip the winner's in-flight row to `failure` out from under it.
+        match hook.on_tx_in_flight(&job_id).await? {
+            TxClaimOutcome::Claimed => {}
+            TxClaimOutcome::ClaimLost => {
+                // Balance the gauge `transaction_broadcast` just incremented; deliberately
+                // not `transaction_failure` - this is an expected, benign outcome (another
+                // actor won the claim), not an error. The hook impl already logged it.
+                metrics::transaction::transaction_claim_lost(tx_metric_type);
+                return Ok(());
+            }
+        }
+
         let request = match self
             .tx_engine
             .prepare_transaction(&job_id, target, calldata_bytes, None)
@@ -115,9 +152,6 @@ impl TransactionHelper {
                 return Err(EventProcessingError::from(error));
             }
         };
-
-        // updating tx with tx_in_flight status.
-        hook.on_tx_in_flight(&job_id).await?;
 
         let receipt = match self
             .tx_engine
