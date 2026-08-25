@@ -784,6 +784,121 @@ impl InputProofRepository {
             .collect())
     }
 
+    /// Sweep: atomically claim incomplete requests nobody is driving, stamping `owner_epoch`
+    /// and incrementing `attempts` in the same statement that selects them. Only rows this
+    /// UPDATE actually touched come back - a row a concurrent claimer already took is not
+    /// returned here, so the caller never dispatches it (see
+    /// `update_status_to_tx_in_flight`'s doc comment for the CAS-with-discarded-count bug
+    /// this is built not to repeat).
+    ///
+    /// `claim_after_secs` guards against claiming a row still being driven in-process on this
+    /// same pod: only rows whose `updated_at` predates `NOW() - claim_after_secs` are
+    /// eligible. Rows already at `max_attempts` are left alone here -
+    /// [`Self::fail_exhausted_attempts`] handles those.
+    pub async fn claim_incomplete_requests(
+        &self,
+        epoch: i64,
+        max_attempts: i32,
+        claim_after_secs: f64,
+    ) -> SqlResult<Vec<(Vec<u8>, Value, ReqStatus, i32)>> {
+        let mut conn = self.pool.get_cron_connection().await?;
+
+        let query_start = Instant::now();
+        let result = sqlx::query!(
+            r#"
+            UPDATE input_proof_req
+            SET owner_epoch = $1,
+                attempts = attempts + 1
+            WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)
+              AND attempts < $2
+              AND updated_at < NOW() - make_interval(secs => $3)
+            RETURNING int_job_id, req, req_status as "req_status!: ReqStatus", attempts
+            "#,
+            epoch,
+            max_attempts,
+            claim_after_secs,
+        )
+        .fetch_all(&mut *conn)
+        .await;
+
+        match &result {
+            Ok(_) => metrics::observe_query(metrics::Table::InputProofReq, query_start.elapsed()),
+            Err(_) => metrics::increment_error(metrics::Table::InputProofReq),
+        }
+
+        Ok(result?
+            .into_iter()
+            .map(|row| (row.int_job_id, row.req, row.req_status, row.attempts))
+            .collect())
+    }
+
+    /// Sweep: move requests that have exhausted `max_attempts` to `failure`, so a row that
+    /// never completes is not claimed forever. Guarded by the same staleness window as
+    /// [`Self::claim_incomplete_requests`], so a row gets one full `claim_after` window after
+    /// its last attempt before being given up on.
+    pub async fn fail_exhausted_attempts(
+        &self,
+        max_attempts: i32,
+        claim_after_secs: f64,
+        err_reason: &str,
+    ) -> SqlResult<u64> {
+        let mut conn = self.pool.get_cron_connection().await?;
+
+        let query_start = Instant::now();
+        let result = sqlx::query!(
+            r#"
+            WITH stale AS (
+                SELECT id, req_status, updated_at
+                FROM input_proof_req
+                WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)
+                  AND attempts >= $1
+                  AND updated_at < NOW() - make_interval(secs => $2)
+                FOR UPDATE SKIP LOCKED
+            ),
+            updated AS (
+                UPDATE input_proof_req
+                SET req_status = 'failure'::req_status,
+                    err_reason = $3
+                FROM stale
+                WHERE input_proof_req.id = stale.id
+                RETURNING input_proof_req.updated_at as new_updated_at,
+                          stale.req_status as old_status,
+                          stale.updated_at as old_updated_at
+            )
+            SELECT
+                old_status as "old_status!: ReqStatus",
+                old_updated_at as "old_updated_at!",
+                new_updated_at as "new_updated_at!"
+            FROM updated
+            "#,
+            max_attempts,
+            claim_after_secs,
+            err_reason,
+        )
+        .fetch_all(&mut *conn)
+        .await;
+
+        match &result {
+            Ok(_) => metrics::observe_query(metrics::Table::InputProofReq, query_start.elapsed()),
+            Err(_) => metrics::increment_error(metrics::Table::InputProofReq),
+        }
+
+        let rows = result?;
+        let count = rows.len() as u64;
+
+        for row in rows {
+            metrics::record_status_transition(
+                metrics::RequestType::InputProof,
+                row.old_status,
+                ReqStatus::Failure,
+                row.old_updated_at,
+                row.new_updated_at,
+            );
+        }
+
+        Ok(count)
+    }
+
     pub async fn count_by_status(&self) -> SqlResult<Vec<(ReqStatus, i64)>> {
         let result = sqlx::query!(
             r#"

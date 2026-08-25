@@ -132,3 +132,69 @@ async fn test_released_lock_can_be_reacquired() {
     task_b.await.unwrap();
     lock_b.release_last().await;
 }
+
+/// `current_epoch()` is `None` before acquisition and `Some` once `Held` - the step-6 sweep
+/// (`sweep::run_tick`) treats a `None` epoch while `Held` as "not yet minted, skip this tick".
+#[tokio::test]
+async fn test_epoch_is_none_before_acquisition_and_some_once_held() {
+    let schema = TestSchema::new()
+        .await
+        .expect("Failed to create test schema");
+    let config = fast_config();
+
+    let lock = DispatcherLock::connect(&config, &schema.database_url())
+        .await
+        .expect("connect");
+    assert_eq!(lock.current_epoch(), None, "no epoch before acquisition");
+
+    let (shutdown, task) = spawn_run(&lock);
+    wait_until_held(&lock, Duration::from_secs(5)).await;
+
+    assert!(
+        lock.current_epoch().is_some(),
+        "epoch must be minted once Held"
+    );
+
+    shutdown.cancel();
+    task.await.unwrap();
+    lock.release_last().await;
+}
+
+/// `owner_epoch` must be monotonic across acquisitions (the fencing property it exists for):
+/// a successor that reacquires the same key after a release always mints a strictly greater
+/// value than its predecessor did.
+#[tokio::test]
+async fn test_epoch_increases_across_reacquire() {
+    let schema = TestSchema::new()
+        .await
+        .expect("Failed to create test schema");
+    let config = fast_config();
+
+    let lock_a = DispatcherLock::connect(&config, &schema.database_url())
+        .await
+        .expect("connect a");
+    let (shutdown_a, task_a) = spawn_run(&lock_a);
+    wait_until_held(&lock_a, Duration::from_secs(5)).await;
+    let epoch_a = lock_a.current_epoch().expect("epoch minted for a");
+
+    shutdown_a.cancel();
+    task_a.await.unwrap();
+    lock_a.release_last().await;
+    assert_eq!(lock_a.current_epoch(), None, "epoch cleared on release");
+
+    let lock_b = DispatcherLock::connect(&config, &schema.database_url())
+        .await
+        .expect("connect b");
+    let (shutdown_b, task_b) = spawn_run(&lock_b);
+    wait_until_held(&lock_b, Duration::from_secs(5)).await;
+    let epoch_b = lock_b.current_epoch().expect("epoch minted for b");
+
+    assert!(
+        epoch_b > epoch_a,
+        "successor epoch {epoch_b} must be greater than predecessor epoch {epoch_a}"
+    );
+
+    shutdown_b.cancel();
+    task_b.await.unwrap();
+    lock_b.release_last().await;
+}

@@ -76,6 +76,11 @@ use crate::metrics;
 /// "HA_1" in ASCII.
 const DISPATCHER_LOCK_CLASSID: i32 = 0x4841_5F31;
 
+/// Mints `owner_epoch` (migration `20260825130000`). Postgres is the only state shared by
+/// every pod, so this - not a pod name, hostname, wall clock, or backend pid - is what makes
+/// a successor's epoch always compare greater than any predecessor's, across restarts.
+const DISPATCHER_EPOCH_SEQUENCE: &str = "dispatcher_epoch_seq";
+
 /// Whether this process currently holds the dispatch lock. Read synchronously via
 /// [`DispatcherLock::state`] or awaited via [`DispatcherLock::subscribe`] - the gate that
 /// reads this is later work. See the module docs for the three states' meaning.
@@ -101,6 +106,10 @@ struct Inner {
     /// Set once, at first acquisition; used to detect a swapped session (see module docs).
     held_pid: Option<i32>,
     consecutive_failures: u32,
+    /// Mirrors `DispatcherLock::epoch_rx` inside the mutex, so [`DispatcherLock::poll_tick`]
+    /// and [`DispatcherLock::heartbeat_tick`] can tell whether minting already succeeded
+    /// without a redundant read of the watch channel.
+    epoch: Option<i64>,
 }
 
 /// Handle to the dispatcher lock. Cheap to clone - clones share the same dedicated connection
@@ -112,6 +121,12 @@ pub struct DispatcherLock {
     inner: Arc<Mutex<Inner>>,
     state_tx: Arc<watch::Sender<LockState>>,
     state_rx: watch::Receiver<LockState>,
+    /// Minted once per successful acquisition (fast path in [`DispatcherLock::poll_tick`],
+    /// retried in [`DispatcherLock::heartbeat_tick`] until it succeeds); `None` whenever
+    /// `state_rx` reads `NotHeld`. The step-6 sweep is the intended reader, via
+    /// [`DispatcherLock::current_epoch`].
+    epoch_tx: Arc<watch::Sender<Option<i64>>>,
+    epoch_rx: watch::Receiver<Option<i64>>,
     config: DispatcherLockConfig,
     classid: i32,
     objid: i32,
@@ -153,6 +168,7 @@ impl DispatcherLock {
         );
 
         let (state_tx, state_rx) = watch::channel(LockState::NotHeld);
+        let (epoch_tx, epoch_rx) = watch::channel(None);
         metrics::set_dispatcher_lock_held(false);
 
         Ok(Self {
@@ -160,9 +176,12 @@ impl DispatcherLock {
                 conn: Some(conn),
                 held_pid: None,
                 consecutive_failures: 0,
+                epoch: None,
             })),
             state_tx: Arc::new(state_tx),
             state_rx,
+            epoch_tx: Arc::new(epoch_tx),
+            epoch_rx,
             config: config.clone(),
             classid: DISPATCHER_LOCK_CLASSID,
             objid,
@@ -179,10 +198,40 @@ impl DispatcherLock {
         self.state_rx.clone()
     }
 
+    /// Current dispatcher generation, read synchronously (no await). `None` unless this pod
+    /// holds the lock (`state() == Held`) - see the module docs' `Unconfirmed` note for why a
+    /// gate (and the sweep) must not treat a stale value as still current once state moves off
+    /// `Held`; that is why acquisition and release both update this alongside `state_tx`
+    /// rather than leaving the last-seen epoch to read stale.
+    pub fn current_epoch(&self) -> Option<i64> {
+        *self.epoch_rx.borrow()
+    }
+
     fn set_state(&self, state: LockState) {
         metrics::set_dispatcher_lock_held(matches!(state, LockState::Held));
         // No receiver is an error only once the process is already tearing down.
         let _ = self.state_tx.send(state);
+    }
+
+    fn set_epoch(&self, epoch: Option<i64>) {
+        let _ = self.epoch_tx.send(epoch);
+    }
+
+    /// Mint the next epoch value from the dedicated Postgres sequence. Called opportunistically
+    /// wherever a query on the dedicated connection just succeeded (see [`Self::poll_tick`] and
+    /// [`Self::heartbeat_tick`]) rather than only once, so a transient failure on the first
+    /// attempt is retried on the next heartbeat instead of leaving this holder without an
+    /// epoch - and therefore without a working sweep - for the rest of its acquisition.
+    async fn mint_epoch(&self, conn: &mut PgConnection) -> anyhow::Result<i64> {
+        tokio::time::timeout(
+            self.config.heartbeat_timeout,
+            sqlx::query_scalar::<_, i64>("SELECT nextval($1)")
+                .bind(DISPATCHER_EPOCH_SEQUENCE)
+                .fetch_one(&mut *conn),
+        )
+        .await
+        .context("epoch mint timed out")?
+        .context("epoch mint query failed")
     }
 
     /// Try to acquire, once. Only ever called while not already holding - the lock is
@@ -279,12 +328,13 @@ impl DispatcherLock {
     /// the pid on the first heartbeat after this transition (`held_pid` starts `None`).
     async fn poll_tick(&self) {
         let mut guard = self.inner.lock().await;
-        // Disjoint field borrows: `conn` and `consecutive_failures` need to be usable
+        // Disjoint field borrows: `conn`, `consecutive_failures` and `epoch` need to be usable
         // independently below (`&mut *guard` alone would tie both to one borrow of the
         // whole `Inner`, through the `MutexGuard` deref).
         let Inner {
             conn,
             consecutive_failures,
+            epoch,
             ..
         } = &mut *guard;
         let Some(conn) = conn.as_mut() else {
@@ -294,6 +344,14 @@ impl DispatcherLock {
         match self.try_acquire(conn).await {
             Ok(true) => {
                 *consecutive_failures = 0;
+                // Best-effort fast path: mint the epoch now, on the same connection, rather
+                // than waiting for the first heartbeat. A failure here is not fatal - the row
+                // still says we hold the lock - so it just falls back to the retry in
+                // `heartbeat_tick`, logged there rather than here.
+                if let Ok(minted) = self.mint_epoch(conn).await {
+                    *epoch = Some(minted);
+                    self.set_epoch(Some(minted));
+                }
                 drop(guard);
                 self.set_state(LockState::Held);
                 info!("Dispatcher lock acquired, confirming backend pid on next heartbeat");
@@ -320,6 +378,7 @@ impl DispatcherLock {
             conn,
             held_pid,
             consecutive_failures,
+            epoch,
         } = &mut *guard;
         let Some(conn) = conn.as_mut() else {
             return;
@@ -335,11 +394,37 @@ impl DispatcherLock {
                 self.set_state(LockState::Held);
                 self.verify_in_pg_locks(conn, pid).await;
                 info!(pid, "Dispatcher lock acquisition confirmed");
+                // Retry path for the fast-path mint in `poll_tick`: if that attempt never
+                // ran (this is the first heartbeat since a fresh acquisition) or failed, this
+                // is still on the dedicated connection and still holding, so it is safe to
+                // try again here.
+                if epoch.is_none() {
+                    match self.mint_epoch(conn).await {
+                        Ok(minted) => {
+                            *epoch = Some(minted);
+                            self.set_epoch(Some(minted));
+                        }
+                        Err(e) => {
+                            warn!(error = %e, "dispatcher lock: epoch mint failed, retrying next heartbeat")
+                        }
+                    }
+                }
             }
             Ok(pid) if Some(pid) == expected_pid => {
                 *consecutive_failures = 0;
                 // Idempotent if already `Held`; recovers from `Unconfirmed` otherwise.
                 self.set_state(LockState::Held);
+                if epoch.is_none() {
+                    match self.mint_epoch(conn).await {
+                        Ok(minted) => {
+                            *epoch = Some(minted);
+                            self.set_epoch(Some(minted));
+                        }
+                        Err(e) => {
+                            warn!(error = %e, "dispatcher lock: epoch mint failed, retrying next heartbeat")
+                        }
+                    }
+                }
             }
             Ok(pid) => {
                 // The session backing this connection changed under us. `PgConnection`
@@ -415,8 +500,10 @@ impl DispatcherLock {
             }
         }
 
+        guard.epoch = None;
         drop(guard);
         self.set_state(LockState::NotHeld);
+        self.set_epoch(None);
 
         if let Err(e) = tokio::time::timeout(self.config.heartbeat_timeout, conn.close()).await {
             warn!(error = %e, "dispatcher lock: close timed out");

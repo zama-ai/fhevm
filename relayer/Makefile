@@ -403,7 +403,7 @@ health: ## Check relayer health endpoints (requires running relayer)
 GROUPS := user-decrypt delegated-user-decrypt public-decrypt input-proof \
           admin-endpoint health keyurl keyurl-poller restart \
           schema-isolation threshold-resolver listener-redundancy \
-          dispatcher-lock common
+          dispatcher-lock sweep common
 
 BINS_user-decrypt           := user_decrypt_v2_test user_decrypt_v3_test
 BINS_delegated-user-decrypt := delegated_user_decrypt_v2_test
@@ -419,6 +419,7 @@ BINS_schema-isolation       := schema_isolation_test
 BINS_threshold-resolver     := threshold_resolver_test
 BINS_listener-redundancy    := listener_redundancy_test
 BINS_dispatcher-lock        := dispatcher_lock_test
+BINS_sweep                  := sweep_test
 BINS_common                 := common_test
 
 group_bins = $(foreach g,$(1),$(BINS_$(g)))

@@ -293,6 +293,37 @@ pub async fn run_fhevm_relayer(
             .context("Failed to start dispatcher lock")?;
     }
 
+    // Step 6 sweep: a named task like the others above, cancelled with `dequeue_shutdown`.
+    // Runs on every pod, but only acts while `dispatcher_lock` reads `Held` - see
+    // `sweep::run_tick`. Registered the same way the other periodic DB workers are, just
+    // here rather than in `Repositories::register_background_workers`, since it needs the
+    // orchestrator (to dispatch) and the dispatcher lock (to gate and to read the epoch),
+    // neither of which that registrar otherwise depends on.
+    {
+        let sweep_repositories = repositories.clone();
+        let sweep_orchestrator = orchestrator.clone();
+        let sweep_lock = dispatcher_lock.clone();
+        let sweep_config = settings.sweep.clone();
+        let sweep_shutdown = dequeue_shutdown.clone();
+        orchestrator
+            .spawn_task_and_wait_ready(
+                "sweep",
+                async move {
+                    crate::sweep::create_sweep_worker_future(
+                        sweep_repositories,
+                        sweep_orchestrator,
+                        sweep_lock,
+                        sweep_config,
+                        sweep_shutdown,
+                    )
+                    .await
+                },
+                async { anyhow::Ok(()) },
+            )
+            .await
+            .context("Failed to start sweep worker")?;
+    }
+
     // Spawn the single host-chain KeyUrl poller now the endpoint is serving. Startup is
     // already gated above, so the readiness future is trivially ready; the task is tracked by
     // the orchestrator, which stops it with the other sources of new work.
@@ -367,8 +398,8 @@ pub async fn run_fhevm_relayer(
     // The dispatcher lock's poll/heartbeat loop is cancelled by `dequeue_shutdown` below and
     // drained with everything else - it stops polling, but does not release (see Step 4).
     //
-    // TODO(seam): "stop pickup from Postgres" (the activation sweep / 0.5s peek) belongs
-    // here too, once that work exists.
+    // The step-6 sweep ("stop pickup from Postgres") is named "sweep" among the tasks drained
+    // below, cancelled by the same `dequeue_shutdown`.
     intake_shutdown.cancel();
     dequeue_shutdown.cancel();
     metrics_shutdown.cancel();

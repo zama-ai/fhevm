@@ -503,6 +503,64 @@ impl Default for DispatcherLockConfig {
     }
 }
 
+/// The step-6 sweep: while this pod holds the dispatcher lock, it periodically claims and
+/// re-dispatches requests nobody is driving (a non-holder's accepted request once step 7
+/// gates dispatch, or a row orphaned by a crashed former holder). Every field has a serde
+/// default so existing config files keep deserializing unchanged.
+#[derive(Debug, Deserialize, Clone)]
+pub struct SweepConfig {
+    /// How often the holder polls Postgres for claimable rows. This is *not* the dominant
+    /// term in handover latency for a freshly-orphaned row - see `claim_after` - but it does
+    /// bound how quickly a row already past `claim_after` gets picked up, and it is the
+    /// per-tick query cost callers pay on every holder, forever, so it stays cheap and short
+    /// rather than merely "sub-second" for its own sake.
+    #[serde(
+        default = "default_sweep_interval",
+        deserialize_with = "deserialize_human_duration"
+    )]
+    pub interval: Duration,
+    /// Minimum time since a row's `updated_at` before the sweep will claim it. This, not
+    /// `interval`, is the dominant term in handover latency: it exists because a row actively
+    /// being driven in-process (readiness checks, a tx send) can legitimately sit at one
+    /// status for longer than any short interval while its `updated_at` stays put, and
+    /// nothing yet stamps `owner_epoch` at intake to tell the sweep "this one's mine" (that's
+    /// later work). Set this above the slowest readiness-check retry budget your deployment
+    /// configures, or the sweep will race live in-process work under normal load, not just
+    /// during a crash.
+    #[serde(
+        default = "default_sweep_claim_after",
+        deserialize_with = "deserialize_human_duration"
+    )]
+    pub claim_after: Duration,
+    /// Maximum number of times the sweep re-dispatches one row before giving up on it. A row
+    /// that reaches this bound is moved to `failure` (see `sweep::fail_exhausted_attempts`)
+    /// rather than left to be claimed forever.
+    #[serde(default = "default_sweep_max_attempts")]
+    pub max_attempts: i32,
+}
+
+fn default_sweep_interval() -> Duration {
+    Duration::from_millis(500)
+}
+
+fn default_sweep_claim_after() -> Duration {
+    Duration::from_secs(10)
+}
+
+fn default_sweep_max_attempts() -> i32 {
+    5
+}
+
+impl Default for SweepConfig {
+    fn default() -> Self {
+        Self {
+            interval: default_sweep_interval(),
+            claim_after: default_sweep_claim_after(),
+            max_attempts: default_sweep_max_attempts(),
+        }
+    }
+}
+
 /// Deserializes strings like "30s", "5m", "1d" into std::time::Duration.
 /// 'y' not supported
 fn deserialize_human_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>
@@ -733,6 +791,10 @@ pub struct Settings {
     /// HA dispatcher lock (session-level Postgres advisory lock)
     #[serde(default)]
     pub dispatcher_lock: DispatcherLockConfig,
+    /// The step-6 sweep: periodic re-dispatch of rows nobody is driving, while this pod
+    /// holds the dispatcher lock.
+    #[serde(default)]
+    pub sweep: SweepConfig,
 }
 
 // Error type for application-specific configuration errors
