@@ -13,7 +13,7 @@ use crate::{
         arbitrum::{
             bindings::Decryption,
             transaction::{
-                helper::{TransactionHelper, TransactionType, TxResult},
+                helper::{TransactionHelper, TransactionType, TxClaimOutcome, TxResult},
                 tx_throttler::{DynTxHook, GatewayTxTask, TxThrottlingSender},
                 TxLifecycleHooks,
             },
@@ -934,15 +934,28 @@ impl GatewayHandler {
 
 #[async_trait]
 impl TxLifecycleHooks for GatewayHandler {
-    async fn on_tx_in_flight(&self, job_id: &JobId) -> Result<(), EventProcessingError> {
-        self.user_decrypt_repo
+    async fn on_tx_in_flight(
+        &self,
+        job_id: &JobId,
+    ) -> Result<TxClaimOutcome, EventProcessingError> {
+        let rows_affected = self
+            .user_decrypt_repo
             .update_status_to_tx_in_flight(&job_id[..])
             .await
-            .map(|_| ())
             .map_err(|e| EventProcessingError::SqlOperationFailed {
                 operation: "user_decrypt.update_status_to_tx_in_flight".to_string(),
                 reason: e.to_string(),
-            })
+            })?;
+
+        if rows_affected == 0 {
+            info!(
+                int_job_id = %job_id,
+                "Tx-in-flight claim did not apply for user decrypt request, skipping send"
+            );
+            return Ok(TxClaimOutcome::ClaimLost);
+        }
+
+        Ok(TxClaimOutcome::Claimed)
     }
 
     async fn on_receipt_received(
