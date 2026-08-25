@@ -1,0 +1,91 @@
+# In-namespace Grafana for the fhevm e2e preview namespace (opt-in via the
+# `observability` dispatch input, see preview-env-deploy.yml). Pure stateless
+# UI: metrics live in Prometheus (values-prometheus-e2e.yaml), traces in
+# Jaeger (values-jaeger-e2e.yaml) - both provisioned as datasources below, so
+# a fresh Grafana pod is immediately useful. No dashboards are provisioned
+# yet (build ad-hoc, or import); dashboards saved in the UI live in the pod's
+# ephemeral sqlite and are lost on pod restart/teardown, so export anything
+# you want to keep (candidates for provisioning here later).
+#
+# Anonymous admin, deliberately: the preview namespace is throwaway, holds no
+# real secrets the env's own values files don't already print, and is only
+# reachable by namespace admins over Tailscale + kubectl port-forward - a
+# login would protect nothing and break the "port-forward and go" flow.
+#
+# Reach it from a dev laptop (Tailscale up):
+#   tailscale configure kubeconfig tailscale-operator-zws-dev.diplodocus-boa.ts.net
+#   kubectl port-forward -n <namespace> svc/grafana 3000:3000
+#   open http://localhost:3000
+fullnameOverride: grafana
+
+deployment:
+  enabled: true
+
+image:
+  repository: grafana/grafana
+  tag: "12.3.2"
+  pullPolicy: IfNotPresent
+
+env:
+  - {name: GF_AUTH_ANONYMOUS_ENABLED, value: "true"}
+  - {name: GF_AUTH_ANONYMOUS_ORG_ROLE, value: "Admin"}
+  - {name: GF_AUTH_DISABLE_LOGIN_FORM, value: "true"}
+  - {name: GF_ANALYTICS_REPORTING_ENABLED, value: "false"}
+  - {name: GF_ANALYTICS_CHECK_FOR_UPDATES, value: "false"}
+
+service:
+  enabled: true
+  ports:
+    - {name: http, port: 3000}
+
+# Datasource provisioning: Grafana reads every file in
+# <provisioning>/datasources/ at startup; mounting the ConfigMap at that exact
+# subdirectory (not /etc/grafana/provisioning itself, which would shadow the
+# dashboards/plugins/... provisioning subdirs) is the one-mount shape
+# configmapFiles supports.
+configmapFiles:
+  enabled: true
+  volumeMount:
+    mountPath: "/etc/grafana/provisioning/datasources"
+    subPath: ""
+    readOnly: true
+  files:
+    datasources.yaml: |
+      apiVersion: 1
+      datasources:
+        - name: Prometheus
+          type: prometheus
+          access: proxy
+          url: http://prometheus:9090
+          isDefault: true
+        - name: Jaeger
+          type: jaeger
+          access: proxy
+          url: http://jaeger:16686
+
+readinessProbe:
+  httpGet: {path: /api/health, port: 3000}
+  initialDelaySeconds: 5
+  periodSeconds: 5
+livenessProbe:
+  httpGet: {path: /api/health, port: 3000}
+  initialDelaySeconds: 10
+  periodSeconds: 10
+
+resources:
+  requests:
+    cpu: "100m"
+    memory: "256Mi"
+  limits:
+    cpu: "500m"
+    memory: "1Gi"
+
+# Pins onto the zws-pool Karpenter node pool - see
+# ../coprocessor-infra/values-postgres-coprocessor-e2e.yaml's matching note.
+nodeSelector:
+  karpenter.sh/nodepool: zws-pool
+tolerations:
+  - key: "karpenter.sh/nodepool"
+    operator: "Equal"
+    value: "zws-pool"
+    effect: "NoSchedule"
