@@ -16,6 +16,7 @@
     "./ts/tarball-consumer.test.ts",
     "./ts/acl-owner-upgrade.test.ts",
     "./ts/deploy-v12.test.ts",
+    "./ts/fhe-rand.test.ts",
     "./ts/utils/viemEthereumLib.ts",
     "./ts/utils/ethUtils.ts",
     "./ts/utils/deployStack.ts"

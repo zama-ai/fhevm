@@ -43,6 +43,32 @@ const EXECUTOR_ABI = [
       { name: 'result', type: 'bytes32', indexed: false },
     ],
   },
+  // A second FHE operation, so the DB is filled by more than one code path before the upgrade.
+  //
+  // `fheRand` rather than a binary op like `fheAdd`, and that is forced rather than chosen: the executor
+  // gates binary operands on `ACL.isAllowed`, and `trivialEncrypt` grants only `allowTransient` — which
+  // is transient storage, cleared at the end of its transaction. `ACL.allow` could make it persist but
+  // itself requires `isAllowed(handle, msg.sender)`, so it too has to be in that same transaction. An EOA
+  // sending one call per transaction therefore cannot feed a handle from one call into the next; doing so
+  // needs a dApp-style helper contract that does both in one frame. `fheRand` takes no handle operand, so
+  // it needs no allowance, while still going through _generateRand -> recordRand -> CleartextDB.set.
+  {
+    type: 'function',
+    name: 'fheRand',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'randType', type: 'uint8' }],
+    outputs: [{ name: 'result', type: 'bytes32' }],
+  },
+  {
+    type: 'event',
+    name: 'FheRand',
+    inputs: [
+      { name: 'caller', type: 'address', indexed: true },
+      { name: 'randType', type: 'uint8', indexed: false },
+      { name: 'seed', type: 'bytes16', indexed: false },
+      { name: 'result', type: 'bytes32', indexed: false },
+    ],
+  },
 ] as const;
 
 // getCurrentKmsContextId + getKmsSigners: identical signatures on the v12 `KMSVerifier` and v13 `ProtocolConfig`.
@@ -204,16 +230,44 @@ test('e2e: deploy a v12 cleartext stack, then upgrade it to v13 — cleartext su
       return event.args.result;
     };
 
-    // --- 2. Pre-upgrade round-trip: record a cleartext under the v12 executor. ---
-    const handleBefore = await trivialEncrypt(42n);
-    expect(
-      await publicClient.readContract({
+    // fheRand(randType), returning the result handle after mining.
+    const fheRand = async (): Promise<Hex> => {
+      const hash = await wallet.writeContract({
+        address: executor,
+        abi: EXECUTOR_ABI,
+        functionName: 'fheRand',
+        args: [FHE_TYPE_UINT64],
+      });
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      const events = parseEventLogs({ abi: EXECUTOR_ABI, eventName: 'FheRand', logs: receipt.logs });
+      const event = events[0];
+      if (event === undefined) {
+        throw new Error('FheRand event not found');
+      }
+      return event.args.result;
+    };
+
+    const dbGet = async (handle: Hex): Promise<bigint> =>
+      (await publicClient.readContract({
         address: cleartextDb,
         abi: CLEARTEXT_DB_ABI,
         functionName: 'get',
-        args: [handleBefore],
-      }),
-    ).toBe(42n);
+        args: [handle],
+      })) as bigint;
+
+    // --- 2. Pre-upgrade round-trip: fill the DB under the v12 executor. ---
+    //
+    // Two different write paths through the v12 arithmetic contract, so the DB holds entries produced by
+    // more than one operator before anything is upgraded. Both must still resolve afterwards, which is
+    // what says the re-pointed v13 implementations kept addressing the SAME CleartextDB rather than the
+    // placeholder address their bytecode ships with.
+    const handleBefore = await trivialEncrypt(42n);
+    expect(await dbGet(handleBefore)).toBe(42n);
+
+    // Whatever fheRand produced, the DB has to agree with it after the upgrade — the value is unknown
+    // here, so it is read now and compared to itself later.
+    const randHandleBefore = await fheRand();
+    const randValueBefore = await dbGet(randHandleBefore);
 
     // --- 3. Upgrade the live v12 stack to v13 (single atomic ACLOwner.upgrade). ---
     const migrated = await updateV12ToV13({
@@ -268,23 +322,30 @@ test('e2e: deploy a v12 cleartext stack, then upgrade it to v13 — cleartext su
 
     // --- 5. Cleartext still works after the upgrade (new v13 executor impl → live CleartextArithmetic
     //        → CleartextDB), and the pre-upgrade value persisted through the migration. ---
+    // The DB proxy is unchanged by the upgrade — asserted directly, so a re-pointed CleartextDB reports
+    // itself as a wrong ADDRESS here rather than as a puzzling wrong value below.
+    expect(v12.cleartextAddresses.cleartextDbAddress).toBe(cleartextDb);
+
+    // Every pre-upgrade handle still resolves to the value it had, through the REPLACED arithmetic
+    // implementation. This is the assertion the whole test exists for: a migration that left the new
+    // executor or arithmetic pointing at their placeholder addresses passes every version check above and
+    // fails here.
+    expect(await dbGet(handleBefore)).toBe(42n);
+    expect(await dbGet(randHandleBefore)).toBe(randValueBefore);
+
+    // And the new v13 implementations can still write, by both paths.
     const handleAfter = await trivialEncrypt(99n);
-    expect(
-      await publicClient.readContract({
-        address: cleartextDb,
-        abi: CLEARTEXT_DB_ABI,
-        functionName: 'get',
-        args: [handleAfter],
-      }),
-    ).toBe(99n);
-    expect(
-      await publicClient.readContract({
-        address: cleartextDb,
-        abi: CLEARTEXT_DB_ABI,
-        functionName: 'get',
-        args: [handleBefore],
-      }),
-    ).toBe(42n);
+    expect(await dbGet(handleAfter)).toBe(99n);
+
+    const randHandleAfter = await fheRand();
+    const randValueAfter = await dbGet(randHandleAfter);
+
+    expect(randValueAfter).not.toBe(randValueBefore);
+    expect(randHandleAfter).not.toBe(randHandleBefore);
+
+    // The drawn value is unknowable, and 0 is a legitimate draw — so its PRESENCE is the assertion. The
+    // read is what proves the v13 arithmetic wrote to the live DB rather than to a placeholder address.
+    expect(typeof (await dbGet(randHandleAfter))).toBe('bigint');
   } finally {
     await stopAnvil(anvil.process);
   }

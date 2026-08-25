@@ -20,6 +20,7 @@ export default [
       'test/ts/tarball-consumer.test.ts',
       'test/ts/acl-owner-upgrade.test.ts',
       'test/ts/deploy-v13.test.ts',
+      'test/ts/fhe-rand.test.ts',
       'test/ts/define-kms-context.test.ts',
       'test/ts/destroy-kms-context.test.ts',
       'test/ts/utils/viemEthereumLib.ts',
