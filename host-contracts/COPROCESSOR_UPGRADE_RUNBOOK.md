@@ -59,7 +59,7 @@ Navigate to **Actions** → **host-contracts-prepare-coprocessor-upgrade** → *
 | **Duration**          | Window length, e.g. `30m`.                 |
 | **Buffer**            | DAO lead time, e.g. `2h`.                  |
 | **Proposal id**       | Any positive integer (operator-chosen).    |
-| **Consensus version** | The binary's `CONSENSUS_PROTOCOL_VERSION`. |
+| **Software version**  | The binary's `STACK_VERSION`, e.g. `0.15.0`. |
 
 Click **Run workflow** and wait for completion.
 
