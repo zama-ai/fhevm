@@ -23,31 +23,30 @@ Aragon DAO proposal. When the proposal passes, the upgrade window opens.
    `proposeCoprocessorUpgrade`.
 2. Deploy listeners and controllers that support
    `CoprocessorUpgradeProposed`.
-3. Check that every green binary has the consensus version used in the proposal.
+3. Check that every green binary is the release named in the proposal.
 4. Submit the proposal.
 5. Complete the cutover, check the new version, and stop the old fleet. A restarted
-   service from this scheme onwards exits because its consensus version is too old; one
-   from before it exits because the stored version is now higher than its release.
+   service from this scheme onwards stops because its consensus version is too old; one
+   from before it stops because the stored release is now higher than its own.
 
-## The consensus version
+## The two versions
 
-The proposal carries one version: the consensus protocol version, written as `N.0.0`.
+The proposal carries the release, the same as before:
 
 ```
---software-version 1.0.0   ->   softwareVersion "1.0.0"
+--software-version 0.15.0   ->   softwareVersion "0.15.0"
 ```
 
-What you pass is what goes on chain.
+What you pass is what goes on chain. It has to be the release the green binaries were
+built as, or they refuse the cutover.
+
+The consensus protocol version is compiled into the binary and never appears in the
+proposal. It decides which stack is live, green, or retired.
 
 **Raise it by one** for an upgrade the fleet must cut over to: new key parameters, the GPU
 feature, a randomization change, or a change to the scheduling logic. **Leave it alone** for
-a plain release, which then rolls out without a cutover.
-
-`softwareVersion` is not the software release. It is written this way so that a service from
-before this scheme, which compares releases, still sees a higher number and stops working.
-
-Only a consensus version above the active one cuts over, and only the version the proposal
-names can do it. Raise it by one and run each upgrade separately.
+a plain release, which then rolls out one operator at a time with no proposal and no
+cutover.
 
 ## Step 1 — Run the workflow
 
@@ -82,7 +81,7 @@ Create a new proposal with:
 - **Calldata**: the hex string copied in Step 2.
 
 After the vote passes, `CoprocessorUpgradeProposed` opens the upgrade window.
-Cutover starts only when the proposal's consensus version matches the green
+Cutover starts only when the proposal's release matches the green
 binaries and is above the active one.
 
 ## Failure modes
@@ -106,7 +105,7 @@ npx hardhat task:prepareCoprocessorUpgrade \
   --duration 30m \
   --buffer 1h \
   --proposal-id 1 \
-  --software-version 1.0.0
+  --software-version 0.15.0
 ```
 
 Output and calldata are identical to the workflow run. The task exits non-zero (and prints the
@@ -128,7 +127,7 @@ DEPLOYER_PRIVATE_KEY=0x... npx hardhat --network sepolia task:proposeCoprocessor
   --environment devnet \
   --start-time "$(date -u -v+2H '+%Y-%m-%dT%H:%M:%SZ')" \
   --duration 30m --buffer 1h --proposal-id 1 \
-  --software-version 1.0.0 \
+  --software-version 0.15.0 \
   --use-internal-proxy-address
 ```
 

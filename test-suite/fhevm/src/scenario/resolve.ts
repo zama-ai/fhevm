@@ -148,6 +148,7 @@ const SCENARIO_FILE = /\.ya?ml$/i;
 
 const BLUE_GREEN_SCENARIO_KIND = "blue-green";
 const BLUE_GREEN_SCENARIO_VERSION = 1;
+const SEMVER_STACK_VERSION = /^\d+\.\d+\.\d+$/;
 const COPROCESSOR_ARG_TARGETS = new Set([
   "*",
   ...GROUP_SERVICE_SUFFIXES.coprocessor.filter((value) => !value.includes("migration")),
@@ -677,6 +678,12 @@ export const parseBlueGreenScenario = (text: string, sourceLabel = "scenario"): 
     throw new Error(`${sourceLabel}: gcs block is required`);
   }
   const gcsObj = gcs as Record<string, unknown>;
+  const stackVersion = String(gcsObj.stackVersion ?? "");
+  if (!SEMVER_STACK_VERSION.test(stackVersion)) {
+    throw new Error(
+      `${sourceLabel}: gcs.stackVersion must be a semver-like string (e.g. "0.15.0"), got "${stackVersion}"`,
+    );
+  }
   if (gcsObj.deferredStart !== undefined && typeof gcsObj.deferredStart !== "boolean") {
     throw new Error(`${sourceLabel}: gcs.deferredStart must be a boolean`);
   }
@@ -706,6 +713,7 @@ export const parseBlueGreenScenario = (text: string, sourceLabel = "scenario"): 
       : undefined,
     gcs: {
       source: parseSource(gcsObj.source, `${sourceLabel}.gcs.source`),
+      stackVersion,
       deferredStart: gcsObj.deferredStart === true,
       env: { ...((gcsObj.env as Record<string, string> | undefined) ?? {}) },
       args: normalizeArgs(
@@ -729,6 +737,7 @@ export const resolveBlueGreenScenario = (
   };
   const gcs = {
     source: normalizeSource(input.gcs.source ?? { mode: "local" as const }),
+    stackVersion: input.gcs.stackVersion,
     deferredStart: input.gcs.deferredStart ?? false,
     env: { ...(input.gcs.env ?? {}) },
     args: input.gcs.args ?? {},
