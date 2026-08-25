@@ -49,22 +49,21 @@ use std::sync::OnceLock;
 static GLOBAL_REGISTRY: OnceLock<Registry> = OnceLock::new();
 
 // Shutdown exists to hand the dispatcher over, not to save in-flight work: a request left
-// `queued` is recovered at the next start, and an event whose handlers have not returned is
-// re-read from the chain because its block cursor never advanced. What recovery cannot do is
-// order the handover, so shutdown settles the one effect that leaves the process - an
-// outbound transaction - and abandons everything else. Its duration is handover latency, and
-// the total must stay below the pod's `terminationGracePeriodSeconds` (the Kubernetes SIGKILL
-// deadline), which gitops leaves unset, so the Kubernetes default of 30s applies.
+// `queued` is recovered at the next start, an event whose handlers have not returned is
+// re-read from the chain because its block cursor never advanced, and a transaction send
+// killed mid-flight costs at most one duplicate send plus one orphaned response event - the
+// gateway contracts mint a fresh id and charge a fee per call with no dedup, so the duplicate
+// costs a fee plus duplicate KMS work but never a wrong result, and the orphaned response just
+// retries and is dropped at debug on the losing side. What recovery cannot do is order the
+// handover, so shutdown drains only the named tasks it can order against, and abandons the
+// rest. Its duration is handover latency, and the total must stay below the pod's
+// `terminationGracePeriodSeconds` (the Kubernetes SIGKILL deadline), which gitops leaves
+// unset, so the Kubernetes default of 30s applies.
 
 /// Bound on the HTTP server's graceful shutdown, the gateway listeners, the keyurl poller,
 /// the tx/readiness processors and the cron workers all observing cancellation and returning.
 /// Every one of them is cancel-safe, so this is a fallback, not an expected wait.
 const STOP_WORK_TIMEOUT: Duration = Duration::from_secs(5);
-/// Bound on in-flight transaction sends. `send_raw_transaction_sync` submits and gets the
-/// receipt in one RPC call against a happy path of one to two seconds, so this covers one
-/// call per already-dequeued task rather than an open-ended wait. Keeping it short is what
-/// keeps the `owner_epoch` fencing surface to the send path alone.
-const INFLIGHT_TX_DRAIN_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// Main library function for the FHE Event Relayer service.
 ///
@@ -92,25 +91,22 @@ pub async fn run_fhevm_relayer(
     // === Orchestration Phase ===
     // Create orchestrator, repositories, and gateway components.
     //
-    // The two trackers below hold the short-lived, unbounded-in-number tasks that don't fit
-    // the orchestrator's named JoinSet, split by what shutdown owes them: `inflight_sends`
-    // holds transaction submissions, which it drains, and `detached_tasks` holds per-event
-    // dispatch and per-readiness-check work, which it abandons. Which tracker a task is
-    // spawned into is the whole policy.
+    // `detached_tasks` holds the short-lived, unbounded-in-number work that doesn't fit the
+    // orchestrator's named JoinSet: per-event dispatch, per-readiness-check work, and
+    // transaction sends. None of it blocks shutdown - each is resumable from what Postgres and
+    // the chain cursor already hold - so shutdown abandons it rather than waiting.
     //
     // The three tokens name subsystems, not phases - they are all cancelled at the same
     // moment: `intake_shutdown` closes the sources of new work (the HTTP server, the gateway
     // listeners, the keyurl poller), `dequeue_shutdown` stops the tx/readiness processors and
     // cron workers and cancels the readiness checks already running, and `metrics_shutdown`
     // stops the metrics server.
-    let inflight_sends = TaskTracker::new();
     let detached_tasks = TaskTracker::new();
     let intake_shutdown = CancellationToken::new();
     let dequeue_shutdown = CancellationToken::new();
     let metrics_shutdown = CancellationToken::new();
     let orchestrator = Orchestrator::new(
         Arc::new(TokioEventDispatcher::new(detached_tasks.clone())),
-        inflight_sends.clone(),
         detached_tasks.clone(),
     );
 
@@ -129,7 +125,7 @@ pub async fn run_fhevm_relayer(
     );
 
     let (gateway_throttlers, bouncer_throttlers) =
-        init_throttlers(&settings, inflight_sends, detached_tasks.clone());
+        init_throttlers(&settings, detached_tasks.clone());
 
     // Initialize all gateway components
     gateway::initialize_gateway(
@@ -326,16 +322,12 @@ pub async fn run_fhevm_relayer(
     dequeue_shutdown.cancel();
     metrics_shutdown.cancel();
     orchestrator.drain_named_tasks(STOP_WORK_TIMEOUT).await;
+    info!(
+        abandoned = orchestrator.abandoned_detached_tasks(),
+        "Named task drain complete, abandoning remaining detached work"
+    );
 
-    // Step 4 - settle the outbound effects. Each already-dequeued send is at most one
-    // `eth_sendRawTransactionSync` call away from done (see `provider.rs`), and dropping it
-    // after the RPC leaves the socket loses the hash that detects the duplicate a re-dispatch
-    // would produce.
-    orchestrator
-        .drain_inflight_sends(INFLIGHT_TX_DRAIN_TIMEOUT)
-        .await;
-
-    // Step 5 - exit. The pools are left to close with the process: closing them here would
+    // Step 4 - exit. The pools are left to close with the process: closing them here would
     // wait on the connections held by the tasks just abandoned, reinstating the wait this
     // sequence removes. `finish_task_drain` is the guard for a task that no predicate above
     // stopped, and warns when it finds one.

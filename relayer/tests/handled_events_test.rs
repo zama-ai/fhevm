@@ -89,7 +89,6 @@ impl Harness {
         let tracker = TaskTracker::new();
         let orchestrator = Orchestrator::new(
             Arc::new(TokioEventDispatcher::new(tracker.clone())),
-            TaskTracker::new(),
             tracker,
         );
 

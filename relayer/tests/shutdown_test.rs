@@ -16,8 +16,8 @@ use rstest::rstest;
 use std::time::{Duration, Instant};
 use tokio::time::timeout;
 
-/// Observed drains are microseconds and the smallest budget is 3s, so this sits clear of
-/// both.
+/// Observed drains are microseconds and the smallest budget (`STOP_WORK_TIMEOUT`) is 5s, so
+/// this sits clear of both.
 const COOPERATIVE_SHUTDOWN_MAX: Duration = Duration::from_secs(2);
 
 /// Separates "slow" from "hung" so a deadlock fails instead of stalling the suite.

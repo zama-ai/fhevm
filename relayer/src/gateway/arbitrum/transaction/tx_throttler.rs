@@ -166,11 +166,14 @@ pub struct TxThrottlingWorker<T> {
     control_rx: Option<mpsc::Receiver<u32>>,
     // Shared current TPS value (updated on dynamic rate changes)
     current_tps: Arc<AtomicU32>,
-    // Tracks the per-dequeued-item processing task spawned in `run_consumer`. This is the
-    // one class of detached work shutdown waits for: a send is cancel-unsafe, since the
-    // nonce protocol has no RAII guard and dropping after the RPC leaves the socket loses
-    // the transaction hash that later detects a duplicate.
-    inflight_sends: TaskTracker,
+    // Tracks the per-dequeued-item send task spawned in `run_consumer`. Shutdown abandons
+    // these: a send killed mid-flight costs at most one duplicate send plus one orphaned
+    // response event - the gateway contracts mint a fresh id and charge a fee per call with
+    // no dedup, so the duplicate costs a fee plus duplicate KMS work but never a wrong result
+    // (the underlying operations are effect-idempotent), and the orphaned response just
+    // retries and is dropped at debug on the losing side - so nothing here is worth waiting
+    // for.
+    detached_tasks: TaskTracker,
 }
 
 impl<T> TxThrottlingSender<T>
@@ -183,7 +186,7 @@ where
         capacity_safety_margin: usize,
         tps: u32,
         enable_dynamic_rate_limiting: bool,
-        inflight_sends: TaskTracker,
+        detached_tasks: TaskTracker,
     ) -> (Self, TxThrottlingWorker<T>, Option<mpsc::Sender<u32>>) {
         let (sender, receiver) = mpsc::channel(capacity);
         let tracker = Arc::new(RwLock::new(IndexMap::new()));
@@ -217,7 +220,7 @@ where
             tps,
             control_rx,
             current_tps,
-            inflight_sends,
+            detached_tasks,
         };
 
         (throttler, worker, control_tx)
@@ -403,10 +406,17 @@ where
                         "Task dequeued for processing"
                     );
 
-                    // 3. Process (Isolated), tracked so shutdown can wait for it.
+                    // 3. Process (Isolated). Tracked in the shared `detached_tasks`, but,
+                    // unlike the readiness-check work sharing that tracker (see
+                    // `readiness/throttler.rs`), deliberately not run under
+                    // `run_until_cancelled`: a send is cancel-unsafe, since the nonce
+                    // protocol (`get_increase_and_lock_nonce` -> send ->
+                    // `confirm_nonce`/`release_nonce`) has no RAII guard, and cutting it short
+                    // after the RPC call leaves the nonce lock held with no one left to
+                    // release it.
                     let proc_clone = processor.clone();
 
-                    self.inflight_sends.spawn(async move {
+                    self.detached_tasks.spawn(async move {
                         // If this panics, the worker loop survives.
                         proc_clone(item).await;
                     });

@@ -52,12 +52,11 @@ impl BouncerThrottlers {
     }
 }
 
-/// Wire the throttler workers to the two shutdown classes: transaction sends into
-/// `inflight_sends`, which shutdown drains, and readiness checks into `detached_tasks`,
-/// which it abandons.
+/// Wire every throttler worker's per-item processing task into the shared `detached_tasks`
+/// tracker. Transaction sends and readiness checks are both resumable from what Postgres and
+/// the chain cursor already hold, so shutdown abandons them rather than waiting.
 pub fn init_throttlers(
     settings: &Settings,
-    inflight_sends: TaskTracker,
     detached_tasks: TaskTracker,
 ) -> (GatewayThrottlers, BouncerThrottlers) {
     let tx_cfg = &settings.gateway.tx_engine.tx_throttlers;
@@ -70,7 +69,7 @@ pub fn init_throttlers(
             tx_cfg.input_proof.safety_margin,
             tx_cfg.input_proof.per_seconds,
             enable_admin,
-            inflight_sends.clone(),
+            detached_tasks.clone(),
         );
     let (user_decrypt_tx_throttler, user_decrypt_tx_worker, throttler_control_user_decrypt) =
         TxThrottlingSender::<GatewayTxTask>::new(
@@ -79,7 +78,7 @@ pub fn init_throttlers(
             tx_cfg.user_decrypt.safety_margin,
             tx_cfg.user_decrypt.per_seconds,
             enable_admin,
-            inflight_sends.clone(),
+            detached_tasks.clone(),
         );
     let (public_decrypt_tx_throttler, public_decrypt_tx_worker, throttler_control_public_decrypt) =
         TxThrottlingSender::<GatewayTxTask>::new(
@@ -88,7 +87,7 @@ pub fn init_throttlers(
             tx_cfg.public_decrypt.safety_margin,
             tx_cfg.public_decrypt.per_seconds,
             enable_admin,
-            inflight_sends,
+            detached_tasks.clone(),
         );
 
     let rd_cfg = &settings.gateway.readiness_checker;

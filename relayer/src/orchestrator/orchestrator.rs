@@ -9,22 +9,22 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tokio_util::task::TaskTracker;
-use tracing::{error, info, instrument, warn};
+use tracing::{error, instrument};
 use uuid::Uuid;
 
 pub struct Orchestrator {
     event_dispatcher: Arc<TokioEventDispatcher>,
     health_checker: Arc<RwLock<HealthChecker>>,
     task_manager: TaskManager,
-    /// Transaction sends, the one class of detached work shutdown waits for: the nonce
-    /// protocol has no RAII guard and dropping after the RPC leaves the socket loses the
-    /// hash that detects a duplicate send.
-    inflight_sends: TaskTracker,
-    /// Every other detached task - per-event dispatch and per-readiness-check. Both are
-    /// resumable from what Postgres and the chain cursor already hold, so shutdown abandons
-    /// them rather than waiting: the count is reported, never drained.
+    /// Short-lived, unbounded-in-number detached work: per-event dispatch, per-readiness-check,
+    /// and transaction sends. All are resumable from what Postgres and the chain cursor already
+    /// hold - a send killed mid-flight costs at most one duplicate send plus one orphaned
+    /// response event. The gateway contracts mint a fresh id and charge a fee per call with no
+    /// dedup, so the duplicate costs a fee plus duplicate KMS work but never a wrong result (the
+    /// underlying operations are effect-idempotent); the orphaned response just retries and is
+    /// dropped at debug on the losing side. So shutdown abandons this work rather than waiting.
     detached_tasks: TaskTracker,
     /// Sticky readiness flag for `/healthz`: once shutdown starts, the relayer must stop
     /// looking healthy to the load balancer even if every dependency check still passes.
@@ -34,14 +34,12 @@ pub struct Orchestrator {
 impl Orchestrator {
     pub fn new(
         event_dispatcher: Arc<TokioEventDispatcher>,
-        inflight_sends: TaskTracker,
         detached_tasks: TaskTracker,
     ) -> Arc<Self> {
         Arc::new(Self {
             event_dispatcher,
             health_checker: Arc::new(RwLock::new(HealthChecker::new())),
             task_manager: TaskManager::new(),
-            inflight_sends,
             detached_tasks,
             shutting_down: AtomicBool::new(false),
         })
@@ -126,30 +124,10 @@ impl Orchestrator {
         self.task_manager.finish_drain().await;
     }
 
-    /// Wait up to `budget` for in-flight transaction sends to finish. Closing the tracker
-    /// only stops `wait()` from blocking on an empty-but-still-open tracker; it does not
-    /// itself prevent new spawns, so the caller must already have stopped the throttlers
-    /// that feed it. Everything in `detached_tasks` is abandoned, and only counted here.
-    pub async fn drain_inflight_sends(&self, budget: Duration) {
-        self.inflight_sends.close();
-        let start = Instant::now();
-        tokio::select! {
-            _ = self.inflight_sends.wait() => {
-                info!(
-                    elapsed = ?start.elapsed(),
-                    abandoned = self.detached_tasks.len(),
-                    "In-flight transaction sends settled"
-                );
-            }
-            _ = tokio::time::sleep(budget) => {
-                warn!(
-                    ?budget,
-                    remaining = self.inflight_sends.len(),
-                    abandoned = self.detached_tasks.len(),
-                    "Transaction drain timeout, exiting with sends unsettled"
-                );
-            }
-        }
+    /// Snapshot of the detached work not waited for at shutdown - per-event dispatch,
+    /// per-readiness-check, and transaction sends. Never drained, only reported.
+    pub fn abandoned_detached_tasks(&self) -> usize {
+        self.detached_tasks.len()
     }
 
     #[instrument(skip_all, fields(event_type=%(event.event_name()), job_id=?event.job_id()))]
@@ -202,9 +180,8 @@ mod tests {
     #[tokio::test]
     async fn test_orchestrator() {
         let detached_tasks = tokio_util::task::TaskTracker::new();
-        let inflight_sends = tokio_util::task::TaskTracker::new();
         let pubsub = Arc::new(TokioEventDispatcher::new(detached_tasks.clone()));
-        let orchestrator = Orchestrator::new(pubsub.clone(), inflight_sends, detached_tasks);
+        let orchestrator = Orchestrator::new(pubsub.clone(), detached_tasks);
 
         let _id = orchestrator.new_internal_request_id();
 
