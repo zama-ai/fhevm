@@ -164,7 +164,7 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
     // -----------------------------------------------------------------------
 
     function test_PostProxyUpgradeCheck() public {
-        assertEq(kmsVerifier.getVersion(), "KMSVerifier v0.4.0");
+        assertEq(kmsVerifier.getVersion(), "KMSVerifier v0.5.0");
         _assertCurrentContextDelegatesToProtocolConfig();
     }
 
@@ -583,10 +583,10 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
         this.upgrade(owner);
     }
 
-    function test_ReinitializeV4CannotBeCalledTwice() public {
+    function test_ReinitializeV5CannotBeCalledTwice() public {
         vm.prank(owner);
         vm.expectRevert(Initializable.InvalidInitialization.selector);
-        kmsVerifier.reinitializeV4();
+        kmsVerifier.reinitializeV5();
     }
 
     function test_GetContextSignersAndThresholdFromExtraData() public {

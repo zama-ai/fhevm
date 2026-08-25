@@ -36,7 +36,7 @@ describe('InputVerifier', function () {
     const origIVAdd = dotenv.parse(fs.readFileSync('addresses/.env.host')).INPUT_VERIFIER_CONTRACT_ADDRESS;
     deployer = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY!).connect(ethers.provider);
     inputVerifier = inputVerifierFactory.attach(origIVAdd) as InputVerifier;
-    expect(await inputVerifier.getVersion()).to.equal('InputVerifier v0.2.0');
+    expect(await inputVerifier.getVersion()).to.equal('InputVerifier v0.3.0');
   });
 
   async function addSigners(params: { list: string[]; threshold: number }) {
