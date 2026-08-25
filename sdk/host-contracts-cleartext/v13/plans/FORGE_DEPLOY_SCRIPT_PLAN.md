@@ -238,7 +238,7 @@ Two things get called "update", and they are not variants of each other:
   contracts is unchanged; only their code changes. No proxy is created and no address moves, and every op
   is a reinitialization (`reinitializeV<n+1>`).
 - **Cross-generation migration** — v12 → v13, implemented as `updateV12ToV13` in `pkg/ts/upgrade.ts`.
-  The protocol itself gains contracts: `FhevmAddressesV13` is `FhevmAddressesV12` **plus**
+  The protocol itself gains contracts: `FhevmAddresses` is `FhevmAddressesV12` **plus**
   `protocolConfigAddress` and `kmsGenerationAddress`.
 
 That difference inverts three of this script's assumptions:

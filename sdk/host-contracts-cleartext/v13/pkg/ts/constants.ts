@@ -1,7 +1,7 @@
 import { DEFAULT_COPROCESSOR_ADDRESSES } from './signers/defaultCoprocessorSigners.js';
 import { DEFAULT_KMS_NODE_ADDRESSES } from './signers/defaultKmsSigners.js';
 import { DEFAULT_KMS_NODE_TX_SENDER_ADDRESSES } from './signers/defaultKmsTxSenderSigners.js';
-import type { BootstrapConfigV13, KmsNode, KmsThresholds } from './types/public.js';
+import type { BootstrapConfig, KmsNode, KmsThresholds } from './types/public.js';
 // Every scalar the cleartext stack is configured with comes from here, and this module is a byte-for-byte
 // copy of internal/cleartext-config.ts — see its header. The values are deliberately NOT re-exported
 // under `DEFAULT_*` aliases: an alias is a second name for one value, which is how the two copies of this
@@ -138,7 +138,7 @@ function generateDefaultCoprocessors(num: number): string[] {
   return signers;
 }
 
-export const DEFAUT_BOOTSTRAP_CONFIG_V13: BootstrapConfigV13 = {
+export const DEFAULT_BOOTSTRAP_CONFIG: BootstrapConfig = {
   hcuLimit: {
     hcuCapPerBlock: CLEARTEXT_HCU_CAP_PER_BLOCK,
     maxHCUDepthPerTx: CLEARTEXT_MAX_HCU_DEPTH_PER_TX,

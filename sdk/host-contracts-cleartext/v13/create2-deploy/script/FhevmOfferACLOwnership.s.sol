@@ -13,7 +13,7 @@ import {IOwnable2Step} from "./Interfaces.sol";
  *
  * OFFER, not transfer, and the name says so on purpose. ACL is `Ownable2Step`: this call only writes
  * `pendingOwner`. Ownership actually moves at step C, when the ACLOwner accepts. Everything gated on
- * `ACL.owner()` — `_authorizeUpgrade` on all nine proxies, `PauserSet.addPauser` — still answers
+ * `ACL.owner()` — `_authorizeUpgrade` on every proxy, `PauserSet.addPauser` — still answers
  * "the deployer" the instant after this script succeeds.
  *
  * (FhevmDeployScript's comment on the nonce path claims the deployer loses `addPauser` after the

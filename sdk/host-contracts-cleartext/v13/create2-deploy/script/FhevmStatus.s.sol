@@ -58,7 +58,7 @@ contract FhevmStatus is FhevmCreate2Base {
     }
 
     // =======================================================================================
-    // The 22 creates
+    // The creates
     // =======================================================================================
 
     function _reportCreates(string memory manifest) private {
@@ -99,7 +99,10 @@ contract FhevmStatus is FhevmCreate2Base {
         // finding that out here costs nothing.
         if (c.initCode.length > MAX_INITCODE_SIZE) {
             _bad++;
-            console.log(string.concat("  TOO BIG  ", c.role, "  - initcode over the EIP-3860 limit:"), c.initCode.length);
+            console.log(
+                string.concat("  TOO BIG  ", c.role, "  - initcode over the EIP-3860 limit:"),
+                c.initCode.length
+            );
             return;
         }
 
@@ -227,7 +230,7 @@ contract FhevmStatus is FhevmCreate2Base {
             _bad++;
             console.log("  D   materialize             FATAL - proxies point at implementations this manifest");
             console.log("                                      did not seal. A human decides.");
-        } else if (live == 9) {
+        } else if (live == _allProxyRoles().length) {
             console.log("  D   materialize             done");
         } else if (live != 0) {
             _bad++;

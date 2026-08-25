@@ -42,8 +42,8 @@ contract FhevmVerify is FhevmCreate2Base {
      * The trailing index is supplied per-signer; foundry appends "/<index>" to the path.
      */
     string internal constant FHEVM_MNEMONIC = "test test test test test test test future home engine virtual motion";
-    string internal constant COPROCESSOR_PATH = "m/44\'/60\'/0\'/2";
-    string internal constant KMS_PATH = "m/44\'/60\'/0\'/3";
+    string internal constant COPROCESSOR_PATH = "m/44'/60'/0'/2";
+    string internal constant KMS_PATH = "m/44'/60'/0'/3";
     uint256 internal constant COPROCESSOR_COUNT = 4;
     uint256 internal constant KMS_NODE_COUNT = 4;
 
@@ -129,7 +129,7 @@ contract FhevmVerify is FhevmCreate2Base {
      *      the implementations. Pass 3 scans for the same class of failure at build time; this is the
      *      same question asked of what actually got deployed.
      *
-     *      Skipped unless all nine proxies are materialized: before step D they point at the empty
+     *      Skipped unless every proxy are materialized: before step D they point at the empty
      *      implementations, which have none of these functions, so every call would revert and take
      *      the whole script with it rather than reporting a failure.
      */
@@ -140,7 +140,9 @@ contract FhevmVerify is FhevmCreate2Base {
 
         _expectAddr(IWiredACL(acl).getFHEVMExecutorAddress(), executor, "ACL.getFHEVMExecutorAddress()");
         _expectAddr(
-            IWiredACL(acl).getPauserSetAddress(), _readManifestAddress(manifest, R_PAUSER_SET), "ACL.getPauserSetAddress()"
+            IWiredACL(acl).getPauserSetAddress(),
+            _readManifestAddress(manifest, R_PAUSER_SET),
+            "ACL.getPauserSetAddress()"
         );
 
         _expectAddr(IWiredFHEVMExecutor(executor).getACLAddress(), acl, "FHEVMExecutor.getACLAddress()");

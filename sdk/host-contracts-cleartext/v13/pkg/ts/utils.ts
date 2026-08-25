@@ -13,7 +13,7 @@ import type {
   AbstractEthereumSigner,
   AbstractEthereumUtils,
   CleartextAddresses,
-  FhevmAddressesV13,
+  FhevmAddresses,
 } from './types/public.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -332,11 +332,11 @@ export async function deployImplementations(parameters: {
 }
 
 /**
- * The eight host addresses baked into every real implementation's bytecode (via `FHEVMHostAddresses.sol`).
- * References whose offsets are empty for a given template patch as no-ops, so passing all eight is safe.
+ * The host addresses baked into every real implementation's bytecode (via `FHEVMHostAddresses.sol`).
+ * References whose offsets are empty for a given template patch as no-ops, so passing the whole set is safe.
  */
-export function buildHostAddressReplacementsV13(parameters: {
-  readonly fhevmAddresses: FhevmAddressesV13;
+export function buildHostAddressReplacements(parameters: {
+  readonly fhevmAddresses: FhevmAddresses;
   readonly pauserSetAddress: string;
   // Optional: only the fresh `deploy` materializes the cleartext-infra contracts. The (deferred)
   // v12→v13 update path omits them until the cleartext-v12 fixture lands (see plan Decision #4).

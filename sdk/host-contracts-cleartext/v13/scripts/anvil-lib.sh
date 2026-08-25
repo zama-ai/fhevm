@@ -48,12 +48,12 @@ ZAMA_LOCAL_KMS_VERIFIER=0x901F8942346f7AB3a01F6D7613119Bca447Bb030
 ERC1967_IMPL_SLOT="0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc"
 # Initializable.INITIALIZABLE_STORAGE. Must be written as exactly 1, not merely non-zero: every
 # initializer is guarded by `onlyFromEmptyProxy`, which reverts unless _getInitializedVersion() == 1, and
-# each is a reinitializer(N) with N > 1 (2..5 across the nine contracts).
+# each is a reinitializer(N) with N > 1 (2..5 across the versioned contracts).
 INITIALIZABLE_SLOT="0xf0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00"
 # OwnableUpgradeable.OwnableStorageLocation, i.e. _owner. Needed on the ACL proxy only:
 # EmptyUUPSProxyACL._authorizeUpgrade is onlyOwner, while every other proxy is onlyACLOwner and reads
 # ACL.owner() instead. Writing the ACLOwner address here is exactly the state a completed Ownable2Step
-# transfer leaves behind, which is what lets one atomic ACLOwner.upgrade authorize all nine.
+# transfer leaves behind, which is what lets one atomic ACLOwner.upgrade authorize all of them.
 OWNABLE_SLOT="0x9016d09d72d40fdae2fd8ceac6b6234c7706214fd39c1cd1e609a0528c199300"
 ONE_WORD="0x0000000000000000000000000000000000000000000000000000000000000001"
 
@@ -305,7 +305,7 @@ read_scalar() { sed -n "s/^[a-z0-9]* constant $1 = \([^;]*\);.*/\1/p" "$ADDRESSE
 #   ANVIL_MNEMONIC="$(read_mnemonic)"  -> adapt mosquito move limb …
 read_mnemonic() { sed -n 's/^string constant MNEMONIC = "\(.*\)";.*/\1/p' "$ADDRESSES_SOL"; }
 
-# One scalar from LocalHostBootstrap.sol — the mirror of DEFAUT_BOOTSTRAP_CONFIG_V13. Matches any
+# One scalar from LocalHostBootstrap.sol — the mirror of DEFAULT_BOOTSTRAP_CONFIG. Matches any
 # visibility, so `internal constant` is found too. Values come back in the source's own form: decimal for
 # the numeric ones, 0x-prefixed for addresses.
 #   read_bootstrap_scalar GATEWAY_CHAIN_ID    -> 100733346448153
@@ -339,7 +339,7 @@ read_bootstrap_array() {
 #   PROTOCOL_CONFIG_ADDRESS KMS_GENERATION_ADDRESS PAUSER_SET_ADDRESS CLEARTEXT_ARITHMETIC_ADDRESS
 #   CLEARTEXT_DB_ADDRESS DEPLOYER_ADDRESS ANVIL_MNEMONIC ACCOUNT_INDEX START_NONCE
 #
-# and from LocalHostBootstrap.sol — the Solidity mirror of DEFAUT_BOOTSTRAP_CONFIG_V13:
+# and from LocalHostBootstrap.sol — the Solidity mirror of DEFAULT_BOOTSTRAP_CONFIG:
 #   GATEWAY_CHAIN_ID DECRYPTION_ADDRESS INPUT_VERIFICATION_ADDRESS COPROCESSOR_THRESHOLD KMS_NODE_COUNT
 #   HCU_CAP_PER_BLOCK MAX_HCU_DEPTH_PER_TX MAX_HCU_PER_TX
 #   COPROCESSOR_SIGNERS KMS_SIGNERS KMS_TX_SENDERS KMS_IPS KMS_URLS   (comma-joined lists)
@@ -438,12 +438,12 @@ deploy_empty_acl_implementation() {
     EMPTY_ACL_IMPL="$(deploy_contract "0x$(read_blob EMPTY_UUPS_PROXY_ACL_CREATION_CODE)" "EmptyUUPSProxyACL")"
 }
 
-# Sets EMPTY_IMPL — shared by the eight non-ACL proxies.
+# Sets EMPTY_IMPL — shared by the non-ACL proxies.
 deploy_empty_implementation() {
     EMPTY_IMPL="$(deploy_contract "0x$(read_blob EMPTY_UUPS_PROXY_CREATION_CODE)" "EmptyUUPSProxy")"
 }
 
-# The nine real implementations. Permissionless, and nothing refers to their addresses, so the nonce they
+# The real implementations. Permissionless, and nothing refers to their addresses, so the nonce they
 # land at does not matter — only that it is not a canonical one, which the guard below enforces.
 # Sets IMPL_ACL, IMPL_EXECUTOR, IMPL_KMS_VERIFIER, IMPL_INPUT_VERIFIER, IMPL_HCU_LIMIT,
 # IMPL_PROTOCOL_CONFIG, IMPL_KMS_GENERATION, IMPL_ARITHMETIC, IMPL_DB.
@@ -498,11 +498,11 @@ assert_no_canonical_collision() {
 # Materializing the stack
 # ---------------------------------------------------------------------------
 
-# Builds the initializeFromEmptyProxy calldata for all nine proxies, from the values
+# Builds the initializeFromEmptyProxy calldata for every proxy, from the values
 # load_generated_addresses_and_bootstrap read. Sets INIT_NOARGS, INIT_KMS_VERIFIER, INIT_INPUT_VERIFIER,
 # INIT_HCU_LIMIT, INIT_PROTOCOL_CONFIG, INIT_CLEARTEXT_DB.
 #
-# Six of the nine take no arguments and share INIT_NOARGS; the other three plus ProtocolConfig carry the
+# Most take no arguments and share INIT_NOARGS; the other three plus ProtocolConfig carry the
 # bootstrap. Nothing here is hardcoded — only the signatures are, in the SIG_* table above.
 build_initializer_calldata() {
     INIT_NOARGS="$(cast calldata "$SIG_INIT")"
@@ -528,9 +528,9 @@ build_initializer_calldata() {
     INIT_PROTOCOL_CONFIG="$(cast calldata "$SIG_INIT_PROTOCOL_CONFIG" "[$nodes]" "($n,$n,$n,$n)")"
 }
 
-# Materializes all nine proxies in ONE ACLOwner.upgrade, mirroring pkg/ts/deploy.ts and FhevmDeploy.sol.
+# Materializes every proxy in ONE ACLOwner.upgrade, mirroring pkg/ts/deploy.ts and FhevmDeploy.sol.
 #
-# Atomic on purpose: nine separate upgradeToAndCall transactions can fail part way and leave some proxies
+# Atomic on purpose: separate per-proxy upgradeToAndCall transactions can fail part way and leave some proxies
 # real and some still empty, which passes every "has code" check and fails only in use.
 #
 # Requires build_initializer_calldata and deploy_real_implementations to have run, ACL_OWNER to exist, and

@@ -41,7 +41,7 @@ import {IACLOwner} from "./Interfaces.sol";
  *
  * §8's table gives E one precondition, `ACLOwner.owner() == deployer`, and says nothing about
  * whether the stack was ever materialized. So this script can legitimately offer the ACLOwner to the
- * admin with all nine proxies still empty.
+ * admin with every proxy still empty.
  *
  * That is not unsafe: step D is `onlyOwner` on the ACLOwner, so an admin who accepts early can
  * simply run D themselves. But an orchestrator that invokes stages out of order can hand over an
@@ -62,7 +62,7 @@ contract FhevmOfferACLOwnerToAdmin is FhevmCreate2Base {
 
         // §11 R2. Guards D: this is the last transaction the deployer sends, so a reorg that unwinds
         // the materialization after the admin has accepted leaves the fix on the far side of a
-        // multisig. It is also what makes _warnIfNotMaterialized's nine slot reads worth trusting.
+        // multisig. It is also what makes _warnIfNotMaterialized's slot reads worth trusting.
         _requireMinBlock();
 
         address aclOwner = _readManifestAddress(manifest, R_ACL_OWNER);
@@ -81,7 +81,8 @@ contract FhevmOfferACLOwnerToAdmin is FhevmCreate2Base {
         // PRECONDITION. Fatal: either this is not the stack the manifest describes, or the ACLOwner
         // was already handed to someone who is not our admin.
         require(
-            owner_ == cfg.deployer, "FhevmOfferACLOwnerToAdmin: E precondition - deployer does not own the ACLOwner"
+            owner_ == cfg.deployer,
+            "FhevmOfferACLOwnerToAdmin: E precondition - deployer does not own the ACLOwner"
         );
 
         _warnIfNotMaterialized(manifest);

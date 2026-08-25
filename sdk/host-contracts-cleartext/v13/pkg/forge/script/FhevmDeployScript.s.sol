@@ -21,6 +21,7 @@ import {CleartextInputVerifier} from "../../src/cleartext/CleartextInputVerifier
 import {CleartextArithmetic} from "../../src/cleartext/CleartextArithmetic.sol";
 import {CleartextDB} from "../../src/cleartext/CleartextDB.sol";
 import {ACLOwner} from "../../src/upgrade/ACLOwner.sol";
+import {PROXY_COUNT} from "../src/_internal/LocalHostAddresses.sol";
 import {LocalHostBootstrap} from "../src/_internal/LocalHostBootstrap.sol";
 
 import {
@@ -64,7 +65,7 @@ import {
  * ---------------------------------------------------------------------------
  *
  * Every initializer argument comes from `LocalHostBootstrap`, the generated
- * Solidity mirror of `DEFAUT_BOOTSTRAP_CONFIG_V13` in pkg/ts/constants.ts. So
+ * Solidity mirror of `DEFAULT_BOOTSTRAP_CONFIG` in pkg/ts/constants.ts. So
  * this script and the TypeScript `deploy()` with no config produce the same
  * stack: same gateway chain id, same EIP-712 verifying contracts, four
  * coprocessor signers, four KMS nodes, and KMS thresholds equal to the node
@@ -85,7 +86,7 @@ import {
  * 1. Nine proxies, not five: v13 adds ProtocolConfig and KMSGeneration, and the
  *    cleartext build adds CleartextArithmetic and CleartextDB.
  *
- * 2. ONE shared EmptyUUPSProxy implementation at nonce+2 serves all eight
+ * 2. ONE shared EmptyUUPSProxy implementation at nonce+2 serves every other proxy
  *    non-ACL proxies, where forge-fhevm deploys a fresh implementation per
  *    slot. That is what makes the proxy nonces contiguous (+3..+10) instead of
  *    odd-numbered, and it must match ComputeAddresses.s.sol exactly.
@@ -100,12 +101,12 @@ import {
  *    referenced through the *declaring* contract, because solc will not resolve
  *    an inherited function as a function pointer through the derived type.
  *
- * 5. A standing ACLOwner takes ownership of the stack, and all nine proxies are
+ * 5. A standing ACLOwner takes ownership of the stack, and every proxy are
  *    materialized in ONE atomic `ACLOwner.upgrade(ops)`. forge-fhevm has no
  *    equivalent because ACLOwner does not exist in the generation it targets —
  *    v12 has no upgrade/ directory at all — so it upgrades each proxy directly
  *    from the deployer EOA. Matching pkg/ts/deploy.ts matters for two reasons:
- *    the stack is never left half-materialized (nine separate upgrades can fail
+ *    the stack is never left half-materialized (separate per-proxy upgrades can fail
  *    midway, leaving some proxies real and some still empty), and
  *    `updateV12ToV13` requires the ACL owner to already be an ACLOwner rather
  *    than an EOA.
@@ -166,7 +167,7 @@ contract FhevmDeployScript is Script {
         ACLOwner aclOwner = _setupACLOwner(deployer);
 
         // ----------------------------------------------------------------
-        // Step 4: Materialize all nine proxies in one atomic upgrade.
+        // Step 4: Materialize every proxy in one atomic upgrade.
         //
         // The generated addresses.sol is complete, so all implementations
         // compile with the correct baked-in addresses.
@@ -205,7 +206,7 @@ contract FhevmDeployScript is Script {
             console.log("ACL empty proxy:            ", address(aclProxy));
         }
 
-        // nonce+2: the single EmptyUUPSProxy implementation shared by all eight
+        // nonce+2: the single EmptyUUPSProxy implementation shared by every other proxy
         // remaining proxies. Deployed once, unlike forge-fhevm's per-slot impl.
         EmptyUUPSProxy sharedImpl = new EmptyUUPSProxy();
         console.log("EmptyUUPSProxy shared impl: ", address(sharedImpl));
@@ -268,11 +269,11 @@ contract FhevmDeployScript is Script {
      *      creations in step 1 nothing here depends on the nonce they land at.
      *
      *      Each initializer that takes arguments gets its own encoder below. That is not decoration: with
-     *      nine ops and their init-args live in one frame, legacy codegen runs out of stack slots ("Stack
+     *      every op and its init-args live in one frame, legacy codegen runs out of stack slots ("Stack
      *      too deep"), and scripts compile with via_ir off.
      */
     function _materialize(ACLOwner aclOwner) private {
-        ACLOwner.Op[] memory ops = new ACLOwner.Op[](9);
+        ACLOwner.Op[] memory ops = new ACLOwner.Op[](PROXY_COUNT);
 
         ops[0] = ACLOwner.Op(aclAdd, address(new ACL()), abi.encodeCall(ACL.initializeFromEmptyProxy, ()));
         ops[1] = ACLOwner.Op(
@@ -300,7 +301,7 @@ contract FhevmDeployScript is Script {
         );
 
         aclOwner.upgrade(ops);
-        console.log("All nine proxies materialized in one ACLOwner.upgrade");
+        console.log("Every proxy materialized in one ACLOwner.upgrade");
     }
 
     /// @dev v13: signers moved to ProtocolConfig, so only the EIP-712 domain is set here.

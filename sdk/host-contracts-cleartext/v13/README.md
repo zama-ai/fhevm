@@ -197,7 +197,7 @@ Three groups, in increasing order of effort:
    fixture path under `test/ts/node_modules/@fhevm/`. `test/ts/vitest.e2e.config.ts` lists the two
    packages the e2e consumes.
 2. **The public API** — `pkg/ts/upgrade.ts` exports `updateV12ToV13`, and `pkg/ts/types/public.ts`
-   declares `FhevmAddressesV12`, `FhevmAddressesV13` and `UpdateV12ToV13MigrationConfig`. Renaming these
+   declares `FhevmAddressesV12`, `FhevmAddresses` and `UpdateV12ToV13MigrationConfig`. Renaming these
    is a breaking change for consumers, so decide deliberately whether N-1→N gets new names or the old
    ones are kept.
 3. **The Solidity** — `pkg/src/cleartext/CleartextArithmetic.sol` and `ICleartextArithmetic.sol` carry
@@ -363,7 +363,7 @@ below (and still not part of `npm run test` — see RULES.md rule 17).
 
 - `test/templates.test.ts` has its own `ALTERNATE_ADDRESSES` fixture; a new host address must be added
   there too or the patching tests fail.
-- The bootstrap config types (`BootstrapConfigV13` and friends in `pkg/ts/types/public.ts`) change
+- The bootstrap config types (`BootstrapConfig` and friends in `pkg/ts/types/public.ts`) change
   whenever upstream adds an initializer parameter.
 - `npm run clean` deletes the tarball-consumer fixture, so editors report unresolved imports in
   `test/ts` until a build or `npm run prepare:tarball-consumer` recreates it.

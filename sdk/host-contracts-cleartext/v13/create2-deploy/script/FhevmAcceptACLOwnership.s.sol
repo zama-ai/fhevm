@@ -12,7 +12,7 @@ import {IOwnable2Step, IPauserSet, IACLOwner} from "./Interfaces.sol";
  * @notice Plan §6 step C — `ACLOwner.acceptACLOwnership()`, which forwards to `ACL.acceptOwnership()`.
  *
  * THIS is where ownership of the stack actually moves, not step B. One transaction, and afterwards
- * every `onlyACLOwner` gate in the system — `_authorizeUpgrade` on all nine proxies,
+ * every `onlyACLOwner` gate in the system — `_authorizeUpgrade` on every proxy,
  * `PauserSet.addPauser`, `PauserSet.removePauser` — answers "the ACLOwner" instead of "the deployer".
  *
  * It is sent BY the deployer but AS the ACLOwner: `acceptACLOwnership` is `onlyOwner` on the

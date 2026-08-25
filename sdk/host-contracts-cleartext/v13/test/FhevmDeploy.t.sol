@@ -29,6 +29,7 @@ import {IKMSGeneration} from "../pkg/forge/src/FhevmDeploy.sol";
 import {IPauserSet} from "../pkg/forge/src/FhevmDeploy.sol";
 import {IProtocolConfig} from "../pkg/forge/src/FhevmDeploy.sol";
 import {LocalHostBootstrap} from "../pkg/forge/src/_internal/LocalHostBootstrap.sol";
+import {LocalHostVersions} from "../pkg/forge/src/_internal/LocalHostVersions.sol";
 
 /**
  * The Foundry half of the suite: `FhevmDeploy` is the one artifact a TS test cannot exercise, because it
@@ -66,15 +67,15 @@ contract FhevmDeployTest is Test, FhevmDeploy {
      * rather than the empty one it was created over — phase 5 either ran or it did not.
      */
     function test_proxiesResolveToTheRealImplementations() public view {
-        assertEq(IACL(ACL_ADDRESS).getVersion(), "ACL v0.4.0");
-        assertEq(ICleartextFHEVMExecutor(FHEVM_EXECUTOR_ADDRESS).getVersion(), "FHEVMExecutor v0.4.0");
-        assertEq(ICleartextKMSVerifier(KMS_VERIFIER_ADDRESS).getVersion(), "KMSVerifier v0.3.0");
-        assertEq(ICleartextInputVerifier(INPUT_VERIFIER_ADDRESS).getVersion(), "InputVerifier v0.2.0");
-        assertEq(IHCULimit(HCU_LIMIT_ADDRESS).getVersion(), "HCULimit v0.3.0");
-        assertEq(IProtocolConfig(PROTOCOL_CONFIG_ADDRESS).getVersion(), "ProtocolConfig v0.1.0");
-        assertEq(IKMSGeneration(KMS_GENERATION_ADDRESS).getVersion(), "KMSGeneration v0.1.0");
-        assertEq(ICleartextArithmetic(CLEARTEXT_ARITHMETIC_ADDRESS).getVersion(), "CleartextArithmetic v0.4.0");
-        assertEq(IPauserSet(PAUSER_SET_ADDRESS).getVersion(), "PauserSet v0.1.0");
+        assertEq(IACL(ACL_ADDRESS).getVersion(), LocalHostVersions.ACL);
+        assertEq(ICleartextFHEVMExecutor(FHEVM_EXECUTOR_ADDRESS).getVersion(), LocalHostVersions.FHEVM_EXECUTOR);
+        assertEq(ICleartextKMSVerifier(KMS_VERIFIER_ADDRESS).getVersion(), LocalHostVersions.KMS_VERIFIER);
+        assertEq(ICleartextInputVerifier(INPUT_VERIFIER_ADDRESS).getVersion(), LocalHostVersions.INPUT_VERIFIER);
+        assertEq(IHCULimit(HCU_LIMIT_ADDRESS).getVersion(), LocalHostVersions.HCU_LIMIT);
+        assertEq(IProtocolConfig(PROTOCOL_CONFIG_ADDRESS).getVersion(), LocalHostVersions.PROTOCOL_CONFIG);
+        assertEq(IKMSGeneration(KMS_GENERATION_ADDRESS).getVersion(), LocalHostVersions.KMS_GENERATION);
+        assertEq(ICleartextArithmetic(CLEARTEXT_ARITHMETIC_ADDRESS).getVersion(), LocalHostVersions.CLEARTEXT_ARITHMETIC);
+        assertEq(IPauserSet(PAUSER_SET_ADDRESS).getVersion(), LocalHostVersions.PAUSER_SET);
     }
 
     /**

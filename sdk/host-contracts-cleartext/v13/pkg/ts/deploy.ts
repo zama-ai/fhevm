@@ -16,13 +16,12 @@ import type {
   AbstractEthereumProvider,
   AbstractEthereumSigner,
   AbstractEthereumUtils,
-  BootstrapConfigV13,
+  BootstrapConfig,
   CleartextAddresses,
-  DeployedV13,
+  Deployed,
   DeployReturnType,
   InputVerifierInitConfig,
-  FhevmAddressesV12,
-  FhevmAddressesV13,
+  FhevmAddresses,
   HCULimitInitConfig,
   KMSVerifierInitConfig,
 } from './types/public.js';
@@ -30,7 +29,7 @@ import {
   assertDeployedAddress,
   assertNoCodeAt,
   assertNoCodeAtTargets,
-  buildHostAddressReplacementsV13,
+  buildHostAddressReplacements,
   deployImplementations,
   sendStep,
 } from './utils.js';
@@ -38,7 +37,7 @@ import { setupACLOwner, toACLOwnerOps } from './aclOwner.js';
 import type { ContractUpgradeSpec, DeployedImplementation, UpgradeTarget } from './types/private.js';
 import { deployPauserSet } from './pauserSet.js';
 import { precomputeAddresses } from './addresses.js';
-import { DEFAUT_BOOTSTRAP_CONFIG_V13 } from './constants.js';
+import { DEFAULT_BOOTSTRAP_CONFIG } from './constants.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -61,19 +60,19 @@ export async function deploy(parameters: {
   // `AbstractEthereumSigner` in types/public.ts for what an adapter must do to satisfy it.
   readonly precomputed?:
     | {
-        readonly fhevmAddresses: FhevmAddressesV13;
+        readonly fhevmAddresses: FhevmAddresses;
         readonly cleartextAddresses: CleartextAddresses;
         readonly pauserSetAddress: string;
       }
     | undefined;
-  readonly config?: BootstrapConfigV13 | undefined;
-}): Promise<DeployedV13> {
+  readonly config?: BootstrapConfig | undefined;
+}): Promise<Deployed> {
   const precomputed = parameters.precomputed ?? (await precomputeFromDeployerNonce(parameters));
   const { fhevmAddresses, cleartextAddresses } = precomputed;
-  const config = parameters.config ?? DEFAUT_BOOTSTRAP_CONFIG_V13;
+  const config = parameters.config ?? DEFAULT_BOOTSTRAP_CONFIG;
 
   // 1. Deploy the 7 core empty proxies, then the 2 cleartext-infra proxies (on the shared impl).
-  const { emptyUUPSProxyAddress } = await deployEmptyProxiesV13({
+  const { emptyUUPSProxyAddress } = await deployEmptyProxies({
     ethProvider: parameters.ethProvider,
     ethUtils: parameters.ethUtils,
     deployer: parameters.deployer,
@@ -106,12 +105,12 @@ export async function deploy(parameters: {
   });
 
   // 4. Deploy the 9 real implementations (permissionless) — bootstrap specs, empty→real.
-  const { implementations } = await buildBootstrapPlanV13({
+  const { implementations } = await buildBootstrapPlan({
     ethUtils: parameters.ethUtils,
     deployer: parameters.deployer,
     precomputedAddresses: fhevmAddresses,
     cleartextAddresses,
-    config: bootstrapUpgradeConfigV13({
+    config: bootstrapUpgradeConfig({
       pauserSetAddress: precomputed.pauserSetAddress,
       cleartextAddresses,
       config,
@@ -148,7 +147,7 @@ async function precomputeFromDeployerNonce(parameters: {
   readonly ethUtils: AbstractEthereumUtils;
   readonly deployer: AbstractEthereumSigner;
 }): Promise<{
-  readonly fhevmAddresses: FhevmAddressesV13;
+  readonly fhevmAddresses: FhevmAddresses;
   readonly cleartextAddresses: CleartextAddresses;
   readonly pauserSetAddress: string;
 }> {
@@ -163,14 +162,14 @@ async function precomputeFromDeployerNonce(parameters: {
  * Phase 1 for a fresh v13 stack: deploys all 7 real implementations (patched with v13 host addresses)
  * and encodes their `upgradeToAndCall` calldata. Sends no owner-gated transaction.
  */
-async function buildBootstrapPlanV13(parameters: {
+async function buildBootstrapPlan(parameters: {
   readonly ethUtils: AbstractEthereumUtils;
   readonly deployer: AbstractEthereumSigner;
-  readonly precomputedAddresses: FhevmAddressesV13;
+  readonly precomputedAddresses: FhevmAddresses;
   readonly cleartextAddresses: CleartextAddresses;
-  readonly config: UpgradeConfigV13;
+  readonly config: UpgradeConfig;
 }): Promise<{ readonly implementations: readonly DeployedImplementation[] }> {
-  const addressReplacements = buildHostAddressReplacementsV13({
+  const addressReplacements = buildHostAddressReplacements({
     fhevmAddresses: parameters.precomputedAddresses,
     cleartextAddresses: parameters.cleartextAddresses,
     pauserSetAddress: parameters.config.pauserSetAddress,
@@ -248,50 +247,85 @@ async function buildBootstrapPlanV13(parameters: {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-async function deployEmptyProxiesV13(parameters: {
+async function deployEmptyProxies(parameters: {
   readonly ethProvider: AbstractEthereumProvider;
   readonly ethUtils: AbstractEthereumUtils;
   readonly deployer: AbstractEthereumSigner;
-  readonly precomputedFhevmAddresses: FhevmAddressesV13;
+  readonly precomputedFhevmAddresses: FhevmAddresses;
 }): Promise<{ emptyUUPSProxyAddress: DeployReturnType }> {
-  const { emptyUUPSProxyAddress } = await deployEmptyProxiesV12(parameters);
+  const addr = parameters.precomputedFhevmAddresses;
 
-  const targetsV13: ReadonlyArray<{ readonly contractName: string; readonly address: string }> = [
-    { contractName: 'ProtocolConfig', address: parameters.precomputedFhevmAddresses.protocolConfigAddress },
-    { contractName: 'KMSGeneration', address: parameters.precomputedFhevmAddresses.kmsGenerationAddress },
+  // Every host proxy except ACL, in deploy order. They are identical operations differing only by the
+  // address each must land on, so they are a table rather than N copies of the same twelve lines: a
+  // generation that adds or drops a host contract edits this list and nothing else.
+  //
+  // ACL is not in it because it is genuinely different — it gets its own empty implementation
+  // (`EmptyUUPSProxyACL`), which every other proxy shares one of.
+  //
+  // ORDER IS LOAD-BEARING. Each address is `CREATE(deployer, startNonce + k)`, and the offsets in
+  // `HOST_NONCE_OFFSET` (addresses.ts) are this list's positions. Reordering here silently moves every
+  // subsequent address while the precomputed set keeps pointing at the old ones — which is what the
+  // per-step `assertDeployedAddress` below turns into an immediate failure instead of a live stack
+  // whose bytecode references dead addresses.
+  const sharedImplProxies: ReadonlyArray<{ readonly contractName: string; readonly address: string }> = [
+    { contractName: 'FHEVMExecutor', address: addr.fhevmExecutorAddress },
+    { contractName: 'KMSVerifier', address: addr.kmsVerifierAddress },
+    { contractName: 'InputVerifier', address: addr.inputVerifierAddress },
+    { contractName: 'HCULimit', address: addr.hcuLimitAddress },
+    { contractName: 'ProtocolConfig', address: addr.protocolConfigAddress },
+    { contractName: 'KMSGeneration', address: addr.kmsGenerationAddress },
   ];
 
-  // Assert none of the target host addresses are already occupied before deploying anything.
+  // Assert no target host address is already occupied before deploying ANYTHING. Checked for the whole
+  // set up front, not per contract: a half-deployed stack is far worse to recover from than a refusal,
+  // and the deployer's nonce has already advanced by the time a later collision would be noticed.
   await assertNoCodeAtTargets({
     ethProvider: parameters.ethProvider,
-    targets: targetsV13,
+    targets: [{ contractName: 'ACL', address: addr.aclAddress }, ...sharedImplProxies],
   });
 
-  // step 1: deploy ProtocolConfig ERC1967Proxy (startNonce + 0)
-  const protocolConfigProxyAddress = await deployERC1967Proxy({
+  // nonce +0: EmptyUUPSProxyACL — the ACL proxy's own initial implementation.
+  const emptyUUPSProxyACLAddress = await deployEmptyUUPSProxyACL({ deployer: parameters.deployer });
+  console.log(`EmptyUUPSProxyACL = ${emptyUUPSProxyACLAddress.contractAddress}`);
+
+  // nonce +1: the ACL proxy.
+  const aclProxyAddress = await deployACLProxy({
     ethUtils: parameters.ethUtils,
     deployer: parameters.deployer,
-    emptyUUPSProxyAddress: emptyUUPSProxyAddress.contractAddress,
+    emptyUUPSProxyACLAddress: emptyUUPSProxyACLAddress.contractAddress,
   });
-  console.log(`ProtocolConfig = ${protocolConfigProxyAddress.contractAddress}`);
+  console.log(`ACL = ${aclProxyAddress.contractAddress}`);
   assertDeployedAddress({
-    contractName: 'ProtocolConfig',
-    expectedAddress: parameters.precomputedFhevmAddresses.protocolConfigAddress,
-    actualAddress: protocolConfigProxyAddress.contractAddress,
+    contractName: 'ACL',
+    expectedAddress: addr.aclAddress,
+    actualAddress: aclProxyAddress.contractAddress,
   });
 
-  // step 2: deploy KMSGeneration ERC1967Proxy (startNonce + 1)
-  const kmsGenerationProxyAddress = await deployERC1967Proxy({
-    ethUtils: parameters.ethUtils,
+  // nonce +2: the one EmptyUUPSProxy implementation every remaining proxy is constructed over. It bakes
+  // the ACL address, which is why it cannot be deployed before the ACL proxy exists.
+  const emptyUUPSProxyAddress = await deployEmptyUUPSProxy({
     deployer: parameters.deployer,
-    emptyUUPSProxyAddress: emptyUUPSProxyAddress.contractAddress,
+    aclAddress: addr.aclAddress,
   });
-  console.log(`KMSGeneration = ${kmsGenerationProxyAddress.contractAddress}`);
-  assertDeployedAddress({
-    contractName: 'KMSGeneration',
-    expectedAddress: parameters.precomputedFhevmAddresses.kmsGenerationAddress,
-    actualAddress: kmsGenerationProxyAddress.contractAddress,
-  });
+  console.log(`EmptyUUPSProxy = ${emptyUUPSProxyAddress.contractAddress}`);
+
+  // nonce +3 onward: one ERC1967Proxy per table entry, in table order.
+  for (const target of sharedImplProxies) {
+    // Sequential on purpose, not a concurrency oversight: these must occupy consecutive nonces in this
+    // exact order, so `await` inside the loop is the requirement rather than a cost. Do not "optimize"
+    // this into Promise.all — it would deploy the whole set at unpredictable nonces.
+    const proxy = await deployERC1967Proxy({
+      ethUtils: parameters.ethUtils,
+      deployer: parameters.deployer,
+      emptyUUPSProxyAddress: emptyUUPSProxyAddress.contractAddress,
+    });
+    console.log(`${target.contractName} = ${proxy.contractAddress}`);
+    assertDeployedAddress({
+      contractName: target.contractName,
+      expectedAddress: target.address,
+      actualAddress: proxy.contractAddress,
+    });
+  }
 
   return { emptyUUPSProxyAddress };
 }
@@ -300,7 +334,7 @@ async function deployEmptyProxiesV13(parameters: {
 
 /**
  * Deploys the two cleartext-infra ERC1967 proxies (`CleartextArithmetic`, `CleartextDB`) on the
- * shared `EmptyUUPSProxy` implementation. Called after `deployEmptyProxiesV13`, before PauserSet, so
+ * shared `EmptyUUPSProxy` implementation. Called after `deployEmptyProxies`, before PauserSet, so
  * their CREATE addresses match `precomputeAddresses`.
  */
 async function deployCleartextEmptyProxies(parameters: {
@@ -383,110 +417,6 @@ async function deployPauserSetContract(parameters: {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-
-async function deployEmptyProxiesV12(parameters: {
-  readonly ethProvider: AbstractEthereumProvider;
-  readonly ethUtils: AbstractEthereumUtils;
-  readonly deployer: AbstractEthereumSigner;
-  readonly precomputedFhevmAddresses: FhevmAddressesV12;
-}): Promise<{ emptyUUPSProxyAddress: DeployReturnType }> {
-  const targetsV12: ReadonlyArray<{ readonly contractName: string; readonly address: string }> = [
-    { contractName: 'ACL', address: parameters.precomputedFhevmAddresses.aclAddress },
-    { contractName: 'FHEVMExecutor', address: parameters.precomputedFhevmAddresses.fhevmExecutorAddress },
-    { contractName: 'KMSVerifier', address: parameters.precomputedFhevmAddresses.kmsVerifierAddress },
-    { contractName: 'InputVerifier', address: parameters.precomputedFhevmAddresses.inputVerifierAddress },
-    { contractName: 'HCULimit', address: parameters.precomputedFhevmAddresses.hcuLimitAddress },
-  ];
-
-  // Assert none of the target host addresses are already occupied before deploying anything.
-  await assertNoCodeAtTargets({
-    ethProvider: parameters.ethProvider,
-    targets: targetsV12,
-  });
-
-  // Step 1: deploy EmptyUUPSProxyACL (startNonce + 0)
-  const emptyUUPSProxyACLAddress = await deployEmptyUUPSProxyACL({
-    deployer: parameters.deployer,
-  });
-  console.log(`EmptyUUPSProxyACL = ${emptyUUPSProxyACLAddress.contractAddress}`);
-
-  // step 2: deploy ACL ERC1967Proxy (startNonce + 1)
-  const aclProxyAddress = await deployACLProxy({
-    ethUtils: parameters.ethUtils,
-    deployer: parameters.deployer,
-    emptyUUPSProxyACLAddress: emptyUUPSProxyACLAddress.contractAddress,
-  });
-  console.log(`ACL = ${aclProxyAddress.contractAddress}`);
-
-  assertDeployedAddress({
-    contractName: 'ACL',
-    expectedAddress: parameters.precomputedFhevmAddresses.aclAddress,
-    actualAddress: aclProxyAddress.contractAddress,
-  });
-
-  // step 3: deploy shared EmptyUUPSProxy implementation (startNonce + 2)
-  const emptyUUPSProxyAddress = await deployEmptyUUPSProxy({
-    deployer: parameters.deployer,
-    aclAddress: parameters.precomputedFhevmAddresses.aclAddress,
-  });
-  console.log(`EmptyUUPSProxy = ${emptyUUPSProxyAddress.contractAddress}`);
-
-  // step 4: deploy FHEVMExecutor ERC1967Proxy (startNonce + 3)
-  const fhevmExecutorProxyAddress = await deployERC1967Proxy({
-    ethUtils: parameters.ethUtils,
-    deployer: parameters.deployer,
-    emptyUUPSProxyAddress: emptyUUPSProxyAddress.contractAddress,
-  });
-  console.log(`FHEVMExecutor = ${fhevmExecutorProxyAddress.contractAddress}`);
-  assertDeployedAddress({
-    contractName: 'FHEVMExecutor',
-    expectedAddress: parameters.precomputedFhevmAddresses.fhevmExecutorAddress,
-    actualAddress: fhevmExecutorProxyAddress.contractAddress,
-  });
-
-  // step 5: deploy KMSVerifier ERC1967Proxy (startNonce + 4)
-  const kmsVerifierProxyAddress = await deployERC1967Proxy({
-    ethUtils: parameters.ethUtils,
-    deployer: parameters.deployer,
-    emptyUUPSProxyAddress: emptyUUPSProxyAddress.contractAddress,
-  });
-  console.log(`KMSVerifier = ${kmsVerifierProxyAddress.contractAddress}`);
-  assertDeployedAddress({
-    contractName: 'KMSVerifier',
-    expectedAddress: parameters.precomputedFhevmAddresses.kmsVerifierAddress,
-    actualAddress: kmsVerifierProxyAddress.contractAddress,
-  });
-
-  // step 6: deploy InputVerifier ERC1967Proxy (startNonce + 5)
-  const inputVerifierProxyAddress = await deployERC1967Proxy({
-    ethUtils: parameters.ethUtils,
-    deployer: parameters.deployer,
-    emptyUUPSProxyAddress: emptyUUPSProxyAddress.contractAddress,
-  });
-  console.log(`InputVerifier = ${inputVerifierProxyAddress.contractAddress}`);
-  assertDeployedAddress({
-    contractName: 'InputVerifier',
-    expectedAddress: parameters.precomputedFhevmAddresses.inputVerifierAddress,
-    actualAddress: inputVerifierProxyAddress.contractAddress,
-  });
-
-  // step 7: deploy HCULimit ERC1967Proxy (startNonce + 6)
-  const hcuLimitProxyAddress = await deployERC1967Proxy({
-    ethUtils: parameters.ethUtils,
-    deployer: parameters.deployer,
-    emptyUUPSProxyAddress: emptyUUPSProxyAddress.contractAddress,
-  });
-  console.log(`HCULimit = ${hcuLimitProxyAddress.contractAddress}`);
-  assertDeployedAddress({
-    contractName: 'HCULimit',
-    expectedAddress: parameters.precomputedFhevmAddresses.hcuLimitAddress,
-    actualAddress: hcuLimitProxyAddress.contractAddress,
-  });
-
-  return { emptyUUPSProxyAddress };
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Upgrade step: materialize each empty proxy into its real implementation.
 //
 // For every proxy this performs exactly two on-chain actions:
@@ -503,8 +433,8 @@ async function deployEmptyProxiesV12(parameters: {
  * Per-contract upgrade specification. One entry per host proxy, in dependency-agnostic order.
  * `pauserSetAddress` is baked into every implementation's bytecode (see `buildHostAddressReplacements`).
  */
-/** @internal — intermediate config built from `BootstrapConfigV13`; not part of the public API. */
-type UpgradeConfigV13 = {
+/** @internal — intermediate config built from `BootstrapConfig`; not part of the public API. */
+type UpgradeConfig = {
   readonly pauserSetAddress: string;
   readonly acl: ContractUpgradeSpec;
   readonly fhevmExecutor: ContractUpgradeSpec;
@@ -517,12 +447,12 @@ type UpgradeConfigV13 = {
   readonly cleartextDb: ContractUpgradeSpec;
 };
 
-/** Maps the typed bootstrap config to a full `UpgradeConfigV13` of `initializeFromEmptyProxy` specs. */
-function bootstrapUpgradeConfigV13(parameters: {
+/** Maps the typed bootstrap config to a full `UpgradeConfig` of `initializeFromEmptyProxy` specs. */
+function bootstrapUpgradeConfig(parameters: {
   readonly pauserSetAddress: string;
   readonly cleartextAddresses: CleartextAddresses;
-  readonly config: BootstrapConfigV13;
-}): UpgradeConfigV13 {
+  readonly config: BootstrapConfig;
+}): UpgradeConfig {
   const { config } = parameters;
   const bootstrap = (initArgs: readonly unknown[]): ContractUpgradeSpec => ({
     initFn: 'initializeFromEmptyProxy',
@@ -532,7 +462,7 @@ function bootstrapUpgradeConfigV13(parameters: {
     pauserSetAddress: parameters.pauserSetAddress,
     acl: bootstrap([]),
     fhevmExecutor: bootstrap([]),
-    kmsVerifier: bootstrap(kmsVerifierInitArgsV13(config.kmsVerifier)),
+    kmsVerifier: bootstrap(kmsVerifierInitArgs(config.kmsVerifier)),
     inputVerifier: bootstrap(inputVerifierInitArgs(config.inputVerifier)),
     hcuLimit: bootstrap(hcuLimitInitArgs(config.hcuLimit)),
     protocolConfig: bootstrap([config.protocolConfig.initialKmsNodes, config.protocolConfig.initialThresholds]),
@@ -550,7 +480,7 @@ function bootstrapUpgradeConfigV13(parameters: {
  * `(address verifyingContractSource, uint64 chainIDSource)`. In v13 the KMS signer set moved to
  * `ProtocolConfig`, so — unlike v12 — no signers/threshold are passed here.
  */
-function kmsVerifierInitArgsV13(config: KMSVerifierInitConfig): readonly unknown[] {
+function kmsVerifierInitArgs(config: KMSVerifierInitConfig): readonly unknown[] {
   return [config.verifyingContractSource, config.chainIDSource];
 }
 

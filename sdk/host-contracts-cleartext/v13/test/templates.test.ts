@@ -59,18 +59,24 @@ type TemplateAddressReference = NonNullable<Template['addressReferences'][Addres
 
 const CONFIG_PATH = `${PACKAGE_ROOT_ABS_PATH}/internal/placeholders/addresses.sol`;
 
-const ALTERNATE_ADDRESSES = {
-  ACL_ADDRESS: '0x7011121314151617181920212223242526272829',
-  FHEVM_EXECUTOR_ADDRESS: '0x8021222324252627282930313233343536373839',
-  KMS_VERIFIER_ADDRESS: '0x9031323334353637383940414243444546474849',
-  INPUT_VERIFIER_ADDRESS: '0x7141424344454647484950515253545556575859',
-  HCU_LIMIT_ADDRESS: '0x8151525354555657585960616263646566676869',
-  PROTOCOL_CONFIG_ADDRESS: '0x7211121314151617181920212223242526272829',
-  KMS_GENERATION_ADDRESS: '0x8221222324252627282930313233343536373839',
-  CLEARTEXT_ARITHMETIC_ADDRESS: '0x7311223344556677889900112233445566778899',
-  CLEARTEXT_DB_ADDRESS: '0x8311223344556677889900112233445566778899',
-  PAUSER_SET_ADDRESS: '0x9161626364656667686970717273747576777879',
-} satisfies Record<AddressName, HexString>;
+/**
+ * A second, distinct address set used to prove the templates really are address-parameterised: patch the
+ * templates with these, rebuild with these, and the two must agree byte for byte.
+ *
+ * Derived from ADDRESS_NAMES rather than listed, so a protocol generation that adds or drops a host
+ * address needs no edit here. The values only have to be valid, non-zero, distinct, and different from
+ * the placeholder markers they replace — nothing depends on which addresses they are.
+ *
+ * DECIMAL DIGITS ONLY, and that is load-bearing rather than stylistic: these are rendered into Solidity
+ * as address literals, and solc rejects any hex literal containing letters unless it carries a valid
+ * EIP-55 checksum (error 9429). A digits-only address has no letters to case, so it needs no checksum —
+ * which is why the hand-written table this replaced also looked like `0x7011121314…`. Switching to a
+ * base-16 counter here fails the build, not the assertion.
+ */
+const ALTERNATE_ADDRESSES = Object.fromEntries(
+  // 70..99 → exactly 40 digits when repeated 20 times. Ample: the largest generation has 10 addresses.
+  ADDRESS_NAMES.map((name, index) => [name, `0x${String(70 + index).repeat(20)}`]),
+) as Record<AddressName, HexString>;
 
 function lowerHex(value: HexString): HexString {
   return `0x${normalizeHex(value, 'hex value')}`;
@@ -131,19 +137,13 @@ function patchBytecode(
 }
 
 function addressConfigSource(addresses: Record<AddressName, HexString>): string {
+  // Rendered from ADDRESS_NAMES, not one line per address: this used to spell all ten out, so a new host
+  // address produced `address(undefined)` in generated Solidity rather than a compile error here.
+  const constants = ADDRESS_NAMES.map((name) => `address constant ${name} = address(${addresses[name]});`).join('\n');
   return `// SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-address constant ACL_ADDRESS = address(${addresses.ACL_ADDRESS});
-address constant FHEVM_EXECUTOR_ADDRESS = address(${addresses.FHEVM_EXECUTOR_ADDRESS});
-address constant KMS_VERIFIER_ADDRESS = address(${addresses.KMS_VERIFIER_ADDRESS});
-address constant INPUT_VERIFIER_ADDRESS = address(${addresses.INPUT_VERIFIER_ADDRESS});
-address constant HCU_LIMIT_ADDRESS = address(${addresses.HCU_LIMIT_ADDRESS});
-address constant PROTOCOL_CONFIG_ADDRESS = address(${addresses.PROTOCOL_CONFIG_ADDRESS});
-address constant KMS_GENERATION_ADDRESS = address(${addresses.KMS_GENERATION_ADDRESS});
-address constant CLEARTEXT_ARITHMETIC_ADDRESS = address(${addresses.CLEARTEXT_ARITHMETIC_ADDRESS});
-address constant CLEARTEXT_DB_ADDRESS = address(${addresses.CLEARTEXT_DB_ADDRESS});
-address constant PAUSER_SET_ADDRESS = address(${addresses.PAUSER_SET_ADDRESS});
+${constants}
 `;
 }
 

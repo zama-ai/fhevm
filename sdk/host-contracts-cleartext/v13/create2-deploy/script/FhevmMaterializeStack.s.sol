@@ -27,21 +27,21 @@ import {IOwnable2Step, IACLOwner} from "./Interfaces.sol";
  * bytes before and after — so `getCode`, the predicate every other stage in this path uses, says
  * nothing at all here. What changes is the ERC-1967 implementation slot, and that is what gets read.
  *
- *   all nine slots == the sealed implementations         → done, skip
- *   all nine slots == their EMPTY proxy implementation   → run
+ *   every slot == the sealed implementations         → done, skip
+ *   every slot == their EMPTY proxy implementation   → run
  *   anything else (mixed, or a third implementation)     → FATAL, a human decides
  *
  * Note the run state is NOT "slot is zero". An ERC1967Proxy sets its implementation in the
  * constructor, and OpenZeppelin's _setImplementation reverts when that implementation has no code, so
  * a deployed proxy's slot is never zero. Before D, ACL points at EmptyUUPSProxyACL and the other
- * eight share EmptyUUPSProxy — see _emptyImplRoleFor.
+ * the rest share EmptyUUPSProxy — see _emptyImplRoleFor.
  *
  * Mixed is fatal rather than resumable because the atomicity that protects the happy path works
  * against a retry: re-running `upgrade` against a partially-materialized stack hits
  * `onlyFromEmptyProxy` / `reinitializer` on the proxies that already moved, and the ENTIRE batch
  * reverts — permanently, at every future attempt. No sequence of retries gets out of it.
  *
- * Reaching mixed state should be impossible, since one transaction carries all nine. It is checked
+ * Reaching mixed state should be impossible, since one transaction carries all of them. It is checked
  * because "impossible" here means "impossible unless someone ran a different upgrade against these
  * proxies" — precisely the case where proceeding silently is worst.
  *
@@ -63,7 +63,7 @@ contract FhevmMaterializeStack is FhevmCreate2Base {
         require(msg.sender == cfg.deployer, "FhevmMaterializeStack: broadcast sender is not FHEVM_DEPLOYER");
 
         // §11 R2, and the step with the least recoverable failure. The tri-state below is decided by
-        // nine ERC-1967 slot reads; if a reorg unwinds step C the `ACL.owner()` precondition is read
+        // one ERC-1967 slot read per proxy; if a reorg unwinds step C the `ACL.owner()` precondition is read
         // from a doomed block, and `upgrade` is the one call in this path that cannot be retried
         // against a stack it half-changed.
         _requireMinBlock();
@@ -76,8 +76,8 @@ contract FhevmMaterializeStack is FhevmCreate2Base {
 
         (IACLOwner.Op[] memory ops, uint256 materialized) = _buildOps(manifest);
 
-        if (materialized == 9) {
-            console.log("  D  upgrade - already done (all nine slots match the seal)");
+        if (materialized == _allProxyRoles().length) {
+            console.log("  D  upgrade - already done (every slot match the seal)");
             return;
         }
         require(materialized == 0, "FhevmMaterializeStack: D - stack is partially materialized, this is not resumable");
@@ -96,26 +96,22 @@ contract FhevmMaterializeStack is FhevmCreate2Base {
         IACLOwner(aclOwner).upgrade(ops);
         vm.stopBroadcast();
 
-        console.log("  D  all nine proxies materialized in one ACLOwner.upgrade");
+        console.log("  D  every proxy materialized in one ACLOwner.upgrade");
         console.log("");
         console.log("  next: FhevmOfferACLOwnerToAdmin (step E)");
     }
 
     /**
-     * @dev Assembles the nine ops and classifies the stack in the same pass, because both need the
-     *      same nine slot reads and the classification decides whether the ops are used at all.
+     * @dev Assembles the ops and classifies the stack in the same pass, because both need the
+     *      same slot reads and the classification decides whether the ops are used at all.
      *
      *      Note the ops are built even when the answer turns out to be "already done". That is
      *      deliberate: the loop is also where a proxy pointing at an UNSEALED implementation is
-     *      caught, and that check has to run against all nine regardless of the verdict.
+     *      caught, and that check has to run against all of them regardless of the verdict.
      */
-    function _buildOps(string memory manifest)
-        private
-        view
-        returns (IACLOwner.Op[] memory ops, uint256 materialized)
-    {
+    function _buildOps(string memory manifest) private view returns (IACLOwner.Op[] memory ops, uint256 materialized) {
         string[] memory proxyRoles = _allProxyRoles();
-        ops = new IACLOwner.Op[](9);
+        ops = new IACLOwner.Op[](_allProxyRoles().length);
 
         address cleartextArithmeticAdd = _readManifestAddress(manifest, R_CLEARTEXT_ARITHMETIC);
 
@@ -133,7 +129,9 @@ contract FhevmMaterializeStack is FhevmCreate2Base {
                 // else upgraded it. Not a retry, not a resume.
                 revert(
                     string.concat(
-                        "FhevmMaterializeStack: D - ", proxyRoles[i], " holds an implementation this manifest did not seal"
+                        "FhevmMaterializeStack: D - ",
+                        proxyRoles[i],
+                        " holds an implementation this manifest did not seal"
                     )
                 );
             }

@@ -3,22 +3,22 @@ pragma solidity ^0.8.24;
 
 // DRAFT — see ../README.md.
 
-import {ACL} from '../../pkg/src/contracts/ACL.sol';
-import {FHEVMExecutor} from '../../pkg/src/contracts/FHEVMExecutor.sol';
-import {KMSVerifier} from '../../pkg/src/contracts/KMSVerifier.sol';
-import {InputVerifier} from '../../pkg/src/contracts/InputVerifier.sol';
-import {HCULimit} from '../../pkg/src/contracts/HCULimit.sol';
-import {ProtocolConfig} from '../../pkg/src/contracts/ProtocolConfig.sol';
-import {KMSGeneration} from '../../pkg/src/contracts/KMSGeneration.sol';
-import {CleartextArithmetic} from '../../pkg/src/cleartext/CleartextArithmetic.sol';
-import {CleartextDB} from '../../pkg/src/cleartext/CleartextDB.sol';
-import {IProtocolConfig} from '../../pkg/src/contracts/interfaces/IProtocolConfig.sol';
-import {KmsNode} from '../../pkg/src/contracts/shared/Structs.sol';
-import {LocalHostBootstrap} from '../../pkg/forge/src/_internal/LocalHostBootstrap.sol';
+import {ACL} from "../../pkg/src/contracts/ACL.sol";
+import {FHEVMExecutor} from "../../pkg/src/contracts/FHEVMExecutor.sol";
+import {KMSVerifier} from "../../pkg/src/contracts/KMSVerifier.sol";
+import {InputVerifier} from "../../pkg/src/contracts/InputVerifier.sol";
+import {HCULimit} from "../../pkg/src/contracts/HCULimit.sol";
+import {ProtocolConfig} from "../../pkg/src/contracts/ProtocolConfig.sol";
+import {KMSGeneration} from "../../pkg/src/contracts/KMSGeneration.sol";
+import {CleartextArithmetic} from "../../pkg/src/cleartext/CleartextArithmetic.sol";
+import {CleartextDB} from "../../pkg/src/cleartext/CleartextDB.sol";
+import {IProtocolConfig} from "../../pkg/src/contracts/interfaces/IProtocolConfig.sol";
+import {KmsNode} from "../../pkg/src/contracts/shared/Structs.sol";
+import {LocalHostBootstrap} from "../../pkg/forge/src/_internal/LocalHostBootstrap.sol";
 
 /**
  * @title MaterializeInitData
- * @notice The nine `initializeFromEmptyProxy` payloads step D carries.
+ * @notice The `initializeFromEmptyProxy` payloads step D carries.
  *
  * Structurally this is FhevmDeployScript._materialize with the `new Impl()` expressions removed — on
  * the CREATE2 path the implementations were already created in the creates stage, so step D only has
@@ -28,7 +28,7 @@ import {LocalHostBootstrap} from '../../pkg/forge/src/_internal/LocalHostBootstr
  * Why LocalHostBootstrap and not literals
  * ---------------------------------------------------------------------------------------------
  *
- * LocalHostBootstrap is the generated Solidity mirror of DEFAUT_BOOTSTRAP_CONFIG_V13 in
+ * LocalHostBootstrap is the generated Solidity mirror of DEFAULT_BOOTSTRAP_CONFIG in
  * pkg/ts/constants.ts, so this script and the TypeScript `deploy()` with no config produce the same
  * stack: same gateway chain id, same EIP-712 verifying contracts, four coprocessor signers, four KMS
  * nodes, thresholds equal to the node count.
@@ -51,7 +51,7 @@ import {LocalHostBootstrap} from '../../pkg/forge/src/_internal/LocalHostBootstr
  * is exactly the kind of thing that deploys, verifies against itself, and fails only when the relayer
  * shows up.
  *
- * Each payload gets its own encoder below. That is not decoration: with nine ops and their init-args
+ * Each payload gets its own encoder below. That is not decoration: with every op and its init-args
  * live in one frame, legacy codegen runs out of stack slots ("Stack too deep"), and scripts compile
  * with via_ir off — the same reason FhevmDeployScript splits them.
  *
@@ -75,7 +75,7 @@ library MaterializeInitData {
         // CleartextDB's initial writer is CleartextArithmetic — the one argument here that is a host
         // address rather than bootstrap config, hence the parameter.
         if (i == 8) return abi.encodeCall(CleartextDB.initializeFromEmptyProxy, (cleartextArithmeticAdd));
-        revert('MaterializeInitData: index out of range');
+        revert("MaterializeInitData: index out of range");
     }
 
     /// @dev v13 moved the KMS signer set out of KMSVerifier into ProtocolConfig, so only the EIP-712
@@ -140,11 +140,6 @@ library MaterializeInitData {
     function _kmsThresholds() private pure returns (IProtocolConfig.KmsThresholds memory) {
         uint256 count = LocalHostBootstrap.KMS_NODE_COUNT;
         return
-            IProtocolConfig.KmsThresholds({
-                publicDecryption: count,
-                userDecryption: count,
-                kmsGen: count,
-                mpc: count
-            });
+            IProtocolConfig.KmsThresholds({publicDecryption: count, userDecryption: count, kmsGen: count, mpc: count});
     }
 }

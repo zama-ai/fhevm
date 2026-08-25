@@ -8,7 +8,7 @@ import {FhevmCreate2Base} from "./FhevmCreate2Base.s.sol";
 
 /**
  * @title FhevmDeployCreates
- * @notice Stage 1 of the deploy: all 22 CREATE2s, every one gated on its own §8 predicate.
+ * @notice Stage 1 of the deploy: every CREATE2, every one gated on its own §8 predicate.
  *
  * Idempotent by construction. Re-running is the resume path, and resume needs no local state — the
  * predicate is `getCode(predicted) != ""`, a chain query (§2). The manifest is read for the expected

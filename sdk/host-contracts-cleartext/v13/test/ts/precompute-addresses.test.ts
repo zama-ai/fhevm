@@ -48,8 +48,14 @@ const LAYOUT = {
   pauserSetAddress: 11n,
 } as const;
 
-/** What `precomputeAddresses` reports as the next free nonce: one past the last address it places. */
-const NEXT_START_NONCE_OFFSET = 12n;
+/**
+ * What `precomputeAddresses` reports as the next free nonce: one past the last address it places.
+ *
+ * Derived from LAYOUT so it cannot disagree with it. LAYOUT itself stays hand-written on purpose — it is
+ * an independent oracle for the deploy order, and deriving it from the code under test would turn this
+ * file from a check into a fifth copy of the same table.
+ */
+const NEXT_START_NONCE_OFFSET = Object.values(LAYOUT).reduce((hi, o) => (o > hi ? o : hi), 0n) + 1n;
 
 /**
  * Deployers the layout must hold for. The first is the localhost one (test 2 below); the others are

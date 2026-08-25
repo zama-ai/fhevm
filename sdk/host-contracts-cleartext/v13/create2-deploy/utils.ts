@@ -6,10 +6,10 @@
 // "erasable" subset: no `enum`, no `namespace`, no parameter properties, and relative imports must
 // carry their `.ts` extension. Union types stand in for enums throughout.
 
-import { spawnSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
-import { relative, resolve, sep } from "node:path";
-import { createInterface } from "node:readline/promises";
+import { spawnSync } from 'node:child_process';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { relative, resolve, sep } from 'node:path';
+import { createInterface } from 'node:readline/promises';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -51,7 +51,7 @@ export function warn(...lines: readonly string[]): void {
  */
 export function run(cmd: string, args: readonly string[], env?: NodeJS.ProcessEnv): number {
   const r = spawnSync(cmd, args as string[], {
-    stdio: "inherit",
+    stdio: 'inherit',
     env: env ? { ...process.env, ...env } : process.env,
   });
   return r.status ?? 1;
@@ -61,11 +61,11 @@ export function run(cmd: string, args: readonly string[], env?: NodeJS.ProcessEn
 
 /** Run a command and capture its output. Never throws; inspect `.ok`. */
 export function capture(cmd: string, args: readonly string[]): CaptureResult {
-  const r = spawnSync(cmd, args as string[], { encoding: "utf8" });
+  const r = spawnSync(cmd, args as string[], { encoding: 'utf8' });
   return {
     ok: r.status === 0,
-    stdout: (r.stdout ?? "").trim(),
-    stderr: (r.stderr ?? "").trim(),
+    stdout: (r.stdout ?? '').trim(),
+    stderr: (r.stderr ?? '').trim(),
     code: r.status ?? 1,
   };
 }
@@ -76,7 +76,7 @@ export function capture(cmd: string, args: readonly string[]): CaptureResult {
 export function captureOrFail(cmd: string, args: readonly string[]): string {
   const r = capture(cmd, args);
   if (!r.ok) {
-    fail(`Error: \`${cmd} ${args.join(" ")}\` failed (exit ${r.code}).`, r.stderr ? `       ${r.stderr}` : "");
+    fail(`Error: \`${cmd} ${args.join(' ')}\` failed (exit ${r.code}).`, r.stderr ? `       ${r.stderr}` : '');
   }
   return r.stdout;
 }
@@ -84,7 +84,7 @@ export function captureOrFail(cmd: string, args: readonly string[]): string {
 ////////////////////////////////////////////////////////////////////////////////
 
 export function requireTool(name: string): void {
-  if (!capture("command", ["-v", name]).ok && !capture("which", [name]).ok) {
+  if (!capture('command', ['-v', name]).ok && !capture('which', [name]).ok) {
     fail(`Error: ${name} not on PATH.`);
   }
 }
@@ -127,14 +127,14 @@ export function sameAddress(a: string, b: string): boolean {
  */
 export function isInside(child: string, parent: string): boolean {
   const rel = relative(resolve(parent), resolve(child));
-  return rel === "" || (!rel.startsWith("..") && !rel.startsWith(sep) && !/^[A-Za-z]:/.test(rel));
+  return rel === '' || (!rel.startsWith('..') && !rel.startsWith(sep) && !/^[A-Za-z]:/.test(rel));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
 export function readJson<T>(path: string): T | null {
   if (!existsSync(path)) return null;
-  return JSON.parse(readFileSync(path, "utf8")) as T;
+  return JSON.parse(readFileSync(path, 'utf8')) as T;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -142,16 +142,16 @@ export function readJson<T>(path: string): T | null {
 /** Append one JSON object per line. Creates the file if absent; never rewrites what is there. */
 export function appendJsonl(path: string, rows: readonly unknown[]): void {
   if (rows.length === 0) return;
-  appendFileSync(path, rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
+  appendFileSync(path, rows.map((r) => JSON.stringify(r)).join('\n') + '\n');
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
 export function readJsonl<T>(path: string): T[] {
   if (!existsSync(path)) return [];
-  return readFileSync(path, "utf8")
-    .split("\n")
-    .filter((l) => l.trim() !== "")
+  return readFileSync(path, 'utf8')
+    .split('\n')
+    .filter((l) => l.trim() !== '')
     .map((l) => JSON.parse(l) as T);
 }
 
@@ -181,7 +181,7 @@ export async function confirm(question: string): Promise<boolean> {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   try {
     const answer = await rl.question(question);
-    return answer.trim().toLowerCase() === "y";
+    return answer.trim().toLowerCase() === 'y';
   } finally {
     rl.close();
   }

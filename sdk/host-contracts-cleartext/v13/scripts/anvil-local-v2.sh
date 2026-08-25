@@ -144,12 +144,13 @@ deploy_empty_proxies() {
 # Phase 2 — PauserSet at nonce 11, the only anvil_setCode here.
 #
 # PauserSet is the sole blob shipped as runtime code (no constructor), so it is the only one setCode can
-# place. setCode consumes no nonce, so 11 is skipped by hand — otherwise ACLOwner takes it and lands on
+# place. setCode consumes no nonce, so PauserSet's nonce is skipped by hand — otherwise ACLOwner takes
+# it and lands on
 # PauserSet's own address. That pairing works with `cast` because there is no local simulation to desync;
 # inside a forge script it silently would not.
 install_pauser_set() {
     anvil_rpc anvil_setCode "$PAUSER_SET_ADDRESS" "0x$(read_blob PAUSER_SET_RUNTIME_CODE)"
-    anvil_rpc anvil_setNonce "$DEPLOYER_ADDRESS" "$(printf '0x%x' $((START_NONCE + 12)))"
+    anvil_rpc anvil_setNonce "$DEPLOYER_ADDRESS" "$(printf '0x%x' $((START_NONCE + $(read_scalar ADDRESSED_NONCE_COUNT))))"
     local code
     code="$(cast code "$PAUSER_SET_ADDRESS" --rpc-url "$RPC_URL")"
     [ "${#code}" -gt 2 ] || { echo "Error: anvil_setCode left no code at PauserSet." >&2; exit 1; }

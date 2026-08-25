@@ -16,10 +16,10 @@ import type {
   AbstractEthereumUtils,
   CleartextAddresses,
   FhevmAddressesV12,
-  FhevmAddressesV13,
+  FhevmAddresses,
   UpdateV12ToV13MigrationConfig,
 } from './types/public.js';
-import { buildHostAddressReplacementsV13, deployImplementations, sendStep } from './utils.js';
+import { buildHostAddressReplacements, deployImplementations, sendStep } from './utils.js';
 import { deployEmptyUUPSProxy, deployERC1967Proxy } from './proxies.js';
 import { toACLOwnerOps } from './aclOwner.js';
 import { generateFromExistingDefaultKmsNodes } from './constants.js';
@@ -86,7 +86,7 @@ export async function updateV12ToV13(parameters: {
     emptyUUPSProxyAddress: emptyImpl.contractAddress,
   });
 
-  const fhevmV13: FhevmAddressesV13 = {
+  const fhevmUpgraded: FhevmAddresses = {
     ...existingV12,
     protocolConfigAddress: protocolConfigProxy.contractAddress,
     kmsGenerationAddress: kmsGenerationProxy.contractAddress,
@@ -96,7 +96,7 @@ export async function updateV12ToV13(parameters: {
   const { implementations } = await buildUpdateV12ToV13Plan({
     ethUtils: parameters.ethUtils,
     deployer: parameters.deployer,
-    fhevmAddresses: fhevmV13,
+    fhevmAddresses: fhevmUpgraded,
     cleartextAddresses: parameters.cleartext,
     pauserSetAddress,
     migration,
@@ -115,8 +115,8 @@ export async function updateV12ToV13(parameters: {
   });
 
   return {
-    protocolConfigAddress: fhevmV13.protocolConfigAddress,
-    kmsGenerationAddress: fhevmV13.kmsGenerationAddress,
+    protocolConfigAddress: fhevmUpgraded.protocolConfigAddress,
+    kmsGenerationAddress: fhevmUpgraded.kmsGenerationAddress,
   };
 }
 
@@ -165,12 +165,12 @@ async function resolveDefaultMigration(parameters: {
 async function buildUpdateV12ToV13Plan(parameters: {
   readonly ethUtils: AbstractEthereumUtils;
   readonly deployer: AbstractEthereumSigner;
-  readonly fhevmAddresses: FhevmAddressesV13;
+  readonly fhevmAddresses: FhevmAddresses;
   readonly cleartextAddresses: CleartextAddresses;
   readonly pauserSetAddress: string;
   readonly migration: UpdateV12ToV13MigrationConfig;
 }): Promise<{ readonly implementations: readonly DeployedImplementation[] }> {
-  const addressReplacements = buildHostAddressReplacementsV13({
+  const addressReplacements = buildHostAddressReplacements({
     fhevmAddresses: parameters.fhevmAddresses,
     cleartextAddresses: parameters.cleartextAddresses,
     pauserSetAddress: parameters.pauserSetAddress,

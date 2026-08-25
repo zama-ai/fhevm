@@ -38,7 +38,7 @@ async function main(): Promise<void> {
     deployer: adapters.signer,
     admin: adapters.signer,
     precomputed: { fhevmAddresses, cleartextAddresses, pauserSetAddress },
-    // No `config`, so `deploy()` applies DEFAUT_BOOTSTRAP_CONFIG_V13 — the Solidity mirror of which is
+    // No `config`, so `deploy()` applies DEFAULT_BOOTSTRAP_CONFIG — the Solidity mirror of which is
     // pkg/forge/src/_internal/LocalHostBootstrap.sol. That default registers the coprocessor and KMS
     // signers derived from FHEVM_MNEMONIC, which is what the js-sdk cleartext relayer holds keys for and
     // looks up by on-chain address. The hand-rolled config this replaced registered the deployer instead,

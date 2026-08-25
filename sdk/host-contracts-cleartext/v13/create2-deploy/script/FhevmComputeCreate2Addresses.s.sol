@@ -30,11 +30,11 @@ import {FhevmCreate2Base} from "./FhevmCreate2Base.s.sol";
  *   pass 2   in: that addresses.sol
  *            hashes EmptyUUPSProxy, PauserSet, ACLOwner — all three import aclAdd ONLY, so the
  *            marker siblings around it are harmless
- *            out: impl₃, the eight proxies, pauserSetAdd, aclOwnerAdd; writes the complete
+ *            out: impl₃, the shared-impl proxies, pauserSetAdd, aclOwnerAdd; writes the complete
  *                 addresses.sol and pass2.json
  *
  *   pass 3   in: the complete addresses.sol
- *            hashes the nine implementations, which bake every host address and so could not be
+ *            hashes the implementations, which bake every host address and so could not be
  *            hashed before now
  *            ASSERTS every pass-1 and pass-2 hash is unchanged, scans for surviving markers,
  *            checks EIP-3860, writes manifest.json
@@ -118,12 +118,12 @@ contract FhevmComputeCreate2Addresses is FhevmCreate2Base {
         bytes memory sharedImplCode = _initCode(A_EMPTY_SHARED);
         address impl3 = _predictCreate2Address(R_IMPL_EMPTY_SHARED, sharedImplCode);
 
-        // §5.4: the eight proxies share ONE init-code hash — same implementation, same empty
+        // §5.4: the shared-impl proxies share ONE init-code hash — same implementation, same empty
         // `initialize()` — and are distinguished purely by salt. That is the whole reason a shared
         // EmptyUUPSProxy is worth keeping on this path too.
         bytes memory sharedProxyCode = _proxyInitCode(impl3, _sharedProxyInitData());
         string[] memory roles = _sharedProxyRoles();
-        address[] memory proxies = new address[](8);
+        address[] memory proxies = new address[](_sharedProxyRoles().length);
         for (uint256 i = 0; i < 8; i++) {
             proxies[i] = _predictCreate2Address(roles[i], sharedProxyCode);
         }
@@ -132,7 +132,10 @@ contract FhevmComputeCreate2Addresses is FhevmCreate2Base {
 
         // §5.1 step 6: a leaf. Its address is referenced by nothing — but it must still be
         // predictable, because step E hands it to the admin and `verify` checks it.
-        address aclOwnerAdd = _predictCreate2Address(R_ACL_OWNER, _initCode(A_ACL_OWNER, abi.encode(cfg.deployer, aclAdd)));
+        address aclOwnerAdd = _predictCreate2Address(
+            R_ACL_OWNER,
+            _initCode(A_ACL_OWNER, abi.encode(cfg.deployer, aclAdd))
+        );
 
         console.log("  impl1 (EmptyUUPSProxyACL)", impl1);
         console.log("  impl3 (EmptyUUPSProxy)   ", impl3);
@@ -143,7 +146,7 @@ contract FhevmComputeCreate2Addresses is FhevmCreate2Base {
         console.log("  PAUSER_SET_ADDRESS      ", pauserSetAdd);
         console.log("  ACL_OWNER               ", aclOwnerAdd);
 
-        address[] memory rest = new address[](9);
+        address[] memory rest = new address[](_sharedProxyRoles().length + 1);
         for (uint256 i = 0; i < 8; i++) {
             rest[i] = proxies[i];
         }
@@ -177,7 +180,7 @@ contract FhevmComputeCreate2Addresses is FhevmCreate2Base {
 
         // -- the assertion (§5.3) ----------------------------------------------------------
         //
-        // Recompute pass 2's inputs against build 3 and require them unchanged. If adding the eight
+        // Recompute pass 2's inputs against build 3 and require them unchanged. If adding the shared-impl
         // real addresses moved EmptyUUPSProxy's or PauserSet's initcode, then every address pass 2
         // wrote is wrong, and every implementation in this build was compiled against wrong
         // addresses. Fail here.
@@ -186,8 +189,9 @@ contract FhevmComputeCreate2Addresses is FhevmCreate2Base {
         require(aclAdd == vm.parseJsonAddress(scratch, ".aclAdd"), "pass3: aclAdd moved between builds");
 
         bytes32 sharedImplHash = keccak256(_initCode(A_EMPTY_SHARED));
-        bytes32 sharedProxyHash =
-            keccak256(_proxyInitCode(vm.parseJsonAddress(scratch, ".impl3"), _sharedProxyInitData()));
+        bytes32 sharedProxyHash = keccak256(
+            _proxyInitCode(vm.parseJsonAddress(scratch, ".impl3"), _sharedProxyInitData())
+        );
 
         require(
             sharedImplHash == vm.parseJsonBytes32(scratch, ".sharedImplHash"),
@@ -198,12 +202,13 @@ contract FhevmComputeCreate2Addresses is FhevmCreate2Base {
             "pass3: ERC1967Proxy init-code hash moved - pass-2 addresses are invalid"
         );
         require(
-            _predictCreate2Address(R_PAUSER_SET, _initCode(A_PAUSER_SET)) == vm.parseJsonAddress(scratch, ".pauserSetAdd"),
+            _predictCreate2Address(R_PAUSER_SET, _initCode(A_PAUSER_SET)) ==
+                vm.parseJsonAddress(scratch, ".pauserSetAdd"),
             "pass3: PauserSet init-code hash moved - pass-2 addresses are invalid"
         );
         require(
-            _predictCreate2Address(R_ACL_OWNER, _initCode(A_ACL_OWNER, abi.encode(cfg.deployer, aclAdd)))
-                == vm.parseJsonAddress(scratch, ".aclOwnerAdd"),
+            _predictCreate2Address(R_ACL_OWNER, _initCode(A_ACL_OWNER, abi.encode(cfg.deployer, aclAdd))) ==
+                vm.parseJsonAddress(scratch, ".aclOwnerAdd"),
             "pass3: ACLOwner init-code hash moved - pass-2 addresses are invalid"
         );
 
@@ -227,7 +232,7 @@ contract FhevmComputeCreate2Addresses is FhevmCreate2Base {
     function _computeImplementations() private view returns (address[] memory impls) {
         string[] memory proxyRoles = _allProxyRoles();
         address[] memory markers = _markerAddresses();
-        impls = new address[](9);
+        impls = new address[](_allProxyRoles().length);
 
         for (uint256 i = 0; i < 9; i++) {
             bytes memory code = _initCode(_implArtifact(i));
@@ -241,7 +246,7 @@ contract FhevmComputeCreate2Addresses is FhevmCreate2Base {
             // pattern rather than address(0). Without this, a silently-ignored FOUNDRY_REMAPPINGS
             // deploys marker addresses as if they were real ones — a stack that verifies against
             // itself and works for nobody. scripts/deploy.sh greps the ACL artifact for the same
-            // reason; this checks all nine, against all ten markers.
+            // reason; this checks every implementation, against every marker.
             for (uint256 m = 0; m < markers.length; m++) {
                 require(
                     !_contains(code, markers[m]),
@@ -263,7 +268,10 @@ contract FhevmComputeCreate2Addresses is FhevmCreate2Base {
     // "this plan adds a second path; it replaces nothing" true at the build level too.
 
     function _writeAddresses(address aclAdd, address[] memory rest) private {
-        require(rest.length == 9, "FhevmComputeCreate2Addresses: rest must hold the 8 proxies + PauserSet");
+        require(
+            rest.length == _sharedProxyRoles().length + 1,
+            "FhevmComputeCreate2Addresses: rest must hold the shared-impl proxies + PauserSet"
+        );
 
         string memory c = string.concat(
             "// SPDX-License-Identifier: BSD-3-Clause-Clear\n",
@@ -295,17 +303,17 @@ contract FhevmComputeCreate2Addresses is FhevmCreate2Base {
         return string.concat("\naddress constant ", name, " = address(", vm.toString(value), ");\n");
     }
 
-    /// @dev Pass-1 fillers for the nine constants that are not yet known. Recognisable on sight and
+    /// @dev Pass-1 fillers for the host-address constants that are not yet known. Recognisable on sight and
     ///      in a hex dump, so pass 3's scan finds them; `address(0)` would not be — it appears in
     ///      legitimately-compiled bytecode all the time.
     function _markerAddresses() private pure returns (address[] memory m) {
-        m = new address[](9);
+        m = new address[](_allProxyRoles().length);
         for (uint256 i = 0; i < 9; i++) {
             m[i] = address(uint160(0xdead0000 + i));
         }
     }
 
-    /// @dev Naive 20-byte scan. Fine for nine artifacts of ~24 KB in a script that runs once.
+    /// @dev Naive 20-byte scan. Fine for a handful of artifacts of ~24 KB in a script that runs once.
     function _contains(bytes memory haystack, address needle) private pure returns (bool) {
         bytes20 n = bytes20(needle);
         if (haystack.length < 20) return false;
@@ -326,7 +334,7 @@ contract FhevmComputeCreate2Addresses is FhevmCreate2Base {
     // pass2.json (scratch) and manifest.json (the seal)
     // =======================================================================================
 
-    /// @dev A struct, not eight parameters: with via_ir off, legacy codegen runs out of stack slots
+    /// @dev A struct, not a long parameter list: with via_ir off, legacy codegen runs out of stack slots
     ///      well before that — the same "Stack too deep" the nonce path's `_materialize` works around.
     struct Pass2 {
         bytes32 sharedImplHash;

@@ -58,6 +58,7 @@ import {
   PACKAGE_ROOT_ABS_PATH,
   ZAMA_LOCAL_CONFIG,
   ADDRESSED_NONCE_COUNT,
+  NONCE_LABEL,
   NONCE_OFFSET,
   UNNAMED_NONCE_CONTRACTS,
   type AddressName,
@@ -250,6 +251,15 @@ function _renderAddresses(stack: LocalHostStack): string {
     .join('\n');
   const constants = ADDRESS_NAMES.map((name) => `address constant ${name} = ${stack.byName[name]};`).join('\n');
 
+  // How many ERC-1967 proxies the stack materializes — the arity of every ops array the deploy layers
+  // build. Emitted rather than written down: it used to be a literal `9` in six places across four
+  // deploy layers, and none of them could disagree loudly. An ops array one entry too long carries a
+  // zero-address entry, and `ACLOwner.upgrade` then calls `upgradeToAndCall` on address(0).
+  //
+  // Derived as "named addresses that sit behind a proxy", read off NONCE_LABEL rather than by excluding
+  // known names, so a second non-proxy contract (PauserSet is the only one today) is handled with no edit.
+  const proxyCount = ADDRESS_NAMES.filter((name) => NONCE_LABEL[name].startsWith('ERC1967Proxy')).length;
+
   // ^0.8.24, not the model's ^0.8.27: it is the payload's own floor (rule 16), it is what the harness
   // pins so test/FhevmDeploy.t.sol can compile these files, and it accepts every consumer 0.8.27 would.
   return `// SPDX-License-Identifier: BSD-3-Clause-Clear
@@ -278,6 +288,13 @@ address constant DEPLOYER_ADDRESS = ${stack.deployer};
 /// @dev Nonce the sequence starts from — the deployer must have sent no transaction yet.
 uint64 constant DEPLOYER_START_NONCE = ${String(stack.startNonce)};
 
+/// @dev How many ERC-1967 proxies the stack materializes — the arity of the ACLOwner ops array.
+uint256 constant PROXY_COUNT = ${String(proxyCount)};
+
+/// @dev Nonces the address-critical part of the deploy consumes: every named contract plus the two
+///      empty-proxy implementations. The first nonce NOT pinned by any baked-in address.
+uint64 constant ADDRESSED_NONCE_COUNT = ${String(ADDRESSED_NONCE_COUNT)};
+
 /// @dev Contracts created at each nonce, in deploy order.
 ${order}
 
@@ -289,7 +306,7 @@ ${constants}
 
 /** Total over ContractName, so a contract without a name is a compile error in CONSTANT_NAMES. */
 /**
- * The Solidity mirror of `DEFAUT_BOOTSTRAP_CONFIG_V13` in ts/constants.ts — what the initializers are
+ * The Solidity mirror of `DEFAULT_BOOTSTRAP_CONFIG` in ts/constants.ts — what the initializers are
  * given when nobody overrides them.
  *
  * The signer pools are re-derived through `deriveSigners`, the same function that writes ts/signers/,
@@ -349,7 +366,7 @@ pragma solidity ^0.8.24;
 // DO NOT EDIT — your changes will be overwritten. See internal/generateLocalHostBytecode.ts.
 //
 // The bootstrap arguments ts/deploy.ts applies when no config is supplied — the Solidity mirror of
-// DEFAUT_BOOTSTRAP_CONFIG_V13. The signer pools are derived from FHEVM_MNEMONIC at the same HD paths the
+// DEFAULT_BOOTSTRAP_CONFIG. The signer pools are derived from FHEVM_MNEMONIC at the same HD paths the
 // js-sdk cleartext relayer derives its keys from, so a stack deployed with these is one the SDK can sign
 // for. Registering any other signer leaves the relayer with no key for the address the chain reports.
 

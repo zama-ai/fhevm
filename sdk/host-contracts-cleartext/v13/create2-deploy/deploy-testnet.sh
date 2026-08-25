@@ -23,7 +23,7 @@
 #                       admin's own transaction lands (the multisig case). See stepF_accept_ownership_as_admin
 #   --stage STAGE       one of, in order:
 #                         compute       3 builds + 3 passes, writes the manifest      (no tx)
-#                         creates       22 CREATE2s through the factory
+#                         creates       every CREATE2 through the factory
 #                         pausers       A, A'  register the pausers
 #                         offer-acl     B      ACL.transferOwnership(ACLOwner)   — offers only
 #                         accept-acl    C      ACLOwner.acceptACLOwnership()     — ownership MOVES
@@ -296,7 +296,7 @@ preflight() {
     #                        reseal over another network's record.
     #   wrong deploymentId   the salts have changed, so this is a DIFFERENT address set (§14.2) that
     #                        happens to be pointed at the same directory. Every read-only stage would
-    #                        compute new salts while reading old addresses and report drift on all 22.
+    #                        compute new salts while reading old addresses and report drift on all of them.
     #
     # In both cases the standing stack is unharmed — but its manifest is how it is verified and
     # upgraded for the rest of its life (§9), and overwriting that is the actual loss.
@@ -346,7 +346,7 @@ preflight() {
 
     # --- §11 R3: funding, checked before starting rather than discovered at send time ------
     #
-    # Deploying via the factory pays initcode as CALLDATA (16 gas per non-zero byte), and nine
+    # Deploying via the factory pays initcode as CALLDATA (16 gas per non-zero byte), and the
     # implementations of up to ~24 KB runtime each add materially per create. Faucet-funded
     # deployers run dry mid-run. The number below is a placeholder: measure it against a fork
     # before this leaves draft.
@@ -734,12 +734,12 @@ broadcast() {
 }
 
 creates() {
-    echo "==> creates (22 CREATE2s, each gated on getCode)"
+    echo "==> creates (one CREATE2 per create, each gated on getCode)"
     STAGE_LABEL="creates"
     use_generated_config
     # --slow: one transaction at a time, waiting for each receipt. §6's two hard edges (impl₁ before
-    # the ACL proxy, impl₃ before the eight) are satisfied by nonce ordering alone, but --slow turns
-    # a mid-run failure into "stop here" instead of "the next nine also fail in the same block".
+    # the ACL proxy, impl₃ before the rest) are satisfied by nonce ordering alone, but --slow turns
+    # a mid-run failure into "stop here" instead of "the rest also fail in the same block".
     broadcast "FhevmDeployCreates.s.sol:FhevmDeployCreates"
 }
 
@@ -778,7 +778,7 @@ stepC_accept_acl_ownership() {
     broadcast "FhevmAcceptACLOwnership.s.sol:FhevmAcceptACLOwnership"
 }
 
-# Step D — nine empty proxies become the real stack, in ONE transaction. The atomicity is why this
+# Step D — the empty proxies become the real stack, in ONE transaction. The atomicity is why this
 # stage cannot be resumed halfway: see the tri-state note in FhevmMaterializeStack.
 stepD_materialize_stack() {
     echo "==> materialize the stack (step D)"

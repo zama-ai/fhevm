@@ -5,7 +5,7 @@ pragma solidity ^0.8.24;
 // DO NOT EDIT — your changes will be overwritten. See internal/generateLocalHostBytecode.ts.
 //
 // The bootstrap arguments ts/deploy.ts applies when no config is supplied — the Solidity mirror of
-// DEFAUT_BOOTSTRAP_CONFIG_V13. The signer pools are derived from FHEVM_MNEMONIC at the same HD paths the
+// DEFAULT_BOOTSTRAP_CONFIG. The signer pools are derived from FHEVM_MNEMONIC at the same HD paths the
 // js-sdk cleartext relayer derives its keys from, so a stack deployed with these is one the SDK can sign
 // for. Registering any other signer leaves the relayer with no key for the address the chain reports.
 

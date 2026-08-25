@@ -1,74 +1,72 @@
-import type {
-  AbstractEthereumUtils,
-  CleartextAddresses,
-  FhevmAddressesV12,
-  FhevmAddressesV13,
-} from './types/public.js';
+import type { AbstractEthereumUtils, CleartextAddresses, FhevmAddresses } from './types/public.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type FhevmAddressAllocationV12 = {
-  readonly fhevmAddresses: FhevmAddressesV12;
-  readonly nextStartNonce: bigint;
-};
-
-type FhevmAddressAllocationV13 = {
-  readonly fhevmAddresses: FhevmAddressesV13;
+type FhevmAddressAllocation = {
+  readonly fhevmAddresses: FhevmAddresses;
   readonly nextStartNonce: bigint;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
 
-function precomputeFhevmAddressesV12(parameters: {
-  readonly ethUtils: AbstractEthereumUtils;
-  readonly from: `0x${string}`;
-  readonly startNonce: bigint;
-}): FhevmAddressAllocationV12 {
-  return {
-    fhevmAddresses: {
-      aclAddress: parameters.ethUtils.getContractAddress({ from: parameters.from, nonce: parameters.startNonce + 1n }),
-      fhevmExecutorAddress: parameters.ethUtils.getContractAddress({
-        from: parameters.from,
-        nonce: parameters.startNonce + 3n,
-      }),
-      kmsVerifierAddress: parameters.ethUtils.getContractAddress({
-        from: parameters.from,
-        nonce: parameters.startNonce + 4n,
-      }),
-      inputVerifierAddress: parameters.ethUtils.getContractAddress({
-        from: parameters.from,
-        nonce: parameters.startNonce + 5n,
-      }),
-      hcuLimitAddress: parameters.ethUtils.getContractAddress({
-        from: parameters.from,
-        nonce: parameters.startNonce + 6n,
-      }),
-    },
-    nextStartNonce: parameters.startNonce + 7n,
-  };
-}
+/**
+ * Nonce offset, relative to the deployer's start nonce, at which each host proxy is created by
+ * `deployEmptyProxies` — and the authoritative statement of the deploy layout on the TS side.
+ *
+ * Offsets 0 and 2 carry no named address: they are the two empty-proxy implementations the proxies are
+ * constructed over (`EmptyUUPSProxyACL`, and the shared `EmptyUUPSProxy`). That is why the numbering has
+ * gaps and cannot be an index.
+ *
+ * `satisfies Record<keyof FhevmAddresses, bigint>` is the load-bearing part: adding a field to
+ * `FhevmAddresses` without giving it an offset here is a compile error rather than an address that
+ * silently reads `undefined`.
+ *
+ * `internal/constants.ts` mirrors this table for the harness generators, which cannot import `pkg/ts`
+ * (see its `HOST_NONCE_OFFSET` comment for why). The two must move together; `test/templates.test.ts`
+ * and `test/ts/precompute-addresses.test.ts` are what catch a divergence.
+ */
+const HOST_NONCE_OFFSET = {
+  aclAddress: 1n,
+  fhevmExecutorAddress: 3n,
+  kmsVerifierAddress: 4n,
+  inputVerifierAddress: 5n,
+  hcuLimitAddress: 6n,
+  protocolConfigAddress: 7n,
+  kmsGenerationAddress: 8n,
+} as const satisfies Record<keyof FhevmAddresses, bigint>;
+
+/**
+ * How many nonces the host block consumes — one past its highest offset, so the unnamed empty-proxy
+ * implementations at 0 and 2 are counted too.
+ *
+ * Derived rather than written down. Everything after the host block is positioned against this, so a
+ * literal here would be a second thing to remember every time the block grows or shrinks — which is
+ * exactly what a generation change does.
+ */
+const HOST_NONCE_COUNT: bigint =
+  Object.values(HOST_NONCE_OFFSET).reduce((highest, offset) => (offset > highest ? offset : highest), 0n) + 1n;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-function precomputeFhevmAddressesV13(parameters: {
+function precomputeFhevmAddresses(parameters: {
   readonly ethUtils: AbstractEthereumUtils;
   readonly from: `0x${string}`;
   readonly startNonce: bigint;
-}): FhevmAddressAllocationV13 {
-  const v12 = precomputeFhevmAddressesV12(parameters);
+}): FhevmAddressAllocation {
+  const at = (offset: bigint): `0x${string}` =>
+    parameters.ethUtils.getContractAddress({ from: parameters.from, nonce: parameters.startNonce + offset });
+
   return {
     fhevmAddresses: {
-      ...v12.fhevmAddresses,
-      protocolConfigAddress: parameters.ethUtils.getContractAddress({
-        from: parameters.from,
-        nonce: v12.nextStartNonce + 0n,
-      }),
-      kmsGenerationAddress: parameters.ethUtils.getContractAddress({
-        from: parameters.from,
-        nonce: v12.nextStartNonce + 1n,
-      }),
+      aclAddress: at(HOST_NONCE_OFFSET.aclAddress),
+      fhevmExecutorAddress: at(HOST_NONCE_OFFSET.fhevmExecutorAddress),
+      kmsVerifierAddress: at(HOST_NONCE_OFFSET.kmsVerifierAddress),
+      inputVerifierAddress: at(HOST_NONCE_OFFSET.inputVerifierAddress),
+      hcuLimitAddress: at(HOST_NONCE_OFFSET.hcuLimitAddress),
+      protocolConfigAddress: at(HOST_NONCE_OFFSET.protocolConfigAddress),
+      kmsGenerationAddress: at(HOST_NONCE_OFFSET.kmsGenerationAddress),
     },
-    nextStartNonce: v12.nextStartNonce + 2n,
+    nextStartNonce: parameters.startNonce + HOST_NONCE_COUNT,
   };
 }
 
@@ -79,24 +77,25 @@ export function precomputeAddresses(parameters: {
   readonly from: `0x${string}`;
   readonly startNonce: bigint;
 }): {
-  fhevmAddresses: FhevmAddressesV13;
+  fhevmAddresses: FhevmAddresses;
   cleartextAddresses: CleartextAddresses;
   pauserSetAddress: string;
   nextStartNonce: bigint;
 } {
-  const { fhevmAddresses, nextStartNonce } = precomputeFhevmAddressesV13(parameters);
-  // Cleartext infra proxies follow the v13 core, then PauserSet.
+  const { fhevmAddresses, nextStartNonce } = precomputeFhevmAddresses(parameters);
+  const at = (nonce: bigint): `0x${string}` => parameters.ethUtils.getContractAddress({ from: parameters.from, nonce });
+
+  // The cleartext-infra proxies follow the host block, then PauserSet. Their offsets are not chosen —
+  // they are `HOST_NONCE_COUNT + k` — so a host contract added or removed shifts them automatically.
   const cleartextAddresses: CleartextAddresses = {
-    cleartextArithmeticAddress: parameters.ethUtils.getContractAddress({
-      from: parameters.from,
-      nonce: nextStartNonce,
-    }),
-    cleartextDbAddress: parameters.ethUtils.getContractAddress({ from: parameters.from, nonce: nextStartNonce + 1n }),
+    cleartextArithmeticAddress: at(nextStartNonce),
+    cleartextDbAddress: at(nextStartNonce + 1n),
   };
+
   return {
     fhevmAddresses,
     cleartextAddresses,
-    pauserSetAddress: parameters.ethUtils.getContractAddress({ from: parameters.from, nonce: nextStartNonce + 2n }),
+    pauserSetAddress: at(nextStartNonce + 2n),
     nextStartNonce: nextStartNonce + 3n,
   };
 }

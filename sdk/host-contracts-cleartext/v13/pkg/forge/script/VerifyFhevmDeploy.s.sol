@@ -16,6 +16,7 @@ import {CleartextArithmetic} from "../../src/cleartext/CleartextArithmetic.sol";
 import {CleartextDB} from "../../src/cleartext/CleartextDB.sol";
 import {ACLOwner} from "../../src/upgrade/ACLOwner.sol";
 import {LocalHostBootstrap} from "../src/_internal/LocalHostBootstrap.sol";
+import {LocalHostVersions} from "../src/_internal/LocalHostVersions.sol";
 
 import {
     aclAdd,
@@ -88,7 +89,7 @@ interface IEIP712Domain {
  *   4. ownership— ACL is owned by an ACLOwner *contract* (not an EOA) whose `acl()` points back at it,
  *                 plus whatever the optional env vars pin
  *   5. bootstrap— signers, KMS nodes, thresholds, HCU limits and both EIP-712 domains, against
- *                 LocalHostBootstrap (the generated mirror of DEFAUT_BOOTSTRAP_CONFIG_V13)
+ *                 LocalHostBootstrap (the generated mirror of DEFAULT_BOOTSTRAP_CONFIG)
  *
  * Every check is reported, then the script reverts if any failed — so one run lists everything wrong
  * rather than stopping at the first problem. The one exception is group 1: if an address holds no code
@@ -159,24 +160,29 @@ contract VerifyFhevmDeploy is Script {
 
     /**
      * @dev The three cleartext subclasses inherit `getVersion` from the contract that declares it, so they
-     *      report the base name ("FHEVMExecutor v0.4.0", not "CleartextFHEVMExecutor v0.4.0"). CleartextDB
-     *      declares no `getVersion` at all, hence its absence here — it is covered by the wiring group.
+     *      report the base name — `CleartextFHEVMExecutor` identifies itself as `FHEVMExecutor`, which is
+     *      why the constant below is keyed by the reporting name rather than the deployed type.
+     *      CleartextDB declares no `getVersion` at all, hence its absence here — it is covered by the
+     *      wiring group.
+     *
+     *      The expected strings come from `LocalHostVersions`, generated from the contracts' own
+     *      CONTRACT_NAME + MAJOR/MINOR/PATCH constants, so a version bump cannot leave this check stale.
      */
     function _checkVersions() private {
         console.log("[versions]");
-        _eqStr("ACL.getVersion", ACL(aclAdd).getVersion(), "ACL v0.4.0");
-        _eqStr("FHEVMExecutor.getVersion", FHEVMExecutor(fhevmExecutorAdd).getVersion(), "FHEVMExecutor v0.4.0");
-        _eqStr("KMSVerifier.getVersion", KMSVerifier(kmsVerifierAdd).getVersion(), "KMSVerifier v0.3.0");
-        _eqStr("InputVerifier.getVersion", InputVerifier(inputVerifierAdd).getVersion(), "InputVerifier v0.2.0");
-        _eqStr("HCULimit.getVersion", HCULimit(hcuLimitAdd).getVersion(), "HCULimit v0.3.0");
-        _eqStr("ProtocolConfig.getVersion", ProtocolConfig(protocolConfigAdd).getVersion(), "ProtocolConfig v0.1.0");
-        _eqStr("KMSGeneration.getVersion", KMSGeneration(kmsGenerationAdd).getVersion(), "KMSGeneration v0.1.0");
+        _eqStr("ACL.getVersion", ACL(aclAdd).getVersion(), LocalHostVersions.ACL);
+        _eqStr("FHEVMExecutor.getVersion", FHEVMExecutor(fhevmExecutorAdd).getVersion(), LocalHostVersions.FHEVM_EXECUTOR);
+        _eqStr("KMSVerifier.getVersion", KMSVerifier(kmsVerifierAdd).getVersion(), LocalHostVersions.KMS_VERIFIER);
+        _eqStr("InputVerifier.getVersion", InputVerifier(inputVerifierAdd).getVersion(), LocalHostVersions.INPUT_VERIFIER);
+        _eqStr("HCULimit.getVersion", HCULimit(hcuLimitAdd).getVersion(), LocalHostVersions.HCU_LIMIT);
+        _eqStr("ProtocolConfig.getVersion", ProtocolConfig(protocolConfigAdd).getVersion(), LocalHostVersions.PROTOCOL_CONFIG);
+        _eqStr("KMSGeneration.getVersion", KMSGeneration(kmsGenerationAdd).getVersion(), LocalHostVersions.KMS_GENERATION);
         _eqStr(
             "CleartextArithmetic.getVersion",
             CleartextArithmetic(cleartextArithmeticAdd).getVersion(),
-            "CleartextArithmetic v0.4.0"
+            LocalHostVersions.CLEARTEXT_ARITHMETIC
         );
-        _eqStr("PauserSet.getVersion", PauserSet(pauserSetAdd).getVersion(), "PauserSet v0.1.0");
+        _eqStr("PauserSet.getVersion", PauserSet(pauserSetAdd).getVersion(), LocalHostVersions.PAUSER_SET);
     }
 
     // ------------------------------------------------------------------

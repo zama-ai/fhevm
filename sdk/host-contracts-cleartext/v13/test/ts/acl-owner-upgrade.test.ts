@@ -1,4 +1,4 @@
-import { deploy, precomputeAddresses, type BootstrapConfigV13 } from '@fhevm/host-contracts-cleartext/ts';
+import { deploy, precomputeAddresses, type BootstrapConfig } from '@fhevm/host-contracts-cleartext/ts';
 import { createPublicClient, createWalletClient, getAddress, http, type Address, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { foundry } from 'viem/chains';
@@ -65,7 +65,7 @@ function bootstrapConfig(parameters: {
   readonly coprocessorSigner: string;
   readonly kmsTxSender: string;
   readonly kmsSigner: string;
-}): BootstrapConfigV13 {
+}): BootstrapConfig {
   return {
     kmsVerifier: { verifyingContractSource: parameters.verifyingContractSource, chainIDSource: 1n },
     inputVerifier: {

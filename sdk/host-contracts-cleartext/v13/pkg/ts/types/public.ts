@@ -1,3 +1,28 @@
+/**
+ * The host address set **this package deploys**.
+ *
+ * Deliberately unsuffixed. A package is already pinned to one protocol generation by its own `version`,
+ * so a `V13` suffix would restate inside the package what the package name and version say outside it —
+ * and it is what made every previous-generation port a rename of ~70 call sites. Where two generations
+ * genuinely meet, the version stays in the name: see `FhevmAddressesV12` below and `updateV12ToV13`.
+ */
+export type FhevmAddresses = {
+  readonly aclAddress: string;
+  readonly fhevmExecutorAddress: string;
+  readonly kmsVerifierAddress: string;
+  readonly inputVerifierAddress: string;
+  readonly hcuLimitAddress: string;
+  readonly protocolConfigAddress: string;
+  readonly kmsGenerationAddress: string;
+};
+
+/**
+ * The **previous** generation's host address set — what `updateV12ToV13` upgrades *from*.
+ *
+ * Written out rather than derived from `FhevmAddresses` by omission: it describes a different protocol
+ * generation that happens to overlap, not a subset of this one. Declaring it independently is what lets
+ * `FhevmAddresses` change without silently redefining what "a v12 stack" means.
+ */
 export type FhevmAddressesV12 = {
   readonly aclAddress: string;
   readonly fhevmExecutorAddress: string;
@@ -6,14 +31,9 @@ export type FhevmAddressesV12 = {
   readonly hcuLimitAddress: string;
 };
 
-export type FhevmAddressesV13 = FhevmAddressesV12 & {
-  readonly protocolConfigAddress: string;
-  readonly kmsGenerationAddress: string;
-};
-
 /**
  * Cleartext-only infrastructure addresses (test stack): the arithmetic/persistence contract and the
- * shared cleartext store. Kept separate from `FhevmAddressesV13` so the real host address set stays clean.
+ * shared cleartext store. Kept separate from `FhevmAddresses` so the real host address set stays clean.
  */
 export type CleartextAddresses = {
   readonly cleartextArithmeticAddress: string;
@@ -166,18 +186,18 @@ export type KmsThresholds = {
   readonly mpc: bigint;
 };
 
-/** Bootstrap init values for a fresh v13 stack (`deploy`). One entry per proxy that takes init args;
+/** Bootstrap init values for a fresh stack (`deploy`). One entry per proxy that takes init args;
  * ACL/FHEVMExecutor/KMSGeneration take none. */
-export type BootstrapConfigV13 = {
+export type BootstrapConfig = {
   readonly kmsVerifier: KMSVerifierInitConfig;
   readonly inputVerifier: InputVerifierInitConfig;
   readonly hcuLimit: HCULimitInitConfig;
-  readonly protocolConfig: { readonly initialKmsNodes: readonly KmsNode[]; readonly initialThresholds: KmsThresholds };
+  readonly protocolConfig: ProtocolConfigInitConfig;
 };
 
-/** Result of `deploy` / `updateV12ToV13`: the full v13 address set plus the standing admin. */
-export type DeployedV13 = {
-  readonly fhevmAddresses: FhevmAddressesV13;
+/** Result of `deploy` / `updateV12ToV13`: the full host address set plus the standing admin. */
+export type Deployed = {
+  readonly fhevmAddresses: FhevmAddresses;
   readonly cleartextAddresses: CleartextAddresses;
   readonly pauserSetAddress: string;
   readonly aclOwnerAddress: string;

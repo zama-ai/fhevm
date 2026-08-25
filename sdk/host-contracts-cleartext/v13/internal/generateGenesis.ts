@@ -59,6 +59,7 @@ import {
   ADDRESS_NAMES,
   DEPLOYER_ADDRESS_INDEX,
   MNEMONIC,
+  NONCE_LABEL,
   PACKAGE_ROOT_ABS_PATH,
   PKG_DIR_ABS_PATH,
 } from './constants.ts';
@@ -250,9 +251,15 @@ export async function writeGenesis(): Promise<GenesisSummary> {
       entries.push({ name: `${name} implementation`, address: implementation });
     }
 
+    // One implementation per proxy. Derived from NONCE_LABEL rather than written down: this check used
+    // to read `!== 9`, which is the kind of literal a protocol generation silently invalidates.
+    const expectedImplementations = ADDRESS_NAMES.filter((name) => NONCE_LABEL[name].startsWith('ERC1967Proxy')).length;
     const implementationCount = entries.filter((e) => e.name.endsWith(' implementation')).length;
-    if (implementationCount !== 9) {
-      throw new Error(`expected 9 implementations behind the proxies, found ${String(implementationCount)}`);
+    if (implementationCount !== expectedImplementations) {
+      throw new Error(
+        `expected ${String(expectedImplementations)} implementations behind the proxies, ` +
+          `found ${String(implementationCount)}`,
+      );
     }
 
     entries.push({ name: 'ACLOwner', address: aclOwner });

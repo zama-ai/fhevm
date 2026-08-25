@@ -11,6 +11,7 @@ import {
     DEPLOYER_ADDRESS,
     DEPLOYER_ADDRESS_INDEX,
     DEPLOYER_START_NONCE,
+    PROXY_COUNT,
     FHEVM_EXECUTOR_ADDRESS,
     HCU_LIMIT_ADDRESS,
     INPUT_VERIFIER_ADDRESS,
@@ -204,12 +205,12 @@ contract DeployLocalStack is Script {
      *      permissionless and nothing references their addresses, so unlike phase 1 the nonce they land
      *      at does not matter.
      *
-     *      Each initializer that takes arguments gets its own encoder, because with nine ops and their
+     *      Each initializer that takes arguments gets its own encoder, because with every op and its
      *      arguments live in one frame legacy codegen runs out of stack slots, and scripts compile with
      *      via_ir off.
      */
     function _materialize(address aclOwner) private {
-        ACLOwner.Op[] memory ops = new ACLOwner.Op[](9);
+        ACLOwner.Op[] memory ops = new ACLOwner.Op[](PROXY_COUNT);
         ops[0] = ACLOwner.Op(
             ACL_ADDRESS, _create(ACL_CREATION_CODE, "ACL impl"), abi.encodeCall(IACL.initializeFromEmptyProxy, ())
         );

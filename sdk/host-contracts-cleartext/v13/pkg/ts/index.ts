@@ -7,6 +7,10 @@ export { setupACLOwner } from './aclOwner.js';
 export { pauseACL, unpauseACL } from './aclOwner.js';
 // Rotate / retire KMS contexts via the standing `ACLOwner`.
 export { defineNewKmsContext, destroyKmsContext } from './kmsContext.js';
+// The `getVersion()` string every contract in this generation reports. Generated from the contracts
+// themselves (internal/generateContractVersions.ts), so it cannot drift from what a deployed stack
+// answers — which is what makes it usable as the expected value when verifying a deployment.
+export { CONTRACT_VERSIONS } from './versions.js';
 
 export type {
   // Abstract adapter interfaces (consumers implement these over their web3 lib).
@@ -17,13 +21,14 @@ export type {
   DeployParameters,
   DeployReturnType,
   EncodeCallParameters,
-  // Address sets.
-  FhevmAddressesV12,
-  FhevmAddressesV13,
+  // Address sets. `FhevmAddresses` is this package's own; the suffixed one is the PREVIOUS generation,
+  // and exists only because `updateV12ToV13` takes it as input.
+  FhevmAddresses,
   CleartextAddresses,
+  FhevmAddressesV12,
   // `deploy` config + shared result of `deploy` / `updateV12ToV13`.
-  BootstrapConfigV13,
-  DeployedV13,
+  BootstrapConfig,
+  Deployed,
   // Per-contract bootstrap init configs.
   ProtocolConfigInitConfig,
   InputVerifierInitConfig,

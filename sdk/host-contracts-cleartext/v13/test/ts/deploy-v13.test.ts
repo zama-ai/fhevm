@@ -3,8 +3,9 @@ import {
   pauseACL,
   precomputeAddresses,
   unpauseACL,
-  type BootstrapConfigV13,
-  type FhevmAddressesV13,
+  type BootstrapConfig,
+  type FhevmAddresses,
+  CONTRACT_VERSIONS,
 } from '@fhevm/host-contracts-cleartext/ts';
 import { createPublicClient, createWalletClient, http, parseEventLogs, type Address, type Hex } from 'viem';
 import { mnemonicToAccount, privateKeyToAccount } from 'viem/accounts';
@@ -108,17 +109,7 @@ const GET_VERSION_ABI = [
  * during a generation sync — see README step 7, which is also where `reinitializeV<n>` is checked
  * (the reinitializer number tracks the same minor version).
  */
-const EXPECTED_VERSIONS = {
-  acl: 'ACL v0.4.0',
-  fhevmExecutor: 'FHEVMExecutor v0.4.0',
-  inputVerifier: 'InputVerifier v0.2.0',
-  kmsVerifier: 'KMSVerifier v0.3.0',
-  hcuLimit: 'HCULimit v0.3.0',
-  protocolConfig: 'ProtocolConfig v0.1.0',
-  kmsGeneration: 'KMSGeneration v0.1.0',
-  pauserSet: 'PauserSet v0.1.0',
-  cleartextArithmetic: 'CleartextArithmetic v0.4.0',
-} as const;
+const EXPECTED_VERSIONS = CONTRACT_VERSIONS;
 
 const PAUSER_SET_ABI = [
   {
@@ -164,7 +155,7 @@ const CLEARTEXT_DB_ABI = [
  */
 async function expectPatchedWiring(parameters: {
   readonly publicClient: ReturnType<typeof createPublicClient>;
-  readonly fhevmAddresses: FhevmAddressesV13;
+  readonly fhevmAddresses: FhevmAddresses;
   readonly pauserSetAddress: string;
 }): Promise<void> {
   const { publicClient, fhevmAddresses, pauserSetAddress } = parameters;
@@ -210,7 +201,7 @@ async function expectPatchedWiring(parameters: {
   ).toBe(lower(executor));
 }
 
-function bootstrapConfig(deployerAddress: string, kmsSignerAddress: string): BootstrapConfigV13 {
+function bootstrapConfig(deployerAddress: string, kmsSignerAddress: string): BootstrapConfig {
   return {
     kmsVerifier: { verifyingContractSource: deployerAddress, chainIDSource: 1n },
     inputVerifier: {
@@ -516,7 +507,7 @@ function derivedSigners(changeIndex: number): readonly string[] {
 }
 
 /**
- * `deploy()` with no `config` must apply DEFAUT_BOOTSTRAP_CONFIG_V13 — the stack the js-sdk cleartext
+ * `deploy()` with no `config` must apply DEFAULT_BOOTSTRAP_CONFIG — the stack the js-sdk cleartext
  * client can actually use.
  *
  * This is the gap that let `deployStack.ts` ship a hand-rolled config registering the deployer as the sole

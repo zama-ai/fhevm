@@ -24,6 +24,13 @@ address constant DEPLOYER_ADDRESS = 0x8B8f5091f8b9817EF69cFC1E8B2f721BafF60DF4;
 /// @dev Nonce the sequence starts from — the deployer must have sent no transaction yet.
 uint64 constant DEPLOYER_START_NONCE = 0;
 
+/// @dev How many ERC-1967 proxies the stack materializes — the arity of the ACLOwner ops array.
+uint256 constant PROXY_COUNT = 9;
+
+/// @dev Nonces the address-critical part of the deploy consumes: every named contract plus the two
+///      empty-proxy implementations. The first nonce NOT pinned by any baked-in address.
+uint64 constant ADDRESSED_NONCE_COUNT = 12;
+
 /// @dev Contracts created at each nonce, in deploy order.
 ///   nonce  0  0x34e3eD8472e409dbF8FDf933cA996DC75e4Be126  EmptyUUPSProxyACL
 ///   nonce  1  0x50157CFfD6bBFA2DECe204a89ec419c23ef5755D  ACL_ADDRESS

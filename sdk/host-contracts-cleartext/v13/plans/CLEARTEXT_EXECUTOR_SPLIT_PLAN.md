@@ -106,7 +106,7 @@ Two more empty proxies join the v13 batch. Append them after `KMSGeneration` so 
 ## TS API changes (`ts/`)
 
 - `public.ts`: introduce a dedicated **`CleartextAddresses`** type
-  (`{ cleartextArithmeticAddress; cleartextDbAddress }`) — kept separate from `FhevmAddressesV13` so
+  (`{ cleartextArithmeticAddress; cleartextDbAddress }`) — kept separate from `FhevmAddresses` so
   the "real host" address set stays clean. `precomputeAddresses` returns it alongside `fhevmAddresses`
   / `pauserSetAddress`.
 - `index.ts`:
@@ -147,7 +147,7 @@ Two more empty proxies join the v13 batch. Append them after `KMSGeneration` so 
 2. **`CleartextDB` write ACL mirrors `PauserSet`** — `addExecutor`/`removeExecutor`/`isExecutor`
    (`onlyACLOwner` admin), `set` gated by `onlyExecutor`; first executor seeded at init.
 3. **Introduce a dedicated `CleartextAddresses` type** — the 2 cleartext addresses are kept separate
-   from `FhevmAddressesV13`.
+   from `FhevmAddresses`.
 4. **Phased — v13 fresh first, v12→v13 upgrade later.** Implement and stabilize v13 fresh (via
    `deploy`) now; the `updateV12ToV13` path is **deferred, not dropped**. A "cleartext v12" stack —
    reusing this same `CleartextArithmetic`/`CleartextDB` design — will be added **in the test folder

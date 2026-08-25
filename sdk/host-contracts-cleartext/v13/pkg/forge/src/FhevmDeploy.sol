@@ -9,6 +9,7 @@ import {
     CLEARTEXT_DB_ADDRESS,
     DEPLOYER_ADDRESS,
     DEPLOYER_START_NONCE,
+    PROXY_COUNT,
     FHEVM_EXECUTOR_ADDRESS,
     HCU_LIMIT_ADDRESS,
     INPUT_VERIFIER_ADDRESS,
@@ -98,10 +99,10 @@ import {IProtocolConfig} from "./_internal/interfaces/IProtocolConfig.sol";
  * bytecode points at addresses nothing lives at.
  *
  * The five phases, mirroring `ts/deploy.ts`:
- *   1. the nine empty proxies (nonces 0-10), each an ERC-1967 proxy over an empty UUPS implementation
+ *   1. the empty proxies (nonces 0-10), each an ERC-1967 proxy over an empty UUPS implementation
  *   2. PauserSet (nonce 11)
  *   3. ACLOwner, registered as a pauser and handed ACL ownership two-step
- *   4. the nine real implementations, deployed permissionlessly
+ *   4. the real implementations, deployed permissionlessly
  *   5. one atomic `ACLOwner.upgrade` swapping every proxy empty -> real and running its initializer
  *
  * All five are `private`, as is everything else here bar the entry point.
@@ -130,7 +131,7 @@ abstract contract FhevmDeploy {
 
     /**
      * @dev Bootstrap arguments for the initializers that take them, mirroring
-     *      `DEFAUT_BOOTSTRAP_CONFIG_V13` via the generated `LocalHostBootstrap`.
+     *      `DEFAULT_BOOTSTRAP_CONFIG` via the generated `LocalHostBootstrap`.
      */
     function _fhevmKmsVerifierConfig() private pure returns (address verifyingContract, uint64 chainId) {
         return (LocalHostBootstrap.DECRYPTION_ADDRESS, LocalHostBootstrap.GATEWAY_CHAIN_ID);
@@ -318,7 +319,7 @@ abstract contract FhevmDeploy {
 
     /// @dev Permissionless, and their addresses are never referenced, so no determinism is required here.
     function _deployImplementations() private returns (address[] memory implementations) {
-        implementations = new address[](9);
+        implementations = new address[](PROXY_COUNT);
         implementations[0] = _create(ACL_CREATION_CODE, "ACL impl");
         implementations[1] = _create(CLEARTEXT_FHEVM_EXECUTOR_CREATION_CODE, "FHEVMExecutor impl");
         implementations[2] = _create(CLEARTEXT_KMS_VERIFIER_CREATION_CODE, "KMSVerifier impl");
@@ -344,7 +345,7 @@ abstract contract FhevmDeploy {
             _fhevmInputVerifierConfig();
         (uint48 capPerBlock, uint48 maxDepthPerTx, uint48 maxPerTx) = _fhevmHcuLimitConfig();
 
-        ACLOwner.Op[] memory ops = new ACLOwner.Op[](9);
+        ACLOwner.Op[] memory ops = new ACLOwner.Op[](PROXY_COUNT);
         ops[0] = ACLOwner.Op(ACL_ADDRESS, implementations[0], abi.encodeCall(IACL.initializeFromEmptyProxy, ()));
         ops[1] = ACLOwner.Op(
             FHEVM_EXECUTOR_ADDRESS,

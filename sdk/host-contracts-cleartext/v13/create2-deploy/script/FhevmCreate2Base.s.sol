@@ -70,7 +70,7 @@ abstract contract FhevmCreate2Base is Script {
     // Roles (§5.4: `role` is the salt's last field, and the address name)
     // ---------------------------------------------------------------------------------------
     //
-    // 22 creates. The nonce path has 13, because it deploys the nine implementations inside step 4
+    // creates. The nonce path has 13, because it deploys the implementations inside step 4
     // as ordinary CREATEs whose addresses nothing references. Here every create goes through the
     // factory, so every create needs a salt — including the implementations, whose addresses are
     // still referenced by nothing but must be predictable for step D to be assembled offline.
@@ -91,7 +91,7 @@ abstract contract FhevmCreate2Base is Script {
     string internal constant R_PAUSER_SET = "PAUSER_SET_ADDRESS";
     string internal constant R_ACL_OWNER = "ACL_OWNER";
 
-    /// @dev The eight non-ACL proxies, in the order step D's ops array uses.
+    /// @dev The non-ACL proxies, in the order step D's ops array uses.
     function _sharedProxyRoles() internal pure returns (string[] memory r) {
         r = new string[](8);
         r[0] = R_FHEVM_EXECUTOR;
@@ -104,17 +104,22 @@ abstract contract FhevmCreate2Base is Script {
         r[7] = R_CLEARTEXT_DB;
     }
 
-    /// @dev All nine proxies, ACL first. Same order as step D's ops array.
+    /// @dev Every proxy, ACL first. Same order as step D's ops array.
     function _allProxyRoles() internal pure returns (string[] memory r) {
         string[] memory shared = _sharedProxyRoles();
-        r = new string[](9);
+        r = new string[](shared.length + 1);
         r[0] = R_ACL;
-        for (uint256 i = 0; i < 8; i++) {
+        for (uint256 i = 0; i < shared.length; i++) {
+            // A role left empty means _sharedProxyRoles' array size and its assignments disagree — the
+            // count is a literal there because Solidity has no array-literal length. An empty role would
+            // otherwise flow into salt derivation and produce a plausible-looking wrong address, so it is
+            // checked here, where every consumer of the list passes through.
+            require(bytes(shared[i]).length != 0, "FhevmCreate2Base: _sharedProxyRoles has an unset entry");
             r[i + 1] = shared[i];
         }
     }
 
-    /// @dev The nine implementation roles, index-aligned with _allProxyRoles().
+    /// @dev The implementation roles, index-aligned with _allProxyRoles().
     ///      `role(impl_i) = "IMPL_" ++ role(proxy_i)`, so there is one naming rule, not two lists.
     function _implRole(string memory proxyRole) internal pure returns (string memory) {
         return string.concat("IMPL_", proxyRole);
@@ -122,7 +127,7 @@ abstract contract FhevmCreate2Base is Script {
 
     /**
      * @dev Which EMPTY implementation proxy `i` points at before step D, index-aligned with
-     *      _allProxyRoles(). ACL gets its own; the other eight share one (§5.4).
+     *      _allProxyRoles(). ACL gets its own; the rest share one (§5.4).
      *
      *      This is the "not yet materialized" state, and it is NOT `address(0)`. An ERC1967Proxy sets
      *      its implementation slot in the constructor — OpenZeppelin's `_setImplementation` even
@@ -260,7 +265,7 @@ abstract contract FhevmCreate2Base is Script {
     }
 
     /**
-     * @dev All 22 creates, in the order §6's two hard edges require. Defined ONCE, here, because two
+     * @dev All creates, in the order §6's two hard edges require. Defined ONCE, here, because two
      *      scripts consume it — FhevmDeployCreates to send them and FhevmStatus to report on them —
      *      and a status board assembled from a second, drifting definition of "the work" would be
      *      worse than no status board.
@@ -270,9 +275,9 @@ abstract contract FhevmCreate2Base is Script {
      *      reverts ERC1967InvalidImplementation when the implementation has no code:
      *
      *          [0] impl₁ (EmptyUUPSProxyACL)  MUST precede  [1] the ACL proxy
-     *          [2] impl₃ (EmptyUUPSProxy)     MUST precede  [3..10] the eight remaining proxies
+     *          [2] impl₃ (EmptyUUPSProxy)     MUST precede  [3..10] the remaining proxies
      *
-     *      Everything after that — PauserSet, ACLOwner, the nine implementations — is order-free.
+     *      Everything after that — PauserSet, ACLOwner, the implementations — is order-free.
      *      Under --broadcast the edges cost nothing: every create is a separate transaction from ONE
      *      sender, and transactions from one sender execute in nonce order. That is the only job the
      *      nonce still does on this path, and it constrains no address.
@@ -289,11 +294,12 @@ abstract contract FhevmCreate2Base is Script {
         string[] memory shared = _sharedProxyRoles();
         string[] memory proxyRoles = _allProxyRoles();
 
-        // The eight share ONE init-code hash — same implementation, same empty `initialize()` — and
+        // They share ONE init-code hash — same implementation, same empty `initialize()` — and
         // are distinguished purely by salt (§5.4). Built once, outside the loop.
         bytes memory sharedProxyCode = _proxyInitCode(impl3, _sharedProxyInitData());
 
-        c = new Create[](22);
+        // 2 empty implementations + N proxies + PauserSet + ACLOwner + N implementations.
+        c = new Create[](2 * _allProxyRoles().length + 4);
         uint256 n;
 
         c[n++] = Create(R_IMPL_EMPTY_ACL, _initCode(A_EMPTY_ACL));
@@ -359,13 +365,13 @@ abstract contract FhevmCreate2Base is Script {
      *      two that can disagree.
      *
      *      A raw call rather than `new C{salt: s}(args)` because the initcode here comes from
-     *      `vm.getCode`, not from a type. That is what lets one loop handle all 22 creates.
+     *      `vm.getCode`, not from a type. That is what lets one loop handle all creates.
      */
     function _factoryCreate2(bytes32 salt, bytes memory initCode) internal {
         require(initCode.length > 0, "FhevmCreate2Base: empty initcode (artifact not built?)");
         require(initCode.length <= MAX_INITCODE_SIZE, "FhevmCreate2Base: initcode exceeds EIP-3860 limit");
         // solhint-disable-next-line avoid-low-level-calls
-        (bool ok,) = CREATE2_FACTORY.call(bytes.concat(salt, initCode));
+        (bool ok, ) = CREATE2_FACTORY.call(bytes.concat(salt, initCode));
         require(ok, "FhevmCreate2Base: factory call reverted");
     }
 
@@ -455,7 +461,7 @@ abstract contract FhevmCreate2Base is Script {
     // This is NOT resume state. Resume is `getCode(addr) != ""` against the chain (§2). The file
     // exists because the addresses are a function of the init-code hashes (§9), so a retry of a
     // failed create needs the byte-exact hash that produced the address — and because a run that
-    // starts at step D needs to know which nine implementations "sealed" means.
+    // starts at step D needs to know which implementations "sealed" means.
 
     function _readManifestAddress(string memory json, string memory role) internal pure returns (address) {
         return vm.parseJsonAddress(json, string.concat(".address.", role));

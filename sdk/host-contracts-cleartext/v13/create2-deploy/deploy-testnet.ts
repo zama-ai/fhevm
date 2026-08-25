@@ -324,7 +324,7 @@ const RULE_WIDTH = 92;
  * entries with. `compute` is absent because it sends nothing — its evidence is the manifest.
  */
 const REPORT_STEPS: readonly { readonly label: string; readonly title: string }[] = [
-  { label: 'creates', title: '22 CREATE2s through the factory' },
+  { label: 'creates', title: 'every CREATE2 through the factory' },
   { label: "A/A'", title: 'register the pausers' },
   { label: 'B', title: 'offer ACL ownership to the ACLOwner (offers only)' },
   { label: 'C', title: 'accept ACL ownership - ownership MOVES here' },
@@ -395,7 +395,7 @@ Usage: node create2-deploy/deploy-testnet.ts --rpc-url URL --account NAME
 
   --stage STAGE        one of, in order:
                          compute       3 builds + 3 passes, writes the manifest      (no tx)
-                         creates       22 CREATE2s through the factory
+                         creates       every CREATE2 through the factory
                          pausers       A, A'  register the pausers
                          offer-acl     B      ACL.transferOwnership(ACLOwner)   — offers only
                          accept-acl    C      ACLOwner.acceptACLOwnership()     — ownership MOVES
@@ -852,7 +852,7 @@ function checkChainAllowed(ctx: Ctx): void {
  *                        reseal over another network's record.
  *   wrong deploymentId   the salts have changed, so this is a DIFFERENT address set (§14.2) that
  *                        happens to be pointed at the same directory. Every read-only stage would
- *                        compute new salts while reading old addresses and report drift on all 22.
+ *                        compute new salts while reading old addresses and report drift on all of them.
  *   wrong deployer       --account points at another key. The deployer is baked into the ACL
  *                        proxy's initcode, so this too is a different address set — but only SOME
  *                        of the 22 move, which is why the symptom is so misleading without this.
@@ -885,7 +885,7 @@ function checkOutDirIdentity(ctx: Ctx): void {
   // A --account pointed at a different key between sessions. Caught HERE because the failure it
   // otherwise produces is actively misleading: the deployer is baked into the ACL proxy's initcode,
   // so `creates` would stop at ACL_ADDRESS reporting "build drift", blaming the build for what is
-  // really a changed key — and only some of the 22 would have moved, since the shared proxies and
+  // really a changed key — and only some of them would have moved, since the shared proxies and
   // PauserSet do not reference the deployer at all.
   if (manifest.deployer !== undefined && !sameAddress(manifest.deployer, ctx.deployer)) {
     fail(
@@ -926,7 +926,7 @@ function checkOutDirIdentity(ctx: Ctx): void {
  * where no admin keystore exists at all. `--admin-account` is only a signing credential for step F.
  *
  * Checked in preflight rather than inside step F, where it lives conceptually, because step F is the
- * LAST stage: a mismatch would otherwise survive compute, the seal, all 22 creates and steps A-E
+ * LAST stage: a mismatch would otherwise survive compute, the seal, all creates and steps A-E
  * before surfacing, on a run that may have started days earlier.
  */
 function checkAdminAccount(ctx: Ctx): void {
@@ -1001,7 +1001,7 @@ function probeFinality(ctx: Ctx): string {
 /**
  * §11 R3, quantified before starting rather than discovered at send time.
  *
- * Deploying via the factory pays initcode as CALLDATA (16 gas per non-zero byte), and nine
+ * Deploying via the factory pays initcode as CALLDATA (16 gas per non-zero byte), and the
  * implementations of up to ~24 KB runtime each add materially per create. Faucet-funded deployers
  * run dry mid-run. This prints; measuring a real threshold against a fork is still a gap.
  */
@@ -1325,7 +1325,7 @@ function stageReport(ctx: Ctx): void {
  *
  * Split three ways because the three groups answer different questions. The host addresses are what
  * a dApp compiles against and what goes in an SDK config. ACL_OWNER is the trust root — whoever owns
- * it can upgrade any of the nine. The implementations are what those proxies currently run, and are
+ * it can upgrade any of them. The implementations are what those proxies currently run, and are
  * the only group that changes on an upgrade.
  */
 function reportAddresses(ctx: Ctx, manifest: Manifest): void {
@@ -1345,7 +1345,10 @@ function reportAddresses(ctx: Ctx, manifest: Manifest): void {
   say(`      ${pad('ACL_OWNER', ROLE_WIDTH)} ${addr.ACL_OWNER ?? '-'}   <- trust root, owned by the admin`);
 
   say('');
-  for (const role of Object.keys(addr).filter((k) => k.startsWith('IMPL_')).sort()) line(role);
+  for (const role of Object.keys(addr)
+    .filter((k) => k.startsWith('IMPL_'))
+    .sort())
+    line(role);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1379,7 +1382,15 @@ function reportTxLine(e: JournalEntry): string {
 async function broadcast(ctx: Ctx, target: string, account?: string, sender?: string): Promise<void> {
   const from = sender ?? ctx.deployer;
   const key = account ?? ctx.opt.account;
-  const base = ['script', `${SCRIPT_DIR}/${target}`, '--rpc-url', ctx.opt.rpcUrl, '--out', ctx.buildOut, ...traceArgs(ctx)];
+  const base = [
+    'script',
+    `${SCRIPT_DIR}/${target}`,
+    '--rpc-url',
+    ctx.opt.rpcUrl,
+    '--out',
+    ctx.buildOut,
+    ...traceArgs(ctx),
+  ];
 
   // --dry-run: the same script, simulated, sending nothing.
   //
@@ -1413,8 +1424,8 @@ async function broadcast(ctx: Ctx, target: string, account?: string, sender?: st
   const env = { ...scriptEnv(ctx), ...generatedConfigEnv(ctx), FHEVM_MIN_BLOCK: String(minBlock) };
 
   // --slow: one transaction at a time, waiting for each receipt. §6's two hard edges (impl₁ before
-  // the ACL proxy, impl₃ before the eight) are satisfied by nonce ordering alone, but --slow turns a
-  // mid-run failure into "stop here" instead of "the next nine also fail in the same block".
+  // the ACL proxy, impl₃ before the rest) are satisfied by nonce ordering alone, but --slow turns a
+  // mid-run failure into "stop here" instead of "the rest also fail in the same block".
   //
   // The exit code is captured rather than thrown, so the journal is written even when the stage
   // dies. A half-finished stage is the case the audit trail exists for.
@@ -1619,7 +1630,7 @@ async function confirmSealed(ctx: Ctx): Promise<void> {
 ////////////////////////////////////////////////////////////////////////////////
 
 async function stageCreates(ctx: Ctx): Promise<void> {
-  say('🧱  creates (22 CREATE2s, each gated on getCode)');
+  say('🧱  creates (one CREATE2 per create, each gated on getCode)');
   ctx.stageLabel = 'creates';
   await broadcast(ctx, 'FhevmDeployCreates.s.sol:FhevmDeployCreates');
 }
@@ -1671,7 +1682,7 @@ async function stepCAcceptAclOwnership(ctx: Ctx): Promise<void> {
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * Step D — nine empty proxies become the real stack, in ONE transaction. The atomicity is why this
+ * Step D — the empty proxies become the real stack, in ONE transaction. The atomicity is why this
  * stage cannot be resumed halfway: see the tri-state note in FhevmMaterializeStack.
  */
 async function stepDMaterializeStack(ctx: Ctx): Promise<void> {
@@ -1763,7 +1774,15 @@ function stageVerify(ctx: Ctx): void {
   say('✅  verify');
   const code = run(
     'forge',
-    ['script', `${SCRIPT_DIR}/FhevmVerify.s.sol:FhevmVerify`, '--rpc-url', ctx.opt.rpcUrl, '--out', ctx.buildOut, ...traceArgs(ctx)],
+    [
+      'script',
+      `${SCRIPT_DIR}/FhevmVerify.s.sol:FhevmVerify`,
+      '--rpc-url',
+      ctx.opt.rpcUrl,
+      '--out',
+      ctx.buildOut,
+      ...traceArgs(ctx),
+    ],
     { ...scriptEnv(ctx), ...generatedConfigEnv(ctx) },
   );
   if (code !== 0) process.exit(code);
@@ -1783,7 +1802,15 @@ function stageStatus(ctx: Ctx): void {
   say('📊  status');
   run(
     'forge',
-    ['script', `${SCRIPT_DIR}/FhevmStatus.s.sol:FhevmStatus`, '--rpc-url', ctx.opt.rpcUrl, '--out', ctx.buildOut, ...traceArgs(ctx)],
+    [
+      'script',
+      `${SCRIPT_DIR}/FhevmStatus.s.sol:FhevmStatus`,
+      '--rpc-url',
+      ctx.opt.rpcUrl,
+      '--out',
+      ctx.buildOut,
+      ...traceArgs(ctx),
+    ],
     { ...scriptEnv(ctx), ...generatedConfigEnv(ctx) },
   );
 }
