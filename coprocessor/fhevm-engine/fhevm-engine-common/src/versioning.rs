@@ -1,5 +1,11 @@
-//! Decides whether a service is live, green or retired by comparing its
-//! consensus version with the active one in the database.
+//! Consensus-version detection that decides whether a service runs in GCS
+//! (green) mode, replacing the deprecated `--gcs-mode` CLI flag.
+//!
+//! Each binary is compiled with a [`crate::CONSENSUS_PROTOCOL_VERSION`]. On
+//! startup a service compares it against the live `versioning.consensus_version`
+//! singleton row: a binary newer than the live version is the incoming green
+//! deployment and runs in GCS mode; an equal binary is the live (blue) stack and
+//! runs normally; an older one belongs to a retired stack and stops working.
 
 use std::cmp::Ordering as CmpOrdering;
 use std::sync::atomic::{AtomicU8, Ordering};
@@ -13,7 +19,13 @@ use tracing::{info, warn};
 
 use crate::{CONSENSUS_PROTOCOL_VERSION, STACK_VERSION};
 
-/// Database channel sent after a cutover changes the active version.
+/// pg_notify channel emitted by the upgrade-controller during `execute_cutover`,
+/// inside the same transaction that bumps `versioning.consensus_version` (so the
+/// notification is atomic with the version change — it is only delivered if the
+/// cutover commits).
+///
+/// Every service listens on this channel and re-resolves its role: the green
+/// stack becomes live, and a stack left behind pauses into no-op mode.
 pub const EVENT_STACK_VERSION_UPGRADED: &str = "event_stack_version_upgraded";
 
 /// Parse a `vMAJOR.MINOR[.PATCH]` string into a comparable tuple, tolerating a
@@ -149,11 +161,18 @@ pub fn classify_consensus_version(binary: u32, live: i64) -> anyhow::Result<Runt
 }
 
 #[derive(Debug)]
+/// Runtime stack mode, shared between a service's work loop and the
+/// version-upgrade listener ([`run_stack_version_listener`]).
+///
+/// Initialized from the startup [`resolve_gcs_mode`] result. A service reads
+/// [`StackMode::is_paused`] at the top of its work loop (skipping work when
+/// paused) and [`StackMode::gcs_mode`] wherever it needs the current routing.
 pub struct StackMode {
     state: AtomicU8,
 }
 
 impl StackMode {
+    /// Create shared state seeded with the startup-resolved `gcs_mode`.
     pub fn new(gcs_mode: bool) -> Arc<Self> {
         Arc::new(Self {
             state: AtomicU8::new(if gcs_mode {
@@ -177,16 +196,22 @@ impl StackMode {
         }
     }
 
+    /// Whether the service is currently the green (GCS) stack.
     pub fn gcs_mode(&self) -> bool {
         self.state() == RuntimeStackMode::Candidate
     }
 
+    /// Whether the service has been paused into no-op mode (retired stack).
     pub fn is_paused(&self) -> bool {
         self.state() == RuntimeStackMode::Retired
     }
 }
 
-/// Update the service role from the active consensus version.
+/// Re-read `versioning.consensus_version` and apply the cutover transition
+/// rules to `mode`:
+///   - binary == live → live (the green stack becomes live);
+///   - binary > live → green;
+///   - binary < live → pause into no-op mode (the retired stack stops).
 pub async fn reconcile_stack_mode(pool: &Pool<Postgres>, mode: &StackMode) -> anyhow::Result<()> {
     let row: Option<(i64,)> =
         sqlx::query_as("SELECT consensus_version FROM versioning WHERE singleton = TRUE")
@@ -227,7 +252,9 @@ pub async fn reconcile_stack_mode(pool: &Pool<Postgres>, mode: &StackMode) -> an
     Ok(())
 }
 
-/// Keep the service role in sync with the database.
+/// Listen for [`EVENT_STACK_VERSION_UPGRADED`] and call [`reconcile_stack_mode`]
+/// on every notification. Runs until `cancel` fires; logs and retries on
+/// listener errors. Spawn this once per service after startup.
 pub async fn run_stack_version_listener(
     pool: Pool<Postgres>,
     mode: Arc<StackMode>,
@@ -281,7 +308,15 @@ async fn listen_for_version_changes(
     }
 }
 
-/// Return whether this service should run as green.
+/// Decide whether this binary should run in GCS (green) mode by comparing its
+/// compiled-in [`crate::CONSENSUS_PROTOCOL_VERSION`] against the live
+/// `versioning.consensus_version` row.
+///
+/// Opens a short-lived connection with the default `public` search_path, so it
+/// works before the service's main pool — whose search_path may be pinned to
+/// `gcs,public` — is built. Unlike the release comparison it replaces, a missing
+/// version is an error rather than a default to blue: a green binary that
+/// assumed blue would start writing as the live stack.
 pub async fn resolve_gcs_mode(database_url: &str) -> anyhow::Result<bool> {
     // Route through `connect_options_for_database_url` so that when AWS IAM auth is
     // enabled we connect with a freshly minted IAM token instead of the raw,
@@ -428,7 +463,12 @@ fn is_undefined_column(err: &sqlx::Error) -> bool {
     matches!(err, sqlx::Error::Database(db) if db.code().as_deref() == Some("42703"))
 }
 
-/// Read the active consensus version. Return `None` before migrations finish.
+/// Fetch the live consensus version singleton, or `None` if the `versioning`
+/// row is absent (fresh/unseeded DB).
+///
+/// A missing `versioning` *table* (42P01), or a missing `consensus_version`
+/// *column* (42703) during the migration window, is treated the same as a
+/// missing row — `None`, not an error.
 async fn live_consensus_version(conn: &mut PgConnection) -> Result<Option<i64>, sqlx::Error> {
     let row: Option<(i64,)> =
         match sqlx::query_as("SELECT consensus_version FROM versioning WHERE singleton = TRUE")
@@ -448,8 +488,15 @@ async fn live_consensus_version(conn: &mut PgConnection) -> Result<Option<i64>, 
     Ok(row.map(|(v,)| v))
 }
 
-/// Return whether this service is older than the active consensus version.
-/// Errors when the version is unavailable: a write guard must not fail open.
+/// Re-read the live consensus version on `conn` and report whether this binary
+/// belongs to a retired stack (its [`crate::CONSENSUS_PROTOCOL_VERSION`] is below
+/// the live `versioning.consensus_version`). A missing version is an error, not a
+/// permissive default: a write guard must not fail open.
+///
+/// This is the single source of truth for "should this stack stop touching the
+/// DB" — the same fence used by [`resolve_gcs_mode`] and [`reconcile_stack_mode`].
+/// Read it *after* taking the shared cutover lock (see [`cutover_gate`]) to close
+/// the begin-time TOCTOU window.
 pub async fn is_retired(conn: &mut PgConnection) -> Result<bool, sqlx::Error> {
     let Some(live) = live_consensus_version(conn).await? else {
         return Err(sqlx::Error::Configuration(
@@ -459,10 +506,13 @@ pub async fn is_retired(conn: &mut PgConnection) -> Result<bool, sqlx::Error> {
     Ok(i64::from(CONSENSUS_PROTOCOL_VERSION) < live)
 }
 
-/// Lock used to keep writes from crossing a cutover or rollback.
+/// PostgreSQL advisory-lock key serializing writes against cutover and rollback.
+/// The upgrade-controller takes the **exclusive** form; every guarded write
+/// transaction takes the **shared** form via [`cutover_gate`]. Chosen to be
+/// recognizable in logs (`0x4648_4556_4355_5456` ~ ASCII "FHEVCUTV").
 pub const CUTOVER_LOCK_ID: i64 = 0x4648_4556_4355_5456;
 
-/// Result of starting a protected write.
+/// Result of opening a guarded write transaction.
 pub enum WriteGuard<'a> {
     Proceed(Transaction<'a, Postgres>),
     Stop,

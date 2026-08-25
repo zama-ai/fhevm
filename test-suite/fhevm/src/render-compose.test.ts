@@ -411,7 +411,7 @@ gcs:
       expect(doc.services["coprocessor-gcs-upgrade-controller"]?.container_name).toBe(
         "coprocessor-gcs-upgrade-controller",
       );
-      // Green uses the local build.
+      // GCS builds from local HEAD.
       expect(doc.services["coprocessor-gcs-host-listener"]?.build).toBeDefined();
       // GCS reuses BCS's db-migration — no `coprocessor-gcs-db-migration`.
       expect(doc.services["coprocessor-gcs-db-migration"]).toBeUndefined();
@@ -629,7 +629,7 @@ gcs:
       expect(bcsCommand).toContain("--bucket-name-ct128=coproc-0");
       expect(bcsCommand).toContain("--bucket-name-ct64=coproc-0");
       expect(bcsCommand).not.toContain("--bucket-name=coproc-0");
-      // Green uses the local command-line flags.
+      // GCS builds from the working tree, so it keeps the modern flag.
       const gcsCommand = doc.services["coprocessor-gcs-sns-worker"]?.command ?? [];
       expect(gcsCommand).toContain("--bucket-name=coproc-0");
       expect(gcsCommand.filter((arg) => arg.startsWith("--bucket-name-"))).toEqual([]);

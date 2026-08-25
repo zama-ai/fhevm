@@ -46,8 +46,19 @@ pub struct ConfigSettings {
 
     pub graceful_shutdown_timeout: Duration,
 
-    /// True for the green stack. The sender waits for cutover so blue and green
-    /// do not submit the same transaction.
+    /// Used during blue/green (GCS) upgrade migrations. True when this binary
+    /// is the incoming green stack (its `CONSENSUS_PROTOCOL_VERSION` is newer
+    /// than the live `versioning.consensus_version`; auto-detected via
+    /// `resolve_gcs_mode`).
+    ///
+    /// When true, the txn-sender starts fully parked and does nothing until the
+    /// cutover finalizes — `execute_cutover` fires `event_stack_version_upgraded`
+    /// atomically with the version bump, which flips this binary out of GCS mode
+    /// and lets it begin submitting. It never participates in the dry-run window,
+    /// since submitting on-chain there would double-submit against the still-live
+    /// blue stack. Writes always target `public` (by cutover time the `gcs`
+    /// schema has been merged into `public` and dropped). When false (default),
+    /// the binary is the live (blue) stack and runs normally.
     pub gcs_mode: bool,
 }
 

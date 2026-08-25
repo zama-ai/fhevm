@@ -392,14 +392,19 @@ pub fn with_statement_timeout(options: PgConnectOptions, timeout: Duration) -> P
     options.options([("statement_timeout", timeout.as_millis())])
 }
 
-/// GCS schema name, e.g. `gcs-1`. Named after the consensus version so a later
-/// upgrade never reuses the schema of the one it replaces. Every green service in
-/// an attempt must run the same consensus version, or they write to different
+/// Versioned GCS schema name, e.g. `gcs-1` — the literal name stored in the
+/// catalog (unquoted). Built from [`crate::consensus_protocol_version!`], the
+/// same hard-coded value as [`crate::CONSENSUS_PROTOCOL_VERSION`], so each
+/// consensus version owns a distinct schema and a new green stack never collides
+/// with the schema of the version it is replacing. Every green service in an
+/// attempt must run the same consensus version, or they write to different
 /// schemas and never agree.
 pub const GCS_SCHEMA: &str = concat!("gcs-", crate::consensus_protocol_version!());
 
-/// [`GCS_SCHEMA`] quoted for SQL, e.g. `"gcs-1"`. The hyphen makes the bare
-/// name invalid unquoted, so every SQL reference must use this form.
+/// [`GCS_SCHEMA`] wrapped in double quotes for use as a SQL identifier, e.g.
+/// `"gcs-1"`. The hyphen makes the bare name an invalid *unquoted* identifier,
+/// so every SQL reference to the schema (`CREATE SCHEMA`, `<schema>.<table>`,
+/// `DROP SCHEMA`) and the `search_path` value must use this quoted form.
 pub const GCS_SCHEMA_QUOTED: &str = concat!("\"gcs-", crate::consensus_protocol_version!(), "\"");
 
 /// Default search_path applied by [`apply_gcs_mode_search_path`] when

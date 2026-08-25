@@ -28,7 +28,8 @@ pub mod common {
 /// every service that links this crate, compared against the release a proposal
 /// names, written into the singleton at cutover, and surfaced in upgrade
 /// notifications. The leading-`v` prefix is optional; the parser in
-/// `versioning::parse_version` tolerates its absence.
+/// `versioning::parse_version` tolerates its absence. Deliberately NOT a crate
+/// `CARGO_PKG_VERSION` (those diverge per-worker across the workspace).
 ///
 /// Change it every release. It never decides blue/green mode.
 pub const STACK_VERSION: &str = "0.15.0";

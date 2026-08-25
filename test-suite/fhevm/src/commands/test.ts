@@ -996,7 +996,17 @@ const startContinuousErc20Traffic = (
   };
 };
 
-/** Run one failed blue/green upgrade, then a successful one. */
+/**
+ * Runs the Blue-Green upgrade end-to-end against a stack booted via
+ * `./fhevm-cli up --scenario blue-green*`. Fires the on-chain proposal, sends
+ * traffic via `./fhevm-cli test erc20`, waits for cutover, and asserts final
+ * state in every operator's database.
+ *
+ * Runs a failed upgrade first: an empty window (no non-trivial FHE op) never
+ * anchors, so the detector's commitment_timeout forces a rollback; the phase
+ * asserts the reset (PAUSED/failed, latches cleared, schema recreated empty,
+ * versioning untouched) and the successful flow then reruns over the residue.
+ */
 const runBlueGreenProfile = async (
   state: State,
   options: Pick<TestOptions, "network" | "noHardhatCompile">,
@@ -1227,7 +1237,10 @@ const runBlueGreenProfile = async (
   const reenabled = await setSyntheticOps(true);
   console.log(`OK:   recreated ${reenabled.length} GCS host-listener service(s) with synthetic ops enabled`);
 
-  // Create the encrypted balance before the proposal so green must read it.
+  // Deploy ERC20 + mint before the proposal so the balance handle lands in
+  // public.ciphertexts with block_number < start_block. Transfers during the
+  // dry-run window will force GCS's tfhe-worker to fall back to
+  // public.ciphertexts for this handle.
   console.log(`\n[5/11] cross-cutover setup: deploy ERC20 + mint, and build a backlog`);
   const setupResult = await run(["./fhevm-cli", "test", "cross-cutover-setup"], { allowFailure: true });
   if (setupResult.code !== 0) {
