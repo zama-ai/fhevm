@@ -19,7 +19,10 @@ skip = ["test/ts/node_modules/**"]
 # pkg/forge/script/ComputeAddresses.s.sol writes the generated fhevm-config addresses.sol here — step 1
 # of scripts/deploy.sh, and the only filesystem write any script in this package performs. Scoped to that
 # one directory rather than granted project-wide, so no other script or test can reach the rest of the tree.
-fs_permissions = [{ access = "read-write", path = "./internal/.deploy-config" }]
+fs_permissions = [
+    { access = "read-write", path = "./internal/.deploy-config" },   # nonce path
+    { access = "read-write", path = "./create2-deploy" },      # this path
+]
 
 [lint]
 exclude_lints = [

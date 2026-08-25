@@ -19,7 +19,9 @@ const JS_SDK_SIGNERS_PATH = join(
   'cleartext',
   'signers.ts',
 );
-const HOST_CONSTANTS_PATH = join(PKG_DIR_ABS_PATH, 'ts', 'constants.ts');
+// The shared cleartext config, not ts/constants.ts: the mnemonic and HD paths moved to
+// internal/cleartext-config.ts, of which this is the byte-for-byte payload copy.
+const HOST_CONFIG_PATH = join(PKG_DIR_ABS_PATH, 'ts', 'cleartext-config.ts');
 const HOST_COPROCESSOR_SIGNERS_PATH = join(PKG_DIR_ABS_PATH, 'ts', 'signers', 'defaultCoprocessorSigners.ts');
 const HOST_KMS_SIGNERS_PATH = join(PKG_DIR_ABS_PATH, 'ts', 'signers', 'defaultKmsSigners.ts');
 
@@ -43,7 +45,7 @@ function countAddresses(source: string, constName: string): number {
 
 void test('js-sdk cleartext signer config matches host-contracts-cleartext/v13 constants', () => {
   const sdk = read(JS_SDK_SIGNERS_PATH);
-  const host = read(HOST_CONSTANTS_PATH);
+  const host = read(HOST_CONFIG_PATH);
 
   // Mnemonic.
   assert.equal(
@@ -58,14 +60,14 @@ void test('js-sdk cleartext signer config matches host-contracts-cleartext/v13 c
     `m/44'/60'/${capture(sdk, /const COPROCESSOR_PATH\s*=\s*"([^"]+)"/, 'js-sdk COPROCESSOR_PATH')}`,
     capture(
       host,
-      /const DEFAULT_COPROCESSORS_MNEMONIC_PATH\s*=\s*"([^"]+)"/,
-      'host DEFAULT_COPROCESSORS_MNEMONIC_PATH',
+      /const CLEARTEXT_COPROCESSORS_MNEMONIC_PATH\s*=\s*"([^"]+)"/,
+      'host CLEARTEXT_COPROCESSORS_MNEMONIC_PATH',
     ),
     'coprocessor derivation path mismatch',
   );
   assert.equal(
     `m/44'/60'/${capture(sdk, /const KMS_PATH\s*=\s*"([^"]+)"/, 'js-sdk KMS_PATH')}`,
-    capture(host, /const DEFAULT_KMS_NODES_MNEMONIC_PATH\s*=\s*"([^"]+)"/, 'host DEFAULT_KMS_NODES_MNEMONIC_PATH'),
+    capture(host, /const CLEARTEXT_KMS_NODES_MNEMONIC_PATH\s*=\s*"([^"]+)"/, 'host CLEARTEXT_KMS_NODES_MNEMONIC_PATH'),
     'kms derivation path mismatch',
   );
 

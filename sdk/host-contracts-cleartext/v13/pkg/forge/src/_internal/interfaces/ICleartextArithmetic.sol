@@ -32,6 +32,7 @@ interface ICleartextArithmetic {
     event Upgraded(address indexed implementation);
 
     function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
+    function getCleartextDBAddress() external view returns (address);
     function getVersion() external pure returns (string memory);
     function initializeFromEmptyProxy() external;
     function plaintexts(bytes32 handle) external view returns (uint256);

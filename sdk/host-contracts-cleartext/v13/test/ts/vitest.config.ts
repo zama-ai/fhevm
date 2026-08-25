@@ -27,6 +27,7 @@ export default defineConfig({
       'tarball-consumer.test.ts',
       'node10-cjs-resolution.test.ts',
       'adapter-nonce-diagnostics.test.ts',
+      'precompute-addresses.test.ts',
       'ethers-adapter.test.ts',
       'acl-owner-upgrade.test.ts',
       'deploy-v13.test.ts',

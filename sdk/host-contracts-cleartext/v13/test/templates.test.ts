@@ -27,6 +27,15 @@ import {
 } from '../internal/generateTemplates.ts';
 import { normalizeHex, readJson } from '../internal/utils.ts';
 import { derivePlaceholder } from '../internal/generatePlaceholders.ts';
+import {
+  CLEARTEXT_CONFIG_PAYLOAD_PATH,
+  CLEARTEXT_CONFIG_SOURCE_PATH,
+  checkCleartextConfig,
+} from '../internal/copyCleartextConfig.ts';
+import {
+  OUTPUT_PATH as COMPUTE_ADDRESSES_PATH,
+  computeAddressesScript,
+} from '../internal/generateComputeAddressesScript.ts';
 
 type Template = {
   contractName: string;
@@ -444,4 +453,30 @@ void test('LocalHostAddresses.sol agrees with the derivation and with LocalHostB
   for (const name of ADDRESS_NAMES) {
     assert.equal(fromBytecode[name].toLowerCase(), byName[name].toLowerCase(), `${name} across the two files`);
   }
+});
+
+void test('the payload cleartext config is byte-identical to the source of truth', () => {
+  // internal/cleartext-config.ts is the single source of truth and pkg/ts/cleartext-config.ts is a copy
+  // of it, because neither side can import the other (see that file's header). The copy is what ships, so
+  // a difference means the published package is configured differently from the harness that generated
+  // and tested it — which nothing else here would notice.
+  const { status } = checkCleartextConfig();
+  assert.equal(
+    status,
+    'identical',
+    `${basename(CLEARTEXT_CONFIG_PAYLOAD_PATH)} is ${status} relative to ${basename(CLEARTEXT_CONFIG_SOURCE_PATH)}; ` +
+      'run `npm run generate:cleartext-config` (never edit the payload copy)',
+  );
+});
+
+void test('ComputeAddresses.s.sol matches its template rendered with the current nonce offsets', () => {
+  // The forge deploy script is the third copy of the deploy layout, and the only one Solidity cannot
+  // derive — so it is generated. A stale committed copy would compute addresses from the OLD offsets
+  // while the templates and pkg/forge bytecode use the new ones, and the mismatch would only surface as
+  // a deploy landing somewhere nothing was compiled for.
+  assert.equal(
+    readFileSync(COMPUTE_ADDRESSES_PATH, 'utf8'),
+    computeAddressesScript(),
+    `${basename(COMPUTE_ADDRESSES_PATH)} is stale — run \`npm run generate:compute-addresses\``,
+  );
 });

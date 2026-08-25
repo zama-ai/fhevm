@@ -308,7 +308,7 @@ read_mnemonic() { sed -n 's/^string constant MNEMONIC = "\(.*\)";.*/\1/p' "$ADDR
 # One scalar from LocalHostBootstrap.sol — the mirror of DEFAUT_BOOTSTRAP_CONFIG_V13. Matches any
 # visibility, so `internal constant` is found too. Values come back in the source's own form: decimal for
 # the numeric ones, 0x-prefixed for addresses.
-#   read_bootstrap_scalar GATEWAY_CHAIN_ID    -> 654321
+#   read_bootstrap_scalar GATEWAY_CHAIN_ID    -> 100733346448153
 #   read_bootstrap_scalar DECRYPTION_ADDRESS  -> 0xEaaA2FC6BC259dF015Aa7Dc8e59e0B67df622721
 #   read_bootstrap_scalar HCU_CAP_PER_BLOCK   -> 281474976710655
 read_bootstrap_scalar() { sed -n "s/.*constant $1 = \([^;]*\);.*/\1/p" "$BOOTSTRAP_SOL"; }

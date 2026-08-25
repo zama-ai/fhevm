@@ -51,6 +51,19 @@
   },
   {
     "type": "function",
+    "name": "getACLAddress",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "initializeFromEmptyProxy",
     "inputs": [
       {

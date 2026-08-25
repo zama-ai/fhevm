@@ -794,6 +794,19 @@
   },
   {
     "type": "function",
+    "name": "getCleartextArithmeticAddress",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "getHCULimitAddress",
     "inputs": [],
     "outputs": [

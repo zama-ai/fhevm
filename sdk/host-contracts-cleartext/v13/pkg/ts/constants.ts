@@ -2,43 +2,36 @@ import { DEFAULT_COPROCESSOR_ADDRESSES } from './signers/defaultCoprocessorSigne
 import { DEFAULT_KMS_NODE_ADDRESSES } from './signers/defaultKmsSigners.js';
 import { DEFAULT_KMS_NODE_TX_SENDER_ADDRESSES } from './signers/defaultKmsTxSenderSigners.js';
 import type { BootstrapConfigV13, KmsNode, KmsThresholds } from './types/public.js';
+// Every scalar the cleartext stack is configured with comes from here, and this module is a byte-for-byte
+// copy of internal/cleartext-config.ts — see its header. The values are deliberately NOT re-exported
+// under `DEFAULT_*` aliases: an alias is a second name for one value, which is how the two copies of this
+// config drifted in the first place.
+import {
+  CLEARTEXT_COPROCESSOR_COUNT,
+  CLEARTEXT_COPROCESSOR_THRESHOLD,
+  CLEARTEXT_DECRYPTION_ADDRESS,
+  CLEARTEXT_GATEWAY_CHAIN_ID,
+  CLEARTEXT_HCU_CAP_PER_BLOCK,
+  CLEARTEXT_INPUT_VERIFICATION_ADDRESS,
+  CLEARTEXT_KMS_NODE_COUNT,
+  CLEARTEXT_KMS_NODE_IP_ADDRESS_PREFIX,
+  CLEARTEXT_KMS_NODE_STORAGE_URL_PREFIX,
+  CLEARTEXT_MAX_HCU_DEPTH_PER_TX,
+  CLEARTEXT_MAX_HCU_PER_TX,
+} from './cleartext-config.js';
 
-// Calculated as `address(uint160(uint256(keccak256("fhevm.cheat.address cleartext input verification"))))`.
-export const DEFAULT_INPUT_VERIFICATION_ADDRESS = '0x6189F6c0c3E40B4a3c72ec86262295D78d845297';
-
-// Calculated as `address(uint160(uint256(keccak256("fhevm.cheat.address cleartext decryption"))))`.
-export const DEFAULT_DECRYPTION_ADDRESS = '0xEaaA2FC6BC259dF015Aa7Dc8e59e0B67df622721';
-
-export const DEFAULT_HCU_CAP_PER_BLOCK = 281474976710655n;
-export const DEFAULT_MAX_HCU_DEPTH_PER_TX = 5000000n;
-export const DEFAULT_MAX_HCU_PER_TX = 20000000n;
-
-export const DEFAULT_CHAIN_ID_GATEWAY = 654321n;
-
-export const FHEVM_MNEMONIC = 'test test test test test test test future home engine virtual motion';
-
-export const DEFAULT_COPROCESSORS_MNEMONIC = FHEVM_MNEMONIC;
-export const DEFAULT_COPROCESSORS_MNEMONIC_PATH = "m/44'/60'/0'/2/";
-export const DEFAULT_COPROCESSORS_MNEMONIC_INDEX = 0;
-
-export const DEFAULT_KMS_NODES_MNEMONIC = FHEVM_MNEMONIC;
-export const DEFAULT_KMS_NODES_MNEMONIC_PATH = "m/44'/60'/0'/3/";
-export const DEFAULT_KMS_NODES_MNEMONIC_INDEX = 0;
-
-export const DEFAULT_KMS_NODES_TX_SENDER_MNEMONIC = FHEVM_MNEMONIC;
-export const DEFAULT_KMS_NODES_TX_SENDER_MNEMONIC_PATH = "m/44'/60'/0'/4/";
-export const DEFAULT_KMS_NODES_TX_SENDER_MNEMONIC_INDEX = 0;
-
-export const DEFAULT_COPROCESSOR_THESHOLD = 4n;
-
-export const DEFAULT_NUM_COPROCESSORS = 4n;
-export const DEFAULT_NUM_KMS_NODES = 4n;
-
+/**
+ * The four KMS thresholds, each defaulting to the node count.
+ *
+ * `CLEARTEXT_KMS_NODE_COUNT` is a plain number — it is a count, and the harness renders it into Solidity
+ * as one — whereas the on-chain struct takes `uint256`, so it is widened here rather than stored twice in
+ * two types.
+ */
 export const DEFAULT_KMS_THRESHOLDS: KmsThresholds = {
-  publicDecryption: DEFAULT_NUM_KMS_NODES,
-  userDecryption: DEFAULT_NUM_KMS_NODES,
-  kmsGen: DEFAULT_NUM_KMS_NODES,
-  mpc: DEFAULT_NUM_KMS_NODES,
+  publicDecryption: BigInt(CLEARTEXT_KMS_NODE_COUNT),
+  userDecryption: BigInt(CLEARTEXT_KMS_NODE_COUNT),
+  kmsGen: BigInt(CLEARTEXT_KMS_NODE_COUNT),
+  mpc: BigInt(CLEARTEXT_KMS_NODE_COUNT),
 };
 
 function generateDefaultKmsNodes(num: number): KmsNode[] {
@@ -52,8 +45,8 @@ function generateDefaultKmsNodes(num: number): KmsNode[] {
       txSenderAddress: DEFAULT_KMS_NODE_TX_SENDER_ADDRESSES[i]!,
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       signerAddress: DEFAULT_KMS_NODE_ADDRESSES[i]!,
-      ipAddress: `127.0.0.${i + 1}`,
-      storageUrl: `s3://kms-bucket-${i + 1}`,
+      ipAddress: `${CLEARTEXT_KMS_NODE_IP_ADDRESS_PREFIX}${i + 1}`,
+      storageUrl: `${CLEARTEXT_KMS_NODE_STORAGE_URL_PREFIX}${i + 1}`,
     };
     nodes.push(n);
   }
@@ -78,8 +71,8 @@ export function generateFromExistingDefaultKmsNodes(existingSigners: string[]): 
       txSenderAddress: DEFAULT_KMS_NODE_TX_SENDER_ADDRESSES[j]!,
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       signerAddress: DEFAULT_KMS_NODE_ADDRESSES[j]!,
-      ipAddress: `127.0.0.${j + 1}`,
-      storageUrl: `s3://kms-bucket-${j + 1}`,
+      ipAddress: `${CLEARTEXT_KMS_NODE_IP_ADDRESS_PREFIX}${j + 1}`,
+      storageUrl: `${CLEARTEXT_KMS_NODE_STORAGE_URL_PREFIX}${j + 1}`,
     };
   });
 }
@@ -147,22 +140,22 @@ function generateDefaultCoprocessors(num: number): string[] {
 
 export const DEFAUT_BOOTSTRAP_CONFIG_V13: BootstrapConfigV13 = {
   hcuLimit: {
-    hcuCapPerBlock: DEFAULT_HCU_CAP_PER_BLOCK,
-    maxHCUDepthPerTx: DEFAULT_MAX_HCU_DEPTH_PER_TX,
-    maxHCUPerTx: DEFAULT_MAX_HCU_PER_TX,
+    hcuCapPerBlock: CLEARTEXT_HCU_CAP_PER_BLOCK,
+    maxHCUDepthPerTx: CLEARTEXT_MAX_HCU_DEPTH_PER_TX,
+    maxHCUPerTx: CLEARTEXT_MAX_HCU_PER_TX,
   },
   inputVerifier: {
-    chainIDSource: DEFAULT_CHAIN_ID_GATEWAY,
-    initialSigners: generateDefaultCoprocessors(Number(DEFAULT_NUM_COPROCESSORS)),
-    initialThreshold: DEFAULT_COPROCESSOR_THESHOLD,
-    verifyingContractSource: DEFAULT_INPUT_VERIFICATION_ADDRESS,
+    chainIDSource: CLEARTEXT_GATEWAY_CHAIN_ID,
+    initialSigners: generateDefaultCoprocessors(CLEARTEXT_COPROCESSOR_COUNT),
+    initialThreshold: BigInt(CLEARTEXT_COPROCESSOR_THRESHOLD),
+    verifyingContractSource: CLEARTEXT_INPUT_VERIFICATION_ADDRESS,
   },
   protocolConfig: {
-    initialKmsNodes: generateDefaultKmsNodes(Number(DEFAULT_NUM_KMS_NODES)),
+    initialKmsNodes: generateDefaultKmsNodes(CLEARTEXT_KMS_NODE_COUNT),
     initialThresholds: DEFAULT_KMS_THRESHOLDS,
   },
   kmsVerifier: {
-    chainIDSource: DEFAULT_CHAIN_ID_GATEWAY,
-    verifyingContractSource: DEFAULT_DECRYPTION_ADDRESS,
+    chainIDSource: CLEARTEXT_GATEWAY_CHAIN_ID,
+    verifyingContractSource: CLEARTEXT_DECRYPTION_ADDRESS,
   },
 };

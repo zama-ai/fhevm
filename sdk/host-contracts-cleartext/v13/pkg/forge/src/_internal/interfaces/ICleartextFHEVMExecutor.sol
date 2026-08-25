@@ -99,6 +99,7 @@ interface ICleartextFHEVMExecutor {
     function fheSub(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result);
     function fheSum(bytes32[] memory values, FheType resultType) external returns (bytes32 result);
     function getACLAddress() external view returns (address);
+    function getCleartextArithmeticAddress() external view returns (address);
     function getHCULimitAddress() external view returns (address);
     function getHandleVersion() external pure returns (uint8);
     function getInputVerifierAddress() external view returns (address);

@@ -8,14 +8,21 @@ import { toHex } from 'viem';
 import { mnemonicToAccount } from 'viem/accounts';
 import { format, resolveConfig } from 'prettier';
 import { PKG_DIR_ABS_PATH } from './constants.ts';
+import {
+  CLEARTEXT_COPROCESSORS_MNEMONIC,
+  CLEARTEXT_COPROCESSORS_MNEMONIC_PATH,
+  CLEARTEXT_KMS_NODES_MNEMONIC,
+  CLEARTEXT_KMS_NODES_MNEMONIC_PATH,
+  CLEARTEXT_KMS_NODES_TX_SENDER_MNEMONIC,
+  CLEARTEXT_KMS_NODES_TX_SENDER_MNEMONIC_PATH,
+} from './cleartext-config.ts';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// Well-known FHEVM test mnemonic. Kept in sync with FHEVM_MNEMONIC in ts/constants.ts.
-const FHEVM_MNEMONIC = 'test test test test test test test future home engine virtual motion';
-
 // Size of each derived signer pool. The runtime slices the first N it needs; this is the pool the SDK
-// ships. Must match SDK_NUM_SIGNERS in ts/constants.ts (which asserts the loaded pool has this length).
+// ships. Not part of cleartext-config.ts: the payload never states a pool size, it reads
+// `.length` off the generated arrays. What does depend on it is the js-sdk relayer, which derives the
+// same pool independently — `test/signers.test.ts` compares the two.
 const DEFAULT_SIGNER_COUNT = 20;
 
 type SignerSet = {
@@ -33,30 +40,31 @@ type SignerSet = {
   readonly count: number;
 };
 
-// One entry per generated module. `path` mirrors the DEFAULT_*_MNEMONIC_PATH constants in ts/constants.ts.
+// One entry per generated module. Mnemonic and HD path come from cleartext-config.ts, the same module the
+// payload reads, so the pools the SDK ships and the paths it documents cannot disagree.
 export const SIGNER_SETS: readonly SignerSet[] = [
   {
     fileName: 'defaultCoprocessorSigners.ts',
     pkConstName: 'DEFAULT_COPROCESSOR_PK',
     addressConstName: 'DEFAULT_COPROCESSOR_ADDRESSES',
-    mnemonic: FHEVM_MNEMONIC,
-    path: "m/44'/60'/0'/2/",
+    mnemonic: CLEARTEXT_COPROCESSORS_MNEMONIC,
+    path: CLEARTEXT_COPROCESSORS_MNEMONIC_PATH,
     count: DEFAULT_SIGNER_COUNT,
   },
   {
     fileName: 'defaultKmsSigners.ts',
     pkConstName: 'DEFAULT_KMS_NODE_PK',
     addressConstName: 'DEFAULT_KMS_NODE_ADDRESSES',
-    mnemonic: FHEVM_MNEMONIC,
-    path: "m/44'/60'/0'/3/",
+    mnemonic: CLEARTEXT_KMS_NODES_MNEMONIC,
+    path: CLEARTEXT_KMS_NODES_MNEMONIC_PATH,
     count: DEFAULT_SIGNER_COUNT,
   },
   {
     fileName: 'defaultKmsTxSenderSigners.ts',
     pkConstName: 'DEFAULT_KMS_NODE_TX_SENDER_PK',
     addressConstName: 'DEFAULT_KMS_NODE_TX_SENDER_ADDRESSES',
-    mnemonic: FHEVM_MNEMONIC,
-    path: "m/44'/60'/0'/4/",
+    mnemonic: CLEARTEXT_KMS_NODES_TX_SENDER_MNEMONIC,
+    path: CLEARTEXT_KMS_NODES_TX_SENDER_MNEMONIC_PATH,
     count: DEFAULT_SIGNER_COUNT,
   },
 ];

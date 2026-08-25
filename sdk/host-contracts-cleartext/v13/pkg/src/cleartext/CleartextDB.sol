@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {ICleartextDB} from "./ICleartextDB.sol";
 import {UUPSUpgradeableEmptyProxy} from "../contracts/shared/UUPSUpgradeableEmptyProxy.sol";
-import {ACLOwnable} from "../contracts/shared/ACLOwnable.sol";
+import {ACLOwnable, aclAdd} from "../contracts/shared/ACLOwnable.sol";
 
 /**
  * @title CleartextDB
@@ -103,5 +103,12 @@ contract CleartextDB is ICleartextDB, UUPSUpgradeableEmptyProxy, ACLOwnable {
         assembly {
             $.slot := CLEARTEXT_DB_STORAGE_LOCATION
         }
+    }
+
+    /**
+     * @notice Getter function for the ACL contract address.
+     */
+    function getACLAddress() public view virtual returns (address) {
+        return aclAdd;
     }
 }

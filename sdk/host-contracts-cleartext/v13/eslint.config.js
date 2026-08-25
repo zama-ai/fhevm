@@ -14,6 +14,7 @@ export default [
   {
     ignores: [
       'test/ts/adapter-nonce-diagnostics.test.ts',
+      'test/ts/precompute-addresses.test.ts',
       'test/ts/ethers-adapter.test.ts',
       'test/ts/utils/ethersEthereumLib.ts',
       'test/ts/tarball-consumer.test.ts',

@@ -10,7 +10,11 @@ pragma solidity ^0.8.24;
 // for. Registering any other signer leaves the relayer with no key for the address the chain reports.
 
 library LocalHostBootstrap {
-    uint64 internal constant GATEWAY_CHAIN_ID = 654321;
+    /// @dev The gateway chain id every EIP-712 proof is bound to. Not a real chain: in cleartext mode it
+    ///      only has to be a stable agreed-upon value, so it is derived from a namespaced string the same
+    ///      way the two addresses below are, and truncated to uint48 so it stays a plausible chain id.
+    ///        GATEWAY_CHAIN_ID = uint48(uint256(keccak256("fhevm.cheat.chainId cleartext gateway")))
+    uint64 internal constant GATEWAY_CHAIN_ID = 100733346448153;
 
     /// @dev The EIP-712 verifyingContract each proof is bound to. Not deployed anywhere: on a real
     ///      network these are gateway contracts, and in cleartext mode they only need to be a stable

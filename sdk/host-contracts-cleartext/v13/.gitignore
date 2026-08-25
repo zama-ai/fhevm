@@ -12,3 +12,8 @@ test/ts/node_modules
 .deploy-config
 broadcast
 .tmp-localhost
+
+# create2-deploy out dirs: one per (chain, deploymentId).
+# The seal inside them IS committed, deliberately and explicitly, with `git add -f` (plan section 9).
+.out
+.out-*

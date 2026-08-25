@@ -333,6 +333,32 @@ what the package claims. `--verbose` also lists upstream files that are not vend
 (exit 0) outside a git checkout or when the commit is not fetched, and fails if either side of the
 comparison is empty — an extraction that produced nothing would otherwise look like success.
 
+The rules 15/17 gate — the localhost address set still being the one `ZamaConfig.sol` hands out:
+
+```sh
+npm run check:zama-config         # also runs inside `npm run build`
+#   🔎 rules 15 and 17: ZAMA_LOCAL_CONFIG must match ZamaConfig.sol _getLocalConfig()
+#      library-solidity/config/ZamaConfig.sol
+#      ✅ ACLAddress           aclAddress             0x50157CFfD6bBFA2DECe204a89ec419c23ef5755D
+#      ✅ CoprocessorAddress   fhevmExecutorAddress   0xe3a9105a3a932253A70F126eb1E3b589C643dD24
+#      ✅ KMSVerifierAddress   kmsVerifierAddress     0x901F8942346f7AB3a01F6D7613119Bca447Bb030
+```
+
+This is the one direction the other address checks do not cover. `generateLocalHostBytecode.ts` asserts
+the *derived* addresses equal `ZAMA_LOCAL_CONFIG`, and `test/templates.test.ts` asserts the generated
+forge constants do too — but all of them compare against that same hand-written constant in
+`internal/constants.ts`. An upstream edit to `_getLocalConfig()` therefore leaves the whole chain
+self-consistent and collectively wrong. This one parses the Solidity instead, so the transcription is
+checked against its source.
+
+It reads the file, compiles nothing, and refuses to pass vacuously: an absent `ZamaConfig.sol`, a 31337
+branch that no longer routes to `_getLocalConfig()`, a renamed field, or a **new** field are all
+failures rather than skips. A new field especially — that is an address the cleartext stack has to place,
+and quietly ignoring it would narrow the check to the three fields we happen to know about.
+
+Note it verifies the address *set*, not where a deploy actually lands; that is `./scripts/anvil.sh`
+below (and still not part of `npm run test` — see RULES.md rule 17).
+
 ## Things that bite
 
 - `test/templates.test.ts` has its own `ALTERNATE_ADDRESSES` fixture; a new host address must be added

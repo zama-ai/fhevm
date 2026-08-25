@@ -97,4 +97,11 @@ contract CleartextFHEVMExecutor is FHEVMExecutor {
     function _cleartext() private pure returns (ICleartextArithmetic) {
         return ICleartextArithmetic(cleartextArithmeticAdd);
     }
+
+    /**
+     * @notice Getter function for the CleartextArithmetic contract address.
+     */
+    function getCleartextArithmeticAddress() public view virtual returns (address) {
+        return address(cleartextArithmeticAdd);
+    }
 }

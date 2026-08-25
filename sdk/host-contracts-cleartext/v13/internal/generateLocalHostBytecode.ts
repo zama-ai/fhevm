@@ -32,17 +32,24 @@ import { basename, dirname, join, relative } from 'node:path';
 import { getContractAddress } from 'viem';
 import { mnemonicToAccount } from 'viem/accounts';
 import {
+  CLEARTEXT_COPROCESSORS_MNEMONIC_PATH,
+  CLEARTEXT_COPROCESSOR_COUNT,
+  CLEARTEXT_COPROCESSOR_THRESHOLD,
+  CLEARTEXT_DECRYPTION_ADDRESS,
+  CLEARTEXT_GATEWAY_CHAIN_ID,
+  CLEARTEXT_HCU_CAP_PER_BLOCK,
+  CLEARTEXT_INPUT_VERIFICATION_ADDRESS,
+  CLEARTEXT_KMS_NODES_MNEMONIC_PATH,
+  CLEARTEXT_KMS_NODES_TX_SENDER_MNEMONIC_PATH,
+  CLEARTEXT_KMS_NODE_COUNT,
+  CLEARTEXT_KMS_NODE_IP_ADDRESS_PREFIX,
+  CLEARTEXT_KMS_NODE_STORAGE_URL_PREFIX,
+  CLEARTEXT_MAX_HCU_DEPTH_PER_TX,
+  CLEARTEXT_MAX_HCU_PER_TX,
+} from './cleartext-config.ts';
+import {
   ADDRESS_NAMES,
   CONSTANT_NAMES,
-  COPROCESSOR_COUNT,
-  COPROCESSOR_THRESHOLD,
-  DECRYPTION_ADDRESS,
-  GATEWAY_CHAIN_ID,
-  HCU_CAP_PER_BLOCK,
-  INPUT_VERIFICATION_ADDRESS,
-  KMS_NODE_COUNT,
-  MAX_HCU_DEPTH_PER_TX,
-  MAX_HCU_PER_TX,
   type ContractName,
   DEPLOYER_ADDRESS_INDEX,
   DEPLOYER_START_NONCE,
@@ -52,6 +59,7 @@ import {
   ZAMA_LOCAL_CONFIG,
   ADDRESSED_NONCE_COUNT,
   NONCE_OFFSET,
+  UNNAMED_NONCE_CONTRACTS,
   type AddressName,
 } from './constants.ts';
 import { SIGNER_SETS, deriveSigners } from './generateSigners.ts';
@@ -111,12 +119,6 @@ export const CODE_KIND: Readonly<Record<ContractName, CodeKind>> = {
  * incompatible across them. Rewritten to import the one shared enum instead (generate.py does the same). */
 const FHE_TYPE_DECLARATION = '    type FheType is uint8;';
 const FHE_TYPE_IMPORT = 'import {FheType} from "../../../../src/contracts/shared/FheType.sol";';
-
-/** Contracts deployed at nonces that hold no named address — see renderAddresses. */
-const UNNAMED_NONCE_CONTRACTS: Readonly<Record<number, string>> = {
-  0: 'EmptyUUPSProxyACL',
-  2: 'EmptyUUPSProxy (shared implementation)',
-};
 
 type CodeKind = 'creation' | 'runtime';
 
@@ -331,8 +333,14 @@ function _renderBootstrap(): string {
     ].join('\n');
   };
 
-  const ips = Array.from({ length: KMS_NODE_COUNT }, (_unused, index) => `127.0.0.${String(index + 1)}`);
-  const urls = Array.from({ length: KMS_NODE_COUNT }, (_unused, index) => `s3://kms-bucket-${String(index + 1)}`);
+  const ips = Array.from(
+    { length: CLEARTEXT_KMS_NODE_COUNT },
+    (_unused, index) => `${CLEARTEXT_KMS_NODE_IP_ADDRESS_PREFIX}${String(index + 1)}`,
+  );
+  const urls = Array.from(
+    { length: CLEARTEXT_KMS_NODE_COUNT },
+    (_unused, index) => `${CLEARTEXT_KMS_NODE_STORAGE_URL_PREFIX}${String(index + 1)}`,
+  );
 
   return `// SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
@@ -346,7 +354,11 @@ pragma solidity ^0.8.24;
 // for. Registering any other signer leaves the relayer with no key for the address the chain reports.
 
 library LocalHostBootstrap {
-    uint64 internal constant GATEWAY_CHAIN_ID = ${String(GATEWAY_CHAIN_ID)};
+    /// @dev The gateway chain id every EIP-712 proof is bound to. Not a real chain: in cleartext mode it
+    ///      only has to be a stable agreed-upon value, so it is derived from a namespaced string the same
+    ///      way the two addresses below are, and truncated to uint48 so it stays a plausible chain id.
+    ///        GATEWAY_CHAIN_ID = uint48(uint256(keccak256("fhevm.cheat.chainId cleartext gateway")))
+    uint64 internal constant GATEWAY_CHAIN_ID = ${String(CLEARTEXT_GATEWAY_CHAIN_ID)};
 
     /// @dev The EIP-712 verifyingContract each proof is bound to. Not deployed anywhere: on a real
     ///      network these are gateway contracts, and in cleartext mode they only need to be a stable
@@ -356,21 +368,21 @@ library LocalHostBootstrap {
     ///        DECRYPTION_ADDRESS =
     ///          address(uint160(uint256(keccak256("fhevm.cheat.address cleartext decryption"))))
     ///      Both re-derived and checked against ts/constants.ts.
-    address internal constant INPUT_VERIFICATION_ADDRESS = ${INPUT_VERIFICATION_ADDRESS};
-    address internal constant DECRYPTION_ADDRESS = ${DECRYPTION_ADDRESS};
+    address internal constant INPUT_VERIFICATION_ADDRESS = ${CLEARTEXT_INPUT_VERIFICATION_ADDRESS};
+    address internal constant DECRYPTION_ADDRESS = ${CLEARTEXT_DECRYPTION_ADDRESS};
 
-    uint256 internal constant COPROCESSOR_THRESHOLD = ${String(COPROCESSOR_THRESHOLD)};
-    uint256 internal constant KMS_NODE_COUNT = ${String(KMS_NODE_COUNT)};
+    uint256 internal constant COPROCESSOR_THRESHOLD = ${String(CLEARTEXT_COPROCESSOR_THRESHOLD)};
+    uint256 internal constant KMS_NODE_COUNT = ${String(CLEARTEXT_KMS_NODE_COUNT)};
 
-    uint48 internal constant HCU_CAP_PER_BLOCK = ${String(HCU_CAP_PER_BLOCK)};
-    uint48 internal constant MAX_HCU_DEPTH_PER_TX = ${String(MAX_HCU_DEPTH_PER_TX)};
-    uint48 internal constant MAX_HCU_PER_TX = ${String(MAX_HCU_PER_TX)};
+    uint48 internal constant HCU_CAP_PER_BLOCK = ${String(CLEARTEXT_HCU_CAP_PER_BLOCK)};
+    uint48 internal constant MAX_HCU_DEPTH_PER_TX = ${String(CLEARTEXT_MAX_HCU_DEPTH_PER_TX)};
+    uint48 internal constant MAX_HCU_PER_TX = ${String(CLEARTEXT_MAX_HCU_PER_TX)};
 
-${addressFn('coprocessorSigners', pool('defaultCoprocessorSigners.ts'), COPROCESSOR_COUNT, "m/44'/60'/0'/2/")}
+${addressFn('coprocessorSigners', pool('defaultCoprocessorSigners.ts'), CLEARTEXT_COPROCESSOR_COUNT, CLEARTEXT_COPROCESSORS_MNEMONIC_PATH)}
 
-${addressFn('kmsSigners', pool('defaultKmsSigners.ts'), KMS_NODE_COUNT, "m/44'/60'/0'/3/")}
+${addressFn('kmsSigners', pool('defaultKmsSigners.ts'), CLEARTEXT_KMS_NODE_COUNT, CLEARTEXT_KMS_NODES_MNEMONIC_PATH)}
 
-${addressFn('kmsTxSenders', pool('defaultKmsTxSenderSigners.ts'), KMS_NODE_COUNT, "m/44'/60'/0'/4/")}
+${addressFn('kmsTxSenders', pool('defaultKmsTxSenderSigners.ts'), CLEARTEXT_KMS_NODE_COUNT, CLEARTEXT_KMS_NODES_TX_SENDER_MNEMONIC_PATH)}
 
 ${stringFn('kmsIpAddresses', ips)}
 

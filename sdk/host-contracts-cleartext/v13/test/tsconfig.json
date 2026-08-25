@@ -10,6 +10,7 @@
   "include": ["./**/*.ts", "../internal/**/*.ts"],
   "exclude": [
     "./ts/adapter-nonce-diagnostics.test.ts",
+    "./ts/precompute-addresses.test.ts",
     "./ts/ethers-adapter.test.ts",
     "./ts/utils/ethersEthereumLib.ts",
     "./ts/tarball-consumer.test.ts",

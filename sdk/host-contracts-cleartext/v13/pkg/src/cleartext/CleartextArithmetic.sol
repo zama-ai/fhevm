@@ -83,6 +83,13 @@ contract CleartextArithmetic is ICleartextArithmetic, UUPSUpgradeableEmptyProxy,
         return ICleartextDB(cleartextDbAdd).get(handle);
     }
 
+    /**
+     * @notice Getter function for the CleartextDB contract address.
+     */
+    function getCleartextDBAddress() public view virtual returns (address) {
+        return address(cleartextDbAdd);
+    }
+
     // -----------------------------------------------------------------------
     // record* entry points (see ICleartextArithmetic) — compute + persist
     // -----------------------------------------------------------------------
