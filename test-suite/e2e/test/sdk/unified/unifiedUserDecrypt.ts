@@ -514,14 +514,21 @@ export function expectStuckAtKms(poll: PollResult | undefined): void {
  * Assert an async rejection surfaced by the relayer's transaction simulation:
  * the Gateway reverts the request on-chain, so the job goes terminal `failed`
  * before any transaction is sent (and before the decryption fee is charged).
- * The message pattern pins the exact revert so the test cannot pass on an
- * unrelated simulation failure.
+ * The relayer forwards the RPC error's `message` and drops `data`, where a custom
+ * error's selector lives — anvil inlines it into `message`, geth-family nodes do
+ * not. So pin the selector only when the node exposed one; a wrong-reason revert
+ * still fails.
  */
-export function expectGatewayRevert(poll: PollResult | undefined, messagePattern: RegExp): void {
+export function expectGatewayRevert(poll: PollResult | undefined, selector: string): void {
   assertReachedTerminalState(poll);
   expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('failed');
   const message = ((poll?.raw as { error?: { message?: string } })?.error?.message ?? '') as string;
-  expect(message, JSON.stringify(poll?.raw)).to.match(messagePattern);
+  expect(message, JSON.stringify(poll?.raw)).to.match(/execution reverted/i);
+
+  const exposed = message.match(/0x[0-9a-fA-F]{8,}/)?.[0];
+  if (exposed !== undefined) {
+    expect(exposed.toLowerCase(), JSON.stringify(poll?.raw)).to.have.string(selector.toLowerCase());
+  }
 }
 
 /** Build a direct-access handle entry (`ownerAddress == userAddress`). */

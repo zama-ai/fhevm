@@ -739,9 +739,8 @@ describe('Unified user decryption', function () {
         },
       );
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-      // InvalidKmsContext(<unknownContextId>) — selector 0x77ddbe81. The id is
-      // random per run, so this cannot pass or fail because of leftover state.
-      expectGatewayRevert(poll, /0x77ddbe81/i);
+      // InvalidKmsContext.
+      expectGatewayRevert(poll, '0x77ddbe81');
     });
 
     it('test unified user decrypt rejects a malformed extraData version', async function () {
