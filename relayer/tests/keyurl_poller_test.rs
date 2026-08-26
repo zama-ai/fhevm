@@ -17,7 +17,7 @@ use alloy::sol_types::{SolCall, SolEvent, SolValue};
 use ethereum_rpc_mock::{MockConfig, MockServer, Response, UsageLimit};
 use fhevm_host_bindings::i_protocol_config::IProtocolConfig;
 use fhevm_host_bindings::ikms_generation::IKMSGeneration;
-use fhevm_relayer::config::settings::{KeyUrlConfig, ProtocolConfigSettings, RetrySettings};
+use fhevm_relayer::config::settings::{ProtocolConfigSettings, RetrySettings};
 use fhevm_relayer::host::KeyUrlPoller;
 use tokio::sync::watch;
 
@@ -31,20 +31,15 @@ fn expected_url(segment: &str, id: u64) -> String {
     format!("{STORAGE_URL}/{STORAGE_PREFIX}/{segment}/{id_hex}")
 }
 
-fn make_config(port: u16, poll_interval_ms: u64) -> (ProtocolConfigSettings, KeyUrlConfig) {
-    let protocol_config = ProtocolConfigSettings {
+fn make_config(port: u16) -> ProtocolConfigSettings {
+    ProtocolConfigSettings {
         ethereum_http_rpc_url: format!("http://localhost:{}", port),
         address: CONTRACT_ADDR.to_string(),
         retry: RetrySettings {
             max_attempts: 3,
             retry_interval_ms: 50,
         },
-    };
-    let keyurl = KeyUrlConfig {
-        kms_generation_address: CONTRACT_ADDR.to_string(),
-        poll_interval_ms,
-    };
-    (protocol_config, keyurl)
+    }
 }
 
 fn addr() -> Address {
@@ -183,8 +178,8 @@ async fn initialize_maps_chain_state_to_response() {
     let handle = mock.start().await.unwrap();
     let port = handle.port();
 
-    let (protocol_config, keyurl) = make_config(port, 12_000);
-    let mut poller = KeyUrlPoller::new(&protocol_config, &keyurl).unwrap();
+    let protocol_config = make_config(port);
+    let mut poller = KeyUrlPoller::new(&protocol_config, CONTRACT_ADDR, 12_000).unwrap();
     let response = poller
         .initialize()
         .await
@@ -239,8 +234,8 @@ async fn run_pushes_updated_value_on_id_change() {
     let port = handle.port();
 
     // Seed via the startup fetch (reads key id 3), then run the loop on a short interval.
-    let (protocol_config, keyurl) = make_config(port, 100);
-    let mut poller = KeyUrlPoller::new(&protocol_config, &keyurl).unwrap();
+    let protocol_config = make_config(port);
+    let mut poller = KeyUrlPoller::new(&protocol_config, CONTRACT_ADDR, 100).unwrap();
     let initial = poller
         .initialize()
         .await
