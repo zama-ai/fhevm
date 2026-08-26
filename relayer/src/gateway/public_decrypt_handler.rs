@@ -397,11 +397,15 @@ impl GatewayHandler {
                         "Public decrypt already timed out (late response event), skipping"
                     );
                 }
+                // Not a warning: a second copy of the same response is expected. A listener
+                // that must attest to its block range re-dispatches an event another
+                // instance is still handling, and it lands here while the first copy is
+                // mid-flight.
                 other_status => {
-                    warn!(
+                    debug!(
                         int_job_id = %int_job_id,
                         current_status = ?other_status,
-                        "Public decrypt in unexpected state, skipping response event - possible race condition or late event"
+                        "Public decrypt not ready for a response event, skipping it"
                     );
                 }
             },

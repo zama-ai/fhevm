@@ -65,17 +65,18 @@ gateway:
     recycle_interval_mins: 30
     # Polling interval in milliseconds (for polling type listeners)
     poll_interval_ms: 2000
-    # TTL for event deduplication cache in seconds (1-10)
+    # How long the event registry remembers an event, in seconds (1-10). It bounds both how
+    # long the same log seen by two listener instances counts as one event, and how long an
+    # entry survives while its handlers run; the window restarts when they finish.
     dedup_ttl_seconds: 5
-    # Maximum capacity for deduplication cache
+    # Maximum number of events the registry tracks at once.
     #
     # Sizing formula: events_per_second * num_listeners * dedup_ttl_seconds * 1.2 (safety buffer)
     #
     # Recommended values (with 3 listeners, 5s TTL, 1.2x buffer):
-    #   100 events/sec → 1,800
-    #   300 events/sec → 5,400
-    #   1000 events/sec → 18,000
-    #   5000 events/sec → 90,000
+    #   100 events/sec -> 1,800
+    #   1000 events/sec -> 18,000
+    #   5000 events/sec -> 90,000
     #
     # Current setting: 100,000 (suitable for ~5500 events/sec)
     dedup_max_capacity: 100000

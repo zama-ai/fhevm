@@ -154,6 +154,8 @@ pub enum ListenerStep {
     EventReceived,
     EventDuplicate,
     EventUnroutable,
+    EventCompleted,
+    EventRedispatched,
     BlockProgressUpdated,
 
     // Degraded path (WARN)
@@ -171,6 +173,8 @@ impl fmt::Display for ListenerStep {
             Self::EventReceived => "event_received",
             Self::EventDuplicate => "event_duplicate",
             Self::EventUnroutable => "event_unroutable",
+            Self::EventCompleted => "event_completed",
+            Self::EventRedispatched => "event_redispatched",
             Self::BlockProgressUpdated => "block_progress_updated",
             Self::ProviderRetrying => "provider_retrying",
             Self::SubscriptionDropped => "subscription_dropped",
