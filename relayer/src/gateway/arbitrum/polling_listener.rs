@@ -17,6 +17,7 @@ use alloy::{
 };
 use async_trait::async_trait;
 use std::{str::FromStr, sync::Arc, time::Duration};
+use tokio_util::sync::CancellationToken;
 
 /// HTTP polling listener that uses eth_getLogs at configurable intervals
 pub struct PollingListener {
@@ -29,6 +30,8 @@ pub struct PollingListener {
     pool_index: usize,
     /// HTTP URL for this listener
     http_url: String,
+    /// Cancelled when shutdown closes the sources of new work.
+    shutdown: CancellationToken,
 }
 
 impl PollingListener {
@@ -38,6 +41,7 @@ impl PollingListener {
         handled_events: Arc<HandledEvents>,
         pool_index: usize,
         http_url: String,
+        shutdown: CancellationToken,
     ) -> anyhow::Result<Self> {
         // Enforce HTTP URL - polling listener requires HTTP, not WebSocket
         if !http_url.starts_with("http://") && !http_url.starts_with("https://") {
@@ -54,7 +58,17 @@ impl PollingListener {
             handled_events,
             pool_index,
             http_url,
+            shutdown,
         })
+    }
+
+    /// Sleep for `dur`, returning early if shutdown is requested meanwhile. Returns `true`
+    /// if the sleep was cut short by shutdown.
+    async fn sleep_or_shutdown(&self, dur: Duration) -> bool {
+        tokio::select! {
+            _ = tokio::time::sleep(dur) => false,
+            _ = self.shutdown.cancelled() => true,
+        }
     }
 
     /// The block to resume polling after. Nothing is written here: the first range this
@@ -157,7 +171,16 @@ impl PollingListener {
             }
 
             // Wait for poll interval
-            tokio::time::sleep(Duration::from_millis(poll_interval_ms)).await;
+            if self
+                .sleep_or_shutdown(Duration::from_millis(poll_interval_ms))
+                .await
+            {
+                info!(
+                    instance_id = self.pool_index,
+                    "Polling listener stopping (shutdown)"
+                );
+                return Ok(());
+            }
 
             // Get current block number
             let current_block = match provider.get_block_number().await {
@@ -173,7 +196,16 @@ impl PollingListener {
                         consecutive_failures,
                         max_attempts
                     );
-                    tokio::time::sleep(Duration::from_millis(retry_interval)).await;
+                    if self
+                        .sleep_or_shutdown(Duration::from_millis(retry_interval))
+                        .await
+                    {
+                        info!(
+                            instance_id = self.pool_index,
+                            "Polling listener stopping (shutdown)"
+                        );
+                        return Ok(());
+                    }
                     continue;
                 }
             };
@@ -210,7 +242,16 @@ impl PollingListener {
                         consecutive_failures,
                         max_attempts
                     );
-                    tokio::time::sleep(Duration::from_millis(retry_interval)).await;
+                    if self
+                        .sleep_or_shutdown(Duration::from_millis(retry_interval))
+                        .await
+                    {
+                        info!(
+                            instance_id = self.pool_index,
+                            "Polling listener stopping (shutdown)"
+                        );
+                        return Ok(());
+                    }
                     continue;
                 }
             };

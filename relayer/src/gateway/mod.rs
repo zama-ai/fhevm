@@ -30,14 +30,21 @@ use arbitrum::{
     ArbitrumListener, PollingListener, WsRecycleStagger,
 };
 use std::{str::FromStr, sync::Arc, time::Duration};
+use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
 /// Initialize all gateway components including handlers and listeners.
+///
+/// `intake_shutdown` stops the gateway listeners/pollers, alongside the HTTP server and the
+/// keyurl poller, the sources of new work; `dequeue_shutdown` stops the tx and readiness
+/// processors from dequeuing, and cancels the readiness checks already running.
 pub async fn initialize_gateway(
     orchestrator: Arc<Orchestrator>,
     settings: &Settings,
     repositories: Arc<Repositories>,
     gateway_throttlers: GatewayThrottlers,
+    dequeue_shutdown: CancellationToken,
+    intake_shutdown: CancellationToken,
 ) -> anyhow::Result<()> {
     info!("Initializing gateway components");
 
@@ -55,25 +62,31 @@ pub async fn initialize_gateway(
 
     // Spawn gateway task for input proof throttler.
     GatewayTxProcessor::orchestrator_spawn_task(
+        "gateway_tx_processor_input_proof",
         gateway_throttlers.tx_throttlers.input_proof_tx_worker,
         gateway_tx_helper.clone(),
         orchestrator.clone(),
+        dequeue_shutdown.clone(),
     )
     .await?;
 
     // Spawn gateway task for public decrypt throttler.
     GatewayTxProcessor::orchestrator_spawn_task(
+        "gateway_tx_processor_public_decrypt",
         gateway_throttlers.tx_throttlers.public_decrypt_tx_worker,
         gateway_tx_helper.clone(),
         orchestrator.clone(),
+        dequeue_shutdown.clone(),
     )
     .await?;
 
     // Spawn gateway task for user decrypt throttler.
     GatewayTxProcessor::orchestrator_spawn_task(
+        "gateway_tx_processor_user_decrypt",
         gateway_throttlers.tx_throttlers.user_decrypt_tx_worker,
         gateway_tx_helper.clone(),
         orchestrator.clone(),
+        dequeue_shutdown.clone(),
     )
     .await?;
 
@@ -104,6 +117,7 @@ pub async fn initialize_gateway(
             .public_decrypt_readiness_worker,
         readiness_checker.clone(),
         orchestrator.clone(),
+        dequeue_shutdown.clone(),
     )
     .await?;
 
@@ -113,6 +127,7 @@ pub async fn initialize_gateway(
             .user_decrypt_readiness_worker,
         readiness_checker.clone(),
         orchestrator.clone(),
+        dequeue_shutdown.clone(),
     )
     .await?;
 
@@ -224,6 +239,7 @@ pub async fn initialize_gateway(
                             index: ws_stagger_index,
                             total: num_ws_listeners,
                         },
+                        intake_shutdown.clone(),
                     )
                     .await
                     .map_err(|e| {
@@ -281,6 +297,7 @@ pub async fn initialize_gateway(
                         handled_events.clone(),
                         pool_index,
                         url.clone(),
+                        intake_shutdown.clone(),
                     )
                     .map_err(|e| {
                         anyhow::anyhow!(
