@@ -4200,6 +4200,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "kms-connector-api"
+version = "0.15.0"
+dependencies = [
+ "alloy",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "kms-grpc"
 version = "0.15.0-0"
 source = "git+https://github.com/zama-ai/kms.git?rev=d27c3b52aa292f6e06c03c668223d0aac9be22e4#d27c3b52aa292f6e06c03c668223d0aac9be22e4"

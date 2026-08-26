@@ -1,0 +1,89 @@
+{
+  "publicDecryption": [
+    {
+      "name": "two handles, one-byte extraData",
+      "request": {
+        "payload": {
+          "ctHandles": [
+            "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "0x2222222222222222222222222222222222222222222222222222222222222222"
+          ],
+          "extraData": "0x00"
+        },
+        "senderSignature": "0xdeadbeef",
+        "timestamp": 1770000000
+      },
+      "decryptionId": "0xe49252c5d9e0951922abc95f5ab346394bc305ad36bf9360d5d60b3cc608f542"
+    },
+    {
+      "name": "empty payload",
+      "request": {
+        "payload": {
+          "ctHandles": [],
+          "extraData": "0x"
+        },
+        "senderSignature": "0x",
+        "timestamp": 0
+      },
+      "decryptionId": "0xfaf82858a5163286dc2c454cd254d2058da3bde1119668ba6e3dbb3d95334ce6"
+    }
+  ],
+  "userDecryption": [
+    {
+      "name": "single handle, RFC-033-style payload",
+      "request": {
+        "payload": {
+          "handles": [
+            {
+              "handle": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "contractAddress": "0x3333333333333333333333333333333333333333",
+              "ownerAddress": "0x4444444444444444444444444444444444444444"
+            }
+          ],
+          "userAddress": "0x5555555555555555555555555555555555555555",
+          "publicKey": "0x20002000",
+          "allowedContracts": [
+            "0x3333333333333333333333333333333333333333"
+          ],
+          "requestValidity": {
+            "startTimestamp": 1770000000,
+            "durationSeconds": 300
+          },
+          "signature": "0x6666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666",
+          "extraData": "0x00"
+        },
+        "senderSignature": "0xdeadbeef",
+        "timestamp": 1770000000
+      },
+      "decryptionId": "0x756428665001973d5c4e288883269f6cb230f26306970549ac5ca4c23f7471a8"
+    },
+    {
+      "name": "empty payload",
+      "request": {
+        "payload": {
+          "handles": [],
+          "userAddress": "0x0000000000000000000000000000000000000000",
+          "publicKey": "0x",
+          "allowedContracts": [],
+          "requestValidity": {
+            "startTimestamp": 0,
+            "durationSeconds": 0
+          },
+          "signature": "0x",
+          "extraData": "0x"
+        },
+        "senderSignature": "0x",
+        "timestamp": 0
+      },
+      "decryptionId": "0x48cd0cbbca822582802b92572d8b37de07b8104981466fc7bdafb7ef1652d321"
+    }
+  ],
+  "requestSubmission": [
+    {
+      "name": "digest over the first public-decryption vector's id",
+      "payloadHash": "0xe49252c5d9e0951922abc95f5ab346394bc305ad36bf9360d5d60b3cc608f542",
+      "timestamp": 1770000042,
+      "digest": "0x58caa5d04a4bbc6f8036459c7e7198411f945394a17f48049e5d9eeec64ebda4"
+    }
+  ]
+}
