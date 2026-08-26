@@ -2,9 +2,15 @@ name: preview-env-deploy
 
 ##############################################################################
 # Ephemeral per-PR e2e preview environments. Each preview gets its own
-# namespace with a fully isolated stack: anvil host+gateway chains, a
+# namespace with a fully isolated stack: anvil host+gateway chains (default), a
 # dedicated KMS (real keygen), contracts, coprocessor, kms-connector, relayer
 # and test-suite. Nothing is shared across PRs.
+#
+# workflow_dispatch can set use_blockchain_dev=true to skip Anvil and point the
+# stack at the shared blockchain-dev Geth (host 1337) + Nitro (gateway 412346)
+# nodes instead. That path generates unique wallets, funds them from the
+# in-cluster faucets, and still deploys this preview's own contracts (which
+# remain on the shared chain after namespace teardown). PR labels ignore it.
 #
 # Two PR labels control deployment (see check-labels below):
 #   - preview-env-e2e: deploy the PR branch. On PRs images are ALWAYS built
@@ -45,10 +51,6 @@ on:
         default: ""
       gateway_contracts_version:
         description: "Override the image tag for the gateway-contracts deployer image. Leave empty to resolve it automatically from the change-detection base commit."
-        required: false
-        default: ""
-      anvil_node_chart_version:
-        description: "Override with a published anvil-node Helm chart version. Leave empty to deploy charts/anvil-node from the selected branch."
         required: false
         default: ""
       contracts_chart_version:
@@ -129,7 +131,15 @@ on:
         required: false
         default: ""
       deploy_polygon:
-        description: "Also deploy a SECOND (Polygon Amoy, 80002) host chain: a fresh local anvil, its own host-contracts (reusing the ETH KMS key via canonical ProtocolConfig mirror), a per-party listener + coprocessor consumer/poller, and - when automated_tests is on - a Polygon e2e run. Roughly doubles the host-side stack."
+        description: "Also deploy a SECOND (Polygon Amoy, 80002) host chain: a fresh local anvil, its own host-contracts (reusing the ETH KMS key via canonical ProtocolConfig mirror), a per-party listener + coprocessor consumer/poller, and - when automated_tests is on - a Polygon e2e run. Roughly doubles the host-side stack. Incompatible with use_blockchain_dev."
+        required: true
+        type: choice
+        default: "false"
+        options:
+          - "false"
+          - "true"
+      use_blockchain_dev:
+        description: "Skip per-namespace Anvil and connect to the shared blockchain-dev Geth (host 1337) + Nitro (gateway 412346). Generates unique wallets and funds them from the blockchain-dev faucets. Dispatch-only (PR labels stay on Anvil). Incompatible with deploy_polygon. Contracts stay on the shared chain after teardown."
         required: true
         type: choice
         default: "false"
@@ -165,7 +175,10 @@ env:
   # Install sources are decided in the deploy job's "Resolve chart sources"
   # step; this prefix is only where a *_chart_version override is pulled from.
   FHEVM_CHARTS_OCI_PREFIX: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts
-  ANVIL_NODE_CHART_VERSION: ${{ inputs.anvil_node_chart_version }}
+  # Always install charts/anvil-node from this checkout (the dispatch input
+  # for anvil-node chart version was dropped: GitHub caps workflow_dispatch
+  # at 25 inputs, and use_blockchain_dev took the last slot).
+  ANVIL_NODE_CHART_VERSION: ""
   CONTRACTS_CHART_VERSION: ${{ inputs.contracts_chart_version }}
   COPROCESSOR_CHART_VERSION: ${{ inputs.coprocessor_chart_version }}
   KMS_CONNECTOR_CHART_VERSION: ${{ inputs.kms_connector_chart_version }}
@@ -191,6 +204,9 @@ env:
   # dispatch input, off by default (inputs.* is empty on PR runs, so PRs never
   # get Polygon).
   DEPLOY_POLYGON: ${{ inputs.deploy_polygon || 'false' }}
+  # Shared blockchain-dev Geth+Nitro instead of per-namespace Anvil. Empty on
+  # pull_request so labeled PRs never take this path.
+  USE_BLOCKCHAIN_DEV: ${{ inputs.use_blockchain_dev || 'false' }}
   #=====TAILSCALE============================================================
   TAILSCALE_HOSTNAME: tailscale-operator-zws-dev.diplodocus-boa.ts.net
 
@@ -456,6 +472,9 @@ jobs:
           harbor-username: ${{ secrets.HARBOR_READ_LOGIN }}
           harbor-token: ${{ secrets.HARBOR_READ_TOKEN }}
 
+      - name: Resolve chain endpoints
+        run: bash ci/preview-env/scripts/resolve-chain.sh
+
       ######################################################################
       # CHART SOURCES: every in-repo chart installs from this checkout's
       # charts/ directory, so a PR's chart changes deploy without waiting for
@@ -710,14 +729,38 @@ jobs:
           signers_json=$(S3_ENDPOINT="${s3_endpoint}" node ci/preview-env/scripts/discover-kms-signers.mjs)
           echo "signers_json=${signers_json}" >> "$GITHUB_OUTPUT"
 
-      # TX-SENDER WALLETS: derive fhevm's own on-chain identities from the
-      # well-known Foundry/Hardhat mnemonic (both anvil chains pre-fund 120
-      # accounts). Install ethers once; NODE_PATH lets the script's
-      # require('ethers') find it (CJS resolves from the script dir, not cwd).
+      # TX-SENDER WALLETS: Anvil uses the well-known Foundry mnemonic (120
+      # prefunded accounts). blockchain-dev generates a fresh mnemonic and
+      # funds the derived addresses from the in-cluster faucets.
+      - name: Capture host head block (blockchain-dev)
+        if: env.USE_BLOCKCHAIN_DEV == 'true'
+        run: |
+          hex=$(bash ci/preview-env/scripts/cluster-rpc.sh "${HOST_HTTP}" \
+            '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}' | tail -1 | jq -r '.result')
+          if [[ ! "${hex}" =~ ^0x[0-9a-fA-F]+$ ]]; then
+            echo "::error::could not read host eth_blockNumber from ${HOST_HTTP} (got '${hex}')"
+            exit 1
+          fi
+          echo "HEAD_BLOCK=$((hex))" >> "$GITHUB_ENV"
+          echo "blockchain-dev host head block $((hex))"
+
       - name: Install ethers for wallet derivation
         run: |
           mkdir -p /tmp/wallet-tools && cd /tmp/wallet-tools
           npm install --silent --no-save ethers@6
+
+      - name: Generate preview mnemonic (blockchain-dev)
+        if: env.USE_BLOCKCHAIN_DEV == 'true'
+        env:
+          NODE_PATH: /tmp/wallet-tools/node_modules
+          ROLES_JSON_PATH: /tmp/preview-role-wallets.json
+        run: |
+          node ci/preview-env/scripts/generate-mnemonic.cjs
+          echo "ROLES_JSON_PATH=/tmp/preview-role-wallets.json" >> "$GITHUB_ENV"
+          mnemonic=$(jq -r .mnemonic /tmp/preview-role-wallets.json)
+          kubectl create secret generic preview-wallets-mnemonic -n "${NAMESPACE}" \
+            --from-literal=mnemonic="${mnemonic}" \
+            --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Derive KMS tx-sender wallets
         id: kms-wallets
@@ -751,22 +794,36 @@ jobs:
           echo "Coprocessor HD offset: ${HD_OFFSET} (KMS parties: ${NB_KMS_CORE})"
           node ci/preview-env/scripts/derive-wallets.cjs
 
+      - name: Fund wallets from blockchain-dev faucets
+        if: env.USE_BLOCKCHAIN_DEV == 'true'
+        env:
+          WALLETS_JSON: ${{ steps.kms-wallets.outputs.wallets_json }}
+          COPROC_WALLETS_JSON: ${{ steps.coproc-wallets.outputs.wallets_json }}
+        run: bash ci/preview-env/scripts/fund-wallets.sh
+
+      - name: Apply blockchain-dev values overlays
+        if: env.USE_BLOCKCHAIN_DEV == 'true'
+        run: bash ci/preview-env/scripts/apply-chain-env.sh
+
       ######################################################################
       # BLOCKCHAIN: per-PR anvil host + gateway chains, fully isolated.
+      # Skipped when use_blockchain_dev points at the shared Geth/Nitro nodes.
       ######################################################################
       - name: Deploy anvil-host
+        if: env.USE_BLOCKCHAIN_DEV != 'true'
         run: |
           helm upgrade --install anvil-host "${ANVIL_NODE_CHART}" \
             -n "${NAMESPACE}" -f ci/preview-env/host-chain/values-anvil-host-e2e.yaml --wait
 
       - name: Deploy anvil-gateway
+        if: env.USE_BLOCKCHAIN_DEV != 'true'
         run: |
           helm upgrade --install anvil-gateway "${ANVIL_NODE_CHART}" \
             -n "${NAMESPACE}" -f ci/preview-env/gateway-chain/values-anvil-gateway-e2e.yaml --wait
 
       - name: Deploy anvil-host-polygon
         # Second (Polygon Amoy, 80002) host chain - fresh local anvil, no fork.
-        if: env.DEPLOY_POLYGON == 'true'
+        if: env.DEPLOY_POLYGON == 'true' && env.USE_BLOCKCHAIN_DEV != 'true'
         run: |
           helm upgrade --install anvil-host-polygon "${ANVIL_NODE_CHART}" \
             -n "${NAMESPACE}" -f ci/preview-env/host-chain/values-anvil-host-polygon-e2e.yaml --wait
