@@ -402,7 +402,8 @@ health: ## Check relayer health endpoints (requires running relayer)
 # test-groups-check fails the build until you do, and CI runs that check.
 GROUPS := user-decrypt delegated-user-decrypt public-decrypt input-proof \
           admin-endpoint health keyurl keyurl-poller restart \
-          schema-isolation threshold-resolver listener-redundancy common
+          schema-isolation threshold-resolver listener-redundancy \
+          dispatcher-lock sweep epoch-fencing dispatch-gate common
 
 BINS_user-decrypt           := user_decrypt_v2_test user_decrypt_v3_test
 BINS_delegated-user-decrypt := delegated_user_decrypt_v2_test
@@ -417,6 +418,10 @@ BINS_restart                := shutdown_test handled_events_test recovery_test
 BINS_schema-isolation       := schema_isolation_test
 BINS_threshold-resolver     := threshold_resolver_test
 BINS_listener-redundancy    := listener_redundancy_test
+BINS_dispatcher-lock        := dispatcher_lock_test
+BINS_sweep                  := sweep_test
+BINS_epoch-fencing          := epoch_fencing_test
+BINS_dispatch-gate          := dispatch_gate_test
 BINS_common                 := common_test
 
 group_bins = $(foreach g,$(1),$(BINS_$(g)))

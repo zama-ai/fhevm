@@ -260,12 +260,16 @@ impl UserDecryptHandler {
         let user_decrypt_request_data =
             UserDecryptReqData::UserDecrypt(user_decrypt_request.clone());
 
+        // One gate read for both decisions - see `dispatch_epoch`.
+        let dispatch_epoch = self.user_decrypt_repo.dispatch_epoch();
+
         let insert_result = match self
             .user_decrypt_repo
             .insert_data_on_conflict_and_get_ext_job_id(
                 proposed_ext_job_id,
                 int_job_id.as_ref(),
                 user_decrypt_request_data,
+                dispatch_epoch,
             )
             .await
         {
@@ -299,18 +303,32 @@ impl UserDecryptHandler {
                 RelayerEventData::UserDecrypt(request_data),
             );
 
-            if let Err(e) = self.orchestrator.dispatch_event(event).await {
-                error!("Failed to dispatch event to orchestrator: {:?}", e);
-                return RelayerV2ResponseFailed::internal_server_error(&request_id.to_string())
-                    .into_response();
+            // Only the confirmed dispatcher drives what it accepted. On any other pod
+            // the row stays durable and unowned, so the holder's sweep claims it on its
+            // next tick; dispatching here would make this pod a second dispatcher for a
+            // request the holder is about to drive.
+            if dispatch_epoch.is_some() {
+                if let Err(e) = self.orchestrator.dispatch_event(event).await {
+                    error!("Failed to dispatch event to orchestrator: {:?}", e);
+                    return RelayerV2ResponseFailed::internal_server_error(&request_id.to_string())
+                        .into_response();
+                }
+                info!(
+                    step = %UserDecryptStep::Queued,
+                    req_id = %request_id,
+                    ext_job_id = %assigned_ext_job_id,
+                    int_job_id = ?int_job_id,
+                    "Dispatched event to orchestrator"
+                );
+            } else {
+                info!(
+                    step = %UserDecryptStep::Queued,
+                    req_id = %request_id,
+                    ext_job_id = %assigned_ext_job_id,
+                    int_job_id = ?int_job_id,
+                    "Accepted while not the dispatcher, left for the sweep to drive"
+                );
             }
-            info!(
-                step = %UserDecryptStep::Queued,
-                req_id = %request_id,
-                ext_job_id = %assigned_ext_job_id,
-                int_job_id = ?int_job_id,
-                "Dispatched event to orchestrator"
-            );
         } else {
             info!(
                 step = %UserDecryptStep::DedupHit,
@@ -491,12 +509,16 @@ impl UserDecryptHandler {
         let delegated_user_decrypt_request_data =
             UserDecryptReqData::DelegatedUserDecrypt(delegated_user_decrypt_request.clone());
 
+        // One gate read for both decisions - see `dispatch_epoch`.
+        let dispatch_epoch = self.user_decrypt_repo.dispatch_epoch();
+
         let insert_result = match self
             .user_decrypt_repo
             .insert_data_on_conflict_and_get_ext_job_id(
                 proposed_ext_job_id,
                 &int_job_id[..],
                 delegated_user_decrypt_request_data,
+                dispatch_epoch,
             )
             .await
         {
@@ -530,21 +552,35 @@ impl UserDecryptHandler {
                 RelayerEventData::UserDecrypt(request_data),
             );
 
-            if let Err(e) = self.orchestrator.dispatch_event(event).await {
-                error!(
-                    "Failed to dispatch DelegatedUserDecrypt event to orchestrator: {:?}",
-                    e
+            // Only the confirmed dispatcher drives what it accepted. On any other pod
+            // the row stays durable and unowned, so the holder's sweep claims it on its
+            // next tick; dispatching here would make this pod a second dispatcher for a
+            // request the holder is about to drive.
+            if dispatch_epoch.is_some() {
+                if let Err(e) = self.orchestrator.dispatch_event(event).await {
+                    error!(
+                        "Failed to dispatch DelegatedUserDecrypt event to orchestrator: {:?}",
+                        e
+                    );
+                    return RelayerV2ResponseFailed::internal_server_error(&request_id.to_string())
+                        .into_response();
+                }
+                info!(
+                    step = %UserDecryptStep::Queued,
+                    req_id = %request_id,
+                    ext_job_id = %assigned_ext_job_id,
+                    int_job_id = ?int_job_id,
+                    "Dispatched DelegatedUserDecrypt event to orchestrator"
                 );
-                return RelayerV2ResponseFailed::internal_server_error(&request_id.to_string())
-                    .into_response();
+            } else {
+                info!(
+                    step = %UserDecryptStep::Queued,
+                    req_id = %request_id,
+                    ext_job_id = %assigned_ext_job_id,
+                    int_job_id = ?int_job_id,
+                    "Accepted while not the dispatcher, left for the sweep to drive"
+                );
             }
-            info!(
-                step = %UserDecryptStep::Queued,
-                req_id = %request_id,
-                ext_job_id = %assigned_ext_job_id,
-                int_job_id = ?int_job_id,
-                "Dispatched DelegatedUserDecrypt event to orchestrator"
-            );
         } else {
             info!(
                 step = %UserDecryptStep::DedupHit,

@@ -1,9 +1,16 @@
-//! Startup recovery for incomplete requests
+//! Re-dispatch of an incomplete request, and the status-count gauges read once at startup.
 //!
-//! Recovers requests interrupted by crashes/restarts by re-dispatching events based on status:
+//! Which event a row is re-dispatched as depends on how far it got:
 //! - `queued`: ReqRcvdFromUser (includes readiness check)
-//! - `processing`/`tx_in_flight`: ReadinessCheckPassed (skips readiness check)
+//! - `processing`: ReadinessCheckPassed (skips readiness check)
 //! - `receipt_received`: Not recovered (gateway listener handles automatically)
+//!
+//! A row mid-send arrives as `processing` too: the claim rewrites `tx_in_flight` to `processing`
+//! in the same `UPDATE` it returns rows from, so `tx_in_flight` never reaches this module.
+//!
+//! Nothing here decides *which* rows to re-dispatch, and [`init_status_counts_from_db`] is the
+//! only thing here that runs at startup. The sweep ([`crate::sweep`]) chooses the rows, claims
+//! each one under this pod's epoch, and calls the three `dispatch_recovered_*` builders below.
 
 use crate::{
     core::event::{
@@ -17,12 +24,17 @@ use crate::{
     store::sql::{models::req_status_enum_model::ReqStatus, repositories::Repositories},
 };
 use anyhow::Context;
+use serde_json::Value;
 use std::sync::Arc;
 use tracing::{error, info, warn};
 
 /// Initialize metrics gauges from current database state.
-/// Must be called before any operations that modify metrics.
-async fn init_status_counts_from_db(repositories: &Arc<Repositories>) -> anyhow::Result<()> {
+///
+/// A pure read, so it stays ungated and runs early in startup - before the HTTP server binds,
+/// let alone anything that later gates dispatch on the HA lock - or the gauges sit
+/// uninitialised for however long that gate takes to open. Must be called before any
+/// operations that modify metrics.
+pub async fn init_status_counts_from_db(repositories: &Arc<Repositories>) -> anyhow::Result<()> {
     let counts = repositories
         .public_decrypt
         .count_by_status()
@@ -54,284 +66,161 @@ async fn init_status_counts_from_db(repositories: &Arc<Repositories>) -> anyhow:
     Ok(())
 }
 
-/// Reset all tx_in_flight requests to processing before recovery.
-/// This ensures clean state transitions and proper idempotency checks.
-async fn reset_tx_in_flight_requests(repositories: &Arc<Repositories>) -> anyhow::Result<()> {
-    let public_decrypt_count = repositories
-        .public_decrypt
-        .reset_tx_in_flight_to_processing()
-        .await
-        .context("Failed to reset public_decrypt")?;
+/// Build and dispatch the recovery event for one incomplete public decrypt row, on behalf of
+/// the sweep (`sweep::run_tick`). Returns whether an event was dispatched; `false` means the
+/// row was skipped - a bad `int_job_id`, an undeserializable `req`, or a status this function
+/// does not recover.
+pub(crate) async fn dispatch_recovered_public_decrypt(
+    orchestrator: &Arc<Orchestrator>,
+    int_job_id: Vec<u8>,
+    req_json: Value,
+    status: ReqStatus,
+) -> bool {
+    let request = match serde_json::from_value::<PublicDecryptRequest>(req_json.clone()) {
+        Ok(r) => r,
+        Err(e) => {
+            warn!(
+                "Failed to deserialize public decrypt request (skipping): {} - req_json: {:?}",
+                e, req_json
+            );
+            return false;
+        }
+    };
 
-    if public_decrypt_count > 0 {
-        info!(
-            "Reset {} public_decrypt requests from tx_in_flight to processing",
-            public_decrypt_count
-        );
+    let int_job_id_len = int_job_id.len();
+    let job_id: JobId = match int_job_id.try_into() {
+        Ok(id) => id,
+        Err(_) => {
+            error!(
+                alert = true,
+                int_job_id_len,
+                "int_job_id has invalid length in public_decrypt recovery, expected 32 bytes, skipping"
+            );
+            return false;
+        }
+    };
+    let api_version = ApiVersion::new(ApiCategory::PRODUCTION, 1);
+
+    let event_data = match status {
+        ReqStatus::Queued => {
+            RelayerEventData::PublicDecrypt(PublicDecryptEventData::ReqRcvdFromUser {
+                decrypt_request: request,
+            })
+        }
+        ReqStatus::Processing => {
+            RelayerEventData::PublicDecrypt(PublicDecryptEventData::ReadinessCheckPassed {
+                decrypt_request: request,
+            })
+        }
+        _ => return false,
+    };
+
+    let event = RelayerEvent::new(job_id, api_version, event_data);
+    if let Err(e) = orchestrator.dispatch_event(event).await {
+        warn!("Failed to recover public decrypt request: {}", e);
+        false
+    } else {
+        true
     }
-
-    let user_decrypt_count = repositories
-        .user_decrypt
-        .reset_tx_in_flight_to_processing()
-        .await
-        .context("Failed to reset user_decrypt")?;
-
-    if user_decrypt_count > 0 {
-        info!(
-            "Reset {} user_decrypt requests from tx_in_flight to processing",
-            user_decrypt_count
-        );
-    }
-
-    let input_proof_count = repositories
-        .input_proof
-        .reset_tx_in_flight_to_processing()
-        .await
-        .context("Failed to reset input_proof")?;
-
-    if input_proof_count > 0 {
-        info!(
-            "Reset {} input_proof requests from tx_in_flight to processing",
-            input_proof_count
-        );
-    }
-
-    Ok(())
 }
 
-/// Recover incomplete requests by re-dispatching events based on their status.
-pub async fn recover_incomplete_requests(
+/// Build and dispatch the recovery event for one incomplete user decrypt row. Same contract
+/// as [`dispatch_recovered_public_decrypt`].
+pub(crate) async fn dispatch_recovered_user_decrypt(
     orchestrator: &Arc<Orchestrator>,
-    repositories: &Arc<Repositories>,
-) -> anyhow::Result<usize> {
-    info!("Starting request recovery...");
+    int_job_id: Vec<u8>,
+    req_json: Value,
+    status: ReqStatus,
+) -> bool {
+    let request = match serde_json::from_value::<UserDecryptRequest>(req_json.clone()) {
+        Ok(r) => r,
+        Err(e) => {
+            error!(
+                alert = true,
+                error = %e,
+                "Failed to deserialize UserDecryptRequest in recovery, skipping"
+            );
+            return false;
+        }
+    };
+    let int_job_id_len = int_job_id.len();
+    let job_id: JobId = match int_job_id.try_into() {
+        Ok(id) => id,
+        Err(_) => {
+            error!(
+                alert = true,
+                int_job_id_len,
+                "int_job_id has invalid length in user_decrypt recovery, expected 32 bytes, skipping"
+            );
+            return false;
+        }
+    };
+    let api_version = ApiVersion::new(ApiCategory::PRODUCTION, 1);
 
-    // Initialize metrics from DB before any operations that modify them
-    init_status_counts_from_db(repositories).await?;
+    let event_data = match status {
+        ReqStatus::Queued => RelayerEventData::UserDecrypt(UserDecryptEventData::ReqRcvdFromUser {
+            decrypt_request: request,
+        }),
+        ReqStatus::Processing => {
+            RelayerEventData::UserDecrypt(UserDecryptEventData::ReadinessCheckPassed {
+                decrypt_request: request,
+            })
+        }
+        _ => return false,
+    };
 
-    // Reset tx_in_flight to processing
-    reset_tx_in_flight_requests(repositories).await?;
-
-    let mut total_recovered = 0;
-
-    // Recover public decrypt requests
-    total_recovered += recover_public_decrypt_requests(orchestrator, repositories).await?;
-
-    // Recover user decrypt requests
-    total_recovered += recover_user_decrypt_requests(orchestrator, repositories).await?;
-
-    // Recover input proof requests
-    total_recovered += recover_input_proof_requests(orchestrator, repositories).await?;
-
-    info!(
-        "Request recovery completed. Recovered {} requests",
-        total_recovered
-    );
-
-    Ok(total_recovered)
+    let event = RelayerEvent::new(job_id, api_version, event_data);
+    if let Err(e) = orchestrator.dispatch_event(event).await {
+        warn!("Failed to recover user decrypt request: {}", e);
+        false
+    } else {
+        true
+    }
 }
 
-/// Recover incomplete public decrypt requests
-async fn recover_public_decrypt_requests(
+/// Build and dispatch the recovery event for one incomplete input proof row. Same contract
+/// as [`dispatch_recovered_public_decrypt`]. Unlike the decrypt flows, input proof recovery
+/// only ever re-emits `ReqRcvdFromUser` regardless of `status` - a status this cannot recover
+/// from is not distinguished from a bad row.
+pub(crate) async fn dispatch_recovered_input_proof(
     orchestrator: &Arc<Orchestrator>,
-    repositories: &Arc<Repositories>,
-) -> anyhow::Result<usize> {
-    let mut requests = repositories
-        .public_decrypt
-        .find_incomplete_requests()
-        .await
-        .context("Failed to query incomplete public decrypt requests")?;
+    int_job_id: Vec<u8>,
+    req_json: Value,
+) -> bool {
+    let request = match serde_json::from_value::<InputProofRequest>(req_json.clone()) {
+        Ok(r) => r,
+        Err(e) => {
+            error!(
+                alert = true,
+                error = %e,
+                "Failed to deserialize InputProofRequest in recovery, skipping"
+            );
+            return false;
+        }
+    };
+    let int_job_id_len = int_job_id.len();
+    let job_id: JobId = match int_job_id.try_into() {
+        Ok(id) => id,
+        Err(_) => {
+            error!(
+                alert = true,
+                int_job_id_len,
+                "int_job_id has invalid length in input_proof recovery, expected 32 bytes, skipping"
+            );
+            return false;
+        }
+    };
+    let api_version = ApiVersion::new(ApiCategory::PRODUCTION, 1);
 
-    // Process furthest-along requests first: TxInFlight > Processing > Queued
-    requests.sort_by_key(|(_, _, status, _)| match status {
-        ReqStatus::TxInFlight => 0,
-        ReqStatus::Processing => 1,
-        ReqStatus::Queued => 2,
-        _ => 3,
+    let event_data = RelayerEventData::InputProof(InputProofEventData::ReqRcvdFromUser {
+        input_proof_request: request,
     });
 
-    let mut recovered = 0;
-
-    for (int_job_id, req_json, status, _updated_at) in requests {
-        match serde_json::from_value::<PublicDecryptRequest>(req_json.clone()) {
-            Ok(request) => {
-                let int_job_id_len = int_job_id.len();
-                let job_id: JobId = match int_job_id.try_into() {
-                    Ok(id) => id,
-                    Err(_) => {
-                        error!(
-                            alert = true,
-                            int_job_id_len,
-                            "int_job_id has invalid length in public_decrypt recovery, expected 32 bytes, skipping"
-                        );
-                        continue;
-                    }
-                };
-                let api_version = ApiVersion::new(ApiCategory::PRODUCTION, 1);
-
-                let event_data = match status {
-                    ReqStatus::Queued => {
-                        RelayerEventData::PublicDecrypt(PublicDecryptEventData::ReqRcvdFromUser {
-                            decrypt_request: request,
-                        })
-                    }
-                    ReqStatus::Processing | ReqStatus::TxInFlight => {
-                        RelayerEventData::PublicDecrypt(
-                            PublicDecryptEventData::ReadinessCheckPassed {
-                                decrypt_request: request,
-                            },
-                        )
-                    }
-                    _ => continue,
-                };
-
-                let event = RelayerEvent::new(job_id, api_version, event_data);
-                if let Err(e) = orchestrator.dispatch_event(event).await {
-                    warn!("Failed to recover public decrypt request: {}", e);
-                } else {
-                    recovered += 1;
-                }
-            }
-            Err(e) => {
-                warn!(
-                    "Failed to deserialize public decrypt request (skipping): {} - req_json: {:?}",
-                    e, req_json
-                );
-            }
-        }
+    let event = RelayerEvent::new(job_id, api_version, event_data);
+    if let Err(e) = orchestrator.dispatch_event(event).await {
+        warn!("Failed to recover input proof request: {}", e);
+        false
+    } else {
+        true
     }
-
-    Ok(recovered)
-}
-
-/// Recover incomplete user decrypt requests
-async fn recover_user_decrypt_requests(
-    orchestrator: &Arc<Orchestrator>,
-    repositories: &Arc<Repositories>,
-) -> anyhow::Result<usize> {
-    let mut requests = repositories
-        .user_decrypt
-        .find_incomplete_requests()
-        .await
-        .context("Failed to query incomplete user decrypt requests")?;
-
-    requests.sort_by_key(|(_, _, status, _)| match status {
-        ReqStatus::TxInFlight => 0,
-        ReqStatus::Processing => 1,
-        ReqStatus::Queued => 2,
-        _ => 3,
-    });
-
-    let mut recovered = 0;
-
-    for (int_job_id, req_json, status, _updated_at) in requests {
-        let request = match serde_json::from_value::<UserDecryptRequest>(req_json.clone()) {
-            Ok(r) => r,
-            Err(e) => {
-                error!(
-                    alert = true,
-                    error = %e,
-                    "Failed to deserialize UserDecryptRequest in recovery, skipping"
-                );
-                continue;
-            }
-        };
-        let int_job_id_len = int_job_id.len();
-        let job_id: JobId = match int_job_id.try_into() {
-            Ok(id) => id,
-            Err(_) => {
-                error!(
-                    alert = true,
-                    int_job_id_len,
-                    "int_job_id has invalid length in user_decrypt recovery, expected 32 bytes, skipping"
-                );
-                continue;
-            }
-        };
-        let api_version = ApiVersion::new(ApiCategory::PRODUCTION, 1);
-
-        let event_data = match status {
-            ReqStatus::Queued => {
-                RelayerEventData::UserDecrypt(UserDecryptEventData::ReqRcvdFromUser {
-                    decrypt_request: request,
-                })
-            }
-            ReqStatus::Processing | ReqStatus::TxInFlight => {
-                RelayerEventData::UserDecrypt(UserDecryptEventData::ReadinessCheckPassed {
-                    decrypt_request: request,
-                })
-            }
-            _ => continue,
-        };
-
-        let event = RelayerEvent::new(job_id, api_version, event_data);
-        if let Err(e) = orchestrator.dispatch_event(event).await {
-            warn!("Failed to recover user decrypt request: {}", e);
-        } else {
-            recovered += 1;
-        }
-    }
-
-    Ok(recovered)
-}
-
-/// Recover incomplete input proof requests
-async fn recover_input_proof_requests(
-    orchestrator: &Arc<Orchestrator>,
-    repositories: &Arc<Repositories>,
-) -> anyhow::Result<usize> {
-    let mut requests = repositories
-        .input_proof
-        .find_incomplete_requests()
-        .await
-        .context("Failed to query incomplete input proof requests")?;
-
-    requests.sort_by_key(|(_, _, status, _)| match status {
-        ReqStatus::TxInFlight => 0,
-        ReqStatus::Processing => 1,
-        ReqStatus::Queued => 2,
-        _ => 3,
-    });
-
-    let mut recovered = 0;
-
-    for (int_job_id, req_json, _status, _updated_at) in requests {
-        let request = match serde_json::from_value::<InputProofRequest>(req_json.clone()) {
-            Ok(r) => r,
-            Err(e) => {
-                error!(
-                    alert = true,
-                    error = %e,
-                    "Failed to deserialize InputProofRequest in recovery, skipping"
-                );
-                continue;
-            }
-        };
-        let int_job_id_len = int_job_id.len();
-        let job_id: JobId = match int_job_id.try_into() {
-            Ok(id) => id,
-            Err(_) => {
-                error!(
-                    alert = true,
-                    int_job_id_len,
-                    "int_job_id has invalid length in input_proof recovery, expected 32 bytes, skipping"
-                );
-                continue;
-            }
-        };
-        let api_version = ApiVersion::new(ApiCategory::PRODUCTION, 1);
-
-        let event_data = RelayerEventData::InputProof(InputProofEventData::ReqRcvdFromUser {
-            input_proof_request: request,
-        });
-
-        let event = RelayerEvent::new(job_id, api_version, event_data);
-        if let Err(e) = orchestrator.dispatch_event(event).await {
-            warn!("Failed to recover input proof request: {}", e);
-        } else {
-            recovered += 1;
-        }
-    }
-
-    Ok(recovered)
 }

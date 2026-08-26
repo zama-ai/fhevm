@@ -13,7 +13,10 @@ use crate::{
         arbitrum::{
             bindings::Decryption,
             transaction::{
-                helper::{TransactionHelper, TransactionType, TxClaimOutcome, TxResult},
+                helper::{
+                    ReceiptRecordOutcome, TransactionHelper, TransactionType, TxClaimOutcome,
+                    TxResult,
+                },
                 tx_throttler::{DynTxHook, GatewayTxTask, TxThrottlingSender},
                 TxLifecycleHooks,
             },
@@ -511,16 +514,28 @@ impl GatewayHandler {
         Ok(())
     }
 
-    /// Updates database status to "processing" after readiness check passes.
+    /// Updates database status to "processing" after readiness check passes. `rows_affected ==
+    /// 0` means this pod's epoch no longer owns the row (a stale write, refused by the fence -
+    /// see `public_decrypt_repo`'s doc block) or the row already moved past `queued` some other
+    /// way; either way the send below must not be skipped on account of it, so this only logs.
     async fn mark_processing(&self, job_id_hash: [u8; 32]) -> Result<(), EventProcessingError> {
-        self.public_decrypt_repo
+        let rows_affected = self
+            .public_decrypt_repo
             .update_status_to_processing(&job_id_hash[..])
             .await
-            .map(|_| ())
             .map_err(|e| EventProcessingError::SqlOperationFailed {
                 operation: "public_decrypt.update_status_to_processing".to_string(),
                 reason: e.to_string(),
-            })
+            })?;
+
+        if rows_affected == 0 {
+            info!(
+                job_id_hash = %hex::encode(job_id_hash),
+                "mark_processing did not apply (stale epoch or status already advanced)"
+            );
+        }
+
+        Ok(())
     }
 
     /// Handles errors during public decrypt processing.
@@ -563,16 +578,21 @@ impl GatewayHandler {
                 {
                     let job_id_hash = decrypt_request.content_hash();
 
-                    if let Err(db_err) = self
+                    match self
                         .public_decrypt_repo
                         .update_status_to_timed_out(&job_id_hash[..], READINESS_CHECK_TIMEOUT_MSG)
                         .await
                     {
-                        error!(
+                        Ok(0) => info!(
+                            job_id = %event.job_id,
+                            "timeout write refused (stale epoch or status already advanced)"
+                        ),
+                        Ok(_) => {}
+                        Err(db_err) => error!(
                             job_id = %event.job_id,
                             db_error = %db_err,
                             "Failed to update timeout status in database"
-                        );
+                        ),
                     }
                 }
             }
@@ -595,16 +615,21 @@ impl GatewayHandler {
                 {
                     let job_id_hash = decrypt_request.content_hash();
 
-                    if let Err(db_err) = self
+                    match self
                         .public_decrypt_repo
                         .update_status_to_failure_from_queued(&job_id_hash[..], &err_reason)
                         .await
                     {
-                        error!(
+                        Ok(0) => info!(
+                            job_id = %event.job_id,
+                            "failure write refused (stale epoch or status already advanced)"
+                        ),
+                        Ok(_) => {}
+                        Err(db_err) => error!(
                             job_id = %event.job_id,
                             db_error = %db_err,
                             "Failed to update failure status in database"
-                        );
+                        ),
                     }
                 }
             }
@@ -624,16 +649,21 @@ impl GatewayHandler {
                     let job_id_hash = decrypt_request.content_hash();
                     let err_reason = format!("Processing Failed: {}", error);
 
-                    if let Err(db_err) = self
+                    match self
                         .public_decrypt_repo
                         .update_status_to_failure_from_queued(&job_id_hash[..], &err_reason)
                         .await
                     {
-                        error!(
+                        Ok(0) => info!(
+                            job_id = %event.job_id,
+                            "failure write refused (stale epoch or status already advanced)"
+                        ),
+                        Ok(_) => {}
+                        Err(db_err) => error!(
                             job_id = %event.job_id,
                             db_error = %db_err,
                             "Failed to update failure status in database"
-                        );
+                        ),
                     }
                 }
 
@@ -647,16 +677,21 @@ impl GatewayHandler {
                     let job_id_hash = decrypt_request.content_hash();
                     let err_reason = format!("Processing Failed: {}", error);
 
-                    if let Err(db_err) = self
+                    match self
                         .public_decrypt_repo
                         .update_status_to_failure_from_queued(&job_id_hash[..], &err_reason)
                         .await
                     {
-                        error!(
+                        Ok(0) => info!(
+                            job_id = %event.job_id,
+                            "failure write refused (stale epoch or status already advanced)"
+                        ),
+                        Ok(_) => {}
+                        Err(db_err) => error!(
                             job_id = %event.job_id,
                             db_error = %db_err,
                             "Failed to update failure status in database"
-                        );
+                        ),
                     }
                 }
 
@@ -671,16 +706,21 @@ impl GatewayHandler {
                     let err_reason = format!("Processing Failed: {}", error);
 
                     // TODO(mano): Review if nested error logging is necessary or can be simplified
-                    if let Err(db_err) = self
+                    match self
                         .public_decrypt_repo
                         .update_status_to_failure_on_tx_failed(&job_id_hash[..], &err_reason)
                         .await
                     {
-                        error!(
+                        Ok(0) => info!(
+                            job_id = %event.job_id,
+                            "failure write refused (stale epoch or status already advanced)"
+                        ),
+                        Ok(_) => {}
+                        Err(db_err) => error!(
                             job_id = %event.job_id,
                             db_error = %db_err,
                             "Failed to update failure status in database"
-                        );
+                        ),
                     }
                 }
             }
@@ -731,7 +771,7 @@ impl TxLifecycleHooks for GatewayHandler {
         &self,
         job_id: &JobId,
         receipt: &TxResult,
-    ) -> Result<(), EventProcessingError> {
+    ) -> Result<ReceiptRecordOutcome, EventProcessingError> {
         let gw_reference_id = TransactionHelper::extract_gateway_id_from_receipt::<
             Decryption::PublicDecryptionRequest_0,
         >(
@@ -750,15 +790,35 @@ impl TxLifecycleHooks for GatewayHandler {
             "Transaction confirmed, receipt received"
         );
 
-        self.public_decrypt_repo
+        let rows_affected = self
+            .public_decrypt_repo
             .update_status_to_receipt_received_on_tx_success(&job_id[..], &tx_hash, gw_reference_id)
             .await
-            .map(|_| ())
             .map_err(|e| EventProcessingError::SqlOperationFailed {
                 operation: "public_decrypt.update_status_to_receipt_received_on_tx_success"
                     .to_string(),
                 reason: e.to_string(),
-            })
+            })?;
+
+        if rows_affected == 0 {
+            // This pod sent the transaction (it won `on_tx_in_flight`'s claim), but the write
+            // requires both `req_status = 'tx_in_flight'` and the epoch fence, and it lost one
+            // of them: a successor's claim (a newer epoch) resets a claimed `tx_in_flight` row
+            // to `processing` in the same statement that takes it, so the row is no longer
+            // `tx_in_flight` by the time we get here. `gw_reference_id` is NOT stored: this
+            // must not read as success, since the gateway-event listener keys off it to
+            // complete the request.
+            warn!(
+                int_job_id = %job_id,
+                gw_reference_id = %gw_reference_id,
+                "receipt_received write refused (row no longer tx_in_flight under this epoch - \
+                 a successor's claim got there first); \
+                 gw_reference_id not stored, a re-drive is expected to record its own receipt"
+            );
+            return Ok(ReceiptRecordOutcome::Refused);
+        }
+
+        Ok(ReceiptRecordOutcome::Recorded)
     }
 
     async fn on_failure(
@@ -772,13 +832,25 @@ impl TxLifecycleHooks for GatewayHandler {
             crate::metrics::transaction::track_revert_with_request_type(reason, "public_decrypt");
         }
 
-        self.public_decrypt_repo
+        let rows_affected = self
+            .public_decrypt_repo
             .update_status_to_failure_on_tx_failed(&job_id[..], err_reason)
             .await
-            .map(|_| ())
             .map_err(|e| EventProcessingError::SqlOperationFailed {
                 operation: "public_decrypt.update_status_to_failure_on_tx_failed".to_string(),
                 reason: e.to_string(),
-            })
+            })?;
+
+        if rows_affected == 0 {
+            // Refused by the fence (stale epoch) or the row already left processing/tx_in_flight
+            // some other way - either way a different owner is driving this row now, so this
+            // pod's failure decision must not be recorded over it.
+            info!(
+                int_job_id = %job_id,
+                "failure write refused (stale epoch or status already advanced)"
+            );
+        }
+
+        Ok(())
     }
 }

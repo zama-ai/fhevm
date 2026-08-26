@@ -8,7 +8,7 @@ use crate::{
         tx_throttler::{GatewayTxTask, TxThrottlingWorker},
     },
     logging::WorkerStep,
-    orchestrator::Orchestrator,
+    orchestrator::{DispatchGate, Orchestrator},
 };
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
@@ -30,6 +30,7 @@ impl GatewayTxProcessor {
         throttler_worker: TxThrottlingWorker<GatewayTxTask>,
         tx_helper: Arc<TransactionHelper>,
         orchestrator: Arc<Orchestrator>,
+        gate: DispatchGate,
         shutdown: CancellationToken,
     ) -> anyhow::Result<()> {
         // Prepare Arcs for the background task
@@ -48,7 +49,7 @@ impl GatewayTxProcessor {
             // This function contains the infinite loop reading from the channel.
             // It exits once `shutdown` fires, stopping the dequeue of new work.
             throttler_worker
-                .run_consumer(shutdown, move |task: GatewayTxTask| {
+                .run_consumer(gate, shutdown, move |task: GatewayTxTask| {
                     // Call the async function directly.
                     // It returns the Future that the consumer expects.
                     Self::process_single_task(tx_helper.clone(), task, dispatcher.clone())

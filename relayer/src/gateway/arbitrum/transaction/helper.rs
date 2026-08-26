@@ -65,6 +65,18 @@ pub enum TxClaimOutcome {
     ClaimLost,
 }
 
+/// Outcome of recording a receipt this pod's own send obtained. The send succeeded either
+/// way - the chain has a real transaction - so this never decides a retry; it says whether
+/// the DB write recording the receipt landed, which the epoch fence refuses once a successor
+/// has claimed the row. Callers must not treat `Refused` as `Recorded`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReceiptRecordOutcome {
+    /// The receipt was recorded.
+    Recorded,
+    /// Refused by the epoch fence; not recorded.
+    Refused,
+}
+
 #[async_trait::async_trait]
 pub trait TxLifecycleHooks: Send + Sync {
     async fn on_tx_in_flight(&self, job_id: &JobId)
@@ -74,7 +86,7 @@ pub trait TxLifecycleHooks: Send + Sync {
         &self,
         job_id: &JobId,
         receipt: &TxResult,
-    ) -> Result<(), EventProcessingError>;
+    ) -> Result<ReceiptRecordOutcome, EventProcessingError>;
 
     async fn on_failure(
         &self,
@@ -160,19 +172,37 @@ impl TransactionHelper {
             }
         };
 
-        hook.on_receipt_received(&job_id, &receipt).await?;
-        metrics::transaction::transaction_confirmed(
-            tx_metric_type,
-            transaction_start_time.elapsed().as_millis() as f64,
-        );
-
-        info!(
-            operation = %transaction_type,
-            tx_hash = ?receipt.transaction_hash,
-            block_number = ?receipt.block_number,
-            gas_used = ?receipt.gas_used,
-            "Transaction confirmed"
-        );
+        // A refused receipt is still a successful send - the chain has a real transaction, the
+        // hook's own log already explains the refusal - so this only decides what gets counted
+        // and logged as "confirmed", never whether to retry or error. See `ReceiptRecordOutcome`.
+        match hook.on_receipt_received(&job_id, &receipt).await? {
+            ReceiptRecordOutcome::Recorded => {
+                metrics::transaction::transaction_confirmed(
+                    tx_metric_type,
+                    transaction_start_time.elapsed().as_millis() as f64,
+                );
+                info!(
+                    operation = %transaction_type,
+                    tx_hash = ?receipt.transaction_hash,
+                    block_number = ?receipt.block_number,
+                    gas_used = ?receipt.gas_used,
+                    "Transaction confirmed"
+                );
+            }
+            ReceiptRecordOutcome::Refused => {
+                metrics::transaction::transaction_receipt_refused(
+                    tx_metric_type,
+                    transaction_start_time.elapsed().as_millis() as f64,
+                );
+                info!(
+                    operation = %transaction_type,
+                    tx_hash = ?receipt.transaction_hash,
+                    block_number = ?receipt.block_number,
+                    "Transaction sent and landed on chain, but the receipt was not recorded \
+                     (refused by the epoch fence)"
+                );
+            }
+        }
 
         Ok(())
     }

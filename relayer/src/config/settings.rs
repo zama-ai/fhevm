@@ -425,6 +425,183 @@ impl Default for ShutdownConfig {
     }
 }
 
+/// The session-level Postgres advisory lock that decides which of N HA-replica pods
+/// dispatches. Every field has a serde default so existing config files - which know
+/// nothing about this section - keep deserializing unchanged.
+#[derive(Debug, Deserialize, Clone)]
+pub struct DispatcherLockConfig {
+    /// How often a non-holder retries acquisition. This is the handover latency once a
+    /// second replica exists: the delay between the old holder releasing (or dying) and a
+    /// standby taking over.
+    #[serde(
+        default = "default_dispatcher_lock_poll_interval",
+        deserialize_with = "deserialize_human_duration"
+    )]
+    pub poll_interval: Duration,
+    /// How often the holder confirms its dedicated connection is still alive.
+    #[serde(
+        default = "default_dispatcher_lock_heartbeat_interval",
+        deserialize_with = "deserialize_human_duration"
+    )]
+    pub heartbeat_interval: Duration,
+    /// Bound on each heartbeat/try-lock round trip. sqlx 0.8.6 sets no TCP keepalive, so a
+    /// query on a black-holed socket would otherwise hang out to TCP retransmit timeouts
+    /// (minutes) instead of surfacing as a failure.
+    #[serde(
+        default = "default_dispatcher_lock_heartbeat_timeout",
+        deserialize_with = "deserialize_human_duration"
+    )]
+    pub heartbeat_timeout: Duration,
+    /// Consecutive heartbeat/try-lock failures tolerated before a hard exit. Distinguishes a
+    /// transient hiccup from a genuinely dead connection.
+    #[serde(default = "default_dispatcher_lock_heartbeat_failures_before_exit")]
+    pub heartbeat_failures_before_exit: u32,
+    /// Bound on the initial dedicated-connection connect.
+    #[serde(
+        default = "default_dispatcher_lock_connect_timeout",
+        deserialize_with = "deserialize_human_duration"
+    )]
+    pub connect_timeout: Duration,
+    /// Server-side bound on how long Postgres keeps the dedicated lock session alive while it
+    /// sits idle - a session-scoped GUC on that one connection, never the application pools;
+    /// needs Postgres 14+. The only bound on no-dispatcher time when a holder's node dies
+    /// without closing its socket: with no FIN and no RST, Postgres holds the session and the
+    /// lock until TCP keepalive reaps them - hours at Linux defaults - while every standby's
+    /// try-lock keeps reporting "held".
+    ///
+    /// Must be strictly greater than `heartbeat_interval` (see [`Self::validate`]): a bound
+    /// at or below it reaps a live holder between heartbeats - a permanent failover loop.
+    #[serde(
+        default = "default_dispatcher_lock_idle_session_timeout",
+        deserialize_with = "deserialize_human_duration"
+    )]
+    pub idle_session_timeout: Duration,
+    /// Overrides the schema-derived lock key. Every pod must set the same value - the key is
+    /// database-wide, not schema-scoped, and production runs every pod against `public` with
+    /// no override needed. Only exists for operational escape hatches.
+    #[serde(default)]
+    pub key_override: Option<i32>,
+}
+
+fn default_dispatcher_lock_poll_interval() -> Duration {
+    Duration::from_secs(2)
+}
+
+fn default_dispatcher_lock_heartbeat_interval() -> Duration {
+    Duration::from_secs(5)
+}
+
+fn default_dispatcher_lock_heartbeat_timeout() -> Duration {
+    Duration::from_secs(3)
+}
+
+fn default_dispatcher_lock_heartbeat_failures_before_exit() -> u32 {
+    3
+}
+
+fn default_dispatcher_lock_connect_timeout() -> Duration {
+    Duration::from_secs(5)
+}
+
+/// Ten heartbeat intervals at the neighboring defaults: generous headroom for a healthy
+/// holder, while still bounding no-dispatcher time to a minute after a holder's node dies.
+fn default_dispatcher_lock_idle_session_timeout() -> Duration {
+    Duration::from_secs(60)
+}
+
+impl DispatcherLockConfig {
+    pub fn validate(&self) -> Result<(), AppConfigError> {
+        // A bound at or below the heartbeat reaps the session of a holder that is doing
+        // everything right, every time it pauses between heartbeats - a permanent failover
+        // loop, strictly worse than the dead-node window this setting exists to close.
+        if self.idle_session_timeout <= self.heartbeat_interval {
+            return Err(AppConfigError::Config(format!(
+                "dispatcher_lock.idle_session_timeout ({:?}) must be greater than \
+                 dispatcher_lock.heartbeat_interval ({:?}): at or below it, Postgres reaps a \
+                 healthy holder's session between heartbeats",
+                self.idle_session_timeout, self.heartbeat_interval
+            )));
+        }
+        Ok(())
+    }
+}
+
+impl Default for DispatcherLockConfig {
+    fn default() -> Self {
+        Self {
+            poll_interval: default_dispatcher_lock_poll_interval(),
+            heartbeat_interval: default_dispatcher_lock_heartbeat_interval(),
+            heartbeat_timeout: default_dispatcher_lock_heartbeat_timeout(),
+            heartbeat_failures_before_exit: default_dispatcher_lock_heartbeat_failures_before_exit(
+            ),
+            connect_timeout: default_dispatcher_lock_connect_timeout(),
+            idle_session_timeout: default_dispatcher_lock_idle_session_timeout(),
+            key_override: None,
+        }
+    }
+}
+
+/// The dispatch sweep: while this pod holds the dispatcher lock, it periodically claims and
+/// re-dispatches requests nobody is driving - one a non-holder accepted and left for the
+/// dispatcher, or one orphaned by a former holder that died. It is also how a
+/// restart recovers its own previous incarnation's work. Every field has a serde default so
+/// existing config files keep deserializing unchanged.
+#[derive(Debug, Deserialize, Clone)]
+pub struct SweepConfig {
+    /// How often the holder polls Postgres for claimable rows, and therefore the dominant term
+    /// in how long a request accepted by a non-holder waits before anything drives it. It is
+    /// also the per-tick query cost every holder pays forever, so it stays short without being
+    /// sub-second for its own sake.
+    #[serde(
+        default = "default_sweep_interval",
+        deserialize_with = "deserialize_human_duration"
+    )]
+    pub interval: Duration,
+    /// Maximum number of times the sweep re-dispatches one row before giving up on it. A row
+    /// that reaches this bound is moved to `failure` (see `sweep::fail_exhausted_attempts`)
+    /// rather than left to be claimed forever.
+    #[serde(default = "default_sweep_max_attempts")]
+    pub max_attempts: i32,
+}
+
+impl SweepConfig {
+    pub fn validate(&self) -> Result<(), AppConfigError> {
+        // `attempts < max_attempts` (claim) and `attempts >= max_attempts` (fail_exhausted)
+        // are complementary only when `max_attempts` is a real, positive bound - at `<= 0`
+        // every stale in-progress row would be failed on sight and none would ever be
+        // claimable, since a fresh row's `attempts` (0) already satisfies `>= max_attempts`.
+        if self.max_attempts <= 0 {
+            return Err(AppConfigError::Config(format!(
+                "sweep.max_attempts must be greater than 0: {}",
+                self.max_attempts
+            )));
+        }
+        if self.interval.is_zero() {
+            return Err(AppConfigError::Config(
+                "sweep.interval must be greater than 0".to_string(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+fn default_sweep_interval() -> Duration {
+    Duration::from_millis(500)
+}
+
+fn default_sweep_max_attempts() -> i32 {
+    5
+}
+
+impl Default for SweepConfig {
+    fn default() -> Self {
+        Self {
+            interval: default_sweep_interval(),
+            max_attempts: default_sweep_max_attempts(),
+        }
+    }
+}
+
 /// Deserializes strings like "30s", "5m", "1d" into std::time::Duration.
 /// 'y' not supported
 fn deserialize_human_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>
@@ -652,6 +829,13 @@ pub struct Settings {
     /// Shutdown sequencing
     #[serde(default)]
     pub shutdown: ShutdownConfig,
+    /// HA dispatcher lock (session-level Postgres advisory lock)
+    #[serde(default)]
+    pub dispatcher_lock: DispatcherLockConfig,
+    /// The dispatch sweep: periodic re-dispatch of rows nobody is driving, while this pod
+    /// holds the dispatcher lock.
+    #[serde(default)]
+    pub sweep: SweepConfig,
 }
 
 // Error type for application-specific configuration errors
@@ -707,6 +891,12 @@ impl Settings {
 
         // Validate cron startup delay (10% rule)
         settings.storage.cron.validate()?;
+
+        // Validate the dispatcher lock's idle-session bound against its own heartbeat
+        settings.dispatcher_lock.validate()?;
+
+        // Validate the sweep's claim/exhaustion bound
+        settings.sweep.validate()?;
 
         // Ensure HTTP metrics configuration is provided
         if settings.http.metrics.histogram_buckets.is_empty() {
@@ -1895,6 +2085,30 @@ mod tests {
                 assert_eq!(crs.urls, vec![CRS_URL_0]);
             }
             other => panic!("expected keyurl.source: config, got {other:?}"),
+        }
+    }
+
+    /// The default pair must pass its own invariant, and a bound at or below the heartbeat must
+    /// be refused at startup rather than reaping a healthy holder's session in production.
+    #[test]
+    fn test_dispatcher_lock_idle_timeout_must_exceed_the_heartbeat() {
+        DispatcherLockConfig::default()
+            .validate()
+            .expect("the shipped defaults must satisfy the invariant");
+
+        for idle in [Duration::from_secs(5), Duration::from_secs(1)] {
+            let err = DispatcherLockConfig {
+                heartbeat_interval: Duration::from_secs(5),
+                idle_session_timeout: idle,
+                ..DispatcherLockConfig::default()
+            }
+            .validate()
+            .expect_err("an idle bound at or below the heartbeat must be rejected")
+            .to_string();
+            assert!(
+                err.contains("idle_session_timeout"),
+                "the error must name the offending field, got: {err}"
+            );
         }
     }
 }
