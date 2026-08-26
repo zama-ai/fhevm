@@ -8,6 +8,9 @@ import {
   type BootstrapConfig as BootstrapConfigV12,
 } from '@fhevm/host-contracts-cleartext-v12/ts';
 import { updateV12ToV13 } from '@fhevm/host-contracts-cleartext/ts';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createPublicClient, createWalletClient, http, parseEventLogs, type Address, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { foundry } from 'viem/chains';
@@ -21,6 +24,133 @@ const MNEMONIC = 'adapt mosquito move limb mobile illegal tree voyage juice mosq
 const FHE_TYPE_UINT64 = 5;
 // KMS_CONTEXT_COUNTER_BASE + 1 = (0x07 << 248) + 1 — the minimum valid migrated KMS context id.
 const MIGRATED_CONTEXT_ID = (7n << 248n) + 1n;
+
+////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Every zero-argument view getter the LIVE v12 stack exposes, read from the v12 fixture's own ABIs.
+ *
+ * Enumerated rather than listed, deliberately. The question this answers is "does anything readable
+ * change across the upgrade that should not", and a hand-written list can only answer it for the getters
+ * whoever wrote the list thought of. Reading the previous generation's ABIs means a getter added upstream
+ * is covered with no edit here — and a getter REMOVED by the new generation shows up as a revert, which is
+ * itself a break worth failing on.
+ *
+ * Zero-argument only, because those are the ones whose value is a property of the stack rather than of an
+ * argument. `ACL.isAllowed(handle, account)` matters just as much, but it is covered by the cleartext
+ * round-trip instead, which exercises it with real handles.
+ */
+const V12_FIXTURE_ABI_DIR = join(
+  dirname(fileURLToPath(import.meta.url)),
+  'node_modules',
+  '@fhevm',
+  'host-contracts-cleartext-v12',
+  'abi',
+);
+
+type AbiEntry = {
+  readonly type?: string;
+  readonly name?: string;
+  readonly stateMutability?: string;
+  readonly inputs?: readonly unknown[];
+};
+
+/** The contracts a live v12 stack actually has, paired with the ABI file that describes each. */
+function surveyTargets(deployed: {
+  readonly fhevmAddresses: Record<string, string>;
+  readonly cleartextAddresses: Record<string, string>;
+  readonly pauserSetAddress: string;
+  readonly aclOwnerAddress: string;
+}): ReadonlyArray<{ readonly label: string; readonly abiFile: string; readonly address: Address }> {
+  return [
+    { label: 'ACL', abiFile: 'ACL.json', address: deployed.fhevmAddresses.aclAddress as Address },
+    {
+      label: 'FHEVMExecutor',
+      abiFile: 'CleartextFHEVMExecutor.json',
+      address: deployed.fhevmAddresses.fhevmExecutorAddress as Address,
+    },
+    {
+      label: 'KMSVerifier',
+      abiFile: 'CleartextKMSVerifier.json',
+      address: deployed.fhevmAddresses.kmsVerifierAddress as Address,
+    },
+    {
+      label: 'InputVerifier',
+      abiFile: 'CleartextInputVerifier.json',
+      address: deployed.fhevmAddresses.inputVerifierAddress as Address,
+    },
+    { label: 'HCULimit', abiFile: 'HCULimit.json', address: deployed.fhevmAddresses.hcuLimitAddress as Address },
+    {
+      label: 'CleartextArithmetic',
+      abiFile: 'CleartextArithmetic.json',
+      address: deployed.cleartextAddresses.cleartextArithmeticAddress as Address,
+    },
+    {
+      label: 'CleartextDB',
+      abiFile: 'CleartextDB.json',
+      address: deployed.cleartextAddresses.cleartextDbAddress as Address,
+    },
+    { label: 'PauserSet', abiFile: 'PauserSet.json', address: deployed.pauserSetAddress as Address },
+    { label: 'ACLOwner', abiFile: 'ACLOwner.json', address: deployed.aclOwnerAddress as Address },
+  ];
+}
+
+/**
+ * The only readings allowed to differ across the upgrade, and why. Anything not here must be identical.
+ *
+ * `getVersion` changes on exactly the contracts `updateV12ToV13` re-points — which is asserted positively
+ * elsewhere in this test, so here it is only excused. `InputVerifier` is deliberately absent: its bytecode
+ * is unchanged between generations, so its version must NOT move.
+ */
+const MAY_CHANGE = new Set([
+  'ACL.getVersion',
+  'FHEVMExecutor.getVersion',
+  'KMSVerifier.getVersion',
+  'HCULimit.getVersion',
+  'CleartextArithmetic.getVersion',
+  // Returns `block.number` by construction, so it differs between any two blocks.
+  'HCULimit.getBlockMeter',
+]);
+
+/** Reads every zero-argument getter on every contract, as comparable strings. */
+async function surveyStack(
+  publicClient: ReturnType<typeof createPublicClient>,
+  targets: ReturnType<typeof surveyTargets>,
+): Promise<Map<string, string>> {
+  const readings = new Map<string, string>();
+  for (const target of targets) {
+    const abi = JSON.parse(readFileSync(join(V12_FIXTURE_ABI_DIR, target.abiFile), 'utf8')) as AbiEntry[];
+    const getters = abi.filter(
+      (entry) =>
+        entry.type === 'function' &&
+        (entry.stateMutability === 'view' || entry.stateMutability === 'pure') &&
+        (entry.inputs ?? []).length === 0 &&
+        entry.name !== undefined,
+    );
+    for (const getter of getters) {
+      const key = `${target.label}.${getter.name ?? ''}`;
+      // A revert is recorded as a value rather than skipped. Some getters revert by design — OpenZeppelin
+      // gates `proxiableUUID` with `notDelegated`, so it always reverts when called through the proxy —
+      // and pretending they do not exist would mean an exclusion list. Recording the revert instead makes
+      // "reverted before, reverts now" a survival, and turns "worked before, reverts now" into the
+      // failure it is, which is the more interesting direction.
+      let reading: string;
+      try {
+        const value = await publicClient.readContract({
+          address: target.address,
+          abi: abi as never,
+          functionName: getter.name ?? '',
+        });
+        // bigints and tuples both have to survive a comparison, so everything is stringified alike.
+        reading = JSON.stringify(value, (_k, v: unknown) => (typeof v === 'bigint' ? `${v.toString()}n` : v));
+      } catch {
+        reading = '<reverted>';
+      }
+      readings.set(key, reading);
+    }
+  }
+  return readings;
+}
 
 const EXECUTOR_ABI = [
   {
@@ -121,6 +251,58 @@ const INPUT_VERIFIER_ABI = [
   },
 ] as const;
 
+/**
+ * The events that would betray a change the upgrade must never make.
+ *
+ * Asserting on EVENT ABSENCE rather than on before/after values, because the two prove different things.
+ * `PauserSet` exposes only `isPauser(address)` and no enumeration, so comparing values can only show that
+ * the accounts you thought to name are unchanged — it cannot show that nobody else was added. No
+ * Add/Remove/Swap event across the whole upgrade proves the membership did not move at all, whoever is
+ * in it. The same argument applies to ownership: no transfer event means it never even started.
+ */
+const OWNERSHIP_EVENTS_ABI = [
+  {
+    type: 'event',
+    name: 'OwnershipTransferStarted',
+    inputs: [
+      { name: 'previousOwner', type: 'address', indexed: true },
+      { name: 'newOwner', type: 'address', indexed: true },
+    ],
+  },
+  {
+    type: 'event',
+    name: 'OwnershipTransferred',
+    inputs: [
+      { name: 'previousOwner', type: 'address', indexed: true },
+      { name: 'newOwner', type: 'address', indexed: true },
+    ],
+  },
+] as const;
+
+const PAUSER_SET_ABI = [
+  {
+    type: 'function',
+    name: 'isPauser',
+    stateMutability: 'view',
+    inputs: [{ name: 'account', type: 'address' }],
+    outputs: [{ type: 'bool' }],
+  },
+] as const;
+
+/** Separate from PAUSER_SET_ABI: viem's `getLogs({ events })` takes event items only, not a whole ABI. */
+const PAUSER_EVENTS_ABI = [
+  { type: 'event', name: 'AddPauser', inputs: [{ name: 'account', type: 'address', indexed: true }] },
+  { type: 'event', name: 'RemovePauser', inputs: [{ name: 'account', type: 'address', indexed: true }] },
+  {
+    type: 'event',
+    name: 'SwapPauser',
+    inputs: [
+      { name: 'oldAccount', type: 'address', indexed: true },
+      { name: 'newAccount', type: 'address', indexed: true },
+    ],
+  },
+] as const;
+
 const CLEARTEXT_DB_ABI = [
   {
     type: 'function',
@@ -159,9 +341,9 @@ function v12BootstrapConfig(deployerAddress: string): BootstrapConfigV12 {
 test('e2e: deploy a v12 cleartext stack, then upgrade it to v13 — cleartext survives the migration', async () => {
   const deployerKey = privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: 5 });
   const deployerAddress = privateKeyToAddress({ privateKey: deployerKey });
-  const kmsSigner = privateKeyToAddress({
-    privateKey: privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: 8 }),
-  });
+  // No separate KMS signer: this stack is deployed with the deployer AS its KMS signer, and the migration
+  // config below has to describe the stack it upgrades. A distinct signer here is what made the survey
+  // fail — the migration would have replaced the signer set instead of carrying it over.
 
   const anvil = startAnvil({ port: 8620, mnemonic: MNEMONIC });
   try {
@@ -269,6 +451,30 @@ test('e2e: deploy a v12 cleartext stack, then upgrade it to v13 — cleartext su
     const randHandleBefore = await fheRand();
     const randValueBefore = await dbGet(randHandleBefore);
 
+    // Snapshot every readable property of the live v12 stack, so the upgrade can be held to preserving
+    // all of it rather than only the handful this test thought to name.
+    const surveyed = surveyTargets(v12 as never);
+    const before = await surveyStack(publicClient, surveyed);
+    // Guard against a vacuous survey: if the ABIs could not be read this would silently compare nothing.
+    expect(before.size).toBeGreaterThan(30);
+
+    // The block the upgrade starts after. Everything it sends lands above this, so the log scan below
+    // covers the WHOLE upgrade — the empty impl, both proxies, all seven implementations and the atomic
+    // ACLOwner.upgrade — not merely the last transaction.
+    const blockBeforeUpgrade = await publicClient.getBlockNumber();
+    const pauserSet = v12.pauserSetAddress as Address;
+    const aclOwner = v12.aclOwnerAddress as Address;
+    const isPauser = (account: string): Promise<boolean> =>
+      publicClient.readContract({
+        address: pauserSet,
+        abi: PAUSER_SET_ABI,
+        functionName: 'isPauser',
+        args: [account as Address],
+      }) as Promise<boolean>;
+
+    // The standing ACLOwner is a registered pauser after setupACLOwner; that is the state to preserve.
+    expect(await isPauser(aclOwner)).toBe(true);
+
     // --- 3. Upgrade the live v12 stack to v13 (single atomic ACLOwner.upgrade). ---
     const migrated = await updateV12ToV13({
       ethProvider: adapters.provider,
@@ -283,7 +489,12 @@ test('e2e: deploy a v12 cleartext stack, then upgrade it to v13 — cleartext su
         existingKmsNodes: [
           {
             txSenderAddress: deployerAddress,
-            signerAddress: kmsSigner,
+            // The signer the live v12 stack was actually deployed with (see v12BootstrapConfig), NOT an
+            // arbitrary one. `existingKmsNodes` means "what this stack already has": v13 reads its KMS
+            // signer set from ProtocolConfig, so a value that disagrees with the running stack silently
+            // REPLACES the signer set during what is supposed to be a migration. The survey below is what
+            // enforces that — it failed on exactly this when the two disagreed.
+            signerAddress: deployerAddress,
             ipAddress: '127.0.0.1',
             storageUrl: 'https://kms.example',
           },
@@ -319,6 +530,68 @@ test('e2e: deploy a v12 cleartext stack, then upgrade it to v13 — cleartext su
       protocolConfig: 'ProtocolConfig v0.1.0',
       kmsGeneration: 'KMSGeneration v0.1.0',
     });
+
+    // --- 4b. Everything readable survives. Every zero-argument getter the v12 stack exposed returns
+    //         exactly what it did before, except the versions the upgrade is supposed to move. ---
+    const after = await surveyStack(publicClient, surveyed);
+
+    const changed: string[] = [];
+    const vanished: string[] = [];
+    for (const [key, valueBefore] of before) {
+      const valueAfter = after.get(key);
+      if (valueAfter === undefined) {
+        vanished.push(key);
+      } else if (valueAfter !== valueBefore && !MAY_CHANGE.has(key)) {
+        changed.push(`${key}: ${valueBefore} -> ${valueAfter}`);
+      }
+    }
+    expect(vanished, `getters the v12 stack had and the upgraded stack does not:\n  ${vanished.join('\n  ')}`).toEqual(
+      [],
+    );
+    expect(changed, `readable state changed across the upgrade:\n  ${changed.join('\n  ')}`).toEqual([]);
+
+    // The exemptions are not a licence: each one must actually have changed, or it does not belong in
+    // MAY_CHANGE. This is what stops the set from quietly growing into a way of ignoring regressions.
+    const unusedExemptions = [...MAY_CHANGE].filter((key) => before.has(key) && before.get(key) === after.get(key));
+    expect(
+      unusedExemptions,
+      `MAY_CHANGE lists readings that did not change — remove them:\n  ${unusedExemptions.join('\n  ')}`,
+    ).toEqual([]);
+
+    // --- 4c. Ownership never moved, and the pauser set never changed. ---
+    //
+    // The upgrade is supposed to run entirely THROUGH the standing ACLOwner without touching who owns
+    // what. A coordinator that re-ran the ownership dance, or a migration that re-registered pausers,
+    // would still leave a working stack — and would have handed root to a different account, or changed
+    // who can pause it, with nothing else noticing.
+    const upgradeBlocks = { fromBlock: blockBeforeUpgrade + 1n, toBlock: 'latest' } as const;
+
+    for (const [label, address] of [
+      ['ACL', v12.fhevmAddresses.aclAddress as Address],
+      ['ACLOwner', aclOwner],
+    ] as const) {
+      const transfers = await publicClient.getLogs({ address, events: OWNERSHIP_EVENTS_ABI, ...upgradeBlocks });
+      expect(
+        transfers.map((log) => log.eventName),
+        `${label} emitted an ownership event during the upgrade — ownership must never change`,
+      ).toEqual([]);
+    }
+
+    const pauserChanges = await publicClient.getLogs({
+      address: pauserSet,
+      events: PAUSER_EVENTS_ABI,
+      ...upgradeBlocks,
+    });
+    expect(
+      pauserChanges.map((log) => log.eventName),
+      'PauserSet membership changed during the upgrade — the pausers must stay the same',
+    ).toEqual([]);
+
+    // Positive counterpart to the event scan: the PauserSet is the same contract, and the ACLOwner is
+    // still a pauser in it. Event absence proves nothing was added or removed; this proves the set the
+    // stack points at is still the one that was checked.
+    expect(v12.pauserSetAddress).toBe(pauserSet);
+    expect(await isPauser(aclOwner)).toBe(true);
 
     // --- 5. Cleartext still works after the upgrade (new v13 executor impl → live CleartextArithmetic
     //        → CleartextDB), and the pre-upgrade value persisted through the migration. ---

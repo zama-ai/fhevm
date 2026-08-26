@@ -1,33 +1,34 @@
 {
   "//": [
-    "DRAFT — see README.md. For the editor and for `tsc --noEmit` only.",
+    "For the editor and for `tsc --noEmit` only — nothing is ever built from this. Plain `node` runs the",
+    ".ts files directly by stripping types at load.",
     "",
-    "Nothing is ever built from this: plain `node` runs the .ts files directly by stripping types at",
-    "load. That is what `erasableSyntaxOnly` enforces — it fails the typecheck on anything node",
-    "cannot strip (enum, namespace, parameter properties), so the editor catches it before node does.",
+    "Extends ../tsconfig.base.json, which is the SAME file as sdk/js-sdk/tsconfig.base.json (the source",
+    "of truth). It used to restate its own options and had drifted badly: noUncheckedIndexedAccess and",
+    "exactOptionalPropertyTypes were off, skipLibCheck was on, target/lib were ahead, and eleven flags",
+    "were simply absent. Extending rather than restating is what stops that happening again.",
     "",
-    "`allowImportingTsExtensions` + `noEmit` are the pair that lets the source say `./utils.ts`,",
-    "which is what node requires for relative imports and what tsc would otherwise reject."
+    "The overrides below are the whole exception list, and each is forced rather than chosen:",
+    "  types            base is [] so the published payload cannot reach Node APIs; this IS a node",
+    "                   script, so it needs them (same override as internal/tsconfig.json)",
+    "  rootDir          base says `src`, which does not exist here",
+    "  noEmit           nothing is emitted, and it is what allowImportingTsExtensions requires",
+    "  allowImportingTs the source says `./utils.ts`, which node requires for relative imports and tsc",
+    "  Extensions       would otherwise reject",
+    "  erasableSyntax   fails the typecheck on anything node cannot strip (enum, namespace, parameter",
+    "  Only             properties), so the editor catches it before node does",
+    "",
+    "`include` is a GLOB on purpose. A named file list only checked files something imported, so common.ts",
+    "was covered solely because deploy-testnet.ts pulled it in — and a new module nobody imports yet would",
+    "have been checked by nothing at all."
   ],
+  "extends": "../tsconfig.base.json",
   "compilerOptions": {
-    "target": "es2023",
-    "lib": ["es2023"],
-    "module": "nodenext",
-    "moduleResolution": "nodenext",
+    "rootDir": ".",
     "types": ["node"],
-
-    "strict": true,
-    "noUncheckedIndexedAccess": false,
-    "exactOptionalPropertyTypes": false,
-    "noImplicitOverride": true,
-    "noFallthroughCasesInSwitch": true,
-
-    "erasableSyntaxOnly": true,
-    "verbatimModuleSyntax": true,
-    "allowImportingTsExtensions": true,
     "noEmit": true,
-
-    "skipLibCheck": true
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true
   },
-  "include": ["deploy-testnet.ts", "utils.ts"]
+  "include": ["./**/*.ts"]
 }

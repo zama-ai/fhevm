@@ -12,6 +12,15 @@
     "dependencies, so the payload's Solidity deps are MIRRORED below as devDependencies -- forge resolves",
     "them from this directory's node_modules via `libs` in foundry.toml. Keep the versions in lockstep",
     "with pkg/package.json.",
+    "`prettier:check` and `prettier:write` pass `--plugin=prettier-plugin-solidity` on the CLI rather than",
+    "declaring it in .prettierrc, and .prettierrc has no comment key. Both are deliberate:",
+    "  - an editor's prettier extension resolves plugin NAMES against its own module path, not this",
+    "    directory's node_modules. When it cannot resolve one it fails to load the whole config and formats",
+    "    with prettier's DEFAULTS (printWidth 80, not 120), so files saved in the editor came out different",
+    "    from what prettier:check demands and the build failed on files that looked fine.",
+    "  - .prettierrc rejects a `//` key -- unlike tsconfig.json and this file -- and warns on every run.",
+    "The cost is that the editor does not format .sol. It did not before the plugin existed either, and",
+    "prettier:write still does.",
     "`build` ends with prepare:tarball-consumer on purpose: it starts with `clean`, which removes",
     "test/ts/node_modules, and those tests import the package by its PUBLISHED name. Re-creating the",
     "fixture leaves a built tree self-consistent instead of leaving test/ts unresolvable in editors."
@@ -44,14 +53,14 @@
     "test:tarball": "npm run clean:tarball-consumer && npm run build:templates && npm run test:tarball:run",
     "test:tarball:run": "npm run build && npm run lint:tarball-consumer && vitest run --config test/ts/vitest.config.ts",
     "test:build": "publint --strict ./pkg && attw --pack ./pkg --ignore-rules false-esm",
-    "lint": "eslint && tsc -b ./tsconfig.json --noEmit",
+    "lint": "eslint && tsc -b ./tsconfig.json --noEmit && tsc -p ./create2-deploy/tsconfig.json --noEmit",
     "check:vendored": "./scripts/check-vendored-sources.sh",
     "check:zama-config": "node internal/cli/checkZamaLocalConfig.ts",
     "check:cleartext-config": "node internal/cli/copyCleartextConfig.ts --check",
     "list:upgrade-ops": "node internal/cli/listUpgradeOps.ts",
     "lint:tarball-consumer": "eslint --config ./eslint.config.with-tarball-consumer.js test/ts/*.ts && tsc --project test/ts/tsconfig.json --noEmit",
-    "prettier:check": "prettier --check \"**/*.{js,json,md,sol,ts,yml}\"",
-    "prettier:write": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\""
+    "prettier:check": "prettier --plugin=prettier-plugin-solidity --check \"**/*.{js,json,md,sol,ts,yml}\"",
+    "prettier:write": "prettier --plugin=prettier-plugin-solidity --write \"**/*.{js,json,md,sol,ts,yml}\""
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",

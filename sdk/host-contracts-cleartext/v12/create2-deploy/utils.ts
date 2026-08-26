@@ -38,7 +38,9 @@ export function say(...lines: readonly string[]): void {
 
 /** Only the first line is labelled; the rest are indented to align under it. */
 export function warn(...lines: readonly string[]): void {
-  lines.forEach((line, i) => console.log(i === 0 ? `  WARNING: ${line}` : `           ${line}`));
+  lines.forEach((line, i) => {
+    console.log(i === 0 ? `  WARNING: ${line}` : `           ${line}`);
+  });
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -64,8 +66,9 @@ export function capture(cmd: string, args: readonly string[]): CaptureResult {
   const r = spawnSync(cmd, args as string[], { encoding: 'utf8' });
   return {
     ok: r.status === 0,
-    stdout: (r.stdout ?? '').trim(),
-    stderr: (r.stderr ?? '').trim(),
+    // spawnSync types these as string when `encoding` is set, so no nullish coalescing is needed.
+    stdout: r.stdout.trim(),
+    stderr: r.stderr.trim(),
     code: r.status ?? 1,
   };
 }
@@ -76,7 +79,7 @@ export function capture(cmd: string, args: readonly string[]): CaptureResult {
 export function captureOrFail(cmd: string, args: readonly string[]): string {
   const r = capture(cmd, args);
   if (!r.ok) {
-    fail(`Error: \`${cmd} ${args.join(' ')}\` failed (exit ${r.code}).`, r.stderr ? `       ${r.stderr}` : '');
+    fail(`Error: \`${cmd} ${args.join(' ')}\` failed (exit ${r.code}).`, r.stderr === '' ? '' : `       ${r.stderr}`);
   }
   return r.stdout;
 }

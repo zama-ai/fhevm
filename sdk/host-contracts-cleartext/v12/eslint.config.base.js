@@ -2,7 +2,10 @@ import eslint from '@eslint/js';
 import tseslint from 'typescript-eslint';
 
 const publicFiles = ['pkg/ts/**/*.ts'];
-const nodeFiles = ['internal/**/*.ts', 'test/**/*.ts'];
+// `create2-deploy` is node-side tooling like `internal/`, and was absent here until now — which meant
+// ~2400 lines were linted by nothing at all, and an unused import survived a full typecheck AND a full
+// lint run. Its own tsconfig extends the same base, so the type-aware rules work the same way.
+const nodeFiles = ['internal/**/*.ts', 'test/**/*.ts', 'create2-deploy/**/*.ts'];
 const targetFiles = [...publicFiles, ...nodeFiles];
 const generatedFiles = ['pkg/ts/_cjs/**', 'pkg/ts/_esm/**', 'pkg/ts/_types/**'];
 
