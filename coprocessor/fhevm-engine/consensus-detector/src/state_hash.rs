@@ -73,7 +73,7 @@ async fn compute_and_insert_gcs(
 ) -> anyhow::Result<()> {
     // This is the write path, so both the pending-scan read and the INSERT
     // explicitly qualify the versioned GCS schema (`GCS_SCHEMA_QUOTED`, e.g.
-    // `"gcs-1"`) instead of relying on the connection search_path. An
+    // `"gcs-0.14.0"`) instead of relying on the connection search_path. An
     // accidental fallback to `public.state_hash` would corrupt the live (BCS)
     // table, so these must never resolve anywhere but the GCS schema — and a
     // missing GCS schema errors loudly rather than silently writing to public.
@@ -482,11 +482,11 @@ async fn compute_and_upload_state_hashes(
     // Every branch below touches the versioned GCS schema — the compute paths and
     // the GW-inputs upload explicitly via GCS_SCHEMA_QUOTED, the host-chain upload
     // implicitly through the gcs-first search_path. That schema is created by the
-    // GCS-side upgrade-controller at startup, and only for the consensus version it is
+    // GCS-side upgrade-controller at startup, and only for the stack version it is
     // dry-running. Before an upgrade of THIS binary's version — or on a plain BCS
     // deployment whose live version differs from the compiled STACK_VERSION — the
     // schema is absent, and the hard-qualified GW upload would fail every pass with
-    // `relation "gcs-<consensus>.state_hash" does not exist`. There is nothing to compute
+    // `relation "gcs-<ver>.state_hash" does not exist`. There is nothing to compute
     // or upload without the schema, so skip the whole pass cleanly.
     if !gcs_schema_exists(&mut tx).await? {
         debug!(

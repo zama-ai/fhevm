@@ -130,7 +130,7 @@ Expected result:
 Check the GCS ciphertexts:
 
 ```sql
-SELECT count(*) FROM "gcs-1".ciphertexts;
+SELECT count(*) FROM "gcs-0.15.0".ciphertexts;
 ```
 
 Expected result:
@@ -150,8 +150,8 @@ Once `end_block` is reached, the cutover is executed automatically.
 
 During cutover:
 
-* the `"gcs-1"` namespace is merged into the `"public"` namespace
-* the `"gcs-1"` namespace is dropped
+* the `"gcs-0.15.0"` namespace is merged into the `"public"` namespace
+* the `"gcs-0.15.0"` namespace is dropped
 * GCS becomes `LIVE`
 * BCS becomes `PAUSED`
 * Check for "Error in background worker, retrying shortly","error":"Coprocessor db error: Configuration(StaleStackError { binary: \"0.14.0\", live: \"0.15.0\" })"}}" in *BCS* workers

@@ -1059,15 +1059,15 @@ const runBlueGreenProfile = async (
     }
     const schema = await psqlQuery(
       db,
-      `SELECT nspname FROM pg_namespace WHERE nspname='gcs-${gcsConsensusVersion}';`,
+      `SELECT nspname FROM pg_namespace WHERE nspname='gcs-${gcsSoftwareVersion}';`,
     );
-    if (schema !== `gcs-${gcsConsensusVersion}`) {
-      throw new Error(`${db} missing schema "gcs-${gcsConsensusVersion}" (GCS upgrade-controller didn't create it)`);
+    if (schema !== `gcs-${gcsSoftwareVersion}`) {
+      throw new Error(`${db} missing schema "gcs-${gcsSoftwareVersion}" (GCS upgrade-controller didn't create it)`);
     }
   }
   console.log(
     `OK:   ${opCount} DB(s) at consensus ${activeConsensusVersion}, empty upgrade_state, ` +
-      `gcs-${gcsConsensusVersion} schema present`,
+      `gcs-${gcsSoftwareVersion} schema present`,
   );
 
   const defaultHostKey = defaultHostChainKey(state.scenario.hostChains);
@@ -1217,15 +1217,15 @@ const runBlueGreenProfile = async (
     }
     const schema = await psqlQuery(
       db,
-      `SELECT nspname FROM pg_namespace WHERE nspname='gcs-${gcsConsensusVersion}';`,
+      `SELECT nspname FROM pg_namespace WHERE nspname='gcs-${gcsSoftwareVersion}';`,
     );
-    if (schema !== `gcs-${gcsConsensusVersion}`) {
-      throw new Error(`${db} missing schema "gcs-${gcsConsensusVersion}" after rollback`);
+    if (schema !== `gcs-${gcsSoftwareVersion}`) {
+      throw new Error(`${db} missing schema "gcs-${gcsSoftwareVersion}" after rollback`);
     }
     const remainingRows = await psqlQuery(
       db,
-      `SELECT (SELECT count(*) FROM "gcs-${gcsConsensusVersion}".computations) + ` +
-        `(SELECT count(*) FROM "gcs-${gcsConsensusVersion}".state_hash);`,
+      `SELECT (SELECT count(*) FROM "gcs-${gcsSoftwareVersion}".computations) + ` +
+        `(SELECT count(*) FROM "gcs-${gcsSoftwareVersion}".state_hash);`,
     );
     if (remainingRows !== "0") {
       throw new Error(`${db} gcs schema still has ${remainingRows} rows`);
@@ -1388,6 +1388,20 @@ const runBlueGreenProfile = async (
         traffic.errored,
       ]);
     }
+
+    // Cutover takes the consensus version from the binary, so it must have moved too.
+    for (const db of operatorDatabases) {
+      const consensus = await psqlQuery(
+        db,
+        "SELECT consensus_version FROM versioning WHERE singleton = TRUE;",
+      );
+      if (Number(consensus) !== gcsConsensusVersion) {
+        throw new Error(
+          `${db}.versioning consensus ${consensus}, expected ${gcsConsensusVersion}`,
+        );
+      }
+    }
+    console.log(`OK:   consensus ${gcsConsensusVersion} active on every operator`);
 
     // BCS has no upgrade_state row — retires implicitly via `resolve_gcs_mode`.
     console.log(`\n[10/11] verify FSM final state`);
