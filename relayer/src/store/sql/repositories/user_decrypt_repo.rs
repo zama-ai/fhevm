@@ -1,8 +1,15 @@
+//! Epoch fencing: see the module doc block in `public_decrypt_repo` for
+//! the full rationale, which applies here unchanged. The listener paths deliberately left
+//! unfenced in this repository are [`UserDecryptRepository::update_consensus_hash_and_return_state`]
+//! and [`UserDecryptRepository::insert_share_and_complete_if_threshold_reached`] - both record
+//! on-chain truth observed by a chain listener, not a send decision this pod's epoch owns.
+
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 
 use crate::core::event::UserDecryptResponse;
 use crate::metrics;
+use crate::orchestrator::DispatcherLock;
 use crate::store::sql::models::req_status_enum_model::ReqStatus;
 use crate::store::sql::models::user_decrypt_req_model::{ConsensusReqState, UserDecryptReqData};
 use crate::store::sql::{
@@ -61,11 +68,24 @@ pub enum UserDecryptInsertResult {
 
 pub struct UserDecryptRepository {
     pool: PgClient,
+    dispatcher_lock: DispatcherLock,
 }
 
 impl UserDecryptRepository {
-    pub fn new(pool: PgClient) -> Self {
-        Self { pool }
+    pub fn new(pool: PgClient, dispatcher_lock: DispatcherLock) -> Self {
+        Self {
+            pool,
+            dispatcher_lock,
+        }
+    }
+
+    /// This pod's dispatch-gate reading: `Some(epoch)` while it is the confirmed dispatcher,
+    /// `None` otherwise. HTTP intake reads this **once** and uses the one value for both
+    /// decisions it makes about a new request - what to stamp on the row, and whether to
+    /// dispatch it in process. See
+    /// [`Self::insert_data_on_conflict_and_get_ext_job_id`] for why one read rather than two.
+    pub fn dispatch_epoch(&self) -> Option<i64> {
+        self.dispatcher_lock.dispatching_epoch()
     }
 
     // NOTE: We have a query which is performed at the database level in a pg_cron job instead of being called by the internals. and is triggered on this condition:
@@ -113,11 +133,15 @@ impl UserDecryptRepository {
     /// Insert req, ext_job_id, int_job_id.
     /// Returns an enum indicating whether the request was inserted or was a duplicate.
     /// For duplicates, includes the current state (completed with response, or still processing).
+    /// `dispatch_epoch` must be the same [`crate::orchestrator::DispatchGate::epoch`] reading
+    /// the caller decided on - see
+    /// [`crate::store::sql::repositories::public_decrypt_repo::PublicDecryptRepository::insert_data_on_conflict_and_get_ext_job_id`].
     pub async fn insert_data_on_conflict_and_get_ext_job_id(
         &self,
         ext_job_id: Uuid,
         int_job_id_bytes: &[u8],
         request_data: UserDecryptReqData,
+        dispatch_epoch: Option<i64>,
     ) -> SqlResult<UserDecryptInsertResult> {
         // Use a transaction to ensure atomic read of status + shares for completed duplicates.
         // This prevents race conditions where shares could be deleted between the INSERT
@@ -142,9 +166,10 @@ impl UserDecryptRepository {
                 ext_job_id,
                 int_job_id,
                 req,
-                req_type
+                req_type,
+                owner_epoch
             )
-            VALUES ($1, $2, $3, $4::user_decrypt_req_type)
+            VALUES ($1, $2, $3, $4::user_decrypt_req_type, $5)
             ON CONFLICT (int_job_id)
             WHERE req_status NOT IN ('failure'::req_status, 'timed_out'::req_status)
             DO UPDATE SET updated_at = user_decrypt_req.updated_at
@@ -154,6 +179,7 @@ impl UserDecryptRepository {
             int_job_id_bytes,
             request,
             req_type as _,
+            dispatch_epoch,
         )
         .fetch_one(&mut *tx)
         .await;
@@ -276,6 +302,7 @@ impl UserDecryptRepository {
     /// Returns the number of rows affected (1 if found, 0 if not).
     pub async fn update_status_to_processing(&self, int_job_id_bytes: &[u8]) -> SqlResult<u64> {
         let mut conn = self.pool.get_app_connection().await?;
+        let epoch = self.dispatcher_lock.current_epoch();
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -287,9 +314,11 @@ impl UserDecryptRepository {
             ),
             upd AS (
                 UPDATE user_decrypt_req
-                SET req_status = 'processing'::req_status
+                SET req_status = 'processing'::req_status,
+                    owner_epoch = $2
                 WHERE int_job_id = $1
                   AND req_status = 'queued'::req_status
+                  AND (owner_epoch IS NULL OR owner_epoch <= $2)
                 RETURNING req_status, updated_at
             )
             SELECT
@@ -298,7 +327,8 @@ impl UserDecryptRepository {
                 upd.updated_at as "new_updated_at!"
             FROM old, upd
             "#,
-            int_job_id_bytes
+            int_job_id_bytes,
+            epoch,
         )
         .fetch_optional(&mut *conn)
         .await;
@@ -333,6 +363,7 @@ impl UserDecryptRepository {
         err_reason: &str,
     ) -> SqlResult<u64> {
         let mut conn = self.pool.get_app_connection().await?;
+        let epoch = self.dispatcher_lock.current_epoch();
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -346,19 +377,22 @@ impl UserDecryptRepository {
                 UPDATE user_decrypt_req
                 SET
                     req_status = 'timed_out'::req_status,
-                    err_reason = $1
+                    err_reason = $1,
+                    owner_epoch = $3
                 WHERE int_job_id = $2
                   AND req_status IN ('queued'::req_status, 'receipt_received'::req_status)
+                  AND (owner_epoch IS NULL OR owner_epoch <= $3)
                 RETURNING req_status, updated_at
             )
-            SELECT 
+            SELECT
                 old.req_status as "old_status!: ReqStatus",
                 old.updated_at as "old_updated_at!",
                 upd.updated_at as "new_updated_at!"
             FROM old, upd
             "#,
             err_reason,
-            int_job_id_bytes
+            int_job_id_bytes,
+            epoch,
         )
         .fetch_optional(&mut *conn)
         .await;
@@ -390,6 +424,7 @@ impl UserDecryptRepository {
     /// Returns the number of rows affected (1 if found, 0 if not).
     pub async fn update_status_to_tx_in_flight(&self, int_job_id_bytes: &[u8]) -> SqlResult<u64> {
         let mut conn = self.pool.get_app_connection().await?;
+        let epoch = self.dispatcher_lock.current_epoch();
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -401,9 +436,11 @@ impl UserDecryptRepository {
             ),
             upd AS (
                 UPDATE user_decrypt_req
-                SET req_status = 'tx_in_flight'::req_status
+                SET req_status = 'tx_in_flight'::req_status,
+                    owner_epoch = $2
                 WHERE int_job_id = $1
                   AND req_status = 'processing'::req_status
+                  AND (owner_epoch IS NULL OR owner_epoch <= $2)
                 RETURNING req_status, updated_at
             )
             SELECT
@@ -412,7 +449,8 @@ impl UserDecryptRepository {
                 upd.updated_at as "new_updated_at!"
             FROM old, upd
             "#,
-            int_job_id_bytes
+            int_job_id_bytes,
+            epoch,
         )
         .fetch_optional(&mut *conn)
         .await;
@@ -438,68 +476,6 @@ impl UserDecryptRepository {
         }
     }
 
-    /// Reset all tx_in_flight requests to processing status.
-    /// Used during startup recovery to ensure clean state transitions.
-    /// Returns the number of rows affected.
-    pub async fn reset_tx_in_flight_to_processing(&self) -> SqlResult<u64> {
-        let mut conn = self.pool.get_app_connection().await?;
-
-        let query_start = Instant::now();
-
-        // Fetch rows to update for metrics
-        let rows = sqlx::query!(
-            r#"
-            SELECT int_job_id, updated_at
-            FROM user_decrypt_req
-            WHERE req_status = 'tx_in_flight'::req_status
-            "#
-        )
-        .fetch_all(&mut *conn)
-        .await;
-
-        match &rows {
-            Ok(_) => metrics::observe_query(metrics::Table::UserDecryptReq, query_start.elapsed()),
-            Err(_) => metrics::increment_error(metrics::Table::UserDecryptReq),
-        }
-
-        let rows = rows?;
-        if rows.is_empty() {
-            return Ok(0);
-        }
-
-        // Perform bulk update (updated_at set by trigger)
-        let query_start = Instant::now();
-        let result = sqlx::query!(
-            r#"
-            UPDATE user_decrypt_req
-            SET req_status = 'processing'::req_status
-            WHERE req_status = 'tx_in_flight'::req_status
-            "#
-        )
-        .execute(&mut *conn)
-        .await;
-
-        match &result {
-            Ok(_) => metrics::observe_query(metrics::Table::UserDecryptReq, query_start.elapsed()),
-            Err(_) => metrics::increment_error(metrics::Table::UserDecryptReq),
-        }
-
-        let rows_affected = result?.rows_affected();
-
-        // Update metrics: decrement tx_in_flight, increment processing
-        for _ in 0..rows_affected {
-            metrics::record_status_transition(
-                metrics::RequestType::UserDecrypt,
-                ReqStatus::TxInFlight,
-                ReqStatus::Processing,
-                chrono::Utc::now(),
-                chrono::Utc::now(),
-            );
-        }
-
-        Ok(rows_affected)
-    }
-
     /// Updating the req_status to receipt_received, gw_req_tx_hash, gw_reference_id by int_job_id
     /// Returns the number of rows affected (should be 1 or retry).
     pub async fn update_status_to_receipt_received_on_tx_success(
@@ -512,6 +488,7 @@ impl UserDecryptRepository {
         let gw_ref_id = id_as_bytes_array.to_vec();
 
         let mut conn = self.pool.get_app_connection().await?;
+        let epoch = self.dispatcher_lock.current_epoch();
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -526,12 +503,14 @@ impl UserDecryptRepository {
                 SET
                     req_status = 'receipt_received'::req_status,
                     gw_req_tx_hash = $1,
-                    gw_reference_id = $2
+                    gw_reference_id = $2,
+                    owner_epoch = $4
                 WHERE int_job_id = $3
                   AND req_status = 'tx_in_flight'::req_status
+                  AND (owner_epoch IS NULL OR owner_epoch <= $4)
                 RETURNING req_status, updated_at
             )
-            SELECT 
+            SELECT
                 old.req_status as "old_status!: ReqStatus",
                 old.updated_at as "old_updated_at!",
                 upd.updated_at as "new_updated_at!"
@@ -539,7 +518,8 @@ impl UserDecryptRepository {
             "#,
             gw_req_tx_hash,
             gw_ref_id,
-            int_job_id_bytes
+            int_job_id_bytes,
+            epoch,
         )
         .fetch_optional(&mut *conn)
         .await;
@@ -574,6 +554,7 @@ impl UserDecryptRepository {
         err_reason: &str,
     ) -> SqlResult<u64> {
         let mut conn = self.pool.get_app_connection().await?;
+        let epoch = self.dispatcher_lock.current_epoch();
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -587,9 +568,11 @@ impl UserDecryptRepository {
                 UPDATE user_decrypt_req
                 SET
                     req_status = 'failure'::req_status,
-                    err_reason = $1
+                    err_reason = $1,
+                    owner_epoch = $3
                 WHERE int_job_id = $2
                   AND req_status = 'queued'::req_status
+                  AND (owner_epoch IS NULL OR owner_epoch <= $3)
                 RETURNING req_status, updated_at
             )
             SELECT
@@ -599,7 +582,8 @@ impl UserDecryptRepository {
             FROM old, upd
             "#,
             err_reason,
-            int_job_id_bytes
+            int_job_id_bytes,
+            epoch,
         )
         .fetch_optional(&mut *conn)
         .await;
@@ -632,6 +616,7 @@ impl UserDecryptRepository {
         err_reason: &str,
     ) -> SqlResult<u64> {
         let mut conn = self.pool.get_app_connection().await?;
+        let epoch = self.dispatcher_lock.current_epoch();
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -645,19 +630,22 @@ impl UserDecryptRepository {
                 UPDATE user_decrypt_req
                 SET
                     req_status = 'failure'::req_status,
-                    err_reason = $1
+                    err_reason = $1,
+                    owner_epoch = $3
                 WHERE int_job_id = $2
                   AND req_status IN ('processing'::req_status, 'tx_in_flight'::req_status)
+                  AND (owner_epoch IS NULL OR owner_epoch <= $3)
                 RETURNING req_status, updated_at
             )
-            SELECT 
+            SELECT
                 old.req_status as "old_status!: ReqStatus",
                 old.updated_at as "old_updated_at!",
                 upd.updated_at as "new_updated_at!"
             FROM old, upd
             "#,
             err_reason,
-            int_job_id_bytes
+            int_job_id_bytes,
+            epoch,
         )
         .fetch_optional(&mut *conn)
         .await;
@@ -690,7 +678,7 @@ impl UserDecryptRepository {
     // but in any case return (status, updated_at, err_reason, int_job_id) for `gw_reference_id`
     /// Attempts to update consensus hash ONLY IF status is 'receipt_received' AND hash is null.
     /// ALWAYS returns the current state of the row (req_status, updated_at, etc.) regardless of update success.
-    /// Step 6: Handle Consensus Tx.
+    /// Handles the consensus transaction hash.
     pub async fn update_consensus_hash_and_return_state(
         &self,
         gw_reference_id: U256,
@@ -1105,25 +1093,125 @@ impl UserDecryptRepository {
         Ok(result?)
     }
 
-    /// Find incomplete requests for startup recovery (queued, processing, tx_in_flight).
-    pub async fn find_incomplete_requests(
+    /// Sweep: atomically claim incomplete requests nobody current is driving, stamping
+    /// `owner_epoch` and incrementing `attempts` in the same statement that selects them. Only
+    /// rows this UPDATE actually touched come back - a row a concurrent claimer already took is
+    /// not returned here, so the caller never dispatches it (see
+    /// `update_status_to_tx_in_flight`'s doc comment for the CAS-with-discarded-count bug
+    /// this is built not to repeat).
+    ///
+    /// Eligibility, the `tx_in_flight` reset and the lifetime `attempts` budget all work
+    /// exactly as they do for public decrypt requests. See
+    /// [`crate::store::sql::repositories::public_decrypt_repo::PublicDecryptRepository::claim_incomplete_requests`]
+    /// for the reasoning; it is the canonical copy for all three request tables, kept in one
+    /// place because three copies of it had already drifted apart once.
+    pub async fn claim_incomplete_requests(
         &self,
-    ) -> SqlResult<Vec<(Vec<u8>, Value, ReqStatus, DateTime<Utc>)>> {
+        epoch: i64,
+        max_attempts: i32,
+    ) -> SqlResult<Vec<(Vec<u8>, Value, ReqStatus, i32)>> {
+        let mut conn = self.pool.get_cron_connection().await?;
+
+        let query_start = Instant::now();
         let result = sqlx::query!(
             r#"
-            SELECT int_job_id, req, req_status as "req_status!: ReqStatus", updated_at
-            FROM user_decrypt_req
+            UPDATE user_decrypt_req
+            SET owner_epoch = $1,
+                attempts = attempts + 1,
+                req_status = CASE
+                    WHEN req_status = 'tx_in_flight'::req_status THEN 'processing'::req_status
+                    ELSE req_status
+                END
             WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)
-            ORDER BY created_at ASC
-            "#
+              AND attempts < $2
+              AND (owner_epoch IS NULL OR owner_epoch < $1)
+            RETURNING int_job_id, req, req_status as "req_status!: ReqStatus", attempts
+            "#,
+            epoch,
+            max_attempts,
         )
-        .fetch_all(&self.pool.get_app_pool())
-        .await?;
+        .fetch_all(&mut *conn)
+        .await;
 
-        Ok(result
+        match &result {
+            Ok(_) => metrics::observe_query(metrics::Table::UserDecryptReq, query_start.elapsed()),
+            Err(_) => metrics::increment_error(metrics::Table::UserDecryptReq),
+        }
+
+        Ok(result?
             .into_iter()
-            .map(|row| (row.int_job_id, row.req, row.req_status, row.updated_at))
+            .map(|row| (row.int_job_id, row.req, row.req_status, row.attempts))
             .collect())
+    }
+
+    /// Sweep: move requests that have exhausted `max_attempts` to `failure`, so a row that
+    /// never completes is not claimed forever. Shares the claim's ownership predicate and
+    /// stamps `owner_epoch`; see
+    /// [`crate::store::sql::repositories::public_decrypt_repo::PublicDecryptRepository::fail_exhausted_attempts`]
+    /// for why the comparison is `<` here and `<=` in every other fenced write, and for why an
+    /// epoch can fail a row it never attempted itself.
+    pub async fn fail_exhausted_attempts(
+        &self,
+        epoch: i64,
+        max_attempts: i32,
+        err_reason: &str,
+    ) -> SqlResult<u64> {
+        let mut conn = self.pool.get_cron_connection().await?;
+
+        let query_start = Instant::now();
+        let result = sqlx::query!(
+            r#"
+            WITH stale AS (
+                SELECT id, req_status, updated_at
+                FROM user_decrypt_req
+                WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)
+                  AND attempts >= $1
+                  AND (owner_epoch IS NULL OR owner_epoch < $3)
+                FOR UPDATE SKIP LOCKED
+            ),
+            updated AS (
+                UPDATE user_decrypt_req
+                SET req_status = 'failure'::req_status,
+                    err_reason = $2,
+                    owner_epoch = $3
+                FROM stale
+                WHERE user_decrypt_req.id = stale.id
+                RETURNING user_decrypt_req.updated_at as new_updated_at,
+                          stale.req_status as old_status,
+                          stale.updated_at as old_updated_at
+            )
+            SELECT
+                old_status as "old_status!: ReqStatus",
+                old_updated_at as "old_updated_at!",
+                new_updated_at as "new_updated_at!"
+            FROM updated
+            "#,
+            max_attempts,
+            err_reason,
+            epoch,
+        )
+        .fetch_all(&mut *conn)
+        .await;
+
+        match &result {
+            Ok(_) => metrics::observe_query(metrics::Table::UserDecryptReq, query_start.elapsed()),
+            Err(_) => metrics::increment_error(metrics::Table::UserDecryptReq),
+        }
+
+        let rows = result?;
+        let count = rows.len() as u64;
+
+        for row in rows {
+            metrics::record_status_transition(
+                metrics::RequestType::UserDecrypt,
+                row.old_status,
+                ReqStatus::Failure,
+                row.old_updated_at,
+                row.new_updated_at,
+            );
+        }
+
+        Ok(count)
     }
 
     pub async fn count_by_status(&self) -> SqlResult<Vec<(ReqStatus, i64)>> {

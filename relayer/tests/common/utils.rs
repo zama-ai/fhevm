@@ -308,6 +308,24 @@ impl TestSetup {
     pub async fn new_with_config_path(
         config_path: Option<std::path::PathBuf>,
     ) -> anyhow::Result<Self> {
+        Self::new_with_config_path_and_settings(config_path, |_| {}).await
+    }
+
+    /// Start a relayer with `mutate` applied to its settings *after* they have been wired to
+    /// the mocks and the isolated schema, for config the other constructors do not expose - the
+    /// dispatch-gate tests use it to pin `dispatcher_lock.key_override` onto a key the test
+    /// itself holds. Same base config as [`TestSetup::new`].
+    #[allow(dead_code)]
+    pub async fn new_with_settings(mutate: impl FnOnce(&mut Settings)) -> anyhow::Result<Self> {
+        let temp_config_dir = tempfile::TempDir::new()?;
+        let temp_config_path = create_default_config(&temp_config_dir)?;
+        Self::new_with_config_path_and_settings(Some(temp_config_path), mutate).await
+    }
+
+    async fn new_with_config_path_and_settings(
+        config_path: Option<std::path::PathBuf>,
+        mutate: impl FnOnce(&mut Settings),
+    ) -> anyhow::Result<Self> {
         // Create isolated test schema first
         let test_schema = TestSchema::new().await?;
         tracing::info!(
@@ -339,6 +357,7 @@ impl TestSetup {
             gateway_port,
             test_schema.database_url(),
         );
+        mutate(&mut settings);
 
         // Start relayer service with isolated settings
         let cancellation_token = CancellationToken::new();
@@ -1229,6 +1248,39 @@ pub fn register_host_acl_rpc_error(host_server: &MockServer, acl_address: Addres
         Response::error("RPC error: host chain node unavailable".to_string()),
         UsageLimit::Unlimited,
     );
+}
+
+/// Poll/heartbeat/sweep intervals fast enough that election and handover both resolve inside
+/// the poll budgets the dispatcher tests allow themselves.
+#[allow(dead_code)]
+pub fn fast_timing(settings: &mut Settings) {
+    settings.dispatcher_lock.poll_interval = std::time::Duration::from_millis(100);
+    settings.dispatcher_lock.heartbeat_interval = std::time::Duration::from_millis(100);
+    settings.sweep.interval = std::time::Duration::from_millis(100);
+}
+
+/// `(req_status, owner_epoch, attempts)` for one public-decrypt row - the three columns that
+/// together say who drove a request and how it got there.
+#[allow(dead_code)]
+pub async fn row_state(pool: &sqlx::PgPool, ext_job_id: &str) -> (String, Option<i64>, i32) {
+    use sqlx::Row;
+
+    let row = sqlx::query(
+        r#"
+        SELECT req_status::text AS status, owner_epoch, attempts
+        FROM public_decrypt_req
+        WHERE ext_job_id = $1::uuid
+        "#,
+    )
+    .bind(ext_job_id)
+    .fetch_one(pool)
+    .await
+    .expect("Failed to read the request row");
+    (
+        row.get("status"),
+        row.get("owner_epoch"),
+        row.get("attempts"),
+    )
 }
 
 #[cfg(test)]

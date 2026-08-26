@@ -38,7 +38,7 @@ use crate::{
     http::endpoints::v2::types::keyurl::KeyUrlResponseJson,
     http::server::run_http_server,
     metrics,
-    orchestrator::{HealthCheck, Orchestrator, TokioEventDispatcher},
+    orchestrator::{DispatcherLock, HealthCheck, Orchestrator, TokioEventDispatcher},
     startup_recovery,
     store::sql::repositories::Repositories,
 };
@@ -53,14 +53,25 @@ static GLOBAL_REGISTRY: OnceLock<Registry> = OnceLock::new();
 // the chain (its cursor never advanced), and a send killed mid-flight costs at most one
 // duplicate send plus one orphaned response event - the gateway contracts mint a fresh id and
 // charge a fee per call with no dedup, so a repeat costs a fee and duplicate KMS work, never a
-// wrong result. Shutdown therefore drains only the named tasks it can order, abandons the
-// rest, and must finish inside the pod's `terminationGracePeriodSeconds` - unset in gitops, so
-// the Kubernetes default of 30s.
+// wrong result. The one client-visible case: a stale holder reads its own gate as open for a
+// heartbeat interval plus its timeout (~8s at defaults), and a `replacement underpriced`
+// collision inside that window takes the non-retryable branch in
+// `gateway::arbitrum::transaction::engine`, marking the row `failure` on a nonce clash.
+// Shutdown therefore drains only the named tasks it can order, abandons the rest, and must
+// finish inside the pod's `terminationGracePeriodSeconds` - unset in gitops, so the
+// Kubernetes default of 30s.
 
 /// Bound on the HTTP server's graceful shutdown, the gateway listeners, the keyurl poller,
 /// the tx/readiness processors and the cron workers all observing cancellation and returning.
 /// Every one of them is cancel-safe, so this is a fallback, not an expected wait.
 const STOP_WORK_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Bound on waiting for this pod's *first* dispatcher-lock acquisition attempt to resolve
+/// before startup proceeds. Purely a fast path - nothing downstream requires the lock - but
+/// without it a pod about to acquire would stamp its first requests unowned and hand them to
+/// its own sweep a tick later. Long enough for one Postgres round trip; short enough that a
+/// standby losing the race to a healthy peer does not stall its own startup.
+const FIRST_EPOCH_WAIT_BUDGET: Duration = Duration::from_secs(5);
 
 /// Main library function for the FHE Event Relayer service.
 ///
@@ -102,9 +113,28 @@ pub async fn run_fhevm_relayer(
         detached_tasks.clone(),
     );
 
+    // === Fast Setup Phase ===
+    // Repositories, health-check registration, throttlers, checkers, and the dispatcher
+    // lock's dedicated connection: everything the HTTP bind below needs, and nothing that
+    // touches the gateway or blocks for long.
+
+    // Dispatcher lock: one dedicated connection, outside both pools (see
+    // `orchestrator::dispatcher_lock` for why). Connecting and resolving the lock key is a
+    // single fast round trip, so it belongs here; actual acquisition happens in its own
+    // background task, spawned below only once the gateway is built and every handler that
+    // serves a dispatch is registered. Connected before the repositories below because they
+    // hold a clone of it -
+    // every request-row and chain-cursor write fences against `current_epoch()`.
+    let dispatcher_lock = DispatcherLock::connect(
+        &settings.dispatcher_lock,
+        &settings.storage.sql_database_url,
+    )
+    .await
+    .context("Failed to initialize dispatcher lock")?;
+
     // Initialize SQL repositories
     let repositories = Arc::new(
-        Repositories::new(settings.storage.clone())
+        Repositories::new(settings.storage.clone(), dispatcher_lock.clone())
             .await
             .context("Failed to initialize SQL repositories")?,
     );
@@ -116,48 +146,13 @@ pub async fn run_fhevm_relayer(
         repositories.clone() as Arc<dyn HealthCheck>,
     );
 
+    // Pure read; must run before anything gates on it later, or the gauges sit uninitialised.
+    startup_recovery::init_status_counts_from_db(&repositories)
+        .await
+        .context("Failed to initialize status-count metrics")?;
+
     let (gateway_throttlers, bouncer_throttlers) =
         init_throttlers(&settings, detached_tasks.clone());
-
-    // Initialize all gateway components
-    gateway::initialize_gateway(
-        orchestrator.clone(),
-        &settings,
-        repositories.clone(),
-        gateway_throttlers,
-        dequeue_shutdown.clone(),
-        intake_shutdown.clone(),
-    )
-    .await
-    .context("Failed to initialize gateway")?;
-
-    // Recover incomplete requests from previous runs
-    info!("Recovering incomplete requests...");
-    startup_recovery::recover_incomplete_requests(&orchestrator, &repositories)
-        .await
-        .context("Failed to recover incomplete requests")?;
-
-    // Start cron workers after configurable delay
-    let cron = &settings.storage.cron;
-    let delay = cron.cron_startup_delay_after_recovery;
-    info!(
-        "Recovery complete. Waiting {:?} before starting cron workers...",
-        delay
-    );
-    tokio::time::sleep(delay).await;
-
-    info!(
-        expiry_enabled = cron.expiry_enabled,
-        "Starting cron workers"
-    );
-    repositories
-        .register_background_workers(
-            &orchestrator,
-            settings.storage.cron.clone(),
-            dequeue_shutdown.clone(),
-        )
-        .await
-        .context("Failed to register background workers")?;
 
     // Build host chain validator from config
     let host_chain_id_checker = Arc::new(HostChainIdChecker::new(
@@ -180,9 +175,12 @@ pub async fn run_fhevm_relayer(
 
     let mut settings = settings;
 
-    // === Services Phase ===
-    // Start HTTP server, metrics server, and initialize handlers
-    if settings.http.endpoint.is_some() {
+    // === Services Phase (bind) ===
+    // Gate startup on the first successful host-chain poll so `/v2/keyurl` always serves a
+    // chain-sourced value; if it keeps failing the relayer exits and is restarted. Runs, and
+    // the HTTP server binds, before the heavy work below (`initialize_gateway`, recovery, the
+    // 30s cron delay), so `/healthz` doesn't wait behind work unrelated to serving it.
+    let pending_keyurl_poller = if settings.http.endpoint.is_some() {
         info!("Starting Relayer HTTP server");
 
         // `/v2/keyurl` is served from a watch channel in both modes; only `chain` runs a poller.
@@ -197,8 +195,6 @@ pub async fn run_fhevm_relayer(
                     *poll_interval_ms,
                 )
                 .context("Failed to build KeyUrl poller")?;
-                // Gate startup on the first successful host-chain poll; if it keeps failing the
-                // relayer exits and is restarted.
                 let initial = poller
                     .initialize()
                     .await
@@ -235,22 +231,142 @@ pub async fn run_fhevm_relayer(
         info!("HTTP server bound to actual address: {}", addr);
         settings.http.endpoint = Some(addr.to_string());
 
-        // Spawn the single host-chain KeyUrl poller now the endpoint is serving. Startup is
-        // already gated above, so the readiness future is trivially ready; the task is tracked
-        // by the orchestrator for graceful shutdown.
-        if let Some(keyurl_poller) = keyurl_poller {
-            let keyurl_intake_shutdown = intake_shutdown.clone();
-            orchestrator
-                .spawn_task_and_wait_ready(
-                    "keyurl_poller",
-                    async move { keyurl_poller.run(keyurl_tx, keyurl_intake_shutdown).await },
-                    async { anyhow::Ok(()) },
-                )
-                .await
-                .context("Failed to start KeyUrl poller")?;
-        }
+        // Under `keyurl.source: config` there is no poller to defer; the channel already holds
+        // the value `/v2/keyurl` serves for the process's lifetime.
+        keyurl_poller.map(|poller| (poller, keyurl_tx))
+    } else {
+        None
     };
 
+    // === Heavy Startup Work ===
+    // Everything here can block for a while (recovery walks the DB, the cron delay is 30s in
+    // production) and now runs after the bind, so `/healthz` is already serving throughout.
+
+    // Initialize all gateway components. The listeners, tx processors and readiness processors
+    // all start, and all sit behind the dispatch gate until this pod is the confirmed
+    // dispatcher - `initialize_gateway` has no construct-without-starting
+    // seam, and giving each subsystem the gate is what makes one unnecessary.
+    gateway::initialize_gateway(
+        orchestrator.clone(),
+        &settings,
+        repositories.clone(),
+        gateway_throttlers,
+        dispatcher_lock.gate(),
+        dequeue_shutdown.clone(),
+        intake_shutdown.clone(),
+    )
+    .await
+    .context("Failed to initialize gateway")?;
+
+    // Dispatcher lock's poll/heartbeat loop, plus a bounded best-effort wait for the first
+    // acquisition attempt - see `FIRST_EPOCH_WAIT_BUDGET`. Every subsystem behind the gate
+    // waits for itself, so a pod that loses the race drives nothing until it acquires.
+    //
+    // Deliberately after `initialize_gateway`, which registers the gateway event handlers
+    // only at the end of a long build: a request accepted with the gate open but no handlers
+    // registered would be stamped with this pod's epoch, dispatched to nobody, answered
+    // `202`, and never rescued - a sweep only claims rows under an *older* epoch.
+    {
+        let lock_for_task = dispatcher_lock.clone();
+        let lock_shutdown = dequeue_shutdown.clone();
+        let lock_for_wait = dispatcher_lock.clone();
+        orchestrator
+            .spawn_task_and_wait_ready(
+                "dispatcher_lock",
+                async move { lock_for_task.run(lock_shutdown).await },
+                async move {
+                    let _ = tokio::time::timeout(FIRST_EPOCH_WAIT_BUDGET, async {
+                        // Watches the epoch channel directly, not lock state: `Held` can be set
+                        // before the epoch is minted on the retry path in `heartbeat_tick` (see
+                        // `subscribe_epoch`'s doc comment), and waiting on state there would
+                        // wake early with the epoch still `None`.
+                        let mut epoch_rx = lock_for_wait.subscribe_epoch();
+                        while lock_for_wait.current_epoch().is_none() {
+                            if epoch_rx.changed().await.is_err() {
+                                return;
+                            }
+                        }
+                    })
+                    .await;
+                    // Best-effort: a timeout (this pod never acquires) or a closed channel
+                    // (never happens in practice) must not fail startup. Every subsystem past
+                    // this point gates itself, so losing the race costs nothing but the
+                    // convenience described on `FIRST_EPOCH_WAIT_BUDGET`.
+                    anyhow::Ok(())
+                },
+            )
+            .await
+            .context("Failed to start dispatcher lock")?;
+    }
+
+    // The sweep: the only Postgres -> dispatch path there is, so it starts before the cron
+    // delay below rather than after it. It is what recovers this pod's own previous
+    // incarnation's work (every row that incarnation owned is under an older epoch, so the
+    // first tick after acquisition claims it), so it starts before the cron delay below: a
+    // restart must not wait out `cron_startup_delay_after_recovery` before recovering
+    // anything. Gated like everything else, so on a standby it idles.
+    {
+        let sweep_repositories = repositories.clone();
+        let sweep_orchestrator = orchestrator.clone();
+        let sweep_gate = dispatcher_lock.gate();
+        let sweep_config = settings.sweep.clone();
+        let sweep_shutdown = dequeue_shutdown.clone();
+        orchestrator
+            .spawn_task_and_wait_ready(
+                "sweep",
+                async move {
+                    crate::sweep::create_sweep_worker_future(
+                        sweep_repositories,
+                        sweep_orchestrator,
+                        sweep_gate,
+                        sweep_config,
+                        sweep_shutdown,
+                    )
+                    .await
+                },
+                async { anyhow::Ok(()) },
+            )
+            .await
+            .context("Failed to start sweep worker")?;
+    }
+
+    // Start cron workers after a configurable delay. The delay exists so the timeout worker
+    // does not start expiring rows the sweep has not had a chance to re-drive yet.
+    let cron = &settings.storage.cron;
+    let delay = cron.cron_startup_delay_after_recovery;
+    info!("Waiting {:?} before starting cron workers...", delay);
+    tokio::time::sleep(delay).await;
+
+    info!(
+        expiry_enabled = cron.expiry_enabled,
+        "Starting cron workers"
+    );
+    repositories
+        .register_background_workers(
+            &orchestrator,
+            settings.storage.cron.clone(),
+            dispatcher_lock.gate(),
+            dequeue_shutdown.clone(),
+        )
+        .await
+        .context("Failed to register background workers")?;
+
+    // Spawn the single host-chain KeyUrl poller now the endpoint is serving. Startup is
+    // already gated above, so the readiness future is trivially ready; the task is tracked by
+    // the orchestrator, which stops it with the other sources of new work.
+    if let Some((keyurl_poller, keyurl_tx)) = pending_keyurl_poller {
+        let keyurl_intake_shutdown = intake_shutdown.clone();
+        orchestrator
+            .spawn_task_and_wait_ready(
+                "keyurl_poller",
+                async move { keyurl_poller.run(keyurl_tx, keyurl_intake_shutdown).await },
+                async { anyhow::Ok(()) },
+            )
+            .await
+            .context("Failed to start KeyUrl poller")?;
+    }
+
+    // === Services Phase (metrics) ===
     // Run metrics server
     info!("Starting Relayer metrics server");
     let actual_metrics_addr = metrics::server::run_metrics_server(
@@ -299,7 +415,9 @@ pub async fn run_fhevm_relayer(
     // server stop, and running readiness checks are cancelled where they wait. Nothing is
     // ordered against anything else: a listener's last event only spawns a handler shutdown
     // abandons, and a queued request is already durable in Postgres. One budget drains every
-    // task - all are cancel-safe.
+    // task - all are cancel-safe. The dispatcher lock's loop is cancelled by
+    // `dequeue_shutdown` and drained with the rest; it stops polling but does not release
+    // (see Step 4). The sweep is among the tasks drained below, under the same token.
     intake_shutdown.cancel();
     dequeue_shutdown.cancel();
     metrics_shutdown.cancel();
@@ -314,6 +432,12 @@ pub async fn run_fhevm_relayer(
     // sequence removes. `finish_task_drain` is the guard for a task that no predicate above
     // stopped, and warns when it finds one.
     orchestrator.finish_task_drain().await;
+
+    // Release the dispatcher lock last, after everything else has stopped: releasing it any
+    // earlier would make this process the stalled ex-holder the epoch fence exists to catch.
+    // The lock's own loop already stopped polling above; this is the one explicit unlock, not
+    // a race with it.
+    dispatcher_lock.release_last().await;
 
     info!("Relayer shutdown complete");
 
@@ -334,6 +458,7 @@ fn ensure_global_init(settings: &Settings) -> anyhow::Result<&'static Registry> 
         metrics::init_db_metrics(&registry, settings.metrics.clone());
         metrics::init_queue_metrics(&registry);
         metrics::init_listener_metrics(&registry);
+        metrics::init_dispatcher_lock_metrics(&registry);
         metrics::init_signature_precheck_metrics(&registry);
         metrics::init_retry_after_metrics(
             &registry,

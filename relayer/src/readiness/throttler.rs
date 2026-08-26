@@ -5,6 +5,7 @@ use crate::{
         job_id::JobId,
     },
     metrics,
+    orchestrator::DispatchGate,
 };
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
@@ -289,8 +290,15 @@ where
     /// cancelling one costs a repeat at the next start and its row stays `queued` for
     /// recovery; letting it run on could instead write a terminal status recovery cannot pick
     /// up. An item still waiting for a permit races `shutdown` the same way: row untouched.
-    pub async fn run_consumer<F, Fut>(mut self, shutdown: CancellationToken, processor: F)
-    where
+    ///
+    /// Waits for `gate` before taking an item, same as the transaction throttler and with the
+    /// same one-item race and cost bound - see `tx_throttler`'s `run_consumer`.
+    pub async fn run_consumer<F, Fut>(
+        mut self,
+        gate: DispatchGate,
+        shutdown: CancellationToken,
+        processor: F,
+    ) where
         F: Fn(T) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = ()> + Send + 'static,
     {
@@ -305,7 +313,22 @@ where
         let processor = Arc::new(processor);
 
         loop {
+            // Wait for the gate before taking an item, so a closed gate leaves the queue as it
+            // is rather than dequeuing work this pod must not drive.
+            tokio::select! {
+                _ = gate.wait_open() => {}
+                _ = shutdown.cancelled() => {
+                    info!("Readiness Worker stopping (shutdown while not dispatching).");
+                    break;
+                }
+            }
+
             let item = tokio::select! {
+                // The gate can close while this loop is parked on an empty channel. `recv` is
+                // cancel-safe, so returning to the gate wait leaves any item that arrives
+                // meanwhile in the channel rather than dequeuing it with the gate closed.
+                _ = gate.wait_closed() => continue,
+
                 item = self.receiver.recv() => match item {
                     Some(item) => item,
                     None => {
@@ -421,12 +444,16 @@ mod tests {
 
         tokio::spawn(async move {
             worker
-                .run_consumer(CancellationToken::new(), move |task| {
-                    let p = processed_clone.clone();
-                    async move {
-                        p.lock().unwrap().push(task.id);
-                    }
-                })
+                .run_consumer(
+                    DispatchGate::open_for_tests(1),
+                    CancellationToken::new(),
+                    move |task| {
+                        let p = processed_clone.clone();
+                        async move {
+                            p.lock().unwrap().push(task.id);
+                        }
+                    },
+                )
                 .await;
         });
 
@@ -498,23 +525,27 @@ mod tests {
 
         tokio::spawn(async move {
             worker
-                .run_consumer(CancellationToken::new(), move |_| {
-                    let ac = ac.clone();
-                    let ms = ms.clone();
-                    async move {
-                        // Increment active count
-                        let current = ac.fetch_add(1, Ordering::Relaxed) + 1;
+                .run_consumer(
+                    DispatchGate::open_for_tests(1),
+                    CancellationToken::new(),
+                    move |_| {
+                        let ac = ac.clone();
+                        let ms = ms.clone();
+                        async move {
+                            // Increment active count
+                            let current = ac.fetch_add(1, Ordering::Relaxed) + 1;
 
-                        // Track peak parallelism
-                        ms.fetch_max(current, Ordering::Relaxed);
+                            // Track peak parallelism
+                            ms.fetch_max(current, Ordering::Relaxed);
 
-                        // Simulate work (Hold the semaphore permit)
-                        sleep(Duration::from_millis(100)).await;
+                            // Simulate work (Hold the semaphore permit)
+                            sleep(Duration::from_millis(100)).await;
 
-                        // Decrement active count
-                        ac.fetch_sub(1, Ordering::Relaxed);
-                    }
-                })
+                            // Decrement active count
+                            ac.fetch_sub(1, Ordering::Relaxed);
+                        }
+                    },
+                )
                 .await;
         });
 
@@ -583,7 +614,11 @@ mod tests {
         // Drain
         tokio::spawn(async move {
             worker
-                .run_consumer(CancellationToken::new(), |_| async {})
+                .run_consumer(
+                    DispatchGate::open_for_tests(1),
+                    CancellationToken::new(),
+                    |_| async {},
+                )
                 .await;
         });
         sleep(Duration::from_millis(100)).await;
@@ -616,19 +651,23 @@ mod tests {
 
         let handle = tokio::spawn(async move {
             worker
-                .run_consumer(shutdown_clone, move |task| {
-                    let first_holds_permit = first_holds_permit_clone.clone();
-                    let second_processed = second_processed_clone.clone();
-                    async move {
-                        if task.id == "1" {
-                            first_holds_permit.notify_one();
-                            // Stands in for a check whose unbounded RPC call has stalled.
-                            std::future::pending::<()>().await;
-                        } else {
-                            second_processed.fetch_add(1, Ordering::Relaxed);
+                .run_consumer(
+                    DispatchGate::open_for_tests(1),
+                    shutdown_clone,
+                    move |task| {
+                        let first_holds_permit = first_holds_permit_clone.clone();
+                        let second_processed = second_processed_clone.clone();
+                        async move {
+                            if task.id == "1" {
+                                first_holds_permit.notify_one();
+                                // Stands in for a check whose unbounded RPC call has stalled.
+                                std::future::pending::<()>().await;
+                            } else {
+                                second_processed.fetch_add(1, Ordering::Relaxed);
+                            }
                         }
-                    }
-                })
+                    },
+                )
                 .await;
         });
 

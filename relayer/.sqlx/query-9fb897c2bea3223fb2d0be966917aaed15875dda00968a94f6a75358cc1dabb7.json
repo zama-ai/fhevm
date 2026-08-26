@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT int_job_id, req, req_status as \"req_status!: ReqStatus\", updated_at\n            FROM input_proof_req\n            WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)\n            ORDER BY created_at ASC\n            ",
+  "query": "\n            UPDATE input_proof_req\n            SET owner_epoch = $1,\n                attempts = attempts + 1,\n                req_status = CASE\n                    WHEN req_status = 'tx_in_flight'::req_status THEN 'processing'::req_status\n                    ELSE req_status\n                END\n            WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)\n              AND attempts < $2\n              AND (owner_epoch IS NULL OR owner_epoch < $1)\n            RETURNING int_job_id, req, req_status as \"req_status!: ReqStatus\", attempts\n            ",
   "describe": {
     "columns": [
       {
@@ -35,12 +35,15 @@
       },
       {
         "ordinal": 3,
-        "name": "updated_at",
-        "type_info": "Timestamptz"
+        "name": "attempts",
+        "type_info": "Int4"
       }
     ],
     "parameters": {
-      "Left": []
+      "Left": [
+        "Int8",
+        "Int4"
+      ]
     },
     "nullable": [
       false,
@@ -49,5 +52,5 @@
       false
     ]
   },
-  "hash": "b2f782ad005c63ae6a6d1af2653e2cc3f894e010454b09bdd91ed82124179835"
+  "hash": "9fb897c2bea3223fb2d0be966917aaed15875dda00968a94f6a75358cc1dabb7"
 }
