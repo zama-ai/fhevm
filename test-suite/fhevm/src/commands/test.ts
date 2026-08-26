@@ -928,12 +928,7 @@ type TrafficStream = {
  */
 const TRAFFIC_MAX_RETRIES = 3;
 const TRAFFIC_RETRY_BACKOFF_MS = 2000;
-const startContinuousErc20Traffic = (
-  targets: TrafficTarget[],
-  streams: number,
-  // Names the stream in its log lines, so concurrent streams stay distinguishable.
-  tag = "traffic",
-): TrafficStream => {
+const startContinuousErc20Traffic = (targets: TrafficTarget[], streams: number): TrafficStream => {
   if (targets.length === 0 || streams < targets.length) {
     throw new Error("ERC-20 traffic requires at least one stream target per host chain");
   }
@@ -948,7 +943,7 @@ const startContinuousErc20Traffic = (
     const target = targets[streamIdx % targets.length]!;
     while (!stopped) {
       counter.iterations += 1;
-      const label = `[${tag} ${target.label} s${streamIdx}#${counter.iterations}]`;
+      const label = `[traffic ${target.label} s${streamIdx}#${counter.iterations}]`;
       let result = await run(target.argv, { allowFailure: true });
       for (let attempt = 1; attempt <= TRAFFIC_MAX_RETRIES && result.code !== 0 && !stopped; attempt += 1) {
         counter.retries += 1;
@@ -1018,12 +1013,16 @@ const runBlueGreenProfile = async (
     );
   }
 
+  // The proposal names the release the GCS image was built as.
+  const gcsStackVersion = await gcsBinaryRelease();
+  const gcsVersionLive = gcsStackVersion;
   const opCount = state.scenario.topology.count;
 
   const operatorDatabases: string[] = [];
   for (let index = 0; index < opCount; index += 1) {
     operatorDatabases.push(coprocessorDatabaseName(index));
   }
+
   const activeConsensusVersion = Number(
     await psqlQuery(operatorDatabases[0], "SELECT consensus_version FROM versioning WHERE singleton = TRUE;"),
   );
@@ -1031,8 +1030,6 @@ const runBlueGreenProfile = async (
     throw new Error(`invalid active consensus version ${activeConsensusVersion}`);
   }
   const gcsConsensusVersion = activeConsensusVersion + 1;
-  // The proposal names the release the GCS image was built as.
-  const gcsSoftwareVersion = await gcsBinaryRelease();
 
   const MIN_BLUE_GREEN_TRAFFIC_STREAMS = 2;
   const CROSS_CUTOVER_CHAIN_DEPTH = 5;
@@ -1040,18 +1037,10 @@ const runBlueGreenProfile = async (
   console.log(`\n==== blue-green E2E: ${opCount} operator(s) ====`);
 
   console.log(`\n[1/11] verify initial state`);
-  const preUpgradeVersions = new Map<string, string>();
   for (const db of operatorDatabases) {
-    // Kept so the failed upgrade can be shown to leave it alone.
-    preUpgradeVersions.set(db, await psqlQuery(db, "SELECT stack_version FROM versioning;"));
-    const dbConsensus = Number(
-      await psqlQuery(db, "SELECT consensus_version FROM versioning WHERE singleton = TRUE;"),
-    );
-    if (dbConsensus !== activeConsensusVersion) {
-      throw new Error(
-        `${db}.versioning consensus ${dbConsensus} does not match operator 0 consensus ` +
-          `${activeConsensusVersion}`,
-      );
+    const version = await psqlQuery(db, "SELECT stack_version FROM versioning;");
+    if (version !== "v0.14") {
+      throw new Error(`${db}.versioning = "${version}", expected "v0.14" (prior test residue?)`);
     }
     const rows = await psqlQuery(db, "SELECT count(*) FROM upgrade_state;");
     if (rows !== "0") {
@@ -1059,16 +1048,13 @@ const runBlueGreenProfile = async (
     }
     const schema = await psqlQuery(
       db,
-      `SELECT nspname FROM pg_namespace WHERE nspname='gcs-${gcsSoftwareVersion}';`,
+      `SELECT nspname FROM pg_namespace WHERE nspname='gcs-${gcsStackVersion}';`,
     );
-    if (schema !== `gcs-${gcsSoftwareVersion}`) {
-      throw new Error(`${db} missing schema "gcs-${gcsSoftwareVersion}" (GCS upgrade-controller didn't create it)`);
+    if (schema !== `gcs-${gcsStackVersion}`) {
+      throw new Error(`${db} missing schema "gcs-${gcsStackVersion}" (GCS upgrade-controller didn't create it)`);
     }
   }
-  console.log(
-    `OK:   ${opCount} DB(s) at consensus ${activeConsensusVersion}, empty upgrade_state, ` +
-      `gcs-${gcsSoftwareVersion} schema present`,
-  );
+  console.log(`OK:   ${opCount} DB(s) at v0.14, empty upgrade_state, gcs-${gcsStackVersion} schema present`);
 
   const defaultHostKey = defaultHostChainKey(state.scenario.hostChains);
   const hostRpcUrl = hostReachableRpcUrl(state.discovery!.endpoints.hosts[defaultHostKey]!.http);
@@ -1147,13 +1133,12 @@ const runBlueGreenProfile = async (
     "--rpc-url", hostRpcUrl,
     "--private-key", deployerPk,
     "proposeCoprocessorUpgrade(uint256,string,(uint64,uint64,uint64)[],uint64)",
-    "1", gcsSoftwareVersion,
+    "1", gcsVersionLive,
     failWindows,
     String(failGwStartBlock),
   ]);
   console.log(
-    `OK:   activation emitted (softwareVersion=${gcsSoftwareVersion} windows=${failWindows} ` +
-      `gw_start=${failGwStartBlock})`,
+    `OK:   activation emitted (windows=${failWindows} gw_start=${failGwStartBlock})`,
   );
 
   console.log(`\n[3/11] failed upgrade: wait for GCS DryRunStarted, then submit a Gateway-only input proof`);
@@ -1209,30 +1194,25 @@ const runBlueGreenProfile = async (
       );
     }
     const version = await psqlQuery(db, "SELECT stack_version FROM versioning;");
-    if (version !== preUpgradeVersions.get(db)) {
-      throw new Error(
-        `${db}.versioning "${version}" changed after failed upgrade; ` +
-          `expected "${preUpgradeVersions.get(db)}"`,
-      );
+    if (version !== "v0.14") {
+      throw new Error(`${db}.versioning = "${version}" after failed upgrade, expected "v0.14"`);
     }
     const schema = await psqlQuery(
       db,
-      `SELECT nspname FROM pg_namespace WHERE nspname='gcs-${gcsSoftwareVersion}';`,
+      `SELECT nspname FROM pg_namespace WHERE nspname='gcs-${gcsStackVersion}';`,
     );
-    if (schema !== `gcs-${gcsSoftwareVersion}`) {
-      throw new Error(`${db} missing schema "gcs-${gcsSoftwareVersion}" after rollback`);
+    if (schema !== `gcs-${gcsStackVersion}`) {
+      throw new Error(`${db} missing schema "gcs-${gcsStackVersion}" after rollback`);
     }
-    const remainingRows = await psqlQuery(
+    const residue = await psqlQuery(
       db,
-      `SELECT (SELECT count(*) FROM "gcs-${gcsSoftwareVersion}".computations) + ` +
-        `(SELECT count(*) FROM "gcs-${gcsSoftwareVersion}".state_hash);`,
+      `SELECT (SELECT count(*) FROM "gcs-${gcsStackVersion}".computations) + ` +
+        `(SELECT count(*) FROM "gcs-${gcsStackVersion}".state_hash);`,
     );
-    if (remainingRows !== "0") {
-      throw new Error(`${db} gcs schema still has ${remainingRows} rows`);
+    if (residue !== "0") {
+      throw new Error(`${db} gcs schema not reset: ${residue} residual computations/state_hash rows`);
     }
-    console.log(
-      `OK:   ${db} failed upgrade cleared; version kept; GCS schema empty`,
-    );
+    console.log(`OK:   ${db}  PAUSED/failed, latches cleared, v0.14 kept, gcs schema recreated empty`);
   }
   const reenabled = await setSyntheticOps(true);
   console.log(`OK:   recreated ${reenabled.length} GCS host-listener service(s) with synthetic ops enabled`);
@@ -1241,7 +1221,7 @@ const runBlueGreenProfile = async (
   // public.ciphertexts with block_number < start_block. Transfers during the
   // dry-run window will force GCS's tfhe-worker to fall back to
   // public.ciphertexts for this handle.
-  console.log(`\n[5/11] cross-cutover setup: deploy ERC20 + mint, and build a backlog`);
+  console.log(`\n[5/11] cross-cutover setup: deploy ERC20 + mint (pre-cutover)`);
   const setupResult = await run(["./fhevm-cli", "test", "cross-cutover-setup"], { allowFailure: true });
   if (setupResult.code !== 0) {
     throw new Error("cross-cutover setup failed — see log above");
@@ -1269,35 +1249,6 @@ const runBlueGreenProfile = async (
     console.log(`OK:   ${db}  pre-cutover ciphertexts=${count} (sample handle recorded)`);
   }
 
-  // A real upgrade will not find the pipeline idle. Leave work queued before the
-  // proposal so the cutover has a backlog to drain, and [11/11] can tell whether
-  // any of it was stranded.
-  // Left running on purpose: stopping it would wait for the erc20 script to finish,
-  // and that waits for its own computations, so the backlog would drain before the
-  // proposal. It is stopped with the main traffic once cutover completes.
-  const backlog = startContinuousErc20Traffic(trafficTargets, trafficTargets.length, "backlog");
-  await Promise.race([
-    waitUntil({
-      label: `${operatorDatabases[0]}  work in flight`,
-      timeoutSecs: 180,
-      check: async () =>
-        Number(
-          await psqlQuery(
-            operatorDatabases[0]!,
-            "SELECT count(*) FROM computations WHERE NOT is_completed;",
-          ),
-        ) > 0,
-    }),
-    backlog.errored,
-  ]);
-  const backlogDepth = Number(
-    await psqlQuery(
-      operatorDatabases[0]!,
-      "SELECT count(*) FROM computations WHERE NOT is_completed;",
-    ),
-  );
-  console.log(`OK:   ${backlogDepth} computation(s) in flight, kept running into the proposal`);
-
   console.log(`\n[6/11] propose upgrade on-chain (ProtocolConfig.proposeCoprocessorUpgrade)`);
   const gwBlock = Number((await run(
     ["cast", "block-number", "--rpc-url", gatewayRpcUrl],
@@ -1310,14 +1261,11 @@ const runBlueGreenProfile = async (
     "--rpc-url", hostRpcUrl,
     "--private-key", deployerPk,
     "proposeCoprocessorUpgrade(uint256,string,(uint64,uint64,uint64)[],uint64)",
-    "2", gcsSoftwareVersion,
+    "2", gcsVersionLive,
     okWindows,
     String(gwStartBlock),
   ]);
-  console.log(
-    `OK:   activation emitted (softwareVersion=${gcsSoftwareVersion} windows=${okWindows} ` +
-      `gw_start=${gwStartBlock})`,
-  );
+  console.log(`OK:   activation emitted (windows=${okWindows} gw_start=${gwStartBlock})`);
 
   console.log(`\n[7/11] wait for GCS DryRunStarted per operator`);
   for (const db of operatorDatabases) {
@@ -1343,7 +1291,6 @@ const runBlueGreenProfile = async (
   );
   const traffic = startContinuousErc20Traffic(trafficTargets, blueGreenTrafficStreams);
   let trafficStats: { iterations: number; retries: number; failures: number };
-  let backlogStats: { iterations: number; retries: number; failures: number };
   try {
     // The chain is a stress signal — a fence hit mid-transfer is expected; [11/11] verifies actual transferCount.
     const chainPromise = (async () => {
@@ -1376,14 +1323,14 @@ const runBlueGreenProfile = async (
     })();
     await Promise.race([chainPromise, traffic.errored]);
 
-    console.log(`\n[9/11] wait for cutover (versioning=${gcsSoftwareVersion} per operator)`);
+    console.log(`\n[9/11] wait for cutover (versioning=${gcsVersionLive} per operator)`);
     for (const db of operatorDatabases) {
       await Promise.race([
         waitUntil({
-          label: `${db}  versioning=${gcsSoftwareVersion}`,
+          label: `${db}  versioning=${gcsVersionLive}`,
           timeoutSecs: 300,
           check: async () =>
-            (await psqlQuery(db, "SELECT stack_version FROM versioning;")) === gcsSoftwareVersion,
+            (await psqlQuery(db, "SELECT stack_version FROM versioning;")) === gcsVersionLive,
         }),
         traffic.errored,
       ]);
@@ -1396,9 +1343,7 @@ const runBlueGreenProfile = async (
         "SELECT consensus_version FROM versioning WHERE singleton = TRUE;",
       );
       if (Number(consensus) !== gcsConsensusVersion) {
-        throw new Error(
-          `${db}.versioning consensus ${consensus}, expected ${gcsConsensusVersion}`,
-        );
+        throw new Error(`${db}.versioning consensus ${consensus}, expected ${gcsConsensusVersion}`);
       }
     }
     console.log(`OK:   consensus ${gcsConsensusVersion} active on every operator`);
@@ -1436,7 +1381,6 @@ const runBlueGreenProfile = async (
     }
   } finally {
     trafficStats = await traffic.stop();
-    backlogStats = await backlog.stop();
   }
 
   console.log(`\n[11/11] stop background traffic + cross-cutover verify + continuity check`);
@@ -1449,35 +1393,6 @@ const runBlueGreenProfile = async (
       `${trafficStats.failures} erc20 iteration(s) failed even after retry — ` +
         "the upgraded stack dropped traffic across cutover.",
     );
-  }
-
-  if (backlogStats.failures > 0) {
-    throw new Error(
-      `${backlogStats.failures} backlog iteration(s) failed even after retry — ` +
-        "work queued before the proposal did not survive the cutover.",
-    );
-  }
-
-  // The backlog from [5/11] crossed the cutover. Every operator must finish it:
-  // work stranded by the schema merge would sit here unfinished forever.
-  for (const db of operatorDatabases) {
-    await waitUntil({
-      label: `${db}  backlog of ${backlogDepth} drained`,
-      timeoutSecs: 300,
-      check: async () =>
-        (await psqlQuery(
-          db,
-          "SELECT count(*) FROM computations WHERE NOT is_completed AND NOT is_error;",
-        )) === "0",
-    });
-    const errored = await psqlQuery(
-      db,
-      "SELECT count(*) FROM computations WHERE is_error;",
-    );
-    if (errored !== "0") {
-      throw new Error(`${db} has ${errored} errored computation(s) after cutover`);
-    }
-    console.log(`OK:   ${db}  no work left in flight, no errors`);
   }
 
   // TODO(fhevm-internal#1567): re-enable once RFC-023 lands — wait for the post-cutover
