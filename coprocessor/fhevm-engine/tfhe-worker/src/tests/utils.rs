@@ -80,8 +80,18 @@ async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) -> u16 {
         generate_fhe_keys: false,
         work_items_batch_size: 40,
         dependence_chains_per_batch: 10,
+        dcid_batch_execution: std::env::var("FHEVM_TEST_DCID_BATCH_EXECUTION")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(false),
         key_cache_size: 4,
         coprocessor_fhe_threads: 4,
+        gpu_memory_reservation_timeout_ms: 300_000,
+        // Byte gates vary this between app instances in one process.
+        gpu_streams_per_device: std::env::var("FHEVM_TEST_GPU_STREAMS")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(1),
         tokio_threads: 2,
         pg_pool_max_connections: 2,
         metrics_addr: None,

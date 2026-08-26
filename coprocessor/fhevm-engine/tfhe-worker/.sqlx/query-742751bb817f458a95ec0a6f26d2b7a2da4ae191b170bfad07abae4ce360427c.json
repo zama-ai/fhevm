@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO ciphertexts(handle, ciphertext, ciphertext_version, ciphertext_type)\n                 SELECT * FROM UNNEST($1::BYTEA[], $2::BYTEA[], $3::SMALLINT[], $4::SMALLINT[])\n                 ON CONFLICT (handle, ciphertext_version) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "ByteaArray",
+        "ByteaArray",
+        "Int2Array",
+        "Int2Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "742751bb817f458a95ec0a6f26d2b7a2da4ae191b170bfad07abae4ce360427c"
+}

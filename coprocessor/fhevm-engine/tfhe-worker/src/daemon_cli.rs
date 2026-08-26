@@ -38,6 +38,16 @@ pub struct Args {
     #[arg(long, default_value_t = 20)]
     pub dependence_chains_per_batch: i32,
 
+    /// Acquire and execute multiple independent dependence chains in one
+    /// worker schedule. Disabled by default to retain the production
+    /// single-DCID lifecycle; the reportable benchmark enables it explicitly.
+    #[arg(
+        long,
+        env = "FHEVM_BENCH_DCID_BATCH_EXECUTION",
+        default_value_t = false
+    )]
+    pub dcid_batch_execution: bool,
+
     /// Key cache size
     #[arg(long, default_value_t = 32, alias = "tenant-key-cache-size")]
     pub key_cache_size: usize,
@@ -45,6 +55,23 @@ pub struct Args {
     /// Coprocessor FHE processing threads
     #[arg(long, default_value_t = 32)]
     pub coprocessor_fhe_threads: usize,
+
+    /// Maximum time a GPU operation may wait for memory capacity before it
+    /// fails (and its batch retries) instead of spinning while holding
+    /// resources. CPU builds ignore this setting.
+    #[arg(
+        long,
+        env = "FHEVM_GPU_MEMORY_RESERVATION_TIMEOUT_MS",
+        default_value_t = 300_000
+    )]
+    pub gpu_memory_reservation_timeout_ms: u64,
+
+    /// Maximum number of concurrent CUDA streams allocated per visible GPU.
+    /// CPU builds ignore this setting. Single-stream execution serializes
+    /// partition dispatch and measurably regresses block-scoped workloads
+    /// versus unbounded main; 16 is the measured plateau on H100.
+    #[arg(long, env = "FHEVM_GPU_STREAMS_PER_DEVICE", value_parser = parse_nonzero_usize, default_value_t = 16)]
+    pub gpu_streams_per_device: usize,
 
     /// Tokio Async IO threads
     #[arg(long, default_value_t = 4)]
@@ -149,6 +176,17 @@ pub struct Args {
     /// on `Args::parse()`.
     #[arg(skip)]
     pub drift_revert_watcher_timeouts: WatcherTimeouts,
+}
+
+fn parse_nonzero_usize(value: &str) -> Result<usize, String> {
+    let parsed = value
+        .parse::<usize>()
+        .map_err(|error| format!("must be a positive integer: {error}"))?;
+    if parsed == 0 {
+        Err("must be at least 1".to_owned())
+    } else {
+        Ok(parsed)
+    }
 }
 
 pub fn parse_args() -> Args {

@@ -20,7 +20,7 @@ use daggy::{
     },
     Dag, NodeIndex,
 };
-use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts, SupportedFheOperations};
+use fhevm_engine_common::types::{Handle, SupportedFheOperations};
 
 pub struct ExecNode {
     df_nodes: Vec<NodeIndex>,
@@ -624,16 +624,15 @@ impl OpNode {
                 DFGTaskInput::BoundaryDependence(d) => {
                     let resolved = match ct_map.get(d) {
                         Some(Some(DFGTxInput::Value((val, _)))) => {
-                            // A transaction-level input is a value that
-                            // crossed the transaction boundary, and the
-                            // canonical cross-transaction representation is
-                            // the persisted compressed form. A raw ciphertext
-                            // here would make the consumer's bytes depend on
-                            // which node/pass produced it.
-                            if !matches!(val, SupportedFheCiphertexts::Scalar(_)) {
-                                error!(target: "scheduler", { handle = ?hex::encode(&self.result_handle) },
-                                       "Consensus risk: non-scalar raw ciphertext crossing a transaction boundary");
-                            }
+                            // CONSENSUS INVARIANT: a transaction-level value
+                            // input must be the DECOMPRESSED CANONICAL FORM of
+                            // the handle's persisted bytes — byte-identical to
+                            // what any consumer would reconstruct itself. The
+                            // only production constructor is the worker's GPU
+                            // boundary materialization, which decompresses the
+                            // fetched bytes; a raw working value injected here
+                            // would make the consumer's bytes depend on which
+                            // node/pass produced it.
                             DFGTaskInput::Value(val.clone())
                         }
                         Some(Some(DFGTxInput::Compressed((cct, _)))) => {

@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "TRUNCATE TABLE dependence_chain",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "356ad05cf8677b0e561e56e0b7d5298b39471d8431093f3297da926b3f97273e"
+}
