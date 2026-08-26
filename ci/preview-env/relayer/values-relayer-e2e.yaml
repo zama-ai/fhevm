@@ -210,14 +210,17 @@ env:
     valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: input_verification.address}}
 
   # --- keyurl (KMSGeneration poller) ---
-  # HEAD relayer replaced the old static fhe_public_key/crs storage-URL config
-  # with a poller that reads the active key/CRS/KMS context straight from the
-  # KMSGeneration contract on the host chain (settings.rs: KeyUrlConfig). It
-  # resolves the active key/CRS itself once the real DKG ceremony reaches
-  # consensus, so only the contract address is wired here (poll_interval_ms is
-  # in local.yaml above). `keyurl` is a required top-level field; its absence
-  # aborts startup with 'missing configuration field "keyurl.kms_generation_address"'.
+  # `keyurl.source` selects where /v2/keyurl comes from (settings.rs: KeyUrlConfig)
+  # and is required: its absence aborts startup with
+  # 'missing configuration field "keyurl.source"'.
+  # `chain` polls the active key/CRS/KMS context straight from the KMSGeneration
+  # contract on the host chain, resolving them itself once the real DKG ceremony
+  # reaches consensus, so only the contract address is wired here (poll_interval_ms
+  # is in local.yaml above). The alternative, `config`, serves static
+  # fhe_public_key/crs values and is only for protocol deployments that predate
+  # ProtocolConfig.getCurrentKmsContextAndEpoch.
   # NB: charts/contracts appends ".address" to every ConfigMap key, hence the suffix.
+  - {name: APP_KEYURL__SOURCE, value: "chain"}
   - name: APP_KEYURL__KMS_GENERATION_ADDRESS
     valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_generation.address}}
 
