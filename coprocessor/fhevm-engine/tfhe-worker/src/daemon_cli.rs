@@ -38,14 +38,12 @@ pub struct Args {
     #[arg(long, default_value_t = 20)]
     pub dependence_chains_per_batch: i32,
 
-    /// Acquire and execute multiple independent dependence chains in one
-    /// worker schedule. Disabled by default to retain the production
-    /// single-DCID lifecycle; the reportable benchmark enables it explicitly.
-    #[arg(
-        long,
-        env = "FHEVM_BENCH_DCID_BATCH_EXECUTION",
-        default_value_t = false
-    )]
+    /// Acquire and execute independent dependence chains in one worker
+    /// schedule. This is enabled by default so DB acquisition and boundary
+    /// preparation can overlap FHE execution; set
+    /// `FHEVM_DCID_BATCH_EXECUTION=false` only when explicitly investigating
+    /// single-DCID scheduling.
+    #[arg(long, env = "FHEVM_DCID_BATCH_EXECUTION", default_value_t = true)]
     pub dcid_batch_execution: bool,
 
     /// Key cache size
@@ -196,4 +194,20 @@ pub fn parse_args() -> Args {
     let _ = scheduler::RERAND_LATENCY_BATCH_HISTOGRAM_CONF.set(args.metric_rerand_batch_latency);
     let _ = scheduler::FHE_BATCH_LATENCY_HISTOGRAM_CONF.set(args.metric_fhe_batch_latency);
     args
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    #[test]
+    fn dcid_batch_execution_defaults_to_enabled() {
+        let command = Args::command();
+        let argument = command
+            .get_arguments()
+            .find(|argument| argument.get_id() == "dcid_batch_execution")
+            .expect("dcid batch execution argument is present");
+        assert_eq!(argument.get_default_values(), ["true"]);
+    }
 }

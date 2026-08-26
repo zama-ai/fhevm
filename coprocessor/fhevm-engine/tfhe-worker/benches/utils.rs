@@ -199,13 +199,24 @@ pub fn benchmark_dependence_chains_per_batch(
 }
 
 pub fn benchmark_dcid_batch_execution() -> Result<bool, Box<dyn std::error::Error>> {
-    match std::env::var("FHEVM_BENCH_DCID_BATCH_EXECUTION") {
-        Ok(value) => value.parse::<bool>().map_err(|error| {
-            format!("parse FHEVM_BENCH_DCID_BATCH_EXECUTION={value:?}: {error}").into()
-        }),
-        Err(std::env::VarError::NotPresent) => Ok(false),
-        Err(error) => Err(error.into()),
+    // The production setting is the source of truth. Retain the former
+    // benchmark-only variable as a fallback so older invocation scripts keep
+    // producing their explicitly requested configuration.
+    for variable in [
+        "FHEVM_DCID_BATCH_EXECUTION",
+        "FHEVM_BENCH_DCID_BATCH_EXECUTION",
+    ] {
+        match std::env::var(variable) {
+            Ok(value) => {
+                return value
+                    .parse::<bool>()
+                    .map_err(|error| format!("parse {variable}={value:?}: {error}").into());
+            }
+            Err(std::env::VarError::NotPresent) => {}
+            Err(error) => return Err(error.into()),
+        }
     }
+    Ok(true)
 }
 
 fn benchmark_positive_i32(variable: &str, default: i32) -> Result<i32, Box<dyn std::error::Error>> {

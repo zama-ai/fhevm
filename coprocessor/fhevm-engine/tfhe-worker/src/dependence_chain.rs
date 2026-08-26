@@ -157,7 +157,7 @@ impl LockMngr {
     ///
     /// The caller must subsequently release the whole acquired set together;
     /// this keeps the existing single-lock lifecycle unchanged when `limit` is
-    /// one while allowing benchmark-only block batching.
+    /// one while allowing batched worker schedules.
     pub async fn acquire_next_locks(
         &mut self,
         limit: i32,
