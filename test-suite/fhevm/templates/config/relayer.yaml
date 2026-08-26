@@ -117,8 +117,9 @@ log:
   show_timestamp: true
   show_target: true
 
-# /v2/keyurl host-chain poller settings.
+# /v2/keyurl host-chain poller settings. `source` is required.
 keyurl:
+  source: chain
   # KMSGeneration contract address on the host chain (source for /v2/keyurl).
   kms_generation_address: "0x3E0fBCcE61af7C01113027449eEFFF5DCd501419"
   # /v2/keyurl poll interval in ms; the poller reads at the finalized block.
