@@ -1251,6 +1251,65 @@ async fn fallback_synthesis_deferred_until_finality() {
     }
 }
 
+/// A fallback grant observed WITHOUT a transaction id — the column is
+/// nullable and None is a normal value on this path — must still
+/// synthesize at finality with the all-zero operand mask. It must never
+/// wedge the finalization loop on a value that cannot depend on the
+/// missing input (the mask derivation is per-event with an empty minted
+/// set, not the block-level pass that fail-closes on a missing hash).
+#[tokio::test]
+#[serial(db)]
+async fn fallback_without_transaction_id_synthesizes_with_zero_mask() {
+    let (mut db, _inst) = fresh_db(DST_CHAIN_ID).await;
+    let dst_handle = fallback_dst_handle(DST_CHAIN_ID, 5);
+    let block_hash = FixedBytes::from([0xCD; 32]);
+
+    // Deferred observation, then NULL the transaction id to model an
+    // observation recorded without one.
+    ingest_fallback_block_at(
+        &mut db,
+        &[(dst_handle, U256::from(123_u64), 0x77)],
+        BLOCK_NUMBER,
+        block_hash,
+        false,
+    )
+    .await;
+    let pool = db.pool().await;
+    sqlx::query(
+        "UPDATE fallback_granted_events SET transaction_id = NULL WHERE dst_handle = $1",
+    )
+    .bind(dst_handle.as_slice())
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let mut tx = db
+        .new_transaction()
+        .await
+        .expect("tx")
+        .expect("new_transaction() returns Some on a live stack");
+    synthesize_finalized_fallback_grants(
+        &db,
+        &mut tx,
+        BLOCK_NUMBER as i64,
+        &block_hash,
+    )
+    .await
+    .expect("synthesis must tolerate a NULL transaction id");
+    tx.commit().await.expect("commit");
+
+    assert_eq!(computation_count(&db, dst_handle).await, 1);
+    assert_eq!(pbs_count(&db, dst_handle).await, 1);
+    let mask: Option<Vec<u8>> = sqlx::query_scalar(
+        "SELECT operand_boundary_mask FROM computations WHERE output_handle = $1",
+    )
+    .bind(dst_handle.as_slice())
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(mask, Some(vec![0_u8; 32]));
+}
+
 /// A fallback grant observed only on a fork that orphans is never
 /// materialized: the retraction removes the observation before the block
 /// could ever finalize, and deferred synthesis finds nothing.
