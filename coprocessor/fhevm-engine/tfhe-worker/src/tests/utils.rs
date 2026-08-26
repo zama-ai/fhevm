@@ -116,6 +116,7 @@ async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) -> u16 {
             .ok()
             .and_then(|value| value.parse().ok())
             .unwrap_or(false),
+        dcid_adaptive_batch_execution: false,
         key_cache_size: 4,
         coprocessor_fhe_threads: 4,
         gpu_memory_reservation_timeout_ms: 300_000,

@@ -46,6 +46,17 @@ pub struct Args {
     #[arg(long, env = "FHEVM_DCID_BATCH_EXECUTION", default_value_t = true)]
     pub dcid_batch_execution: bool,
 
+    /// Opt in to sharing each bounded work window across acquired DCIDs. This
+    /// prevents one large chain from monopolizing the worker batch while
+    /// unrelated ready chains wait. Disabled by default until it is profiled
+    /// on production-like mixed traffic.
+    #[arg(
+        long,
+        env = "FHEVM_DCID_ADAPTIVE_BATCH_EXECUTION",
+        default_value_t = false
+    )]
+    pub dcid_adaptive_batch_execution: bool,
+
     /// Key cache size
     #[arg(long, default_value_t = 32, alias = "tenant-key-cache-size")]
     pub key_cache_size: usize,
@@ -209,5 +220,15 @@ mod tests {
             .find(|argument| argument.get_id() == "dcid_batch_execution")
             .expect("dcid batch execution argument is present");
         assert_eq!(argument.get_default_values(), ["true"]);
+    }
+
+    #[test]
+    fn dcid_adaptive_batch_execution_defaults_to_disabled() {
+        let command = Args::command();
+        let argument = command
+            .get_arguments()
+            .find(|argument| argument.get_id() == "dcid_adaptive_batch_execution")
+            .expect("adaptive dcid batch execution argument is present");
+        assert_eq!(argument.get_default_values(), ["false"]);
     }
 }
