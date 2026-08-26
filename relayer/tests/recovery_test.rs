@@ -27,9 +27,7 @@ use common::utils::{
     TEST_CONFIG_PATH,
 };
 use ethereum_rpc_mock::{fhevm::UserDecryptKind, SubscriptionTarget};
-use fhevm_relayer::config::settings::{DispatcherLockConfig, Settings, StorageConfig};
-use fhevm_relayer::orchestrator::DispatcherLock;
-use fhevm_relayer::store::sql::repositories::Repositories;
+use fhevm_relayer::config::settings::{Settings, StorageConfig};
 use fhevm_relayer::tracing::init_tracing_once;
 use serde_json::json;
 use std::slice;
@@ -51,11 +49,6 @@ struct RecoveryTestSetup {
     cancellation_token: CancellationToken,
     relayer_task: Option<tokio::task::JoinHandle<()>>,
     storage_settings: Option<StorageConfig>,
-    /// Lazily connected in `get_repositories` and reused: `DispatcherLock` owns a dedicated
-    /// Postgres connection outside both pools, so connecting a fresh one on every call (this
-    /// helper is called repeatedly per test) would leak one per call for the rest of the
-    /// process.
-    dispatcher_lock: Option<DispatcherLock>,
 }
 
 impl RecoveryTestSetup {
@@ -89,7 +82,6 @@ impl RecoveryTestSetup {
             cancellation_token: CancellationToken::new(),
             relayer_task: None,
             storage_settings: None,
-            dispatcher_lock: None,
         })
     }
 
@@ -229,32 +221,35 @@ impl RecoveryTestSetup {
         )
     }
 
-    /// Get repositories for DB access. Used only for out-of-band assertions, so an unrun
-    /// (never-held) dispatcher lock is fine - it never writes through the epoch-fenced paths.
-    /// Connects the dedicated lock connection once and reuses it (`DispatcherLock` is a cheap
-    /// `Clone`) rather than opening a fresh one - and leaking it - on every call.
-    async fn get_repositories(&mut self) -> anyhow::Result<Repositories> {
-        let storage = self
-            .storage_settings
-            .as_ref()
-            .context("Storage settings not available")?
-            .clone();
-        let dispatcher_lock = match &self.dispatcher_lock {
-            Some(lock) => lock.clone(),
-            None => {
-                let lock = DispatcherLock::connect(
-                    &DispatcherLockConfig::default(),
-                    &storage.sql_database_url,
-                )
-                .await
-                .context("Failed to connect dispatcher lock")?;
-                self.dispatcher_lock = Some(lock.clone());
-                lock
-            }
-        };
-        Repositories::new(storage, dispatcher_lock)
+    /// Incomplete rows straight from SQL, for the diagnostic logging below. The repository
+    /// method this replaces (`find_incomplete_requests`) went with startup recovery: the sweep
+    /// selects the rows it drives inside its own claim `UPDATE`, so nothing in the relayer reads
+    /// them separately any more.
+    async fn incomplete_public_decrypt_rows(&self) -> anyhow::Result<Vec<(Vec<u8>, String)>> {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&self.test_schema.database_url())
             .await
-            .context("Failed to create repositories")
+            .context("Failed to connect diagnostic pool")?;
+        let rows = sqlx::query(
+            r#"
+            SELECT int_job_id, req_status::text AS status
+            FROM public_decrypt_req
+            WHERE req_status IN ('queued'::req_status, 'processing'::req_status,
+                                 'tx_in_flight'::req_status)
+            ORDER BY created_at ASC
+            "#,
+        )
+        .fetch_all(&pool)
+        .await
+        .context("Failed to query incomplete rows")?;
+        Ok(rows
+            .into_iter()
+            .map(|row| {
+                use sqlx::Row;
+                (row.get("int_job_id"), row.get("status"))
+            })
+            .collect())
     }
 
     /// Stop the relayer and drop the test schema.
@@ -454,13 +449,8 @@ async fn test_recovery_from_processing_status() {
     sleep(Duration::from_secs(3)).await;
 
     // Verify via DB that at least one request is in processing/tx_in_flight
-    let repos = setup
-        .get_repositories()
-        .await
-        .expect("Failed to get repositories");
-    let incomplete = repos
-        .public_decrypt
-        .find_incomplete_requests()
+    let incomplete = setup
+        .incomplete_public_decrypt_rows()
         .await
         .expect("Failed to query DB");
     tracing::info!(
@@ -469,12 +459,11 @@ async fn test_recovery_from_processing_status() {
     );
 
     // Log details of what we found
-    for (job_id, _req_json, status, updated_at) in &incomplete {
+    for (job_id, status) in &incomplete {
         tracing::info!(
-            "  - Request int_job_id={} status={:?} updated_at={}",
+            "  - Request int_job_id={} status={}",
             hex::encode(job_id),
-            status,
-            updated_at
+            status
         );
     }
 
@@ -493,13 +482,8 @@ async fn test_recovery_from_processing_status() {
         .expect("Failed to start relayer with working gateway");
 
     // Query DB after restart to verify what recovery should have seen
-    let repos2 = setup
-        .get_repositories()
-        .await
-        .expect("Failed to get repositories");
-    let incomplete_after_restart = repos2
-        .public_decrypt
-        .find_incomplete_requests()
+    let incomplete_after_restart = setup
+        .incomplete_public_decrypt_rows()
         .await
         .expect("Failed to query DB");
     tracing::info!(
@@ -578,13 +562,8 @@ async fn test_recovery_from_queued_status() {
     sleep(Duration::from_secs(3)).await;
 
     // Verify via DB that request is in queued status
-    let repos = setup
-        .get_repositories()
-        .await
-        .expect("Failed to get repositories");
-    let incomplete = repos
-        .public_decrypt
-        .find_incomplete_requests()
+    let incomplete = setup
+        .incomplete_public_decrypt_rows()
         .await
         .expect("Failed to query DB");
     tracing::info!(
@@ -592,12 +571,11 @@ async fn test_recovery_from_queued_status() {
         incomplete.len()
     );
 
-    for (job_id, _req_json, status, updated_at) in &incomplete {
+    for (job_id, status) in &incomplete {
         tracing::info!(
-            "  - Request int_job_id={} status={:?} updated_at={}",
+            "  - Request int_job_id={} status={}",
             hex::encode(job_id),
-            status,
-            updated_at
+            status
         );
     }
 
@@ -616,13 +594,8 @@ async fn test_recovery_from_queued_status() {
         .expect("Failed to start relayer with working gateway");
 
     // Query DB after restart
-    let repos2 = setup
-        .get_repositories()
-        .await
-        .expect("Failed to get repositories");
-    let incomplete_after_restart = repos2
-        .public_decrypt
-        .find_incomplete_requests()
+    let incomplete_after_restart = setup
+        .incomplete_public_decrypt_rows()
         .await
         .expect("Failed to query DB");
     tracing::info!(
@@ -700,13 +673,8 @@ async fn test_recovery_from_tx_in_flight_status() {
     sleep(Duration::from_secs(3)).await;
 
     // Verify via DB that request is in an incomplete status
-    let repos = setup
-        .get_repositories()
-        .await
-        .expect("Failed to get repositories");
-    let incomplete = repos
-        .public_decrypt
-        .find_incomplete_requests()
+    let incomplete = setup
+        .incomplete_public_decrypt_rows()
         .await
         .expect("Failed to query DB");
     tracing::info!(
@@ -714,12 +682,11 @@ async fn test_recovery_from_tx_in_flight_status() {
         incomplete.len()
     );
 
-    for (job_id, _req_json, status, updated_at) in &incomplete {
+    for (job_id, status) in &incomplete {
         tracing::info!(
-            "  - Request int_job_id={} status={:?} updated_at={}",
+            "  - Request int_job_id={} status={}",
             hex::encode(job_id),
-            status,
-            updated_at
+            status
         );
     }
 
@@ -738,13 +705,8 @@ async fn test_recovery_from_tx_in_flight_status() {
         .expect("Failed to start relayer with working gateway");
 
     // Query DB after restart - recovery should have reset tx_in_flight → processing
-    let repos2 = setup
-        .get_repositories()
-        .await
-        .expect("Failed to get repositories");
-    let incomplete_after_restart = repos2
-        .public_decrypt
-        .find_incomplete_requests()
+    let incomplete_after_restart = setup
+        .incomplete_public_decrypt_rows()
         .await
         .expect("Failed to query DB");
     tracing::info!(

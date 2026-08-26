@@ -219,12 +219,18 @@ impl PublicDecryptHandler {
 
         let proposed_ext_job_id = self.orchestrator.new_ext_job_id();
 
+        // One read of the dispatch gate, used for both decisions about this request: what
+        // `owner_epoch` the row carries, and whether this pod drives it in process. See
+        // `insert_data_on_conflict_and_get_ext_job_id` for why the two must not disagree.
+        let dispatch_epoch = self.public_decrypt_repo.dispatch_epoch();
+
         let insert_result = match self
             .public_decrypt_repo
             .insert_data_on_conflict_and_get_ext_job_id(
                 proposed_ext_job_id,
                 int_job_id.as_ref(),
                 request.clone(),
+                dispatch_epoch,
             )
             .await
         {
@@ -258,19 +264,33 @@ impl PublicDecryptHandler {
                 RelayerEventData::PublicDecrypt(event_data),
             );
 
-            if let Err(e) = self.orchestrator.dispatch_event(event).await {
-                error!("Failed to dispatch event to orchestrator: {:?}", e);
-                return RelayerV2ResponseFailed::internal_server_error(&request_id.to_string())
-                    .into_response();
-            }
+            // Only the confirmed dispatcher drives what it accepted. On any other pod
+            // the row stays durable and unowned, so the holder's sweep claims it on its
+            // next tick; dispatching here would make this pod a second dispatcher for a
+            // request the holder is about to drive.
+            if dispatch_epoch.is_some() {
+                if let Err(e) = self.orchestrator.dispatch_event(event).await {
+                    error!("Failed to dispatch event to orchestrator: {:?}", e);
+                    return RelayerV2ResponseFailed::internal_server_error(&request_id.to_string())
+                        .into_response();
+                }
 
-            info!(
-                step = %PublicDecryptStep::Queued,
-                req_id = %request_id,
-                ext_job_id = %assigned_ext_job_id,
-                int_job_id = ?int_job_id,
-                "Dispatched event to orchestrator"
-            );
+                info!(
+                    step = %PublicDecryptStep::Queued,
+                    req_id = %request_id,
+                    ext_job_id = %assigned_ext_job_id,
+                    int_job_id = ?int_job_id,
+                    "Dispatched event to orchestrator"
+                );
+            } else {
+                info!(
+                    step = %PublicDecryptStep::Queued,
+                    req_id = %request_id,
+                    ext_job_id = %assigned_ext_job_id,
+                    int_job_id = ?int_job_id,
+                    "Accepted while not the dispatcher, left for the sweep to drive"
+                );
+            }
         } else {
             info!(
                 step = %PublicDecryptStep::DedupHit,

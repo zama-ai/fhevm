@@ -100,37 +100,9 @@ impl RepoTestSetup {
         int_job_id
     }
 
-    /// Push a row's `updated_at` back by `age`, simulating time passing since its last claim
-    /// without a real sleep. `trigger_set_timestamp()` (the `BEFORE UPDATE` trigger on this
-    /// table) unconditionally rewrites `updated_at` to `NOW()` on any change - including an
-    /// explicit write to `updated_at` itself, since that also makes `OLD IS DISTINCT FROM
-    /// NEW` - so this runs inside a transaction with the session's triggers disabled for the
-    /// backdating write only.
-    async fn backdate(&self, int_job_id: &[u8], age: std::time::Duration) {
-        let age_secs = age.as_secs_f64();
-        let mut tx = self.raw_pool.begin().await.expect("Failed to begin tx");
-        sqlx::query("SET LOCAL session_replication_role = replica")
-            .execute(&mut *tx)
-            .await
-            .expect("Failed to disable triggers");
-        sqlx::query(
-            r#"
-            UPDATE public_decrypt_req
-            SET updated_at = NOW() - make_interval(secs => $2)
-            WHERE int_job_id = $1
-            "#,
-        )
-        .bind(int_job_id)
-        .bind(age_secs)
-        .execute(&mut *tx)
-        .await
-        .expect("Failed to backdate row");
-        tx.commit().await.expect("Failed to commit backdate");
-    }
-
-    /// Insert a `public_decrypt_req` row with an explicit status, age, and `owner_epoch` - for
-    /// the two-tier claim tests, which need control over all three independently of the
-    /// `queued`-only, `owner_epoch`-`NULL`-only helper above.
+    /// Insert a `public_decrypt_req` row with an explicit status, age, and `owner_epoch`. The
+    /// age is set for realism only - since step 7 the claim has no time term, and the tests
+    /// below assert exactly that where it matters.
     async fn insert_public_decrypt_row(
         &self,
         status: &str,
@@ -193,13 +165,13 @@ impl RepoTestSetup {
     }
 }
 
-/// Two concurrent claim attempts on the same stale row, under the *same* epoch, must not both
-/// win: the claim `UPDATE` is Postgres's row-lock-then-recheck-the-WHERE-clause CAS, so the
-/// loser's predicate (`updated_at < NOW() - claim_after`) stops matching the instant the
-/// winner's `UPDATE` commits and the `updated_at` trigger fires. Exactly one row comes back
-/// across both calls, and `attempts` ends at 1, not 2 - the failure mode this guards against
-/// is `update_status_to_tx_in_flight`'s bug, where two callers both believed they had won
-/// because nobody checked how many rows a CAS actually touched.
+/// Two concurrent claims of the same unowned row must not both win. The claim `UPDATE` is
+/// Postgres's row-lock-then-recheck-the-WHERE-clause CAS, and the winner's `owner_epoch = $1`
+/// stamp is what stops matching for the loser: the row is no longer `NULL`-owned, and its epoch
+/// is not *below* the loser's own. Exactly one row comes back across both calls, and `attempts`
+/// ends at 1, not 2 - the failure mode this guards against is
+/// `update_status_to_tx_in_flight`'s bug, where two callers both believed they had won because
+/// nobody checked how many rows a CAS actually touched.
 ///
 /// Same epoch, not different ones: only one pod's sweep loop ever ticks with a given epoch (it
 /// is minted once per acquisition and the loop is sequential, so nothing within one pod races
@@ -211,17 +183,15 @@ impl RepoTestSetup {
 #[tokio::test]
 async fn test_claim_is_not_double_claimed_under_concurrent_claimers_of_the_same_epoch() {
     let setup = RepoTestSetup::new().await;
-    let claim_after = std::time::Duration::from_millis(50);
     let int_job_id = setup
         .insert_stale_public_decrypt(std::time::Duration::from_secs(60))
         .await;
 
-    let claim_after_secs = claim_after.as_secs_f64();
     let repo_a = setup.repositories.public_decrypt.clone();
     let repo_b = setup.repositories.public_decrypt.clone();
     let (result_a, result_b) = tokio::join!(
-        repo_a.claim_incomplete_requests(111, 5, claim_after_secs),
-        repo_b.claim_incomplete_requests(111, 5, claim_after_secs),
+        repo_a.claim_incomplete_requests(111, 5),
+        repo_b.claim_incomplete_requests(111, 5),
     );
     let claimed_a = result_a.expect("claim a failed");
     let claimed_b = result_b.expect("claim b failed");
@@ -248,16 +218,14 @@ async fn test_claim_is_not_double_claimed_under_concurrent_claimers_of_the_same_
 /// The other shape a concurrent claim race can take: two *different* epochs, e.g. a genuine
 /// handover where the ex-holder's sweep tick is still in flight on a surviving cron-pool
 /// connection when the new holder's own sweep claims the same row. Unlike the same-epoch case
-/// above, this is NOT mutually exclusive at the claim level. The claim's actual predicate is
-/// three-way - `owner_epoch < $epoch` (immediate) `OR ((owner_epoch IS NULL OR owner_epoch =
-/// $epoch) AND stale)` (see `claim_incomplete_requests`'s doc comment) - and once the lower
-/// epoch's `UPDATE` has landed, the row it leaves behind (`owner_epoch = 111`) matches the
-/// higher epoch's `owner_epoch < $epoch` branch immediately, no staleness needed, regardless of
-/// which claim committed first. Both claims can therefore "succeed" at the SQL level. This is
-/// deliberately tolerated, not fixed here, because it is caught one layer up: the loser's epoch
-/// is by then stale on the row, so its very next status write (self-served from its own
-/// `current_epoch()`) is refused by the same `owner_epoch <= $epoch` fence every other write
-/// uses - see `public_decrypt_repo`'s module doc. The cost is one wasted claim and
+/// above, this is NOT mutually exclusive at the claim level: once the lower epoch's `UPDATE`
+/// has landed, the row it leaves behind (`owner_epoch = 111`) satisfies the higher epoch's
+/// `owner_epoch < $epoch` immediately. Both claims can therefore succeed at the SQL level.
+///
+/// Deliberately tolerated rather than fixed here, because it is caught one layer up: the
+/// loser's epoch is by then stale on the row, so its very next status write (self-served from
+/// its own `current_epoch()`) is refused by the `owner_epoch <= $epoch` fence every write uses
+/// - see `public_decrypt_repo`'s module doc. The cost is one wasted claim and
 /// attempts-increment, never a wrong final state.
 #[tokio::test]
 async fn test_a_lower_epochs_claim_is_defeated_by_a_higher_epochs_concurrent_claim() {
@@ -269,20 +237,15 @@ async fn test_a_lower_epochs_claim_is_defeated_by_a_higher_epochs_concurrent_cla
 
     // Sequential, not concurrent: this isolates the "lower epoch already committed" half of
     // the race deterministically, which is the half that matters (the other order already
-    // excludes the lower epoch outright, since its predicate no longer matches). A small
-    // claim_after so the initial NULL-owner claim (staleness-gated, not immediate - see
-    // `claim_incomplete_requests`'s doc on why `NULL` differs from a provably older epoch)
-    // clears it quickly; the row was backdated 60s by `insert_stale_public_decrypt`.
+    // excludes the lower epoch outright, since its predicate no longer matches).
     let claimed_low = repo
-        .claim_incomplete_requests(111, 5, 0.05)
+        .claim_incomplete_requests(111, 5)
         .await
         .expect("low-epoch claim failed");
     assert_eq!(claimed_low.len(), 1, "the lower epoch claims first");
 
-    // The higher epoch's claim needs no staleness wait at all: 111 is now a strictly older,
-    // necessarily dead epoch from its perspective.
     let claimed_high = repo
-        .claim_incomplete_requests(222, 5, 300.0)
+        .claim_incomplete_requests(222, 5)
         .await
         .expect("high-epoch claim failed");
     assert_eq!(
@@ -303,12 +266,6 @@ async fn test_a_lower_epochs_claim_is_defeated_by_a_higher_epochs_concurrent_cla
         Some(222),
         "the higher epoch's claim is what the row ends up owned by"
     );
-
-    // What actually prevents this double-claim from causing harm is that the lower epoch's
-    // own subsequent write is refused by the same `owner_epoch <= $epoch` fence -
-    // `epoch_fencing_test.rs::test_stale_epoch_write_is_refused_current_epoch_write_succeeds`
-    // covers that directly (it needs two real, held `DispatcherLock`s to self-serve distinct
-    // epochs from a status-write method, which this file's claim-focused setup does not have).
 }
 
 /// A previously-confirmed blocker: a row already at `max_attempts` under an *older* epoch must
@@ -322,7 +279,7 @@ async fn test_exhausted_row_from_an_older_epoch_is_failed_not_stranded() {
     let repo = &setup.repositories.public_decrypt;
     let max_attempts = 5;
 
-    // owner_epoch=4, attempts already at the bound, stale (backdated well past claim_after).
+    // owner_epoch=4, attempts already at the bound.
     let int_job_id = setup
         .insert_public_decrypt_row("processing", std::time::Duration::from_secs(1000), Some(4))
         .await;
@@ -332,15 +289,10 @@ async fn test_exhausted_row_from_an_older_epoch_is_failed_not_stranded() {
         .execute(&setup.raw_pool)
         .await
         .expect("Failed to set attempts");
-    // The trigger that maintains `updated_at` fires on the write above too (see `backdate`'s
-    // doc comment), so re-backdate afterward rather than relying on the original INSERT's age.
-    setup
-        .backdate(&int_job_id, std::time::Duration::from_secs(1000))
-        .await;
 
     // The newer epoch's claim must not touch it - attempts already at the bound.
     let claimed = repo
-        .claim_incomplete_requests(9, max_attempts, 0.05)
+        .claim_incomplete_requests(9, max_attempts)
         .await
         .expect("claim failed");
     assert!(
@@ -348,11 +300,10 @@ async fn test_exhausted_row_from_an_older_epoch_is_failed_not_stranded() {
         "a row already at max_attempts must not be claimable, regardless of owner"
     );
 
-    // fail_exhausted_attempts, fenced by `<=` (not narrowed to an exact match), is what
-    // rescues it from becoming a zombie: epoch 9 never attempted this row, but it is still
-    // the one that correctly gives up on it.
+    // `fail_exhausted_attempts` is what rescues it from becoming a zombie: epoch 9 never
+    // attempted this row, but it is still the one that correctly gives up on it.
     let failed = repo
-        .fail_exhausted_attempts(9, max_attempts, 0.05, "test: exhausted")
+        .fail_exhausted_attempts(9, max_attempts, "test: exhausted")
         .await
         .expect("fail_exhausted_attempts failed");
     assert_eq!(
@@ -364,14 +315,54 @@ async fn test_exhausted_row_from_an_older_epoch_is_failed_not_stranded() {
     assert_eq!(status, "failure");
 }
 
-/// `max_attempts` bounds re-dispatch: a row claimed up to the bound stops being claimable,
-/// and once stale again past the bound, `fail_exhausted_attempts` moves it to `failure`
-/// rather than leaving it claimable (or claimed) forever.
+/// The other side of that predicate, and the reason `fail_exhausted_attempts` compares `<`
+/// rather than the `<=` every fenced *write* uses: an exhausted row owned by the **current**
+/// epoch must be left alone. This pod is driving that row, and a row reaches `attempts ==
+/// max_attempts` the moment its own last claim incremented the counter to the bound - so `<=`
+/// here would fail a live request out from under an in-flight send on the very next tick.
+#[tokio::test]
+async fn test_exhausted_row_owned_by_the_current_epoch_is_not_failed() {
+    let setup = RepoTestSetup::new().await;
+    let repo = &setup.repositories.public_decrypt;
+    let max_attempts = 5;
+
+    let int_job_id = setup
+        .insert_public_decrypt_row(
+            "tx_in_flight",
+            std::time::Duration::from_secs(1000),
+            Some(9),
+        )
+        .await;
+    sqlx::query("UPDATE public_decrypt_req SET attempts = $1 WHERE int_job_id = $2")
+        .bind(max_attempts)
+        .bind(&int_job_id)
+        .execute(&setup.raw_pool)
+        .await
+        .expect("Failed to set attempts");
+
+    let failed = repo
+        .fail_exhausted_attempts(9, max_attempts, "test: exhausted")
+        .await
+        .expect("fail_exhausted_attempts failed");
+    assert_eq!(
+        failed, 0,
+        "a row under the current epoch is being driven by this pod, however old it looks"
+    );
+
+    let (status, _) = setup.status_and_owner_epoch_only(&int_job_id).await;
+    assert_eq!(status, "tx_in_flight", "the row must be untouched");
+}
+
+/// `max_attempts` bounds re-dispatch across owners: each successive epoch claims the row once,
+/// and once the budget is spent no epoch can claim it again - at which point
+/// `fail_exhausted_attempts` gives up on it rather than leaving it claimable forever.
+///
+/// One claim per epoch is the shape the claim now enforces: a row under the claiming epoch is
+/// not re-claimable at all, so spending a budget of 2 takes two distinct epochs, exactly as a
+/// row surviving two handovers would.
 #[tokio::test]
 async fn test_attempts_bound_redispatch_then_fails_exhausted_row() {
     let setup = RepoTestSetup::new().await;
-    let claim_after = std::time::Duration::from_millis(50);
-    let claim_after_secs = claim_after.as_secs_f64();
     let max_attempts = 2;
     let repo = &setup.repositories.public_decrypt;
 
@@ -379,35 +370,38 @@ async fn test_attempts_bound_redispatch_then_fails_exhausted_row() {
         .insert_stale_public_decrypt(std::time::Duration::from_secs(60))
         .await;
 
-    // First claim: attempts 0 -> 1.
+    // First claim, by epoch 1 (row is unowned): attempts 0 -> 1.
     let claimed = repo
-        .claim_incomplete_requests(1, max_attempts, claim_after_secs)
+        .claim_incomplete_requests(1, max_attempts)
         .await
         .expect("first claim failed");
     assert_eq!(claimed.len(), 1, "first claim must succeed");
 
-    // Second claim, after backdating past claim_after again: attempts 1 -> 2 (== max_attempts).
-    setup
-        .backdate(&int_job_id, std::time::Duration::from_secs(60))
-        .await;
+    // Same epoch again: the row is now this epoch's own, so it is not claimable.
     let claimed = repo
-        .claim_incomplete_requests(1, max_attempts, claim_after_secs)
+        .claim_incomplete_requests(1, max_attempts)
         .await
-        .expect("second claim failed");
+        .expect("same-epoch claim query failed");
+    assert!(
+        claimed.is_empty(),
+        "a row under the claiming epoch is never re-claimed - this pod is driving it"
+    );
+
+    // A successor epoch takes over: attempts 1 -> 2 (== max_attempts).
+    let claimed = repo
+        .claim_incomplete_requests(2, max_attempts)
+        .await
+        .expect("successor claim failed");
     assert_eq!(
         claimed.len(),
         1,
-        "second claim must succeed (attempts == max_attempts after this)"
+        "a successor epoch claims the row (attempts == max_attempts after this)"
     );
     assert_eq!(claimed[0].3, max_attempts);
 
-    // Third attempt, past the bound: attempts (2) is no longer < max_attempts (2), so the
-    // claim query must not touch it.
-    setup
-        .backdate(&int_job_id, std::time::Duration::from_secs(60))
-        .await;
+    // A third epoch, past the bound: attempts (2) is no longer < max_attempts (2).
     let claimed = repo
-        .claim_incomplete_requests(1, max_attempts, claim_after_secs)
+        .claim_incomplete_requests(3, max_attempts)
         .await
         .expect("third claim query failed");
     assert!(
@@ -415,11 +409,10 @@ async fn test_attempts_bound_redispatch_then_fails_exhausted_row() {
         "a row at max_attempts must not be claimed again"
     );
 
-    // fail_exhausted_attempts now moves it to failure - the row is stale again (backdated
-    // above) and at the bound. Same epoch (1) as the claims: the row is mine, so the fence
-    // (`owner_epoch IS NULL OR owner_epoch <= $epoch`) matches.
+    // `fail_exhausted_attempts` under that third epoch moves it to failure: the row's own
+    // epoch (2) is strictly below, so nothing is driving it.
     let failed = repo
-        .fail_exhausted_attempts(1, max_attempts, claim_after_secs, "test: exhausted")
+        .fail_exhausted_attempts(3, max_attempts, "test: exhausted")
         .await
         .expect("fail_exhausted_attempts failed");
     assert_eq!(failed, 1, "exactly the exhausted row must be failed out");
@@ -429,43 +422,33 @@ async fn test_attempts_bound_redispatch_then_fails_exhausted_row() {
     assert_eq!(err_reason.as_deref(), Some("test: exhausted"));
 }
 
-/// Two-tier claim, not-provably-dead branch: a `tx_in_flight` row with no owner (`NULL`)
-/// requires `claim_after` staleness before it is claimed - unlike a row owned by a strictly
-/// older epoch, `NULL` is not immediately claimable, because until dispatch is gated on the
-/// lock (step 7) a `NULL` owner can be a *live* non-holder pod driving its own accepted
-/// traffic in-process (see `claim_incomplete_requests`'s doc comment). Once claimed, it is
-/// reset to `processing` in the same statement, so `on_tx_in_flight`'s CAS (which requires
-/// `processing`) can claim it again. Without the reset, the row would be claimed to exhaustion
-/// and failed out even though nothing was ever wrong with it.
+/// An unowned (`NULL`) `tx_in_flight` row is claimed immediately, however fresh. `NULL` means
+/// intake declined to claim the row, which since step 7 means the accepting pod also declined
+/// to drive it - so there is nothing to wait for. This is the case that used to require a
+/// staleness window, back when a `NULL` owner could be a live non-holder's own in-process work.
+///
+/// The row is also reset to `processing` in the same statement, so `on_tx_in_flight`'s CAS
+/// (which requires `processing`) can claim it again. Without the reset, the row would be claimed
+/// to exhaustion and failed out even though nothing was ever wrong with it.
 #[tokio::test]
-async fn test_null_owner_tx_in_flight_row_requires_staleness_then_is_reset_to_processing() {
+async fn test_null_owner_tx_in_flight_row_is_claimed_immediately_and_reset() {
     let setup = RepoTestSetup::new().await;
     let repo = &setup.repositories.public_decrypt;
-    let claim_after = std::time::Duration::from_millis(50);
 
-    // Fresh - must not be claimable yet even though nothing owns it.
+    // Zero age: freshness is not a factor any more.
     let int_job_id = setup
         .insert_public_decrypt_row("tx_in_flight", std::time::Duration::ZERO, None)
         .await;
-    let claimed = repo
-        .claim_incomplete_requests(9, 5, claim_after.as_secs_f64())
-        .await
-        .expect("claim failed");
-    assert!(
-        claimed.is_empty(),
-        "a fresh NULL-owner row must not be claimed before it goes stale - it may be a live \
-         non-holder's own traffic"
-    );
 
-    // Backdate past claim_after: now claimable, and reset.
-    setup
-        .backdate(&int_job_id, std::time::Duration::from_secs(60))
-        .await;
     let claimed = repo
-        .claim_incomplete_requests(9, 5, claim_after.as_secs_f64())
+        .claim_incomplete_requests(9, 5)
         .await
         .expect("claim failed");
-    assert_eq!(claimed.len(), 1, "a stale NULL-owner row is claimable");
+    assert_eq!(
+        claimed.len(),
+        1,
+        "an unowned row has nobody driving it, so it is claimable at once"
+    );
     assert_eq!(
         claimed[0].2,
         fhevm_relayer::store::sql::models::req_status_enum_model::ReqStatus::Processing,
@@ -477,10 +460,9 @@ async fn test_null_owner_tx_in_flight_row_requires_staleness_then_is_reset_to_pr
     assert_eq!(owner_epoch, Some(9));
 }
 
-/// Two-tier claim, not-mine branch: a `tx_in_flight` row owned by an *older* epoch is claimed
-/// immediately (epochs are minted only on acquisition and monotonic, so an older epoch is
-/// necessarily a dead predecessor's, not a live peer's) and reset the same way as a `NULL`-owner
-/// row.
+/// A `tx_in_flight` row owned by an *older* epoch is claimed immediately too (epochs are minted
+/// only on acquisition and monotonic, so an older epoch is necessarily a dead predecessor's,
+/// not a live peer's) and reset the same way as an unowned row.
 #[tokio::test]
 async fn test_older_epoch_owned_tx_in_flight_row_is_claimed_immediately_and_reset() {
     let setup = RepoTestSetup::new().await;
@@ -491,7 +473,7 @@ async fn test_older_epoch_owned_tx_in_flight_row_is_claimed_immediately_and_rese
         .await;
 
     let claimed = repo
-        .claim_incomplete_requests(9, 5, 300.0)
+        .claim_incomplete_requests(9, 5)
         .await
         .expect("claim failed");
     assert_eq!(
@@ -505,54 +487,48 @@ async fn test_older_epoch_owned_tx_in_flight_row_is_claimed_immediately_and_rese
     assert_eq!(owner_epoch, Some(9));
 }
 
-/// Two-tier claim, mine branch: a `tx_in_flight` row already owned by the claiming epoch is
-/// not claimable until `claim_after` has actually elapsed - the same staleness requirement as
-/// the `NULL`-owner case. Once claimed, it *is* reset to `processing` (this changed from an
-/// earlier design that never reset a self-owned row): the only way to reach this branch at all
-/// is `claim_after` of silence, comfortably above every legitimate single-attempt latency in
-/// the pipeline, so a row still here cannot be a send that is merely running long - see
-/// `claim_incomplete_requests`'s doc comment for the full reasoning, including why the
-/// occasional false positive is still safe (a tolerated duplicate send, never a wrong result).
+/// A row owned by the claiming epoch is never claimed, no matter how long it has sat there.
+/// This pod is driving it, and `updated_at` cannot tell "still working" from "silently died":
+/// the legitimate dwell is unbounded on two paths (an RPC call with no client-side timeout, and
+/// a saturated tx throttler), so no staleness window over that signal can be made safe. An
+/// earlier design had one; step 7 removed it, accepting instead that a row whose in-process task
+/// dies without a terminal write waits for this pod's restart, which mints a higher epoch and
+/// makes the row claimable as a predecessor's.
 #[tokio::test]
-async fn test_own_epoch_owned_tx_in_flight_row_requires_staleness_then_is_reset_too() {
+async fn test_own_epoch_owned_row_is_never_claimed_however_old() {
     let setup = RepoTestSetup::new().await;
     let repo = &setup.repositories.public_decrypt;
-    let claim_after = std::time::Duration::from_millis(50);
 
     let int_job_id = setup
-        .insert_public_decrypt_row("tx_in_flight", std::time::Duration::ZERO, Some(9))
+        .insert_public_decrypt_row(
+            "tx_in_flight",
+            std::time::Duration::from_secs(86_400),
+            Some(9),
+        )
         .await;
 
-    // Fresh - must not be claimable yet even though it is "mine".
     let claimed = repo
-        .claim_incomplete_requests(9, 5, claim_after.as_secs_f64())
+        .claim_incomplete_requests(9, 5)
         .await
         .expect("claim failed");
     assert!(
         claimed.is_empty(),
-        "a fresh row owned by my own epoch must not be reclaimed before it goes stale"
-    );
-
-    // Backdate past claim_after: now claimable, and reset just like the NULL-owner case.
-    setup
-        .backdate(&int_job_id, std::time::Duration::from_secs(60))
-        .await;
-    let claimed = repo
-        .claim_incomplete_requests(9, 5, claim_after.as_secs_f64())
-        .await
-        .expect("claim failed");
-    assert_eq!(
-        claimed.len(),
-        1,
-        "a stale row owned by my own epoch is reclaimable"
-    );
-    assert_eq!(
-        claimed[0].2,
-        fhevm_relayer::store::sql::models::req_status_enum_model::ReqStatus::Processing,
-        "claim must return the post-reset status"
+        "a row under the claiming epoch is this pod's own in-flight work, at any age"
     );
 
     let (status, owner_epoch) = setup.status_and_owner_epoch_only(&int_job_id).await;
-    assert_eq!(status, "processing", "tx_in_flight must be reset");
+    assert_eq!(status, "tx_in_flight", "the row must be untouched");
     assert_eq!(owner_epoch, Some(9));
+
+    // A restart is what resolves it: the next incarnation's epoch is higher, so the row is a
+    // predecessor's and claimable at once.
+    let claimed = repo
+        .claim_incomplete_requests(10, 5)
+        .await
+        .expect("successor claim failed");
+    assert_eq!(
+        claimed.len(),
+        1,
+        "the same row is claimable by the next epoch, with no wait"
+    );
 }

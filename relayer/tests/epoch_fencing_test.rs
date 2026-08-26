@@ -252,57 +252,6 @@ async fn test_newer_epoch_write_succeeds_over_an_older_owned_row() {
     );
 }
 
-/// `reset_tx_in_flight_to_processing` is fenced the same way as every other write: the
-/// current epoch can reset a `tx_in_flight` row a genuinely older epoch last touched (this
-/// pod's own previous incarnation, or a dead peer's) - the case startup recovery relies on.
-#[tokio::test]
-async fn test_reset_tx_in_flight_to_processing_succeeds_over_an_older_owner() {
-    let setup = TwoEpochSetup::new().await;
-
-    let int_job_id = setup
-        .insert_public_decrypt_row("tx_in_flight", Some(setup.epoch_a))
-        .await;
-
-    let rows = setup
-        .repos_b
-        .public_decrypt
-        .reset_tx_in_flight_to_processing()
-        .await
-        .expect("reset b");
-    assert_eq!(
-        rows, 1,
-        "the current epoch must be able to reset a tx_in_flight row an older epoch owned"
-    );
-    let (status, owner_epoch) = setup.status_and_owner_epoch(&int_job_id).await;
-    assert_eq!(status, "processing");
-    assert_eq!(owner_epoch, Some(setup.epoch_b));
-}
-
-/// The other direction: a stale epoch's `reset_tx_in_flight_to_processing` must not touch a
-/// row a *newer* epoch already claimed - it is not this pod's to reset.
-#[tokio::test]
-async fn test_reset_tx_in_flight_to_processing_refused_against_a_newer_owner() {
-    let setup = TwoEpochSetup::new().await;
-
-    let int_job_id = setup
-        .insert_public_decrypt_row("tx_in_flight", Some(setup.epoch_b))
-        .await;
-
-    let rows = setup
-        .repos_a
-        .public_decrypt
-        .reset_tx_in_flight_to_processing()
-        .await
-        .expect("reset a");
-    assert_eq!(
-        rows, 0,
-        "a stale epoch must not reset a tx_in_flight row a newer epoch already owns"
-    );
-    let (status, owner_epoch) = setup.status_and_owner_epoch(&int_job_id).await;
-    assert_eq!(status, "tx_in_flight", "row must be untouched");
-    assert_eq!(owner_epoch, Some(setup.epoch_b));
-}
-
 /// The `current_epoch() == None` fence path: a pod that has never acquired the lock (the
 /// pre-first-acquisition window every replica passes through at startup, and the entire
 /// failure mode `FIRST_EPOCH_WAIT_BUDGET` in `startup.rs` bounds) can still write a `NULL`-

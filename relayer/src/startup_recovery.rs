@@ -1,9 +1,18 @@
-//! Startup recovery for incomplete requests
+//! Re-dispatch of an incomplete request, and the status-count gauges read once at startup.
 //!
-//! Recovers requests interrupted by crashes/restarts by re-dispatching events based on status:
+//! Which event a row is re-dispatched as depends on how far it got:
 //! - `queued`: ReqRcvdFromUser (includes readiness check)
 //! - `processing`/`tx_in_flight`: ReadinessCheckPassed (skips readiness check)
 //! - `receipt_received`: Not recovered (gateway listener handles automatically)
+//!
+//! Nothing here decides *which* rows to re-dispatch, and nothing here runs at startup any more
+//! except [`init_status_counts_from_db`]. The sweep ([`crate::sweep`]) chooses the rows, claims
+//! each one under this pod's epoch first, and calls the three `dispatch_recovered_*` builders
+//! below. A startup pass that re-dispatched without claiming used to live here; it would now
+//! race the sweep's own claim of the same rows, since the claim no longer waits out a staleness
+//! window before taking an unowned or older-epoch row. A restart recovers by minting a higher
+//! epoch instead, which makes every row the previous incarnation owned claimable on the first
+//! tick after acquisition.
 
 use crate::{
     core::event::{
@@ -57,83 +66,6 @@ pub async fn init_status_counts_from_db(repositories: &Arc<Repositories>) -> any
 
     info!("Initialized request status metrics from database");
     Ok(())
-}
-
-/// Reset all tx_in_flight requests to processing before recovery.
-/// This ensures clean state transitions and proper idempotency checks.
-async fn reset_tx_in_flight_requests(repositories: &Arc<Repositories>) -> anyhow::Result<()> {
-    let public_decrypt_count = repositories
-        .public_decrypt
-        .reset_tx_in_flight_to_processing()
-        .await
-        .context("Failed to reset public_decrypt")?;
-
-    if public_decrypt_count > 0 {
-        info!(
-            "Reset {} public_decrypt requests from tx_in_flight to processing",
-            public_decrypt_count
-        );
-    }
-
-    let user_decrypt_count = repositories
-        .user_decrypt
-        .reset_tx_in_flight_to_processing()
-        .await
-        .context("Failed to reset user_decrypt")?;
-
-    if user_decrypt_count > 0 {
-        info!(
-            "Reset {} user_decrypt requests from tx_in_flight to processing",
-            user_decrypt_count
-        );
-    }
-
-    let input_proof_count = repositories
-        .input_proof
-        .reset_tx_in_flight_to_processing()
-        .await
-        .context("Failed to reset input_proof")?;
-
-    if input_proof_count > 0 {
-        info!(
-            "Reset {} input_proof requests from tx_in_flight to processing",
-            input_proof_count
-        );
-    }
-
-    Ok(())
-}
-
-/// Recover incomplete requests by re-dispatching events based on their status.
-pub async fn recover_incomplete_requests(
-    orchestrator: &Arc<Orchestrator>,
-    repositories: &Arc<Repositories>,
-) -> anyhow::Result<usize> {
-    info!("Starting request recovery...");
-
-    // Status-count metrics are initialized earlier, before the HTTP server binds - see
-    // `init_status_counts_from_db`'s doc comment.
-
-    // Reset tx_in_flight to processing
-    reset_tx_in_flight_requests(repositories).await?;
-
-    let mut total_recovered = 0;
-
-    // Recover public decrypt requests
-    total_recovered += recover_public_decrypt_requests(orchestrator, repositories).await?;
-
-    // Recover user decrypt requests
-    total_recovered += recover_user_decrypt_requests(orchestrator, repositories).await?;
-
-    // Recover input proof requests
-    total_recovered += recover_input_proof_requests(orchestrator, repositories).await?;
-
-    info!(
-        "Request recovery completed. Recovered {} requests",
-        total_recovered
-    );
-
-    Ok(total_recovered)
 }
 
 /// Build and dispatch the recovery event for one incomplete public decrypt row. Shared by
@@ -195,36 +127,6 @@ pub(crate) async fn dispatch_recovered_public_decrypt(
     }
 }
 
-/// Recover incomplete public decrypt requests
-async fn recover_public_decrypt_requests(
-    orchestrator: &Arc<Orchestrator>,
-    repositories: &Arc<Repositories>,
-) -> anyhow::Result<usize> {
-    let mut requests = repositories
-        .public_decrypt
-        .find_incomplete_requests()
-        .await
-        .context("Failed to query incomplete public decrypt requests")?;
-
-    // Process furthest-along requests first: TxInFlight > Processing > Queued
-    requests.sort_by_key(|(_, _, status, _)| match status {
-        ReqStatus::TxInFlight => 0,
-        ReqStatus::Processing => 1,
-        ReqStatus::Queued => 2,
-        _ => 3,
-    });
-
-    let mut recovered = 0;
-
-    for (int_job_id, req_json, status, _updated_at) in requests {
-        if dispatch_recovered_public_decrypt(orchestrator, int_job_id, req_json, status).await {
-            recovered += 1;
-        }
-    }
-
-    Ok(recovered)
-}
-
 /// Build and dispatch the recovery event for one incomplete user decrypt row. Shared by
 /// startup recovery and the step-6 sweep - see
 /// [`dispatch_recovered_public_decrypt`] for why. Returns whether an event was dispatched.
@@ -280,35 +182,6 @@ pub(crate) async fn dispatch_recovered_user_decrypt(
     }
 }
 
-/// Recover incomplete user decrypt requests
-async fn recover_user_decrypt_requests(
-    orchestrator: &Arc<Orchestrator>,
-    repositories: &Arc<Repositories>,
-) -> anyhow::Result<usize> {
-    let mut requests = repositories
-        .user_decrypt
-        .find_incomplete_requests()
-        .await
-        .context("Failed to query incomplete user decrypt requests")?;
-
-    requests.sort_by_key(|(_, _, status, _)| match status {
-        ReqStatus::TxInFlight => 0,
-        ReqStatus::Processing => 1,
-        ReqStatus::Queued => 2,
-        _ => 3,
-    });
-
-    let mut recovered = 0;
-
-    for (int_job_id, req_json, status, _updated_at) in requests {
-        if dispatch_recovered_user_decrypt(orchestrator, int_job_id, req_json, status).await {
-            recovered += 1;
-        }
-    }
-
-    Ok(recovered)
-}
-
 /// Build and dispatch the recovery event for one incomplete input proof row. Shared by
 /// startup recovery and the step-6 sweep - see
 /// [`dispatch_recovered_public_decrypt`] for why. Returns whether an event was dispatched.
@@ -356,33 +229,4 @@ pub(crate) async fn dispatch_recovered_input_proof(
     } else {
         true
     }
-}
-
-/// Recover incomplete input proof requests
-async fn recover_input_proof_requests(
-    orchestrator: &Arc<Orchestrator>,
-    repositories: &Arc<Repositories>,
-) -> anyhow::Result<usize> {
-    let mut requests = repositories
-        .input_proof
-        .find_incomplete_requests()
-        .await
-        .context("Failed to query incomplete input proof requests")?;
-
-    requests.sort_by_key(|(_, _, status, _)| match status {
-        ReqStatus::TxInFlight => 0,
-        ReqStatus::Processing => 1,
-        ReqStatus::Queued => 2,
-        _ => 3,
-    });
-
-    let mut recovered = 0;
-
-    for (int_job_id, req_json, _status, _updated_at) in requests {
-        if dispatch_recovered_input_proof(orchestrator, int_job_id, req_json).await {
-            recovered += 1;
-        }
-    }
-
-    Ok(recovered)
 }

@@ -308,6 +308,24 @@ impl TestSetup {
     pub async fn new_with_config_path(
         config_path: Option<std::path::PathBuf>,
     ) -> anyhow::Result<Self> {
+        Self::new_with_config_path_and_settings(config_path, |_| {}).await
+    }
+
+    /// Start a relayer with `mutate` applied to its settings *after* they have been wired to
+    /// the mocks and the isolated schema, for config the other constructors do not expose - the
+    /// dispatch-gate tests use it to pin `dispatcher_lock.key_override` onto a key the test
+    /// itself holds. Same base config as [`TestSetup::new`].
+    #[allow(dead_code)]
+    pub async fn new_with_settings(mutate: impl FnOnce(&mut Settings)) -> anyhow::Result<Self> {
+        let temp_config_dir = tempfile::TempDir::new()?;
+        let temp_config_path = create_default_config(&temp_config_dir)?;
+        Self::new_with_config_path_and_settings(Some(temp_config_path), mutate).await
+    }
+
+    async fn new_with_config_path_and_settings(
+        config_path: Option<std::path::PathBuf>,
+        mutate: impl FnOnce(&mut Settings),
+    ) -> anyhow::Result<Self> {
         // Create isolated test schema first
         let test_schema = TestSchema::new().await?;
         tracing::info!(
@@ -339,6 +357,7 @@ impl TestSetup {
             gateway_port,
             test_schema.database_url(),
         );
+        mutate(&mut settings);
 
         // Start relayer service with isolated settings
         let cancellation_token = CancellationToken::new();

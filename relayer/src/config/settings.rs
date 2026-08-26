@@ -503,79 +503,22 @@ impl Default for DispatcherLockConfig {
     }
 }
 
-/// The step-6 sweep: while this pod holds the dispatcher lock, it periodically claims and
-/// re-dispatches requests nobody is driving (a non-holder's accepted request once step 7
-/// gates dispatch, or a row orphaned by a crashed former holder). Every field has a serde
-/// default so existing config files keep deserializing unchanged.
+/// The dispatch sweep: while this pod holds the dispatcher lock, it periodically claims and
+/// re-dispatches requests nobody is driving - one a non-holder accepted and left for the
+/// dispatcher, or one orphaned by a former holder that died. Since step 7 it is also how a
+/// restart recovers its own previous incarnation's work. Every field has a serde default so
+/// existing config files keep deserializing unchanged.
 #[derive(Debug, Deserialize, Clone)]
 pub struct SweepConfig {
-    /// How often the holder polls Postgres for claimable rows. This is *not* the dominant
-    /// term in handover latency for a freshly-orphaned row - see `claim_after` - but it does
-    /// bound how quickly a row already past `claim_after` gets picked up, and it is the
-    /// per-tick query cost callers pay on every holder, forever, so it stays cheap and short
-    /// rather than merely "sub-second" for its own sake.
+    /// How often the holder polls Postgres for claimable rows, and therefore the dominant term
+    /// in how long a request accepted by a non-holder waits before anything drives it. It is
+    /// also the per-tick query cost every holder pays forever, so it stays short without being
+    /// sub-second for its own sake.
     #[serde(
         default = "default_sweep_interval",
         deserialize_with = "deserialize_human_duration"
     )]
     pub interval: Duration,
-    /// Minimum time since a row's `updated_at` before the sweep will claim a row it does not
-    /// already know is a dead predecessor's, and the same bound `fail_exhausted_attempts` uses
-    /// to give up on an exhausted one.
-    ///
-    /// A row owned by a strictly *older* epoch than this pod's current one is claimed
-    /// immediately, no staleness wait: epochs are minted only on actual lock acquisition and
-    /// monotonic across the database, so an older epoch can never still be the live holder (see
-    /// `claim_incomplete_requests`'s doc comment). This field governs everything else that can
-    /// reach the claim or the exhaustion check - a `NULL`-owned row (which, until dispatch is
-    /// gated on the lock in step 7, can be a *live* non-holder's own accepted traffic, not a
-    /// dead one) and a row this pod already owns under its current epoch (which may simply
-    /// still be in progress).
-    ///
-    /// **This bounds sleeps, not wall-clock latency, and is not a hard guarantee.** It is set
-    /// to exceed every *sleep*-bound retry budget in the pipeline: `gw_ciphertext_check`'s
-    /// readiness-check retries (75 attempts x 3000ms, 225s) and the transaction engine's own
-    /// gas-estimation and send retries (`tx_engine.retry`: 100 attempts x 500ms each, ~50s per
-    /// phase - see `claim_incomplete_requests`'s doc comment for why both run with `updated_at`
-    /// already frozen at `tx_in_flight`). It does *not* bound the RPC calls themselves: no HTTP
-    /// call anywhere under `gateway::arbitrum` carries a client-side timeout, so a stalled
-    /// `eth_sendRawTransactionSync` against a degraded gateway RPC can legitimately run past
-    /// 300s. A row still genuinely retrying when that happens gets reclaimed and re-dispatched
-    /// out from under itself - the tolerated failure mode (a duplicate send, a fee, an orphaned
-    /// on-chain request, never a wrong final state), not a new one this field was meant to rule
-    /// out entirely.
-    ///
-    /// It also does not bound queueing: `mark_processing` stamps `updated_at` on entry to
-    /// `processing`, and the row then waits in the tx throttler queue before a send is even
-    /// attempted - at configured capacity, on the order of several hundred seconds (the
-    /// service's own ETA histogram buckets run out to 2400s). A backlogged row can be reclaimed
-    /// and re-pushed onto the same saturated queue, converting queue latency into duplicate
-    /// sends and spurious failures under sustained backlog - self-limiting via `max_attempts`,
-    /// but real. Not chased with a larger number here: raising this past the throttler's own
-    /// worst case would only widen the single-replica regression below further for a case this
-    /// field cannot fully cover regardless.
-    ///
-    /// **Known tradeoff, accepted deliberately rather than split into a separate knob:** at one
-    /// replica - today's only deployment shape - there is never an older epoch to claim
-    /// immediately from (nothing mints a new one without a process restart), so this value is
-    /// also, in practice, how long a genuinely dropped in-process task (a panicked handler, an
-    /// aborted send) sits before the sweep notices and re-drives it. That was 10s before this
-    /// field existed for epoch-fencing purposes; it is now bounded below by the 225s figure
-    /// above instead, a real latency regression for that specific case. Splitting it - a short
-    /// timer for "probably dead, no other epoch available" against a long one for "provably
-    /// still within a legitimate retry budget" - is possible but was not done: the two cases
-    /// are indistinguishable from `updated_at` alone (both look like "no progress"), a shorter
-    /// timer would have to accept the same false-positive risk the 225s margin exists to avoid,
-    /// and a stuck async task inside an otherwise-healthy process is not the failure mode a
-    /// Kubernetes liveness probe catches quickly anyway. The cost is bounded (self-heals within
-    /// one `claim_after` window, never a stuck client) and not a correctness issue - the epoch
-    /// fence is what protects correctness, this value only trades off latency against wasted
-    /// duplicate work.
-    #[serde(
-        default = "default_sweep_claim_after",
-        deserialize_with = "deserialize_human_duration"
-    )]
-    pub claim_after: Duration,
     /// Maximum number of times the sweep re-dispatches one row before giving up on it. A row
     /// that reaches this bound is moved to `failure` (see `sweep::fail_exhausted_attempts`)
     /// rather than left to be claimed forever.
@@ -608,15 +551,6 @@ fn default_sweep_interval() -> Duration {
     Duration::from_millis(500)
 }
 
-fn default_sweep_claim_after() -> Duration {
-    // Guards a NULL-owned row and one this pod already owns (see the field doc); a row owned by
-    // a strictly older epoch is claimed immediately, unaffected by this value. 300s: comfortable
-    // margin above the 225s and ~50s+50s sleep-bound worst cases, not the pre-step-8 10s
-    // default, which predated `owner_epoch` fencing and this two-tier claim - but not a bound on
-    // a stalled RPC call, which nothing under `gateway::arbitrum` times out (see the field doc).
-    Duration::from_secs(300)
-}
-
 fn default_sweep_max_attempts() -> i32 {
     5
 }
@@ -625,7 +559,6 @@ impl Default for SweepConfig {
     fn default() -> Self {
         Self {
             interval: default_sweep_interval(),
-            claim_after: default_sweep_claim_after(),
             max_attempts: default_sweep_max_attempts(),
         }
     }

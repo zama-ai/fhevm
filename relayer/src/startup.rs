@@ -66,16 +66,18 @@ static GLOBAL_REGISTRY: OnceLock<Registry> = OnceLock::new();
 const STOP_WORK_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Bound on waiting for this pod's *first* dispatcher-lock acquisition attempt to resolve,
-/// before `initialize_gateway` and startup recovery run - see the call site below for why
-/// recovery needs a real epoch. `initialize_gateway` does not itself need one, but the wait
-/// sits ahead of it too since both belong to the same "heavy startup work" phase, after the
-/// HTTP bind - so `/healthz` is unaffected, but this is still up to `FIRST_EPOCH_WAIT_BUDGET`
-/// added to time-to-first-poll for the gateway listeners on every pod, not just recovery's
-/// delay on the ones that need it. Generous for the single-replica/solo-restart happy path
-/// (acquisition of an unclaimed key is one fast Postgres round trip, well under this), short
-/// enough that a standby losing the acquisition race to a healthy peer does not meaningfully
-/// delay its own startup (the cron workers, the sweep, the keyurl poller) waiting for a lock
-/// that peer may hold indefinitely.
+/// before the rest of startup proceeds.
+///
+/// Nothing downstream *requires* the lock any more - every subsystem behind the dispatch gate
+/// waits for it on its own (build-order step 7), and a pod that never acquires still binds,
+/// serves `/healthz`, accepts requests and starts its metrics server. This wait only removes a
+/// pointless detour on the common path: without it, a pod that is about to acquire the lock a
+/// few milliseconds from now would accept its first requests as a non-holder, stamp them
+/// unowned, and hand them to its own sweep a tick later instead of driving them directly.
+///
+/// Generous for the single-replica and solo-restart cases (acquiring an unclaimed key is one
+/// Postgres round trip, well under this), short enough that a standby losing the race to a
+/// healthy peer does not sit here waiting for a lock that peer may hold for hours.
 const FIRST_EPOCH_WAIT_BUDGET: Duration = Duration::from_secs(5);
 
 /// Main library function for the FHE Event Relayer service.
@@ -253,18 +255,11 @@ pub async fn run_fhevm_relayer(
     // Everything here can block for a while (recovery walks the DB, the cron delay is 30s in
     // production) and now runs after the bind, so `/healthz` is already serving throughout.
 
-    // Dispatcher lock's poll/heartbeat loop: spawned here, before recovery, and given a
-    // bounded best-effort wait for this pod's *first* acquisition attempt to resolve.
-    // Recovery re-dispatches through the same event pipeline live traffic uses, whose
-    // status-writes are epoch-fenced (build-order step 8): without a real epoch yet,
-    // `current_epoch()` reads `None`, every fenced write's predicate degrades to `owner_epoch
-    // IS NULL`, and a row this same pod owned in its previous incarnation - never `NULL` - is
-    // untouched. Recovery still logs it as recovered (dispatch only reports whether the event
-    // was queued, not what its handler's write did - see `TokioEventDispatcher::dispatch_event`)
-    // and the row sits until the sweep's own claim notices it, which after the cron start delay
-    // below can be tens of seconds later in production. The wait here closes that gap for the
-    // common case (a solo restart, or the pod that wins the acquisition race) without blocking
-    // a losing standby's own startup indefinitely - see `FIRST_EPOCH_WAIT_BUDGET`.
+    // Dispatcher lock's poll/heartbeat loop, plus a bounded best-effort wait for this pod's
+    // first acquisition attempt to resolve - see `FIRST_EPOCH_WAIT_BUDGET` for why the wait is
+    // a convenience rather than a dependency. Everything spawned after this gates itself on
+    // `dispatcher_lock.gate()`, so a pod that loses the race carries on starting up and simply
+    // drives nothing until it acquires.
     {
         let lock_for_task = dispatcher_lock.clone();
         let lock_shutdown = dequeue_shutdown.clone();
@@ -288,9 +283,9 @@ pub async fn run_fhevm_relayer(
                     })
                     .await;
                     // Best-effort: a timeout (this pod never acquires) or a closed channel
-                    // (never happens in practice) must not fail startup - recovery still runs,
-                    // just with `current_epoch() == None`, degrading to the pre-step-8 no-op
-                    // for previously-owned rows rather than blocking forever.
+                    // (never happens in practice) must not fail startup. Every subsystem past
+                    // this point gates itself, so losing the race costs nothing but the
+                    // convenience described on `FIRST_EPOCH_WAIT_BUDGET`.
                     anyhow::Ok(())
                 },
             )
@@ -298,56 +293,32 @@ pub async fn run_fhevm_relayer(
             .context("Failed to start dispatcher lock")?;
     }
 
-    // Initialize all gateway components
+    // Initialize all gateway components. The listeners, tx processors and readiness processors
+    // all start, and all sit behind the dispatch gate until this pod is the confirmed
+    // dispatcher (build-order step 7) - `initialize_gateway` has no construct-without-starting
+    // seam, and giving each subsystem the gate is what makes one unnecessary.
     gateway::initialize_gateway(
         orchestrator.clone(),
         &settings,
         repositories.clone(),
         gateway_throttlers,
+        dispatcher_lock.gate(),
         dequeue_shutdown.clone(),
         intake_shutdown.clone(),
     )
     .await
     .context("Failed to initialize gateway")?;
 
-    // Recover incomplete requests from previous runs
-    info!("Recovering incomplete requests...");
-    startup_recovery::recover_incomplete_requests(&orchestrator, &repositories)
-        .await
-        .context("Failed to recover incomplete requests")?;
-
-    // Start cron workers after configurable delay
-    let cron = &settings.storage.cron;
-    let delay = cron.cron_startup_delay_after_recovery;
-    info!(
-        "Recovery complete. Waiting {:?} before starting cron workers...",
-        delay
-    );
-    tokio::time::sleep(delay).await;
-
-    info!(
-        expiry_enabled = cron.expiry_enabled,
-        "Starting cron workers"
-    );
-    repositories
-        .register_background_workers(
-            &orchestrator,
-            settings.storage.cron.clone(),
-            dequeue_shutdown.clone(),
-        )
-        .await
-        .context("Failed to register background workers")?;
-
-    // Step 6 sweep: a named task like the others above, cancelled with `dequeue_shutdown`.
-    // Runs on every pod, but only acts while `dispatcher_lock` reads `Held` - see
-    // `sweep::run_tick`. Registered the same way the other periodic DB workers are, just
-    // here rather than in `Repositories::register_background_workers`, since it needs the
-    // orchestrator (to dispatch) and the dispatcher lock (to gate and to read the epoch),
-    // neither of which that registrar otherwise depends on.
+    // The sweep: the only Postgres -> dispatch path there is, so it starts before the cron
+    // delay below rather than after it. It is what recovers this pod's own previous
+    // incarnation's work (every row that incarnation owned is under an older epoch, so the
+    // first tick after acquisition claims it), and making a restart wait out
+    // `cron_startup_delay_after_recovery` before recovering anything would be a regression on
+    // the startup pass it replaced. Gated like everything else, so on a standby it idles.
     {
         let sweep_repositories = repositories.clone();
         let sweep_orchestrator = orchestrator.clone();
-        let sweep_lock = dispatcher_lock.clone();
+        let sweep_gate = dispatcher_lock.gate();
         let sweep_config = settings.sweep.clone();
         let sweep_shutdown = dequeue_shutdown.clone();
         orchestrator
@@ -357,7 +328,7 @@ pub async fn run_fhevm_relayer(
                     crate::sweep::create_sweep_worker_future(
                         sweep_repositories,
                         sweep_orchestrator,
-                        sweep_lock,
+                        sweep_gate,
                         sweep_config,
                         sweep_shutdown,
                     )
@@ -368,6 +339,27 @@ pub async fn run_fhevm_relayer(
             .await
             .context("Failed to start sweep worker")?;
     }
+
+    // Start cron workers after a configurable delay. The delay exists so the timeout worker
+    // does not start expiring rows the sweep has not had a chance to re-drive yet.
+    let cron = &settings.storage.cron;
+    let delay = cron.cron_startup_delay_after_recovery;
+    info!("Waiting {:?} before starting cron workers...", delay);
+    tokio::time::sleep(delay).await;
+
+    info!(
+        expiry_enabled = cron.expiry_enabled,
+        "Starting cron workers"
+    );
+    repositories
+        .register_background_workers(
+            &orchestrator,
+            settings.storage.cron.clone(),
+            dispatcher_lock.gate(),
+            dequeue_shutdown.clone(),
+        )
+        .await
+        .context("Failed to register background workers")?;
 
     // Spawn the single host-chain KeyUrl poller now the endpoint is serving. Startup is
     // already gated above, so the readiness future is trivially ready; the task is tracked by

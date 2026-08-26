@@ -1,12 +1,17 @@
 //! Epoch fencing (build-order step 8).
 //!
-//! Every write below that drives a request forward - the intake `INSERT`, and every
-//! send-decision status write (`processing`, `tx_in_flight`, `receipt_received`, the
-//! `failure`/`timed_out` transitions reachable from a live send) - stamps `owner_epoch` with
+//! Every send-decision status write below (`processing`, `tx_in_flight`, `receipt_received`,
+//! the `failure`/`timed_out` transitions reachable from a live send) stamps `owner_epoch` with
 //! this pod's [`DispatcherLock::current_epoch`] in the same statement that changes the row, and
 //! refuses to apply unless the row's current `owner_epoch` is either `NULL` (nobody has claimed
-//! it under the fence yet - true for every pre-migration row and every row a pod not currently
-//! holding the lock inserts) or **less than or equal to** that epoch.
+//! it under the fence yet - true for every pre-migration row and every row inserted by a pod
+//! that was not the dispatcher at the time) or **less than or equal to** that epoch.
+//!
+//! The intake `INSERT` is the one exception to where the epoch comes from: it stamps the
+//! caller's [`crate::orchestrator::DispatchGate`] reading, passed in as `dispatch_epoch`,
+//! because intake is the one write that decides *whether this pod will drive the row at all*
+//! rather than carrying on driving one - see
+//! [`PublicDecryptRepository::insert_data_on_conflict_and_get_ext_job_id`].
 //!
 //! It is `<=`, not `=`: this is a fencing token, not an ownership check. `owner_epoch` records
 //! the *newest* epoch that has ever touched a row, not "the one true current owner" - a write
@@ -38,7 +43,6 @@
 
 use std::time::Instant;
 
-use chrono::{DateTime, Utc};
 use serde_json::Value;
 
 use crate::core::event::{PublicDecryptRequest, PublicDecryptResponse};
@@ -101,6 +105,15 @@ impl PublicDecryptRepository {
         }
     }
 
+    /// This pod's dispatch-gate reading: `Some(epoch)` while it is the confirmed dispatcher,
+    /// `None` otherwise. HTTP intake reads this **once** and uses the one value for both
+    /// decisions it makes about a new request - what to stamp on the row, and whether to
+    /// dispatch it in process. See
+    /// [`Self::insert_data_on_conflict_and_get_ext_job_id`] for why one read rather than two.
+    pub fn dispatch_epoch(&self) -> Option<i64> {
+        self.dispatcher_lock.dispatching_epoch()
+    }
+
     // NOTE: We have a query which is performed at the database level in a pg_cron job instead of being called by the internals. and is triggered on this condition:
     // If status == 'receipt_received' and now - `updated_at` > 30 min roughly (TBD.)
     // Update status to timed_out with configured timeout message.
@@ -148,11 +161,21 @@ impl PublicDecryptRepository {
     /// Insert req, ext_job_id, int_job_id.
     /// Returns an enum indicating whether the request was inserted or was a duplicate.
     /// For duplicates, includes the current state (completed with response, or still processing).
+    ///
+    /// `dispatch_epoch` is the value [`crate::orchestrator::DispatchGate::epoch`] returned when
+    /// the caller decided whether to drive this request in process, and must be that same
+    /// value - not a second, later read of the gate. `Some` marks the row as owned and driven
+    /// by this pod; `None` leaves it unowned for the sweep to claim on its next tick. Reading
+    /// the gate twice would let the two answers disagree: stamping an epoch and then not
+    /// dispatching leaves a row nothing will ever claim (the sweep skips its own epoch) until
+    /// this pod restarts, and stamping `None` and then dispatching has the sweep immediately
+    /// claim and re-drive a request already running in process.
     pub async fn insert_data_on_conflict_and_get_ext_job_id(
         &self,
         ext_job_id: Uuid,
         int_job_id_bytes: &[u8],
         request: PublicDecryptRequest,
+        dispatch_epoch: Option<i64>,
     ) -> SqlResult<PublicDecryptInsertResult> {
         let req = serde_json::to_value(&request).map_err(|e| {
             SqlError::conversion_error(
@@ -163,7 +186,7 @@ impl PublicDecryptRepository {
         })?;
 
         let mut conn = self.pool.get_app_connection().await?;
-        let epoch = self.dispatcher_lock.current_epoch();
+        let epoch = dispatch_epoch;
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -432,85 +455,6 @@ impl PublicDecryptRepository {
         } else {
             Ok(0)
         }
-    }
-
-    /// Reset all tx_in_flight requests to processing status.
-    /// Used during startup recovery to ensure clean state transitions.
-    /// Returns the number of rows affected.
-    pub async fn reset_tx_in_flight_to_processing(&self) -> SqlResult<u64> {
-        let mut conn = self.pool.get_app_connection().await?;
-        let epoch = self.dispatcher_lock.current_epoch();
-
-        let query_start = Instant::now();
-
-        // Fenced like every other write (`owner_epoch IS NULL OR owner_epoch <= $epoch`): a
-        // fresh epoch is always >= any prior one, so this always wins against a genuinely dead
-        // predecessor's rows (including this same pod's own previous incarnation) and never
-        // touches a row a currently-live peer still owns - see `public_decrypt_repo`'s module
-        // doc for why `<=`, not `=`. If this pod has not yet acquired the lock (`epoch` is
-        // `None`), the predicate degrades to `owner_epoch IS NULL` and only unclaimed rows move.
-
-        // Fetch rows to update for metrics
-        let rows = sqlx::query!(
-            r#"
-            SELECT int_job_id, updated_at
-            FROM public_decrypt_req
-            WHERE req_status = 'tx_in_flight'::req_status
-              AND (owner_epoch IS NULL OR owner_epoch <= $1)
-            "#,
-            epoch,
-        )
-        .fetch_all(&mut *conn)
-        .await;
-
-        match &rows {
-            Ok(_) => {
-                metrics::observe_query(metrics::Table::PublicDecryptReq, query_start.elapsed())
-            }
-            Err(_) => metrics::increment_error(metrics::Table::PublicDecryptReq),
-        }
-
-        let rows = rows?;
-        if rows.is_empty() {
-            return Ok(0);
-        }
-
-        // Perform bulk update (updated_at set by trigger)
-        let query_start = Instant::now();
-        let result = sqlx::query!(
-            r#"
-            UPDATE public_decrypt_req
-            SET req_status = 'processing'::req_status,
-                owner_epoch = $1
-            WHERE req_status = 'tx_in_flight'::req_status
-              AND (owner_epoch IS NULL OR owner_epoch <= $1)
-            "#,
-            epoch,
-        )
-        .execute(&mut *conn)
-        .await;
-
-        match &result {
-            Ok(_) => {
-                metrics::observe_query(metrics::Table::PublicDecryptReq, query_start.elapsed())
-            }
-            Err(_) => metrics::increment_error(metrics::Table::PublicDecryptReq),
-        }
-
-        let rows_affected = result?.rows_affected();
-
-        // Update metrics: decrement tx_in_flight, increment processing
-        for _ in 0..rows_affected {
-            metrics::record_status_transition(
-                metrics::RequestType::PublicDecrypt,
-                ReqStatus::TxInFlight,
-                ReqStatus::Processing,
-                chrono::Utc::now(),
-                chrono::Utc::now(),
-            );
-        }
-
-        Ok(rows_affected)
     }
 
     /// Updating the req_status to receipt_received, gw_req_tx_hash, gw_reference_id by int_job_id
@@ -910,27 +854,6 @@ impl PublicDecryptRepository {
         Ok(result?)
     }
 
-    /// Find incomplete requests for startup recovery (queued, processing, tx_in_flight).
-    pub async fn find_incomplete_requests(
-        &self,
-    ) -> SqlResult<Vec<(Vec<u8>, Value, ReqStatus, DateTime<Utc>)>> {
-        let result = sqlx::query!(
-            r#"
-            SELECT int_job_id, req, req_status as "req_status!: ReqStatus", updated_at
-            FROM public_decrypt_req
-            WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)
-            ORDER BY created_at ASC
-            "#
-        )
-        .fetch_all(&self.pool.get_app_pool())
-        .await?;
-
-        Ok(result
-            .into_iter()
-            .map(|row| (row.int_job_id, row.req, row.req_status, row.updated_at))
-            .collect())
-    }
-
     /// Sweep: atomically claim incomplete requests nobody current is driving, stamping
     /// `owner_epoch` and incrementing `attempts` in the same statement that selects them. Only
     /// rows this UPDATE actually touched come back - a row a concurrent claimer already took is
@@ -938,50 +861,40 @@ impl PublicDecryptRepository {
     /// `update_status_to_tx_in_flight`'s doc comment for the CAS-with-discarded-count bug
     /// this is built not to repeat).
     ///
-    /// Two-tier eligibility, both requiring `attempts < max_attempts`
-    /// ([`Self::fail_exhausted_attempts`] handles rows past that bound):
-    /// - `owner_epoch < $epoch` (strictly older, never `NULL` - see below) - a genuinely dead
-    ///   predecessor. Epochs are minted only on actual lock acquisition and monotonic across
-    ///   the whole database, so an *older* epoch can never still be the live holder while this
-    ///   pod is (see `public_decrypt_repo`'s module doc for why `<`, not `=`, is what "dead"
-    ///   means here). Claimed immediately, no staleness window: the epoch fence on every
-    ///   subsequent write is what makes this safe even if the predecessor has not noticed it is
-    ///   dead yet, not this timing.
-    /// - `owner_epoch IS NULL OR owner_epoch = $epoch` - unclaimed, or this pod's own prior
-    ///   claim. **`NULL` is not treated as immediately claimable**, unlike the branch above,
-    ///   because until dispatch is gated on the lock (step 7) a `NULL` owner can be a *live*
-    ///   non-holder pod driving its own accepted traffic in-process - claiming it out from under
-    ///   that pod races a live sender, not a dead one, and causes exactly the double-send
-    ///   `on_receipt_received`'s fence check exists to catch on the *losing* side, not prevent
-    ///   on the winning one. Once non-holders stop dispatching, this branch can drop its
-    ///   staleness requirement and merge with the one above. Until then, `claim_after_secs`
-    ///   guards it the same as this pod's own prior claim: a row can legitimately sit here for a
-    ///   while (the dominant case is a readiness check retrying against `gw_ciphertext_check`'s
-    ///   worst case, ~225s at default settings) without `updated_at` moving, and reclaiming it
-    ///   early would just re-dispatch live work on every tick.
+    /// Eligibility is ownership alone, with no time term: `attempts < max_attempts` (see
+    /// [`Self::fail_exhausted_attempts`] for rows past that bound) and `owner_epoch IS NULL OR
+    /// owner_epoch < $epoch`. Both of those owners are provably not driving the row, which is
+    /// what lets the claim be immediate:
     ///
-    /// A row claimed out of `tx_in_flight` is also reset to `processing` in the same statement,
-    /// unconditionally: nothing else ever moves a `tx_in_flight` row back, so without this
-    /// `on_tx_in_flight`'s CAS (which requires `processing`) refuses every re-dispatch, the row
-    /// is claimed to exhaustion and failed out, and a transaction that may already have
-    /// succeeded on chain is orphaned. This used to apply only to the not-mine branch, on the
-    /// reasoning that resetting my own active send risks a double-send; it now applies
-    /// everywhere, because the *only* way to reach this `UPDATE` at all through the `owner_epoch
-    /// = $epoch` branch is `claim_after_secs` of silence.
+    /// - A **strictly older** epoch is a dead predecessor. Epochs are minted only on actual
+    ///   lock acquisition and are monotonic across the whole database, so an older one can
+    ///   never still be the live holder while this pod is. What keeps this safe if that
+    ///   predecessor has not yet noticed it is dead is the epoch fence on every write the
+    ///   re-dispatched handler goes on to make, not the timing of the claim.
+    /// - **`NULL`** means no epoch has ever claimed the row. Since dispatch is gated on the
+    ///   lock (build-order step 7), a pod that is not the confirmed dispatcher drives nothing,
+    ///   and intake stamps `NULL` precisely when the accepting pod will not drive what it just
+    ///   inserted (see [`crate::orchestrator::DispatchGate`]). A `NULL` row therefore has
+    ///   nobody on it by construction, rather than by a timeout's guess.
     ///
-    /// **That silence bounds sleeps, not RPC latency, so it is not a hard guarantee.**
-    /// `claim_after_secs`'s 300s default exceeds every *sleep*-bound retry budget between here
-    /// and a receipt - the 225s readiness-check worst case, and the transaction engine's own gas
-    /// estimation and send retries (`tx_engine.retry`: 100 attempts x 500ms each, ~50s per
-    /// phase) - but `on_tx_in_flight` claims *before any RPC work* (see `TransactionHelper`'s
-    /// doc comment on why), and neither phase's HTTP call carries a client-side timeout anywhere
-    /// under `gateway::arbitrum`: a stalled `eth_sendRawTransactionSync` against a degraded
-    /// gateway RPC can run past 300s with `updated_at` frozen the whole time, indistinguishable
-    /// from a dead send. Resetting it then is the same tolerated failure mode as everywhere else
-    /// in this pipeline: a second concurrent send, one `on_tx_in_flight` CAS losing to the
-    /// other, one orphaned on-chain request - a wasted attempt and duplicate KMS work, never a
-    /// wrong final state (see `startup.rs`'s shutdown-rationale comment for the same tradeoff
-    /// made elsewhere).
+    /// A row under **this pod's own current epoch** is deliberately not claimable: this pod is
+    /// driving it, and no query can tell "still working" from "silently died". An earlier
+    /// version gave that case an `updated_at` staleness window; step 7 removed it, because no
+    /// window can be made safe. `updated_at` freezes at `on_tx_in_flight`, before any RPC work
+    /// (see `TransactionHelper`'s doc comment on why it claims first), and the legitimate dwell
+    /// that follows is unbounded in principle: no HTTP call under `gateway::arbitrum` carries a
+    /// client-side timeout, and a saturated tx throttler can hold a row for the length of its
+    /// own backlog. The cost of dropping the window is bounded and accepted: a row whose
+    /// in-process task dies without a terminal write - a panicked handler, a send abandoned at
+    /// shutdown - sits until this pod restarts, at which point the new incarnation mints a
+    /// higher epoch, the row becomes "older", and the first sweep tick claims it. That is the
+    /// behaviour the relayer had before any of this work, when recovery was startup-only.
+    ///
+    /// A row claimed out of `tx_in_flight` is reset to `processing` in the same statement:
+    /// nothing else ever moves a `tx_in_flight` row back, so without this `on_tx_in_flight`'s
+    /// CAS (which requires `processing`) refuses every re-dispatch, the row is claimed to
+    /// exhaustion and failed out, and a transaction that may already have succeeded on chain is
+    /// orphaned.
     ///
     /// `attempts` is never reset - not on this `UPDATE`, not anywhere - including when a claim
     /// changes who owns a row. An earlier version of this method reset it to `1` on ownership
@@ -998,7 +911,6 @@ impl PublicDecryptRepository {
         &self,
         epoch: i64,
         max_attempts: i32,
-        claim_after_secs: f64,
     ) -> SqlResult<Vec<(Vec<u8>, Value, ReqStatus, i32)>> {
         let mut conn = self.pool.get_cron_connection().await?;
 
@@ -1014,18 +926,11 @@ impl PublicDecryptRepository {
                 END
             WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)
               AND attempts < $2
-              AND (
-                    owner_epoch < $1
-                    OR (
-                         (owner_epoch IS NULL OR owner_epoch = $1)
-                         AND updated_at < NOW() - make_interval(secs => $3)
-                       )
-                  )
+              AND (owner_epoch IS NULL OR owner_epoch < $1)
             RETURNING int_job_id, req, req_status as "req_status!: ReqStatus", attempts
             "#,
             epoch,
             max_attempts,
-            claim_after_secs,
         )
         .fetch_all(&mut *conn)
         .await;
@@ -1044,30 +949,38 @@ impl PublicDecryptRepository {
     }
 
     /// Sweep: move requests that have exhausted `max_attempts` to `failure`, so a row that
-    /// never completes is not claimed forever. Guarded by the same staleness window as
-    /// [`Self::claim_incomplete_requests`], so a row gets one full `claim_after` window after
-    /// its last attempt before being given up on. Fenced like every other terminal write
-    /// (`owner_epoch IS NULL OR owner_epoch <= $epoch`, deliberately `<=` and not an exact
-    /// match - see below) and stamps `owner_epoch = $epoch`: this was the one sweep write
-    /// outside the fence, and an ex-holder still reading `Held` for up to `heartbeat_interval +
-    /// heartbeat_timeout` after a successor has already taken over could otherwise fail a row
-    /// the successor is actively driving.
+    /// never completes is not claimed forever. Stamps `owner_epoch = $epoch`, keeping the
+    /// terminal write itself inside the fence.
     ///
-    /// This can fail a row under a `$epoch` that never itself claimed or drove it - `attempts`
-    /// is a global budget on the row's whole life, never reset by [`Self::claim_incomplete_requests`]
-    /// even across a change of owner, so whichever epoch's sweep next notices the row is stale
-    /// and past `max_attempts` is the one that fails it, regardless of who spent the budget.
-    /// The predicate stays `<=`, not narrowed to `owner_epoch = $epoch`: narrowing it would
-    /// make an exhausted row invisible to everyone once its owner is a dead epoch (the claim
-    /// also requires `attempts < max_attempts`, so it cannot rescue it either), stranding it
-    /// forever instead of failing it. See `claim_incomplete_requests`'s doc comment for why
-    /// `attempts` is global rather than reset-on-takeover: the reset was tried and reverted
-    /// because it let a crash-looping pod retry a row forever.
+    /// Matches exactly the ownership predicate [`Self::claim_incomplete_requests`] uses -
+    /// `owner_epoch IS NULL OR owner_epoch < $epoch` - and for the same reason: those are the
+    /// rows nobody is driving. One shared predicate is what keeps the two queries
+    /// complementary. A row is claimable while it has budget left and failed once it does not,
+    /// with no third state either query silently owns.
+    ///
+    /// The comparison is `<`, deliberately not the `<=` every *other* write in this file
+    /// fences with. `<=` would also match a row under this pod's own current epoch, and a row
+    /// this pod is actively driving reaches `attempts >= max_attempts` the moment its last
+    /// claim incremented the counter to the bound - failing it there would kill a live request
+    /// mid-send. The two comparisons answer two different questions: the fence asks "may a
+    /// write of mine land on this row" (yes, at or above the row's epoch), while this and the
+    /// claim ask "is anybody driving this row" (nobody, strictly below this pod's epoch).
+    ///
+    /// This can fail a row under an epoch that never itself claimed or drove it. `attempts` is
+    /// a budget on the row's whole life, never reset by [`Self::claim_incomplete_requests`]
+    /// even across a change of owner, so whichever epoch's sweep next notices a row past
+    /// `max_attempts` is the one that fails it, regardless of who spent the budget. See that
+    /// method's doc comment for why the budget is global rather than reset on takeover: the
+    /// reset was tried and reverted, because a crash-looping pod mints a fresh epoch on every
+    /// restart, and a fresh epoch resetting the budget means `max_attempts` never binds.
+    ///
+    /// An exhausted row under this pod's *own* epoch is neither claimed nor failed here. That
+    /// is the stranded case [`Self::claim_incomplete_requests`] describes, and a restart
+    /// resolves it: the row's epoch becomes older than the new incarnation's.
     pub async fn fail_exhausted_attempts(
         &self,
         epoch: i64,
         max_attempts: i32,
-        claim_after_secs: f64,
         err_reason: &str,
     ) -> SqlResult<u64> {
         let mut conn = self.pool.get_cron_connection().await?;
@@ -1080,15 +993,14 @@ impl PublicDecryptRepository {
                 FROM public_decrypt_req
                 WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)
                   AND attempts >= $1
-                  AND updated_at < NOW() - make_interval(secs => $2)
-                  AND (owner_epoch IS NULL OR owner_epoch <= $4)
+                  AND (owner_epoch IS NULL OR owner_epoch < $3)
                 FOR UPDATE SKIP LOCKED
             ),
             updated AS (
                 UPDATE public_decrypt_req
                 SET req_status = 'failure'::req_status,
-                    err_reason = $3,
-                    owner_epoch = $4
+                    err_reason = $2,
+                    owner_epoch = $3
                 FROM stale
                 WHERE public_decrypt_req.id = stale.id
                 RETURNING public_decrypt_req.updated_at as new_updated_at,
@@ -1102,7 +1014,6 @@ impl PublicDecryptRepository {
             FROM updated
             "#,
             max_attempts,
-            claim_after_secs,
             err_reason,
             epoch,
         )

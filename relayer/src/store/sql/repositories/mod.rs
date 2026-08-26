@@ -11,7 +11,7 @@ pub mod utils;
 use super::client::PgClient;
 use crate::{
     config::settings::StorageConfig,
-    orchestrator::{DispatcherLock, Orchestrator},
+    orchestrator::{DispatchGate, DispatcherLock, Orchestrator},
     store::sql::repositories::{
         cron_task::{create_expiry_worker_future, create_timeout_worker_future},
         expiry_repo::ExpiryRepository,
@@ -98,6 +98,7 @@ impl Repositories {
         &self,
         orchestrator: &Arc<Orchestrator>,
         cron_config: crate::config::settings::CronConfig,
+        gate: DispatchGate,
         shutdown: CancellationToken,
     ) -> anyhow::Result<()> {
         orchestrator
@@ -106,6 +107,7 @@ impl Repositories {
                 create_timeout_worker_future(
                     (*self.pg_client).clone(),
                     cron_config.clone(),
+                    gate.clone(),
                     shutdown.clone(),
                 ),
                 async { Ok(()) }, // Ready immediately
@@ -126,6 +128,7 @@ impl Repositories {
                     create_expiry_worker_future(
                         (*self.pg_client).clone(),
                         cron_config.clone(),
+                        gate,
                         shutdown,
                     ),
                     async { Ok(()) }, // Ready immediately

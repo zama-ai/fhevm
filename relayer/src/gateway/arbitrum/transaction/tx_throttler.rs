@@ -3,6 +3,7 @@ use crate::gateway::arbitrum::transaction::helper::TransactionType;
 use crate::gateway::arbitrum::transaction::TxLifecycleHooks;
 use crate::logging::ThrottlerStep;
 use crate::metrics;
+use crate::orchestrator::DispatchGate;
 use alloy::primitives::{Address, Bytes};
 use governor::{Quota, RateLimiter};
 use indexmap::IndexMap;
@@ -360,8 +361,20 @@ where
     /// Runs the dequeue loop until `shutdown` fires. Driven from the token rather than
     /// channel closure: the sender half lives in an `Arc` held permanently by the
     /// dispatcher and the HTTP router state, so it never drops on its own.
-    pub async fn run_consumer<F, Fut>(mut self, shutdown: CancellationToken, processor: F)
-    where
+    ///
+    /// Nothing is dequeued while `gate` is closed (build-order step 7). A pod that is not the
+    /// confirmed dispatcher should not have work queued here at all - intake does not dispatch
+    /// on it, so nothing enqueues - but a pod that *loses* the lock mid-flight does, and
+    /// sending those queued transactions would make it a second dispatcher for rows a successor
+    /// may already have claimed. Items stay in the bounded channel: this pod either regains the
+    /// lock and drains them, or exits on lock loss and the successor's sweep re-drives their
+    /// rows from Postgres.
+    pub async fn run_consumer<F, Fut>(
+        mut self,
+        gate: DispatchGate,
+        shutdown: CancellationToken,
+        processor: F,
+    ) where
         F: Fn(T) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = ()> + Send + 'static,
     {
@@ -375,6 +388,16 @@ where
         let processor = Arc::new(processor);
 
         loop {
+            // Wait for the gate before touching the queue, so a closed gate holds items in the
+            // channel rather than dequeuing and dropping them.
+            tokio::select! {
+                _ = gate.wait_open() => {}
+                _ = shutdown.cancelled() => {
+                    info!("Throttler Worker stopping (shutdown while not dispatching).");
+                    return;
+                }
+            }
+
             // Handle control channel conditionally
             let control_fut = async {
                 match &mut self.control_rx {
@@ -496,12 +519,16 @@ mod tests {
 
         tokio::spawn(async move {
             worker
-                .run_consumer(CancellationToken::new(), move |task| {
-                    let p = processed_clone.clone();
-                    async move {
-                        p.lock().unwrap().push(task.id);
-                    }
-                })
+                .run_consumer(
+                    DispatchGate::open_for_tests(1),
+                    CancellationToken::new(),
+                    move |task| {
+                        let p = processed_clone.clone();
+                        async move {
+                            p.lock().unwrap().push(task.id);
+                        }
+                    },
+                )
                 .await;
         });
 
@@ -589,7 +616,11 @@ mod tests {
         // Spawn worker
         tokio::spawn(async move {
             worker
-                .run_consumer(CancellationToken::new(), |_| async {})
+                .run_consumer(
+                    DispatchGate::open_for_tests(1),
+                    CancellationToken::new(),
+                    |_| async {},
+                )
                 .await;
         });
 
@@ -641,7 +672,11 @@ mod tests {
         // Now we verify that they are processed and removed correctly
         tokio::spawn(async move {
             worker
-                .run_consumer(CancellationToken::new(), |_| async {})
+                .run_consumer(
+                    DispatchGate::open_for_tests(1),
+                    CancellationToken::new(),
+                    |_| async {},
+                )
                 .await;
         });
 
@@ -676,12 +711,16 @@ mod tests {
 
         tokio::spawn(async move {
             worker
-                .run_consumer(CancellationToken::new(), move |_| {
-                    let c = counter.clone();
-                    async move {
-                        c.fetch_add(1, Ordering::Relaxed);
-                    }
-                })
+                .run_consumer(
+                    DispatchGate::open_for_tests(1),
+                    CancellationToken::new(),
+                    move |_| {
+                        let c = counter.clone();
+                        async move {
+                            c.fetch_add(1, Ordering::Relaxed);
+                        }
+                    },
+                )
                 .await;
         });
 
@@ -738,12 +777,16 @@ mod tests {
 
         tokio::spawn(async move {
             worker
-                .run_consumer(CancellationToken::new(), move |_| {
-                    let c = counter.clone();
-                    async move {
-                        c.fetch_add(1, Ordering::Relaxed);
-                    }
-                })
+                .run_consumer(
+                    DispatchGate::open_for_tests(1),
+                    CancellationToken::new(),
+                    move |_| {
+                        let c = counter.clone();
+                        async move {
+                            c.fetch_add(1, Ordering::Relaxed);
+                        }
+                    },
+                )
                 .await;
         });
 
@@ -801,7 +844,11 @@ mod tests {
         // Spawn worker to drain queue
         tokio::spawn(async move {
             worker
-                .run_consumer(CancellationToken::new(), |_| async {})
+                .run_consumer(
+                    DispatchGate::open_for_tests(1),
+                    CancellationToken::new(),
+                    |_| async {},
+                )
                 .await;
         });
 
@@ -872,7 +919,11 @@ mod tests {
         // Drain to clean up
         tokio::spawn(async move {
             worker
-                .run_consumer(CancellationToken::new(), |_| async {})
+                .run_consumer(
+                    DispatchGate::open_for_tests(1),
+                    CancellationToken::new(),
+                    |_| async {},
+                )
                 .await;
         });
         sleep(Duration::from_millis(100)).await;

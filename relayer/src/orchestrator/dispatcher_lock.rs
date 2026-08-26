@@ -1,7 +1,7 @@
 //! The dispatcher lock: a session-level Postgres advisory lock that decides which of N HA
 //! replica pods dispatches. Every pod serves HTTP and is Ready immediately; only the lock
-//! holder is meant to dispatch (the gate itself is later work - this module only tracks and
-//! exposes lock state).
+//! holder dispatches, which every other subsystem enforces for itself by reading the
+//! [`DispatchGate`] this module hands out.
 //!
 //! # Why a dedicated connection
 //!
@@ -74,7 +74,7 @@ use crate::metrics;
 /// classid could in principle collide by chance (1 in 2^32 per request); this constant just
 /// keeps the two uses documented and distinct rather than colliding by accident. Spells
 /// "HA_1" in ASCII.
-const DISPATCHER_LOCK_CLASSID: i32 = 0x4841_5F31;
+pub const DISPATCHER_LOCK_CLASSID: i32 = 0x4841_5F31;
 
 /// Mints `owner_epoch` (migration `20260825130000`). Postgres is the only state shared by
 /// every pod, so this - not a pod name, hostname, wall clock, or backend pid - is what makes
@@ -82,14 +82,148 @@ const DISPATCHER_LOCK_CLASSID: i32 = 0x4841_5F31;
 const DISPATCHER_EPOCH_SEQUENCE: &str = "dispatcher_epoch_seq";
 
 /// Whether this process currently holds the dispatch lock. Read synchronously via
-/// [`DispatcherLock::state`] or awaited via [`DispatcherLock::subscribe`] - the gate that
-/// reads this is later work. See the module docs for the three states' meaning.
+/// [`DispatcherLock::state`] or awaited via [`DispatcherLock::subscribe`]; the dispatch gate
+/// (build-order step 7) reads it through [`DispatchGate`]. See the module docs for the three
+/// states' meaning.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LockState {
     Held,
     /// Acquired, but the last heartbeat failed - a gate must treat this as not dispatching.
     Unconfirmed,
     NotHeld,
+}
+
+/// Keeps a test gate's watch channels open for its lifetime - see
+/// [`DispatchGate::open_for_tests`]. A production gate leaves this `None`, because the lock owns
+/// the senders.
+type TestGateSenders = Arc<(watch::Sender<LockState>, watch::Sender<Option<i64>>)>;
+
+/// The dispatch gate (build-order step 7): a read-only view of "may this pod drive work right
+/// now, and under which epoch". Handed to every subsystem that would otherwise dispatch -
+/// the gateway listeners, the tx and readiness processors, the cron workers, the sweep and the
+/// HTTP intake path - so a pod that is not the confirmed dispatcher accepts requests, serves
+/// `/healthz`, and drives nothing.
+///
+/// Deliberately not [`DispatcherLock`] itself: that type can acquire and release, and no
+/// subsystem behind the gate has any business doing either.
+///
+/// # Why the epoch, and not just the state
+///
+/// [`Self::epoch`] is `Some` only when the lock is `Held` **and** an epoch has been minted.
+/// Both halves are load-bearing:
+///
+/// - `Unconfirmed` reads as closed. The lock may already have been released to a peer by
+///   Postgres (see the module docs), so newly dispatched work would be a second dispatcher's.
+/// - `Held` with no epoch yet reads as closed too, which matters because the gate's value is
+///   also what intake stamps on the row it inserts. A pod dispatching in that window would
+///   stamp `owner_epoch = NULL`, and its own sweep - claiming every unowned row on sight since
+///   step 7 - would immediately claim and re-drive the request it is already driving in
+///   process. Waiting out the mint (one heartbeat interval at worst) costs a pause; not
+///   waiting costs a duplicate send on every request accepted in that window.
+#[derive(Clone)]
+pub struct DispatchGate {
+    state_rx: watch::Receiver<LockState>,
+    epoch_rx: watch::Receiver<Option<i64>>,
+    /// Set only by [`DispatchGate::open_for_tests`], which has no [`DispatcherLock`] to keep
+    /// the channels alive. A production gate's senders live in the lock; without this a test
+    /// gate's would drop at the end of the constructor, and `wait_open` treats a closed channel
+    /// as "park forever" - so the gate would read open and then never wake anything again.
+    _test_senders: Option<TestGateSenders>,
+}
+
+/// Shared by [`DispatchGate::epoch`] and [`DispatcherLock::dispatching_epoch`] so the two can
+/// never drift into disagreeing about what "may dispatch" means.
+fn dispatching_epoch_of(
+    state_rx: &watch::Receiver<LockState>,
+    epoch_rx: &watch::Receiver<Option<i64>>,
+) -> Option<i64> {
+    match *state_rx.borrow() {
+        LockState::Held => *epoch_rx.borrow(),
+        LockState::Unconfirmed | LockState::NotHeld => None,
+    }
+}
+
+impl DispatchGate {
+    /// A permanently open gate, for tests that exercise a gated subsystem's own behaviour
+    /// rather than the gating. Production gates come from [`DispatcherLock::gate`], which is
+    /// the only way to get one that ever closes.
+    pub fn open_for_tests(epoch: i64) -> Self {
+        let (state_tx, state_rx) = watch::channel(LockState::Held);
+        let (epoch_tx, epoch_rx) = watch::channel(Some(epoch));
+        Self {
+            state_rx,
+            epoch_rx,
+            _test_senders: Some(Arc::new((state_tx, epoch_tx))),
+        }
+    }
+
+    /// The epoch to stamp on work this pod is about to drive itself, or `None` when the gate is
+    /// closed. See the type's doc comment for why both halves of the condition matter.
+    ///
+    /// Not to be confused with [`DispatcherLock::current_epoch`], which keeps returning this
+    /// pod's last real epoch through `Unconfirmed` and past release, and is what the write
+    /// fence needs. The distinction: `current_epoch` answers "which epoch does a write of mine
+    /// carry", this answers "may I start driving something new".
+    pub fn epoch(&self) -> Option<i64> {
+        dispatching_epoch_of(&self.state_rx, &self.epoch_rx)
+    }
+
+    /// Whether the gate is open, read synchronously (no await).
+    pub fn is_open(&self) -> bool {
+        self.epoch().is_some()
+    }
+
+    /// Resolves once the gate *closes*, immediately if it already is closed. The mirror of
+    /// [`Self::wait_open`], for a subsystem holding something it must give up when this pod
+    /// stops being the dispatcher - the WebSocket listener's subscription is the case that
+    /// needs it, since a subscription cannot be paused, only dropped and re-established.
+    pub async fn wait_closed(&self) {
+        let mut state_rx = self.state_rx.clone();
+        let mut epoch_rx = self.epoch_rx.clone();
+        loop {
+            if !self.is_open() {
+                return;
+            }
+            let closed_channel = tokio::select! {
+                changed = state_rx.changed() => changed.is_err(),
+                changed = epoch_rx.changed() => changed.is_err(),
+            };
+            if closed_channel {
+                // The lock handle is gone, so this pod is certainly not dispatching any more.
+                return;
+            }
+        }
+    }
+
+    /// Resolves once the gate is open, immediately if it already is. Cancel-safe, and intended
+    /// to be raced against a shutdown token by every caller - it never resolves on its own
+    /// while the gate stays closed, which for a standby pod is its whole life.
+    pub async fn wait_open(&self) {
+        let mut state_rx = self.state_rx.clone();
+        let mut epoch_rx = self.epoch_rx.clone();
+        loop {
+            if self.is_open() {
+                return;
+            }
+            // Both channels are watched: `Held` and the mint are two independent sends whose
+            // order is not fixed (see `DispatcherLock::subscribe_epoch`), and the gate needs
+            // both. The receivers are cloned before the first check, so a send landing between
+            // the check and the await marks them changed rather than being missed.
+            let closed = tokio::select! {
+                changed = state_rx.changed() => changed.is_err(),
+                changed = epoch_rx.changed() => changed.is_err(),
+            };
+            if closed {
+                break;
+            }
+        }
+        // Both senders live in `Arc`s held by every `DispatcherLock` clone, so a closed channel
+        // means the lock handle itself is gone - unreachable while the process is running.
+        // Parking is the safe direction anyway: returning would open the gate for a caller
+        // that is about to start dispatching, and every caller races this against shutdown.
+        warn!("dispatch gate: lock state channel closed, parking rather than opening the gate");
+        std::future::pending().await
+    }
 }
 
 /// Derive the schema-scoped `objid` half of the lock key from `current_schema()`. Full `i32`
@@ -193,9 +327,27 @@ impl DispatcherLock {
         *self.state_rx.borrow()
     }
 
-    /// Subscribe to lock-state changes. Step 7's gate is the intended reader.
+    /// Subscribe to lock-state changes.
     pub fn subscribe(&self) -> watch::Receiver<LockState> {
         self.state_rx.clone()
+    }
+
+    /// A read-only [`DispatchGate`] over this lock, for the subsystems that must only act while
+    /// this pod is the confirmed dispatcher (build-order step 7).
+    pub fn gate(&self) -> DispatchGate {
+        DispatchGate {
+            state_rx: self.state_rx.clone(),
+            epoch_rx: self.epoch_rx.clone(),
+            _test_senders: None,
+        }
+    }
+
+    /// The epoch to stamp on work this pod is about to drive itself - `Some` only while the
+    /// gate is open. Same value as [`DispatchGate::epoch`]; this exists so the request
+    /// repositories can stamp intake without carrying a second handle. Distinct from
+    /// [`Self::current_epoch`], which is what an *already-started* write fences with.
+    pub fn dispatching_epoch(&self) -> Option<i64> {
+        dispatching_epoch_of(&self.state_rx, &self.epoch_rx)
     }
 
     /// Subscribe to epoch changes. `startup.rs`'s bounded wait for this pod's first acquisition
@@ -585,6 +737,111 @@ mod tests {
         }
         assert!(has_positive);
         assert!(has_negative);
+    }
+
+    /// Build a gate over channels the test drives directly. The two states below are the ones
+    /// no integration test can reach: `Unconfirmed` needs the lock's dedicated connection to
+    /// fail, and the `Held`-without-epoch window needs a mint to fail, and the harness can
+    /// force neither.
+    fn gate_at(state: LockState, epoch: Option<i64>) -> DispatchGate {
+        let (state_tx, state_rx) = watch::channel(state);
+        let (epoch_tx, epoch_rx) = watch::channel(epoch);
+        DispatchGate {
+            state_rx,
+            epoch_rx,
+            _test_senders: Some(Arc::new((state_tx, epoch_tx))),
+        }
+    }
+
+    #[test]
+    fn gate_is_open_only_when_held_with_a_minted_epoch() {
+        assert_eq!(gate_at(LockState::Held, Some(7)).epoch(), Some(7));
+        assert!(gate_at(LockState::Held, Some(7)).is_open());
+    }
+
+    #[test]
+    fn gate_is_closed_while_unconfirmed_even_with_an_epoch() {
+        // The lock may already have been released to a peer by Postgres, so anything newly
+        // dispatched here could be a second dispatcher's work.
+        let gate = gate_at(LockState::Unconfirmed, Some(7));
+        assert_eq!(gate.epoch(), None);
+        assert!(!gate.is_open());
+    }
+
+    #[test]
+    fn gate_is_closed_while_held_without_a_minted_epoch() {
+        // Dispatching here would stamp `owner_epoch = NULL` on intake, and the holder's own
+        // sweep claims unowned rows on sight - so it would re-drive what it is already driving.
+        let gate = gate_at(LockState::Held, None);
+        assert_eq!(gate.epoch(), None);
+        assert!(!gate.is_open());
+    }
+
+    #[test]
+    fn gate_is_closed_when_not_held() {
+        assert!(!gate_at(LockState::NotHeld, None).is_open());
+        // A stale epoch left over from a previous acquisition does not reopen it.
+        assert!(!gate_at(LockState::NotHeld, Some(7)).is_open());
+    }
+
+    #[tokio::test]
+    async fn gate_wait_open_returns_immediately_when_already_open() {
+        let gate = gate_at(LockState::Held, Some(1));
+        tokio::time::timeout(std::time::Duration::from_millis(100), gate.wait_open())
+            .await
+            .expect("an open gate must not make a caller wait");
+    }
+
+    #[tokio::test]
+    async fn gate_wait_open_wakes_on_the_epoch_being_minted() {
+        // The `Held`-then-mint order, which is the `heartbeat_tick` retry path: a waiter that
+        // watched only lock state would wake here with the epoch still `None`.
+        let (state_tx, state_rx) = watch::channel(LockState::Held);
+        let (epoch_tx, epoch_rx) = watch::channel(None);
+        let gate = DispatchGate {
+            state_rx,
+            epoch_rx,
+            _test_senders: None,
+        };
+        assert!(!gate.is_open(), "no epoch yet");
+
+        let waiter = tokio::spawn({
+            let gate = gate.clone();
+            async move { gate.wait_open().await }
+        });
+        epoch_tx.send(Some(42)).expect("send epoch");
+
+        tokio::time::timeout(std::time::Duration::from_secs(1), waiter)
+            .await
+            .expect("wait_open must wake when the epoch is minted")
+            .expect("waiter task panicked");
+        assert_eq!(gate.epoch(), Some(42));
+        drop(state_tx);
+    }
+
+    #[tokio::test]
+    async fn gate_wait_closed_wakes_when_the_lock_is_lost() {
+        let (state_tx, state_rx) = watch::channel(LockState::Held);
+        let (epoch_tx, epoch_rx) = watch::channel(Some(1));
+        let gate = DispatchGate {
+            state_rx,
+            epoch_rx,
+            _test_senders: None,
+        };
+
+        let waiter = tokio::spawn({
+            let gate = gate.clone();
+            async move { gate.wait_closed().await }
+        });
+        state_tx
+            .send(LockState::Unconfirmed)
+            .expect("send state change");
+
+        tokio::time::timeout(std::time::Duration::from_secs(1), waiter)
+            .await
+            .expect("wait_closed must wake when the gate closes")
+            .expect("waiter task panicked");
+        drop(epoch_tx);
     }
 
     #[test]

@@ -5,7 +5,7 @@ use crate::{
     gateway::arbitrum::bindings::gateway_chain_event_for_log,
     gateway::handled_events::{EventKey, HandledEvents, ObservedEvent},
     logging::ListenerStep,
-    orchestrator::HealthCheck,
+    orchestrator::{DispatchGate, HealthCheck},
 };
 use alloy::{
     network::AnyNetwork,
@@ -26,6 +26,8 @@ enum RecycleReason {
     StreamEnded,
     /// Planned connection recycle timer triggered
     RecycleTimer,
+    /// This pod stopped being the confirmed dispatcher, so the subscription is dropped
+    GateClosed,
     /// Shutdown was requested
     ShuttingDown,
 }
@@ -38,6 +40,12 @@ pub struct ArbitrumListener {
     ws_url: String,
     /// Total number of listener instances (for staggered recycle timing)
     num_listeners: usize,
+    /// Open only while this pod is the confirmed dispatcher (build-order step 7). A non-holder
+    /// holds no subscription at all: a WebSocket listener cannot replay (`eth_subscribe` takes
+    /// no `fromBlock`), so anything it received while not dispatching would have to be dropped
+    /// anyway, and the polling listener replays that range from the cursor once this pod holds
+    /// the lock.
+    gate: DispatchGate,
     /// Cancelled when shutdown closes the sources of new work.
     shutdown: CancellationToken,
 }
@@ -49,6 +57,7 @@ impl ArbitrumListener {
         instance_id: usize,
         ws_url: String,
         num_listeners: usize,
+        gate: DispatchGate,
         shutdown: CancellationToken,
     ) -> anyhow::Result<Self> {
         Ok(Self {
@@ -57,6 +66,7 @@ impl ArbitrumListener {
             instance_id,
             ws_url,
             num_listeners,
+            gate,
             shutdown,
         })
     }
@@ -106,6 +116,31 @@ impl ArbitrumListener {
                     "Listener stopping (shutdown)"
                 );
                 return Ok(());
+            }
+
+            // Connect only while this pod is the dispatcher. Checked here, at the top of the
+            // reconnect loop, so a closed gate drops the subscription with it: `process_events`
+            // returns when the gate closes, and this waits before dialling again.
+            if !self.gate.is_open() {
+                info!(
+                    instance_id = self.instance_id,
+                    "Listener idle: not the dispatcher"
+                );
+                tokio::select! {
+                    _ = self.gate.wait_open() => {
+                        info!(
+                            instance_id = self.instance_id,
+                            "Listener resuming: this pod is now the dispatcher"
+                        );
+                    }
+                    _ = self.shutdown.cancelled() => {
+                        info!(
+                            instance_id = self.instance_id,
+                            "Listener stopping (shutdown while not dispatching)"
+                        );
+                        return Ok(());
+                    }
+                }
             }
 
             // Log ERROR continuously when exceeding threshold (fatal state)
@@ -219,6 +254,14 @@ impl ArbitrumListener {
                         );
                         return Ok(());
                     }
+                }
+                RecycleReason::GateClosed => {
+                    // Back to the top of the loop, which waits for the gate before dialling.
+                    info!(
+                        instance_id = self.instance_id,
+                        last_block = ?last_processed_block,
+                        "Dropped WebSocket subscription: no longer the dispatcher"
+                    );
                 }
                 RecycleReason::ShuttingDown => {
                     info!(
@@ -360,6 +403,13 @@ impl ArbitrumListener {
                         "WebSocket connection recycle timer triggered, reconnecting"
                     );
                     return RecycleReason::RecycleTimer;
+                }
+                _ = self.gate.wait_closed() => {
+                    // Stop consuming the moment this pod stops being the dispatcher: an event
+                    // handled here would be one the successor is responsible for. Dropping the
+                    // subscription loses nothing recoverable - it never advanced the cursor, so
+                    // the polling listener replays this range once the gate reopens.
+                    return RecycleReason::GateClosed;
                 }
                 _ = self.shutdown.cancelled() => {
                     return RecycleReason::ShuttingDown;
