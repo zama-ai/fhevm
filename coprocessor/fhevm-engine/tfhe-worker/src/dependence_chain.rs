@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use prometheus::{register_histogram, register_int_counter, Histogram, IntCounter};
 use sqlx::Postgres;
-use std::{fmt, sync::LazyLock, time::SystemTime};
+use std::{collections::HashSet, fmt, sync::LazyLock, time::SystemTime};
 use time::PrimitiveDateTime;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
@@ -42,9 +42,6 @@ pub enum LockingReason {
     ExpiredLock,    // Work-stealing
     ExtendedLock,   // Lock extension
     Missing,        // No lock acquired
-    /// Repair-path acquisition of a chain stranded by a stale
-    /// dependency gate — distinct so repair activations are observable.
-    StaleGateRepair,
 }
 
 impl From<&str> for LockingReason {
@@ -53,7 +50,6 @@ impl From<&str> for LockingReason {
             "updated_unowned" => LockingReason::UpdatedUnowned,
             "expired_lock" => LockingReason::ExpiredLock,
             "extended_lock" => LockingReason::ExtendedLock,
-            "stale_gate_repair" => LockingReason::StaleGateRepair,
             _ => LockingReason::Missing,
         }
     }
@@ -65,7 +61,10 @@ impl From<&str> for LockingReason {
 pub struct LockMngr {
     pool: sqlx::Pool<Postgres>,
     worker_id: Uuid,
-    lock: Option<(DatabaseChainLock, SystemTime)>,
+    // A worker normally owns one DCID.  The one-shot benchmark can opt into a
+    // bounded batch, in which case every entry is acquired/released as a
+    // single fenced ownership set.
+    locks: Vec<(DatabaseChainLock, SystemTime)>,
 
     // Configurations
     lock_ttl_sec: i64,
@@ -75,7 +74,6 @@ pub struct LockMngr {
     processed_dcid_ttl_sec: Option<u32>,
 
     last_cleanup_at: Option<SystemTime>,
-    last_stale_probe_at: Option<SystemTime>,
 }
 
 /// Dependence chain lock data
@@ -90,11 +88,6 @@ pub struct DatabaseChainLock {
     pub block_timestamp: Option<DateTime<Utc>>,
     pub schedule_priority: i16,
     pub match_reason: String,
-}
-
-#[derive(Debug, sqlx::FromRow)]
-struct LockExpiresAt {
-    lock_expires_at: Option<DateTime<Utc>>,
 }
 
 impl fmt::Debug for DatabaseChainLock {
@@ -118,12 +111,11 @@ impl LockMngr {
         Self {
             worker_id,
             pool,
-            lock: None,
+            locks: Vec::new(),
             lock_ttl_sec: 30,
             lock_timeslice_sec: None,
             disable_locking: false,
             last_cleanup_at: None,
-            last_stale_probe_at: None,
             cleanup_interval_sec: None,
             processed_dcid_ttl_sec: None,
         }
@@ -147,42 +139,32 @@ impl LockMngr {
         mgr
     }
 
-    /// Shared tail of every acquisition query: record the taken lock, count
-    /// and time the acquisition, and translate the row into the callers'
-    /// return shape. Keeping this in one place keeps the three acquisition
-    /// variants (normal, early-escalation, stranded-repair) from drifting in
-    /// their bookkeeping — they differ only in their candidate predicate.
-    fn note_acquisition(
-        &mut self,
-        row: Option<DatabaseChainLock>,
-        started_at: SystemTime,
-        log_msg: &str,
-    ) -> (Option<Vec<u8>>, LockingReason) {
-        let Some(row) = row else {
-            return (None, LockingReason::Missing);
-        };
-        self.lock.replace((row.clone(), SystemTime::now()));
-        ACQUIRED_DEPENDENCE_CHAIN_ID_COUNTER.inc();
-        let elapsed = started_at.elapsed().map(|d| d.as_secs_f64()).unwrap_or(0.0);
-        if elapsed > 0.0 {
-            ACQUIRE_DEPENDENCE_CHAIN_ID_QUERY_HISTOGRAM.observe(elapsed);
-        }
-        info!(?row, query_elapsed = %elapsed, "{}", log_msg);
-        (
-            Some(row.dependence_chain_id),
-            LockingReason::from(row.match_reason.as_str()),
-        )
-    }
-
     /// Acquire the next available dependence-chain entry for processing
     /// sorted by last_updated_at (FIFO).
     /// Returns the dependence_chain_id if a lock was acquired
     pub async fn acquire_next_lock(
         &mut self,
     ) -> Result<(Option<Vec<u8>>, LockingReason), sqlx::Error> {
+        Ok(self
+            .acquire_next_locks(1)
+            .await?
+            .into_iter()
+            .next()
+            .unwrap_or((None, LockingReason::Missing)))
+    }
+
+    /// Acquire up to `limit` ready dependence chains in one atomic query.
+    ///
+    /// The caller must subsequently release the whole acquired set together;
+    /// this keeps the existing single-lock lifecycle unchanged when `limit` is
+    /// one while allowing benchmark-only block batching.
+    pub async fn acquire_next_locks(
+        &mut self,
+        limit: i32,
+    ) -> Result<Vec<(Option<Vec<u8>>, LockingReason)>, sqlx::Error> {
         if self.disable_locking {
             debug!("Locking is disabled");
-            return Ok((None, LockingReason::Missing));
+            return Ok(vec![(None, LockingReason::Missing)]);
         }
 
         let started_at = SystemTime::now();
@@ -212,7 +194,7 @@ impl LockMngr {
                         )
                 ORDER BY schedule_priority ASC, last_updated_at ASC -- highest priority first
                 FOR UPDATE SKIP LOCKED              -- Ensure no other worker is currently trying to lock it
-                LIMIT 1
+                LIMIT $3
             )
             UPDATE dependence_chain AS dc
             SET
@@ -227,10 +209,32 @@ impl LockMngr {
         )
         .bind(self.worker_id)
         .bind(self.lock_ttl_sec)
-        .fetch_optional(&self.pool)
+        .bind(limit.max(1))
+        .fetch_all(&self.pool)
         .await?;
 
-        Ok(self.note_acquisition(row, started_at, "Acquired lock"))
+        if row.is_empty() {
+            return Ok(vec![(None, LockingReason::Missing)]);
+        }
+
+        ACQUIRED_DEPENDENCE_CHAIN_ID_COUNTER.inc_by(row.len() as u64);
+
+        let elapsed = started_at.elapsed().map(|d| d.as_secs_f64()).unwrap_or(0.0);
+        if elapsed > 0.0 {
+            ACQUIRE_DEPENDENCE_CHAIN_ID_QUERY_HISTOGRAM.observe(elapsed);
+        }
+
+        let acquired_at = SystemTime::now();
+        let mut acquired = Vec::with_capacity(row.len());
+        for lock in row {
+            acquired.push((
+                Some(lock.dependence_chain_id.clone()),
+                LockingReason::from(lock.match_reason.as_str()),
+            ));
+            self.locks.push((lock, acquired_at));
+        }
+        info!(acquired_count = acquired.len(), query_elapsed = %elapsed, "Acquired locks");
+        Ok(acquired)
     }
 
     /// Acquire the earliest dependence-chain entry for processing
@@ -277,114 +281,25 @@ impl LockMngr {
         .fetch_optional(&self.pool)
         .await?;
 
-        Ok(self.note_acquisition(row, started_at, "Acquired lock on earliest DCID"))
-    }
-
-    /// Repair-path acquisition for chains STRANDED by a dependency_count
-    /// that will never be decremented. The count is a live same-block gate:
-    /// the listener arms it with the chain's in-block dependency count and
-    /// each producer's mark-as-processed release decrements its dependents.
-    /// That bookkeeping can be lost — the release status flip and the
-    /// decrement are separate auto-commit statements (a worker crash between
-    /// them skips the decrement), and reorgs can orphan a producer chain
-    /// outright — leaving a chain whose producers are all processed (or
-    /// gone) but whose count never reached zero. Such a chain matches
-    /// neither normal acquisition predicate, and the no-progress escalation
-    /// (`acquire_early_lock`) is only reachable through some OTHER acquired
-    /// chain stalling, so in an otherwise idle pipeline it sits forever.
-    ///
-    /// Called when normal acquisition finds nothing. Strandedness is
-    /// checked against ground truth — no producer chain naming this one a
-    /// dependent is unprocessed — so a chain whose gate is legitimately
-    /// live (producers still pending, e.g. during catchup where
-    /// block-derived `last_updated_at` is arbitrarily old) is never picked
-    /// up. The age gate on top avoids racing a listener transaction
-    /// mid-arm. One race is accepted: a reorg-replay re-arming the
-    /// producers between this statement's snapshot and its row lock is not
-    /// seen by the NOT EXISTS (EvalPlanQual rechecks only the candidate's
-    /// own quals), so the repair can zero a just-re-armed gate — bounded to
-    /// an ordering hiccup, since missing boundary inputs defer at execution
-    /// and the decrement clamp tolerates the lost count. Acquisition also resets the count to zero, which ground
-    /// truth says it should be: the chain re-enters normal scheduling —
-    /// including the expired-lock steal path, so a crash while holding this
-    /// repair lock cannot re-strand it — and drains at full speed rather
-    /// than one batch per age window.
-    pub async fn acquire_stale_gated_lock(
-        &mut self,
-        min_age_secs: f64,
-    ) -> Result<(Option<Vec<u8>>, LockingReason), sqlx::Error> {
-        if self.disable_locking {
-            debug!("Locking is disabled");
+        let row = if let Some(row) = row {
+            row
+        } else {
             return Ok((None, LockingReason::Missing));
-        }
-        // This runs on every empty poll and its ground-truth anti-join has
-        // no supporting index, so probe at most twice per age window —
-        // repair tolerates minutes of latency by design, and during catchup
-        // (block-derived last_updated_at) gated candidates are routine.
-        let now = SystemTime::now();
-        if let Some(last) = self.last_stale_probe_at {
-            if now
-                .duration_since(last)
-                .map(|d| d.as_secs_f64() < min_age_secs / 2.0)
-                .unwrap_or(false)
-            {
-                return Ok((None, LockingReason::Missing));
-            }
-        }
-        self.last_stale_probe_at = Some(now);
+        };
 
-        let started_at = SystemTime::now();
-        let row = sqlx::query_as::<_, DatabaseChainLock>(
-            r#"
-            WITH candidate AS (
-                SELECT dependence_chain_id, 'stale_gate_repair' AS match_reason
-                FROM dependence_chain c
-                WHERE
-                    status = 'updated'      -- Marked as updated by host-listener
-                    AND
-                    worker_id IS NULL       -- Ensure no other workers own it
-                    AND
-                    dependency_count > 0    -- Gated: invisible to normal acquisition
-                    AND
-                    last_updated_at < NOW() - make_interval(secs => $3)
-                    AND NOT EXISTS (        -- Ground truth: the gate is stale, every
-                        SELECT 1            -- producer is processed or gone
-                        FROM dependence_chain p
-                        WHERE c.dependence_chain_id = ANY(p.dependents)
-                          AND p.status <> 'processed'
-                    )
-                ORDER BY last_updated_at ASC, schedule_priority ASC
-                FOR UPDATE SKIP LOCKED              -- Ensure no other worker is currently trying to lock it
-                LIMIT 1
-            )
-            UPDATE dependence_chain AS dc
-            SET
-                worker_id = $1,
-                status = 'processing',
-                lock_acquired_at = NOW(),
-                lock_expires_at = NOW() + make_interval(secs => $2),
-                dependency_count = 0    -- what ground truth established above
-            FROM candidate
-            WHERE dc.dependence_chain_id = candidate.dependence_chain_id
-            RETURNING dc.*, candidate.match_reason;
-        "#,
-        )
-        .bind(self.worker_id)
-        .bind(self.lock_ttl_sec)
-        .bind(min_age_secs)
-        .fetch_optional(&self.pool)
-        .await?;
+        self.locks.push((row.clone(), SystemTime::now()));
+        ACQUIRED_DEPENDENCE_CHAIN_ID_COUNTER.inc();
 
-        if row.is_some() {
-            // A successful repair must not consume the probe budget: a mass
-            // stranding (one crashed producer, N dependents) should drain
-            // back-to-back, throttled only once repairs stop finding work.
-            self.last_stale_probe_at = None;
+        let elapsed = started_at.elapsed().map(|d| d.as_secs_f64()).unwrap_or(0.0);
+        if elapsed > 0.0 {
+            ACQUIRE_DEPENDENCE_CHAIN_ID_QUERY_HISTOGRAM.observe(elapsed);
         }
-        Ok(self.note_acquisition(
-            row,
-            started_at,
-            "Acquired lock on stranded DCID (repair path)",
+
+        info!(?row, query_elapsed = %elapsed, "Acquired lock on earliest DCID");
+
+        Ok((
+            Some(row.dependence_chain_id),
+            LockingReason::from(row.match_reason.as_str()),
         ))
     }
 
@@ -411,7 +326,7 @@ impl LockMngr {
         .execute(&self.pool)
         .await?;
 
-        self.take_lock();
+        self.take_locks();
         info!(worker_id = %self.worker_id,
             count = rows.rows_affected(), "Released all locks");
 
@@ -431,18 +346,16 @@ impl LockMngr {
             return Ok(0);
         }
 
-        let dep_chain_id = match &self.lock {
-            Some((lock, _)) => lock.dependence_chain_id.clone(),
-            None => {
-                debug!("No lock to release");
-                return Ok(0);
-            }
-        };
+        let dep_chain_ids = self.get_current_lock_ids();
+        if dep_chain_ids.is_empty() {
+            debug!("No lock to release");
+            return Ok(0);
+        }
 
         // Since UPDATE always acquire a row-level lock internally,
         // this acts as atomic_exchange
         let rows = if let Some(update_at) = update_at {
-            sqlx::query!(
+            sqlx::query(
             r#"
             UPDATE dependence_chain
             SET
@@ -456,17 +369,17 @@ impl LockMngr {
                     ELSE status
                 END
             WHERE worker_id = $1
-            AND dependence_chain_id = $2
+            AND dependence_chain_id = ANY($2)
             "#,
-            self.worker_id,
-            dep_chain_id,
-            mark_as_processed,
-            update_at,
         )
+        .bind(self.worker_id)
+        .bind(&dep_chain_ids)
+        .bind(mark_as_processed)
+        .bind(update_at)
         .execute(&self.pool)
         .await?
         } else {
-            sqlx::query!(
+            sqlx::query(
             r#"
             UPDATE dependence_chain
             SET
@@ -479,12 +392,12 @@ impl LockMngr {
                     ELSE status
                 END
             WHERE worker_id = $1
-            AND dependence_chain_id = $2
+            AND dependence_chain_id = ANY($2)
             "#,
-            self.worker_id,
-            dep_chain_id,
-            mark_as_processed,
         )
+        .bind(self.worker_id)
+        .bind(&dep_chain_ids)
+        .bind(mark_as_processed)
         .execute(&self.pool)
         .await?
         };
@@ -493,18 +406,29 @@ impl LockMngr {
         if mark_as_processed {
             // Get all dependents of a given dependence chain ID and decrement their dependency count
             // If any dependent's dependency count reaches zero, notify work_available
-            dependents_updated = sqlx::query!(
+            //
+            // A dependent must be decremented once PER released parent: a
+            // single UPDATE row-matches each dependent only once, so a chain
+            // gated on two parents released in the same batch would keep
+            // dependency_count = 1 forever. Aggregate the multiplicity first.
+            dependents_updated = sqlx::query(
                 r#"
-                WITH updated AS (
-                    UPDATE dependence_chain
-                    SET
-                        dependency_count = GREATEST(dependency_count - 1, 0)
-                    WHERE dependence_chain_id = ANY (
-                        SELECT unnest(dependents)
+                WITH decrements AS (
+                    SELECT dependent_id, count(*) AS n
+                    FROM (
+                        SELECT unnest(dependents) AS dependent_id
                         FROM dependence_chain
-                        WHERE dependence_chain_id = $1
-                    )
-                        RETURNING dependence_chain_id, dependency_count
+                        WHERE dependence_chain_id = ANY($1)
+                    ) AS parent_dependents
+                    GROUP BY dependent_id
+                ),
+                updated AS (
+                    UPDATE dependence_chain dc
+                    SET
+                        dependency_count = GREATEST(dc.dependency_count - decrements.n, 0)
+                    FROM decrements
+                    WHERE dc.dependence_chain_id = decrements.dependent_id
+                    RETURNING dc.dependence_chain_id, dc.dependency_count
                 ),
                 ready_dcid_available AS (
                     SELECT 1
@@ -516,15 +440,21 @@ impl LockMngr {
                     pg_notify('work_available', '')
                 FROM   ready_dcid_available;
             "#,
-                dep_chain_id,
             )
+            .bind(&dep_chain_ids)
             .execute(&self.pool)
             .await?
             .rows_affected();
         }
 
-        self.take_lock();
-        info!(dcid = %hex::encode(&dep_chain_id), rows = rows.rows_affected(), mark_as_processed, dependents_updated,  "Released lock");
+        self.take_locks();
+        info!(
+            dcid_count = dep_chain_ids.len(),
+            rows = rows.rows_affected(),
+            mark_as_processed,
+            dependents_updated,
+            "Released locks"
+        );
 
         Ok(rows.rows_affected())
     }
@@ -540,15 +470,13 @@ impl LockMngr {
             return Ok(0);
         }
 
-        let dep_chain_id: Vec<u8> = match &self.lock {
-            Some((lock, _)) => lock.dependence_chain_id.clone(),
-            None => {
-                warn!("No lock to set error on");
-                return Ok(0);
-            }
-        };
+        let dep_chain_ids = self.get_current_lock_ids();
+        if dep_chain_ids.is_empty() {
+            warn!("No lock to set error on");
+            return Ok(0);
+        }
 
-        let rows = sqlx::query!(
+        let rows = sqlx::query(
             r#"
             UPDATE dependence_chain
             SET
@@ -556,16 +484,16 @@ impl LockMngr {
                         WHEN status = 'processing' THEN $3
                         ELSE error_message
                         END
-            WHERE worker_id = $1 AND dependence_chain_id = $2
+            WHERE worker_id = $1 AND dependence_chain_id = ANY($2)
             "#,
-            self.worker_id,
-            dep_chain_id,
-            err
         )
+        .bind(self.worker_id)
+        .bind(&dep_chain_ids)
+        .bind(&err)
         .execute(&self.pool)
         .await?;
 
-        info!(dcid = %hex::encode(&dep_chain_id), error = ?err, "Set error on lock");
+        info!(dcid_count = dep_chain_ids.len(), error = ?err, "Set error on locks");
         Ok(rows.rows_affected())
     }
 
@@ -583,24 +511,30 @@ impl LockMngr {
         }
 
         let started_at = SystemTime::now();
-        let (dependence_chain_id, created_at) = match &self.lock {
-            Some((lock, created_at)) => (lock.dependence_chain_id.clone(), *created_at),
-            None => {
-                debug!("No lock to extend");
-                return Ok(None);
-            }
-        };
+        if self.locks.is_empty() {
+            debug!("No lock to extend");
+            return Ok(None);
+        }
 
         // Check timeslice
         if let Some(timeslice) = self.lock_timeslice_sec {
             if enable_timeslice_check
-                && created_at
+                && self
+                    .locks
+                    .iter()
+                    .map(|(_, created_at)| *created_at)
+                    .min()
+                    .unwrap_or_else(SystemTime::now)
                     .elapsed()
                     .map(|d: std::time::Duration| d.as_secs())
                     .unwrap_or(0)
                     >= timeslice as u64
             {
-                warn!(dcid = %hex::encode(&dependence_chain_id), timeslice = timeslice, "Max lock timeslice exceeded, releasing lock");
+                warn!(
+                    dcid_count = self.locks.len(),
+                    timeslice = timeslice,
+                    "Max lock timeslice exceeded, releasing locks"
+                );
 
                 // Release the lock instead of extending it as the timeslice's been consumed
                 // Do not mark as processed so it can be re-acquired
@@ -611,35 +545,42 @@ impl LockMngr {
 
         // max_lock_ttl_sec
 
-        let row = sqlx::query_as!(
-            LockExpiresAt,
+        let dep_chain_ids = self.get_current_lock_ids();
+        // Return what was renewed rather than counting it: the statement extends
+        // every row this worker still owns, so a short count means some rows were
+        // stolen, not that the renewal failed. Forgetting the whole set would
+        // strand the rows it just extended — unreachable to this worker, and to
+        // every other one, until the expiry this very statement pushed out.
+        let renewed: Vec<Vec<u8>> = sqlx::query_scalar(
             r#"
             UPDATE dependence_chain AS dc
                 SET
                 lock_expires_at = NOW() + make_interval(secs => $3)
-            WHERE dependence_chain_id = $1 AND worker_id = $2
-            RETURNING dc.lock_expires_at::timestamptz AS "lock_expires_at: chrono::DateTime<Utc>";
+            WHERE dependence_chain_id = ANY($1) AND worker_id = $2
+            RETURNING dependence_chain_id
         "#,
-            dependence_chain_id,
-            self.worker_id,
-            self.lock_ttl_sec as f64
         )
-        .fetch_optional(&self.pool)
+        .bind(&dep_chain_ids)
+        .bind(self.worker_id)
+        .bind(self.lock_ttl_sec as f64)
+        .fetch_all(&self.pool)
         .await?;
 
-        let lock_expires_at = match row {
-            Some(r) => r,
-            None => {
-                self.take_lock();
-                error!(dcid = %hex::encode(&dependence_chain_id), "No lock extended");
+        if renewed.len() != dep_chain_ids.len() {
+            let renewed_ids: HashSet<&[u8]> = renewed.iter().map(|id| id.as_slice()).collect();
+            self.locks
+                .retain(|(lock, _)| renewed_ids.contains(lock.dependence_chain_id.as_slice()));
+            error!(
+                held = dep_chain_ids.len(),
+                retained = renewed.len(),
+                lost = dep_chain_ids.len() - renewed.len(),
+                "Not all locks extended; dropping the stolen ones and keeping the rest"
+            );
+            if self.locks.is_empty() {
                 return Ok(None);
             }
-        };
-
-        // Update the in-memory lock
-        if let Some((lock, _)) = self.lock.as_mut() {
-            lock.lock_expires_at = lock_expires_at.lock_expires_at;
-            info!(dcid = %hex::encode(&dependence_chain_id), expires_at = ?lock.lock_expires_at, "Extended lock");
+        } else {
+            info!(dcid_count = dep_chain_ids.len(), "Extended locks");
         }
 
         let elapsed = started_at.elapsed().map(|d| d.as_secs_f64()).unwrap_or(0.0);
@@ -647,7 +588,11 @@ impl LockMngr {
             EXTEND_DEPENDENCE_CHAIN_ID_QUERY_HISTOGRAM.observe(elapsed);
         }
 
-        Ok(Some((dependence_chain_id, LockingReason::ExtendedLock)))
+        Ok(self
+            .get_current_lock_ids()
+            .first()
+            .cloned()
+            .map(|id| (id, LockingReason::ExtendedLock)))
     }
 
     pub async fn do_cleanup(&mut self) -> Result<u64, sqlx::Error> {
@@ -682,20 +627,27 @@ impl LockMngr {
     }
 
     pub fn get_current_lock(&self) -> Option<DatabaseChainLock> {
-        self.lock.as_ref().map(|(lock, _)| lock.clone())
+        self.locks.first().map(|(lock, _)| lock.clone())
+    }
+
+    pub fn get_current_lock_ids(&self) -> Vec<Vec<u8>> {
+        self.locks
+            .iter()
+            .map(|(lock, _)| lock.dependence_chain_id.clone())
+            .collect()
     }
 
     /// Stop extending the current lock without modifying its database row.
     /// The chain becomes eligible for work-stealing after its existing TTL.
     pub fn park_current_lock(&mut self) {
-        if let Some((lock, _)) = self.lock.take() {
-            info!(
-                dcid = %hex::encode(&lock.dependence_chain_id),
-                expires_at = ?lock.lock_expires_at,
-                "Parked lock until expiration"
-            );
-        } else {
+        if self.locks.is_empty() {
             debug!("No lock to park");
+        } else {
+            info!(
+                dcid_count = self.locks.len(),
+                "Parked locks until expiration"
+            );
+            self.take_locks();
         }
     }
 
@@ -708,8 +660,8 @@ impl LockMngr {
     }
 
     /// Clear the current lock without releasing it in the database
-    fn take_lock(&mut self) {
-        self.lock.take();
+    fn take_locks(&mut self) {
+        self.locks.clear();
     }
 }
 
@@ -750,12 +702,8 @@ async fn delete_old_processed_dependence_chains(
     .await?;
 
     let elapsed = started_at.elapsed().map(|d| d.as_secs_f64()).unwrap_or(0.0);
-    info!(
-        rows_deleted = result.rows_affected(),
-        query_elapsed = %elapsed,
-        threshold_sec,
-        "Deleted old processed dependence chains"
-    );
+    info!(rows_deleted = result.rows_affected(), query_elapsed = %elapsed, threshold_sec,
+        "Deleted old processed dependence chains");
 
     Ok(result.rows_affected())
 }

@@ -592,6 +592,7 @@ pub async fn ingest_block_logs(
     let chains = dependence_chains(
         &mut tfhe_event_log,
         &db.dependence_chain,
+        &db.consumed_boundaries,
         options.dependence_by_connexity,
         options.dependence_cross_block,
     )
@@ -1165,8 +1166,14 @@ pub async fn synthesize_finalized_fallback_grants(
     let block_timestamp = logs[0].block_timestamp;
     // Dependency-free singletons: connexity/cross-block grouping options
     // cannot change the outcome, so neither flag is threaded through here.
-    let chains =
-        dependence_chains(&mut logs, &db.dependence_chain, false, false).await;
+    let chains = dependence_chains(
+        &mut logs,
+        &db.dependence_chain,
+        &db.consumed_boundaries,
+        false,
+        false,
+    )
+    .await;
     for log in &logs {
         let dst_handle = tfhe_result_handle(&log.event)
             .expect("synthetic TrivialEncrypt has a result handle");

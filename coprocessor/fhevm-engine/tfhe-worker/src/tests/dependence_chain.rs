@@ -542,80 +542,76 @@ async fn setup() -> TestInstance {
     test_instance
 }
 
-/// A chain stranded by a corrupted dependency_count ('updated', unowned,
-/// count > 0) matches neither normal acquisition predicate, and the
-/// no-progress escalation is only reachable through some OTHER chain
-/// stalling. The stale-gated repair acquisition must pick it up once it has
-/// sat past the age gate — and never before.
+/// A chain gated on several parents released in ONE batch must receive one
+/// decrement per parent. The naive row-match decremented such a chain once
+/// per batch, leaving dependency_count > 0 forever (braid-shaped joins
+/// deadlocked when both parents completed together).
 #[tokio::test]
 #[serial(db)]
-async fn test_acquire_stale_gated_lock_recovers_stranded_chain() {
+async fn test_batched_release_decrements_per_parent() {
     let instance = setup().await;
-    let pool = PgPoolOptions::new()
+    let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(2)
         .connect(instance.db_url())
         .await
         .expect("Failed to connect to the database");
 
-    let stranded_id = vec![9u8];
+    let child = b"child-chain-0000".to_vec();
     sqlx::query!(
         r#"
-        INSERT INTO dependence_chain
-            (dependence_chain_id, status, last_updated_at, block_timestamp, block_height,
-             schedule_priority, dependency_count)
-        VALUES ($1, 'updated', NOW() - INTERVAL '10 minutes', NOW(), 1, 0, 1)
+        INSERT INTO dependence_chain (dependence_chain_id, status, last_updated_at, block_timestamp, block_height, dependency_count)
+        VALUES ($1, 'updated', NOW(), NOW(), 3, 2)
         "#,
-        stranded_id,
+        child,
     )
     .execute(&pool)
     .await
     .unwrap();
+    for (i, parent) in [b"parent-chain-aaa".to_vec(), b"parent-chain-bbb".to_vec()]
+        .into_iter()
+        .enumerate()
+    {
+        sqlx::query!(
+            r#"
+            INSERT INTO dependence_chain (dependence_chain_id, status, last_updated_at, block_timestamp, block_height, dependency_count, dependents)
+            VALUES ($1, 'updated', NOW() - INTERVAL '1 minute', NOW(), $2, 0, $3)
+            "#,
+            parent,
+            i as i64,
+            &[child.clone()],
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
 
     let mut mgr =
         LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None);
+    let locks = mgr.acquire_next_locks(10).await.unwrap();
+    let acquired: Vec<_> = locks.iter().filter_map(|(id, _)| id.clone()).collect();
+    assert_eq!(acquired.len(), 2, "both parents acquired in one batch");
+    mgr.release_current_lock(true, None).await.unwrap();
 
-    // Invisible to normal acquisition (dependency_count > 0).
-    let (acquired, _) = mgr.acquire_next_lock().await.unwrap();
-    assert_eq!(acquired, None);
-
-    // The age gate protects a chain that has not sat long enough.
-    let (acquired, _) = mgr.acquire_stale_gated_lock(3600.0).await.unwrap();
-    assert_eq!(acquired, None);
-
-    // The probe itself is throttled per manager (at most twice per age
-    // window), so an immediate retry on the SAME manager stays silent...
-    let (acquired, _) = mgr.acquire_stale_gated_lock(60.0).await.unwrap();
-    assert_eq!(acquired, None);
-
-    // ...while another worker past the gate acquires it like any other
-    // chain.
-    let mut mgr =
-        LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None);
-    let (acquired, locking) = mgr.acquire_stale_gated_lock(60.0).await.unwrap();
-    assert_eq!(acquired, Some(stranded_id.clone()));
-    assert_eq!(locking, LockingReason::StaleGateRepair);
-
-    let row = sqlx::query!(
-        "SELECT status, worker_id, dependency_count FROM dependence_chain WHERE dependence_chain_id = $1",
-        stranded_id
+    let count: i32 = sqlx::query_scalar!(
+        r#"SELECT dependency_count AS "count!" FROM dependence_chain WHERE dependence_chain_id = $1"#,
+        child,
     )
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(row.status, "processing".to_string());
-    assert_eq!(row.worker_id, Some(mgr.worker_id()));
-    // Repair resets the count ground truth established as stale, so the
-    // chain re-enters normal scheduling (including expired-lock stealing —
-    // a crash while holding this lock cannot re-strand it).
-    assert_eq!(row.dependency_count, 0);
+    assert_eq!(
+        count, 0,
+        "one decrement per released parent, not one per batch"
+    );
 }
 
-/// dependency_count > 0 is a LIVE same-block gate while a producer chain is
-/// still pending: the repair path must not bypass it (e.g. during catchup,
-/// where block-derived last_updated_at makes every chain look old).
+/// A renewal that loses one lease must keep the rest. The statement renews
+/// every row this worker still owns, so forgetting the whole set would strand
+/// the rows it just extended: nobody can acquire them, this worker included,
+/// until the expiry the renewal itself pushed out.
 #[tokio::test]
 #[serial(db)]
-async fn test_stale_gated_lock_respects_live_producers() {
+async fn test_extend_keeps_the_locks_it_renewed() {
     let instance = setup().await;
     let pool = PgPoolOptions::new()
         .max_connections(2)
@@ -623,45 +619,63 @@ async fn test_stale_gated_lock_respects_live_producers() {
         .await
         .expect("Failed to connect to the database");
 
-    let gated_id = vec![7u8];
-    let producer_id = vec![8u8];
-    sqlx::query!(
-        r#"
-        INSERT INTO dependence_chain
-            (dependence_chain_id, status, last_updated_at, block_timestamp, block_height,
-             schedule_priority, dependency_count, dependents)
-        VALUES
-            ($1, 'updated', NOW() - INTERVAL '10 minutes', NOW(), 1, 0, 1, '{}'),
-            ($2, 'updated', NOW() - INTERVAL '10 minutes', NOW(), 1, 0, 0, ARRAY[$1::bytea])
-        "#,
-        gated_id,
-        producer_id,
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
+    let chains = insert_sample_dcids(&pool, "updated", 2)
+        .await
+        .expect("inserted chains");
+    let (stolen, kept) = (chains[0].clone(), chains[1].clone());
 
     let mut mgr =
         LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None);
+    let acquired = mgr.acquire_next_locks(2).await.unwrap();
+    assert_eq!(
+        acquired
+            .into_iter()
+            .filter_map(|(id, _)| id)
+            .collect::<Vec<_>>(),
+        vec![stolen.clone(), kept.clone()]
+    );
 
-    // The producer is unprocessed, so the gate is legitimate: the repair
-    // path must leave the gated chain alone however old it looks.
-    let (acquired, _) = mgr.acquire_stale_gated_lock(60.0).await.unwrap();
-    assert_eq!(acquired, None);
-    // Fresh manager: sidestep the per-manager probe throttle.
-    let mut mgr =
-        LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None);
+    // Another worker takes one of the two leases.
+    let thief = Uuid::new_v4();
+    sqlx::query("UPDATE dependence_chain SET worker_id = $1 WHERE dependence_chain_id = $2")
+        .bind(thief)
+        .bind(&stolen)
+        .execute(&pool)
+        .await
+        .unwrap();
 
-    // Once the producer is processed (its release decremented nothing here,
-    // simulating a lost decrement), the gate is provably stale and the
-    // repair path recovers the chain.
-    sqlx::query!(
-        "UPDATE dependence_chain SET status = 'processed' WHERE dependence_chain_id = $1",
-        producer_id,
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
-    let (acquired, _) = mgr.acquire_stale_gated_lock(60.0).await.unwrap();
-    assert_eq!(acquired, Some(gated_id));
+    let extended = mgr.extend_or_release_current_lock(false).await.unwrap();
+    assert!(
+        extended.is_some(),
+        "a renewal that still owns a lease reports one"
+    );
+    assert_eq!(
+        mgr.get_current_lock_ids(),
+        vec![kept.clone()],
+        "the stolen lease is dropped and the renewed one retained"
+    );
+
+    // The retained lease is still this worker's in the database, so it keeps
+    // being worked rather than waiting out a TTL nobody can shorten.
+    let owner: Option<Uuid> =
+        sqlx::query_scalar("SELECT worker_id FROM dependence_chain WHERE dependence_chain_id = $1")
+            .bind(&kept)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(owner, Some(mgr.worker_id()));
+
+    // Losing every lease still reports nothing held.
+    sqlx::query("UPDATE dependence_chain SET worker_id = $1 WHERE dependence_chain_id = $2")
+        .bind(thief)
+        .bind(&kept)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(mgr
+        .extend_or_release_current_lock(false)
+        .await
+        .unwrap()
+        .is_none());
+    assert!(mgr.get_current_lock_ids().is_empty());
 }
