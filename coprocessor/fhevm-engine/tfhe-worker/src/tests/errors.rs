@@ -414,12 +414,11 @@ async fn retryable_panic_stamp_is_retried_and_healed() -> Result<(), Box<dyn std
         .await?;
         if row.0 {
             assert!(!row.1, "a healed row must not stay errored");
-            let bytes: Option<Vec<u8>> = sqlx::query_scalar(
-                "SELECT ciphertext FROM ciphertexts WHERE handle = $1",
-            )
-            .bind(output.as_slice())
-            .fetch_optional(&pool)
-            .await?;
+            let bytes: Option<Vec<u8>> =
+                sqlx::query_scalar("SELECT ciphertext FROM ciphertexts WHERE handle = $1")
+                    .bind(output.as_slice())
+                    .fetch_optional(&pool)
+                    .await?;
             assert!(bytes.is_some_and(|b| !b.is_empty()));
             return Ok(());
         }

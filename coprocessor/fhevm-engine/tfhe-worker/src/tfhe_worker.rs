@@ -2391,9 +2391,8 @@ async fn upload_transaction_graph_results<'a>(
                         continue;
                     }
                 }
-                if let Some(CoprocessorError::SchedulerError(
-                    SchedulerError::ExecutionPanic(_),
-                )) = cerr.downcast_ref::<CoprocessorError>()
+                if let Some(CoprocessorError::SchedulerError(SchedulerError::ExecutionPanic(_))) =
+                    cerr.downcast_ref::<CoprocessorError>()
                 {
                     panicked_transactions.push(result.transaction_id.clone());
                 }
