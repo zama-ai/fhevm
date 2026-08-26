@@ -59,14 +59,20 @@ struct WorkItem {
 const OPERAND_BOUNDARY_MASK_BYTES: usize = 32;
 
 /// Marker distinguishing the one NONDETERMINISTIC stamp source: a panic
-/// caught around an FHE op (`SchedulerError::ExecutionPanic`) can be device
-/// or allocation pressure, not a property of the inputs, so such rows stay
-/// stamped (visible, never silently spinning) but remain RE-EXECUTABLE when
-/// a live window pulls them in — success then heals the stamp through the
-/// bytes-are-ground-truth completion path. Every other stamp is
-/// deterministic (content validation, operand types, FHE semantics, dead
-/// inputs) and terminal. Message-substring matching is admittedly coarse; a
-/// dedicated error-class column is the follow-up if more classes appear.
+/// caught around an FHE op or its output compression
+/// (`SchedulerError::ExecutionPanic`) can be device or allocation pressure,
+/// not a property of the inputs, so such rows stay stamped (visible, never
+/// silently failing) but are RETRIED: the work window re-selects them
+/// (compression panics hit allowed outputs, often a transaction's only
+/// incomplete allowed row, so waiting for a live sibling would latch them
+/// forever), and success heals the stamp through the bytes-are-ground-truth
+/// completion path. A panic that keeps failing is paced, not terminal:
+/// no-progress parking at the lock TTL with DCID locking, the
+/// deferred-transaction cooldown in the lockless fallback — a rate-limited
+/// alert loop by design. Every other stamp is deterministic (content
+/// validation, operand types, FHE semantics, dead inputs) and terminal.
+/// Message-substring matching is admittedly coarse; a dedicated error-class
+/// column is the follow-up if more classes appear.
 const RETRYABLE_STAMP_MARKER: &str = "ExecutionPanic";
 
 fn stamp_is_retryable(error_message: Option<&str>) -> bool {
@@ -1312,10 +1318,19 @@ async fn tfhe_worker_cycle(
         {
             warn!(target: "tfhe_worker", "Lost dcid lock during transaction execution; persisting deterministic results may be redundant");
         }
-        let has_progressed =
+        let (has_progressed, panicked_transactions) =
             upload_transaction_graph_results(&mut tx_graph, &mut trx, &mut dcid_mngr)
                 .instrument(loop_span.clone())
                 .await?;
+        if !dcid_mngr.enabled() {
+            // Pace retryable panics in the lockless fallback: without this
+            // the oldest-first window re-selects a still-failing panic
+            // transaction at poll cadence. With locking the no-progress
+            // parking below paces the same case at the lock TTL.
+            for transaction_id in &panicked_transactions {
+                deferred_cooldown.quarantine(transaction_id);
+            }
+        }
         if has_progressed {
             no_progress_cycles = 0;
         } else {
@@ -1705,7 +1720,13 @@ WHERE c.transaction_id IN (
       SELECT transaction_id
       FROM computations
       WHERE is_completed = FALSE
-        AND is_error = FALSE
+        -- Terminally errored rows never re-anchor the window, but RETRYABLE
+        -- panic stamps (see RETRYABLE_STAMP_MARKER, bound as $4) do: they
+        -- re-execute and heal through the completion path on success.
+        -- Pacing for a panic that keeps failing: no-progress parking at the
+        -- lock TTL with DCID locking, the deferred-transaction cooldown in
+        -- the lockless fallback.
+        AND (is_error = FALSE OR error_message LIKE '%' || $4 || '%')
         AND is_allowed = TRUE
         AND ($1::bytea IS NULL OR dependence_chain_id = $1)
         -- Lockless fallback fairness: transactions this worker deferred
@@ -1729,6 +1750,7 @@ WHERE c.transaction_id IN (
         dependence_chain_id.as_deref(),
         transaction_batch_size as i32,
         &cooled_transactions,
+        RETRYABLE_STAMP_MARKER,
     )
     .fetch_all(trx.as_mut())
     .instrument(s_work.clone())
@@ -2295,11 +2317,15 @@ async fn build_transaction_graph_and_execute<'a>(
 }
 
 #[tracing::instrument(name = "upload_results", skip_all)]
+/// Returns (progress, panicked_transactions): the latter are transactions
+/// with an ExecutionPanic result this cycle — the lockless caller quarantines
+/// them so the oldest-first window cannot re-select a still-failing panic at
+/// poll cadence (DCID locking paces the same case via no-progress parking).
 async fn upload_transaction_graph_results<'a>(
     tx_graph: &mut DFComponentGraph,
     trx: &mut sqlx::Transaction<'a, Postgres>,
     deps_mngr: &mut dependence_chain::LockMngr,
-) -> Result<bool, CoprocessorError> {
+) -> Result<(bool, Vec<Vec<u8>>), CoprocessorError> {
     // Schema isolation: the connection's `search_path` already routes
     // unqualified writes to the stack's own schema (`public` for BCS,
     // `gcs` for GCS post-activation). The two-step ciphertext read in
@@ -2308,6 +2334,7 @@ async fn upload_transaction_graph_results<'a>(
     // Get computation results
     let graph_results = tx_graph.get_results();
     let mut handles_to_update = vec![];
+    let mut panicked_transactions: Vec<Vec<u8>> = vec![];
     let mut res = false;
 
     // Traverse computations that have been scheduled and
@@ -2363,6 +2390,12 @@ async fn upload_transaction_graph_results<'a>(
                         // inputs weren't available when we tried scheduling these operations.
                         continue;
                     }
+                }
+                if let Some(CoprocessorError::SchedulerError(
+                    SchedulerError::ExecutionPanic(_),
+                )) = cerr.downcast_ref::<CoprocessorError>()
+                {
+                    panicked_transactions.push(result.transaction_id.clone());
                 }
                 // A terminal stamp IS progress: a dead-chain drain larger
                 // than one batch would otherwise count as no-progress
@@ -2447,7 +2480,9 @@ async fn upload_transaction_graph_results<'a>(
         .await?;
         res |= comp_updated > 0;
     }
-    Ok(res)
+    panicked_transactions.sort();
+    panicked_transactions.dedup();
+    Ok((res, panicked_transactions))
 }
 
 #[tracing::instrument(skip_all)]

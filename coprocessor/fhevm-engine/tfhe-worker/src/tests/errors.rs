@@ -1,3 +1,5 @@
+use std::ops::DerefMut;
+
 use crate::tests::event_helpers::{
     allow_handle, insert_event, insert_trivial_encrypt, next_handle, next_handle_with_type,
     scalar_flag, setup_event_harness, wait_for_error, zero_address, EventHarness, TEST_CHAIN_ID,
@@ -363,4 +365,64 @@ async fn errored_producer_drains_cross_transaction_consumer(
         "expected dead-boundary-input error, got: {error_msg}"
     );
     Ok(())
+}
+
+/// A retryable (panic) stamp is not a dead end: the work window re-selects
+/// the stamped row, re-executes it, and a successful retry heals the stamp
+/// through the completion path — bytes present, is_error cleared. Modeled by
+/// stamping a perfectly computable row with an ExecutionPanic message in the
+/// same transaction that inserts it, so the worker only ever sees the
+/// stamped state.
+#[tokio::test]
+#[serial(db)]
+async fn retryable_panic_stamp_is_retried_and_healed() -> Result<(), Box<dyn std::error::Error>> {
+    let EventHarness {
+        app: _app,
+        pool,
+        listener_db,
+    } = setup_event_harness().await?;
+    let tx_id = next_handle();
+    let output = next_handle_with_type(5);
+    let mut tx = listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
+    insert_trivial_encrypt(&listener_db, &mut tx, tx_id, 42, 5, output, true).await?;
+    allow_handle(&listener_db, &mut tx, &output).await?;
+    // Stamp it as a transient panic BEFORE the commit the worker can see.
+    sqlx::query(
+        r#"UPDATE computations
+           SET is_error = true,
+               error_message = 'Coprocessor scheduler error: ExecutionPanic("simulated device pressure")'
+           WHERE output_handle = $1 AND transaction_id = $2"#,
+    )
+    .bind(output.as_slice())
+    .bind(tx_id.as_slice())
+    .execute(tx.deref_mut())
+    .await?;
+    tx.commit().await?;
+
+    for _ in 0..240 {
+        tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
+        let row = sqlx::query_as::<_, (bool, bool)>(
+            "SELECT is_completed, is_error FROM computations
+             WHERE output_handle = $1 AND transaction_id = $2",
+        )
+        .bind(output.as_slice())
+        .bind(tx_id.as_slice())
+        .fetch_one(&pool)
+        .await?;
+        if row.0 {
+            assert!(!row.1, "a healed row must not stay errored");
+            let bytes: Option<Vec<u8>> = sqlx::query_scalar(
+                "SELECT ciphertext FROM ciphertexts WHERE handle = $1",
+            )
+            .bind(output.as_slice())
+            .fetch_optional(&pool)
+            .await?;
+            assert!(bytes.is_some_and(|b| !b.is_empty()));
+            return Ok(());
+        }
+    }
+    panic!("panic-stamped row was never retried and healed");
 }
