@@ -528,6 +528,21 @@ export const validateBundleCompatibility = (state: Pick<CompatState, "versions">
 export const assertSupportedBundleScenario = (state: CompatState) => {
   const scenario = "scenario" in state ? state.scenario : state.coprocessor;
   if (!scenario) return; // blue-green stack spec — handled by its own compat path
+  if (scenario.kind === "coprocessor-consensus" && (scenario.topology?.count ?? 1) > 1) {
+    // Byte-consensus topologies compare persisted ciphertext bytes across
+    // coprocessors, which is only meaningful when every node runs the same
+    // software revision.  Requiring a full local coprocessor build avoids
+    // silently pairing the scenario with an older published
+    // listener/migration/worker image; partial service overrides cannot
+    // guarantee one revision.
+    const overrides = effectiveCompatOverrides(state);
+    const fullLocalCoprocessor = overrides.some((override) => override.group === "coprocessor" && !override.services?.length);
+    if (!fullLocalCoprocessor) {
+      throw new Error(
+        "Consensus scenarios require a full local coprocessor build (use --build or --override coprocessor) so listener, migration, and worker are from the same revision.",
+      );
+    }
+  }
   const hostChains = scenario.hostChains;
   if (hostChains.length <= 1 || !requiresLegacySingleChainCoprocessor(state)) {
     return;

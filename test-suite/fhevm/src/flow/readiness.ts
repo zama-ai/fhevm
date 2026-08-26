@@ -348,22 +348,52 @@ export const discoverKmsSigners = async (
   throw new MinioError(`Could not discover ${parties} KMS signer(s) after 60 attempts (${lastFailure})`);
 };
 
-/** Waits until one material artifact becomes available through host-reachable MinIO. */
-export const ensureMaterial = async (url: string) => {
+/**
+ * Waits until one of the supplied material artifacts is available through
+ * host-reachable MinIO.  Probing alternatives together preserves the normal
+ * bootstrap retry budget when a bundle supports more than one wire format.
+ */
+export const ensureOneMaterial = async (urls: readonly string[]) => {
+  if (!urls.length) {
+    throw new PreflightError("At least one material URL is required");
+  }
   for (let attempt = 0; attempt <= 30; attempt += 1) {
-    try {
-      const response = await fetch(hostReachableMaterialUrl(url), { method: "HEAD" });
-      if (response.ok) {
-        return;
-      }
-    } catch {
-      // retry
+    const available = await Promise.all(
+      urls.map(async (url) => {
+        try {
+          return (await fetch(hostReachableMaterialUrl(url), { method: "HEAD" })).ok;
+        } catch {
+          return false;
+        }
+      }),
+    );
+    if (available.some(Boolean)) {
+      return;
     }
     if (attempt === 30) {
-      throw new MinioError(`Material not ready: ${url}`);
+      throw new MinioError(`Material not ready: ${urls.join(" or ")}`);
     }
     await Bun.sleep(1_000);
   }
+};
+
+/** Waits until one material artifact becomes available through host-reachable MinIO. */
+export const ensureMaterial = async (url: string) => ensureOneMaterial([url]);
+
+/**
+ * Waits for the server-side part of an FHE key activation.  Current kms-core
+ * publishes that material as a `CompressedXofKeySet`; older bundles publish a
+ * plain `ServerKey`.  PublicKey and CRS availability alone is not sufficient:
+ * a coprocessor cannot materialise `keys` or start a TFHE worker without one
+ * of these authenticated server-side blobs.
+ */
+const ensureServerKeyMaterial = async (baseUrl: string, keyPrefix: string, keyId: string) => {
+  const root = `${baseUrl}/kms-public/${keyPrefix}`;
+  const candidates = [
+    `${root}/CompressedXofKeySet/${keyId}`,
+    `${root}/ServerKey/${keyId}`,
+  ];
+  await ensureOneMaterial(candidates);
 };
 
 /** Calls a contract view through cast and interprets the result as a boolean. */
@@ -451,6 +481,7 @@ export const probeBootstrap = async (state: State) => {
     const actualCrsKeyId = actualCrs.toString(16).padStart(64, "0");
     await Promise.all([
       ensureMaterial(`${discovery.endpoints.minioExternal}/kms-public/${keyPrefix}/PublicKey/${actualFheKeyId}`),
+      ensureServerKeyMaterial(discovery.endpoints.minioExternal, keyPrefix, actualFheKeyId),
       ensureMaterial(`${discovery.endpoints.minioExternal}/kms-public/${keyPrefix}/CRS/${actualCrsKeyId}`),
     ]);
     if (discovery.fheKeyId !== actualFheKeyId || discovery.crsKeyId !== actualCrsKeyId) {

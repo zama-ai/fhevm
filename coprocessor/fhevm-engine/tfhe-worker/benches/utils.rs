@@ -5,6 +5,7 @@ use fhevm_engine_common::{chain_id::ChainId, types::AllowEvents};
 use rand::Rng;
 use test_harness::db_utils::setup_test_key;
 use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage, ImageExt};
+use tfhe_worker::benchmark_exact_tuples::wait_for_exact_legacy_terminals;
 use tfhe_worker::daemon_cli::Args;
 use tokio::sync::watch::Receiver;
 use tracing::Level;
@@ -18,19 +19,31 @@ use host_listener::database::tfhe_event_propagate::{
 };
 use sqlx::types::time::PrimitiveDateTime;
 use sqlx::PgPool;
+use std::collections::BTreeMap;
+use std::hash::{Hash, Hasher};
+use std::path::PathBuf;
+use std::process::Command;
+use std::thread::JoinHandle;
+use std::time::SystemTime;
 
 pub struct TestInstance {
     // just to destroy container
     _container: Option<testcontainers::ContainerAsync<testcontainers::GenericImage>>,
     // send message to this on destruction to stop the app
     app_close_channel: Option<tokio::sync::watch::Sender<bool>>,
+    worker_thread: Option<JoinHandle<()>>,
     db_url: String,
 }
 
 impl Drop for TestInstance {
     fn drop(&mut self) {
-        if let Some(chan) = &self.app_close_channel {
+        if let Some(chan) = self.app_close_channel.take() {
             let _ = chan.send_replace(true);
+        }
+        if let Some(worker_thread) = self.worker_thread.take() {
+            std::thread::spawn(move || {
+                let _ = worker_thread.join();
+            });
         }
     }
 }
@@ -38,6 +51,31 @@ impl Drop for TestInstance {
 impl TestInstance {
     pub fn db_url(&self) -> &str {
         self.db_url.as_str()
+    }
+
+    pub async fn shutdown(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(chan) = self.app_close_channel.take() {
+            let _ = chan.send_replace(true);
+        }
+        let Some(worker_thread) = self.worker_thread.take() else {
+            return Ok(());
+        };
+        let timeout = benchmark_shutdown_timeout()?;
+        match tokio::time::timeout(
+            timeout,
+            tokio::task::spawn_blocking(move || worker_thread.join()),
+        )
+        .await
+        {
+            Ok(Ok(Ok(()))) => Ok(()),
+            Ok(Ok(Err(_))) => Err("main_block_baseline worker panicked during shutdown".into()),
+            Ok(Err(error)) => Err(format!("join main_block_baseline worker: {error}").into()),
+            Err(_) => Err(format!(
+                "timed out after {}s joining main_block_baseline worker",
+                timeout.as_secs()
+            )
+            .into()),
+        }
     }
 }
 
@@ -56,17 +94,34 @@ pub async fn setup_test_app() -> Result<TestInstance, Box<dyn std::error::Error>
 const LOCAL_DB_URL: &str = "postgresql://postgres:postgres@127.0.0.1:5432/coprocessor";
 
 async fn setup_test_app_existing_db() -> Result<TestInstance, Box<dyn std::error::Error>> {
+    let db_url = local_benchmark_db_url()?;
     let (app_close_channel, rx) = tokio::sync::watch::channel(false);
-    start_coprocessor(rx, LOCAL_DB_URL).await;
+    let worker_thread = start_coprocessor(rx, &db_url).await?;
     Ok(TestInstance {
         _container: None,
         app_close_channel: Some(app_close_channel),
-        db_url: LOCAL_DB_URL.to_string(),
+        worker_thread: Some(worker_thread),
+        db_url,
     })
 }
 
-async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) {
+fn local_benchmark_db_url() -> Result<String, Box<dyn std::error::Error>> {
+    if std::env::var("FHEVM_BENCH_ISOLATED_DB").as_deref() != Ok("1") {
+        return Err("COPROCESSOR_TEST_LOCAL_DB requires FHEVM_BENCH_ISOLATED_DB=1".into());
+    }
+    let url = std::env::var("FHEVM_BENCH_DATABASE_URL")?;
+    if url.contains("application_name=") {
+        return Err("FHEVM_BENCH_DATABASE_URL must not set application_name".into());
+    }
+    Ok(url)
+}
+
+async fn start_coprocessor(
+    rx: Receiver<bool>,
+    db_url: &str,
+) -> Result<JoinHandle<()>, Box<dyn std::error::Error>> {
     let ecfg = EnvConfig::new();
+    let application_name = format!("main-block-baseline-{:016x}", random_handle());
     let args: Args = Args {
         max_batch_ttl_secs: 300,
         run_bg_worker: true,
@@ -74,38 +129,131 @@ async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) {
         bridge_polling_interval_ms: 1000,
         bridge_associate_batch_size: 128,
         generate_fhe_keys: false,
-        work_items_batch_size: ecfg.batch_size,
-        dependence_chains_per_batch: 2000,
+        // Reportable one-shot targets can raise these independently.  Keep
+        // the historical defaults for all other benchmark/test callers.
+        work_items_batch_size: benchmark_work_items_batch_size(ecfg.batch_size)?,
+        dependence_chains_per_batch: benchmark_dependence_chains_per_batch(2000)?,
+        dcid_batch_execution: benchmark_dcid_batch_execution()?,
         key_cache_size: 4,
         coprocessor_fhe_threads: 64,
+        gpu_streams_per_device: benchmark_gpu_streams_per_device()?,
         tokio_threads: 32,
-        pg_pool_max_connections: 2,
+        pg_pool_max_connections: 8,
         metrics_addr: None,
-        database_url: Some(db_url.into()),
+        database_url: Some(fhevm_engine_common::utils::DatabaseURL::new_with_app_name(
+            db_url,
+            &application_name,
+        )),
         service_name: std::env::var("OTEL_SERVICE_NAME").unwrap_or_default(),
         log_level: Level::INFO,
-        health_check_port: 8080,
+        health_check_port: test_harness::localstack::pick_free_port(),
         metric_rerand_batch_latency: MetricsConfig::default(),
         metric_fhe_batch_latency: MetricsConfig::default(),
         worker_id: None,
         dcid_ttl_sec: 30,
-        disable_dcid_locking: true,
+        disable_dcid_locking: false,
         dcid_timeslice_sec: 90,
         dcid_cleanup_interval_sec: 0,
-        processed_dcid_ttl_sec: 0,
+        // Retain processed rows long enough for the direct smoke to prove the
+        // native first->second DCID lifecycle. They are unique fixture IDs and
+        // cannot be re-acquired once processed.
+        processed_dcid_ttl_sec: 3600,
         dcid_max_no_progress_cycles: 2,
         dcid_ignore_dependency_count_threshold: 100,
         dcid_stale_gate_age_secs: 300.0,
+        gpu_memory_reservation_timeout_ms: 300_000,
         drift_revert_watcher_timeouts: Default::default(),
         stack_version: false,
     };
 
-    std::thread::spawn(move || {
-        tfhe_worker::start_runtime(args, Some(rx));
+    let (readiness_tx, readiness_rx) = tokio::sync::oneshot::channel();
+    let worker_thread = std::thread::spawn(move || {
+        tfhe_worker::start_runtime_with_readiness(args, Some(rx), Some(readiness_tx));
     });
+    wait_for_worker_readiness(readiness_rx, &application_name, &worker_thread).await?;
+    Ok(worker_thread)
+}
 
-    // wait until app port is opened
-    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+fn benchmark_gpu_streams_per_device() -> Result<usize, Box<dyn std::error::Error>> {
+    match std::env::var("FHEVM_GPU_STREAMS_PER_DEVICE") {
+        Ok(value) => {
+            let streams = value.parse::<usize>()?;
+            if streams == 0 {
+                return Err("FHEVM_GPU_STREAMS_PER_DEVICE must be at least 1".into());
+            }
+            Ok(streams)
+        }
+        Err(std::env::VarError::NotPresent) => Ok(16),
+        Err(error) => Err(error.into()),
+    }
+}
+
+pub fn benchmark_work_items_batch_size(default: i32) -> Result<i32, Box<dyn std::error::Error>> {
+    benchmark_positive_i32("FHEVM_BENCH_WORK_ITEMS_BATCH_SIZE", default)
+}
+
+pub fn benchmark_dependence_chains_per_batch(
+    default: i32,
+) -> Result<i32, Box<dyn std::error::Error>> {
+    benchmark_positive_i32("FHEVM_BENCH_DEPENDENCE_CHAINS_PER_BATCH", default)
+}
+
+pub fn benchmark_dcid_batch_execution() -> Result<bool, Box<dyn std::error::Error>> {
+    match std::env::var("FHEVM_BENCH_DCID_BATCH_EXECUTION") {
+        Ok(value) => value.parse::<bool>().map_err(|error| {
+            format!("parse FHEVM_BENCH_DCID_BATCH_EXECUTION={value:?}: {error}").into()
+        }),
+        Err(std::env::VarError::NotPresent) => Ok(false),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn benchmark_positive_i32(variable: &str, default: i32) -> Result<i32, Box<dyn std::error::Error>> {
+    match std::env::var(variable) {
+        Ok(value) => {
+            let parsed = value
+                .parse::<i32>()
+                .map_err(|error| format!("parse {variable}={value:?}: {error}"))?;
+            if parsed <= 0 {
+                return Err(format!("{variable} must be at least 1").into());
+            }
+            Ok(parsed)
+        }
+        Err(std::env::VarError::NotPresent) => Ok(default),
+        Err(error) => Err(error.into()),
+    }
+}
+
+async fn wait_for_worker_readiness(
+    readiness_rx: tokio::sync::oneshot::Receiver<Result<(), String>>,
+    application_name: &str,
+    worker_thread: &JoinHandle<()>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let timeout = benchmark_startup_timeout()?;
+    match tokio::time::timeout(timeout, readiness_rx).await {
+        Ok(Ok(Ok(()))) => Ok(()),
+        Ok(Ok(Err(reason))) => Err(format!(
+            "main_block_baseline worker reported failed LISTEN/acquisition/key-cache readiness (application_name={application_name:?}): {reason}"
+        )
+        .into()),
+        Ok(Err(_)) => {
+            let state = if worker_thread.is_finished() {
+                "worker thread exited"
+            } else {
+                "readiness hook was dropped before acknowledgement"
+            };
+            Err(format!(
+                "main_block_baseline worker did not acknowledge LISTEN/acquisition/key-cache readiness (application_name={application_name:?}): {state}"
+            )
+            .into())
+        }
+        Err(_) => Err(format!(
+            "timed out after {}s waiting for main_block_baseline worker in-process readiness (application_name={application_name:?}, worker_thread_finished={})",
+            timeout.as_secs(),
+            worker_thread.is_finished(),
+        )
+        .into()),
+    }
 }
 
 async fn setup_test_app_custom_docker() -> Result<TestInstance, Box<dyn std::error::Error>> {
@@ -138,10 +286,11 @@ async fn setup_test_app_custom_docker() -> Result<TestInstance, Box<dyn std::err
     setup_test_key(&pool, false).await?;
 
     let (app_close_channel, rx) = tokio::sync::watch::channel(false);
-    start_coprocessor(rx, &db_url).await;
+    let worker_thread = start_coprocessor(rx, &db_url).await?;
     Ok(TestInstance {
         _container: Some(container),
         app_close_channel: Some(app_close_channel),
+        worker_thread: Some(worker_thread),
         db_url,
     })
 }
@@ -154,7 +303,6 @@ pub async fn wait_until_all_allowed_handles_computed(
         .max_connections(2)
         .connect(&db_url)
         .await?;
-
     loop {
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         let current_count: i64 = sqlx::query_scalar(
@@ -168,6 +316,449 @@ pub async fn wait_until_all_allowed_handles_computed(
     }
 
     Ok(())
+}
+
+#[derive(Clone, Debug)]
+pub struct LegacyTerminal {
+    pub handle: Handle,
+    pub transaction_id: Handle,
+}
+
+/// Wait only for the legacy rows created by this sample.  The historical
+/// all-allowed predicate is unsafe for a reused reportable database: unrelated
+/// completed rows can make it appear that a sample has finished.
+pub async fn wait_until_legacy_terminals_computed(
+    db_url: String,
+    terminals: &[LegacyTerminal],
+) -> Result<std::time::Instant, Box<dyn std::error::Error>> {
+    let expected = terminals
+        .iter()
+        .map(|terminal| (terminal.handle.to_vec(), terminal.transaction_id.to_vec()))
+        .collect::<Vec<_>>();
+    wait_for_exact_legacy_terminals(
+        &db_url,
+        &expected,
+        benchmark_wait_timeout()?,
+        std::env::var("FHEVM_BENCH_RUN_MODE").as_deref() == Ok(SMOKE_ONLY_RUN_MODE),
+    )
+    .await
+}
+
+/// Materialize native legacy DCID state without inventing any host block.  The
+/// worker consumes this table directly when DCID locking is enabled.
+pub async fn upsert_legacy_dependence_chain(
+    tx: &mut Transaction<'_>,
+    dependence_chain_id: &Handle,
+    dependency_count: i32,
+    dependents: &[Handle],
+) -> Result<(), sqlx::Error> {
+    let dependents = dependents
+        .iter()
+        .map(|handle| handle.to_vec())
+        .collect::<Vec<_>>();
+    sqlx::query(
+        "INSERT INTO dependence_chain ( \
+             dependence_chain_id, status, last_updated_at, dependency_count, dependents, \
+             block_hash, block_height, schedule_priority \
+         ) VALUES ($1, 'updated', NOW(), $2, $3, ''::bytea, 0, 0) \
+         ON CONFLICT (dependence_chain_id) DO UPDATE \
+         SET status = 'updated', dependency_count = EXCLUDED.dependency_count, \
+             dependents = EXCLUDED.dependents, worker_id = NULL, \
+             lock_acquired_at = NULL, lock_expires_at = NULL",
+    )
+    .bind(dependence_chain_id.to_vec())
+    .bind(dependency_count)
+    .bind(dependents)
+    .execute(tx.as_mut())
+    .await?;
+    Ok(())
+}
+
+const MAIN_BLOCK_BASELINE_LABEL: &str = "main_block_baseline";
+const REPORTABLE_RUN_MODE: &str = "reportable";
+const SMOKE_ONLY_RUN_MODE: &str = "smoke_only";
+
+pub fn validate_main_block_run_policy() -> Result<&'static str, String> {
+    let smoke_triggered = std::env::var("FHEVM_BENCH_DIRECT_SMOKE").as_deref() == Ok("1")
+        || std::env::var_os("FHEVM_TEST_NUM_SAMPLES").is_some();
+    let requested = std::env::var("FHEVM_BENCH_RUN_MODE").ok();
+    let mode = match requested.as_deref() {
+        None if smoke_triggered => SMOKE_ONLY_RUN_MODE,
+        None => REPORTABLE_RUN_MODE,
+        Some(SMOKE_ONLY_RUN_MODE) => SMOKE_ONLY_RUN_MODE,
+        Some(REPORTABLE_RUN_MODE) if !smoke_triggered => REPORTABLE_RUN_MODE,
+        Some(REPORTABLE_RUN_MODE) => {
+            return Err("FHEVM_BENCH_RUN_MODE=reportable conflicts with a smoke trigger".into())
+        }
+        Some(other) => {
+            return Err(format!(
+                "invalid FHEVM_BENCH_RUN_MODE={other:?}; expected {REPORTABLE_RUN_MODE:?} or {SMOKE_ONLY_RUN_MODE:?}"
+            ))
+        }
+    };
+    effective_main_block_bench_lto()?;
+    if mode == REPORTABLE_RUN_MODE {
+        for variable in [
+            "FHEVM_BENCH_SMOKE_WARMUP_SECS",
+            "FHEVM_BENCH_SMOKE_MEASUREMENT_SECS",
+            "FHEVM_BENCH_SMOKE_SAMPLE_SIZE",
+            "FHEVM_BENCH_SMOKE_NRESAMPLES",
+            "FHEVM_BENCH_SMOKE_MAX_REQUESTED_ITERS",
+            "FHEVM_BENCH_CRITERION_PROBE",
+        ] {
+            if std::env::var_os(variable).is_some() {
+                return Err(format!(
+                    "reportable {MAIN_BLOCK_BASELINE_LABEL} forbids smoke-only override {variable}"
+                ));
+            }
+        }
+        let source = runtime_source_identity().map_err(|error| error.to_string())?;
+        if source.state != "clean" {
+            return Err(
+                "reportable main_block_baseline requires a clean committed source tree".into(),
+            );
+        }
+        verify_reportable_source_claim("FHEVM_BENCH_BUILD_REVISION", &source.revision)?;
+        verify_reportable_source_claim("FHEVM_BENCH_SOURCE_STATE", &source.state)?;
+        verify_reportable_source_claim("FHEVM_BENCH_SOURCE_FINGERPRINT", &source.fingerprint)?;
+    }
+    Ok(mode)
+}
+
+pub fn effective_main_block_bench_lto() -> Result<&'static str, String> {
+    let cargo_profile_lto = std::env::var("CARGO_PROFILE_BENCH_LTO").map_err(|_| {
+        "main_block_baseline requires CARGO_PROFILE_BENCH_LTO=false from its isolated Make target"
+            .to_owned()
+    })?;
+    let recorded_lto = std::env::var("FHEVM_BENCH_EFFECTIVE_LTO").map_err(|_| {
+        "main_block_baseline requires FHEVM_BENCH_EFFECTIVE_LTO=false for artifact provenance"
+            .to_owned()
+    })?;
+    if cargo_profile_lto != "false" || recorded_lto != "false" {
+        return Err(format!(
+            "main_block_baseline requires disabled bench LTO, got CARGO_PROFILE_BENCH_LTO={cargo_profile_lto:?}, FHEVM_BENCH_EFFECTIVE_LTO={recorded_lto:?}"
+        ));
+    }
+    Ok("false")
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+struct RuntimeSourceIdentity {
+    revision: String,
+    state: String,
+    fingerprint: String,
+}
+
+fn runtime_source_identity() -> Result<RuntimeSourceIdentity, Box<dyn std::error::Error>> {
+    let revision = command_stdout("git", &["rev-parse", "HEAD"])?;
+    let status = command_output(
+        "git",
+        &["status", "--porcelain", "--untracked-files=normal"],
+    )?;
+    if status.is_empty() {
+        return Ok(RuntimeSourceIdentity {
+            fingerprint: revision.clone(),
+            revision,
+            state: "clean".to_owned(),
+        });
+    }
+    let diff = command_output("git", &["diff", "--no-ext-diff", "--binary", "HEAD"])?;
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    revision.hash(&mut hasher);
+    status.hash(&mut hasher);
+    diff.hash(&mut hasher);
+    Ok(RuntimeSourceIdentity {
+        revision,
+        state: "dirty".to_owned(),
+        fingerprint: format!("dirty-{:016x}", hasher.finish()),
+    })
+}
+
+fn command_output(program: &str, args: &[&str]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let output = Command::new(program).args(args).output()?;
+    if !output.status.success() {
+        return Err(format!("{program} {args:?} exited with {}", output.status).into());
+    }
+    Ok(output.stdout)
+}
+
+fn command_stdout(program: &str, args: &[&str]) -> Result<String, Box<dyn std::error::Error>> {
+    Ok(String::from_utf8(command_output(program, args)?)?
+        .trim()
+        .to_owned())
+}
+
+fn verify_reportable_source_claim(variable: &str, observed: &str) -> Result<(), String> {
+    let claimed = std::env::var(variable).map_err(|_| {
+        format!("reportable {MAIN_BLOCK_BASELINE_LABEL} requires {variable}={observed:?}")
+    })?;
+    if claimed != observed {
+        return Err(format!(
+            "reportable {MAIN_BLOCK_BASELINE_LABEL} source provenance mismatch: {variable}={claimed:?}, observed {observed:?}"
+        ));
+    }
+    Ok(())
+}
+
+pub fn compiled_benchmark_backend() -> &'static str {
+    if cfg!(feature = "gpu") {
+        "gpu"
+    } else {
+        "cpu"
+    }
+}
+
+pub fn persist_main_block_provenance() -> Result<PathBuf, Box<dyn std::error::Error>> {
+    if validate_main_block_run_policy()? != REPORTABLE_RUN_MODE {
+        return Err("canonical main_block_baseline provenance is reportable-only".into());
+    }
+    let source = runtime_source_identity()?;
+    let bench_lto = effective_main_block_bench_lto()?;
+    let executable_path = std::env::current_exe()?;
+    let mut host = BTreeMap::from([
+        ("architecture", std::env::consts::ARCH.to_owned()),
+        ("operating_system", std::env::consts::OS.to_owned()),
+        ("kernel_release", command_stdout("uname", &["-r"])?),
+        ("hostname", command_stdout("hostname", &[])?),
+    ]);
+    if compiled_benchmark_backend() == "gpu" {
+        host.insert(
+            "gpu_runtime",
+            command_stdout(
+                "nvidia-smi",
+                &[
+                    "--query-gpu=index,uuid,name,driver_version",
+                    "--format=csv,noheader",
+                ],
+            )?,
+        );
+    } else {
+        host.insert("cpu_model", cpu_model_name()?);
+    }
+    let manifest = serde_json::json!({
+        "schema_version": 1,
+        "baseline": MAIN_BLOCK_BASELINE_LABEL,
+        "worker_semantics": "main_native_legacy_computations_ciphertexts_dependence_chain",
+        "topology": "legacy_tx/dependence_chain_no_host_block_provenance",
+        "run": { "mode": REPORTABLE_RUN_MODE },
+        "build": {
+            "revision": source.revision,
+            "source_state": source.state,
+            "source_fingerprint": source.fingerprint,
+            "package_version": env!("CARGO_PKG_VERSION"),
+            "backend": compiled_benchmark_backend(),
+            "features": compiled_benchmark_features(),
+            "bench_lto": bench_lto,
+        },
+        "executable": { "path": executable_path, "sha256": sha256_hex(&executable_path)? },
+        "host": host,
+    });
+    let serialized = serde_json::to_string(&manifest)?;
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    serialized.hash(&mut hasher);
+    let id = format!("{:016x}", hasher.finish());
+    let path = criterion_output_directory()
+        .join("benchmark-manifests")
+        .join(format!("{MAIN_BLOCK_BASELINE_LABEL}-{id}.json"));
+    std::fs::create_dir_all(path.parent().expect("manifest has a parent"))?;
+    std::fs::write(
+        &path,
+        format!("{}\n", serde_json::to_string_pretty(&manifest)?),
+    )?;
+    Ok(path)
+}
+
+/// Persist the one and only reportable result for the canonical main legacy
+/// baseline. The benchmark body supplies its operation/topology evidence;
+/// this helper owns the comparable source, build, and runtime provenance.
+pub fn persist_main_block_one_shot_artifact(
+    result: serde_json::Value,
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    if validate_main_block_run_policy()? != REPORTABLE_RUN_MODE {
+        return Err("main_block_baseline one-shot artifact is reportable-only".into());
+    }
+    let source = runtime_source_identity()?;
+    let bench_lto = effective_main_block_bench_lto()?;
+    let mut host = BTreeMap::from([
+        ("architecture", std::env::consts::ARCH.to_owned()),
+        ("operating_system", std::env::consts::OS.to_owned()),
+        ("kernel_release", command_stdout("uname", &["-r"])?),
+        ("hostname", command_stdout("hostname", &[])?),
+    ]);
+    if compiled_benchmark_backend() == "gpu" {
+        host.insert(
+            "gpu_runtime",
+            command_stdout(
+                "nvidia-smi",
+                &[
+                    "--query-gpu=index,uuid,name,driver_version",
+                    "--format=csv,noheader",
+                ],
+            )?,
+        );
+    } else {
+        host.insert("cpu_model", cpu_model_name()?);
+    }
+    let contents = serde_json::json!({
+        "schema_version": 2,
+        "run_mode": REPORTABLE_RUN_MODE,
+        "baseline": MAIN_BLOCK_BASELINE_LABEL,
+        "build": {
+            "revision": source.revision,
+            "source_state": source.state,
+            "source_fingerprint": source.fingerprint,
+            "package_version": env!("CARGO_PKG_VERSION"),
+            "backend": compiled_benchmark_backend(),
+            "features": compiled_benchmark_features(),
+            "bench_lto": bench_lto,
+        },
+        "runtime_facts": {
+            "xof_keyset_sha256": sha256_hex(std::path::Path::new("../fhevm-keys/xof-keyset"))?,
+            "host": host,
+        },
+        "result": result,
+    });
+    let serialized = serde_json::to_string(&contents)?;
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    serialized.hash(&mut hasher);
+    let timestamp = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)?
+        .as_millis();
+    let path = criterion_output_directory()
+        .join("benchmark-runs")
+        .join(format!(
+            "reportable-main-one-shot-{:016x}-{timestamp}.json",
+            hasher.finish(),
+        ));
+    std::fs::create_dir_all(path.parent().expect("artifact has a parent"))?;
+    std::fs::write(
+        &path,
+        format!("{}\n", serde_json::to_string_pretty(&contents)?),
+    )?;
+    Ok(path)
+}
+
+pub fn persist_main_block_smoke_artifact(
+    smoke_kind: &str,
+    details: serde_json::Value,
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    if validate_main_block_run_policy()? != SMOKE_ONLY_RUN_MODE {
+        return Err("main_block_baseline smoke artifact requested for a reportable run".into());
+    }
+    let source = runtime_source_identity()?;
+    let bench_lto = effective_main_block_bench_lto()?;
+    let timestamp = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)?
+        .as_millis();
+    let path = criterion_output_directory()
+        .join("benchmark-smokes")
+        .join(format!(
+            "{MAIN_BLOCK_BASELINE_LABEL}-{smoke_kind}-{timestamp}-{:016x}.json",
+            random_handle()
+        ));
+    std::fs::create_dir_all(path.parent().expect("smoke artifact has a parent"))?;
+    std::fs::write(
+        &path,
+        format!(
+            "{}\n",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "schema_version": 1,
+                "baseline": MAIN_BLOCK_BASELINE_LABEL,
+                "run_mode": SMOKE_ONLY_RUN_MODE,
+                "smoke_kind": smoke_kind,
+                "topology": "legacy_tx/dependence_chain_no_host_block_provenance",
+                "source": source,
+                "backend": compiled_benchmark_backend(),
+                "bench_lto": bench_lto,
+                "details": details,
+            }))?
+        ),
+    )?;
+    Ok(path)
+}
+
+fn criterion_output_directory() -> PathBuf {
+    std::env::var_os("CRITERION_HOME")
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("CARGO_TARGET_DIR").map(|path| PathBuf::from(path).join("criterion"))
+        })
+        .unwrap_or_else(|| PathBuf::from("target/criterion"))
+}
+
+fn compiled_benchmark_features() -> Vec<&'static str> {
+    let mut features = vec!["bench"];
+    if cfg!(feature = "gpu") {
+        features.push("gpu");
+    }
+    if cfg!(feature = "latency") {
+        features.push("latency");
+    }
+    if cfg!(feature = "throughput") {
+        features.push("throughput");
+    }
+    features
+}
+
+fn cpu_model_name() -> Result<String, Box<dyn std::error::Error>> {
+    let cpuinfo = std::fs::read_to_string("/proc/cpuinfo")?;
+    cpuinfo
+        .lines()
+        .find_map(|line| line.strip_prefix("model name\t: ").map(str::to_owned))
+        .ok_or_else(|| "CPU model name is missing from /proc/cpuinfo".into())
+}
+
+fn sha256_hex(path: &std::path::Path) -> Result<String, Box<dyn std::error::Error>> {
+    let path = path.to_string_lossy();
+    command_stdout("sha256sum", &[path.as_ref()]).map(|line| {
+        line.split_whitespace()
+            .next()
+            .unwrap_or_default()
+            .to_owned()
+    })
+}
+
+fn benchmark_startup_timeout() -> Result<tokio::time::Duration, Box<dyn std::error::Error>> {
+    benchmark_timeout(
+        "FHEVM_BENCH_STARTUP_TIMEOUT_SECS",
+        if std::env::var_os("FHEVM_BENCH_DIRECT_SMOKE").is_some() {
+            60
+        } else {
+            300
+        },
+    )
+}
+
+pub fn benchmark_wait_timeout() -> Result<tokio::time::Duration, Box<dyn std::error::Error>> {
+    benchmark_timeout(
+        "FHEVM_BENCH_WAIT_TIMEOUT_SECS",
+        if std::env::var_os("FHEVM_BENCH_DIRECT_SMOKE").is_some() {
+            120
+        } else {
+            7200
+        },
+    )
+}
+
+fn benchmark_shutdown_timeout() -> Result<tokio::time::Duration, Box<dyn std::error::Error>> {
+    benchmark_timeout("FHEVM_BENCH_SHUTDOWN_TIMEOUT_SECS", 30)
+}
+
+fn benchmark_timeout(
+    variable: &str,
+    default_seconds: u64,
+) -> Result<tokio::time::Duration, Box<dyn std::error::Error>> {
+    let seconds = std::env::var(variable)
+        .ok()
+        .map_or(Ok(default_seconds), |value| {
+            value
+                .parse::<u64>()
+                .map_err(|_| format!("{variable} must be a positive integer, got {value:?}"))
+        })?;
+    if seconds == 0 {
+        return Err(format!("{variable} must be greater than zero").into());
+    }
+    Ok(tokio::time::Duration::from_secs(seconds))
 }
 
 pub fn to_ty(ty: i32) -> ToType {
@@ -220,13 +811,28 @@ pub async fn insert_tfhe_event(
     tx_hash: Handle,
     is_allowed: bool,
 ) -> Result<bool, sqlx::Error> {
+    insert_tfhe_event_with_dependence_chain(db, tx, log, tx_hash, tx_hash, is_allowed).await
+}
+
+/// Benchmark staging normally uses one transaction per native dependence
+/// chain. The auction fixture instead preserves its 300 EVM transaction IDs
+/// while intentionally executing their same-L1-block graph as one legacy
+/// scheduling chain.
+pub async fn insert_tfhe_event_with_dependence_chain(
+    db: &ListenerDatabase,
+    tx: &mut Transaction<'_>,
+    log: alloy::rpc::types::Log<TfheContractEvents>,
+    transaction_hash: Handle,
+    dependence_chain: Handle,
+    is_allowed: bool,
+) -> Result<bool, sqlx::Error> {
     // Bench staging bypasses ordered block ingestion, so derive the same
     // authoritative transaction-local origin bits from rows already staged
     // for this fixture transaction.
     let previously_minted = sqlx::query_scalar::<_, Vec<u8>>(
         "SELECT output_handle FROM computations WHERE transaction_id = $1",
     )
-    .bind(tx_hash.to_vec())
+    .bind(transaction_hash.to_vec())
     .fetch_all(&mut **tx)
     .await?
     .into_iter()
@@ -237,12 +843,12 @@ pub async fn insert_tfhe_event(
     .map_err(sqlx::Error::Protocol)?;
     let event = LogTfhe {
         event: log.inner,
-        transaction_hash: Some(tx_hash),
+        transaction_hash: Some(transaction_hash),
         is_allowed,
         block_number: log.block_number.unwrap_or(0),
         block_hash: log.block_hash.unwrap_or_default(),
         block_timestamp: PrimitiveDateTime::MAX,
-        dependence_chain: tx_hash,
+        dependence_chain,
         tx_depth_size: 0,
         log_index: log.log_index,
         operand_boundary_mask: Some(operand_boundary_mask),
@@ -279,7 +885,6 @@ pub fn scalar_flag(is_scalar: bool) -> FixedBytes<1> {
 
 use serde::Serialize;
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::OnceLock;
 use std::{env, fs};
 use tfhe::core_crypto::prelude::*;

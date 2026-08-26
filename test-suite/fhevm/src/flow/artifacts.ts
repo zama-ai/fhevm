@@ -5,6 +5,7 @@ import { stackSpecForState, topologyForState } from "../stack-spec/stack-spec";
 import { PreflightError } from "../errors";
 import {
   COMPONENTS,
+  GROUP_BUILD_SERVICES,
   gatewayAddressesPath,
   gatewayAddressesSolidityPath,
   paymentBridgingAddressesSolidityPath,
@@ -18,7 +19,11 @@ import {
 } from "../layout";
 import type { State, StepName } from "../types";
 import { exists, readEnvFile } from "../utils/fs";
-import { generatedComposeComponents } from "../generate/compose";
+import {
+  generatedComposeComponents,
+  loadMergedComposeDoc,
+  localSourceRevision,
+} from "../generate/compose";
 import { defaultHostChain, extraHostChains } from "./topology";
 
 /** Validates that a generated address file exists and contains the required keys. */
@@ -86,15 +91,66 @@ export const runtimeArtifactPaths = (state: State) => {
   ];
 };
 
+/**
+ * A persisted local KMS runtime override must rebuild from the source revision
+ * that generated it. This is especially important for a retry after a Docker
+ * build failure: the original compose file may predate the linked-worktree
+ * BUILD_ID fallback even though every runtime artifact still exists.
+ */
+const kmsConnectorBuildRevisionCurrent = async (state: State) => {
+  const selectedRuntimeServices = state.overrides
+    .filter((override) => override.group === "kms-connector")
+    .flatMap((override) =>
+      override.services?.length
+        ? override.services.filter((service) => !service.endsWith("-db-migration"))
+        : GROUP_BUILD_SERVICES["kms-connector"].filter((service) => !service.endsWith("-db-migration")),
+    );
+  if (!selectedRuntimeServices.length) {
+    return true;
+  }
+  const compose = await loadMergedComposeDoc("kms-connector");
+  const expectedBuildId = localSourceRevision();
+  return selectedRuntimeServices.every((service) => {
+    const build = compose.services[service]?.build;
+    const args = build && typeof build === "object" && !Array.isArray(build)
+      ? (build as { args?: unknown }).args
+      : undefined;
+    return Boolean(
+      args &&
+        typeof args === "object" &&
+        !Array.isArray(args) &&
+        (args as Record<string, unknown>).BUILD_ID === expectedBuildId,
+    );
+  });
+};
+
+export type RuntimeArtifactOperations = {
+  ensureLockSnapshot: typeof ensureLockSnapshot;
+  exists: typeof exists;
+  kmsConnectorBuildRevisionCurrent: typeof kmsConnectorBuildRevisionCurrent;
+  generateRuntime: typeof generateRuntime;
+};
+
+const runtimeArtifactOperations: RuntimeArtifactOperations = {
+  ensureLockSnapshot,
+  exists,
+  kmsConnectorBuildRevisionCurrent,
+  generateRuntime,
+};
+
 /** Regenerates runtime artifacts when persisted state outlives generated files. */
-export const ensureRuntimeArtifacts = async (state: State, reason: string) => {
-  await ensureLockSnapshot(state.lockPath, state.versions);
-  const allExist = (await Promise.all(runtimeArtifactPaths(state).map((file) => exists(file)))).every(Boolean);
-  if (allExist) {
+export const ensureRuntimeArtifacts = async (
+  state: State,
+  reason: string,
+  operations: RuntimeArtifactOperations = runtimeArtifactOperations,
+) => {
+  await operations.ensureLockSnapshot(state.lockPath, state.versions);
+  const allExist = (await Promise.all(runtimeArtifactPaths(state).map((file) => operations.exists(file)))).every(Boolean);
+  if (allExist && (await operations.kmsConnectorBuildRevisionCurrent(state))) {
     return;
   }
   console.log(`[regen] restoring runtime artifacts for ${reason}`);
-  await generateRuntime(state, stackSpecForState(state));
+  await operations.generateRuntime(state, stackSpecForState(state));
 };
 
 /** Returns multi-chain compose file names and their owning step for the current scenario. */
