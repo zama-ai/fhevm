@@ -735,10 +735,11 @@ jobs:
       - name: Capture host head block (blockchain-dev)
         if: env.USE_BLOCKCHAIN_DEV == 'true'
         run: |
-          hex=$(bash ci/preview-env/scripts/cluster-rpc.sh "${HOST_HTTP}" \
-            '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}' | tail -1 | jq -r '.result')
+          raw=$(bash ci/preview-env/scripts/cluster-rpc.sh "${HOST_HTTP}" \
+            '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}')
+          hex=$(jq -r '.result' <<<"${raw}")
           if [[ ! "${hex}" =~ ^0x[0-9a-fA-F]+$ ]]; then
-            echo "::error::could not read host eth_blockNumber from ${HOST_HTTP} (got '${hex}')"
+            echo "::error::could not read host eth_blockNumber from ${HOST_HTTP} (got '${hex}'; raw='${raw}')"
             exit 1
           fi
           echo "HEAD_BLOCK=$((hex))" >> "$GITHUB_ENV"
