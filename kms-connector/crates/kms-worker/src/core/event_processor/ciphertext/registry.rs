@@ -155,6 +155,11 @@ where
         config: &Config,
         cancel_token: CancellationToken,
     ) -> anyhow::Result<Self> {
+        anyhow::ensure!(
+            !config.copro_registry_refresh.is_zero(),
+            "copro_registry_refresh must be non-zero"
+        );
+
         let gateway_config_contract =
             GatewayConfig::new(config.gateway_config_contract.address, provider);
 
@@ -325,5 +330,22 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(err, RegistryError::Critical(_)));
+    }
+
+    #[tokio::test]
+    async fn connect_rejects_zero_refresh_interval() {
+        let asserter = Asserter::new();
+        let provider = ProviderBuilder::new()
+            .disable_recommended_fillers()
+            .connect_mocked_client(asserter.clone());
+        let config = Config {
+            copro_registry_refresh: Duration::ZERO,
+            ..Default::default()
+        };
+        let result =
+            CoprocessorRegistry::connect(provider, &config, CancellationToken::new()).await;
+        if result.is_ok() {
+            panic!("zero refresh interval should be rejected");
+        };
     }
 }

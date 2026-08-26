@@ -57,7 +57,13 @@ where
     let kms_client = KmsClient::connect(&config).await?;
     let event_picker = DbEventPicker::connect(db.clone(), &config).await?;
 
-    let context_manager = DbContextManager::new(db.clone(), &config, provider.clone());
+    let context_manager = DbContextManager::connect(
+        db.clone(),
+        &config,
+        provider.clone(),
+        CancellationToken::new(),
+    )
+    .await?;
     let host_clients = acl_contracts_mock
         .into_iter()
         .map(|(chain_id, acl)| (chain_id, HostRpcClient::new(chain_id, acl)))
@@ -82,6 +88,10 @@ where
 
 /// Registry refresh interval used by the tests: long enough that the refresh task never fires.
 pub const TEST_COPRO_REGISTRY_REFRESH: Duration = Duration::from_hours(24);
+
+/// Context cache refresh interval used by the tests: long enough that the refresh task never
+/// fires, so validations conclude from the initial snapshot and the on-chain fallback alone.
+pub const TEST_KMS_CONTEXT_CACHE_REFRESH: Duration = Duration::from_hours(24);
 
 pub fn create_mock_user_decryption_request_tx(
     tx_hash: FixedBytes<32>,

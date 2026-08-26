@@ -1,8 +1,8 @@
 mod common;
 
 use crate::common::{
-    TEST_COPRO_REGISTRY_REFRESH, create_mock_user_decryption_request_tx, init_kms_worker,
-    mock_copro_registry_load,
+    TEST_COPRO_REGISTRY_REFRESH, TEST_KMS_CONTEXT_CACHE_REFRESH,
+    create_mock_user_decryption_request_tx, init_kms_worker, mock_copro_registry_load,
 };
 use alloy::{
     hex::FromHex,
@@ -168,6 +168,7 @@ async fn test_processing_request(
     let config = Config {
         kms_core_endpoints: vec![kms_mock_server.base_url().unwrap().to_string()],
         copro_registry_refresh: TEST_COPRO_REGISTRY_REFRESH,
+        kms_context_cache_refresh: TEST_KMS_CONTEXT_CACHE_REFRESH,
         ..Default::default()
     };
     let kms_worker = init_kms_worker(

@@ -99,6 +99,10 @@ database_url = "postgres://postgres:postgres@localhost/kms-connector"
 # ENV: KMS_CONNECTOR_COPRO_REGISTRY_REFRESH (format: https://docs.rs/humantime/latest/humantime/)
 # copro_registry_refresh = "60s"
 
+# Refresh interval of the in-memory KMS context cache read from the local DB (optional, defaults to 60s)
+# ENV: KMS_CONNECTOR_KMS_CONTEXT_CACHE_REFRESH (format: https://docs.rs/humantime/latest/humantime/)
+# kms_context_cache_refresh = "60s"
+
 # Maximum number of calls in flight on a host chain endpoint, across all requests (optional, defaults to 128)
 # ENV: KMS_CONNECTOR_HOST_RPC_MAX_CONCURRENT_CALLS
 # host_rpc_max_concurrent_calls = 128
