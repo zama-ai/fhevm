@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT int_job_id, updated_at\n            FROM public_decrypt_req\n            WHERE req_status = 'tx_in_flight'::req_status\n            ",
+  "query": "\n            SELECT int_job_id, updated_at\n            FROM public_decrypt_req\n            WHERE req_status = 'tx_in_flight'::req_status\n              AND (owner_epoch IS NULL OR owner_epoch <= $1)\n            ",
   "describe": {
     "columns": [
       {
@@ -15,12 +15,14 @@
       }
     ],
     "parameters": {
-      "Left": []
+      "Left": [
+        "Int8"
+      ]
     },
     "nullable": [
       false,
       false
     ]
   },
-  "hash": "762eedb61437e2043c5215bfb2c2b5d576e87caebcc07da733cf81ad4fbbb193"
+  "hash": "ff0ba314be683d2aa8f0c125e16784c518ff124efbb17d638a3e30915f64794b"
 }

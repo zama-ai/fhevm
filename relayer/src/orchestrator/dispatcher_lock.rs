@@ -198,11 +198,43 @@ impl DispatcherLock {
         self.state_rx.clone()
     }
 
-    /// Current dispatcher generation, read synchronously (no await). `None` unless this pod
-    /// holds the lock (`state() == Held`) - see the module docs' `Unconfirmed` note for why a
-    /// gate (and the sweep) must not treat a stale value as still current once state moves off
-    /// `Held`; that is why acquisition and release both update this alongside `state_tx`
-    /// rather than leaving the last-seen epoch to read stale.
+    /// Subscribe to epoch changes. `startup.rs`'s bounded wait for this pod's first acquisition
+    /// (so startup recovery has a real epoch to fence its re-dispatched writes with - see the
+    /// call site) is the intended reader - and must watch this, not [`Self::subscribe`]:
+    /// `state_tx` and `epoch_tx` are two independent watch channels, and which one changes
+    /// first is not fixed. The fast path in `poll_tick` mints the epoch before setting `Held`;
+    /// the mint-retry path in `heartbeat_tick` sets `Held` on the *first* confirmed heartbeat
+    /// and only mints afterward if minting had not yet succeeded. A waiter watching `state_rx`
+    /// on that second path wakes with the epoch still `None` and has to wait for a whole extra
+    /// heartbeat interval before the mint's own retry fires - which can outrun a wait budget
+    /// sized against the fast path alone.
+    pub fn subscribe_epoch(&self) -> watch::Receiver<Option<i64>> {
+        self.epoch_rx.clone()
+    }
+
+    /// Current dispatcher generation, read synchronously (no await). `None` until this pod has
+    /// acquired the lock at least once in this process's lifetime; `Some` from that acquisition
+    /// onward for the rest of the process's life - including through `Unconfirmed`, where it
+    /// deliberately keeps returning the last real value rather than going stale-safe to `None`,
+    /// and through and after [`Self::release_last`], which deliberately does not clear it
+    /// either (see that method's doc comment). Acquisition is the only thing that ever changes
+    /// it; a failed heartbeat only ever moves `state()`, never this.
+    ///
+    /// This is why nothing that reads `current_epoch()` may treat `Some` as "I am the current
+    /// holder" - a gate must check `state() == Held` for that. What this getter guarantees is
+    /// narrower and is what every reader below actually needs: this pod's real epoch from its
+    /// last acquisition, monotonic across restarts, regardless of whether it still holds the
+    /// lock or has released it. The step-6 sweep stamps a claim with it. The step-8
+    /// write-fencing in the request repositories and `ChainCursorRepository` reads it on every
+    /// send-decision write, where returning `None` once state moves off `Held` - whether to
+    /// `Unconfirmed` or all the way to a released `NotHeld` - would be actively worse, not
+    /// safer: a write made in that window carries this pod's real, once-valid epoch either way,
+    /// and it is the row's own `owner_epoch` predicate - not this getter - that decides whether
+    /// a successor has since claimed it. A row's fence only starts refusing this pod's writes
+    /// once some successor's claim has actually landed and stamped a newer epoch onto it; until
+    /// then, an ex-holder's own writes keep succeeding and keep the row's `updated_at` fresh,
+    /// same as when it genuinely still held the lock - the epoch alone never announces the
+    /// loss, only a later write's refusal does.
     pub fn current_epoch(&self) -> Option<i64> {
         *self.epoch_rx.borrow()
     }
@@ -477,6 +509,16 @@ impl DispatcherLock {
     /// close, both bounded so a hung release cannot eat the shutdown grace period. Never
     /// called on the loss path - the lock is already gone there, and that path never returns
     /// (it hard-exits).
+    ///
+    /// Sets `state()` to `NotHeld` but deliberately leaves `current_epoch()` alone rather than
+    /// clearing it to `None`. Detached work (a tx send, a gateway-response handler) is
+    /// abandoned rather than drained at shutdown - see `startup.rs`'s shutdown-rationale
+    /// comment - so something can still be self-serving `current_epoch()` for a write after
+    /// this call returns. Clearing it would make that write's fence predicate degrade to
+    /// `owner_epoch IS NULL`, refusing this pod's own still-valid write against the very row it
+    /// legitimately owns and forcing a successor to redo it - a self-inflicted duplicate this
+    /// process's own real epoch would otherwise have avoided. The process is exiting either
+    /// way, so nothing here ever reads this epoch as if it were current again after release.
     pub async fn release_last(&self) {
         let mut guard = self.inner.lock().await;
         let Some(mut conn) = guard.conn.take() else {
@@ -500,10 +542,8 @@ impl DispatcherLock {
             }
         }
 
-        guard.epoch = None;
         drop(guard);
         self.set_state(LockState::NotHeld);
-        self.set_epoch(None);
 
         if let Err(e) = tokio::time::timeout(self.config.heartbeat_timeout, conn.close()).await {
             warn!(error = %e, "dispatcher lock: close timed out");

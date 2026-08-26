@@ -180,7 +180,13 @@ async fn test_epoch_increases_across_reacquire() {
     shutdown_a.cancel();
     task_a.await.unwrap();
     lock_a.release_last().await;
-    assert_eq!(lock_a.current_epoch(), None, "epoch cleared on release");
+    assert_eq!(
+        lock_a.current_epoch(),
+        Some(epoch_a),
+        "release_last must not clear current_epoch() - abandoned detached work self-serving \
+         it after shutdown still needs this pod's real, last-held epoch to fence its writes \
+         correctly (see release_last's doc comment)"
+    );
 
     let lock_b = DispatcherLock::connect(&config, &schema.database_url())
         .await

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            INSERT INTO user_decrypt_req (\n                ext_job_id,\n                int_job_id,\n                req,\n                req_type\n            )\n            VALUES ($1, $2, $3, $4::user_decrypt_req_type)\n            ON CONFLICT (int_job_id)\n            WHERE req_status NOT IN ('failure'::req_status, 'timed_out'::req_status)\n            DO UPDATE SET updated_at = user_decrypt_req.updated_at\n            RETURNING ext_job_id, (xmax = 0) AS \"is_inserted!\", req_status AS \"req_status!: ReqStatus\", gw_reference_id\n            ",
+  "query": "\n            INSERT INTO user_decrypt_req (\n                ext_job_id,\n                int_job_id,\n                req,\n                req_type,\n                owner_epoch\n            )\n            VALUES ($1, $2, $3, $4::user_decrypt_req_type, $5)\n            ON CONFLICT (int_job_id)\n            WHERE req_status NOT IN ('failure'::req_status, 'timed_out'::req_status)\n            DO UPDATE SET updated_at = user_decrypt_req.updated_at\n            RETURNING ext_job_id, (xmax = 0) AS \"is_inserted!\", req_status AS \"req_status!: ReqStatus\", gw_reference_id\n            ",
   "describe": {
     "columns": [
       {
@@ -55,7 +55,8 @@
               ]
             }
           }
-        }
+        },
+        "Int8"
       ]
     },
     "nullable": [
@@ -65,5 +66,5 @@
       true
     ]
   },
-  "hash": "8c3047bafebb9f6e2bb94b0f91adbd780b5fa96236e0f06137700480c24c0165"
+  "hash": "fefeea8c4a071528d9f6a93b342ee0c8b553b21088db70af8cac3a1dea64c39a"
 }

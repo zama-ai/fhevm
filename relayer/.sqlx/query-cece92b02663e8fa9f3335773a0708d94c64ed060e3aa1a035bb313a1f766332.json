@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE input_proof_req\n            SET req_status = 'processing'::req_status,\n                owner_epoch = $1\n            WHERE req_status = 'tx_in_flight'::req_status\n              AND (owner_epoch IS NULL OR owner_epoch <= $1)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cece92b02663e8fa9f3335773a0708d94c64ed060e3aa1a035bb313a1f766332"
+}

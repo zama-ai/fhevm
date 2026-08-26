@@ -1,8 +1,15 @@
+//! Epoch fencing (build-order step 8): see the module doc block in `public_decrypt_repo` for
+//! the full rationale, which applies here unchanged. The listener paths deliberately left
+//! unfenced in this repository are [`UserDecryptRepository::update_consensus_hash_and_return_state`]
+//! and [`UserDecryptRepository::insert_share_and_complete_if_threshold_reached`] - both record
+//! on-chain truth observed by a chain listener, not a send decision this pod's epoch owns.
+
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 
 use crate::core::event::UserDecryptResponse;
 use crate::metrics;
+use crate::orchestrator::DispatcherLock;
 use crate::store::sql::models::req_status_enum_model::ReqStatus;
 use crate::store::sql::models::user_decrypt_req_model::{ConsensusReqState, UserDecryptReqData};
 use crate::store::sql::{
@@ -61,11 +68,15 @@ pub enum UserDecryptInsertResult {
 
 pub struct UserDecryptRepository {
     pool: PgClient,
+    dispatcher_lock: DispatcherLock,
 }
 
 impl UserDecryptRepository {
-    pub fn new(pool: PgClient) -> Self {
-        Self { pool }
+    pub fn new(pool: PgClient, dispatcher_lock: DispatcherLock) -> Self {
+        Self {
+            pool,
+            dispatcher_lock,
+        }
     }
 
     // NOTE: We have a query which is performed at the database level in a pg_cron job instead of being called by the internals. and is triggered on this condition:
@@ -123,6 +134,7 @@ impl UserDecryptRepository {
         // This prevents race conditions where shares could be deleted between the INSERT
         // and the subsequent SELECT query.
         let mut tx = self.pool.get_app_pool().begin().await?;
+        let epoch = self.dispatcher_lock.current_epoch();
 
         // Convert typed data to JSON Value and extract type
         let req_type = request_data.req_type();
@@ -142,9 +154,10 @@ impl UserDecryptRepository {
                 ext_job_id,
                 int_job_id,
                 req,
-                req_type
+                req_type,
+                owner_epoch
             )
-            VALUES ($1, $2, $3, $4::user_decrypt_req_type)
+            VALUES ($1, $2, $3, $4::user_decrypt_req_type, $5)
             ON CONFLICT (int_job_id)
             WHERE req_status NOT IN ('failure'::req_status, 'timed_out'::req_status)
             DO UPDATE SET updated_at = user_decrypt_req.updated_at
@@ -154,6 +167,7 @@ impl UserDecryptRepository {
             int_job_id_bytes,
             request,
             req_type as _,
+            epoch,
         )
         .fetch_one(&mut *tx)
         .await;
@@ -276,6 +290,7 @@ impl UserDecryptRepository {
     /// Returns the number of rows affected (1 if found, 0 if not).
     pub async fn update_status_to_processing(&self, int_job_id_bytes: &[u8]) -> SqlResult<u64> {
         let mut conn = self.pool.get_app_connection().await?;
+        let epoch = self.dispatcher_lock.current_epoch();
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -287,9 +302,11 @@ impl UserDecryptRepository {
             ),
             upd AS (
                 UPDATE user_decrypt_req
-                SET req_status = 'processing'::req_status
+                SET req_status = 'processing'::req_status,
+                    owner_epoch = $2
                 WHERE int_job_id = $1
                   AND req_status = 'queued'::req_status
+                  AND (owner_epoch IS NULL OR owner_epoch <= $2)
                 RETURNING req_status, updated_at
             )
             SELECT
@@ -298,7 +315,8 @@ impl UserDecryptRepository {
                 upd.updated_at as "new_updated_at!"
             FROM old, upd
             "#,
-            int_job_id_bytes
+            int_job_id_bytes,
+            epoch,
         )
         .fetch_optional(&mut *conn)
         .await;
@@ -333,6 +351,7 @@ impl UserDecryptRepository {
         err_reason: &str,
     ) -> SqlResult<u64> {
         let mut conn = self.pool.get_app_connection().await?;
+        let epoch = self.dispatcher_lock.current_epoch();
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -346,19 +365,22 @@ impl UserDecryptRepository {
                 UPDATE user_decrypt_req
                 SET
                     req_status = 'timed_out'::req_status,
-                    err_reason = $1
+                    err_reason = $1,
+                    owner_epoch = $3
                 WHERE int_job_id = $2
                   AND req_status IN ('queued'::req_status, 'receipt_received'::req_status)
+                  AND (owner_epoch IS NULL OR owner_epoch <= $3)
                 RETURNING req_status, updated_at
             )
-            SELECT 
+            SELECT
                 old.req_status as "old_status!: ReqStatus",
                 old.updated_at as "old_updated_at!",
                 upd.updated_at as "new_updated_at!"
             FROM old, upd
             "#,
             err_reason,
-            int_job_id_bytes
+            int_job_id_bytes,
+            epoch,
         )
         .fetch_optional(&mut *conn)
         .await;
@@ -390,6 +412,7 @@ impl UserDecryptRepository {
     /// Returns the number of rows affected (1 if found, 0 if not).
     pub async fn update_status_to_tx_in_flight(&self, int_job_id_bytes: &[u8]) -> SqlResult<u64> {
         let mut conn = self.pool.get_app_connection().await?;
+        let epoch = self.dispatcher_lock.current_epoch();
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -401,9 +424,11 @@ impl UserDecryptRepository {
             ),
             upd AS (
                 UPDATE user_decrypt_req
-                SET req_status = 'tx_in_flight'::req_status
+                SET req_status = 'tx_in_flight'::req_status,
+                    owner_epoch = $2
                 WHERE int_job_id = $1
                   AND req_status = 'processing'::req_status
+                  AND (owner_epoch IS NULL OR owner_epoch <= $2)
                 RETURNING req_status, updated_at
             )
             SELECT
@@ -412,7 +437,8 @@ impl UserDecryptRepository {
                 upd.updated_at as "new_updated_at!"
             FROM old, upd
             "#,
-            int_job_id_bytes
+            int_job_id_bytes,
+            epoch,
         )
         .fetch_optional(&mut *conn)
         .await;
@@ -443,8 +469,14 @@ impl UserDecryptRepository {
     /// Returns the number of rows affected.
     pub async fn reset_tx_in_flight_to_processing(&self) -> SqlResult<u64> {
         let mut conn = self.pool.get_app_connection().await?;
+        let epoch = self.dispatcher_lock.current_epoch();
 
         let query_start = Instant::now();
+
+        // Fenced like every other write - see `public_decrypt_repo`'s module doc for why
+        // `<=`, not `=`: a fresh epoch always wins against a dead predecessor's rows (including
+        // this same pod's own previous incarnation) without ever touching a row a currently
+        // live peer still owns.
 
         // Fetch rows to update for metrics
         let rows = sqlx::query!(
@@ -452,7 +484,9 @@ impl UserDecryptRepository {
             SELECT int_job_id, updated_at
             FROM user_decrypt_req
             WHERE req_status = 'tx_in_flight'::req_status
-            "#
+              AND (owner_epoch IS NULL OR owner_epoch <= $1)
+            "#,
+            epoch,
         )
         .fetch_all(&mut *conn)
         .await;
@@ -472,9 +506,12 @@ impl UserDecryptRepository {
         let result = sqlx::query!(
             r#"
             UPDATE user_decrypt_req
-            SET req_status = 'processing'::req_status
+            SET req_status = 'processing'::req_status,
+                owner_epoch = $1
             WHERE req_status = 'tx_in_flight'::req_status
-            "#
+              AND (owner_epoch IS NULL OR owner_epoch <= $1)
+            "#,
+            epoch,
         )
         .execute(&mut *conn)
         .await;
@@ -512,6 +549,7 @@ impl UserDecryptRepository {
         let gw_ref_id = id_as_bytes_array.to_vec();
 
         let mut conn = self.pool.get_app_connection().await?;
+        let epoch = self.dispatcher_lock.current_epoch();
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -526,12 +564,14 @@ impl UserDecryptRepository {
                 SET
                     req_status = 'receipt_received'::req_status,
                     gw_req_tx_hash = $1,
-                    gw_reference_id = $2
+                    gw_reference_id = $2,
+                    owner_epoch = $4
                 WHERE int_job_id = $3
                   AND req_status = 'tx_in_flight'::req_status
+                  AND (owner_epoch IS NULL OR owner_epoch <= $4)
                 RETURNING req_status, updated_at
             )
-            SELECT 
+            SELECT
                 old.req_status as "old_status!: ReqStatus",
                 old.updated_at as "old_updated_at!",
                 upd.updated_at as "new_updated_at!"
@@ -539,7 +579,8 @@ impl UserDecryptRepository {
             "#,
             gw_req_tx_hash,
             gw_ref_id,
-            int_job_id_bytes
+            int_job_id_bytes,
+            epoch,
         )
         .fetch_optional(&mut *conn)
         .await;
@@ -574,6 +615,7 @@ impl UserDecryptRepository {
         err_reason: &str,
     ) -> SqlResult<u64> {
         let mut conn = self.pool.get_app_connection().await?;
+        let epoch = self.dispatcher_lock.current_epoch();
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -587,9 +629,11 @@ impl UserDecryptRepository {
                 UPDATE user_decrypt_req
                 SET
                     req_status = 'failure'::req_status,
-                    err_reason = $1
+                    err_reason = $1,
+                    owner_epoch = $3
                 WHERE int_job_id = $2
                   AND req_status = 'queued'::req_status
+                  AND (owner_epoch IS NULL OR owner_epoch <= $3)
                 RETURNING req_status, updated_at
             )
             SELECT
@@ -599,7 +643,8 @@ impl UserDecryptRepository {
             FROM old, upd
             "#,
             err_reason,
-            int_job_id_bytes
+            int_job_id_bytes,
+            epoch,
         )
         .fetch_optional(&mut *conn)
         .await;
@@ -632,6 +677,7 @@ impl UserDecryptRepository {
         err_reason: &str,
     ) -> SqlResult<u64> {
         let mut conn = self.pool.get_app_connection().await?;
+        let epoch = self.dispatcher_lock.current_epoch();
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -645,19 +691,22 @@ impl UserDecryptRepository {
                 UPDATE user_decrypt_req
                 SET
                     req_status = 'failure'::req_status,
-                    err_reason = $1
+                    err_reason = $1,
+                    owner_epoch = $3
                 WHERE int_job_id = $2
                   AND req_status IN ('processing'::req_status, 'tx_in_flight'::req_status)
+                  AND (owner_epoch IS NULL OR owner_epoch <= $3)
                 RETURNING req_status, updated_at
             )
-            SELECT 
+            SELECT
                 old.req_status as "old_status!: ReqStatus",
                 old.updated_at as "old_updated_at!",
                 upd.updated_at as "new_updated_at!"
             FROM old, upd
             "#,
             err_reason,
-            int_job_id_bytes
+            int_job_id_bytes,
+            epoch,
         )
         .fetch_optional(&mut *conn)
         .await;
@@ -1126,17 +1175,33 @@ impl UserDecryptRepository {
             .collect())
     }
 
-    /// Sweep: atomically claim incomplete requests nobody is driving, stamping `owner_epoch`
-    /// and incrementing `attempts` in the same statement that selects them. Only rows this
-    /// UPDATE actually touched come back - a row a concurrent claimer already took is not
-    /// returned here, so the caller never dispatches it (see
+    /// Sweep: atomically claim incomplete requests nobody current is driving, stamping
+    /// `owner_epoch` and incrementing `attempts` in the same statement that selects them. Only
+    /// rows this UPDATE actually touched come back - a row a concurrent claimer already took is
+    /// not returned here, so the caller never dispatches it (see
     /// `update_status_to_tx_in_flight`'s doc comment for the CAS-with-discarded-count bug
     /// this is built not to repeat).
     ///
-    /// `claim_after_secs` guards against claiming a row still being driven in-process on this
-    /// same pod: only rows whose `updated_at` predates `NOW() - claim_after_secs` are
-    /// eligible. Rows already at `max_attempts` are left alone here -
-    /// [`Self::fail_exhausted_attempts`] handles those.
+    /// Two-tier eligibility, both requiring `attempts < max_attempts`
+    /// ([`Self::fail_exhausted_attempts`] handles rows past that bound); see
+    /// `public_decrypt_repo::claim_incomplete_requests`'s doc comment for the full rationale:
+    /// - `owner_epoch < $epoch` (strictly older, never `NULL`) - a necessarily dead epoch.
+    ///   Claimed immediately, no staleness window.
+    /// - `owner_epoch IS NULL OR owner_epoch = $epoch` - unclaimed or this pod's own prior
+    ///   claim. `NULL` is deliberately *not* immediate here (unlike the branch above) - until
+    ///   dispatch is gated on the lock (step 7), a `NULL` owner can be a live non-holder still
+    ///   driving its own traffic in-process, not a dead one. `claim_after_secs` guards this
+    ///   branch, above the dominant readiness-retry budget, so live work is not re-dispatched
+    ///   on every tick.
+    ///
+    /// A row claimed out of `tx_in_flight` is reset to `processing` in the same statement,
+    /// unconditionally now (including this pod's own prior claim) - and `attempts` is never
+    /// reset, including across a change of owner - see
+    /// `public_decrypt_repo::claim_incomplete_requests`'s doc comment for both: why the reset
+    /// is safe despite `claim_after_secs` bounding sleeps rather than RPC latency, and why
+    /// `attempts` staying a global, cross-owner budget (not per-owner) is what keeps
+    /// `max_attempts` meaningful against a crash-looping pod minting a fresh epoch every
+    /// restart.
     pub async fn claim_incomplete_requests(
         &self,
         epoch: i64,
@@ -1150,10 +1215,20 @@ impl UserDecryptRepository {
             r#"
             UPDATE user_decrypt_req
             SET owner_epoch = $1,
-                attempts = attempts + 1
+                attempts = attempts + 1,
+                req_status = CASE
+                    WHEN req_status = 'tx_in_flight'::req_status THEN 'processing'::req_status
+                    ELSE req_status
+                END
             WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)
               AND attempts < $2
-              AND updated_at < NOW() - make_interval(secs => $3)
+              AND (
+                    owner_epoch < $1
+                    OR (
+                         (owner_epoch IS NULL OR owner_epoch = $1)
+                         AND updated_at < NOW() - make_interval(secs => $3)
+                       )
+                  )
             RETURNING int_job_id, req, req_status as "req_status!: ReqStatus", attempts
             "#,
             epoch,
@@ -1177,9 +1252,12 @@ impl UserDecryptRepository {
     /// Sweep: move requests that have exhausted `max_attempts` to `failure`, so a row that
     /// never completes is not claimed forever. Guarded by the same staleness window as
     /// [`Self::claim_incomplete_requests`], so a row gets one full `claim_after` window after
-    /// its last attempt before being given up on.
+    /// its last attempt before being given up on. Fenced like every other terminal write and
+    /// stamps `owner_epoch = $epoch` - see `public_decrypt_repo::fail_exhausted_attempts`'s
+    /// doc comment for why.
     pub async fn fail_exhausted_attempts(
         &self,
+        epoch: i64,
         max_attempts: i32,
         claim_after_secs: f64,
         err_reason: &str,
@@ -1195,12 +1273,14 @@ impl UserDecryptRepository {
                 WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)
                   AND attempts >= $1
                   AND updated_at < NOW() - make_interval(secs => $2)
+                  AND (owner_epoch IS NULL OR owner_epoch <= $4)
                 FOR UPDATE SKIP LOCKED
             ),
             updated AS (
                 UPDATE user_decrypt_req
                 SET req_status = 'failure'::req_status,
-                    err_reason = $3
+                    err_reason = $3,
+                    owner_epoch = $4
                 FROM stale
                 WHERE user_decrypt_req.id = stale.id
                 RETURNING user_decrypt_req.updated_at as new_updated_at,
@@ -1216,6 +1296,7 @@ impl UserDecryptRepository {
             max_attempts,
             claim_after_secs,
             err_reason,
+            epoch,
         )
         .fetch_all(&mut *conn)
         .await;

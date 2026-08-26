@@ -12,7 +12,10 @@ use crate::{
         arbitrum::{
             bindings::InputVerification,
             transaction::{
-                helper::{TransactionHelper, TransactionType, TxClaimOutcome, TxResult},
+                helper::{
+                    ReceiptRecordOutcome, TransactionHelper, TransactionType, TxClaimOutcome,
+                    TxResult,
+                },
                 tx_throttler::{DynTxHook, GatewayTxTask, TxThrottlingSender},
                 TxLifecycleHooks,
             },
@@ -648,17 +651,22 @@ impl InputProofGatewayHandler {
                     "Request processing failed - notifying user"
                 );
 
-                if let Err(db_err) = self
+                match self
                     .input_proof_repo
                     .update_status_to_failure(event.job_id.as_ref(), &error.to_string())
                     .await
                 {
-                    error!(
+                    Ok(0) => info!(
+                        job_id = %event.job_id,
+                        "failure write refused (stale epoch or status already advanced)"
+                    ),
+                    Ok(_) => {}
+                    Err(db_err) => error!(
                         alert = true,
                         job_id = %event.job_id,
                         db_error = %db_err,
                         "Failed to update failure status in database"
-                    );
+                    ),
                 }
             }
         }
@@ -710,7 +718,7 @@ impl TxLifecycleHooks for InputProofGatewayHandler {
         &self,
         job_id: &JobId,
         receipt: &TxResult,
-    ) -> Result<(), EventProcessingError> {
+    ) -> Result<ReceiptRecordOutcome, EventProcessingError> {
         let gw_reference_id = TransactionHelper::extract_gateway_id_from_receipt::<
             InputVerification::VerifyProofRequest,
         >(
@@ -729,18 +737,41 @@ impl TxLifecycleHooks for InputProofGatewayHandler {
             "Transaction confirmed, receipt received"
         );
 
-        self.input_proof_repo
+        let rows_affected = self
+            .input_proof_repo
             .update_input_proof_status_to_receipt_received(
                 job_id.as_ref(),
                 &tx_hash,
                 gw_reference_id,
             )
             .await
-            .map(|_| ())
             .map_err(|e| EventProcessingError::SqlOperationFailed {
                 operation: "input_proof.update_input_proof_status_to_receipt_received".to_string(),
                 reason: e.to_string(),
-            })
+            })?;
+
+        if rows_affected == 0 {
+            // This pod sent the transaction (it won `on_tx_in_flight`'s claim), but the write
+            // requires both `req_status = 'tx_in_flight'` and the epoch fence, and either can
+            // be why it lost: a successor's claim (a *different*, newer epoch) resets a claimed
+            // `tx_in_flight` row to `processing` in the same statement that takes it, so the
+            // row is no longer `tx_in_flight` by the time we get here. Or, within this pod's
+            // *own* epoch, its own later sweep tick reclaimed and reset this same row
+            // (build-order step 8's `claim_after` staleness case) while this send was still
+            // genuinely in flight - no epoch changed at all, just the status raced out from
+            // under it. Either way `gw_reference_id` is NOT stored: this must not read as
+            // success, since the gateway-event listener keys off it to complete the request.
+            warn!(
+                int_job_id = %job_id,
+                gw_reference_id = %gw_reference_id,
+                "receipt_received write refused (row no longer tx_in_flight under this epoch - \
+                 a successor's claim or this pod's own reclaim got there first); \
+                 gw_reference_id not stored, a re-drive is expected to record its own receipt"
+            );
+            return Ok(ReceiptRecordOutcome::Refused);
+        }
+
+        Ok(ReceiptRecordOutcome::Recorded)
     }
 
     async fn on_failure(
@@ -754,13 +785,22 @@ impl TxLifecycleHooks for InputProofGatewayHandler {
             crate::metrics::transaction::track_revert_with_request_type(reason, "input_proof");
         }
 
-        self.input_proof_repo
+        let rows_affected = self
+            .input_proof_repo
             .update_status_to_failure(job_id.as_ref(), err_reason)
             .await
-            .map(|_| ())
             .map_err(|e| EventProcessingError::SqlOperationFailed {
                 operation: "input_proof.update_status_to_failure".to_string(),
                 reason: e.to_string(),
-            })
+            })?;
+
+        if rows_affected == 0 {
+            info!(
+                int_job_id = %job_id,
+                "failure write refused (stale epoch or status already advanced)"
+            );
+        }
+
+        Ok(())
     }
 }

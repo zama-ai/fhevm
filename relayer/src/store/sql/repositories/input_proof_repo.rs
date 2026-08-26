@@ -1,3 +1,9 @@
+//! Epoch fencing (build-order step 8): see the module doc block in `public_decrypt_repo` for
+//! the full rationale, which applies here unchanged. The listener paths deliberately left
+//! unfenced in this repository are [`InputProofRepository::accept_and_complete_input_proof_req`]
+//! and [`InputProofRepository::reject_and_complete_input_proof_req`] - both record on-chain
+//! truth observed by a chain listener, not a send decision this pod's epoch owns.
+
 use std::time::Instant;
 
 use chrono::{DateTime, Utc};
@@ -7,6 +13,7 @@ use tracing::error;
 use crate::core::event::{InputProofRequest, InputProofResponse};
 use crate::core::job_id::JobId;
 use crate::metrics;
+use crate::orchestrator::DispatcherLock;
 use crate::store::sql::models::input_proof_req_model::InputProofResponseModel;
 use crate::store::sql::models::req_status_enum_model::ReqStatus;
 use crate::store::sql::{
@@ -48,11 +55,15 @@ pub enum InputProofInsertResult {
 
 pub struct InputProofRepository {
     pool: PgClient,
+    dispatcher_lock: DispatcherLock,
 }
 
 impl InputProofRepository {
-    pub fn new(pool: PgClient) -> Self {
-        Self { pool }
+    pub fn new(pool: PgClient, dispatcher_lock: DispatcherLock) -> Self {
+        Self {
+            pool,
+            dispatcher_lock,
+        }
     }
 
     // NOTE: We have a query which is performed at the database level in a pg_cron job instead of being called by the internals. and is triggered on this condition:
@@ -112,6 +123,7 @@ impl InputProofRepository {
         })?;
 
         let mut conn = self.pool.get_app_connection().await?;
+        let epoch = self.dispatcher_lock.current_epoch();
 
         let query_start = Instant::now();
         // Use ON CONFLICT with partial unique index - atomic operation, no race conditions
@@ -122,9 +134,10 @@ impl InputProofRepository {
                 ext_job_id,
                 int_job_id,
                 req,
-                req_status
+                req_status,
+                owner_epoch
             )
-            VALUES ($1, $2, $3, 'processing'::req_status)
+            VALUES ($1, $2, $3, 'processing'::req_status, $4)
             ON CONFLICT (int_job_id)
             WHERE req_status NOT IN ('failure'::req_status, 'timed_out'::req_status)
               AND int_job_id != '\x0000000000000000000000000000000000000000000000000000000000000000'
@@ -134,6 +147,7 @@ impl InputProofRepository {
             ext_job_id,
             int_job_id_bytes,
             req,
+            epoch,
         )
         .fetch_one(&mut *conn)
         .await;
@@ -207,6 +221,7 @@ impl InputProofRepository {
     /// Returns number of rows affected.
     pub async fn update_status_to_tx_in_flight(&self, int_job_id_bytes: &[u8]) -> SqlResult<u64> {
         let mut conn = self.pool.get_app_connection().await?;
+        let epoch = self.dispatcher_lock.current_epoch();
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -216,9 +231,11 @@ impl InputProofRepository {
             ),
             upd AS (
                 UPDATE input_proof_req
-                SET req_status = 'tx_in_flight'::req_status
+                SET req_status = 'tx_in_flight'::req_status,
+                    owner_epoch = $2
                 WHERE int_job_id = $1
                   AND req_status = 'processing'::req_status
+                  AND (owner_epoch IS NULL OR owner_epoch <= $2)
                 RETURNING req_status, updated_at
             )
             SELECT
@@ -227,7 +244,8 @@ impl InputProofRepository {
                 upd.updated_at as "new_updated_at!"
             FROM old, upd
             "#,
-            int_job_id_bytes
+            int_job_id_bytes,
+            epoch,
         )
         .fetch_optional(&mut *conn)
         .await;
@@ -258,8 +276,14 @@ impl InputProofRepository {
     /// Returns the number of rows affected.
     pub async fn reset_tx_in_flight_to_processing(&self) -> SqlResult<u64> {
         let mut conn = self.pool.get_app_connection().await?;
+        let epoch = self.dispatcher_lock.current_epoch();
 
         let query_start = Instant::now();
+
+        // Fenced like every other write - see `public_decrypt_repo`'s module doc for why
+        // `<=`, not `=`: a fresh epoch always wins against a dead predecessor's rows (including
+        // this same pod's own previous incarnation) without ever touching a row a currently
+        // live peer still owns.
 
         // Fetch rows to update for metrics
         let rows = sqlx::query!(
@@ -267,7 +291,9 @@ impl InputProofRepository {
             SELECT int_job_id, updated_at
             FROM input_proof_req
             WHERE req_status = 'tx_in_flight'::req_status
-            "#
+              AND (owner_epoch IS NULL OR owner_epoch <= $1)
+            "#,
+            epoch,
         )
         .fetch_all(&mut *conn)
         .await;
@@ -287,9 +313,12 @@ impl InputProofRepository {
         let result = sqlx::query!(
             r#"
             UPDATE input_proof_req
-            SET req_status = 'processing'::req_status
+            SET req_status = 'processing'::req_status,
+                owner_epoch = $1
             WHERE req_status = 'tx_in_flight'::req_status
-            "#
+              AND (owner_epoch IS NULL OR owner_epoch <= $1)
+            "#,
+            epoch,
         )
         .execute(&mut *conn)
         .await;
@@ -327,6 +356,7 @@ impl InputProofRepository {
         let id_as_bytes_array: [u8; 32] = gw_reference_id.to_be_bytes();
         let gw_ref_id = id_as_bytes_array.to_vec();
         let mut conn = self.pool.get_app_connection().await?;
+        let epoch = self.dispatcher_lock.current_epoch();
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -339,9 +369,11 @@ impl InputProofRepository {
                 SET
                     req_status = 'receipt_received'::req_status,
                     gw_req_tx_hash = $1,
-                    gw_reference_id = $2
+                    gw_reference_id = $2,
+                    owner_epoch = $4
                 WHERE int_job_id = $3
                   AND req_status = 'tx_in_flight'::req_status
+                  AND (owner_epoch IS NULL OR owner_epoch <= $4)
                 RETURNING req_status, updated_at
             )
             SELECT
@@ -352,7 +384,8 @@ impl InputProofRepository {
             "#,
             gw_req_tx_hash,
             gw_ref_id,
-            int_job_id_bytes
+            int_job_id_bytes,
+            epoch,
         )
         .fetch_optional(&mut *conn)
         .await;
@@ -387,6 +420,7 @@ impl InputProofRepository {
         err_reason: &str,
     ) -> SqlResult<u64> {
         let mut conn = self.pool.get_app_connection().await?;
+        let epoch = self.dispatcher_lock.current_epoch();
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -398,11 +432,13 @@ impl InputProofRepository {
                 UPDATE input_proof_req
                 SET
                     req_status = 'failure'::req_status,
-                    err_reason = $1
+                    err_reason = $1,
+                    owner_epoch = $3
                 WHERE int_job_id = $2
                   AND req_status IN ('processing'::req_status,
                                      'tx_in_flight'::req_status,
                                      'receipt_received'::req_status)
+                  AND (owner_epoch IS NULL OR owner_epoch <= $3)
                 RETURNING req_status, updated_at
             )
             SELECT
@@ -412,7 +448,8 @@ impl InputProofRepository {
             FROM old, upd
             "#,
             err_reason,
-            int_job_id_bytes
+            int_job_id_bytes,
+            epoch,
         )
         .fetch_optional(&mut *conn)
         .await;
@@ -784,17 +821,33 @@ impl InputProofRepository {
             .collect())
     }
 
-    /// Sweep: atomically claim incomplete requests nobody is driving, stamping `owner_epoch`
-    /// and incrementing `attempts` in the same statement that selects them. Only rows this
-    /// UPDATE actually touched come back - a row a concurrent claimer already took is not
-    /// returned here, so the caller never dispatches it (see
+    /// Sweep: atomically claim incomplete requests nobody current is driving, stamping
+    /// `owner_epoch` and incrementing `attempts` in the same statement that selects them. Only
+    /// rows this UPDATE actually touched come back - a row a concurrent claimer already took is
+    /// not returned here, so the caller never dispatches it (see
     /// `update_status_to_tx_in_flight`'s doc comment for the CAS-with-discarded-count bug
     /// this is built not to repeat).
     ///
-    /// `claim_after_secs` guards against claiming a row still being driven in-process on this
-    /// same pod: only rows whose `updated_at` predates `NOW() - claim_after_secs` are
-    /// eligible. Rows already at `max_attempts` are left alone here -
-    /// [`Self::fail_exhausted_attempts`] handles those.
+    /// Two-tier eligibility, both requiring `attempts < max_attempts`
+    /// ([`Self::fail_exhausted_attempts`] handles rows past that bound); see
+    /// `public_decrypt_repo::claim_incomplete_requests`'s doc comment for the full rationale:
+    /// - `owner_epoch < $epoch` (strictly older, never `NULL`) - a necessarily dead epoch.
+    ///   Claimed immediately, no staleness window.
+    /// - `owner_epoch IS NULL OR owner_epoch = $epoch` - unclaimed or this pod's own prior
+    ///   claim. `NULL` is deliberately *not* immediate here (unlike the branch above) - until
+    ///   dispatch is gated on the lock (step 7), a `NULL` owner can be a live non-holder still
+    ///   driving its own traffic in-process, not a dead one. `claim_after_secs` guards this
+    ///   branch, above the dominant readiness-retry budget, so live work is not re-dispatched
+    ///   on every tick.
+    ///
+    /// A row claimed out of `tx_in_flight` is reset to `processing` in the same statement,
+    /// unconditionally now (including this pod's own prior claim) - and `attempts` is never
+    /// reset, including across a change of owner - see
+    /// `public_decrypt_repo::claim_incomplete_requests`'s doc comment for both: why the reset
+    /// is safe despite `claim_after_secs` bounding sleeps rather than RPC latency, and why
+    /// `attempts` staying a global, cross-owner budget (not per-owner) is what keeps
+    /// `max_attempts` meaningful against a crash-looping pod minting a fresh epoch every
+    /// restart.
     pub async fn claim_incomplete_requests(
         &self,
         epoch: i64,
@@ -808,10 +861,20 @@ impl InputProofRepository {
             r#"
             UPDATE input_proof_req
             SET owner_epoch = $1,
-                attempts = attempts + 1
+                attempts = attempts + 1,
+                req_status = CASE
+                    WHEN req_status = 'tx_in_flight'::req_status THEN 'processing'::req_status
+                    ELSE req_status
+                END
             WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)
               AND attempts < $2
-              AND updated_at < NOW() - make_interval(secs => $3)
+              AND (
+                    owner_epoch < $1
+                    OR (
+                         (owner_epoch IS NULL OR owner_epoch = $1)
+                         AND updated_at < NOW() - make_interval(secs => $3)
+                       )
+                  )
             RETURNING int_job_id, req, req_status as "req_status!: ReqStatus", attempts
             "#,
             epoch,
@@ -835,9 +898,12 @@ impl InputProofRepository {
     /// Sweep: move requests that have exhausted `max_attempts` to `failure`, so a row that
     /// never completes is not claimed forever. Guarded by the same staleness window as
     /// [`Self::claim_incomplete_requests`], so a row gets one full `claim_after` window after
-    /// its last attempt before being given up on.
+    /// its last attempt before being given up on. Fenced like every other terminal write and
+    /// stamps `owner_epoch = $epoch` - see `public_decrypt_repo::fail_exhausted_attempts`'s
+    /// doc comment for why.
     pub async fn fail_exhausted_attempts(
         &self,
+        epoch: i64,
         max_attempts: i32,
         claim_after_secs: f64,
         err_reason: &str,
@@ -853,12 +919,14 @@ impl InputProofRepository {
                 WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)
                   AND attempts >= $1
                   AND updated_at < NOW() - make_interval(secs => $2)
+                  AND (owner_epoch IS NULL OR owner_epoch <= $4)
                 FOR UPDATE SKIP LOCKED
             ),
             updated AS (
                 UPDATE input_proof_req
                 SET req_status = 'failure'::req_status,
-                    err_reason = $3
+                    err_reason = $3,
+                    owner_epoch = $4
                 FROM stale
                 WHERE input_proof_req.id = stale.id
                 RETURNING input_proof_req.updated_at as new_updated_at,
@@ -874,6 +942,7 @@ impl InputProofRepository {
             max_attempts,
             claim_after_secs,
             err_reason,
+            epoch,
         )
         .fetch_all(&mut *conn)
         .await;

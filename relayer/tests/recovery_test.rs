@@ -27,7 +27,8 @@ use common::utils::{
     TEST_CONFIG_PATH,
 };
 use ethereum_rpc_mock::{fhevm::UserDecryptKind, SubscriptionTarget};
-use fhevm_relayer::config::settings::{Settings, StorageConfig};
+use fhevm_relayer::config::settings::{DispatcherLockConfig, Settings, StorageConfig};
+use fhevm_relayer::orchestrator::DispatcherLock;
 use fhevm_relayer::store::sql::repositories::Repositories;
 use fhevm_relayer::tracing::init_tracing_once;
 use serde_json::json;
@@ -50,6 +51,11 @@ struct RecoveryTestSetup {
     cancellation_token: CancellationToken,
     relayer_task: Option<tokio::task::JoinHandle<()>>,
     storage_settings: Option<StorageConfig>,
+    /// Lazily connected in `get_repositories` and reused: `DispatcherLock` owns a dedicated
+    /// Postgres connection outside both pools, so connecting a fresh one on every call (this
+    /// helper is called repeatedly per test) would leak one per call for the rest of the
+    /// process.
+    dispatcher_lock: Option<DispatcherLock>,
 }
 
 impl RecoveryTestSetup {
@@ -83,6 +89,7 @@ impl RecoveryTestSetup {
             cancellation_token: CancellationToken::new(),
             relayer_task: None,
             storage_settings: None,
+            dispatcher_lock: None,
         })
     }
 
@@ -222,13 +229,30 @@ impl RecoveryTestSetup {
         )
     }
 
-    /// Get repositories for DB access
-    async fn get_repositories(&self) -> anyhow::Result<Repositories> {
+    /// Get repositories for DB access. Used only for out-of-band assertions, so an unrun
+    /// (never-held) dispatcher lock is fine - it never writes through the epoch-fenced paths.
+    /// Connects the dedicated lock connection once and reuses it (`DispatcherLock` is a cheap
+    /// `Clone`) rather than opening a fresh one - and leaking it - on every call.
+    async fn get_repositories(&mut self) -> anyhow::Result<Repositories> {
         let storage = self
             .storage_settings
             .as_ref()
-            .context("Storage settings not available")?;
-        Repositories::new(storage.clone())
+            .context("Storage settings not available")?
+            .clone();
+        let dispatcher_lock = match &self.dispatcher_lock {
+            Some(lock) => lock.clone(),
+            None => {
+                let lock = DispatcherLock::connect(
+                    &DispatcherLockConfig::default(),
+                    &storage.sql_database_url,
+                )
+                .await
+                .context("Failed to connect dispatcher lock")?;
+                self.dispatcher_lock = Some(lock.clone());
+                lock
+            }
+        };
+        Repositories::new(storage, dispatcher_lock)
             .await
             .context("Failed to create repositories")
     }

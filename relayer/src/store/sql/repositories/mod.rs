@@ -11,7 +11,7 @@ pub mod utils;
 use super::client::PgClient;
 use crate::{
     config::settings::StorageConfig,
-    orchestrator::Orchestrator,
+    orchestrator::{DispatcherLock, Orchestrator},
     store::sql::repositories::{
         cron_task::{create_expiry_worker_future, create_timeout_worker_future},
         expiry_repo::ExpiryRepository,
@@ -44,16 +44,34 @@ pub struct Repositories {
 }
 
 impl Repositories {
-    /// Create all repositories from storage configuration.
-    pub async fn new(config: StorageConfig) -> anyhow::Result<Self> {
+    /// Create all repositories from storage configuration. `dispatcher_lock` is the epoch
+    /// source every request-row and chain-cursor write fences against (build-order step 8) -
+    /// see the doc block on `public_decrypt_repo` for the rationale. Cheap to pass by value:
+    /// `DispatcherLock` clones share one dedicated connection and state.
+    pub async fn new(
+        config: StorageConfig,
+        dispatcher_lock: DispatcherLock,
+    ) -> anyhow::Result<Self> {
         let health_timeout = Duration::from_secs(config.sql_health_check_timeout_secs);
         let pg_client = Arc::new(PgClient::new(config.clone()).await?);
 
         Ok(Self {
-            input_proof: Arc::new(InputProofRepository::new((*pg_client).clone())),
-            public_decrypt: Arc::new(PublicDecryptRepository::new((*pg_client).clone())),
-            user_decrypt: Arc::new(UserDecryptRepository::new((*pg_client).clone())),
-            chain_cursor: Arc::new(ChainCursorRepository::new((*pg_client).clone())),
+            input_proof: Arc::new(InputProofRepository::new(
+                (*pg_client).clone(),
+                dispatcher_lock.clone(),
+            )),
+            public_decrypt: Arc::new(PublicDecryptRepository::new(
+                (*pg_client).clone(),
+                dispatcher_lock.clone(),
+            )),
+            user_decrypt: Arc::new(UserDecryptRepository::new(
+                (*pg_client).clone(),
+                dispatcher_lock.clone(),
+            )),
+            chain_cursor: Arc::new(ChainCursorRepository::new(
+                (*pg_client).clone(),
+                dispatcher_lock,
+            )),
             timeout_repo: Arc::new(TimeoutRepository::new(
                 (*pg_client).clone(),
                 config.cron.clone(),

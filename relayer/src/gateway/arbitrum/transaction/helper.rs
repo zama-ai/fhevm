@@ -69,6 +69,23 @@ pub enum TxClaimOutcome {
     ClaimLost,
 }
 
+/// Outcome of recording a receipt this pod's own send obtained.
+///
+/// The send succeeded either way - the chain has a real transaction - so this is never about
+/// whether to retry the send. It is about whether the DB write that records the receipt
+/// (`gw_reference_id`, the `receipt_received` status) actually landed, which the epoch fence
+/// (build-order step 8) can refuse even for a genuinely successful send: a successor already
+/// claimed the row and is driving its own send in parallel. The caller must not treat `Refused`
+/// as `Recorded` - see `TransactionHelper::send_raw_transaction_sync`'s doc comment for why a
+/// refused receipt logged as "confirmed" is worse than not logging it at all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReceiptRecordOutcome {
+    /// The receipt was recorded.
+    Recorded,
+    /// Refused by the epoch fence; not recorded.
+    Refused,
+}
+
 #[async_trait::async_trait]
 pub trait TxLifecycleHooks: Send + Sync {
     async fn on_tx_in_flight(&self, job_id: &JobId)
@@ -78,7 +95,7 @@ pub trait TxLifecycleHooks: Send + Sync {
         &self,
         job_id: &JobId,
         receipt: &TxResult,
-    ) -> Result<(), EventProcessingError>;
+    ) -> Result<ReceiptRecordOutcome, EventProcessingError>;
 
     async fn on_failure(
         &self,
@@ -169,19 +186,37 @@ impl TransactionHelper {
             }
         };
 
-        hook.on_receipt_received(&job_id, &receipt).await?;
-        metrics::transaction::transaction_confirmed(
-            tx_metric_type,
-            transaction_start_time.elapsed().as_millis() as f64,
-        );
-
-        info!(
-            operation = %transaction_type,
-            tx_hash = ?receipt.transaction_hash,
-            block_number = ?receipt.block_number,
-            gas_used = ?receipt.gas_used,
-            "Transaction confirmed"
-        );
+        // A refused receipt is still a successful send - the chain has a real transaction, the
+        // hook's own log already explains the refusal - so this only decides what gets counted
+        // and logged as "confirmed", never whether to retry or error. See `ReceiptRecordOutcome`.
+        match hook.on_receipt_received(&job_id, &receipt).await? {
+            ReceiptRecordOutcome::Recorded => {
+                metrics::transaction::transaction_confirmed(
+                    tx_metric_type,
+                    transaction_start_time.elapsed().as_millis() as f64,
+                );
+                info!(
+                    operation = %transaction_type,
+                    tx_hash = ?receipt.transaction_hash,
+                    block_number = ?receipt.block_number,
+                    gas_used = ?receipt.gas_used,
+                    "Transaction confirmed"
+                );
+            }
+            ReceiptRecordOutcome::Refused => {
+                metrics::transaction::transaction_receipt_refused(
+                    tx_metric_type,
+                    transaction_start_time.elapsed().as_millis() as f64,
+                );
+                info!(
+                    operation = %transaction_type,
+                    tx_hash = ?receipt.transaction_hash,
+                    block_number = ?receipt.block_number,
+                    "Transaction sent and landed on chain, but the receipt was not recorded \
+                     (refused by the epoch fence)"
+                );
+            }
+        }
 
         Ok(())
     }

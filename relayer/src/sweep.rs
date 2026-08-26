@@ -16,27 +16,48 @@
 //! `PublicDecryptRepository::claim_incomplete_requests` and its two siblings): it stamps
 //! `owner_epoch` and increments `attempts` in the same statement that selects the row, and
 //! only the rows that statement actually touched are ever returned to (and dispatched by)
-//! this module. `update_status_to_tx_in_flight` is this codebase's example of getting that
-//! wrong - a compare-and-set whose `rows_affected` every caller discarded, so two callers
-//! could both believe they had won and both send. This module never dispatches a row it did
-//! not get back from the claim `UPDATE`.
+//! this module. This module never dispatches a row it did not get back from the claim
+//! `UPDATE`, and every send-decision write the dispatched handler goes on to make is itself
+//! fenced against `owner_epoch` (build-order step 8) - so a row this claim wins cannot be
+//! written by a stale-epoch holder underneath it either.
 //!
 //! # Not double-driving a row already in flight in-process
 //!
 //! At one replica (or on the current holder's own traffic at any replica count), the HTTP
 //! handler that inserts a `queued` row also calls [`crate::orchestrator::Orchestrator::dispatch_event`]
-//! for it in the same request, and nothing yet stamps `owner_epoch` at intake (that is later
-//! work - see the `owner_epoch` migration's comment). So the claim query cannot tell "nobody
-//! is driving this" from "the in-process handler is driving this and just hasn't updated the
-//! row yet" by `owner_epoch` alone; the only signal available without changing intake is time.
-//! `SweepConfig::claim_after` is that guard: a row is only claimable once its `updated_at` is
-//! older than `claim_after`, which must be set above the slowest readiness-check retry budget
-//! configured for this deployment - shorter, and the sweep would race live in-process work
-//! under ordinary load, not just after a crash. This is not a hard mutual-exclusion guarantee
-//! (a readiness check that runs unusually long could still be claimed and re-dispatched
-//! alongside itself); it degrades to the same tolerated duplicate every other recovery path in
-//! this codebase already accepts (see `startup.rs`'s shutdown-rationale comment: a duplicate
-//! send costs a fee and duplicate KMS work, never a wrong result), not a correctness bug.
+//! for it in the same request. Since build-order step 8, intake stamps `owner_epoch` with the
+//! inserting pod's current epoch (`NULL` if it is not the holder), and the claim query
+//! (`PublicDecryptRepository::claim_incomplete_requests` and its two siblings) is two-tier
+//! because of it:
+//!
+//! - A row owned by a *strictly older* epoch than this pod's current one - never `NULL`, see
+//!   below - can only belong to a predecessor that is, by construction, no longer the live
+//!   holder: epochs are minted only on actual lock acquisition and are monotonic across the
+//!   whole database, so an older one can never still be current. It is claimed immediately,
+//!   with no staleness window: the epoch fence on every write the dispatched handler goes on to
+//!   make is what makes this safe even if that predecessor has not noticed it is dead yet and
+//!   is still writing - not the timing of the claim itself.
+//! - A row owned by `NULL` or by this pod's own current epoch shares the *other* branch, and
+//!   `updated_at`-based timing still guards both: a `NULL` owner can be a *live* non-holder pod
+//!   driving its own accepted traffic in-process (not a dead one, until dispatch is gated on
+//!   the lock in step 7), and a row already under this pod's own epoch may genuinely still be
+//!   in progress (a readiness check, a tx send) without having touched `updated_at` recently -
+//!   reclaiming either early would just re-dispatch live work on every tick.
+//!   `SweepConfig::claim_after` bounds this branch - see its doc comment for what it is set
+//!   against, and for why that bound covers sleeps but not a stalled RPC call. This is not a
+//!   hard mutual-exclusion guarantee even so; it degrades to the same tolerated duplicate every
+//!   other recovery path in this codebase already accepts (see `startup.rs`'s shutdown-rationale
+//!   comment: a duplicate send costs a fee and duplicate KMS work, never a wrong result), not a
+//!   correctness bug.
+//!
+//! A row claimed out of `tx_in_flight` from either branch is also reset to `processing` in the
+//! same statement - see `claim_incomplete_requests`'s doc comment for why: without it,
+//! `on_tx_in_flight`'s CAS (which requires `processing`) refuses every re-dispatch, the row
+//! exhausts its attempts and is failed out, and a transaction that may already have succeeded
+//! on chain is orphaned. `attempts` itself is never reset by a claim, including across a change
+//! of owner - see the same doc comment for why a reset-on-takeover design was tried and
+//! reverted (it let a crash-looping pod, minting a fresh epoch on every restart, retry a row
+//! forever).
 
 use std::{sync::Arc, time::Duration};
 
@@ -61,9 +82,16 @@ const EXHAUSTED_ATTEMPTS_ERR_REASON: &str =
     "Exceeded maximum sweep re-dispatch attempts without completing";
 
 /// One sweep tick: while holding the lock, fail out exhausted rows, claim the rest, and
-/// dispatch what was claimed. Returns `(claimed, failed)` counts for logging. A no-op (both
-/// zero, no queries issued) when this pod does not hold the lock, or when it holds it but has
-/// not yet minted an epoch (a short window right after acquisition - see
+/// dispatch what was claimed. Returns `(dispatched, failed)` counts for logging. `dispatched`
+/// counts a successful claim *and* a successful hand-off to
+/// [`crate::orchestrator::Orchestrator::dispatch_event`] - not a confirmed re-drive.
+/// `dispatch_event` only reports whether the event was queued
+/// ([`crate::orchestrator::TokioEventDispatcher::dispatch_event`] spawns the handler detached
+/// and returns immediately), so a claimed row whose handler chain later loses a downstream CAS
+/// (e.g. `on_tx_in_flight` racing a send this same claim's `tx_in_flight` reset just started)
+/// still counts here; there is no synchronous signal for that outcome to count instead. A
+/// no-op (both zero, no queries issued) when this pod does not hold the lock, or when it holds
+/// it but has not yet minted an epoch (a short window right after acquisition - see
 /// `DispatcherLock::current_epoch`'s doc comment).
 async fn run_tick(
     repositories: &Arc<Repositories>,
@@ -82,12 +110,13 @@ async fn run_tick(
     };
 
     let claim_after_secs = config.claim_after.as_secs_f64();
-    let mut claimed = 0usize;
+    let mut dispatched = 0usize;
     let mut failed = 0u64;
 
     failed += repositories
         .public_decrypt
         .fail_exhausted_attempts(
+            epoch,
             config.max_attempts,
             claim_after_secs,
             EXHAUSTED_ATTEMPTS_ERR_REASON,
@@ -99,13 +128,14 @@ async fn run_tick(
         .await?
     {
         if dispatch_recovered_public_decrypt(orchestrator, int_job_id, req_json, status).await {
-            claimed += 1;
+            dispatched += 1;
         }
     }
 
     failed += repositories
         .user_decrypt
         .fail_exhausted_attempts(
+            epoch,
             config.max_attempts,
             claim_after_secs,
             EXHAUSTED_ATTEMPTS_ERR_REASON,
@@ -117,13 +147,14 @@ async fn run_tick(
         .await?
     {
         if dispatch_recovered_user_decrypt(orchestrator, int_job_id, req_json, status).await {
-            claimed += 1;
+            dispatched += 1;
         }
     }
 
     failed += repositories
         .input_proof
         .fail_exhausted_attempts(
+            epoch,
             config.max_attempts,
             claim_after_secs,
             EXHAUSTED_ATTEMPTS_ERR_REASON,
@@ -135,11 +166,11 @@ async fn run_tick(
         .await?
     {
         if dispatch_recovered_input_proof(orchestrator, int_job_id, req_json).await {
-            claimed += 1;
+            dispatched += 1;
         }
     }
 
-    Ok((claimed, failed))
+    Ok((dispatched, failed))
 }
 
 async fn run_sweep_worker_logic(
@@ -169,11 +200,11 @@ async fn run_sweep_worker_logic(
             Ok((0, 0)) => {
                 debug!(step = %WorkerStep::TickCompleted, worker = "sweep", "Tick complete, nothing to claim");
             }
-            Ok((claimed, failed)) => {
+            Ok((dispatched, failed)) => {
                 info!(
                     step = %WorkerStep::RowsProcessed,
                     worker = "sweep",
-                    claimed,
+                    dispatched,
                     failed_exhausted = failed,
                     "Sweep tick claimed and re-dispatched requests"
                 );

@@ -65,6 +65,19 @@ static GLOBAL_REGISTRY: OnceLock<Registry> = OnceLock::new();
 /// Every one of them is cancel-safe, so this is a fallback, not an expected wait.
 const STOP_WORK_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// Bound on waiting for this pod's *first* dispatcher-lock acquisition attempt to resolve,
+/// before `initialize_gateway` and startup recovery run - see the call site below for why
+/// recovery needs a real epoch. `initialize_gateway` does not itself need one, but the wait
+/// sits ahead of it too since both belong to the same "heavy startup work" phase, after the
+/// HTTP bind - so `/healthz` is unaffected, but this is still up to `FIRST_EPOCH_WAIT_BUDGET`
+/// added to time-to-first-poll for the gateway listeners on every pod, not just recovery's
+/// delay on the ones that need it. Generous for the single-replica/solo-restart happy path
+/// (acquisition of an unclaimed key is one fast Postgres round trip, well under this), short
+/// enough that a standby losing the acquisition race to a healthy peer does not meaningfully
+/// delay its own startup (the cron workers, the sweep, the keyurl poller) waiting for a lock
+/// that peer may hold indefinitely.
+const FIRST_EPOCH_WAIT_BUDGET: Duration = Duration::from_secs(5);
+
 /// Main library function for the FHE Event Relayer service.
 ///
 /// This function performs the following initialization steps:
@@ -115,9 +128,23 @@ pub async fn run_fhevm_relayer(
     // lock's dedicated connection: everything the HTTP bind below needs, and nothing that
     // touches the gateway or blocks for long.
 
+    // Dispatcher lock: one dedicated connection, outside both pools (see
+    // `orchestrator::dispatcher_lock` for why). Connecting and resolving the lock key is a
+    // single fast round trip, so it belongs here; actual acquisition happens in its own
+    // background task, spawned below once the heavy work has registered the rest of the
+    // named tasks. Connected before the repositories below because they hold a clone of it -
+    // every request-row and chain-cursor write fences against `current_epoch()` (build-order
+    // step 8).
+    let dispatcher_lock = DispatcherLock::connect(
+        &settings.dispatcher_lock,
+        &settings.storage.sql_database_url,
+    )
+    .await
+    .context("Failed to initialize dispatcher lock")?;
+
     // Initialize SQL repositories
     let repositories = Arc::new(
-        Repositories::new(settings.storage.clone())
+        Repositories::new(settings.storage.clone(), dispatcher_lock.clone())
             .await
             .context("Failed to initialize SQL repositories")?,
     );
@@ -155,18 +182,6 @@ pub async fn run_fhevm_relayer(
             .retry
             .clone(),
     )?);
-
-    // Dispatcher lock: one dedicated connection, outside both pools (see
-    // `orchestrator::dispatcher_lock` for why). Connecting and resolving the lock key is a
-    // single fast round trip, so it belongs here; actual acquisition happens in its own
-    // background task, spawned below once the heavy work has registered the rest of the
-    // named tasks.
-    let dispatcher_lock = DispatcherLock::connect(
-        &settings.dispatcher_lock,
-        &settings.storage.sql_database_url,
-    )
-    .await
-    .context("Failed to initialize dispatcher lock")?;
 
     let mut settings = settings;
 
@@ -238,6 +253,51 @@ pub async fn run_fhevm_relayer(
     // Everything here can block for a while (recovery walks the DB, the cron delay is 30s in
     // production) and now runs after the bind, so `/healthz` is already serving throughout.
 
+    // Dispatcher lock's poll/heartbeat loop: spawned here, before recovery, and given a
+    // bounded best-effort wait for this pod's *first* acquisition attempt to resolve.
+    // Recovery re-dispatches through the same event pipeline live traffic uses, whose
+    // status-writes are epoch-fenced (build-order step 8): without a real epoch yet,
+    // `current_epoch()` reads `None`, every fenced write's predicate degrades to `owner_epoch
+    // IS NULL`, and a row this same pod owned in its previous incarnation - never `NULL` - is
+    // untouched. Recovery still logs it as recovered (dispatch only reports whether the event
+    // was queued, not what its handler's write did - see `TokioEventDispatcher::dispatch_event`)
+    // and the row sits until the sweep's own claim notices it, which after the cron start delay
+    // below can be tens of seconds later in production. The wait here closes that gap for the
+    // common case (a solo restart, or the pod that wins the acquisition race) without blocking
+    // a losing standby's own startup indefinitely - see `FIRST_EPOCH_WAIT_BUDGET`.
+    {
+        let lock_for_task = dispatcher_lock.clone();
+        let lock_shutdown = dequeue_shutdown.clone();
+        let lock_for_wait = dispatcher_lock.clone();
+        orchestrator
+            .spawn_task_and_wait_ready(
+                "dispatcher_lock",
+                async move { lock_for_task.run(lock_shutdown).await },
+                async move {
+                    let _ = tokio::time::timeout(FIRST_EPOCH_WAIT_BUDGET, async {
+                        // Watches the epoch channel directly, not lock state: `Held` can be set
+                        // before the epoch is minted on the retry path in `heartbeat_tick` (see
+                        // `subscribe_epoch`'s doc comment), and waiting on state there would
+                        // wake early with the epoch still `None`.
+                        let mut epoch_rx = lock_for_wait.subscribe_epoch();
+                        while lock_for_wait.current_epoch().is_none() {
+                            if epoch_rx.changed().await.is_err() {
+                                return;
+                            }
+                        }
+                    })
+                    .await;
+                    // Best-effort: a timeout (this pod never acquires) or a closed channel
+                    // (never happens in practice) must not fail startup - recovery still runs,
+                    // just with `current_epoch() == None`, degrading to the pre-step-8 no-op
+                    // for previously-owned rows rather than blocking forever.
+                    anyhow::Ok(())
+                },
+            )
+            .await
+            .context("Failed to start dispatcher lock")?;
+    }
+
     // Initialize all gateway components
     gateway::initialize_gateway(
         orchestrator.clone(),
@@ -277,21 +337,6 @@ pub async fn run_fhevm_relayer(
         )
         .await
         .context("Failed to register background workers")?;
-
-    // Dispatcher lock's poll/heartbeat loop: a named task like the others above, cancelled
-    // with `dequeue_shutdown` and drained the same way. Nothing gates on its state yet.
-    {
-        let lock_for_task = dispatcher_lock.clone();
-        let lock_shutdown = dequeue_shutdown.clone();
-        orchestrator
-            .spawn_task_and_wait_ready(
-                "dispatcher_lock",
-                async move { lock_for_task.run(lock_shutdown).await },
-                async { anyhow::Ok(()) },
-            )
-            .await
-            .context("Failed to start dispatcher lock")?;
-    }
 
     // Step 6 sweep: a named task like the others above, cancelled with `dequeue_shutdown`.
     // Runs on every pod, but only acts while `dispatcher_lock` reads `Held` - see
