@@ -95,6 +95,7 @@ const LOCAL_DB_URL: &str = "postgresql://postgres:postgres@127.0.0.1:5432/coproc
 
 async fn setup_test_app_existing_db() -> Result<TestInstance, Box<dyn std::error::Error>> {
     let db_url = local_benchmark_db_url()?;
+    ensure_benchmark_keys(&db_url).await?;
     let (app_close_channel, rx) = tokio::sync::watch::channel(false);
     let worker_thread = start_coprocessor(rx, &db_url).await?;
     Ok(TestInstance {
@@ -103,6 +104,39 @@ async fn setup_test_app_existing_db() -> Result<TestInstance, Box<dyn std::error
         worker_thread: Some(worker_thread),
         db_url,
     })
+}
+
+/// Seed the FHE keys the worker needs when the target database has none.
+///
+/// The docker path gets them from the test harness's import mode, but a local
+/// database is prepared by `make init_db`, which runs migrations and seeds host
+/// chains only. Without this a reportable run starts against a keyless database
+/// and the worker cycles on "No keys found in database" until the run's wait
+/// budget expires — a wedge whose cause is several layers away from its symptom.
+async fn ensure_benchmark_keys(db_url: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .connect(db_url)
+        .await?;
+    let key_count: i64 = sqlx::query_scalar("SELECT count(1) FROM keys")
+        .fetch_one(&pool)
+        .await?;
+    if key_count > 0 {
+        return Ok(());
+    }
+    println!("benchmark database has no keys; importing the test keys");
+    // The import also inserts the test host chain, and inserts it last, so on a
+    // database whose migration already seeded that same chain and ACL it fails
+    // on the duplicate after the keys are already in. Clear the seeded row
+    // first: the import writes it back with identical contents.
+    sqlx::query("DELETE FROM host_chains")
+        .execute(&pool)
+        .await?;
+    // Without the SnS key, matching the docker path: it belongs to sns-worker,
+    // and importing it would add well over a gigabyte to every scenario that
+    // starts from a freshly recreated database.
+    setup_test_key(&pool, false).await?;
+    Ok(())
 }
 
 fn local_benchmark_db_url() -> Result<String, Box<dyn std::error::Error>> {
@@ -146,7 +180,7 @@ async fn start_coprocessor(
             &application_name,
         )),
         service_name: std::env::var("OTEL_SERVICE_NAME").unwrap_or_default(),
-        log_level: Level::INFO,
+        log_level: benchmark_log_level()?,
         health_check_port: test_harness::localstack::pick_free_port(),
         metric_rerand_batch_latency: MetricsConfig::default(),
         metric_fhe_batch_latency: MetricsConfig::default(),
@@ -175,7 +209,7 @@ async fn start_coprocessor(
     Ok(worker_thread)
 }
 
-fn benchmark_gpu_streams_per_device() -> Result<usize, Box<dyn std::error::Error>> {
+pub fn benchmark_gpu_streams_per_device() -> Result<usize, Box<dyn std::error::Error>> {
     match std::env::var("FHEVM_GPU_STREAMS_PER_DEVICE") {
         Ok(value) => {
             let streams = value.parse::<usize>()?;
@@ -199,6 +233,41 @@ pub fn benchmark_dependence_chains_per_batch(
     benchmark_positive_i32("FHEVM_BENCH_DEPENDENCE_CHAINS_PER_BATCH", default)
 }
 
+pub fn benchmark_dcid_batch_execution() -> Result<bool, Box<dyn std::error::Error>> {
+    // The production setting is the source of truth. Retain the former
+    // benchmark-only variable as a fallback so older invocation scripts keep
+    // producing their explicitly requested configuration.
+    for variable in [
+        "FHEVM_DCID_BATCH_EXECUTION",
+        "FHEVM_BENCH_DCID_BATCH_EXECUTION",
+    ] {
+        match std::env::var(variable) {
+            Ok(value) => {
+                return value
+                    .parse::<bool>()
+                    .map_err(|error| format!("parse {variable}={value:?}: {error}").into());
+            }
+            Err(std::env::VarError::NotPresent) => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(true)
+}
+
+/// Log level for the worker a benchmark starts, defaulting to warnings.
+///
+/// The subscriber applies one level to every target, so INFO here also turns on
+/// the listener's per-event logging. The traffic scenarios stage through the
+/// real ingest path and emit thousands of those records — which bury the run's
+/// own output, and, because those scenarios deliberately overlap ingestion with
+/// the window they measure, write log latency straight into the measurement.
+pub fn benchmark_log_level() -> Result<Level, Box<dyn std::error::Error>> {
+    let requested = std::env::var("FHEVM_BENCH_LOG_LEVEL").unwrap_or_else(|_| "warn".to_owned());
+    requested
+        .parse::<Level>()
+        .map_err(|error| format!("parse FHEVM_BENCH_LOG_LEVEL={requested:?}: {error}").into())
+}
+
 pub fn benchmark_dcid_adaptive_batch_execution() -> Result<bool, Box<dyn std::error::Error>> {
     // Same precedence as the batch-execution setting: the production variable
     // wins, with a benchmark-only fallback. Defaults to the production default
@@ -219,27 +288,6 @@ pub fn benchmark_dcid_adaptive_batch_execution() -> Result<bool, Box<dyn std::er
         }
     }
     Ok(false)
-}
-
-pub fn benchmark_dcid_batch_execution() -> Result<bool, Box<dyn std::error::Error>> {
-    // The production setting is the source of truth. Retain the former
-    // benchmark-only variable as a fallback so older invocation scripts keep
-    // producing their explicitly requested configuration.
-    for variable in [
-        "FHEVM_DCID_BATCH_EXECUTION",
-        "FHEVM_BENCH_DCID_BATCH_EXECUTION",
-    ] {
-        match std::env::var(variable) {
-            Ok(value) => {
-                return value
-                    .parse::<bool>()
-                    .map_err(|error| format!("parse {variable}={value:?}: {error}").into());
-            }
-            Err(std::env::VarError::NotPresent) => {}
-            Err(error) => return Err(error.into()),
-        }
-    }
-    Ok(true)
 }
 
 fn benchmark_positive_i32(variable: &str, default: i32) -> Result<i32, Box<dyn std::error::Error>> {
@@ -464,13 +512,21 @@ pub fn effective_main_block_bench_lto() -> Result<&'static str, String> {
         "main_block_baseline requires CARGO_PROFILE_BENCH_LTO=false from its isolated Make target"
             .to_owned()
     })?;
+    // `cargo bench` builds the benchmark target with the bench profile but its
+    // dependencies with the release profile, and this workspace sets fat LTO
+    // there. Requiring only the bench profile would record "no LTO" for a run
+    // whose entire dependency graph — tfhe included — was linked with it.
+    let cargo_release_lto = std::env::var("CARGO_PROFILE_RELEASE_LTO").map_err(|_| {
+        "main_block_baseline requires CARGO_PROFILE_RELEASE_LTO=false: bench dependencies build under the release profile"
+            .to_owned()
+    })?;
     let recorded_lto = std::env::var("FHEVM_BENCH_EFFECTIVE_LTO").map_err(|_| {
         "main_block_baseline requires FHEVM_BENCH_EFFECTIVE_LTO=false for artifact provenance"
             .to_owned()
     })?;
-    if cargo_profile_lto != "false" || recorded_lto != "false" {
+    if cargo_profile_lto != "false" || cargo_release_lto != "false" || recorded_lto != "false" {
         return Err(format!(
-            "main_block_baseline requires disabled bench LTO, got CARGO_PROFILE_BENCH_LTO={cargo_profile_lto:?}, FHEVM_BENCH_EFFECTIVE_LTO={recorded_lto:?}"
+            "main_block_baseline requires disabled LTO for the benchmark and its dependencies, got CARGO_PROFILE_BENCH_LTO={cargo_profile_lto:?}, CARGO_PROFILE_RELEASE_LTO={cargo_release_lto:?}, FHEVM_BENCH_EFFECTIVE_LTO={recorded_lto:?}"
         ));
     }
     Ok("false")
@@ -1386,6 +1442,56 @@ pub fn write_to_json<
     params_directory.push("parameters.json");
 
     fs::write(params_directory, serde_json::to_string(&record).unwrap()).unwrap();
+}
+
+/// The Criterion parameter record for this benchmark's key, as JSON.
+///
+/// Reported points carry these parameters wherever they are stored, and the
+/// store types them: bit size, crypto parameter alias and operand type are
+/// columns, not free-form keys. A one-shot run therefore has to describe itself
+/// with the same record every other benchmark does, rather than with the
+/// workload facts alone — those stay in the test name and the run artifact.
+pub async fn atomic_u64_bench_params_json(
+    pool: &PgPool,
+    display_name: &str,
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    let db_key_cache = fhevm_engine_common::db_keys::DbKeyCache::new(100)?;
+    let key = db_key_cache.fetch_latest_from_pool(pool).await?;
+    let params = key
+        .cks
+        .ok_or_else(|| std::io::Error::other("latest key is missing cks"))?
+        .computation_parameters();
+    Ok(serde_json::to_value(atomic_u64_parameters_record(
+        params.into(),
+        display_name,
+    ))?)
+}
+
+fn atomic_u64_parameters_record(
+    params: CryptoParametersRecord<u64>,
+    display_name: &str,
+) -> BenchmarkParametersRecord<u64> {
+    BenchmarkParametersRecord {
+        display_name: display_name.to_owned(),
+        crypto_parameters_alias: String::new(),
+        crypto_parameters: params.to_owned(),
+        message_modulus: params.message_modulus,
+        carry_modulus: params.carry_modulus,
+        ciphertext_modulus: 64,
+        bit_size: 64,
+        polynomial_multiplication: PolynomialMultiplication::Fft,
+        precision: (params.message_modulus.unwrap_or(2) as u32).ilog2(),
+        error_probability: 2f64.powf(-41.0),
+        integer_representation: IntegerRepresentation::Radix,
+        decomposition_basis: vec![],
+        pbs_algorithm: None,
+        // The worker executes a scheduled batch across its own threads, over
+        // ciphertext operands.
+        execution_type: ExecutionType::Parallel,
+        key_set_type: KeySetType::Single,
+        operand_type: OperandType::CipherText,
+        operator_type: OperatorType::Atomic,
+    }
 }
 
 pub async fn write_atomic_u64_bench_params(

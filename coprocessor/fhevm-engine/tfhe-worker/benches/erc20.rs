@@ -922,8 +922,29 @@ async fn run_main_block_one_shot() -> Result<(), Box<dyn std::error::Error>> {
         "work_items_batch_size": utils::benchmark_work_items_batch_size(EnvConfig::new().batch_size)?,
         "dependence_chains_per_batch": utils::benchmark_dependence_chains_per_batch(2000)?,
         "dcid_batch_execution": utils::benchmark_dcid_batch_execution()?,
+        "dcid_adaptive_batch_execution": utils::benchmark_dcid_adaptive_batch_execution()?,
+        // Recorded because it is not free: at INFO the listener logs every
+        // ingested event, inside the window the traffic scenarios measure.
+        "log_level": utils::benchmark_log_level()?.to_string(),
+        // Per device, so a multi-GPU host runs this many times its device
+        // count. Governs how much of a batch a GPU overlaps, which a reported
+        // GPU number cannot be compared without.
+        "gpu_streams_per_device": utils::benchmark_gpu_streams_per_device()?,
     });
     let mut app = setup_test_app().await?;
+    // Read the key's parameters before staging, so the record costs nothing
+    // inside the measured window.
+    let bench_parameters = {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(app.db_url())
+            .await?;
+        utils::atomic_u64_bench_params_json(
+            &pool,
+            &format!("erc20::transfer::main_block_one_shot::{}", scenario.name),
+        )
+        .await?
+    };
     let result: Result<MainBlockOneShotOutcome, Box<dyn std::error::Error>> = async {
         let listener_db = listener_event_db(&app).await?;
         if scenario.workload == MainBlockWorkload::Auction {
@@ -1131,6 +1152,9 @@ async fn run_main_block_one_shot() -> Result<(), Box<dyn std::error::Error>> {
             })
         } else { serde_json::Value::Null },
         "dispatch": dispatch,
+        // The parameter record reported points are stored under. The workload's
+        // own facts stay in this artifact and in the reported test name.
+        "bench_parameters": bench_parameters,
         "terminal_handle_count": outcome.terminal_handle_count,
         "computation_count": outcome.computation_count,
         "dependence_chain_count": outcome.dependence_chain_count,
