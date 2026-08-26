@@ -1449,7 +1449,7 @@ txSender:
   #     --provider-retry-interval=4s
   #     --health-check-timeout=4s
   #     --log-level=INFO
-  #     --gas-limit-overprovision-percent=120
+  #     --gas-limit-overprovision-percent=300  # default covers the quorum-completing addCiphertextMaterial
   #     --graceful-shutdown-timeout=8s
   #     --service-name=txn-sender
   #     --metric-host-txn-latency=0.1:60.0:0.1

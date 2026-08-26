@@ -45,6 +45,14 @@ pub type ToType = u8;
 pub type ScalarByte = FixedBytes<1>;
 pub type ClearConst = Uint<256, 4>;
 pub type ChainHash = TransactionHash;
+/// The executor's `uint256 boundaryBits`, stored in the ABI's canonical
+/// big-endian byte order. Bit `i` is at `mask[31 - i / 8] & (1 << (i % 8))`.
+///
+/// This is authoritative execution metadata, not a scheduler hint: it says
+/// whether the encrypted operand at dependency position `i` was minted by an
+/// earlier successful executor operation in the *same* EVM transaction.
+pub type OperandBoundaryMask = [u8; 32];
+pub const OPERAND_BOUNDARY_MASK_BYTES: usize = 32;
 
 static SLOW_LANE_MARKED_CHAINS_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(
     || {
@@ -173,6 +181,17 @@ pub struct LogTfhe {
     pub dependence_chain: TransactionHash,
     // global index per block (not by tx)
     pub log_index: Option<u64>,
+    /// The exact operand-origin bits folded into this operation's result
+    /// handle by `FHEVMExecutor`. Computation rows must carry this value;
+    /// `None` is only valid before ordered block ingestion derives it (or for
+    /// non-computation events such as `VerifyInput`).
+    pub operand_boundary_mask: Option<OperandBoundaryMask>,
+    /// Whether this event is an actual executor operation whose result is
+    /// marked in executor transient storage. Bridge fallback synthesis emits
+    /// a `TrivialEncrypt`-shaped computation row but did not execute the
+    /// executor, so its result must never become a same-transaction minted
+    /// operand for a later real executor operation.
+    pub is_executor_minted: bool,
 }
 
 pub type Transaction<'l> = sqlx::Transaction<'l, Postgres>;
@@ -491,6 +510,12 @@ impl Database {
         is_scalar: bool,
         log: &LogTfhe,
     ) -> Result<bool, SqlxError> {
+        let operand_boundary_mask = log.operand_boundary_mask.as_ref().ok_or_else(|| {
+            SqlxError::Protocol(
+                "refusing computation insert without authoritative operand boundary mask"
+                    .into(),
+            )
+        })?;
         // Schema isolation handles BCS/GCS routing at the connection layer
         // (`search_path = gcs,public` for GCS, default `public` for BCS), so
         // this INSERT references `computations` unqualified.
@@ -508,17 +533,18 @@ impl Database {
                 schedule_order,
                 is_completed,
                 host_chain_id,
-                block_number
+                block_number,
+                operand_boundary_mask
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9, $10, $11)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9, $10, $11, $12)
             ON CONFLICT (output_handle, transaction_id) DO NOTHING
             "#,
             output_handle,
-            dependencies,
+            dependencies as _,
             fhe_operation as i16,
             is_scalar,
             log.dependence_chain.to_vec(),
-            log.transaction_hash.map(|txh| txh.to_vec()),
+            log.transaction_hash.map(|txh| txh.to_vec()) as _,
             log.is_allowed,
             log.block_timestamp
                 .saturating_add(TimeDuration::microseconds(
@@ -526,7 +552,8 @@ impl Database {
                 )),
             !log.is_allowed,
             self.chain_id.as_i64(),
-            log.block_number as i64
+            log.block_number as i64,
+            operand_boundary_mask.as_slice(),
         );
         query
             .execute(tx.deref_mut())
@@ -2221,6 +2248,231 @@ pub fn tfhe_inputs_handle(op: &TfheContractEvents) -> Vec<Handle> {
 
         E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => vec![],
     }
+}
+
+/// Returns every encrypted executor operand together with its position in the
+/// `dependencies` vector stored for the computation. The position is also the
+/// bit position used by `FHEVMExecutor`'s `boundaryBits` preimage. Plaintext
+/// scalar positions are intentionally absent, and therefore retain their
+/// required zero bit.
+///
+/// Keep this in lock-step with both `insert_tfhe_event` and the executor's
+/// `_oneOperandBoundaryBit` callers. In particular, `FheMulDiv` always has a
+/// scalar divisor at position 2, and binary scalar operations have a scalar
+/// right operand at position 1.
+pub fn tfhe_encrypted_operand_positions(
+    op: &TfheContractEvents,
+) -> Vec<(usize, Handle)> {
+    use TfheContract as C;
+    use TfheContractEvents as E;
+
+    match op {
+        E::Cast(C::Cast { ct, .. })
+        | E::FheNeg(C::FheNeg { ct, .. })
+        | E::FheNot(C::FheNot { ct, .. }) => vec![(0, *ct)],
+
+        E::FheAdd(C::FheAdd {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheBitAnd(C::FheBitAnd {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheBitOr(C::FheBitOr {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheBitXor(C::FheBitXor {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheDiv(C::FheDiv {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheMax(C::FheMax {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheMin(C::FheMin {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheMul(C::FheMul {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheRem(C::FheRem {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheRotl(C::FheRotl {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheRotr(C::FheRotr {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheShl(C::FheShl {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheShr(C::FheShr {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheSub(C::FheSub {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheEq(C::FheEq {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheGe(C::FheGe {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheGt(C::FheGt {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheLe(C::FheLe {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheLt(C::FheLt {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheNe(C::FheNe {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        }) => {
+            let mut operands = vec![(0, *lhs)];
+            if scalarByte.const_is_zero() {
+                operands.push((1, *rhs));
+            }
+            operands
+        }
+
+        E::FheIfThenElse(C::FheIfThenElse {
+            control,
+            ifTrue,
+            ifFalse,
+            ..
+        }) => vec![(0, *control), (1, *ifTrue), (2, *ifFalse)],
+
+        E::FheRand(_) | E::FheRandBounded(_) | E::TrivialEncrypt(_) => {
+            vec![]
+        }
+
+        E::FheSum(C::FheSum { values, .. }) => {
+            values.iter().copied().enumerate().collect()
+        }
+
+        E::FheIsIn(C::FheIsIn { value, values, .. }) => {
+            let mut operands =
+                Vec::with_capacity(values.len().saturating_add(1));
+            operands.push((0, *value));
+            operands.extend(
+                values
+                    .iter()
+                    .copied()
+                    .enumerate()
+                    .map(|(i, value)| (i.saturating_add(1), value)),
+            );
+            operands
+        }
+
+        E::FheMulDiv(C::FheMulDiv {
+            factor1,
+            factor2,
+            scalarByte,
+            ..
+        }) => {
+            let mut operands = vec![(0, *factor1)];
+            if !fhe_mul_div_factor2_is_scalar(scalarByte) {
+                operands.push((1, *factor2));
+            }
+            operands
+        }
+
+        E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => vec![],
+    }
+}
+
+/// Reconstructs the exact `uint256 boundaryBits` value committed by the
+/// executor for one operation. `was_minted` must represent successful prior
+/// executor operations in this transaction, in log order.
+///
+/// The executor only has 256 bits of provenance. Current collection events
+/// are bounded below that limit; reject a larger event rather than silently
+/// inventing a sourcing rule that its handle does not commit to.
+pub fn operand_boundary_mask_from_minted<F>(
+    op: &TfheContractEvents,
+    mut was_minted: F,
+) -> Result<OperandBoundaryMask, String>
+where
+    F: FnMut(&Handle) -> bool,
+{
+    let mut mask = [0_u8; OPERAND_BOUNDARY_MASK_BYTES];
+    for (position, handle) in tfhe_encrypted_operand_positions(op) {
+        if position >= OPERAND_BOUNDARY_MASK_BYTES * 8 {
+            return Err(format!(
+                "operation has encrypted operand at position {position}, beyond executor boundaryBits"
+            ));
+        }
+        if !was_minted(&handle) {
+            // Match `uint256` ABI byte order: Solidity bit 0 is the least
+            // significant bit of the final byte.
+            let byte_index = OPERAND_BOUNDARY_MASK_BYTES - 1 - position / 8;
+            mask[byte_index] |= 1 << (position % 8);
+        }
+    }
+    Ok(mask)
 }
 
 /// `fheMulDiv` `scalarByte` bit 1 — factor2 is a plaintext scalar (bit 0 is the
