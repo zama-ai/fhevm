@@ -3073,7 +3073,7 @@ mod tests {
             seed_gcs_row_with_release(&pool, "DryRunStarted", "in_progress", release).await;
             create_gcs_schema(&pool).await.expect("create gcs schema");
 
-            try_cutover_if_consensus(&pool)
+            try_cutover_if_consensus(&pool, &CancellationToken::new())
                 .await
                 .expect("try cutover must not error");
             assert_eq!(
