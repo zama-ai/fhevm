@@ -3,7 +3,9 @@ mod sem_evm_rpc_provider_tests {
     use tracing::{Level, info};
     use tracing_subscriber::FmtSubscriber;
 
-    use crate::blockchain::evm::sem_evm_rpc_provider::{SemEvmRpcProvider, extract_tx_hashes};
+    use crate::blockchain::evm::sem_evm_rpc_provider::{
+        SemEvmRpcProvider, extract_tx_hashes, hex_to_u64,
+    };
 
     struct RpcTarget {
         name: &'static str,
@@ -86,7 +88,7 @@ mod sem_evm_rpc_provider_tests {
     }
 
     async fn probe_chain(target: RpcTarget) -> ChainReport {
-        let provider = match SemEvmRpcProvider::new(target.url.to_string(), 5) {
+        let provider = match SemEvmRpcProvider::new(target.url.to_string(), 5, false, 64) {
             Ok(p) => p,
             Err(e) => return ChainReport::fatal(target, format!("Creation failed: {}", e)),
         };
@@ -249,5 +251,115 @@ mod sem_evm_rpc_provider_tests {
         fmt_res(&r.batch_receipts, "batch receipts");
 
         info!("{}\n", "-".repeat(40));
+    }
+
+    // ── Finality strategy tests ──────────────────────────────────────────
+
+    const FINALITY_TEST_URL: &str = "https://ethereum-rpc.publicnode.com";
+    const FINALITY_TEST_DEPTH: u64 = 64;
+
+    #[test]
+    fn hex_to_u64_parses_prefixed_quantity() {
+        assert_eq!(hex_to_u64("0x10").unwrap(), 16);
+        assert_eq!(hex_to_u64("0x0").unwrap(), 0);
+    }
+
+    #[test]
+    fn hex_to_u64_parses_unprefixed_quantity() {
+        assert_eq!(hex_to_u64("ff").unwrap(), 255);
+    }
+
+    #[test]
+    fn hex_to_u64_rejects_invalid_hex() {
+        assert!(hex_to_u64("0xzz").is_err());
+        assert!(hex_to_u64("").is_err());
+    }
+
+    #[tokio::test]
+    async fn finality_from_tag_returns_block_behind_head() {
+        let provider =
+            SemEvmRpcProvider::new(FINALITY_TEST_URL.to_string(), 5, true, FINALITY_TEST_DEPTH)
+                .expect("Provider creation");
+
+        let finalized = provider
+            .get_finalized_block_number_from_tag()
+            .await
+            .expect("finalized tag call");
+        let head = provider.get_block_number().await.expect("head call");
+
+        assert!(finalized > 0, "finalized block must be non-zero on mainnet");
+        assert!(
+            finalized <= head,
+            "finalized ({finalized}) must not be ahead of head ({head})"
+        );
+    }
+
+    #[tokio::test]
+    async fn finality_from_depth_subtracts_depth() {
+        let provider =
+            SemEvmRpcProvider::new(FINALITY_TEST_URL.to_string(), 5, false, FINALITY_TEST_DEPTH)
+                .expect("Provider creation");
+
+        let head_before = provider.get_block_number().await.expect("head call");
+        let finalized = provider
+            .get_finalized_block_number_from_depth()
+            .await
+            .expect("depth call");
+        let head_after = provider.get_block_number().await.expect("head call");
+
+        // The head may advance between calls; bound the result on both sides.
+        assert!(
+            finalized >= head_before.saturating_sub(FINALITY_TEST_DEPTH),
+            "finalized ({finalized}) below head_before ({head_before}) - depth"
+        );
+        assert!(
+            finalized <= head_after.saturating_sub(FINALITY_TEST_DEPTH),
+            "finalized ({finalized}) above head_after ({head_after}) - depth"
+        );
+    }
+
+    #[tokio::test]
+    async fn get_final_block_number_switches_strategy() {
+        // Head moves between calls: allow a few blocks of drift when comparing
+        // the switcher's result against the strategy called directly.
+        const DRIFT: u64 = 8;
+
+        // finality_tag = true → the switcher must follow the `finalized` tag.
+        let tag_provider =
+            SemEvmRpcProvider::new(FINALITY_TEST_URL.to_string(), 5, true, FINALITY_TEST_DEPTH)
+                .expect("Provider creation");
+        let switched = tag_provider
+            .get_final_block_number()
+            .await
+            .expect("switcher (tag)");
+        let direct = tag_provider
+            .get_finalized_block_number_from_tag()
+            .await
+            .expect("direct tag call");
+        assert!(
+            switched.abs_diff(direct) <= DRIFT,
+            "tag strategy: switcher ({switched}) diverges from direct call ({direct})"
+        );
+
+        // finality_tag = false → the switcher must follow head - depth.
+        let depth_provider =
+            SemEvmRpcProvider::new(FINALITY_TEST_URL.to_string(), 5, false, FINALITY_TEST_DEPTH)
+                .expect("Provider creation");
+        let switched = depth_provider
+            .get_final_block_number()
+            .await
+            .expect("switcher (depth)");
+        let direct = depth_provider
+            .get_finalized_block_number_from_depth()
+            .await
+            .expect("direct depth call");
+        assert!(
+            switched.abs_diff(direct) <= DRIFT,
+            "depth strategy: switcher ({switched}) diverges from direct call ({direct})"
+        );
+
+        // The two strategies must both sit at or behind the chain head.
+        let head = depth_provider.get_block_number().await.expect("head call");
+        assert!(switched <= head);
     }
 }

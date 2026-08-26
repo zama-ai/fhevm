@@ -406,6 +406,11 @@ pub struct BlockchainConfig {
     #[serde(default = "default_finality_depth")]
     pub finality_depth: u64,
 
+    /// Use the `finalized` block tag (eth_getBlockByNumber("finalized")) to
+    /// determine the final block. When false, final = head - finality_depth.
+    #[serde(default = "default_finality_tag")]
+    pub finality_tag: bool,
+
     #[serde(default)]
     pub cleaner: CleanerConfig,
 
@@ -418,6 +423,10 @@ pub struct BlockchainConfig {
 
 fn default_finality_depth() -> u64 {
     64
+}
+
+fn default_finality_tag() -> bool {
+    false
 }
 
 fn default_blockchain_type() -> String {
@@ -927,6 +936,7 @@ mod tests {
             rpc_url: "https://rpc.example.com".to_string(),
             network: "test".to_string(),
             finality_depth: default_finality_depth(),
+            finality_tag: false,
             cleaner: CleanerConfig {
                 blocks_to_keep: 998,
                 ..Default::default()
@@ -949,6 +959,7 @@ mod tests {
             rpc_url: "https://rpc.example.com".to_string(),
             network: "test".to_string(),
             finality_depth: 5000,
+            finality_tag: false,
             cleaner: CleanerConfig {
                 blocks_to_keep: 999,
                 ..Default::default()
@@ -1010,6 +1021,7 @@ mod tests {
             r#type: default_blockchain_type(),
             rpc_url: "https://ethereum-rpc.publicnode.com".to_string(), // REQUIRED, REDACTED
             finality_depth: default_finality_depth(),
+            finality_tag: false,
             cleaner: CleanerConfig::default(),
             strategy: StrategyConfig::default(),
             catchup: CatchupConfig::default(),
@@ -1132,6 +1144,7 @@ mod tests {
             strategy: StrategyConfig::default(),
             catchup: CatchupConfig::default(),
             finality_depth: 15,
+            finality_tag: false,
         };
         let result = config.validate();
         assert!(result.is_err());
@@ -1171,6 +1184,7 @@ mod tests {
             strategy: StrategyConfig::default(),
             catchup: CatchupConfig::default(),
             finality_depth: 15,
+            finality_tag: false,
         };
         let debug_output = format!("{:?}", blockchain_config);
         assert!(!debug_output.contains("secret-api-key"));
@@ -1300,6 +1314,7 @@ mod tests {
             rpc_url: "https://rpc.example.com".to_string(),
             network: "ethereum-mainnet".to_string(),
             finality_depth: 64,
+            finality_tag: false,
             cleaner: CleanerConfig::default(),
             strategy: StrategyConfig::default(),
             catchup: CatchupConfig {

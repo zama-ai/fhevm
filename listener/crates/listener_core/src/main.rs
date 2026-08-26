@@ -137,6 +137,8 @@ async fn main() {
     let provider = match SemEvmRpcProvider::new(
         settings.blockchain.rpc_url.clone(),
         settings.blockchain.strategy.max_parallel_requests,
+        settings.blockchain.finality_tag,
+        settings.blockchain.finality_depth,
     ) {
         Ok(provider) => provider,
         Err(e) => {

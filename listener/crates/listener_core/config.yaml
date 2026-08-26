@@ -66,6 +66,9 @@ blockchain:
   # network: bsc-mainnet
 
   finality_depth: 64
+  # Use the node's `finalized` block tag to determine the final block.
+  # When false, final = head - finality_depth.
+  finality_tag: false
   cleaner:
     active: true
     blocks_to_keep: 1000
