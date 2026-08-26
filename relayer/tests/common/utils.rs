@@ -215,6 +215,28 @@ pub fn http_port_of(settings: &Settings) -> anyhow::Result<u16> {
         .context("Failed to parse HTTP port from settings")
 }
 
+/// Who is responsible for the Postgres schema a [`TestSetup`] runs against.
+///
+/// A [`TestSetup::join`]ed instance runs its relayer against the same schema as the peer it
+/// joined (that is the point - see `join`'s doc comment), so it must never be the one to drop
+/// it: only the original owner does, and only from its own `shutdown`.
+enum SchemaHandle {
+    Owned(TestSchema),
+    /// A peer `TestSetup` owns the schema at this URL; nothing to clean up here.
+    Shared {
+        database_url: String,
+    },
+}
+
+impl SchemaHandle {
+    fn database_url(&self) -> String {
+        match self {
+            SchemaHandle::Owned(schema) => schema.database_url(),
+            SchemaHandle::Shared { database_url } => database_url.clone(),
+        }
+    }
+}
+
 /// Per-test isolated setup with own ports, database, and mock servers
 #[allow(dead_code)]
 pub struct TestSetup {
@@ -222,11 +244,18 @@ pub struct TestSetup {
     pub host_server: MockServer,
     pub settings: Settings,
     pub http_port: u16,
-    host: HostMock,
-    gateway: GatewayMock,
+    /// Ports of the mock servers backing [`Self::fhevm_mock`] / [`Self::host_server`], kept
+    /// around (independent of who owns those mocks) so [`TestSetup::join`] can wire a second
+    /// relayer at them without needing `host`/`gateway` to be `Some`.
+    host_port: u16,
+    gateway_port: u16,
+    /// `None` for an instance built by [`TestSetup::join`]: it shares a peer's mock servers
+    /// rather than starting its own, so there is nothing here for `shutdown` to drop.
+    host: Option<HostMock>,
+    gateway: Option<GatewayMock>,
     cancellation_token: CancellationToken,
     relayer_handle: JoinHandle<()>,
-    test_schema: TestSchema,
+    test_schema: SchemaHandle,
 }
 
 impl TestSetup {
@@ -382,11 +411,84 @@ impl TestSetup {
             host_server: host.server.clone(),
             settings,
             http_port,
-            host,
-            gateway,
+            host_port,
+            gateway_port,
+            host: Some(host),
+            gateway: Some(gateway),
             cancellation_token,
             relayer_handle,
-            test_schema,
+            test_schema: SchemaHandle::Owned(test_schema),
+        })
+    }
+
+    /// Start a second relayer process against `existing`'s own schema and mock servers - two
+    /// real relayer instances against one shared database schema, rather
+    /// than the single-relayer-plus-faked-peer shape `dispatch_gate_test.rs` uses.
+    ///
+    /// Sharing the schema is what makes the two instances contend for the dispatcher lock for
+    /// real: the lock key is derived from `current_schema()` (see
+    /// `orchestrator::dispatcher_lock`), so two relayers pointed at the same schema resolve the
+    /// same key on their own, with no need for `dispatcher_lock.key_override` - prefer that
+    /// natural contention over the override for tests like these; the override stays available
+    /// (`mutate`) for a test that needs the winner to be deterministic instead.
+    ///
+    /// Sharing the mock servers (rather than starting a second pair) is what makes the test's
+    /// `fhevm_mock` / `host_server` expectations apply no matter which of the two pods ends up
+    /// dispatching. Gets its own HTTP/metrics ports, same as any other constructor - the spawn
+    /// path already binds port 0 and echoes the real address back.
+    ///
+    /// The returned instance does not own the schema or the mocks, so its `shutdown()` leaves
+    /// them alone: dropping either while `existing` is still running would pull the database or
+    /// the RPC mocks out from under it. Always shut a joined instance down *before* the one it
+    /// joined.
+    #[allow(dead_code)]
+    pub async fn join(
+        existing: &TestSetup,
+        mutate: impl FnOnce(&mut Settings),
+    ) -> anyhow::Result<Self> {
+        let temp_config_dir = tempfile::TempDir::new()?;
+        let temp_config_path = create_default_config(&temp_config_dir)?;
+        let mut settings = Settings::new(Some(temp_config_path.to_string_lossy().to_string()))
+            .expect("Failed to load configuration");
+
+        init_tracing_once(&settings.log);
+
+        wire_settings_to_mocks(
+            &mut settings,
+            existing.host_port,
+            existing.gateway_port,
+            existing.test_schema.database_url(),
+        );
+        mutate(&mut settings);
+
+        let cancellation_token = CancellationToken::new();
+        let (relayer_handle, settings) =
+            spawn_relayer(settings, cancellation_token.clone()).await?;
+        let http_port = http_port_of(&settings)?;
+
+        tracing::info!(
+            "Joined test setup complete, sharing schema and mocks with the peer - http: {}",
+            settings
+                .http
+                .endpoint
+                .as_ref()
+                .unwrap_or(&"none".to_string())
+        );
+
+        Ok(TestSetup {
+            fhevm_mock: existing.fhevm_mock.clone(),
+            host_server: existing.host_server.clone(),
+            settings,
+            http_port,
+            host_port: existing.host_port,
+            gateway_port: existing.gateway_port,
+            host: None,
+            gateway: None,
+            cancellation_token,
+            relayer_handle,
+            test_schema: SchemaHandle::Shared {
+                database_url: existing.test_schema.database_url(),
+            },
         })
     }
 
@@ -398,7 +500,7 @@ impl TestSetup {
     }
 
     #[allow(dead_code)]
-    pub async fn shutdown(mut self) {
+    pub async fn shutdown(self) {
         self.cancellation_token.cancel();
 
         // Only wait for relayer - it has the DB connections
@@ -406,13 +508,16 @@ impl TestSetup {
             tracing::error!("Test relayer task failed: {}", e);
         }
 
-        // Mock servers will shutdown when their handles are dropped
+        // Mock servers will shutdown when their handles are dropped - `None` for a joined
+        // instance, which never started its own (see `TestSetup::join`).
         drop(self.host);
         drop(self.gateway);
 
-        // Clean up test schema
-        if let Err(e) = self.test_schema.cleanup().await {
-            tracing::error!("Failed to cleanup test schema: {}", e);
+        // Clean up the test schema, but only if this instance owns it - see `SchemaHandle`.
+        if let SchemaHandle::Owned(mut schema) = self.test_schema {
+            if let Err(e) = schema.cleanup().await {
+                tracing::error!("Failed to cleanup test schema: {}", e);
+            }
         }
     }
 }
