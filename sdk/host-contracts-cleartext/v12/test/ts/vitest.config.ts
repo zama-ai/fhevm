@@ -31,6 +31,7 @@ export default defineConfig({
       'ethers-adapter.test.ts',
       'acl-owner-upgrade.test.ts',
       'deploy-v12.test.ts',
+      'create2-precompute.test.ts',
       'fhe-rand.test.ts',
     ],
     testTimeout: 60_000,

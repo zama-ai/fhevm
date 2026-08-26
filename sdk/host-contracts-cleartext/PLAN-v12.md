@@ -932,6 +932,42 @@ here is drift.
 | No `create2-deploy/upgrade-testnet.ts`              | —     | 21     |
 | No `create2-deploy/script/FhevmVerifyUpgrade.s.sol` | —     | 21     |
 
+**`test/e2e/create2-upgrade.test.ts` is v13-only for the same reason `test/ts/upgrade-e2e.test.ts` is.**
+It drives a fresh anvil, a v12 stack deployed by v12's own CREATE2 coordinator, and then v13's coordinator
+upgrading it — a _cross-generation_ test, which by rule 21 belongs to the newer generation. v12 has nothing
+to upgrade from, so a copy there would have no second stack to point at. Note the asymmetry it creates and
+accept it deliberately: the test lives in v13 but exercises v12's `create2-deploy/deploy-testnet.ts` end to
+end, so v12's deploy coordinator is covered from a directory v12 does not contain. That is the same shape
+as the TypeScript e2e and is why rule 20 makes v13 the place the work happens.
+
+**`pkg/ts/create2Addresses.ts` is ported, and differs only by the two missing roles.**
+`precomputeCreate2Addresses` predicts the CREATE2 address set — the deterministic-deployment counterpart to
+`precomputeAddresses` — and is not upgrade-path work, so rule 22 requires it here. `CREATE2_ROLES` loses
+`protocolConfig` and `kmsGeneration`, so its seal carries eleven roles rather than thirteen; the derivation
+itself is byte-identical, because the salt and init-code rules do not vary by generation.
+
+`AbstractEthereumUtils` gains the same three members (`keccak256`, `encodeAbiParameters`,
+`getCreate2Address`) in both payloads. They are REQUIRED, not optional, which is a breaking change for any
+consumer implementing that interface — recorded here because it is the only place in this port where the
+published surface got stricter rather than larger.
+
+**`pkg/ts/verify.ts` is ported, and differs only by this generation's shape.** The public `verify` /
+`snapshotStack` pair is not upgrade-path work — it checks a stack of whatever generation it ships in — so
+rule 22 requires it here, and it is present with the same exports, the same report shape and the same
+ABI-enumerated survey. The 51 differing lines are all one cause: v12 has no `ProtocolConfig` and no
+`KMSGeneration`, so those two drop out of the target table and the KMS signer set, context id and threshold
+are read off `KMSVerifier` instead. That also makes `VerifyExpectations.kmsThreshold` a scalar here against
+v13's four-field `kmsThresholds`, which is the same F-group divergence the register already records.
+
+`test/templates.test.ts`'s check that `DEFAULT_MAY_CHANGE` agrees with the proxies `updateV12ToV13`
+re-points is **v13-only**, and unavoidably so: it parses `pkg/ts/upgrade.ts`, which does not exist here
+(rule 21). The list it guards is still carried, so if this generation ever gains an upgrade path the check
+should be ported with it.
+
+`DEFAULT_MAY_CHANGE` is carried unchanged even though this generation is the floor and has nothing to
+upgrade _from_. `mode: 'upgrade'` is still reachable — verifying a stack against a snapshot of itself, which
+the ported test does — and keeping the list identical is what makes the two files diffable line by line.
+
 **The two upgrade verifies are v13-only** — `create2-deploy/upgrade-testnet.ts` and
 `create2-deploy/script/FhevmVerifyUpgrade.s.sol` — and that is rule 21 rather than an omission: v12 is
 the floor, so it has nothing to upgrade _from_ and ships no upgrade path in any form — no

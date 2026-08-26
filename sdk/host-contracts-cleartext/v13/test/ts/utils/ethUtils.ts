@@ -1,5 +1,15 @@
 import type { AbstractEthereumUtils, EncodeCallParameters } from '@fhevm/host-contracts-cleartext/ts';
-import { encodeFunctionData, getContractAddress as getViemContractAddress, toHex, type Address } from 'viem';
+import {
+  encodeAbiParameters as viemEncodeAbiParameters,
+  encodeFunctionData,
+  getContractAddress as getViemContractAddress,
+  getCreate2Address as viemGetCreate2Address,
+  keccak256 as viemKeccak256,
+  parseAbiParameters,
+  toHex,
+  type Address,
+  type Hex,
+} from 'viem';
 import { mnemonicToAccount, privateKeyToAccount } from 'viem/accounts';
 
 export type PrivateKeyFromMnemonicArgs = {
@@ -51,6 +61,31 @@ export function createViemEthereumUtils(): AbstractEthereumUtils {
           args: parameters.args,
         }),
       );
+    },
+
+    keccak256(parameters: { readonly bytes: string }): `0x${string}` {
+      return viemKeccak256(parameters.bytes as Hex);
+    },
+
+    encodeAbiParameters(parameters: {
+      readonly types: readonly string[];
+      readonly values: readonly unknown[];
+    }): `0x${string}` {
+      // viem wants parsed parameter descriptors, not type strings; `parseAbiParameters` turns the
+      // comma-joined list into them. Standard encoding, which is what `abi.encode` in Solidity is.
+      return viemEncodeAbiParameters(parseAbiParameters(parameters.types.join(',')), parameters.values as never);
+    },
+
+    getCreate2Address(parameters: {
+      readonly from: string;
+      readonly salt: string;
+      readonly initCodeHash: string;
+    }): `0x${string}` {
+      return viemGetCreate2Address({
+        from: parameters.from as Address,
+        salt: parameters.salt as Hex,
+        bytecodeHash: parameters.initCodeHash as Hex,
+      });
     },
   };
 }

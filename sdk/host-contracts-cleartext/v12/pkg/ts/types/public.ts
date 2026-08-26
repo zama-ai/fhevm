@@ -40,6 +40,38 @@ export interface AbstractEthereumUtils {
 
   // Pure ABI encoding. No signer/caller/msg.sender.
   encodeCall(parameters: EncodeCallParameters): Promise<`0x${string}`>;
+
+  // ---------------------------------------------------------------------------------------
+  // CREATE2 prediction (`precomputeCreate2Addresses`)
+  //
+  // Three pure primitives, all synchronous, all a one-liner over viem or ethers. They are here rather
+  // than on a separate optional interface because a CREATE2 address is not an optional capability of the
+  // deterministic path — without them `precomputeCreate2Addresses` cannot answer at all, so a "partial"
+  // implementation would only be able to report that it could not work.
+  // ---------------------------------------------------------------------------------------
+
+  /** keccak256 of raw bytes. Hashes both the salt preimage and the init code. */
+  keccak256(parameters: { readonly bytes: string }): `0x${string}`;
+
+  /**
+   * `abi.encode(...)` — the standard, offset-carrying encoding, not the packed one.
+   *
+   * Standard specifically: the CREATE2 salt is `keccak256(abi.encode(prefix, version, deploymentId,
+   * role))` over four DYNAMIC strings, so the offsets are part of the preimage. `encodePacked` over the
+   * same four values hashes to something else entirely, and the resulting addresses would look perfectly
+   * plausible while matching nothing the deploy scripts produce.
+   */
+  encodeAbiParameters(parameters: {
+    readonly types: readonly string[];
+    readonly values: readonly unknown[];
+  }): `0x${string}`;
+
+  /** `keccak256(0xff ++ from ++ salt ++ initCodeHash)[12:]`, EIP-1014. */
+  getCreate2Address(parameters: {
+    readonly from: string;
+    readonly salt: string;
+    readonly initCodeHash: string;
+  }): `0x${string}`;
 }
 
 export interface AbstractEthereumProvider {
@@ -166,4 +198,215 @@ export type Deployed = {
   readonly cleartextAddresses: CleartextAddresses;
   readonly pauserSetAddress: string;
   readonly aclOwnerAddress: string;
+};
+
+////////////////////////////////////////////////////////////////////////////////
+// verify
+////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * The read-only chain access `verify` needs beyond `AbstractEthereumProvider`.
+ *
+ * A separate, optional interface rather than three more members on `AbstractEthereumProvider`, for two
+ * reasons. Every existing adapter keeps compiling — this package's core flows never needed history. And
+ * the capability becomes explicit at the call site: a consumer who does not pass `history` gets checks
+ * reported as SKIPPED with the reason, instead of silently weaker verification.
+ *
+ * Both methods are a few lines over viem or ethers.
+ */
+export interface AbstractEthereumHistory {
+  /** Latest block height. Bounds the event scans to the blocks an upgrade actually spanned. */
+  getBlockNumber(): Promise<bigint>;
+
+  /**
+   * Raw storage at a slot. Needed for the ERC-1967 implementation slot: a proxy's CODE is identical
+   * before and after it is pointed at a real implementation, so nothing else can tell them apart.
+   */
+  getStorageAt(parameters: { readonly address: string; readonly slot: string }): Promise<string>;
+
+  /**
+   * Logs for the named events of `abi`, emitted by `address` in `[fromBlock, toBlock]`.
+   *
+   * Only the event NAME is needed back, because every use here asserts an empty result: the question is
+   * always "did this happen at all", never "with what arguments". Decoding is left to the adapter, whose
+   * web3 library already does it.
+   */
+  getLogs(parameters: {
+    readonly address: string;
+    readonly abi: readonly unknown[];
+    readonly eventNames: readonly string[];
+    readonly fromBlock: bigint;
+    readonly toBlock: bigint | 'latest';
+  }): Promise<ReadonlyArray<{ readonly eventName: string }>>;
+}
+
+/** One verification result. `skip` means the check could not run — never that a value looked acceptable. */
+export type VerifyCheck = {
+  readonly name: string;
+  readonly status: 'pass' | 'fail' | 'skip';
+  /** Present on `fail` (what was wrong) and on `skip` (why it could not run). */
+  readonly detail?: string;
+};
+
+/**
+ * The outcome of `verify`. `ok` is the verdict; the arrays are why.
+ *
+ * `skipped` is not a subset of failures and not a form of success. Read it: the checks that land there are
+ * the ones needing capabilities the adapter did not supply, or expectations the caller did not state.
+ */
+export type VerifyReport = {
+  readonly ok: boolean;
+  readonly checks: readonly VerifyCheck[];
+  readonly failures: readonly VerifyCheck[];
+  readonly skipped: readonly VerifyCheck[];
+};
+
+/**
+ * Everything readable about a stack at one moment, plus the height it was read at.
+ *
+ * `blockNumber` is null when `snapshotStack` was called without a `history` adapter. That is not fatal, but
+ * it costs the event scans: without a lower bound they cannot be run at all, and `verify` reports them as
+ * skipped rather than guessing a range.
+ */
+export type StackSnapshot = {
+  readonly blockNumber: bigint | null;
+  /** `"<Label>.<getter>"` -> stringified reading, or the literal `"<reverted>"`. */
+  readonly readings: Readonly<Record<string, string>>;
+};
+
+/**
+ * What `verify` cannot derive and will not assume.
+ *
+ * Every field is optional and every omission is reported as a skip rather than passing quietly. The
+ * package genuinely cannot know who *should* own a stack, or which signers *should* have been seeded — a
+ * stack bootstrapped with real keys is as valid as one built from our defaults, and deriving an
+ * expectation from a published mnemonic would make `verify` unusable against the former.
+ */
+export type VerifyExpectations = {
+  /** Who must own the `ACLOwner`. Until the admin has accepted, the deployer key is still root. */
+  readonly admin?: string;
+  /** Accounts that must be pausers, besides the `ACLOwner`, which is always required to be one. */
+  readonly pausers?: readonly string[];
+  readonly coprocessorSigners?: readonly string[];
+  readonly coprocessorThreshold?: bigint;
+  readonly kmsSigners?: readonly string[];
+  readonly kmsContextId?: bigint;
+  /**
+   * The single threshold this generation stores. v13 splits it into four on `ProtocolConfig`; here it
+   * lives on `KMSVerifier`, which is why the field is scalar rather than a `KmsThresholds`.
+   */
+  readonly kmsThreshold?: bigint;
+};
+
+type VerifyCommon = {
+  readonly ethProvider: AbstractEthereumProvider;
+  /** Omit and the two checks that need it are reported as skipped, with the reason. */
+  readonly history?: AbstractEthereumHistory;
+  readonly deployed: Deployed;
+  readonly expected?: VerifyExpectations;
+  /**
+   * Per-label ABI overrides, keyed by the labels `verify` uses (`ACL`, `FHEVMExecutor`, `KMSVerifier`,
+   * `InputVerifier`, `HCULimit`, `ProtocolConfig`, `KMSGeneration`, `CleartextArithmetic`, `CleartextDB`,
+   * `PauserSet`, `ACLOwner`).
+   *
+   * Only affects the getter survey. Supply the PREVIOUS generation's ABIs when snapshotting a stack of
+   * that generation: this package's ABIs cannot describe a getter the new generation removed, so its
+   * disappearance would otherwise be invisible.
+   */
+  readonly abis?: Readonly<Record<string, readonly unknown[]>>;
+};
+
+/**
+ * The contracts that exist RIGHT NOW, which is not the same set as a finished stack.
+ *
+ * `snapshotStack` is only meaningful before an upgrade, and at that moment the proxies the upgrade is
+ * about to create do not exist. Requiring a full `Deployed` made the function uncallable for its only real
+ * use — a caller holding a previous-generation stack has fewer roles — and the one way to satisfy it was
+ * worse than uncallable: passing the PREDICTED addresses surveys two empty proxies, records every getter
+ * as `<reverted>`, and then reports the upgrade filling them in as a changed reading. A false failure on a
+ * correct upgrade.
+ *
+ * So every role is optional except the ACL, which every generation has and which anchors the stack.
+ * Contracts with no address are simply not surveyed, and `verify` compares only the readings the snapshot
+ * actually contains — so a proxy that appears during the upgrade is new, not changed.
+ *
+ * A full `Deployed` still satisfies this, which is what makes snapshotting a same-generation stack a
+ * one-liner.
+ */
+export type PartialStack = {
+  readonly fhevmAddresses: Partial<FhevmAddresses> & { readonly aclAddress: string };
+  readonly cleartextAddresses?: Partial<CleartextAddresses>;
+  readonly pauserSetAddress?: string;
+  readonly aclOwnerAddress?: string;
+};
+
+export type SnapshotParameters = {
+  readonly ethProvider: AbstractEthereumProvider;
+  readonly history?: AbstractEthereumHistory;
+  /** The contracts that exist now — not necessarily a finished stack. See `PartialStack`. */
+  readonly deployed: PartialStack;
+  readonly abis?: Readonly<Record<string, readonly unknown[]>>;
+};
+
+/**
+ * `mode` is a discriminated union rather than a flag with an optional snapshot, so forgetting the
+ * before-snapshot is a compile error instead of an upgrade that verified only the easy half.
+ */
+export type VerifyParameters =
+  | ({ readonly mode: 'deploy' } & VerifyCommon)
+  | ({
+      readonly mode: 'upgrade';
+      /** From `snapshotStack()`, taken BEFORE the upgrade ran. */
+      readonly before: StackSnapshot;
+      /** Defaults to `DEFAULT_MAY_CHANGE`. Every entry must actually change, or verification fails. */
+      readonly mayChange?: readonly string[];
+    } & VerifyCommon);
+
+////////////////////////////////////////////////////////////////////////////////
+// precomputeCreate2Addresses
+////////////////////////////////////////////////////////////////////////////////
+
+export type Create2Parameters = {
+  readonly ethUtils: AbstractEthereumUtils;
+  /**
+   * The generation's version string, exactly as the deploy scripts spell it — `"0.13"`, not `"0.13.0"`.
+   *
+   * It is inside the salt, so it is inside every address. Mixing it in is what lets two generations use
+   * the same role names against the same factory without colliding.
+   */
+  readonly version: string;
+  /** Operator-chosen. A fresh one yields a completely disjoint address set. */
+  readonly deploymentId: string;
+  /**
+   * The account that will SEND the creates — baked into the ACL proxy's `initialize(address)` and into
+   * `ACLOwner`'s constructor, so it changes those two addresses.
+   *
+   * The deployer, not the final admin. `PauserSet.addPauser` is `onlyACLOwner`, so the early bootstrap
+   * steps are only sendable by whoever this names, and a multisig admin cannot sign mid-run.
+   */
+  readonly deployer: string;
+  /** Defaults to the canonical `CREATE2_FACTORY`. Override only to rehearse against a private factory. */
+  readonly factory?: string;
+};
+
+/**
+ * Every address a CREATE2 deploy will land on, except the nine implementations.
+ *
+ * Those are absent because their init code bakes in this whole set, so predicting them requires feeding
+ * this result back into a rebuild — the coordinator's three-pass pipeline, not something a pure function
+ * can do. Nothing a consumer needs in order to TALK to a stack is missing.
+ */
+export type Create2Addresses = {
+  readonly fhevmAddresses: FhevmAddresses;
+  readonly cleartextAddresses: CleartextAddresses;
+  readonly pauserSetAddress: string;
+  readonly aclOwnerAddress: string;
+  /**
+   * The two `EmptyUUPSProxy` implementations every proxy is constructed over before it is materialized.
+   * Returned because the deploy needs them and because they are part of what makes the set reproducible —
+   * not because a consumer of a finished stack has any use for them.
+   */
+  readonly emptyImplementations: { readonly acl: string; readonly shared: string };
+  /** Echoed back so a caller can record which factory a prediction was made against. */
+  readonly factory: string;
 };

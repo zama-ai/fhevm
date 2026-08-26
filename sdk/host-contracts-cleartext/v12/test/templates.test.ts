@@ -356,6 +356,39 @@ void test('LocalHostBytecode.sol declares the ZamaConfig localhost addresses', (
   }
 });
 
+/**
+ * The cheatcode-calling cleartext variants, which LocalHostBytecode.sol carries ALONGSIDE the standard
+ * blobs so `FhevmDeploy.sol` can use them while `DeployLocalStack.s.sol` keeps the plain ones.
+ *
+ * They have no committed template, and should not: `TARGET_CONTRACTS` drives `pkg/ts/artifacts`, and a
+ * contract that reverts outside forge has no business shipping to a TypeScript consumer. So they are
+ * checked for what CAN be checked here — present, creation code, and NOT equal to the standard blob,
+ * which is what proves the generator read a different artifact instead of silently duplicating one.
+ * That they are marker-free is covered by the sweep over every blob at the end of this test.
+ */
+const FORGE_BLOBS: ReadonlyArray<{ readonly constantName: string; readonly standardOf: string }> = [
+  { constantName: 'CLEARTEXT_FORGE_ARITHMETIC', standardOf: 'CLEARTEXT_ARITHMETIC' },
+  { constantName: 'CLEARTEXT_FORGE_FHEVM_EXECUTOR', standardOf: 'CLEARTEXT_FHEVM_EXECUTOR' },
+];
+
+void test('LocalHostBytecode.sol carries the Forge cleartext variants alongside the standard blobs', () => {
+  const blobs = declaredBlobs(readFileSync(LOCAL_HOST_BYTECODE_PATH, 'utf8'));
+
+  for (const { constantName, standardOf } of FORGE_BLOBS) {
+    const forgeBlob = blobs.get(constantName);
+    const standardBlob = blobs.get(standardOf);
+
+    assert.ok(forgeBlob !== undefined, `${constantName} missing from LocalHostBytecode.sol`);
+    assert.ok(standardBlob !== undefined, `${standardOf} missing from LocalHostBytecode.sol`);
+    assert.equal(forgeBlob.suffix, 'CREATION', `${constantName} code kind`);
+    assert.notEqual(
+      forgeBlob.hex,
+      standardBlob.hex,
+      `${constantName} is identical to ${standardOf} — the generator did not read the Forge artifact`,
+    );
+  }
+});
+
 void test('LocalHostBytecode.sol blobs equal the committed templates patched with those addresses', () => {
   // Ties the two pipelines together. The generated file is compiled against real addresses; the
   // templates are compiled against markers and patched. Test 5 above proves those are equivalent, so
@@ -364,7 +397,11 @@ void test('LocalHostBytecode.sol blobs equal the committed templates patched wit
   const declared = declaredAddresses(source);
   const blobs = declaredBlobs(source);
 
-  assert.equal(blobs.size, TARGET_CONTRACTS.length, 'one blob per target contract');
+  assert.equal(
+    blobs.size,
+    TARGET_CONTRACTS.length + FORGE_BLOBS.length,
+    'one blob per target contract, plus the Forge cleartext variants',
+  );
 
   for (const target of TARGET_CONTRACTS) {
     // CONSTANT_NAMES is total over ContractName, so completeness is a compile-time property here.

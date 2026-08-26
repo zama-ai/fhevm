@@ -85,6 +85,25 @@ export function createEthersEthereumUtils(): AbstractEthereumUtils {
       const calldata = itf.encodeFunctionData(parameters.functionName, parameters.args ? [...parameters.args] : []);
       return Promise.resolve(calldata as `0x${string}`);
     },
+
+    keccak256(parameters: { readonly bytes: string }): `0x${string}` {
+      return EthersT.keccak256(parameters.bytes) as `0x${string}`;
+    },
+
+    encodeAbiParameters(parameters: {
+      readonly types: readonly string[];
+      readonly values: readonly unknown[];
+    }): `0x${string}` {
+      return EthersT.AbiCoder.defaultAbiCoder().encode([...parameters.types], [...parameters.values]) as `0x${string}`;
+    },
+
+    getCreate2Address(parameters: {
+      readonly from: string;
+      readonly salt: string;
+      readonly initCodeHash: string;
+    }): `0x${string}` {
+      return EthersT.getCreate2Address(parameters.from, parameters.salt, parameters.initCodeHash) as `0x${string}`;
+    },
   };
 }
 

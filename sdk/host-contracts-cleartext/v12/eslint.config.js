@@ -20,6 +20,7 @@ export default [
       'test/ts/tarball-consumer.test.ts',
       'test/ts/acl-owner-upgrade.test.ts',
       'test/ts/deploy-v12.test.ts',
+      'test/ts/create2-precompute.test.ts',
       'test/ts/fhe-rand.test.ts',
       'test/ts/utils/viemEthereumLib.ts',
       'test/ts/utils/ethUtils.ts',

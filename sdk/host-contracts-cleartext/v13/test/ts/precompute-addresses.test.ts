@@ -90,6 +90,18 @@ function nonceProbe(): { readonly ethUtils: AbstractEthereumUtils; readonly call
     encodeCall: () => {
       throw new Error('precomputeAddresses must not encode calls');
     },
+    // The CREATE2 primitives are not part of the nonce path. Throwing rather than stubbing a plausible
+    // value is the point: if `precomputeAddresses` ever reached for one, this test would say so instead of
+    // quietly agreeing with whatever the stub returned.
+    keccak256: () => {
+      throw new Error('precomputeAddresses must not hash');
+    },
+    encodeAbiParameters: () => {
+      throw new Error('precomputeAddresses must not ABI-encode');
+    },
+    getCreate2Address: () => {
+      throw new Error('precomputeAddresses must not derive a CREATE2 address');
+    },
   };
   return { ethUtils, callers };
 }
@@ -98,6 +110,15 @@ function nonceProbe(): { readonly ethUtils: AbstractEthereumUtils; readonly call
 const viemEthUtils: AbstractEthereumUtils = {
   getContractAddress: ({ from, nonce }) => getContractAddress({ from: from as Address, nonce }),
   encodeCall: () => {
+    throw new Error('unused');
+  },
+  keccak256: () => {
+    throw new Error('unused');
+  },
+  encodeAbiParameters: () => {
+    throw new Error('unused');
+  },
+  getCreate2Address: () => {
     throw new Error('unused');
   },
 };

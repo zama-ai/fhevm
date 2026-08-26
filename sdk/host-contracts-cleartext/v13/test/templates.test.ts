@@ -356,6 +356,39 @@ void test('LocalHostBytecode.sol declares the ZamaConfig localhost addresses', (
   }
 });
 
+/**
+ * The cheatcode-calling cleartext variants, which LocalHostBytecode.sol carries ALONGSIDE the standard
+ * blobs so `FhevmDeploy.sol` can use them while `DeployLocalStack.s.sol` keeps the plain ones.
+ *
+ * They have no committed template, and should not: `TARGET_CONTRACTS` drives `pkg/ts/artifacts`, and a
+ * contract that reverts outside forge has no business shipping to a TypeScript consumer. So they are
+ * checked for what CAN be checked here — present, creation code, and NOT equal to the standard blob,
+ * which is what proves the generator read a different artifact instead of silently duplicating one.
+ * That they are marker-free is covered by the sweep over every blob at the end of this test.
+ */
+const FORGE_BLOBS: ReadonlyArray<{ readonly constantName: string; readonly standardOf: string }> = [
+  { constantName: 'CLEARTEXT_FORGE_ARITHMETIC', standardOf: 'CLEARTEXT_ARITHMETIC' },
+  { constantName: 'CLEARTEXT_FORGE_FHEVM_EXECUTOR', standardOf: 'CLEARTEXT_FHEVM_EXECUTOR' },
+];
+
+void test('LocalHostBytecode.sol carries the Forge cleartext variants alongside the standard blobs', () => {
+  const blobs = declaredBlobs(readFileSync(LOCAL_HOST_BYTECODE_PATH, 'utf8'));
+
+  for (const { constantName, standardOf } of FORGE_BLOBS) {
+    const forgeBlob = blobs.get(constantName);
+    const standardBlob = blobs.get(standardOf);
+
+    assert.ok(forgeBlob !== undefined, `${constantName} missing from LocalHostBytecode.sol`);
+    assert.ok(standardBlob !== undefined, `${standardOf} missing from LocalHostBytecode.sol`);
+    assert.equal(forgeBlob.suffix, 'CREATION', `${constantName} code kind`);
+    assert.notEqual(
+      forgeBlob.hex,
+      standardBlob.hex,
+      `${constantName} is identical to ${standardOf} — the generator did not read the Forge artifact`,
+    );
+  }
+});
+
 void test('LocalHostBytecode.sol blobs equal the committed templates patched with those addresses', () => {
   // Ties the two pipelines together. The generated file is compiled against real addresses; the
   // templates are compiled against markers and patched. Test 5 above proves those are equivalent, so
@@ -364,7 +397,11 @@ void test('LocalHostBytecode.sol blobs equal the committed templates patched wit
   const declared = declaredAddresses(source);
   const blobs = declaredBlobs(source);
 
-  assert.equal(blobs.size, TARGET_CONTRACTS.length, 'one blob per target contract');
+  assert.equal(
+    blobs.size,
+    TARGET_CONTRACTS.length + FORGE_BLOBS.length,
+    'one blob per target contract, plus the Forge cleartext variants',
+  );
 
   for (const target of TARGET_CONTRACTS) {
     // CONSTANT_NAMES is total over ContractName, so completeness is a compile-time property here.
@@ -478,5 +515,44 @@ void test('ComputeAddresses.s.sol matches its template rendered with the current
     readFileSync(COMPUTE_ADDRESSES_PATH, 'utf8'),
     computeAddressesScript(),
     `${basename(COMPUTE_ADDRESSES_PATH)} is stale — run \`npm run generate:compute-addresses\``,
+  );
+});
+
+/**
+ * `DEFAULT_MAY_CHANGE`'s version exemptions are exactly the proxies `updateV12ToV13` re-points, minus the
+ * two it CREATES.
+ *
+ * The list in `pkg/ts/verify.ts` is a copy of a decision made in `pkg/ts/upgrade.ts`, and a copy nothing
+ * compares is the failure mode this repository keeps finding. Deriving it instead is not possible without
+ * restructuring `upgrade.ts` — its target table carries a template, an ABI and an initializer per entry, so
+ * it cannot be generated from names — so the copy stays and this checks it.
+ *
+ * The two new proxies are excluded for a reason worth keeping straight: before the upgrade they do not
+ * exist, so they produce no reading to compare. They are NEW, not changed, and exempting them would mean
+ * claiming a reading moved when there was never a first one.
+ */
+void test('verify DEFAULT_MAY_CHANGE matches the proxies updateV12ToV13 re-points', () => {
+  const upgradeSrc = readFileSync(join(PACKAGE_ROOT_ABS_PATH, 'pkg', 'ts', 'upgrade.ts'), 'utf8');
+  const verifySrc = readFileSync(join(PACKAGE_ROOT_ABS_PATH, 'pkg', 'ts', 'verify.ts'), 'utf8');
+
+  const repointed = [...upgradeSrc.matchAll(/^\s+contractName: '([A-Za-z]+)',$/gm)].map((m) => m[1] ?? '');
+  assert.ok(repointed.length >= 5, `parsed only ${repointed.length} upgrade targets — the parser is broken`);
+
+  // The proxies the upgrade CREATES rather than re-points. Named here rather than inferred, because the
+  // distinction is the whole point of the check and inferring it would just move the assumption.
+  const created = new Set(['ProtocolConfig', 'KMSGeneration']);
+
+  const block = verifySrc.slice(verifySrc.indexOf('DEFAULT_MAY_CHANGE'));
+  const exempted = [...block.slice(0, block.indexOf('];')).matchAll(/'([A-Za-z]+)\.getVersion'/g)].map(
+    (m) => m[1] ?? '',
+  );
+  assert.ok(exempted.length > 0, 'parsed no getVersion exemptions out of DEFAULT_MAY_CHANGE');
+
+  assert.deepEqual(
+    [...exempted].sort(),
+    repointed.filter((name) => !created.has(name)).sort(),
+    'DEFAULT_MAY_CHANGE and upgrade.ts disagree about which proxies get re-pointed.\n' +
+      'A proxy re-pointed without being exempted makes verify fail on a correct upgrade; one exempted\n' +
+      'without being re-pointed makes verify fail its own "exemptions were used" check.',
   );
 });

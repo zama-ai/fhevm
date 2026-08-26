@@ -116,6 +116,39 @@ export const CODE_KIND: Readonly<Record<ContractName, CodeKind>> = {
   PauserSet: 'runtime',
 };
 
+/**
+ * Forge-instrumented cleartext contracts, emitted ALONGSIDE the standard blobs.
+ *
+ * Additive on purpose. An earlier design had `--forge` overwrite
+ * CLEARTEXT_FHEVM_EXECUTOR_CREATION_CODE / CLEARTEXT_ARITHMETIC_CREATION_CODE in place, which cannot
+ * work: `DeployLocalStack.s.sol` imports this same file and BROADCASTS to a node. Overwriting would
+ * have given the broadcast path cheatcode-calling bytecode, and every FHE operation on that stack
+ * would revert — cheatcodes live in forge's own EVM and nowhere else. Two extra constants let each
+ * path import what it needs, with no build mode to get wrong and nothing to remember before
+ * committing.
+ *
+ *   FhevmDeploy.sol          in-process forge test  -> CLEARTEXT_FORGE_*_CREATION_CODE
+ *   DeployLocalStack.s.sol   broadcast to a node    -> CLEARTEXT_*_CREATION_CODE
+ *
+ * Only these two contracts have Forge variants: they are the only ones that call cheatcodes.
+ */
+const FORGE_VARIANTS: ReadonlyArray<{
+  readonly constantName: string;
+  readonly contractName: string;
+  readonly sourcePath: string;
+}> = [
+  {
+    constantName: 'CLEARTEXT_FORGE_ARITHMETIC',
+    contractName: 'CleartextForgeArithmetic',
+    sourcePath: 'src/cleartext/CleartextForgeArithmetic.sol',
+  },
+  {
+    constantName: 'CLEARTEXT_FORGE_FHEVM_EXECUTOR',
+    contractName: 'CleartextForgeFHEVMExecutor',
+    sourcePath: 'src/cleartext/CleartextForgeFHEVMExecutor.sol',
+  },
+];
+
 /** `FheType` reaches generated interfaces as `type FheType is uint8;`, local to each interface and so
  * incompatible across them. Rewritten to import the one shared enum instead (generate.py does the same). */
 const FHE_TYPE_DECLARATION = '    type FheType is uint8;';
@@ -430,8 +463,22 @@ function _renderCodeSection(code: ReadonlyMap<ContractName, string>, kind: CodeK
 
 ////////////////////////////////////////////////////////////////////////////////
 
-function _render(stack: LocalHostStack, code: ReadonlyMap<ContractName, string>): string {
+function _render(
+  stack: LocalHostStack,
+  code: ReadonlyMap<ContractName, string>,
+  forgeCode: ReadonlyMap<string, string>,
+): string {
   const addressComment = ADDRESS_NAMES.map((name) => `///   ${name} = ${stack.byName[name]}`).join('\n');
+
+  // Named apart and documented here, because the two blobs are otherwise indistinguishable by eye and
+  // land in the same file that DeployLocalStack.s.sol imports.
+  const forgeSection = [...forgeCode]
+    .map(
+      ([constantName, hex]) =>
+        `/// @dev ${constantName} creation bytecode (${String(hex.length / 2)} bytes).\n` +
+        `bytes constant ${constantName}_CREATION_CODE =\n    hex"${hex}";`,
+    )
+    .join('\n\n');
 
   // ^0.8.24, not the model's ^0.8.27: it is the payload's own floor (rule 16), it is what the harness
   // pins so test/FhevmDeploy.t.sol can compile these files, and it accepts every consumer 0.8.27 would.
@@ -449,10 +496,18 @@ pragma solidity ^0.8.24;
 // CREATION_CODE must be deployed: the constructor either takes arguments or writes storage.
 // RUNTIME_CODE may be etched at its address, being equivalent to constructing the contract.
 //
+// CLEARTEXT_FORGE_* are the cheatcode-calling variants of the executor and arithmetic contracts, and
+// are for pkg/forge/src/FhevmDeploy.sol ONLY — a forge test that creates the stack in-process.
+// Broadcast to a node, they revert on every FHE operation: cheatcodes live in forge's own EVM, so
+// 0x7109...dD12D has no code anywhere else and Solidity's extcodesize guard turns the call into a
+// revert. DeployLocalStack.s.sol broadcasts, and therefore uses the plain CLEARTEXT_* blobs.
+//
 /// Deployer: ${stack.deployer} (address index ${String(stack.deployerAddressIndex)})
 ${addressComment}
 
 ${_renderCodeSection(code, 'creation')}
+
+${forgeSection}
 
 ${_renderCodeSection(code, 'runtime')}
 `;
@@ -515,6 +570,7 @@ export function writeLocalHostBytecode(): LocalHostBytecodeResult {
   const originalRemappings = readFileSync(REMAPPINGS_PATH, 'utf8');
   const tmpOut = join(TMP_DIR, 'out');
   const code = new Map<ContractName, string>();
+  const forgeCode = new Map<string, string>();
   const interfaces: string[] = [];
 
   try {
@@ -555,8 +611,20 @@ export function writeLocalHostBytecode(): LocalHostBytecodeResult {
       code.set(target.contractName, hex);
     }
 
+    // Same marker check, same tmp build — these compile from pkg/src like everything else.
+    for (const variant of FORGE_VARIANTS) {
+      const artifactPath = join(tmpOut, basename(variant.sourcePath), `${variant.contractName}.json`);
+      const hex = readJson<Artifact>(artifactPath).bytecode.object.replace(/^0x/, '').toLowerCase();
+
+      const survivor = markers.find((marker) => hex.includes(marker));
+      if (survivor !== undefined) {
+        throw new Error(`${variant.contractName}: placeholder marker 0x${survivor} survived the build.`);
+      }
+      forgeCode.set(variant.constantName, hex);
+    }
+
     mkdirSync(dirname(OUTPUT_PATH), { recursive: true });
-    writeFileSync(OUTPUT_PATH, _render(stack, code), 'utf8');
+    writeFileSync(OUTPUT_PATH, _render(stack, code, forgeCode), 'utf8');
     writeFileSync(ADDRESSES_OUTPUT_PATH, _renderAddresses(stack), 'utf8');
     writeFileSync(BOOTSTRAP_OUTPUT_PATH, _renderBootstrap(), 'utf8');
     interfaces.push(..._generateInterfaces(tmpOut));

@@ -50,9 +50,14 @@ function canonicalRole(name: string): string {
     .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
     .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
     .toUpperCase();
+  // The Forge variants are the same ROLE deployed with different bytecode — FhevmDeploy uses them so
+  // its in-process stack can call cheatcodes, DeployLocalStack cannot because it broadcasts. This test
+  // compares ORDER, and the order is identical, so the infix is dropped before anything else. Were it
+  // not, every layer would appear to disagree with FhevmDeploy about two positions that never moved.
+  const deforged = snake.replace(/^CLEARTEXT_FORGE_/, 'CLEARTEXT_');
   // The cleartext variants sit behind the stock proxies; CleartextArithmetic and CleartextDB are their
   // own roles, so only the three substitutions are rewritten.
-  return snake.replace(/^CLEARTEXT_(FHEVM_EXECUTOR|KMS_VERIFIER|INPUT_VERIFIER)$/, '$1');
+  return deforged.replace(/^CLEARTEXT_(FHEVM_EXECUTOR|KMS_VERIFIER|INPUT_VERIFIER)$/, '$1');
 }
 
 function read(relativePath: string): string {

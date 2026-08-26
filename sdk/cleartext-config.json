@@ -61,20 +61,6 @@
     ]
   },
 
-  "emittedTo": {
-    "_note": "Every file that must agree with this one. RULES.md rule 23 requires names verbatim.",
-    "typescript": [
-      "host-contracts-cleartext/v13/internal/cleartext-config.ts",
-      "host-contracts-cleartext/v13/pkg/ts/cleartext-config.ts",
-      "host-contracts-cleartext/v12/internal/cleartext-config.ts",
-      "host-contracts-cleartext/v12/pkg/ts/cleartext-config.ts"
-    ],
-    "solidity": [
-      "host-contracts-cleartext/v13/create2-deploy/script/FhevmCleartextConfig.sol",
-      "host-contracts-cleartext/v12/create2-deploy/script/FhevmCleartextConfig.sol"
-    ]
-  },
-
   "constants": {
     "CLEARTEXT_GATEWAY_CHAIN_ID": {
       "value": "100733346448153",

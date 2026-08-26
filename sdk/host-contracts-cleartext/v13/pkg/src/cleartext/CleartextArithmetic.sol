@@ -116,16 +116,24 @@ contract CleartextArithmetic is ICleartextArithmetic, UUPSUpgradeableEmptyProxy,
         }
     }
 
+    function randomUint256(FheType randType, bytes16 seed) internal view virtual returns (uint256) {
+        return uint256(keccak256(abi.encodePacked(randType, seed, "randValue")));
+    }
+
+    function randomBoundedUint256(uint256 upperBound, bytes16 seed) internal view virtual returns (uint256) {
+        return (uint256(keccak256(abi.encodePacked(upperBound, seed, "randBoundedValue"))) % upperBound);
+    }
+
     /// @inheritdoc ICleartextArithmetic
     function recordRand(bytes32 result, FheType randType, bytes16 seed) external override {
-        uint256 randomValue = uint256(keccak256(abi.encodePacked(seed, "randValue")));
+        uint256 randomValue = randomUint256(randType, seed);
         ICleartextDB(cleartextDbAdd).set(result, clamp(randomValue, FheTypeBitWidth.bitWidthForType(randType)));
     }
 
     /// @inheritdoc ICleartextArithmetic
     function recordRandBounded(bytes32 result, uint256 upperBound, bytes16 seed) external override {
-        uint256 randomValue = uint256(keccak256(abi.encodePacked(seed, "randBoundedValue")));
-        ICleartextDB(cleartextDbAdd).set(result, randomValue % upperBound);
+        uint256 randomValue = randomBoundedUint256(upperBound, seed);
+        ICleartextDB(cleartextDbAdd).set(result, randomValue);
     }
 
     /// @inheritdoc ICleartextArithmetic

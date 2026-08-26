@@ -6,6 +6,9 @@ import {
   type BootstrapConfig,
   type FhevmAddresses,
   CONTRACT_VERSIONS,
+  snapshotStack,
+  verify,
+  type AbstractEthereumHistory,
 } from '@fhevm/host-contracts-cleartext/ts';
 import { createPublicClient, createWalletClient, http, parseEventLogs, type Address, type Hex } from 'viem';
 import { mnemonicToAccount, privateKeyToAccount } from 'viem/accounts';
@@ -566,3 +569,184 @@ test('deploy with no config registers the signers the SDK derives', async () => 
     await stopAnvil(anvil.process);
   }
 }, 120_000);
+
+////////////////////////////////////////////////////////////////////////////////
+// The public `verify` entry point
+////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * The `history` capability `verify` needs beyond `AbstractEthereumProvider`, over viem.
+ *
+ * Written out here rather than shipped as a helper on purpose: it is the reference implementation a
+ * consumer copies, so if it is longer than a few lines the interface is wrong. It is not.
+ */
+function createViemHistory(rpcUrl: string): AbstractEthereumHistory {
+  const client = createPublicClient({ chain: foundry, transport: http(rpcUrl) });
+  return {
+    async getBlockNumber() {
+      return await client.getBlockNumber();
+    },
+    async getStorageAt(parameters) {
+      return (
+        (await client.getStorageAt({ address: parameters.address as Address, slot: parameters.slot as Hex })) ?? '0x'
+      );
+    },
+    async getLogs(parameters) {
+      const events = (parameters.abi as ReadonlyArray<{ type?: string; name?: string }>).filter(
+        (entry) => entry.type === 'event' && parameters.eventNames.includes(entry.name ?? ''),
+      );
+      // An ABI with none of the named events would make getLogs return every log from the address, which
+      // would read as a spurious failure. Empty means "nothing to look for", so answer that directly.
+      if (events.length === 0) return [];
+      const logs = await client.getLogs({
+        address: parameters.address as Address,
+        events: events as never,
+        fromBlock: parameters.fromBlock,
+        toBlock: parameters.toBlock,
+      });
+      return logs.map((log) => ({ eventName: (log as { eventName?: string }).eventName ?? '' }));
+    },
+  };
+}
+
+test('verify reports a freshly deployed stack as sound', async () => {
+  const deployerKey = privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: 5 });
+  const adminKey = privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: 6 });
+
+  const anvil = startAnvil({ port: 8616, mnemonic: MNEMONIC });
+  try {
+    await waitForAnvil(anvil.rpcUrl);
+
+    const adapters = createViemEthereumAdapters({ rpcUrl: anvil.rpcUrl, privateKey: deployerKey });
+    const adminAdapters = createViemEthereumAdapters({ rpcUrl: anvil.rpcUrl, privateKey: adminKey });
+    const history = createViemHistory(anvil.rpcUrl);
+
+    const deployed = await deploy({
+      ethProvider: adapters.provider,
+      ethUtils: adapters.utils,
+      deployer: adapters.signer,
+      admin: adminAdapters.signer,
+    });
+
+    const report = await verify({
+      mode: 'deploy',
+      ethProvider: adapters.provider,
+      history,
+      deployed,
+      // Supplied, not derived: `verify` cannot know who SHOULD own a stack, and reports a skip rather
+      // than assuming. Passing it is what turns "somebody owns this" into "the right account does".
+      expected: { admin: privateKeyToAddress({ privateKey: adminKey }) },
+    });
+
+    expect(
+      report.failures.map((f) => `${f.name}: ${f.detail ?? ''}`),
+      'a stack deploy() just built must verify clean',
+    ).toEqual([]);
+    expect(report.ok).toBe(true);
+
+    // A skip is not a pass, so the count is pinned. With `history` supplied and an admin expectation
+    // given, everything except the unstated bootstrap expectations should have RUN.
+    expect(
+      report.skipped.map((s) => s.name),
+      'only checks with no stated expectation may be skipped here',
+    ).toEqual([]);
+
+    // Non-vacuity: the report must actually contain the checks it claims to make. A verify() that ran
+    // nothing would satisfy every assertion above.
+    const names = report.checks.map((c) => c.name);
+    for (const prefix of ['code.', 'materialized.', 'version.', 'wiring.', 'ownership.', 'pausers.']) {
+      expect(names.filter((n) => n.startsWith(prefix)).length, `verify ran no ${prefix} checks`).toBeGreaterThan(0);
+    }
+    expect(names.length, 'verify should run dozens of checks, not a handful').toBeGreaterThan(25);
+  } finally {
+    await stopAnvil(anvil.process);
+  }
+}, 180_000);
+
+test('verify catches a stack whose admin never accepted ownership', async () => {
+  // The one failure mode that leaves everything else looking perfect: the deployer is still root over the
+  // stack, every version and every wired address is correct, and only `ACLOwner.owner()` gives it away.
+  const deployerKey = privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: 5 });
+
+  const anvil = startAnvil({ port: 8617, mnemonic: MNEMONIC });
+  try {
+    await waitForAnvil(anvil.rpcUrl);
+
+    const adapters = createViemEthereumAdapters({ rpcUrl: anvil.rpcUrl, privateKey: deployerKey });
+    const deployed = await deploy({
+      ethProvider: adapters.provider,
+      ethUtils: adapters.utils,
+      deployer: adapters.signer,
+      admin: adapters.signer,
+    });
+
+    const report = await verify({
+      mode: 'deploy',
+      ethProvider: adapters.provider,
+      history: createViemHistory(anvil.rpcUrl),
+      deployed,
+      // Deliberately wrong: claim an admin that never took ownership.
+      expected: {
+        admin: privateKeyToAddress({ privateKey: privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: 7 }) }),
+      },
+    });
+
+    expect(report.ok).toBe(false);
+    expect(
+      report.failures.map((f) => f.name),
+      'the wrong-admin claim must be the only thing that fails',
+    ).toEqual(['ownership.ACLOwner.owner']);
+  } finally {
+    await stopAnvil(anvil.process);
+  }
+}, 180_000);
+
+test('snapshotStack captures every readable value, and verify needs one for upgrade mode', async () => {
+  const deployerKey = privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: 5 });
+
+  const anvil = startAnvil({ port: 8618, mnemonic: MNEMONIC });
+  try {
+    await waitForAnvil(anvil.rpcUrl);
+
+    const adapters = createViemEthereumAdapters({ rpcUrl: anvil.rpcUrl, privateKey: deployerKey });
+    const history = createViemHistory(anvil.rpcUrl);
+    const deployed = await deploy({
+      ethProvider: adapters.provider,
+      ethUtils: adapters.utils,
+      deployer: adapters.signer,
+      admin: adapters.signer,
+    });
+
+    const before = await snapshotStack({ ethProvider: adapters.provider, history, deployed });
+    // The survey's whole value is breadth — a handful of readings would mean the ABI enumeration silently
+    // matched almost nothing, and every survival comparison built on it would be vacuous.
+    expect(Object.keys(before.readings).length, 'the survey must cover the stack broadly').toBeGreaterThan(30);
+    expect(before.blockNumber, 'a snapshot taken with history must carry a height').not.toBeNull();
+
+    // Comparing a stack against a snapshot of ITSELF is the degenerate upgrade: nothing moved, so every
+    // exempt reading is an exemption that did not fire — which verify is required to report, because that
+    // is what stops the allow-list decaying into a way to ignore regressions.
+    const report = await verify({ mode: 'upgrade', ethProvider: adapters.provider, history, deployed, before });
+    expect(report.failures.map((f) => f.name)).toContain('survival.exemptionsWereUsed');
+    expect(
+      report.failures.map((f) => f.name),
+      'nothing actually changed, so no value may be reported as having changed',
+    ).not.toContain('survival.everythingElseUnchanged');
+
+    // With nothing exempt, a stack compared against itself must show no drift at all.
+    const strict = await verify({
+      mode: 'upgrade',
+      ethProvider: adapters.provider,
+      history,
+      deployed,
+      before,
+      mayChange: [],
+    });
+    expect(
+      strict.failures.map((f) => `${f.name}: ${f.detail ?? ''}`),
+      'a stack must survive being compared against itself',
+    ).toEqual([]);
+  } finally {
+    await stopAnvil(anvil.process);
+  }
+}, 180_000);
