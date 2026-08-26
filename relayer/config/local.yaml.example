@@ -252,3 +252,12 @@ storage:
     # timeout checks begin, preventing false positives.
     # VALIDATION: Must be less than 10% of minimum timeout duration AND minimum expiry duration.
     cron_startup_delay_after_recovery: "30s"
+
+shutdown:
+  # How long to keep serving HTTP after `/healthz` starts answering 503, so a request routed
+  # during the window gets a clean 503 rather than a refused connection. Deleting a pod
+  # removes it from the service endpoints at the same moment it delivers SIGTERM, so this
+  # covers the lag until that removal reaches the ingress controller - not the readiness
+  # probe's own detection time (periodSeconds x failureThreshold), which the deletion path
+  # never waits for. Shutdown as a whole must finish inside terminationGracePeriodSeconds.
+  lb_propagation_wait: "5s"

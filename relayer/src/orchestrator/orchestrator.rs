@@ -7,8 +7,9 @@ use crate::orchestrator::TokioEventDispatcher;
 use anyhow::Error;
 use std::collections::HashMap;
 use std::future::Future;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
-use tokio_util::sync::CancellationToken;
+use std::time::Duration;
 use tokio_util::task::TaskTracker;
 use tracing::{error, instrument};
 use uuid::Uuid;
@@ -22,7 +23,14 @@ pub struct Orchestrator {
     ///
     /// - per-event dispatch
     /// - `handled_events`' dispatch-then-complete follow-up
+    /// - per-readiness-check work
+    /// - transaction sends
+    ///
+    /// Shutdown abandons the lot rather than waiting - see the module-level note in `startup`.
     detached_tasks: TaskTracker,
+    /// Sticky readiness flag for `/healthz`: once shutdown starts, the relayer must stop
+    /// looking healthy to the load balancer even if every dependency check still passes.
+    shutting_down: AtomicBool,
 }
 
 impl Orchestrator {
@@ -35,7 +43,19 @@ impl Orchestrator {
             health_checker: Arc::new(RwLock::new(HealthChecker::new())),
             task_manager: TaskManager::new(),
             detached_tasks,
+            shutting_down: AtomicBool::new(false),
         })
+    }
+
+    /// Flip `/healthz` to unhealthy regardless of dependency status. Called once, at the very
+    /// start of the shutdown sequence, while the HTTP server keeps serving.
+    pub fn mark_not_ready(&self) {
+        self.shutting_down.store(true, Ordering::Release);
+    }
+
+    /// Whether shutdown has started. Checked by the `/healthz` handler.
+    pub fn is_shutting_down(&self) -> bool {
+        self.shutting_down.load(Ordering::Acquire)
     }
 
     pub fn new_internal_request_id(&self) -> Uuid {
@@ -88,12 +108,25 @@ impl Orchestrator {
             .await
     }
 
-    /// Wait for shutdown signal and gracefully shutdown all tasks
-    pub async fn run_until_shutdown(
-        &self,
-        shutdown_token: CancellationToken,
-    ) -> anyhow::Result<()> {
-        self.task_manager.run_until_shutdown(shutdown_token).await
+    /// Stop accepting new named-task spawns. Call once, before the drain.
+    pub async fn begin_task_drain(&self) {
+        self.task_manager.begin_shutdown().await;
+    }
+
+    /// Wait up to `budget` for the named tasks to exit on their own (the caller must already
+    /// have cancelled whatever drives them); abort any still running once the budget elapses.
+    pub async fn drain_named_tasks(&self, budget: Duration) {
+        self.task_manager.drain_tasks(budget).await;
+    }
+
+    /// Final safety net after the drain: abort anything left tracked.
+    pub async fn finish_task_drain(&self) {
+        self.task_manager.finish_drain().await;
+    }
+
+    /// Snapshot of the detached work not waited for at shutdown. Never drained, only reported.
+    pub fn abandoned_detached_tasks(&self) -> usize {
+        self.detached_tasks.len()
     }
 
     #[instrument(skip_all, fields(event_type=%(event.event_name()), job_id=?event.job_id()))]

@@ -25,6 +25,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 async fn wait_for_ready(addr: SocketAddr) -> anyhow::Result<()> {
@@ -42,6 +43,7 @@ async fn wait_for_ready(addr: SocketAddr) -> anyhow::Result<()> {
     Err(anyhow::anyhow!("HTTP server failed to start"))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn run_http_server(
     settings: &Settings,
     orchestrator: Arc<Orchestrator>,
@@ -52,6 +54,7 @@ pub async fn run_http_server(
     keyurl_rx: tokio::sync::watch::Receiver<
         crate::http::endpoints::v2::types::keyurl::KeyUrlResponseJson,
     >,
+    shutdown: CancellationToken,
 ) -> SocketAddr {
     let http = &settings.http;
     let user_decrypt_shares_threshold = settings.gateway.contracts.user_decrypt_shares_threshold;
@@ -212,7 +215,12 @@ pub async fn run_http_server(
         .spawn_task_and_wait_ready(
             "http_server_axum",
             async move {
-                axum::serve(listener, app).await.unwrap();
+                // Cancelled when shutdown stops intake: finishes in-flight HTTP
+                // requests, then stops accepting new connections.
+                axum::serve(listener, app)
+                    .with_graceful_shutdown(shutdown.cancelled_owned())
+                    .await
+                    .unwrap();
             },
             async move {
                 // Wait for HTTP server to be ready with actual health check

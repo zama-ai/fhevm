@@ -13,6 +13,8 @@ use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
+use tokio_util::sync::CancellationToken;
+use tokio_util::task::TaskTracker;
 use tracing::{debug, error, info, instrument, warn};
 
 /// Queue information for ETA computation (TPS-based throttler)
@@ -164,6 +166,10 @@ pub struct TxThrottlingWorker<T> {
     control_rx: Option<mpsc::Receiver<u32>>,
     // Shared current TPS value (updated on dynamic rate changes)
     current_tps: Arc<AtomicU32>,
+    // Tracks the per-dequeued-item send task spawned in `run_consumer`. Shutdown abandons
+    // these; see the module-level shutdown note in `startup` for what a send killed
+    // mid-flight costs.
+    detached_tasks: TaskTracker,
 }
 
 impl<T> TxThrottlingSender<T>
@@ -176,6 +182,7 @@ where
         capacity_safety_margin: usize,
         tps: u32,
         enable_dynamic_rate_limiting: bool,
+        detached_tasks: TaskTracker,
     ) -> (Self, TxThrottlingWorker<T>, Option<mpsc::Sender<u32>>) {
         let (sender, receiver) = mpsc::channel(capacity);
         let tracker = Arc::new(RwLock::new(IndexMap::new()));
@@ -209,6 +216,7 @@ where
             tps,
             control_rx,
             current_tps,
+            detached_tasks,
         };
 
         (throttler, worker, control_tx)
@@ -345,7 +353,10 @@ where
         Arc::new(RateLimiter::direct(quota))
     }
 
-    pub async fn run_consumer<F, Fut>(mut self, processor: F)
+    /// Runs the dequeue loop until `shutdown` fires. Driven from the token, not channel
+    /// closure: the sender half lives in `Arc`s held permanently by the dispatcher and the
+    /// HTTP router state, so it never drops on its own.
+    pub async fn run_consumer<F, Fut>(mut self, shutdown: CancellationToken, processor: F)
     where
         F: Fn(T) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = ()> + Send + 'static,
@@ -391,10 +402,17 @@ where
                         "Task dequeued for processing"
                     );
 
-                    // 3. Process (Isolated)
+                    // 3. Process (Isolated). Tracked in the shared `detached_tasks`, but,
+                    // unlike the readiness-check work sharing that tracker (see
+                    // `readiness/throttler.rs`), deliberately not run under
+                    // `run_until_cancelled`: a send is cancel-unsafe, since the nonce
+                    // protocol (`get_increase_and_lock_nonce` -> send ->
+                    // `confirm_nonce`/`release_nonce`) has no RAII guard, and cutting it short
+                    // after the RPC call leaves the nonce lock held with no one left to
+                    // release it.
                     let proc_clone = processor.clone();
 
-                    tokio::spawn(async move {
+                    self.detached_tasks.spawn(async move {
                         // If this panics, the worker loop survives.
                         proc_clone(item).await;
                     });
@@ -406,6 +424,11 @@ where
                     // Update shared current_tps for queue info consumers
                     self.current_tps.store(new_tps, Ordering::Relaxed);
                     limiter = Self::create_limiter(new_tps);
+                }
+
+                _ = shutdown.cancelled() => {
+                    info!("Throttler Worker stopping (shutdown).");
+                    break;
                 }
 
                 else => {
@@ -456,14 +479,20 @@ mod tests {
     #[tokio::test]
     async fn test_fifo_ordering() {
         init_metrics_once();
-        let (throttler, worker, _control_tx) =
-            TxThrottlingSender::<MockTask>::new(TxThrottlingType::InputProof, 10, 0, 100, false);
+        let (throttler, worker, _control_tx) = TxThrottlingSender::<MockTask>::new(
+            TxThrottlingType::InputProof,
+            10,
+            0,
+            100,
+            false,
+            TaskTracker::new(),
+        );
         let processed = Arc::new(Mutex::new(Vec::new()));
         let processed_clone = processed.clone();
 
         tokio::spawn(async move {
             worker
-                .run_consumer(move |task| {
+                .run_consumer(CancellationToken::new(), move |task| {
                     let p = processed_clone.clone();
                     async move {
                         p.lock().unwrap().push(task.id);
@@ -485,8 +514,14 @@ mod tests {
     #[tokio::test]
     async fn test_deduplication() {
         init_metrics_once();
-        let (throttler, _worker, _control_tx) =
-            TxThrottlingSender::<MockTask>::new(TxThrottlingType::InputProof, 10, 0, 100, false);
+        let (throttler, _worker, _control_tx) = TxThrottlingSender::<MockTask>::new(
+            TxThrottlingType::InputProof,
+            10,
+            0,
+            100,
+            false,
+            TaskTracker::new(),
+        );
 
         throttler.push(MockTask { id: "A".into() }).await.unwrap();
 
@@ -501,8 +536,14 @@ mod tests {
     async fn test_queue_full() {
         init_metrics_once();
         // Capacity = 1
-        let (throttler, _worker, _control_tx) =
-            TxThrottlingSender::<MockTask>::new(TxThrottlingType::InputProof, 1, 0, 100, false);
+        let (throttler, _worker, _control_tx) = TxThrottlingSender::<MockTask>::new(
+            TxThrottlingType::InputProof,
+            1,
+            0,
+            100,
+            false,
+            TaskTracker::new(),
+        );
 
         // 1. Push OK
         assert!(throttler.push(MockTask { id: "1".into() }).await.is_ok());
@@ -525,8 +566,14 @@ mod tests {
     async fn test_position_tracking() {
         init_metrics_once();
         // Very slow rate (1 TPS) to ensure items stay in queue
-        let (throttler, worker, _control_tx) =
-            TxThrottlingSender::<MockTask>::new(TxThrottlingType::InputProof, 10, 0, 1, false);
+        let (throttler, worker, _control_tx) = TxThrottlingSender::<MockTask>::new(
+            TxThrottlingType::InputProof,
+            10,
+            0,
+            1,
+            false,
+            TaskTracker::new(),
+        );
 
         throttler.push(MockTask { id: "A".into() }).await.unwrap();
         throttler.push(MockTask { id: "B".into() }).await.unwrap();
@@ -537,7 +584,9 @@ mod tests {
 
         // Spawn worker
         tokio::spawn(async move {
-            worker.run_consumer(|_| async {}).await;
+            worker
+                .run_consumer(CancellationToken::new(), |_| async {})
+                .await;
         });
 
         // Small wait to let A start processing and be removed from map
@@ -558,8 +607,14 @@ mod tests {
         init_metrics_once();
         // 1. Setup Throttler (Worker NOT spawned yet)
         // Capacity 10 allows us to push multiple items without blocking/failing
-        let (throttler, worker, _control_tx) =
-            TxThrottlingSender::<MockTask>::new(TxThrottlingType::InputProof, 10, 0, 50, false);
+        let (throttler, worker, _control_tx) = TxThrottlingSender::<MockTask>::new(
+            TxThrottlingType::InputProof,
+            10,
+            0,
+            50,
+            false,
+            TaskTracker::new(),
+        );
 
         // 2. Push items
         // Since the worker isn't running, these sit in the Channel and the Tracker.
@@ -581,7 +636,9 @@ mod tests {
         // 4. Start Worker to drain
         // Now we verify that they are processed and removed correctly
         tokio::spawn(async move {
-            worker.run_consumer(|_| async {}).await;
+            worker
+                .run_consumer(CancellationToken::new(), |_| async {})
+                .await;
         });
 
         // Wait for drain (50 TPS is fast, 100ms is plenty)
@@ -602,14 +659,20 @@ mod tests {
         // - Items 11-20: Processed 1 every 100ms.
         // Total expected time: ~1.0 second.
         let tps = 10;
-        let (throttler, worker, _control_tx) =
-            TxThrottlingSender::<MockTask>::new(TxThrottlingType::InputProof, 100, 0, tps, false);
+        let (throttler, worker, _control_tx) = TxThrottlingSender::<MockTask>::new(
+            TxThrottlingType::InputProof,
+            100,
+            0,
+            tps,
+            false,
+            TaskTracker::new(),
+        );
         let processed_count = Arc::new(AtomicUsize::new(0));
         let counter = processed_count.clone();
 
         tokio::spawn(async move {
             worker
-                .run_consumer(move |_| {
+                .run_consumer(CancellationToken::new(), move |_| {
                     let c = counter.clone();
                     async move {
                         c.fetch_add(1, Ordering::Relaxed);
@@ -658,14 +721,20 @@ mod tests {
         init_metrics_once();
         let tps = 20;
         // Capacity large enough to hold the blast so we don't get "Queue Full" errors during setup
-        let (throttler, worker, _control_tx) =
-            TxThrottlingSender::<MockTask>::new(TxThrottlingType::InputProof, 200, 0, tps, false);
+        let (throttler, worker, _control_tx) = TxThrottlingSender::<MockTask>::new(
+            TxThrottlingType::InputProof,
+            200,
+            0,
+            tps,
+            false,
+            TaskTracker::new(),
+        );
         let processed_count = Arc::new(AtomicUsize::new(0));
         let counter = processed_count.clone();
 
         tokio::spawn(async move {
             worker
-                .run_consumer(move |_| {
+                .run_consumer(CancellationToken::new(), move |_| {
                     let c = counter.clone();
                     async move {
                         c.fetch_add(1, Ordering::Relaxed);
@@ -713,15 +782,23 @@ mod tests {
     #[tokio::test]
     async fn test_cloning_shares_state() {
         init_metrics_once();
-        let (throttler_1, worker, _control_tx) =
-            TxThrottlingSender::<MockTask>::new(TxThrottlingType::InputProof, 10, 0, 100, false);
+        let (throttler_1, worker, _control_tx) = TxThrottlingSender::<MockTask>::new(
+            TxThrottlingType::InputProof,
+            10,
+            0,
+            100,
+            false,
+            TaskTracker::new(),
+        );
 
         // Clone it (Creating a second producer handle)
         let throttler_2 = throttler_1.clone();
 
         // Spawn worker to drain queue
         tokio::spawn(async move {
-            worker.run_consumer(|_| async {}).await;
+            worker
+                .run_consumer(CancellationToken::new(), |_| async {})
+                .await;
         });
 
         // 1. Push via Clone 1
@@ -746,8 +823,14 @@ mod tests {
         // Buffer = 2
         // Soft Limit = 8
         // TPS = 100 (irrelevant as we don't start worker immediately)
-        let (throttler, worker, _control_tx) =
-            TxThrottlingSender::<MockTask>::new(TxThrottlingType::InputProof, 10, 2, 100, false);
+        let (throttler, worker, _control_tx) = TxThrottlingSender::<MockTask>::new(
+            TxThrottlingType::InputProof,
+            10,
+            2,
+            100,
+            false,
+            TaskTracker::new(),
+        );
 
         // 1. Fill up to Soft Limit (8 items)
         for i in 0..8 {
@@ -784,7 +867,9 @@ mod tests {
 
         // Drain to clean up
         tokio::spawn(async move {
-            worker.run_consumer(|_| async {}).await;
+            worker
+                .run_consumer(CancellationToken::new(), |_| async {})
+                .await;
         });
         sleep(Duration::from_millis(100)).await;
     }

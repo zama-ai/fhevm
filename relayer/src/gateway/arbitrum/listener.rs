@@ -18,6 +18,7 @@ use alloy::{
 use async_trait::async_trait;
 use futures::StreamExt;
 use std::{str::FromStr, sync::Arc, time::Duration};
+use tokio_util::sync::CancellationToken;
 
 /// Reason why process_events() returned
 enum RecycleReason {
@@ -25,6 +26,8 @@ enum RecycleReason {
     StreamEnded,
     /// Planned connection recycle timer triggered
     RecycleTimer,
+    /// Shutdown was requested
+    ShuttingDown,
 }
 
 /// Where one subscription listener sits in the recycle stagger, so a pool of them drops and
@@ -63,6 +66,8 @@ pub struct ArbitrumListener {
     ws_url: String,
     /// Recycle-stagger position, deliberately not an identity - see [`WsRecycleStagger`].
     ws_recycle_stagger: WsRecycleStagger,
+    /// Cancelled when shutdown closes the sources of new work.
+    shutdown: CancellationToken,
 }
 
 impl ArbitrumListener {
@@ -72,6 +77,7 @@ impl ArbitrumListener {
         pool_index: usize,
         ws_url: String,
         ws_recycle_stagger: WsRecycleStagger,
+        shutdown: CancellationToken,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             gateway_config,
@@ -79,7 +85,16 @@ impl ArbitrumListener {
             pool_index,
             ws_url,
             ws_recycle_stagger,
+            shutdown,
         })
+    }
+
+    /// Sleeps for `dur`, cut short if shutdown is requested meanwhile.
+    async fn interruptible_sleep(&self, dur: Duration) {
+        tokio::select! {
+            _ = tokio::time::sleep(dur) => {}
+            _ = self.shutdown.cancelled() => {}
+        }
     }
 
     pub async fn run(&self) -> anyhow::Result<()> {
@@ -112,6 +127,14 @@ impl ArbitrumListener {
         );
 
         loop {
+            if self.shutdown.is_cancelled() {
+                info!(
+                    instance_id = self.pool_index,
+                    "Listener stopping (shutdown)"
+                );
+                return Ok(());
+            }
+
             // Log ERROR continuously when exceeding threshold (fatal state)
             if consecutive_failures >= max_attempts {
                 error!(
@@ -142,7 +165,8 @@ impl ArbitrumListener {
                         max_attempts = max_attempts,
                         "Failed to create provider"
                     );
-                    tokio::time::sleep(Duration::from_millis(retry_interval)).await;
+                    self.interruptible_sleep(Duration::from_millis(retry_interval))
+                        .await;
                     continue;
                 }
             };
@@ -163,7 +187,8 @@ impl ArbitrumListener {
                         max_attempts = max_attempts,
                         "Failed to subscribe"
                     );
-                    tokio::time::sleep(Duration::from_millis(retry_interval)).await;
+                    self.interruptible_sleep(Duration::from_millis(retry_interval))
+                        .await;
                     continue;
                 }
             };
@@ -195,7 +220,15 @@ impl ArbitrumListener {
                         max_attempts = max_attempts,
                         "WebSocket connection dropped"
                     );
-                    tokio::time::sleep(Duration::from_millis(retry_interval)).await;
+                    self.interruptible_sleep(Duration::from_millis(retry_interval))
+                        .await;
+                }
+                RecycleReason::ShuttingDown => {
+                    info!(
+                        instance_id = self.pool_index,
+                        "Listener stopping (shutdown)"
+                    );
+                    return Ok(());
                 }
                 RecycleReason::RecycleTimer => {
                     // Planned recycle - reconnect immediately without delay
@@ -324,6 +357,9 @@ impl ArbitrumListener {
                         "WebSocket connection recycle timer triggered, reconnecting"
                     );
                     return RecycleReason::RecycleTimer;
+                }
+                _ = self.shutdown.cancelled() => {
+                    return RecycleReason::ShuttingDown;
                 }
             }
         }
