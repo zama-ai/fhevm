@@ -79,7 +79,7 @@ impl GatewayHandler {
                 PublicDecryptEventId::ReadinessCheckPassed.into(),
                 PublicDecryptEventId::ReadinessCheckTimedOut.into(),
                 PublicDecryptEventId::ReadinessCheckFailed.into(),
-                GatewayChainEventId::EventLogRcvd.into(),
+                GatewayChainEventId::PublicDecryptionResponse.into(),
             ],
             handler.clone() as Arc<dyn EventHandler<RelayerEvent>>,
         );
@@ -138,22 +138,12 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                 }
             },
 
-            RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd {
+            RelayerEventData::GatewayChain(GatewayChainEventData::PublicDecryptionResponse {
                 ref log,
                 tx_hash,
             }) => {
-                if let Some(topic0) = log.topic0() {
-                    if FixedBytes::<32>::from_slice(topic0.as_slice())
-                        == Decryption::PublicDecryptionResponse::SIGNATURE_HASH
-                    {
-                        debug!("Observed gateway public-decrypt response");
-                        self.process_decrypt_response(&event, log, tx_hash).await
-                    } else {
-                        return;
-                    }
-                } else {
-                    return;
-                }
+                debug!("Observed gateway public-decrypt response");
+                self.process_decrypt_response(&event, log, tx_hash).await
             }
             _ => return,
         };

@@ -2,10 +2,11 @@ use tracing::{debug, error, info, warn};
 
 use crate::{
     config::settings::GatewayConfig,
-    core::event::{ApiCategory, ApiVersion, GatewayChainEventData, RelayerEvent, RelayerEventData},
+    core::event::{ApiCategory, ApiVersion, RelayerEvent, RelayerEventData},
     core::job_id::INTERNAL_EVENT_JOB_ID,
-    gateway::arbitrum::bindings::{Decryption, InputVerification},
+    gateway::arbitrum::bindings::{gateway_chain_event_for_log, Decryption, InputVerification},
     gateway::arbitrum::event_deduplicator::{EventDeduplicator, EventKey},
+    logging::ListenerStep,
     orchestrator::{HealthCheck, Orchestrator},
     store::sql::repositories::block_number_repo::BlockNumberRepository,
 };
@@ -394,16 +395,25 @@ impl PollingListener {
             block_number, block_hash, log_index, topic0, topic1, tx_hash
         );
 
+        let Some(gateway_event) = gateway_chain_event_for_log(event_log.clone(), tx_hash) else {
+            debug!(
+                step = %ListenerStep::EventUnroutable,
+                instance_id = self.instance_id,
+                block_number = block_number,
+                log_index = log_index,
+                topic0 = %topic0,
+                "Unroutable gateway event"
+            );
+            return;
+        };
+
         let event = RelayerEvent::new(
             INTERNAL_EVENT_JOB_ID,
             ApiVersion {
                 category: ApiCategory::PRODUCTION,
                 number: 1,
             },
-            RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd {
-                log: event_log.clone(),
-                tx_hash,
-            }),
+            RelayerEventData::GatewayChain(gateway_event),
         );
 
         self.orchestrator

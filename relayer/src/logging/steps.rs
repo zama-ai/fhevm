@@ -153,6 +153,7 @@ pub enum ListenerStep {
     // Event processing (DEBUG — high-volume when multiple relayers share contracts)
     EventReceived,
     EventDuplicate,
+    EventUnroutable,
     BlockProgressUpdated,
 
     // Degraded path (WARN)
@@ -169,6 +170,7 @@ impl fmt::Display for ListenerStep {
             Self::SubscriptionActive => "subscription_active",
             Self::EventReceived => "event_received",
             Self::EventDuplicate => "event_duplicate",
+            Self::EventUnroutable => "event_unroutable",
             Self::BlockProgressUpdated => "block_progress_updated",
             Self::ProviderRetrying => "provider_retrying",
             Self::SubscriptionDropped => "subscription_dropped",
