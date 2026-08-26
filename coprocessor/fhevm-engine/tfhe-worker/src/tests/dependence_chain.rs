@@ -541,3 +541,127 @@ async fn setup() -> TestInstance {
 
     test_instance
 }
+
+/// A chain stranded by a corrupted dependency_count ('updated', unowned,
+/// count > 0) matches neither normal acquisition predicate, and the
+/// no-progress escalation is only reachable through some OTHER chain
+/// stalling. The stale-gated repair acquisition must pick it up once it has
+/// sat past the age gate — and never before.
+#[tokio::test]
+#[serial(db)]
+async fn test_acquire_stale_gated_lock_recovers_stranded_chain() {
+    let instance = setup().await;
+    let pool = PgPoolOptions::new()
+        .max_connections(2)
+        .connect(instance.db_url())
+        .await
+        .expect("Failed to connect to the database");
+
+    let stranded_id = vec![9u8];
+    sqlx::query!(
+        r#"
+        INSERT INTO dependence_chain
+            (dependence_chain_id, status, last_updated_at, block_timestamp, block_height,
+             schedule_priority, dependency_count)
+        VALUES ($1, 'updated', NOW() - INTERVAL '10 minutes', NOW(), 1, 0, 1)
+        "#,
+        stranded_id,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let mut mgr =
+        LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None);
+
+    // Invisible to normal acquisition (dependency_count > 0).
+    let (acquired, _) = mgr.acquire_next_lock().await.unwrap();
+    assert_eq!(acquired, None);
+
+    // The age gate protects a chain that has not sat long enough.
+    let (acquired, _) = mgr.acquire_stale_gated_lock(3600.0).await.unwrap();
+    assert_eq!(acquired, None);
+
+    // The probe itself is throttled per manager (at most twice per age
+    // window), so an immediate retry on the SAME manager stays silent...
+    let (acquired, _) = mgr.acquire_stale_gated_lock(60.0).await.unwrap();
+    assert_eq!(acquired, None);
+
+    // ...while another worker past the gate acquires it like any other
+    // chain.
+    let mut mgr =
+        LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None);
+    let (acquired, locking) = mgr.acquire_stale_gated_lock(60.0).await.unwrap();
+    assert_eq!(acquired, Some(stranded_id.clone()));
+    assert_eq!(locking, LockingReason::StaleGateRepair);
+
+    let row = sqlx::query!(
+        "SELECT status, worker_id, dependency_count FROM dependence_chain WHERE dependence_chain_id = $1",
+        stranded_id
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(row.status, "processing".to_string());
+    assert_eq!(row.worker_id, Some(mgr.worker_id()));
+    // Repair resets the count ground truth established as stale, so the
+    // chain re-enters normal scheduling (including expired-lock stealing —
+    // a crash while holding this lock cannot re-strand it).
+    assert_eq!(row.dependency_count, 0);
+}
+
+/// dependency_count > 0 is a LIVE same-block gate while a producer chain is
+/// still pending: the repair path must not bypass it (e.g. during catchup,
+/// where block-derived last_updated_at makes every chain look old).
+#[tokio::test]
+#[serial(db)]
+async fn test_stale_gated_lock_respects_live_producers() {
+    let instance = setup().await;
+    let pool = PgPoolOptions::new()
+        .max_connections(2)
+        .connect(instance.db_url())
+        .await
+        .expect("Failed to connect to the database");
+
+    let gated_id = vec![7u8];
+    let producer_id = vec![8u8];
+    sqlx::query!(
+        r#"
+        INSERT INTO dependence_chain
+            (dependence_chain_id, status, last_updated_at, block_timestamp, block_height,
+             schedule_priority, dependency_count, dependents)
+        VALUES
+            ($1, 'updated', NOW() - INTERVAL '10 minutes', NOW(), 1, 0, 1, '{}'),
+            ($2, 'updated', NOW() - INTERVAL '10 minutes', NOW(), 1, 0, 0, ARRAY[$1::bytea])
+        "#,
+        gated_id,
+        producer_id,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let mut mgr =
+        LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None);
+
+    // The producer is unprocessed, so the gate is legitimate: the repair
+    // path must leave the gated chain alone however old it looks.
+    let (acquired, _) = mgr.acquire_stale_gated_lock(60.0).await.unwrap();
+    assert_eq!(acquired, None);
+    // Fresh manager: sidestep the per-manager probe throttle.
+    let mut mgr =
+        LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None);
+
+    // Once the producer is processed (its release decremented nothing here,
+    // simulating a lost decrement), the gate is provably stale and the
+    // repair path recovers the chain.
+    sqlx::query!(
+        "UPDATE dependence_chain SET status = 'processed' WHERE dependence_chain_id = $1",
+        producer_id,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let (acquired, _) = mgr.acquire_stale_gated_lock(60.0).await.unwrap();
+    assert_eq!(acquired, Some(gated_id));
+}
