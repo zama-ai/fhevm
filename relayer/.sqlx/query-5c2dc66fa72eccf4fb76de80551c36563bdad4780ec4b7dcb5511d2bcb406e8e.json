@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                SELECT req_status as \"req_status!: ReqStatus\"\n                FROM input_proof_req\n                WHERE updated_at < NOW() - make_interval(secs => $1)\n                ",
+  "query": "\n                SELECT req_status as \"req_status!: ReqStatus\"\n                FROM input_proof_req\n                WHERE updated_at < NOW() - make_interval(secs => $1)\n                  AND req_status IN ('completed'::req_status, 'timed_out'::req_status, 'failure'::req_status)\n                ",
   "describe": {
     "columns": [
       {
@@ -33,5 +33,5 @@
       false
     ]
   },
-  "hash": "8864b8e11244693474b49f264923f339821a0752f66956436c15bda419354da4"
+  "hash": "5c2dc66fa72eccf4fb76de80551c36563bdad4780ec4b7dcb5511d2bcb406e8e"
 }
