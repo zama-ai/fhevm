@@ -20,6 +20,7 @@ use fhevm_host_bindings::i_protocol_config::IProtocolConfig::IProtocolConfigInst
 use fhevm_host_bindings::ikms_generation::IKMSGeneration;
 use fhevm_host_bindings::ikms_generation::IKMSGeneration::IKMSGenerationInstance;
 use tokio::sync::watch;
+use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
 use crate::config::settings::ProtocolConfigSettings;
@@ -326,19 +327,26 @@ impl KeyUrlPoller {
 
     /// Long-running loop: poll the active ids on the configured interval and, on any change,
     /// refetch the materials and push the new value into `tx`. RPC failures are logged and
-    /// retried on the next tick (the last served value is kept). Stops when the orchestrator
-    /// aborts the task on shutdown.
-    pub async fn run(mut self, tx: watch::Sender<KeyUrlResponseJson>) {
+    /// retried on the next tick (the last served value is kept). Stops once `shutdown` fires
+    /// (cancelled when shutdown closes the sources of new work).
+    pub async fn run(mut self, tx: watch::Sender<KeyUrlResponseJson>, shutdown: CancellationToken) {
         let mut ticker = tokio::time::interval(self.poll_interval);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
         loop {
-            ticker.tick().await;
-            if let Err(e) = self.poll_once(&tx).await {
-                error!(
-                    error = %e,
-                    "/v2/keyurl poll failed; keeping last served value, will retry next tick"
-                );
+            tokio::select! {
+                _ = ticker.tick() => {
+                    if let Err(e) = self.poll_once(&tx).await {
+                        error!(
+                            error = %e,
+                            "/v2/keyurl poll failed; keeping last served value, will retry next tick"
+                        );
+                    }
+                }
+                _ = shutdown.cancelled() => {
+                    info!("KeyUrl poller stopping (shutdown)");
+                    return;
+                }
             }
         }
     }

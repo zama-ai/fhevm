@@ -11,7 +11,8 @@ use crate::{
     orchestrator::Orchestrator,
 };
 use std::sync::Arc;
-use tracing::{error, info, warn};
+use tokio_util::sync::CancellationToken;
+use tracing::{error, info};
 
 /// The Processor is responsible for bridging the throttler (Queue) and the TransactionHelper (Executor).
 pub struct GatewayTxProcessor;
@@ -20,40 +21,44 @@ impl GatewayTxProcessor {
     /// Spawns the background worker.
     ///
     /// It registers with the Orchestrator so it starts/stops cleanly with the application.
-    /// It delegates the infinite loop logic to `throttler.run_consumer`.
+    /// It delegates the infinite loop logic to `throttler.run_consumer`, which exits once
+    /// `shutdown` fires. `task_name` must be distinct per instance (input-proof, public-decrypt,
+    /// user-decrypt): three of these are spawned under the same orchestrator and would otherwise
+    /// be indistinguishable in logs and during phased shutdown.
     pub async fn orchestrator_spawn_task(
+        task_name: &str,
         throttler_worker: TxThrottlingWorker<GatewayTxTask>,
         tx_helper: Arc<TransactionHelper>,
         orchestrator: Arc<Orchestrator>,
+        shutdown: CancellationToken,
     ) -> anyhow::Result<()> {
-        let task_name = "gateway_tx_processor";
-
         // Prepare Arcs for the background task
         let dispatcher = orchestrator.clone();
+        let worker_name = task_name.to_string();
 
         // The Task Future
         let task_future = async move {
             info!(
                 step = %WorkerStep::WorkerStarted,
-                worker = "tx_processor",
+                worker = %worker_name,
                 "Worker started"
             );
 
             // We run the consumer.
             // This function contains the infinite loop reading from the channel.
-            // It will only exit if the application shuts down or the channel is explicitly closed.
+            // It exits once `shutdown` fires, stopping the dequeue of new work.
             throttler_worker
-                .run_consumer(move |task: GatewayTxTask| {
+                .run_consumer(shutdown, move |task: GatewayTxTask| {
                     // Call the async function directly.
                     // It returns the Future that the consumer expects.
                     Self::process_single_task(tx_helper.clone(), task, dispatcher.clone())
                 })
                 .await;
 
-            warn!(
-                step = %WorkerStep::WorkerRestarting,
-                worker = "tx_processor",
-                "Worker stopped unexpectedly"
+            info!(
+                step = %WorkerStep::WorkerStopped,
+                worker = %worker_name,
+                "Worker stopped"
             );
         };
 

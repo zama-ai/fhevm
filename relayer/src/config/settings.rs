@@ -399,6 +399,32 @@ pub struct MetricsConfig {
     pub retry_after_raw_eta_histogram_bucket: Vec<f64>,
 }
 
+#[derive(Debug, Deserialize, Clone)]
+pub struct ShutdownConfig {
+    /// How long to keep serving HTTP after `/healthz` starts answering 503, so a request
+    /// routed during the window gets a clean 503 from a pod still listening rather than a
+    /// refused connection. Deleting a pod removes it from the service endpoints at the same
+    /// moment it delivers SIGTERM, so this covers the lag until that removal reaches the
+    /// ingress controller, not the readiness probe's own detection time. Tests set it to 0.
+    #[serde(
+        default = "default_lb_propagation_wait",
+        deserialize_with = "deserialize_human_duration"
+    )]
+    pub lb_propagation_wait: Duration,
+}
+
+fn default_lb_propagation_wait() -> Duration {
+    Duration::from_secs(5)
+}
+
+impl Default for ShutdownConfig {
+    fn default() -> Self {
+        Self {
+            lb_propagation_wait: default_lb_propagation_wait(),
+        }
+    }
+}
+
 /// Deserializes strings like "30s", "5m", "1d" into std::time::Duration.
 /// 'y' not supported
 fn deserialize_human_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>
@@ -623,6 +649,9 @@ pub struct Settings {
     pub keyurl: KeyUrlConfig,
     /// User-decryption signature check configuration
     pub user_decrypt_signature_check: UserDecryptSignatureCheckConfig,
+    /// Shutdown sequencing
+    #[serde(default)]
+    pub shutdown: ShutdownConfig,
 }
 
 // Error type for application-specific configuration errors

@@ -256,3 +256,7 @@ storage:
     # timeout checks begin, preventing false positives.
     # VALIDATION: Must be less than 10% of minimum timeout duration AND minimum expiry duration.
     cron_startup_delay_after_recovery: "0s"
+
+shutdown:
+  # No load balancer in front of the tests, so nothing has to notice the 503.
+  lb_propagation_wait: "0s"
