@@ -13,6 +13,7 @@ import { foundry } from 'viem/chains';
 import { expect, test } from 'vitest';
 import { startAnvil, stopAnvil, waitForAnvil } from './utils/anvil.ts';
 import { privateKeyFromMnemonic, privateKeyToAddress } from './utils/ethUtils.ts';
+import { expectedHcuLimit } from './utils/expectedBootstrap.ts';
 import { createViemEthereumAdapters } from './utils/viemEthereumLib.ts';
 
 // ERC-1967 implementation slot: keccak256("eip1967.proxy.implementation") - 1.
@@ -210,7 +211,7 @@ function bootstrapConfig(deployerAddress: string, kmsSignerAddress: string): Boo
       initialSigners: [deployerAddress],
       initialThreshold: 1n,
     },
-    hcuLimit: { hcuCapPerBlock: 281474976710655n, maxHCUDepthPerTx: 5000000n, maxHCUPerTx: 20000000n },
+    hcuLimit: expectedHcuLimit(),
     protocolConfig: {
       initialKmsNodes: [
         {

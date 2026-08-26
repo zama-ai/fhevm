@@ -17,6 +17,7 @@ import { foundry } from 'viem/chains';
 import { expect, test } from 'vitest';
 import { startAnvil, stopAnvil, waitForAnvil } from './utils/anvil.ts';
 import { privateKeyFromMnemonic, privateKeyToAddress } from './utils/ethUtils.ts';
+import { expectedHcuLimit } from './utils/expectedBootstrap.ts';
 import { createViemEthereumAdapters } from './utils/viemEthereumLib.ts';
 
 const IMPL_SLOT = '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc' as const;
@@ -334,7 +335,7 @@ function v12BootstrapConfig(deployerAddress: string): BootstrapConfigV12 {
   return {
     kmsVerifier: verifier,
     inputVerifier: verifier,
-    hcuLimit: { hcuCapPerBlock: 281474976710655n, maxHCUDepthPerTx: 5000000n, maxHCUPerTx: 20000000n },
+    hcuLimit: expectedHcuLimit(),
   };
 }
 

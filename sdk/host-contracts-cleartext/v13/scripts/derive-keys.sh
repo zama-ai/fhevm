@@ -4,8 +4,13 @@
 #
 # Usage: ./derive-keys.sh [COUNT] [MNEMONIC] [PATH_PREFIX]
 #   COUNT        number of indices to derive, starting at 0 (default: 10)
-#   MNEMONIC     the mnemonic phrase          (default: FHEVM test mnemonic)
-#   PATH_PREFIX  HD path prefix; the index is appended (default: m/44'/60'/0'/2/)
+#   MNEMONIC     the mnemonic phrase          (default: FHEVM_MNEMONIC)
+#   PATH_PREFIX  HD path prefix; the index is appended
+#                (default: CLEARTEXT_KMS_NODES_TX_SENDER_MNEMONIC_PATH)
+#
+# Both defaults are read from sdk/cleartext-config.json (RULES.md rule 23) rather than written here, so
+# they cannot drift from the pools the stack actually registers. Named rather than quoted in this help
+# text for the same reason: a literal here would be a fourth copy.
 #
 # Examples:
 #   ./derive-keys.sh                       # first 10 keys, default mnemonic + coprocessor path
@@ -14,16 +19,17 @@
 #   ./derive-keys.sh 3 "word1 ... word12" "m/44'/60'/0'/0/"  # custom path
 set -euo pipefail
 
-COUNT="${1:-25}"
-MNEMONIC="${2:-test test test test test test test future home engine virtual motion}"
-# Default path kept as a plain assignment: the single quotes are literal inside double quotes, but
-# would break bash's parser inside a `${3:-...}` default expansion.
-if [ "$#" -ge 3 ]; then PATH_PREFIX="$3"; else PATH_PREFIX="m/44'/60'/0'/4/"; fi
+# shellcheck source=scripts/cleartext-config-lib.sh
+source "${BASH_SOURCE[0]%/*}/cleartext-config-lib.sh"
 
 if ! command -v cast >/dev/null 2>&1; then
   echo "error: 'cast' not found — install foundry (https://getfoundry.sh)" >&2
   exit 1
 fi
+
+COUNT="${1:-25}"
+MNEMONIC="${2:-$(cfg_constant FHEVM_MNEMONIC)}"
+PATH_PREFIX="${3:-$(cfg_constant CLEARTEXT_KMS_NODES_TX_SENDER_MNEMONIC_PATH)}"
 
 addrs=()
 pks=()

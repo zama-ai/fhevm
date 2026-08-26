@@ -1,5 +1,11 @@
 // The cleartext stack's configuration — the values the harness and the payload must agree on.
 //
+// NOT the source of truth. `sdk/cleartext-config.json` is (RULES.md rule 23): it sits at the repository's
+// sdk root because the generations share it, it records the keccak FORMULA behind each derived value rather
+// than only the hex, and it is what `test/cleartext-config-mirror.test.ts` checks this file against — name
+// for name, in declaration order, value for value, and bigint-vs-number literal shape included.
+// `create2-deploy/script/FhevmCleartextConfig.sol` is the same JSON's Solidity face.
+//
 // This file exists TWICE, byte-for-byte identical:
 //
 //   internal/cleartext-config.ts   the source of truth. Edit here, and only here.

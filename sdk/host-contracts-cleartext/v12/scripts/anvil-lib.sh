@@ -32,9 +32,17 @@ BOOTSTRAP_SOL="$(anvil_lib_internal_dir)/LocalHostBootstrap.sol"
 # The three addresses a dApp gets from the FHE library's local config
 # (library-solidity/config/ZamaConfig.sol -> _getLocalConfig). They are compiled into consumer bytecode,
 # so every launcher checks the stack actually landed on them.
-ZAMA_LOCAL_ACL=0x50157CFfD6bBFA2DECe204a89ec419c23ef5755D
-ZAMA_LOCAL_COPROCESSOR=0xe3a9105a3a932253A70F126eb1E3b589C643dD24
-ZAMA_LOCAL_KMS_VERIFIER=0x901F8942346f7AB3a01F6D7613119Bca447Bb030
+#
+# Read from sdk/cleartext-config.json rather than written here (RULES.md rule 23). They used to be three
+# literals in this file AND three more in anvil.sh, so the two launchers could disagree with each other as
+# well as with the source of truth -- and nothing would have noticed: the TypeScript and Solidity checks
+# cannot see a shell variable, and a wrong value here surfaces only as a ZamaConfig-compiled dApp calling
+# an address that holds no code.
+# shellcheck source=scripts/cleartext-config-lib.sh
+source "${BASH_SOURCE[0]%/*}/cleartext-config-lib.sh"
+ZAMA_LOCAL_ACL="$(cfg_localhost_zama ACLAddress)"
+ZAMA_LOCAL_COPROCESSOR="$(cfg_localhost_zama CoprocessorAddress)"
+ZAMA_LOCAL_KMS_VERIFIER="$(cfg_localhost_zama KMSVerifierAddress)"
 
 # -----------------------------------------------------------------------------
 # Storage slots

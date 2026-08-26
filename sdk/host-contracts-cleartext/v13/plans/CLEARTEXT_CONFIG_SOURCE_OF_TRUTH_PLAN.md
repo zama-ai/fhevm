@@ -1,0 +1,192 @@
+# Closing the last unchecked copies of the cleartext config
+
+`sdk/cleartext-config.json` is the source of truth for every value the cleartext stack's languages must
+agree on (RULES.md rule 23). This plan covers what does **not** yet come from it.
+
+Status: **all five items open.** Nothing here is started.
+
+## 0. What the audit found
+
+Nothing generates from the JSON and nothing imports it. Today it is a *verified oracle*, not a build
+input — the only file that reads it is `test/cleartext-config-mirror.test.ts`. That is the intended
+design (rule 23 argues for checked-in faces over a build step an operator could be blocked on), and the
+derived layer below the faces genuinely is derived:
+
+```
+sdk/cleartext-config.json ─────────────► read ONLY by test/cleartext-config-mirror.test.ts
+        ▲ verified against, never consumed
+        │
+        ├─ internal/cleartext-config.ts ........... HAND-WRITTEN, checked
+        │        └─► pkg/ts/cleartext-config.ts ... GENERATED (copyCleartextConfig.ts, byte-identical)
+        │                └─► imported by generateLocalHostBytecode.ts, generateSigners.ts,
+        │                     pkg/ts/constants.ts ........................ IMPORTS
+        │                        └─► LocalHostAddresses/Bootstrap/Bytecode.sol,
+        │                             pkg/ts/signers/*, pkg/templates/* ... GENERATED
+        │
+        ├─ create2-deploy/script/FhevmCleartextConfig.sol ... HAND-WRITTEN, checked
+        │
+        └─ internal/constants.ts (MNEMONIC, DEPLOYER_*, ZAMA_LOCAL_CONFIG, NONCE_OFFSET)
+                 HAND-WRITTEN, checked only TRANSITIVELY
+```
+
+26 generated files and 8 importers, all traceable. Two hand-written roots, both checked. What is left is
+the files holding a bare literal that reaches the JSON through nothing at all — 17 by the first scan, and
+more than that once the scan's known false negative is fixed (see "Reproducing the audit").
+
+The distinction that matters, and the one this plan is organised around: **the mirror test opens exactly
+four files** — the JSON, the two faces, and the generated `LocalHostAddresses.sol`. Any other file holding
+the same value is outside its field of view entirely. Setting `scripts/anvil.sh`'s ACL address to
+`0xdead…` leaves it reporting 14/14. So "the faces are checked" and "every copy of these values is
+checked" are different claims, and only the first is true today.
+
+**One caveat worth carrying into item 5.** `internal/constants.ts` is checked through its *output*: the
+mirror test compares the JSON against the generated `LocalHostAddresses.sol`. Edit `MNEMONIC` there
+without regenerating and the test still passes — the drift surfaces only once `build:templates` runs. CI
+does run it, so this is a latency problem rather than a hole, but it is the reason item 5 exists.
+
+## 1. `scripts/*.sh` — read the JSON with `jq`
+
+**Open.** The motivating case for choosing JSON over TypeScript, and currently the only consumer group
+that benefits from it not at all.
+
+| File | Bare literals |
+| --- | --- |
+| `scripts/anvil.sh:97-99` | `ZAMA_LOCAL_ACL`, `ZAMA_LOCAL_COPROCESSOR`, `ZAMA_LOCAL_KMS_VERIFIER` |
+| `scripts/anvil-lib.sh:35-37` | the same three again — a **second** copy inside the shell layer |
+| `scripts/derive-keys.sh` | `FHEVM_MNEMONIC` and `m/44'/60'/0'/4/`, as `${2:-…}` / `${3:-…}` defaults |
+
+`anvil-lib.sh` is the one that makes this the highest-value item: the same three addresses are declared
+twice within the shell layer alone, so the launchers can disagree with each other as well as with the
+JSON. It also escaped the first audit pass — see "Reproducing the audit" for why, and fix the heuristic
+before trusting a re-run.
+
+These three are `ZamaConfig._getLocalConfig()`'s, and `anvil-lib.sh`'s own comment says why that matters:
+they are compiled into consumer bytecode. Nothing in the TypeScript or Solidity checks can see them, so a
+wrong one surfaces only when a dApp calls an address holding no code.
+
+All of them read from `localhost` rather than `constants`: the ZamaConfig trio is the `zamaConfigLocal`
+subset, and `derive-keys.sh`'s are `FHEVM_MNEMONIC` plus a `CLEARTEXT_*_MNEMONIC_PATH`.
+
+Do it as one helper sourced by both — something like `scripts/config-lib.sh` exposing
+`cfg_constant <NAME>` and `cfg_localhost_address <ROLE>` — rather than a `jq` invocation per call site,
+which would just be the same duplication in a different syntax.
+
+Two things to get right:
+
+- **`jq` is a new hard dependency for these scripts.** They already require `cast` and `anvil`, so this
+  is not a new class of requirement, but the failure must be a named one: check for `jq` up front and say
+  what is missing, rather than letting an empty variable flow into a deploy and produce an address of
+  `0x`.
+- **The path to the JSON is `../../cleartext-config.json` from a generation root**, which means these
+  scripts stop working from a checkout of one generation alone. That is the same trade the mirror test
+  makes, and the same answer applies: fail loudly, naming the missing file. Do not fall back to a
+  hardcoded default — a silent fallback is indistinguishable from the drift being fixed here.
+
+Verify by asserting the derived values equal today's literals before deleting them, so the change is
+provably a no-op on values.
+
+## 2. One shared `hcuLimit` fixture for the tests
+
+**Open.** This triple appears verbatim **nine times** across the two generations:
+
+```ts
+hcuLimit: { hcuCapPerBlock: 281474976710655n, maxHCUDepthPerTx: 5000000n, maxHCUPerTx: 20000000n }
+```
+
+in `deploy-v1{2,3}.test.ts`, `acl-owner-upgrade.test.ts`, `tarball-consumer.test.ts` and
+`upgrade-e2e.test.ts`. Hoist it into one fixture built from the three `CLEARTEXT_*_HCU_*` constants.
+
+`test/ts/utils/` is the natural home — but note that `tarball-consumer.test.ts` cannot import from
+`internal/` (see item 3), so either that one call site stays behind until item 3 lands, or the fixture
+lives somewhere both can reach. Do not solve it by giving the fixture its own copy of the numbers.
+
+## 3. Export the cleartext constants from `pkg/ts/index.ts`
+
+**Open, and it needs a decision rather than an implementation.** `pkg/ts/index.ts` does not re-export
+`pkg/ts/cleartext-config.ts`, so a consumer of the published package — which is exactly what
+`test/ts/tarball-consumer.test.ts` is — physically cannot import these values. That is the *cause* of
+two findings, not laziness:
+
+- `tarball-consumer.test.ts:12` hardcodes the deploy mnemonic;
+- its `hcuLimit` triple cannot use item 2's fixture.
+
+This changes the published API surface, so it is the one item here that is not purely internal. The
+argument for it: a consumer wiring up a cleartext stack needs the gateway chain id and the relayer URL
+anyway, and today they must copy them out of our source. The argument against: every exported name is a
+compatibility commitment, and these are testnet-only values.
+
+If the answer is no, item 2's fixture has to live in the payload or those two call sites stay hardcoded
+with a comment saying why — which is acceptable, but it should be a *recorded* decision rather than the
+status quo persisting because nobody chose.
+
+## 4. Pin `precompute-addresses.test.ts` — legibility only, not a hole
+
+**Open, and the lowest-value item here. It was mis-filed in the first draft of this plan.**
+
+It hardcodes all 10 (v13) / 8 (v12) stack addresses, and **they must stay hardcoded** — the file exists to
+be an independent statement of the layout, and deriving them from the source it is checking would defeat
+the point, the same way `FhevmVerify.s.sol` derives signers from the mnemonic rather than reading the
+generated bootstrap.
+
+More importantly, this is **not** an unchecked copy. Its table is compared against what
+`precomputeAddresses()` actually produces, so if a source-of-truth value moved, *this test fails on its
+own*. It is a self-catching oracle, unlike the shell scripts of item 1 where nothing notices at all.
+
+What is left is only the quality of the signal. Today a drift here reports "the deploy produced the wrong
+addresses"; having `cleartext-config-mirror.test.ts` also compare the table to the JSON would additionally
+report "you changed a source-of-truth value and this file still holds the old one", which is the sentence
+that actually says what to do. Worth doing, but after items 1-3.
+
+Note the file also legitimately holds `CLEARTEXT_*_COUNT` and `*_INDEX` values, which are too short to
+grep for distinctively (`4`, `0`). Compare by role name, not by scanning for values.
+
+## 5. Optional: check `internal/constants.ts` directly
+
+**Open, lower value than it looks.** Closes §0's caveat by comparing `MNEMONIC`,
+`DEPLOYER_ADDRESS_INDEX`, `DEPLOYER_START_NONCE` and `ZAMA_LOCAL_CONFIG` against the JSON *at edit time*
+instead of after regeneration.
+
+Worth doing only if the generated-artifact check ever proves too slow a signal in practice. `ZAMA_LOCAL_CONFIG`
+is already compared directly (the `zamaConfigLocal` test), so this is really about the three deploy scalars.
+
+## Not defects — do not "fix" these
+
+Two classes of match look like findings and are not. Recorded so the audit does not get re-litigated:
+
+- **`127.0.0.`** is `CLEARTEXT_KMS_NODE_IP_ADDRESS_PREFIX`'s value and also the host in every localhost
+  RPC URL in the repo. A hit on it carries no information; it must be excluded from any scan.
+- **`scripts/anvil-lib.sh`** appears to hardcode the gateway chain id, the decryption address and the HCU
+  cap. Those three are in **doc comments** illustrating what `read_bootstrap_scalar` returns, and that
+  function reads them off the chain. The comments can go stale, which is a documentation risk, not a
+  second copy in use.
+
+Also deliberate, and already recorded elsewhere: `pkg/ts/cleartext-config.ts` is a byte-identical copy of
+`internal/cleartext-config.ts` rather than an import (rule 9 — neither side can reach the other), and it
+is protected by `npm run check:cleartext-config`.
+
+## Reproducing the audit
+
+The scan that produced this list: for every value in the JSON, find files containing the value but **not**
+the constant's name — the name being present implies an import and a reference rather than a copy. Then
+exclude files whose first 3000 characters say `AUTOGENERATED` or `DO NOT EDIT` (their generator is the
+face, so the value belongs there), skip build output and vendored trees, drop values shorter than 8
+characters as non-distinctive, and separate matches on comment lines from matches in code.
+
+**That heuristic has a known false negative, and it must be fixed before the scan is trusted again.** It
+is applied *per file*: any file mentioning the constant's name anywhere is skipped entirely. That is how
+`scripts/anvil-lib.sh:35-37` was missed — the file mentions `ACL_ADDRESS` at line 353, reading it from the
+deploy manifest, an entirely unrelated use. Make the check **per line**: skip a matching line only if that
+line, or its immediate neighbours, reference the name. Expect the count to rise, not fall, on the first
+corrected run.
+
+Run it again after each item to confirm the count drops and nothing new appeared. The starting point was
+**17 files with bare literals in code**, which the corrected heuristic will revise upward.
+
+## Rules that apply
+
+- **Rule 22** — every change lands in v12 in the same change. Items 1, 2 and 4 all touch files that exist
+  in both generations, and the shell scripts and test fixtures are byte-identical apart from the recorded
+  deltas. Item 3 touches the payload's public surface, so it applies to both payloads.
+- **Rule 23** — the values themselves do not move. Every item here changes *where a value is read from*,
+  never what it is. Any item that would change a value has gone wrong.
+- **Rule 21** — nothing here is upgrade-path work, so no item is v13-only.

@@ -13,11 +13,11 @@ diff auditable — one entry per hunk, each naming its cause.
 
 "Deployable from scratch" means all three deploy paths work for v12, not just the TS one:
 
-| Path                     | Entry point                              | Target                    |
-| ------------------------ | ---------------------------------------- | ------------------------- |
-| TypeScript               | `pkg/ts/deploy.ts`                       | any chain, via an adapter |
-| Foundry, nonce-based     | `pkg/forge/src/FhevmDeploy.sol`, `pkg/forge/script/` | local / anvil  |
-| Foundry, CREATE2-based   | `create2-deploy/`                        | testnet                   |
+| Path                   | Entry point                                          | Target                    |
+| ---------------------- | ---------------------------------------------------- | ------------------------- |
+| TypeScript             | `pkg/ts/deploy.ts`                                   | any chain, via an adapter |
+| Foundry, nonce-based   | `pkg/forge/src/FhevmDeploy.sol`, `pkg/forge/script/` | local / anvil             |
+| Foundry, CREATE2-based | `create2-deploy/`                                    | testnet                   |
 
 ## Decisions taken
 
@@ -36,12 +36,12 @@ diff auditable — one entry per hunk, each naming its cause.
 **No outward-facing action in this plan may be performed without the repo owner's explicit approval for
 that specific action.** Local work is unrestricted; anything that publishes is not.
 
-| Allowed freely, locally                                    | Requires explicit approval, every time                          |
-| ---------------------------------------------------------- | --------------------------------------------------------------- |
-| `git commit` (Phase 0.1), local branches, local tags        | `git push`, pushing tags, deleting or force-pushing a remote ref |
-| `npm pack` (Phase 1, Phase 5 fixture)                       | `npm publish` to any registry — rules 2–4 name npm as a release channel, and this plan never exercises it |
-| `./scripts/anvil.sh`, `deploy-testnet.sh --chain anvil`      | any deploy to a live chain — testnet included; a CREATE2 deploy burns salts and is not undoable |
-| creating a local git repo for the rule 3 mirror              | creating or writing `github.com/zama-ai/host-contracts-cleartext` (rule 3) |
+| Allowed freely, locally                                 | Requires explicit approval, every time                                                                    |
+| ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `git commit` (Phase 0.1), local branches, local tags    | `git push`, pushing tags, deleting or force-pushing a remote ref                                          |
+| `npm pack` (Phase 1, Phase 5 fixture)                   | `npm publish` to any registry — rules 2–4 name npm as a release channel, and this plan never exercises it |
+| `./scripts/anvil.sh`, `deploy-testnet.sh --chain anvil` | any deploy to a live chain — testnet included; a CREATE2 deploy burns salts and is not undoable           |
+| creating a local git repo for the rule 3 mirror         | creating or writing `github.com/zama-ai/host-contracts-cleartext` (rule 3)                                |
 
 This applies to steps that look like cleanup too: reverting a bad push and deleting a stray tag are both
 remote writes. Ask rather than tidying up unilaterally.
@@ -78,7 +78,7 @@ Local commit only — no push, no tag (see the hard constraint above).
 ### 0.2 Two v13 fixes the new layout forces
 
 Rule 20's corollary — a bug found while working on v12 is fixed in v13 first, then copied down. Both of
-these are broken *by* v12 gaining the `pkg/` payload split, so they must land in v13 before the copy:
+these are broken _by_ v12 gaining the `pkg/` payload split, so they must land in v13 before the copy:
 
 - **`internal/prepareTestV12Consumer.ts:34`** runs `npm pack` with `cwd: V12_PACKAGE_ROOT`, i.e. the
   harness root. Under the split layout the harness manifest is private and the payload manifest lives in
@@ -98,20 +98,20 @@ stack at **58 passed / 0 failed / 3 skipped**.
 The strongest single signal: `internal/placeholders/patch-sites.json` regenerated **byte-identical** —
 360 patch sites across 14 contracts unchanged — so none of this altered bytecode or address semantics.
 
-| Item | Landed as |
-| ---- | --------- |
-| A | `FhevmAddressesV13`→`FhevmAddresses`, `BootstrapConfigV13`→`BootstrapConfig`, `DeployedV13`→`Deployed`, `DEFAUT_BOOTSTRAP_CONFIG_V13`→`DEFAULT_BOOTSTRAP_CONFIG` (typo fixed too), plus the internal `buildHostAddressReplacements` / `buildBootstrapPlan` / `UpgradeConfig` / `kmsVerifierInitArgs`. `FhevmAddressesV12` and `updateV12ToV13` keep their suffix — they name a *pair*. The two-layer `deployEmptyProxiesV12`/`V13` split and the `precomputeFhevmAddressesV12`/`V13` split are collapsed into one function each. |
-| B | `PROXY_COUNT` and `ADDRESSED_NONCE_COUNT` emitted into the generated `LocalHostAddresses.sol`; all 15 executable arity literals now derived (`PROXY_COUNT`, `_allProxyRoles().length`, `_sharedProxyRoles().length + 1`, `2 * n + 4`). `generateGenesis.ts`'s `!== 9` and `anvil-local-v2.sh`'s `START_NONCE + 12` derive too — the shell reads the constant via the existing `read_scalar`. `_sharedProxyRoles()` keeps its literal size (Solidity has no array-literal length) but a mismatch now reverts instead of producing a wrong address. |
-| C | 78 count-phrases rewritten count-free across 16 files. Zero `nine`/`eight`/`22 creates` prose left in the deploy layers. |
-| D | New `internal/contractVersions.ts` scans `pkg/src` for `CONTRACT_NAME` + the three version constants — **zero configuration**, so a generation needs no edit. `generateContractVersions.ts` emits `pkg/forge/src/_internal/LocalHostVersions.sol` and `pkg/ts/versions.ts`; `VerifyFhevmDeploy.s.sol`, `FhevmDeploy.t.sol` and `deploy-v13.test.ts` all read them. All 9 generated strings matched the hand-written literals exactly. `CONTRACT_VERSIONS` is exported from `pkg/ts`. |
-| E | `test/templates.test.ts`'s `addressConfigSource()` and `ALTERNATE_ADDRESSES` derive from `ADDRESS_NAMES`; `NEXT_START_NONCE_OFFSET` derives from `LAYOUT`. **`LAYOUT` and `LOCALHOST_ADDRESSES` deliberately stay hand-written** — see the correction below. |
+| Item | Landed as                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A    | `FhevmAddressesV13`→`FhevmAddresses`, `BootstrapConfigV13`→`BootstrapConfig`, `DeployedV13`→`Deployed`, `DEFAUT_BOOTSTRAP_CONFIG_V13`→`DEFAULT_BOOTSTRAP_CONFIG` (typo fixed too), plus the internal `buildHostAddressReplacements` / `buildBootstrapPlan` / `UpgradeConfig` / `kmsVerifierInitArgs`. `FhevmAddressesV12` and `updateV12ToV13` keep their suffix — they name a _pair_. The two-layer `deployEmptyProxiesV12`/`V13` split and the `precomputeFhevmAddressesV12`/`V13` split are collapsed into one function each.                  |
+| B    | `PROXY_COUNT` and `ADDRESSED_NONCE_COUNT` emitted into the generated `LocalHostAddresses.sol`; all 15 executable arity literals now derived (`PROXY_COUNT`, `_allProxyRoles().length`, `_sharedProxyRoles().length + 1`, `2 * n + 4`). `generateGenesis.ts`'s `!== 9` and `anvil-local-v2.sh`'s `START_NONCE + 12` derive too — the shell reads the constant via the existing `read_scalar`. `_sharedProxyRoles()` keeps its literal size (Solidity has no array-literal length) but a mismatch now reverts instead of producing a wrong address. |
+| C    | 78 count-phrases rewritten count-free across 16 files. Zero `nine`/`eight`/`22 creates` prose left in the deploy layers.                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| D    | New `internal/contractVersions.ts` scans `pkg/src` for `CONTRACT_NAME` + the three version constants — **zero configuration**, so a generation needs no edit. `generateContractVersions.ts` emits `pkg/forge/src/_internal/LocalHostVersions.sol` and `pkg/ts/versions.ts`; `VerifyFhevmDeploy.s.sol`, `FhevmDeploy.t.sol` and `deploy-v13.test.ts` all read them. All 9 generated strings matched the hand-written literals exactly. `CONTRACT_VERSIONS` is exported from `pkg/ts`.                                                              |
+| E    | `test/templates.test.ts`'s `addressConfigSource()` and `ALTERNATE_ADDRESSES` derive from `ADDRESS_NAMES`; `NEXT_START_NONCE_OFFSET` derives from `LAYOUT`. **`LAYOUT` and `LOCALHOST_ADDRESSES` deliberately stay hand-written** — see the correction below.                                                                                                                                                                                                                                                                                      |
 
 Two corrections to what this section originally proposed, both found by doing the work:
 
 - **`precompute-addresses.test.ts`'s `LAYOUT` must NOT be derived.** Its own doc comment says it is "the
   only one that is an assertion rather than an input, which is what makes it a check instead of a fifth
   thing to keep in step." Deriving it from the code under test would delete the oracle. Same for
-  `LOCALHOST_ADDRESSES`. Only `NEXT_START_NONCE_OFFSET` was derived, *from* `LAYOUT`, which keeps the
+  `LOCALHOST_ADDRESSES`. Only `NEXT_START_NONCE_OFFSET` was derived, _from_ `LAYOUT`, which keeps the
   oracle independent while removing one literal. For v12 these two tables are legitimate generation work.
 - **`ALTERNATE_ADDRESSES` must use decimal digits only.** They are rendered into Solidity as address
   literals, and solc rejects a hex literal containing letters unless it carries a valid EIP-55 checksum
@@ -135,7 +135,7 @@ The original rationale follows, for the record.
 ### 0.3.1 Why these five — the original analysis
 
 **v13 has never been shipped.** No consumer holds its API, no tarball is on npm, rules 2–4's channels
-are unused. That makes every change below free *right now* and progressively expensive afterwards — a
+are unused. That makes every change below free _right now_ and progressively expensive afterwards — a
 renamed exported type costs nothing today and is a breaking change the day after the first publish. This
 is the window, so these are prerequisites of Phase 1 rather than a wishlist.
 
@@ -146,19 +146,19 @@ once for v12, again for v11, again for v14.
 Rule 20 says a non-generation-specific fix goes into v13 first and is then copied down. These qualify —
 and each also closes a real drift gap in v13 today, independent of v12. Measured against the baseline:
 
-| # | v13 strategy that costs v12 edits                                    | Hand-written sites | Fix in v13                                                                 | v12 diff after |
-| - | -------------------------------------------------------------------- | ------------------ | -------------------------------------------------------------------------- | -------------- |
-| A | Generation number baked into type and function *names* — `FhevmAddressesV13`, `BootstrapConfigV13`, `DEFAUT_BOOTSTRAP_CONFIG_V13`, `buildHostAddressReplacementsV13`, `deployEmptyProxiesV13`, `precomputeFhevmAddressesV13`, `UpgradeConfigV13` | **74** | Drop the suffix. A package is already version-pinned by its own `version`, so the suffix carries no information *inside* it. Keep it only in `upgrade.ts`, which genuinely names a *pair* of generations | 0 lines |
-| B | Proxy/create counts as literals — `new ACLOwner.Op[](9)`, `new Create[](22)`, `materialized == 9`, `live == 9`, `implementationCount !== 9`, `NEXT_START_NONCE_OFFSET = 12n`, `START_NONCE + 12` | **~20** | Derive from one source. Solidity call sites mostly have `_allProxyRoles()` in scope already; the rest can read a `PROXY_COUNT` emitted into the generated `LocalHostAddresses.sol`, which already knows `ADDRESS_NAMES`. TS reads `ADDRESSED_NONCE_COUNT`, which is already derived | 0 lines |
-| C | Prose that spells the counts out — "all nine proxies", "the eight share ONE init-code hash", "22 CREATE2s through the factory" | **~75** | Write count-free prose: "every proxy", "the shared-implementation proxies", "one CREATE2 per `_creates()` entry" | 0 lines |
-| D | Expected `getVersion()` strings hand-copied per contract — `"ACL v0.4.0"`, `"KMSVerifier v0.3.0"`, … in three files | **~15** | Emit them. `generateTemplates.ts` already reads every compiled artifact, and `MAJOR/MINOR/PATCH_VERSION` are compile-time constants — add `version` beside `abi`/`template` in `pkg/ts/artifacts/*.ts` and as a generated Solidity table | 0 lines |
-| E | Address tables retyped instead of derived — `SCRIPT_VARIABLE` in `generateComputeAddressesScript.ts`, `addressConfigSource()` in `test/templates.test.ts`, `LAYOUT` + `LOCALHOST_ADDRESSES` in `test/ts/precompute-addresses.test.ts`, `ALTERNATE_ADDRESSES` | **~30** | Loop over `ADDRESS_NAMES` / import `NONCE_OFFSET`. `LAYOUT` *is* `NONCE_OFFSET` retyped; `LOCALHOST_ADDRESSES` is the generated `LocalHostAddresses.sol` retyped | ~2 lines |
+| #   | v13 strategy that costs v12 edits                                                                                                                                                                                                                            | Hand-written sites | Fix in v13                                                                                                                                                                                                                                                                          | v12 diff after |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| A   | Generation number baked into type and function _names_ — `FhevmAddressesV13`, `BootstrapConfigV13`, `DEFAUT_BOOTSTRAP_CONFIG_V13`, `buildHostAddressReplacementsV13`, `deployEmptyProxiesV13`, `precomputeFhevmAddressesV13`, `UpgradeConfigV13`             | **74**             | Drop the suffix. A package is already version-pinned by its own `version`, so the suffix carries no information _inside_ it. Keep it only in `upgrade.ts`, which genuinely names a _pair_ of generations                                                                            | 0 lines        |
+| B   | Proxy/create counts as literals — `new ACLOwner.Op[](9)`, `new Create[](22)`, `materialized == 9`, `live == 9`, `implementationCount !== 9`, `NEXT_START_NONCE_OFFSET = 12n`, `START_NONCE + 12`                                                             | **~20**            | Derive from one source. Solidity call sites mostly have `_allProxyRoles()` in scope already; the rest can read a `PROXY_COUNT` emitted into the generated `LocalHostAddresses.sol`, which already knows `ADDRESS_NAMES`. TS reads `ADDRESSED_NONCE_COUNT`, which is already derived | 0 lines        |
+| C   | Prose that spells the counts out — "all nine proxies", "the eight share ONE init-code hash", "22 CREATE2s through the factory"                                                                                                                               | **~75**            | Write count-free prose: "every proxy", "the shared-implementation proxies", "one CREATE2 per `_creates()` entry"                                                                                                                                                                    | 0 lines        |
+| D   | Expected `getVersion()` strings hand-copied per contract — `"ACL v0.4.0"`, `"KMSVerifier v0.3.0"`, … in three files                                                                                                                                          | **~15**            | Emit them. `generateTemplates.ts` already reads every compiled artifact, and `MAJOR/MINOR/PATCH_VERSION` are compile-time constants — add `version` beside `abi`/`template` in `pkg/ts/artifacts/*.ts` and as a generated Solidity table                                            | 0 lines        |
+| E   | Address tables retyped instead of derived — `SCRIPT_VARIABLE` in `generateComputeAddressesScript.ts`, `addressConfigSource()` in `test/templates.test.ts`, `LAYOUT` + `LOCALHOST_ADDRESSES` in `test/ts/precompute-addresses.test.ts`, `ALTERNATE_ADDRESSES` | **~30**            | Loop over `ADDRESS_NAMES` / import `NONCE_OFFSET`. `LAYOUT` _is_ `NONCE_OFFSET` retyped; `LOCALHOST_ADDRESSES` is the generated `LocalHostAddresses.sol` retyped                                                                                                                    | ~2 lines       |
 
 Order to do them in — cheapest and least risky first, each independently landable and reviewable:
 
 1. **C — count-free prose.** ~75 sites, zero logic, no test can fail. Do it first: it makes the B sweep
    readable by leaving only real literals behind.
-2. **A — drop the generation suffix from names.** 74 sites, mechanical rename. Keep the suffix *only* in
+2. **A — drop the generation suffix from names.** 74 sites, mechanical rename. Keep the suffix _only_ in
    `upgrade.ts` and `UpdateV12ToV13MigrationConfig`, which genuinely name a pair of generations. Because
    v13 is unshipped there are no deprecated aliases to leave behind — rename outright.
 3. **D — generate the expected `getVersion()` strings.** Removes group D′ entirely and closes a live
@@ -167,7 +167,7 @@ Order to do them in — cheapest and least risky first, each independently landa
 4. **B — derive the counts.** Removes group H.3 entirely. Emit `PROXY_COUNT` / `CREATE_COUNT` into the
    already-generated `LocalHostAddresses.sol`; several Solidity call sites can use
    `_allProxyRoles().length`, already in scope. TS reads `ADDRESSED_NONCE_COUNT`, already derived.
-5. **E — derive the address tables.** `LAYOUT` in `precompute-addresses.test.ts` *is* `NONCE_OFFSET`
+5. **E — derive the address tables.** `LAYOUT` in `precompute-addresses.test.ts` _is_ `NONCE_OFFSET`
    retyped; `LOCALHOST_ADDRESSES` is the generated `LocalHostAddresses.sol` retyped. Import instead.
 
 Together these delete groups D′ and H.3 outright and shrink D, F and G to the protocol delta alone.
@@ -259,12 +259,12 @@ the exclusion table below.
 
 Deliberately excluded:
 
-| Excluded                                | Why                                                                 |
-| --------------------------------------- | ------------------------------------------------------------------- |
-| `node_modules/`, `dependencies/`, `out/`, `cache/`, `tarball/` | Install/build outputs. Phase 1.1 regenerates them. |
-| `create2-deploy/.out-*/`                | Per-deployment seals and broadcast logs from v13's own anvil run. They record *that* deployment, not the tooling. |
-| `internal/.deploy-config/`, `internal/.tmp-localhost/` | Generator scratch. |
-| `plans/`                                | v13 design history. Two copies of one narrative would drift; it stays in `v13/`. |
+| Excluded                                                       | Why                                                                                                               |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `node_modules/`, `dependencies/`, `out/`, `cache/`, `tarball/` | Install/build outputs. Phase 1.1 regenerates them.                                                                |
+| `create2-deploy/.out-*/`                                       | Per-deployment seals and broadcast logs from v13's own anvil run. They record _that_ deployment, not the tooling. |
+| `internal/.deploy-config/`, `internal/.tmp-localhost/`         | Generator scratch.                                                                                                |
+| `plans/`                                                       | v13 design history. Two copies of one narrative would drift; it stays in `v13/`.                                  |
 
 `plans/` is **not** copied. Those documents are v13 design history, they describe work done in v13, and
 duplicating them would mean two copies of the same narrative drifting apart. They stay in `v13/` only,
@@ -306,7 +306,7 @@ Phase 3 regenerated to exactly the expected shape with **zero hand-editing**: 7 
 list covered `pkg/forge`, `create2-deploy/script` and `scripts/anvil-lib.sh` — not `deploy.sh` — and its
 regex would not have matched `+ 12` anyway. Fixed in v13 first (rule 20) by reading
 `ADDRESSED_NONCE_COUNT` out of the generated `LocalHostAddresses.sol`, then copied down. It presented as
-`FAIL ACL.owner == ACL_OWNER_ADDRESS` with the *deploy* correct and the *expectation* stale — worth
+`FAIL ACL.owner == ACL_OWNER_ADDRESS` with the _deploy_ correct and the _expectation_ stale — worth
 remembering as the signature of this class of bug.
 
 ### The original edit list
@@ -320,15 +320,15 @@ step to skip.
 
 ### A. Identity and provenance — rules 5, 7, 18
 
-| File               | Edit                                                                        |
-| ------------------ | --------------------------------------------------------------------------- |
-| `pkg/package.json` | `version`: `0.13.0` → `0.12.0`                                              |
+| File               | Edit                                                                                                                            |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| `pkg/package.json` | `version`: `0.13.0` → `0.12.0`                                                                                                  |
 | `pkg/package.json` | `fhevm.vendoredFrom`: `tag` → `v0.12.5`, `commit` → `ac18e49ea85dd3c26788fc66f9ac0ea7cfe48519` — verbatim from RULES.md rule 18 |
-| `package.json`     | drop `test:upgrade-e2e` from the `test` script, and drop the `test:upgrade-e2e` script itself (group G) |
+| `package.json`     | drop `test:upgrade-e2e` from the `test` script, and drop the `test:upgrade-e2e` script itself (group G)                         |
 
 The published name stays `@fhevm/host-contracts-cleartext`. Every generation publishes under it and they
 differ only by version — `internal/constants.ts` says so, and v13's e2e fixture relies on it, installing
-the package into an *aliased directory* rather than renaming it.
+the package into an _aliased directory_ rather than renaming it.
 
 ### B. The config remapping prefix — `fhevm-config-0.13.0/` → `fhevm-config-0.12.0/`
 
@@ -391,19 +391,18 @@ gate self-configuring — no edit needed here.
 > inherits its own correct table with no edit. The table below is kept only as the record of what the
 > 0.13→0.12 version delta actually is — useful when reading `list:upgrade-ops` output.
 
-
 0.13 bumped four vendored contracts and group E bumps a fifth, so **every surviving `getVersion()`
 expectation changes**, not just the two that disappear. Verified against `v0.12.5` vs v13's vendored
 sources:
 
-| Contract               | v13      | v12      |
-| ---------------------- | -------- | -------- |
-| `ACL`                  | `v0.4.0` | `v0.3.0` |
-| `FHEVMExecutor`        | `v0.4.0` | `v0.3.0` |
-| `KMSVerifier`          | `v0.3.0` | `v0.2.0` |
-| `HCULimit`             | `v0.3.0` | `v0.2.0` |
-| `CleartextArithmetic`  | `v0.4.0` | `v0.3.0` |
-| `InputVerifier`        | `v0.2.0` | `v0.2.0` — unchanged, which is *why* `updateV12ToV13` omits it |
+| Contract              | v13      | v12                                                            |
+| --------------------- | -------- | -------------------------------------------------------------- |
+| `ACL`                 | `v0.4.0` | `v0.3.0`                                                       |
+| `FHEVMExecutor`       | `v0.4.0` | `v0.3.0`                                                       |
+| `KMSVerifier`         | `v0.3.0` | `v0.2.0`                                                       |
+| `HCULimit`            | `v0.3.0` | `v0.2.0`                                                       |
+| `CleartextArithmetic` | `v0.4.0` | `v0.3.0`                                                       |
+| `InputVerifier`       | `v0.2.0` | `v0.2.0` — unchanged, which is _why_ `updateV12ToV13` omits it |
 
 Cross-check: v13's own `test/ts/upgrade-e2e.test.ts:178-183` already records exactly these v12 strings,
 so they are not a guess.
@@ -422,15 +421,15 @@ deletes this group entirely** — generated versions cannot be stale.
 0.12 has no `ProtocolConfig` and no `KMSGeneration`, so `PROTOCOL_CONFIG_ADDRESS` and
 `KMS_GENERATION_ADDRESS` disappear everywhere.
 
-| File                                        | Edit                                                        |
-| ------------------------------------------- | ----------------------------------------------------------- |
-| `pkg/src/addresses/FHEVMHostAddresses.sol`  | drop 2 imported symbols and their 2 `*Add` aliases          |
-| `internal/constants.ts`                     | drop 2 entries from each of `ADDRESS_NAMES`, `HOST_NONCE_OFFSET`, `NONCE_LABEL`, `CONSTANT_NAMES` |
-| `internal/generateTemplates.ts`             | drop the 2 `// v0.13.0` rows from `TARGET_CONTRACTS`         |
-| `internal/generateLocalHostBytecode.ts`     | drop 2 rows from the creation/runtime kind map               |
-| `internal/generateComputeAddressesScript.ts` | drop 2 rows from `SCRIPT_VARIABLE` (`:68-69`) — it is typed `Record<AddressName, string>`, so the excess keys are a type error once `ADDRESS_NAMES` shrinks |
-| `internal/generateGenesis.ts`               | `implementationCount !== 9` (`:254-255`) → 7 — an arity literal outside H.3's sweep paths |
-| `test/templates.test.ts`                    | drop 2 entries from `ALTERNATE_ADDRESSES` (`:68-69`) **and** 2 lines from `addressConfigSource()` (`:142-143`), which spells each name out — left alone it renders `address(undefined)` into generated Solidity |
+| File                                         | Edit                                                                                                                                                                                                            |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pkg/src/addresses/FHEVMHostAddresses.sol`   | drop 2 imported symbols and their 2 `*Add` aliases                                                                                                                                                              |
+| `internal/constants.ts`                      | drop 2 entries from each of `ADDRESS_NAMES`, `HOST_NONCE_OFFSET`, `NONCE_LABEL`, `CONSTANT_NAMES`                                                                                                               |
+| `internal/generateTemplates.ts`              | drop the 2 `// v0.13.0` rows from `TARGET_CONTRACTS`                                                                                                                                                            |
+| `internal/generateLocalHostBytecode.ts`      | drop 2 rows from the creation/runtime kind map                                                                                                                                                                  |
+| `internal/generateComputeAddressesScript.ts` | drop 2 rows from `SCRIPT_VARIABLE` (`:68-69`) — it is typed `Record<AddressName, string>`, so the excess keys are a type error once `ADDRESS_NAMES` shrinks                                                     |
+| `internal/generateGenesis.ts`                | `implementationCount !== 9` (`:254-255`) → 7 — an arity literal outside H.3's sweep paths                                                                                                                       |
+| `test/templates.test.ts`                     | drop 2 entries from `ALTERNATE_ADDRESSES` (`:68-69`) **and** 2 lines from `addressConfigSource()` (`:142-143`), which spells each name out — left alone it renders `address(undefined)` into generated Solidity |
 
 **The nonce layout needs no edit.** v13 derives it: `HOST_NONCE_COUNT` is computed from
 `HOST_NONCE_OFFSET`, and the trailing block is positioned as `HOST_NONCE_COUNT + k`. Deleting the two
@@ -449,15 +448,15 @@ cleartext sources add `kmsVerifierAdd`, `cleartextArithmeticAdd` and `cleartextD
 ### E. The cleartext contracts — no nary operators
 
 0.13 added `fheSum` and `fheIsIn`. Their cleartext `record*` hooks are new selectors that 0.12's executor
-never calls, and their *absence* from v12 is what will force the `CleartextArithmetic` re-point in the
+never calls, and their _absence_ from v12 is what will force the `CleartextArithmetic` re-point in the
 future v12→v13 upgrade — so this is a real divergence, not a copy shortcut.
 
-| File                                          | Edit                                                                  |
-| --------------------------------------------- | --------------------------------------------------------------------- |
-| `pkg/src/cleartext/ICleartextArithmetic.sol`  | drop `recordNaryOp`                                                   |
-| `pkg/src/cleartext/CleartextArithmetic.sol`   | drop the `recordNaryOp` implementation and `reinitializeV2`; `MINOR_VERSION` 4 → 3, `REINITIALIZER_VERSION` 3 → 2 |
-| `pkg/src/cleartext/CleartextFHEVMExecutor.sol`| drop both `_naryOp` overrides                                         |
-| `test/CleartextNaryOps.t.sol`                 | delete                                                                |
+| File                                           | Edit                                                                                                              |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `pkg/src/cleartext/ICleartextArithmetic.sol`   | drop `recordNaryOp`                                                                                               |
+| `pkg/src/cleartext/CleartextArithmetic.sol`    | drop the `recordNaryOp` implementation and `reinitializeV2`; `MINOR_VERSION` 4 → 3, `REINITIALIZER_VERSION` 3 → 2 |
+| `pkg/src/cleartext/CleartextFHEVMExecutor.sol` | drop both `_naryOp` overrides                                                                                     |
+| `test/CleartextNaryOps.t.sol`                  | delete                                                                                                            |
 
 Everything else under `pkg/src/cleartext/` and `pkg/src/` stays verbatim. In particular:
 
@@ -476,16 +475,16 @@ The v13→v12 shape change is one thing: **0.13 moved the KMS signer set out of 
 `(verifyingContractSource, chainIDSource, initialSigners, initialThreshold)` — the same 4-arg signature
 as `InputVerifier` — and there is no `ProtocolConfig` to configure.
 
-| File                       | Edit                                                                                            |
-| -------------------------- | ----------------------------------------------------------------------------------------------- |
-| `pkg/ts/types/public.ts`   | drop `FhevmAddressesV13`, `ProtocolConfigInitConfig`, `KmsNode`, `KmsThresholds`, `UpdateV12ToV13MigrationConfig`; `KMSVerifierInitConfig` regains `initialSigners` + `initialThreshold`; `BootstrapConfigV13` → `BootstrapConfigV12` minus its `protocolConfig` field; `DeployedV13` → `DeployedV12` |
-| `pkg/ts/constants.ts`      | `DEFAUT_BOOTSTRAP_CONFIG_V13` → `..._V12`: `kmsVerifier` gains signers + threshold, `protocolConfig` goes; drop `DEFAULT_KMS_THRESHOLDS`, `generateDefaultKmsNodes`, `generateFromExistingDefaultKmsNodes`, `nextDefaultKmsSignerWindow` and the `KMS_SIGNER_INDEX` map |
-| `pkg/ts/deploy.ts`         | delete `deployEmptyProxiesV13` (`deployEmptyProxiesV12` already exists in v13 and becomes the only one); drop 2 rows from `targets` and 2 fields from `UpgradeConfigV13`; `kmsVerifierInitArgsV13` → the 4-arg v12 form; rename the `V13` identifiers |
-| `pkg/ts/utils.ts`          | `buildHostAddressReplacementsV13` → `...V12`, minus 2 entries                                    |
-| `pkg/ts/addresses.ts`      | drop the 2 addresses from `precomputeFhevmAddressesV13`; the nonce arithmetic follows group D     |
-| `pkg/ts/kmsContext.ts`     | delete — `defineNewKmsContext` / `destroyKmsContext` are `ProtocolConfig` operations             |
-| `pkg/ts/upgrade.ts`        | delete — rule 21 floor                                                                          |
-| `pkg/ts/index.ts`          | drop `updateV12ToV13`, `defineNewKmsContext`, `destroyKmsContext` and the deleted types; `V13` type names → `V12` |
+| File                     | Edit                                                                                                                                                                                                                                                                                                  |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pkg/ts/types/public.ts` | drop `FhevmAddressesV13`, `ProtocolConfigInitConfig`, `KmsNode`, `KmsThresholds`, `UpdateV12ToV13MigrationConfig`; `KMSVerifierInitConfig` regains `initialSigners` + `initialThreshold`; `BootstrapConfigV13` → `BootstrapConfigV12` minus its `protocolConfig` field; `DeployedV13` → `DeployedV12` |
+| `pkg/ts/constants.ts`    | `DEFAUT_BOOTSTRAP_CONFIG_V13` → `..._V12`: `kmsVerifier` gains signers + threshold, `protocolConfig` goes; drop `DEFAULT_KMS_THRESHOLDS`, `generateDefaultKmsNodes`, `generateFromExistingDefaultKmsNodes`, `nextDefaultKmsSignerWindow` and the `KMS_SIGNER_INDEX` map                               |
+| `pkg/ts/deploy.ts`       | delete `deployEmptyProxiesV13` (`deployEmptyProxiesV12` already exists in v13 and becomes the only one); drop 2 rows from `targets` and 2 fields from `UpgradeConfigV13`; `kmsVerifierInitArgsV13` → the 4-arg v12 form; rename the `V13` identifiers                                                 |
+| `pkg/ts/utils.ts`        | `buildHostAddressReplacementsV13` → `...V12`, minus 2 entries                                                                                                                                                                                                                                         |
+| `pkg/ts/addresses.ts`    | drop the 2 addresses from `precomputeFhevmAddressesV13`; the nonce arithmetic follows group D                                                                                                                                                                                                         |
+| `pkg/ts/kmsContext.ts`   | delete — `defineNewKmsContext` / `destroyKmsContext` are `ProtocolConfig` operations                                                                                                                                                                                                                  |
+| `pkg/ts/upgrade.ts`      | delete — rule 21 floor                                                                                                                                                                                                                                                                                |
+| `pkg/ts/index.ts`        | drop `updateV12ToV13`, `defineNewKmsContext`, `destroyKmsContext` and the deleted types; `V13` type names → `V12`                                                                                                                                                                                     |
 
 v13's `deploy.ts` already factors 0.12's seven-proxy sequence out as `deployEmptyProxiesV12`, so this
 group is mostly deletion rather than rewriting.
@@ -515,23 +514,23 @@ at rather than being broken — the same call rule 21 makes for v11.
 
 **Edit**:
 
-| File                                     | Edit                                                                    |
-| ---------------------------------------- | ----------------------------------------------------------------------- |
-| `test/ts/deploy-v13.test.ts`             | rename to `deploy-v12.test.ts`; drop the 2 contracts; apply group D′; **re-point** the KMS-signer/threshold reads at `:559-570` from `protocolConfigAddress` to `KMSVerifier.getKmsSigners()`/`getThreshold()` (both exist at 0.12.5) or drop that block wholesale; drop the `protocolConfig` bootstrap block at `:223` |
-| `eslint.config.js`, `test/ts/vitest.config.ts`, `test/tsconfig.json` | the `deploy-v13.test.ts` path in each include/ignore list, **and** the now-dangling `define-kms-context.test.ts` / `destroy-kms-context.test.ts` / `upgrade-e2e.test.ts` entries |
-| `test/ts/precompute-addresses.test.ts`   | more than a deletion: drop the 2 addresses from `LAYOUT` (`:39-49`) **and renumber** cleartextArithmetic 9n→7n, cleartextDb 10n→8n, pauserSet 11n→9n; `NEXT_START_NONCE_OFFSET` 12n→10n (`:52`); **recompute** the three shifted `LOCALHOST_ADDRESSES` literals (`:155-157`) — only the five core addresses at offsets 1/3/4/5/6 survive unchanged |
-| `test/ts/utils/deployStack.ts`           | reads `.protocolConfigAddress` / `.kmsGenerationAddress` at `:54-55` — fields group F deletes — plus `v13` strings at `:1,41,63`. **Not verbatim**; `npm run lint` fails otherwise |
-| `test/ts/tarball-consumer.test.ts`       | the CREATE-layout comment and assertions → the 10-nonce v12 layout      |
-| `test/ts/acl-owner-upgrade.test.ts`      | drop `ProtocolConfig` / `KMSGeneration` from the upgrade batch           |
-| `test/ts/node10-cjs-resolution.test.ts`  | one "v13 tarball" message string                                        |
-| `test/signers.test.ts`                   | two `.../v13` strings in the test name and assertion message            |
-| `test/FhevmDeploy.t.sol`                 | drop the 2 contracts, and apply group D′ to the surviving five          |
-| `scripts/anvil-lib.sh`                   | 22 lines / 44 name occurrences (not "25 hits", and it carries no `0.13.x` version string). Beyond deletions: **re-point** the bootstrap smoke checks at `:718-721` from `ProtocolConfig.getKmsSigners()` / `getPublicDecryptionThreshold()` to the `KMSVerifier` equivalents |
-| `scripts/anvil-local-v1.sh`              | "cleartext v13 stack" (`:3`), "~22 at once" (`:108`) — omitted from the first draft of this list |
-| `scripts/anvil-local-v2.sh`              | the 2 `create_proxy` calls (`:137-138`), **`anvil_setNonce … $((START_NONCE + 12))` at `:152` → +10** (an arity literal H.3's sweep does not reach), "nonces 0-10" (`:119`), the "✅ 9 …" echoes (`:141,174`) |
-| `scripts/anvil-local-v3.sh`              | same shape (`:168-169`, "9 proxies placed", "2 empty + 9 real", "0..11") |
-| `scripts/anvil.sh`, `anvil-fast.sh`, `deploy.sh` | version strings and the two contracts' checks; `deploy.sh:85` also hardcodes `CONFIG_PREFIX="fhevm-config-0.13.0/"` (group B) |
-| `README.md`                              | version strings, "21 files" → 16, step 6 rewritten to say v12 is the floor, and the step 7 `plans/FORGE_DEPLOY_SCRIPT_PLAN.md` reference re-pointed or dropped (Phase 1) |
+| File                                                                 | Edit                                                                                                                                                                                                                                                                                                                                               |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `test/ts/deploy-v13.test.ts`                                         | rename to `deploy-v12.test.ts`; drop the 2 contracts; apply group D′; **re-point** the KMS-signer/threshold reads at `:559-570` from `protocolConfigAddress` to `KMSVerifier.getKmsSigners()`/`getThreshold()` (both exist at 0.12.5) or drop that block wholesale; drop the `protocolConfig` bootstrap block at `:223`                            |
+| `eslint.config.js`, `test/ts/vitest.config.ts`, `test/tsconfig.json` | the `deploy-v13.test.ts` path in each include/ignore list, **and** the now-dangling `define-kms-context.test.ts` / `destroy-kms-context.test.ts` / `upgrade-e2e.test.ts` entries                                                                                                                                                                   |
+| `test/ts/precompute-addresses.test.ts`                               | more than a deletion: drop the 2 addresses from `LAYOUT` (`:39-49`) **and renumber** cleartextArithmetic 9n→7n, cleartextDb 10n→8n, pauserSet 11n→9n; `NEXT_START_NONCE_OFFSET` 12n→10n (`:52`); **recompute** the three shifted `LOCALHOST_ADDRESSES` literals (`:155-157`) — only the five core addresses at offsets 1/3/4/5/6 survive unchanged |
+| `test/ts/utils/deployStack.ts`                                       | reads `.protocolConfigAddress` / `.kmsGenerationAddress` at `:54-55` — fields group F deletes — plus `v13` strings at `:1,41,63`. **Not verbatim**; `npm run lint` fails otherwise                                                                                                                                                                 |
+| `test/ts/tarball-consumer.test.ts`                                   | the CREATE-layout comment and assertions → the 10-nonce v12 layout                                                                                                                                                                                                                                                                                 |
+| `test/ts/acl-owner-upgrade.test.ts`                                  | drop `ProtocolConfig` / `KMSGeneration` from the upgrade batch                                                                                                                                                                                                                                                                                     |
+| `test/ts/node10-cjs-resolution.test.ts`                              | one "v13 tarball" message string                                                                                                                                                                                                                                                                                                                   |
+| `test/signers.test.ts`                                               | two `.../v13` strings in the test name and assertion message                                                                                                                                                                                                                                                                                       |
+| `test/FhevmDeploy.t.sol`                                             | drop the 2 contracts, and apply group D′ to the surviving five                                                                                                                                                                                                                                                                                     |
+| `scripts/anvil-lib.sh`                                               | 22 lines / 44 name occurrences (not "25 hits", and it carries no `0.13.x` version string). Beyond deletions: **re-point** the bootstrap smoke checks at `:718-721` from `ProtocolConfig.getKmsSigners()` / `getPublicDecryptionThreshold()` to the `KMSVerifier` equivalents                                                                       |
+| `scripts/anvil-local-v1.sh`                                          | "cleartext v13 stack" (`:3`), "~22 at once" (`:108`) — omitted from the first draft of this list                                                                                                                                                                                                                                                   |
+| `scripts/anvil-local-v2.sh`                                          | the 2 `create_proxy` calls (`:137-138`), **`anvil_setNonce … $((START_NONCE + 12))` at `:152` → +10** (an arity literal H.3's sweep does not reach), "nonces 0-10" (`:119`), the "✅ 9 …" echoes (`:141,174`)                                                                                                                                      |
+| `scripts/anvil-local-v3.sh`                                          | same shape (`:168-169`, "9 proxies placed", "2 empty + 9 real", "0..11")                                                                                                                                                                                                                                                                           |
+| `scripts/anvil.sh`, `anvil-fast.sh`, `deploy.sh`                     | version strings and the two contracts' checks; `deploy.sh:85` also hardcodes `CONFIG_PREFIX="fhevm-config-0.13.0/"` (group B)                                                                                                                                                                                                                      |
+| `README.md`                                                          | version strings, "21 files" → 16, step 6 rewritten to say v12 is the floor, and the step 7 `plans/FORGE_DEPLOY_SCRIPT_PLAN.md` reference re-pointed or dropped (Phase 1)                                                                                                                                                                           |
 
 **Verbatim**: `test/ts/ethers-adapter.test.ts`, `test/ts/adapter-nonce-diagnostics.test.ts`,
 `test/ts/utils/anvil.ts`, `ethUtils.ts`, `ethersEthereumLib.ts`, `viemEthereumLib.ts` (one `v13` comment
@@ -553,12 +552,12 @@ change, not a v12 one.
 
 #### H.1 `pkg/forge/`
 
-| File                                       | Edit                                                                     |
-| ------------------------------------------ | ------------------------------------------------------------------------ |
-| `src/FhevmDeploy.sol`                      | drop the 2 imports, 2 `_createProxy` calls, 2 `_create` implementations, 2 `ops` entries, and `_fhevmProtocolConfig` / `_protocolConfigInitData`; `KMSVerifier` init regains signers + threshold |
-| `script/FhevmDeployScript.s.sol`           | same shape; "Nine proxies, not five" → seven                             |
-| `script/DeployLocalStack.s.sol`            | same shape                                                               |
-| `script/VerifyFhevmDeploy.s.sol`           | drop the `ProtocolConfig` / `KMSGeneration` `getVersion` and KMS-context checks; verify the signer set on `KMSVerifier` instead |
+| File                             | Edit                                                                                                                                                                                             |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/FhevmDeploy.sol`            | drop the 2 imports, 2 `_createProxy` calls, 2 `_create` implementations, 2 `ops` entries, and `_fhevmProtocolConfig` / `_protocolConfigInitData`; `KMSVerifier` init regains signers + threshold |
+| `script/FhevmDeployScript.s.sol` | same shape; "Nine proxies, not five" → seven                                                                                                                                                     |
+| `script/DeployLocalStack.s.sol`  | same shape                                                                                                                                                                                       |
+| `script/VerifyFhevmDeploy.s.sol` | drop the `ProtocolConfig` / `KMSGeneration` `getVersion` and KMS-context checks; verify the signer set on `KMSVerifier` instead                                                                  |
 
 Each of these three also carries an `ACLOwner.Op[]` arity literal — see group H.3, which must be applied
 in the same pass. `src/_internal/` is **entirely generated** — no hand edits (Phase 3).
@@ -569,27 +568,27 @@ The riskiest edit in the port, because four **index-aligned ordinal lists** must
 has 9 proxies; v12 has 7, and dropping `ProtocolConfig` (index 5) and `KMSGeneration` (index 6) shifts
 `CleartextArithmetic` from 7 to 5 and `CleartextDB` from 8 to 6:
 
-| File / list                                                    | v13 | v12 |
-| -------------------------------------------------------------- | --- | --- |
-| `script/FhevmCreate2Base.s.sol` → `_sharedProxyRoles()`         | 8   | 6   |
-| `script/FhevmCreate2Base.s.sol` → `_allProxyRoles()`            | 9   | 7   |
-| `script/FhevmCreate2Base.s.sol` → `_implArtifact(i)`            | 9   | 7   |
-| `script/MaterializeInitData.sol` → `initData(i, ...)`           | 9   | 7   |
+| File / list                                             | v13 | v12 |
+| ------------------------------------------------------- | --- | --- |
+| `script/FhevmCreate2Base.s.sol` → `_sharedProxyRoles()` | 8   | 6   |
+| `script/FhevmCreate2Base.s.sol` → `_allProxyRoles()`    | 9   | 7   |
+| `script/FhevmCreate2Base.s.sol` → `_implArtifact(i)`    | 9   | 7   |
+| `script/MaterializeInitData.sol` → `initData(i, ...)`   | 9   | 7   |
 
 A partial renumber compiles cleanly and deploys the wrong implementation behind the wrong proxy, so it
 must be checked as one unit — `FhevmStatus.s.sol` and `FhevmVerify.s.sol` are what catch it.
 
 The rest:
 
-| File                                        | Edit                                                                    |
-| ------------------------------------------- | ----------------------------------------------------------------------- |
-| `script/FhevmCreate2Base.s.sol`             | drop `R_PROTOCOL_CONFIG`, `R_KMS_GENERATION`; `FHEVM_VERSION` doc `"0.13"` → `"0.12"` |
-| `script/MaterializeInitData.sol`            | drop **4** imports (`ProtocolConfig`, `KMSGeneration`, `IProtocolConfig`, and `KmsNode` from `shared/Structs.sol` — `:11,12,15,16`), the `i == 5` and `i == 6` branches, the index doc-comment (`:63-65`), `_protocolConfig()`, `_kmsNodes()`, `_kmsThresholds()`; `_kmsVerifier()` becomes the 4-arg v12 call using `LocalHostBootstrap.kmsSigners()` and `LocalHostBootstrap.KMS_NODE_COUNT` |
-| `script/Interfaces.sol`                     | drop `IWiredProtocolConfig`                                             |
-| `script/FhevmVerify.s.sol`                  | drop the `ProtocolConfig` threshold/signer block; check `KMSVerifier.getKmsSigners()` and `getThreshold()` instead |
-| `deploy-testnet.ts:215`, `deploy-testnet.sh:107` | `FHEVM_VERSION` → `'0.12'`                                         |
-| `deploy-testnet.ts:309-310`                 | drop the 2 address names                                                |
-| `GUIDE.md`, `README.md`                     | version strings and the 22-creates / 9-proxies counts                   |
+| File                                             | Edit                                                                                                                                                                                                                                                                                                                                                                                           |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `script/FhevmCreate2Base.s.sol`                  | drop `R_PROTOCOL_CONFIG`, `R_KMS_GENERATION`; `FHEVM_VERSION` doc `"0.13"` → `"0.12"`                                                                                                                                                                                                                                                                                                          |
+| `script/MaterializeInitData.sol`                 | drop **4** imports (`ProtocolConfig`, `KMSGeneration`, `IProtocolConfig`, and `KmsNode` from `shared/Structs.sol` — `:11,12,15,16`), the `i == 5` and `i == 6` branches, the index doc-comment (`:63-65`), `_protocolConfig()`, `_kmsNodes()`, `_kmsThresholds()`; `_kmsVerifier()` becomes the 4-arg v12 call using `LocalHostBootstrap.kmsSigners()` and `LocalHostBootstrap.KMS_NODE_COUNT` |
+| `script/Interfaces.sol`                          | drop `IWiredProtocolConfig`                                                                                                                                                                                                                                                                                                                                                                    |
+| `script/FhevmVerify.s.sol`                       | drop the `ProtocolConfig` threshold/signer block; check `KMSVerifier.getKmsSigners()` and `getThreshold()` instead                                                                                                                                                                                                                                                                             |
+| `deploy-testnet.ts:215`, `deploy-testnet.sh:107` | `FHEVM_VERSION` → `'0.12'`                                                                                                                                                                                                                                                                                                                                                                     |
+| `deploy-testnet.ts:309-310`                      | drop the 2 address names                                                                                                                                                                                                                                                                                                                                                                       |
+| `GUIDE.md`, `README.md`                          | version strings and the 22-creates / 9-proxies counts                                                                                                                                                                                                                                                                                                                                          |
 
 **No code changes** (prose only, per H.3): `FhevmDeployCreates.s.sol`,
 `FhevmOfferACLOwnership.s.sol`, `FhevmAcceptACLOwnership.s.sol`, `FhevmOfferACLOwnerToAdmin.s.sol`,
@@ -615,8 +614,7 @@ the mechanism working as designed, not a divergence to reconcile.
 > **Delivered by Phase 0.3 item B.** All 15 executable sites now derive their arity, and the ~75 prose
 > sites are count-free (item C). v12 inherits correct counts from its own tables with no edit. Kept as
 > the record of what the literals were, and as the explanation for why H.2's ordinal renumber is still
-> the port's riskiest step — that one is *not* fixed by item B.
-
+> the port's riskiest step — that one is _not_ fixed by item B.
 
 Dropping two proxies changes two counts that v13 spells out as **literals in 15 executable places**.
 These are invisible to a name-based grep — no file here mentions `ProtocolConfig` — and getting one wrong
@@ -629,23 +627,23 @@ does not fail to compile:
 
 So this group is not cosmetic and not optional. The full executable set:
 
-| File                                        | Line | v13                                   | v12  |
-| ------------------------------------------- | ---- | ------------------------------------- | ---- |
-| `pkg/forge/src/FhevmDeploy.sol`             | 321  | `new address[](9)`                    | 7    |
-| `pkg/forge/src/FhevmDeploy.sol`             | 347  | `new ACLOwner.Op[](9)`                | 7    |
-| `pkg/forge/script/FhevmDeployScript.s.sol`  | 275  | `new ACLOwner.Op[](9)`                | 7    |
-| `pkg/forge/script/DeployLocalStack.s.sol`   | 212  | `new ACLOwner.Op[](9)`                | 7    |
-| `create2-deploy/script/FhevmCreate2Base.s.sol` | 96 | `new string[](8)`                    | 6    |
-| `create2-deploy/script/FhevmCreate2Base.s.sol` | 110| `new string[](9)`                    | 7    |
-| `create2-deploy/script/FhevmCreate2Base.s.sol` | 296| `new Create[](22)`                   | 18   |
-| `create2-deploy/script/FhevmComputeCreate2Addresses.s.sol` | 126 | `new address[](8)`      | 6    |
-| `create2-deploy/script/FhevmComputeCreate2Addresses.s.sol` | 146 | `new address[](9)`      | 7    |
-| `create2-deploy/script/FhevmComputeCreate2Addresses.s.sol` | 230 | `new address[](9)`      | 7    |
-| `create2-deploy/script/FhevmComputeCreate2Addresses.s.sol` | 266 | `require(rest.length == 9, …)` | 7 (+ message) |
-| `create2-deploy/script/FhevmComputeCreate2Addresses.s.sol` | 302 | `new address[](9)`      | 7    |
-| `create2-deploy/script/FhevmMaterializeStack.s.sol` | 79 | `materialized == 9`           | 7    |
-| `create2-deploy/script/FhevmMaterializeStack.s.sol` | 118| `new IACLOwner.Op[](9)`       | 7    |
-| `create2-deploy/script/FhevmStatus.s.sol`   | 230  | `live == 9`                           | 7    |
+| File                                                       | Line | v13                            | v12           |
+| ---------------------------------------------------------- | ---- | ------------------------------ | ------------- |
+| `pkg/forge/src/FhevmDeploy.sol`                            | 321  | `new address[](9)`             | 7             |
+| `pkg/forge/src/FhevmDeploy.sol`                            | 347  | `new ACLOwner.Op[](9)`         | 7             |
+| `pkg/forge/script/FhevmDeployScript.s.sol`                 | 275  | `new ACLOwner.Op[](9)`         | 7             |
+| `pkg/forge/script/DeployLocalStack.s.sol`                  | 212  | `new ACLOwner.Op[](9)`         | 7             |
+| `create2-deploy/script/FhevmCreate2Base.s.sol`             | 96   | `new string[](8)`              | 6             |
+| `create2-deploy/script/FhevmCreate2Base.s.sol`             | 110  | `new string[](9)`              | 7             |
+| `create2-deploy/script/FhevmCreate2Base.s.sol`             | 296  | `new Create[](22)`             | 18            |
+| `create2-deploy/script/FhevmComputeCreate2Addresses.s.sol` | 126  | `new address[](8)`             | 6             |
+| `create2-deploy/script/FhevmComputeCreate2Addresses.s.sol` | 146  | `new address[](9)`             | 7             |
+| `create2-deploy/script/FhevmComputeCreate2Addresses.s.sol` | 230  | `new address[](9)`             | 7             |
+| `create2-deploy/script/FhevmComputeCreate2Addresses.s.sol` | 266  | `require(rest.length == 9, …)` | 7 (+ message) |
+| `create2-deploy/script/FhevmComputeCreate2Addresses.s.sol` | 302  | `new address[](9)`             | 7             |
+| `create2-deploy/script/FhevmMaterializeStack.s.sol`        | 79   | `materialized == 9`            | 7             |
+| `create2-deploy/script/FhevmMaterializeStack.s.sol`        | 118  | `new IACLOwner.Op[](9)`        | 7             |
+| `create2-deploy/script/FhevmStatus.s.sol`                  | 230  | `live == 9`                    | 7             |
 
 Line numbers are against the Phase 0.1 baseline commit; re-derive them rather than trusting them if v13
 moved. The sweep that finds all of it, prose included:
@@ -690,18 +688,18 @@ in `npm run test` notices. But `scripts/anvil-fast.sh` — which group G edits �
 `internal/generateGenesis.ts` carries the `implementationCount !== 9` arity check that group D fixes. If
 the fast-anvil path is deferred for v12, say so explicitly rather than leaving a script with no input.
 
-| Generated output                                      | Count | Generator                        |
-| ----------------------------------------------------- | ----- | -------------------------------- |
-| `pkg/abi/*.json`                                      | 14→12 | `generateTemplates.ts`           |
-| `pkg/templates/*.json`                                | 14→12 | `generateTemplates.ts`           |
-| `pkg/ts/artifacts/*.ts`                               | 15→13 | `generateTemplates.ts`           |
-| `pkg/ts/signers/*.ts`                                 | 3     | `generateSigners.ts`             |
-| `pkg/ts/cleartext-config.ts`                          | 1     | `copyCleartextConfig.ts`         |
-| `pkg/forge/script/ComputeAddresses.s.sol`             | 1     | `generateComputeAddressesScript.ts` |
-| `pkg/forge/src/_internal/LocalHost{Bytecode,Addresses,Bootstrap}.sol` | 3 | `generateLocalHostBytecode.ts` |
-| `pkg/forge/src/_internal/interfaces/I*.sol`           | 14→12 | `generateLocalHostBytecode.ts`   |
-| `internal/placeholders/addresses.sol`                 | 1     | `generatePlaceholders.ts`        |
-| `internal/placeholders/patch-sites.json`              | 1     | `generatePatchSites.ts`          |
+| Generated output                                                      | Count | Generator                           |
+| --------------------------------------------------------------------- | ----- | ----------------------------------- |
+| `pkg/abi/*.json`                                                      | 14→12 | `generateTemplates.ts`              |
+| `pkg/templates/*.json`                                                | 14→12 | `generateTemplates.ts`              |
+| `pkg/ts/artifacts/*.ts`                                               | 15→13 | `generateTemplates.ts`              |
+| `pkg/ts/signers/*.ts`                                                 | 3     | `generateSigners.ts`                |
+| `pkg/ts/cleartext-config.ts`                                          | 1     | `copyCleartextConfig.ts`            |
+| `pkg/forge/script/ComputeAddresses.s.sol`                             | 1     | `generateComputeAddressesScript.ts` |
+| `pkg/forge/src/_internal/LocalHost{Bytecode,Addresses,Bootstrap}.sol` | 3     | `generateLocalHostBytecode.ts`      |
+| `pkg/forge/src/_internal/interfaces/I*.sol`                           | 14→12 | `generateLocalHostBytecode.ts`      |
+| `internal/placeholders/addresses.sol`                                 | 1     | `generatePlaceholders.ts`           |
+| `internal/placeholders/patch-sites.json`                              | 1     | `generatePatchSites.ts`             |
 
 **Review the `patch-sites.json` diff rather than accepting it.** A count of 0 for an address the
 contracts still use means the deploy would bake in a placeholder — a stack that deploys and then calls
@@ -720,17 +718,17 @@ directories is deleted on the next build.** `pkg/ts/versions.ts` sits at `pkg/ts
 
 Both generations green after the port:
 
-| Gate | v13 | v12 |
-| --- | --- | --- |
-| `lint` (eslint + tsc) | ✅ | ✅ |
-| `forge test` | 42/42 | 18/18 |
-| template + signer tests | 11/11 | 11/11 |
-| `check:vendored` (rule 6) | ✅ 21 files @ `v0.13.2` | ✅ 16 files @ `v0.12.5` |
-| `check:zama-config` (rules 15/17) | ✅ | ✅ |
-| `prettier:check` | ✅ | ✅ |
-| `test:tarball` | 19/19 (9 files) | 17/17 (7 files) |
-| `forge build --sizes` (rule 12) | 22,994 B / 1,582 B margin | 19,764 B / 4,812 B margin |
-| `./scripts/anvil.sh` (bash deploy) | 58 passed / 0 failed | 40 passed / 0 failed |
+| Gate                               | v13                       | v12                       |
+| ---------------------------------- | ------------------------- | ------------------------- |
+| `lint` (eslint + tsc)              | ✅                        | ✅                        |
+| `forge test`                       | 42/42                     | 18/18                     |
+| template + signer tests            | 11/11                     | 11/11                     |
+| `check:vendored` (rule 6)          | ✅ 21 files @ `v0.13.2`   | ✅ 16 files @ `v0.12.5`   |
+| `check:zama-config` (rules 15/17)  | ✅                        | ✅                        |
+| `prettier:check`                   | ✅                        | ✅                        |
+| `test:tarball`                     | 19/19 (9 files)           | 17/17 (7 files)           |
+| `forge build --sizes` (rule 12)    | 22,994 B / 1,582 B margin | 19,764 B / 4,812 B margin |
+| `./scripts/anvil.sh` (bash deploy) | 58 passed / 0 failed      | 40 passed / 0 failed      |
 
 ### The CREATE2 path: verified by test AND by a real run
 
@@ -740,7 +738,7 @@ rehearsal needs no keystore, and the full path was actually run.
 **Keystore-free on anvil only.** `--account` is now optional, and omitting it uses accounts 0 and 1 of
 anvil's public mnemonic (0 deploys, 1 is the admin, which `--admin` also defaults to). The gate is
 `anvil_nodeInfo` — a method anvil answers and every other node rejects with -32601. Chain id is
-deliberately *not* the test: the documented rehearsal runs on `--chain-id 11155111` (31337 is excluded
+deliberately _not_ the test: the documented rehearsal runs on `--chain-id 11155111` (31337 is excluded
 from the allow-list because it is the nonce path's chain) and a fork inherits the upstream id, so a
 31337 check would have missed exactly the case this is for. Plan §12's keystore-only rule still binds
 every other chain, with an explanatory refusal.
@@ -749,7 +747,7 @@ Result, in both generations: `--stage all` completes and `verify` reports **"OK 
 condition met."**
 
 **The run found a bug the test could not.** v12's `compute` died with `panic: array out-of-bounds
-access (0x32)`. The Phase 0.3 item-B sweep had derived every array *size* but left **12 hardcoded loop
+access (0x32)`. The Phase 0.3 item-B sweep had derived every array _size_ but left **12 hardcoded loop
 bounds and one index literal** — `for (uint256 i = 0; i < 8; i++)`, `rest[8] = pauserSetAdd`,
 `proxyRoles[8]` — none of which match a `[](N)` or `== N` pattern. In v13 they are all correct **by
 coincidence**, because `_sharedProxyRoles().length` happens to equal 8 and `_allProxyRoles().length` 9.
@@ -846,11 +844,11 @@ reads Phase C predicted would work at `v0.12.5`.
 5 reinitializations**, in exact agreement with `pkg/ts/upgrade.ts`'s 7 targets and every reinitializer
 version. Three rows confirm Phase 2 decisions independently:
 
-| Row | Confirms |
-| --- | --- |
-| `CleartextArithmetic  CHANGED  - -> reinitializeV2` | group E: v12 has no reinitializer, so v13's `reinitializeV2` op has something to step *from* |
-| `CleartextInputVerifier  same  reinitializeV2 -> reinitializeV2  no op` | the README's worked example — deliberately absent from the op list |
-| `CleartextDB  same  no op` | correctly omitted from the upgrade |
+| Row                                                                     | Confirms                                                                                     |
+| ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `CleartextArithmetic  CHANGED  - -> reinitializeV2`                     | group E: v12 has no reinitializer, so v13's `reinitializeV2` op has something to step _from_ |
+| `CleartextInputVerifier  same  reinitializeV2 -> reinitializeV2  no op` | the README's worked example — deliberately absent from the op list                           |
+| `CleartextDB  same  no op`                                              | correctly omitted from the upgrade                                                           |
 
 ### Three things had to be fixed first, and two were mine
 
@@ -865,7 +863,7 @@ version. Three rows confirm Phase 2 decisions independently:
 3. **`node10-cjs-resolution.test.ts` contradicted `createPackageTarball.ts`.** The latter documents
    `tarball/` as deliberately shared with the previous generation; the former required exactly one file
    in it. Its comment already said "pick by name rather than taking the only entry" — but the filter was
-   the name *prefix*, and both generations publish under the same npm name. It now pins the exact
+   the name _prefix_, and both generations publish under the same npm name. It now pins the exact
    `fhevm-host-contracts-cleartext-<version>.tgz` read from the payload manifest, which is a stronger
    guard than the count ever was: a stale tarball is now a miss instead of a coin flip.
 
@@ -875,13 +873,13 @@ a test that cannot disagree with its neighbours.
 
 ### Verification, both generations
 
-| | v13 | v12 |
-| --- | --- | --- |
-| `forge test` | 42/42 | 18/18 |
-| template + signer tests | 11/11 | 11/11 |
-| vitest suite | 19/19 (9 files) | 17/17 (7 files) |
-| `test:upgrade-e2e` | **2/2** | n/a (rule 21 floor) |
-| `prettier:check`, `lint` | ✅ | ✅ |
+|                          | v13             | v12                 |
+| ------------------------ | --------------- | ------------------- |
+| `forge test`             | 42/42           | 18/18               |
+| template + signer tests  | 11/11           | 11/11               |
+| vitest suite             | 19/19 (9 files) | 17/17 (7 files)     |
+| `test:upgrade-e2e`       | **2/2**         | n/a (rule 21 floor) |
+| `prettier:check`, `lint` | ✅              | ✅                  |
 
 ### The original readiness notes
 
@@ -905,8 +903,7 @@ nothing about the upgrade path.
 Two things Phase 5 should check rather than assume, both of which v12's Phase 2 choices bear on:
 
 1. `updateV12ToV13` re-points `CleartextArithmetic` via `reinitializeV2` because v12's arithmetic lacks
-   the nary selectors. Group E keeps that true — the versions (`MINOR_VERSION` 3, `REINITIALIZER_VERSION`
-   2) are what the upgrade steps *from*.
+   the nary selectors. Group E keeps that true — the versions (`MINOR_VERSION` 3, `REINITIALIZER_VERSION` 2) are what the upgrade steps _from_.
 2. `updateV12ToV13` deliberately omits `InputVerifier`, on the grounds that its v13 bytecode is
    identical. `npm run list:upgrade-ops -- ../v12` re-checks that against the real v12 artifacts instead
    of the pre-split directory's.
@@ -916,32 +913,58 @@ Two things Phase 5 should check rather than assume, both of which v12's Phase 2 
 The complete list of legitimate v13 ↔ v12 differences. Anything in `diff -r` not attributable to a row
 here is drift.
 
-| Cause                                       | Group | Rule    |
-| ------------------------------------------- | ----- | ------- |
-| Package version `0.12.0`                    | A     | 5       |
-| Vendored tag/commit `v0.12.5` / `ac18e49e`  | A     | 7, 18   |
-| Config prefix `fhevm-config-0.12.0/`        | B     | 11, 20  |
-| 16 vendored files, not 21                   | C     | 6, 20   |
-| 8 host addresses, not 10                    | D     | 20      |
-| Five contracts one minor version lower      | D′    | 6, 20   |
-| 10-nonce deploy layout, not 12              | D     | 17, 20  |
-| No nary operators in the cleartext layer    | E     | 20      |
-| `KMSVerifier` holds its own signer set      | F, H  | 20      |
-| No `ProtocolConfig` / `KMSGeneration`       | D–H   | 20      |
-| No upgrade path (floor)                     | F, G  | 21      |
-| `FHEVM_VERSION = "0.12"` in the CREATE2 salt | H.2  | 20      |
-| 7 proxies not 9, 18 creates not 22          | H.3   | 20      |
-| No `plans/` directory                       | 1     | —       |
+| Cause                                               | Group | Rule   |
+| --------------------------------------------------- | ----- | ------ |
+| Package version `0.12.0`                            | A     | 5      |
+| Vendored tag/commit `v0.12.5` / `ac18e49e`          | A     | 7, 18  |
+| Config prefix `fhevm-config-0.12.0/`                | B     | 11, 20 |
+| 16 vendored files, not 21                           | C     | 6, 20  |
+| 8 host addresses, not 10                            | D     | 20     |
+| Five contracts one minor version lower              | D′    | 6, 20  |
+| 10-nonce deploy layout, not 12                      | D     | 17, 20 |
+| No nary operators in the cleartext layer            | E     | 20     |
+| `KMSVerifier` holds its own signer set              | F, H  | 20     |
+| No `ProtocolConfig` / `KMSGeneration`               | D–H   | 20     |
+| No upgrade path (floor)                             | F, G  | 21     |
+| `FHEVM_VERSION = "0.12"` in the CREATE2 salt        | H.2   | 20     |
+| 7 proxies not 9, 18 creates not 22                  | H.3   | 20     |
+| No `plans/` directory                               | 1     | —      |
+| No `create2-deploy/upgrade-testnet.ts`              | —     | 21     |
+| No `create2-deploy/script/FhevmVerifyUpgrade.s.sol` | —     | 21     |
 
-**One structural divergence, deliberately taken:** `v12/` has no `plans/`. It is documentation only —
+**The two upgrade verifies are v13-only** — `create2-deploy/upgrade-testnet.ts` and
+`create2-deploy/script/FhevmVerifyUpgrade.s.sol` — and that is rule 21 rather than an omission: v12 is
+the floor, so it has nothing to upgrade _from_ and ships no upgrade path in any form — no
+`pkg/ts/upgrade.ts`, no upgrade e2e, and no CREATE2 upgrade coordinator either. Rule 22 requires every
+v13 change to reach v12 in the same change _unless the generation makes it impossible_, and this is that
+case, recorded here as the rule demands.
+
+What IS ported from that same work is the _shared_ half, and the split was drawn with this port in mind.
+`create2-deploy/script/FhevmVerifyBase.s.sol` — the reporting primitives, the comparison helpers that
+print both sides on failure, and the two checks that are the same question for any deployment (is the
+canonical factory there, does every role hold code, does every proxy point at its sealed implementation,
+does every baked-in address match the manifest) — is byte-identical in both generations, and v12's
+`FhevmVerify.s.sol` consumes it. Only the concrete upgrade verify is absent. Extracting the base _before_
+the second consumer existed is what made that possible: with one caller there was nothing to reconcile,
+so the line could be drawn at "what a check is" versus "which checks to run" rather than wherever two
+copies had already diverged.
+
+Note what else IS ported: `create2-deploy/common.ts` carries the upgrade's option plumbing —
+`ExistingAddresses`, `EXISTING_ROLES`, `--handle`, `--migration` — even though nothing in v12 reads it.
+Keeping the shared file byte-identical apart from the two generation deltas is what keeps the diff
+auditable, and when v11 lands v12 gains an upgrade path and will need exactly that plumbing. `EXISTING_ROLES`
+is marked unused-in-this-generation, with a warning that its contents are v13-shaped and must be
+re-derived for whatever stack a future v12 upgrade reads _from_.
+
+**One further structural divergence, deliberately taken:** `v12/` has no `plans/`. It is documentation only —
 outside the payload (rule 16), outside every tsconfig and eslint scope, and referenced from nothing but
-one README parenthetical — so it changes no behaviour. Everything that *does* affect behaviour is
+one README parenthetical — so it changes no behaviour. Everything that _does_ affect behaviour is
 identical: the harness layout, the `pkg/` payload split, the tsconfigs, eslint and prettier config,
 `scripts/`, the `internal/` generators and the test structure, as rule 20 requires.
 
 ## Appendix B — what must stay byte-identical
 
-The trap in this port is *restoring* an older shape from the pre-split
+The trap in this port is _restoring_ an older shape from the pre-split
 `sdk/host-contracts-cleartext-v12` because it happens to be v12-flavoured. That directory predates
 several v13 improvements that are not generation-specific, and rule 20 requires v12 to carry them. Take
 these from **v13**, never from the old directory:
@@ -957,7 +980,7 @@ these from **v13**, never from the old directory:
 - `internal/cleartext-config.ts`, `internal/checkZamaLocalConfig.ts`, `internal/generateGenesis.ts`,
   `internal/listUpgradeOps.ts`, `scripts/check-vendored-sources.sh` — all newer than the old directory
 
-"Take from v13" here means *provenance*, not "do not edit": `internal/generateGenesis.ts` still needs its
+"Take from v13" here means _provenance_, not "do not edit": `internal/generateGenesis.ts` still needs its
 group D arity fix, and `internal/createPackageTarball.ts:35` carries a comment referencing the deleted
 `prepareTestV12Consumer.ts`. Similarly `pkg/src/upgrade/ACLOwner.sol:107` cites
 `ProtocolConfig.defineNewKmsContext` as its `execute` example — a comment, so cosmetic, but it names a

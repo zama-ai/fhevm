@@ -27,6 +27,17 @@ interface IPauserSet {
 }
 
 /**
+ * `getVersion()`, which almost every host contract has and `CleartextDB` does not.
+ *
+ * The one reading that says WHICH generation's code a proxy is executing, and therefore the only direct
+ * evidence an upgrade did what it claims. Compared against the generated `LocalHostVersions` — never a
+ * hand-written string, which would just be a second place to get it wrong.
+ */
+interface IVersioned {
+    function getVersion() external view returns (string memory);
+}
+
+/**
  * The baked-in addresses each host contract carries, as getters.
  *
  * These return what the CONTRACT WAS COMPILED WITH, not what the manifest says — which is exactly

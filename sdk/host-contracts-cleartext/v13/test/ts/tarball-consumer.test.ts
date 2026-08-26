@@ -4,6 +4,7 @@ import { foundry } from 'viem/chains';
 import { expect, test } from 'vitest';
 import { startAnvil, stopAnvil, waitForAnvil } from './utils/anvil.ts';
 import { getContractAddressAtNonce, privateKeyFromMnemonic, privateKeyToAddress } from './utils/ethUtils.ts';
+import { expectedHcuLimit } from './utils/expectedBootstrap.ts';
 import { createViemEthereumAdapters } from './utils/viemEthereumLib.ts';
 
 test('published tarball can be consumed by a viem-backed TypeScript project', async () => {
@@ -69,7 +70,7 @@ test('published tarball can be consumed by a viem-backed TypeScript project', as
           initialSigners: [deployerAddress],
           initialThreshold: 1n,
         },
-        hcuLimit: { hcuCapPerBlock: 281474976710655n, maxHCUDepthPerTx: 5000000n, maxHCUPerTx: 20000000n },
+        hcuLimit: expectedHcuLimit(),
         protocolConfig: {
           initialKmsNodes: [
             {

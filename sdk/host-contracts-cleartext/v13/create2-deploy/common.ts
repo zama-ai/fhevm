@@ -93,6 +93,20 @@ export type Options = {
   readonly verbose: boolean;
   /** Where the stable half came from, or null if it was all typed. Shown in the preflight banner. */
   readonly configPath: string | null;
+
+  // ---- upgrade only; empty / null for a deploy ----
+
+  /** The live stack being upgraded (see ExistingAddresses). Empty for a deploy. */
+  readonly existing: ExistingAddresses;
+  /** Path to the KMS migration seed, or null to reconstruct it from the live stack plus defaults. */
+  readonly migrationPath: string | null;
+  /**
+   * Cleartext handles already recorded in the live `CleartextDB`, whose values must survive the upgrade.
+   *
+   * Optional and repeatable, and its emptiness is REPORTED rather than silently tolerated: without one,
+   * verify can only prove the stack still works, not that existing data survived. Two different claims.
+   */
+  readonly handles: readonly string[];
 };
 
 /**
@@ -115,6 +129,12 @@ export type ConfigFile = {
   readonly finality?: boolean;
   /** Positive form of --no-git: `false` means this deployment needs no committed seal. */
   readonly git?: boolean;
+  /** Upgrade only: the live stack's addresses. Nine flags is unreasonable to retype. */
+  readonly existing?: ExistingAddresses;
+  /** Upgrade only: path to the KMS migration seed. */
+  readonly migration?: string;
+  /** Upgrade only: handles whose cleartext values must survive. */
+  readonly handles?: readonly string[];
 };
 
 /** Command line before the config file is merged under it. `null` means "not given". */
@@ -136,6 +156,10 @@ export type CliArgs = {
   requireGitSeal: boolean | null;
   noBuild: boolean;
   verbose: boolean;
+  /** Upgrade only. Merged over the config file's `existing` block, so a single address can be overridden. */
+  existing: Record<string, string>;
+  migrationPath: string | null;
+  handles: string[];
 };
 
 /** Mutable run state. The shell version kept these as globals; they are threaded explicitly here. */
@@ -278,6 +302,9 @@ export const CONFIG_KEYS: readonly string[] = [
   'outDir',
   'finality',
   'git',
+  'existing',
+  'migration',
+  'handles',
 ];
 
 /** Rejected in a config file by name, so the message can say where they belong instead. */
@@ -324,6 +351,47 @@ export const ANVIL_MNEMONIC = 'test test test test test test test test test test
 /** Account 0 deploys; account 1 is the admin that takes root in step F. Matches anvil-config.json. */
 export const ANVIL_DEPLOYER_INDEX = 0;
 export const ANVIL_ADMIN_INDEX = 1;
+
+/**
+ * The nine addresses of a stack that ALREADY EXISTS, supplied by the operator.
+ *
+ * Only the upgrade uses this; a deploy derives every address it needs. Keyed by the role names the
+ * manifest and the generated `addresses.sol` use, so a value read here can be written straight out
+ * without a second naming convention to keep in step.
+ *
+ * Deliberately supplied rather than read from a previous manifest: a stack may have been deployed by the
+ * nonce path, by an older revision, or by someone else, and requiring a manifest this tooling happened to
+ * write would make the upgrade unusable exactly when it matters. The cost is that a typo bakes into the
+ * new implementations, which is why every entry is validated against the live chain before anything is
+ * computed.
+ */
+export type ExistingAddresses = Readonly<Record<string, string>>;
+
+/** The role names an upgrade must be given, in the order the help and the banner list them. */
+export const EXISTING_ROLES: readonly string[] = [
+  'ACL_ADDRESS',
+  'FHEVM_EXECUTOR_ADDRESS',
+  'KMS_VERIFIER_ADDRESS',
+  'INPUT_VERIFIER_ADDRESS',
+  'HCU_LIMIT_ADDRESS',
+  'CLEARTEXT_ARITHMETIC_ADDRESS',
+  'CLEARTEXT_DB_ADDRESS',
+  'PAUSER_SET_ADDRESS',
+  'ACL_OWNER',
+];
+
+/** `--acl` -> `ACL_ADDRESS`. The CLI spelling of each role above. */
+export const EXISTING_FLAGS: Readonly<Record<string, string>> = {
+  '--acl': 'ACL_ADDRESS',
+  '--fhevm-executor': 'FHEVM_EXECUTOR_ADDRESS',
+  '--kms-verifier': 'KMS_VERIFIER_ADDRESS',
+  '--input-verifier': 'INPUT_VERIFIER_ADDRESS',
+  '--hcu-limit': 'HCU_LIMIT_ADDRESS',
+  '--cleartext-arithmetic': 'CLEARTEXT_ARITHMETIC_ADDRESS',
+  '--cleartext-db': 'CLEARTEXT_DB_ADDRESS',
+  '--pauser-set': 'PAUSER_SET_ADDRESS',
+  '--acl-owner': 'ACL_OWNER',
+};
 
 /**
  * How a stage signs: a forge keystore account, or an index into the public anvil mnemonic.
@@ -409,6 +477,9 @@ export function parseCliArgs(flow: Flow, argv: readonly string[]): CliArgs {
     requireGitSeal: null,
     noBuild: false,
     verbose: false,
+    existing: {},
+    migrationPath: null,
+    handles: [],
   };
 
   const need = (i: number, flag: string): string => {
@@ -488,13 +559,34 @@ export function parseCliArgs(flow: Flow, argv: readonly string[]): CliArgs {
       case '--verbose':
         cli.verbose = true;
         break;
+      case '--migration':
+        cli.migrationPath = need(i, a);
+        i += 1;
+        break;
+      case '--handle':
+        // Repeatable rather than comma-separated: a handle is 66 characters and a missed comma would
+        // produce one unusable value instead of an error.
+        cli.handles.push(need(i, a));
+        i += 1;
+        break;
       case '-h':
       case '--help':
         say(flow.help);
         process.exit(0);
-      // eslint-disable-next-line no-fallthrough -- `fail` is `never`, but the rule cannot see that
-      default:
+      // The --help case above ends in `process.exit`, which is `never` — but the rule cannot see that,
+      // and `allowUnreachableCode: false` forbids adding the `break` that would otherwise silence it.
+      // The directive has to be the line immediately before `default`, or it applies to a comment.
+      // eslint-disable-next-line no-fallthrough
+      default: {
+        // The nine `existing` address flags, from one table rather than nine cases.
+        const role = EXISTING_FLAGS[a];
+        if (role !== undefined) {
+          cli.existing[role] = need(i, a);
+          i += 1;
+          break;
+        }
         fail(`Error: unknown argument '${a}'. Try --help.`);
+      }
     }
   }
   return cli;
@@ -663,6 +755,12 @@ export function resolveOptions(flow: Flow, cli: CliArgs, cfg: ConfigFile, config
     noBuild: cli.noBuild,
     verbose: cli.verbose,
     configPath,
+
+    // Upgrade inputs. CLI merged OVER the config file, so one address can be overridden without editing
+    // the file. Empty for a deploy, which derives every address it needs.
+    existing: { ...(cfg.existing ?? {}), ...cli.existing },
+    migrationPath: cli.migrationPath ?? cfg.migration ?? null,
+    handles: cli.handles.length > 0 ? cli.handles : (cfg.handles ?? []),
   };
 }
 

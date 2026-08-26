@@ -88,15 +88,15 @@ start_anvil
 
 wait_for_node
 
-# The three addresses a dApp expects when it compiles against the FHE library's local config
-# (library-solidity/config/ZamaConfig.sol -> _getLocalConfig). Checked here rather than in deploy.sh
-# because deploy.sh serves any network, while this script exists to produce the *local* stack: it is the
-# default mnemonic at account index 5, with a start nonce of 0, that lands on these. Pass a different
-# --mnemonic or --account-index and the whole stack moves — VerifyFhevmDeploy will still pass, because it
-# checks against the addresses the build was compiled for, but no ZamaConfig-compiled dApp will find it.
-ZAMA_LOCAL_ACL=0x50157CFfD6bBFA2DECe204a89ec419c23ef5755D
-ZAMA_LOCAL_COPROCESSOR=0xe3a9105a3a932253A70F126eb1E3b589C643dD24
-ZAMA_LOCAL_KMS_VERIFIER=0x901F8942346f7AB3a01F6D7613119Bca447Bb030
+# ZAMA_LOCAL_ACL / _COPROCESSOR / _KMS_VERIFIER come from anvil-lib.sh, which reads them out of
+# sdk/cleartext-config.json. This script used to redeclare all three, which made it a second copy of a
+# value the sourced library already had.
+#
+# The check below is here rather than in deploy.sh because deploy.sh serves any network, while this script
+# exists to produce the *local* stack: it is the default mnemonic at account index 5, with a start nonce of
+# 0, that lands on these. Pass a different --mnemonic or --account-index and the whole stack moves —
+# VerifyFhevmDeploy will still pass, because it checks against the addresses the build was compiled for,
+# but no ZamaConfig-compiled dApp will find it.
 
 verify_zama_local_config() {
     local failed=0

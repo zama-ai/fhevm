@@ -16,7 +16,9 @@ available (rules 2–4), how it is versioned (rule 5), how faithful its vendored
 (rules 6–7), what it may depend on (rules 8–9), what its optional TS layer must look like (rule 10), and
 how it resolves inside a Foundry consumer (rule 11), where it must be deployable (rule 12), what it must not depend on
 (rule 13), what may not live in the payload (rule 14), which addresses a local stack must use
-(rules 15 and 17), and what the standalone repo of rule 3 contains (rule 16). Most
+(rules 15 and 17), and what the standalone repo of rule 3 contains (rule 16). Rules 20-22 govern the
+relationship _between_ generations: which is the source of truth, which may lack an upgrade path, and how
+quickly a change to the reference implementation has to reach the others. Most
 bind the package itself; rule 11 also binds
 the layer that consumes it — `forge-fhevm` — because the config remapping can only be satisfied there.
 
@@ -450,3 +452,127 @@ which means release automation, not hand-copying.
     `UpdateV12ToV13MigrationConfig` types. `internal/listUpgradeOps.ts` is the exception worth keeping —
     it takes the previous generation as an argument, so in v11 it simply has nothing to point at rather
     than being broken.
+
+22. **Every change to `v13/` is ported to every derived generation in the same change.** Immediately, not
+    "next time someone touches it" — and the port is part of the change, not a follow-up task.
+
+    Rule 20 already says a non-generation-specific fix must be propagated rather than left to diverge.
+    This rule adds the only thing that makes that hold in practice: **when.** "Must be propagated"
+    without a deadline is a statement of intent that loses to whatever is being worked on; "in the same
+    change" is checkable.
+
+    The exception is narrow and has to be _stated_, not assumed: a change is not ported only when the
+    protocol generation makes it impossible or meaningless — the contract does not exist there, the
+    address set differs, the generation is the floor of rule 21. When that happens, the divergence goes
+    in the register in `PLAN-v12.md` with its cause, so `diff -r v13 v12` stays attributable line by
+    line. A difference that is in neither the register nor a legitimate cause is drift, by definition.
+
+    "Not possible" is a much smaller category than it looks. Inert plumbing that a derived generation
+    does not currently use is still ported: keeping the shared files byte-identical apart from the
+    recorded deltas is what keeps the diff short enough to audit, and today's unused option becomes
+    tomorrow's requirement when the next generation is derived. `create2-deploy/common.ts` is the worked
+    example — v12 has no upgrade coordinator and reads none of the upgrade's option plumbing, and carries
+    it anyway, marked as unused-in-this-generation with the reason.
+
+    Why this is a rule and not a habit: **the two directions are not symmetric.** `v13/` is where the
+    work happens, so it is also where the tests run, the e2e executes and the rehearsals are done. A
+    derived generation that lags is not merely behind — it is _unexercised_, so its copies rot without
+    anything failing. Every defect rule 20's second half describes was found that way, and each had been
+    latent in `v13/` for as long as nobody had derived from it.
+
+    The practical form: after changing a shared file in `v13/`, run
+
+    ```sh
+    diff -rq v13 v12 --exclude=node_modules --exclude=dependencies --exclude=out --exclude=cache \
+      --exclude=tarball --exclude='.out*' --exclude=_cjs --exclude=_esm --exclude=_types \
+      --exclude='*.tsbuildinfo' --exclude=broadcast --exclude=state --exclude=plans
+    ```
+
+    and account for every line of output before considering the change done.
+
+23. **`sdk/cleartext-config.json` is the only source for a cleartext-stack constant.** Every value the
+    cleartext stack's languages must agree on is decided there, once. Two faces are emitted from it and
+    nothing else declares these values:
+
+    | Face       | Path                                                                                        |
+    | ---------- | ------------------------------------------------------------------------------------------- |
+    | TypeScript | `<gen>/internal/cleartext-config.ts`, copied to `<gen>/pkg/ts/cleartext-config.ts` (rule 9) |
+    | Solidity   | `<gen>/create2-deploy/script/FhevmCleartextConfig.sol`                                      |
+
+    The JSON sits **above** every generation, at the `sdk/` root, because the generations share it — v12's
+    and v13's TypeScript copies are byte-identical today. JSON rather than TypeScript because Solidity
+    cannot read a `.ts` module, and neither can a shell script, a Rust crate, or a CI job that wants a
+    chain id without installing a toolchain.
+
+    Each face keeps every **name verbatim** — `CLEARTEXT_KMS_NODE_COUNT`, never a locally tidier
+    `KMS_NODE_COUNT` — in **declaration order**, and every **value byte-for-byte**.
+
+    The naming half is the part that gets argued with, so it is worth being explicit: inside a file that is
+    entirely about the cleartext stack the `CLEARTEXT_` prefix reads as noise, and shortening it is the
+    natural thing to do. Refuse it. The identical name is the only thing that makes a drift _findable_ —
+    one `grep` has to reach all three files. A renamed face is a copy nobody will think to check, which is
+    the same failure this document keeps describing under other headings.
+
+    "Byte-for-byte" includes what looks like a mistake. The mnemonic paths end in `/` because
+    `vm.deriveKey(mnemonic, path, index)` derives at `{path}{index}` by plain concatenation — a path
+    written `m/44'/60'/0'/2` silently derives `m/44'/60'/0'/20` for index 0. That is a valid path, a real
+    key and an entirely wrong signer set, and nothing else in the run notices: the stack deploys, verifies
+    against itself, and fails only when the js-sdk relayer arrives with keys at the _documented_ path.
+    `FhevmVerify.s.sol` carried exactly that, in a hand-copied constant, until this rule existed. Copy
+    values; do not tidy them.
+
+    **A derived value records its formula, not just its result.** Three of these are keccak-derived from a
+    fixed string, and the string is the real decision — the hex is only what it hashes to. A hex literal is
+    unverifiable by reading: a mistyped digit looks exactly like a correct one, survives review, and then
+    every copy agrees with every other. So the JSON carries `formula`, `formulaKind` and `preimage`
+    alongside the value, and the check recomputes them.
+
+    Faces are emitted-and-checked-in rather than generated at build time, deliberately: an operator running
+    `forge script` against a testnet from an unbuilt checkout must never be blocked on a generator. That is
+    safe only because the copies are _checked_. `<gen>/test/cleartext-config-mirror.test.ts` requires each
+    face to declare the same names in the same order with equal values, recomputes every formula, and
+    requires every address to be EIP-55 checksummed — which Solidity needs anyway (error 9429). It also
+    checks the literal _shape_ on the TypeScript side, since a `bigint` and a `number` compare equal
+    numerically and behave differently at every call site.
+
+    A constant that genuinely has no counterpart in the other language — a role name, a forge artifact
+    path, an EIP-170 limit — is not covered by this rule and belongs wherever it is used. The rule is about
+    the values two languages have to agree on, and those are exactly the ones that fail silently.
+
+    **The same file's `localhost` block covers the fixed local-deploy addresses (rules 15 and 17).** Its
+    faces are different — `<gen>/internal/constants.ts` and the generated
+    `<gen>/pkg/forge/src/_internal/LocalHostAddresses.sol`, not `FhevmCleartextConfig.sol` — so the names
+    there are _those_ files' names, including `MNEMONIC`, kept as-is despite reading ambiguously next to
+    `FHEVM_MNEMONIC`. Renaming it would hide a real hazard from a `grep` rather than fix it: two mnemonics
+    with two different jobs, and swapping them produces a stack whose addresses look right and whose
+    signatures never verify.
+
+    Two things differ from the `constants` block, and both follow from what these values are:
+
+    - **The block is keyed by generation, and a generation may not read another's table.** Every address is
+      `CREATE(deployer, nonce)`, so it is a function of position and nothing else. Reading a role out of the
+      wrong table is therefore silent — every address stays a valid address, just of a different contract —
+      which is why each generation selects its own from `FHEVM_CONFIG_REMAPPING_PREFIX` and a missing table
+      is a failure rather than a fallback.
+    - **Each table is split into `primary` and `secondary`, along the line the code already draws** between
+      `HOST_NONCE_OFFSET` and the entries positioned against `HOST_NONCE_COUNT` in
+      `<gen>/pkg/ts/addresses.ts`. `primary` is the protocol stack: the two empty-proxy implementations plus
+      every contract in the `FhevmAddresses` type. `secondary` is what sits after it — the two
+      cleartext-only contracts and `PauserSet`.
+
+      The split is what makes the cross-generation divergence legible instead of a coincidence of
+      numbering. Only the primary block changes shape: v13 adds `ProtocolConfig` and `KMSGeneration` to it,
+      so the two generations agree up to nonce 6 and v13's entire secondary block shifts by two.
+      `0x44aA028f…` is `PROTOCOL_CONFIG_ADDRESS` (primary) in v13 and `CLEARTEXT_ARITHMETIC_ADDRESS`
+      (secondary) in v12 — the _same address_, a different contract, not even the same category. The
+      categories are positional rather than labels, so the check asserts that `secondary` starts exactly
+      where `primary` ends, that only the two empty implementations are unnamed, and that every
+      generation's secondary list is the same three roles in the same order.
+
+    - **Nothing in it is transcribed — it is re-derived.** The check derives the deployer from the mnemonic
+      at its HD index, then every address from `CREATE(deployer, nonce)`, and compares the generated
+      Solidity against the _result_. So the JSON is not trusted either. That matters more here than
+      anywhere else in this document: `ZamaConfig.sol` is a library dApps **inherit**, so three of these
+      addresses are compiled into consumer bytecode and cannot be reconfigured afterwards. A local deploy
+      landing anywhere else leaves every such dApp calling addresses that hold no code — and the deploy
+      still verifies, because it checks itself against whatever it produced.

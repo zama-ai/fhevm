@@ -252,7 +252,7 @@ function needsDeployerKey(stage: string): boolean {
 ////////////////////////////////////////////////////////////////////////////////
 
 function stageCompute(ctx: Ctx): void {
-  say('🧮  compute (3 passes, 2 rebuilds)');
+  say('🎃  compute (3 passes, 2 rebuilds)');
 
   // Recomputing after transactions have been sent would move the sealed address set out from under a
   // stack that is already partly deployed — the creates stage would then either report drift or,
@@ -625,7 +625,7 @@ async function main(): Promise<void> {
     // sent something simply skips it and carries on — otherwise `--stage all` could never resume the
     // deployment it started.
     if (readJsonl<JournalEntry>(ctx.journalPath).length > 0) {
-      say('🧮  compute  already sealed and past its first transaction - skipping (resume)');
+      say('🎃 compute already sealed and past its first transaction - skipping (resume)');
     } else {
       stageCompute(ctx);
     }
