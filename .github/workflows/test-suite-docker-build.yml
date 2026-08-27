@@ -48,7 +48,8 @@ jobs:
     outputs:
       sdk_version: ${{ steps.strip.outputs.sdk_version }}
     steps:
-      - id: strip
+      - name: Strip leading v from release tag
+        id: strip
         env:
           EVENT_NAME: ${{ github.event_name }}
           REF_NAME: ${{ github.ref_name }}
