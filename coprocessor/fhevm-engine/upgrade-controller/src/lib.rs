@@ -1791,7 +1791,22 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
         sqlx::query_scalar("SELECT stack_version FROM versioning WHERE singleton = TRUE")
             .fetch_one(&mut *tx)
             .await?;
-    validate_cutover_release(&stack_version, &live_stack_version).map_err(Error::Payload)?;
+    // Fail the attempt rather than erroring: the rows are already UpgradeAuthorized,
+    // and only a failed attempt can be replaced by a later proposal.
+    if let Err(reason) = validate_cutover_release(&stack_version, &live_stack_version) {
+        warn!(reason, "proposal cannot cut over; failing the attempt");
+        sqlx::query(
+            "UPDATE upgrade_state
+                SET state = 'PAUSED', status = 'failed',
+                    last_error = $1, updated_at = NOW()
+              WHERE stack_role = 'GCS' AND state = 'UpgradeAuthorized'",
+        )
+        .bind(&reason)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        return Ok(());
+    }
     let consensus_version = i64::from(fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION);
 
     // 2. Promote the new stack version inside the cutover tx. This is the

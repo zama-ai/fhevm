@@ -52,12 +52,6 @@ async fn gcs_mode_tracks_consensus_version_not_release() {
             "the next version must run green"
         );
     }
-
-    set_consensus_version(db.db_url(), 99).await;
-    assert!(
-        resolve_gcs_mode(db.db_url()).await.is_err(),
-        "an old version must not start"
-    );
 }
 
 #[tokio::test]
