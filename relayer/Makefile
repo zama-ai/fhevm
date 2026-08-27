@@ -343,8 +343,15 @@ db-shell: _check-postgres ## Open psql shell into local database
 sqlx-migrate: _check-sqlx-cli _check-postgres ## Run migrations via sqlx-cli
 	@cd relayer-migrate && cargo sqlx migrate run --database-url "$(DATABASE_URL)"
 
+# --all-features is required, not cosmetic: the integration test targets only compile with
+# the `integration-tests` feature, and without it prepare fails on those targets.
 sqlx-prepare: _check-sqlx-cli _check-postgres ## Prepare sqlx offline data for CI (run after schema changes)
-	@cargo sqlx prepare --database-url "$(DATABASE_URL)" -- --all-targets
+	@cargo sqlx prepare --database-url "$(DATABASE_URL)" -- --all-targets --all-features
+
+# CI compiles with SQLX_OFFLINE, which trusts .sqlx rather than checking it. Data left
+# behind by a schema change therefore compiles fine and misdescribes the database.
+sqlx-check: _check-sqlx-cli _check-postgres ## Fail if .sqlx no longer matches the migrations
+	@cargo sqlx prepare --check --database-url "$(DATABASE_URL)" -- --all-targets --all-features
 
 # ---------------------------------------------------------------------------
 ##@ Development
