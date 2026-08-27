@@ -1,5 +1,5 @@
-//! Consensus-version detection that decides whether a service runs in GCS
-//! (green) mode, replacing the deprecated `--gcs-mode` CLI flag.
+//! Consensus-version detection that decides whether a service runs in GCS (green)
+//! mode, replacing the deprecated `--gcs-mode` CLI flag.
 //!
 //! Each binary is compiled with a [`crate::CONSENSUS_PROTOCOL_VERSION`]. On
 //! startup a service compares it against the live `versioning.consensus_version`
@@ -24,14 +24,18 @@ use crate::{CONSENSUS_PROTOCOL_VERSION, STACK_VERSION};
 /// notification is atomic with the version change — it is only delivered if the
 /// cutover commits).
 ///
-/// Every service listens on this channel and re-resolves its role: the green
-/// stack becomes live, and a stack left behind pauses into no-op mode.
+/// Every service listens on this channel. When an upgrade is active, a service
+/// re-runs [`resolve_gcs_mode`] and transitions its runtime mode:
+///   - binary version now == table version AND it was in GCS mode → leave GCS
+///     mode (the green stack becomes live), or
+///   - binary version != table version AND it was not in GCS mode → pause into
+///     no-op mode (the retired blue stack stops processing).
 pub const EVENT_STACK_VERSION_UPGRADED: &str = "event_stack_version_upgraded";
 
 /// Parse a `vMAJOR.MINOR[.PATCH]` string into a comparable tuple, tolerating a
 /// leading `v`/`V`, a missing patch component, and any pre-release/build
 /// suffix (e.g. `v0.14.0-rc1`). Non-numeric components parse as 0.
-pub fn parse_version(s: &str) -> (u64, u64, u64) {
+fn parse_version(s: &str) -> (u64, u64, u64) {
     let s = s.trim();
     let s = s.strip_prefix(['v', 'V']).unwrap_or(s);
     let core = s.split(['-', '+']).next().unwrap_or(s);
@@ -43,15 +47,20 @@ pub fn parse_version(s: &str) -> (u64, u64, u64) {
     )
 }
 
-/// True iff this binary's [`STACK_VERSION`] equals `other` (same major.minor.patch).
-pub fn binary_matches(other: &str) -> bool {
-    parse_version(STACK_VERSION) == parse_version(other)
+/// True iff this binary's [`STACK_VERSION`] is strictly newer than `live`.
+pub fn binary_is_newer_than(live: &str) -> bool {
+    parse_version(STACK_VERSION) > parse_version(live)
+}
+
+/// True iff this binary's [`STACK_VERSION`] equals `live` (same major.minor.patch).
+pub fn binary_matches(live: &str) -> bool {
+    parse_version(STACK_VERSION) == parse_version(live)
 }
 
 /// Current role of a running service.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
-pub enum RuntimeStackMode {
+enum RuntimeStackMode {
     Live = 0,
     Candidate = 1,
     Retired = 2,
@@ -136,7 +145,7 @@ pub async fn bootstrap_versioning(pool: &Pool<Postgres>) -> anyhow::Result<()> {
 }
 
 /// Choose a service role from its version and the active version.
-pub fn classify_consensus_version(binary: u32, live: i64) -> anyhow::Result<RuntimeStackMode> {
+fn classify_consensus_version(binary: u32, live: i64) -> anyhow::Result<RuntimeStackMode> {
     let live = u32::try_from(live)
         .map_err(|_| anyhow::anyhow!("invalid active consensus version: {live}"))?;
     match binary.cmp(&live) {
@@ -192,35 +201,45 @@ impl StackMode {
     }
 }
 
-/// Re-read `versioning.consensus_version` and apply the cutover transition
-/// rules to `mode`:
-///   - binary == live → live (the green stack becomes live);
-///   - binary > live → green;
-///   - binary < live → pause into no-op mode (the retired stack stops).
+/// Re-read `versioning.consensus_version` and apply the cutover transition rules to
+/// `mode`:
+///   - binary == live AND currently in GCS mode → leave GCS mode (become live);
+///   - binary < live AND not paused → pause into no-op mode;
+///   - otherwise no change.
 pub async fn reconcile_stack_mode(pool: &Pool<Postgres>, mode: &StackMode) -> anyhow::Result<()> {
     let row: Option<(i64,)> =
         sqlx::query_as("SELECT consensus_version FROM versioning WHERE singleton = TRUE")
             .fetch_optional(pool)
             .await?;
     let Some((live,)) = row else {
-        return Err(anyhow::anyhow!(
-            "cannot update service role: versioning row is missing"
-        ));
+        return Ok(());
     };
 
     let runtime_mode = classify_consensus_version(CONSENSUS_PROTOCOL_VERSION, live)?;
-    mode.gcs_mode.store(
-        runtime_mode == RuntimeStackMode::Candidate,
-        Ordering::SeqCst,
-    );
-    mode.paused
-        .store(runtime_mode == RuntimeStackMode::Retired, Ordering::SeqCst);
-    info!(
-        binary_consensus_version = CONSENSUS_PROTOCOL_VERSION,
-        live_consensus_version = live,
-        ?runtime_mode,
-        "updated service role"
-    );
+    let gcs_mode = mode.gcs_mode();
+    if runtime_mode == RuntimeStackMode::Live && gcs_mode {
+        mode.gcs_mode.store(false, Ordering::SeqCst);
+        info!(
+            binary_consensus_version = CONSENSUS_PROTOCOL_VERSION,
+            live_consensus_version = live,
+            "consensus version matches live; leaving GCS mode (now live stack)"
+        );
+    } else if runtime_mode == RuntimeStackMode::Retired && !mode.is_paused() {
+        mode.paused.store(true, Ordering::SeqCst);
+        info!(
+            binary_consensus_version = CONSENSUS_PROTOCOL_VERSION,
+            live_consensus_version = live,
+            "consensus version is behind live; pausing into no-op mode"
+        );
+    } else {
+        info!(
+            binary_consensus_version = CONSENSUS_PROTOCOL_VERSION,
+            live_consensus_version = live,
+            ?runtime_mode,
+            gcs_mode,
+            "stack-version-upgraded received; no mode change"
+        );
+    }
     Ok(())
 }
 
@@ -262,9 +281,10 @@ pub async fn run_stack_version_listener(
 ///
 /// Opens a short-lived connection with the default `public` search_path, so it
 /// works before the service's main pool — whose search_path may be pinned to
-/// `gcs,public` — is built. Unlike the release comparison it replaces, a missing
-/// version is an error rather than a default to blue: a green binary that
-/// assumed blue would start writing as the live stack.
+/// `gcs,public` — is built. If the `versioning` row is missing — or the table
+/// itself does not exist yet (a fresh deploy where the db-migration Job has not
+/// finished) — the service defaults to non-GCS (blue) mode rather than failing
+/// startup, so it does not CrashLoop waiting on migration ordering.
 pub async fn resolve_gcs_mode(database_url: &str) -> anyhow::Result<bool> {
     // Route through `connect_options_for_database_url` so that when AWS IAM auth is
     // enabled we connect with a freshly minted IAM token instead of the raw,
@@ -294,29 +314,22 @@ pub async fn resolve_gcs_mode(database_url: &str) -> anyhow::Result<bool> {
     let live = match live {
         Some(v) => v,
         None => {
-            return Err(anyhow::anyhow!(
-                "active consensus version is missing; run database migrations first"
-            ));
+            warn!(
+                binary_consensus_version = CONSENSUS_PROTOCOL_VERSION,
+                "versioning table is empty or not yet created; defaulting to non-GCS (blue) mode"
+            );
+            return Ok(false);
         }
     };
 
     let runtime_mode = classify_consensus_version(CONSENSUS_PROTOCOL_VERSION, live)?;
-    let gcs_mode = match runtime_mode {
-        RuntimeStackMode::Candidate => true,
-        RuntimeStackMode::Live => false,
-        RuntimeStackMode::Retired => {
-            return Err(anyhow::anyhow!(
-                "this service uses consensus version {}, but the active version is {live}",
-                CONSENSUS_PROTOCOL_VERSION
-            ));
-        }
-    };
+    let gcs_mode = runtime_mode == RuntimeStackMode::Candidate;
     info!(
         binary_consensus_version = CONSENSUS_PROTOCOL_VERSION,
         live_consensus_version = live,
         ?runtime_mode,
         gcs_mode,
-        "set service role from consensus version"
+        "resolved gcs_mode from versioning table"
     );
     Ok(gcs_mode)
 }
@@ -401,57 +414,102 @@ pub async fn wait_for_gcs_schema(database_url: &str, timeout: Duration) -> anyho
     }
 }
 
+/// Error returned by [`begin_guarded_pool`] / [`begin_guarded_conn`] when this
+/// binary belongs to a retired stack — its consensus version is below the live
+/// `versioning.consensus_version`.
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "consensus version {binary} is older than the active {live}; access denied (retired stack)"
+)]
+pub struct StaleStackError {
+    pub binary: u32,
+    pub live: i64,
+}
+
 /// True if `err` is Postgres `undefined_table` (SQLSTATE 42P01) — i.e. the
 /// `versioning` table does not exist yet (migrations not applied).
 fn is_undefined_table(err: &sqlx::Error) -> bool {
     matches!(err, sqlx::Error::Database(db) if db.code().as_deref() == Some("42P01"))
 }
 
-fn is_undefined_column(err: &sqlx::Error) -> bool {
-    matches!(err, sqlx::Error::Database(db) if db.code().as_deref() == Some("42703"))
-}
-
-/// Fetch the live consensus version singleton, or `None` if the `versioning`
-/// row is absent (fresh/unseeded DB).
+/// Fetch the live consensus version singleton, or `None` if the `versioning` row
+/// is absent (fresh/unseeded DB). Shared by the retirement checks below.
 ///
-/// A missing `versioning` *table* (42P01), or a missing `consensus_version`
-/// *column* (42703) during the migration window, is treated the same as a
-/// missing row — `None`, not an error.
+/// A missing `versioning` *table* (SQLSTATE 42P01) is treated the same as a
+/// missing row — `None`, not an error — so a service that starts before the
+/// db-migration Job has created the table does not fail (see [`resolve_gcs_mode`]
+/// and [`assert_not_retired`], which read this as "unseeded → blue / not-retired").
 async fn live_consensus_version(conn: &mut PgConnection) -> Result<Option<i64>, sqlx::Error> {
-    let row: Option<(i64,)> =
-        match sqlx::query_as("SELECT consensus_version FROM versioning WHERE singleton = TRUE")
-            .fetch_optional(conn)
-            .await
-        {
-            Ok(row) => row,
-            Err(err) if is_undefined_table(&err) || is_undefined_column(&err) => {
-                warn!(
+    let row: Option<(i64,)> = match sqlx::query_as(
+        "SELECT consensus_version FROM versioning WHERE singleton = TRUE",
+    )
+    .fetch_optional(conn)
+    .await
+    {
+        Ok(row) => row,
+        Err(err) if is_undefined_table(&err) => {
+            warn!(
                     binary_consensus_version = CONSENSUS_PROTOCOL_VERSION,
-                    "active consensus version is not available yet"
+                    "versioning table does not exist yet (migrations not applied?); treating as unseeded"
                 );
-                None
-            }
-            Err(err) => return Err(err),
-        };
+            None
+        }
+        Err(err) => return Err(err),
+    };
     Ok(row.map(|(v,)| v))
 }
 
 /// Re-read the live consensus version on `conn` and report whether this binary
 /// belongs to a retired stack (its [`crate::CONSENSUS_PROTOCOL_VERSION`] is below
-/// the live `versioning.consensus_version`). A missing version is an error, not a
-/// permissive default: a write guard must not fail open.
+/// the live `versioning.consensus_version`). A missing `versioning` row is treated
+/// as not-retired, so a fresh/unseeded DB is not locked out.
 ///
 /// This is the single source of truth for "should this stack stop touching the
-/// DB" — the same fence used by [`resolve_gcs_mode`] and [`reconcile_stack_mode`].
-/// Read it *after* taking the shared cutover lock (see [`cutover_gate`]) to close
-/// the begin-time TOCTOU window.
+/// DB" — the same fence used by [`assert_not_retired`], [`resolve_gcs_mode`], and
+/// [`reconcile_stack_mode`]. Read it *after* taking the shared cutover lock (see
+/// [`cutover_gate`]) to close the begin-time TOCTOU window.
 pub async fn is_retired(conn: &mut PgConnection) -> Result<bool, sqlx::Error> {
-    let Some(live) = live_consensus_version(conn).await? else {
-        return Err(sqlx::Error::Configuration(
-            "active consensus version is missing; refusing writes".into(),
-        ));
-    };
-    Ok(i64::from(CONSENSUS_PROTOCOL_VERSION) < live)
+    Ok(live_consensus_version(conn)
+        .await?
+        .is_some_and(|live| i64::from(CONSENSUS_PROTOCOL_VERSION) < live))
+}
+
+/// Re-read the live consensus version on `conn` and fail if this binary is strictly
+/// below it (a retired stack). A missing `versioning` row is permissive, so a
+/// fresh/unseeded DB is not locked out.
+async fn assert_not_retired(conn: &mut PgConnection) -> Result<(), sqlx::Error> {
+    if let Some(live) = live_consensus_version(conn).await? {
+        if i64::from(CONSENSUS_PROTOCOL_VERSION) < live {
+            return Err(sqlx::Error::Configuration(Box::new(StaleStackError {
+                binary: CONSENSUS_PROTOCOL_VERSION,
+                live,
+            })));
+        }
+    }
+    Ok(())
+}
+
+/// Begin a transaction on `pool` whose first action asserts this binary is not a
+/// retired stack (see [`assert_not_retired`]). On rejection the just-opened
+/// transaction is dropped (and thus rolled back) before it is returned, so a
+/// stale binary can neither read nor write through it.
+///
+/// Cost: one extra round-trip per transaction (a single indexed singleton read).
+pub(crate) async fn begin_guarded_pool(
+    pool: &Pool<Postgres>,
+) -> Result<Transaction<'static, Postgres>, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    assert_not_retired(&mut tx).await?;
+    Ok(tx)
+}
+
+/// Like [`begin_guarded_pool`] but begins on an already-acquired connection.
+pub(crate) async fn begin_guarded_conn(
+    conn: &mut PgConnection,
+) -> Result<Transaction<'_, Postgres>, sqlx::Error> {
+    let mut tx = conn.begin().await?;
+    assert_not_retired(&mut tx).await?;
+    Ok(tx)
 }
 
 /// PostgreSQL advisory-lock key serializing writes against cutover and rollback.
@@ -496,23 +554,28 @@ enum GateBlock {
 ///
 /// Takes the **shared** advisory lock on `tx`, then checks the stack state while
 /// ordered against controller changes, which take the **exclusive** form.
-/// Returns `Stop` when cutover has retired this writer and `Skip` when rollback
+/// Returns `Stop` when cutover has retired a BCS writer and `Skip` when rollback
 /// has paused derived GCS writes. The caller rolls back either blocked
 /// transaction before returning it.
 ///
-/// Why the lock and not a check at BEGIN: a transaction opened before cutover
-/// could otherwise commit *after* it, injecting stale-format rows into the live
-/// tables. The shared lock closes that window: either this tx holds it and
-/// cutover's exclusive request waits for the commit, or cutover already
-/// committed and the check below sees the new consensus version and aborts.
-/// Shared locks are mutually compatible, so replicas are not serialized against
-/// each other — only against the one-shot cutover.
+/// Why the lock, not just [`begin_guarded_pool`]'s BEGIN-time check:
+/// `assert_not_retired` runs only at BEGIN, so a transaction opened before
+/// cutover could otherwise commit *after* it (a time-of-check/time-of-use gap),
+/// injecting stale-format rows into the live green tables. The shared lock closes
+/// that window: either this tx holds the shared lock and cutover's exclusive
+/// request blocks until it commits, or cutover already committed and this check
+/// observes the bumped `versioning` and aborts. Shared locks are mutually
+/// compatible, so this does **not** serialize BCS worker replicas against each
+/// other — only against the one-shot cutover.
 ///
 /// GCS-mode (green) writers also take the shared lock: their writes land in the
 /// `gcs` schema, which cutover merges and rollback resets. Without the lock a
-/// green write could be lost during cutover or land in the recreated schema
-/// after rollback. Raw ingestion continues after rollback, while derived workers
-/// skip when the GCS row is `PAUSED`.
+/// green write could be lost during cutover or land in the recreated schema after
+/// rollback. Holding the shared lock makes either exclusive request wait until
+/// the write commits. Raw ingestion continues after rollback, while derived
+/// workers skip when the GCS row is `PAUSED`. GCS writers skip only the
+/// [`is_retired`] re-check because a green binary is newer than the live stack
+/// and cannot be retired.
 async fn cutover_gate(
     tx: &mut Transaction<'_, Postgres>,
     gcs_mode: bool,
@@ -544,18 +607,21 @@ async fn cutover_gate(
 
 /// Begin a **write** transaction fenced against cutover and rollback, in one call.
 ///
-/// Returns [`WriteGuard::Stop`] for a retired stack and [`WriteGuard::Skip`] for a
+/// Combines [`begin_guarded_pool`] (BEGIN-time `assert_not_retired`) with
+/// [`cutover_gate`] (shared advisory lock plus the relevant state check). Returns
+/// [`WriteGuard::Stop`] for a retired BCS stack and [`WriteGuard::Skip`] for a
 /// derived GCS write after rollback.
 ///
-/// Use this for every BCS or GCS write transaction. Read-only transactions should
-/// not take the shared lock, which would delay cutover or rollback behind every
-/// in-flight read.
+/// Use this for every BCS or GCS write transaction. Keep [`begin_guarded_pool`]
+/// for **read-only** transactions: reads cannot corrupt merged or reset state,
+/// so they should not take the shared lock, which would delay cutover or
+/// rollback behind every in-flight read.
 pub async fn begin_write_guarded(
     pool: &Pool<Postgres>,
     gcs_mode: bool,
     rollback_policy: GcsRollbackPolicy,
 ) -> Result<WriteGuard<'static>, sqlx::Error> {
-    let mut tx = pool.begin().await?;
+    let mut tx = begin_guarded_pool(pool).await?;
     match cutover_gate(&mut tx, gcs_mode, rollback_policy).await? {
         None => Ok(WriteGuard::Proceed(tx)),
         Some(block) => {
@@ -568,13 +634,14 @@ pub async fn begin_write_guarded(
     }
 }
 
-/// Like [`begin_write_guarded`] but begins on an already-acquired connection.
+/// Like [`begin_write_guarded`] but begins on an already-acquired connection
+/// (mirrors [`begin_guarded_conn`]).
 pub async fn begin_write_guarded_conn(
     conn: &mut PgConnection,
     gcs_mode: bool,
     rollback_policy: GcsRollbackPolicy,
 ) -> Result<WriteGuard<'_>, sqlx::Error> {
-    let mut tx = conn.begin().await?;
+    let mut tx = begin_guarded_conn(conn).await?;
     match cutover_gate(&mut tx, gcs_mode, rollback_policy).await? {
         None => Ok(WriteGuard::Proceed(tx)),
         Some(block) => {
@@ -639,31 +706,12 @@ mod tests {
 
     #[test]
     fn classifies_consensus_relationships() {
-        assert_eq!(
-            classify_consensus_version(7, 7).unwrap(),
-            RuntimeStackMode::Live
-        );
-        assert_eq!(
-            classify_consensus_version(8, 7).unwrap(),
-            RuntimeStackMode::Candidate
-        );
-        assert_eq!(
-            classify_consensus_version(6, 7).unwrap(),
-            RuntimeStackMode::Retired
-        );
-    }
-
-    #[test]
-    fn runs_green_on_any_newer_consensus_version() {
+        use RuntimeStackMode::{Candidate, Live, Retired};
+        assert_eq!(classify_consensus_version(7, 7).unwrap(), Live);
+        assert_eq!(classify_consensus_version(8, 7).unwrap(), Candidate);
+        assert_eq!(classify_consensus_version(6, 7).unwrap(), Retired);
         // A version that skips ahead still runs green.
-        assert_eq!(
-            classify_consensus_version(9, 7).unwrap(),
-            RuntimeStackMode::Candidate
-        );
-    }
-
-    #[test]
-    fn rejects_an_unreadable_active_consensus_version() {
+        assert_eq!(classify_consensus_version(9, 7).unwrap(), Candidate);
         assert!(classify_consensus_version(2, -1).is_err());
     }
 }

@@ -399,9 +399,9 @@ impl Database {
         pool.expect("unreachable")
     }
 
-    /// Begin a write transaction fenced against cutover. Takes the shared advisory
-    /// lock at BEGIN, then checks retirement under it.
-    /// Returns `Ok(None)` if a committed cutover retired
+    /// Begin a write transaction fenced against cutover. Runs `assert_not_retired`
+    /// at BEGIN (via `begin_guarded_pool`), then takes the shared advisory lock and
+    /// re-checks retirement. Returns `Ok(None)` if a committed cutover retired
     /// this stack. GCS-mode connections (`self.gcs_mode`) take the same lock so
     /// their raw writes cannot overlap cutover or schema reset, but continue after
     /// rollback to refill the GCS schema. See `versioning::begin_write_guarded`.
