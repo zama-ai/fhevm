@@ -502,6 +502,7 @@ const NETWORKS = [
   "devnet",
   "devnet-amoy",
   "mainnet",
+  "polygon",
 ] as const;
 
 const safeInteger = z.number().int().safe();
