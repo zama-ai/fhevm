@@ -14,22 +14,20 @@
  *      new epoch). Wait until the new epoch activates, then decrypt again.
  *   3. Destruction. Steps 1 and 2 leave two entries that are still live but no longer current: the
  *      baseline context and the epoch from step 1. Destroy them with `destroyKmsContext` /
- *      `destroyKmsEpoch` and check:
- *        - the current context and epoch cannot be destroyed;
- *        - unknown ids and already-destroyed ids revert;
- *        - `KmsContextDestroyed` / `KmsEpochDestroyed` emitted;
- *        - the destroyed target becomes invalid, and the active context/epoch does not move;
- *        - destroying a context also invalidates its epochs (`isValidEpochForContext` requires a
- *          valid context, so the contract needs no per-epoch write);
- *        - every party's connector forwards `DestroyMpcContext` / `DestroyMpcEpoch` to its core
- *          and invalidates the destroyed target in its validation cache;
- *        - the spare never held the material, so its core accepts the context destroy (nothing to
- *          delete) but rejects the epoch destroy, and that request ends `failed`. Both outcomes
- *          are benign, and the spare still invalidates its cache rows;
- *        - the context-to-epoch cascade reaches committee caches only: it is driven by the epoch
- *          ids each core returns, and the spare's core returns none. Its stale epoch row is
- *          harmless — on-chain epoch validity derives from context validity;
- *        - the current context/epoch keeps serving.
+ *      `destroyKmsEpoch`. Each destroy must:
+ *        - be rejected for the current context and epoch, for unknown ids, and for ids already
+ *          destroyed;
+ *        - emit `KmsContextDestroyed` / `KmsEpochDestroyed`;
+ *        - make the target invalid on chain without moving the active context/epoch (destroying a
+ *          context also makes its epochs invalid, because `isValidEpochForContext` needs a valid
+ *          context, so the contract writes nothing per epoch);
+ *        - reach every committee node: its connector forwards `DestroyMpcContext` /
+ *          `DestroyMpcEpoch` to its core and drops the target from its validation cache;
+ *        - leave the current context and epoch serving decryptions and input proofs.
+ *      The spare behaves differently, by design: it never held this material, so its core accepts
+ *      the context destroy (nothing to delete) but fails the epoch destroy, and the
+ *      context-to-epoch cache cascade skips it, because that cascade follows the epoch ids each
+ *      core returns. Both are harmless — on-chain epoch validity follows context validity.
  *   4. Recovery and abort. Two independent checks:
  *      a) A context switch must still work after a destroy. That is, destroying a context must
  *         never leave the system stuck and unable to reshare and activate a new one.
@@ -137,7 +135,8 @@ type SwitchTarget = { rpcUrl: string; configAddress: string; where: string };
 
 /** Node roles on this topology. The initial on-chain committee is parties 1..committeeSize; cores
  * beyond it are spares. The node-swap step drops the last committee slot(s) and promotes the
- * spare(s), e.g. {1,2,3,4} -> {1,2,3,5}. */
+ * spare(s), e.g. {1,2,3,4} -> {1,2,3,5}. One swap promotes every spare, so the scenario's spare
+ * count is how many nodes it replaces — one here. */
 const committeePlan = (kms: State["scenario"]["kms"]) => {
   const spareCount = kms.parties - kms.committeeSize;
   return {
@@ -151,12 +150,14 @@ const committeePlan = (kms: State["scenario"]["kms"]) => {
 /**
  * NewKmsContext step, in one of two modes.
  * Same-committee (swap = false): the new context keeps the committee, so this is a pure reshare.
- * Node swap (swap = true): the new context drops one committee node and promotes the spare, so n
- * stays committeeSize. The dropped node's tx-sender is stopped before the broadcast. The switch
- * must then complete on the n − t quorum of the previous committee, without the dropped node's
- * confirmation — a node that cannot transact must not veto its own removal. The rest of the
- * dropped node stays up, because the reshare still needs its core (the KMS core cannot yet
- * reshare around an absent outgoing party); upgrade to a full party stop once it can.
+ * Node swap (swap = true): the new context drops the committee's last node(s) and promotes the
+ * spare(s), so n stays committeeSize. The dropped node's tx-sender is stopped before the
+ * broadcast, so it cannot confirm the switch: a node that cannot transact must not veto its own
+ * removal. Creating the context needs n − t confirmations from the previous committee (3 of the
+ * 4 nodes here), and the 3 still transacting supply exactly that. Each dropped node is one
+ * confirmation fewer, so a swap can drop at most t nodes at a time.
+ * The rest of a dropped node stays up, because the reshare still needs its core (the KMS core
+ * cannot yet reshare around an absent outgoing party); upgrade to a full party stop once it can.
  * In both modes activation waits for ALL new-committee signers, so the context id only advances
  * once every new-committee member has reshared and confirmed.
  */
@@ -498,11 +499,15 @@ const destroyContextAndEpoch = async (
 /**
  * Aborts a stuck epoch rotation and recovers from it. Stopping one committee node's tx-sender
  * blocks that node's activation confirmation, and activation needs every signer. The new epoch
- * therefore reshares but stays Pending under the still-Active context. This checks three things:
- * while the rotation is Pending, any new lifecycle operation reverts with
- * KmsLifecycleOperationInFlight; destroying the Pending epoch aborts the rotation; and once the
- * node is back, a fresh rotation activates normally. Returns the state after the recovery
- * rotation.
+ * therefore reshares but stays Pending under the still-Active context. From there the step does
+ * three things:
+ *   1. tries a second lifecycle operation while the rotation is Pending — it must revert with
+ *      KmsLifecycleOperationInFlight;
+ *   2. destroys the Pending epoch, which aborts the rotation and makes the previous epoch current
+ *      again. The abort starts no rotation of its own; it only clears the in-flight state so a
+ *      later rotation is allowed;
+ *   3. restarts the node and broadcasts a fresh rotation, which must activate normally.
+ * Returns the state after that recovery rotation.
  */
 const abortStuckRotation = async (
   state: State,
