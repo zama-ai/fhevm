@@ -350,7 +350,8 @@ When changing runtime flags, env contracts, target semantics, or external compan
 ./fhevm-cli test standard
 ./fhevm-cli test heavy
 ./fhevm-cli test operators
-./fhevm-cli test --grep "oversized shift/rotate" --verbose
+./fhevm-cli test --grep "oversized shift and rotate" --verbose
+./fhevm-cli test operators --grep "edge cases" --verbose
 ./fhevm-cli pause host
 ./fhevm-cli unpause host
 
