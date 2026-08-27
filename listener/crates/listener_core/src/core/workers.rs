@@ -248,6 +248,94 @@ impl Handler for FetchHandler {
     }
 }
 
+// ── FinalityHandler ──────────────────────────────────────────────────────
+
+/// Manual [`Handler`] impl for the fetch-final-block consumer.
+///
+/// Ignores the message payload (the message is just a wake-up signal) and
+/// calls [`EvmListener::fetch_final_blocks`]. Errors are routed through
+/// [`classify`] so that infrastructure failures (DB, RPC) produce
+/// `HandlerError::Transient` — enabling the circuit breaker.
+/// Acquires a PostgreSQL advisory lock (finality-specific key, per chain_id)
+/// before processing. If the lock is held by another pod, the message is
+/// Acked (not requeued). Avoids infinite message requeuing over message
+/// duplication. This provides HPA-safe mutual exclusion for the finality
+/// flow, fully independent from the fetch/reorg cursor lock: a stall of the
+/// finality flow never impacts the live flow, and vice versa.
+/// When the finality flow is inactive, the message is Acked without
+/// re-triggering, so a stale seeded loop terminates deliberately.
+#[derive(Clone)]
+pub struct FinalityHandler {
+    listener: Arc<EvmListener>,
+    flow_lock: FlowLock,
+    publisher: Publisher,
+}
+
+impl FinalityHandler {
+    pub fn new(listener: Arc<EvmListener>, flow_lock: FlowLock, publisher: Publisher) -> Self {
+        Self {
+            listener,
+            flow_lock,
+            publisher,
+        }
+    }
+}
+
+#[async_trait]
+impl Handler for FinalityHandler {
+    async fn call(&self, _msg: &Message) -> Result<AckDecision, HandlerError> {
+        // Step 0: Inactive flow — skip and end the loop deliberately.
+        if !self.listener.finality_active() {
+            info!("Finality: inactive — skipping and not re-triggering");
+            return Ok(AckDecision::Ack);
+        }
+
+        // Step 1: Try to acquire the distributed lock (non-blocking).
+        let guard = match self.flow_lock.try_acquire().await {
+            Ok(Some(guard)) => guard,
+            Ok(None) => {
+                warn!(
+                    "Finality: advisory lock held by another processor, Acking and skipping this process, mostly duplicate."
+                );
+                return Ok(AckDecision::Ack);
+            }
+            Err(e) => {
+                return Err(HandlerError::transient(
+                    EvmListenerError::MessageProcessingError {
+                        message: format!("Failed to acquire advisory lock: {e}"),
+                    },
+                ));
+            }
+        };
+
+        // Step 2: Process under lock.
+        let result = self.listener.fetch_final_blocks().await;
+
+        // Step 3: Release lock BEFORE publishing (eliminates race with other handlers).
+        if let Err(unlock_err) = guard.release().await {
+            warn!(error = %unlock_err, "Failed to explicitly release advisory lock");
+        }
+
+        // Step 4: Publish continuation message AFTER lock release, then Ack.
+        match result {
+            Ok(()) => {
+                // Up-to-date or complete — schedule next finality iteration.
+                self.publisher
+                    .publish(routing::FETCH_FINAL_BLOCK, &serde_json::Value::Null)
+                    .await
+                    .map_err(|e| {
+                        error!(error = %e, "Failed to publish finality trigger");
+                        HandlerError::transient(EvmListenerError::BrokerPublishError {
+                            message: format!("Broker publish failed: {e}"),
+                        })
+                    })?;
+                Ok(AckDecision::Ack)
+            }
+            Err(e) => Err(classify(e, self.listener.chain_id())),
+        }
+    }
+}
+
 // ── ReorgHandlerV2 ──────────────────────────────────────────────────────
 
 /// Handler for the backtrack-reorg consumer using the state-atomic v2 algorithm.

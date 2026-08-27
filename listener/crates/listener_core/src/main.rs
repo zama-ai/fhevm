@@ -10,7 +10,7 @@ use listener_core::blockchain::evm::sem_evm_rpc_provider::SemEvmRpcProvider;
 use listener_core::config::BrokerType;
 use listener_core::config::config::Settings;
 use listener_core::core::{
-    CatchupHandler, Cleaner, CleanerHandler, EvmListener, FetchHandler, Filters,
+    CatchupHandler, Cleaner, CleanerHandler, EvmListener, FetchHandler, Filters, FinalityHandler,
     RangeCatchupHandler, ReorgHandler, UnwatchHandler, WatchHandler,
 };
 use listener_core::logging;
@@ -237,6 +237,12 @@ async fn main() {
         )
         .await;
 
+    // Anchor the finality tip (panics on failure, same crash-loop pattern).
+    // Skipped entirely when the finality flow is disabled.
+    if settings.blockchain.finality_active {
+        evm_listener.validate_and_init_final_block().await;
+    }
+
     let evm_listener = Arc::new(evm_listener);
 
     // let network = &settings.blockchain.network;
@@ -260,6 +266,27 @@ async fn main() {
         Ok(c) => c,
         Err(e) => {
             error!("Failed to build fetch consumer: {}", e);
+            process::exit(1);
+        }
+    };
+
+    let finality_consumer = match broker
+        .consumer(&Topic::new(routing::FETCH_FINAL_BLOCK).with_namespace(chain_id))
+        .group(routing::FETCH_FINAL_BLOCK)
+        .prefetch(1)
+        .max_retries(5)
+        .redis_claim_min_idle(settings.broker.claim_min_idle)
+        .redis_claim_interval(1)
+        .redis_block_ms(200)
+        .circuit_breaker(
+            settings.broker.circuit_breaker_threshold,
+            Duration::from_secs(settings.broker.circuit_breaker_cooldown_secs),
+        )
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            error!("Failed to build finality consumer: {}", e);
             process::exit(1);
         }
     };
@@ -414,6 +441,16 @@ async fn main() {
     let cleaner_handler =
         CleanerHandler::new(Arc::clone(&cleaner), cleaner_flow_lock, cleaner_publisher);
 
+    // Finality flow: own salted lock, so a stalled finality loop never blocks
+    // (or is blocked by) the live cursor/reorg flows.
+    let finality_flow_lock =
+        FlowLock::new_finality(Arc::clone(&arc_pg_client), configured_chain_id);
+    let finality_handler = FinalityHandler::new(
+        Arc::clone(&evm_listener),
+        finality_flow_lock,
+        handler_publisher.clone(),
+    );
+
     let catchup_handler = CatchupHandler::new(Arc::clone(&evm_listener), handler_publisher.clone());
     let range_catchup_handler = RangeCatchupHandler::new(Arc::clone(&evm_listener));
 
@@ -515,6 +552,40 @@ async fn main() {
             process::exit(1);
         }
     }
+
+    // ── Ensure finality topology and seed ────────────────────────────────
+    // The finality loop is fully independent from the fetch/reorg loop (own
+    // lock, own queue), so its seed gate only checks its own queue emptiness —
+    // a busy cursor must never suppress the finality bootstrap.
+    if let Err(e) = finality_consumer.ensure_topology().await {
+        error!(error = %e, "Failed to set up finality consumer topology");
+        process::exit(1);
+    }
+
+    let finality_topic = Topic::new(routing::FETCH_FINAL_BLOCK).with_namespace(chain_id);
+    let should_seed_finality = settings.blockchain.finality_active
+        && settings.blockchain.strategy.automatic_startup
+        && match broker
+            .is_empty(&finality_topic, routing::FETCH_FINAL_BLOCK)
+            .await
+        {
+            Ok(empty) => empty,
+            Err(e) => {
+                error!(error = %e, "Failed to check finality queue depth");
+                process::exit(1);
+            }
+        };
+
+    if should_seed_finality {
+        info!("Finality queue empty — publishing seed to bootstrap finality loop");
+        if let Err(e) = seed_publisher
+            .publish(routing::FETCH_FINAL_BLOCK, &serde_json::Value::Null)
+            .await
+        {
+            error!(error = %e, "Failed to publish finality seed");
+            process::exit(1);
+        }
+    }
     // ── Periodic queue depth poller ──────────────────────────────────────
     // Polls broker.queue_depths() every 15s for each listener topic and emits
     // the values as broker_queue_depth_* Prometheus gauges.
@@ -569,6 +640,7 @@ async fn main() {
 
     let (consumer_name, result) = tokio::select! {
         r = fetch_consumer.run(fetch_handler) => ("Fetch", r),
+        r = finality_consumer.run(finality_handler) => ("Finality", r),
         r = reorg_consumer.run(reorg_handler) => ("Reorg", r),
         r = watch_consumer.run(watch_handler) => ("Watch", r),
         r = unwatch_consumer.run(unwatch_handler) => ("Unwatch", r),

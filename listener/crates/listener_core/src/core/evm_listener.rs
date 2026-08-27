@@ -20,7 +20,7 @@ use crate::{
     },
     config::BlockFetcherStrategy,
     core::slot_buffer::{AsyncSlotBuffer, BufferError},
-    store::models::{BlockStatus, NewDatabaseBlock, UpsertResult},
+    store::models::{BlockStatus, NewDatabaseBlock, NewFinalBlock, UpsertResult},
     store::repositories::Repositories,
 };
 
@@ -107,6 +107,7 @@ pub struct EvmListener {
     compute_block_allow_skipping: bool,
     loop_delay_ms: u64,
     finality_depth: u64,
+    finality_active: bool,
     max_exponential_backoff_ms: u64,
     catchup_max_sub_range: u64,
 }
@@ -138,6 +139,7 @@ impl EvmListener {
             compute_block_allow_skipping: blockchain_settings.strategy.compute_block_allow_skipping,
             loop_delay_ms: blockchain_settings.strategy.loop_delay_ms,
             finality_depth: blockchain_settings.finality_depth,
+            finality_active: blockchain_settings.finality_active,
             max_exponential_backoff_ms: blockchain_settings.strategy.max_exponential_backoff_ms,
             catchup_max_sub_range: blockchain_settings.catchup.catchup_max_sub_range,
         }
@@ -146,6 +148,11 @@ impl EvmListener {
     /// Returns the chain ID this listener is configured for.
     pub fn chain_id(&self) -> u64 {
         self.chain_id
+    }
+
+    /// Whether the finality flow (fetch-final-block loop) is enabled.
+    pub fn finality_active(&self) -> bool {
+        self.finality_active
     }
 
     /// Create a fetcher with the given cancellation token and compute_block flag.
@@ -1123,6 +1130,300 @@ impl EvmListener {
             }
         }
     }
+
+    /// Validates the finality strategy and initializes the `final_blocks` table
+    /// with an anchor block when it is empty.
+    ///
+    /// The anchor is the **latest final block**, obtained from the provider's
+    /// finality function ([`SemEvmRpcProvider::get_final_block_number`] — the
+    /// `finalized` tag or `head - finality_depth`, per config). Like the live
+    /// flow's starting block, the anchor is a seed and is never published: the
+    /// first published final block is `anchor + 1`.
+    ///
+    /// This function is called during service initialization and will panic on
+    /// any failure (crash-loop-backoff pattern, mirroring
+    /// [`Self::validate_strategy_and_init_block`]).
+    ///
+    /// # Panics
+    /// - If the RPC node is unreachable or returns an error
+    /// - If the configured strategy cannot fetch the final block
+    /// - If the database is unreachable or returns an error
+    pub async fn validate_and_init_final_block(&self) {
+        // Check for an existing final block in the database
+        let latest_final_block = match self
+            .repositories
+            .final_blocks
+            .get_latest_final_block()
+            .await
+        {
+            Ok(block) => block,
+            Err(e) => {
+                tracing::error!(
+                    error = %e,
+                    "CRITICAL: Could not query database for latest final block"
+                );
+                panic!("Could not query database for latest final block: {}", e);
+            }
+        };
+
+        if let Some(block) = latest_final_block {
+            tracing::info!(
+                block_number = block.block_number,
+                block_hash = %block.block_hash,
+                "Found existing final block in database, no initialization needed"
+            );
+            return;
+        }
+
+        // Resolve the anchor: the latest final block number per the configured
+        // finality strategy (tag or depth).
+        let final_block_number = match self.provider.get_final_block_number().await {
+            Ok(block_number) => block_number,
+            Err(e) => {
+                tracing::error!(
+                    error = %e,
+                    "CRITICAL: Could not fetch final block number from RPC"
+                );
+                panic!("Could not fetch final block number from RPC: {}", e);
+            }
+        };
+
+        tracing::info!(
+            final_block_number = final_block_number,
+            "No final block in database, initializing with the latest final block"
+        );
+
+        // Fetch the anchor block from the blockchain with the configured strategy
+        let cancel_token = CancellationToken::new();
+        let fetched_block = match self
+            .get_block_by_number(final_block_number, cancel_token, self.compute_block)
+            .await
+        {
+            Ok(block) => block,
+            Err(e) => {
+                tracing::error!(
+                    error = %e,
+                    final_block_number = final_block_number,
+                    "CRITICAL: Could not fetch final anchor block from blockchain"
+                );
+                panic!(
+                    "Could not fetch final anchor block {} from blockchain: {}",
+                    final_block_number, e
+                );
+            }
+        };
+
+        // Convert FetchedBlock to NewFinalBlock and insert into database
+        let new_final_block = NewFinalBlock::from_rpc_block(&fetched_block.block);
+
+        if let Err(e) = self
+            .repositories
+            .final_blocks
+            .insert_block(&new_final_block)
+            .await
+        {
+            if e.is_unique_violation() {
+                tracing::info!(
+                    block_number = new_final_block.block_number,
+                    block_hash = %new_final_block.block_hash,
+                    "Final anchor block already exists in database, skipping insert"
+                );
+            } else {
+                tracing::error!(
+                    error = %e,
+                    block_number = new_final_block.block_number,
+                    block_hash = %new_final_block.block_hash,
+                    "CRITICAL: Could not insert final anchor block into database"
+                );
+                panic!("Could not insert final anchor block into database: {}", e);
+            }
+        } else {
+            tracing::info!(
+                block_number = new_final_block.block_number,
+                block_hash = %new_final_block.block_hash,
+                "Successfully initialized database with the final anchor block"
+            );
+        }
+    }
+
+    /// Orchestrates one iteration of the finality flow.
+    ///
+    /// Mirror of [`Self::fetch_blocks_and_run_cursor`] with everything
+    /// reorg-related removed: finalized blocks never reorg, so there is no
+    /// parent-hash validation, no reorg result, and no backtrack publishing.
+    ///
+    /// 1. Reads the final tip (latest row in `final_blocks`)
+    /// 2. Gets the current final block number from the RPC node
+    ///    (finalized tag or `head - finality_depth`, per config)
+    /// 3. Calculates the range of blocks to fetch (capped by `range_size`)
+    /// 4. Spawns two concurrent tasks via `tokio::spawn`:
+    ///    - **Producer** (`fetch_blocks_in_parallel`): fetches blocks via
+    ///      parallel RPC calls, fills an `AsyncSlotBuffer` out-of-order
+    ///    - **Consumer** (`final_processing`): reads slots sequentially in
+    ///      order and inserts them into `final_blocks`
+    /// 5. Awaits both tasks and analyzes outcomes
+    ///
+    /// # Returns
+    /// - `Ok(())` — up-to-date (nothing to fetch) or all blocks processed;
+    ///   sleeps `loop_delay_ms` before returning in both cases
+    /// - `Err(...)` — unrecoverable or transient error (no sleep, propagate
+    ///   fast for retry logic)
+    ///
+    /// # Cancellation
+    /// A fresh `CancellationToken` is created per iteration and shared between
+    /// producer and consumer for bidirectional fail-fast: a fetch failure
+    /// unblocks the consumer's `buffer.get`, and a DB failure stops the
+    /// remaining RPC calls.
+    ///
+    /// # Panics
+    /// This function does not panic. Task panics are caught via `JoinError`
+    /// and converted to `EvmListenerError::InvariantViolation`.
+    pub async fn fetch_final_blocks(&self) -> Result<(), EvmListenerError> {
+        // We don't need to dedup the message, the flow lock + ack will handle the deduplication by itself.
+
+        // Step 1: Get the latest final block from DB (the finality tip).
+        // validate_and_init_final_block guarantees at least one row exists.
+        let final_tip = self
+            .repositories
+            .final_blocks
+            .get_latest_final_block()
+            .await
+            .map_err(|e| EvmListenerError::DatabaseError { source: e })?
+            .ok_or_else(|| EvmListenerError::InvariantViolation {
+                message: "No final block anchor in database. \
+                          validate_and_init_final_block must run before the finality flow."
+                    .to_string(),
+            })?;
+
+        let final_tip_number = final_tip.block_number;
+
+        debug!(
+            final_tip_number = final_tip_number,
+            final_tip_hash = %final_tip.block_hash,
+            "Retrieved final tip for finality iteration"
+        );
+
+        // Step 2: Get the current final block number from the RPC node
+        let final_height = self
+            .provider
+            .get_final_block_number()
+            .await
+            .map_err(|e| EvmListenerError::ChainHeightError { source: e })?;
+
+        // Step 3: If finality hasn't advanced beyond our tip, there's nothing to do
+        if final_height <= final_tip_number {
+            debug!(
+                final_height = final_height,
+                final_tip_number = final_tip_number,
+                "Finality has not advanced beyond the final tip"
+            );
+            tokio::time::sleep(Duration::from_millis(self.loop_delay_ms)).await;
+            return Ok(());
+        }
+
+        // Step 4: Calculate the inclusive range [range_start, range_end]
+        let range_start = final_tip_number + 1;
+        let range_end = std::cmp::min(final_height, final_tip_number + self.range_size as u64);
+        let range_length = (range_end - range_start + 1) as usize; // +1 because both bounds are inclusive
+
+        info!(
+            range_start = range_start,
+            range_end = range_end,
+            range_length = range_length,
+            final_height = final_height,
+            "Starting finality iteration"
+        );
+
+        // Step 5: Create shared state for producer-consumer coordination
+        let buffer = AsyncSlotBuffer::<FetchedBlock>::new(range_length);
+        let cancel_token = CancellationToken::new();
+
+        // Step 6: Spawn both tasks concurrently
+        let final_handle = tokio::spawn(final_processing(
+            self.clone(),
+            buffer.clone(),
+            cancel_token.clone(),
+            range_start,
+            range_length,
+        ));
+
+        let fetcher_handle = tokio::spawn(fetch_blocks_in_parallel(
+            self.clone(),
+            buffer,
+            cancel_token.clone(),
+            range_start,
+            range_length,
+        ));
+
+        // Step 7: Await both tasks to completion.
+        // tokio::join! ensures neither task is abandoned even if the other completes/fails first.
+        let (final_join_result, fetcher_join_result) = tokio::join!(final_handle, fetcher_handle);
+
+        // Step 8: Unwrap JoinHandle results — a JoinError means the task panicked,
+        // which is a critical bug (we never panic in our code).
+        let final_outcome = final_join_result.map_err(|join_err| {
+            cancel_token.cancel();
+            error!(error = %join_err, "Finality task panicked — this is a critical bug");
+            EvmListenerError::InvariantViolation {
+                message: format!("Finality task panicked: {}", join_err),
+            }
+        })?;
+
+        let fetcher_outcome = fetcher_join_result.map_err(|join_err| {
+            cancel_token.cancel();
+            error!(error = %join_err, "Fetcher task panicked — this is a critical bug");
+            EvmListenerError::InvariantViolation {
+                message: format!("Fetcher task panicked: {}", join_err),
+            }
+        })?;
+
+        // Step 9: Analyze outcomes — the consumer takes priority since it's the
+        // authority on what actually made it into the DB. Same matrix as the
+        // cursor flow, minus the reorg arm (finalized blocks never reorg).
+        match (final_outcome, fetcher_outcome) {
+            // === SUCCESS PATH ===
+            // All blocks processed and inserted. Sleep before returning to avoid hammering RPC.
+            (Ok(()), Ok(())) => {
+                info!(
+                    range_start = range_start,
+                    range_end = range_end,
+                    "Finality iteration complete — all final blocks processed and inserted"
+                );
+                tokio::time::sleep(Duration::from_millis(self.loop_delay_ms)).await;
+                Ok(())
+            }
+
+            // === ERROR PATHS ===
+
+            // Consumer was cancelled because fetcher failed — return the ROOT CAUSE (fetcher's error).
+            (
+                Err(EvmListenerError::CouldNotFetchBlock {
+                    source: BlockFetchError::Cancelled,
+                }),
+                Err(fetcher_err),
+            ) => {
+                error!(error = %fetcher_err, "Fetcher error caused finality consumer cancellation");
+                Err(fetcher_err)
+            }
+
+            // Consumer had a real error (DB failure, buffer error, etc.) — return it.
+            // No sleep — propagate fast for retry logic.
+            (Err(final_err), _) => {
+                error!(error = %final_err, "Finality consumer error during iteration");
+                Err(final_err)
+            }
+
+            // Consumer succeeded but fetcher errored — unexpected but the consumer's
+            // result is authoritative (if it completed, all slots were filled).
+            (Ok(()), Err(fetcher_err)) => {
+                warn!(
+                    error = %fetcher_err,
+                    "Fetcher errored despite finality consumer succeeding — unexpected"
+                );
+                Ok(())
+            }
+        }
+    }
 }
 
 /// Sequential block validator and DB inserter (the "consumer" in the producer-consumer pattern).
@@ -1257,6 +1558,91 @@ async fn cursor_processing(
     }
 
     Ok(CursorResult::Complete)
+}
+
+/// Sequential final-block inserter (the "consumer" sibling of
+/// [`cursor_processing`] for the finality flow).
+///
+/// Reads blocks from the [`AsyncSlotBuffer`] in order (slot 0, 1, 2, …) and
+/// inserts each one into the `final_blocks` tip table. **No** parent-hash
+/// validation and **no** reorg branch — finalized blocks never reorg, so
+/// in-order consumption is only needed to keep publication and the tip
+/// monotonic.
+///
+/// # Parameters
+/// - `listener`: Cloned `EvmListener` (owns repositories for DB access). Passed
+///   by value because this runs in `tokio::spawn` which requires `'static`.
+/// - `buffer`: Shared slot buffer where the producer writes fetched blocks.
+/// - `cancel_token`: Shared cancellation token. The consumer checks it before
+///   each slot read (via `tokio::select!`) and cancels it on DB failure.
+/// - `range_start`: The block number of slot 0 in the buffer.
+/// - `range_length`: Total number of slots to process.
+///
+/// # Returns
+/// - `Ok(())` — all final blocks processed and inserted
+/// - `Err(...)` — DB failure, buffer error, or cancellation from the fetcher side
+///
+/// # Cancellation Safety
+/// `buffer.get()` is cancel-safe: if `tokio::select!` drops it while awaiting
+/// `Mutex::lock`, the guard drops correctly. If dropped during
+/// `Notify::notified()`, the waiter is deregistered.
+async fn final_processing(
+    listener: EvmListener,
+    buffer: AsyncSlotBuffer<FetchedBlock>,
+    cancel_token: CancellationToken,
+    range_start: u64,
+    range_length: usize,
+) -> Result<(), EvmListenerError> {
+    for i in 0..range_length {
+        let block_number = range_start + i as u64;
+
+        let fetched_block = tokio::select! {
+            biased;
+            _ = cancel_token.cancelled() => {
+                return Err(EvmListenerError::CouldNotFetchBlock {
+                    source: BlockFetchError::Cancelled,
+                });
+            }
+            block_opt = buffer.get(i) => {
+                block_opt.ok_or(EvmListenerError::SlotBufferError {
+                    source: BufferError::IndexOutOfBounds,
+                })?
+            }
+        };
+
+        // TODO(finality): publish final block events HERE, BEFORE the insert
+        // (publish-before-commit invariant, like cursor_processing) once
+        // publisher::publish_final_block_events exists — it will need a
+        // BlockFlow::Final variant, a FINAL-scoped filter query
+        // (get_final_filters_by_chain_id) and a {consumer_id}.final-event
+        // routing helper, and it inherits the publish_stale/queue-existence
+        // behavior of publish_payload_to_consumer.
+        // On publish failure: cancel_token.cancel() + PayloadBuildError,
+        // mirroring the cursor flow.
+
+        // Insert the final block AFTER publishing (publish-before-commit):
+        // if the insert fails the message is retried and the tip is re-read,
+        // so the same final block is re-published — at-least-once, zero missed.
+        let new_final_block = NewFinalBlock::from_rpc_block(&fetched_block.block);
+        listener
+            .repositories
+            .final_blocks
+            .insert_block(&new_final_block)
+            .await
+            .map_err(|source| {
+                // Stop fetcher on DB failure — no point fetching more blocks
+                cancel_token.cancel();
+                EvmListenerError::DatabaseError { source }
+            })?;
+
+        debug!(
+            block_number = block_number,
+            block_hash = %new_final_block.block_hash,
+            "Final block inserted"
+        );
+    }
+
+    Ok(())
 }
 
 /// Sequential publisher for the catchup pipeline (the "consumer" sibling of

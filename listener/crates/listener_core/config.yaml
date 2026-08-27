@@ -68,7 +68,9 @@ blockchain:
   finality_depth: 64
   # Use the node's `finalized` block tag to determine the final block.
   # When false, final = head - finality_depth.
-  finality_tag: false
+  finality_tag: true
+  # Enable the finality flow (fetch-final-block loop).
+  finality_active: true
   cleaner:
     active: true
     blocks_to_keep: 1000

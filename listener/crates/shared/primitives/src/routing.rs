@@ -1,5 +1,6 @@
 // Common routing keys for listener/consumer.
 pub const FETCH_NEW_BLOCKS: &str = "fetch-new-blocks";
+pub const FETCH_FINAL_BLOCK: &str = "fetch-final-block";
 pub const BACKTRACK_REORG: &str = "backtrack-reorg";
 pub const WATCH: &str = "control.watch";
 pub const UNWATCH: &str = "control.unwatch";

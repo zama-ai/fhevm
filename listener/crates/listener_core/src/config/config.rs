@@ -34,8 +34,9 @@ const MIN_BATCH_RANGE: usize = 1;
 
 /// 1 advisory-lock session + 1 concurrent query at least.
 const MIN_POOL_MIN_CONNECTIONS: u32 = 2;
-/// 1 advisory-lock + 4 concurrent handler queries (fetch/reorg, watch, unwatch, cleaner).
-const MIN_POOL_MAX_CONNECTIONS: u32 = 5;
+/// 3 advisory-lock sessions (fetch/reorg, cleaner, finality) + 4 concurrent
+/// handler queries (fetch/reorg, watch, unwatch, cleaner).
+const MIN_POOL_MAX_CONNECTIONS: u32 = 7;
 const MAX_BATCH_RANGE: usize = 100;
 
 #[derive(Error, Debug)]
@@ -411,6 +412,10 @@ pub struct BlockchainConfig {
     #[serde(default = "default_finality_tag")]
     pub finality_tag: bool,
 
+    /// Enable the finality flow (fetch-final-block loop). Defaults to true.
+    #[serde(default = "default_finality_active")]
+    pub finality_active: bool,
+
     #[serde(default)]
     pub cleaner: CleanerConfig,
 
@@ -427,6 +432,10 @@ fn default_finality_depth() -> u64 {
 
 fn default_finality_tag() -> bool {
     false
+}
+
+fn default_finality_active() -> bool {
+    true
 }
 
 fn default_blockchain_type() -> String {
@@ -937,6 +946,7 @@ mod tests {
             network: "test".to_string(),
             finality_depth: default_finality_depth(),
             finality_tag: false,
+            finality_active: true,
             cleaner: CleanerConfig {
                 blocks_to_keep: 998,
                 ..Default::default()
@@ -960,6 +970,7 @@ mod tests {
             network: "test".to_string(),
             finality_depth: 5000,
             finality_tag: false,
+            finality_active: true,
             cleaner: CleanerConfig {
                 blocks_to_keep: 999,
                 ..Default::default()
@@ -1022,6 +1033,7 @@ mod tests {
             rpc_url: "https://ethereum-rpc.publicnode.com".to_string(), // REQUIRED, REDACTED
             finality_depth: default_finality_depth(),
             finality_tag: false,
+            finality_active: true,
             cleaner: CleanerConfig::default(),
             strategy: StrategyConfig::default(),
             catchup: CatchupConfig::default(),
@@ -1145,6 +1157,7 @@ mod tests {
             catchup: CatchupConfig::default(),
             finality_depth: 15,
             finality_tag: false,
+            finality_active: true,
         };
         let result = config.validate();
         assert!(result.is_err());
@@ -1185,6 +1198,7 @@ mod tests {
             catchup: CatchupConfig::default(),
             finality_depth: 15,
             finality_tag: false,
+            finality_active: true,
         };
         let debug_output = format!("{:?}", blockchain_config);
         assert!(!debug_output.contains("secret-api-key"));
@@ -1194,6 +1208,33 @@ mod tests {
     #[test]
     fn test_pool_default_passes_validation() {
         assert!(PoolConfig::default().validate().is_ok());
+    }
+
+    #[test]
+    fn test_pool_max_connections_below_lock_floor() {
+        // 3 advisory-lock holders (fetch/reorg, cleaner, finality) + concurrent
+        // handler queries require at least 7 connections.
+        let config = PoolConfig {
+            max_connections: 6,
+            ..Default::default()
+        };
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("max_connections"));
+    }
+
+    #[test]
+    fn test_finality_active_defaults_to_true() {
+        // A config omitting finality_active must default to enabled
+        // (serde named default, format-agnostic).
+        let config: BlockchainConfig = serde_json::from_value(serde_json::json!({
+            "chain_id": 1,
+            "rpc_url": "https://rpc.example.com",
+            "network": "test",
+        }))
+        .unwrap();
+        assert!(config.finality_active);
+        assert!(!config.finality_tag);
     }
 
     #[test]
@@ -1315,6 +1356,7 @@ mod tests {
             network: "ethereum-mainnet".to_string(),
             finality_depth: 64,
             finality_tag: false,
+            finality_active: true,
             cleaner: CleanerConfig::default(),
             strategy: StrategyConfig::default(),
             catchup: CatchupConfig {

@@ -40,6 +40,11 @@ blockchain:
   rpc_url: "http://placeholder"
   network: placeholder
   finality_depth: 64
+  # Use the node's `finalized` block tag to determine the final block.
+  # When false, final = head - finality_depth.
+  finality_tag: true
+  # Enable the finality flow (fetch-final-block loop).
+  finality_active: true
   strategy:
     automatic_startup: true
     block_start_on_first_start: "current"

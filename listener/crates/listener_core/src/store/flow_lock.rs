@@ -54,16 +54,23 @@ impl Drop for FlowLockGuard {
 /// must never block or be blocked by the cursor flows.
 const CLEANER_LOCK_SALT: i64 = 0x434C_4541_4E45_5221; // "CLEANER!"
 
+/// Salt XORed into the chain_id to derive the finality-flow lock key.
+/// Keeps finality mutual exclusion independent from the fetch/reorg lock
+/// (raw chain_id) and the cleaner lock: a stalled finality flow must never
+/// block or be blocked by the live cursor.
+const FINALITY_LOCK_SALT: i64 = 0x4649_4E41_4C49_5459; // "FINALITY"
+
 /// Non-blocking distributed lock backed by `pg_try_advisory_lock`.
 ///
 /// Provides mutual exclusion per `chain_id` across all pods sharing the
 /// same PostgreSQL database. The fetch/reorg lock key IS the `chain_id`
-/// ([`new`](Self::new)); the cleaner uses a salted key
-/// ([`new_cleaner`](Self::new_cleaner)) so the flows never contend.
+/// ([`new`](Self::new)); the cleaner and finality flows use salted keys
+/// ([`new_cleaner`](Self::new_cleaner), [`new_finality`](Self::new_finality))
+/// so the flows never contend with each other.
 /// Different chains on the same database are completely independent.
 ///
-/// Used to prevent concurrent execution of fetch, reorg, and cleaner flows
-/// for the same chain under HPA (Horizontal Pod Autoscaling).
+/// Used to prevent concurrent execution of fetch, reorg, cleaner, and
+/// finality flows for the same chain under HPA (Horizontal Pod Autoscaling).
 #[derive(Clone)]
 pub struct FlowLock {
     client: Arc<PgClient>,
@@ -85,6 +92,16 @@ impl FlowLock {
         Self {
             client,
             lock_key: chain_id ^ CLEANER_LOCK_SALT,
+        }
+    }
+
+    /// Lock for the finality flow: same mutual-exclusion semantics as
+    /// [`new`](Self::new) but on a salted key, so the finality loop never
+    /// blocks — or is blocked by — the live cursor and reorg flows.
+    pub fn new_finality(client: Arc<PgClient>, chain_id: i64) -> Self {
+        Self {
+            client,
+            lock_key: chain_id ^ FINALITY_LOCK_SALT,
         }
     }
 
