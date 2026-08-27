@@ -8,7 +8,7 @@
 //! runs normally; an older one belongs to a retired stack and stops working.
 
 use std::cmp::Ordering as CmpOrdering;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -160,50 +160,35 @@ pub fn classify_consensus_version(binary: u32, live: i64) -> anyhow::Result<Runt
     }
 }
 
-#[derive(Debug)]
 /// Runtime stack mode, shared between a service's work loop and the
 /// version-upgrade listener ([`run_stack_version_listener`]).
 ///
 /// Initialized from the startup [`resolve_gcs_mode`] result. A service reads
 /// [`StackMode::is_paused`] at the top of its work loop (skipping work when
 /// paused) and [`StackMode::gcs_mode`] wherever it needs the current routing.
+#[derive(Debug)]
 pub struct StackMode {
-    state: AtomicU8,
+    gcs_mode: AtomicBool,
+    paused: AtomicBool,
 }
 
 impl StackMode {
     /// Create shared state seeded with the startup-resolved `gcs_mode`.
     pub fn new(gcs_mode: bool) -> Arc<Self> {
         Arc::new(Self {
-            state: AtomicU8::new(if gcs_mode {
-                RuntimeStackMode::Candidate as u8
-            } else {
-                RuntimeStackMode::Live as u8
-            }),
+            gcs_mode: AtomicBool::new(gcs_mode),
+            paused: AtomicBool::new(false),
         })
-    }
-
-    fn set(&self, state: RuntimeStackMode) {
-        self.state.store(state as u8, Ordering::SeqCst);
-    }
-
-    pub fn state(&self) -> RuntimeStackMode {
-        match self.state.load(Ordering::SeqCst) {
-            0 => RuntimeStackMode::Live,
-            1 => RuntimeStackMode::Candidate,
-            2 => RuntimeStackMode::Retired,
-            value => panic!("invalid runtime stack mode {value}"),
-        }
     }
 
     /// Whether the service is currently the green (GCS) stack.
     pub fn gcs_mode(&self) -> bool {
-        self.state() == RuntimeStackMode::Candidate
+        self.gcs_mode.load(Ordering::SeqCst)
     }
 
-    /// Whether the service has been paused into no-op mode (retired stack).
+    /// Whether the service has been paused into no-op mode (retired blue stack).
     pub fn is_paused(&self) -> bool {
-        self.state() == RuntimeStackMode::Retired
+        self.paused.load(Ordering::SeqCst)
     }
 }
 
@@ -223,32 +208,19 @@ pub async fn reconcile_stack_mode(pool: &Pool<Postgres>, mode: &StackMode) -> an
         ));
     };
 
-    match classify_consensus_version(CONSENSUS_PROTOCOL_VERSION, live)? {
-        RuntimeStackMode::Candidate => {
-            mode.set(RuntimeStackMode::Candidate);
-            info!(
-                binary_consensus_version = CONSENSUS_PROTOCOL_VERSION,
-                live_consensus_version = live,
-                "service is green"
-            );
-        }
-        RuntimeStackMode::Live => {
-            mode.set(RuntimeStackMode::Live);
-            info!(
-                binary_consensus_version = CONSENSUS_PROTOCOL_VERSION,
-                live_consensus_version = live,
-                "service is live"
-            );
-        }
-        RuntimeStackMode::Retired => {
-            mode.set(RuntimeStackMode::Retired);
-            info!(
-                binary_consensus_version = CONSENSUS_PROTOCOL_VERSION,
-                live_consensus_version = live,
-                "service is retired"
-            );
-        }
-    }
+    let runtime_mode = classify_consensus_version(CONSENSUS_PROTOCOL_VERSION, live)?;
+    mode.gcs_mode.store(
+        runtime_mode == RuntimeStackMode::Candidate,
+        Ordering::SeqCst,
+    );
+    mode.paused
+        .store(runtime_mode == RuntimeStackMode::Retired, Ordering::SeqCst);
+    info!(
+        binary_consensus_version = CONSENSUS_PROTOCOL_VERSION,
+        live_consensus_version = live,
+        ?runtime_mode,
+        "updated service role"
+    );
     Ok(())
 }
 
@@ -260,31 +232,8 @@ pub async fn run_stack_version_listener(
     mode: Arc<StackMode>,
     cancel: CancellationToken,
 ) -> anyhow::Result<()> {
-    // Retry the whole connect + listen cycle so the service role never freezes.
-    loop {
-        if let Err(e) = listen_for_version_changes(&pool, &mode, &cancel).await {
-            warn!(error = %e, "version listener failed; reconnecting");
-        } else {
-            return Ok(());
-        }
-        tokio::select! {
-            _ = cancel.cancelled() => return Ok(()),
-            _ = tokio::time::sleep(Duration::from_secs(5)) => {}
-        }
-    }
-}
-
-async fn listen_for_version_changes(
-    pool: &Pool<Postgres>,
-    mode: &StackMode,
-    cancel: &CancellationToken,
-) -> anyhow::Result<()> {
-    let mut listener = PgListener::connect_with(pool).await?;
+    let mut listener = PgListener::connect_with(&pool).await?;
     listener.listen(EVENT_STACK_VERSION_UPGRADED).await?;
-    // Update once before waiting in case the service missed a notification.
-    reconcile_stack_mode(pool, mode).await?;
-    let mut poll = tokio::time::interval(Duration::from_secs(30));
-    poll.tick().await;
     info!(
         channel = EVENT_STACK_VERSION_UPGRADED,
         "stack-version-upgraded listener started"
@@ -292,18 +241,17 @@ async fn listen_for_version_changes(
     loop {
         tokio::select! {
             _ = cancel.cancelled() => return Ok(()),
-            recv = listener.recv() => {
-                // A receive error means the connection is broken; rebuild it.
-                recv?;
-                if let Err(e) = reconcile_stack_mode(pool, mode).await {
-                    warn!(error = %e, "failed to update service role");
+            recv = listener.recv() => match recv {
+                Ok(_) => {
+                    if let Err(e) = reconcile_stack_mode(&pool, &mode).await {
+                        warn!(error = %e, "failed to reconcile stack mode after version upgrade");
+                    }
                 }
-            },
-            _ = poll.tick() => {
-                if let Err(e) = reconcile_stack_mode(pool, mode).await {
-                    warn!(error = %e, "failed to update service role");
+                Err(e) => {
+                    warn!(error = %e, "stack-version listener recv error; sleeping before retry");
+                    tokio::time::sleep(Duration::from_secs(1)).await;
                 }
-            },
+            }
         }
     }
 }
