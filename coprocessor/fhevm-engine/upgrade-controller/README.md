@@ -79,7 +79,7 @@ cast send $PROTOCOL_CONFIG \
     --rpc-url $HOST_RPC_URL \
     --private-key $DEPLOYER_PK \
     "proposeCoprocessorUpgrade(uint256,string,(uint64,uint64,uint64)[],uint64)" \
-    1 "0.15.0" "[(12345,$START_BLOCK,$END_BLOCK)]" $GW_START_BLOCK
+    1 "v0.15.0" "[(12345,$START_BLOCK,$END_BLOCK)]" $GW_START_BLOCK
 ```
 
 ### Checkpoint: Verify `upgrade_state`
@@ -93,8 +93,8 @@ Expected result after start_block is reached and the readiness check is done:
 ```text
  stack_role |      state       |   status    |                            proposal_id                             | version | start_block | end_block | gw_start_block | last_error |          updated_at           | gw_dry_run_started 
 ------------+------------------+-------------+--------------------------------------------------------------------+---------+-------------+-----------+----------------+------------+-------------------------------+--------------------
- BCS        | UpgradeActivated | in_progress | \x0000000000000000000000000000000000000000000000000000000000000001 | 0.15.0 |       10499 |     10699 |          10478 |            | 2026-07-02 08:27:49.377294+00 | f
- GCS        | DryRunStarted    | in_progress | \x0000000000000000000000000000000000000000000000000000000000000001 | 0.15.0 |       10499 |     10699 |          10478 |            | 2026-07-02 08:28:18.975754+00 | t
+ BCS        | UpgradeActivated | in_progress | \x0000000000000000000000000000000000000000000000000000000000000001 | v0.15.0 |       10499 |     10699 |          10478 |            | 2026-07-02 08:27:49.377294+00 | f
+ GCS        | DryRunStarted    | in_progress | \x0000000000000000000000000000000000000000000000000000000000000001 | v0.15.0 |       10499 |     10699 |          10478 |            | 2026-07-02 08:28:18.975754+00 | t
 (2 rows)
 ```
 
@@ -154,7 +154,7 @@ During cutover:
 * the `"gcs-0.15.0"` namespace is dropped
 * GCS becomes `LIVE`
 * BCS becomes `PAUSED`
-* Check for "Error in background worker, retrying shortly","error":"Coprocessor db error: Configuration(StaleStackError { binary: \"0.14.0\", live: \"0.15.0\" })"}}" in *BCS* workers
+* Check for "Error in background worker, retrying shortly","error":"Coprocessor db error: Configuration(StaleStackError { binary: \"0.14.0\", live: \"v0.15.0\" })"}}" in *BCS* workers
 
 ### Checkpoint: Verify Final `upgrade_state`
 
@@ -167,8 +167,8 @@ Expected result:
 ```text
  stack_role | state  |  status   |                            proposal_id                             | version | start_block | end_block | gw_start_block | last_error |          updated_at          | gw_dry_run_started 
 ------------+--------+-----------+--------------------------------------------------------------------+---------+-------------+-----------+----------------+------------+------------------------------+--------------------
- GCS        | LIVE   | completed | \x0000000000000000000000000000000000000000000000000000000000000001 | 0.15.0 |       10499 |     10699 |          10478 |            | 2026-07-02 08:31:39.03538+00 | t
- BCS        | PAUSED | completed | \x0000000000000000000000000000000000000000000000000000000000000001 | 0.15.0 |       10499 |     10699 |          10478 |            | 2026-07-02 08:31:39.03538+00 | f
+ GCS        | LIVE   | completed | \x0000000000000000000000000000000000000000000000000000000000000001 | v0.15.0 |       10499 |     10699 |          10478 |            | 2026-07-02 08:31:39.03538+00 | t
+ BCS        | PAUSED | completed | \x0000000000000000000000000000000000000000000000000000000000000001 | v0.15.0 |       10499 |     10699 |          10478 |            | 2026-07-02 08:31:39.03538+00 | f
 (2 rows)
 ```
 
@@ -178,5 +178,5 @@ Expected result:
 coprocessor# select * from versioning;
  singleton | stack_version | consensus_version |          updated_at
 -----------+---------------+-------------------+------------------------------
- t         | 0.15.0        |                 1 | 2026-07-02 08:31:39.03538+00
+ t         | v0.15.0       |                 1 | 2026-07-02 08:31:39.03538+00
 ```
