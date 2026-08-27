@@ -29,7 +29,7 @@ export const DEFAULT_KMS_NODES_TX_SENDER_MNEMONIC = FHEVM_MNEMONIC;
 export const DEFAULT_KMS_NODES_TX_SENDER_MNEMONIC_PATH = "m/44'/60'/0'/4/";
 export const DEFAULT_KMS_NODES_TX_SENDER_MNEMONIC_INDEX = 0;
 
-export const DEFAULT_COPROCESSOR_THESHOLD = 4n;
+export const DEFAULT_COPROCESSOR_THRESHOLD = 4n;
 
 export const DEFAULT_NUM_COPROCESSORS = 4n;
 export const DEFAULT_NUM_KMS_NODES = 4n;
@@ -145,7 +145,7 @@ function generateDefaultCoprocessors(num: number): string[] {
   return signers;
 }
 
-export const DEFAUT_BOOTSTRAP_CONFIG_V13: BootstrapConfigV13 = {
+export const DEFAULT_BOOTSTRAP_CONFIG_V13: BootstrapConfigV13 = {
   hcuLimit: {
     hcuCapPerBlock: DEFAULT_HCU_CAP_PER_BLOCK,
     maxHCUDepthPerTx: DEFAULT_MAX_HCU_DEPTH_PER_TX,
@@ -154,7 +154,7 @@ export const DEFAUT_BOOTSTRAP_CONFIG_V13: BootstrapConfigV13 = {
   inputVerifier: {
     chainIDSource: DEFAULT_CHAIN_ID_GATEWAY,
     initialSigners: generateDefaultCoprocessors(Number(DEFAULT_NUM_COPROCESSORS)),
-    initialThreshold: DEFAULT_COPROCESSOR_THESHOLD,
+    initialThreshold: DEFAULT_COPROCESSOR_THRESHOLD,
     verifyingContractSource: DEFAULT_INPUT_VERIFICATION_ADDRESS,
   },
   protocolConfig: {

@@ -1,0 +1,12 @@
+node_modules
+dependencies
+*.tsbuildinfo
+cache
+_cjs
+_esm
+_types
+out
+test/ts/.consumer
+test/ts/.tarballs
+test/ts/.vitest-cache
+test/ts/node_modules

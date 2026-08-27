@@ -1,0 +1,44 @@
+{
+  "name": "@fhevm/hardhat-plugin",
+  "version": "0.15.0-alpha.0",
+  "description": "Hardhat plugin for testing FHEVM contracts against the on-chain cleartext engine (@fhevm/host-contracts-cleartext).",
+  "license": "BSD-3-Clause-Clear",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "files": [
+    "dist/src/"
+  ],
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "clean": "rm -rf dist",
+    "rebuild": "npm run clean && npm run build",
+    "test": "npm run build && node dist/test/e2e.js"
+  },
+  "keywords": [
+    "fhevm",
+    "zama",
+    "fhe",
+    "hardhat",
+    "hardhat-plugin",
+    "cleartext",
+    "mock"
+  ],
+  "dependencies": {
+    "@fhevm/host-contracts-cleartext": "file:../host-contracts-cleartext"
+  },
+  "peerDependencies": {
+    "ethers": "^6.16.0",
+    "hardhat": "^2.28.6"
+  },
+  "peerDependenciesMeta": {
+    "hardhat": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.30",
+    "ethers": "^6.16.0",
+    "hardhat": "^2.28.6",
+    "typescript": "^5.9.3"
+  }
+}

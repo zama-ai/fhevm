@@ -1,0 +1,9 @@
+node_modules
+cache
+out
+internal
+test
+*.tsbuildinfo
+tsconfig*.json
+eslint.config.js
+PLAN.md

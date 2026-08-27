@@ -22,8 +22,8 @@ export const DEFAULT_KMS_NODES_MNEMONIC = FHEVM_MNEMONIC;
 export const DEFAULT_KMS_NODES_MNEMONIC_PATH = "m/44'/60'/0'/3/";
 export const DEFAULT_KMS_NODES_MNEMONIC_INDEX = 0;
 
-export const DEFAULT_KMS_THESHOLD = 1n;
-export const DEFAULT_COPROCESSOR_THESHOLD = 1n;
+export const DEFAULT_KMS_THRESHOLD = 1n;
+export const DEFAULT_COPROCESSOR_THRESHOLD = 1n;
 
 export const DEFAULT_NUM_COPROCESSORS = 4n;
 export const DEFAULT_NUM_KMS_NODES = 4n;
@@ -62,7 +62,7 @@ export const DEFAULT_KMS_NODE_ADDRESS = [
   '0x8252dD4D1350BCd34f419aBD05f8cfA146d71C5D',
 ];
 
-export const DEFAUT_BOOTSTRAP_CONFIG_V12: BootstrapConfigV12 = {
+export const DEFAULT_BOOTSTRAP_CONFIG_V12: BootstrapConfigV12 = {
   hcuLimit: {
     hcuCapPerBlock: DEFAULT_HCU_CAP_PER_BLOCK,
     maxHCUDepthPerTx: DEFAULT_MAX_HCU_DEPTH_PER_TX,
@@ -71,13 +71,13 @@ export const DEFAUT_BOOTSTRAP_CONFIG_V12: BootstrapConfigV12 = {
   inputVerifier: {
     chainIDSource: DEFAULT_CHAIN_ID_GATEWAY,
     initialSigners: DEFAULT_COPROCESSOR_ADDRESS,
-    initialThreshold: DEFAULT_COPROCESSOR_THESHOLD,
+    initialThreshold: DEFAULT_COPROCESSOR_THRESHOLD,
     verifyingContractSource: DEFAULT_INPUT_VERIFICATION_ADDRESS,
   },
   kmsVerifier: {
     chainIDSource: DEFAULT_CHAIN_ID_GATEWAY,
     initialSigners: DEFAULT_KMS_NODE_ADDRESS,
-    initialThreshold: DEFAULT_KMS_THESHOLD,
+    initialThreshold: DEFAULT_KMS_THRESHOLD,
     verifyingContractSource: DEFAULT_DECRYPTION_ADDRESS,
   },
 };

@@ -1,0 +1,19 @@
+# Compiler files
+cache/
+out/
+
+# Dependencies — soldeer-installed, restored with `forge soldeer install`.
+# soldeer.lock IS committed: it pins the versions that restore reproduces.
+dependencies/
+
+# Broadcast logs
+broadcast/
+!broadcast/**/dry-run/
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Misc
+.DS_Store

@@ -1,0 +1,37 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["dependencies"]
+test = "test"
+solc = "0.8.27"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 800
+cbor_metadata = false
+bytecode_hash = "none"
+# The host contracts are compiled from the sibling package's Solidity sources rather than vendored.
+allow_paths = ["../host-contracts-cleartext"]
+auto_detect_remappings = false
+
+[fuzz]
+runs = 256
+
+[fmt]
+line_length = 120
+
+[lint]
+# The host contracts are not ours to lint.
+ignore = ["../host-contracts-cleartext/**/*.sol"]
+exclude_lints = ["asm-keccak256", "mixed-case-function", "screaming-snake-case-const"]
+
+[dependencies]
+"@openzeppelin-contracts" = "5.1.0"
+"@openzeppelin-contracts-upgradeable" = "5.1.0"
+forge-std = "1.14.0"
+"@encrypted-types" = "0.0.4"
+"@fhevm-solidity" = "0.11.1"
+"@openzeppelin-confidential-contracts" = { version = "0.4.0", git = "https://github.com/OpenZeppelin/openzeppelin-confidential-contracts.git", rev = "v0.4.0" }
+
+[soldeer]
+remappings_version = false
+recursive_deps = true
