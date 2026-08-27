@@ -1,10 +1,10 @@
 import { assert, expect } from 'chai';
-import type { Contract } from 'ethers';
 import { ethers } from 'hardhat';
 
 import type { FHEVMManualTestSuite } from '../../types/contracts/operations/FHEVMManualTestSuite';
 import { createInstance } from '../instance';
 import { getSigner } from '../signers';
+import { OVERSIZED_SHIFT_64, SHIFT_ROTATE_VALUE_64 } from './operatorEdgeCases';
 import { expectedRotl, expectedRotr, expectedShl, expectedShr } from './shiftSemantics';
 
 async function deployFHEVMManualTestFixture(): Promise<FHEVMManualTestSuite> {
@@ -17,49 +17,11 @@ async function deployFHEVMManualTestFixture(): Promise<FHEVMManualTestSuite> {
   return contract;
 }
 
-const OVERSIZED_SHIFT_64 = 70n;
-const SHIFT_ROTATE_VALUE_64 = 0x123456789abcdef0n;
-const SHIFT_CASES = [
-  { bits: 8n, valueType: 'uint8', value: 0xa5n, amounts: [0n, 7n, 8n, 255n] },
-  { bits: 16n, valueType: 'uint16', value: 0xa5c3n, amounts: [0n, 15n, 16n, 255n] },
-  { bits: 32n, valueType: 'uint32', value: 0xa5c3f00fn, amounts: [0n, 31n, 32n, 255n] },
-  { bits: 64n, valueType: 'uint64', value: SHIFT_ROTATE_VALUE_64, amounts: [0n, 63n, 64n, OVERSIZED_SHIFT_64, 255n] },
-  {
-    bits: 128n,
-    valueType: 'uint128',
-    value: 0x123456789abcdef0fedcba9876543210n,
-    amounts: [0n, 127n, 128n, 255n],
-  },
-  {
-    // The shift amount is a uint8/euint8, so amount >= 256 is unrepresentable here.
-    bits: 256n,
-    valueType: 'uint256',
-    value: 0x123456789abcdef0fedcba9876543210123456789abcdef0fedcba9876543210n,
-    amounts: [0n, 255n],
-  },
-] as const;
-
-// Under the legacy modulo the amount == bits rows make every operator the identity; they
-// only become discriminating once OVERSHIFT_RETURNS_ZERO flips.
-const WIDTHS = SHIFT_CASES.map(({ bits }) => bits);
-
-// div/rem and add/sub/mul are only defined up to euint128
-const NARROW_CASES = SHIFT_CASES.filter(({ bits }) => bits <= 128n);
-
 const addr = (value: string) => ethers.getAddress(value);
 const ADDR_A = addr('0x8ba1f109551bd432803012645ac136ddd64dba72');
 const ADDR_B = addr('0x8881f109551bd432803012645ac136ddd64dba72');
 const ADDR_C = addr('0x9ba1f109551bd432803012645ac136ddd64dba72');
 const ADDR_D = addr('0x9aa1f109551bd432803012645ac136ddd64dba72');
-
-async function decryptBatch(
-  instance: Awaited<ReturnType<typeof createInstance>>,
-  contract: Contract,
-): Promise<bigint[]> {
-  const handles = [...(await contract.resBatch())] as string[];
-  const res = await instance.publicDecrypt(handles);
-  return handles.map((h) => res.clearValues[h as `0x${string}`] as bigint);
-}
 
 async function decrypt64Result(
   instance: Awaited<ReturnType<typeof createInstance>>,
@@ -1862,158 +1824,5 @@ describe('FHEVM manual operations', function () {
     const handle = await this.contract.resAdd();
     const res = await this.instance.publicDecrypt([handle]);
     assert.equal(res.clearValues[handle], ADDR_A);
-  });
-});
-
-// Top-level: these tests use their own fixture, so they must not pay for the
-// FHEVMManualTestSuite deploy in the parent beforeEach (shared signer, nonce pressure).
-describe('FHEVM manual operations - shift, rotate, div and rem edge cases', function () {
-  before(async function () {
-    this.signer = await getSigner(119);
-    this.instance = await createInstance();
-    const factory = await ethers.getContractFactory('FHEVMOperatorEdgeCaseTestSuite');
-    const contract = await factory.connect(this.signer).deploy();
-    await contract.waitForDeployment();
-    this.edge = contract as unknown as Contract;
-    this.edgeAddress = await contract.getAddress();
-  });
-  SHIFT_CASES.forEach(({ bits, valueType, value, amounts }) => {
-    amounts.forEach((amount) => {
-      it(`shl/shr/rotl/rotr(euint${bits}, ${amount}) matches reference semantics`, async function () {
-        const encryptedAmount = await this.instance.encryptTypedValues({
-          values: [
-            { type: valueType, value },
-            { type: 'uint8', value: amount },
-          ],
-          contractAddress: this.edgeAddress,
-          userAddress: this.signer.address,
-        });
-        const tx = await this.edge[`test_shifts_euint${bits}`](
-          encryptedAmount.handles[0],
-          amount,
-          encryptedAmount.handles[1],
-          encryptedAmount.inputProof,
-        );
-        await tx.wait();
-        const values = await decryptBatch(this.instance, this.edge);
-        const expected = [
-          expectedShl(value, amount, bits),
-          expectedShr(value, amount, bits),
-          expectedRotl(value, amount, bits),
-          expectedRotr(value, amount, bits),
-        ];
-        assert.deepEqual(values, [...expected, ...expected]);
-      });
-    });
-  });
-
-  NARROW_CASES.forEach(({ bits, valueType, value }) => {
-    const max = (1n << bits) - 1n;
-    (
-      [
-        [value, 1n],
-        [value, value],
-        [value, max],
-        [max, max],
-        [0n, value],
-      ] as const
-    ).forEach(([dividend, divisor]) => {
-      it(`div/rem(euint${bits}(${dividend}), ${divisor}) matches reference semantics`, async function () {
-        const encryptedAmount = await this.instance.encryptTypedValues({
-          values: [{ type: valueType, value: dividend }],
-          contractAddress: this.edgeAddress,
-          userAddress: this.signer.address,
-        });
-        const tx = await this.edge[`test_divrem_euint${bits}`](
-          encryptedAmount.handles[0],
-          divisor,
-          encryptedAmount.inputProof,
-        );
-        await tx.wait();
-        const values = await decryptBatch(this.instance, this.edge);
-        assert.deepEqual(values, [dividend / divisor, dividend % divisor]);
-      });
-    });
-
-    it(`div/rem(euint${bits}, 0) reverts`, async function () {
-      const encryptedAmount = await this.instance.encryptTypedValues({
-        values: [{ type: valueType, value }],
-        contractAddress: this.edgeAddress,
-        userAddress: this.signer.address,
-      });
-      // FHEVMExecutor reverts with DivisionByZero() before any FHE work
-      await expect(this.edge[`test_divrem_euint${bits}`](encryptedAmount.handles[0], 0n, encryptedAmount.inputProof)).to
-        .be.reverted;
-    });
-  });
-
-  NARROW_CASES.forEach(({ bits, valueType }) => {
-    const modulus = 1n << bits;
-    const max = modulus - 1n;
-    const wrap = (v: bigint) => ((v % modulus) + modulus) % modulus;
-    (
-      [
-        [max, 1n],
-        [0n, 1n],
-        [max, max],
-        [max, 2n],
-        [0n, 0n],
-      ] as const
-    ).forEach(([lhs, rhs]) => {
-      it(`add/sub/mul/neg/not(euint${bits}(${lhs}), ${rhs}) wraps`, async function () {
-        const encryptedAmount = await this.instance.encryptTypedValues({
-          values: [
-            { type: valueType, value: lhs },
-            { type: valueType, value: rhs },
-          ],
-          contractAddress: this.edgeAddress,
-          userAddress: this.signer.address,
-        });
-        const tx = await this.edge[`test_arith_euint${bits}`](
-          encryptedAmount.handles[0],
-          rhs,
-          encryptedAmount.handles[1],
-          encryptedAmount.inputProof,
-        );
-        await tx.wait();
-        const values = await decryptBatch(this.instance, this.edge);
-        const binary = [wrap(lhs + rhs), wrap(lhs - rhs), wrap(lhs * rhs)];
-        assert.deepEqual(values, [...binary, ...binary, wrap(-lhs), max - lhs]);
-      });
-    });
-  });
-
-  const MODULUS_256 = 1n << 256n;
-  [0n, MODULUS_256 - 1n].forEach((operand) => {
-    it(`neg/not(euint256(${operand === 0n ? '0' : 'MAX'})) wraps`, async function () {
-      const encryptedAmount = await this.instance.encryptTypedValues({
-        values: [{ type: 'uint256', value: operand }],
-        contractAddress: this.edgeAddress,
-        userAddress: this.signer.address,
-      });
-      const tx = await this.edge.test_negnot_euint256(encryptedAmount.handles[0], encryptedAmount.inputProof);
-      await tx.wait();
-      const values = await decryptBatch(this.instance, this.edge);
-      assert.deepEqual(values, [(MODULUS_256 - operand) % MODULUS_256, MODULUS_256 - 1n - operand]);
-    });
-  });
-
-  SHIFT_CASES.filter(({ bits }) => bits > 8n).forEach(({ bits, valueType, value }) => {
-    it(`asEuintX(euint${bits}) truncates`, async function () {
-      const encryptedAmount = await this.instance.encryptTypedValues({
-        values: [{ type: valueType, value }],
-        contractAddress: this.edgeAddress,
-        userAddress: this.signer.address,
-      });
-      const tx = await this.edge[`test_narrow_euint${bits}`](encryptedAmount.handles[0], encryptedAmount.inputProof);
-      await tx.wait();
-      const values = await decryptBatch(this.instance, this.edge);
-      assert.deepEqual(
-        values,
-        WIDTHS.filter((w) => w < bits)
-          .reverse()
-          .map((w) => value & ((1n << w) - 1n)),
-      );
-    });
   });
 });
