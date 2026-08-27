@@ -178,11 +178,16 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
         conflict_cols: &[],
     },
     // ---------------------------------------------------------------------
-    // Deprecated wave1 branch-context state: no v0.15 binary references
-    // these directly (legacy-table mirror triggers still write some of them
-    // DB-side), so no gcs.* duplicate is created; a v0.16 migration drops
-    // them (see db-migration/DEPRECATIONS.md). Remove these entries together
-    // with that migration.
+    // Deprecated wave1 branch-context state. Nothing in the upgrade-controller
+    // reads, writes or deletes these any more: they get no gcs.* duplicate, the
+    // cutover deletes skip them, and the merge never carries them. Only the
+    // legacy-table mirror triggers still write them, DB-side.
+    //
+    // The entries themselves have to stay until the v0.16 migration drops the
+    // tables (see db-migration/DEPRECATIONS.md), because
+    // `coprocessor_tables_cover_public_schema` requires every table present in
+    // `public` to carry an explicit decision. Remove them together with that
+    // migration.
     // ---------------------------------------------------------------------
     CoprocessorTable {
         name: "computations_branch",
@@ -305,29 +310,19 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
     },
 ];
 
-/// Every table holding ciphertext bytes keyed by `handle`, legacy and branch
-/// form. Cutover clears blue's in-window rows from all of them before merging
-/// `gcs.*` back into `public`, so green's ciphertexts are the ones that survive.
-pub const CIPHERTEXT_TABLES: &[&str] = &[
-    "ciphertexts",
-    "ciphertexts_branch",
-    "ciphertexts128",
-    "ciphertexts128_branch",
-];
+/// Every table holding ciphertext bytes keyed by `handle`. Cutover clears blue's
+/// in-window rows from all of them before merging `gcs.*` back into `public`, so
+/// green's ciphertexts are the ones that survive.
+pub const CIPHERTEXT_TABLES: &[&str] = &["ciphertexts", "ciphertexts128"];
 
-/// Every table recording one FHE computation per output handle, legacy and branch
-/// form. Cutover clears blue's in-window rows from both, and the [`CIPHERTEXT_TABLES`]
-/// deletes reach their rows *through* these, so they are cleared last.
-///
-/// Both forms have to be walked. They are dual-written today (branch-context wave 1),
-/// so either one alone would do; once the readers and writers move to the branch form
-/// only the branch rows carry the window, and the legacy delete would silently become
-/// a no-op.
-pub const COMPUTATION_TABLES: &[&str] = &["computations", "computations_branch"];
+/// Every table recording one FHE computation per output handle. Cutover clears blue's
+/// in-window rows, and the [`CIPHERTEXT_TABLES`] deletes reach their rows *through*
+/// these, so they are cleared last.
+pub const COMPUTATION_TABLES: &[&str] = &["computations"];
 
-/// Every table recording squashed-noise (PBS) work per handle, legacy and branch form.
-/// Cleared in-window at cutover for the same reason as [`COMPUTATION_TABLES`].
-pub const PBS_COMPUTATION_TABLES: &[&str] = &["pbs_computations", "pbs_computations_branch"];
+/// Every table recording squashed-noise (PBS) work per handle. Cleared in-window at
+/// cutover for the same reason as [`COMPUTATION_TABLES`].
+pub const PBS_COMPUTATION_TABLES: &[&str] = &["pbs_computations"];
 
 #[cfg(test)]
 mod tests {
