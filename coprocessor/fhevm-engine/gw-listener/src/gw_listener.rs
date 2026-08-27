@@ -281,6 +281,22 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                     if let Err(e) = drift_detector.end_of_batch(db_pool).await {
                         error!(error = %e, "Drift detector end_of_batch failed");
                     }
+
+                    // GCS only: inject the deterministic synthetic Gateway input once the
+                    // window's designated block has been reached, so the input-verification
+                    // consensus track can anchor without user traffic. Idempotent and retried
+                    // on later ticks, so a failure here costs this tick, not the window.
+                    match crate::synthetic_input::maybe_inject_synthetic_input(
+                        db_pool,
+                        self.stack_mode.gcs_mode(),
+                        to_block,
+                        &self.conf.verify_proof_req_db_channel,
+                    )
+                    .await {
+                        Ok(true) => verify_proof_success += 1,
+                        Ok(false) => {}
+                        Err(e) => error!(error = %e, "Synthetic Gateway input injection failed"),
+                    }
                     last_processed_block_num = Some(to_block);
                     self.update_listener_progress(
                         db_pool,

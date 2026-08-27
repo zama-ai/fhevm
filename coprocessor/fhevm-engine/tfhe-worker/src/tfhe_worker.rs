@@ -5,7 +5,9 @@ use fhevm_engine_common::database::{
     connect_pool_with_options_and_connect_options, resolve_database_url_from_option,
 };
 use fhevm_engine_common::db_keys::DbKeyCache;
-use fhevm_engine_common::gcs_activation::{run_gcs_activation_watcher, GCS_NOT_ACTIVATED};
+use fhevm_engine_common::gcs_activation::{
+    run_gcs_activation_watcher, GCS_GATE_RECHECK, GCS_NOT_ACTIVATED, WORK_AVAILABLE_CHANNEL,
+};
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::check_fhe_operand_types;
 use fhevm_engine_common::types::{FhevmError, Handle, SupportedFheCiphertexts};
@@ -1014,7 +1016,7 @@ async fn tfhe_worker_cycle(
     let db_key_cache =
         DbKeyCache::new(args.key_cache_size).map_err(|e| CoprocessorError::Other(e.into()))?;
     let mut listener = PgListener::connect_with(&pool).await?;
-    listener.listen("work_available").await?;
+    listener.listen(WORK_AVAILABLE_CHANNEL).await?;
 
     let mut dcid_mngr = dependence_chain::LockMngr::new_with_conf(
         worker_id,
@@ -1050,11 +1052,8 @@ async fn tfhe_worker_cycle(
         // start_block value inside the cycle. In BCS mode this branch is a
         // no-op.
         if gcs_mode && start_block_state.load(Ordering::SeqCst) == GCS_NOT_ACTIVATED {
-            debug!(target: "tfhe_worker", "GCS not yet activated; sleeping before re-check");
-            tokio::time::sleep(tokio::time::Duration::from_millis(
-                args.worker_polling_interval_ms,
-            ))
-            .await;
+            info!(target: "tfhe_worker", "GCS not yet activated; sleeping before re-check");
+            tokio::time::sleep(GCS_GATE_RECHECK).await;
             continue;
         }
 

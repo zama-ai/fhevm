@@ -19,7 +19,8 @@ use crate::contracts::{
 };
 use crate::database::dependence_chains::dependence_chains;
 use crate::database::synthetic_ops::{
-    synthetic_logs, SyntheticContext, SYNTHETIC_BLOCK_OFFSET,
+    synthetic_logs, synthetic_transaction_hash, SyntheticContext,
+    SYNTHETIC_BLOCK_OFFSET,
 };
 use crate::database::tfhe_event_propagate::{
     acl_result_handles, operand_boundary_mask_from_minted, tfhe_result_handle,
@@ -808,14 +809,82 @@ async fn synthetic_logs_for_block(
         return Ok(vec![]);
     }
 
+    let ctx = SyntheticContext {
+        proposal_id: &proposal_id,
+        target_version: &target_version,
+        chain_id: chain_id.as_u64(),
+        block_number: block_number_i64,
+        block_hash,
+    };
+
+    // Record the transaction hash so cutover can find this work and delete it before the merge.
+    // The hash is keccak over the whole context, and `block_hash` is not persisted anywhere the
+    // upgrade-controller can read unambiguously, so it cannot be recomputed there — the injector
+    // is the only component that knows it.
+    //
+    // APPENDED, never overwritten. Injection happens at `start_block + 1` with no wait for
+    // finality, so a reorg re-injects on the replacement block: different block hash, different
+    // transaction hash, a second set of synthetic rows. Overwriting would forget the first set
+    // and let it merge into `public` as live data.
+    //
+    // Same transaction as the log decoding that follows, so the marker and the work it points at
+    // commit together or not at all.
+    let synthetic_txn_hash = synthetic_transaction_hash(&ctx);
+    let recorded = sqlx::query(
+        "UPDATE upgrade_state u
+            SET synthetic_txn_hashes = CASE
+                    -- Offset-aligned membership test, not a `position()` substring search: a
+                    -- 32-byte needle could straddle two stored hashes, and a false positive
+                    -- there would skip the append and leak that fork's rows. Alignment makes
+                    -- the comparison exact, and keeps re-ingesting the same block idempotent.
+                    WHEN EXISTS (
+                        SELECT 1
+                          FROM generate_series(
+                                   1, octet_length(u.synthetic_txn_hashes), 32
+                               ) AS g(pos)
+                         WHERE substring(u.synthetic_txn_hashes FROM g.pos FOR 32) = $1
+                    )
+                    THEN u.synthetic_txn_hashes
+                    ELSE u.synthetic_txn_hashes || $1
+                END,
+                updated_at = NOW()
+          WHERE u.stack_role = 'GCS'
+            AND u.status = 'in_progress'
+            AND u.state IN ('UpgradeActivated', 'DryRunStarted')
+            AND u.host_chain_id = $2
+            -- Pin to the proposal the hash was derived from. Without it, a proposal activated
+            -- between the SELECT above and this UPDATE would be stamped with a hash computed
+            -- from the previous one, and cutover would then delete nothing.
+            AND u.proposal_id = $3",
+    )
+    .bind(synthetic_txn_hash.as_slice())
+    .bind(chain_id_i64)
+    .bind(&proposal_id)
+    .execute(tx.as_mut())
+    .await?
+    .rows_affected();
+
+    // No marker recorded means no injection. The row this UPDATE targets was read a few lines
+    // above, but statements run at READ COMMITTED, so a concurrent FSM write — a rollback to
+    // `PAUSED`, `transition_to_dry_run_started`, a replacement proposal — can move it in between
+    // and leave the predicate matching nothing.
+    //
+    // Returning no logs is what keeps the invariant exact: cutover deletes synthetic work by
+    // marker, so work injected without one would survive into `public` as live data. Skipping
+    // this block costs nothing, because the trigger is a floor rather than an exact match and
+    // the next tick re-evaluates.
+    if recorded == 0 {
+        warn!(
+            chain_id = chain_id.as_u64(),
+            block_number = block_number_i64,
+            synthetic_txn_hash = %alloy::primitives::hex::encode(synthetic_txn_hash),
+            "GCS: upgrade_state moved while injecting; skipping synthetic ops for this block"
+        );
+        return Ok(vec![]);
+    }
+
     Ok(synthetic_logs(
-        &SyntheticContext {
-            proposal_id: &proposal_id,
-            target_version: &target_version,
-            chain_id: chain_id.as_u64(),
-            block_number: block_number_i64,
-            block_hash,
-        },
+        &ctx,
         tfhe_contract_address,
         acl_contract_address,
         log_index_base,
