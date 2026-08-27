@@ -44,6 +44,7 @@ jobs:
   # @fhevm/sdk@<version> from the registry. Off-release the output stays
   # empty and the Dockerfile falls back to SDK_SOURCE=local.
   compute-sdk-version:
+    name: Compute SDK version
     runs-on: ubuntu-latest
     outputs:
       sdk_version: ${{ steps.strip.outputs.sdk_version }}
@@ -92,10 +93,7 @@ jobs:
         || (github.event_name == 'push' && needs.is-latest-commit.outputs.is_latest == 'true' && needs.check-changes.outputs.changes == 'true')
         || (inputs.is_workflow_call && needs.check-changes.outputs.changes == 'true')
       )
-    # TODO: bump to the tagged release once the `build-args` input lands in
-    # ci-templates. Pinned to the feature branch SHA in the
-    # meantime.
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@8dd70af950757e966c429b9dd0945eaff56b93aa # aw/common-docker-expose-build-args
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@9d706c6ba52a0ceed3c9048227ae6b4ae40b5fe6 # main
     secrets:
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
       AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
