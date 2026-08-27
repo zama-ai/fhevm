@@ -226,7 +226,7 @@ contract VerifyFhevmDeploy is Script {
             return;
         }
         _pass(string.concat("ACL.owner is a contract at ", vm.toString(owner)));
-        _eqAddr("ACLOwner.acl points back at ACL", ACLOwner(owner).acl(), aclAdd);
+        _eqAddr("ACLOwner.ACL_ADDRESS points back at ACL", ACLOwner(owner).ACL_ADDRESS(), aclAdd);
         // The deploy registers the ACLOwner as a pauser while it still can — addPauser is onlyACLOwner,
         // so after the ownership transfer only the ACLOwner itself could add one.
         _isTrue("PauserSet.isPauser(ACLOwner)", PauserSet(pauserSetAdd).isPauser(owner));

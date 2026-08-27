@@ -158,10 +158,11 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV2(
-        address[] memory newSignersSet,
-        uint256 threshold
-    ) public virtual reinitializer(REINITIALIZER_VERSION) {
+    function reinitializeV2(address[] memory newSignersSet, uint256 threshold)
+        public
+        virtual
+        reinitializer(REINITIALIZER_VERSION)
+    {
         defineNewContext(newSignersSet, threshold);
     }
 
@@ -215,7 +216,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
 
     /**
      * @dev This function removes the transient allowances, which could be useful for
-            integration with Account Abstraction when bundling several UserOps calling InputVerifier.
+     *         integration with Account Abstraction when bundling several UserOps calling InputVerifier.
      */
     function cleanTransientStorage() public virtual {
         assembly {
@@ -241,20 +242,16 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
      * @param inputProof    Input proof.
      * @return result       Result.
      */
-    function verifyInput(
-        FHEVMExecutor.ContextUserInputs memory context,
-        bytes32 inputHandle,
-        bytes memory inputProof
-    ) public virtual returns (bytes32) {
-        (bool isProofCached, bytes32 cacheKey) = _checkProofCache(
-            inputProof,
-            context.userAddress,
-            context.contractAddress
-        );
+    function verifyInput(FHEVMExecutor.ContextUserInputs memory context, bytes32 inputHandle, bytes memory inputProof)
+        public
+        virtual
+        returns (bytes32)
+    {
+        (bool isProofCached, bytes32 cacheKey) =
+            _checkProofCache(inputProof, context.userAddress, context.contractAddress);
 
-        uint64 recoveredChainId = uint64(
-            uint256((inputHandle & 0x00000000000000000000000000000000000000000000ffffffffffffffffffff) >> 16)
-        );
+        uint64 recoveredChainId =
+            uint64(uint256((inputHandle & 0x00000000000000000000000000000000000000000000ffffffffffffffffffff) >> 16));
 
         if (recoveredChainId != block.chainid) revert InvalidChainId();
 
@@ -310,7 +307,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
             uint256 extraDataSize = inputProof.length - extraDataOffset;
             ctVerif.extraData = new bytes(extraDataSize);
 
-            for (uint i = 0; i < extraDataSize; i++) {
+            for (uint256 i = 0; i < extraDataSize; i++) {
                 ctVerif.extraData[i] = inputProof[extraDataOffset + i];
             }
 
@@ -374,18 +371,17 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
      * @return string Name and the version of the contract.
      */
     function getVersion() external pure virtual returns (string memory) {
-        return
-            string(
-                abi.encodePacked(
-                    CONTRACT_NAME,
-                    " v",
-                    Strings.toString(MAJOR_VERSION),
-                    ".",
-                    Strings.toString(MINOR_VERSION),
-                    ".",
-                    Strings.toString(PATCH_VERSION)
-                )
-            );
+        return string(
+            abi.encodePacked(
+                CONTRACT_NAME,
+                " v",
+                Strings.toString(MAJOR_VERSION),
+                ".",
+                Strings.toString(MINOR_VERSION),
+                ".",
+                Strings.toString(PATCH_VERSION)
+            )
+        );
     }
 
     function _cacheProof(bytes32 proofKey) internal virtual {
@@ -398,11 +394,12 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
         }
     }
 
-    function _checkProofCache(
-        bytes memory inputProof,
-        address userAddress,
-        address contractAddress
-    ) internal view virtual returns (bool, bytes32) {
+    function _checkProofCache(bytes memory inputProof, address userAddress, address contractAddress)
+        internal
+        view
+        virtual
+        returns (bool, bytes32)
+    {
         bool isProofCached;
         bytes32 key = keccak256(abi.encodePacked(contractAddress, userAddress, inputProof));
         assembly {
@@ -414,22 +411,24 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
     /// @notice Computes the hash of a given CiphertextVerification structured data
     /// @param ctVerification The CiphertextVerification structure
     /// @return The hash of the CiphertextVerification structure
-    function _hashEIP712InputVerification(
-        CiphertextVerification memory ctVerification
-    ) internal view virtual returns (bytes32) {
-        return
-            _hashTypedDataV4(
-                keccak256(
-                    abi.encode(
-                        EIP712_INPUT_VERIFICATION_TYPEHASH,
-                        keccak256(abi.encodePacked(ctVerification.ctHandles)),
-                        ctVerification.userAddress,
-                        ctVerification.contractAddress,
-                        ctVerification.contractChainId,
-                        keccak256(abi.encodePacked(ctVerification.extraData))
-                    )
+    function _hashEIP712InputVerification(CiphertextVerification memory ctVerification)
+        internal
+        view
+        virtual
+        returns (bytes32)
+    {
+        return _hashTypedDataV4(
+            keccak256(
+                abi.encode(
+                    EIP712_INPUT_VERIFICATION_TYPEHASH,
+                    keccak256(abi.encodePacked(ctVerification.ctHandles)),
+                    ctVerification.userAddress,
+                    ctVerification.contractAddress,
+                    ctVerification.contractChainId,
+                    keccak256(abi.encodePacked(ctVerification.extraData))
                 )
-            );
+            )
+        );
     }
 
     function _verifyEIP712(CiphertextVerification memory ctVerif, bytes[] memory signatures) internal virtual {

@@ -9,10 +9,10 @@ import {IACLOwner} from "./Interfaces.sol";
 
 /**
  * @title FhevmOfferACLOwnerToAdmin
- * @notice Plan §6 step E — `ACLOwner.transferOwnership(admin)`. The last transaction the deployer
+ * @notice Step E — `ACLOwner.transferOwnership(admin)`. The last transaction the deployer
  *         sends, and the one that gives up root over the stack.
  *
- * §7: this step is REQUIRED, not optional, and it is missing from `FhevmDeployScript` today — that
+ * The terminal conditions: this step is REQUIRED, not optional, and it is missing from `FhevmDeployScript` today — that
  * script constructs `new ACLOwner(deployer, aclAdd)` and never transfers it. `ACLOwner.execute` is an
  * unrestricted call made AS `ACL.owner()`, so whoever owns the ACLOwner can make any
  * `onlyACLOwner`-gated call on any host contract. The deployer must hold that during the run —
@@ -28,7 +28,7 @@ import {IACLOwner} from "./Interfaces.sol";
  * transaction no script here can produce, and the reason FhevmVerify is a separate stage the
  * orchestrator waits for rather than a tail of this one.
  *
- * A dangling `pendingOwner` is a latent takeover, so §7 makes `ACLOwner.pendingOwner() == 0` a
+ * A dangling `pendingOwner` is a latent takeover, so the terminal conditions makes `ACLOwner.pendingOwner() == 0` a
  * terminal condition alongside `ACLOwner.owner() == admin`. Both are checked by FhevmVerify.
  *
  * `--admin` is mandatory with no default, and `_loadConfig` additionally refuses `admin == deployer`
@@ -39,7 +39,7 @@ import {IACLOwner} from "./Interfaces.sol";
  * OPEN: E has no precondition on D
  * ---------------------------------------------------------------------------------------------
  *
- * §8's table gives E one precondition, `ACLOwner.owner() == deployer`, and says nothing about
+ * The precondition table's table gives E one precondition, `ACLOwner.owner() == deployer`, and says nothing about
  * whether the stack was ever materialized. So this script can legitimately offer the ACLOwner to the
  * admin with every proxy still empty.
  *
@@ -48,9 +48,9 @@ import {IACLOwner} from "./Interfaces.sol";
  * unmaterialized stack, and the hand-over is the point after which fixing anything costs a multisig
  * round-trip instead of a command. FhevmVerify catches it either way.
  *
- * This draft follows §8 and does NOT gate on D — it warns loudly instead. Promoting that warning to
- * a `require` is a plan decision, not a draft one: it would be the second check in this path that is
- * not in §8, and unlike C's pauser gate it forbids an ordering that is arguably legitimate (offer
+ * This draft follows the precondition table and does NOT gate on D — it warns loudly instead. Promoting that warning to
+ * a `require` is a design decision, not a draft one: it would be the second check in this path that is
+ * not in the precondition table, and unlike C's pauser gate it forbids an ordering that is arguably legitimate (offer
  * early so the admin's multisig can schedule its acceptance while D runs).
  */
 contract FhevmOfferACLOwnerToAdmin is FhevmCreate2Base {
@@ -60,8 +60,8 @@ contract FhevmOfferACLOwnerToAdmin is FhevmCreate2Base {
 
         require(msg.sender == cfg.deployer, "FhevmOfferACLOwnerToAdmin: broadcast sender is not FHEVM_DEPLOYER");
 
-        // §11 R2. Guards D: this is the last transaction the deployer sends, so a reorg that unwinds
-        // the materialization after the admin has accepted leaves the fix on the far side of a
+        // Reorg depth. Guards D: this is the last transaction the deployer sends, so a reorg that unwinds
+        // The materialization after the admin has accepted leaves the fix on the far side of a
         // multisig. It is also what makes _warnIfNotMaterialized's slot reads worth trusting.
         _requireMinBlock();
 
@@ -98,7 +98,7 @@ contract FhevmOfferACLOwnerToAdmin is FhevmCreate2Base {
         console.log("");
         console.log("    cast send <ACL_OWNER> 'acceptOwnership()' --account <admin>");
         console.log("");
-        console.log("  next: that transaction, then FhevmVerify (plan section 7)");
+        console.log("  next: that transaction, then FhevmVerify");
     }
 
     /// @dev See the OPEN note in the header. A warning, deliberately, not a `require`.

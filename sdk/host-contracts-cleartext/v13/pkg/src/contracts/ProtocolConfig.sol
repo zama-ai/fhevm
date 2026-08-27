@@ -94,10 +94,12 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
      * @param initialThresholds The initial thresholds.
      */
     /// @custom:oz-upgrades-validate-as-initializer
-    function initializeFromEmptyProxy(
-        KmsNode[] calldata initialKmsNodes,
-        KmsThresholds calldata initialThresholds
-    ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
+    function initializeFromEmptyProxy(KmsNode[] calldata initialKmsNodes, KmsThresholds calldata initialThresholds)
+        public
+        virtual
+        onlyFromEmptyProxy
+        reinitializer(REINITIALIZER_VERSION)
+    {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         $.currentKmsContextId = KMS_CONTEXT_COUNTER_BASE;
         uint256 newContextId = _defineKmsContext(initialKmsNodes, initialThresholds);
@@ -136,10 +138,11 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     // -----------------------------------------------------------------------------------------
 
     /// @inheritdoc IProtocolConfig
-    function defineNewKmsContext(
-        KmsNode[] calldata kmsNodes,
-        KmsThresholds calldata thresholds
-    ) external virtual onlyACLOwner {
+    function defineNewKmsContext(KmsNode[] calldata kmsNodes, KmsThresholds calldata thresholds)
+        external
+        virtual
+        onlyACLOwner
+    {
         uint256 newContextId = _defineKmsContext(kmsNodes, thresholds);
         emit NewKmsContext(newContextId, kmsNodes, thresholds);
     }
@@ -160,10 +163,11 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     }
 
     /// @inheritdoc IProtocolConfig
-    function updatePublicDecryptionThresholdForContext(
-        uint256 kmsContextId,
-        uint256 threshold
-    ) external virtual onlyACLOwner {
+    function updatePublicDecryptionThresholdForContext(uint256 kmsContextId, uint256 threshold)
+        external
+        virtual
+        onlyACLOwner
+    {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         _requireValidContext(kmsContextId);
         _checkThreshold("publicDecryption", threshold, $.kmsNodesForContext[kmsContextId].length);
@@ -172,10 +176,11 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     }
 
     /// @inheritdoc IProtocolConfig
-    function updateUserDecryptionThresholdForContext(
-        uint256 kmsContextId,
-        uint256 threshold
-    ) external virtual onlyACLOwner {
+    function updateUserDecryptionThresholdForContext(uint256 kmsContextId, uint256 threshold)
+        external
+        virtual
+        onlyACLOwner
+    {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         _requireValidContext(kmsContextId);
         _checkThreshold("userDecryption", threshold, $.kmsNodesForContext[kmsContextId].length);
@@ -252,10 +257,12 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     }
 
     /// @inheritdoc IProtocolConfig
-    function getKmsNodeForContext(
-        uint256 kmsContextId,
-        address txSender
-    ) external view virtual returns (KmsNode memory) {
+    function getKmsNodeForContext(uint256 kmsContextId, address txSender)
+        external
+        view
+        virtual
+        returns (KmsNode memory)
+    {
         _requireValidContext(kmsContextId);
         return _getProtocolConfigStorage().kmsNodeByTxSenderForContext[kmsContextId][txSender];
     }
@@ -310,18 +317,17 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
 
     /// @inheritdoc IProtocolConfig
     function getVersion() external pure virtual returns (string memory) {
-        return
-            string(
-                abi.encodePacked(
-                    CONTRACT_NAME,
-                    " v",
-                    Strings.toString(MAJOR_VERSION),
-                    ".",
-                    Strings.toString(MINOR_VERSION),
-                    ".",
-                    Strings.toString(PATCH_VERSION)
-                )
-            );
+        return string(
+            abi.encodePacked(
+                CONTRACT_NAME,
+                " v",
+                Strings.toString(MAJOR_VERSION),
+                ".",
+                Strings.toString(MINOR_VERSION),
+                ".",
+                Strings.toString(PATCH_VERSION)
+            )
+        );
     }
 
     // -----------------------------------------------------------------------------------------
@@ -333,10 +339,11 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
      *      Returns the new context ID. Callers are responsible for emitting `NewKmsContext`
      *      when appropriate.
      */
-    function _defineKmsContext(
-        KmsNode[] calldata kmsNodes,
-        KmsThresholds calldata thresholds
-    ) internal virtual returns (uint256 newContextId) {
+    function _defineKmsContext(KmsNode[] calldata kmsNodes, KmsThresholds calldata thresholds)
+        internal
+        virtual
+        returns (uint256 newContextId)
+    {
         if (kmsNodes.length == 0) {
             revert EmptyKmsNodes();
         }
@@ -405,11 +412,8 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         // A valid context must be in the allocated range and have at least one stored node.
         // The node check also keeps migration gap IDs invalid when initializeFromMigration
         // preserves a legacy context ID above BASE + 1.
-        return
-            kmsContextId >= KMS_CONTEXT_COUNTER_BASE + 1 &&
-            kmsContextId <= $.currentKmsContextId &&
-            $.kmsNodesForContext[kmsContextId].length != 0 &&
-            !$.destroyedContexts[kmsContextId];
+        return kmsContextId >= KMS_CONTEXT_COUNTER_BASE + 1 && kmsContextId <= $.currentKmsContextId
+            && $.kmsNodesForContext[kmsContextId].length != 0 && !$.destroyedContexts[kmsContextId];
     }
 
     function _requireValidContext(uint256 kmsContextId) internal view virtual {

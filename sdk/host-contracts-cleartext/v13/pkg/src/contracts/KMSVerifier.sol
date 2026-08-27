@@ -113,10 +113,12 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
      * @param chainIDSource The chain id of the Gateway chain.
      */
     /// @custom:oz-upgrades-validate-as-initializer
-    function initializeFromEmptyProxy(
-        address verifyingContractSource,
-        uint64 chainIDSource
-    ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
+    function initializeFromEmptyProxy(address verifyingContractSource, uint64 chainIDSource)
+        public
+        virtual
+        onlyFromEmptyProxy
+        reinitializer(REINITIALIZER_VERSION)
+    {
         __EIP712_init(CONTRACT_NAME_SOURCE, "1", verifyingContractSource, chainIDSource);
     }
 
@@ -169,15 +171,12 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
         /// @dev Extract the extraData from the decryptionProof.
         uint256 extraDataSize = decryptionProof.length - extraDataOffset;
         bytes memory extraData = new bytes(extraDataSize);
-        for (uint i = 0; i < extraDataSize; i++) {
+        for (uint256 i = 0; i < extraDataSize; i++) {
             extraData[i] = decryptionProof[extraDataOffset + i];
         }
 
-        PublicDecryptVerification memory publicDecryptVerification = PublicDecryptVerification(
-            handlesList,
-            decryptedResult,
-            extraData
-        );
+        PublicDecryptVerification memory publicDecryptVerification =
+            PublicDecryptVerification(handlesList, decryptedResult, extraData);
         bytes32 digest = _hashDecryptionResult(publicDecryptVerification);
 
         uint256 kmsContextId = _extractKmsContextId(extraData);
@@ -239,9 +238,12 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
      * @return signers      The list of signers for the resolved context.
      * @return threshold    The threshold for the resolved context.
      */
-    function getContextSignersAndThresholdFromExtraData(
-        bytes calldata extraData
-    ) external view virtual returns (address[] memory signers, uint256 threshold) {
+    function getContextSignersAndThresholdFromExtraData(bytes calldata extraData)
+        external
+        view
+        virtual
+        returns (address[] memory signers, uint256 threshold)
+    {
         uint256 kmsContextId = _extractKmsContextId(extraData);
         return (
             PROTOCOL_CONFIG.getKmsSignersForContext(kmsContextId),
@@ -254,18 +256,17 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
      * @return string Name and the version of the contract.
      */
     function getVersion() external pure virtual returns (string memory) {
-        return
-            string(
-                abi.encodePacked(
-                    CONTRACT_NAME,
-                    " v",
-                    Strings.toString(MAJOR_VERSION),
-                    ".",
-                    Strings.toString(MINOR_VERSION),
-                    ".",
-                    Strings.toString(PATCH_VERSION)
-                )
-            );
+        return string(
+            abi.encodePacked(
+                CONTRACT_NAME,
+                " v",
+                Strings.toString(MAJOR_VERSION),
+                ".",
+                Strings.toString(MINOR_VERSION),
+                ".",
+                Strings.toString(PATCH_VERSION)
+            )
+        );
     }
 
     /**
@@ -329,11 +330,11 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
      * @param kmsContextId  The KMS context ID to verify against.
      * @return isVerified   true if enough provided signatures are valid, false otherwise.
      */
-    function _verifySignaturesDigestForContext(
-        bytes32 digest,
-        bytes[] memory signatures,
-        uint256 kmsContextId
-    ) internal virtual returns (bool) {
+    function _verifySignaturesDigestForContext(bytes32 digest, bytes[] memory signatures, uint256 kmsContextId)
+        internal
+        virtual
+        returns (bool)
+    {
         uint256 numSignatures = signatures.length;
         if (numSignatures == 0) {
             revert KMSZeroSignature();
@@ -376,17 +377,16 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
      * @return hashTypedData    Hash typed data.
      */
     function _hashDecryptionResult(PublicDecryptVerification memory decRes) internal view virtual returns (bytes32) {
-        return
-            _hashTypedDataV4(
-                keccak256(
-                    abi.encode(
-                        DECRYPTION_RESULT_TYPEHASH,
-                        keccak256(abi.encodePacked(decRes.ctHandles)),
-                        keccak256(decRes.decryptedResult),
-                        keccak256(abi.encodePacked(decRes.extraData))
-                    )
+        return _hashTypedDataV4(
+            keccak256(
+                abi.encode(
+                    DECRYPTION_RESULT_TYPEHASH,
+                    keccak256(abi.encodePacked(decRes.ctHandles)),
+                    keccak256(decRes.decryptedResult),
+                    keccak256(abi.encodePacked(decRes.extraData))
                 )
-            );
+            )
+        );
     }
 
     /**

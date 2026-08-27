@@ -3,62 +3,50 @@
 //
 // This module is deliberately dependency-free: paths and literals only, no imports from generateTemplates
 // or its siblings. Everything in internal/ may import it, so a dependency of its own would risk a cycle.
+import { findWorkspaceRootAbsPath } from '@fhevm/sdk-common';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-/** This package's root directory, holding internal/, test/, scripts/ and pkg/. */
+/**
+ * This package's root directory, holding internal/, test/, scripts/ and pkg/.
+ *
+ * Stays HERE and can never move into @fhevm/sdk-common: it is derived from `import.meta.url`, so the
+ * same expression evaluated inside the shared package would resolve to that package instead of this
+ * one — and every path built from it would point at the wrong directory while still looking valid.
+ * That is why the helpers below take it as an argument rather than inferring it.
+ */
 export const PACKAGE_ROOT_ABS_PATH = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-/** The pkg/ directory — the published payload, and the only part of the tree that ships (rule 9). */
+/** The sdk workspace root. Tarballs go to TARBALL_DIR_ABS_PATH in @fhevm/sdk-common, not here. */
+export const WORKSPACE_ROOT_ABS_PATH = findWorkspaceRootAbsPath(PACKAGE_ROOT_ABS_PATH);
+
+/** The pkg/ directory — the published payload, and the only part of the tree that ships. */
 export const PKG_DIR_ABS_PATH = join(PACKAGE_ROOT_ABS_PATH, 'pkg');
 
 /**
- * The previous generation, consumed by the upgrade path and its e2e. A sibling directory rather than an
- * npm dependency, so the fixture can be rebuilt from source (RULES.md rule 20).
+ * The previous generation's DIRECTORY — for work that is not an import: running its scripts as child
+ * processes, and cleaning its build output. `test/e2e/create2-upgrade.test.ts` is the only caller.
+ *
+ * TypeScript that merely wants v12's code must NOT come through here. v12 is a workspace member, so
+ * it is imported like any dependency — `@fhevm/host-contracts-cleartext-dev-v12/pkg/ts/index.ts`,
+ * resolved through the link npm created, with types and go-to-definition intact. The upgrade e2e used
+ * to build v12, pack it and extract it under an alias in `test/ts/node_modules` purely to get an
+ * importable copy; a workspace link does that already, and the whole apparatus is gone.
+ *
+ * A tarball is for testing the PUBLISH CONTRACT — `files` omissions, undeclared deps, stale output —
+ * and it is worth its cost only when the packed artifact is what is on trial. Using one to obtain a
+ * sibling's source code buys nothing and pays a build, a pack and an install for it.
  */
 export const PREVIOUS_GENERATION_DIR_ABS_PATH = resolve(PACKAGE_ROOT_ABS_PATH, '..', 'v12');
 
-/**
- * The npm name **every** generation publishes under. Generations differ only by version — v12 is 0.12.x,
- * v13 is 0.13.x — so the name alone never identifies which one you have.
- */
-const PACKAGE_NAME = '@fhevm/host-contracts-cleartext';
-
-/**
- * Directory the previous generation's fixture is extracted into, and the specifier the upgrade e2e
- * imports it by.
- *
- * It cannot be PACKAGE_NAME: the e2e needs both generations resolvable at once, and npm keys
- * `node_modules` by name, so one would overwrite the other. Node resolves a bare specifier by walking
- * directory paths and never consults the manifest's `name`, so an aliased directory resolves fine while
- * the package inside still calls itself PACKAGE_NAME. Verified against a two-generation fixture.
- */
-export const PREVIOUS_GENERATION_FIXTURE_ALIAS = `${PACKAGE_NAME}-v12`;
-
-/**
- * The mnemonic the **local stack is deployed from** — the deployer and admin accounts, anvil's funded
- * set, and the addresses baked into pkg/forge/.
- *
- * Not to be confused with `FHEVM_MNEMONIC` in pkg/ts/constants.ts, which derives the KMS and coprocessor
- * *signer* pools. Two different mnemonics with two different jobs; swapping them produces a stack whose
- * addresses look right and whose signatures never verify.
- */
-export const MNEMONIC =
-  'adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer';
-
-/**
- * Account index of the deployer within MNEMONIC (HD path `m/44'/60'/0'/0/5`).
- *
- * Load-bearing: every stack address is `CREATE(deployer, nonce)`, so this index together with a start
- * nonce of 0 is what makes the deploy land on the addresses ZamaConfig.sol compiles into consumers
- * (RULES.md rules 15 and 17). Changing it moves the entire stack.
- */
-export const DEPLOYER_ADDRESS_INDEX = 5;
+// The local stack's deploy identity, defined in @fhevm/sdk-common because every generation shares it.
+// Re-exported so all of internal/ keeps one import point for constants.
+export { DEPLOYER_ADDRESS_INDEX, MNEMONIC, ZAMA_LOCAL_CONFIG } from '@fhevm/sdk-common';
 
 /**
  * The Solidity import prefix the contracts read their address set through — the left side of a Foundry
  * remapping, as in `fhevm-config-0.13.0/=internal/placeholders/`. Not a directory: what it maps *to*
- * varies by who is compiling, which is the whole point (RULES.md rule 11).
+ * varies by who is compiling, which is the whole point.
  *
  * Version-pinned, so two protocol generations can coexist in one project without their address sets
  * colliding — which also means it moves when the protocol minor does (README step 5).
@@ -77,30 +65,6 @@ export const FHEVM_CONFIG_REMAPPING_PREFIX = 'fhevm-config-0.13.0/';
  * consumer can assert the precondition rather than discover it.
  */
 export const DEPLOYER_START_NONCE = 0n;
-
-/**
- * The three addresses `library-solidity/config/ZamaConfig.sol` returns from `_getLocalConfig()`, the
- * branch it takes on chain id 31337 (RULES.md rules 15 and 17).
- *
- * They are not ours to choose. `ZamaConfig` is a library dApps inherit, so these literals are compiled
- * into consumer bytecode and cannot be reconfigured afterwards — a default local deploy landing anywhere
- * else leaves every such dApp calling addresses that hold no code. Anything deriving or baking in the
- * local address set checks against these, which is what turns a wrong deployer index or start nonce into
- * a loud failure instead of a plausible-looking artifact.
- *
- * Note `CoprocessorAddress` in ZamaConfig **is** the FHEVMExecutor address; the two names describe one
- * contract.
- *
- * Being a transcription, this constant can drift from the file it copies — and every other check compares
- * against *it*, so nothing downstream would notice. `npm run check:zama-config`
- * (internal/checkZamaLocalConfig.ts) closes that loop by parsing `_getLocalConfig()` and comparing, and
- * runs as part of `npm run build`.
- */
-export const ZAMA_LOCAL_CONFIG = {
-  aclAddress: '0x50157CFfD6bBFA2DECe204a89ec419c23ef5755D',
-  fhevmExecutorAddress: '0xe3a9105a3a932253A70F126eb1E3b589C643dD24',
-  kmsVerifierAddress: '0x901F8942346f7AB3a01F6D7613119Bca447Bb030',
-} as const;
 
 /**
  * Every address the contracts read from the `fhevm-config-<version>/addresses.sol` the build compiles

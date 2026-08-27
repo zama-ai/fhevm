@@ -33,7 +33,7 @@ BOOTSTRAP_SOL="$(anvil_lib_internal_dir)/LocalHostBootstrap.sol"
 # (library-solidity/config/ZamaConfig.sol -> _getLocalConfig). They are compiled into consumer bytecode,
 # so every launcher checks the stack actually landed on them.
 #
-# Read from sdk/cleartext-config.json rather than written here (RULES.md rule 23). They used to be three
+# Read from sdk/cleartext-config.json rather than written here. They used to be three
 # literals in this file AND three more in anvil.sh, so the two launchers could disagree with each other as
 # well as with the source of truth -- and nothing would have noticed: the TypeScript and Solidity checks
 # cannot see a shell variable, and a wrong value here surfaces only as a ZamaConfig-compiled dApp calling
@@ -699,11 +699,11 @@ smoke_check() {
         _smoke_fail "ACL.owner() $owner has no code — the stack is EOA-owned"
     else
         _smoke_pass "ACL.owner() -> $owner (contract)"
-        if [ "$(cast call "$owner" 'acl()(address)' --rpc-url "$RPC_URL" 2>/dev/null \
+        if [ "$(cast call "$owner" 'ACL_ADDRESS()(address)' --rpc-url "$RPC_URL" 2>/dev/null \
                 | tr 'A-Z' 'a-z')" = "$(printf '%s' "$ACL_ADDRESS" | tr 'A-Z' 'a-z')" ]; then
-            _smoke_pass "ACLOwner.acl() points back at ACL"
+            _smoke_pass "ACLOwner.ACL_ADDRESS() points back at ACL"
         else
-            _smoke_fail "ACLOwner.acl() does not point back at ACL"
+            _smoke_fail "ACLOwner.ACL_ADDRESS() does not point back at ACL"
         fi
         if [ "$(cast call "$PAUSER_SET_ADDRESS" 'isPauser(address)(bool)' "$owner" \
                 --rpc-url "$RPC_URL" 2>/dev/null)" = "true" ]; then

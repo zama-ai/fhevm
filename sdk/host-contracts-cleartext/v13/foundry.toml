@@ -2,7 +2,14 @@
 # The payload ships no foundry.toml of its own (RULES.md rule 16) — a consumer's own config, or
 # forge-fhevm's, supplies the remappings. `forge-std/` is aliased in remappings.txt so pkg/forge can use
 # the prefix every Foundry consumer has rather than this project's soldeer-versioned one.
+# `node_modules` is this package's own. As a workspace member it keeps its @openzeppelin copy locally
+# (npm's placement, recorded in sdk/package-lock.json) rather than hoisting it to the workspace root.
+# If that ever changes, forge breaks loudly — it does not walk up to a parent node_modules the way
+# node does — and the fix is to append "../../node_modules" here.
 [profile.default]
+# Shared forge fmt settings for the whole sdk/ workspace. Merges: local keys still win, and a
+# missing target is a hard error. See sdk/foundry.base.toml before changing any [fmt] value.
+extends = "../../foundry.base.toml"
 libs = ["dependencies", "node_modules"]
 solc_version = '0.8.24'
 optimizer = true
@@ -24,7 +31,36 @@ fs_permissions = [
     { access = "read-write", path = "./create2-deploy" },      # this path
 ]
 
+[fmt]
+# BARE DIRECTORY NAMES, never "dir/**": `**` requires an intervening path segment, so "dir/**" would
+# skip files sitting directly in dir while looking correct.
+#
+# pkg/src/contracts is deliberately NOT ignored. Vendored sources are stored forge-formatted and the
+# rule 6 gate compares them against `forge fmt`(upstream) — so forge fmt must reach them, and is a
+# no-op on them. That is what keeps the whole tree one style and makes an IDE save harmless.
+#
+# test/ts/node_modules IS ignored: it is the installed tarball fixture, and formatting it would
+# rewrite the published artifact under test. `skip` above applies to `forge build`, not `forge fmt`.
+ignore = ["test/ts/node_modules"]
+
 [lint]
+# `forge lint` is the ONLY Solidity linter in this workspace — solhint is banned outright, not
+# merely unused (ARCHITECTURE.md I14, enforced by `check:lint-policy` in `build`). This block is
+# therefore the single place a Solidity rule may be turned off; there is no second opinion.
+#
+# FILE GLOB, not a bare directory — the opposite of [fmt] ignore, which wants a bare directory and
+# rejects globs. Measured: "pkg/src/contracts" and "pkg/src/contracts/**" both fail to exclude here,
+# "pkg/src/contracts/**/*.sol" works.
+#
+# Vendored sources are excluded because their lint findings are upstream's to fix, not ours, and
+# RULES.md rule 6 forbids editing them. Unlike formatting there is no "store it linted" equivalent,
+# so exclusion is the only option.
+#
+# test/ts/node_modules is the installed tarball fixture. `skip` keeps it out of `forge build`, so it
+# has no AST, and lint then emits one "AST source not found" warning per fixture .sol — ~40 lines of
+# noise that bury the real findings. It needs its own entry here: the [fmt] `ignore` above does not
+# apply to lint, and neither does `skip`.
+ignore = ["pkg/src/contracts/**/*.sol", "test/ts/node_modules/**/*.sol"]
 exclude_lints = [
     "unsafe-typecast", 
     "incorrect-shift", 

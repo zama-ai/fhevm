@@ -183,8 +183,8 @@ previous generation becomes N-1 everywhere:
 # excludes build output (_cjs/_esm/_types) and the tarball fixture under test/ts/node_modules
 grep -rln --exclude-dir=node_modules --exclude-dir=_types --exclude-dir=_cjs --exclude-dir=_esm \
   'V12\|v12' --include='*.ts' --include='*.sol' internal pkg test
-#   internal/prepareTestV12Consumer.ts        pkg/ts/types/public.ts
-#   internal/runUpgradeE2e.ts                 pkg/ts/upgrade.ts
+#   internal/runUpgradeE2e.ts                 pkg/ts/types/public.ts
+#   internal/constants.ts                     pkg/ts/upgrade.ts
 #   pkg/src/cleartext/CleartextArithmetic.sol pkg/ts/utils.ts
 #   pkg/src/cleartext/ICleartextArithmetic.sol test/ts/upgrade-e2e.test.ts
 #   pkg/ts/addresses.ts                       test/ts/utils/viemEthereumLib.ts
@@ -194,11 +194,15 @@ grep -rln --exclude-dir=node_modules --exclude-dir=_types --exclude-dir=_cjs --e
 
 Three groups, in increasing order of effort:
 
-1. **The e2e fixture wiring** — `internal/prepareTestV12Consumer.ts` (rename it to
-   `prepareTestV<N-1>Consumer.ts`) and `internal/runUpgradeE2e.ts`. Both hardcode the sibling directory
-   name `host-contracts-cleartext-v12`, the tarball prefix `fhevm-host-contracts-cleartext-v12`, and the
-   fixture path under `test/ts/node_modules/@fhevm/`. `test/ts/vitest.e2e.config.ts` lists the two
-   packages the e2e consumes.
+1. **The previous-generation edge** — `internal/constants.ts` (`PREVIOUS_GENERATION_DIR_ABS_PATH`),
+   the devDependency pin in `package.json`, and the import specifier
+   `@fhevm/host-contracts-cleartext-dev-v12/pkg/ts/index.ts` in `test/ts/upgrade-e2e.test.ts`.
+
+   Much smaller than it used to be. The e2e once built v(N-1), packed it, and extracted it under an
+   alias in `test/ts/node_modules` just to obtain an importable copy — a whole `prepareTestV12Consumer`
+   plus fixture guards plus two skip paths. v(N-1) is a workspace member, so it is now simply imported
+   through the link npm creates, and all of that is gone. A tarball is for testing a PUBLISH CONTRACT;
+   using one to read a sibling's source bought nothing.
 2. **The public API** — `pkg/ts/upgrade.ts` exports `updateV12ToV13`, and `pkg/ts/types/public.ts`
    declares `FhevmAddressesV12`, `FhevmAddresses` and `UpdateV12ToV13MigrationConfig`. Renaming these
    is a breaking change for consumers, so decide deliberately whether N-1→N gets new names or the old

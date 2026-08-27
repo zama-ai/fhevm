@@ -17,11 +17,9 @@ import {ACLOwnable} from "./shared/ACLOwnable.sol";
  * @title IInputVerifier.
  */
 interface IInputVerifier {
-    function verifyInput(
-        FHEVMExecutor.ContextUserInputs memory context,
-        bytes32 inputHandle,
-        bytes memory inputProof
-    ) external returns (bytes32);
+    function verifyInput(FHEVMExecutor.ContextUserInputs memory context, bytes32 inputHandle, bytes memory inputProof)
+        external
+        returns (bytes32);
 }
 
 /**
@@ -186,11 +184,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @return result       Result.
      */
     function fheAdd(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
-        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
-            (1 << uint8(FheType.Uint16)) +
-            (1 << uint8(FheType.Uint32)) +
-            (1 << uint8(FheType.Uint64)) +
-            (1 << uint8(FheType.Uint128));
+        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) + (1 << uint8(FheType.Uint16))
+            + (1 << uint8(FheType.Uint32)) + (1 << uint8(FheType.Uint64)) + (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         result = _binaryOp(Operators.fheAdd, lhs, rhs, scalarByte, lhsType);
         HCU_LIMIT.checkHCUForFheAdd(lhsType, scalarByte, lhs, rhs, result, msg.sender);
@@ -205,11 +200,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @return result       Result.
      */
     function fheSub(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
-        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
-            (1 << uint8(FheType.Uint16)) +
-            (1 << uint8(FheType.Uint32)) +
-            (1 << uint8(FheType.Uint64)) +
-            (1 << uint8(FheType.Uint128));
+        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) + (1 << uint8(FheType.Uint16))
+            + (1 << uint8(FheType.Uint32)) + (1 << uint8(FheType.Uint64)) + (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         result = _binaryOp(Operators.fheSub, lhs, rhs, scalarByte, lhsType);
         HCU_LIMIT.checkHCUForFheSub(lhsType, scalarByte, lhs, rhs, result, msg.sender);
@@ -224,11 +216,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @return result       Result.
      */
     function fheMul(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
-        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
-            (1 << uint8(FheType.Uint16)) +
-            (1 << uint8(FheType.Uint32)) +
-            (1 << uint8(FheType.Uint64)) +
-            (1 << uint8(FheType.Uint128));
+        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) + (1 << uint8(FheType.Uint16))
+            + (1 << uint8(FheType.Uint32)) + (1 << uint8(FheType.Uint64)) + (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         result = _binaryOp(Operators.fheMul, lhs, rhs, scalarByte, lhsType);
         HCU_LIMIT.checkHCUForFheMul(lhsType, scalarByte, lhs, rhs, result, msg.sender);
@@ -244,11 +233,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      */
     function fheDiv(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         if (scalarByte != 0x01) revert IsNotScalar(); /// @dev we know scalarByte is either 0x01 or 0x00 because we check it is boolean inside _binaryOp
-        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
-            (1 << uint8(FheType.Uint16)) +
-            (1 << uint8(FheType.Uint32)) +
-            (1 << uint8(FheType.Uint64)) +
-            (1 << uint8(FheType.Uint128));
+        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) + (1 << uint8(FheType.Uint16))
+            + (1 << uint8(FheType.Uint32)) + (1 << uint8(FheType.Uint64)) + (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         if (_isScalarZeroForType(rhs, lhsType)) revert DivisionByZero();
         result = _binaryOp(Operators.fheDiv, lhs, rhs, scalarByte, lhsType);
@@ -265,11 +251,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      */
     function fheRem(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         if (scalarByte != 0x01) revert IsNotScalar(); /// @dev we know scalarByte is either 0x01 or 0x00 because we check it is boolean inside _binaryOp
-        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
-            (1 << uint8(FheType.Uint16)) +
-            (1 << uint8(FheType.Uint32)) +
-            (1 << uint8(FheType.Uint64)) +
-            (1 << uint8(FheType.Uint128));
+        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) + (1 << uint8(FheType.Uint16))
+            + (1 << uint8(FheType.Uint32)) + (1 << uint8(FheType.Uint64)) + (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         if (_isScalarZeroForType(rhs, lhsType)) revert DivisionByZero();
         result = _binaryOp(Operators.fheRem, lhs, rhs, scalarByte, lhsType);
@@ -285,13 +268,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @return result       Result.
      */
     function fheBitAnd(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
-        uint256 supportedTypes = (1 << uint8(FheType.Bool)) +
-            (1 << uint8(FheType.Uint8)) +
-            (1 << uint8(FheType.Uint16)) +
-            (1 << uint8(FheType.Uint32)) +
-            (1 << uint8(FheType.Uint64)) +
-            (1 << uint8(FheType.Uint128)) +
-            (1 << uint8(FheType.Uint256));
+        uint256 supportedTypes = (1 << uint8(FheType.Bool)) + (1 << uint8(FheType.Uint8)) + (1 << uint8(FheType.Uint16))
+            + (1 << uint8(FheType.Uint32)) + (1 << uint8(FheType.Uint64)) + (1 << uint8(FheType.Uint128))
+            + (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         result = _binaryOp(Operators.fheBitAnd, lhs, rhs, scalarByte, lhsType);
         HCU_LIMIT.checkHCUForFheBitAnd(lhsType, scalarByte, lhs, rhs, result, msg.sender);
@@ -306,13 +285,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @return result       Result.
      */
     function fheBitOr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
-        uint256 supportedTypes = (1 << uint8(FheType.Bool)) +
-            (1 << uint8(FheType.Uint8)) +
-            (1 << uint8(FheType.Uint16)) +
-            (1 << uint8(FheType.Uint32)) +
-            (1 << uint8(FheType.Uint64)) +
-            (1 << uint8(FheType.Uint128)) +
-            (1 << uint8(FheType.Uint256));
+        uint256 supportedTypes = (1 << uint8(FheType.Bool)) + (1 << uint8(FheType.Uint8)) + (1 << uint8(FheType.Uint16))
+            + (1 << uint8(FheType.Uint32)) + (1 << uint8(FheType.Uint64)) + (1 << uint8(FheType.Uint128))
+            + (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         result = _binaryOp(Operators.fheBitOr, lhs, rhs, scalarByte, lhsType);
         HCU_LIMIT.checkHCUForFheBitOr(lhsType, scalarByte, lhs, rhs, result, msg.sender);
@@ -327,13 +302,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @return result       Result.
      */
     function fheBitXor(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
-        uint256 supportedTypes = (1 << uint8(FheType.Bool)) +
-            (1 << uint8(FheType.Uint8)) +
-            (1 << uint8(FheType.Uint16)) +
-            (1 << uint8(FheType.Uint32)) +
-            (1 << uint8(FheType.Uint64)) +
-            (1 << uint8(FheType.Uint128)) +
-            (1 << uint8(FheType.Uint256));
+        uint256 supportedTypes = (1 << uint8(FheType.Bool)) + (1 << uint8(FheType.Uint8)) + (1 << uint8(FheType.Uint16))
+            + (1 << uint8(FheType.Uint32)) + (1 << uint8(FheType.Uint64)) + (1 << uint8(FheType.Uint128))
+            + (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         result = _binaryOp(Operators.fheBitXor, lhs, rhs, scalarByte, lhsType);
         HCU_LIMIT.checkHCUForFheBitXor(lhsType, scalarByte, lhs, rhs, result, msg.sender);
@@ -348,12 +319,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @return result       Result.
      */
     function fheShl(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
-        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
-            (1 << uint8(FheType.Uint16)) +
-            (1 << uint8(FheType.Uint32)) +
-            (1 << uint8(FheType.Uint64)) +
-            (1 << uint8(FheType.Uint128)) +
-            (1 << uint8(FheType.Uint256));
+        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) + (1 << uint8(FheType.Uint16))
+            + (1 << uint8(FheType.Uint32)) + (1 << uint8(FheType.Uint64)) + (1 << uint8(FheType.Uint128))
+            + (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         result = _binaryOp(Operators.fheShl, lhs, rhs, scalarByte, lhsType);
         HCU_LIMIT.checkHCUForFheShl(lhsType, scalarByte, lhs, rhs, result, msg.sender);
@@ -368,12 +336,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @return result       Result.
      */
     function fheShr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
-        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
-            (1 << uint8(FheType.Uint16)) +
-            (1 << uint8(FheType.Uint32)) +
-            (1 << uint8(FheType.Uint64)) +
-            (1 << uint8(FheType.Uint128)) +
-            (1 << uint8(FheType.Uint256));
+        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) + (1 << uint8(FheType.Uint16))
+            + (1 << uint8(FheType.Uint32)) + (1 << uint8(FheType.Uint64)) + (1 << uint8(FheType.Uint128))
+            + (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         result = _binaryOp(Operators.fheShr, lhs, rhs, scalarByte, lhsType);
         HCU_LIMIT.checkHCUForFheShr(lhsType, scalarByte, lhs, rhs, result, msg.sender);
@@ -388,12 +353,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @return result       Result.
      */
     function fheRotl(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
-        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
-            (1 << uint8(FheType.Uint16)) +
-            (1 << uint8(FheType.Uint32)) +
-            (1 << uint8(FheType.Uint64)) +
-            (1 << uint8(FheType.Uint128)) +
-            (1 << uint8(FheType.Uint256));
+        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) + (1 << uint8(FheType.Uint16))
+            + (1 << uint8(FheType.Uint32)) + (1 << uint8(FheType.Uint64)) + (1 << uint8(FheType.Uint128))
+            + (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         result = _binaryOp(Operators.fheRotl, lhs, rhs, scalarByte, lhsType);
         HCU_LIMIT.checkHCUForFheRotl(lhsType, scalarByte, lhs, rhs, result, msg.sender);
@@ -408,12 +370,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @return result       Result.
      */
     function fheRotr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
-        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
-            (1 << uint8(FheType.Uint16)) +
-            (1 << uint8(FheType.Uint32)) +
-            (1 << uint8(FheType.Uint64)) +
-            (1 << uint8(FheType.Uint128)) +
-            (1 << uint8(FheType.Uint256));
+        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) + (1 << uint8(FheType.Uint16))
+            + (1 << uint8(FheType.Uint32)) + (1 << uint8(FheType.Uint64)) + (1 << uint8(FheType.Uint128))
+            + (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         result = _binaryOp(Operators.fheRotr, lhs, rhs, scalarByte, lhsType);
         HCU_LIMIT.checkHCUForFheRotr(lhsType, scalarByte, lhs, rhs, result, msg.sender);
@@ -428,14 +387,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @return result       Result.
      */
     function fheEq(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
-        uint256 supportedTypes = (1 << uint8(FheType.Bool)) +
-            (1 << uint8(FheType.Uint8)) +
-            (1 << uint8(FheType.Uint16)) +
-            (1 << uint8(FheType.Uint32)) +
-            (1 << uint8(FheType.Uint64)) +
-            (1 << uint8(FheType.Uint128)) +
-            (1 << uint8(FheType.Uint160)) +
-            (1 << uint8(FheType.Uint256));
+        uint256 supportedTypes = (1 << uint8(FheType.Bool)) + (1 << uint8(FheType.Uint8)) + (1 << uint8(FheType.Uint16))
+            + (1 << uint8(FheType.Uint32)) + (1 << uint8(FheType.Uint64)) + (1 << uint8(FheType.Uint128))
+            + (1 << uint8(FheType.Uint160)) + (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         result = _binaryOp(Operators.fheEq, lhs, rhs, scalarByte, FheType.Bool);
         HCU_LIMIT.checkHCUForFheEq(lhsType, scalarByte, lhs, rhs, result, msg.sender);
@@ -450,14 +404,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @return result       Result.
      */
     function fheNe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
-        uint256 supportedTypes = (1 << uint8(FheType.Bool)) +
-            (1 << uint8(FheType.Uint8)) +
-            (1 << uint8(FheType.Uint16)) +
-            (1 << uint8(FheType.Uint32)) +
-            (1 << uint8(FheType.Uint64)) +
-            (1 << uint8(FheType.Uint128)) +
-            (1 << uint8(FheType.Uint160)) +
-            (1 << uint8(FheType.Uint256));
+        uint256 supportedTypes = (1 << uint8(FheType.Bool)) + (1 << uint8(FheType.Uint8)) + (1 << uint8(FheType.Uint16))
+            + (1 << uint8(FheType.Uint32)) + (1 << uint8(FheType.Uint64)) + (1 << uint8(FheType.Uint128))
+            + (1 << uint8(FheType.Uint160)) + (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         result = _binaryOp(Operators.fheNe, lhs, rhs, scalarByte, FheType.Bool);
         HCU_LIMIT.checkHCUForFheNe(lhsType, scalarByte, lhs, rhs, result, msg.sender);
@@ -472,11 +421,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @return result       Result.
      */
     function fheGe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
-        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
-            (1 << uint8(FheType.Uint16)) +
-            (1 << uint8(FheType.Uint32)) +
-            (1 << uint8(FheType.Uint64)) +
-            (1 << uint8(FheType.Uint128));
+        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) + (1 << uint8(FheType.Uint16))
+            + (1 << uint8(FheType.Uint32)) + (1 << uint8(FheType.Uint64)) + (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         result = _binaryOp(Operators.fheGe, lhs, rhs, scalarByte, FheType.Bool);
         HCU_LIMIT.checkHCUForFheGe(lhsType, scalarByte, lhs, rhs, result, msg.sender);
@@ -491,11 +437,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @return result       Result.
      */
     function fheGt(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
-        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
-            (1 << uint8(FheType.Uint16)) +
-            (1 << uint8(FheType.Uint32)) +
-            (1 << uint8(FheType.Uint64)) +
-            (1 << uint8(FheType.Uint128));
+        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) + (1 << uint8(FheType.Uint16))
+            + (1 << uint8(FheType.Uint32)) + (1 << uint8(FheType.Uint64)) + (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         result = _binaryOp(Operators.fheGt, lhs, rhs, scalarByte, FheType.Bool);
         HCU_LIMIT.checkHCUForFheGt(lhsType, scalarByte, lhs, rhs, result, msg.sender);
@@ -510,11 +453,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @return result       Result.
      */
     function fheLe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
-        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
-            (1 << uint8(FheType.Uint16)) +
-            (1 << uint8(FheType.Uint32)) +
-            (1 << uint8(FheType.Uint64)) +
-            (1 << uint8(FheType.Uint128));
+        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) + (1 << uint8(FheType.Uint16))
+            + (1 << uint8(FheType.Uint32)) + (1 << uint8(FheType.Uint64)) + (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         result = _binaryOp(Operators.fheLe, lhs, rhs, scalarByte, FheType.Bool);
         HCU_LIMIT.checkHCUForFheLe(lhsType, scalarByte, lhs, rhs, result, msg.sender);
@@ -529,11 +469,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @return result       Result.
      */
     function fheLt(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
-        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
-            (1 << uint8(FheType.Uint16)) +
-            (1 << uint8(FheType.Uint32)) +
-            (1 << uint8(FheType.Uint64)) +
-            (1 << uint8(FheType.Uint128));
+        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) + (1 << uint8(FheType.Uint16))
+            + (1 << uint8(FheType.Uint32)) + (1 << uint8(FheType.Uint64)) + (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         result = _binaryOp(Operators.fheLt, lhs, rhs, scalarByte, FheType.Bool);
         HCU_LIMIT.checkHCUForFheLt(lhsType, scalarByte, lhs, rhs, result, msg.sender);
@@ -548,11 +485,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @return result       Result.
      */
     function fheMin(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
-        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
-            (1 << uint8(FheType.Uint16)) +
-            (1 << uint8(FheType.Uint32)) +
-            (1 << uint8(FheType.Uint64)) +
-            (1 << uint8(FheType.Uint128));
+        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) + (1 << uint8(FheType.Uint16))
+            + (1 << uint8(FheType.Uint32)) + (1 << uint8(FheType.Uint64)) + (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         result = _binaryOp(Operators.fheMin, lhs, rhs, scalarByte, lhsType);
         HCU_LIMIT.checkHCUForFheMin(lhsType, scalarByte, lhs, rhs, result, msg.sender);
@@ -567,11 +501,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @return result       Result.
      */
     function fheMax(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
-        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
-            (1 << uint8(FheType.Uint16)) +
-            (1 << uint8(FheType.Uint32)) +
-            (1 << uint8(FheType.Uint64)) +
-            (1 << uint8(FheType.Uint128));
+        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) + (1 << uint8(FheType.Uint16))
+            + (1 << uint8(FheType.Uint32)) + (1 << uint8(FheType.Uint64)) + (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         result = _binaryOp(Operators.fheMax, lhs, rhs, scalarByte, lhsType);
         HCU_LIMIT.checkHCUForFheMax(lhsType, scalarByte, lhs, rhs, result, msg.sender);
@@ -584,12 +515,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @return result       Result.
      */
     function fheNeg(bytes32 ct) public virtual returns (bytes32 result) {
-        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
-            (1 << uint8(FheType.Uint16)) +
-            (1 << uint8(FheType.Uint32)) +
-            (1 << uint8(FheType.Uint64)) +
-            (1 << uint8(FheType.Uint128)) +
-            (1 << uint8(FheType.Uint256));
+        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) + (1 << uint8(FheType.Uint16))
+            + (1 << uint8(FheType.Uint32)) + (1 << uint8(FheType.Uint64)) + (1 << uint8(FheType.Uint128))
+            + (1 << uint8(FheType.Uint256));
         FheType typeCt = _verifyAndReturnType(ct, supportedTypes);
         result = _unaryOp(Operators.fheNeg, ct);
         HCU_LIMIT.checkHCUForFheNeg(typeCt, ct, result, msg.sender);
@@ -602,13 +530,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @return result       Result.
      */
     function fheNot(bytes32 ct) public virtual returns (bytes32 result) {
-        uint256 supportedTypes = (1 << uint8(FheType.Bool)) +
-            (1 << uint8(FheType.Uint8)) +
-            (1 << uint8(FheType.Uint16)) +
-            (1 << uint8(FheType.Uint32)) +
-            (1 << uint8(FheType.Uint64)) +
-            (1 << uint8(FheType.Uint128)) +
-            (1 << uint8(FheType.Uint256));
+        uint256 supportedTypes = (1 << uint8(FheType.Bool)) + (1 << uint8(FheType.Uint8)) + (1 << uint8(FheType.Uint16))
+            + (1 << uint8(FheType.Uint32)) + (1 << uint8(FheType.Uint64)) + (1 << uint8(FheType.Uint128))
+            + (1 << uint8(FheType.Uint256));
         FheType typeCt = _verifyAndReturnType(ct, supportedTypes);
         result = _unaryOp(Operators.fheNot, ct);
         HCU_LIMIT.checkHCUForFheNot(typeCt, ct, result, msg.sender);
@@ -623,14 +547,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @return result       Result.
      */
     function fheIfThenElse(bytes32 control, bytes32 ifTrue, bytes32 ifFalse) public virtual returns (bytes32 result) {
-        uint256 supportedTypes = (1 << uint8(FheType.Bool)) +
-            (1 << uint8(FheType.Uint8)) +
-            (1 << uint8(FheType.Uint16)) +
-            (1 << uint8(FheType.Uint32)) +
-            (1 << uint8(FheType.Uint64)) +
-            (1 << uint8(FheType.Uint128)) +
-            (1 << uint8(FheType.Uint160)) +
-            (1 << uint8(FheType.Uint256));
+        uint256 supportedTypes = (1 << uint8(FheType.Bool)) + (1 << uint8(FheType.Uint8)) + (1 << uint8(FheType.Uint16))
+            + (1 << uint8(FheType.Uint32)) + (1 << uint8(FheType.Uint64)) + (1 << uint8(FheType.Uint128))
+            + (1 << uint8(FheType.Uint160)) + (1 << uint8(FheType.Uint256));
         FheType typeCt = _verifyAndReturnType(ifTrue, supportedTypes);
         result = _ternaryOp(Operators.fheIfThenElse, control, ifTrue, ifFalse);
         HCU_LIMIT.checkHCUForIfThenElse(typeCt, control, ifTrue, ifFalse, result, msg.sender);
@@ -667,11 +586,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @return result       Result handle of the same FheType as the inputs.
      */
     function fheSum(bytes32[] calldata values, FheType resultType) public virtual returns (bytes32 result) {
-        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
-            (1 << uint8(FheType.Uint16)) +
-            (1 << uint8(FheType.Uint32)) +
-            (1 << uint8(FheType.Uint64)) +
-            (1 << uint8(FheType.Uint128));
+        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) + (1 << uint8(FheType.Uint16))
+            + (1 << uint8(FheType.Uint32)) + (1 << uint8(FheType.Uint64)) + (1 << uint8(FheType.Uint128));
         if ((1 << uint8(resultType)) & supportedTypes == 0) revert UnsupportedType();
 
         uint256 maxSize = (resultType == FheType.Uint64 || resultType == FheType.Uint128)
@@ -691,24 +607,18 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @param valueType     FheType of the ciphertext value.
      * @return result       Result handle of type FheBool.
      */
-    function fheIsIn(
-        bytes32 value,
-        bytes32[] calldata values,
-        FheType valueType
-    ) public virtual returns (bytes32 result) {
-        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
-            (1 << uint8(FheType.Uint16)) +
-            (1 << uint8(FheType.Uint32)) +
-            (1 << uint8(FheType.Uint64)) +
-            (1 << uint8(FheType.Uint128)) +
-            (1 << uint8(FheType.Uint160)) +
-            (1 << uint8(FheType.Uint256));
+    function fheIsIn(bytes32 value, bytes32[] calldata values, FheType valueType)
+        public
+        virtual
+        returns (bytes32 result)
+    {
+        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) + (1 << uint8(FheType.Uint16))
+            + (1 << uint8(FheType.Uint32)) + (1 << uint8(FheType.Uint64)) + (1 << uint8(FheType.Uint128))
+            + (1 << uint8(FheType.Uint160)) + (1 << uint8(FheType.Uint256));
         if ((1 << uint8(valueType)) & supportedTypes == 0) revert UnsupportedType();
 
-        uint256 maxSize = (valueType == FheType.Uint64 ||
-            valueType == FheType.Uint128 ||
-            valueType == FheType.Uint160 ||
-            valueType == FheType.Uint256)
+        uint256 maxSize = (valueType == FheType.Uint64 || valueType == FheType.Uint128 || valueType == FheType.Uint160
+                || valueType == FheType.Uint256)
             ? FHE_COLLECTION_WIDE_MAX_SIZE
             : FHE_COLLECTION_NARROW_MAX_SIZE;
         if (values.length > maxSize) revert FHECollectionSizeInvalid(values.length, maxSize);
@@ -727,20 +637,13 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      */
     function cast(bytes32 ct, FheType toType) public virtual returns (bytes32 result) {
         if (!ACL.isAllowed(ct, msg.sender)) revert ACLNotAllowed(ct, msg.sender);
-        uint256 supportedTypesInput = (1 << uint8(FheType.Bool)) +
-            (1 << uint8(FheType.Uint8)) +
-            (1 << uint8(FheType.Uint16)) +
-            (1 << uint8(FheType.Uint32)) +
-            (1 << uint8(FheType.Uint64)) +
-            (1 << uint8(FheType.Uint128)) +
-            (1 << uint8(FheType.Uint256));
+        uint256 supportedTypesInput = (1 << uint8(FheType.Bool)) + (1 << uint8(FheType.Uint8))
+            + (1 << uint8(FheType.Uint16)) + (1 << uint8(FheType.Uint32)) + (1 << uint8(FheType.Uint64))
+            + (1 << uint8(FheType.Uint128)) + (1 << uint8(FheType.Uint256));
         FheType typeCt = _verifyAndReturnType(ct, supportedTypesInput);
-        uint256 supportedTypesOutput = (1 << uint8(FheType.Uint8)) +
-            (1 << uint8(FheType.Uint16)) +
-            (1 << uint8(FheType.Uint32)) +
-            (1 << uint8(FheType.Uint64)) +
-            (1 << uint8(FheType.Uint128)) +
-            (1 << uint8(FheType.Uint256)); // @note: unsupported casting to ebool (use fheNe instead)
+        uint256 supportedTypesOutput = (1 << uint8(FheType.Uint8)) + (1 << uint8(FheType.Uint16))
+            + (1 << uint8(FheType.Uint32)) + (1 << uint8(FheType.Uint64)) + (1 << uint8(FheType.Uint128))
+            + (1 << uint8(FheType.Uint256)); // @note: unsupported casting to ebool (use fheNe instead)
         if ((1 << uint8(toType)) & supportedTypesOutput == 0) revert UnsupportedType();
 
         /// @dev It must not cast to same type.
@@ -770,14 +673,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @return result   Result value of the target type.
      */
     function trivialEncrypt(uint256 pt, FheType toType) public virtual returns (bytes32 result) {
-        uint256 supportedTypes = (1 << uint8(FheType.Bool)) +
-            (1 << uint8(FheType.Uint8)) +
-            (1 << uint8(FheType.Uint16)) +
-            (1 << uint8(FheType.Uint32)) +
-            (1 << uint8(FheType.Uint64)) +
-            (1 << uint8(FheType.Uint128)) +
-            (1 << uint8(FheType.Uint160)) +
-            (1 << uint8(FheType.Uint256));
+        uint256 supportedTypes = (1 << uint8(FheType.Bool)) + (1 << uint8(FheType.Uint8)) + (1 << uint8(FheType.Uint16))
+            + (1 << uint8(FheType.Uint32)) + (1 << uint8(FheType.Uint64)) + (1 << uint8(FheType.Uint128))
+            + (1 << uint8(FheType.Uint160)) + (1 << uint8(FheType.Uint256));
 
         if ((1 << uint8(toType)) & supportedTypes == 0) revert UnsupportedType();
         result = keccak256(
@@ -806,16 +704,13 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @param inputType     Input type.
      * @return result       Result.
      */
-    function verifyInput(
-        bytes32 inputHandle,
-        address userAddress,
-        bytes memory inputProof,
-        FheType inputType
-    ) public virtual returns (bytes32 result) {
-        ContextUserInputs memory contextUserInputs = ContextUserInputs({
-            userAddress: userAddress,
-            contractAddress: msg.sender
-        });
+    function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inputProof, FheType inputType)
+        public
+        virtual
+        returns (bytes32 result)
+    {
+        ContextUserInputs memory contextUserInputs =
+            ContextUserInputs({userAddress: userAddress, contractAddress: msg.sender});
         FheType typeCt = _typeOf(inputHandle);
         if (inputType != typeCt) revert InvalidType();
         result = INPUT_VERIFIER.verifyInput(contextUserInputs, inputHandle, inputProof);
@@ -857,18 +752,17 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @return string Name and the version of the contract.
      */
     function getVersion() external pure virtual returns (string memory) {
-        return
-            string(
-                abi.encodePacked(
-                    CONTRACT_NAME,
-                    " v",
-                    Strings.toString(MAJOR_VERSION),
-                    ".",
-                    Strings.toString(MINOR_VERSION),
-                    ".",
-                    Strings.toString(PATCH_VERSION)
-                )
-            );
+        return string(
+            abi.encodePacked(
+                CONTRACT_NAME,
+                " v",
+                Strings.toString(MAJOR_VERSION),
+                ".",
+                Strings.toString(MINOR_VERSION),
+                ".",
+                Strings.toString(PATCH_VERSION)
+            )
+        );
     }
 
     /**
@@ -881,10 +775,12 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         typeCt = FheType(uint8(handle[30]));
     }
 
-    function _appendMetadataToPrehandle(
-        bytes32 prehandle,
-        FheType handleType
-    ) internal view virtual returns (bytes32 result) {
+    function _appendMetadataToPrehandle(bytes32 prehandle, FheType handleType)
+        internal
+        view
+        virtual
+        returns (bytes32 result)
+    {
         /// @dev Clear bytes 21-31.
         result = prehandle & 0xffffffffffffffffffffffffffffffffffffffffff0000000000000000000000;
         /// @dev Set byte 21 to 0xff since the new handle comes from computation.
@@ -898,10 +794,12 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         result = result | bytes32(uint256(HANDLE_VERSION));
     }
 
-    function _verifyAndReturnType(
-        bytes32 handle,
-        uint256 supportedTypes
-    ) internal pure virtual returns (FheType typeCt) {
+    function _verifyAndReturnType(bytes32 handle, uint256 supportedTypes)
+        internal
+        pure
+        virtual
+        returns (FheType typeCt)
+    {
         typeCt = _typeOf(handle);
         if ((1 << uint8(typeCt)) & supportedTypes == 0) revert UnsupportedType();
     }
@@ -922,13 +820,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         if (!ACL.isAllowed(ct, msg.sender)) revert ACLNotAllowed(ct, msg.sender);
         result = keccak256(
             abi.encodePacked(
-                COMPUTATION_DOMAIN_SEPARATOR,
-                op,
-                ct,
-                ACL,
-                block.chainid,
-                blockhash(block.number - 1),
-                block.timestamp
+                COMPUTATION_DOMAIN_SEPARATOR, op, ct, ACL, block.chainid, blockhash(block.number - 1), block.timestamp
             )
         );
         FheType typeCt = _typeOf(ct);
@@ -936,13 +828,11 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         ACL.allowTransient(result, msg.sender);
     }
 
-    function _binaryOp(
-        Operators op,
-        bytes32 lhs,
-        bytes32 rhs,
-        bytes1 scalar,
-        FheType resultType
-    ) internal virtual returns (bytes32 result) {
+    function _binaryOp(Operators op, bytes32 lhs, bytes32 rhs, bytes1 scalar, FheType resultType)
+        internal
+        virtual
+        returns (bytes32 result)
+    {
         /// @dev at the moment at most only right operand of binary ops can be scalar, so we enforce `scalar` to be bool
         _checkBoolean(scalar);
 
@@ -971,12 +861,11 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         ACL.allowTransient(result, msg.sender);
     }
 
-    function _ternaryOp(
-        Operators op,
-        bytes32 lhs,
-        bytes32 middle,
-        bytes32 rhs
-    ) internal virtual returns (bytes32 result) {
+    function _ternaryOp(Operators op, bytes32 lhs, bytes32 middle, bytes32 rhs)
+        internal
+        virtual
+        returns (bytes32 result)
+    {
         if (!ACL.isAllowed(lhs, msg.sender)) revert ACLNotAllowed(lhs, msg.sender);
         if (!ACL.isAllowed(middle, msg.sender)) revert ACLNotAllowed(middle, msg.sender);
         if (!ACL.isAllowed(rhs, msg.sender)) revert ACLNotAllowed(rhs, msg.sender);
@@ -1006,11 +895,11 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         ACL.allowTransient(result, msg.sender);
     }
 
-    function _naryOp(
-        Operators op,
-        bytes32[] calldata values,
-        FheType resultType
-    ) internal virtual returns (bytes32 result) {
+    function _naryOp(Operators op, bytes32[] calldata values, FheType resultType)
+        internal
+        virtual
+        returns (bytes32 result)
+    {
         for (uint256 i = 0; i < values.length; i++) {
             if (!ACL.isAllowed(values[i], msg.sender)) revert ACLNotAllowed(values[i], msg.sender);
             if (_typeOf(values[i]) != resultType) revert IncompatibleTypes();
@@ -1031,12 +920,11 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         ACL.allowTransient(result, msg.sender);
     }
 
-    function _naryOp(
-        Operators op,
-        bytes32 value,
-        bytes32[] calldata values,
-        FheType resultType
-    ) internal virtual returns (bytes32 result) {
+    function _naryOp(Operators op, bytes32 value, bytes32[] calldata values, FheType resultType)
+        internal
+        virtual
+        returns (bytes32 result)
+    {
         if (!ACL.isAllowed(value, msg.sender)) revert ACLNotAllowed(value, msg.sender);
         FheType valueType = _typeOf(value);
         for (uint256 i = 0; i < values.length; i++) {
@@ -1078,13 +966,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     }
 
     function _generateRand(FheType randType, bytes16 seed) internal virtual returns (bytes32 result) {
-        uint256 supportedTypes = (1 << uint8(FheType.Bool)) +
-            (1 << uint8(FheType.Uint8)) +
-            (1 << uint8(FheType.Uint16)) +
-            (1 << uint8(FheType.Uint32)) +
-            (1 << uint8(FheType.Uint64)) +
-            (1 << uint8(FheType.Uint128)) +
-            (1 << uint8(FheType.Uint256));
+        uint256 supportedTypes = (1 << uint8(FheType.Bool)) + (1 << uint8(FheType.Uint8)) + (1 << uint8(FheType.Uint16))
+            + (1 << uint8(FheType.Uint32)) + (1 << uint8(FheType.Uint64)) + (1 << uint8(FheType.Uint128))
+            + (1 << uint8(FheType.Uint256));
 
         /// @dev Unsupported erandom type.
         if ((1 << uint8(randType)) & supportedTypes == 0) revert UnsupportedType();
@@ -1094,17 +978,14 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         ACL.allowTransient(result, msg.sender);
     }
 
-    function _generateRandBounded(
-        uint256 upperBound,
-        FheType randType,
-        bytes16 seed
-    ) internal virtual returns (bytes32 result) {
-        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
-            (1 << uint8(FheType.Uint16)) +
-            (1 << uint8(FheType.Uint32)) +
-            (1 << uint8(FheType.Uint64)) +
-            (1 << uint8(FheType.Uint128)) +
-            (1 << uint8(FheType.Uint256));
+    function _generateRandBounded(uint256 upperBound, FheType randType, bytes16 seed)
+        internal
+        virtual
+        returns (bytes32 result)
+    {
+        uint256 supportedTypes = (1 << uint8(FheType.Uint8)) + (1 << uint8(FheType.Uint16))
+            + (1 << uint8(FheType.Uint32)) + (1 << uint8(FheType.Uint64)) + (1 << uint8(FheType.Uint128))
+            + (1 << uint8(FheType.Uint256));
         /// @dev Unsupported erandom type.
         if ((1 << uint8(randType)) & supportedTypes == 0) revert UnsupportedType();
         if (!_isPowerOfTwo(upperBound)) revert NotPowerOfTwo();

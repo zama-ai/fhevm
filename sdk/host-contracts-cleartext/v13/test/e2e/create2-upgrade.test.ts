@@ -70,7 +70,7 @@ function outDirAbs(packageRoot: string): string {
 /** Distinct from the GUIDE's `anvil-rehearsal`, so a developer's manual rehearsal state is never reused. */
 const DEPLOYMENT_ID = 'create2-e2e';
 
-/** The four Solidity scripts v13's upgrade coordinator needs. Absent today; see the plan cited below. */
+/** The four Solidity scripts v13's upgrade coordinator needs. Absent today. */
 const UPGRADE_SCRIPTS = [
   'FhevmUpgradeBase.s.sol',
   'FhevmComputeUpgradeAddresses.s.sol',
@@ -109,7 +109,7 @@ function upgradeBlockedReason(): string | undefined {
   if (missing.length === 0) return undefined;
   return (
     `v13's CREATE2 upgrade is not implemented yet — missing ${missing.join(', ')}. ` +
-    'See plans/CREATE2_TESTNET_UPGRADE_PLAN.md sections 4-6. This subtest activates by itself once they exist.'
+    'This subtest activates by itself once they exist.'
   );
 }
 
@@ -243,7 +243,7 @@ function expectVersion(table: Readonly<Record<string, string>>, key: string): st
 // The test
 ////////////////////////////////////////////////////////////////////////////////
 
-/** The nine live roles v13's upgrade is handed as arguments (plan section 3). */
+/** The nine live roles v13's upgrade is handed as arguments. */
 const LIVE_ROLES = [
   'ACL_ADDRESS',
   'FHEVM_EXECUTOR_ADDRESS',
@@ -257,7 +257,7 @@ const LIVE_ROLES = [
 ] as const;
 
 /**
- * `--acl 0x… --fhevm-executor 0x… …` — the nine live addresses as the upgrade's arguments (section 3).
+ * `--acl 0x… --fhevm-executor 0x… …` — the nine live addresses as the upgrade's arguments.
  *
  * The flag is DERIVED from the role name rather than copied from `common.ts`'s `EXISTING_FLAGS`: drop a
  * trailing `_ADDRESS`, lowercase, and turn `_` into `-`. That rule reproduces all nine exactly, including
@@ -293,14 +293,36 @@ void test('create2-deploy: fresh anvil, v12 stack, then the v13 upgrade', { skip
   let node: ChildProcess | undefined;
   let provider: JsonRpcProvider | undefined;
 
+  /**
+   * Why anvil is gone, or undefined while it is running.
+   *
+   * A coordinator that outlives its node reports the loss as `Connection refused` from deep inside forge's
+   * output, which reads as a deploy bug. Recording the exit here lets the assertion name the real cause.
+   */
+  let nodeGone: string | undefined;
+
+  const killNode = (): void => {
+    if (node?.exitCode === null && node.signalCode === null) {
+      node.kill('SIGTERM');
+    }
+  };
+
   try {
     node = spawn('anvil', ['--silent', '--host', '127.0.0.1', '--port', String(PORT)], { stdio: 'ignore' });
+    node.on('exit', (code, signal) => {
+      nodeGone = `the anvil on ${RPC_URL} exited mid-run (code ${String(code)}, signal ${String(signal)})`;
+    });
+    // Killed on the way out even if this process dies abnormally, so a crashed run cannot leave an
+    // orphaned node holding the port for the next one.
+    process.on('exit', killNode);
     await waitForNode(60_000);
     provider = new JsonRpcProvider(RPC_URL, undefined, { staticNetwork: true });
 
     let v12: Readonly<Record<string, string>> = {};
+    /** Whether the deploy sealed a manifest — the subtests below all read one. */
+    let v12Deployed = false;
 
-    await t.test('v12 deploys from scratch through its own CREATE2 coordinator', () => {
+    await t.test('v12 deploys from scratch through its own CREATE2 coordinator', async () => {
       rmSync(outDirAbs(v12Root), { recursive: true, force: true });
       const { ok, output } = runCoordinator(v12Root, [
         'create2-deploy/deploy-testnet.ts',
@@ -317,20 +339,43 @@ void test('create2-deploy: fresh anvil, v12 stack, then the v13 upgrade', { skip
         '--stage',
         'all',
       ]);
-      assert.ok(ok, `v12 create2 deploy failed:\n${output.slice(-4000)}`);
+      if (!ok) {
+        // The node is PROBED rather than read off the child's `exit` event: `runCoordinator` uses
+        // spawnSync, so that event is still queued here and would report a live node as dead.
+        const detail = (await portIsOpen()) ? '' : ` — ${nodeGone ?? `the anvil on ${RPC_URL} stopped answering`}`;
+        assert.fail(`v12 create2 deploy failed${detail}:\n${output.slice(-4000)}`);
+      }
       v12 = manifestAddresses(v12Root);
       // Asserted here so a role the deploy failed to seal is reported against the deploy, rather than
       // later as an unhelpful "bad argument" from the upgrade.
       for (const role of LIVE_ROLES) addressOf(v12, role);
+      v12Deployed = true;
     });
 
-    // Captured BEFORE the upgrade: section 1's invariants are about what did NOT change, and the
+    /**
+     * Why the subtests below cannot run, or undefined. They all read the manifest the deploy sealed, so
+     * without one they report `manifest has no usable ACL_ADDRESS` — three failures for a single cause,
+     * none of them naming it. Skipping leaves exactly one failure to read.
+     */
+    const noStackReason = (): string | undefined =>
+      v12Deployed ? undefined : 'the v12 deploy above failed, so there is no stack to inspect';
+
+    /** Skips `st` when there is no stack, and reports whether it did. */
+    const needsV12 = (st: { skip: (reason: string) => void }): boolean => {
+      const reason = noStackReason();
+      if (reason === undefined) return false;
+      st.skip(reason);
+      return true;
+    };
+
+    // Captured BEFORE the upgrade: the invariants are about what did NOT change, and the
     // pre-upgrade values are gone by the time the upgrade has run.
     let ownerBefore = '';
     let adminBefore = '';
     let pauserSetBefore = '';
 
-    await t.test('every deployed contract reports its v12 version', async () => {
+    await t.test('every deployed contract reports its v12 version', async (st) => {
+      if (needsV12(st)) return;
       assert.ok(provider);
       const table = contractVersions(v12Root);
       for (const [role, key] of [
@@ -346,7 +391,8 @@ void test('create2-deploy: fresh anvil, v12 stack, then the v13 upgrade', { skip
       }
     });
 
-    await t.test('the v12 stack is owned through ACLOwner, with nothing dangling', async () => {
+    await t.test('the v12 stack is owned through ACLOwner, with nothing dangling', async (st) => {
+      if (needsV12(st)) return;
       assert.ok(provider);
       const acl = view<AclView>(addressOf(v12, 'ACL_ADDRESS'), ACL_ABI, provider);
       const aclOwner = view<OwnableView>(addressOf(v12, 'ACL_OWNER'), OWNABLE_ABI, provider);
@@ -369,7 +415,9 @@ void test('create2-deploy: fresh anvil, v12 stack, then the v13 upgrade', { skip
       assert.equal(await pauserSet.isPauser(addressOf(v12, 'ACL_OWNER')), true, 'ACLOwner is a pauser');
     });
 
-    const upgradeSkip = upgradeBlockedReason();
+    // A missing upgrade script is one reason to skip; a v12 stack that never came up is the other, and it
+    // has to be checked here rather than in each subtest because there is nothing to upgrade either way.
+    const upgradeSkip = upgradeBlockedReason() ?? noStackReason();
 
     await t.test('v13 upgrades the live v12 stack through its own CREATE2 coordinator', { skip: upgradeSkip }, () => {
       rmSync(outDirAbs(v13Root), { recursive: true, force: true });
@@ -383,7 +431,7 @@ void test('create2-deploy: fresh anvil, v12 stack, then the v13 upgrade', { skip
         OUT_DIR_ARG,
         // The SAME deployment id as the deploy, deliberately: `_salt` mixes `cfg.version`, so "0.13"
         // against the v12 deploy's "0.12" already yields a disjoint salt namespace for the same role
-        // names. Reusing the id is therefore correct and is what the plan prefers (section 5).
+        // names. Reusing the id is therefore correct and preferred.
         '--deployment-id',
         DEPLOYMENT_ID,
         '--stage',
@@ -455,7 +503,8 @@ void test('create2-deploy: fresh anvil, v12 stack, then the v13 upgrade', { skip
     });
   } finally {
     provider?.destroy();
-    node?.kill('SIGTERM');
+    killNode();
+    process.off('exit', killNode);
     rmSync(outDirAbs(PREVIOUS_GENERATION_DIR_ABS_PATH), { recursive: true, force: true });
     rmSync(outDirAbs(PACKAGE_ROOT_ABS_PATH), { recursive: true, force: true });
   }

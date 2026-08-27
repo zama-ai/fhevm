@@ -6,10 +6,11 @@
 // Why this test asserts the resolved PATH and not merely "it compiles": without that stub the consumer
 // still typechecks — node10 happily resolves `ts/index.ts` and pulls the package's ESM *sources* into the
 // consumer's build. No error is produced, so a pass/fail check would not notice. The file it lands on is
-// the whole assertion.
+// The whole assertion.
 //
-// Built against the real packed artifact in <root>/tarball, not against pkg/ — an `exports`/`files` change
-// that omits the stub has to be caught in the thing that actually gets published.
+// Built against the real packed artifact in the shared tarballs directory, not against pkg/ — an
+// `exports`/`files` change that omits the stub has to be caught in the thing that actually gets published.
+import { TARBALL_DIR_ABS_PATH } from '@fhevm/sdk-common';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -20,7 +21,6 @@ import { afterAll, expect, test } from 'vitest';
 
 const TEST_ROOT = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = join(TEST_ROOT, '..', '..');
-const TARBALL_DIR = join(PACKAGE_ROOT, 'tarball');
 const PACKAGE_SPECIFIER = '@fhevm/host-contracts-cleartext/ts';
 
 /** The repo's own compiler; the throwaway consumers install nothing. */
@@ -47,19 +47,14 @@ function readJson<T>(path: string): T | null {
 ////////////////////////////////////////////////////////////////////////////////
 
 function _tarballPath(): string {
-  if (!existsSync(TARBALL_DIR)) {
-    throw new Error(`Missing ${TARBALL_DIR}. Run npm run build (or npm run pack:tarball) first.`);
+  if (!existsSync(TARBALL_DIR_ABS_PATH)) {
+    throw new Error(`Missing ${TARBALL_DIR_ABS_PATH}. Run npm run build (or npm run pack:tarball) first.`);
   }
-  const tarballs = readdirSync(TARBALL_DIR).filter((entry) => entry.endsWith('.tgz'));
+  const tarballs = readdirSync(TARBALL_DIR_ABS_PATH).filter((entry) => entry.endsWith('.tgz'));
 
-  // Pinned by VERSION, not by name prefix.
-  //
-  // The directory is deliberately shared: the upgrade e2e packs the previous generation's tarball here
-  // too (see internal/createPackageTarball.ts). Every generation publishes under the SAME npm name and
-  // differs only by version, so a name-prefix filter matches both and this threw "expected exactly one"
-  // as soon as the e2e had run. Reading the version out of the payload manifest makes the guard stronger
-  // than the count ever was: it pins the exact artifact this test is supposed to be exercising, so a
-  // stale tarball from an earlier version is a miss rather than a coin flip.
+  // Pinned by VERSION, not by name prefix: the directory is shared, and every generation publishes under
+  // The same npm name, so a prefix filter matches a sibling's tarball too. The version pins the exact
+  // artifact this test exercises, which also makes a stale one a miss rather than a coin flip.
   const version = readJson<{ version?: string }>(join(PACKAGE_ROOT, 'pkg', 'package.json'))?.version;
   if (version === undefined) {
     throw new Error(`Could not read version from ${join(PACKAGE_ROOT, 'pkg', 'package.json')}.`);
@@ -67,9 +62,9 @@ function _tarballPath(): string {
   const expected = `fhevm-host-contracts-cleartext-${version}.tgz`;
   if (!tarballs.includes(expected)) {
     const found = tarballs.length === 0 ? '(none)' : tarballs.join(', ');
-    throw new Error(`Missing ${expected} in ${TARBALL_DIR}, found: ${found}. Run npm run pack:tarball.`);
+    throw new Error(`Missing ${expected} in ${TARBALL_DIR_ABS_PATH}, found: ${found}. Run npm run pack:tarball.`);
   }
-  return join(TARBALL_DIR, expected);
+  return join(TARBALL_DIR_ABS_PATH, expected);
 }
 
 /**

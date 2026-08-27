@@ -1,0 +1,66 @@
+{
+  "name": "fhevm-sdk-workspace",
+  "private": true,
+  "//": [
+    "- Workspace root. Private, never published. Holds the shared toolchain, shared config and the member list.",
+    "- The root fhevm workspace must never glob `sdk/*`, or members belong to two workspaces and hoist out of this one.",
+    "- js-sdk is not a member: it is still a root-workspace member. Consume it as a tarball until Step 2.",
+    "- hardhat-plugin/v2 and /v3 are not members either: they depend on js-sdk.",
+    "- Members are explicit paths, not globs. Only the CURRENT generation lists its `pkg/`: every payload",
+    "  shares one published name, so v12/pkg is excluded while v13/pkg is a member (ARCHITECTURE.md I3).",
+    "- Older generations stay reachable through their harness: `@fhevm/host-contracts-cleartext-dev-v12/pkg/...`,",
+    "  which works only because harness manifests declare no `exports`. Never add one (I2).",
+    "- devDependencies here are the shared toolchain only. Package-specific deps (ethers, viem, openzeppelin) stay in their package.",
+    "- `common/` is @fhevm/sdk-common: private, never published, and importable ONLY by code that is",
+    "  itself never published. It holds what every harness needs identically -- workspace layout, tarball",
+    "  collection -- and nothing that a generation defines for itself. A `pkg/` importing it would ship an",
+    "  unresolvable specifier; test:tarball:run is what catches that, so the boundary is enforced, not just",
+    "  stated. It is a member so npm links it and consumers use a bare specifier.",
+    "- Tool versions must match sdk/js-sdk: a workspace hoists one copy, so the root pin wins for every member.",
+    "- prettier ^3.8.3 outranks the members' and js-sdk's ^3.6.2; all three resolve to one hoisted 3.9.x.",
+    "- No `type` field: hardhat-plugin/v2 is commonjs and v3 is esm, and a subpackage omitting its own would inherit it.",
+    "- engines >=22.6, not js-sdk's >=22.0: create2-deploy runs .ts on plain node, which needs type stripping.",
+    "- foundry.base.toml holds cross-generation POLICY (currently `[fmt]`), pulled in via `extends` in foundry.toml.",
+    "  NOT compile settings: solc_version/evm_version are part of what each generation freezes. Editing it\n    changes what check:vendored expects, because vendored sources are stored forge-formatted.",
+    "- scripts/ holds shared SHELL scripts, invoked by members as \"$(npm prefix)/scripts/<name>.sh\".",
+    "  It is deliberately not a workspace member: shell scripts are run by path, so they need no node resolution.",
+    "- pack:tarballs collects every member's .tgz into sdk/tarballs, so a package never packs its predecessor.",
+    "- `npm prefix` is this directory at any member depth. Not $INIT_CWD, which is wherever npm was invoked.",
+    "- Only this root may clear sdk/tarballs: a member sweeping it would delete another generation's tarball.",
+    "- clean:tarballs stays relative: a root script's cwd is always this dir, and an empty $(...) in rm -rf targets /."
+  ],
+  "engines": {
+    "node": ">=22.6"
+  },
+  "workspaces": [
+    "common",
+    "host-contracts-cleartext/v12",
+    "host-contracts-cleartext/v13",
+    "host-contracts-cleartext/v13/pkg"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "prettier:check": "npm run prettier:check --workspaces --if-present",
+    "prettier:write": "npm run prettier:write --workspaces --if-present",
+    "pack:tarballs": "npm run pack:tarball --workspaces --if-present -- --out-dir \"$(npm prefix)/tarballs\"",
+    "clean:tarballs": "rm -rf ./tarballs",
+    "forge:fmt": "npm run forge:fmt --workspaces --if-present",
+    "forge:fmt:check": "npm run forge:fmt:check --workspaces --if-present",
+    "forge:lint": "npm run forge:lint --workspaces --if-present",
+    "check:lint-policy": "\"$(npm prefix)/scripts/check-lint-policy.sh\""
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.0.0",
+    "eslint": "^10.0.2",
+    "prettier": "^3.8.3",
+    "publint": "^0.2.12",
+    "tsx": "^4.23.0",
+    "typescript": "^6.0.2",
+    "typescript-eslint": "^8.58.2",
+    "vitest": "^4.0.18"
+  }
+}

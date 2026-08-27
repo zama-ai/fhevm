@@ -12,7 +12,7 @@ import {IOwnable2Step, IPauserSet, IACLOwner} from "./Interfaces.sol";
  * @notice What is done, what is left, and why. Read-only: no broadcast, no key, no state written.
  *
  * Answers the question a resumable deploy makes unavoidable — "where did I get to?" — from the only
- * source that can be trusted for it. Resume on this path has no journal (§2), so a status board
+ * source that can be trusted for it. Resume on this path has no journal, so a status board
  * assembled from local files would be a second opinion that can disagree with the chain. Everything
  * below is a chain read plus the sealed manifest.
  *
@@ -25,12 +25,12 @@ import {IOwnable2Step, IPauserSet, IACLOwner} from "./Interfaces.sol";
  * ---------------------------------------------------------------------------------------------
  *
  *   done       code at the sealed address. Nothing to do — including when someone else's
- *              transaction put it there (§4: frontrunning is harmless, because construction
+ *              transaction put it there (frontrunning is harmless, because construction
  *              captures nothing from the caller, so their bytes are our bytes).
  *   todo       no code. The next `--stage creates` will send it.
  *   DRIFT      this build predicts a DIFFERENT address than the manifest sealed. Fatal, and not an
  *              attack — different initcode gives a different address, which is what CREATE2 is. It
- *              means the build moved under the seal. Check the build, not the mempool (§8).
+ *              means the build moved under the seal. Check the build, not the mempool.
  *   NO CODE    `vm.getCode` returned nothing: the artifact is not in out/. The build did not run,
  *              or ran with a different --out, or the contract was renamed.
  *
@@ -95,7 +95,7 @@ contract FhevmStatus is FhevmCreate2Base {
             return;
         }
 
-        // EIP-3860 (§11 R3). Not fatal to report, but a create that exceeds it fails on chain, and
+        // EIP-3860. Not fatal to report, but a create that exceeds it fails on chain, and
         // finding that out here costs nothing.
         if (c.initCode.length > MAX_INITCODE_SIZE) {
             _bad++;
@@ -152,7 +152,7 @@ contract FhevmStatus is FhevmCreate2Base {
         } else if (aclCurrentOwner == cfg.deployer) {
             console.log("  A   addPauser(ACLOwner)     ready");
         } else {
-            // Not unrecoverable — §6.1 keeps it reachable via ACLOwner.execute forever — but it is
+            // Not unrecoverable — `ACLOwner.execute` keeps it reachable forever — but it is
             // no longer this stage's to do, and step C will refuse until it is done.
             console.log("  A   addPauser(ACLOwner)     BLOCKED - ACL.owner() is no longer the deployer;");
             console.log("                                        use ACLOwner.execute(pauserSet, ...)");
@@ -198,7 +198,7 @@ contract FhevmStatus is FhevmCreate2Base {
     }
 
     /**
-     * @dev The tri-state (§8). The proxies' runtime code never changes when they are materialized,
+     * @dev The tri-state. The proxies' runtime code never changes when they are materialized,
      *      so this counts ERC-1967 implementation slots rather than calling `getCode`.
      *
      *      Mixed is the state worth having a status board for at all: `ACLOwner.upgrade` is atomic,

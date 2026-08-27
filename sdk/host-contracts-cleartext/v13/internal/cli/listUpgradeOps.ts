@@ -2,7 +2,7 @@
 //
 // Read-only: writes nothing, compiles nothing, reads only committed JSON.
 //
-// The verdicts mirror RULES.md rule 6 / README step 7: a bytecode change without a version bump means an
+// The verdicts mirror README step 7: a bytecode change without a version bump means an
 // upgrade of that proxy would carry no replay guard; a bump without a bytecode change is a wasted version.
 // Those two are flagged, because they are always a manual decision and never a mechanical fix.
 

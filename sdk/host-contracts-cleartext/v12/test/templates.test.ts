@@ -65,7 +65,7 @@ const CONFIG_PATH = `${PACKAGE_ROOT_ABS_PATH}/internal/placeholders/addresses.so
  *
  * Derived from ADDRESS_NAMES rather than listed, so a protocol generation that adds or drops a host
  * address needs no edit here. The values only have to be valid, non-zero, distinct, and different from
- * the placeholder markers they replace — nothing depends on which addresses they are.
+ * The placeholder markers they replace — nothing depends on which addresses they are.
  *
  * DECIMAL DIGITS ONLY, and that is load-bearing rather than stylistic: these are rendered into Solidity
  * as address literals, and solc rejects any hex literal containing letters unless it carries a valid

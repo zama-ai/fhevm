@@ -12,7 +12,7 @@ const FHE_TYPE_UINT64 = 5;
 
 /**
  * How many draws. Enough that a constant or a per-block seed shows up immediately, and small enough that
- * the run stays a few seconds on anvil (one transaction, and therefore one block, per draw).
+ * The run stays a few seconds on anvil (one transaction, and therefore one block, per draw).
  */
 const DRAWS = 100;
 

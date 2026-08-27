@@ -1,13 +1,11 @@
 // Upgrade a LIVE v12 cleartext stack to v13, through the canonical CREATE2 factory.
 //
-// See plans/CREATE2_TESTNET_UPGRADE_PLAN.md. Section references in the form §N are that document's;
-// references to the deploy plan are marked as such.
 //
 // The sibling of deploy-testnet.ts, and everything that is not a stage comes from common.ts: argument
 // parsing, the config file, the out-dir identity check, the chain and factory preflight, signer
 // resolution, the reorg/finality waits, the journal, the seal gate and broadcast().
 //
-// ## Two invariants, structural rather than checked-and-hoped (§1)
+// ## Two invariants, structural rather than checked-and-hoped
 //
 // OWNERSHIP NEVER CHANGES. The live stack's ACL is already owned by a standing ACLOwner, and that
 // ACLOwner is already owned by the admin; the upgrade runs entirely THROUGH that existing root. So this
@@ -15,7 +13,7 @@
 // cannot move ownership even when invoked wrongly. `verify` asserts it anyway.
 //
 // THE PAUSERS STAY THE SAME. No pauser stage either. PauserSet is untouched: same contract, same
-// membership. Also asserted rather than assumed, because PauserSet exposes no enumeration — see §7.
+// membership. Also asserted rather than assumed, because PauserSet exposes no enumeration.
 //
 // ## What is NOT here
 //
@@ -66,13 +64,13 @@ import {
 } from './common.ts';
 
 ////////////////////////////////////////////////////////////////////////////////
-// Stages (§2)
+// Stages
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
  * Four real stages against the deploy's nine.
  *
- * Absent by design, and their absence is the enforcement of §1: `pausers`, `offer-acl`, `accept-acl`,
+ * Absent by design, and their absence is what enforces the invariants: `pausers`, `offer-acl`, `accept-acl`,
  * `offer-admin`, `accept-admin`. An upgrade that cannot name those stages cannot run them.
  */
 export type Stage = 'compute' | 'creates' | 'materialize' | 'verify' | 'status' | 'log' | 'report' | 'all';
@@ -109,7 +107,6 @@ function needsDeployerKey(stage: string): boolean {
 
 const HELP = `
 Upgrade a live v12 cleartext stack to v13, via the canonical CREATE2 factory.
-See plans/CREATE2_TESTNET_UPGRADE_PLAN.md.
 
 Usage: node create2-deploy/upgrade-testnet.ts --rpc-url URL [--account NAME] --admin 0x...
                              --deployment-id ID <the nine existing addresses> [--handle 0x...]
@@ -118,11 +115,11 @@ Usage: node create2-deploy/upgrade-testnet.ts --rpc-url URL [--account NAME] --a
   --account NAME       forge keystore account to broadcast from. Required on every chain EXCEPT a
                        local anvil, where accounts 0 and 1 of anvil's public mnemonic are used
   --admin 0x...        the CURRENT ACLOwner owner. Not a value this sets — a value it VERIFIES, since
-                       ownership must not change (section 1)
+                       ownership must not change
   --deployment-id ID   reuse the deployment's own id. The salt mixes the version, so "0.13" here and
-                       "0.12" for the original deploy already give disjoint addresses (section 5)
+                       "0.12" for the original deploy already give disjoint addresses
 
-THE LIVE STACK (section 3) — nine addresses, best supplied through the config file:
+THE LIVE STACK — nine addresses, best supplied through the config file:
 
   --acl 0x...                    --hcu-limit 0x...
   --fhevm-executor 0x...         --cleartext-arithmetic 0x...
@@ -134,15 +131,15 @@ THE LIVE STACK (section 3) — nine addresses, best supplied through the config 
   implementations BAKE these addresses into their creation code: a wrong entry produces a stack that
   materializes cleanly and fails only in use. Eight are cross-checked against the stack's own wiring;
   --kms-verifier cannot be (no contract exposes a getter returning it), so it gets a weaker check and
-  says so. See section 3.1.
+  says so.
 
   --handle 0x...       a cleartext handle already in the live CleartextDB, repeatable. compute records
                        its value; verify requires it unchanged. STRONGLY RECOMMENDED: without one,
                        verify can only prove the stack still works, not that existing data survived
-                       (section 3.2)
+
   --migration PATH     the KMS migration seed. Omit to reconstruct it from the live KMSVerifier plus
                        the package defaults, which is refused if the live signer set disagrees
-                       (section 6)
+
 
   --confirmations N    reorg DEPTH floor for the between-stage waits
   --no-finality        wait only for --confirmations of depth, not for finality
@@ -165,7 +162,7 @@ THE LIVE STACK (section 3) — nine addresses, best supplied through the config 
 `;
 
 ////////////////////////////////////////////////////////////////////////////////
-// The live stack (§3)
+// The live stack
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
@@ -200,7 +197,7 @@ function callString(ctx: Ctx, target: string, sig: string): string | null {
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * §3.1 — every supplied address, checked against the live chain before anything is computed.
+ * Every supplied address, checked against the live chain before anything is computed.
  *
  * This is the most important thing this coordinator does, and the reason is worth stating where the code
  * is: the seven v13 implementations bake these addresses into their CREATION CODE. A wrong entry does not
@@ -223,7 +220,7 @@ function validateExisting(ctx: Ctx): void {
       ...missing.map((role) => `         ${flagFor(role)}  (${role})`),
       '',
       `       Put them in the "existing" block of ${DEFAULT_CONFIG_NAME}, or pass the flags. An upgrade`,
-      '       derives nothing from the chain it does not first verify — see section 3 of the plan.',
+      '       derives nothing from the chain it does not first verify.',
     );
   }
 
@@ -233,7 +230,7 @@ function validateExisting(ctx: Ctx): void {
   const arithmetic = at('CLEARTEXT_ARITHMETIC_ADDRESS');
   const aclOwner = at('ACL_OWNER');
 
-  say('🔬  validating the live stack (section 3.1)');
+  say('🔬  validating the live stack');
 
   let bad = 0;
   const expect = (role: string, from: string, sig: string, source: string): void => {
@@ -255,7 +252,7 @@ function validateExisting(ctx: Ctx): void {
   // Eight addresses, each corroborated by a contract OTHER than itself. ACL by three.
   expect('ACL_ADDRESS', executor, 'getACLAddress()(address)', 'FHEVMExecutor.getACLAddress');
   expect('ACL_ADDRESS', at('CLEARTEXT_DB_ADDRESS'), 'getACLAddress()(address)', 'CleartextDB.getACLAddress');
-  expect('ACL_ADDRESS', aclOwner, 'acl()(address)', 'ACLOwner.acl');
+  expect('ACL_ADDRESS', aclOwner, 'ACL_ADDRESS()(address)', 'ACLOwner.ACL_ADDRESS');
   expect('FHEVM_EXECUTOR_ADDRESS', acl, 'getFHEVMExecutorAddress()(address)', 'ACL.getFHEVMExecutorAddress');
   expect(
     'FHEVM_EXECUTOR_ADDRESS',
@@ -285,7 +282,7 @@ function validateExisting(ctx: Ctx): void {
   expect('PAUSER_SET_ADDRESS', acl, 'getPauserSetAddress()(address)', 'ACL.getPauserSetAddress');
   expect('ACL_OWNER', acl, 'owner()(address)', 'ACL.owner');
 
-  // §1: --admin is verified, never set. The upgrade must not move ownership, so a mismatch here means
+  // --admin is verified, never set. The upgrade must not move ownership, so a mismatch here means
   // the operator believes something false about who controls the stack.
   const liveAdmin = callAddress(ctx, aclOwner, 'owner()(address)');
   if (liveAdmin?.toLowerCase() !== ctx.opt.admin.toLowerCase()) {
@@ -299,7 +296,7 @@ function validateExisting(ctx: Ctx): void {
 
   // KMS_VERIFIER_ADDRESS: no contract in the v12 set exposes a getter returning it, so it cannot be
   // corroborated by wiring the way the others are. What follows establishes "this is an initialized v12
-  // KMSVerifier" — NOT that it is this stack's. §7's post-upgrade signer-set comparison is what would
+  // KMSVerifier" — NOT that it is this stack's. The post-upgrade signer-set comparison is what would
   // catch the residual case of pointing at another deployment's verifier on the same chain.
   const kms = at('KMS_VERIFIER_ADDRESS');
   const kmsVersion = callString(ctx, kms, 'getVersion()(string)');
@@ -311,7 +308,7 @@ function validateExisting(ctx: Ctx): void {
     bad += 1;
   } else {
     say(`    ok   ${pad('KMS_VERIFIER_ADDRESS', ROLE_WIDTH)} reports ${kmsVersion} — WEAK: not corroborated by wiring`);
-    warn('       KMS_VERIFIER_ADDRESS is the one address the live stack cannot confirm (section 3.1).');
+    warn('       KMS_VERIFIER_ADDRESS is the one address the live stack cannot confirm.');
   }
 
   if (bad > 0) {
@@ -331,21 +328,19 @@ function validateExisting(ctx: Ctx): void {
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * The Solidity half of this coordinator is not written yet (plan §8). Rather than let forge fail with
+ * The Solidity half of this coordinator is not written yet. Rather than let forge fail with
  * "script not found", each stage that needs one says which file is missing and where it is specified.
  *
- * This exists so the parts that ARE implemented can be run and tested on their own — §3.1's validation
- * needs no Solidity at all, and it is the check most likely to save an operator.
+ * This exists so the parts that ARE implemented can be run and tested on their own — validating the
+ * supplied addresses needs no Solidity at all, and it is the check most likely to save an operator.
  */
-function requireScript(name: string, planSection: string): string {
+function requireScript(name: string): string {
   const path = join(SCRIPT_DIR, name);
   if (!existsSync(join(PACKAGE_ROOT, path))) {
     fail(
       `Error: ${path} does not exist yet.`,
-      `       It is specified in plans/CREATE2_TESTNET_UPGRADE_PLAN.md ${planSection}.`,
-      '',
-      '       Implemented and runnable today: --stage compute performs the section 3.1 validation of the',
-      '       live stack before it reaches this point, so it is worth running on its own.',
+      '       Implemented and runnable today: --stage compute validates the supplied addresses against',
+      '       the live stack before it reaches this point, so it is worth running on its own.',
     );
   }
   return path;
@@ -359,7 +354,7 @@ function stageCompute(ctx: Ctx): void {
   // Same reasoning as the deploy: recomputing after transactions have been sent would move the sealed
   // address set out from under a half-applied upgrade. An upgrade is worse than a deploy here, because
   // `materialize` is NOT idempotent — the reinitializers are reinitializer(n)-guarded, so a second run
-  // reverts rather than no-oping (plan §11).
+  // reverts rather than no-oping.
   if (readJsonl<JournalEntry>(ctx.journalPath).length > 0) {
     fail(
       `Error: '${ctx.opt.deploymentId}' has already sent transactions (see ${ctx.journalPath}),`,
@@ -368,7 +363,7 @@ function stageCompute(ctx: Ctx): void {
     );
   }
 
-  // §3.1 — before anything is computed, and before any build. This is the cheap check that prevents the
+  // Before anything is computed, and before any build. This is the cheap check that prevents the
   // expensive mistake.
   validateExisting(ctx);
   recordHandleValues(ctx);
@@ -376,7 +371,7 @@ function stageCompute(ctx: Ctx): void {
   ensureDir(ctx.outDir);
   removeIfPresent(ctx.buildOut, join(ctx.outDir, 'addresses.sol'), join(ctx.outDir, 'pass2.json'), manifestPath(ctx));
 
-  const script = requireScript('FhevmComputeUpgradeAddresses.s.sol', '§4 and §8');
+  const script = requireScript('FhevmComputeUpgradeAddresses.s.sol');
   const build = (env: NodeJS.ProcessEnv): void => {
     if (ctx.opt.noBuild) {
       requireBuiltArtifacts(ctx);
@@ -404,7 +399,7 @@ function stageCompute(ctx: Ctx): void {
     }
   };
 
-  // Two passes, not the deploy's three (§4): the ACL already exists, so nothing computed here feeds
+  // Two passes, not the deploy's three: the ACL already exists, so nothing computed here feeds
   // anything the live stack has already fixed.
   const env = scriptEnv(ctx, existingEnv(ctx));
   build(env);
@@ -416,7 +411,7 @@ function stageCompute(ctx: Ctx): void {
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * §3.2 — the value of each `--handle`, read before the upgrade and required unchanged after it.
+ * The value of each `--handle`, read before the upgrade and required unchanged after it.
  *
  * Reported rather than silently skipped when empty, because the two situations give different guarantees
  * and conflating them in the output would overstate what `verify` proved.
@@ -425,7 +420,7 @@ function recordHandleValues(ctx: Ctx): void {
   if (ctx.opt.handles.length === 0) {
     warn(
       '  no --handle given: verify will be able to prove the stack still WORKS after the upgrade, but',
-      '  not that existing cleartext data survived it. Those are different claims (section 3.2).',
+      '  not that existing cleartext data survived it. Those are different claims.',
     );
     return;
   }
@@ -456,20 +451,20 @@ function existingEnv(ctx: Ctx): NodeJS.ProcessEnv {
 async function stageCreates(ctx: Ctx): Promise<void> {
   say('🥩 creates (one CREATE2 per create, each gated on getCode)');
   ctx.stageLabel = 'creates';
-  const script = requireScript('FhevmUpgradeCreates.s.sol', '§5 and §8');
+  const script = requireScript('FhevmUpgradeCreates.s.sol');
   await broadcast(ctx, `${script}:FhevmUpgradeCreates`);
 }
 
 async function stageMaterialize(ctx: Ctx): Promise<void> {
   say('🧩  materialize — one atomic ACLOwner.upgrade');
   ctx.stageLabel = 'D';
-  const script = requireScript('FhevmMaterializeUpgrade.s.sol', '§6 and §8');
+  const script = requireScript('FhevmMaterializeUpgrade.s.sol');
   await broadcast(ctx, `${script}:FhevmMaterializeUpgrade`);
 }
 
 function stageVerify(ctx: Ctx): void {
   say('✅  verify');
-  const script = requireScript('FhevmVerifyUpgrade.s.sol', '§7 and §8');
+  const script = requireScript('FhevmVerifyUpgrade.s.sol');
   const args = [
     'script',
     `${script}:FhevmVerifyUpgrade`,
@@ -482,10 +477,10 @@ function stageVerify(ctx: Ctx): void {
   if (run('forge', args, { ...scriptEnv(ctx, existingEnv(ctx)), ...generatedConfigEnv(ctx) }) !== 0) {
     fail('Error: verify failed.');
   }
-  // §7.1's ABI-enumerated survey and the ownership/pauser log scans live HERE rather than in Solidity,
-  // which cannot enumerate an ABI. Not yet implemented; the plan is explicit that a missing survey must
-  // be reported rather than inferred as "nothing changed".
-  warn('  the section 7.1 survey (every readable value unchanged) is not implemented yet.');
+  // The ABI-enumerated survey and the ownership/pauser log scans live HERE rather than in Solidity,
+  // which cannot enumerate an ABI. Not yet implemented; a missing survey is reported rather than
+  // inferred as "nothing changed".
+  warn('  the survey (every readable value unchanged) is not implemented yet.');
 }
 
 function stageStatus(ctx: Ctx): void {
@@ -497,9 +492,9 @@ function stageStatus(ctx: Ctx): void {
   say('-'.repeat(RULE_WIDTH));
   say(`📋  status  ${ctx.opt.deploymentId} @ v${ctx.opt.stage}`);
   say('-'.repeat(RULE_WIDTH));
-  // materialize is NOT idempotent (plan §11), so "already done" has to read as success, not as a reason
+  // materialize is NOT idempotent, so "already done" has to read as success, not as a reason
   // to retry into a revert.
-  warn('  status detail for the upgrade is not implemented yet (plan section 8).');
+  warn('  status detail for the upgrade is not implemented yet.');
 }
 
 ////////////////////////////////////////////////////////////////////////////////

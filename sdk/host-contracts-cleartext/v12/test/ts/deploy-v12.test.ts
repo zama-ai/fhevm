@@ -301,7 +301,7 @@ test('full deploy of a brand-new v13 stack: all proxies materialize and cleartex
     ).toBe(false);
 
     // (c) Functional round-trip: trivialEncrypt(42) via the executor, then read the cleartext from
-    //     the DB — proves executor → CleartextArithmetic → CleartextDB wiring end to end.
+    //     The DB — proves executor → CleartextArithmetic → CleartextDB wiring end to end.
     const executor = deployed.fhevmAddresses.fhevmExecutorAddress as Address;
     const hash = await wallet.writeContract({
       address: executor,

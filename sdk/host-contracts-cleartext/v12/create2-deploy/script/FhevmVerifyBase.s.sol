@@ -27,7 +27,7 @@ import {
  *                                 (including whole signer arrays), and the two gates that are the same
  *                                 question for any deployment — is the canonical factory there, and does
  *                                 every role hold code
- *   the concrete verify           which roles, which values, which invariants, and in what order
+ *   The concrete verify           which roles, which values, which invariants, and in what order
  *
  * `FhevmVerify` and `FhevmVerifyUpgrade` therefore share no code with each other at all — only with
  * this. That is deliberate: they answer different questions. A deploy asserts a stack came into
@@ -36,7 +36,7 @@ import {
  * a check drift into "whatever the other one happened to need".
  *
  * @dev Every helper is `internal` rather than `private`: `private` in a base contract is invisible to
- *      the contract extending it, which is what made these live in the deploy's verify to begin with.
+ *      The contract extending it, which is what made these live in the deploy's verify to begin with.
  */
 abstract contract FhevmVerifyBase is FhevmCreate2Base {
     /**
@@ -133,7 +133,7 @@ abstract contract FhevmVerifyBase is FhevmCreate2Base {
     /**
      * @dev The canonical factory has code.
      *
-     *      Presence only. The §3 gate proper — that its RUNTIME code hashes to the known value — is the
+     *      Presence only. The real gate — that its RUNTIME code hashes to the known value — is the
      *      coordinator's, in `common.ts`, and runs in preflight before any script does. Repeating it here
      *      would need the expected hash as a second copy of a constant, which is how the two drift.
      */
@@ -250,7 +250,7 @@ abstract contract FhevmVerifyBase is FhevmCreate2Base {
     }
 
     /**
-     * @dev §11 R1, printed on every successful verify rather than filed in a document nobody reads.
+     * @dev The mainnet-replay notice, printed on every successful verify rather than filed in a document nobody reads.
      *
      *      The factory exists on mainnet, the manifest is public in git before the first transaction,
      *      and the signer keys derive from a published mnemonic. So anyone can deploy a bit-identical

@@ -25,7 +25,7 @@
 # (apply_genesis in anvil's backend inserts the dev accounts first, then overlays the alloc). So the ten
 # funded dev accounts are still there with their normal balances; only the addresses named in the alloc
 # are touched. The mnemonic and derivation path below therefore have to match scripts/anvil.sh exactly, or
-# the account indices a test expects will not line up.
+# The account indices a test expects will not line up.
 #
 # The deployer's nonce is part of the alloc on purpose. Both loaders apply `nonce.unwrap_or_default()`
 # unconditionally, so an entry without one would silently reset it to 0 — and the next CREATE from that

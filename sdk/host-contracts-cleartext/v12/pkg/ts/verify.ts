@@ -455,7 +455,7 @@ async function checkOwnership(
 
   report.expectAddress('ownership.ACL.owner', await read(acl, aclAbi, 'owner'), aclOwner);
   report.expectAddress('ownership.ACL.pendingOwner', await read(acl, aclAbi, 'pendingOwner'), ZERO_ADDRESS);
-  report.expectAddress('ownership.ACLOwner.acl', await read(aclOwner, aclOwnerAbi, 'acl'), acl);
+  report.expectAddress('ownership.ACLOwner.ACL_ADDRESS', await read(aclOwner, aclOwnerAbi, 'ACL_ADDRESS'), acl);
   report.expectAddress(
     'ownership.ACLOwner.pendingOwner',
     await read(aclOwner, aclOwnerAbi, 'pendingOwner'),
@@ -573,10 +573,10 @@ async function checkBootstrap(
  * unchanged between generations, so a moved version there means something re-pointed a proxy nobody
  * intended to touch.
  *
- * This generation is the FLOOR (RULES.md rule 21): it has no upgrade path of its own, so `mode: 'upgrade'`
+ * This generation is the FLOOR: it has no upgrade path of its own, so `mode: 'upgrade'`
  * here is only ever used to verify a stack of this generation against a snapshot of itself — or by the NEXT
  * generation's tooling, which supplies its own list. The default is carried anyway rather than removed, so
- * the file stays byte-comparable with v13 (rule 22) and so the list is already correct when this generation
+ * the file stays byte-comparable with v13 and so the list is already correct when this generation
  * gains an upgrade path.
  */
 export const DEFAULT_MAY_CHANGE: readonly string[] = [

@@ -33,7 +33,7 @@ BOOTSTRAP_SOL="$(anvil_lib_internal_dir)/LocalHostBootstrap.sol"
 # (library-solidity/config/ZamaConfig.sol -> _getLocalConfig). They are compiled into consumer bytecode,
 # so every launcher checks the stack actually landed on them.
 #
-# Read from sdk/cleartext-config.json rather than written here (RULES.md rule 23). They used to be three
+# Read from sdk/cleartext-config.json rather than written here. They used to be three
 # literals in this file AND three more in anvil.sh, so the two launchers could disagree with each other as
 # well as with the source of truth -- and nothing would have noticed: the TypeScript and Solidity checks
 # cannot see a shell variable, and a wrong value here surfaces only as a ZamaConfig-compiled dApp calling
@@ -314,7 +314,7 @@ read_mnemonic() { sed -n 's/^string constant MNEMONIC = "\(.*\)";.*/\1/p' "$ADDR
 
 # One scalar from LocalHostBootstrap.sol — the mirror of DEFAULT_BOOTSTRAP_CONFIG. Matches any
 # visibility, so `internal constant` is found too. Values come back in the source's own form: decimal for
-# the numeric ones, 0x-prefixed for addresses.
+# The numeric ones, 0x-prefixed for addresses.
 #   read_bootstrap_scalar GATEWAY_CHAIN_ID    -> 100733346448153
 #   read_bootstrap_scalar DECRYPTION_ADDRESS  -> 0xEaaA2FC6BC259dF015Aa7Dc8e59e0B67df622721
 #   read_bootstrap_scalar HCU_CAP_PER_BLOCK   -> 281474976710655
@@ -523,7 +523,7 @@ build_initializer_calldata() {
 # real and some still empty, which passes every "has code" check and fails only in use.
 #
 # Requires build_initializer_calldata and deploy_real_implementations to have run, ACL_OWNER to exist, and
-# the caller to already hold upgrade authority — ACL.owner() must be the ACLOwner, whether that came from
+# The caller to already hold upgrade authority — ACL.owner() must be the ACLOwner, whether that came from
 # a two-step transfer or from writing OWNABLE_SLOT directly.
 upgrade_stack_atomically() {
     local ops
@@ -674,11 +674,11 @@ smoke_check() {
         _smoke_fail "ACL.owner() $owner has no code — the stack is EOA-owned"
     else
         _smoke_pass "ACL.owner() -> $owner (contract)"
-        if [ "$(cast call "$owner" 'acl()(address)' --rpc-url "$RPC_URL" 2>/dev/null \
+        if [ "$(cast call "$owner" 'ACL_ADDRESS()(address)' --rpc-url "$RPC_URL" 2>/dev/null \
                 | tr 'A-Z' 'a-z')" = "$(printf '%s' "$ACL_ADDRESS" | tr 'A-Z' 'a-z')" ]; then
-            _smoke_pass "ACLOwner.acl() points back at ACL"
+            _smoke_pass "ACLOwner.ACL_ADDRESS() points back at ACL"
         else
-            _smoke_fail "ACLOwner.acl() does not point back at ACL"
+            _smoke_fail "ACLOwner.ACL_ADDRESS() does not point back at ACL"
         fi
         if [ "$(cast call "$PAUSER_SET_ADDRESS" 'isPauser(address)(bool)' "$owner" \
                 --rpc-url "$RPC_URL" 2>/dev/null)" = "true" ]; then

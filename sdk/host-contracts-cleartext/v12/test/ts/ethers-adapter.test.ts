@@ -5,7 +5,7 @@
 //
 //   1. A full stack deployed through it, with every address compared against `precomputeAddresses`.
 //      Since each address is CREATE(deployer, startNonce + k), matching addresses IS the proof that
-//      the ~26 sends occupied a contiguous nonce range — the exact thing an adapter that lets ethers
+//      The ~26 sends occupied a contiguous nonce range — the exact thing an adapter that lets ethers
 //      choose gets wrong.
 //   2. A failed broadcast must not consume a nonce. Driven with a stub signer, because making a real
 //      node reject one send mid-deploy is not reproducible.

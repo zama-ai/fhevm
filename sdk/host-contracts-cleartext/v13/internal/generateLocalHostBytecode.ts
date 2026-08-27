@@ -223,7 +223,7 @@ export function localHostAddresses(): LocalHostStack {
     if (actual.toLowerCase() !== expected.toLowerCase()) {
       throw new Error(
         `${field} derived as ${actual}, but ZamaConfig._getLocalConfig() says ${expected} ` +
-          `(RULES.md rules 15 and 17). Check MNEMONIC, DEPLOYER_ADDRESS_INDEX, the start nonce and ` +
+          `. Check MNEMONIC, DEPLOYER_ADDRESS_INDEX, the start nonce and ` +
           `NONCE_OFFSET against pkg/ts/addresses.ts.`,
       );
     }
@@ -293,7 +293,7 @@ function _renderAddresses(stack: LocalHostStack): string {
   // known names, so a second non-proxy contract (PauserSet is the only one today) is handled with no edit.
   const proxyCount = ADDRESS_NAMES.filter((name) => NONCE_LABEL[name].startsWith('ERC1967Proxy')).length;
 
-  // ^0.8.24, not the model's ^0.8.27: it is the payload's own floor (rule 16), it is what the harness
+  // ^0.8.24, not the model's ^0.8.27: it is the payload's own floor, it is what the harness
   // pins so test/FhevmDeploy.t.sol can compile these files, and it accepts every consumer 0.8.27 would.
   return `// SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
@@ -307,7 +307,7 @@ pragma solidity ^0.8.24;
 //
 // ACL_ADDRESS, FHEVM_EXECUTOR_ADDRESS and KMS_VERIFIER_ADDRESS are the three values
 // library-solidity/config/ZamaConfig.sol compiles into every dApp inheriting its localhost config
-// (RULES.md rules 15 and 17), which is why none of this may drift.
+//, which is why none of this may drift.
 
 /// @dev BIP-39 mnemonic the local stack is deployed with.
 string constant MNEMONIC = "${stack.mnemonic}";
@@ -480,7 +480,7 @@ function _render(
     )
     .join('\n\n');
 
-  // ^0.8.24, not the model's ^0.8.27: it is the payload's own floor (rule 16), it is what the harness
+  // ^0.8.24, not the model's ^0.8.27: it is the payload's own floor, it is what the harness
   // pins so test/FhevmDeploy.t.sol can compile these files, and it accepts every consumer 0.8.27 would.
   return `// SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
@@ -489,7 +489,7 @@ pragma solidity ^0.8.24;
 // DO NOT EDIT — your changes will be overwritten. See internal/generateLocalHostBytecode.ts.
 //
 // Bytecode for the cleartext stack, compiled against the localhost address set below. Deploying the
-// creation blobs in the order of RULES.md rule 17 from account index ${String(stack.deployerAddressIndex)} of
+// creation blobs in deploy order from account index ${String(stack.deployerAddressIndex)} of
 // the anvil mnemonic, starting at nonce ${String(stack.startNonce)}, reproduces exactly those addresses — the bytecode and the
 // addresses are two halves of one artifact and cannot be mixed with another deployer.
 //

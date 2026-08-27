@@ -1,9 +1,7 @@
-// RULES.md rule 23: `sdk/cleartext-config.json` is THE source of truth for the cleartext stack's shared
-// values; `internal/cleartext-config.ts` and `create2-deploy/script/FhevmCleartextConfig.sol` are faces of
-// it — same names, same order, equal values.
-//
-// The rule's whole safety argument is that the faces are CHECKED rather than trusted, so this file is that
-// argument. Without it the rule is a request.
+// `sdk/cleartext-config.json` is the source of truth for the cleartext stack's shared values;
+// `internal/cleartext-config.ts` and `create2-deploy/script/FhevmCleartextConfig.sol` are faces of it —
+// same names, same order, equal values. Hand-written faces are only safe because they are CHECKED, and
+// this file is that check.
 //
 // Four things are checked, and the last two could not exist before the JSON did:
 //
@@ -97,7 +95,7 @@ function comparisonOf(solidityType: string): 'address' | 'uint' | 'string' {
  * Each normalisation step is a difference in how the two languages SPELL a value, never a difference in
  * the value: `100733346448153n` against `100733346448153`, `'0x6189…'` against a bare `0x6189…`, single
  * against double quotes. Trailing characters are NOT normalised — a mnemonic path ending `/` on one side
- * and not the other is exactly the failure rule 23 describes.
+ * and not the other is the failure this guards against.
  */
 function canonical(solidityType: string, literal: string): string {
   const v = literal.trim();
@@ -183,7 +181,7 @@ function readTsFace(): Map<string, string> {
  *
  * A value may wrap onto following lines — prettier does that to the mnemonic — so this reads to the
  * terminating semicolon rather than to end of line. A regex suffices where a parser would not be worth it:
- * the file is a flat library of constants by construction, and rule 23 keeps it that way.
+ * the file is a flat library of constants by construction.
  */
 function readSolFace(): Map<string, { type: string; value: string }> {
   const src = readFileSync(SOL_PATH, 'utf8');
@@ -198,7 +196,7 @@ function readSolFace(): Map<string, { type: string; value: string }> {
   return out;
 }
 
-void test('rule 23: the source of truth parses and is not vacuous', () => {
+void test('the source of truth parses and is not vacuous', () => {
   const truth = readSourceOfTruth();
   // A parser that silently matched nothing would make every assertion below pass trivially. The floor is
   // deliberately loose but non-zero.
@@ -214,7 +212,7 @@ void test('rule 23: the source of truth parses and is not vacuous', () => {
   }
 });
 
-void test('rule 23: every entry says why', () => {
+void test('every entry says why', () => {
   // A value nobody explained is a value nobody can safely change: the next person cannot tell a deliberate
   // choice from an arbitrary one, so they either leave a wrong value alone or edit a load-bearing one.
   // Required, therefore, rather than encouraged.
@@ -222,7 +220,7 @@ void test('rule 23: every entry says why', () => {
   assert.deepEqual(missing, [], 'these entries have no "note" explaining the value');
 });
 
-void test('rule 23: the declared TypeScript type is the minimal exact one', () => {
+void test('the declared TypeScript type is the minimal exact one', () => {
   // `ts` is a FLOOR that a face may widen, so it has to be the narrowest type that still holds the value
   // exactly. A uint that fits a double may be declared `number` and emitted as either; one that does not
   // must be declared `bigint`, because narrowing it to a `number` would silently drop digits.
@@ -238,7 +236,7 @@ void test('rule 23: the declared TypeScript type is the minimal exact one', () =
   }
 });
 
-void test('rule 23: every recorded formula reproduces its value', () => {
+void test('every recorded formula reproduces its value', () => {
   const truth = readSourceOfTruth();
   const withFormula = [...truth].filter(([, e]) => e.formula !== undefined);
   // The formula-derived values are the only ones checkable at all; if this filter ever matched nothing the
@@ -253,7 +251,7 @@ void test('rule 23: every recorded formula reproduces its value', () => {
   }
 });
 
-void test('rule 23: addresses are EIP-55 checksummed', () => {
+void test('addresses are EIP-55 checksummed', () => {
   // Not cosmetic: Solidity REJECTS a hex address literal containing letters unless it is checksummed
   // (error 9429), so an un-checksummed value in the JSON cannot be emitted into the Solidity face at all.
   for (const [name, e] of readSourceOfTruth()) {
@@ -262,7 +260,7 @@ void test('rule 23: addresses are EIP-55 checksummed', () => {
   }
 });
 
-void test('rule 23: the TypeScript face matches the source of truth', () => {
+void test('the TypeScript face matches the source of truth', () => {
   const truth = readSourceOfTruth();
   const face = readTsFace();
 
@@ -294,7 +292,7 @@ void test('rule 23: the TypeScript face matches the source of truth', () => {
   assert.deepEqual(diffs, [], 'value drift between sdk/cleartext-config.json and internal/cleartext-config.ts');
 });
 
-void test('rule 23: the Solidity face matches the source of truth', () => {
+void test('the Solidity face matches the source of truth', () => {
   const truth = readSourceOfTruth();
   const face = readSolFace();
 
@@ -331,7 +329,7 @@ void test('rule 23: the Solidity face matches the source of truth', () => {
 });
 
 ////////////////////////////////////////////////////////////////////////////////
-// The localhost address set — rules 15 and 17
+// The localhost address set
 //
 // A different kind of check from the ones above. Those compare a value against two copies of it; these
 // RE-DERIVE the value from the recipe and compare the copies against the result. That is possible here and
@@ -409,7 +407,7 @@ function readGeneratedLocalHost(): Map<string, string> {
   return out;
 }
 
-void test('rules 15/17: the deployer is the account the mnemonic and index name', () => {
+void test('the deployer is the account the mnemonic and index name', () => {
   const l = readLocalhost();
   const path = `m/44'/60'/0'/0/${l.DEPLOYER_ADDRESS_INDEX.value}`;
   const derived = HDNodeWallet.fromPhrase(l.MNEMONIC.value, undefined, path).address;
@@ -420,7 +418,7 @@ void test('rules 15/17: the deployer is the account the mnemonic and index name'
   );
 });
 
-void test('rules 15/17: every recorded address is CREATE(deployer, its nonce)', () => {
+void test('every recorded address is CREATE(deployer, its nonce)', () => {
   const l = readLocalhost();
   const from = getAddress(l.DEPLOYER_ADDRESS.value);
   const start = BigInt(l.DEPLOYER_START_NONCE.value);
@@ -451,8 +449,8 @@ void test('rules 15/17: every recorded address is CREATE(deployer, its nonce)', 
  * `ZamaConfig`'s `CoprocessorConfig` field names, mapped to the role names the nonce table uses.
  *
  * `CoprocessorAddress` **is** the FHEVMExecutor address — the two names describe one contract, and reading
- * it as some other component is the easiest way to get rule 17 wrong. `internal/checkZamaLocalConfig.ts`
- * carries the same mapping against its own key names, and says the same thing.
+ * it as some other component is the easiest way to get this wrong. `@fhevm/sdk-common` carries the
+ * same mapping against its own key names, and says the same thing.
  */
 const ZAMA_FIELD_TO_ROLE: Readonly<Record<string, string>> = {
   ACLAddress: 'ACL_ADDRESS',
@@ -467,7 +465,7 @@ const ZAMA_HARNESS_KEY: Readonly<Record<string, string>> = {
   KMSVerifierAddress: 'kmsVerifierAddress',
 };
 
-void test('rules 15/17: the ZamaConfig subset agrees with the nonce table and with the harness', () => {
+void test('the ZamaConfig subset agrees with the nonce table and with the harness', () => {
   const l = readLocalhost();
   const byRole = new Map(allNonces(thisGeneration(l)).map((e) => [e.role, e.address]));
 
@@ -506,7 +504,7 @@ void test('rules 15/17: the ZamaConfig subset agrees with the nonce table and wi
   }
 });
 
-void test('rules 15/17: the generated LocalHostAddresses.sol matches the source of truth', () => {
+void test('the generated LocalHostAddresses.sol matches the source of truth', () => {
   const l = readLocalhost();
   const table = thisGeneration(l);
   const gen = readGeneratedLocalHost();
@@ -550,7 +548,7 @@ void test('rules 15/17: the generated LocalHostAddresses.sol matches the source 
   );
 });
 
-void test('rules 15/17: secondary starts exactly where primary ends', () => {
+void test('secondary starts exactly where primary ends', () => {
   // The categories are POSITIONAL, not labels: `secondary` means "positioned after the primary block", so
   // its first nonce must be the primary block's length. Anything else would mean a gap or an overlap, and
   // in a CREATE(deployer, nonce) layout both are silent — every address stays a valid address, just of a
@@ -567,7 +565,7 @@ void test('rules 15/17: secondary starts exactly where primary ends', () => {
   }
 });
 
-void test('rules 15/17: the categories hold what their definitions say', () => {
+void test('the categories hold what their definitions say', () => {
   for (const [gen, table] of Object.entries(readLocalhost().generations)) {
     // The two empty-proxy implementations are the only entries with no baked-in address, and they belong to
     // the primary block by construction — they are what its proxies are constructed over.
@@ -585,7 +583,7 @@ void test('rules 15/17: the categories hold what their definitions say', () => {
   }
 });
 
-void test('rules 15/17: every generation has the same secondary roles in the same order', () => {
+void test('every generation has the same secondary roles in the same order', () => {
   // The invariant the split exists to make visible: only the PRIMARY block changes shape between
   // generations. The secondary block is the same three contracts every time and merely starts later, so a
   // generation whose secondary list differs has either gained a cleartext contract — which would need
@@ -612,12 +610,12 @@ void test('rules 15/17: every generation has the same secondary roles in the sam
 // import the constants: `test/ts/tsconfig.json` sets `rootDir: "."` so nothing there may reach the source
 // tree, which is what stops a test in that suite from exercising our source when its purpose is to
 // exercise the PUBLISHED package. Honouring that boundary costs one hand-written copy, and this is what
-// makes the copy safe — the same trade rule 23 makes for the other two faces.
+// makes the copy safe — the same trade the other two faces make.
 ////////////////////////////////////////////////////////////////////////////////
 
 const EXPECTED_BOOTSTRAP_PATH = join(PACKAGE_ROOT_ABS_PATH, 'test', 'ts', 'utils', 'expectedBootstrap.ts');
 
-void test('rule 23: the vitest bootstrap fixture matches the source of truth', () => {
+void test('the vitest bootstrap fixture matches the source of truth', () => {
   const truth = readSourceOfTruth();
   const src = readFileSync(EXPECTED_BOOTSTRAP_PATH, 'utf8');
 

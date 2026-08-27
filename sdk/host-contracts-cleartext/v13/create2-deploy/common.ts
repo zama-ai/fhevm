@@ -250,7 +250,7 @@ export const CONFIG_PREFIX = `fhevm-config-${FHEVM_VERSION}.0/`;
 export const FACTORY = '0x4e59b44847b379578588920cA78FbF26c0B4956C';
 
 /**
- * The factory's runtime code hash (§3).
+ * The factory's runtime code hash.
  *
  * WHY THIS IS A CONSTANT RATHER THAN COMPUTED. Computing it is trivial — checkFactory already does
  * `keccak(eth_getCode(FACTORY))` on the target chain. But deriving the EXPECTED value from the same
@@ -264,24 +264,24 @@ export const FACTORY = '0x4e59b44847b379578588920cA78FbF26c0B4956C';
  * all return this, and it is also what anvil pre-deploys locally. The factory is the same deployed
  * bytes everywhere by construction — that is the entire point of a deterministic-deployment proxy.
  *
- * PROVENANCE, per §3's "read it off mainnet or Sepolia; do not transcribe it from memory or from a
+ * PROVENANCE: read it off mainnet or Sepolia; do not transcribe it from memory or from a
  * blog post": read off mainnet and Sepolia, which agree. Re-verify with
  *
  *     cast keccak "$(cast code 0x4e59b44847b379578588920cA78FbF26c0B4956C --rpc-url <rpc>)"
  *
  * The runtime is the EIP-3860-aware variant, whose leading PUSH32 mask rejects initcode at or above
  * the 49152-byte limit. Shorter bytecode for this address circulates in older write-ups; it is stale,
- * which is exactly why §3 says to read the value rather than recall it.
+ * which is exactly why the value must be read rather than recalled.
  */
 export const FACTORY_CODEHASH = '0x2fa86add0aed31f33a762c9d88e807c475bd51d0f52bd0955754b2608f7e4989';
 
 /**
- * §1: testnets only. This is the cleartext stack — FHE is replaced by plaintext and the KMS /
+ * Testnets only. This is the cleartext stack — FHE is replaced by plaintext and the KMS /
  * coprocessor signer keys derive from the published FHEVM_MNEMONIC at documented HD paths. On a
  * testnet that is the POINT: the js-sdk relayer must hold those keys for cleartext decryption to
  * work. On mainnet it is total compromise.
  *
- * Read §11 R1 before trusting this list to do more than it does. It binds OUR tooling and nobody
+ * This list binds OUR tooling and nobody
  * else's — the address set is replayable onto mainnet by anyone, and no allow-list here can stop it.
  */
 export const ALLOWED_CHAIN_IDS: readonly string[] = ['11155111', '17000', '84532', '421614'];
@@ -340,7 +340,7 @@ export const ROLE_WIDTH = 34;
 export const RULE_WIDTH = 92;
 
 /**
- * The steps a report accounts for, in plan order, keyed by the label each stage tags its journal
+ * The steps a report accounts for, in run order, keyed by the label each stage tags its journal
  * entries with. `compute` is absent because it sends nothing — its evidence is the manifest.
  */
 
@@ -676,12 +676,12 @@ export function resolveOptions(flow: Flow, cli: CliArgs, cfg: ConfigFile, config
 
   if (rpcUrl === '') fail(missing('--rpc-url', 'rpcUrl'));
 
-  // Before the value reaches `cast`, which would print it in its own error. See §12.
+  // Before the value reaches `cast`, which would print it in its own error.
   if (account !== '') rejectRawPrivateKey('--account', account);
   if (adminAccount !== null) rejectRawPrivateKey('--admin-account', adminAccount);
 
   // --account is optional in exactly one case: a local anvil, where the funded accounts come from a
-  // mnemonic that is public knowledge. Anywhere else it stays mandatory, and §12's keystone holds —
+  // mnemonic that is public knowledge. Anywhere else it stays mandatory —
   // the deployer key owns ACLOwner until step F, so a testnet run must not accept an unprotected key.
   //
   // The probe runs only when the operator has actually omitted --account, so an unreachable node
@@ -697,7 +697,7 @@ export function resolveOptions(flow: Flow, cli: CliArgs, cfg: ConfigFile, config
         `       ${rpcUrl} did not answer anvil_nodeInfo, so it is not an anvil. The keystore-free`,
         '       default exists only for a local anvil rehearsal, whose funded accounts come from a',
         '       PUBLIC mnemonic. On any other chain the deployer key owns ACLOwner until step F',
-        '       completes (plan section 12), so it has to be a keystore:',
+        '       completes, so it has to be a keystore:',
         '',
         '         cast wallet import my-deployer --interactive',
         '         --account my-deployer',
@@ -716,14 +716,14 @@ export function resolveOptions(flow: Flow, cli: CliArgs, cfg: ConfigFile, config
         ? { kind: 'anvil', index: ANVIL_ADMIN_INDEX }
         : null;
 
-  // --admin is an ADDRESS, and mandatory by plan section 7 — except on the anvil default, where the
+  // --admin is an ADDRESS, and mandatory — except on the anvil default, where the
   // only sensible value is the account that adminSigner will sign with. Deriving it keeps the two from
   // disagreeing, which preflight would otherwise reject.
   if (admin === '' && adminSigner?.kind === 'anvil') {
     admin = signerAddress(adminSigner);
   }
-  if (admin === '') fail(missing('--admin', 'admin') + ' (plan section 7)');
-  if (deploymentId === '') fail(missing('--deployment-id', 'deploymentId') + ' (plan section 14.2)');
+  if (admin === '') fail(missing('--admin', 'admin'));
+  if (deploymentId === '') fail(missing('--deployment-id', 'deploymentId'));
 
   // A dry run of `all` would be theatre: nothing is sent, so stage 2 simulates against a chain where
   // stage 1 never happened, and every later stage reports blocked on a precondition a real run would
@@ -820,7 +820,7 @@ export function resolveOutDir(outDirArg: string | null): string {
 export function buildContext(flow: Flow, opt: Options): Ctx {
   const outDir = resolveOutDir(opt.outDirArg);
 
-  // §12: the deployer key owns ACLOwner — root over the stack — until step F completes. Keystore
+  // The deployer key owns ACLOwner — root over the stack — until step F completes. Keystore
   // only. A raw private key is accepted by scripts/deploy.sh for 31337 and is NOT accepted here.
   // "Testnet" is not "throwaway": these stacks are what the js-sdk integration story runs against.
   //
@@ -947,12 +947,12 @@ export function checkChainAllowed(ctx: Ctx): void {
  * Do the arguments of this session match the ones the manifest was sealed with?
  *
  * A deployment spans many invocations, often days apart, and every one of them retypes the whole
- * argument list. The manifest is the record of what the first one decided (§9), so it is also the
+ * argument list. The manifest is the record of what the first one decided, so it is also the
  * only thing that can catch the second one from drifting. Four fields, four distinct failures:
  *
  *   wrong chain          --out-dir was not changed when --rpc-url was. The next `compute` would
  *                        reseal over another network's record.
- *   wrong deploymentId   the salts have changed, so this is a DIFFERENT address set (§14.2) that
+ *   wrong deploymentId   the salts have changed, so this is a DIFFERENT address set that
  *                        happens to be pointed at the same directory. Every read-only stage would
  *                        compute new salts while reading old addresses and report drift on all of them.
  *   wrong deployer       --account points at another key. The deployer is baked into the ACL
@@ -978,7 +978,7 @@ export function checkOutDirIdentity(ctx: Ctx): void {
     fail(
       `Error: ${ctx.outDir} belongs to deployment '${manifest.deploymentId}', not '${ctx.opt.deploymentId}'.`,
       '       A different --deployment-id is a different set of salts, so a different',
-      '       address set entirely (plan section 14.2) - it needs its own --out-dir.',
+      '       address set entirely - it needs its own --out-dir.',
       `         --deployment-id ${ctx.opt.deploymentId} --out-dir .out-${ctx.opt.deploymentId}`,
       `       '${manifest.deploymentId}' stays where it is; its stack is untouched and still standing.`,
     );
@@ -994,14 +994,14 @@ export function checkOutDirIdentity(ctx: Ctx): void {
       `Error: '${ctx.opt.deploymentId}' was sealed by a different deployer.`,
       `         sealed:            ${manifest.deployer}`,
       `         ${ctx.opt.signer === null ? 'the deployer' : describeSigner(ctx.opt.signer)} resolves to ${ctx.deployer}`,
-      '       Every address in this stack derives from the deployer (plan section 5.2), so this is',
+      '       Every address in this stack derives from the deployer, so this is',
       '       a different address set — not a different way of reaching the same one.',
       '       Use the keystore account that sealed it, or start a new deployment with its own',
       '       --deployment-id and --out-dir.',
     );
   }
 
-  // The admin moves no address (§5.2), so this is not about the address set — it is about who ends
+  // The admin moves no address, so this is not about the address set — it is about who ends
   // up with root. Step E's predicate is "offered to THIS admin", so a changed --admin would not be
   // seen as already-done: it would offer again, silently redirecting ownership of the whole stack to
   // an address the seal never named.
@@ -1024,7 +1024,7 @@ export function checkOutDirIdentity(ctx: Ctx): void {
  *
  * The two are not alternatives and one does not override the other. `--admin` is the ADDRESS that
  * gets root: it is sealed into the manifest, read by every script as FHEVM_ADMIN, and needed at
- * compute time — long before any admin key is involved, and in the multisig case §7 is written for,
+ * compute time — long before any admin key is involved, and in the multisig case,
  * where no admin keystore exists at all. `--admin-account` is only a signing credential for step F.
  *
  * Checked in preflight rather than inside step F, where it lives conceptually, because step F is the
@@ -1048,8 +1048,8 @@ export function checkAdminAccount(ctx: Ctx): void {
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * §3, hard gate. A different contract squatting 0x4e59… on some testnet is the one realistic way
- * §8's "fatal mismatch" actually fires, and it would produce addresses nothing was compiled for.
+ * Hard gate. A different contract squatting 0x4e59… on some testnet is the one realistic way
+ * a fatal mismatch actually fires, and it would produce addresses nothing was compiled for.
  */
 export function checkFactory(ctx: Ctx): void {
   const code = capture('cast', ['code', FACTORY, '--rpc-url', ctx.opt.rpcUrl]);
@@ -1101,7 +1101,7 @@ export function probeFinality(ctx: Ctx): string {
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * §11 R3, quantified before starting rather than discovered at send time.
+ * Quantified before starting rather than discovered at send time.
  *
  * Deploying via the factory pays initcode as CALLDATA (16 gas per non-zero byte), and the
  * implementations of up to ~24 KB runtime each add materially per create. Faucet-funded deployers
@@ -1151,7 +1151,7 @@ export function finalizedBlock(ctx: Ctx): number {
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * The reorg gate (§11 R2), shell half.
+ * The reorg gate, shell half.
  *
  * Steps A-F each REQUIRE FHEVM_MIN_BLOCK and refuse to run until the chain has reached it. Every one
  * of them decides what to do by reading state a previous step wrote, so a predicate evaluated one
@@ -1220,7 +1220,7 @@ export function requireNoPendingTxs(ctx: Ctx, who: string): void {
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * Distil forge's run-latest.json into the journal (§9).
+ * Distil forge's run-latest.json into the journal.
  *
  * Called whether the stage SUCCEEDED OR NOT — a stage that died halfway is precisely when the record
  * matters, and forge has already written what it managed to send.
@@ -1279,7 +1279,7 @@ export function recordJournal(ctx: Ctx, target: string): void {
   appendJsonl(ctx.journalPath, fresh);
 
   // A reverted transaction is not fatal on this path — a failed create does not burn its address
-  // (§2) — but it must never scroll past unnoticed. Counted from what was actually appended, so a
+  // — but it must never scroll past unnoticed. Counted from what was actually appended, so a
   // re-run of a stage that once reverted does not warn about it again.
   const reverted = fresh.filter((r) => r.status === 'REVERTED').length;
   if (reverted > 0) warn(`${reverted} transaction(s) REVERTED in this stage - see --stage log`);
@@ -1364,7 +1364,7 @@ export function showJournal(ctx: Ctx): void {
  *   status   what is DONE and what is BLOCKED, right now, and why    (reads the chain)
  *
  * A step can appear more than once. That is not a bug to hide: re-running a stage after a failure is
- * the normal path here (§2), so a report that collapsed the retries would be hiding the interesting
+ * the normal path here, so a report that collapsed the retries would be hiding the interesting
  * part.
  */
 export function stageReport(ctx: Ctx): void {
@@ -1419,7 +1419,7 @@ export function stageReport(ctx: Ctx): void {
   say(
     '',
     `  ${executed}/${ctx.flow.reportSteps.length} steps executed, ${rows.length} transactions, ${reverted} reverted`,
-    ...(reverted > 0 ? ['  A reverted create does NOT burn its address (plan section 2) - re-run the stage.'] : []),
+    ...(reverted > 0 ? ['  A reverted create does NOT burn its address - re-run the stage.'] : []),
   );
 
   reportAddresses(manifest);
@@ -1483,7 +1483,7 @@ export function reportTxLine(e: JournalEntry): string {
  * One broadcasting stage.
  *
  * --sender alongside --account: every script requires msg.sender == FHEVM_DEPLOYER, because the whole
- * address set is a function of the deployer (§5.2) and broadcasting from another account produces
+ * address set is a function of the deployer and broadcasting from another account produces
  * creates that land where nothing was compiled for.
  *
  * Step F is sent by the ADMIN, not the deployer — that inversion is what Ownable2Step is for — so
@@ -1529,7 +1529,7 @@ export async function broadcast(ctx: Ctx, target: string, signer?: Signer, sende
     return;
   }
 
-  // §9's gate. No-ops unless this is the deployment's first transaction; never reached by a dry run,
+  // The seal gate. No-ops unless this is the first transaction of the deployment; never reached by a dry run,
   // which returned above.
   await confirmSealed(ctx);
 
@@ -1539,7 +1539,7 @@ export async function broadcast(ctx: Ctx, target: string, signer?: Signer, sende
 
   const env = { ...scriptEnv(ctx), ...generatedConfigEnv(ctx), FHEVM_MIN_BLOCK: String(minBlock) };
 
-  // --slow: one transaction at a time, waiting for each receipt. §6's two hard edges (impl₁ before
+  // --slow: one transaction at a time, waiting for each receipt. The two hard edges (impl₁ before
   // the ACL proxy, impl₃ before the rest) are satisfied by nonce ordering alone, but --slow turns a
   // mid-run failure into "stop here" instead of "the rest also fail in the same block".
   //
@@ -1597,7 +1597,7 @@ export function requireBuiltArtifacts(ctx: Ctx): void {
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * Compute the address set — the three-build pipeline (§5.3).
+ * Compute the address set — the three-build pipeline.
  *
  * Each pass is: build, then compute. The build comes FIRST every time, because a pass computes an
  * address by hashing bytecode, and that bytecode has to already contain whatever the previous pass

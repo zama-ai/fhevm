@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 /**
  * @title  FhevmCleartextConfig
- * @notice The Solidity face of `sdk/cleartext-config.json` — RULES.md rule 23.
+ * @notice The Solidity face of `sdk/cleartext-config.json`.
  *
  * That JSON, at the repository's `sdk/` root, is where every value the harness, the payload and the js-sdk
  * cleartext relayer must agree on is DECIDED. It sits above the generations because they share it. This

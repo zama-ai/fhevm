@@ -6,7 +6,7 @@
 //      whatever start nonce it is given, for any deployer. The API exists to serve any signer, so the
 //      addresses themselves are not invariant — the offsets are.
 //   2. The ADDRESSES are local-only. Applying that layout to the localhost deployer at nonce 0 must
-//      reproduce the set `ZamaConfig.sol` compiles into every dApp (RULES.md rules 15 and 17). A caller
+//      reproduce the set `ZamaConfig.sol` compiles into every dApp. A caller
 //      passing an explicit `precomputed` set, or targeting a chain other than 31337, has opted out.
 //
 // Why this file exists at all: `deploy()` derives its addresses from `precomputeAddresses` and then checks
@@ -184,7 +184,7 @@ const LOCALHOST_ADDRESSES: Readonly<Record<keyof typeof LAYOUT, string>> = {
   pauserSetAddress: '0x590e3330386Fa042843773541aaBb3a45EC3164D',
 };
 
-/** The three `ZamaConfig._getLocalConfig()` returns — the ones rule 17 binds specifically. */
+/** The three `ZamaConfig._getLocalConfig()` returns — the ones consumers are bound to. */
 const ZAMA_CONFIG_ANCHORS: ReadonlyArray<keyof typeof LAYOUT> = [
   'aclAddress',
   'fhevmExecutorAddress',

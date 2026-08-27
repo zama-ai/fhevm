@@ -9,7 +9,7 @@
 // taking `.alloc` (foundry: crates/cheatcodes/src/evm.rs), and `anvil --init` reads a genesis directly.
 //
 // How it is built: start a throwaway anvil, run the real deploy through scripts/deploy.sh — which verifies
-// the result — then snapshot only the accounts that matter. So the artifact is only ever produced from a
+// The result — then snapshot only the accounts that matter. So the artifact is only ever produced from a
 // deploy that passed verification.
 //
 // ## The account set is chosen by inclusion, not by filtering
@@ -33,7 +33,7 @@
 //   - anvil's predeployed CREATE2 factory at 0x4e59b4...4956c, which already has code on a *fresh* anvil.
 //     anvil provides it itself.
 //   - the other funded dev EOAs. `anvil --init` overlays the alloc on top of the accounts it derives from
-//     the mnemonic, so omitting them leaves their normal balances rather than pinning them to whatever
+//     The mnemonic, so omitting them leaves their normal balances rather than pinning them to whatever
 //     this particular run happened to spend.
 //
 // ## Two details that will bite if changed

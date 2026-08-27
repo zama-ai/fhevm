@@ -8,10 +8,10 @@ import {FhevmCreate2Base} from "./FhevmCreate2Base.s.sol";
 
 /**
  * @title FhevmComputeCreate2Addresses
- * @notice ONE pass of the three-build address pipeline (plan §5.3). Selected by `FHEVM_PASS`.
+ * @notice ONE pass of the three-build address pipeline. Selected by `FHEVM_PASS`.
  *
  * NOT `pkg/forge/script/ComputeAddresses.s.sol`, which is the nonce path and is untouched by this
- * plan. Every address here is `vm.computeCreate2Address(salt, initCodeHash, factory)`; every address
+ * Every address here is `vm.computeCreate2Address(salt, initCodeHash, factory)`; every address
  * there is `vm.computeCreateAddress(deployer, nonce)`. Both write the same `addresses.sol` for the
  * same consumers — they differ only in how the values are derived — so the file names are the only
  * thing telling a reader which set of rules applies, and "CREATE2" is in this one's name for that
@@ -68,7 +68,7 @@ contract FhevmComputeCreate2Addresses is FhevmCreate2Base {
     // =======================================================================================
 
     /**
-     * @dev §5.1: the dependency graph looks circular and is not. Only `aclAdd` feeds back, and it is
+     * @dev The dependency graph looks circular and is not. Only `aclAdd` feeds back, and it is
      *      computable from inputs alone:
      *
      *        impl₁  ← EmptyUUPSProxyACL initcode, which references no host address
@@ -76,7 +76,7 @@ contract FhevmComputeCreate2Addresses is FhevmCreate2Base {
      *
      *      The tempting shortcut — initialize the ACL proxy with the ACLOwner address and drop the
      *      transfer/accept pair — IS a genuine cycle: aclAdd ← ACL initcode ← ACLOwner address ←
-     *      ACLOwner initcode ← aclAdd. §6 steps B and C are structural, not ceremony.
+     *      ACLOwner initcode ← aclAdd. Steps B and C are structural, not ceremony.
      */
     function _pass1() private {
         _banner("pass 1/3 - ACL");
@@ -118,7 +118,7 @@ contract FhevmComputeCreate2Addresses is FhevmCreate2Base {
         bytes memory sharedImplCode = _initCode(A_EMPTY_SHARED);
         address impl3 = _predictCreate2Address(R_IMPL_EMPTY_SHARED, sharedImplCode);
 
-        // §5.4: the shared-impl proxies share ONE init-code hash — same implementation, same empty
+        // The shared-impl proxies share ONE init-code hash — same implementation, same empty
         // `initialize()` — and are distinguished purely by salt. That is the whole reason a shared
         // EmptyUUPSProxy is worth keeping on this path too.
         bytes memory sharedProxyCode = _proxyInitCode(impl3, _sharedProxyInitData());
@@ -130,7 +130,7 @@ contract FhevmComputeCreate2Addresses is FhevmCreate2Base {
 
         address pauserSetAdd = _predictCreate2Address(R_PAUSER_SET, _initCode(A_PAUSER_SET));
 
-        // §5.1 step 6: a leaf. Its address is referenced by nothing — but it must still be
+        // A leaf. Its address is referenced by nothing — but it must still be
         // predictable, because step E hands it to the admin and `verify` checks it.
         address aclOwnerAdd = _predictCreate2Address(
             R_ACL_OWNER,
@@ -178,7 +178,7 @@ contract FhevmComputeCreate2Addresses is FhevmCreate2Base {
 
         string memory scratch = vm.readFile(_scratchPath());
 
-        // -- the assertion (§5.3) ----------------------------------------------------------
+        // -- the assertion ----------------------------------------------------------
         //
         // Recompute pass 2's inputs against build 3 and require them unchanged. If adding the shared-impl
         // real addresses moved EmptyUUPSProxy's or PauserSet's initcode, then every address pass 2
@@ -226,7 +226,7 @@ contract FhevmComputeCreate2Addresses is FhevmCreate2Base {
 
         console.log("");
         console.log("  wrote", _manifestPath());
-        console.log("  next: commit and PUSH the manifest, then deploy (plan 9)");
+        console.log("  next: commit and PUSH the manifest, then deploy");
     }
 
     function _computeImplementations() private view returns (address[] memory impls) {
@@ -237,7 +237,7 @@ contract FhevmComputeCreate2Addresses is FhevmCreate2Base {
         for (uint256 i = 0; i < impls.length; i++) {
             bytes memory code = _initCode(_implArtifact(i));
 
-            // §11 R3: a ~24 KB runtime plus constructor args approaches the EIP-3860 ceiling, and a
+            // A ~24 KB runtime plus constructor args approaches the EIP-3860 ceiling, and a
             // create that exceeds it fails on chain, not here. Measure it while it is still free to
             // fix.
             require(code.length <= MAX_INITCODE_SIZE, string.concat("pass3: EIP-3860 overflow in ", proxyRoles[i]));
@@ -265,7 +265,7 @@ contract FhevmComputeCreate2Addresses is FhevmCreate2Base {
     //
     // Same file, same constant names, same consumer as the nonce path's ComputeAddresses.s.sol. The
     // two paths differ in how the values are derived and in nothing downstream — which is what makes
-    // "this plan adds a second path; it replaces nothing" true at the build level too.
+    // "a second path that replaces nothing" true at the build level too.
 
     function _writeAddresses(address aclAdd, address[] memory rest) private {
         require(
@@ -361,13 +361,13 @@ contract FhevmComputeCreate2Addresses is FhevmCreate2Base {
     }
 
     /**
-     * @dev The seal (§9). Committed and PUSHED before any transaction, for a reason stronger than
+     * @dev The seal. Committed and PUSHED before any transaction, for a reason stronger than
      *      audit trail: the addresses ARE a function of the init-code hashes, so retrying a failed
      *      create needs the byte-exact ones, and a resumed run's first act — deciding which
      *      addresses to probe — needs them too.
      *
      *      The shell adds the fields this script cannot see: toolchain pins, the factory's runtime
-     *      code hash as observed on THIS chain, and the §11 R1 warning.
+     *      code hash as observed on THIS chain, and the replay notice.
      */
     function _writeManifest(string memory scratch, address[] memory impls) private {
         string memory o = "manifest";

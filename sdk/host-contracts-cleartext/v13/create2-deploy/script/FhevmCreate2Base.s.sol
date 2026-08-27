@@ -11,8 +11,8 @@ import {Script, console} from "forge-std/Script.sol";
  *         salt derivation, init-code assembly, address prediction, the raw factory call, and the
  *         scratch/manifest JSON codec.
  *
- * Implements the mechanics of plans/CREATE2_TESTNET_DEPLOY_PLAN.md §3 (factory), §5.4 (salts) and
- * §9 (seal). The scripts that inherit from it implement §5.3, §6, §7 and §8.
+ * Implements the shared mechanics: the factory, the salts and
+ * the seal. The scripts that inherit from it implement the passes, the steps and their preconditions.
  *
  * ---------------------------------------------------------------------------------------------
  * Configuration — every script reads the same environment. No script takes a CLI argument.
@@ -21,16 +21,16 @@ import {Script, console} from "forge-std/Script.sol";
  *   FHEVM_VERSION           MAJOR_MINOR baked into every salt, e.g. "0.13". NOT the patch version:
  *                           a patch release must not move the addresses.
  *   FHEVM_DEPLOYMENT_ID     operator-chosen string. Distinct value ⇒ a disjoint address set on the
- *                           same chain (§14.2: a redeploy always takes a fresh one).
+ *                           same chain; a redeploy always takes a fresh one.
  *   FHEVM_DEPLOYER          deployer ADDRESS, not a key. The compute and verify scripts only predict
  *                           with it; the six broadcasting scripts check it against `msg.sender` and
  *                           let forge authenticate via --account/--sender. No script in this path
- *                           ever holds a key. Addresses are a function of this value (§5.2), so it
+ *                           ever holds a key. Addresses are a function of this value, so it
  *                           must be identical on every chain meant to share an address set.
- *   FHEVM_ADMIN             final owner of ACLOwner (step E). Mandatory, no default (§7).
- *   FHEVM_PAUSER_0          optional operator pauser (§6.1). Unset ⇒ step A' is skipped.
+ *   FHEVM_ADMIN             final owner of ACLOwner (step E). Mandatory, no default.
+ *   FHEVM_PAUSER_0          optional operator pauser. Unset ⇒ step A' is skipped.
  *
- *   FHEVM_PASS              1 | 2 | 3 — which pass of the §5.3 pipeline to run. Compute only.
+ *   FHEVM_PASS              1 | 2 | 3 — which pass of the three-pass pipeline to run. Compute only.
  *   FHEVM_OUT_DIR           where addresses.sol, pass2.json and manifest.json are written.
  *                           Must be listed in foundry.toml `fs_permissions`.
  *
@@ -41,11 +41,11 @@ import {Script, console} from "forge-std/Script.sol";
  *                           See _requireMinBlock.
  *
  * The factory address is a constant, not an environment variable, deliberately: it is the one input
- * that must never vary per operator or per chain, and §3's preflight pins its runtime code hash.
+ * that must never vary per operator or per chain, and the preflight pins its runtime code hash.
  */
 abstract contract FhevmCreate2Base is Script {
     // ---------------------------------------------------------------------------------------
-    // The factory (§3)
+    // The factory
     // ---------------------------------------------------------------------------------------
 
     // `CREATE2_FACTORY` — the canonical deterministic-deployment proxy at 0x4e59b448…, whose
@@ -54,20 +54,20 @@ abstract contract FhevmCreate2Base is Script {
     // ("Identifier already declared"). Inheriting it is also the better answer: one source for the
     // one input that must never vary per operator or per chain.
     //
-    // Inheriting the ADDRESS is not the §3 preflight. The plan's gate is on the factory's RUNTIME
+    // Inheriting the ADDRESS is not the preflight. The gate is on the factory's RUNTIME
     // CODE HASH, pinned in the manifest and checked per chain, because the realistic failure is a
     // different contract squatting that address on some testnet — which no constant, here or in
     // forge-std, can detect.
 
     /// @dev ERC-1967 implementation slot. The proxies' runtime code never changes, so this slot —
-    ///      not `getCode` — is what says whether step D has run (§8).
+    ///      not `getCode` — is what says whether step D has run.
     bytes32 internal constant ERC1967_IMPL_SLOT = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
 
-    /// @dev EIP-3860. Checked per role in pass 3 (§11 R3).
+    /// @dev EIP-3860. Checked per role in pass 3.
     uint256 internal constant MAX_INITCODE_SIZE = 49152;
 
     // ---------------------------------------------------------------------------------------
-    // Roles (§5.4: `role` is the salt's last field, and the address name)
+    // Roles — `role` is the salt's last field, and the address name
     // ---------------------------------------------------------------------------------------
     //
     // One create per entry in _creates(). The nonce path needs fewer, because it deploys the
@@ -128,7 +128,7 @@ abstract contract FhevmCreate2Base is Script {
 
     /**
      * @dev Which EMPTY implementation proxy `i` points at before step D, index-aligned with
-     *      _allProxyRoles(). ACL gets its own; the rest share one (§5.4).
+     *      _allProxyRoles(). ACL gets its own; the rest share one.
      *
      *      This is the "not yet materialized" state, and it is NOT `address(0)`. An ERC1967Proxy sets
      *      its implementation slot in the constructor — OpenZeppelin's `_setImplementation` even
@@ -199,9 +199,9 @@ abstract contract FhevmCreate2Base is Script {
         cfg.confirmations = vm.envOr("FHEVM_CONFIRMATIONS", uint256(2));
         cfg.outDir = vm.envString("FHEVM_OUT_DIR");
 
-        // §7: E is required, not optional, and "admin == deployer" would make it a no-op that leaves
+        // E is required, not optional, and "admin == deployer" would make it a no-op that leaves
         // the deployer as root over the stack forever.
-        require(cfg.admin != address(0), "FhevmCreate2Base: FHEVM_ADMIN is mandatory (plan 7)");
+        require(cfg.admin != address(0), "FhevmCreate2Base: FHEVM_ADMIN is mandatory");
         require(cfg.admin != cfg.deployer, "FhevmCreate2Base: FHEVM_ADMIN must differ from the deployer");
         require(cfg.deployer != address(0), "FhevmCreate2Base: FHEVM_DEPLOYER is mandatory");
     }
@@ -219,7 +219,7 @@ abstract contract FhevmCreate2Base is Script {
     }
 
     // ---------------------------------------------------------------------------------------
-    // Salts (§5.4)
+    // Salts
     // ---------------------------------------------------------------------------------------
 
     /**
@@ -232,9 +232,9 @@ abstract contract FhevmCreate2Base is Script {
      *      The canonical factory does not namespace by caller either — it passes the salt to CREATE2
      *      verbatim, so `msg.sender` enters the derivation nowhere. The deployer reaches the address
      *      set through exactly one channel: it is an initcode argument to the ACL proxy's
-     *      `initialize` (§5.2), and everything downstream bakes the resulting aclAdd. Two operators
+     *      `initialize`, and everything downstream bakes the resulting aclAdd. Two operators
      *      running this with the same version and deploymentId but different deployers get disjoint
-     *      addresses; same deployer ⇒ identical addresses on every chain (§14.1).
+     *      addresses; same deployer ⇒ identical addresses on every chain.
      */
     function _salt(string memory role) internal view returns (bytes32) {
         return keccak256(abi.encode("fhevm.cleartext", cfg.version, cfg.deploymentId, role));
@@ -246,7 +246,7 @@ abstract contract FhevmCreate2Base is Script {
 
     /// @dev Creation code from the artifact, with ABI-encoded constructor args appended.
     ///      `vm.getCode` reads out/ — so it reflects the LAST build, which is exactly what makes the
-    ///      §5.3 three-pass pipeline expressible in one script run three times.
+    ///      three-pass pipeline expressible in one script run three times.
     function _initCode(string memory artifact, bytes memory args) internal view returns (bytes memory) {
         return bytes.concat(vm.getCode(artifact), args);
     }
@@ -266,12 +266,12 @@ abstract contract FhevmCreate2Base is Script {
     }
 
     /**
-     * @dev All creates, in the order §6's two hard edges require. Defined ONCE, here, because two
+     * @dev All creates, in the order the two hard edges require. Defined ONCE, here, because two
      *      scripts consume it — FhevmDeployCreates to send them and FhevmStatus to report on them —
      *      and a status board assembled from a second, drifting definition of "the work" would be
      *      worse than no status board.
      *
-     *      ORDER (§6). CREATE2 removes address fragility, not logical dependencies. Our ERC1967Proxy
+     *      ORDER. CREATE2 removes address fragility, not logical dependencies. Our ERC1967Proxy
      *      wraps OpenZeppelin's, whose constructor calls upgradeToAndCall → _setImplementation, which
      *      reverts ERC1967InvalidImplementation when the implementation has no code:
      *
@@ -296,7 +296,7 @@ abstract contract FhevmCreate2Base is Script {
         string[] memory proxyRoles = _allProxyRoles();
 
         // They share ONE init-code hash — same implementation, same empty `initialize()` — and
-        // are distinguished purely by salt (§5.4). Built once, outside the loop.
+        // are distinguished purely by salt. Built once, outside the loop.
         bytes memory sharedProxyCode = _proxyInitCode(impl3, _sharedProxyInitData());
 
         // 2 empty implementations + N proxies + PauserSet + ACLOwner + N implementations.
@@ -344,7 +344,7 @@ abstract contract FhevmCreate2Base is Script {
     // a wrong address set that every later check happily agrees with.
 
     function _aclProxyInitData(address deployer) internal pure returns (bytes memory) {
-        // §5.2: the DEPLOYER, not the admin. `PauserSet.addPauser` is `onlyACLOwner`, so step A is
+        // The DEPLOYER, not the admin. `PauserSet.addPauser` is `onlyACLOwner`, so step A is
         // only sendable by whoever this names — and a multisig admin cannot sign mid-run.
         return abi.encodeWithSignature("initialize(address)", deployer);
     }
@@ -354,13 +354,13 @@ abstract contract FhevmCreate2Base is Script {
     }
 
     // ---------------------------------------------------------------------------------------
-    // The factory call (§3)
+    // The factory call
     // ---------------------------------------------------------------------------------------
 
     /**
      * @dev One CREATE2 through the factory. Must be called inside a broadcast.
      *
-     *      The return data is deliberately discarded — §3: "Nothing may parse the factory's return
+     *      The return data is deliberately discarded: nothing may parse the factory's return
      *      data." The caller verifies by checking code at the predicted address, which is the same
      *      check `verify` and a resumed run perform, so there is one verification path rather than
      *      two that can disagree.
@@ -371,13 +371,12 @@ abstract contract FhevmCreate2Base is Script {
     function _factoryCreate2(bytes32 salt, bytes memory initCode) internal {
         require(initCode.length > 0, "FhevmCreate2Base: empty initcode (artifact not built?)");
         require(initCode.length <= MAX_INITCODE_SIZE, "FhevmCreate2Base: initcode exceeds EIP-3860 limit");
-        // solhint-disable-next-line avoid-low-level-calls
         (bool ok, ) = CREATE2_FACTORY.call(bytes.concat(salt, initCode));
         require(ok, "FhevmCreate2Base: factory call reverted");
     }
 
     // ---------------------------------------------------------------------------------------
-    // Predicates (§8)
+    // Predicates
     // ---------------------------------------------------------------------------------------
 
     function _deployed(address a) internal view returns (bool) {
@@ -390,22 +389,22 @@ abstract contract FhevmCreate2Base is Script {
     }
 
     // ---------------------------------------------------------------------------------------
-    // The reorg gate (§11 R2)
+    // The reorg gate
     // ---------------------------------------------------------------------------------------
 
     /**
      * @dev Refuse to run until the chain has reached `FHEVM_MIN_BLOCK`.
      *
      *      Every step A–E reads chain state to decide what to do, and every one of those reads is
-     *      about a transaction some EARLIER step sent. §11 R2: Sepolia reorgs. A predicate evaluated
+     *      about a transaction some EARLIER step sent. Sepolia reorgs. A predicate evaluated
      *      one block after the transaction it is asking about can be answering from a block that is
      *      about to be orphaned — and this path's predicates are not merely informational, they
      *      decide whether a step is skipped. A reorged-away `addPauser` that the predicate reported
-     *      as done is a stack that reaches §7's terminal conditions with no pauser.
+     *      as done is a stack that reaches the terminal conditions with no pauser.
      *
      *      The orchestrator sets this to (block of the previous step's last transaction) +
      *      FHEVM_CONFIRMATIONS. Enforcing it HERE rather than only in the shell is the same argument
-     *      as every other gate in this path: the shell is one orchestrator, §13's TS driver will be
+     *      as every other gate in this path: the shell is one orchestrator, a TS driver will be
      *      another, and an operator running a single stage by hand is a third. A `sleep` in one of
      *      them binds only that one.
      *
@@ -459,8 +458,8 @@ abstract contract FhevmCreate2Base is Script {
     //     "initCodeHash": { "ACL_ADDRESS": "0x.." },
     //     "address":      { "ACL_ADDRESS": "0x.." } }
     //
-    // This is NOT resume state. Resume is `getCode(addr) != ""` against the chain (§2). The file
-    // exists because the addresses are a function of the init-code hashes (§9), so a retry of a
+    // This is NOT resume state. Resume is `getCode(addr) != ""` against the chain. The file
+    // exists because the addresses are a function of the init-code hashes, so a retry of a
     // failed create needs the byte-exact hash that produced the address — and because a run that
     // starts at step D needs to know which implementations "sealed" means.
 

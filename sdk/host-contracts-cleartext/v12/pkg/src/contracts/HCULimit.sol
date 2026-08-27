@@ -123,11 +123,12 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param maxHCUPerTx Maximum total HCU per transaction.
      */
     /// @custom:oz-upgrades-validate-as-initializer
-    function initializeFromEmptyProxy(
-        uint48 hcuCapPerBlock,
-        uint48 maxHCUDepthPerTx,
-        uint48 maxHCUPerTx
-    ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
+    function initializeFromEmptyProxy(uint48 hcuCapPerBlock, uint48 maxHCUDepthPerTx, uint48 maxHCUPerTx)
+        public
+        virtual
+        onlyFromEmptyProxy
+        reinitializer(REINITIALIZER_VERSION)
+    {
         _setHCUPerBlock(hcuCapPerBlock);
         _setMaxHCUPerTx(maxHCUPerTx);
         _setMaxHCUDepthPerTx(maxHCUDepthPerTx);
@@ -141,11 +142,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV2(
-        uint48 hcuCapPerBlock,
-        uint48 maxHCUDepthPerTx,
-        uint48 maxHCUPerTx
-    ) public virtual reinitializer(REINITIALIZER_VERSION) {
+    function reinitializeV2(uint48 hcuCapPerBlock, uint48 maxHCUDepthPerTx, uint48 maxHCUPerTx)
+        public
+        virtual
+        reinitializer(REINITIALIZER_VERSION)
+    {
         _setHCUPerBlock(hcuCapPerBlock);
         _setMaxHCUPerTx(maxHCUPerTx);
         _setMaxHCUDepthPerTx(maxHCUDepthPerTx);
@@ -325,7 +326,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         FheType resultType,
         bytes1 scalarByte,
         bytes32 lhs,
-        bytes32 /*rhs*/,
+        bytes32,
+        /*rhs*/
         bytes32 result,
         address caller
     ) external virtual {
@@ -361,7 +363,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         FheType resultType,
         bytes1 scalarByte,
         bytes32 lhs,
-        bytes32 /*rhs*/,
+        bytes32,
+        /*rhs*/
         bytes32 result,
         address caller
     ) external virtual {
@@ -1523,12 +1526,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /**
      * @notice Adjusts the sequential HCU for the transaction.
      */
-    function _adjustAndCheckFheTransactionLimitOneOp(
-        uint256 opHCU,
-        address caller,
-        bytes32 op1,
-        bytes32 result
-    ) internal virtual {
+    function _adjustAndCheckFheTransactionLimitOneOp(uint256 opHCU, address caller, bytes32 op1, bytes32 result)
+        internal
+        virtual
+    {
         _updateAndVerifyHCUTransactionLimit(opHCU, caller);
 
         uint256 totalHCU = opHCU + _getHCUForHandle(op1);
@@ -1734,18 +1735,17 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @return string Name and the version of the contract.
      */
     function getVersion() external pure virtual returns (string memory) {
-        return
-            string(
-                abi.encodePacked(
-                    CONTRACT_NAME,
-                    " v",
-                    Strings.toString(MAJOR_VERSION),
-                    ".",
-                    Strings.toString(MINOR_VERSION),
-                    ".",
-                    Strings.toString(PATCH_VERSION)
-                )
-            );
+        return string(
+            abi.encodePacked(
+                CONTRACT_NAME,
+                " v",
+                Strings.toString(MAJOR_VERSION),
+                ".",
+                Strings.toString(MINOR_VERSION),
+                ".",
+                Strings.toString(PATCH_VERSION)
+            )
+        );
     }
 
     /**

@@ -18,7 +18,9 @@ how it resolves inside a Foundry consumer (rule 11), where it must be deployable
 (rule 13), what may not live in the payload (rule 14), which addresses a local stack must use
 (rules 15 and 17), and what the standalone repo of rule 3 contains (rule 16). Rules 20-22 govern the
 relationship _between_ generations: which is the source of truth, which may lack an upgrade path, and how
-quickly a change to the reference implementation has to reach the others. Most
+quickly a change to the reference implementation has to reach the others. Rules 23–24 bind the
+**workspace** rather than the package: where a value two languages must agree on is decided (rule 23),
+and what has to be re-validated whenever a folder is added to `sdk/` (rule 24). Most
 bind the package itself; rule 11 also binds
 the layer that consumes it — `forge-fhevm` — because the config remapping can only be satisfied there.
 
@@ -65,8 +67,8 @@ which means release automation, not hand-copying.
     generations of the package are expected to exist side by side, each pinned to the protocol it
     targets.
 
-6.  Everything under `src/contracts/` is **vendored from `host-contracts/`** and must be **byte-for-byte
-    identical** to it at one **declared fhevm tag**, recorded in the package. The tag must sit on the
+6.  Everything under `src/contracts/` is **vendored from `host-contracts/`** and must be identical to
+    **`forge fmt` of** it at one **declared fhevm tag**, recorded in the package. The tag must sit on the
     package's own major.minor line (rule 5). Cleartext-specific contracts live in `src/cleartext/` and are
     out of scope.
 
@@ -75,9 +77,28 @@ which means release automation, not hand-copying.
     recorded.
 
     Only the files cleartext actually vendors are covered; it carries a subset, and adopting a new
-    upstream file is a deliberate decision. No local edits of any kind, not even a "do not edit" header —
-    that is what lets a plain `diff` against the declared tag enforce the rule, so `src/contracts/` must
-    be excluded from anything that rewrites files (`forge fmt`, prettier).
+    upstream file is a deliberate decision.
+
+    **`forge fmt` is the one transformation allowed, and no other.** Vendored sources are *stored*
+    forge-formatted, and `scripts/check-vendored-sources.sh` normalises the upstream side before
+    comparing. Everything else still holds: no hand edits, not even a "do not edit" header, and no
+    other tool may rewrite these files.
+
+    This is not a loosening for convenience. Upstream formats with `prettier-plugin-solidity` and this
+    workspace formats with `forge`; the two cannot be reconciled by configuration — 20 prettier configs
+    and 13 forge configs were measured and neither converges. A raw byte compare therefore forced the
+    directory to be excluded from `forge fmt`, which left two Solidity styles in one tree *and* left the
+    files exposed: the VS Code formatter pipes buffer text to `forge fmt --raw` with no path, so
+    `[fmt] ignore` cannot protect them and one save rewrote ~87 lines of `ACL.sol`. Storing them
+    forge-formatted makes that save a **no-op**, which is a stronger guarantee than the exclusion it
+    replaces.
+
+    What the gate still catches: renamed identifiers, changed types, changed licences, inserted blank
+    lines, added or removed code. What it no longer catches: a purely cosmetic upstream reflow.
+
+    Because the comparison depends on `forge fmt` output, the forge version is pinned in
+    `.foundry-version` and checked by `scripts/check-forge-version.sh` before this gate runs. A forge
+    upgrade changes what rule 6 expects and must be a deliberate, separate step.
 
 7.  The declared tag of rule 6 lives in the **published `package.json`**, under a namespaced `fhevm`
     field. npm ignores unknown top-level fields and carries them through `npm publish`, so the
@@ -447,7 +468,7 @@ which means release automation, not hand-copying.
 
     Under rule 20 this is the largest legitimate divergence in the v11 diff, so it should read as
     expected rather than as drift. v11 **deletes** rather than re-points: `pkg/ts/upgrade.ts` and its
-    `updateV12ToV13` export, `internal/prepareTestV12Consumer.ts`, `internal/runUpgradeE2e.ts`,
+    `updateV12ToV13` export, `internal/runUpgradeE2e.ts`,
     `test/ts/upgrade-e2e.test.ts`, `test/ts/vitest.e2e.config.ts`, and the `FhevmAddressesV12` /
     `UpdateV12ToV13MigrationConfig` types. `internal/listUpgradeOps.ts` is the exception worth keeping —
     it takes the previous generation as an argument, so in v11 it simply has nothing to point at rather
@@ -576,3 +597,61 @@ which means release automation, not hand-copying.
       addresses are compiled into consumer bytecode and cannot be reconfigured afterwards. A local deploy
       landing anywhere else leaves every such dApp calling addresses that hold no code — and the deploy
       still verifies, because it checks itself against whatever it produced.
+
+24. **Adding a folder to the `sdk/` workspace is a change to every path-scoped gate, and the codebase
+    must be re-validated as part of that change.** Not afterwards, and not when something breaks: a new
+    directory is either deliberately inside each gate's scope or deliberately outside it, and both
+    answers have to be _decided_ rather than inherited from a glob that happened to match.
+
+    The mechanism is that **every gate in this workspace is scoped by hardcoded paths, and no scope is
+    shared with any other.** `sdk/scripts/check-lint-policy.sh` scans
+    `host-contracts-cleartext/v*` for banned directives and nothing else, so a new folder at the `sdk/`
+    root is simply not looked at — the gate still prints `✅` and now means less than it did. That is
+    the dangerous direction: a gate that goes _red_ announces itself, whereas a gate whose reach quietly
+    shrank keeps passing and is indistinguishable from one that is working.
+
+    The opposite direction is just as real and is what the workspace has actually been bitten by. Foundry
+    applies three different scoping mechanisms to the same tree and **none of them inherits from
+    another**: `skip` governs `forge build`, `[fmt] ignore` governs `forge fmt`, `[lint] ignore` governs
+    `forge lint`. When the tarball-consumer fixture first appeared under `test/ts/node_modules`,
+    `forge fmt` began rewriting the published artifact under test and needed its own `[fmt] ignore`
+    entry; `forge lint` kept scanning the same directory long after that, emitting ~40
+    `AST source not found` warnings per package — one per fixture file, because `skip` had kept them out
+    of the build and left them with no AST — until `[lint] ignore` got an entry of its own. One folder,
+    three declarations, each discovered by breakage rather than by design.
+
+    **The register of scope-bearing declarations**, all of which a new folder may belong to or have to be
+    excluded from:
+
+    | declaration               | lives in                           | decides                                                          |
+    | ------------------------- | ---------------------------------- | ---------------------------------------------------------------- |
+    | `workspaces`              | `sdk/package.json`                 | whether npm sees the folder at all — explicit paths, never globs |
+    | `skip`                    | `<gen>/foundry.toml`               | whether `forge build` compiles it                                |
+    | `[fmt] ignore`            | `<gen>/foundry.toml`               | whether `forge fmt` rewrites it (bare directory names)           |
+    | `[lint] ignore`           | `<gen>/foundry.toml`               | whether `forge lint` reports it (file globs — the opposite form) |
+    | `libs`                    | `<gen>/foundry.toml`               | where forge resolves imports from (invariant I9)                 |
+    | `.prettierignore`         | `<gen>/`                           | whether prettier touches it                                      |
+    | `files`                   | `<gen>/pkg/package.json`           | whether it ships (rules 9 and 16)                                |
+    | `fhevm.vendoredFrom.to`   | `<gen>/pkg/package.json`           | whether the rule 6 gate covers it                                |
+    | scan roots and exclusions | `sdk/scripts/check-lint-policy.sh` | whether the linter ban reaches it                                |
+    | `--exclude` list          | rule 22's `diff -rq`               | whether cross-generation drift in it stays visible               |
+    | `clean`                   | `<gen>/package.json`               | whether its build output is removed                              |
+    | `.gitignore`              | `sdk/`, `<gen>/`                   | whether it is committed                                          |
+
+    **Validated means run, not reasoned about.** `npm run build` in every generation — which chains
+    `check:forge-version`, `check:forge-fmt-config`, `check:vendored`, `prettier:check`,
+    `forge:fmt:check`, `check:lint-policy`, `forge:lint` and `lint` — plus rule 22's `diff -rq` for a
+    folder that exists in more than one generation. A gate that passes is only evidence once you have
+    confirmed it actually reached the new directory; the cheap confirmation is to break something inside
+    it on purpose and watch the gate fail.
+
+    Two consequences follow. A gate whose scope is a glob over generations (`v*`) absorbs a new
+    _generation_ for free but never a new _kind_ of folder, so `v11/` costs nothing here and
+    `sdk/rust-sdk/` costs a decision per row of the table. And a folder holding installed or generated
+    content — anything named `node_modules`, `dependencies`, `out`, `cache`, `broadcast`, `tarball` — is
+    the case that needs exclusions rather than inclusions, which is precisely the case that fails
+    silently by rewriting or flagging files nobody owns.
+
+    Vendored sources stay exempt throughout: `pkg/src/contracts/**` is upstream's (rule 6), so a gate
+    that would flag it must exclude it instead — a permanently red gate is not enforcement, it is noise
+    that teaches everyone to ignore the output.

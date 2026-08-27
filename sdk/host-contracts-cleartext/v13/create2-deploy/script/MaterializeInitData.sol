@@ -38,7 +38,7 @@ import {LocalHostBootstrap} from "../../pkg/forge/src/_internal/LocalHostBootstr
  * address the chain reports. Register any other signer and the stack still deploys, verifies nothing,
  * and fails only in use. Regenerate LocalHostBootstrap to change them, rather than editing here.
  *
- * §10 still applies: the bootstrap config is CHOSEN, not inherited. `seal` records the full set in
+ * The bootstrap config is CHOSEN, not inherited. `seal` records the full set in
  * the manifest so that what a deployment used is a fact on record rather than whatever the build
  * happened to bake in.
  *

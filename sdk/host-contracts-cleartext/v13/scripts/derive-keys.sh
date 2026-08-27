@@ -8,7 +8,7 @@
 #   PATH_PREFIX  HD path prefix; the index is appended
 #                (default: CLEARTEXT_KMS_NODES_TX_SENDER_MNEMONIC_PATH)
 #
-# Both defaults are read from sdk/cleartext-config.json (RULES.md rule 23) rather than written here, so
+# Both defaults are read from sdk/cleartext-config.json rather than written here, so
 # they cannot drift from the pools the stack actually registers. Named rather than quoted in this help
 # text for the same reason: a literal here would be a fourth copy.
 #

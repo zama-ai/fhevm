@@ -22,7 +22,7 @@
 //   * `DEPLOYER_PRIVATE_KEY` is shared with scripts/deploy.sh, which exports it. A stable env-var
 //     contract, so low value.
 //   * `pragma solidity ^0.8.24` appears twice — this script's own pragma and the one it writes into the
-//     generated addresses.sol. It is the RULES.md rule 16 compile floor, duplicated repo-wide; a
+//     generated addresses.sol. It is the compile floor, duplicated repo-wide; a
 //     placeholder here would fix one instance of many.
 
 import { readFileSync, writeFileSync } from 'node:fs';

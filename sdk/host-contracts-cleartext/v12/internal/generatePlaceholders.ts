@@ -44,7 +44,7 @@ ${lines.join('\n')}
 
 /**
  * Writes the marker file. The only thing here that touches disk, and it is never reached by importing
- * the module — templates.test.ts imports `derivePlaceholder` and cannot rewrite the file by doing so.
+ * The module — templates.test.ts imports `derivePlaceholder` and cannot rewrite the file by doing so.
  */
 export function writePlaceholders(): void {
   writeFileSync(PLACEHOLDERS_PATH, _render(), 'utf8');

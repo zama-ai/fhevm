@@ -6,7 +6,7 @@ import { PACKAGE_ROOT_ABS_PATH, PKG_DIR_ABS_PATH } from '../internal/constants.t
 
 // The js-sdk relayer duplicates this package's cleartext signer config (mnemonic, HD paths, pool size)
 // deep in its internals — see js-sdk .../relayer/cleartext/signers.ts. It is not exported, so we read
-// the relevant files as text and assert they agree. A silent drift here breaks cleartext decrypt.
+// The relevant files as text and assert they agree. A silent drift here breaks cleartext decrypt.
 const JS_SDK_SIGNERS_PATH = join(
   PACKAGE_ROOT_ABS_PATH,
   '..',

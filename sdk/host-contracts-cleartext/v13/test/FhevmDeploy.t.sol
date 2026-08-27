@@ -66,7 +66,7 @@ contract FhevmDeployTest is Test, FhevmDeploy {
      * `getVersion()` is the only external evidence that the *real* implementation sits behind each proxy
      * rather than the empty one it was created over — phase 5 either ran or it did not.
      */
-    function test_proxiesResolveToTheRealImplementations() public view {
+    function test_proxiesResolveToTheRealImplementations() public pure {
         assertEq(IACL(ACL_ADDRESS).getVersion(), LocalHostVersions.ACL);
         assertEq(ICleartextFHEVMExecutor(FHEVM_EXECUTOR_ADDRESS).getVersion(), LocalHostVersions.FHEVM_EXECUTOR);
         assertEq(ICleartextKMSVerifier(KMS_VERIFIER_ADDRESS).getVersion(), LocalHostVersions.KMS_VERIFIER);
@@ -74,7 +74,9 @@ contract FhevmDeployTest is Test, FhevmDeploy {
         assertEq(IHCULimit(HCU_LIMIT_ADDRESS).getVersion(), LocalHostVersions.HCU_LIMIT);
         assertEq(IProtocolConfig(PROTOCOL_CONFIG_ADDRESS).getVersion(), LocalHostVersions.PROTOCOL_CONFIG);
         assertEq(IKMSGeneration(KMS_GENERATION_ADDRESS).getVersion(), LocalHostVersions.KMS_GENERATION);
-        assertEq(ICleartextArithmetic(CLEARTEXT_ARITHMETIC_ADDRESS).getVersion(), LocalHostVersions.CLEARTEXT_ARITHMETIC);
+        assertEq(
+            ICleartextArithmetic(CLEARTEXT_ARITHMETIC_ADDRESS).getVersion(), LocalHostVersions.CLEARTEXT_ARITHMETIC
+        );
         assertEq(IPauserSet(PAUSER_SET_ADDRESS).getVersion(), LocalHostVersions.PAUSER_SET);
     }
 

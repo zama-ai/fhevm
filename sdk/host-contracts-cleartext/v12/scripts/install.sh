@@ -6,7 +6,7 @@
 # Usage: ./scripts/install.sh [--reset] [--reset-only] [--skip-build] [--lockfile=MODE] [--dry-run]
 #
 #   --reset            first remove installed state: `npm run clean` (forge cache/out, tsbuildinfos,
-#                      the ts/_cjs|_esm|_types output, the tarball-consumer fixtures), every
+#                      The ts/_cjs|_esm|_types output, the tarball-consumer fixtures), every
 #                      node_modules directory, and the soldeer `dependencies/` folder
 #   --reset-only       remove installed state and stop, installing nothing (implies --reset)
 #   --skip-build       install dependencies but do not build (skips `build:templates` + `build`)
@@ -83,7 +83,7 @@ esac
 cd "$PACKAGE_ROOT"
 
 # Sanity check: never let a mis-resolved path turn --reset into a delete-somewhere-else script.
-if [ ! -f package.json ] || ! grep -q '"@fhevm/host-contracts-cleartext-dev"' package.json; then
+if [ ! -f package.json ] || ! grep -q '"@fhevm/host-contracts-cleartext-dev' package.json; then
     echo "Error: $PACKAGE_ROOT does not look like the host-contracts-cleartext harness." >&2
     exit 1
 fi

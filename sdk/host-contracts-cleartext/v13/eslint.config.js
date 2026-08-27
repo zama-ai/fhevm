@@ -1,16 +1,7 @@
-// DEFAULT config — the one `eslint` discovers with no --config, so it is also what editors use.
-// It must therefore work on a bare checkout, which means ignoring the `test/ts` files that import the
-// package by its PUBLISHED name: those resolve only after `npm run prepare:tarball-consumer` has
-// installed the tarball fixture. They are linted by `lint:tarball-consumer` instead.
-//
-// Three configs, one job each:
-//   eslint.config.base.js                  the shared rule set (never run directly)
-//   eslint.config.js                       base + ignores — the DEFAULT, safe on a bare checkout
-//   eslint.config.with-tarball-consumer.js base as-is — the stricter gate, needs the fixture
-import baseConfig from './eslint.config.base.js';
+import eslintCleartext from '../eslint.cleartext.mjs';
 
 export default [
-  ...baseConfig,
+  ...eslintCleartext(import.meta.dirname),
   {
     ignores: [
       'test/ts/adapter-nonce-diagnostics.test.ts',

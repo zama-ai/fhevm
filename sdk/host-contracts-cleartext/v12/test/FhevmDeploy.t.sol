@@ -60,13 +60,15 @@ contract FhevmDeployTest is Test, FhevmDeploy {
      * `getVersion()` is the only external evidence that the *real* implementation sits behind each proxy
      * rather than the empty one it was created over — phase 5 either ran or it did not.
      */
-    function test_proxiesResolveToTheRealImplementations() public view {
+    function test_proxiesResolveToTheRealImplementations() public pure {
         assertEq(IACL(ACL_ADDRESS).getVersion(), LocalHostVersions.ACL);
         assertEq(ICleartextFHEVMExecutor(FHEVM_EXECUTOR_ADDRESS).getVersion(), LocalHostVersions.FHEVM_EXECUTOR);
         assertEq(ICleartextKMSVerifier(KMS_VERIFIER_ADDRESS).getVersion(), LocalHostVersions.KMS_VERIFIER);
         assertEq(ICleartextInputVerifier(INPUT_VERIFIER_ADDRESS).getVersion(), LocalHostVersions.INPUT_VERIFIER);
         assertEq(IHCULimit(HCU_LIMIT_ADDRESS).getVersion(), LocalHostVersions.HCU_LIMIT);
-        assertEq(ICleartextArithmetic(CLEARTEXT_ARITHMETIC_ADDRESS).getVersion(), LocalHostVersions.CLEARTEXT_ARITHMETIC);
+        assertEq(
+            ICleartextArithmetic(CLEARTEXT_ARITHMETIC_ADDRESS).getVersion(), LocalHostVersions.CLEARTEXT_ARITHMETIC
+        );
         assertEq(IPauserSet(PAUSER_SET_ADDRESS).getVersion(), LocalHostVersions.PAUSER_SET);
     }
 
@@ -151,7 +153,6 @@ contract FhevmDeployTest is Test, FhevmDeploy {
     /// threshold, so there is no on-chain node metadata (tx-sender/ip/storage) to check. 0.13 introduces
     /// ProtocolConfig and records all of it, which is why the v12->v13 migration has to be told the node
     /// details rather than reading them off the running stack.
-
 
     /// One KMS threshold, on the verifier itself. 0.13 splits it into four on ProtocolConfig.
     function test_kmsThresholdMatchesTheNodeCount() public view {

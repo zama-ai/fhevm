@@ -9,7 +9,7 @@ import {IOwnable2Step, IPauserSet} from "./Interfaces.sol";
 
 /**
  * @title FhevmRegisterPausers
- * @notice Plan §6 steps A and A' — register the pausers in `PauserSet`, while the deployer still
+ * @notice Steps A and A' — register the pausers in `PauserSet`, while the deployer still
  *         owns the ACL.
  *
  * ---------------------------------------------------------------------------------------------
@@ -17,11 +17,11 @@ import {IOwnable2Step, IPauserSet} from "./Interfaces.sol";
  * ---------------------------------------------------------------------------------------------
  *
  * Because an independently invocable unit is what an orchestrator can sequence. The shell drives
- * these today; §13's `internal/deploySeal.ts` will want to drive them tomorrow, and neither should
+ * these today; a TS driver will want to drive them tomorrow, and neither should
  * have to edit Solidity to change what runs when. A and A' are the natural seam: they are the only
  * calls that are not part of the ownership handover — they write to a contract with no proxy, no
  * upgrade path and no initializer — and the only two that remain reachable after the run is over
- * (§6.1: via `ACLOwner.execute(pauserSet, addPauser(...))`, by the deployer before E and by the
+ * (via `ACLOwner.execute(pauserSet, addPauser(...))`, by the deployer before E and by the
  * admin after). Pauser policy can be revisited without touching the script that moves ownership.
  *
  * The split costs nothing in safety, because CONTROL FLOW NEVER GUARANTEED ORDER IN THE FIRST PLACE.
@@ -53,8 +53,8 @@ import {IOwnable2Step, IPauserSet} from "./Interfaces.sol";
  *
  * `ACLOwner.pause()` forwards to `ACL.pause()`, which is gated on the caller being a registered
  * pauser — and the ACLOwner is a contract, so it cannot register itself later without already having
- * the ability to make that call. Miss step A and the emergency stop is unreachable through the
- * standing admin. It is a §7 terminal condition for that reason, not for tidiness.
+ * The ability to make that call. Miss step A and the emergency stop is unreachable through the
+ * standing admin. It is a terminal condition for that reason, not for tidiness.
  */
 contract FhevmRegisterPausers is FhevmCreate2Base {
     address private acl;
@@ -67,7 +67,7 @@ contract FhevmRegisterPausers is FhevmCreate2Base {
 
         require(msg.sender == cfg.deployer, "FhevmRegisterPausers: broadcast sender is not FHEVM_DEPLOYER");
 
-        // §11 R2. Here it guards the creates: `isPauser` and `ACL.owner()` below are read against
+        // Reorg depth. Here it guards the creates: `isPauser` and `ACL.owner()` below are read against
         // PauserSet and the ACL proxy, and a reorg that unwinds their creation would make both reads
         // answer from a block about to be orphaned.
         _requireMinBlock();
@@ -88,7 +88,7 @@ contract FhevmRegisterPausers is FhevmCreate2Base {
         // A — the standing admin. Required.
         _addPauser(aclOwner, "A  addPauser(ACLOwner)");
 
-        // A' — the operator pauser. Optional (§6.1), and deliberately non-blocking: an unset
+        // A' — the operator pauser. Optional, and deliberately non-blocking: an unset
         // FHEVM_PAUSER_0 is a configuration choice, not an incomplete run.
         if (cfg.pauser0 == address(0)) {
             console.log("  A' skipped (FHEVM_PAUSER_0 unset)");

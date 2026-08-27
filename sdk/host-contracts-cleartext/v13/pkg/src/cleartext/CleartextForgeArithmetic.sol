@@ -11,11 +11,28 @@ import {VmSafe} from "forge-std/Vm.sol";
 contract CleartextForgeArithmetic is CleartextArithmetic {
     VmSafe private constant vmSafe = VmSafe(address(uint160(uint256(keccak256("hevm cheat code")))));
 
-    function randomUint256(FheType /* randType */, bytes16 /* seed */) internal view override returns (uint256) {
+    function randomUint256(
+        FheType,
+        /* randType */
+        bytes16 /* seed */
+    )
+        internal
+        view
+        override
+        returns (uint256)
+    {
         return vmSafe.randomUint();
     }
 
-    function randomBoundedUint256(uint256 upperBound, bytes16 /* seed */) internal view override returns (uint256) {
+    function randomBoundedUint256(
+        uint256 upperBound,
+        bytes16 /* seed */
+    )
+        internal
+        view
+        override
+        returns (uint256)
+    {
         return vmSafe.randomUint() % upperBound;
     }
 }

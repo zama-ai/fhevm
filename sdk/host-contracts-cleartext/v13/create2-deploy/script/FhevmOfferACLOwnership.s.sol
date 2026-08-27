@@ -9,7 +9,7 @@ import {IOwnable2Step} from "./Interfaces.sol";
 
 /**
  * @title FhevmOfferACLOwnership
- * @notice Plan §6 step B — `ACL.transferOwnership(ACLOwner)`.
+ * @notice Step B — `ACL.transferOwnership(ACLOwner)`.
  *
  * OFFER, not transfer, and the name says so on purpose. ACL is `Ownable2Step`: this call only writes
  * `pendingOwner`. Ownership actually moves at step C, when the ACLOwner accepts. Everything gated on
@@ -24,7 +24,7 @@ import {IOwnable2Step} from "./Interfaces.sol";
  * Why B and C exist at all
  * ---------------------------------------------------------------------------------------------
  *
- * §5.1: it is tempting to initialize the ACL proxy with the `ACLOwner` address directly and delete
+ * It is tempting to initialize the ACL proxy with the `ACLOwner` address directly and delete
  * both steps. That is a genuine cycle — `aclAdd` ← ACL initcode ← ACLOwner address ← ACLOwner
  * initcode ← `aclAdd` — and it is the one place the dependency graph does close on itself. The
  * two-step handover is structural, not ceremony.
@@ -33,9 +33,9 @@ import {IOwnable2Step} from "./Interfaces.sol";
  * Ordering
  * ---------------------------------------------------------------------------------------------
  *
- * B must precede C, and unlike the A/A' case that needed no gate added: step C's §8 precondition is
+ * B must precede C, and unlike the A/A' case that needed no gate added: step C's own precondition is
  * already `ACL.pendingOwner() == aclOwner`, which nothing but this script can make true. Running the
- * stages out of order fails there, on a check the plan called for anyway.
+ * stages out of order fails there, on a check that is required anyway.
  *
  * B has no ordering relationship with A or A' in either direction, and this script deliberately does
  * NOT check that FhevmRegisterPausers has run. `PauserSet.addPauser` is `onlyACLOwner`, which reads
@@ -55,7 +55,7 @@ contract FhevmOfferACLOwnership is FhevmCreate2Base {
 
         require(msg.sender == cfg.deployer, "FhevmOfferACLOwnership: broadcast sender is not FHEVM_DEPLOYER");
 
-        // §11 R2. Guards the creates: the predicate below reads `ACL.owner()` / `pendingOwner()`,
+        // reorg depth. Guards the creates: the predicate below reads `ACL.owner()` / `pendingOwner()`,
         // and a reorg that unwinds the ACL proxy's creation would make both answer from a block
         // about to be orphaned.
         _requireMinBlock();
@@ -71,7 +71,7 @@ contract FhevmOfferACLOwnership is FhevmCreate2Base {
         // PREDICATE. Two ways this is already done: the offer stands (`pendingOwner`), or it stands
         // and was accepted (`owner`) — a resume that comes back after C. Re-offering in the second
         // case would hand the deployer a live `pendingOwner` on a contract it no longer owns, which
-        // §7 then refuses to call complete.
+        // `FhevmVerify` then refuses to call the run complete.
         if (IOwnable2Step(acl).owner() == aclOwner || IOwnable2Step(acl).pendingOwner() == aclOwner) {
             console.log("  B  transferOwnership(ACLOwner) - already done");
         } else {

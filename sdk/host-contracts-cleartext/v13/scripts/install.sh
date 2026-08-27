@@ -83,7 +83,7 @@ esac
 cd "$PACKAGE_ROOT"
 
 # Sanity check: never let a mis-resolved path turn --reset into a delete-somewhere-else script.
-if [ ! -f package.json ] || ! grep -q '"@fhevm/host-contracts-cleartext-dev"' package.json; then
+if [ ! -f package.json ] || ! grep -q '"@fhevm/host-contracts-cleartext-dev' package.json; then
     echo "Error: $PACKAGE_ROOT does not look like the host-contracts-cleartext harness." >&2
     exit 1
 fi

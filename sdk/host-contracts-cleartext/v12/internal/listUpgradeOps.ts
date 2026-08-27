@@ -16,7 +16,7 @@
 //      reinitializer shows up too: CleartextKMSVerifier reports KMSVerifier's `reinitializeV3` without
 //      this having to follow `is` clauses.
 //
-// The verdicts mirror RULES.md rule 6 / README step 7: a bytecode change without a version bump means an
+// The verdicts mirror README step 7: a bytecode change without a version bump means an
 // upgrade of that proxy would carry no replay guard; a bump without a bytecode change is a wasted version.
 
 import { createHash } from 'node:crypto';
@@ -64,7 +64,7 @@ type Initializers = {
   readonly reinitializer: string | undefined;
   /** Every `initialize*` entry point the contract offers. Which one a materialization should call is a
    * decision, not a lookup — `updateV12ToV13` calls `initializeFromMigration` on ProtocolConfig (it seeds
-   * the migrated KMS context) but `initializeFromEmptyProxy` on KMSGeneration. So list them, don't pick. */
+   * The migrated KMS context) but `initializeFromEmptyProxy` on KMSGeneration. So list them, don't pick. */
   readonly materializers: readonly string[];
 };
 

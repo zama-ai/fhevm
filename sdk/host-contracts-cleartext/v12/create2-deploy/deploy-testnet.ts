@@ -18,11 +18,11 @@
 //   1. RECOMPILE MID-RUN. EmptyUUPSProxy and PauserSet bake aclAdd as a compiled-in immediate, and
 //      this path forbids bytecode patching, so their init-code hashes — and therefore their
 //      addresses — only exist after a build against a config holding the real aclAdd. Hence three
-//      passes with two rebuilds between them (§5.3). This is the largest piece of work CREATE2 adds
+//      passes with two rebuilds between them. This is the largest piece of work CREATE2 adds
 //      over the nonce path.
 //
 //   2. WAIT FOR A TRANSACTION FROM SOMEONE ELSE. Step E only offers; ACLOwner is Ownable2Step and
-//      the admin must send acceptOwnership() from its own key. Nothing here can produce that.
+//      The admin must send acceptOwnership() from its own key. Nothing here can produce that.
 //
 // The nonce path (scripts/deploy.sh) is UNTOUCHED and remains the only path for chain 31337.
 // This adds a second path; it replaces nothing.
@@ -140,12 +140,12 @@ Usage: node create2-deploy/deploy-testnet.ts --rpc-url URL --account NAME
   --account NAME       forge keystore account to broadcast from. Required on every chain EXCEPT a
                        local anvil: omit it there and accounts 0 and 1 of anvil's public mnemonic are
                        used as deployer and admin, so a rehearsal needs no keystore. The node must
-                       answer anvil_nodeInfo or this is refused — see plan section 12
-  --admin 0x...        final owner of ACLOwner. Mandatory, no default (plan §7) — except under the
+                       answer anvil_nodeInfo or this is refused
+  --admin 0x...        final owner of ACLOwner. Mandatory, no default — except under the
                        anvil default above, where it is anvil account 1
-  --deployment-id ID   operator-chosen string; a fresh one gives a disjoint address set (§14.2)
-  --pauser 0x...       optional operator pauser, step A' (§6.1)
-  --confirmations N    reorg DEPTH floor for the between-stage waits (default 3, §11 R2). This is
+  --deployment-id ID   operator-chosen string; a fresh one gives a disjoint address set
+  --pauser 0x...       optional operator pauser, step A'
+  --confirmations N    reorg DEPTH floor for the between-stage waits (default 3, reorg depth). This is
                        the value the Solidity gate enforces, so it is the one a different
                        orchestrator also has to honour
   --no-finality        between stages wait only for --confirmations of depth, NOT for the previous
@@ -194,7 +194,7 @@ Usage: node create2-deploy/deploy-testnet.ts --rpc-url URL --account NAME
                          materialize   D      ACLOwner.upgrade(ops)             — one atomic tx
                          offer-admin   E      ACLOwner.transferOwnership(admin) — offers only
                          accept-admin  F      ACLOwner.acceptOwnership()  — SENT BY THE ADMIN
-                         verify               the §7 terminal conditions        (no tx)
+                         verify               the terminal conditions        (no tx)
                        or \`all\` (default) to run every one of them in that order.
                        Three more are accepted out of band, and none of them sends anything:
                          status        what is done, what is left, and WHY   (reads the chain)
@@ -209,7 +209,7 @@ Usage: node create2-deploy/deploy-testnet.ts --rpc-url URL --account NAME
 /**
  * Refuse a raw private key where a keystore NAME is expected.
  *
- * §12: the deployer key owns the ACLOwner — root over the whole stack — until step F completes, so
+ * The key policy: the deployer key owns the ACLOwner — root over the whole stack — until step F completes, so
  * this path accepts keystore accounts only. scripts/deploy.sh takes a raw --private-key because
  * chain 31337 keys are throwaway; "testnet" is not "throwaway" here, since these stacks are what the
  * js-sdk integration story runs against.
@@ -225,7 +225,7 @@ Usage: node create2-deploy/deploy-testnet.ts --rpc-url URL --account NAME
  *
  * It exists so a LOCAL REHEARSAL needs no keystore. Rehearsing the CREATE2 path is how you find out
  * that a salt, an ordinal or a stage gate is wrong, and requiring an unlockable keystore for that put
- * the rehearsal behind a password prompt — which meant it did not get run.
+ * The rehearsal behind a password prompt — which meant it did not get run.
  */
 function needsChain(stage: string): boolean {
   return stage !== 'log' && stage !== 'report';
@@ -242,7 +242,7 @@ function needsChain(stage: string): boolean {
  * deployment that already recorded its deployer in the manifest.
  *
  * `compute` is on this side of the line and must stay there: the whole address set is a function of
- * the deployer (§5.2), so taking it from anywhere but the key itself would let a typo seal a stack
+ * The deployer, so taking it from anywhere but the key itself would let a typo seal a stack
  * nobody holds the key to.
  */
 function needsDeployerKey(stage: string): boolean {
@@ -256,7 +256,7 @@ function stageCompute(ctx: Ctx): void {
 
   // Recomputing after transactions have been sent would move the sealed address set out from under a
   // stack that is already partly deployed — the creates stage would then either report drift or,
-  // worse, start building a second disjoint set alongside the first. §14.2 is explicit that a
+  // worse, start building a second disjoint set alongside the first. The deployment id is explicit that a
   // redeploy takes a FRESH deploymentId. Preflight rejects the mismatches, so reaching here with a
   // non-empty journal really does mean "this deployment has already sent transactions".
   if (readJsonl<JournalEntry>(ctx.journalPath).length > 0) {
@@ -270,7 +270,7 @@ function stageCompute(ctx: Ctx): void {
   }
 
   // Clears only what compute itself produces. NOT the whole out dir: that would also take
-  // journal.jsonl and broadcast/, which are the audit trail (§9) and belong to the deploy stages.
+  // journal.jsonl and broadcast/, which are the audit trail and belong to the deploy stages.
   ensureDir(ctx.outDir);
   removeIfPresent(ctx.buildOut, join(ctx.outDir, 'addresses.sol'), join(ctx.outDir, 'pass2.json'), manifestPath(ctx));
 
@@ -283,7 +283,7 @@ function stageCompute(ctx: Ctx): void {
   // nothing. So the skip is not silent: it checks, and refuses if the out dir is not populated.
   //
   // It cannot check whether the artifacts are UP TO DATE — that is what you are asserting by passing
-  // the flag. Pass 3's assertion is still the backstop: if the artifacts disagree with what pass 2
+  // The flag. Pass 3's assertion is still the backstop: if the artifacts disagree with what pass 2
   // computed from, the init-code hashes will not match and the seal fails rather than proceeding.
   const build = (env: NodeJS.ProcessEnv): void => {
     if (ctx.opt.noBuild) {
@@ -334,7 +334,7 @@ function stageCompute(ctx: Ctx): void {
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * The seal must be committed AND PUSHED before any transaction (§9) — for a stronger reason than
+ * The seal must be committed AND PUSHED before any transaction — for a stronger reason than
  * audit trail. The addresses are a function of the init-code hashes, so retrying a failed create
  * needs the byte-exact ones, and a resumed run's first act is computing which addresses to probe.
  * Lose the seal and a half-finished stack is unfinishable.
@@ -351,7 +351,7 @@ async function stageCreates(ctx: Ctx): Promise<void> {
 
 /**
  * Steps A and A'. The only part of the sequence that is not the ownership handover, and the only
- * part still reachable after the run, via ACLOwner.execute (§6.1).
+ * part still reachable after the run, via ACLOwner.execute.
  *
  * Needs ACL.owner() == deployer, which stops being true at step C — so running accept-acl without a
  * prior pausers stage fails there, on FhevmAcceptACLOwnership's PauserSet.isPauser(ACLOwner) gate,
@@ -366,7 +366,7 @@ async function stepARegisterPausers(ctx: Ctx): Promise<void> {
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * Step B. Needed no gate invented for it — step C's §8 precondition is already
+ * Step B. Needed no gate invented for it — step C's the precondition table precondition is already
  * ACL.pendingOwner() == aclOwner, and nothing but this stage can make that true.
  *
  * It only OFFERS. ACL is Ownable2Step, so ACL.owner() is still the deployer after this returns, and
@@ -406,7 +406,7 @@ async function stepDMaterializeStack(ctx: Ctx): Promise<void> {
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * Step E — the deployer gives up root. Only OFFERS; §8 gives it no precondition on D, so the script
+ * Step E — the deployer gives up root. Only OFFERS; the precondition table gives it no precondition on D, so the script
  * warns rather than refuses if the stack is not materialized (see its header).
  */
 async function stepEOfferOwnerToAdmin(ctx: Ctx): Promise<void> {
@@ -420,16 +420,16 @@ async function stepEOfferOwnerToAdmin(ctx: Ctx): Promise<void> {
 /**
  * Step F — ACLOwner.acceptOwnership(), sent BY THE ADMIN. The transaction that ends the deployment.
  *
- * The plan has no step F: §6 stops at E, and §7 describes this only as prose — "the admin must send
+ * The plan has no step F: the step sequence stops at E, and the terminal conditions describes this only as prose — "the admin must send
  * acceptOwnership()… the runner waits for and verifies it". That prose is a step. It has a sender, a
- * predicate, a precondition, and a §7 terminal condition that fails without it, and until it lands
- * the DEPLOYER still holds ACLOwner.execute — an unrestricted call as ACL.owner(), i.e. root.
+ * predicate, a precondition, and a terminal condition that fails without it, and until it lands
+ * The DEPLOYER still holds ACLOwner.execute — an unrestricted call as ACL.owner(), i.e. root.
  *
  * Two paths, because the admin is not necessarily a key we can sign with:
  *
  *   --admin-account NAME   a forge keystore account for the admin: send it, gated like every other
  *                          step. This is the local-key / single-signer case.
- *   (not given)            the multisig case §7 is really written for. Nobody here can produce that
+ *   (not given)            the multisig case the terminal conditions is really written for. Nobody here can produce that
  *                          transaction, so POLL until it lands. Ctrl-C is safe: nothing is in flight
  *                          and `--stage verify` picks up wherever it got to.
  */
@@ -481,7 +481,7 @@ async function stepFAcceptOwnershipAsAdmin(ctx: Ctx): Promise<void> {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/** §7's terminal conditions. Reverts non-zero if any is unmet. */
+/** the terminal conditions. Reverts non-zero if any is unmet. */
 function stageVerify(ctx: Ctx): void {
   say('✅  verify');
   const code = run(

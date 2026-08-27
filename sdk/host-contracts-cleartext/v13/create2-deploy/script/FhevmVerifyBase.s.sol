@@ -133,7 +133,7 @@ abstract contract FhevmVerifyBase is FhevmCreate2Base {
     /**
      * @dev The canonical factory has code.
      *
-     *      Presence only. The §3 gate proper — that its RUNTIME code hashes to the known value — is the
+     *      Presence only. The real gate — that its RUNTIME code hashes to the known value — is the
      *      coordinator's, in `common.ts`, and runs in preflight before any script does. Repeating it here
      *      would need the expected hash as a second copy of a constant, which is how the two drift.
      */
@@ -250,7 +250,7 @@ abstract contract FhevmVerifyBase is FhevmCreate2Base {
     }
 
     /**
-     * @dev §11 R1, printed on every successful verify rather than filed in a document nobody reads.
+     * @dev The mainnet-replay notice, printed on every successful verify rather than filed in a document nobody reads.
      *
      *      The factory exists on mainnet, the manifest is public in git before the first transaction,
      *      and the signer keys derive from a published mnemonic. So anyone can deploy a bit-identical

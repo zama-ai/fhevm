@@ -1,4 +1,4 @@
-// Emits the expected `getVersion()` table for both toolchains, from the scan in contractVersions.ts.
+// Emits the expected `getVersion()` table for both toolchains, from the scan in @fhevm/sdk-common.
 //
 // Two outputs because two toolchains consume it and neither can read the other's:
 //   - pkg/forge/src/_internal/LocalHostVersions.sol  — the forge verify script and the forge test
@@ -7,10 +7,10 @@
 // Both are generated from one scan, so a bumped contract cannot leave one of them stale — which is what
 // the three hand-maintained copies these replace could not promise.
 
+import { readContractVersions, solidityConstantName, tsKeyName, type ContractVersion } from '@fhevm/sdk-common';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { PACKAGE_ROOT_ABS_PATH, PKG_DIR_ABS_PATH } from './constants.ts';
-import { readContractVersions, solidityConstantName, tsKeyName, type ContractVersion } from './contractVersions.ts';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -67,7 +67,8 @@ ${entries}
 ////////////////////////////////////////////////////////////////////////////////
 
 export function generateContractVersions(): void {
-  const versions = readContractVersions();
+  // Scanned under pkg/src, with paths reported from pkg/ so the provenance comments read `src/...`.
+  const versions = readContractVersions(join(PKG_DIR_ABS_PATH, 'src'), PKG_DIR_ABS_PATH);
 
   writeFileSync(SOLIDITY_OUTPUT_PATH, _renderSolidity(versions), 'utf8');
   writeFileSync(TS_OUTPUT_PATH, _renderTypeScript(versions), 'utf8');

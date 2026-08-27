@@ -106,16 +106,9 @@ abstract contract EIP712UpgradeableCrossChain is Initializable, IERC5267 {
 
     function _buildDomainSeparator() private view returns (bytes32) {
         EIP712Storage storage $ = _getEIP712Storage();
-        return
-            keccak256(
-                abi.encode(
-                    TYPEHASH,
-                    _EIP712NameHash(),
-                    _EIP712VersionHash(),
-                    $._chainIDSource,
-                    $._verifyingContractSource
-                )
-            );
+        return keccak256(
+            abi.encode(TYPEHASH, _EIP712NameHash(), _EIP712VersionHash(), $._chainIDSource, $._verifyingContractSource)
+        );
     }
 
     /**

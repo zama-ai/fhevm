@@ -15,7 +15,7 @@
 #
 # `npm pack` runs in ./pkg, not the package root. pkg/package.json is the PUBLISHED manifest — the root
 # one is the private harness, and packing it would ship the tests, the generators and the whole toolchain
-# instead of the payload (RULES.md rule 9).
+# instead of the payload.
 #
 # It also runs with its own npm cache under $TMPDIR. Sharing the user's cache makes concurrent runs race
 # on the same lock, which surfaces as an unrelated-looking npm error rather than a pack failure.
@@ -93,7 +93,7 @@ TARBALL="$OUT_DIR/$FILENAME"
 [ -f "$TARBALL" ] || { echo "Error: npm pack reported $FILENAME but $TARBALL does not exist." >&2; exit 1; }
 
 # A tarball missing src/ still installs and still fails later, at `forge install` time in a consumer —
-# far from here. Cheap to rule out now (RULES.md rule 16).
+# far from here. Cheap to rule out now.
 for required in package/package.json package/src; do
     tar -tzf "$TARBALL" | grep -q "^${required}" || {
         echo "Error: $FILENAME does not contain $required." >&2

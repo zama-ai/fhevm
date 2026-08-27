@@ -12,7 +12,7 @@ import {IOwnable2Step, IACLOwner} from "./Interfaces.sol";
  * @notice Step F — `ACLOwner.acceptOwnership()`, sent BY THE ADMIN. The transaction that actually
  *         ends the deployment.
  *
- * There is no step F in the plan. §6 stops at E and §7 describes this only as prose — "the admin
+ * There is no step F in the stage list: the sequence stops at E, and this is described only as prose — "the admin
  * must send `acceptOwnership()`… the runner waits for and verifies it". That prose IS a step: it has
  * a predicate, a precondition, a sender, and a terminal condition that fails without it. Leaving it
  * as an instruction printed at the end of E made it the one part of the sequence with no script,
@@ -28,7 +28,7 @@ import {IOwnable2Step, IACLOwner} from "./Interfaces.sol";
  * the deployer could complete alone would prove nothing about the admin's key.
  *
  * So this script is only usable when the admin is a key the operator can sign with. When the admin
- * is a multisig — which is the case §7 is really written for — nobody runs this: the multisig
+ * is a multisig — the case this is really written for — nobody runs this: the multisig
  * executes `acceptOwnership()` through its own flow, and `deploy-testnet.sh --stage accept-admin`
  * degrades to polling until it lands. Both paths end in the same chain state, and FhevmVerify cannot
  * tell them apart, which is correct.
@@ -38,7 +38,7 @@ import {IOwnable2Step, IACLOwner} from "./Interfaces.sol";
  * ---------------------------------------------------------------------------------------------
  *
  * `ACLOwner.pendingOwner()` returns to 0 — `Ownable2Step._transferOwnership` clears it as it sets
- * the owner — which is what makes §7's "no dangling pendingOwner" condition satisfiable at all. A
+ * the owner — which is what makes the "no dangling pendingOwner" condition satisfiable at all. A
  * pending owner that never accepts is a standing offer anyone holding that key can take up later.
  */
 contract FhevmAcceptOwnershipAsAdmin is FhevmCreate2Base {
@@ -52,7 +52,7 @@ contract FhevmAcceptOwnershipAsAdmin is FhevmCreate2Base {
         address aclOwner = _readManifestAddress(manifest, R_ACL_OWNER);
         require(_deployed(aclOwner), "FhevmAcceptOwnershipAsAdmin: run creates first");
 
-        // §11 R2. Guards E: the offer this accepts must be buried before it is read, or a reorg can
+        // reorg depth. Guards E: the offer this accepts must be buried before it is read, or a reorg can
         // unwind the `pendingOwner` write that the precondition below just confirmed.
         _requireMinBlock();
 
@@ -76,6 +76,6 @@ contract FhevmAcceptOwnershipAsAdmin is FhevmCreate2Base {
         console.log("  F  ACLOwner ownership accepted by", cfg.admin);
         console.log("");
         console.log("  The deployer key is no longer root over this stack.");
-        console.log("  next: FhevmVerify (plan section 7)");
+        console.log("  next: FhevmVerify");
     }
 }

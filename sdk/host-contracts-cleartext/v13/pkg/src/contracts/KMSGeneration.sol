@@ -154,7 +154,8 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         /// @notice Whether a request has reached consensus
         mapping(uint256 requestId => bool hasConsensusAlreadyBeenReached) isRequestDone;
         /// @notice The KMS transaction sender addresses that propagated valid signatures for a request
-        mapping(uint256 requestId => mapping(bytes32 digest => address[] kmsTxSenderAddresses)) consensusTxSenderAddresses;
+        mapping(uint256 requestId => mapping(bytes32 digest => address[] kmsTxSenderAddresses))
+            consensusTxSenderAddresses;
         /// @notice The digest of the signed struct on which consensus was reached for a request
         mapping(uint256 requestId => bytes32 digest) consensusDigest;
         // ----------------------------------------------------------------------------------------------
@@ -206,9 +207,12 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
      * @dev Uses the request-time context, not the live context, so rotations do not invalidate
      * in-flight responses from the original KMS committee.
      */
-    function _loadExtraDataAndAuthorizeResponse(
-        uint256 requestId
-    ) internal view virtual returns (bytes memory extraData, uint256 contextId) {
+    function _loadExtraDataAndAuthorizeResponse(uint256 requestId)
+        internal
+        view
+        virtual
+        returns (bytes memory extraData, uint256 contextId)
+    {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
         extraData = $.requestExtraData[requestId];
         contextId = _extractContextIdFromExtraData(extraData);
@@ -670,18 +674,17 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
      * @notice See {IKMSGeneration-getVersion}.
      */
     function getVersion() external pure virtual returns (string memory) {
-        return
-            string(
-                abi.encodePacked(
-                    CONTRACT_NAME,
-                    " v",
-                    Strings.toString(MAJOR_VERSION),
-                    ".",
-                    Strings.toString(MINOR_VERSION),
-                    ".",
-                    Strings.toString(PATCH_VERSION)
-                )
-            );
+        return string(
+            abi.encodePacked(
+                CONTRACT_NAME,
+                " v",
+                Strings.toString(MAJOR_VERSION),
+                ".",
+                Strings.toString(MINOR_VERSION),
+                ".",
+                Strings.toString(PATCH_VERSION)
+            )
+        );
     }
 
     /**
@@ -691,11 +694,12 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
      * @param signature The signature to validate.
      * @return The signer address.
      */
-    function _validateEIP712Signature(
-        uint256 contextId,
-        bytes32 digest,
-        bytes calldata signature
-    ) internal view virtual returns (address) {
+    function _validateEIP712Signature(uint256 contextId, bytes32 digest, bytes calldata signature)
+        internal
+        view
+        virtual
+        returns (address)
+    {
         // Recover the signer address from the signature
         address signer = ECDSA.recover(digest, signature);
 
@@ -718,10 +722,12 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
      * @param kmsCounter The number of KMS nodes that agreed.
      * @return Whether the consensus is reached.
      */
-    function _isKmsConsensusReachedForContext(
-        uint256 contextId,
-        uint256 kmsCounter
-    ) internal view virtual returns (bool) {
+    function _isKmsConsensusReachedForContext(uint256 contextId, uint256 kmsCounter)
+        internal
+        view
+        virtual
+        returns (bool)
+    {
         uint256 consensusThreshold = PROTOCOL_CONFIG.getKmsGenThresholdForContext(contextId);
         return kmsCounter >= consensusThreshold;
     }
@@ -732,12 +738,13 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
      * @param extraData The extra data for replay protection.
      * @return The hash of the PrepKeygenVerification struct
      */
-    function _hashPrepKeygenVerification(
-        uint256 prepKeygenId,
-        bytes memory extraData
-    ) internal view virtual returns (bytes32) {
-        return
-            _hashTypedDataV4(keccak256(abi.encode(EIP712_PREP_KEYGEN_TYPE_HASH, prepKeygenId, keccak256(extraData))));
+    function _hashPrepKeygenVerification(uint256 prepKeygenId, bytes memory extraData)
+        internal
+        view
+        virtual
+        returns (bytes32)
+    {
+        return _hashTypedDataV4(keccak256(abi.encode(EIP712_PREP_KEYGEN_TYPE_HASH, prepKeygenId, keccak256(extraData))));
     }
 
     /**
@@ -764,18 +771,17 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
             );
         }
 
-        return
-            _hashTypedDataV4(
-                keccak256(
-                    abi.encode(
-                        EIP712_KEYGEN_TYPE_HASH,
-                        prepKeygenId,
-                        keyId,
-                        keccak256(abi.encodePacked(keyDigestHashes)),
-                        keccak256(extraData)
-                    )
+        return _hashTypedDataV4(
+            keccak256(
+                abi.encode(
+                    EIP712_KEYGEN_TYPE_HASH,
+                    prepKeygenId,
+                    keyId,
+                    keccak256(abi.encodePacked(keyDigestHashes)),
+                    keccak256(extraData)
                 )
-            );
+            )
+        );
     }
 
     /**
@@ -792,18 +798,17 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         bytes calldata crsDigest,
         bytes memory extraData
     ) internal view virtual returns (bytes32) {
-        return
-            _hashTypedDataV4(
-                keccak256(
-                    abi.encode(
-                        EIP712_CRSGEN_TYPE_HASH,
-                        crsId,
-                        maxBitLength,
-                        keccak256(abi.encodePacked(crsDigest)),
-                        keccak256(extraData)
-                    )
+        return _hashTypedDataV4(
+            keccak256(
+                abi.encode(
+                    EIP712_CRSGEN_TYPE_HASH,
+                    crsId,
+                    maxBitLength,
+                    keccak256(abi.encodePacked(crsDigest)),
+                    keccak256(extraData)
                 )
-            );
+            )
+        );
     }
 
     /**
@@ -825,11 +830,11 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
      * @param signerAddress The recovered EIP-712 signer.
      * @param txSenderAddress The transaction sender (msg.sender).
      */
-    function _checkKmsContextSignerMatchesTxSender(
-        uint256 contextId,
-        address signerAddress,
-        address txSenderAddress
-    ) internal view virtual {
+    function _checkKmsContextSignerMatchesTxSender(uint256 contextId, address signerAddress, address txSenderAddress)
+        internal
+        view
+        virtual
+    {
         if (!PROTOCOL_CONFIG.isKmsSignerForContext(contextId, signerAddress)) {
             revert KmsSignerDoesNotMatchTxSender(signerAddress, txSenderAddress);
         }
@@ -844,10 +849,12 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
      * @param contextId The KMS context under which the consensus was reached.
      * @param consensusTxSenders The tx sender addresses from the consensus.
      */
-    function _buildConsensusStorageUrls(
-        uint256 contextId,
-        address[] memory consensusTxSenders
-    ) internal view virtual returns (string[] memory) {
+    function _buildConsensusStorageUrls(uint256 contextId, address[] memory consensusTxSenders)
+        internal
+        view
+        virtual
+        returns (string[] memory)
+    {
         uint256 len = consensusTxSenders.length;
         string[] memory urls = new string[](len);
         for (uint256 i = 0; i < len; i++) {
@@ -937,25 +944,22 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function initializeFromMigration(
-        MigrationState calldata state
-    ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
+    function initializeFromMigration(MigrationState calldata state)
+        public
+        virtual
+        onlyFromEmptyProxy
+        reinitializer(REINITIALIZER_VERSION)
+    {
         __EIP712_init(CONTRACT_NAME, "1");
 
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
         _validateMigrationCounters(state);
         _validateMigratedConsensusState(
-            state.activeKeyId,
-            state.keyConsensusTxSenders,
-            state.keyConsensusDigest,
-            state.contextId
+            state.activeKeyId, state.keyConsensusTxSenders, state.keyConsensusDigest, state.contextId
         );
         _validateMigratedConsensusState(
-            state.activeCrsId,
-            state.crsConsensusTxSenders,
-            state.crsConsensusDigest,
-            state.contextId
+            state.activeCrsId, state.crsConsensusTxSenders, state.crsConsensusDigest, state.contextId
         );
         _validateMigratedConsensusState(
             state.activePrepKeygenId,
@@ -995,18 +999,10 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
 
         // Finalized consensus tx senders
         _setMigratedConsensusState(
-            $,
-            state.activeKeyId,
-            state.keyConsensusTxSenders,
-            state.keyConsensusDigest,
-            state.contextId
+            $, state.activeKeyId, state.keyConsensusTxSenders, state.keyConsensusDigest, state.contextId
         );
         _setMigratedConsensusState(
-            $,
-            state.activeCrsId,
-            state.crsConsensusTxSenders,
-            state.crsConsensusDigest,
-            state.contextId
+            $, state.activeCrsId, state.crsConsensusTxSenders, state.crsConsensusDigest, state.contextId
         );
         _setMigratedConsensusState(
             $,
@@ -1049,9 +1045,8 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     }
 
     function _validateMigrationCounters(MigrationState calldata state) internal pure virtual {
-        if (
-            state.activePrepKeygenId <= PREP_KEYGEN_COUNTER_BASE || state.prepKeygenCounter != state.activePrepKeygenId
-        ) {
+        if (state.activePrepKeygenId <= PREP_KEYGEN_COUNTER_BASE || state.prepKeygenCounter != state.activePrepKeygenId)
+        {
             revert InvalidMigrationCounterState();
         }
         if (state.activeKeyId <= KEY_COUNTER_BASE || state.keyCounter != state.activeKeyId) {

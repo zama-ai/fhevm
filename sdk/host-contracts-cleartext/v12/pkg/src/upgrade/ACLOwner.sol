@@ -56,7 +56,7 @@ contract ACLOwner is Ownable2Step {
     }
 
     /// @notice The ACL proxy — the stack's ownership root.
-    address public immutable acl;
+    address public immutable ACL_ADDRESS;
 
     /// @notice Emitted for each proxy upgraded, making the atomic batch auditable from logs.
     event HostUpgraded(address indexed proxy, address indexed implementation);
@@ -72,10 +72,10 @@ contract ACLOwner is Ownable2Step {
 
     /**
      * @param initialOwner The address that controls this admin (drives upgrades / migration).
-     * @param acl_         The ACL proxy address.
+     * @param aclAddress   The ACL proxy address.
      */
-    constructor(address initialOwner, address acl_) Ownable(initialOwner) {
-        acl = acl_;
+    constructor(address initialOwner, address aclAddress) Ownable(initialOwner) {
+        ACL_ADDRESS = aclAddress;
     }
 
     /**
@@ -83,7 +83,7 @@ contract ACLOwner is Ownable2Step {
      * @dev One-time setup: the current ACL owner must have called `ACL.transferOwnership(this)` first.
      */
     function acceptACLOwnership() external onlyOwner {
-        IOwnable2Step(acl).acceptOwnership();
+        IOwnable2Step(ACL_ADDRESS).acceptOwnership();
     }
 
     /**
@@ -134,14 +134,14 @@ contract ACLOwner is Ownable2Step {
      * @notice Pause the ACL (emergency stop). Requires this contract to be a registered pauser.
      */
     function pause() external onlyOwner {
-        IACLPausable(acl).pause();
+        IACLPausable(ACL_ADDRESS).pause();
     }
 
     /**
      * @notice Unpause the ACL. Gated by ACL on its owner, which is this contract.
      */
     function unpause() external onlyOwner {
-        IACLPausable(acl).unpause();
+        IACLPausable(ACL_ADDRESS).unpause();
     }
 
     /**
@@ -150,6 +150,6 @@ contract ACLOwner is Ownable2Step {
      * @param newOwner The successor ACL owner (e.g. a new `ACLOwner`).
      */
     function transferACLOwnership(address newOwner) external onlyOwner {
-        IOwnable2Step(acl).transferOwnership(newOwner);
+        IOwnable2Step(ACL_ADDRESS).transferOwnership(newOwner);
     }
 }

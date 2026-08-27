@@ -10,7 +10,7 @@ import {IOwnable2Step, IACLOwner} from "./Interfaces.sol";
 
 /**
  * @title FhevmMaterializeStack
- * @notice Plan §6 step D — `ACLOwner.upgrade(ops)`. Nine empty proxies become the real stack in ONE
+ * @notice Step D — `ACLOwner.upgrade(ops)`. Nine empty proxies become the real stack in ONE
  *         transaction: each op points a proxy at its sealed implementation and runs the initializer
  *         in the same call.
  *
@@ -20,7 +20,7 @@ import {IOwnable2Step, IACLOwner} from "./Interfaces.sol";
  * can fail midway and leave some proxies real and some still empty.
  *
  * ---------------------------------------------------------------------------------------------
- * The tri-state, and why the third state cannot be an else-branch (§8)
+ * The tri-state, and why the third state cannot be an else-branch
  * ---------------------------------------------------------------------------------------------
  *
  * The proxies' runtime CODE never changes when they are materialized — an ERC1967Proxy is the same
@@ -62,7 +62,7 @@ contract FhevmMaterializeStack is FhevmCreate2Base {
 
         require(msg.sender == cfg.deployer, "FhevmMaterializeStack: broadcast sender is not FHEVM_DEPLOYER");
 
-        // §11 R2, and the step with the least recoverable failure. The tri-state below is decided by
+        // reorg depth, and the step with the least recoverable failure. The tri-state below is decided by
         // one ERC-1967 slot read per proxy; if a reorg unwinds step C the `ACL.owner()` precondition is read
         // from a doomed block, and `upgrade` is the one call in this path that cannot be retried
         // against a stack it half-changed.

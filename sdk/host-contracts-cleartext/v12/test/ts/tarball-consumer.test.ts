@@ -16,7 +16,7 @@ test('published tarball can be consumed by a viem-backed TypeScript project', as
   const kmsSigner = privateKeyToAddress({ privateKey: privateKeyFromMnemonic({ mnemonic, addressIndex: 8 }) });
 
   // CREATE layout for a deployer starting at nonce 0: the 5 core proxies at nonces 1/3/4/5/6,
-  // the two cleartext-infra proxies at 7/8, and PauserSet at 9.
+  // The two cleartext-infra proxies at 7/8, and PauserSet at 9.
   const EXPECTED_FHEVM_ADDRESSES = {
     aclAddress: getContractAddressAtNonce({ privateKey, nonce: 1n }),
     fhevmExecutorAddress: getContractAddressAtNonce({ privateKey, nonce: 3n }),

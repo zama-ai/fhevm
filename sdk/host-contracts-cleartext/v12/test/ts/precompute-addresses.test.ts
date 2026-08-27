@@ -6,7 +6,7 @@
 //      whatever start nonce it is given, for any deployer. The API exists to serve any signer, so the
 //      addresses themselves are not invariant — the offsets are.
 //   2. The ADDRESSES are local-only. Applying that layout to the localhost deployer at nonce 0 must
-//      reproduce the set `ZamaConfig.sol` compiles into every dApp (RULES.md rules 15 and 17). A caller
+//      reproduce the set `ZamaConfig.sol` compiles into every dApp. A caller
 //      passing an explicit `precomputed` set, or targeting a chain other than 31337, has opted out.
 //
 // Why this file exists at all: `deploy()` derives its addresses from `precomputeAddresses` and then checks
@@ -15,7 +15,7 @@
 // itself. Everything that does reach the ZamaConfig literals goes through `NONCE_OFFSET` in
 // internal/constants.ts (a deliberate duplicate of pkg/ts/addresses.ts) or through the forge path — never
 // through pkg/ts. A consistent reordering of the TS sequence therefore passed the whole suite while moving
-// the stack off the addresses dApps are compiled against. This is the missing edge.
+// The stack off the addresses dApps are compiled against. This is the missing edge.
 //
 // Runs against the installed tarball fixture, so it checks the built package rather than the sources. No
 // node required: `precomputeAddresses` reaches the chain only through the injected `ethUtils`.
@@ -76,7 +76,7 @@ const START_NONCES: readonly bigint[] = [0n, 1n, 7n, 12_345n];
  *
  * This is what makes the offsets observable: a real derivation returns an opaque hash, so reading an
  * offset back out of it would mean re-deriving with the same function under test. Here the answer *is*
- * the question, so `BigInt(address)` recovers the nonce exactly.
+ * The question, so `BigInt(address)` recovers the nonce exactly.
  */
 function nonceProbe(): { readonly ethUtils: AbstractEthereumUtils; readonly callers: readonly string[] } {
   const callers: string[] = [];
@@ -163,7 +163,7 @@ test('the nonce layout is fixed, for any deployer and any start nonce', () => {
 /**
  * The localhost deployer: `MNEMONIC` at account index 5, as declared by DEPLOYER_ADDRESS in
  * pkg/forge/src/_internal/LocalHostAddresses.sol. Written out rather than derived from the mnemonic —
- * the deploy mnemonic and the SIGNER mnemonic (`FHEVM_MNEMONIC`) are different things with different
+ * The deploy mnemonic and the SIGNER mnemonic (`FHEVM_MNEMONIC`) are different things with different
  * jobs, and a spec that carried one of them invites the swap.
  */
 const LOCALHOST_DEPLOYER: Address = '0x8B8f5091f8b9817EF69cFC1E8B2f721BafF60DF4';
@@ -182,7 +182,7 @@ const LOCALHOST_ADDRESSES: Readonly<Record<keyof typeof LAYOUT, string>> = {
   pauserSetAddress: '0xded0D2a71268DC12622BdD1b55d68a1CB5662327',
 };
 
-/** The three `ZamaConfig._getLocalConfig()` returns — the ones rule 17 binds specifically. */
+/** The three `ZamaConfig._getLocalConfig()` returns — the ones consumers are bound to. */
 const ZAMA_CONFIG_ANCHORS: ReadonlyArray<keyof typeof LAYOUT> = [
   'aclAddress',
   'fhevmExecutorAddress',

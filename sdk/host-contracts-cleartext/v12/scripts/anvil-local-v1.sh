@@ -78,7 +78,7 @@ wait_for_node
 echo ""
 echo "🚀 deploying the pre-compiled blobs"
 # No FOUNDRY_REMAPPINGS override: the blobs already carry the addresses, so pkg/src is compiled only for
-# the one shared FheType enum the generated interfaces import, against the committed placeholder config.
+# The one shared FheType enum the generated interfaces import, against the committed placeholder config.
 # Without --verbose this step prints nothing for several seconds — forge's own output is captured, and a
 # cold build cache adds a full solc pass over pkg/src. Say so, or it reads as a hang.
 if [ "$VERBOSE" -eq 1 ]; then

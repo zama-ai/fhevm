@@ -53,6 +53,30 @@ folder proposal with associated deps + devDeps:
 <root>/fhevm/sdk/tsconfig.base.json
 
 planning:
+Step 0: the workspace root, and nothing else
+
+- Deliverable: `sdk/package.json` only -- no config files, no subpackage changes, no install.
+- Workspace name `fhevm-sdk-workspace`, `private: true`, never published.
+- It sits at `sdk/`, outside the root `fhevm` workspace, which must never glob `sdk/*` or a member would belong to two workspaces and hoist out of this one's toolchain.
+- `js-sdk` is excluded from the member list: it is still a root-workspace member, cannot belong to two, and anything needing it consumes a published tarball until Step 2.
+- `hardhat-plugin/v2` and `v3` are excluded for the same reason -- they depend on `js-sdk`.
+- Members are listed by explicit path, not by glob. Superseded in one detail by what was built: a version is _not_ always a pair. Every `pkg/` shares the one published name `@fhevm/host-contracts-cleartext`, and npm rejects two workspace members with the same name (`EDUPLICATEWORKSPACE`), so only the CURRENT generation lists its `pkg/`. Today that is `v12`, `v13`, `v13/pkg` — `v12/pkg` is deliberately absent, and v12's payload stays reachable through its harness because harness manifests declare no `exports` (ARCHITECTURE.md I2, I3).
+- One `tsconfig.base.json` at the root holds the compiler options every subpackage extends, `module`/`moduleResolution` excepted (rule 38).
+- One eslint config at the root, extended by every subpackage.
+- One prettier config at the root, extended by every subpackage.
+- TypeScript >= 6 everywhere.
+- Shared toolchain (compiler, linter, formatter, test runner) is declared once in the root `devDependencies`; package-specific deps stay in their package.
+- Root tool versions match `sdk/js-sdk` exactly, because a workspace hoists one copy and a higher root pin silently upgrades every member -- prettier reformats between minor versions and every package runs `prettier:check` in its build.
+- No `type` field at the root: `hardhat-plugin/v2` is commonjs and `v3` is esm, and any subpackage omitting its own would inherit it.
+- A subpackage may override eslint/prettier rules locally, as an exception that states its reason in the file.
+
+- i want to create a real TS project with multiple sub TS projects. ('composite: true' i believe ?)
+- i want to create a real TS dependencees tree. for example <root>/fhevm/sdk/host-contracts-cleartext/v12 should be compiled first, then <root>/fhevm/sdk/host-contracts-cleartext/v13, then js-sdk (when available), then HH plugin v2/v3
+
+Step 0-bis:
+
+- i want to be able to test TS compiler 7 without impacting the TS 6 config
+
 Step 1:
 
 - specs: npm packages architecture definition (names and versions)

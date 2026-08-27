@@ -99,7 +99,6 @@ contract CleartextDB is ICleartextDB, UUPSUpgradeableEmptyProxy, ACLOwnable {
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyACLOwner {}
 
     function _getCleartextDBStorage() private pure returns (CleartextDBStorage storage $) {
-        // solhint-disable-next-line no-inline-assembly
         assembly {
             $.slot := CLEARTEXT_DB_STORAGE_LOCATION
         }

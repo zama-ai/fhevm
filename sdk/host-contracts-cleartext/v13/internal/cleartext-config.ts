@@ -1,6 +1,6 @@
 // The cleartext stack's configuration — the values the harness and the payload must agree on.
 //
-// NOT the source of truth. `sdk/cleartext-config.json` is (RULES.md rule 23): it sits at the repository's
+// NOT the source of truth. `sdk/cleartext-config.json` is: it sits at the repository's
 // sdk root because the generations share it, it records the keccak FORMULA behind each derived value rather
 // than only the hex, and it is what `test/cleartext-config-mirror.test.ts` checks this file against — name
 // for name, in declaration order, value for value, and bigint-vs-number literal shape included.
@@ -14,7 +14,7 @@
 //
 // A copy rather than an import, because neither side can reach the other: `internal/tsconfig.json` sets
 // `rootDir: "."` so internal/ cannot import the payload, and the payload must not import the harness at
-// all — internal/ is never published (rule 9), so a payload importing it would ship a dangling
+// all — internal/ is never published, so a payload importing it would ship a dangling
 // specifier. Copying is the only mechanism that leaves both sides self-contained.
 //
 // Byte-for-byte is what makes the duplication safe: `npm run check:cleartext-config` compares the two and

@@ -6,14 +6,14 @@ pragma solidity ^0.8.24;
 // Minimal local views, so this draft compiles against forge-std alone and nothing here can influence
 // an address by pulling a real contract into the build. The production version should import
 // pkg/forge/src/_internal/interfaces/{IACL,IPauserSet,IACLOwner}.sol, which already exist and are
-// the same shape.
+// The same shape.
 //
 // Everything below is READ-BACK or a step A–E call. No initcode is built from these, so a signature
 // mismatch here fails loudly at call time rather than silently moving an address — unlike the two
 // initializer signatures in FhevmCreate2Base, which are inside the addresses.
 
 /// @dev ACL's ownership surface. Ownable2Step: `transferOwnership` only OFFERS; ownership moves at
-///      the acceptance. That distinction is load-bearing for §6's A-before-C rule.
+///      the acceptance. That distinction is load-bearing for the step sequence's A-before-C rule.
 interface IOwnable2Step {
     function owner() external view returns (address);
     function pendingOwner() external view returns (address);
@@ -79,7 +79,7 @@ interface IWiredCleartextDB {
  *
  * Not baked into bytecode like the addresses above — these arrive as initializer arguments at step D
  * and live in storage, so they are the one part of the stack that a correct deployment can still get
- * wrong without anything else noticing. §10: a stack seeded with the wrong signers deploys fine,
+ * wrong without anything else noticing. The bootstrap config: a stack seeded with the wrong signers deploys fine,
  * verifies against itself, and fails only when the js-sdk relayer shows up and cannot find its own
  * key in the set the chain reports.
  */
@@ -103,7 +103,7 @@ interface IACLOwner {
         bytes initData;
     }
 
-    function acl() external view returns (address);
+    function ACL_ADDRESS() external view returns (address);
     function owner() external view returns (address);
     function pendingOwner() external view returns (address);
 

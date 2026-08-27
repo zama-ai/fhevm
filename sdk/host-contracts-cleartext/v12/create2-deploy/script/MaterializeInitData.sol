@@ -17,7 +17,7 @@ import {LocalHostBootstrap} from "../../pkg/forge/src/_internal/LocalHostBootstr
  * @notice The `initializeFromEmptyProxy` payloads step D carries.
  *
  * Structurally this is FhevmDeployScript._materialize with the `new Impl()` expressions removed — on
- * the CREATE2 path the implementations were already created in the creates stage, so step D only has
+ * The CREATE2 path the implementations were already created in the creates stage, so step D only has
  * to name them. The arguments are identical, and come from the same place.
  *
  * ---------------------------------------------------------------------------------------------
@@ -30,12 +30,12 @@ import {LocalHostBootstrap} from "../../pkg/forge/src/_internal/LocalHostBootstr
  * nodes, thresholds equal to the node count.
  *
  * That is not a convenience default. The signer pools are derived from FHEVM_MNEMONIC at the HD paths
- * the js-sdk cleartext relayer derives its own keys from, and the relayer looks a signer up by the
+ * The js-sdk cleartext relayer derives its own keys from, and the relayer looks a signer up by the
  * address the chain reports. Register any other signer and the stack still deploys, verifies nothing,
  * and fails only in use. Regenerate LocalHostBootstrap to change them, rather than editing here.
  *
- * §10 still applies: the bootstrap config is CHOSEN, not inherited. `seal` records the full set in
- * the manifest so that what a deployment used is a fact on record rather than whatever the build
+ * The bootstrap config still applies: the bootstrap config is CHOSEN, not inherited. `seal` records the full set in
+ * The manifest so that what a deployment used is a fact on record rather than whatever the build
  * happened to bake in.
  *
  * ---------------------------------------------------------------------------------------------

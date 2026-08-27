@@ -1,7 +1,7 @@
 // Run: node internal/cli/createPackageTarball.ts [--out-dir <dir>] [--clean]
 //
-//   --out-dir <dir>   where the .tgz is written; created if missing. Defaults to ./tarball, a sibling
-//                     of ./pkg, which is where the tarball-consumer fixture looks for it.
+//   --out-dir <dir>   where the .tgz is written; created if missing. Defaults to the shared
+//                     sdk/tarballs directory, where every workspace member collects its tarball.
 //   --clean           delete existing *.tgz in that directory first
 //
 // Prints the tarball's absolute path on stdout.
@@ -10,7 +10,8 @@
 // a stray argument is easy to introduce and, taken as a destination, would silently write the tarball
 // somewhere nothing looks for it.
 
-import { createPackageTarball } from '../createPackageTarball.ts';
+import { createPackageTarball } from '@fhevm/sdk-common';
+import { PKG_DIR_ABS_PATH } from '../constants.ts';
 
 const USAGE = 'usage: node internal/cli/createPackageTarball.ts [--out-dir <dir>] [--clean]';
 
@@ -41,4 +42,5 @@ for (let index = 0; index < argv.length; index++) {
   }
 }
 
-console.log(createPackageTarball({ ...(outDir !== undefined ? { outDir } : {}), clean }));
+// packageDir is ./pkg, the PUBLISHED payload manifest — packing the root one would ship the harness.
+console.log(createPackageTarball({ packageDir: PKG_DIR_ABS_PATH, ...(outDir !== undefined ? { outDir } : {}), clean }));

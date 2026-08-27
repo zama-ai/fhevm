@@ -25,7 +25,7 @@
 // copy the author happened to read. This is that proof, and it keeps them equivalent in the meantime.
 //
 // A scan has one real weakness worth stating: it verifies ORDER, not behaviour. Two layers can agree on
-// the sequence and still pass different initializer arguments. Those arguments are deliberately NOT
+// The sequence and still pass different initializer arguments. Those arguments are deliberately NOT
 // unified — they are the documented override point (see FhevmDeploy's `_fhevmProtocolConfig`) — so they
 // stay covered by the deploy tests and `VerifyFhevmDeploy`, which read them back off a live chain.
 

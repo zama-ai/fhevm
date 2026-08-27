@@ -472,7 +472,7 @@ async function checkOwnership(
 
   report.expectAddress('ownership.ACL.owner', await read(acl, aclAbi, 'owner'), aclOwner);
   report.expectAddress('ownership.ACL.pendingOwner', await read(acl, aclAbi, 'pendingOwner'), ZERO_ADDRESS);
-  report.expectAddress('ownership.ACLOwner.acl', await read(aclOwner, aclOwnerAbi, 'acl'), acl);
+  report.expectAddress('ownership.ACLOwner.ACL_ADDRESS', await read(aclOwner, aclOwnerAbi, 'ACL_ADDRESS'), acl);
   report.expectAddress(
     'ownership.ACLOwner.pendingOwner',
     await read(aclOwner, aclOwnerAbi, 'pendingOwner'),

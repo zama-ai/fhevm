@@ -6,3 +6,6 @@ pkg/templates
 pkg/forge
 *.t.sol
 *.md
+
+# Solidity is formatted by `forge fmt`, never prettier (foundry.toml -> extends ../../foundry.base.toml).
+*.sol

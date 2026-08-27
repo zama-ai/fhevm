@@ -23,9 +23,9 @@ interface IACLOwner {
     event OwnershipTransferStarted(address indexed previousOwner, address indexed newOwner);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
+    function ACL_ADDRESS() external view returns (address);
     function acceptACLOwnership() external;
     function acceptOwnership() external;
-    function acl() external view returns (address);
     function execute(address target, bytes memory data) external returns (bytes memory result);
     function owner() external view returns (address);
     function pause() external;

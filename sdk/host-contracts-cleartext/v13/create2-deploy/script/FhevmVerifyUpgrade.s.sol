@@ -17,7 +17,7 @@ import {
 
 /**
  * @title  FhevmVerifyUpgrade
- * @notice The terminal conditions of plans/CREATE2_TESTNET_UPGRADE_PLAN.md §7 — the Solidity half.
+ * @notice The terminal conditions of an upgrade — the Solidity half.
  *
  * Read-only, no broadcast, no key.
  *
@@ -37,7 +37,7 @@ import {
  *     that ownership did not MOVE, so the comparison is against the snapshot, not the config. Comparing
  *     to config would pass an upgrade that had quietly re-pointed ownership at the configured admin.
  *
- * ## The manifest fields this requires (§4)
+ * ## The manifest fields this requires
  *
  * `FhevmComputeUpgradeAddresses.s.sol` seals these; this reads them and nothing else:
  *
@@ -56,7 +56,7 @@ import {
  *
  * ## What is NOT here, and why
  *
- * §7.1's survey — every zero-argument getter on the live stack, unchanged — lives in
+ * The survey — every zero-argument getter on the live stack, unchanged — lives in
  * `upgrade-testnet.ts`, together with the ownership/pauser LOG scans and the `--handle` value re-read.
  * That split is a capability constraint, not a preference: Solidity cannot enumerate an ABI, so a
  * Solidity survey would be a hand-maintained list of getters — exactly what the survey exists to avoid.
@@ -94,7 +94,7 @@ contract FhevmVerifyUpgrade is FhevmVerifyBase {
         _checkPausersUnchanged(pauserSet, aclOwner);
 
         _summary("every terminal condition for the upgrade");
-        console.log("  NOT sufficient on its own: the section 7.1 survey and the log scans run in the");
+        console.log("  NOT sufficient on its own: the survey and the log scans run in the");
         console.log("  coordinator. This says the intended changes happened, not that nothing else did.");
         _mainnetReplayNotice();
     }
@@ -104,10 +104,10 @@ contract FhevmVerifyUpgrade is FhevmVerifyBase {
     // ---------------------------------------------------------------------------------------
 
     /**
-     * @dev The 7 proxies §6's op list re-points, in op order.
+     * @dev The 7 proxies the op list re-points, in op order.
      *
      *      Not `_allProxyRoles()`: `INPUT_VERIFIER_ADDRESS` and `CLEARTEXT_DB_ADDRESS` are absent from the
-     *      op list because their bytecode is byte-identical across the two generations (§5, confirmed by
+     *      op list because their bytecode is byte-identical across the two generations (confirmed by
      *      `npm run list:upgrade-ops`). They therefore have no `IMPL_` entry in this manifest, and asking
      *      for one would fail on a correct upgrade.
      *
@@ -141,7 +141,7 @@ contract FhevmVerifyUpgrade is FhevmVerifyBase {
      *
      *      The supplied live addresses are included on purpose. On a deploy, no code at a role means "not
      *      deployed yet"; here it means the operator pointed `--acl` (or another flag) at something that
-     *      is not a contract, which §3.1 should have caught before any transaction. Re-asserting it lets
+     *      is not a contract, which the supplied-address validation should have caught before any transaction. Re-asserting it lets
      *      this script stand alone as a statement about the chain.
      */
     function _checkCode(string memory manifest) private {
@@ -164,7 +164,7 @@ contract FhevmVerifyUpgrade is FhevmVerifyBase {
     /**
      * @dev The versions each proxy now reports, against the generated `LocalHostVersions`.
      *
-     *      Generated, never hand-written (§7): the constants are read out of the `MAJOR/MINOR/PATCH`
+     *      Generated, never hand-written: the constants are read out of the `MAJOR/MINOR/PATCH`
      *      declarations in the sources this package vendors, so bumping a contract cannot leave a stale
      *      expectation here. A literal string would be a second copy of a version number, and the whole
      *      class of bug this file exists to catch is two copies disagreeing.
@@ -195,7 +195,7 @@ contract FhevmVerifyUpgrade is FhevmVerifyBase {
     /**
      * @dev The values that must come through the upgrade untouched, against `compute`'s snapshot.
      *
-     *      The KMS signer set is the load-bearing one, and not for the reason it looks like. §3.1 cannot
+     *      The KMS signer set is the load-bearing one, and not for the reason it looks like. The supplied-address validation cannot
      *      validate `KMS_VERIFIER_ADDRESS` — nothing else on chain corroborates it — so an operator who
      *      points it at ANOTHER deployment's verifier gets through validation. v13 reads its KMS signers
      *      from `ProtocolConfig`, seeded during `materialize` from the migration input, which means a
@@ -238,7 +238,7 @@ contract FhevmVerifyUpgrade is FhevmVerifyBase {
     }
 
     /**
-     * @dev §1's first invariant: ownership NEVER changes.
+     * @dev The first invariant: ownership NEVER changes.
      *
      *      `ACLOwner` is the single atomic upgrade root, so its owner is root over the whole stack. An
      *      upgrade that moved it would hand the stack to whoever holds the new key — and it would still
@@ -261,11 +261,11 @@ contract FhevmVerifyUpgrade is FhevmVerifyBase {
         _expectAddr(IOwnable2Step(acl).pendingOwner(), address(0), "ACL.pendingOwner() == 0");
         _expectAddr(IACLOwner(aclOwner).owner(), admin, "ACLOwner.owner() is still the pre-upgrade admin");
         _expectAddr(IACLOwner(aclOwner).pendingOwner(), address(0), "ACLOwner.pendingOwner() == 0");
-        _expectAddr(IACLOwner(aclOwner).acl(), acl, "ACLOwner.acl() is still the same ACL");
+        _expectAddr(IACLOwner(aclOwner).ACL_ADDRESS(), acl, "ACLOwner.ACL_ADDRESS() is still the same ACL");
     }
 
     /**
-     * @dev §1's second invariant: the pauser set is the same set.
+     * @dev The second invariant: the pauser set is the same set.
      *
      *      What can be asserted here is bounded, and the bound is worth naming: `PauserSet` exposes
      *      `isPauser(address)` and no enumeration. So this can only confirm that accounts SOMEONE THOUGHT
@@ -275,7 +275,7 @@ contract FhevmVerifyUpgrade is FhevmVerifyBase {
      *
      *      That the ACL still points at the SAME PauserSet is not repeated here — it is one of
      *      `_expectWiring`'s readings, compared against the manifest's supplied `PAUSER_SET_ADDRESS`. That
-     *      is the right witness for "the same one": §3.1 validated the supplied value by cross-reading
+     *      is the right witness for "the same one": the supplied value was validated by cross-reading
      *      `ACL.getPauserSetAddress()` off the live stack BEFORE any transaction, so the manifest holds a
      *      pre-upgrade fact. Re-comparing it to a variable read from that same manifest key would be a
      *      tautology, which is what this comment replaced.

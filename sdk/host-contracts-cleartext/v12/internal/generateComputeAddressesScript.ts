@@ -4,7 +4,7 @@
 // NONCE_OFFSET in constants.ts — and the only one that used to spell the offsets out as literals,
 // because Solidity cannot import TypeScript. Generating it removes the copy: the offsets and the config
 // remapping prefix now come from constants.ts, and the layout table in its doc comment is rendered from
-// the same numbers as the code below it, so the two cannot disagree.
+// The same numbers as the code below it, so the two cannot disagree.
 //
 // Deliberately a substitution, not a renderer: the template is valid-looking Solidity with `{{NAME}}`
 // holes, so it stays readable and diffable as Solidity. Everything the deploy order does NOT decide is
@@ -22,7 +22,7 @@
 //   * `DEPLOYER_PRIVATE_KEY` is shared with scripts/deploy.sh, which exports it. A stable env-var
 //     contract, so low value.
 //   * `pragma solidity ^0.8.24` appears twice — this script's own pragma and the one it writes into the
-//     generated addresses.sol. It is the RULES.md rule 16 compile floor, duplicated repo-wide; a
+//     generated addresses.sol. It is the compile floor, duplicated repo-wide; a
 //     placeholder here would fix one instance of many.
 
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -78,7 +78,7 @@ const BODY_INDENT = ' '.repeat(8);
  *
  * Not ADDRESS_NAMES order: that list is a schema and puts PAUSER_SET_ADDRESS before the cleartext pair,
  * whereas it is created after them. Every block below uses nonce order, so the script reads in the order
- * the deploy actually happens — the hand-written original mixed the two orders, which said nothing.
+ * The deploy actually happens — the hand-written original mixed the two orders, which said nothing.
  */
 function namesInNonceOrder(): readonly AddressName[] {
   return [...ADDRESS_NAMES].sort((left, right) => (NONCE_OFFSET[left] < NONCE_OFFSET[right] ? -1 : 1));

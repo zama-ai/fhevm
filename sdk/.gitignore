@@ -1,0 +1,3 @@
+# Shared tarball output. `npm run pack:tarballs` collects every member's .tgz here so a package
+# never has to pack its own predecessor. Owned by this root: only `clean:tarballs` may clear it.
+tarballs

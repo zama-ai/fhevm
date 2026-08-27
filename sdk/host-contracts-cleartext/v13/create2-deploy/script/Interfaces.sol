@@ -13,7 +13,7 @@ pragma solidity ^0.8.24;
 // initializer signatures in FhevmCreate2Base, which are inside the addresses.
 
 /// @dev ACL's ownership surface. Ownable2Step: `transferOwnership` only OFFERS; ownership moves at
-///      the acceptance. That distinction is load-bearing for §6's A-before-C rule.
+///      the acceptance. That distinction is load-bearing for the A-before-C rule.
 interface IOwnable2Step {
     function owner() external view returns (address);
     function pendingOwner() external view returns (address);
@@ -79,7 +79,7 @@ interface IWiredCleartextDB {
  *
  * Not baked into bytecode like the addresses above — these arrive as initializer arguments at step D
  * and live in storage, so they are the one part of the stack that a correct deployment can still get
- * wrong without anything else noticing. §10: a stack seeded with the wrong signers deploys fine,
+ * wrong without anything else noticing: a stack seeded with the wrong signers deploys fine,
  * verifies against itself, and fails only when the js-sdk relayer shows up and cannot find its own
  * key in the set the chain reports.
  */
@@ -104,7 +104,7 @@ interface IACLOwner {
         bytes initData;
     }
 
-    function acl() external view returns (address);
+    function ACL_ADDRESS() external view returns (address);
     function owner() external view returns (address);
     function pendingOwner() external view returns (address);
 

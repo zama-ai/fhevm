@@ -44,7 +44,7 @@ import {
   type Deployed,
 } from '@fhevm/host-contracts-cleartext/ts';
 import { Interface, JsonRpcProvider } from 'ethers';
-import { spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from 'vitest';
@@ -57,6 +57,21 @@ const PACKAGE_ROOT = join(import.meta.dirname, '..', '..');
 /** Resolved by the coordinator against `create2-deploy/`, the only directory forge may write to. */
 const OUT_DIR_ARG = '.out-create2-precompute';
 const OUT_DIR_ABS = join(PACKAGE_ROOT, 'create2-deploy', OUT_DIR_ARG);
+
+/**
+ * Clears the SEAL but keeps `build/`, which is forge's `--out` — i.e. its compilation cache.
+ *
+ * Wiping the whole out-dir is the obvious thing and it triples the runtime: a full run compiles twelve
+ * times (three compute passes over the whole payload, then one per broadcasting stage), and with a cold
+ * cache that is ~90s instead of ~30s. forge keys its cache on source hashes, so keeping it cannot serve
+ * stale artifacts — while the manifest and the journal MUST go, or the run resumes a previous seal
+ * instead of starting clean.
+ */
+function clearSealKeepingBuildCache(): void {
+  for (const name of ['manifest.json', 'pass2.json', 'journal.jsonl', 'broadcast']) {
+    rmSync(join(OUT_DIR_ABS, name), { recursive: true, force: true });
+  }
+}
 
 type Manifest = {
   readonly address: Record<string, string>;
@@ -101,7 +116,63 @@ function createEthersHistory(rpcUrl: string): AbstractEthereumHistory {
   };
 }
 
+/**
+ * Runs the coordinator, reporting progress on a timer and keeping the whole output for a failure message.
+ *
+ * A heartbeat rather than a tee, and the reason is measured: the coordinator emits ~500 lines, and
+ * forwarding each one with its own `process.stdout.write` made the SAME command take 93s inside vitest
+ * against 37s standalone. Vitest forwards a worker's stdout to the main process per write, so the writes,
+ * not the work, were the cost. One line every few seconds carries the same reassurance for ~1% of the
+ * writes; the full output is still accumulated, so a failure is quoted rather than lost.
+ *
+ * What the run is actually spending time on: twelve `solc` invocations — three compute passes over the
+ * whole payload, then one per broadcasting stage. The transactions are the cheap part.
+ */
+async function runCoordinator(args: readonly string[], started: number): Promise<{ status: number; output: string }> {
+  const child = spawn('node', [...args], { cwd: PACKAGE_ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
+  let output = '';
+  let last = 'starting';
+  const keep = (chunk: Buffer): void => {
+    const text = chunk.toString('utf8');
+    output += text;
+    // Remember the most recent line worth showing, so the heartbeat says WHERE the run is.
+    for (const line of text.split('\n')) {
+      const t = line.trim();
+      if (t === '' || t.startsWith('==') || t.startsWith('##')) continue;
+      if (
+        /^(Compiling|Solc|Script ran|Sensitive values|ONCHAIN|Traces|Gas used|Total|Estimated|Chain |Setting|Sequence|Transactions|Saved|Waiting)/.test(
+          t,
+        ) ||
+        t.length < 90
+      ) {
+        last = t.slice(0, 88);
+      }
+    }
+  };
+  child.stdout.on('data', keep);
+  child.stderr.on('data', keep);
+
+  const beat = setInterval(() => {
+    step(started, `still running — ${last}`);
+  }, 5000);
+  try {
+    return await new Promise<{ status: number; output: string }>((resolve) => {
+      child.on('close', (code) => {
+        resolve({ status: code ?? 1, output });
+      });
+    });
+  } finally {
+    clearInterval(beat);
+  }
+}
+
+/** Wall-clock label for the progress lines, so a slow phase is visibly slow rather than silent. */
+function step(started: number, message: string): void {
+  process.stdout.write(`   [${String(Math.round((Date.now() - started) / 1000)).padStart(3)}s] ${message}\n`);
+}
+
 test('precomputeCreate2Addresses predicts where a real create2 deploy actually lands', async () => {
+  const t0 = Date.now();
   // A port no other test in this suite uses. `startAnvil` does NOT fail when the port is taken — anvil
   // exits, `waitForAnvil` then connects to whatever else is listening, and the run fails much later with
   // something unrelated (a deployer with no balance, if the squatter was funded from another mnemonic).
@@ -109,10 +180,10 @@ test('precomputeCreate2Addresses predicts where a real create2 deploy actually l
   const anvil = startAnvil({ port: 8651 });
   try {
     await waitForAnvil(anvil.rpcUrl);
-    rmSync(OUT_DIR_ABS, { recursive: true, force: true });
+    clearSealKeepingBuildCache();
 
-    const run = spawnSync(
-      'node',
+    step(t0, 'anvil up — running the create2 coordinator: 12 solc runs (3 compute passes + 9 stages), ~40s');
+    const run = await runCoordinator(
       [
         'create2-deploy/deploy-testnet.ts',
         '--config',
@@ -126,9 +197,10 @@ test('precomputeCreate2Addresses predicts where a real create2 deploy actually l
         '--stage',
         'all',
       ],
-      { cwd: PACKAGE_ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
+      t0,
     );
-    expect(run.status, `create2 deploy failed:\n${`${run.stdout}${run.stderr}`.slice(-4000)}`).toBe(0);
+    expect(run.status, `create2 deploy failed:\n${run.output.slice(-4000)}`).toBe(0);
+    step(t0, 'deploy done — comparing the sealed manifest against precomputeCreate2Addresses');
 
     const manifestPath = join(OUT_DIR_ABS, 'manifest.json');
     expect(existsSync(manifestPath), `no manifest sealed at ${manifestPath}`).toBe(true);
@@ -183,6 +255,8 @@ test('precomputeCreate2Addresses predicts where a real create2 deploy actually l
       .filter((role) => !pairs.some(([covered]) => covered === role));
     expect(uncovered, 'these roles are in the seal but not returned by precomputeCreate2Addresses').toEqual([]);
 
+    step(t0, 'manifest matches — verifying the live chain through the predicted addresses');
+
     // --- the chain, not the manifest ---
     //
     // Every predicted address must hold code. Checked per role before `verify` runs, so a single wrong
@@ -225,6 +299,8 @@ test('precomputeCreate2Addresses predicts where a real create2 deploy actually l
       provider.destroy();
     }
 
+    step(t0, 'verify clean — checking that a different deployment id is disjoint');
+
     // The property an operator relies on when rehearsing: a fresh deployment id cannot collide with a live
     // stack. Asserted rather than assumed, because it is a property of the SALT PREIMAGE — drop the id from
     // it and every check above still passes while `--deployment-id` silently does nothing.
@@ -258,8 +334,10 @@ test('precomputeCreate2Addresses predicts where a real create2 deploy actually l
     // And within one set, the eight shared proxies share ONE init code — so if the role name were ever
     // dropped from the salt they would all collapse onto a single address.
     expect(new Set(otherAddresses).size, 'two roles in one set landed on the same address').toBe(otherAddresses.length);
+    step(t0, 'done');
   } finally {
     await stopAnvil(anvil.process);
-    rmSync(OUT_DIR_ABS, { recursive: true, force: true });
+    // The seal goes; `build/` stays, so the next run is warm.
+    clearSealKeepingBuildCache();
   }
 }, 180_000);

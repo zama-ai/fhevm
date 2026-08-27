@@ -44,10 +44,7 @@ contract ACL is
      * @param blockNumber The block number.
      */
     error AlreadyDelegatedOrRevokedInSameBlock(
-        address delegator,
-        address delegate,
-        address contractAddress,
-        uint256 blockNumber
+        address delegator, address delegate, address contractAddress, uint256 blockNumber
     );
 
     /**
@@ -64,10 +61,7 @@ contract ACL is
      * @param expirationDate The UNIX timestamp when the user decryption delegation expires.
      */
     error ExpirationDateAlreadySetToSameValue(
-        address delegator,
-        address delegate,
-        address contractAddress,
-        uint256 expirationDate
+        address delegator, address delegate, address contractAddress, uint256 expirationDate
     );
 
     /// @notice Returned if the requested expiration date for user decryption delegation is in the past.
@@ -130,9 +124,10 @@ contract ACL is
         mapping(bytes32 handle => mapping(address account => bool isAllowed)) persistedAllowedPairs;
         mapping(bytes32 handle => bool isAllowedForDecryption) allowedForDecryption;
         // prettier-ignore
-        mapping(address account =>
-            mapping(address delegate => mapping(address contractAddress => UserDecryptionDelegation delegation)))
-                userDecryptionDelegations;
+        mapping(
+            address account
+                => mapping(address delegate => mapping(address contractAddress => UserDecryptionDelegation delegation))
+        ) userDecryptionDelegations;
         mapping(address account => bool isDenied) denyList;
     }
 
@@ -263,15 +258,14 @@ contract ACL is
      * @param contractAddress The contract address to delegate access to.
      * @param expirationDate The UNIX timestamp when the user decryption delegation expires.
      */
-    function delegateForUserDecryption(
-        address delegate,
-        address contractAddress,
-        uint64 expirationDate
-    ) public virtual whenNotPaused {
+    function delegateForUserDecryption(address delegate, address contractAddress, uint64 expirationDate)
+        public
+        virtual
+        whenNotPaused
+    {
         ACLStorage storage $ = _getACLStorage();
-        UserDecryptionDelegation storage userDecryptionDelegation = $.userDecryptionDelegations[msg.sender][delegate][
-            contractAddress
-        ];
+        UserDecryptionDelegation storage userDecryptionDelegation =
+            $.userDecryptionDelegations[msg.sender][delegate][contractAddress];
         uint256 blockNumber = block.number;
 
         if (userDecryptionDelegation.lastBlockDelegateOrRevoke == blockNumber) {
@@ -320,9 +314,8 @@ contract ACL is
      */
     function revokeDelegationForUserDecryption(address delegate, address contractAddress) public virtual whenNotPaused {
         ACLStorage storage $ = _getACLStorage();
-        UserDecryptionDelegation storage userDecryptionDelegation = $.userDecryptionDelegations[msg.sender][delegate][
-            contractAddress
-        ];
+        UserDecryptionDelegation storage userDecryptionDelegation =
+            $.userDecryptionDelegations[msg.sender][delegate][contractAddress];
         uint256 blockNumber = block.number;
 
         if (userDecryptionDelegation.lastBlockDelegateOrRevoke == blockNumber) {
@@ -341,11 +334,7 @@ contract ACL is
         userDecryptionDelegation.expirationDate = 0;
 
         emit RevokedDelegationForUserDecryption(
-            msg.sender,
-            delegate,
-            contractAddress,
-            ++userDecryptionDelegation.delegationCounter,
-            oldExpirationDate
+            msg.sender, delegate, contractAddress, ++userDecryptionDelegation.delegationCounter, oldExpirationDate
         );
     }
 
@@ -377,15 +366,15 @@ contract ACL is
      * @param contractAddress The contract address to delegate access to.
      * @return expirationDate The UNIX timestamp when the user decryption delegation expires (0 means delegation is inactive).
      */
-    function getUserDecryptionDelegationExpirationDate(
-        address delegator,
-        address delegate,
-        address contractAddress
-    ) public view virtual returns (uint64) {
+    function getUserDecryptionDelegationExpirationDate(address delegator, address delegate, address contractAddress)
+        public
+        view
+        virtual
+        returns (uint64)
+    {
         ACLStorage storage $ = _getACLStorage();
-        UserDecryptionDelegation storage userDecryptionDelegation = $.userDecryptionDelegations[delegator][delegate][
-            contractAddress
-        ];
+        UserDecryptionDelegation storage userDecryptionDelegation =
+            $.userDecryptionDelegations[delegator][delegate][contractAddress];
         return userDecryptionDelegation.expirationDate;
     }
 
@@ -457,13 +446,10 @@ contract ACL is
         bytes32 handle
     ) public view virtual returns (bool) {
         ACLStorage storage $ = _getACLStorage();
-        UserDecryptionDelegation storage userDecryptionDelegation = $.userDecryptionDelegations[delegator][delegate][
-            contractAddress
-        ];
-        return
-            $.persistedAllowedPairs[handle][delegator] &&
-            $.persistedAllowedPairs[handle][contractAddress] &&
-            userDecryptionDelegation.expirationDate >= block.timestamp;
+        UserDecryptionDelegation storage userDecryptionDelegation =
+            $.userDecryptionDelegations[delegator][delegate][contractAddress];
+        return $.persistedAllowedPairs[handle][delegator] && $.persistedAllowedPairs[handle][contractAddress]
+            && userDecryptionDelegation.expirationDate >= block.timestamp;
     }
 
     /**
@@ -547,18 +533,17 @@ contract ACL is
      * @return string Name and the version of the contract.
      */
     function getVersion() external pure virtual returns (string memory) {
-        return
-            string(
-                abi.encodePacked(
-                    CONTRACT_NAME,
-                    " v",
-                    Strings.toString(MAJOR_VERSION),
-                    ".",
-                    Strings.toString(MINOR_VERSION),
-                    ".",
-                    Strings.toString(PATCH_VERSION)
-                )
-            );
+        return string(
+            abi.encodePacked(
+                CONTRACT_NAME,
+                " v",
+                Strings.toString(MAJOR_VERSION),
+                ".",
+                Strings.toString(MINOR_VERSION),
+                ".",
+                Strings.toString(PATCH_VERSION)
+            )
+        );
     }
 
     /**

@@ -15,7 +15,7 @@
 # pkg/forge/script/VerifyFhevmDeploy.s.sol reading the chain back.
 #
 # The node runs with stock settings: no --code-size-limit. Every contract must fit the 24576 B EIP-170
-# cap so the stack deploys on any chain (RULES.md rule 12). Largest today: CleartextFHEVMExecutor at
+# cap so the stack deploys on any chain. Largest today: CleartextFHEVMExecutor at
 # 22,994 B. If a deploy ever fails on code size, shrink the contract — do not raise the node's limit.
 set -euo pipefail
 

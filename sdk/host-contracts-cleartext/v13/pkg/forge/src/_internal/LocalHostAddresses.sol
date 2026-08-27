@@ -10,7 +10,7 @@ pragma solidity ^0.8.24;
 //
 // ACL_ADDRESS, FHEVM_EXECUTOR_ADDRESS and KMS_VERIFIER_ADDRESS are the three values
 // library-solidity/config/ZamaConfig.sol compiles into every dApp inheriting its localhost config
-// (RULES.md rules 15 and 17), which is why none of this may drift.
+//, which is why none of this may drift.
 
 /// @dev BIP-39 mnemonic the local stack is deployed with.
 string constant MNEMONIC = "adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer";

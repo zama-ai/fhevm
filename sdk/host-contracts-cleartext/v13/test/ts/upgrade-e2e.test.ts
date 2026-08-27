@@ -1,4 +1,14 @@
-// The previous generation, imported from the fixture built by internal/prepareTestV12Consumer.ts.
+// The previous generation, imported straight from the WORKSPACE — v12 is a member, so npm has already
+// linked it into node_modules and there is nothing to build, pack or install first. The subpath works
+// because a harness manifest declares no `exports` (ARCHITECTURE.md I2); this import is what keeps that
+// mechanism exercised rather than merely documented.
+//
+// Deliberately NOT a tarball. A tarball buys publish fidelity — `files` omissions, undeclared deps,
+// stale build output — and that is worth paying for when the package under test is the thing being
+// published. Here v12 is just a library used to stand up the "before" stack, and its own publish
+// contract is proven by its own `test:tarball:run`. v13, below, is still consumed by its PUBLISHED name,
+// because that half IS the publish rehearsal.
+//
 // Its exports are UNSUFFIXED — a package is pinned to one generation by its own version, so the
 // specifier is what says which generation this is, not the type name. Aliased on the way in, because
 // this file is the one place where both generations are in scope at once.
@@ -6,7 +16,7 @@ import {
   deploy as deployV12,
   precomputeAddresses as precomputeV12,
   type BootstrapConfig as BootstrapConfigV12,
-} from '@fhevm/host-contracts-cleartext-v12/ts';
+} from '@fhevm/host-contracts-cleartext-dev-v12/pkg/ts/index.ts';
 import { updateV12ToV13 } from '@fhevm/host-contracts-cleartext/ts';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -40,13 +50,15 @@ const MIGRATED_CONTEXT_ID = (7n << 248n) + 1n;
  * Zero-argument only, because those are the ones whose value is a property of the stack rather than of an
  * argument. `ACL.isAllowed(handle, account)` matters just as much, but it is covered by the cleartext
  * round-trip instead, which exercises it with real handles.
+ *
+ * Located by asking the module system, not by walking a relative path: v12 is a workspace member, so
+ * resolution already knows where it is and this cannot drift if the layout moves. Resolving a real file
+ * inside the directory rather than the package root also makes it a live assertion that the subpath
+ * reach-in of I2 still works — if v12's harness ever gained an `exports` map this throws
+ * ERR_PACKAGE_PATH_NOT_EXPORTED right here, instead of surfacing as a puzzling missing-ABI much later.
  */
-const V12_FIXTURE_ABI_DIR = join(
-  dirname(fileURLToPath(import.meta.url)),
-  'node_modules',
-  '@fhevm',
-  'host-contracts-cleartext-v12',
-  'abi',
+const V12_ABI_DIR = dirname(
+  fileURLToPath(import.meta.resolve('@fhevm/host-contracts-cleartext-dev-v12/pkg/abi/ACL.json')),
 );
 
 type AbiEntry = {
@@ -120,7 +132,7 @@ async function surveyStack(
 ): Promise<Map<string, string>> {
   const readings = new Map<string, string>();
   for (const target of targets) {
-    const abi = JSON.parse(readFileSync(join(V12_FIXTURE_ABI_DIR, target.abiFile), 'utf8')) as AbiEntry[];
+    const abi = JSON.parse(readFileSync(join(V12_ABI_DIR, target.abiFile), 'utf8')) as AbiEntry[];
     const getters = abi.filter(
       (entry) =>
         entry.type === 'function' &&

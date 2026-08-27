@@ -10,7 +10,7 @@ import {IOwnable2Step, IPauserSet, IACLOwner, IWiredInputVerifier, IWiredKMSVeri
 
 /**
  * @title FhevmVerify
- * @notice The terminal conditions from plan §7. Reverts non-zero if any is unmet; the run is not
+ * @notice The terminal conditions from plan the terminal conditions. Reverts non-zero if any is unmet; the run is not
  *         "complete" until this passes.
  *
  * Read-only, no broadcast, no key. Runs against the chain and the MANIFEST — never against the
@@ -18,7 +18,7 @@ import {IOwnable2Step, IPauserSet, IACLOwner, IWiredInputVerifier, IWiredKMSVeri
  * compare what it just did against the same values it did it with, so they cannot catch a stack
  * built from a stale seal. Same reason VerifyFhevmDeploy.s.sol is separate on the nonce path.
  *
- * Run it twice, per §11 R2 — once at FHEVM_CONFIRMATIONS depth right after the deploy, and once at
+ * Run it twice, per reorg depth — once at FHEVM_CONFIRMATIONS depth right after the deploy, and once at
  * greater depth at the end. Sepolia reorgs.
  */
 contract FhevmVerify is FhevmVerifyBase {
@@ -32,7 +32,7 @@ contract FhevmVerify is FhevmVerifyBase {
         address pauserSet = _readManifestAddress(manifest, R_PAUSER_SET);
         address aclOwner = _readManifestAddress(manifest, R_ACL_OWNER);
 
-        // §3's preflight, repeated so `verify` standing alone is a complete statement about the chain.
+        // The factory preflight's preflight, repeated so `verify` standing alone is a complete statement about the chain.
         // The coordinator gates on this BEFORE deploying; this is the after-the-fact record. A different
         // contract squatting 0x4e59... on some testnet is the one realistic way it actually fires.
         _expectFactoryPresent();
@@ -88,14 +88,14 @@ contract FhevmVerify is FhevmVerifyBase {
      *      were regenerated wrongly, or generated from a different mnemonic, the chain and the mirror
      *      would agree with each other and both be wrong. Deriving from FHEVM_MNEMONIC at the paths
      *      in cleartext-config.ts checks the chain against the ACTUAL source, independently of
-     *      whatever the build happened to bake in — which is §10's "chosen, not inherited" applied to
-     *      the one part of the config that only exists in storage.
+     *      whatever the build happened to bake in — which is the bootstrap config's "chosen, not inherited" applied to
+     *      The one part of the config that only exists in storage.
      *
-     *      Why it matters (§12, §11 R1): these keys are what make the stack SDK-compatible. The
+     *      Why it matters: these keys are what make the stack SDK-compatible. The
      *      js-sdk cleartext relayer derives its own keys from this mnemonic at these paths and looks
      *      a signer up by the address the chain reports. Seed a different set and everything else in
      *      this file still passes — the stack deploys, verifies against itself, and fails only when
-     *      the relayer arrives. It is also why this stack is testnet-only: the mnemonic is published,
+     *      The relayer arrives. It is also why this stack is testnet-only: the mnemonic is published,
      *      so on mainnet these are keys everyone has.
      */
     function _checkSigners(string memory manifest) private {
@@ -122,7 +122,7 @@ contract FhevmVerify is FhevmVerifyBase {
     }
 
     /**
-     * @dev §7's list, in full. The two `pendingOwner() == 0` checks are not tidiness: a dangling
+     * @dev the terminal conditions's list, in full. The two `pendingOwner() == 0` checks are not tidiness: a dangling
      *      pending owner on either contract is a latent takeover — anyone holding that key can
      *      accept at any future moment — and it blocks completion.
      *
@@ -135,15 +135,15 @@ contract FhevmVerify is FhevmVerifyBase {
         _expect(IOwnable2Step(acl).pendingOwner() == address(0), "ACL.pendingOwner() == 0");
         _expect(IACLOwner(aclOwner).owner() == cfg.admin, "ACLOwner.owner() == admin (admin accepted)");
         _expect(IACLOwner(aclOwner).pendingOwner() == address(0), "ACLOwner.pendingOwner() == 0");
-        _expect(IACLOwner(aclOwner).acl() == acl, "ACLOwner.acl() == ACL");
+        _expect(IACLOwner(aclOwner).ACL_ADDRESS() == acl, "ACLOwner.ACL_ADDRESS() == ACL");
     }
 
     /**
      * @dev The signer pool at an HD path, derived rather than read from the chain.
      *
      *      Deriving is the point: comparing the chain against itself would pass whatever it held. These are
-     *      the keys the js-sdk cleartext relayer will use, so the question is whether the stack registered
-     *      the addresses those keys produce.
+     *      The keys the js-sdk cleartext relayer will use, so the question is whether the stack registered
+     *      The addresses those keys produce.
      */
     function _derive(string memory path, uint256 count) private pure returns (address[] memory out) {
         out = new address[](count);

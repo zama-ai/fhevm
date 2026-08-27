@@ -8,10 +8,10 @@ import {FhevmCreate2Base} from "./FhevmCreate2Base.s.sol";
 
 /**
  * @title FhevmDeployCreates
- * @notice Stage 1 of the deploy: every CREATE2, every one gated on its own §8 predicate.
+ * @notice Stage 1 of the deploy: every CREATE2, every one gated on its own predicate.
  *
  * Idempotent by construction. Re-running is the resume path, and resume needs no local state — the
- * predicate is `getCode(predicted) != ""`, a chain query (§2). The manifest is read for the expected
+ * predicate is `getCode(predicted) != ""`, a chain query. The manifest is read for the expected
  * addresses, not for progress.
  *
  * ---------------------------------------------------------------------------------------------
@@ -22,7 +22,7 @@ import {FhevmCreate2Base} from "./FhevmCreate2Base.s.sol";
  * exactly the same command again. Whatever landed is skipped; whatever did not is retried AT THE
  * SAME ADDRESS. There is nothing to clean up and no journal that can disagree with the chain.
  *
- * That is the property §2 is about, and it is the one thing the nonce path cannot offer: there, a
+ * That is what makes a run resumable, and it is the one thing the nonce path cannot offer: there, a
  * transaction that reverts still consumes its nonce, so `CREATE(deployer, n)` becomes permanently
  * unfillable while every later address stays correct — a failure that stays silent until something
  * calls the missing contract.
@@ -40,7 +40,7 @@ import {FhevmCreate2Base} from "./FhevmCreate2Base.s.sol";
  * cases that matter.
  *
  * ---------------------------------------------------------------------------------------------
- * Why the gate is in Solidity and not in the shell (§8)
+ * Why the gate is in Solidity and not in the shell
  * ---------------------------------------------------------------------------------------------
  *
  * `forge script` simulates the WHOLE run before broadcasting anything. An ungated CREATE2 at an
@@ -51,14 +51,14 @@ import {FhevmCreate2Base} from "./FhevmCreate2Base.s.sol";
  *     if (predicted.code.length == 0) { factoryCreate2(salt, initCode); }
  *
  * ---------------------------------------------------------------------------------------------
- * Ordering (§6)
+ * Ordering
  * ---------------------------------------------------------------------------------------------
  *
  * The work list and its order are `FhevmCreate2Base._allCreates`, which is also what FhevmStatus
  * reports on — see there for the two hard edges and why nonce ordering satisfies them for free.
  *
  * ---------------------------------------------------------------------------------------------
- * Frontrunning (§4)
+ * Frontrunning
  * ---------------------------------------------------------------------------------------------
  *
  * Anyone may call the factory with our salt and initcode, and it does not matter, because no
@@ -76,7 +76,7 @@ contract FhevmDeployCreates is FhevmCreate2Base {
         _loadConfig();
         string memory manifest = _loadManifest();
 
-        // Identity, not authorisation. The whole address set is a function of the deployer (§5.2), so
+        // Identity, not authorisation. The whole address set is a function of the deployer, so
         // broadcasting from a different account produces creates that land at addresses nothing was
         // compiled for. Requires `--sender` alongside `--account`.
         require(msg.sender == cfg.deployer, "FhevmDeployCreates: broadcast sender is not FHEVM_DEPLOYER");
@@ -102,10 +102,10 @@ contract FhevmDeployCreates is FhevmCreate2Base {
 
     /**
      * @dev One gated CREATE2, through the factory. Never a plain CREATE — the deployer's nonce plays
-     *      no part in any address on this path, which is the whole point of it (§2).
+     *      no part in any address on this path, which is the whole point of it.
      *
      *      The address is recomputed from THIS build's initcode and checked against the manifest
-     *      before anything is sent. §8: a mismatch here is fatal and is NOT an attack. Different
+     *      before anything is sent. A mismatch here is fatal and is NOT an attack. Different
      *      initcode yields a different address — that is what CREATE2 is — so a mismatch can only
      *      mean the sealed hash is wrong (build drift) or the contract at 0x4e59… is not the
      *      canonical factory. Check the build and the factory preflight, not the mempool.
@@ -130,7 +130,7 @@ contract FhevmDeployCreates is FhevmCreate2Base {
 
         _factoryCreate2(_salt(role), initCode);
 
-        // Verify by reading code back, never by parsing the factory's return data (§3).
+        // Verify by reading code back, never by parsing the factory's return data.
         //
         // This observes SIMULATED state — forge has not broadcast anything yet — so it proves the
         // initcode constructs and lands where predicted, not that the transaction was mined. What

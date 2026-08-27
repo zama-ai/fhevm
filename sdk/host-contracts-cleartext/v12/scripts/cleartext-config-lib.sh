@@ -5,7 +5,7 @@
 # Sourced, never executed.
 #
 # `sdk/cleartext-config.json` is where every value the cleartext stack's languages must agree on is
-# DECIDED (RULES.md rule 23). The TypeScript and Solidity faces of it are checked by
+# DECIDED. The TypeScript and Solidity faces of it are checked by
 # test/cleartext-config-mirror.test.ts; this file is how the shell layer reads the same values instead of
 # carrying a third copy.
 #
@@ -41,10 +41,10 @@ _cfg_require() {
     fi
     if [ ! -f "$CLEARTEXT_CONFIG_JSON" ]; then
         # A generation checked out on its own cannot see the shared file. That is a real limitation and
-        # the right answer is to say so: without the source of truth there is nothing to read, and
+        # The right answer is to say so: without the source of truth there is nothing to read, and
         # guessing would defeat the purpose.
         echo "error: cleartext config not found at $CLEARTEXT_CONFIG_JSON" >&2
-        echo "       it lives at the sdk root and is shared by every generation (RULES.md rule 23)" >&2
+        echo "       it lives at the sdk root and is shared by every generation" >&2
         return 1
     fi
     _CFG_CHECKED=1

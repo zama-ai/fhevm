@@ -49,5 +49,4 @@ interface ICleartextArithmetic {
     ///         The only ternary op is `fheIfThenElse(lhs, middle, rhs)`.
     function recordTernaryOp(FHEVMExecutor.Operators op, bytes32 result, bytes32 lhs, bytes32 middle, bytes32 rhs)
         external;
-
 }
