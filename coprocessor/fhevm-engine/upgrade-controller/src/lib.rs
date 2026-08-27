@@ -1504,21 +1504,27 @@ async fn delete_synthetic_rows_by_handle(
 /// window, together with every ciphertext derived from it, before the merge carries `gcs.*` into
 /// `public`.
 ///
-/// Keyed on `upgrade_state.synthetic_txn_hash`, written by the injector at `start_block + 1`.
+/// Keyed on `upgrade_state.synthetic_txn_hashes`, appended by the injector at
+/// `start_block + 1` — one entry per fork it injected on, so a reorg leaves more than one.
 /// `computations.transaction_id` *is* the log's transaction hash, so that column is the join key
 /// on the computation side, and the handles it yields drive the by-handle sweep.
 ///
 /// Runs inside the cutover transaction and before the merge loop, so it is atomic with the
 /// cutover: if the cutover rolls back, so does this.
 async fn delete_gcs_synthetic_ops(tx: &mut Transaction<'_, Postgres>) -> Result<(), Error> {
-    // Snapshot the markers so they can be logged and reused; one per host chain that reached its
-    // injection block. A window that never got that far has NULL and contributes nothing.
+    // One row per stored hash. The column holds N 32-byte digests back to back, so it is
+    // unpacked the way `verify_proofs.handles` is. A chain has more than one whenever a reorg
+    // made the listener re-inject on a replacement block, and every set has to go. A window that
+    // never reached its injection block is empty.
     let markers: Vec<(i64, Vec<u8>)> = sqlx::query_as(
-        "SELECT host_chain_id, synthetic_txn_hash
-           FROM upgrade_state
-          WHERE stack_role = 'GCS'
-            AND synthetic_txn_hash IS NOT NULL
-          ORDER BY host_chain_id",
+        "SELECT u.host_chain_id, substring(u.synthetic_txn_hashes FROM g.pos FOR 32)
+           FROM upgrade_state u
+           CROSS JOIN LATERAL generate_series(
+                                  1, octet_length(u.synthetic_txn_hashes), 32
+                              ) AS g(pos)
+          WHERE u.stack_role = 'GCS'
+            AND octet_length(u.synthetic_txn_hashes) > 0
+          ORDER BY u.host_chain_id, g.pos",
     )
     .fetch_all(&mut **tx)
     .await?;
@@ -1529,6 +1535,17 @@ async fn delete_gcs_synthetic_ops(tx: &mut Transaction<'_, Postgres>) -> Result<
     }
 
     let hashes: Vec<Vec<u8>> = markers.iter().map(|(_, h)| h.clone()).collect();
+    // `upgrade_state_synthetic_txn_hashes_aligned` already guarantees full digests, but this
+    // delete is irreversible and keys on `transaction_id`, which is
+    // `BYTEA NOT NULL DEFAULT '\x00'::BYTEA` with legacy rows backfilled to `'\x01'::BYTEA` —
+    // a short hash would match real production computations. Enforced here too, not trusted
+    // from one place.
+    if hashes.iter().any(|h| h.len() != 32) {
+        error!("cutover: refusing to delete synthetic ops — a stored hash is not 32 bytes");
+        return Err(Error::Payload(
+            "refusing to delete synthetic ops: a stored hash is not a 32-byte digest".to_string(),
+        ));
+    }
     for (host_chain_id, hash) in &markers {
         info!(
             host_chain_id,
@@ -1636,8 +1653,8 @@ async fn delete_gcs_synthetic_ops(tx: &mut Transaction<'_, Postgres>) -> Result<
 
     // Clear the markers so a later attempt cannot match this window's work.
     sqlx::query(
-        "UPDATE upgrade_state SET synthetic_txn_hash = NULL, updated_at = NOW()
-          WHERE stack_role = 'GCS' AND synthetic_txn_hash IS NOT NULL",
+        "UPDATE upgrade_state SET synthetic_txn_hashes = ''::bytea, updated_at = NOW()
+          WHERE stack_role = 'GCS' AND octet_length(synthetic_txn_hashes) > 0",
     )
     .execute(&mut **tx)
     .await?;
@@ -2026,7 +2043,7 @@ async fn rollback_dry_run(
                -- next attempt injects at a different block (or fork) and so derives a different
                -- hash. A stale marker would leave cutover matching nothing while the real rows
                -- merged through.
-               synthetic_txn_hash = NULL,
+               synthetic_txn_hashes = ''::bytea,
                updated_at = NOW()
          WHERE u.stack_role = 'GCS'
            AND u.state IN ('UpgradeActivated', 'DryRunStarted')
@@ -2627,7 +2644,7 @@ mod tests {
         sqlx::query(
             "INSERT INTO upgrade_state (
                  stack_role, state, status, proposal_id, version, start_block, end_block,
-                 host_chain_id, proposal_block, synthetic_txn_hash, updated_at
+                 host_chain_id, proposal_block, synthetic_txn_hashes, updated_at
              ) VALUES ('GCS', 'UpgradeAuthorized', 'in_progress', $1, '0.15.0', 100, 200,
                        12345, 100, $2, NOW())",
         )
@@ -2695,13 +2712,125 @@ mod tests {
         }
 
         // The marker is cleared, so a later attempt cannot match this window's work.
-        let marker: Option<Vec<u8>> = sqlx::query_scalar(
-            "SELECT synthetic_txn_hash FROM upgrade_state WHERE stack_role = 'GCS'",
+        let marker: Vec<u8> = sqlx::query_scalar(
+            "SELECT synthetic_txn_hashes FROM upgrade_state WHERE stack_role = 'GCS'",
         )
         .fetch_one(&pool)
         .await
-        .expect("read marker");
-        assert!(marker.is_none(), "synthetic_txn_hash was not cleared");
+        .expect("read markers");
+        assert!(marker.is_empty(), "synthetic_txn_hashes was not cleared");
+    }
+
+    /// The reorg case the concatenated column exists for.
+    ///
+    /// Injection happens at `start_block + 1` with no wait for finality, so a replacement block
+    /// makes the listener inject again under a different block hash, leaving a second set of
+    /// synthetic rows. With a single-value column the forgotten set would merge into `public` as
+    /// live data. Two hashes are stored for one chain, each with its own computation and
+    /// ciphertext, and both sets must be gone.
+    #[tokio::test]
+    async fn reorg_leaves_two_hashes_and_both_sets_are_deleted() {
+        let (_instance, pool) = test_pool().await;
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+
+        let fork_a = vec![0xAAu8; 32];
+        let fork_b = vec![0xBBu8; 32];
+        let handle_a = vec![0x1Au8; 32];
+        let handle_b = vec![0x1Bu8; 32];
+
+        // Concatenated exactly as the injector's `||` append leaves them.
+        let mut both = fork_a.clone();
+        both.extend_from_slice(&fork_b);
+        sqlx::query(
+            "INSERT INTO upgrade_state (
+                 stack_role, state, status, proposal_id, version, start_block, end_block,
+                 host_chain_id, proposal_block, synthetic_txn_hashes, updated_at
+             ) VALUES ('GCS', 'UpgradeAuthorized', 'in_progress', $1, '0.15.0', 100, 200,
+                       12345, 100, $2, NOW())",
+        )
+        .bind(vec![7u8; 32])
+        .bind(&both)
+        .execute(&pool)
+        .await
+        .expect("seed two hashes");
+
+        for (txn, handle) in [(&fork_a, &handle_a), (&fork_b, &handle_b)] {
+            let seed = format!(
+                "INSERT INTO {GCS_SCHEMA_QUOTED}.computations
+                      (tenant_id, output_handle, transaction_id, dependencies, fhe_operation,
+                       is_completed, is_scalar, host_chain_id)
+                      VALUES (1, $2, $1, ARRAY[$2], 1, true, false, 12345);
+                 INSERT INTO {GCS_SCHEMA_QUOTED}.ciphertexts
+                      (handle, ciphertext, ciphertext_version, ciphertext_type)
+                      VALUES ($2, '\\x01'::bytea, 0, 5);"
+            );
+            sqlx::raw_sql(
+                &seed
+                    .replace("$1", &format!("'\\x{}'::bytea", hex_encode(txn)))
+                    .replace("$2", &format!("'\\x{}'::bytea", hex_encode(handle))),
+            )
+            .execute(&pool)
+            .await
+            .expect("seed fork work");
+        }
+
+        let mut tx = pool.begin().await.expect("begin");
+        delete_gcs_synthetic_ops(&mut tx)
+            .await
+            .expect("delete both forks");
+        tx.commit().await.expect("commit");
+
+        for (label, txn, handle) in [
+            ("fork_a", &fork_a, &handle_a),
+            ("fork_b", &fork_b, &handle_b),
+        ] {
+            let comps: i64 = sqlx::query_scalar(&format!(
+                "SELECT COUNT(*) FROM {GCS_SCHEMA_QUOTED}.computations WHERE transaction_id = $1"
+            ))
+            .bind(txn)
+            .fetch_one(&pool)
+            .await
+            .expect("count computations");
+            assert_eq!(comps, 0, "{label}: computations survived");
+
+            let cts: i64 = sqlx::query_scalar(&format!(
+                "SELECT COUNT(*) FROM {GCS_SCHEMA_QUOTED}.ciphertexts WHERE handle = $1"
+            ))
+            .bind(handle)
+            .fetch_one(&pool)
+            .await
+            .expect("count ciphertexts");
+            assert_eq!(
+                cts, 0,
+                "{label}: ciphertexts survived — would merge into public"
+            );
+        }
+    }
+
+    /// The alignment CHECK is what stops a malformed marker becoming a delete predicate. Real
+    /// production rows carry short `transaction_id` sentinels (`'\x00'` default, `'\x01'`
+    /// backfill), so a one-byte value in this column would delete all of them.
+    #[tokio::test]
+    async fn misaligned_marker_is_rejected_by_the_database() {
+        let (_instance, pool) = test_pool().await;
+
+        let err = sqlx::query(
+            "INSERT INTO upgrade_state (
+                 stack_role, state, status, proposal_id, version, start_block, end_block,
+                 host_chain_id, proposal_block, synthetic_txn_hashes, updated_at
+             ) VALUES ('GCS', 'UpgradeAuthorized', 'in_progress', $1, '0.15.0', 100, 200,
+                       12345, 100, '\\x00'::bytea, NOW())",
+        )
+        .bind(vec![7u8; 32])
+        .execute(&pool)
+        .await
+        .expect_err("a 1-byte value must violate the alignment CHECK");
+
+        let msg = err.to_string();
+        assert!(
+            msg.contains("synthetic_txn_hashes_aligned"),
+            "expected the alignment CHECK to reject it, got: {msg}"
+        );
     }
 
     /// With no marker recorded the cleanup must be a clean no-op, not an error: a window that
