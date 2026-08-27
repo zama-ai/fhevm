@@ -197,7 +197,11 @@ where
                 txn_is_sent = true,
                 txn_hash = $1,
                 txn_block_number = $2
-            WHERE handle = $3",
+            WHERE handle = $3
+              AND ciphertext IS NOT NULL
+              AND ciphertext128 IS NOT NULL
+              AND s3_publication_verified_at IS NOT NULL
+              AND s3_publication_verified_digest IS NOT DISTINCT FROM ciphertext",
             txn_hash,
             txn_block_number,
             handle
@@ -365,9 +369,8 @@ where
     }
 
     async fn execute(&self) -> anyhow::Result<bool> {
-        // The service responsible for populating the ciphertext_digest table must
-        // ensure that ciphertext and ciphertext128 are non-null only after the
-        // ciphertexts have been successfully uploaded to AWS S3 buckets.
+        // Computed digests becoming non-NULL does not prove S3 publication.
+        // Only a current postflight verification witness makes a row eligible.
         let rows = sqlx::query!(
             "
             SELECT handle, key_id_gw, ciphertext, ciphertext128, host_chain_id, txn_limited_retries_count, txn_unlimited_retries_count, transaction_id
@@ -375,6 +378,8 @@ where
             WHERE txn_is_sent = false
             AND ciphertext IS NOT NULL
             AND ciphertext128 IS NOT NULL
+            AND s3_publication_verified_at IS NOT NULL
+            AND s3_publication_verified_digest IS NOT DISTINCT FROM ciphertext
             AND txn_limited_retries_count < $1
             ORDER BY created_at ASC
             LIMIT $2",
@@ -483,10 +488,24 @@ async fn delete_ct128_from_db(
     tx: &mut Transaction<'_, Postgres>,
     handle: Vec<u8>,
 ) -> Result<(), sqlx::Error> {
-    let rows_affected = sqlx::query!("DELETE FROM ciphertexts128 WHERE  handle = $1", handle)
-        .execute(tx.as_mut())
-        .await?
-        .rows_affected();
+    let rows_affected = sqlx::query!(
+        "DELETE FROM ciphertexts128 c
+         WHERE c.handle = $1
+           AND EXISTS (
+               SELECT 1
+                 FROM ciphertext_digest d
+                WHERE d.handle = c.handle
+                  AND d.ciphertext IS NOT NULL
+                  AND d.ciphertext128 IS NOT NULL
+                  AND d.ciphertext128_format IS NOT NULL
+                  AND d.s3_publication_verified_at IS NOT NULL
+                  AND d.s3_publication_verified_digest IS NOT DISTINCT FROM d.ciphertext
+           )",
+        handle
+    )
+    .execute(tx.as_mut())
+    .await?
+    .rows_affected();
 
     if rows_affected > 0 {
         info!(

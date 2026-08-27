@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH block_handles AS MATERIALIZED (\n            SELECT DISTINCT producer.handle,\n                   d.key_id_gw,\n                   d.ciphertext AS ct64_digest,\n                   d.ciphertext128 AS ct128_digest,\n                   d.ciphertext128_format AS ct128_format\n              FROM handle_producer_block producer\n              LEFT JOIN ciphertext_digest d\n                ON d.host_chain_id = producer.host_chain_id\n               AND d.handle = producer.handle\n             WHERE producer.host_chain_id = $1\n               AND producer.producer_block_number = $2\n               AND producer.producer_block_hash = $3\n        )\n        SELECT NOT EXISTS (\n                   SELECT 1\n                     FROM block_handles\n                    WHERE key_id_gw IS NULL\n                       OR ct64_digest IS NULL\n                       OR ct128_digest IS NULL\n                       OR ct128_format IS NULL\n               ) AS \"ready!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ready!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "494ea5061473a4b8706da9b4b63373d162330203ce30c6eb171388db551ba853"
+}

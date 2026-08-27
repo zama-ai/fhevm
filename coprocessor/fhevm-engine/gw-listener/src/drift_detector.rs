@@ -278,7 +278,12 @@ impl DriftDetector {
         };
 
         let row = sqlx::query(
-            "SELECT ciphertext, ciphertext128 FROM ciphertext_digest WHERE handle = $1",
+            "SELECT ciphertext, ciphertext128,
+                    s3_publication_verified_at IS NOT NULL
+                        AND s3_publication_verified_digest IS NOT DISTINCT FROM ciphertext
+                        AS s3_publication_verified
+               FROM ciphertext_digest
+              WHERE handle = $1",
         )
         .bind(handle.as_slice())
         .fetch_optional(db_pool)
@@ -287,7 +292,8 @@ impl DriftDetector {
         let local_digests = row.and_then(|r| {
             let ct: Option<Vec<u8>> = r.get("ciphertext");
             let ct128: Option<Vec<u8>> = r.get("ciphertext128");
-            ct.zip(ct128)
+            let verified: bool = r.get("s3_publication_verified");
+            verified.then(|| ct.zip(ct128)).flatten()
         });
         let Some((local_ciphertext_digest, local_ciphertext128_digest)) = local_digests else {
             debug!(
@@ -1832,7 +1838,12 @@ mod tests {
         let local_ct = vec![0xBBu8; 32];
         let local_ct128 = vec![0xCCu8; 32];
         sqlx::query(
-            "UPDATE ciphertext_digest SET ciphertext = $1, ciphertext128 = $2 WHERE handle = $3",
+            "UPDATE ciphertext_digest
+             SET ciphertext = $1,
+                 ciphertext128 = $2,
+                 s3_publication_verified_at = NOW(),
+                 s3_publication_verified_digest = $1
+             WHERE handle = $3",
         )
         .bind(&local_ct)
         .bind(&local_ct128)
@@ -1854,6 +1865,57 @@ mod tests {
         assert!(state.local_consensus_checked);
         // Consensus digest [0xFF] != local digest [0xBB] → drift.
         assert_eq!(detector.deferred_drift_detected, 1);
+    }
+
+    #[tokio::test]
+    #[serial(db)]
+    async fn consensus_defers_when_local_digests_lack_s3_witness() {
+        let (pool, _inst) = setup_db().await;
+        let handle = [0xAD; 32];
+
+        insert_ciphertext_digest(
+            &pool,
+            12345,
+            [0u8; 32],
+            &handle,
+            &[0xBB; 32],
+            &[0xCC; 32],
+            0,
+        )
+        .await
+        .unwrap();
+        sqlx::query(
+            "UPDATE ciphertext_digest
+             SET s3_publication_verified_at = NULL,
+                 s3_publication_verified_digest = NULL
+             WHERE handle = $1",
+        )
+        .bind(&handle[..])
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let mut detector = detector();
+        detector
+            .handle_consensus(
+                make_consensus_event(
+                    FixedBytes::from(handle),
+                    FixedBytes::from([0xFF; 32]),
+                    FixedBytes::from([0xCC; 32]),
+                    vec![senders()[0], senders()[1], senders()[2]],
+                ),
+                context(10),
+                &pool,
+            )
+            .await
+            .unwrap();
+
+        let state = detector
+            .open_handles
+            .get(&FixedBytes::from(handle))
+            .unwrap();
+        assert!(!state.local_consensus_checked);
+        assert_eq!(detector.deferred_drift_detected, 0);
     }
 
     #[tokio::test]

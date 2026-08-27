@@ -88,14 +88,19 @@ pub fn spawn_gauge_update_routine(period: std::time::Duration, db_pool: PgPool) 
                 "
                 SELECT COUNT(*)::BIGINT
                 FROM ciphertext_digest d
-                WHERE d.ciphertext IS NULL
+                WHERE d.s3_publication_verified_at IS NULL
+                   OR d.s3_publication_verified_digest IS DISTINCT FROM d.ciphertext
+                   OR d.ciphertext IS NULL
                    OR (
-                     d.ciphertext128 IS NULL
-                     AND EXISTS (
+                     EXISTS (
                        SELECT 1
                        FROM ciphertexts128 c
                        WHERE c.handle = d.handle
                          AND c.ciphertext IS NOT NULL
+                     )
+                     AND (
+                       d.ciphertext128 IS NULL
+                       OR d.ciphertext128_format IS NULL
                      )
                    )
                 ",

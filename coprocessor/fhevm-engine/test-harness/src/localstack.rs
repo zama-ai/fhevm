@@ -36,6 +36,16 @@ pub async fn start_localstack() -> anyhow::Result<LocalstackContainer> {
     })
 }
 
+pub async fn create_localstack_s3_client(host_port: u16) -> aws_sdk_s3::Client {
+    let endpoint_url = format!("http://127.0.0.1:{host_port}");
+    std::env::set_var("AWS_ENDPOINT_URL", endpoint_url);
+    std::env::set_var("AWS_REGION", "us-east-1");
+    std::env::set_var("AWS_ACCESS_KEY_ID", "test");
+    std::env::set_var("AWS_SECRET_ACCESS_KEY", "test");
+    let aws_conf = aws_config::load_defaults(BehaviorVersion::latest()).await;
+    aws_sdk_s3::Client::new(&aws_conf)
+}
+
 // Note that this function sets the AWS environment variables to point to the LocalStack instance.
 pub async fn create_aws_aws_kms_client(host_port: u16) -> anyhow::Result<aws_sdk_kms::Client> {
     let endpoint_url = format!("http://localhost:{}", host_port);

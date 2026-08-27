@@ -1,0 +1,90 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT generation,\n               host_chain_id,\n               block_number,\n               block_hash,\n               parent_block_hash,\n               publication_cadence,\n               block_content_digest,\n               block_handle_count,\n               manifest_revision,\n               manifest_publisher,\n               manifest_digest,\n               manifest_published\n          FROM block_manifest_state\n         WHERE host_chain_id = $1\n           AND block_hash = $2\n           AND generation = $3\n         LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "generation",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "host_chain_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "block_number",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "block_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "parent_block_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
+        "name": "publication_cadence",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "block_content_digest",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 7,
+        "name": "block_handle_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "manifest_revision",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 9,
+        "name": "manifest_publisher",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 10,
+        "name": "manifest_digest",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 11,
+        "name": "manifest_published",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "ad3d1da6b21b984d4fc69d64dbea19a9fe32c0933aa46016c8908f5b040de4c1"
+}

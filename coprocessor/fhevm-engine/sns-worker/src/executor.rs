@@ -350,7 +350,7 @@ pub(crate) async fn run_loop(
     }
 }
 
-/// Clean up the database by removing old ciphertexts128 already uploaded to S3.
+/// Clean up the database by removing old ciphertexts128 verified in S3.
 /// Ideally, the table will be cleaned up by txn-sender if it's working properly
 pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionError> {
     if limit == 0 {
@@ -405,6 +405,9 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
             ON d.handle = c.handle
             WHERE d.ciphertext IS NOT NULL
               AND d.ciphertext128 IS NOT NULL
+              AND d.ciphertext128_format IS NOT NULL
+              AND d.s3_publication_verified_at IS NOT NULL
+              AND d.s3_publication_verified_digest IS NOT DISTINCT FROM d.ciphertext
             FOR UPDATE OF c SKIP LOCKED
             LIMIT $1
         )
@@ -514,8 +517,8 @@ async fn fetch_and_execute_sns_tasks(
             update_ciphertext128(trx, &tasks).await?;
             notify_ciphertext128_ready(trx, &conf.db.notify_channel).await?;
 
-            // Try to enqueue the tasks for upload in the DB
-            // This is a best-effort attempt, as the upload worker might not be available
+            // Persist both computed digests before dispatch. These rows also
+            // form the durable upload queue when the in-memory uploader is unavailable.
             enqueue_upload_tasks(trx, &tasks).await?;
             Ok::<(), ExecutionError>(())
         };
@@ -624,7 +627,7 @@ async fn enqueue_upload_tasks(
         // false = the handle's provenance was deleted by reorg cleanup while
         // this batch was computing; its publication is cancelled (logged by
         // the callee) and the computed ct128 is simply left unpublished.
-        let _enqueued = task.enqueue_upload_task(db_txn).await?;
+        task.enqueue_upload_task(db_txn).await?;
     }
     Ok(())
 }

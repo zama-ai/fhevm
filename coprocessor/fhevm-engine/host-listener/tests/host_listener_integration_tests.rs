@@ -359,6 +359,118 @@ async fn test_mark_block_as_valid_repairs_missing_parent_hash(
     Ok(())
 }
 
+#[tokio::test]
+#[serial(db)]
+async fn test_allowed_computation_records_its_producer_block(
+) -> Result<(), Box<dyn std::error::Error>> {
+    use alloy::primitives::Log as EventLog;
+    use host_listener::contracts::TfheContract;
+    use host_listener::contracts::TfheContract::TfheContractEvents;
+    use host_listener::database::tfhe_event_propagate::{ClearConst, LogTfhe};
+    use sqlx::types::time::PrimitiveDateTime;
+
+    let test_instance =
+        test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
+            .await?;
+    let chain_id = ChainId::try_from(42_u64)?;
+    let db = Database::new(&test_instance.db_url, chain_id, 128).await?;
+    let pool = db.pool.read().await.clone();
+
+    let caller = Address::repeat_byte(0x11);
+    let handle = FixedBytes::<32>::repeat_byte(0x42);
+    let unallowed_handle = FixedBytes::<32>::repeat_byte(0x43);
+    let first_block_hash = FixedBytes::<32>::repeat_byte(0x33);
+    let competing_block_hash = FixedBytes::<32>::repeat_byte(0x34);
+
+    let event =
+        |handle, transaction_hash, block_hash, is_allowed, clear| LogTfhe {
+            event: EventLog {
+                address: Address::ZERO,
+                data: TfheContractEvents::TrivialEncrypt(
+                    TfheContract::TrivialEncrypt {
+                        caller,
+                        pt: ClearConst::from_be_slice(&[clear]),
+                        toType: 4,
+                        result: handle,
+                    },
+                ),
+            },
+            transaction_hash: Some(transaction_hash),
+            is_allowed,
+            block_number: 7,
+            block_hash,
+            block_timestamp: PrimitiveDateTime::MAX,
+            dependence_chain: transaction_hash,
+            tx_depth_size: 0,
+            log_index: None,
+        };
+
+    let mut tx = db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
+    db.insert_tfhe_event(
+        &mut tx,
+        &event(
+            handle,
+            FixedBytes::repeat_byte(0x71),
+            first_block_hash,
+            true,
+            7,
+        ),
+    )
+    .await?;
+    db.insert_tfhe_event(
+        &mut tx,
+        &event(
+            unallowed_handle,
+            FixedBytes::repeat_byte(0x72),
+            first_block_hash,
+            false,
+            8,
+        ),
+    )
+    .await?;
+    db.insert_tfhe_event(
+        &mut tx,
+        &event(
+            handle,
+            FixedBytes::repeat_byte(0x73),
+            competing_block_hash,
+            true,
+            9,
+        ),
+    )
+    .await?;
+    tx.commit().await?;
+
+    let rows = sqlx::query(
+        "SELECT handle, producer_block_number, producer_block_hash
+           FROM handle_producer_block
+          WHERE host_chain_id = $1
+          ORDER BY producer_block_hash",
+    )
+    .bind(chain_id.as_i64())
+    .fetch_all(&pool)
+    .await?;
+
+    assert_eq!(rows.len(), 2, "only allowed producers must be recorded");
+    assert!(rows
+        .iter()
+        .all(|row| row.get::<Vec<u8>, _>("handle") == handle.to_vec()));
+    assert!(rows
+        .iter()
+        .all(|row| row.get::<i64, _>("producer_block_number") == 7));
+    assert_eq!(
+        rows.iter()
+            .map(|row| row.get::<Vec<u8>, _>("producer_block_hash"))
+            .collect::<Vec<_>>(),
+        vec![first_block_hash.to_vec(), competing_block_hash.to_vec()]
+    );
+
+    Ok(())
+}
+
 fn trivial_encrypt_handle(val: U256, to_type: u8) -> FixedBytes<32> {
     let mut payload = Vec::with_capacity(
         "trivialEncrypt".len() + std::mem::size_of::<[u8; 32]>() + 1,

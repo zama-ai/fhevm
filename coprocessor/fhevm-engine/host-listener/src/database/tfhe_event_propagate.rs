@@ -87,6 +87,34 @@ const MAX_RETRY_ON_UNKNOWN_ERROR: usize = 5;
 // short wait in case the database had a short issue
 const RECONNECTION_DELAY: Duration = Duration::from_millis(100);
 
+async fn insert_handle_producer_block(
+    tx: &mut Transaction<'_>,
+    chain_id: i64,
+    handle: &[u8],
+    producer_block_number: i64,
+    producer_block_hash: &[u8],
+) -> Result<bool, SqlxError> {
+    let done = sqlx::query!(
+        r#"
+        INSERT INTO handle_producer_block (
+            host_chain_id,
+            handle,
+            producer_block_number,
+            producer_block_hash
+        )
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (host_chain_id, handle, producer_block_hash) DO NOTHING
+        "#,
+        chain_id,
+        handle,
+        producer_block_number,
+        producer_block_hash,
+    )
+    .execute(tx.deref_mut())
+    .await?;
+    Ok(done.rows_affected() > 0)
+}
+
 struct AllowedHandleInsert {
     handle: Vec<u8>,
     account_address: String,
@@ -471,15 +499,29 @@ impl Database {
     ) -> Result<bool, SqlxError> {
         let is_scalar = !scalar_byte.is_zero();
         let output_handle = result.to_vec();
-        self.insert_computation_legacy_row(
-            tx,
-            &output_handle,
-            &dependencies,
-            fhe_operation,
-            is_scalar,
-            log,
-        )
-        .await
+        let producer_recorded = if log.is_allowed {
+            insert_handle_producer_block(
+                tx,
+                self.chain_id.as_i64(),
+                &output_handle,
+                log.block_number as i64,
+                log.block_hash.as_slice(),
+            )
+            .await?
+        } else {
+            false
+        };
+        let inserted = self
+            .insert_computation_legacy_row(
+                tx,
+                &output_handle,
+                &dependencies,
+                fhe_operation,
+                is_scalar,
+                log,
+            )
+            .await?;
+        Ok(producer_recorded || inserted)
     }
 
     async fn insert_computation_legacy_row(

@@ -1,0 +1,232 @@
+{{- if .Values.consensusDetector.enabled -}}
+{{- $component := .Values.consensusDetector -}}
+{{- $disabled := default (list) $component.disabledArgs -}}
+{{- $bucket := $component.config.s3BucketName -}}
+{{- if not (or $bucket.value $bucket.valueFrom) -}}
+{{- fail "consensusDetector.config.s3BucketName must set value or valueFrom when consensusDetector is enabled" -}}
+{{- end -}}
+{{- if and (or $bucket.valueFrom (ne ($bucket.value | default "") "none")) (not $component.wallet.enabled) -}}
+{{- fail "consensusDetector.wallet.enabled must be true when manifest publication is enabled" -}}
+{{- end -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coprocessor-consensus-detector
+    app.kubernetes.io/name: {{ include "consensusDetectorName" . }}
+  name: {{ include "consensusDetectorName" . }}
+spec:
+  replicas: {{ $component.replicas }}
+  selector:
+    matchLabels:
+      app: coprocessor-consensus-detector
+  {{- with $component.updateStrategy }}
+  strategy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        app: coprocessor-consensus-detector
+        app.kubernetes.io/name: {{ include "consensusDetectorName" . }}
+        {{- with .Values.commonConfig.stackVersion }}
+        app.kubernetes.io/version: {{ . | quote }}
+        {{- end }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with $component.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Always
+      {{- with $component.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $component.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $component.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $component.serviceAccountName }}
+      serviceAccountName: {{ . }}
+      {{- end }}
+      containers:
+        - name: coprocessor-consensus-detector
+          image: {{ $component.image.name }}:{{ $component.image.tag }}
+          command: ["consensus-detector"]
+          {{- if .Values.commonConfig.stackVersionProbe.enabled }}
+          startupProbe:
+            exec:
+              command: ["consensus-detector", "--stack-version"]
+            periodSeconds: {{ .Values.commonConfig.stackVersionProbe.periodSeconds | default 10 }}
+            failureThreshold: {{ .Values.commonConfig.stackVersionProbe.failureThreshold | default 30 }}
+          {{- end }}
+          args:
+            {{- if not (has "database-url" $disabled) }}
+            - --database-url=$(DATABASE_URL)
+            {{- end }}
+            {{- if not (has "gw-url" $disabled) }}
+            - --gw-url=$(GATEWAY_URL)
+            {{- end }}
+            {{- if not (has "gateway-config-address" $disabled) }}
+            - --gateway-config-address=$(GATEWAY_CONFIG_ADDRESS)
+            {{- end }}
+            {{- if not (has "my-bucket" $disabled) }}
+            - --my-bucket=$(S3_BUCKET_NAME)
+            {{- end }}
+            {{- if not (has "consensus-publication-retry-count" $disabled) }}
+            - --consensus-publication-retry-count={{ $component.config.publicationRetryCount }}
+            {{- end }}
+            {{- if $component.wallet.enabled }}
+            {{- if not (has "signer-type" $disabled) }}
+            {{- if $component.wallet.awsKms.enabled }}
+            - --signer-type=aws-kms
+            {{- else }}
+            - --signer-type=private-key
+            {{- end }}
+            {{- end }}
+            {{- if and (not $component.wallet.awsKms.enabled) (not (has "private-key" $disabled)) }}
+            - --private-key=$(TX_SENDER_PRIVATE_KEY)
+            {{- end }}
+            {{- end }}
+            {{- if not (has "metrics-addr" $disabled) }}
+            - --metrics-addr=0.0.0.0:{{ $component.ports.metrics }}
+            {{- end }}
+            {{- with $component.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          env:
+            {{- with .Values.commonConfig.databaseUser }}
+            - name: DATABASE_USER
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with .Values.commonConfig.databaseEndpoint }}
+            - name: DATABASE_ENDPOINT
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- if eq (include "coprocessorDatabaseAuthMode" .) "password" }}
+            {{- with .Values.commonConfig.databasePassword }}
+            - name: DATABASE_PASSWORD
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.commonConfig.databaseUrl }}
+            - name: DATABASE_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if eq (include "coprocessorDatabaseAuthMode" .) "iam" }}
+            - name: DATABASE_IAM_AUTH_ENABLED
+              value: "true"
+            {{- with .Values.commonConfig.databaseIamRegion }}
+            - name: DATABASE_IAM_REGION
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- if eq (include "coprocessor.databaseSslRootCertEnvEnabled" .) "true" }}
+            {{- include "coprocessor.databaseSslRootCertEnv" . | nindent 12 }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.commonConfig.gatewayUrl }}
+            - name: GATEWAY_URL
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with .Values.commonConfig.gatewayContractAddresses.gatewayConfig }}
+            - name: GATEWAY_CONFIG_ADDRESS
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            - name: S3_BUCKET_NAME
+              {{- if $bucket.value }}
+              value: {{ $bucket.value | quote }}
+              {{- else }}
+              valueFrom:
+                {{- toYaml $bucket.valueFrom | nindent 16 }}
+              {{- end }}
+            {{- if $component.wallet.enabled }}
+            {{- if $component.wallet.awsKms.enabled }}
+            - name: AWS_KEY_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ $component.wallet.awsKms.configmap.name | quote }}
+                  key: {{ $component.wallet.awsKms.configmap.key | quote }}
+            {{- else if $component.wallet.secret.value }}
+            - name: TX_SENDER_PRIVATE_KEY
+              value: {{ $component.wallet.secret.value | quote }}
+            {{- else }}
+            - name: TX_SENDER_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $component.wallet.secret.name | quote }}
+                  key: {{ $component.wallet.secret.key | quote }}
+            {{- end }}
+            {{- end }}
+          {{- if default .Values.commonConfig.tracing.enabled $component.tracing.enabled }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.commonConfig.tracing.endpoint | quote }}
+            - name: OTEL_SERVICE_NAME
+              {{- if $component.tracing.service }}
+              value: {{ $component.tracing.service | quote }}
+              {{- else }}
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+              {{- end }}
+          {{- end }}
+          {{- with .Values.commonConfig.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $component.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: metrics
+              containerPort: {{ $component.ports.metrics }}
+              protocol: TCP
+          resources:
+            {{- toYaml $component.resources | nindent 12 }}
+          {{- if eq (include "coprocessor.databaseSslRootCertMountEnabled" .) "true" }}
+          {{- include "coprocessor.databaseSslRootCertVolumeMount" . | nindent 10 }}
+          {{- end }}
+      {{- if eq (include "coprocessor.databaseSslRootCertMountEnabled" .) "true" }}
+      {{- include "coprocessor.databaseSslRootCertVolume" . | nindent 6 }}
+      {{- end }}
+{{- end -}}
