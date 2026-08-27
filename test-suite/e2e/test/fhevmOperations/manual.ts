@@ -1868,7 +1868,7 @@ describe('FHEVM manual operations', function () {
 // Top-level: these tests use their own fixture, so they must not pay for the
 // FHEVMManualTestSuite deploy in the parent beforeEach (shared signer, nonce pressure).
 describe('FHEVM manual operations - shift, rotate, div and rem edge cases', function () {
-  beforeEach(async function () {
+  before(async function () {
     this.signer = await getSigner(119);
     this.instance = await createInstance();
     const factory = await ethers.getContractFactory('FHEVMOperatorEdgeCaseTestSuite');
