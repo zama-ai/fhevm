@@ -1,2 +1,0 @@
-forge-std-1.11.0/=dependencies/forge-std-1.11.0/
-fhevm-config-0.13.0/=config/
