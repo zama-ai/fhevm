@@ -39,6 +39,26 @@ jobs:
     uses: ./.github/workflows/is-latest-commit.yml
     if: github.event_name == 'push'
 
+  # On `release` events, resolve the npm-compatible SDK version from the
+  # release tag (e.g. `v0.13.3` -> `0.13.3`) so the docker build can install
+  # @fhevm/sdk@<version> from the registry. Off-release the output stays
+  # empty and the Dockerfile falls back to SDK_SOURCE=local.
+  compute-sdk-version:
+    runs-on: ubuntu-latest
+    outputs:
+      sdk_version: ${{ steps.strip.outputs.sdk_version }}
+    steps:
+      - id: strip
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [[ "$EVENT_NAME" == "release" ]]; then
+            echo "sdk_version=${REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "sdk_version=" >> "$GITHUB_OUTPUT"
+          fi
+
   check-changes:
     if: github.event_name == 'push' || inputs.is_workflow_call
     uses: ./.github/workflows/check-changes-for-docker-build.yml
@@ -59,7 +79,7 @@ jobs:
           - 'library-solidity/**'
 
   build:
-    needs: [is-latest-commit, check-changes]
+    needs: [is-latest-commit, check-changes, compute-sdk-version]
     concurrency:
       group: test-suite-e2e-build-${{ github.ref_name }}
       cancel-in-progress: true
@@ -71,7 +91,10 @@ jobs:
         || (github.event_name == 'push' && needs.is-latest-commit.outputs.is_latest == 'true' && needs.check-changes.outputs.changes == 'true')
         || (inputs.is_workflow_call && needs.check-changes.outputs.changes == 'true')
       )
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
+    # TODO: bump to the tagged release once the `build-args` input lands in
+    # ci-templates. Pinned to the feature branch SHA in the
+    # meantime.
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@8dd70af950757e966c429b9dd0945eaff56b93aa # aw/common-docker-expose-build-args
     secrets:
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
       AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
@@ -90,6 +113,12 @@ jobs:
       image-name: "fhevm/test-suite/e2e"
       docker-file: "./test-suite/e2e/Dockerfile"
       app-cache-dir: "fhevm-test-suite-e2e"
+      # SDK_SOURCE / SDK_VERSION are consumed by test-suite/e2e/Dockerfile.
+      # On `release` events install the published @fhevm/sdk@<version> from
+      # the npm registry; otherwise fall back to the local sdk/js-sdk build.
+      build-args: |
+        SDK_SOURCE=${{ github.event_name == 'release' && 'registry' || 'local' }}
+        SDK_VERSION=${{ needs.compute-sdk-version.outputs.sdk_version }}
 
   re-tag-image:
     needs: [is-latest-commit, check-changes]
