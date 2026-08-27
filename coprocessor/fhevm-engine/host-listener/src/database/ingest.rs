@@ -19,7 +19,8 @@ use crate::contracts::{
 };
 use crate::database::dependence_chains::dependence_chains;
 use crate::database::synthetic_ops::{
-    synthetic_logs, SyntheticContext, SYNTHETIC_BLOCK_OFFSET,
+    synthetic_logs, synthetic_transaction_hash, SyntheticContext,
+    SYNTHETIC_BLOCK_OFFSET,
 };
 use crate::database::tfhe_event_propagate::{
     acl_result_handles, tfhe_result_handle, Chain, ChainHash, Database, LogTfhe,
@@ -698,14 +699,46 @@ async fn synthetic_logs_for_block(
         return Ok(vec![]);
     }
 
+    let ctx = SyntheticContext {
+        proposal_id: &proposal_id,
+        target_version: &target_version,
+        chain_id: chain_id.as_u64(),
+        block_number: block_number_i64,
+        block_hash,
+    };
+
+    // Record the transaction hash so cutover can find this work and delete it before the merge.
+    // The hash is keccak over the whole context, and `block_hash` is not persisted anywhere the
+    // upgrade-controller can read unambiguously, so it cannot be recomputed there — the injector
+    // is the only component that knows it.
+    //
+    // Written unconditionally rather than only when NULL: a re-attempt lands on a different
+    // block (or a different fork of the same height) and so derives a different hash. Leaving a
+    // stale value would make cutover delete nothing while the real rows merged through.
+    //
+    // Same transaction as the log decoding that follows, so the marker and the work it points at
+    // commit together or not at all.
+    let synthetic_txn_hash = synthetic_transaction_hash(&ctx);
+    sqlx::query(
+        "UPDATE upgrade_state
+            SET synthetic_txn_hash = $1, updated_at = NOW()
+          WHERE stack_role = 'GCS'
+            AND status = 'in_progress'
+            AND state IN ('UpgradeActivated', 'DryRunStarted')
+            AND host_chain_id = $2
+            -- Pin to the proposal the hash was derived from. Without it, a proposal activated
+            -- between the SELECT above and this UPDATE would be stamped with a hash computed
+            -- from the previous one, and cutover would then delete nothing.
+            AND proposal_id = $3",
+    )
+    .bind(synthetic_txn_hash.as_slice())
+    .bind(chain_id_i64)
+    .bind(&proposal_id)
+    .execute(tx.as_mut())
+    .await?;
+
     Ok(synthetic_logs(
-        &SyntheticContext {
-            proposal_id: &proposal_id,
-            target_version: &target_version,
-            chain_id: chain_id.as_u64(),
-            block_number: block_number_i64,
-            block_hash,
-        },
+        &ctx,
         tfhe_contract_address,
         acl_contract_address,
         log_index_base,
