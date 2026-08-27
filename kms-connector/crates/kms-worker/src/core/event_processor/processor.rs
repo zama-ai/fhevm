@@ -313,15 +313,19 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
         &mut self,
         event: &mut ProtocolEvent,
     ) -> Result<Option<KmsResponseKind>, ProcessingError> {
-        self.check_request(event)
-            .await
-            .inspect_err(|_| event.error_counter += 1)?;
-
-        if !event.already_sent {
-            let request = self
-                .prepare_grpc_request(event)
+        if event.already_sent {
+            // Poll-only retry: we still re-run live-state checks.
+            self.check_request(event)
                 .await
                 .inspect_err(|_| event.error_counter += 1)?;
+        } else {
+            // We optimistically prepare the request while running the checks.
+            let ((), request) = tokio::try_join!(
+                biased;
+                self.check_request(event),
+                self.prepare_grpc_request(event),
+            )
+            .inspect_err(|_| event.error_counter += 1)?;
 
             let (error_count, result) = self.kms_client.send_request(&request).await;
             event.error_counter += error_count;
