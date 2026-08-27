@@ -27,9 +27,7 @@ use fhevm_engine_common::database::{
     apply_gcs_mode_search_path, connect_pool_with_options_and_connect_options,
     resolve_database_url_from_option, EVENT_CIPHERTEXTS_UPLOADED, GCS_SCHEMA,
 };
-use fhevm_engine_common::versioning::{
-    begin_write_guarded, run_stack_version_listener, GcsRollbackPolicy, StackMode, WriteGuard,
-};
+use fhevm_engine_common::versioning::{begin_write_guarded, GcsRollbackPolicy, WriteGuard};
 use prometheus::{register_int_counter, register_int_gauge, IntCounter, IntGauge};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{PgConnection, PgPool, Postgres, Transaction};
@@ -70,34 +68,14 @@ pub async fn run_confidential_bridge(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let db_url = resolve_database_url_from_option(args.database_url.clone())?;
     let gcs_mode = fhevm_engine_common::versioning::resolve_gcs_mode(db_url.as_str()).await?;
-    if gcs_mode {
-        fhevm_engine_common::versioning::wait_for_gcs_schema(
-            db_url.as_str(),
-            fhevm_engine_common::versioning::GCS_SCHEMA_WAIT,
-        )
-        .await?;
-    }
-    let stack_mode = StackMode::new(gcs_mode);
-    // The listener and bridge each use one connection.
+    // A single connection suffices: the worker polls and associates sequentially.
     let (pool, _pool_refresh_handle) = connect_pool_with_options_and_connect_options(
         &db_url,
-        PgPoolOptions::new().max_connections(2),
+        PgPoolOptions::new().max_connections(1),
         Some(&cancel_token),
         apply_gcs_mode_search_path(gcs_mode),
     )
     .await?;
-    {
-        let listener_pool = pool.clone();
-        let listener_mode = stack_mode.clone();
-        let listener_cancel = cancel_token.child_token();
-        tokio::spawn(async move {
-            if let Err(err) =
-                run_stack_version_listener(listener_pool, listener_mode, listener_cancel).await
-            {
-                error!(target: "bridge", error = %err, "version listener stopped");
-            }
-        });
-    }
 
     let poll_interval = Duration::from_millis(args.bridge_polling_interval_ms);
     info!(
@@ -110,20 +88,11 @@ pub async fn run_confidential_bridge(
         if cancel_token.is_cancelled() {
             break;
         }
-        // A retired stack has every write refused, so skip the work.
-        if stack_mode.is_paused() {
-            tokio::select! {
-                _ = tokio::time::sleep(poll_interval) => {}
-                _ = cancel_token.cancelled() => break,
-            }
-            continue;
-        }
-        let current_gcs_mode = stack_mode.gcs_mode();
         match drain_associations(
             &pool,
             args.bridge_associate_batch_size,
             &cancel_token,
-            current_gcs_mode,
+            gcs_mode,
         )
         .await
         {

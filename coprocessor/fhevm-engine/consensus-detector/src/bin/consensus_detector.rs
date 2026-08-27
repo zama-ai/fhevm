@@ -11,7 +11,6 @@ use fhevm_engine_common::{
         resolve_database_url_from_option,
     },
     utils::DatabaseURL,
-    versioning::{run_stack_version_listener, StackMode},
 };
 use humantime::parse_duration;
 use sqlx::postgres::PgPoolOptions;
@@ -136,17 +135,6 @@ async fn main() -> anyhow::Result<()> {
     let cancel = CancellationToken::new();
     install_signal_handlers(cancel.clone())?;
 
-    let gcs_mode =
-        fhevm_engine_common::versioning::resolve_gcs_mode(config.database_url.as_str()).await?;
-    if gcs_mode {
-        fhevm_engine_common::versioning::wait_for_gcs_schema(
-            config.database_url.as_str(),
-            fhevm_engine_common::versioning::GCS_SCHEMA_WAIT,
-        )
-        .await?;
-    }
-    let stack_mode = StackMode::new(gcs_mode);
-
     let provider = loop {
         match ProviderBuilder::new()
             .connect_ws(
@@ -185,22 +173,7 @@ async fn main() -> anyhow::Result<()> {
     )
     .await?;
 
-    {
-        let listener_pool = pool.clone();
-        let listener_mode = stack_mode.clone();
-        let listener_cancel = cancel.child_token();
-        tokio::spawn(async move {
-            if let Err(err) =
-                run_stack_version_listener(listener_pool, listener_mode, listener_cancel).await
-            {
-                error!(error = %err, "version listener stopped");
-            }
-        });
-    }
-
-    if let Err(e) =
-        consensus_detector::run(config, pool, provider, stack_mode, cancel.clone()).await
-    {
+    if let Err(e) = consensus_detector::run(config, pool, provider, cancel.clone()).await {
         error!(error = %e, "consensus-detector exited with error");
         return Err(e);
     }

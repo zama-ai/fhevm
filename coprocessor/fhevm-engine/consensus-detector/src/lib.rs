@@ -794,7 +794,6 @@ pub async fn run<P>(
     config: Config,
     pool: Pool<Postgres>,
     provider: P,
-    stack_mode: Arc<fhevm_engine_common::versioning::StackMode>,
     cancel: CancellationToken,
 ) -> anyhow::Result<()>
 where
@@ -895,20 +894,18 @@ where
         // notification triggers below.
         macro_rules! consensus_pass {
             () => {
-                if stack_mode.gcs_mode() {
-                    if let Err(e) = consensus_pass(
-                        &pool,
-                        &http,
-                        &s3_urls,
-                        &mut host_tracks,
-                        &mut gateway_track,
-                        &mut window_state,
-                        config.commitment_timeout,
-                    )
-                    .await
-                    {
-                        error!(error = %e, "consensus pass failed");
-                    }
+                if let Err(e) = consensus_pass(
+                    &pool,
+                    &http,
+                    &s3_urls,
+                    &mut host_tracks,
+                    &mut gateway_track,
+                    &mut window_state,
+                    config.commitment_timeout,
+                )
+                .await
+                {
+                    error!(error = %e, "consensus pass failed");
                 }
             };
         }

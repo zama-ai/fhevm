@@ -11,9 +11,7 @@ use fhevm_engine_common::gcs_activation::{
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::check_fhe_operand_types;
 use fhevm_engine_common::types::{FhevmError, Handle, SupportedFheCiphertexts};
-use fhevm_engine_common::versioning::{
-    run_stack_version_listener, GcsRollbackPolicy, StackMode, WriteGuard,
-};
+use fhevm_engine_common::versioning::{GcsRollbackPolicy, WriteGuard};
 use fhevm_engine_common::{tfhe_ops::current_ciphertext_version, types::SupportedFheOperations};
 use itertools::Itertools;
 use lazy_static::lazy_static;
@@ -2167,9 +2165,6 @@ pub const NO_READINESS: Readiness = None;
 #[cfg(not(feature = "bench"))]
 pub const NO_READINESS: Readiness = ();
 
-/// Delay between worker cycles, and between checks while the stack is retired.
-const CYCLE_RETRY_DELAY: Duration = Duration::from_millis(5000);
-
 pub async fn run_tfhe_worker(
     args: crate::daemon_cli::Args,
     health_check: crate::health_check::HealthCheck,
@@ -2198,8 +2193,8 @@ async fn run_tfhe_worker_inner(
     let worker_id = args.worker_id.unwrap_or(Uuid::new_v4());
 
     // GCS mode is auto-detected at startup by comparing this binary's
-    // compiled-in `CONSENSUS_PROTOCOL_VERSION` against the live
-    // `versioning.consensus_version` row.
+    // compiled-in `STACK_VERSION` against the live `versioning.stack_version`
+    // row.
     let db_url = resolve_database_url_from_option(args.database_url.clone())?;
     let gcs_mode = fhevm_engine_common::versioning::resolve_gcs_mode(db_url.as_str())
         .await
@@ -2208,39 +2203,7 @@ async fn run_tfhe_worker_inner(
             err
         })?;
 
-    if gcs_mode {
-        fhevm_engine_common::versioning::wait_for_gcs_schema(
-            db_url.as_str(),
-            fhevm_engine_common::versioning::GCS_SCHEMA_WAIT,
-        )
-        .await?;
-    }
-
     info!(target: "tfhe_worker", worker_id = %worker_id, gcs_mode = gcs_mode, "Starting tfhe-worker service");
-
-    // Keep the role updated after each cutover.
-    let stack_mode = StackMode::new(gcs_mode);
-    let (watcher_pool, _refresh) = connect_pool_with_options(
-        &db_url,
-        sqlx::postgres::PgPoolOptions::new().max_connections(3),
-        None,
-    )
-    .await?;
-    {
-        let listener_pool = watcher_pool.clone();
-        let listener_mode = stack_mode.clone();
-        tokio::spawn(async move {
-            if let Err(err) = run_stack_version_listener(
-                listener_pool,
-                listener_mode,
-                tokio_util::sync::CancellationToken::new(),
-            )
-            .await
-            {
-                error!(target: "tfhe_worker", error = %err, "version listener stopped");
-            }
-        });
-    }
 
     // Shared GCS activation state. `GCS_NOT_ACTIVATED` means the worker is
     // paused (BCS mode keeps this value for the lifetime of the process).
@@ -2250,12 +2213,16 @@ async fn run_tfhe_worker_inner(
         // Long-lived task that mirrors `upgrade_state.start_block` (stack_role
         // = 'GCS') into the atomic, woken by `event_upgrade_activated`. Lives
         // outside the cycle loop so it survives `tfhe_worker_cycle` restarts.
+        let (watcher_pool, _refresh) = connect_pool_with_options(
+            &db_url,
+            sqlx::postgres::PgPoolOptions::new().max_connections(2),
+            None,
+        )
+        .await?;
         let watcher_state = start_block_state.clone();
-        let activation_pool = watcher_pool.clone();
         tokio::spawn(async move {
             loop {
-                if let Err(err) = run_gcs_activation_watcher(&activation_pool, &watcher_state).await
-                {
+                if let Err(err) = run_gcs_activation_watcher(&watcher_pool, &watcher_state).await {
                     error!(target: "tfhe_worker", error = %err, "GCS activation watcher errored; restarting in 5s");
                     tokio::time::sleep(Duration::from_secs(5)).await;
                 }
@@ -2264,17 +2231,11 @@ async fn run_tfhe_worker_inner(
     }
 
     loop {
-        // A retired stack has every write refused, so skip the work entirely.
-        if stack_mode.is_paused() {
-            tokio::time::sleep(CYCLE_RETRY_DELAY).await;
-            continue;
-        }
         // here we log the errors and make sure we retry
         if let Err(cycle_error) = tfhe_worker_cycle(
             &args,
             worker_id,
-            stack_mode.gcs_mode(),
-            stack_mode.clone(),
+            gcs_mode,
             start_block_state.clone(),
             health_check.clone(),
             &mut readiness,
@@ -2289,7 +2250,7 @@ async fn run_tfhe_worker_inner(
             }
             error!(target: "tfhe_worker", { error = %cycle_error }, "Error in background worker, retrying shortly");
         }
-        tokio::time::sleep(CYCLE_RETRY_DELAY).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(5000)).await;
     }
 }
 
@@ -2297,7 +2258,6 @@ async fn tfhe_worker_cycle(
     args: &crate::daemon_cli::Args,
     worker_id: Uuid,
     gcs_mode: bool,
-    stack_mode: Arc<StackMode>,
     start_block_state: Arc<AtomicI64>,
     health_check: crate::health_check::HealthCheck,
     readiness: &mut Readiness,
@@ -2439,17 +2399,6 @@ async fn tfhe_worker_cycle(
     let mut deferred_cooldown = DeferredTransactionCooldown::new();
     let mut consecutive_batch_failures: u32 = 0;
     loop {
-        // Restart with the correct database schema when the role changes.
-        if stack_mode.is_paused() || stack_mode.gcs_mode() != gcs_mode {
-            info!(
-                target: "tfhe_worker",
-                old_gcs_mode = gcs_mode,
-                new_mode = ?stack_mode.state(),
-                "service role changed; restarting worker"
-            );
-            return Ok(());
-        }
-
         // GCS gating: skip the iteration entirely until the activation
         // watcher has populated `start_block` in `upgrade_state` for
         // `stack_role='GCS'`. Once that's observed, the schema-isolated

@@ -74,7 +74,6 @@ pub async fn setup() -> anyhow::Result<(PostgresPoolManager, DBInstance, ProofMa
             conf.clone(),
             last_active_at.clone(),
             start_block_state,
-            fhevm_engine_common::versioning::StackMode::new(false),
         )
         .await
         .unwrap();
