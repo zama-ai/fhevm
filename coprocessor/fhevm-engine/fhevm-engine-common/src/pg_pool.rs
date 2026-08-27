@@ -89,6 +89,16 @@ impl PostgresPoolManager {
                 return None;
             }
 
+            // Postgres ignores a missing schema in search_path, so a green pool
+            // opened too early would write to `public`. Wait for the schema.
+            if gcs_mode {
+                if let Err(err) = crate::versioning::assert_gcs_schema_exists(url).await {
+                    error!(error = %err, "Waiting for the GCS schema before opening the pool");
+                    sleep(retry_db_conn_interval).await;
+                    continue;
+                }
+            }
+
             let statement_timeout = std::cmp::max(acquire_timeout, Duration::from_secs(10));
 
             match connect_pool_with_options_and_connect_options(

@@ -245,6 +245,17 @@ async fn main() -> anyhow::Result<()> {
                 std::process::exit(1);
             }
         };
+    if config.gcs_mode {
+        if let Err(err) = fhevm_engine_common::versioning::wait_for_gcs_schema(
+            config.database_url.as_str(),
+            fhevm_engine_common::versioning::GCS_SCHEMA_WAIT,
+        )
+        .await
+        {
+            error!(error = %err, "GCS schema never appeared");
+            std::process::exit(1);
+        }
+    }
 
     let gw_listener = std::sync::Arc::new(GatewayListener::new(
         conf.input_verification_address,
