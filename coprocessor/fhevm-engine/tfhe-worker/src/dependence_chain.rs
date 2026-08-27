@@ -42,6 +42,9 @@ pub enum LockingReason {
     ExpiredLock,    // Work-stealing
     ExtendedLock,   // Lock extension
     Missing,        // No lock acquired
+    /// Repair-path acquisition of a chain stranded by a stale
+    /// dependency gate — distinct so repair activations are observable.
+    StaleGateRepair,
 }
 
 impl From<&str> for LockingReason {
@@ -50,6 +53,7 @@ impl From<&str> for LockingReason {
             "updated_unowned" => LockingReason::UpdatedUnowned,
             "expired_lock" => LockingReason::ExpiredLock,
             "extended_lock" => LockingReason::ExtendedLock,
+            "stale_gate_repair" => LockingReason::StaleGateRepair,
             _ => LockingReason::Missing,
         }
     }
@@ -65,6 +69,7 @@ pub struct LockMngr {
     // completed DCID is released independently so the next ready DCID can
     // refill its slot without waiting for the rest of the batch.
     locks: Vec<(DatabaseChainLock, SystemTime)>,
+    last_stale_probe_at: Option<SystemTime>,
 
     // Configurations
     lock_ttl_sec: i64,
@@ -112,6 +117,7 @@ impl LockMngr {
             worker_id,
             pool,
             locks: Vec::new(),
+            last_stale_probe_at: None,
             lock_ttl_sec: 30,
             lock_timeslice_sec: None,
             disable_locking: false,
@@ -296,6 +302,125 @@ impl LockMngr {
         }
 
         info!(?row, query_elapsed = %elapsed, "Acquired lock on earliest DCID");
+
+        Ok((
+            Some(row.dependence_chain_id),
+            LockingReason::from(row.match_reason.as_str()),
+        ))
+    }
+
+    /// Repair-path acquisition for chains STRANDED by a dependency_count
+    /// that will never be decremented. The count is a live same-block gate:
+    /// the listener arms it with the chain's in-block dependency count and
+    /// each producer's mark-as-processed release decrements its dependents.
+    /// That bookkeeping can be lost — the release status flip and the
+    /// decrement are separate auto-commit statements (a worker crash between
+    /// them skips the decrement), and reorgs can orphan a producer chain
+    /// outright — leaving a chain whose producers are all processed (or
+    /// gone) but whose count never reached zero. Such a chain matches
+    /// neither normal acquisition predicate, and the no-progress escalation
+    /// (`acquire_early_lock`) is only reachable through some OTHER acquired
+    /// chain stalling, so in an otherwise idle pipeline it sits forever.
+    ///
+    /// Called when normal acquisition finds nothing. Strandedness is
+    /// checked against ground truth — no producer chain naming this one a
+    /// dependent is unprocessed — so a chain whose gate is legitimately
+    /// live (producers still pending, e.g. during catchup where
+    /// block-derived `last_updated_at` is arbitrarily old) is never picked
+    /// up. The age gate on top avoids racing a listener transaction
+    /// mid-arm. One race is accepted: a reorg-replay re-arming the
+    /// producers between this statement's snapshot and its row lock is not
+    /// seen by the NOT EXISTS (EvalPlanQual rechecks only the candidate's
+    /// own quals), so the repair can zero a just-re-armed gate — bounded to
+    /// an ordering hiccup, since missing boundary inputs defer at execution
+    /// and the decrement clamp tolerates the lost count. Acquisition also resets the count to zero, which ground
+    /// truth says it should be: the chain re-enters normal scheduling —
+    /// including the expired-lock steal path, so a crash while holding this
+    /// repair lock cannot re-strand it — and drains at full speed rather
+    /// than one batch per age window.
+    pub async fn acquire_stale_gated_lock(
+        &mut self,
+        min_age_secs: f64,
+    ) -> Result<(Option<Vec<u8>>, LockingReason), sqlx::Error> {
+        if self.disable_locking {
+            debug!("Locking is disabled");
+            return Ok((None, LockingReason::Missing));
+        }
+        // This runs on every empty poll and its ground-truth anti-join has
+        // no supporting index, so probe at most twice per age window —
+        // repair tolerates minutes of latency by design, and during catchup
+        // (block-derived last_updated_at) gated candidates are routine.
+        let now = SystemTime::now();
+        if let Some(last) = self.last_stale_probe_at {
+            if now
+                .duration_since(last)
+                .map(|d| d.as_secs_f64() < min_age_secs / 2.0)
+                .unwrap_or(false)
+            {
+                return Ok((None, LockingReason::Missing));
+            }
+        }
+        self.last_stale_probe_at = Some(now);
+
+        let started_at = SystemTime::now();
+        let row = sqlx::query_as::<_, DatabaseChainLock>(
+            r#"
+            WITH candidate AS (
+                SELECT dependence_chain_id, 'stale_gate_repair' AS match_reason
+                FROM dependence_chain c
+                WHERE
+                    status = 'updated'      -- Marked as updated by host-listener
+                    AND
+                    worker_id IS NULL       -- Ensure no other workers own it
+                    AND
+                    dependency_count > 0    -- Gated: invisible to normal acquisition
+                    AND
+                    last_updated_at < NOW() - make_interval(secs => $3)
+                    AND NOT EXISTS (        -- Ground truth: the gate is stale, every
+                        SELECT 1            -- producer is processed or gone
+                        FROM dependence_chain p
+                        WHERE c.dependence_chain_id = ANY(p.dependents)
+                          AND p.status <> 'processed'
+                    )
+                ORDER BY last_updated_at ASC, schedule_priority ASC
+                FOR UPDATE SKIP LOCKED              -- Ensure no other worker is currently trying to lock it
+                LIMIT 1
+            )
+            UPDATE dependence_chain AS dc
+            SET
+                worker_id = $1,
+                status = 'processing',
+                lock_acquired_at = NOW(),
+                lock_expires_at = NOW() + make_interval(secs => $2),
+                dependency_count = 0    -- what ground truth established above
+            FROM candidate
+            WHERE dc.dependence_chain_id = candidate.dependence_chain_id
+            RETURNING dc.*, candidate.match_reason;
+        "#,
+        )
+        .bind(self.worker_id)
+        .bind(self.lock_ttl_sec)
+        .bind(min_age_secs)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        let Some(row) = row else {
+            return Ok((None, LockingReason::Missing));
+        };
+        // A successful repair must not consume the probe budget: a mass
+        // stranding (one crashed producer, N dependents) should drain
+        // back-to-back, throttled only once repairs stop finding work.
+        self.last_stale_probe_at = None;
+
+        self.locks.push((row.clone(), SystemTime::now()));
+        ACQUIRED_DEPENDENCE_CHAIN_ID_COUNTER.inc();
+
+        let elapsed = started_at.elapsed().map(|d| d.as_secs_f64()).unwrap_or(0.0);
+        if elapsed > 0.0 {
+            ACQUIRE_DEPENDENCE_CHAIN_ID_QUERY_HISTOGRAM.observe(elapsed);
+        }
+
+        info!(?row, query_elapsed = %elapsed, "Acquired lock on stranded DCID (repair path)");
 
         Ok((
             Some(row.dependence_chain_id),
