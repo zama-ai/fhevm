@@ -384,7 +384,7 @@ export const ensureMaterial = async (url: string) => ensureOneMaterial([url]);
  * Waits for the server-side part of an FHE key activation.  Current kms-core
  * publishes that material as a `CompressedXofKeySet`; older bundles publish a
  * plain `ServerKey`.  PublicKey and CRS availability alone is not sufficient:
- * a coprocessor cannot materialise `keys` or start a TFHE worker without one
+ * a coprocessor cannot materialize `keys` or start a TFHE worker without one
  * of these authenticated server-side blobs.
  */
 const ensureServerKeyMaterial = async (baseUrl: string, keyPrefix: string, keyId: string) => {

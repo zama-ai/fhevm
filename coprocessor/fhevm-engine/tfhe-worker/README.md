@@ -98,7 +98,7 @@ production ACL rule.
 
 Canonical workload `traffic_join_1000_200x5_20acct_lag2` keeps workload #3's
 cadence but braids value between twenty accounts (two parity decks of ten,
-neighbouring pairs rotating): every transfer consumes the balance tails of
+neighboring pairs rotating): every transfer consumes the balance tails of
 two different account chains, so no linear extension is possible and
 formation must gate each transfer on both parents. This is the worst-case
 join shape for dependence-chain scheduling.
@@ -188,7 +188,7 @@ leaves the metric. Latencies are in nanoseconds; the rate metrics are already
 per second.
 
 The panels filter on hardware and branch, not on backend. Backend follows from
-the machine — a GPU flavour only ever stores `cuda` — so filtering on it adds a
+the machine — a GPU flavor only ever stores `cuda` — so filtering on it adds a
 way for a panel to come back empty without adding a distinction. It is still
 recorded, and the diagnostics below print it.
 
@@ -470,12 +470,12 @@ Latency rows are converted to milliseconds and rates left alone, with the unit
 named per row, since a suite's metrics do not share one. `DISTINCT ON
 (test.name, h.name)` takes the most recent run per workload per machine, and the
 `commit` column says which revision each row came from — machines are rarely
-dispatched together, so a row's neighbour may be older than it looks. Grafana's
+dispatched together, so a row's neighbor may be older than it looks. Grafana's
 "Rows to fields" transformation will pivot hardware into columns if a matrix
 reads better than a list.
 
 Two caveats when comparing across machines. Runs carry the schedule and
-optimisation target in their test name, so rows from differently configured
+optimization target in their test name, so rows from differently configured
 dispatches are different tests and appear separately, which is intended but easy
 to misread as duplication. And GPU runs use 16 CUDA streams per device by
 default, which means a multi-GPU host also runs proportionally more of them —
@@ -508,7 +508,7 @@ the change. And keep a panel to one unit: latencies and rates differ
 by seven orders of magnitude and share an axis badly.
 
 Scenarios differ by that much between themselves too, which makes absolute
-values awkward to compare across a suite. Normalising each scenario against its
+values awkward to compare across a suite. Normalizing each scenario against its
 own first run in the window puts every workload on one axis, where the shape of
 a regression is what stands out rather than the size of the workload:
 

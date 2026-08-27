@@ -1147,7 +1147,7 @@ async fn run_main_block_one_shot() -> Result<(), Box<dyn std::error::Error>> {
             serde_json::json!({
                 "l1_transaction_count": AUCTION_300_BIDS,
                 "transaction_topology": "300_e2e_bid_transaction_ids_in_one_l1_block_one_legacy_dcid",
-                "acl_projection": "five_persistent_state_outputs_per_bid_marked_allowed; terminal_decryption_permissions_staged_before_commit; transient_and_user_specific_e2e_allow_events_not_modelled",
+                "acl_projection": "five_persistent_state_outputs_per_bid_marked_allowed; terminal_decryption_permissions_staged_before_commit; transient_and_user_specific_e2e_allow_events_not_modeled",
                 "acl_staging_in_primary_metric": false,
             })
         } else { serde_json::Value::Null },
@@ -1723,7 +1723,7 @@ async fn run_main_block_unpaced_traffic(
             let (from, to, from_slot, to_slot);
             if join_braid {
                 // Parity decks: even blocks braid accounts 0..deck-1, odd
-                // blocks deck..2*deck-1. Rotation alternates neighbouring
+                // blocks deck..2*deck-1. Rotation alternates neighboring
                 // pairs so consecutive deck-blocks join different chains.
                 let deck = chain_count / 2;
                 let deck_base = (block_index % 2) * deck;

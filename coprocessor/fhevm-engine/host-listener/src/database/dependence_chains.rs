@@ -321,10 +321,9 @@ fn grouping_to_chains_no_fork(
         // transaction and if the current transaction is not a
         // descendant of a fork
         // 1. Test for joins
-        let mut is_linear = (dependencies_block.len()
-            + dependencies_outer.len())
-            == 1
-            && !tx.forked_cross_block;
+        let mut is_linear =
+            (dependencies_block.len() + dependencies_outer.len()) == 1
+                && !tx.forked_cross_block;
         // 2. Test for forks
         if is_linear {
             let unique_parent = if dependencies_block.is_empty() {
@@ -666,7 +665,8 @@ mod tests {
         result
     }
 
-    fn new_guard() -> crate::database::tfhe_event_propagate::ConsumedBoundaryGuard {
+    fn new_guard(
+    ) -> crate::database::tfhe_event_propagate::ConsumedBoundaryGuard {
         std::sync::Arc::new(tokio::sync::RwLock::new(lru::LruCache::new(
             std::num::NonZeroUsize::new(4096).unwrap(),
         )))
@@ -685,7 +685,9 @@ mod tests {
         let tx1 = TransactionHash::with_last_byte(0);
         let v0 = input_handle(&mut logs, tx1);
         let _v1 = op1(v0, &mut logs, tx1);
-        let chains = dependence_chains(&mut logs, &cache, &new_guard(), false, true).await;
+        let chains =
+            dependence_chains(&mut logs, &cache, &new_guard(), false, true)
+                .await;
         assert_eq!(chains.len(), 1);
         assert!(logs.iter().all(|log| log.dependence_chain == tx1));
         assert_eq!(cache.read().await.len(), 1);
@@ -702,7 +704,9 @@ mod tests {
         let _vb_1 = op1(va_1, &mut logs, tx1);
         let va_2 = input_handle(&mut logs, tx2);
         let _vb_2 = op1(va_2, &mut logs, tx2);
-        let chains = dependence_chains(&mut logs, &cache, &new_guard(), false, true).await;
+        let chains =
+            dependence_chains(&mut logs, &cache, &new_guard(), false, true)
+                .await;
         assert_eq!(chains.len(), 2);
         assert!(logs[0..2].iter().all(|log| log.dependence_chain == tx1));
         assert!(logs[2..4].iter().all(|log| log.dependence_chain == tx2));
@@ -721,7 +725,9 @@ mod tests {
         let va_2 = input_handle(&mut logs, tx2);
         let vb_2 = op1(va_2, &mut logs, tx2);
         let _vc_1 = op2(vb_1, vb_2, &mut logs, tx3);
-        let chains = dependence_chains(&mut logs, &cache, &new_guard(), false, true).await;
+        let chains =
+            dependence_chains(&mut logs, &cache, &new_guard(), false, true)
+                .await;
         assert!(logs[0..2].iter().all(|log| log.dependence_chain == tx1));
         assert!(logs[2..4].iter().all(|log| log.dependence_chain == tx2));
         assert!(logs[4..].iter().all(|log| log.dependence_chain == tx3));
@@ -742,7 +748,9 @@ mod tests {
         let vb_2 = op1(va_2, &mut logs, tx2);
         let vb_1 = op1(va_1, &mut logs, tx1);
         let _vc_1 = op2(vb_1, vb_2, &mut logs, tx3);
-        let chains = dependence_chains(&mut logs, &cache, &new_guard(), false, true).await;
+        let chains =
+            dependence_chains(&mut logs, &cache, &new_guard(), false, true)
+                .await;
         assert_eq!(chains.len(), 3);
         assert_eq!(logs[0].dependence_chain, tx1);
         assert_eq!(logs[1].dependence_chain, tx2);
@@ -789,7 +797,9 @@ mod tests {
         cache.write().await.put(past_handle, past_chain_hash);
         let tx1 = TransactionHash::with_last_byte(1);
         let _va_1 = op1(past_handle, &mut logs, tx1);
-        let chains = dependence_chains(&mut logs, &cache, &new_guard(), false, true).await;
+        let chains =
+            dependence_chains(&mut logs, &cache, &new_guard(), false, true)
+                .await;
         assert_eq!(chains.len(), 1);
         assert!(chains.iter().all(|chain| chain.hash == past_chain_hash));
         assert!(logs
@@ -805,7 +815,9 @@ mod tests {
         let past_handle = new_handle();
         let tx1 = TransactionHash::with_last_byte(1);
         let _va_1 = op1(past_handle, &mut logs, tx1);
-        let chains = dependence_chains(&mut logs, &cache, &new_guard(), false, true).await;
+        let chains =
+            dependence_chains(&mut logs, &cache, &new_guard(), false, true)
+                .await;
         assert_eq!(chains.len(), 1);
         assert!(chains.iter().all(|chain| chain.hash == tx1));
         assert!(logs.iter().all(|log| log.dependence_chain == tx1));
@@ -823,7 +835,9 @@ mod tests {
         let mut logs = vec![];
         let va_1 = input_handle(&mut logs, tx1);
         let _vb_1 = op2(past_handle, va_1, &mut logs, tx1);
-        let chains = dependence_chains(&mut logs, &cache, &new_guard(), false, true).await;
+        let chains =
+            dependence_chains(&mut logs, &cache, &new_guard(), false, true)
+                .await;
         assert_eq!(chains.len(), 1);
         assert!(chains.iter().all(|chain| chain.hash == past_chain_hash));
         assert!(logs
@@ -842,7 +856,9 @@ mod tests {
         let _vb_1 = op1(va_1, &mut logs, tx1);
         let _va_2 = input_shared_handle(&mut logs, va_1, tx2);
         let _vb_2 = op1(va_1, &mut logs, tx2);
-        let chains = dependence_chains(&mut logs, &cache, &new_guard(), false, true).await;
+        let chains =
+            dependence_chains(&mut logs, &cache, &new_guard(), false, true)
+                .await;
         assert_eq!(chains.len(), 2);
         assert_eq!(cache.read().await.len(), 2);
     }
@@ -857,7 +873,9 @@ mod tests {
         let vb_1 = op1(va_1, &mut logs, tx1);
         let va_2 = input_shared_handle(&mut logs, va_1, tx2);
         let _vb_2 = op2(vb_1, va_2, &mut logs, tx2);
-        let chains = dependence_chains(&mut logs, &cache, &new_guard(), false, true).await;
+        let chains =
+            dependence_chains(&mut logs, &cache, &new_guard(), false, true)
+                .await;
         assert_eq!(chains.len(), 1);
     }
 
@@ -873,7 +891,9 @@ mod tests {
         let last = logs.pop().unwrap();
         logs.insert(0, last);
         assert!(logs[0].transaction_hash == Some(tx2));
-        let chains = dependence_chains(&mut logs, &cache, &new_guard(), false, true).await;
+        let chains =
+            dependence_chains(&mut logs, &cache, &new_guard(), false, true)
+                .await;
         // answer is the same as with good order
         assert!(logs.iter().all(|log| log.dependence_chain == tx1));
         assert_eq!(chains.len(), 1);
@@ -891,7 +911,9 @@ mod tests {
         let va_2 = input_handle(&mut logs, tx2);
         let _vb_2 = op1(va_2, &mut logs, tx2);
         logs[3].is_allowed = false;
-        let chains = dependence_chains(&mut logs, &cache, &new_guard(), false, true).await;
+        let chains =
+            dependence_chains(&mut logs, &cache, &new_guard(), false, true)
+                .await;
         assert_eq!(chains.len(), 2);
         assert_eq!(cache.read().await.len(), 0);
     }
@@ -930,7 +952,9 @@ mod tests {
                 past_handles[chain as usize - 1] = (v2, v3);
             }
         }
-        let chains = dependence_chains(&mut logs, &cache, &new_guard(), false, true).await;
+        let chains =
+            dependence_chains(&mut logs, &cache, &new_guard(), false, true)
+                .await;
         assert_eq!(chains.len(), 6);
         assert!(chains.iter().all(|c| c.before_size == 0));
         assert!(logs.iter().all(|log| log.tx_depth_size == 0));

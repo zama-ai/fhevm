@@ -2194,9 +2194,10 @@ async fn test_cross_block_join_gates_on_incomplete_parents(
     let parent_processed = FixedBytes::<32>::from([0xA2; 32]);
     let parent_unknown = FixedBytes::<32>::from([0xA3; 32]);
     let child = FixedBytes::<32>::from([0xC1; 32]);
-    for (hash, status) in
-        [(parent_incomplete, "updated"), (parent_processed, "processed")]
-    {
+    for (hash, status) in [
+        (parent_incomplete, "updated"),
+        (parent_processed, "processed"),
+    ] {
         sqlx::query(
             "INSERT INTO dependence_chain(
                 dependence_chain_id, status, last_updated_at,
@@ -2225,10 +2226,7 @@ async fn test_cross_block_join_gates_on_incomplete_parents(
         before_size: 0,
         new_chain: true,
     }];
-    let mut tx = db
-        .new_transaction()
-        .await?
-        .expect("live stack transaction");
+    let mut tx = db.new_transaction().await?.expect("live stack transaction");
     let block_summary = BlockSummary {
         number: 2,
         hash: FixedBytes::<32>::from([0x0C; 32]),
@@ -2254,10 +2252,7 @@ async fn test_cross_block_join_gates_on_incomplete_parents(
     .bind(child.as_slice())
     .fetch_one(&pool)
     .await?;
-    assert_eq!(
-        count, 1,
-        "only the incomplete parent gates the join chain"
-    );
+    assert_eq!(count, 1, "only the incomplete parent gates the join chain");
     assert_eq!(status, "updated");
 
     let incomplete_dependents: Vec<Vec<u8>> = sqlx::query_scalar(
