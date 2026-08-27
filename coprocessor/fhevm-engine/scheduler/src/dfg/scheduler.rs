@@ -365,22 +365,50 @@ impl<'a> Scheduler<'a> {
     }
 }
 
+/// Re-randomizes the operation's BOUNDARY operands only (RFC 019): operands
+/// entering the transaction through their canonical persisted representation.
+/// Operands minted in the consuming transaction are forwarded raw and must
+/// not be re-randomized — the consuming handle's boundary bits commit to
+/// that choice on chain. The seed context binds the consuming operation's
+/// output handle, its opcode (explicit though redundant with the handle's
+/// commitment — RFC 019, Function binding), and the canonical decompressed
+/// bytes of the boundary operands: a pure function of on-chain data, so any
+/// minting site of the same output handle — same-block aliases, cross-fork
+/// replays, re-execution — derives identical seeds and identical bytes
+/// (dynamic single assignment).
 fn re_randomise_operation_inputs(
     cts: &mut [SupportedFheCiphertexts],
+    is_boundary: &[bool],
+    result_handle: &[u8],
     opcode: i32,
     cpk: &tfhe::CompactPublicKey,
 ) -> Result<()> {
+    // Consensus-critical pairing: a desync would silently exclude trailing
+    // operands from the seed context and from re-randomization (zip
+    // truncates), so fail closed instead.
+    if cts.len() != is_boundary.len() {
+        return Err(SchedulerError::ReRandomisationError.into());
+    }
+    let rerand = |ct: &SupportedFheCiphertexts, boundary: &bool| {
+        *boundary && !matches!(ct, SupportedFheCiphertexts::Scalar(_))
+    };
+    if !cts.iter().zip(is_boundary).any(|(c, b)| rerand(c, b)) {
+        return Ok(());
+    }
+    let opcode_bytes = opcode.to_be_bytes();
     let mut re_rand_context = ReRandomizationContext::new(
         OPERATION_RERANDOMISATION_DOMAIN_SEPARATOR,
-        [opcode.to_be_bytes().as_slice()],
+        [result_handle, opcode_bytes.as_slice()],
         COMPACT_PUBLIC_ENCRYPTION_DOMAIN_SEPARATOR,
     );
-    for ct in cts.iter() {
-        ct.add_to_re_randomization_context(&mut re_rand_context);
+    for (ct, boundary) in cts.iter().zip(is_boundary) {
+        if rerand(ct, boundary) {
+            ct.add_to_re_randomization_context(&mut re_rand_context);
+        }
     }
     let mut seed_gen = re_rand_context.finalize();
-    for ct in cts.iter_mut() {
-        if !matches!(ct, SupportedFheCiphertexts::Scalar(_)) {
+    for (ct, boundary) in cts.iter_mut().zip(is_boundary) {
+        if rerand(ct, boundary) {
             ct.re_randomise(cpk, seed_gen.next_seed()?)?;
         }
     }
@@ -638,14 +666,24 @@ fn try_execute_node(
         return Err(SchedulerError::SchedulerError.into());
     }
     let mut cts = Vec::with_capacity(node.inputs.len());
+    let mut is_boundary = Vec::with_capacity(node.inputs.len());
     for i in std::mem::take(&mut node.inputs) {
         match i {
             // Scalars, or raw working values forwarded from a producer in
-            // the SAME transaction (the materialization boundary). A raw
-            // value crossing a transaction boundary is flagged where
-            // transaction-level inputs are resolved (check_ready_inputs).
+            // the SAME transaction (the materialization boundary). Boundary
+            // operands can never reach this arm: check_ready_inputs resolves
+            // them to Compressed or BoundaryValue, both carrying their
+            // provenance in the type. Never re-randomized (RFC 019).
             DFGTaskInput::Value(v) => {
                 cts.push(v);
+                is_boundary.push(false);
+            }
+            // A boundary operand already in canonical decompressed form
+            // (GPU boundary materialization). Re-randomized like any other
+            // boundary operand (RFC 019).
+            DFGTaskInput::BoundaryValue(v) => {
+                cts.push(v);
+                is_boundary.push(true);
             }
             DFGTaskInput::Compressed(cct) => {
                 let decompressed = SupportedFheCiphertexts::decompress(
@@ -674,6 +712,7 @@ fn try_execute_node(
 				anyhow::Error::new(SchedulerError::DecompressionError)
 			    })?;
                 cts.push(decompressed);
+                is_boundary.push(true);
             }
             DFGTaskInput::LocalDependence(_) | DFGTaskInput::BoundaryDependence(_) => {
                 error!(target: "scheduler", { handle = ?hex::encode(&node.result_handle) }, "Computation missing inputs");
@@ -681,11 +720,17 @@ fn try_execute_node(
             }
         }
     }
-    // Re-randomize inputs for this operation
+    // Re-randomize the operation's boundary inputs (RFC 019)
     {
         let _guard = tracing::info_span!("rerandomise_op_inputs").entered();
         let started_at = std::time::Instant::now();
-        if let Err(e) = re_randomise_operation_inputs(&mut cts, node.opcode, cpk) {
+        if let Err(e) = re_randomise_operation_inputs(
+            &mut cts,
+            &is_boundary,
+            &node.result_handle,
+            node.opcode,
+            cpk,
+        ) {
             error!(target: "scheduler", { handle = ?hex::encode(&node.result_handle), error = ?e },
                    "Error while re-randomising operation inputs");
             telemetry::set_current_span_error(&e);

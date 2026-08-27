@@ -58,6 +58,12 @@ pub enum DFGTaskInput {
     /// the canonical persisted representation even if stale database rows
     /// happen to advertise a producer with the same transaction id.
     BoundaryDependence(Handle),
+    /// A resolved boundary operand already in its canonical DECOMPRESSED
+    /// form (the GPU boundary materialization decompresses at fetch). Kept
+    /// distinct from `Value` so boundary provenance survives resolution:
+    /// re-randomization (RFC 019) applies to boundary operands regardless
+    /// of the representation they were delivered in.
+    BoundaryValue(SupportedFheCiphertexts),
 }
 impl std::fmt::Debug for DFGTaskInput {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -66,6 +72,7 @@ impl std::fmt::Debug for DFGTaskInput {
             Self::Compressed(_) => write!(f, "ComCT"),
             Self::LocalDependence(_) => write!(f, "LocalDepHL"),
             Self::BoundaryDependence(_) => write!(f, "BoundaryDepHL"),
+            Self::BoundaryValue(_) => write!(f, "BoundaryDecCT"),
         }
     }
 }

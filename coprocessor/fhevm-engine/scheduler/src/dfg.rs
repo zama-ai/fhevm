@@ -185,7 +185,8 @@ pub fn build_component_nodes(
                 // to the canonical ciphertext fetch below.
                 DFGTaskInput::BoundaryDependence(_)
                 | DFGTaskInput::Value(_)
-                | DFGTaskInput::Compressed(_) => {}
+                | DFGTaskInput::Compressed(_)
+                | DFGTaskInput::BoundaryValue(_) => {}
             }
         }
         let node_idx = graph.add_node((op.is_allowed, index)).index();
@@ -262,7 +263,9 @@ impl ComponentNode {
                         // choice. Always expose it for canonical sourcing.
                         self.inputs.entry(dh.clone()).or_insert(None);
                     }
-                    DFGTaskInput::Value(_) | DFGTaskInput::Compressed(_) => {}
+                    DFGTaskInput::Value(_)
+                    | DFGTaskInput::Compressed(_)
+                    | DFGTaskInput::BoundaryValue(_) => {}
                 }
             }
             self.results.push(op.output_handle.clone());
@@ -615,7 +618,9 @@ impl OpNode {
     fn check_ready_inputs(&mut self, ct_map: &mut HashMap<Handle, Option<DFGTxInput>>) -> bool {
         for i in self.inputs.iter_mut() {
             match i {
-                DFGTaskInput::Value(_) | DFGTaskInput::Compressed(_) => continue,
+                DFGTaskInput::Value(_)
+                | DFGTaskInput::Compressed(_)
+                | DFGTaskInput::BoundaryValue(_) => continue,
                 DFGTaskInput::LocalDependence(d) => {
                     error!(target: "scheduler", handle = ?hex::encode(d),
                            "transaction-local dependence reached execution without local producer");
@@ -632,8 +637,10 @@ impl OpNode {
                             // boundary materialization, which decompresses the
                             // fetched bytes; a raw working value injected here
                             // would make the consumer's bytes depend on which
-                            // node/pass produced it.
-                            DFGTaskInput::Value(val.clone())
+                            // node/pass produced it. Resolved as
+                            // BoundaryValue so boundary provenance survives
+                            // for re-randomization (RFC 019).
+                            DFGTaskInput::BoundaryValue(val.clone())
                         }
                         Some(Some(DFGTxInput::Compressed((cct, _)))) => {
                             DFGTaskInput::Compressed(cct.clone())

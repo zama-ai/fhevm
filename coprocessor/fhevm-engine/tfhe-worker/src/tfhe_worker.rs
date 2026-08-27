@@ -207,6 +207,7 @@ mod operand_boundary_mask_tests {
                 DFGTaskInput::LocalDependence(_) => "local",
                 DFGTaskInput::BoundaryDependence(_) => "boundary",
                 DFGTaskInput::Value(_) => "value",
+                DFGTaskInput::BoundaryValue(_) => "boundary_value",
                 DFGTaskInput::Compressed(_) => "compressed",
             })
             .collect()
@@ -2600,7 +2601,10 @@ fn prepare_transaction_ops(
                 // loop, not through the transaction-local propagation.
                 DFGTaskInput::BoundaryDependence(_)
                 | DFGTaskInput::Value(_)
-                | DFGTaskInput::Compressed(_) => false,
+                | DFGTaskInput::Compressed(_)
+                // Never present at prepare time: BoundaryValue only exists
+                // after execution-time input resolution.
+                | DFGTaskInput::BoundaryValue(_) => false,
             });
             if blocked {
                 let op = ops.remove(index);
