@@ -12,6 +12,62 @@ npx hardhat node
 npx hardhat ignition deploy ./ignition/modules/Lock.ts
 ```
 
+## Switching the `@fhevm/sdk` source
+
+`test-suite/e2e` doesn't declare `@fhevm/sdk` in `package.json` — it's
+installed in place by `scripts/install-sdk.sh`, either from a local build or
+from the npm registry, without touching `package.json`/`package-lock.json`.
+
+By default (and in the Docker build), it's built and packed from your local
+`sdk/js-sdk` source:
+
+```shell
+cd test-suite/e2e
+npm run sdk:local
+```
+
+Set `SDK_BUILD_PROFILE=dev` before `npm run sdk:local` for a faster,
+unminified build while iterating. Re-run it after every change to
+`sdk/js-sdk` source — the install is a one-off pack, not a live link.
+
+To install a specific published version from the registry instead, pass it
+explicitly — there's no default to fall back to:
+
+```shell
+npm run sdk:registry -- 0.13.2
+```
+
+Both commands wrap `scripts/install-sdk.sh` (`local`/`registry` modes) — see
+its header comment for details.
+
+## Unified user-decryption suites
+
+E2E coverage for ERC-1271 smart-account signature verification and the unified
+EIP-712 user-decryption request:
+
+- `test/erc1271UserDecryption/` — smart-account signing modes and every ERC-1271
+  rejection path
+- `test/unifiedUserDecryption/` — `allowedContracts` modes, validity window,
+  mixed direct+delegated batches, `extraData` version matrix
+- `test/decryptionSignatureInvalidation/` — on-chain signature invalidation and
+  its end-to-end effect, including the multisig-rotation scenario
+
+These suites POST the unified `eip712-unified-user-decrypt-v1` envelope directly
+to the relayer's `/v3/user-decrypt` endpoint via
+`test/sdk/unified/unifiedUserDecrypt.ts` — the public SDK builds the same
+envelope on protocol >= 0.14, but always signs as the connected signer and does
+not expose the fields these suites must control (distinct `userAddress`, empty
+signatures, extraData versions, malformed shapes). Positives additionally
+decrypt through the public SDK and assert the known plaintext where the
+scenario is SDK-expressible. The helper's header comment documents the
+assertion model. If the relayer is fronted by auth, set `ZAMA_FHEVM_API_KEY`
+(sent as `x-api-key`).
+
+Run via the fhevm-cli profiles `erc1271-user-decryption`,
+`unified-user-decryption`, and `decryption-signature-invalidation` (all part of
+`standard`) — see `test-suite/fhevm/README.md` — or directly with
+`npx hardhat test --grep "<describe title>" --network staging`.
+
 ## Smoke runner (inputFlow)
 
 Runs a single on-chain smoke flow (input + add42 + decrypt) using Hardhat as a runtime
