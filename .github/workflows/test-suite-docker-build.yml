@@ -43,6 +43,13 @@ jobs:
   # release tag (e.g. `v0.13.3` -> `0.13.3`) so the docker build can install
   # @fhevm/sdk@<version> from the registry. Off-release the output stays
   # empty and the Dockerfile falls back to SDK_SOURCE=local.
+  #
+  # The sibling js-sdk-publish workflow also triggers on `release: published`
+  # and runs in parallel with this one — the wait step below blocks the build
+  # job until @fhevm/sdk@<version> is actually resolvable on npm, so the
+  # Dockerfile's `npm install @fhevm/sdk@<version>` doesn't race the publish.
+  # Historical js-sdk-publish runtime is ~2m30s, so 10 minutes is comfortable
+  # headroom while still failing fast on a broken publish.
   compute-sdk-version:
     name: Compute SDK version
     runs-on: ubuntu-latest
@@ -60,6 +67,24 @@ jobs:
           else
             echo "sdk_version=" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Wait for @fhevm/sdk on npm
+        if: github.event_name == 'release'
+        env:
+          SDK_VERSION: ${{ steps.strip.outputs.sdk_version }}
+        run: |
+          # Poll `npm view` until the freshly-published version is visible.
+          # 60 attempts * 10s = 10 minutes total wait.
+          for attempt in $(seq 1 60); do
+            if npm view "@fhevm/sdk@${SDK_VERSION}" version >/dev/null 2>&1; then
+              echo "@fhevm/sdk@${SDK_VERSION} is available on npm (attempt ${attempt})"
+              exit 0
+            fi
+            echo "attempt ${attempt}/60: @fhevm/sdk@${SDK_VERSION} not yet on npm, sleeping 10s..."
+            sleep 10
+          done
+          echo "::error::timed out after 10 minutes waiting for @fhevm/sdk@${SDK_VERSION} on npm" >&2
+          exit 1
 
   check-changes:
     if: github.event_name == 'push' || inputs.is_workflow_call
