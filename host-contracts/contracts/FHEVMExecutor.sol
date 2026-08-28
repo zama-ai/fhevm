@@ -126,7 +126,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         fheRandBounded,
         fheSum,
         fheIsIn,
-        fheMulDiv
+        fheMulDiv,
+        /// PROBE ONLY: synthetic multi-output operator (index 31).
+        fheReverse
     }
 
     /// @notice Name of the contract.
@@ -170,6 +172,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     /// width, and _consumeOperand reverts at runtime as a backstop.
     uint256 private constant FHE_COLLECTION_NARROW_MAX_SIZE = 100;
     uint256 private constant FHE_COLLECTION_WIDE_MAX_SIZE = 60;
+
+    /// PROBE ONLY: cap for the synthetic multi-output operator.
+    uint256 private constant FHE_REVERSE_MAX_SIZE = 8;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.FHEVMExecutor")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant FHEVM_EXECUTOR_STORAGE_LOCATION =
@@ -698,6 +703,50 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         result = _naryOp(Operators.fheSum, values, resultType);
         HCU_LIMIT.checkHCUForFheSum(resultType, values, result, msg.sender);
         emit FheSum(msg.sender, values, result);
+    }
+
+    /**
+     * PROBE ONLY. Synthetic multi-output operator: returns the inputs in
+     * reverse order, so `results[i]` holds `values[n-1-i]`. It exists to drive
+     * the coprocessor's N-output path (grouping, per-output permissions,
+     * per-output result validation) end to end before a real multi-output
+     * operator lands. Not for production; do not merge.
+     *
+     * Types are deliberately not required to be uniform: each output inherits
+     * the type of the input it receives, which is what exercises heterogeneous
+     * per-output type checking in the scheduler.
+     */
+    function fheReverse(bytes32[] calldata values) public virtual returns (bytes32[] memory results) {
+        uint256 n = values.length;
+        if (n == 0 || n > FHE_REVERSE_MAX_SIZE) revert FHECollectionSizeInvalid(n, FHE_REVERSE_MAX_SIZE);
+
+        uint256 boundaryBits;
+        for (uint256 i = 0; i < n; i++) {
+            boundaryBits |= _consumeOperand(values[i], i);
+        }
+
+        bytes32 base = keccak256(
+            abi.encodePacked(
+                COMPUTATION_DOMAIN_SEPARATOR,
+                Operators.fheReverse,
+                n,
+                values,
+                boundaryBits,
+                ACL,
+                block.chainid,
+                blockhash(block.number - 1),
+                block.timestamp
+            )
+        );
+
+        results = new bytes32[](n);
+        for (uint256 i = 0; i < n; i++) {
+            /// @dev Output i carries the value, and therefore the type, of input n-1-i.
+            results[i] = _mintHandle(keccak256(abi.encodePacked(base, uint32(i))), _typeOf(values[n - 1 - i]));
+        }
+
+        HCU_LIMIT.checkHCUForFheReverse(values, results, msg.sender);
+        emit FheReverse(msg.sender, values, results);
     }
 
     /**

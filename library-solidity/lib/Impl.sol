@@ -319,6 +319,13 @@ interface IFHEVMExecutor {
     function fheSum(bytes32[] calldata values, FheType resultType) external returns (bytes32 result);
 
     /**
+     * PROBE ONLY. Synthetic multi-output operator: returns the inputs reversed.
+     * @param values    Array of ciphertext handles.
+     * @return results  One handle per input, in reverse order.
+     */
+    function fheReverse(bytes32[] calldata values) external returns (bytes32[] memory results);
+
+    /**
      * @notice              Tests whether a ciphertext value is a member of an encrypted set.
      * @param value         Ciphertext handle for the value to test.
      * @param values        Encrypted set of ciphertext handles.
@@ -793,6 +800,12 @@ library Impl {
     function sum(bytes32[] memory values, FheType resultType) internal returns (bytes32 result) {
         CoprocessorConfig storage $ = getCoprocessorConfig();
         result = IFHEVMExecutor($.CoprocessorAddress).fheSum(values, resultType);
+    }
+
+    /// PROBE ONLY: see IFHEVMExecutor.fheReverse.
+    function reverse(bytes32[] memory values) internal returns (bytes32[] memory results) {
+        CoprocessorConfig storage $ = getCoprocessorConfig();
+        results = IFHEVMExecutor($.CoprocessorAddress).fheReverse(values);
     }
 
     function isIn(bytes32 value, bytes32[] memory values, FheType valueType) internal returns (bytes32 result) {

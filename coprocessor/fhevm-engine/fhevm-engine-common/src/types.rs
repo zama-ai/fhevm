@@ -415,6 +415,10 @@ pub enum SupportedFheOperations {
     FheSum = 28,
     FheIsIn = 29,
     FheMulDiv = 30,
+    /// PROBE ONLY: synthetic multi-output operator, returns its inputs
+    /// reversed. Occupies the value the Solidity `Operators` enum gives it
+    /// by position. Not for production.
+    FheReverse = 31,
     FheGetInputCiphertext = 32,
 }
 
@@ -828,6 +832,7 @@ impl SupportedFheOperations {
             | SupportedFheOperations::FheTrivialEncrypt
             | SupportedFheOperations::FheRand
             | SupportedFheOperations::FheRandBounded => FheOperationType::Other,
+            SupportedFheOperations::FheReverse => FheOperationType::Other,
             SupportedFheOperations::FheGetInputCiphertext => FheOperationType::Other,
             SupportedFheOperations::FheSum
             | SupportedFheOperations::FheIsIn
@@ -875,7 +880,7 @@ impl SupportedFheOperations {
     /// Whether this op produces multiple output ciphertexts. The output count
     /// comes from the event, not from the opcode.
     pub fn is_multi_output(&self) -> bool {
-        false
+        matches!(self, SupportedFheOperations::FheReverse)
     }
 
     pub fn supports_bool_inputs(&self) -> bool {
@@ -892,6 +897,7 @@ impl SupportedFheOperations {
 
     pub fn supports_ebytes_inputs(&self) -> bool {
         match self {
+            SupportedFheOperations::FheReverse => false,
             SupportedFheOperations::FheBitAnd
             | SupportedFheOperations::FheBitOr
             | SupportedFheOperations::FheBitXor
@@ -962,6 +968,7 @@ impl TryFrom<i16> for SupportedFheOperations {
             28 => Ok(SupportedFheOperations::FheSum),
             29 => Ok(SupportedFheOperations::FheIsIn),
             30 => Ok(SupportedFheOperations::FheMulDiv),
+            31 => Ok(SupportedFheOperations::FheReverse),
             32 => Ok(SupportedFheOperations::FheGetInputCiphertext),
             _ => Err(FhevmError::UnknownFheOperation(value as i32)),
         };

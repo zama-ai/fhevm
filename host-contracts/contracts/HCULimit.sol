@@ -1536,6 +1536,44 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     /**
+     * PROBE ONLY. Homomorphic complexity units for the synthetic multi-output
+     * operator. Charged once for the operation, but the depth is stamped on
+     * EVERY output handle: writing it to results[0] alone would leave the
+     * siblings at depth zero, letting a caller chain work off them without the
+     * depth limit ever seeing this operation.
+     * @param values  Input ciphertext handles.
+     * @param results Output ciphertext handles, one per input.
+     * @param caller  Original dapp caller address from FHEVMExecutor.
+     */
+    function checkHCUForFheReverse(
+        bytes32[] calldata values,
+        bytes32[] calldata results,
+        address caller
+    ) external virtual {
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
+        /// @dev Reordering performs no FHE work; price it per output so the
+        ///      accounting is still proportional to the group's width.
+        uint256 opHCU = 30000 * results.length;
+        _updateAndVerifyHCUTransactionLimit(opHCU, caller);
+
+        uint256 maxInputDepth = 0;
+        for (uint256 i = 0; i < values.length; i++) {
+            uint256 inputDepth = _getHCUForHandle(values[i]);
+            if (inputDepth > maxInputDepth) {
+                maxInputDepth = inputDepth;
+            }
+        }
+
+        uint256 totalHCU = opHCU + maxInputDepth;
+        if (totalHCU > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
+            revert HCUTransactionDepthLimitExceeded();
+        }
+        for (uint256 i = 0; i < results.length; i++) {
+            _setHCUForHandle(results[i], totalHCU);
+        }
+    }
+
+    /**
      * @notice Check the homomorphic complexity units limit for FheIsIn.
      * @param valueType Value type.
      * @param value Input ciphertext handle.
