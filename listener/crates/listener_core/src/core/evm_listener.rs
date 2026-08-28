@@ -1560,11 +1560,13 @@ async fn cursor_processing(
     Ok(CursorResult::Complete)
 }
 
-/// Sequential final-block inserter (the "consumer" sibling of
+/// Sequential final-block publisher and inserter (the "consumer" sibling of
 /// [`cursor_processing`] for the finality flow).
 ///
-/// Reads blocks from the [`AsyncSlotBuffer`] in order (slot 0, 1, 2, …) and
-/// inserts each one into the `final_blocks` tip table. **No** parent-hash
+/// Reads blocks from the [`AsyncSlotBuffer`] in order (slot 0, 1, 2, …),
+/// publishes each one to the FINAL watchers via
+/// [`publisher::publish_final_block_events`] (publish-before-commit), then
+/// inserts it into the `final_blocks` tip table. **No** parent-hash
 /// validation and **no** reorg branch — finalized blocks never reorg, so
 /// in-order consumption is only needed to keep publication and the tip
 /// monotonic.
@@ -1610,15 +1612,30 @@ async fn final_processing(
             }
         };
 
-        // TODO(finality): publish final block events HERE, BEFORE the insert
-        // (publish-before-commit invariant, like cursor_processing) once
-        // publisher::publish_final_block_events exists — it will need a
-        // BlockFlow::Final variant, a FINAL-scoped filter query
-        // (get_final_filters_by_chain_id) and a {consumer_id}.final-event
-        // routing helper, and it inherits the publish_stale/queue-existence
-        // behavior of publish_payload_to_consumer.
-        // On publish failure: cancel_token.cancel() + PayloadBuildError,
-        // mirroring the cursor flow.
+        // Publish-before-commit: publishing precedes final_blocks.insert_block,
+        // so a publish failure leaves the finality tip unchanged — the producer
+        // is cancelled and the error propagates as transient, the handler
+        // retries the whole message, and the tip re-read resumes at the same
+        // block: zero missed events, at-least-once delivery. The finality
+        // FlowLock + tip re-read make that retry HPA-safe (no concurrent run
+        // can advance the tip meanwhile), exactly like the live cursor flow.
+        // The publish inherits the publish_stale/queue-existence behavior of
+        // publish_payload_to_consumer.
+        let chain_id_u64 = listener.repositories.chain_id() as u64;
+        publisher::publish_final_block_events(
+            &listener.repositories,
+            &fetched_block,
+            chain_id_u64,
+            &listener.broker,
+            &listener.event_publisher,
+            &listener.publish_config,
+        )
+        .await
+        .map_err(|source| {
+            // Stop fetcher on publish failure — no point fetching more blocks
+            cancel_token.cancel();
+            EvmListenerError::PayloadBuildError { source }
+        })?;
 
         // Insert the final block AFTER publishing (publish-before-commit):
         // if the insert fails the message is retried and the tip is re-read,

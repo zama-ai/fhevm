@@ -149,6 +149,9 @@ pub enum BlockFlow {
     Reorged,
     /// Historical catch-up / replay published on the `catchup-event` queue.
     Catchup,
+    /// Finalized-only flow: block published on the `final-event` queue once
+    /// final (never reorgs).
+    Final,
 }
 
 /// Block payload published to the message broker after a block is validated and persisted.
@@ -322,6 +325,17 @@ mod tests {
         // Round-trip
         let deserialized: BlockPayload = serde_json::from_value(json).unwrap();
         assert_eq!(payload, deserialized);
+    }
+
+    #[test]
+    fn block_flow_final_serializes_to_screaming_snake_case() {
+        // The wire tag for the finality flow is pinned: consumers of the
+        // final-event queue rely on it.
+        let json = serde_json::to_value(BlockFlow::Final).unwrap();
+        assert_eq!(json, json!("FINAL"));
+
+        let deserialized: BlockFlow = serde_json::from_value(json).unwrap();
+        assert_eq!(deserialized, BlockFlow::Final);
     }
 
     #[test]

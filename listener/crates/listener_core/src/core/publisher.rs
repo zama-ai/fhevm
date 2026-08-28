@@ -11,7 +11,9 @@ use tokio::time::sleep;
 use tracing::{error, info, warn};
 
 use primitives::event::{BlockFlow, BlockPayload, IndexedLog, TransactionPayload};
-use primitives::routing::{consumer_catchup_event_routing, consumer_new_event_routing};
+use primitives::routing::{
+    consumer_catchup_event_routing, consumer_final_event_routing, consumer_new_event_routing,
+};
 
 use crate::blockchain::evm::evm_block_fetcher::FetchedBlock;
 use crate::config::PublishConfig;
@@ -416,6 +418,68 @@ pub async fn publish_block_events(
     //    Per-consumer retry/stale semantics live in `publish_payload_to_consumer`.
     for (consumer_id, payload) in &payloads {
         let routing_key = consumer_new_event_routing(consumer_id.clone());
+        publish_payload_to_consumer(
+            broker,
+            event_publisher,
+            publish_config,
+            consumer_id,
+            &routing_key,
+            payload,
+            chain_id,
+        )
+        .await?;
+    }
+
+    Ok(())
+}
+
+/// Finality variant of [`publish_block_events`]: publishes one final block's
+/// events to every FINAL watcher on the `{consumer_id}.final-event` queue.
+///
+/// Called from evm_listener.rs before each final block is persisted to DB.
+/// Returns errors on broker failures, filter fetch failures, or payload
+/// construction failures — callers MUST treat any error as a signal to NOT
+/// advance the finality tip. The handler framework retries the entire block,
+/// which guarantees at-least-once delivery to all consumers.
+///
+/// Same queue-existence, `publish_stale` retry/skip, and error semantics as
+/// the live path (shared `publish_payload_to_consumer`). The flow is always
+/// [`BlockFlow::Final`]: finalized blocks never reorg.
+pub async fn publish_final_block_events(
+    repositories: &Repositories,
+    fetched_block: &FetchedBlock,
+    chain_id: u64,
+    broker: &Broker,
+    event_publisher: &Publisher,
+    publish_config: &PublishConfig,
+) -> Result<(), PublisherError> {
+    // 1. Fetch FINAL filters — propagate DB errors to caller for handler-level retry.
+    let filters = repositories
+        .filters
+        .get_final_filters_by_chain_id()
+        .await
+        .map_err(|e| {
+            error!(error = %e, "Failed to fetch final filters");
+            PublisherError::FilterFetchError {
+                message: e.to_string(),
+            }
+        })?;
+
+    if filters.is_empty() {
+        return Ok(());
+    }
+
+    // 2. Build inverted index from filters — O(F).
+    let filter_index = FilterIndex::from_filters(filters);
+
+    // 3. Match transactions and build per-consumer payloads.
+    //    PayloadBuildError propagated to caller — data may be stale, re-fetch can self-heal.
+    let payloads = filter_index.build_block_payloads(fetched_block, chain_id, BlockFlow::Final)?;
+
+    // 4. For each consumer: verify queue exists, then publish.
+    //    Per-consumer retry/stale semantics live in `publish_payload_to_consumer`.
+    for (consumer_id, payload) in &payloads {
+        let routing_key = consumer_final_event_routing(consumer_id.clone());
         publish_payload_to_consumer(
             broker,
             event_publisher,

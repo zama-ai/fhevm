@@ -99,6 +99,55 @@ impl FilterRepository {
         Ok(rows)
     }
 
+    /// Fetch all active FINAL filters for this chain_id.
+    /// Results are ordered by consumer_id for efficient grouping.
+    ///
+    /// LIVE filters are excluded: they belong to the head-of-chain flow and
+    /// must never receive finalized-only events.
+    /// Served by the partial index `idx_filters_chain_consumer_final`.
+    pub async fn get_final_filters_by_chain_id(&self) -> SqlResult<Vec<Filter>> {
+        let mut conn = self.client.get_app_connection().await?;
+        let rows = sqlx::query_as!(
+            Filter,
+            r#"
+            SELECT id, chain_id, consumer_id, "from", "to", "log_address", filter_type as "filter_type: FilterType", created_at
+            FROM filters
+            WHERE chain_id = $1 AND filter_type = 'FINAL'::filter_type
+            ORDER BY consumer_id
+            "#,
+            self.chain_id,
+        )
+        .fetch_all(&mut *conn)
+        .await?;
+        Ok(rows)
+    }
+
+    /// Fetch all active FINAL filters for a single consumer on this chain.
+    ///
+    /// LIVE filters are excluded (see [`Self::get_final_filters_by_chain_id`]).
+    /// Served by the partial index `idx_filters_chain_consumer_final`.
+    /// Groundwork for the finality catchup feature.
+    pub async fn get_final_filters_by_consumer_id(
+        &self,
+        consumer_id: &str,
+    ) -> SqlResult<Vec<Filter>> {
+        let mut conn = self.client.get_app_connection().await?;
+        let rows = sqlx::query_as!(
+            Filter,
+            r#"
+            SELECT id, chain_id, consumer_id, "from", "to", "log_address", filter_type as "filter_type: FilterType", created_at
+            FROM filters
+            WHERE chain_id = $1 AND consumer_id = $2 AND filter_type = 'FINAL'::filter_type
+            ORDER BY id
+            "#,
+            self.chain_id,
+            consumer_id,
+        )
+        .fetch_all(&mut *conn)
+        .await?;
+        Ok(rows)
+    }
+
     /// Remove a filter matching the given (chain_id, consumer_id, from, to, log_address, filter_type).
     ///
     /// Returns `Some(Filter)` if a filter was removed, `None` if no matching filter found.
