@@ -12,8 +12,8 @@ tests_interval = "1s"
 # The number of parallel requests to send to the Gateway/Connectors' DBs, at each interval
 parallel_requests = 1
 
-# # If requests burst must be sent sequentially only when the previous one has been completed
-# # Defaults to false, if set to true, then `tests_interval` is ignored
+# If requests burst must be sent sequentially only when the previous one has been completed
+# Defaults to false, if set to true, then `tests_interval` is ignored
 # sequential = false
 
 # The ciphertexts to use for public decryptions
