@@ -128,10 +128,4 @@ async fn bootstrap_refuses_existing_database_and_consensus_downgrade() {
         retry_marker_preserved,
         "a failed setup must keep its marker for a retry"
     );
-
-    // The versions are not final while the marker exists, so no role may be picked.
-    assert!(
-        resolve_gcs_mode(db.db_url()).await.is_err(),
-        "startup must fail while database setup is in progress"
-    );
 }

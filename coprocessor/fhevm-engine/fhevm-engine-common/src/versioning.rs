@@ -186,7 +186,7 @@ impl StackMode {
 /// Re-read `versioning.consensus_version` and apply the cutover transition rules to
 /// `mode`:
 ///   - binary == live AND currently in GCS mode → leave GCS mode (become live);
-///   - binary < live AND not paused → pause into no-op mode;
+///   - binary != live AND not in GCS mode → pause into no-op mode;
 ///   - otherwise no change.
 pub async fn reconcile_stack_mode(pool: &Pool<Postgres>, mode: &StackMode) -> anyhow::Result<()> {
     let row: Option<(i64,)> =
@@ -259,8 +259,8 @@ pub async fn run_stack_version_listener(
 }
 
 /// Decide whether this binary should run in GCS (green) mode by comparing its
-/// compiled-in [`crate::CONSENSUS_PROTOCOL_VERSION`] against the live
-/// `versioning.consensus_version` row.
+/// compiled-in [`CONSENSUS_PROTOCOL_VERSION`] against the live `versioning.consensus_version`
+/// row.
 ///
 /// Opens a short-lived connection with the default `public` search_path, so it
 /// works before the service's main pool — whose search_path may be pinned to
@@ -384,11 +384,11 @@ pub async fn wait_for_gcs_schema(database_url: &str, timeout: Duration) -> anyho
 }
 
 /// Error returned by [`begin_guarded_pool`] / [`begin_guarded_conn`] when this
-/// binary belongs to a retired stack — its [`CONSENSUS_PROTOCOL_VERSION`] is
-/// strictly older than the live `versioning.consensus_version`.
+/// binary belongs to a retired stack — its [`CONSENSUS_PROTOCOL_VERSION`] is strictly older
+/// than the live `versioning.consensus_version`.
 #[derive(Debug, thiserror::Error)]
 #[error(
-    "consensus version {binary} is older than the active {live}; access denied (retired stack)"
+    "consensus version {binary} is older than live stack {live}; access denied (retired stack)"
 )]
 pub struct StaleStackError {
     pub binary: u32,
@@ -401,8 +401,8 @@ fn is_undefined_table(err: &sqlx::Error) -> bool {
     matches!(err, sqlx::Error::Database(db) if db.code().as_deref() == Some("42P01"))
 }
 
-/// Fetch the live consensus version singleton, or `None` if the `versioning` row
-/// is absent (fresh/unseeded DB). Shared by the retirement checks below.
+/// Fetch the live consensus version singleton, or `None` if the `versioning` row is
+/// absent (fresh/unseeded DB). Shared by the retirement checks below.
 ///
 /// A missing `versioning` *table* (SQLSTATE 42P01) is treated the same as a
 /// missing row — `None`, not an error — so a service that starts before the
@@ -429,10 +429,10 @@ async fn live_consensus_version(conn: &mut PgConnection) -> Result<Option<i64>, 
 }
 
 /// Re-read the live consensus version on `conn` and report whether this binary
-/// belongs to a retired stack (its [`CONSENSUS_PROTOCOL_VERSION`] is strictly
-/// older than the live `versioning.consensus_version`). A missing `versioning`
-/// row is treated as not-retired, mirroring [`resolve_gcs_mode`]'s permissive
-/// default so a fresh/unseeded DB is not locked out.
+/// belongs to a retired stack (its [`CONSENSUS_PROTOCOL_VERSION`] is strictly older than the
+/// live `versioning.consensus_version`). A missing `versioning` row is treated as
+/// not-retired, mirroring [`resolve_gcs_mode`]'s permissive default so a
+/// fresh/unseeded DB is not locked out.
 ///
 /// This is the single source of truth for "should this stack stop touching the
 /// DB" — the same fence used by [`assert_not_retired`], [`resolve_gcs_mode`], and
@@ -639,6 +639,7 @@ mod tests {
         assert!(parse_version("v0.14.1") > parse_version("v0.14"));
         // Missing patch component pads to 0, so these compare equal.
         assert_eq!(parse_version("v0.14.0"), parse_version("v0.14"));
+        assert!(parse_version("v0.14.0") <= parse_version("v0.14.0"));
         assert!(parse_version("v0.13") <= parse_version("v0.14.0"));
     }
 
