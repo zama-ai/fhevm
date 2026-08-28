@@ -118,7 +118,8 @@ export const activeNetworkName = () => network.name;
 export const isLiveNetwork = () => LIVE_NETWORKS.has(activeNetworkName());
 ```
 
-This preview runs the host chain as **`staging`** (chainId `12345`), which is **not**
+This preview's **default** (PR labels + dispatch without `use_blockchain_dev`)
+runs the host chain as **`staging`** (chainId `12345` Anvil), which is **not**
 in that set, so `isLiveNetwork()` is `false` and the suite takes its **local /
 deterministic** path. That matters because the check is on the *name only*, not on
 what the underlying node can actually do — our host chain is anvil (fully
@@ -178,6 +179,32 @@ like everything else:
 Access is `kubectl port-forward` from the dev laptop (Tailscale up, namespace
 admin via `coprocessor-dev-access`/`kms-dev-access`) — see
 [`101-preview-env.md`](./101-preview-env.md#observe-your-environment).
+
+## `use_blockchain_dev`: shared Geth + Nitro (dispatch-only)
+
+`preview-env-deploy.yml` accepts `use_blockchain_dev=true` on **workflow_dispatch
+only** (PR labels always stay on Anvil). That skips `anvil-host` / `anvil-gateway`
+and points the stack at the shared `blockchain-dev` namespace:
+
+| Chain | Node | In-cluster RPC | Chain ID |
+|-------|------|----------------|----------|
+| Host | Geth `--dev` | `http://ethereum-rpc-node.blockchain-dev:8545` (WS on the same port) | 1337 |
+| Gateway | Nitro `dev` | HTTP `:8547`, WS `:8548` | 412346 |
+
+The preview still deploys **its own** host + gateway contracts. Wallets are **not**
+the Anvil junk mnemonic: a unique mnemonic is generated, the same HD index map
+(`#0` gateway deployer, `#3` relayer, `#9` host/ACL owner, `#10+` KMS/coprocessor
+tx-senders) is derived, and every address is funded from the in-cluster PoW
+faucets (`host-faucet-…` / `gateway-faucet-…`). The mnemonic is stored as secret
+`preview-wallets-mnemonic` in the preview namespace.
+
+Because Geth has no `evm_*` cheats and `--slots-in-an-epoch`, automated tests use
+Hardhat network **`zwsDev`** (live path: HCU deterministic blocks skip). The
+coprocessor poller seeds at the **current host head**, not block 0 — the Geth
+dev chain already has millions of blocks (kms-enclave-dev history).
+
+Incompatible with `deploy_polygon` (no Amoy node in `blockchain-dev`). Destroying
+the Kubernetes namespace does not delete the on-chain contracts.
 
 ## Multi-coprocessor (`nb_coprocessor`) and shared Redis
 
