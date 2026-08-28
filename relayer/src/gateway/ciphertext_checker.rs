@@ -189,11 +189,12 @@ impl CiphertextChecker {
         let max_retries = self.retry_config.max_attempts;
         let retry_interval = Duration::from_millis(self.retry_config.retry_interval_ms);
         let mut retries = 0;
-        let mut last_error: Option<alloy::contract::Error> = None;
+        let mut last_error: Option<alloy::contract::Error>;
 
         loop {
             match check_fn().await {
                 Ok(is_ready) => {
+                    last_error = None;
                     if is_ready {
                         return Ok(());
                     } else {
