@@ -45,26 +45,6 @@ interface ExecutorOptions {
 pub mod ExecutorOptions {
     use super::*;
     use alloy::sol_types as alloy_sol_types;
-    /// The creation / init bytecode of the contract.
-    ///
-    /// ```text
-    ///0x601f6032600b8282823980515f1a607314602657634e487b7160e01b5f525f60045260245ffd5b305f52607381538281f3fe730000000000000000000000000000000000000000301460806040525f80fd
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"`\x1F`2`\x0B\x82\x82\x829\x80Q_\x1A`s\x14`&WcNH{q`\xE0\x1B_R_`\x04R`$_\xFD[0_R`s\x81S\x82\x81\xF3\xFEs\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x000\x14`\x80`@R_\x80\xFD",
-    );
-    /// The runtime bytecode of the contract, as deployed on the network.
-    ///
-    /// ```text
-    ///0x730000000000000000000000000000000000000000301460806040525f80fd
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"s\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x000\x14`\x80`@R_\x80\xFD",
-    );
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `Executor_InvalidLzComposeOption()` and selector `0x8b4aa70b`.
@@ -134,10 +114,10 @@ error Executor_InvalidLzComposeOption();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -210,10 +190,10 @@ error Executor_InvalidLzReadOption();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -286,10 +266,10 @@ error Executor_InvalidLzReceiveOption();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -362,10 +342,10 @@ error Executor_InvalidNativeDropOption();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -467,15 +447,31 @@ error Executor_InvalidNativeDropOption();
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::default(),
+            )
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_with_config(
+            selector: [u8; 4],
+            data: &[u8],
+            config: alloy_sol_types::abi::AbiDecoderConfig,
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
+                alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<ExecutorOptionsErrors>] = &[
                 {
                     fn Executor_InvalidLzReceiveOption(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ExecutorOptionsErrors> {
-                        <Executor_InvalidLzReceiveOption as alloy_sol_types::SolError>::abi_decode_raw(
+                        <Executor_InvalidLzReceiveOption as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ExecutorOptionsErrors::Executor_InvalidLzReceiveOption)
                     }
@@ -484,9 +480,11 @@ error Executor_InvalidNativeDropOption();
                 {
                     fn Executor_InvalidLzComposeOption(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ExecutorOptionsErrors> {
-                        <Executor_InvalidLzComposeOption as alloy_sol_types::SolError>::abi_decode_raw(
+                        <Executor_InvalidLzComposeOption as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ExecutorOptionsErrors::Executor_InvalidLzComposeOption)
                     }
@@ -495,9 +493,11 @@ error Executor_InvalidNativeDropOption();
                 {
                     fn Executor_InvalidNativeDropOption(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ExecutorOptionsErrors> {
-                        <Executor_InvalidNativeDropOption as alloy_sol_types::SolError>::abi_decode_raw(
+                        <Executor_InvalidNativeDropOption as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ExecutorOptionsErrors::Executor_InvalidNativeDropOption)
                     }
@@ -506,9 +506,11 @@ error Executor_InvalidNativeDropOption();
                 {
                     fn Executor_InvalidLzReadOption(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ExecutorOptionsErrors> {
-                        <Executor_InvalidLzReadOption as alloy_sol_types::SolError>::abi_decode_raw(
+                        <Executor_InvalidLzReadOption as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ExecutorOptionsErrors::Executor_InvalidLzReadOption)
                     }
@@ -523,7 +525,7 @@ error Executor_InvalidNativeDropOption();
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data)
+            DECODE_SHIMS[idx](data, config)
         }
         #[inline]
         #[allow(non_snake_case)]
@@ -531,63 +533,11 @@ error Executor_InvalidNativeDropOption();
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_VALIDATE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<ExecutorOptionsErrors>] = &[
-                {
-                    fn Executor_InvalidLzReceiveOption(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ExecutorOptionsErrors> {
-                        <Executor_InvalidLzReceiveOption as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ExecutorOptionsErrors::Executor_InvalidLzReceiveOption)
-                    }
-                    Executor_InvalidLzReceiveOption
-                },
-                {
-                    fn Executor_InvalidLzComposeOption(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ExecutorOptionsErrors> {
-                        <Executor_InvalidLzComposeOption as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ExecutorOptionsErrors::Executor_InvalidLzComposeOption)
-                    }
-                    Executor_InvalidLzComposeOption
-                },
-                {
-                    fn Executor_InvalidNativeDropOption(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ExecutorOptionsErrors> {
-                        <Executor_InvalidNativeDropOption as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ExecutorOptionsErrors::Executor_InvalidNativeDropOption)
-                    }
-                    Executor_InvalidNativeDropOption
-                },
-                {
-                    fn Executor_InvalidLzReadOption(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ExecutorOptionsErrors> {
-                        <Executor_InvalidLzReadOption as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ExecutorOptionsErrors::Executor_InvalidLzReadOption)
-                    }
-                    Executor_InvalidLzReadOption
-                },
-            ];
-            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
-            };
-            DECODE_VALIDATE_SHIMS[idx](data)
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+            )
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -644,6 +594,45 @@ error Executor_InvalidNativeDropOption();
             }
         }
     }
+    #[automatically_derived]
+    impl ExecutorOptionsErrors {
+        /**Creates a [`Executor_InvalidLzComposeOption`] error.
+
+```solidity
+error Executor_InvalidLzComposeOption()
+```*/
+        #[inline]
+        pub fn executor_invalid_lz_compose_option() -> Self {
+            Self::Executor_InvalidLzComposeOption(Executor_InvalidLzComposeOption)
+        }
+        /**Creates a [`Executor_InvalidLzReadOption`] error.
+
+```solidity
+error Executor_InvalidLzReadOption()
+```*/
+        #[inline]
+        pub fn executor_invalid_lz_read_option() -> Self {
+            Self::Executor_InvalidLzReadOption(Executor_InvalidLzReadOption)
+        }
+        /**Creates a [`Executor_InvalidLzReceiveOption`] error.
+
+```solidity
+error Executor_InvalidLzReceiveOption()
+```*/
+        #[inline]
+        pub fn executor_invalid_lz_receive_option() -> Self {
+            Self::Executor_InvalidLzReceiveOption(Executor_InvalidLzReceiveOption)
+        }
+        /**Creates a [`Executor_InvalidNativeDropOption`] error.
+
+```solidity
+error Executor_InvalidNativeDropOption()
+```*/
+        #[inline]
+        pub fn executor_invalid_native_drop_option() -> Self {
+            Self::Executor_InvalidNativeDropOption(Executor_InvalidNativeDropOption)
+        }
+    }
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`ExecutorOptions`](self) contract instance.
 
@@ -657,34 +646,6 @@ See the [wrapper's documentation](`ExecutorOptionsInstance`) for more details.*/
         __provider: P,
     ) -> ExecutorOptionsInstance<P, N> {
         ExecutorOptionsInstance::<P, N>::new(address, __provider)
-    }
-    /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-    #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
-        __provider: P,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<ExecutorOptionsInstance<P, N>>,
-    > {
-        ExecutorOptionsInstance::<P, N>::deploy(__provider)
-    }
-    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-    #[inline]
-    pub fn deploy_builder<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        ExecutorOptionsInstance::<P, N>::deploy_builder(__provider)
     }
     /**A [`ExecutorOptions`](self) instance.
 
@@ -728,31 +689,6 @@ See the [wrapper's documentation](`ExecutorOptionsInstance`) for more details.*/
                 provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
-        }
-        /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-        #[inline]
-        pub async fn deploy(
-            __provider: P,
-        ) -> alloy_contract::Result<ExecutorOptionsInstance<P, N>> {
-            let call_builder = Self::deploy_builder(__provider);
-            let contract_address = call_builder.deploy().await?;
-            Ok(Self::new(contract_address, call_builder.provider))
-        }
-        /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-        #[inline]
-        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-            alloy_contract::RawCallBuilder::new_raw_deploy(
-                __provider,
-                ::core::clone::Clone::clone(&BYTECODE),
-            )
         }
         /// Returns a reference to the address.
         #[inline]

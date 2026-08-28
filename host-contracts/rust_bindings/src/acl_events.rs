@@ -197,26 +197,6 @@ interface ACLEvents {
 pub mod ACLEvents {
     use super::*;
     use alloy::sol_types as alloy_sol_types;
-    /// The creation / init bytecode of the contract.
-    ///
-    /// ```text
-    ///0x6080604052348015600e575f80fd5b50600880601a5f395ff3fe60806040525f80fd
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"`\x80`@R4\x80\x15`\x0EW_\x80\xFD[P`\x08\x80`\x1A_9_\xF3\xFE`\x80`@R_\x80\xFD",
-    );
-    /// The runtime bytecode of the contract, as deployed on the network.
-    ///
-    /// ```text
-    ///0x60806040525f80fd
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"`\x80`@R_\x80\xFD",
-    );
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `Allowed(address,address,bytes32)` and selector `0xe2e1decee6e05ee246cd7c7f1337d25cdfd41dcbdcf8c57b61630be56cc7366a`.
@@ -1329,6 +1309,122 @@ event UnblockedAccount(address indexed account);
             }
         }
     }
+    #[automatically_derived]
+    impl ACLEventsEvents {
+        /**Creates a [`Allowed`] event.
+
+```solidity
+event Allowed(address,address,bytes32)
+```*/
+        #[inline]
+        pub fn allowed(
+            caller: alloy::sol_types::private::Address,
+            account: alloy::sol_types::private::Address,
+            handle: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::Allowed(Allowed {
+                caller: caller,
+                account: account,
+                handle: handle,
+            })
+        }
+        /**Creates a [`AllowedForDecryption`] event.
+
+```solidity
+event AllowedForDecryption(address,bytes32[])
+```*/
+        #[inline]
+        pub fn allowed_for_decryption(
+            caller: alloy::sol_types::private::Address,
+            handles_list: alloy::sol_types::private::Vec<
+                alloy::sol_types::private::FixedBytes<32>,
+            >,
+        ) -> Self {
+            Self::AllowedForDecryption(AllowedForDecryption {
+                caller: caller,
+                handlesList: handles_list,
+            })
+        }
+        /**Creates a [`BlockedAccount`] event.
+
+```solidity
+event BlockedAccount(address)
+```*/
+        #[inline]
+        pub fn blocked_account(account: alloy::sol_types::private::Address) -> Self {
+            Self::BlockedAccount(BlockedAccount { account: account })
+        }
+        /**Creates a [`DecryptionSignaturesInvalidated`] event.
+
+```solidity
+event DecryptionSignaturesInvalidated(address,uint256)
+```*/
+        #[inline]
+        pub fn decryption_signatures_invalidated(
+            account: alloy::sol_types::private::Address,
+            before_timestamp: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::DecryptionSignaturesInvalidated(DecryptionSignaturesInvalidated {
+                account: account,
+                beforeTimestamp: before_timestamp,
+            })
+        }
+        /**Creates a [`DelegatedForUserDecryption`] event.
+
+```solidity
+event DelegatedForUserDecryption(address,address,address,uint64,uint64,uint64)
+```*/
+        #[inline]
+        pub fn delegated_for_user_decryption(
+            delegator: alloy::sol_types::private::Address,
+            delegate: alloy::sol_types::private::Address,
+            contract_address: alloy::sol_types::private::Address,
+            delegation_counter: u64,
+            old_expiration_date: u64,
+            new_expiration_date: u64,
+        ) -> Self {
+            Self::DelegatedForUserDecryption(DelegatedForUserDecryption {
+                delegator: delegator,
+                delegate: delegate,
+                contractAddress: contract_address,
+                delegationCounter: delegation_counter,
+                oldExpirationDate: old_expiration_date,
+                newExpirationDate: new_expiration_date,
+            })
+        }
+        /**Creates a [`RevokedDelegationForUserDecryption`] event.
+
+```solidity
+event RevokedDelegationForUserDecryption(address,address,address,uint64,uint64)
+```*/
+        #[inline]
+        pub fn revoked_delegation_for_user_decryption(
+            delegator: alloy::sol_types::private::Address,
+            delegate: alloy::sol_types::private::Address,
+            contract_address: alloy::sol_types::private::Address,
+            delegation_counter: u64,
+            old_expiration_date: u64,
+        ) -> Self {
+            Self::RevokedDelegationForUserDecryption(RevokedDelegationForUserDecryption {
+                delegator: delegator,
+                delegate: delegate,
+                contractAddress: contract_address,
+                delegationCounter: delegation_counter,
+                oldExpirationDate: old_expiration_date,
+            })
+        }
+        /**Creates a [`UnblockedAccount`] event.
+
+```solidity
+event UnblockedAccount(address)
+```*/
+        #[inline]
+        pub fn unblocked_account(account: alloy::sol_types::private::Address) -> Self {
+            Self::UnblockedAccount(UnblockedAccount {
+                account: account,
+            })
+        }
+    }
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`ACLEvents`](self) contract instance.
 
@@ -1342,34 +1438,6 @@ See the [wrapper's documentation](`ACLEventsInstance`) for more details.*/
         __provider: P,
     ) -> ACLEventsInstance<P, N> {
         ACLEventsInstance::<P, N>::new(address, __provider)
-    }
-    /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-    #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
-        __provider: P,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<ACLEventsInstance<P, N>>,
-    > {
-        ACLEventsInstance::<P, N>::deploy(__provider)
-    }
-    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-    #[inline]
-    pub fn deploy_builder<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        ACLEventsInstance::<P, N>::deploy_builder(__provider)
     }
     /**A [`ACLEvents`](self) instance.
 
@@ -1413,31 +1481,6 @@ See the [wrapper's documentation](`ACLEventsInstance`) for more details.*/
                 provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
-        }
-        /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-        #[inline]
-        pub async fn deploy(
-            __provider: P,
-        ) -> alloy_contract::Result<ACLEventsInstance<P, N>> {
-            let call_builder = Self::deploy_builder(__provider);
-            let contract_address = call_builder.deploy().await?;
-            Ok(Self::new(contract_address, call_builder.provider))
-        }
-        /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-        #[inline]
-        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-            alloy_contract::RawCallBuilder::new_raw_deploy(
-                __provider,
-                ::core::clone::Clone::clone(&BYTECODE),
-            )
         }
         /// Returns a reference to the address.
         #[inline]

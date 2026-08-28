@@ -115,26 +115,6 @@ interface GatewayConfigChecks {
 pub mod GatewayConfigChecks {
     use super::*;
     use alloy::sol_types as alloy_sol_types;
-    /// The creation / init bytecode of the contract.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
-    /// The runtime bytecode of the contract, as deployed on the network.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `CoprocessorSignerDoesNotMatchTxSender(address,address)` and selector `0xe134bf62`.
@@ -225,10 +205,10 @@ error CoprocessorSignerDoesNotMatchTxSender(address signerAddress, address txSen
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -308,10 +288,10 @@ error HostChainDisabled(uint256 chainId);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -405,10 +385,10 @@ error KmsSignerDoesNotMatchTxSender(address signerAddress, address txSenderAddre
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -486,10 +466,10 @@ error NotCoprocessorSigner(address signerAddress);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -567,10 +547,10 @@ error NotCoprocessorTxSender(address txSenderAddress);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -648,10 +628,10 @@ error NotKmsSigner(address signerAddress);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -729,10 +709,10 @@ error NotKmsTxSender(address txSenderAddress);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -858,15 +838,31 @@ error NotKmsTxSender(address txSenderAddress);
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::default(),
+            )
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_with_config(
+            selector: [u8; 4],
+            data: &[u8],
+            config: alloy_sol_types::abi::AbiDecoderConfig,
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
+                alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<GatewayConfigChecksErrors>] = &[
                 {
                     fn KmsSignerDoesNotMatchTxSender(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<GatewayConfigChecksErrors> {
-                        <KmsSignerDoesNotMatchTxSender as alloy_sol_types::SolError>::abi_decode_raw(
+                        <KmsSignerDoesNotMatchTxSender as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(
                                 GatewayConfigChecksErrors::KmsSignerDoesNotMatchTxSender,
@@ -877,9 +873,11 @@ error NotKmsTxSender(address txSenderAddress);
                 {
                     fn NotCoprocessorSigner(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<GatewayConfigChecksErrors> {
-                        <NotCoprocessorSigner as alloy_sol_types::SolError>::abi_decode_raw(
+                        <NotCoprocessorSigner as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(GatewayConfigChecksErrors::NotCoprocessorSigner)
                     }
@@ -888,8 +886,12 @@ error NotKmsTxSender(address txSenderAddress);
                 {
                     fn NotKmsSigner(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<GatewayConfigChecksErrors> {
-                        <NotKmsSigner as alloy_sol_types::SolError>::abi_decode_raw(data)
+                        <NotKmsSigner as alloy_sol_types::SolError>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(GatewayConfigChecksErrors::NotKmsSigner)
                     }
                     NotKmsSigner
@@ -897,9 +899,11 @@ error NotKmsTxSender(address txSenderAddress);
                 {
                     fn NotCoprocessorTxSender(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<GatewayConfigChecksErrors> {
-                        <NotCoprocessorTxSender as alloy_sol_types::SolError>::abi_decode_raw(
+                        <NotCoprocessorTxSender as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(GatewayConfigChecksErrors::NotCoprocessorTxSender)
                     }
@@ -908,9 +912,11 @@ error NotKmsTxSender(address txSenderAddress);
                 {
                     fn HostChainDisabled(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<GatewayConfigChecksErrors> {
-                        <HostChainDisabled as alloy_sol_types::SolError>::abi_decode_raw(
+                        <HostChainDisabled as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(GatewayConfigChecksErrors::HostChainDisabled)
                     }
@@ -919,9 +925,11 @@ error NotKmsTxSender(address txSenderAddress);
                 {
                     fn NotKmsTxSender(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<GatewayConfigChecksErrors> {
-                        <NotKmsTxSender as alloy_sol_types::SolError>::abi_decode_raw(
+                        <NotKmsTxSender as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(GatewayConfigChecksErrors::NotKmsTxSender)
                     }
@@ -930,9 +938,11 @@ error NotKmsTxSender(address txSenderAddress);
                 {
                     fn CoprocessorSignerDoesNotMatchTxSender(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<GatewayConfigChecksErrors> {
-                        <CoprocessorSignerDoesNotMatchTxSender as alloy_sol_types::SolError>::abi_decode_raw(
+                        <CoprocessorSignerDoesNotMatchTxSender as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(
                                 GatewayConfigChecksErrors::CoprocessorSignerDoesNotMatchTxSender,
@@ -949,7 +959,7 @@ error NotKmsTxSender(address txSenderAddress);
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data)
+            DECODE_SHIMS[idx](data, config)
         }
         #[inline]
         #[allow(non_snake_case)]
@@ -957,100 +967,11 @@ error NotKmsTxSender(address txSenderAddress);
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_VALIDATE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<GatewayConfigChecksErrors>] = &[
-                {
-                    fn KmsSignerDoesNotMatchTxSender(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<GatewayConfigChecksErrors> {
-                        <KmsSignerDoesNotMatchTxSender as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                GatewayConfigChecksErrors::KmsSignerDoesNotMatchTxSender,
-                            )
-                    }
-                    KmsSignerDoesNotMatchTxSender
-                },
-                {
-                    fn NotCoprocessorSigner(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<GatewayConfigChecksErrors> {
-                        <NotCoprocessorSigner as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(GatewayConfigChecksErrors::NotCoprocessorSigner)
-                    }
-                    NotCoprocessorSigner
-                },
-                {
-                    fn NotKmsSigner(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<GatewayConfigChecksErrors> {
-                        <NotKmsSigner as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(GatewayConfigChecksErrors::NotKmsSigner)
-                    }
-                    NotKmsSigner
-                },
-                {
-                    fn NotCoprocessorTxSender(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<GatewayConfigChecksErrors> {
-                        <NotCoprocessorTxSender as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(GatewayConfigChecksErrors::NotCoprocessorTxSender)
-                    }
-                    NotCoprocessorTxSender
-                },
-                {
-                    fn HostChainDisabled(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<GatewayConfigChecksErrors> {
-                        <HostChainDisabled as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(GatewayConfigChecksErrors::HostChainDisabled)
-                    }
-                    HostChainDisabled
-                },
-                {
-                    fn NotKmsTxSender(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<GatewayConfigChecksErrors> {
-                        <NotKmsTxSender as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(GatewayConfigChecksErrors::NotKmsTxSender)
-                    }
-                    NotKmsTxSender
-                },
-                {
-                    fn CoprocessorSignerDoesNotMatchTxSender(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<GatewayConfigChecksErrors> {
-                        <CoprocessorSignerDoesNotMatchTxSender as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                GatewayConfigChecksErrors::CoprocessorSignerDoesNotMatchTxSender,
-                            )
-                    }
-                    CoprocessorSignerDoesNotMatchTxSender
-                },
-            ];
-            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
-            };
-            DECODE_VALIDATE_SHIMS[idx](data)
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+            )
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -1138,6 +1059,104 @@ error NotKmsTxSender(address txSenderAddress);
             }
         }
     }
+    #[automatically_derived]
+    impl GatewayConfigChecksErrors {
+        /**Creates a [`CoprocessorSignerDoesNotMatchTxSender`] error.
+
+```solidity
+error CoprocessorSignerDoesNotMatchTxSender(address,address)
+```*/
+        #[inline]
+        pub fn coprocessor_signer_does_not_match_tx_sender(
+            signer_address: alloy::sol_types::private::Address,
+            tx_sender_address: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::CoprocessorSignerDoesNotMatchTxSender(CoprocessorSignerDoesNotMatchTxSender {
+                signerAddress: signer_address,
+                txSenderAddress: tx_sender_address,
+            })
+        }
+        /**Creates a [`HostChainDisabled`] error.
+
+```solidity
+error HostChainDisabled(uint256)
+```*/
+        #[inline]
+        pub fn host_chain_disabled(
+            chain_id: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::HostChainDisabled(HostChainDisabled {
+                chainId: chain_id,
+            })
+        }
+        /**Creates a [`KmsSignerDoesNotMatchTxSender`] error.
+
+```solidity
+error KmsSignerDoesNotMatchTxSender(address,address)
+```*/
+        #[inline]
+        pub fn kms_signer_does_not_match_tx_sender(
+            signer_address: alloy::sol_types::private::Address,
+            tx_sender_address: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::KmsSignerDoesNotMatchTxSender(KmsSignerDoesNotMatchTxSender {
+                signerAddress: signer_address,
+                txSenderAddress: tx_sender_address,
+            })
+        }
+        /**Creates a [`NotCoprocessorSigner`] error.
+
+```solidity
+error NotCoprocessorSigner(address)
+```*/
+        #[inline]
+        pub fn not_coprocessor_signer(
+            signer_address: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::NotCoprocessorSigner(NotCoprocessorSigner {
+                signerAddress: signer_address,
+            })
+        }
+        /**Creates a [`NotCoprocessorTxSender`] error.
+
+```solidity
+error NotCoprocessorTxSender(address)
+```*/
+        #[inline]
+        pub fn not_coprocessor_tx_sender(
+            tx_sender_address: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::NotCoprocessorTxSender(NotCoprocessorTxSender {
+                txSenderAddress: tx_sender_address,
+            })
+        }
+        /**Creates a [`NotKmsSigner`] error.
+
+```solidity
+error NotKmsSigner(address)
+```*/
+        #[inline]
+        pub fn not_kms_signer(
+            signer_address: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::NotKmsSigner(NotKmsSigner {
+                signerAddress: signer_address,
+            })
+        }
+        /**Creates a [`NotKmsTxSender`] error.
+
+```solidity
+error NotKmsTxSender(address)
+```*/
+        #[inline]
+        pub fn not_kms_tx_sender(
+            tx_sender_address: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::NotKmsTxSender(NotKmsTxSender {
+                txSenderAddress: tx_sender_address,
+            })
+        }
+    }
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`GatewayConfigChecks`](self) contract instance.
 
@@ -1151,34 +1170,6 @@ See the [wrapper's documentation](`GatewayConfigChecksInstance`) for more detail
         __provider: P,
     ) -> GatewayConfigChecksInstance<P, N> {
         GatewayConfigChecksInstance::<P, N>::new(address, __provider)
-    }
-    /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-    #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
-        __provider: P,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<GatewayConfigChecksInstance<P, N>>,
-    > {
-        GatewayConfigChecksInstance::<P, N>::deploy(__provider)
-    }
-    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-    #[inline]
-    pub fn deploy_builder<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        GatewayConfigChecksInstance::<P, N>::deploy_builder(__provider)
     }
     /**A [`GatewayConfigChecks`](self) instance.
 
@@ -1222,31 +1213,6 @@ See the [wrapper's documentation](`GatewayConfigChecksInstance`) for more detail
                 provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
-        }
-        /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-        #[inline]
-        pub async fn deploy(
-            __provider: P,
-        ) -> alloy_contract::Result<GatewayConfigChecksInstance<P, N>> {
-            let call_builder = Self::deploy_builder(__provider);
-            let contract_address = call_builder.deploy().await?;
-            Ok(Self::new(contract_address, call_builder.provider))
-        }
-        /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-        #[inline]
-        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-            alloy_contract::RawCallBuilder::new_raw_deploy(
-                __provider,
-                ::core::clone::Clone::clone(&BYTECODE),
-            )
         }
         /// Returns a reference to the address.
         #[inline]

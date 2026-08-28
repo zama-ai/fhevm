@@ -2001,26 +2001,6 @@ interface ILayerZeroEndpointV2 {
 pub mod ILayerZeroEndpointV2 {
     use super::*;
     use alloy::sol_types as alloy_sol_types;
-    /// The creation / init bytecode of the contract.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
-    /// The runtime bytecode of the contract, as deployed on the network.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
@@ -5900,13 +5880,26 @@ function burn(address _oapp, uint32 _srcEid, bytes32 _sender, uint64 _nonce, byt
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -6077,13 +6070,26 @@ function clear(address _oapp, Origin memory _origin, bytes32 _guid, bytes memory
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -6261,16 +6267,29 @@ function composeQueue(address _from, address _to, bytes32 _guid, uint16 _index) 
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: composeQueueReturn = r.into();
                         r.messageHash
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -6417,16 +6436,29 @@ function defaultReceiveLibrary(uint32 _eid) external view returns (address);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: defaultReceiveLibraryReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -6596,13 +6628,26 @@ function defaultReceiveLibraryTimeout(uint32 _eid) external view returns (addres
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -6749,16 +6794,29 @@ function defaultSendLibrary(uint32 _eid) external view returns (address);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: defaultSendLibraryReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -6894,16 +6952,29 @@ function eid() external view returns (uint32);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: eidReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -7081,16 +7152,29 @@ function getConfig(address _oapp, address _lib, uint32 _eid, uint32 _configType)
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getConfigReturn = r.into();
                         r.config
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -7269,13 +7353,26 @@ function getReceiveLibrary(address _receiver, uint32 _eid) external view returns
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -7423,16 +7520,29 @@ function getRegisteredLibraries() external view returns (address[] memory);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getRegisteredLibrariesReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -7588,13 +7698,26 @@ function getSendContext() external view returns (uint32 dstEid, address sender);
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -7753,16 +7876,29 @@ function getSendLibrary(address _sender, uint32 _eid) external view returns (add
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getSendLibraryReturn = r.into();
                         r.lib
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -7931,16 +8067,29 @@ function inboundNonce(address _receiver, uint32 _srcEid, bytes32 _sender) extern
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: inboundNonceReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -8122,16 +8271,29 @@ function inboundPayloadHash(address _receiver, uint32 _srcEid, bytes32 _sender, 
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: inboundPayloadHashReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -8283,16 +8445,29 @@ function initializable(Origin memory _origin, address _receiver) external view r
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: initializableReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -8453,16 +8628,29 @@ function isDefaultSendLibrary(address _sender, uint32 _eid) external view return
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: isDefaultSendLibraryReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -8609,16 +8797,29 @@ function isRegisteredLibrary(address _lib) external view returns (bool);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: isRegisteredLibraryReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -8758,16 +8959,29 @@ function isSendingMessage() external view returns (bool);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: isSendingMessageReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -8912,16 +9126,29 @@ function isSupportedEid(uint32 _eid) external view returns (bool);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: isSupportedEidReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -9094,16 +9321,29 @@ function isValidReceiveLibrary(address _receiver, uint32 _eid, address _lib) ext
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: isValidReceiveLibraryReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -9276,16 +9516,29 @@ function lazyInboundNonce(address _receiver, uint32 _srcEid, bytes32 _sender) ex
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: lazyInboundNonceReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -9483,13 +9736,26 @@ function lzCompose(address _from, address _to, bytes32 _guid, uint16 _index, byt
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -9675,13 +9941,26 @@ function lzReceive(Origin memory _origin, address _receiver, bytes32 _guid, byte
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -9817,16 +10096,29 @@ function lzToken() external view returns (address);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: lzTokenReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -9962,16 +10254,29 @@ function nativeToken() external view returns (address);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: nativeTokenReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -10140,16 +10445,29 @@ function nextGuid(address _sender, uint32 _dstEid, bytes32 _receiver) external v
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: nextGuidReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -10337,13 +10655,26 @@ function nilify(address _oapp, uint32 _srcEid, bytes32 _sender, uint64 _nonce, b
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -10512,16 +10843,29 @@ function outboundNonce(address _sender, uint32 _dstEid, bytes32 _receiver) exter
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: outboundNonceReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -10676,16 +11020,29 @@ function quote(MessagingParams memory _params, address _sender) external view re
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: quoteReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -10869,13 +11226,26 @@ function receiveLibraryTimeout(address _receiver, uint32 _eid) external view ret
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -11015,13 +11385,26 @@ function registerLibrary(address _lib) external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -11176,16 +11559,29 @@ function send(MessagingParams memory _params, address _refundAddress) external p
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: sendReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -11358,13 +11754,26 @@ function sendCompose(address _to, bytes32 _guid, uint16 _index, bytes memory _me
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -11532,13 +11941,26 @@ function setConfig(address _oapp, address _lib, SetConfigParam[] memory _params)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -11708,13 +12130,26 @@ function setDefaultReceiveLibrary(uint32 _eid, address _newLib, uint256 _gracePe
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -11884,13 +12319,26 @@ function setDefaultReceiveLibraryTimeout(uint32 _eid, address _lib, uint256 _exp
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -12048,13 +12496,26 @@ function setDefaultSendLibrary(uint32 _eid, address _newLib) external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -12192,13 +12653,26 @@ function setDelegate(address _delegate) external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -12336,13 +12810,26 @@ function setLzToken(address _lzToken) external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -12519,13 +13006,26 @@ function setReceiveLibrary(address _oapp, uint32 _eid, address _newLib, uint256 
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -12704,13 +13204,26 @@ function setReceiveLibraryTimeout(address _oapp, uint32 _eid, address _lib, uint
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -12876,13 +13389,26 @@ function setSendLibrary(address _oapp, uint32 _eid, address _newLib) external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -13055,13 +13581,26 @@ function skip(address _oapp, uint32 _srcEid, bytes32 _sender, uint64 _nonce) ext
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -13213,16 +13752,29 @@ function verifiable(Origin memory _origin, address _receiver) external view retu
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: verifiableReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -13384,20 +13936,33 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
     ///Container for all the [`ILayerZeroEndpointV2`](self) function calls.
     #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive()]
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum ILayerZeroEndpointV2Calls {
         #[allow(missing_docs)]
         burn(burnCall),
@@ -13800,14 +14365,32 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::default(),
+            )
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_with_config(
+            selector: [u8; 4],
+            data: &[u8],
+            config: alloy_sol_types::abi::AbiDecoderConfig,
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
+                alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls>] = &[
                 {
                     fn lzReceive(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <lzReceiveCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <lzReceiveCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(ILayerZeroEndpointV2Calls::lzReceive)
                     }
                     lzReceive
@@ -13815,9 +14398,11 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn getSendContext(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <getSendContextCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getSendContextCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ILayerZeroEndpointV2Calls::getSendContext)
                     }
@@ -13826,9 +14411,11 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn setReceiveLibraryTimeout(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <setReceiveLibraryTimeoutCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <setReceiveLibraryTimeoutCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ILayerZeroEndpointV2Calls::setReceiveLibraryTimeout)
                     }
@@ -13837,8 +14424,12 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn send(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <sendCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <sendCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(ILayerZeroEndpointV2Calls::send)
                     }
                     send
@@ -13846,8 +14437,12 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn clear(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <clearCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <clearCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(ILayerZeroEndpointV2Calls::clear)
                     }
                     clear
@@ -13855,8 +14450,12 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn getConfig(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <getConfigCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <getConfigCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(ILayerZeroEndpointV2Calls::getConfig)
                     }
                     getConfig
@@ -13864,8 +14463,12 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn nilify(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <nilifyCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <nilifyCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(ILayerZeroEndpointV2Calls::nilify)
                     }
                     nilify
@@ -13873,9 +14476,11 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn composeQueue(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <composeQueueCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <composeQueueCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ILayerZeroEndpointV2Calls::composeQueue)
                     }
@@ -13884,9 +14489,11 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn getReceiveLibrary(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <getReceiveLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getReceiveLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ILayerZeroEndpointV2Calls::getReceiveLibrary)
                     }
@@ -13895,8 +14502,12 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn burn(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <burnCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <burnCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(ILayerZeroEndpointV2Calls::burn)
                     }
                     burn
@@ -13904,8 +14515,12 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn eid(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <eidCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <eidCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(ILayerZeroEndpointV2Calls::eid)
                     }
                     eid
@@ -13913,9 +14528,11 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn lazyInboundNonce(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <lazyInboundNonceCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <lazyInboundNonceCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ILayerZeroEndpointV2Calls::lazyInboundNonce)
                     }
@@ -13924,9 +14541,11 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn isSupportedEid(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <isSupportedEidCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <isSupportedEidCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ILayerZeroEndpointV2Calls::isSupportedEid)
                     }
@@ -13935,9 +14554,11 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn setReceiveLibrary(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <setReceiveLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <setReceiveLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ILayerZeroEndpointV2Calls::setReceiveLibrary)
                     }
@@ -13946,8 +14567,12 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn setConfig(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <setConfigCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <setConfigCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(ILayerZeroEndpointV2Calls::setConfig)
                     }
                     setConfig
@@ -13955,9 +14580,11 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn defaultReceiveLibraryTimeout(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <defaultReceiveLibraryTimeoutCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <defaultReceiveLibraryTimeoutCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ILayerZeroEndpointV2Calls::defaultReceiveLibraryTimeout)
                     }
@@ -13966,9 +14593,11 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn defaultReceiveLibrary(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <defaultReceiveLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <defaultReceiveLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ILayerZeroEndpointV2Calls::defaultReceiveLibrary)
                     }
@@ -13977,9 +14606,11 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn isSendingMessage(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <isSendingMessageCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <isSendingMessageCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ILayerZeroEndpointV2Calls::isSendingMessage)
                     }
@@ -13988,9 +14619,11 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn sendCompose(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <sendComposeCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <sendComposeCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ILayerZeroEndpointV2Calls::sendCompose)
                     }
@@ -13999,9 +14632,11 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn initializable(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <initializableCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <initializableCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ILayerZeroEndpointV2Calls::initializable)
                     }
@@ -14010,9 +14645,11 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn getRegisteredLibraries(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <getRegisteredLibrariesCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getRegisteredLibrariesCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ILayerZeroEndpointV2Calls::getRegisteredLibraries)
                     }
@@ -14021,8 +14658,12 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn lzCompose(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <lzComposeCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <lzComposeCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(ILayerZeroEndpointV2Calls::lzCompose)
                     }
                     lzCompose
@@ -14030,9 +14671,11 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn setSendLibrary(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <setSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <setSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ILayerZeroEndpointV2Calls::setSendLibrary)
                     }
@@ -14041,9 +14684,11 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn outboundNonce(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <outboundNonceCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <outboundNonceCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ILayerZeroEndpointV2Calls::outboundNonce)
                     }
@@ -14052,9 +14697,11 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn isValidReceiveLibrary(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <isValidReceiveLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <isValidReceiveLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ILayerZeroEndpointV2Calls::isValidReceiveLibrary)
                     }
@@ -14063,9 +14710,11 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn inboundNonce(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <inboundNonceCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <inboundNonceCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ILayerZeroEndpointV2Calls::inboundNonce)
                     }
@@ -14074,9 +14723,11 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn setDefaultReceiveLibrary(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <setDefaultReceiveLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <setDefaultReceiveLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ILayerZeroEndpointV2Calls::setDefaultReceiveLibrary)
                     }
@@ -14085,8 +14736,12 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn verify(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <verifyCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <verifyCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(ILayerZeroEndpointV2Calls::verify)
                     }
                     verify
@@ -14094,8 +14749,12 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn nextGuid(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <nextGuidCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <nextGuidCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(ILayerZeroEndpointV2Calls::nextGuid)
                     }
                     nextGuid
@@ -14103,9 +14762,11 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn setDefaultSendLibrary(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <setDefaultSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <setDefaultSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ILayerZeroEndpointV2Calls::setDefaultSendLibrary)
                     }
@@ -14114,9 +14775,11 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn getSendLibrary(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <getSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ILayerZeroEndpointV2Calls::getSendLibrary)
                     }
@@ -14125,9 +14788,11 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn setLzToken(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <setLzTokenCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <setLzTokenCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ILayerZeroEndpointV2Calls::setLzToken)
                     }
@@ -14136,9 +14801,11 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn verifiable(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <verifiableCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <verifiableCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ILayerZeroEndpointV2Calls::verifiable)
                     }
@@ -14147,9 +14814,11 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn inboundPayloadHash(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <inboundPayloadHashCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <inboundPayloadHashCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ILayerZeroEndpointV2Calls::inboundPayloadHash)
                     }
@@ -14158,9 +14827,11 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn setDelegate(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <setDelegateCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <setDelegateCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ILayerZeroEndpointV2Calls::setDelegate)
                     }
@@ -14169,9 +14840,11 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn setDefaultReceiveLibraryTimeout(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <setDefaultReceiveLibraryTimeoutCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <setDefaultReceiveLibraryTimeoutCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(
                                 ILayerZeroEndpointV2Calls::setDefaultReceiveLibraryTimeout,
@@ -14182,8 +14855,12 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn skip(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <skipCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <skipCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(ILayerZeroEndpointV2Calls::skip)
                     }
                     skip
@@ -14191,9 +14868,11 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn isRegisteredLibrary(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <isRegisteredLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <isRegisteredLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ILayerZeroEndpointV2Calls::isRegisteredLibrary)
                     }
@@ -14202,9 +14881,11 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn isDefaultSendLibrary(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <isDefaultSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <isDefaultSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ILayerZeroEndpointV2Calls::isDefaultSendLibrary)
                     }
@@ -14213,8 +14894,12 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn quote(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <quoteCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <quoteCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(ILayerZeroEndpointV2Calls::quote)
                     }
                     quote
@@ -14222,9 +14907,11 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn nativeToken(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <nativeTokenCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <nativeTokenCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ILayerZeroEndpointV2Calls::nativeToken)
                     }
@@ -14233,8 +14920,12 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn lzToken(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <lzTokenCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <lzTokenCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(ILayerZeroEndpointV2Calls::lzToken)
                     }
                     lzToken
@@ -14242,9 +14933,11 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn registerLibrary(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <registerLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <registerLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ILayerZeroEndpointV2Calls::registerLibrary)
                     }
@@ -14253,9 +14946,11 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn receiveLibraryTimeout(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <receiveLibraryTimeoutCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <receiveLibraryTimeoutCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ILayerZeroEndpointV2Calls::receiveLibraryTimeout)
                     }
@@ -14264,9 +14959,11 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                 {
                     fn defaultSendLibrary(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <defaultSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <defaultSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(ILayerZeroEndpointV2Calls::defaultSendLibrary)
                     }
@@ -14281,7 +14978,7 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data)
+            DECODE_SHIMS[idx](data, config)
         }
         #[inline]
         #[allow(non_snake_case)]
@@ -14289,516 +14986,11 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_VALIDATE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls>] = &[
-                {
-                    fn lzReceive(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <lzReceiveCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::lzReceive)
-                    }
-                    lzReceive
-                },
-                {
-                    fn getSendContext(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <getSendContextCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::getSendContext)
-                    }
-                    getSendContext
-                },
-                {
-                    fn setReceiveLibraryTimeout(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <setReceiveLibraryTimeoutCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::setReceiveLibraryTimeout)
-                    }
-                    setReceiveLibraryTimeout
-                },
-                {
-                    fn send(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <sendCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::send)
-                    }
-                    send
-                },
-                {
-                    fn clear(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <clearCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::clear)
-                    }
-                    clear
-                },
-                {
-                    fn getConfig(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <getConfigCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::getConfig)
-                    }
-                    getConfig
-                },
-                {
-                    fn nilify(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <nilifyCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::nilify)
-                    }
-                    nilify
-                },
-                {
-                    fn composeQueue(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <composeQueueCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::composeQueue)
-                    }
-                    composeQueue
-                },
-                {
-                    fn getReceiveLibrary(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <getReceiveLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::getReceiveLibrary)
-                    }
-                    getReceiveLibrary
-                },
-                {
-                    fn burn(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <burnCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::burn)
-                    }
-                    burn
-                },
-                {
-                    fn eid(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <eidCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::eid)
-                    }
-                    eid
-                },
-                {
-                    fn lazyInboundNonce(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <lazyInboundNonceCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::lazyInboundNonce)
-                    }
-                    lazyInboundNonce
-                },
-                {
-                    fn isSupportedEid(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <isSupportedEidCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::isSupportedEid)
-                    }
-                    isSupportedEid
-                },
-                {
-                    fn setReceiveLibrary(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <setReceiveLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::setReceiveLibrary)
-                    }
-                    setReceiveLibrary
-                },
-                {
-                    fn setConfig(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <setConfigCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::setConfig)
-                    }
-                    setConfig
-                },
-                {
-                    fn defaultReceiveLibraryTimeout(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <defaultReceiveLibraryTimeoutCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::defaultReceiveLibraryTimeout)
-                    }
-                    defaultReceiveLibraryTimeout
-                },
-                {
-                    fn defaultReceiveLibrary(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <defaultReceiveLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::defaultReceiveLibrary)
-                    }
-                    defaultReceiveLibrary
-                },
-                {
-                    fn isSendingMessage(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <isSendingMessageCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::isSendingMessage)
-                    }
-                    isSendingMessage
-                },
-                {
-                    fn sendCompose(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <sendComposeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::sendCompose)
-                    }
-                    sendCompose
-                },
-                {
-                    fn initializable(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <initializableCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::initializable)
-                    }
-                    initializable
-                },
-                {
-                    fn getRegisteredLibraries(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <getRegisteredLibrariesCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::getRegisteredLibraries)
-                    }
-                    getRegisteredLibraries
-                },
-                {
-                    fn lzCompose(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <lzComposeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::lzCompose)
-                    }
-                    lzCompose
-                },
-                {
-                    fn setSendLibrary(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <setSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::setSendLibrary)
-                    }
-                    setSendLibrary
-                },
-                {
-                    fn outboundNonce(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <outboundNonceCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::outboundNonce)
-                    }
-                    outboundNonce
-                },
-                {
-                    fn isValidReceiveLibrary(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <isValidReceiveLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::isValidReceiveLibrary)
-                    }
-                    isValidReceiveLibrary
-                },
-                {
-                    fn inboundNonce(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <inboundNonceCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::inboundNonce)
-                    }
-                    inboundNonce
-                },
-                {
-                    fn setDefaultReceiveLibrary(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <setDefaultReceiveLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::setDefaultReceiveLibrary)
-                    }
-                    setDefaultReceiveLibrary
-                },
-                {
-                    fn verify(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <verifyCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::verify)
-                    }
-                    verify
-                },
-                {
-                    fn nextGuid(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <nextGuidCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::nextGuid)
-                    }
-                    nextGuid
-                },
-                {
-                    fn setDefaultSendLibrary(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <setDefaultSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::setDefaultSendLibrary)
-                    }
-                    setDefaultSendLibrary
-                },
-                {
-                    fn getSendLibrary(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <getSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::getSendLibrary)
-                    }
-                    getSendLibrary
-                },
-                {
-                    fn setLzToken(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <setLzTokenCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::setLzToken)
-                    }
-                    setLzToken
-                },
-                {
-                    fn verifiable(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <verifiableCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::verifiable)
-                    }
-                    verifiable
-                },
-                {
-                    fn inboundPayloadHash(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <inboundPayloadHashCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::inboundPayloadHash)
-                    }
-                    inboundPayloadHash
-                },
-                {
-                    fn setDelegate(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <setDelegateCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::setDelegate)
-                    }
-                    setDelegate
-                },
-                {
-                    fn setDefaultReceiveLibraryTimeout(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <setDefaultReceiveLibraryTimeoutCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                ILayerZeroEndpointV2Calls::setDefaultReceiveLibraryTimeout,
-                            )
-                    }
-                    setDefaultReceiveLibraryTimeout
-                },
-                {
-                    fn skip(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <skipCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::skip)
-                    }
-                    skip
-                },
-                {
-                    fn isRegisteredLibrary(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <isRegisteredLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::isRegisteredLibrary)
-                    }
-                    isRegisteredLibrary
-                },
-                {
-                    fn isDefaultSendLibrary(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <isDefaultSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::isDefaultSendLibrary)
-                    }
-                    isDefaultSendLibrary
-                },
-                {
-                    fn quote(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <quoteCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::quote)
-                    }
-                    quote
-                },
-                {
-                    fn nativeToken(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <nativeTokenCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::nativeToken)
-                    }
-                    nativeToken
-                },
-                {
-                    fn lzToken(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <lzTokenCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::lzToken)
-                    }
-                    lzToken
-                },
-                {
-                    fn registerLibrary(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <registerLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::registerLibrary)
-                    }
-                    registerLibrary
-                },
-                {
-                    fn receiveLibraryTimeout(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <receiveLibraryTimeoutCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::receiveLibraryTimeout)
-                    }
-                    receiveLibraryTimeout
-                },
-                {
-                    fn defaultSendLibrary(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ILayerZeroEndpointV2Calls> {
-                        <defaultSendLibraryCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ILayerZeroEndpointV2Calls::defaultSendLibrary)
-                    }
-                    defaultSendLibrary
-                },
-            ];
-            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
-            };
-            DECODE_VALIDATE_SHIMS[idx](data)
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+            )
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -15755,6 +15947,354 @@ function verify(Origin memory _origin, address _receiver, bytes32 _payloadHash) 
             }
         }
     }
+    #[automatically_derived]
+    impl ILayerZeroEndpointV2Events {
+        /**Creates a [`ComposeDelivered`] event.
+
+```solidity
+event ComposeDelivered(address,address,bytes32,uint16)
+```*/
+        #[inline]
+        pub fn compose_delivered(
+            from: alloy::sol_types::private::Address,
+            to: alloy::sol_types::private::Address,
+            guid: alloy::sol_types::private::FixedBytes<32>,
+            index: u16,
+        ) -> Self {
+            Self::ComposeDelivered(ComposeDelivered {
+                from: from,
+                to: to,
+                guid: guid,
+                index: index,
+            })
+        }
+        /**Creates a [`ComposeSent`] event.
+
+```solidity
+event ComposeSent(address,address,bytes32,uint16,bytes)
+```*/
+        #[inline]
+        pub fn compose_sent(
+            from: alloy::sol_types::private::Address,
+            to: alloy::sol_types::private::Address,
+            guid: alloy::sol_types::private::FixedBytes<32>,
+            index: u16,
+            message: alloy::sol_types::private::Bytes,
+        ) -> Self {
+            Self::ComposeSent(ComposeSent {
+                from: from,
+                to: to,
+                guid: guid,
+                index: index,
+                message: message,
+            })
+        }
+        /**Creates a [`DefaultReceiveLibrarySet`] event.
+
+```solidity
+event DefaultReceiveLibrarySet(uint32,address)
+```*/
+        #[inline]
+        pub fn default_receive_library_set(
+            eid: u32,
+            new_lib: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::DefaultReceiveLibrarySet(DefaultReceiveLibrarySet {
+                eid: eid,
+                newLib: new_lib,
+            })
+        }
+        /**Creates a [`DefaultReceiveLibraryTimeoutSet`] event.
+
+```solidity
+event DefaultReceiveLibraryTimeoutSet(uint32,address,uint256)
+```*/
+        #[inline]
+        pub fn default_receive_library_timeout_set(
+            eid: u32,
+            old_lib: alloy::sol_types::private::Address,
+            expiry: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::DefaultReceiveLibraryTimeoutSet(DefaultReceiveLibraryTimeoutSet {
+                eid: eid,
+                oldLib: old_lib,
+                expiry: expiry,
+            })
+        }
+        /**Creates a [`DefaultSendLibrarySet`] event.
+
+```solidity
+event DefaultSendLibrarySet(uint32,address)
+```*/
+        #[inline]
+        pub fn default_send_library_set(
+            eid: u32,
+            new_lib: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::DefaultSendLibrarySet(DefaultSendLibrarySet {
+                eid: eid,
+                newLib: new_lib,
+            })
+        }
+        /**Creates a [`DelegateSet`] event.
+
+```solidity
+event DelegateSet(address,address)
+```*/
+        #[inline]
+        pub fn delegate_set(
+            sender: alloy::sol_types::private::Address,
+            delegate: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::DelegateSet(DelegateSet {
+                sender: sender,
+                delegate: delegate,
+            })
+        }
+        /**Creates a [`InboundNonceSkipped`] event.
+
+```solidity
+event InboundNonceSkipped(uint32,bytes32,address,uint64)
+```*/
+        #[inline]
+        pub fn inbound_nonce_skipped(
+            src_eid: u32,
+            sender: alloy::sol_types::private::FixedBytes<32>,
+            receiver: alloy::sol_types::private::Address,
+            nonce: u64,
+        ) -> Self {
+            Self::InboundNonceSkipped(InboundNonceSkipped {
+                srcEid: src_eid,
+                sender: sender,
+                receiver: receiver,
+                nonce: nonce,
+            })
+        }
+        /**Creates a [`LibraryRegistered`] event.
+
+```solidity
+event LibraryRegistered(address)
+```*/
+        #[inline]
+        pub fn library_registered(new_lib: alloy::sol_types::private::Address) -> Self {
+            Self::LibraryRegistered(LibraryRegistered {
+                newLib: new_lib,
+            })
+        }
+        /**Creates a [`LzComposeAlert`] event.
+
+```solidity
+event LzComposeAlert(address,address,address,bytes32,uint16,uint256,uint256,bytes,bytes,bytes)
+```*/
+        #[inline]
+        pub fn lz_compose_alert(
+            from: alloy::sol_types::private::Address,
+            to: alloy::sol_types::private::Address,
+            executor: alloy::sol_types::private::Address,
+            guid: alloy::sol_types::private::FixedBytes<32>,
+            index: u16,
+            gas: alloy::sol_types::private::primitives::aliases::U256,
+            value: alloy::sol_types::private::primitives::aliases::U256,
+            message: alloy::sol_types::private::Bytes,
+            extra_data: alloy::sol_types::private::Bytes,
+            reason: alloy::sol_types::private::Bytes,
+        ) -> Self {
+            Self::LzComposeAlert(LzComposeAlert {
+                from: from,
+                to: to,
+                executor: executor,
+                guid: guid,
+                index: index,
+                gas: gas,
+                value: value,
+                message: message,
+                extraData: extra_data,
+                reason: reason,
+            })
+        }
+        /**Creates a [`LzReceiveAlert`] event.
+
+```solidity
+event LzReceiveAlert(address,address,(uint32,bytes32,uint64),bytes32,uint256,uint256,bytes,bytes,bytes)
+```*/
+        #[inline]
+        pub fn lz_receive_alert(
+            receiver: alloy::sol_types::private::Address,
+            executor: alloy::sol_types::private::Address,
+            origin: <Origin as alloy::sol_types::SolType>::RustType,
+            guid: alloy::sol_types::private::FixedBytes<32>,
+            gas: alloy::sol_types::private::primitives::aliases::U256,
+            value: alloy::sol_types::private::primitives::aliases::U256,
+            message: alloy::sol_types::private::Bytes,
+            extra_data: alloy::sol_types::private::Bytes,
+            reason: alloy::sol_types::private::Bytes,
+        ) -> Self {
+            Self::LzReceiveAlert(LzReceiveAlert {
+                receiver: receiver,
+                executor: executor,
+                origin: origin,
+                guid: guid,
+                gas: gas,
+                value: value,
+                message: message,
+                extraData: extra_data,
+                reason: reason,
+            })
+        }
+        /**Creates a [`LzTokenSet`] event.
+
+```solidity
+event LzTokenSet(address)
+```*/
+        #[inline]
+        pub fn lz_token_set(token: alloy::sol_types::private::Address) -> Self {
+            Self::LzTokenSet(LzTokenSet { token: token })
+        }
+        /**Creates a [`PacketBurnt`] event.
+
+```solidity
+event PacketBurnt(uint32,bytes32,address,uint64,bytes32)
+```*/
+        #[inline]
+        pub fn packet_burnt(
+            src_eid: u32,
+            sender: alloy::sol_types::private::FixedBytes<32>,
+            receiver: alloy::sol_types::private::Address,
+            nonce: u64,
+            payload_hash: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::PacketBurnt(PacketBurnt {
+                srcEid: src_eid,
+                sender: sender,
+                receiver: receiver,
+                nonce: nonce,
+                payloadHash: payload_hash,
+            })
+        }
+        /**Creates a [`PacketDelivered`] event.
+
+```solidity
+event PacketDelivered((uint32,bytes32,uint64),address)
+```*/
+        #[inline]
+        pub fn packet_delivered(
+            origin: <Origin as alloy::sol_types::SolType>::RustType,
+            receiver: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::PacketDelivered(PacketDelivered {
+                origin: origin,
+                receiver: receiver,
+            })
+        }
+        /**Creates a [`PacketNilified`] event.
+
+```solidity
+event PacketNilified(uint32,bytes32,address,uint64,bytes32)
+```*/
+        #[inline]
+        pub fn packet_nilified(
+            src_eid: u32,
+            sender: alloy::sol_types::private::FixedBytes<32>,
+            receiver: alloy::sol_types::private::Address,
+            nonce: u64,
+            payload_hash: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::PacketNilified(PacketNilified {
+                srcEid: src_eid,
+                sender: sender,
+                receiver: receiver,
+                nonce: nonce,
+                payloadHash: payload_hash,
+            })
+        }
+        /**Creates a [`PacketSent`] event.
+
+```solidity
+event PacketSent(bytes,bytes,address)
+```*/
+        #[inline]
+        pub fn packet_sent(
+            encoded_payload: alloy::sol_types::private::Bytes,
+            options: alloy::sol_types::private::Bytes,
+            send_library: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::PacketSent(PacketSent {
+                encodedPayload: encoded_payload,
+                options: options,
+                sendLibrary: send_library,
+            })
+        }
+        /**Creates a [`PacketVerified`] event.
+
+```solidity
+event PacketVerified((uint32,bytes32,uint64),address,bytes32)
+```*/
+        #[inline]
+        pub fn packet_verified(
+            origin: <Origin as alloy::sol_types::SolType>::RustType,
+            receiver: alloy::sol_types::private::Address,
+            payload_hash: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::PacketVerified(PacketVerified {
+                origin: origin,
+                receiver: receiver,
+                payloadHash: payload_hash,
+            })
+        }
+        /**Creates a [`ReceiveLibrarySet`] event.
+
+```solidity
+event ReceiveLibrarySet(address,uint32,address)
+```*/
+        #[inline]
+        pub fn receive_library_set(
+            receiver: alloy::sol_types::private::Address,
+            eid: u32,
+            new_lib: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::ReceiveLibrarySet(ReceiveLibrarySet {
+                receiver: receiver,
+                eid: eid,
+                newLib: new_lib,
+            })
+        }
+        /**Creates a [`ReceiveLibraryTimeoutSet`] event.
+
+```solidity
+event ReceiveLibraryTimeoutSet(address,uint32,address,uint256)
+```*/
+        #[inline]
+        pub fn receive_library_timeout_set(
+            receiver: alloy::sol_types::private::Address,
+            eid: u32,
+            old_lib: alloy::sol_types::private::Address,
+            timeout: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::ReceiveLibraryTimeoutSet(ReceiveLibraryTimeoutSet {
+                receiver: receiver,
+                eid: eid,
+                oldLib: old_lib,
+                timeout: timeout,
+            })
+        }
+        /**Creates a [`SendLibrarySet`] event.
+
+```solidity
+event SendLibrarySet(address,uint32,address)
+```*/
+        #[inline]
+        pub fn send_library_set(
+            sender: alloy::sol_types::private::Address,
+            eid: u32,
+            new_lib: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::SendLibrarySet(SendLibrarySet {
+                sender: sender,
+                eid: eid,
+                newLib: new_lib,
+            })
+        }
+    }
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`ILayerZeroEndpointV2`](self) contract instance.
 
@@ -15768,34 +16308,6 @@ See the [wrapper's documentation](`ILayerZeroEndpointV2Instance`) for more detai
         __provider: P,
     ) -> ILayerZeroEndpointV2Instance<P, N> {
         ILayerZeroEndpointV2Instance::<P, N>::new(address, __provider)
-    }
-    /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-    #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
-        __provider: P,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<ILayerZeroEndpointV2Instance<P, N>>,
-    > {
-        ILayerZeroEndpointV2Instance::<P, N>::deploy(__provider)
-    }
-    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-    #[inline]
-    pub fn deploy_builder<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        ILayerZeroEndpointV2Instance::<P, N>::deploy_builder(__provider)
     }
     /**A [`ILayerZeroEndpointV2`](self) instance.
 
@@ -15839,31 +16351,6 @@ See the [wrapper's documentation](`ILayerZeroEndpointV2Instance`) for more detai
                 provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
-        }
-        /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-        #[inline]
-        pub async fn deploy(
-            __provider: P,
-        ) -> alloy_contract::Result<ILayerZeroEndpointV2Instance<P, N>> {
-            let call_builder = Self::deploy_builder(__provider);
-            let contract_address = call_builder.deploy().await?;
-            Ok(Self::new(contract_address, call_builder.provider))
-        }
-        /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-        #[inline]
-        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-            alloy_contract::RawCallBuilder::new_raw_deploy(
-                __provider,
-                ::core::clone::Clone::clone(&BYTECODE),
-            )
         }
         /// Returns a reference to the address.
         #[inline]

@@ -69,26 +69,6 @@ interface IERC1967 {
 pub mod IERC1967 {
     use super::*;
     use alloy::sol_types as alloy_sol_types;
-    /// The creation / init bytecode of the contract.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
-    /// The runtime bytecode of the contract, as deployed on the network.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `AdminChanged(address,address)` and selector `0x7e644d79422f17c01e4894b5f4f588d331ebfa28653d42ae832dc59e38c9798f`.
@@ -558,6 +538,44 @@ event Upgraded(address indexed implementation);
             }
         }
     }
+    #[automatically_derived]
+    impl IERC1967Events {
+        /**Creates a [`AdminChanged`] event.
+
+```solidity
+event AdminChanged(address,address)
+```*/
+        #[inline]
+        pub fn admin_changed(
+            previous_admin: alloy::sol_types::private::Address,
+            new_admin: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::AdminChanged(AdminChanged {
+                previousAdmin: previous_admin,
+                newAdmin: new_admin,
+            })
+        }
+        /**Creates a [`BeaconUpgraded`] event.
+
+```solidity
+event BeaconUpgraded(address)
+```*/
+        #[inline]
+        pub fn beacon_upgraded(beacon: alloy::sol_types::private::Address) -> Self {
+            Self::BeaconUpgraded(BeaconUpgraded { beacon: beacon })
+        }
+        /**Creates a [`Upgraded`] event.
+
+```solidity
+event Upgraded(address)
+```*/
+        #[inline]
+        pub fn upgraded(implementation: alloy::sol_types::private::Address) -> Self {
+            Self::Upgraded(Upgraded {
+                implementation: implementation,
+            })
+        }
+    }
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`IERC1967`](self) contract instance.
 
@@ -571,34 +589,6 @@ See the [wrapper's documentation](`IERC1967Instance`) for more details.*/
         __provider: P,
     ) -> IERC1967Instance<P, N> {
         IERC1967Instance::<P, N>::new(address, __provider)
-    }
-    /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-    #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
-        __provider: P,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<IERC1967Instance<P, N>>,
-    > {
-        IERC1967Instance::<P, N>::deploy(__provider)
-    }
-    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-    #[inline]
-    pub fn deploy_builder<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        IERC1967Instance::<P, N>::deploy_builder(__provider)
     }
     /**A [`IERC1967`](self) instance.
 
@@ -642,31 +632,6 @@ See the [wrapper's documentation](`IERC1967Instance`) for more details.*/
                 provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
-        }
-        /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-        #[inline]
-        pub async fn deploy(
-            __provider: P,
-        ) -> alloy_contract::Result<IERC1967Instance<P, N>> {
-            let call_builder = Self::deploy_builder(__provider);
-            let contract_address = call_builder.deploy().await?;
-            Ok(Self::new(contract_address, call_builder.provider))
-        }
-        /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-        #[inline]
-        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-            alloy_contract::RawCallBuilder::new_raw_deploy(
-                __provider,
-                ::core::clone::Clone::clone(&BYTECODE),
-            )
         }
         /// Returns a reference to the address.
         #[inline]

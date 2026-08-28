@@ -130,26 +130,6 @@ interface IERC1155Errors {
 pub mod IERC1155Errors {
     use super::*;
     use alloy::sol_types as alloy_sol_types;
-    /// The creation / init bytecode of the contract.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
-    /// The runtime bytecode of the contract, as deployed on the network.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ERC1155InsufficientBalance(address,uint256,uint256,uint256)` and selector `0x03dee4c5`.
@@ -256,10 +236,10 @@ error ERC1155InsufficientBalance(address sender, uint256 balance, uint256 needed
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -337,10 +317,10 @@ error ERC1155InvalidApprover(address approver);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -434,10 +414,10 @@ error ERC1155InvalidArrayLength(uint256 idsLength, uint256 valuesLength);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -515,10 +495,10 @@ error ERC1155InvalidOperator(address operator);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -596,10 +576,10 @@ error ERC1155InvalidReceiver(address receiver);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -677,10 +657,10 @@ error ERC1155InvalidSender(address sender);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -774,10 +754,10 @@ error ERC1155MissingApprovalForAll(address operator, address owner);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -903,15 +883,31 @@ error ERC1155MissingApprovalForAll(address operator, address owner);
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::default(),
+            )
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_with_config(
+            selector: [u8; 4],
+            data: &[u8],
+            config: alloy_sol_types::abi::AbiDecoderConfig,
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
+                alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<IERC1155ErrorsErrors>] = &[
                 {
                     fn ERC1155InvalidSender(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IERC1155ErrorsErrors> {
-                        <ERC1155InvalidSender as alloy_sol_types::SolError>::abi_decode_raw(
+                        <ERC1155InvalidSender as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IERC1155ErrorsErrors::ERC1155InvalidSender)
                     }
@@ -920,9 +916,11 @@ error ERC1155MissingApprovalForAll(address operator, address owner);
                 {
                     fn ERC1155InsufficientBalance(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IERC1155ErrorsErrors> {
-                        <ERC1155InsufficientBalance as alloy_sol_types::SolError>::abi_decode_raw(
+                        <ERC1155InsufficientBalance as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IERC1155ErrorsErrors::ERC1155InsufficientBalance)
                     }
@@ -931,9 +929,11 @@ error ERC1155MissingApprovalForAll(address operator, address owner);
                 {
                     fn ERC1155InvalidApprover(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IERC1155ErrorsErrors> {
-                        <ERC1155InvalidApprover as alloy_sol_types::SolError>::abi_decode_raw(
+                        <ERC1155InvalidApprover as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IERC1155ErrorsErrors::ERC1155InvalidApprover)
                     }
@@ -942,9 +942,11 @@ error ERC1155MissingApprovalForAll(address operator, address owner);
                 {
                     fn ERC1155InvalidReceiver(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IERC1155ErrorsErrors> {
-                        <ERC1155InvalidReceiver as alloy_sol_types::SolError>::abi_decode_raw(
+                        <ERC1155InvalidReceiver as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IERC1155ErrorsErrors::ERC1155InvalidReceiver)
                     }
@@ -953,9 +955,11 @@ error ERC1155MissingApprovalForAll(address operator, address owner);
                 {
                     fn ERC1155InvalidArrayLength(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IERC1155ErrorsErrors> {
-                        <ERC1155InvalidArrayLength as alloy_sol_types::SolError>::abi_decode_raw(
+                        <ERC1155InvalidArrayLength as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IERC1155ErrorsErrors::ERC1155InvalidArrayLength)
                     }
@@ -964,9 +968,11 @@ error ERC1155MissingApprovalForAll(address operator, address owner);
                 {
                     fn ERC1155InvalidOperator(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IERC1155ErrorsErrors> {
-                        <ERC1155InvalidOperator as alloy_sol_types::SolError>::abi_decode_raw(
+                        <ERC1155InvalidOperator as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IERC1155ErrorsErrors::ERC1155InvalidOperator)
                     }
@@ -975,9 +981,11 @@ error ERC1155MissingApprovalForAll(address operator, address owner);
                 {
                     fn ERC1155MissingApprovalForAll(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IERC1155ErrorsErrors> {
-                        <ERC1155MissingApprovalForAll as alloy_sol_types::SolError>::abi_decode_raw(
+                        <ERC1155MissingApprovalForAll as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IERC1155ErrorsErrors::ERC1155MissingApprovalForAll)
                     }
@@ -992,7 +1000,7 @@ error ERC1155MissingApprovalForAll(address operator, address owner);
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data)
+            DECODE_SHIMS[idx](data, config)
         }
         #[inline]
         #[allow(non_snake_case)]
@@ -1000,96 +1008,11 @@ error ERC1155MissingApprovalForAll(address operator, address owner);
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_VALIDATE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<IERC1155ErrorsErrors>] = &[
-                {
-                    fn ERC1155InvalidSender(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IERC1155ErrorsErrors> {
-                        <ERC1155InvalidSender as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IERC1155ErrorsErrors::ERC1155InvalidSender)
-                    }
-                    ERC1155InvalidSender
-                },
-                {
-                    fn ERC1155InsufficientBalance(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IERC1155ErrorsErrors> {
-                        <ERC1155InsufficientBalance as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IERC1155ErrorsErrors::ERC1155InsufficientBalance)
-                    }
-                    ERC1155InsufficientBalance
-                },
-                {
-                    fn ERC1155InvalidApprover(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IERC1155ErrorsErrors> {
-                        <ERC1155InvalidApprover as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IERC1155ErrorsErrors::ERC1155InvalidApprover)
-                    }
-                    ERC1155InvalidApprover
-                },
-                {
-                    fn ERC1155InvalidReceiver(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IERC1155ErrorsErrors> {
-                        <ERC1155InvalidReceiver as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IERC1155ErrorsErrors::ERC1155InvalidReceiver)
-                    }
-                    ERC1155InvalidReceiver
-                },
-                {
-                    fn ERC1155InvalidArrayLength(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IERC1155ErrorsErrors> {
-                        <ERC1155InvalidArrayLength as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IERC1155ErrorsErrors::ERC1155InvalidArrayLength)
-                    }
-                    ERC1155InvalidArrayLength
-                },
-                {
-                    fn ERC1155InvalidOperator(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IERC1155ErrorsErrors> {
-                        <ERC1155InvalidOperator as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IERC1155ErrorsErrors::ERC1155InvalidOperator)
-                    }
-                    ERC1155InvalidOperator
-                },
-                {
-                    fn ERC1155MissingApprovalForAll(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IERC1155ErrorsErrors> {
-                        <ERC1155MissingApprovalForAll as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IERC1155ErrorsErrors::ERC1155MissingApprovalForAll)
-                    }
-                    ERC1155MissingApprovalForAll
-                },
-            ];
-            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
-            };
-            DECODE_VALIDATE_SHIMS[idx](data)
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+            )
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -1179,6 +1102,110 @@ error ERC1155MissingApprovalForAll(address operator, address owner);
             }
         }
     }
+    #[automatically_derived]
+    impl IERC1155ErrorsErrors {
+        /**Creates a [`ERC1155InsufficientBalance`] error.
+
+```solidity
+error ERC1155InsufficientBalance(address,uint256,uint256,uint256)
+```*/
+        #[inline]
+        pub fn erc_1155_insufficient_balance(
+            sender: alloy::sol_types::private::Address,
+            balance: alloy::sol_types::private::primitives::aliases::U256,
+            needed: alloy::sol_types::private::primitives::aliases::U256,
+            token_id: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::ERC1155InsufficientBalance(ERC1155InsufficientBalance {
+                sender: sender,
+                balance: balance,
+                needed: needed,
+                tokenId: token_id,
+            })
+        }
+        /**Creates a [`ERC1155InvalidApprover`] error.
+
+```solidity
+error ERC1155InvalidApprover(address)
+```*/
+        #[inline]
+        pub fn erc_1155_invalid_approver(
+            approver: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::ERC1155InvalidApprover(ERC1155InvalidApprover {
+                approver: approver,
+            })
+        }
+        /**Creates a [`ERC1155InvalidArrayLength`] error.
+
+```solidity
+error ERC1155InvalidArrayLength(uint256,uint256)
+```*/
+        #[inline]
+        pub fn erc_1155_invalid_array_length(
+            ids_length: alloy::sol_types::private::primitives::aliases::U256,
+            values_length: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::ERC1155InvalidArrayLength(ERC1155InvalidArrayLength {
+                idsLength: ids_length,
+                valuesLength: values_length,
+            })
+        }
+        /**Creates a [`ERC1155InvalidOperator`] error.
+
+```solidity
+error ERC1155InvalidOperator(address)
+```*/
+        #[inline]
+        pub fn erc_1155_invalid_operator(
+            operator: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::ERC1155InvalidOperator(ERC1155InvalidOperator {
+                operator: operator,
+            })
+        }
+        /**Creates a [`ERC1155InvalidReceiver`] error.
+
+```solidity
+error ERC1155InvalidReceiver(address)
+```*/
+        #[inline]
+        pub fn erc_1155_invalid_receiver(
+            receiver: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::ERC1155InvalidReceiver(ERC1155InvalidReceiver {
+                receiver: receiver,
+            })
+        }
+        /**Creates a [`ERC1155InvalidSender`] error.
+
+```solidity
+error ERC1155InvalidSender(address)
+```*/
+        #[inline]
+        pub fn erc_1155_invalid_sender(
+            sender: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::ERC1155InvalidSender(ERC1155InvalidSender {
+                sender: sender,
+            })
+        }
+        /**Creates a [`ERC1155MissingApprovalForAll`] error.
+
+```solidity
+error ERC1155MissingApprovalForAll(address,address)
+```*/
+        #[inline]
+        pub fn erc_1155_missing_approval_for_all(
+            operator: alloy::sol_types::private::Address,
+            owner: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::ERC1155MissingApprovalForAll(ERC1155MissingApprovalForAll {
+                operator: operator,
+                owner: owner,
+            })
+        }
+    }
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`IERC1155Errors`](self) contract instance.
 
@@ -1192,34 +1219,6 @@ See the [wrapper's documentation](`IERC1155ErrorsInstance`) for more details.*/
         __provider: P,
     ) -> IERC1155ErrorsInstance<P, N> {
         IERC1155ErrorsInstance::<P, N>::new(address, __provider)
-    }
-    /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-    #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
-        __provider: P,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<IERC1155ErrorsInstance<P, N>>,
-    > {
-        IERC1155ErrorsInstance::<P, N>::deploy(__provider)
-    }
-    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-    #[inline]
-    pub fn deploy_builder<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        IERC1155ErrorsInstance::<P, N>::deploy_builder(__provider)
     }
     /**A [`IERC1155Errors`](self) instance.
 
@@ -1263,31 +1262,6 @@ See the [wrapper's documentation](`IERC1155ErrorsInstance`) for more details.*/
                 provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
-        }
-        /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-        #[inline]
-        pub async fn deploy(
-            __provider: P,
-        ) -> alloy_contract::Result<IERC1155ErrorsInstance<P, N>> {
-            let call_builder = Self::deploy_builder(__provider);
-            let contract_address = call_builder.deploy().await?;
-            Ok(Self::new(contract_address, call_builder.provider))
-        }
-        /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-        #[inline]
-        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-            alloy_contract::RawCallBuilder::new_raw_deploy(
-                __provider,
-                ::core::clone::Clone::clone(&BYTECODE),
-            )
         }
         /// Returns a reference to the address.
         #[inline]

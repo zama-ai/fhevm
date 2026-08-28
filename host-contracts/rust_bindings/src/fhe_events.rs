@@ -1153,26 +1153,6 @@ interface FHEEvents {
 pub mod FHEEvents {
     use super::*;
     use alloy::sol_types as alloy_sol_types;
-    /// The creation / init bytecode of the contract.
-    ///
-    /// ```text
-    ///0x6080604052348015600e575f80fd5b50600880601a5f395ff3fe60806040525f80fd
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"`\x80`@R4\x80\x15`\x0EW_\x80\xFD[P`\x08\x80`\x1A_9_\xF3\xFE`\x80`@R_\x80\xFD",
-    );
-    /// The runtime bytecode of the contract, as deployed on the network.
-    ///
-    /// ```text
-    ///0x60806040525f80fd
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"`\x80`@R_\x80\xFD",
-    );
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -1217,7 +1197,7 @@ pub mod FHEEvents {
         }
         impl FheType {
             /// The Solidity type name.
-            pub const NAME: &'static str = stringify!(@ name);
+            pub const NAME: &'static str = stringify!(FheType);
             /// Convert from the underlying value type.
             #[inline]
             pub const fn from_underlying(value: u8) -> Self {
@@ -6249,6 +6229,648 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
             }
         }
     }
+    #[automatically_derived]
+    impl FHEEventsEvents {
+        /**Creates a [`Cast`] event.
+
+```solidity
+event Cast(address,bytes32,uint8,bytes32)
+```*/
+        #[inline]
+        pub fn cast(
+            caller: alloy::sol_types::private::Address,
+            ct: alloy::sol_types::private::FixedBytes<32>,
+            to_type: <FheType as alloy::sol_types::SolType>::RustType,
+            result: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::Cast(Cast {
+                caller: caller,
+                ct: ct,
+                toType: to_type,
+                result: result,
+            })
+        }
+        /**Creates a [`FheAdd`] event.
+
+```solidity
+event FheAdd(address,bytes32,bytes32,bytes1,bytes32)
+```*/
+        #[inline]
+        pub fn fhe_add(
+            caller: alloy::sol_types::private::Address,
+            lhs: alloy::sol_types::private::FixedBytes<32>,
+            rhs: alloy::sol_types::private::FixedBytes<32>,
+            scalar_byte: alloy::sol_types::private::FixedBytes<1>,
+            result: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::FheAdd(FheAdd {
+                caller: caller,
+                lhs: lhs,
+                rhs: rhs,
+                scalarByte: scalar_byte,
+                result: result,
+            })
+        }
+        /**Creates a [`FheBitAnd`] event.
+
+```solidity
+event FheBitAnd(address,bytes32,bytes32,bytes1,bytes32)
+```*/
+        #[inline]
+        pub fn fhe_bit_and(
+            caller: alloy::sol_types::private::Address,
+            lhs: alloy::sol_types::private::FixedBytes<32>,
+            rhs: alloy::sol_types::private::FixedBytes<32>,
+            scalar_byte: alloy::sol_types::private::FixedBytes<1>,
+            result: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::FheBitAnd(FheBitAnd {
+                caller: caller,
+                lhs: lhs,
+                rhs: rhs,
+                scalarByte: scalar_byte,
+                result: result,
+            })
+        }
+        /**Creates a [`FheBitOr`] event.
+
+```solidity
+event FheBitOr(address,bytes32,bytes32,bytes1,bytes32)
+```*/
+        #[inline]
+        pub fn fhe_bit_or(
+            caller: alloy::sol_types::private::Address,
+            lhs: alloy::sol_types::private::FixedBytes<32>,
+            rhs: alloy::sol_types::private::FixedBytes<32>,
+            scalar_byte: alloy::sol_types::private::FixedBytes<1>,
+            result: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::FheBitOr(FheBitOr {
+                caller: caller,
+                lhs: lhs,
+                rhs: rhs,
+                scalarByte: scalar_byte,
+                result: result,
+            })
+        }
+        /**Creates a [`FheBitXor`] event.
+
+```solidity
+event FheBitXor(address,bytes32,bytes32,bytes1,bytes32)
+```*/
+        #[inline]
+        pub fn fhe_bit_xor(
+            caller: alloy::sol_types::private::Address,
+            lhs: alloy::sol_types::private::FixedBytes<32>,
+            rhs: alloy::sol_types::private::FixedBytes<32>,
+            scalar_byte: alloy::sol_types::private::FixedBytes<1>,
+            result: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::FheBitXor(FheBitXor {
+                caller: caller,
+                lhs: lhs,
+                rhs: rhs,
+                scalarByte: scalar_byte,
+                result: result,
+            })
+        }
+        /**Creates a [`FheDiv`] event.
+
+```solidity
+event FheDiv(address,bytes32,bytes32,bytes1,bytes32)
+```*/
+        #[inline]
+        pub fn fhe_div(
+            caller: alloy::sol_types::private::Address,
+            lhs: alloy::sol_types::private::FixedBytes<32>,
+            rhs: alloy::sol_types::private::FixedBytes<32>,
+            scalar_byte: alloy::sol_types::private::FixedBytes<1>,
+            result: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::FheDiv(FheDiv {
+                caller: caller,
+                lhs: lhs,
+                rhs: rhs,
+                scalarByte: scalar_byte,
+                result: result,
+            })
+        }
+        /**Creates a [`FheEq`] event.
+
+```solidity
+event FheEq(address,bytes32,bytes32,bytes1,bytes32)
+```*/
+        #[inline]
+        pub fn fhe_eq(
+            caller: alloy::sol_types::private::Address,
+            lhs: alloy::sol_types::private::FixedBytes<32>,
+            rhs: alloy::sol_types::private::FixedBytes<32>,
+            scalar_byte: alloy::sol_types::private::FixedBytes<1>,
+            result: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::FheEq(FheEq {
+                caller: caller,
+                lhs: lhs,
+                rhs: rhs,
+                scalarByte: scalar_byte,
+                result: result,
+            })
+        }
+        /**Creates a [`FheGe`] event.
+
+```solidity
+event FheGe(address,bytes32,bytes32,bytes1,bytes32)
+```*/
+        #[inline]
+        pub fn fhe_ge(
+            caller: alloy::sol_types::private::Address,
+            lhs: alloy::sol_types::private::FixedBytes<32>,
+            rhs: alloy::sol_types::private::FixedBytes<32>,
+            scalar_byte: alloy::sol_types::private::FixedBytes<1>,
+            result: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::FheGe(FheGe {
+                caller: caller,
+                lhs: lhs,
+                rhs: rhs,
+                scalarByte: scalar_byte,
+                result: result,
+            })
+        }
+        /**Creates a [`FheGt`] event.
+
+```solidity
+event FheGt(address,bytes32,bytes32,bytes1,bytes32)
+```*/
+        #[inline]
+        pub fn fhe_gt(
+            caller: alloy::sol_types::private::Address,
+            lhs: alloy::sol_types::private::FixedBytes<32>,
+            rhs: alloy::sol_types::private::FixedBytes<32>,
+            scalar_byte: alloy::sol_types::private::FixedBytes<1>,
+            result: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::FheGt(FheGt {
+                caller: caller,
+                lhs: lhs,
+                rhs: rhs,
+                scalarByte: scalar_byte,
+                result: result,
+            })
+        }
+        /**Creates a [`FheIfThenElse`] event.
+
+```solidity
+event FheIfThenElse(address,bytes32,bytes32,bytes32,bytes32)
+```*/
+        #[inline]
+        pub fn fhe_if_then_else(
+            caller: alloy::sol_types::private::Address,
+            control: alloy::sol_types::private::FixedBytes<32>,
+            if_true: alloy::sol_types::private::FixedBytes<32>,
+            if_false: alloy::sol_types::private::FixedBytes<32>,
+            result: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::FheIfThenElse(FheIfThenElse {
+                caller: caller,
+                control: control,
+                ifTrue: if_true,
+                ifFalse: if_false,
+                result: result,
+            })
+        }
+        /**Creates a [`FheIsIn`] event.
+
+```solidity
+event FheIsIn(address,bytes32,bytes32[],bytes32)
+```*/
+        #[inline]
+        pub fn fhe_is_in(
+            caller: alloy::sol_types::private::Address,
+            value: alloy::sol_types::private::FixedBytes<32>,
+            values: alloy::sol_types::private::Vec<
+                alloy::sol_types::private::FixedBytes<32>,
+            >,
+            result: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::FheIsIn(FheIsIn {
+                caller: caller,
+                value: value,
+                values: values,
+                result: result,
+            })
+        }
+        /**Creates a [`FheLe`] event.
+
+```solidity
+event FheLe(address,bytes32,bytes32,bytes1,bytes32)
+```*/
+        #[inline]
+        pub fn fhe_le(
+            caller: alloy::sol_types::private::Address,
+            lhs: alloy::sol_types::private::FixedBytes<32>,
+            rhs: alloy::sol_types::private::FixedBytes<32>,
+            scalar_byte: alloy::sol_types::private::FixedBytes<1>,
+            result: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::FheLe(FheLe {
+                caller: caller,
+                lhs: lhs,
+                rhs: rhs,
+                scalarByte: scalar_byte,
+                result: result,
+            })
+        }
+        /**Creates a [`FheLt`] event.
+
+```solidity
+event FheLt(address,bytes32,bytes32,bytes1,bytes32)
+```*/
+        #[inline]
+        pub fn fhe_lt(
+            caller: alloy::sol_types::private::Address,
+            lhs: alloy::sol_types::private::FixedBytes<32>,
+            rhs: alloy::sol_types::private::FixedBytes<32>,
+            scalar_byte: alloy::sol_types::private::FixedBytes<1>,
+            result: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::FheLt(FheLt {
+                caller: caller,
+                lhs: lhs,
+                rhs: rhs,
+                scalarByte: scalar_byte,
+                result: result,
+            })
+        }
+        /**Creates a [`FheMax`] event.
+
+```solidity
+event FheMax(address,bytes32,bytes32,bytes1,bytes32)
+```*/
+        #[inline]
+        pub fn fhe_max(
+            caller: alloy::sol_types::private::Address,
+            lhs: alloy::sol_types::private::FixedBytes<32>,
+            rhs: alloy::sol_types::private::FixedBytes<32>,
+            scalar_byte: alloy::sol_types::private::FixedBytes<1>,
+            result: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::FheMax(FheMax {
+                caller: caller,
+                lhs: lhs,
+                rhs: rhs,
+                scalarByte: scalar_byte,
+                result: result,
+            })
+        }
+        /**Creates a [`FheMin`] event.
+
+```solidity
+event FheMin(address,bytes32,bytes32,bytes1,bytes32)
+```*/
+        #[inline]
+        pub fn fhe_min(
+            caller: alloy::sol_types::private::Address,
+            lhs: alloy::sol_types::private::FixedBytes<32>,
+            rhs: alloy::sol_types::private::FixedBytes<32>,
+            scalar_byte: alloy::sol_types::private::FixedBytes<1>,
+            result: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::FheMin(FheMin {
+                caller: caller,
+                lhs: lhs,
+                rhs: rhs,
+                scalarByte: scalar_byte,
+                result: result,
+            })
+        }
+        /**Creates a [`FheMul`] event.
+
+```solidity
+event FheMul(address,bytes32,bytes32,bytes1,bytes32)
+```*/
+        #[inline]
+        pub fn fhe_mul(
+            caller: alloy::sol_types::private::Address,
+            lhs: alloy::sol_types::private::FixedBytes<32>,
+            rhs: alloy::sol_types::private::FixedBytes<32>,
+            scalar_byte: alloy::sol_types::private::FixedBytes<1>,
+            result: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::FheMul(FheMul {
+                caller: caller,
+                lhs: lhs,
+                rhs: rhs,
+                scalarByte: scalar_byte,
+                result: result,
+            })
+        }
+        /**Creates a [`FheMulDiv`] event.
+
+```solidity
+event FheMulDiv(address,bytes32,bytes32,bytes32,bytes1,bytes32)
+```*/
+        #[inline]
+        pub fn fhe_mul_div(
+            caller: alloy::sol_types::private::Address,
+            factor_1: alloy::sol_types::private::FixedBytes<32>,
+            factor_2: alloy::sol_types::private::FixedBytes<32>,
+            divisor: alloy::sol_types::private::FixedBytes<32>,
+            scalar_byte: alloy::sol_types::private::FixedBytes<1>,
+            result: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::FheMulDiv(FheMulDiv {
+                caller: caller,
+                factor1: factor_1,
+                factor2: factor_2,
+                divisor: divisor,
+                scalarByte: scalar_byte,
+                result: result,
+            })
+        }
+        /**Creates a [`FheNe`] event.
+
+```solidity
+event FheNe(address,bytes32,bytes32,bytes1,bytes32)
+```*/
+        #[inline]
+        pub fn fhe_ne(
+            caller: alloy::sol_types::private::Address,
+            lhs: alloy::sol_types::private::FixedBytes<32>,
+            rhs: alloy::sol_types::private::FixedBytes<32>,
+            scalar_byte: alloy::sol_types::private::FixedBytes<1>,
+            result: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::FheNe(FheNe {
+                caller: caller,
+                lhs: lhs,
+                rhs: rhs,
+                scalarByte: scalar_byte,
+                result: result,
+            })
+        }
+        /**Creates a [`FheNeg`] event.
+
+```solidity
+event FheNeg(address,bytes32,bytes32)
+```*/
+        #[inline]
+        pub fn fhe_neg(
+            caller: alloy::sol_types::private::Address,
+            ct: alloy::sol_types::private::FixedBytes<32>,
+            result: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::FheNeg(FheNeg {
+                caller: caller,
+                ct: ct,
+                result: result,
+            })
+        }
+        /**Creates a [`FheNot`] event.
+
+```solidity
+event FheNot(address,bytes32,bytes32)
+```*/
+        #[inline]
+        pub fn fhe_not(
+            caller: alloy::sol_types::private::Address,
+            ct: alloy::sol_types::private::FixedBytes<32>,
+            result: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::FheNot(FheNot {
+                caller: caller,
+                ct: ct,
+                result: result,
+            })
+        }
+        /**Creates a [`FheRand`] event.
+
+```solidity
+event FheRand(address,uint8,bytes16,bytes32)
+```*/
+        #[inline]
+        pub fn fhe_rand(
+            caller: alloy::sol_types::private::Address,
+            rand_type: <FheType as alloy::sol_types::SolType>::RustType,
+            seed: alloy::sol_types::private::FixedBytes<16>,
+            result: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::FheRand(FheRand {
+                caller: caller,
+                randType: rand_type,
+                seed: seed,
+                result: result,
+            })
+        }
+        /**Creates a [`FheRandBounded`] event.
+
+```solidity
+event FheRandBounded(address,uint256,uint8,bytes16,bytes32)
+```*/
+        #[inline]
+        pub fn fhe_rand_bounded(
+            caller: alloy::sol_types::private::Address,
+            upper_bound: alloy::sol_types::private::primitives::aliases::U256,
+            rand_type: <FheType as alloy::sol_types::SolType>::RustType,
+            seed: alloy::sol_types::private::FixedBytes<16>,
+            result: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::FheRandBounded(FheRandBounded {
+                caller: caller,
+                upperBound: upper_bound,
+                randType: rand_type,
+                seed: seed,
+                result: result,
+            })
+        }
+        /**Creates a [`FheRem`] event.
+
+```solidity
+event FheRem(address,bytes32,bytes32,bytes1,bytes32)
+```*/
+        #[inline]
+        pub fn fhe_rem(
+            caller: alloy::sol_types::private::Address,
+            lhs: alloy::sol_types::private::FixedBytes<32>,
+            rhs: alloy::sol_types::private::FixedBytes<32>,
+            scalar_byte: alloy::sol_types::private::FixedBytes<1>,
+            result: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::FheRem(FheRem {
+                caller: caller,
+                lhs: lhs,
+                rhs: rhs,
+                scalarByte: scalar_byte,
+                result: result,
+            })
+        }
+        /**Creates a [`FheRotl`] event.
+
+```solidity
+event FheRotl(address,bytes32,bytes32,bytes1,bytes32)
+```*/
+        #[inline]
+        pub fn fhe_rotl(
+            caller: alloy::sol_types::private::Address,
+            lhs: alloy::sol_types::private::FixedBytes<32>,
+            rhs: alloy::sol_types::private::FixedBytes<32>,
+            scalar_byte: alloy::sol_types::private::FixedBytes<1>,
+            result: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::FheRotl(FheRotl {
+                caller: caller,
+                lhs: lhs,
+                rhs: rhs,
+                scalarByte: scalar_byte,
+                result: result,
+            })
+        }
+        /**Creates a [`FheRotr`] event.
+
+```solidity
+event FheRotr(address,bytes32,bytes32,bytes1,bytes32)
+```*/
+        #[inline]
+        pub fn fhe_rotr(
+            caller: alloy::sol_types::private::Address,
+            lhs: alloy::sol_types::private::FixedBytes<32>,
+            rhs: alloy::sol_types::private::FixedBytes<32>,
+            scalar_byte: alloy::sol_types::private::FixedBytes<1>,
+            result: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::FheRotr(FheRotr {
+                caller: caller,
+                lhs: lhs,
+                rhs: rhs,
+                scalarByte: scalar_byte,
+                result: result,
+            })
+        }
+        /**Creates a [`FheShl`] event.
+
+```solidity
+event FheShl(address,bytes32,bytes32,bytes1,bytes32)
+```*/
+        #[inline]
+        pub fn fhe_shl(
+            caller: alloy::sol_types::private::Address,
+            lhs: alloy::sol_types::private::FixedBytes<32>,
+            rhs: alloy::sol_types::private::FixedBytes<32>,
+            scalar_byte: alloy::sol_types::private::FixedBytes<1>,
+            result: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::FheShl(FheShl {
+                caller: caller,
+                lhs: lhs,
+                rhs: rhs,
+                scalarByte: scalar_byte,
+                result: result,
+            })
+        }
+        /**Creates a [`FheShr`] event.
+
+```solidity
+event FheShr(address,bytes32,bytes32,bytes1,bytes32)
+```*/
+        #[inline]
+        pub fn fhe_shr(
+            caller: alloy::sol_types::private::Address,
+            lhs: alloy::sol_types::private::FixedBytes<32>,
+            rhs: alloy::sol_types::private::FixedBytes<32>,
+            scalar_byte: alloy::sol_types::private::FixedBytes<1>,
+            result: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::FheShr(FheShr {
+                caller: caller,
+                lhs: lhs,
+                rhs: rhs,
+                scalarByte: scalar_byte,
+                result: result,
+            })
+        }
+        /**Creates a [`FheSub`] event.
+
+```solidity
+event FheSub(address,bytes32,bytes32,bytes1,bytes32)
+```*/
+        #[inline]
+        pub fn fhe_sub(
+            caller: alloy::sol_types::private::Address,
+            lhs: alloy::sol_types::private::FixedBytes<32>,
+            rhs: alloy::sol_types::private::FixedBytes<32>,
+            scalar_byte: alloy::sol_types::private::FixedBytes<1>,
+            result: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::FheSub(FheSub {
+                caller: caller,
+                lhs: lhs,
+                rhs: rhs,
+                scalarByte: scalar_byte,
+                result: result,
+            })
+        }
+        /**Creates a [`FheSum`] event.
+
+```solidity
+event FheSum(address,bytes32[],bytes32)
+```*/
+        #[inline]
+        pub fn fhe_sum(
+            caller: alloy::sol_types::private::Address,
+            values: alloy::sol_types::private::Vec<
+                alloy::sol_types::private::FixedBytes<32>,
+            >,
+            result: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::FheSum(FheSum {
+                caller: caller,
+                values: values,
+                result: result,
+            })
+        }
+        /**Creates a [`TrivialEncrypt`] event.
+
+```solidity
+event TrivialEncrypt(address,uint256,uint8,bytes32)
+```*/
+        #[inline]
+        pub fn trivial_encrypt(
+            caller: alloy::sol_types::private::Address,
+            pt: alloy::sol_types::private::primitives::aliases::U256,
+            to_type: <FheType as alloy::sol_types::SolType>::RustType,
+            result: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::TrivialEncrypt(TrivialEncrypt {
+                caller: caller,
+                pt: pt,
+                toType: to_type,
+                result: result,
+            })
+        }
+        /**Creates a [`VerifyInput`] event.
+
+```solidity
+event VerifyInput(address,bytes32,address,bytes,uint8,bytes32)
+```*/
+        #[inline]
+        pub fn verify_input(
+            caller: alloy::sol_types::private::Address,
+            input_handle: alloy::sol_types::private::FixedBytes<32>,
+            user_address: alloy::sol_types::private::Address,
+            input_proof: alloy::sol_types::private::Bytes,
+            input_type: <FheType as alloy::sol_types::SolType>::RustType,
+            result: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::VerifyInput(VerifyInput {
+                caller: caller,
+                inputHandle: input_handle,
+                userAddress: user_address,
+                inputProof: input_proof,
+                inputType: input_type,
+                result: result,
+            })
+        }
+    }
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`FHEEvents`](self) contract instance.
 
@@ -6262,34 +6884,6 @@ See the [wrapper's documentation](`FHEEventsInstance`) for more details.*/
         __provider: P,
     ) -> FHEEventsInstance<P, N> {
         FHEEventsInstance::<P, N>::new(address, __provider)
-    }
-    /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-    #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
-        __provider: P,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<FHEEventsInstance<P, N>>,
-    > {
-        FHEEventsInstance::<P, N>::deploy(__provider)
-    }
-    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-    #[inline]
-    pub fn deploy_builder<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        FHEEventsInstance::<P, N>::deploy_builder(__provider)
     }
     /**A [`FHEEvents`](self) instance.
 
@@ -6333,31 +6927,6 @@ See the [wrapper's documentation](`FHEEventsInstance`) for more details.*/
                 provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
-        }
-        /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-        #[inline]
-        pub async fn deploy(
-            __provider: P,
-        ) -> alloy_contract::Result<FHEEventsInstance<P, N>> {
-            let call_builder = Self::deploy_builder(__provider);
-            let contract_address = call_builder.deploy().await?;
-            Ok(Self::new(contract_address, call_builder.provider))
-        }
-        /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-        #[inline]
-        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-            alloy_contract::RawCallBuilder::new_raw_deploy(
-                __provider,
-                ::core::clone::Clone::clone(&BYTECODE),
-            )
         }
         /// Returns a reference to the address.
         #[inline]

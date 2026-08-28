@@ -170,26 +170,6 @@ interface IOAppCore {
 pub mod IOAppCore {
     use super::*;
     use alloy::sol_types as alloy_sol_types;
-    /// The creation / init bytecode of the contract.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
-    /// The runtime bytecode of the contract, as deployed on the network.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `InvalidDelegate()` and selector `0xb5863604`.
@@ -257,10 +237,10 @@ error InvalidDelegate();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -331,10 +311,10 @@ error InvalidEndpointCall();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -412,10 +392,10 @@ error NoPeer(uint32 eid);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -504,10 +484,10 @@ error OnlyPeer(uint32 eid, bytes32 sender);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -756,16 +736,29 @@ function endpoint() external view returns (address iEndpoint);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: endpointReturn = r.into();
                         r.iEndpoint
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -919,13 +912,26 @@ function oAppVersion() external view returns (uint64 senderVersion, uint64 recei
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1068,16 +1074,29 @@ function peers(uint32 _eid) external view returns (bytes32 peer);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: peersReturn = r.into();
                         r.peer
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1215,13 +1234,26 @@ function setDelegate(address _delegate) external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1376,20 +1408,33 @@ function setPeer(uint32 _eid, bytes32 _peer) external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
     ///Container for all the [`IOAppCore`](self) function calls.
     #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive()]
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IOAppCoreCalls {
         #[allow(missing_docs)]
         endpoint(endpointCall),
@@ -1486,37 +1531,71 @@ function setPeer(uint32 _eid, bytes32 _peer) external;
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::default(),
+            )
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_with_config(
+            selector: [u8; 4],
+            data: &[u8],
+            config: alloy_sol_types::abi::AbiDecoderConfig,
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
+                alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<IOAppCoreCalls>] = &[
                 {
                     fn oAppVersion(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IOAppCoreCalls> {
-                        <oAppVersionCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <oAppVersionCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IOAppCoreCalls::oAppVersion)
                     }
                     oAppVersion
                 },
                 {
-                    fn setPeer(data: &[u8]) -> alloy_sol_types::Result<IOAppCoreCalls> {
-                        <setPeerCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                    fn setPeer(
+                        data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
+                    ) -> alloy_sol_types::Result<IOAppCoreCalls> {
+                        <setPeerCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(IOAppCoreCalls::setPeer)
                     }
                     setPeer
                 },
                 {
-                    fn endpoint(data: &[u8]) -> alloy_sol_types::Result<IOAppCoreCalls> {
-                        <endpointCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                    fn endpoint(
+                        data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
+                    ) -> alloy_sol_types::Result<IOAppCoreCalls> {
+                        <endpointCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(IOAppCoreCalls::endpoint)
                     }
                     endpoint
                 },
                 {
-                    fn peers(data: &[u8]) -> alloy_sol_types::Result<IOAppCoreCalls> {
-                        <peersCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                    fn peers(
+                        data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
+                    ) -> alloy_sol_types::Result<IOAppCoreCalls> {
+                        <peersCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(IOAppCoreCalls::peers)
                     }
                     peers
@@ -1524,9 +1603,11 @@ function setPeer(uint32 _eid, bytes32 _peer) external;
                 {
                     fn setDelegate(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IOAppCoreCalls> {
-                        <setDelegateCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <setDelegateCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IOAppCoreCalls::setDelegate)
                     }
@@ -1541,7 +1622,7 @@ function setPeer(uint32 _eid, bytes32 _peer) external;
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data)
+            DECODE_SHIMS[idx](data, config)
         }
         #[inline]
         #[allow(non_snake_case)]
@@ -1549,68 +1630,11 @@ function setPeer(uint32 _eid, bytes32 _peer) external;
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_VALIDATE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<IOAppCoreCalls>] = &[
-                {
-                    fn oAppVersion(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IOAppCoreCalls> {
-                        <oAppVersionCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IOAppCoreCalls::oAppVersion)
-                    }
-                    oAppVersion
-                },
-                {
-                    fn setPeer(data: &[u8]) -> alloy_sol_types::Result<IOAppCoreCalls> {
-                        <setPeerCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IOAppCoreCalls::setPeer)
-                    }
-                    setPeer
-                },
-                {
-                    fn endpoint(data: &[u8]) -> alloy_sol_types::Result<IOAppCoreCalls> {
-                        <endpointCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IOAppCoreCalls::endpoint)
-                    }
-                    endpoint
-                },
-                {
-                    fn peers(data: &[u8]) -> alloy_sol_types::Result<IOAppCoreCalls> {
-                        <peersCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IOAppCoreCalls::peers)
-                    }
-                    peers
-                },
-                {
-                    fn setDelegate(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IOAppCoreCalls> {
-                        <setDelegateCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IOAppCoreCalls::setDelegate)
-                    }
-                    setDelegate
-                },
-            ];
-            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
-            };
-            DECODE_VALIDATE_SHIMS[idx](data)
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+            )
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -1760,15 +1784,31 @@ function setPeer(uint32 _eid, bytes32 _peer) external;
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::default(),
+            )
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_with_config(
+            selector: [u8; 4],
+            data: &[u8],
+            config: alloy_sol_types::abi::AbiDecoderConfig,
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
+                alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<IOAppCoreErrors>] = &[
                 {
                     fn InvalidEndpointCall(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IOAppCoreErrors> {
-                        <InvalidEndpointCall as alloy_sol_types::SolError>::abi_decode_raw(
+                        <InvalidEndpointCall as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IOAppCoreErrors::InvalidEndpointCall)
                     }
@@ -1777,9 +1817,11 @@ function setPeer(uint32 _eid, bytes32 _peer) external;
                 {
                     fn InvalidDelegate(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IOAppCoreErrors> {
-                        <InvalidDelegate as alloy_sol_types::SolError>::abi_decode_raw(
+                        <InvalidDelegate as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IOAppCoreErrors::InvalidDelegate)
                     }
@@ -1788,15 +1830,25 @@ function setPeer(uint32 _eid, bytes32 _peer) external;
                 {
                     fn OnlyPeer(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IOAppCoreErrors> {
-                        <OnlyPeer as alloy_sol_types::SolError>::abi_decode_raw(data)
+                        <OnlyPeer as alloy_sol_types::SolError>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(IOAppCoreErrors::OnlyPeer)
                     }
                     OnlyPeer
                 },
                 {
-                    fn NoPeer(data: &[u8]) -> alloy_sol_types::Result<IOAppCoreErrors> {
-                        <NoPeer as alloy_sol_types::SolError>::abi_decode_raw(data)
+                    fn NoPeer(
+                        data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
+                    ) -> alloy_sol_types::Result<IOAppCoreErrors> {
+                        <NoPeer as alloy_sol_types::SolError>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(IOAppCoreErrors::NoPeer)
                     }
                     NoPeer
@@ -1810,7 +1862,7 @@ function setPeer(uint32 _eid, bytes32 _peer) external;
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data)
+            DECODE_SHIMS[idx](data, config)
         }
         #[inline]
         #[allow(non_snake_case)]
@@ -1818,61 +1870,11 @@ function setPeer(uint32 _eid, bytes32 _peer) external;
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_VALIDATE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<IOAppCoreErrors>] = &[
-                {
-                    fn InvalidEndpointCall(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IOAppCoreErrors> {
-                        <InvalidEndpointCall as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IOAppCoreErrors::InvalidEndpointCall)
-                    }
-                    InvalidEndpointCall
-                },
-                {
-                    fn InvalidDelegate(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IOAppCoreErrors> {
-                        <InvalidDelegate as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IOAppCoreErrors::InvalidDelegate)
-                    }
-                    InvalidDelegate
-                },
-                {
-                    fn OnlyPeer(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IOAppCoreErrors> {
-                        <OnlyPeer as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IOAppCoreErrors::OnlyPeer)
-                    }
-                    OnlyPeer
-                },
-                {
-                    fn NoPeer(data: &[u8]) -> alloy_sol_types::Result<IOAppCoreErrors> {
-                        <NoPeer as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IOAppCoreErrors::NoPeer)
-                    }
-                    NoPeer
-                },
-            ];
-            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
-            };
-            DECODE_VALIDATE_SHIMS[idx](data)
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+            )
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -1917,6 +1919,51 @@ function setPeer(uint32 _eid, bytes32 _peer) external;
                     <OnlyPeer as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
             }
+        }
+    }
+    #[automatically_derived]
+    impl IOAppCoreErrors {
+        /**Creates a [`InvalidDelegate`] error.
+
+```solidity
+error InvalidDelegate()
+```*/
+        #[inline]
+        pub fn invalid_delegate() -> Self {
+            Self::InvalidDelegate(InvalidDelegate)
+        }
+        /**Creates a [`InvalidEndpointCall`] error.
+
+```solidity
+error InvalidEndpointCall()
+```*/
+        #[inline]
+        pub fn invalid_endpoint_call() -> Self {
+            Self::InvalidEndpointCall(InvalidEndpointCall)
+        }
+        /**Creates a [`NoPeer`] error.
+
+```solidity
+error NoPeer(uint32)
+```*/
+        #[inline]
+        pub fn no_peer(eid: u32) -> Self {
+            Self::NoPeer(NoPeer { eid: eid })
+        }
+        /**Creates a [`OnlyPeer`] error.
+
+```solidity
+error OnlyPeer(uint32,bytes32)
+```*/
+        #[inline]
+        pub fn only_peer(
+            eid: u32,
+            sender: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::OnlyPeer(OnlyPeer {
+                eid: eid,
+                sender: sender,
+            })
         }
     }
     ///Container for all the [`IOAppCore`](self) events.
@@ -2014,6 +2061,21 @@ function setPeer(uint32 _eid, bytes32 _peer) external;
             }
         }
     }
+    #[automatically_derived]
+    impl IOAppCoreEvents {
+        /**Creates a [`PeerSet`] event.
+
+```solidity
+event PeerSet(uint32,bytes32)
+```*/
+        #[inline]
+        pub fn peer_set(
+            eid: u32,
+            peer: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::PeerSet(PeerSet { eid: eid, peer: peer })
+        }
+    }
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`IOAppCore`](self) contract instance.
 
@@ -2027,34 +2089,6 @@ See the [wrapper's documentation](`IOAppCoreInstance`) for more details.*/
         __provider: P,
     ) -> IOAppCoreInstance<P, N> {
         IOAppCoreInstance::<P, N>::new(address, __provider)
-    }
-    /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-    #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
-        __provider: P,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<IOAppCoreInstance<P, N>>,
-    > {
-        IOAppCoreInstance::<P, N>::deploy(__provider)
-    }
-    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-    #[inline]
-    pub fn deploy_builder<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        IOAppCoreInstance::<P, N>::deploy_builder(__provider)
     }
     /**A [`IOAppCore`](self) instance.
 
@@ -2098,31 +2132,6 @@ See the [wrapper's documentation](`IOAppCoreInstance`) for more details.*/
                 provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
-        }
-        /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-        #[inline]
-        pub async fn deploy(
-            __provider: P,
-        ) -> alloy_contract::Result<IOAppCoreInstance<P, N>> {
-            let call_builder = Self::deploy_builder(__provider);
-            let contract_address = call_builder.deploy().await?;
-            Ok(Self::new(contract_address, call_builder.provider))
-        }
-        /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-        #[inline]
-        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-            alloy_contract::RawCallBuilder::new_raw_deploy(
-                __provider,
-                ::core::clone::Clone::clone(&BYTECODE),
-            )
         }
         /// Returns a reference to the address.
         #[inline]

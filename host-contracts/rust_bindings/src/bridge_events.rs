@@ -185,26 +185,6 @@ interface BridgeEvents {
 pub mod BridgeEvents {
     use super::*;
     use alloy::sol_types as alloy_sol_types;
-    /// The creation / init bytecode of the contract.
-    ///
-    /// ```text
-    ///0x6080604052348015600e575f80fd5b50600880601a5f395ff3fe60806040525f80fd
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"`\x80`@R4\x80\x15`\x0EW_\x80\xFD[P`\x08\x80`\x1A_9_\xF3\xFE`\x80`@R_\x80\xFD",
-    );
-    /// The runtime bytecode of the contract, as deployed on the network.
-    ///
-    /// ```text
-    ///0x60806040525f80fd
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"`\x80`@R_\x80\xFD",
-    );
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `BridgeHandle(address,bytes32,uint64,bytes32)` and selector `0x232d74a405b7390224b127ddebd1af9c6958450a736d9febbc1b383b6481f2b3`.
@@ -1297,6 +1277,116 @@ event LzReceivePerPayloadByteGasSet(uint32 indexed dstEid, uint64 lzReceivePerPa
             }
         }
     }
+    #[automatically_derived]
+    impl BridgeEventsEvents {
+        /**Creates a [`BridgeHandle`] event.
+
+```solidity
+event BridgeHandle(address,bytes32,uint64,bytes32)
+```*/
+        #[inline]
+        pub fn bridge_handle(
+            sender_dapp: alloy::sol_types::private::Address,
+            src_handle: alloy::sol_types::private::FixedBytes<32>,
+            dst_chain_id: u64,
+            guid: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::BridgeHandle(BridgeHandle {
+                senderDapp: sender_dapp,
+                srcHandle: src_handle,
+                dstChainId: dst_chain_id,
+                guid: guid,
+            })
+        }
+        /**Creates a [`DstChainIdSet`] event.
+
+```solidity
+event DstChainIdSet(uint32,uint64)
+```*/
+        #[inline]
+        pub fn dst_chain_id_set(dst_eid: u32, dst_chain_id: u64) -> Self {
+            Self::DstChainIdSet(DstChainIdSet {
+                dstEid: dst_eid,
+                dstChainId: dst_chain_id,
+            })
+        }
+        /**Creates a [`FallbackGrantedPlaintext`] event.
+
+```solidity
+event FallbackGrantedPlaintext(bytes32,uint256)
+```*/
+        #[inline]
+        pub fn fallback_granted_plaintext(
+            dst_handle: alloy::sol_types::private::FixedBytes<32>,
+            plaintext: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::FallbackGrantedPlaintext(FallbackGrantedPlaintext {
+                dstHandle: dst_handle,
+                plaintext: plaintext,
+            })
+        }
+        /**Creates a [`HandleBridged`] event.
+
+```solidity
+event HandleBridged(address,bytes32,bytes32,bytes32)
+```*/
+        #[inline]
+        pub fn handle_bridged(
+            receiver_dapp: alloy::sol_types::private::Address,
+            src_handle: alloy::sol_types::private::FixedBytes<32>,
+            dst_handle: alloy::sol_types::private::FixedBytes<32>,
+            guid: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::HandleBridged(HandleBridged {
+                receiverDapp: receiver_dapp,
+                srcHandle: src_handle,
+                dstHandle: dst_handle,
+                guid: guid,
+            })
+        }
+        /**Creates a [`LzReceiveBaseGasSet`] event.
+
+```solidity
+event LzReceiveBaseGasSet(uint32,uint64)
+```*/
+        #[inline]
+        pub fn lz_receive_base_gas_set(dst_eid: u32, lz_receive_base_gas: u64) -> Self {
+            Self::LzReceiveBaseGasSet(LzReceiveBaseGasSet {
+                dstEid: dst_eid,
+                lzReceiveBaseGas: lz_receive_base_gas,
+            })
+        }
+        /**Creates a [`LzReceivePerHandleGasSet`] event.
+
+```solidity
+event LzReceivePerHandleGasSet(uint32,uint64)
+```*/
+        #[inline]
+        pub fn lz_receive_per_handle_gas_set(
+            dst_eid: u32,
+            lz_receive_per_handle_gas: u64,
+        ) -> Self {
+            Self::LzReceivePerHandleGasSet(LzReceivePerHandleGasSet {
+                dstEid: dst_eid,
+                lzReceivePerHandleGas: lz_receive_per_handle_gas,
+            })
+        }
+        /**Creates a [`LzReceivePerPayloadByteGasSet`] event.
+
+```solidity
+event LzReceivePerPayloadByteGasSet(uint32,uint64)
+```*/
+        #[inline]
+        pub fn lz_receive_per_payload_byte_gas_set(
+            dst_eid: u32,
+            lz_receive_per_payload_byte_gas: u64,
+        ) -> Self {
+            Self::LzReceivePerPayloadByteGasSet(LzReceivePerPayloadByteGasSet {
+                dstEid: dst_eid,
+                lzReceivePerPayloadByteGas: lz_receive_per_payload_byte_gas,
+            })
+        }
+    }
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`BridgeEvents`](self) contract instance.
 
@@ -1310,34 +1400,6 @@ See the [wrapper's documentation](`BridgeEventsInstance`) for more details.*/
         __provider: P,
     ) -> BridgeEventsInstance<P, N> {
         BridgeEventsInstance::<P, N>::new(address, __provider)
-    }
-    /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-    #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
-        __provider: P,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<BridgeEventsInstance<P, N>>,
-    > {
-        BridgeEventsInstance::<P, N>::deploy(__provider)
-    }
-    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-    #[inline]
-    pub fn deploy_builder<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        BridgeEventsInstance::<P, N>::deploy_builder(__provider)
     }
     /**A [`BridgeEvents`](self) instance.
 
@@ -1381,31 +1443,6 @@ See the [wrapper's documentation](`BridgeEventsInstance`) for more details.*/
                 provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
-        }
-        /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-        #[inline]
-        pub async fn deploy(
-            __provider: P,
-        ) -> alloy_contract::Result<BridgeEventsInstance<P, N>> {
-            let call_builder = Self::deploy_builder(__provider);
-            let contract_address = call_builder.deploy().await?;
-            Ok(Self::new(contract_address, call_builder.provider))
-        }
-        /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-        #[inline]
-        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-            alloy_contract::RawCallBuilder::new_raw_deploy(
-                __provider,
-                ::core::clone::Clone::clone(&BYTECODE),
-            )
         }
         /// Returns a reference to the address.
         #[inline]

@@ -396,26 +396,6 @@ interface IMessagingChannel {
 pub mod IMessagingChannel {
     use super::*;
     use alloy::sol_types as alloy_sol_types;
-    /// The creation / init bytecode of the contract.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
-    /// The runtime bytecode of the contract, as deployed on the network.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `InboundNonceSkipped(uint32,bytes32,address,uint64)` and selector `0x28f40053783033ef755556a0c3315379141f51a33aed8334174ffbadd90bde48`.
@@ -1004,13 +984,26 @@ function burn(address _oapp, uint32 _srcEid, bytes32 _sender, uint64 _nonce, byt
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1146,16 +1139,29 @@ function eid() external view returns (uint32);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: eidReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1324,16 +1330,29 @@ function inboundNonce(address _receiver, uint32 _srcEid, bytes32 _sender) extern
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: inboundNonceReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1515,16 +1534,29 @@ function inboundPayloadHash(address _receiver, uint32 _srcEid, bytes32 _sender, 
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: inboundPayloadHashReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1697,16 +1729,29 @@ function lazyInboundNonce(address _receiver, uint32 _srcEid, bytes32 _sender) ex
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: lazyInboundNonceReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1875,16 +1920,29 @@ function nextGuid(address _sender, uint32 _dstEid, bytes32 _receiver) external v
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: nextGuidReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2072,13 +2130,26 @@ function nilify(address _oapp, uint32 _srcEid, bytes32 _sender, uint64 _nonce, b
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2247,16 +2318,29 @@ function outboundNonce(address _sender, uint32 _dstEid, bytes32 _receiver) exter
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: outboundNonceReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -2429,20 +2513,33 @@ function skip(address _oapp, uint32 _srcEid, bytes32 _sender, uint64 _nonce) ext
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
     ///Container for all the [`IMessagingChannel`](self) function calls.
     #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive()]
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IMessagingChannelCalls {
         #[allow(missing_docs)]
         burn(burnCall),
@@ -2567,14 +2664,32 @@ function skip(address _oapp, uint32 _srcEid, bytes32 _sender, uint64 _nonce) ext
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::default(),
+            )
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_with_config(
+            selector: [u8; 4],
+            data: &[u8],
+            config: alloy_sol_types::abi::AbiDecoderConfig,
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
+                alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<IMessagingChannelCalls>] = &[
                 {
                     fn nilify(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IMessagingChannelCalls> {
-                        <nilifyCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <nilifyCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(IMessagingChannelCalls::nilify)
                     }
                     nilify
@@ -2582,8 +2697,12 @@ function skip(address _oapp, uint32 _srcEid, bytes32 _sender, uint64 _nonce) ext
                 {
                     fn burn(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IMessagingChannelCalls> {
-                        <burnCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <burnCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(IMessagingChannelCalls::burn)
                     }
                     burn
@@ -2591,8 +2710,12 @@ function skip(address _oapp, uint32 _srcEid, bytes32 _sender, uint64 _nonce) ext
                 {
                     fn eid(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IMessagingChannelCalls> {
-                        <eidCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <eidCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(IMessagingChannelCalls::eid)
                     }
                     eid
@@ -2600,9 +2723,11 @@ function skip(address _oapp, uint32 _srcEid, bytes32 _sender, uint64 _nonce) ext
                 {
                     fn lazyInboundNonce(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IMessagingChannelCalls> {
-                        <lazyInboundNonceCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <lazyInboundNonceCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IMessagingChannelCalls::lazyInboundNonce)
                     }
@@ -2611,9 +2736,11 @@ function skip(address _oapp, uint32 _srcEid, bytes32 _sender, uint64 _nonce) ext
                 {
                     fn outboundNonce(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IMessagingChannelCalls> {
-                        <outboundNonceCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <outboundNonceCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IMessagingChannelCalls::outboundNonce)
                     }
@@ -2622,9 +2749,11 @@ function skip(address _oapp, uint32 _srcEid, bytes32 _sender, uint64 _nonce) ext
                 {
                     fn inboundNonce(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IMessagingChannelCalls> {
-                        <inboundNonceCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <inboundNonceCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IMessagingChannelCalls::inboundNonce)
                     }
@@ -2633,8 +2762,12 @@ function skip(address _oapp, uint32 _srcEid, bytes32 _sender, uint64 _nonce) ext
                 {
                     fn nextGuid(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IMessagingChannelCalls> {
-                        <nextGuidCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <nextGuidCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(IMessagingChannelCalls::nextGuid)
                     }
                     nextGuid
@@ -2642,9 +2775,11 @@ function skip(address _oapp, uint32 _srcEid, bytes32 _sender, uint64 _nonce) ext
                 {
                     fn inboundPayloadHash(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IMessagingChannelCalls> {
-                        <inboundPayloadHashCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <inboundPayloadHashCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IMessagingChannelCalls::inboundPayloadHash)
                     }
@@ -2653,8 +2788,12 @@ function skip(address _oapp, uint32 _srcEid, bytes32 _sender, uint64 _nonce) ext
                 {
                     fn skip(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IMessagingChannelCalls> {
-                        <skipCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <skipCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(IMessagingChannelCalls::skip)
                     }
                     skip
@@ -2668,7 +2807,7 @@ function skip(address _oapp, uint32 _srcEid, bytes32 _sender, uint64 _nonce) ext
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data)
+            DECODE_SHIMS[idx](data, config)
         }
         #[inline]
         #[allow(non_snake_case)]
@@ -2676,118 +2815,11 @@ function skip(address _oapp, uint32 _srcEid, bytes32 _sender, uint64 _nonce) ext
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_VALIDATE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<IMessagingChannelCalls>] = &[
-                {
-                    fn nilify(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMessagingChannelCalls> {
-                        <nilifyCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMessagingChannelCalls::nilify)
-                    }
-                    nilify
-                },
-                {
-                    fn burn(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMessagingChannelCalls> {
-                        <burnCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMessagingChannelCalls::burn)
-                    }
-                    burn
-                },
-                {
-                    fn eid(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMessagingChannelCalls> {
-                        <eidCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMessagingChannelCalls::eid)
-                    }
-                    eid
-                },
-                {
-                    fn lazyInboundNonce(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMessagingChannelCalls> {
-                        <lazyInboundNonceCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMessagingChannelCalls::lazyInboundNonce)
-                    }
-                    lazyInboundNonce
-                },
-                {
-                    fn outboundNonce(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMessagingChannelCalls> {
-                        <outboundNonceCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMessagingChannelCalls::outboundNonce)
-                    }
-                    outboundNonce
-                },
-                {
-                    fn inboundNonce(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMessagingChannelCalls> {
-                        <inboundNonceCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMessagingChannelCalls::inboundNonce)
-                    }
-                    inboundNonce
-                },
-                {
-                    fn nextGuid(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMessagingChannelCalls> {
-                        <nextGuidCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMessagingChannelCalls::nextGuid)
-                    }
-                    nextGuid
-                },
-                {
-                    fn inboundPayloadHash(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMessagingChannelCalls> {
-                        <inboundPayloadHashCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMessagingChannelCalls::inboundPayloadHash)
-                    }
-                    inboundPayloadHash
-                },
-                {
-                    fn skip(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMessagingChannelCalls> {
-                        <skipCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMessagingChannelCalls::skip)
-                    }
-                    skip
-                },
-            ];
-            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
-            };
-            DECODE_VALIDATE_SHIMS[idx](data)
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+            )
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -3021,6 +3053,70 @@ function skip(address _oapp, uint32 _srcEid, bytes32 _sender, uint64 _nonce) ext
             }
         }
     }
+    #[automatically_derived]
+    impl IMessagingChannelEvents {
+        /**Creates a [`InboundNonceSkipped`] event.
+
+```solidity
+event InboundNonceSkipped(uint32,bytes32,address,uint64)
+```*/
+        #[inline]
+        pub fn inbound_nonce_skipped(
+            src_eid: u32,
+            sender: alloy::sol_types::private::FixedBytes<32>,
+            receiver: alloy::sol_types::private::Address,
+            nonce: u64,
+        ) -> Self {
+            Self::InboundNonceSkipped(InboundNonceSkipped {
+                srcEid: src_eid,
+                sender: sender,
+                receiver: receiver,
+                nonce: nonce,
+            })
+        }
+        /**Creates a [`PacketBurnt`] event.
+
+```solidity
+event PacketBurnt(uint32,bytes32,address,uint64,bytes32)
+```*/
+        #[inline]
+        pub fn packet_burnt(
+            src_eid: u32,
+            sender: alloy::sol_types::private::FixedBytes<32>,
+            receiver: alloy::sol_types::private::Address,
+            nonce: u64,
+            payload_hash: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::PacketBurnt(PacketBurnt {
+                srcEid: src_eid,
+                sender: sender,
+                receiver: receiver,
+                nonce: nonce,
+                payloadHash: payload_hash,
+            })
+        }
+        /**Creates a [`PacketNilified`] event.
+
+```solidity
+event PacketNilified(uint32,bytes32,address,uint64,bytes32)
+```*/
+        #[inline]
+        pub fn packet_nilified(
+            src_eid: u32,
+            sender: alloy::sol_types::private::FixedBytes<32>,
+            receiver: alloy::sol_types::private::Address,
+            nonce: u64,
+            payload_hash: alloy::sol_types::private::FixedBytes<32>,
+        ) -> Self {
+            Self::PacketNilified(PacketNilified {
+                srcEid: src_eid,
+                sender: sender,
+                receiver: receiver,
+                nonce: nonce,
+                payloadHash: payload_hash,
+            })
+        }
+    }
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`IMessagingChannel`](self) contract instance.
 
@@ -3034,34 +3130,6 @@ See the [wrapper's documentation](`IMessagingChannelInstance`) for more details.
         __provider: P,
     ) -> IMessagingChannelInstance<P, N> {
         IMessagingChannelInstance::<P, N>::new(address, __provider)
-    }
-    /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-    #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
-        __provider: P,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<IMessagingChannelInstance<P, N>>,
-    > {
-        IMessagingChannelInstance::<P, N>::deploy(__provider)
-    }
-    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-    #[inline]
-    pub fn deploy_builder<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        IMessagingChannelInstance::<P, N>::deploy_builder(__provider)
     }
     /**A [`IMessagingChannel`](self) instance.
 
@@ -3105,31 +3173,6 @@ See the [wrapper's documentation](`IMessagingChannelInstance`) for more details.
                 provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
-        }
-        /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-        #[inline]
-        pub async fn deploy(
-            __provider: P,
-        ) -> alloy_contract::Result<IMessagingChannelInstance<P, N>> {
-            let call_builder = Self::deploy_builder(__provider);
-            let contract_address = call_builder.deploy().await?;
-            Ok(Self::new(contract_address, call_builder.provider))
-        }
-        /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-        #[inline]
-        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-            alloy_contract::RawCallBuilder::new_raw_deploy(
-                __provider,
-                ::core::clone::Clone::clone(&BYTECODE),
-            )
         }
         /// Returns a reference to the address.
         #[inline]

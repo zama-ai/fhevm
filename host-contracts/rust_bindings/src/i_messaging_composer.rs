@@ -263,26 +263,6 @@ interface IMessagingComposer {
 pub mod IMessagingComposer {
     use super::*;
     use alloy::sol_types as alloy_sol_types;
-    /// The creation / init bytecode of the contract.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
-    /// The runtime bytecode of the contract, as deployed on the network.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `ComposeDelivered(address,address,bytes32,uint16)` and selector `0x0036c98efcf9e6641dfbc9051f66f405253e8e0c2ab4a24dccda15595b7378c8`.
@@ -903,16 +883,29 @@ function composeQueue(address _from, address _to, bytes32 _guid, uint16 _index) 
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: composeQueueReturn = r.into();
                         r.messageHash
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1110,13 +1103,26 @@ function lzCompose(address _from, address _to, bytes32 _guid, uint16 _index, byt
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -1289,20 +1295,33 @@ function sendCompose(address _to, bytes32 _guid, uint16 _index, bytes memory _me
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
     ///Container for all the [`IMessagingComposer`](self) function calls.
     #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive()]
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IMessagingComposerCalls {
         #[allow(missing_docs)]
         composeQueue(composeQueueCall),
@@ -1389,15 +1408,31 @@ function sendCompose(address _to, bytes32 _guid, uint16 _index, bytes memory _me
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::default(),
+            )
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_with_config(
+            selector: [u8; 4],
+            data: &[u8],
+            config: alloy_sol_types::abi::AbiDecoderConfig,
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
+                alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<IMessagingComposerCalls>] = &[
                 {
                     fn composeQueue(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IMessagingComposerCalls> {
-                        <composeQueueCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <composeQueueCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IMessagingComposerCalls::composeQueue)
                     }
@@ -1406,9 +1441,11 @@ function sendCompose(address _to, bytes32 _guid, uint16 _index, bytes memory _me
                 {
                     fn sendCompose(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IMessagingComposerCalls> {
-                        <sendComposeCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <sendComposeCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IMessagingComposerCalls::sendCompose)
                     }
@@ -1417,8 +1454,12 @@ function sendCompose(address _to, bytes32 _guid, uint16 _index, bytes memory _me
                 {
                     fn lzCompose(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IMessagingComposerCalls> {
-                        <lzComposeCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <lzComposeCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(IMessagingComposerCalls::lzCompose)
                     }
                     lzCompose
@@ -1432,7 +1473,7 @@ function sendCompose(address _to, bytes32 _guid, uint16 _index, bytes memory _me
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data)
+            DECODE_SHIMS[idx](data, config)
         }
         #[inline]
         #[allow(non_snake_case)]
@@ -1440,52 +1481,11 @@ function sendCompose(address _to, bytes32 _guid, uint16 _index, bytes memory _me
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_VALIDATE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<IMessagingComposerCalls>] = &[
-                {
-                    fn composeQueue(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMessagingComposerCalls> {
-                        <composeQueueCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMessagingComposerCalls::composeQueue)
-                    }
-                    composeQueue
-                },
-                {
-                    fn sendCompose(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMessagingComposerCalls> {
-                        <sendComposeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMessagingComposerCalls::sendCompose)
-                    }
-                    sendCompose
-                },
-                {
-                    fn lzCompose(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMessagingComposerCalls> {
-                        <lzComposeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMessagingComposerCalls::lzCompose)
-                    }
-                    lzCompose
-                },
-            ];
-            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
-            };
-            DECODE_VALIDATE_SHIMS[idx](data)
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+            )
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -1671,6 +1671,80 @@ function sendCompose(address _to, bytes32 _guid, uint16 _index, bytes memory _me
             }
         }
     }
+    #[automatically_derived]
+    impl IMessagingComposerEvents {
+        /**Creates a [`ComposeDelivered`] event.
+
+```solidity
+event ComposeDelivered(address,address,bytes32,uint16)
+```*/
+        #[inline]
+        pub fn compose_delivered(
+            from: alloy::sol_types::private::Address,
+            to: alloy::sol_types::private::Address,
+            guid: alloy::sol_types::private::FixedBytes<32>,
+            index: u16,
+        ) -> Self {
+            Self::ComposeDelivered(ComposeDelivered {
+                from: from,
+                to: to,
+                guid: guid,
+                index: index,
+            })
+        }
+        /**Creates a [`ComposeSent`] event.
+
+```solidity
+event ComposeSent(address,address,bytes32,uint16,bytes)
+```*/
+        #[inline]
+        pub fn compose_sent(
+            from: alloy::sol_types::private::Address,
+            to: alloy::sol_types::private::Address,
+            guid: alloy::sol_types::private::FixedBytes<32>,
+            index: u16,
+            message: alloy::sol_types::private::Bytes,
+        ) -> Self {
+            Self::ComposeSent(ComposeSent {
+                from: from,
+                to: to,
+                guid: guid,
+                index: index,
+                message: message,
+            })
+        }
+        /**Creates a [`LzComposeAlert`] event.
+
+```solidity
+event LzComposeAlert(address,address,address,bytes32,uint16,uint256,uint256,bytes,bytes,bytes)
+```*/
+        #[inline]
+        pub fn lz_compose_alert(
+            from: alloy::sol_types::private::Address,
+            to: alloy::sol_types::private::Address,
+            executor: alloy::sol_types::private::Address,
+            guid: alloy::sol_types::private::FixedBytes<32>,
+            index: u16,
+            gas: alloy::sol_types::private::primitives::aliases::U256,
+            value: alloy::sol_types::private::primitives::aliases::U256,
+            message: alloy::sol_types::private::Bytes,
+            extra_data: alloy::sol_types::private::Bytes,
+            reason: alloy::sol_types::private::Bytes,
+        ) -> Self {
+            Self::LzComposeAlert(LzComposeAlert {
+                from: from,
+                to: to,
+                executor: executor,
+                guid: guid,
+                index: index,
+                gas: gas,
+                value: value,
+                message: message,
+                extraData: extra_data,
+                reason: reason,
+            })
+        }
+    }
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`IMessagingComposer`](self) contract instance.
 
@@ -1684,34 +1758,6 @@ See the [wrapper's documentation](`IMessagingComposerInstance`) for more details
         __provider: P,
     ) -> IMessagingComposerInstance<P, N> {
         IMessagingComposerInstance::<P, N>::new(address, __provider)
-    }
-    /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-    #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
-        __provider: P,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<IMessagingComposerInstance<P, N>>,
-    > {
-        IMessagingComposerInstance::<P, N>::deploy(__provider)
-    }
-    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-    #[inline]
-    pub fn deploy_builder<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        IMessagingComposerInstance::<P, N>::deploy_builder(__provider)
     }
     /**A [`IMessagingComposer`](self) instance.
 
@@ -1755,31 +1801,6 @@ See the [wrapper's documentation](`IMessagingComposerInstance`) for more details
                 provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
-        }
-        /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-        #[inline]
-        pub async fn deploy(
-            __provider: P,
-        ) -> alloy_contract::Result<IMessagingComposerInstance<P, N>> {
-            let call_builder = Self::deploy_builder(__provider);
-            let contract_address = call_builder.deploy().await?;
-            Ok(Self::new(contract_address, call_builder.provider))
-        }
-        /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-        #[inline]
-        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-            alloy_contract::RawCallBuilder::new_raw_deploy(
-                __provider,
-                ::core::clone::Clone::clone(&BYTECODE),
-            )
         }
         /// Returns a reference to the address.
         #[inline]

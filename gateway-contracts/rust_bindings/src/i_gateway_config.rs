@@ -2015,26 +2015,6 @@ interface IGatewayConfig {
 pub mod IGatewayConfig {
     use super::*;
     use alloy::sol_types as alloy_sol_types;
-    /// The creation / init bytecode of the contract.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
-    /// The runtime bytecode of the contract, as deployed on the network.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
@@ -3673,10 +3653,10 @@ error AllGatewayContractsAlreadyPaused();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -3749,10 +3729,10 @@ error AllGatewayContractsAlreadyUnpaused();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -3832,10 +3812,10 @@ error ChainIdNotUint64(uint256 chainId);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -3917,10 +3897,10 @@ error CoprocessorSignerAlreadyRegistered(address coprocessorSignerAddress);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -4002,10 +3982,10 @@ error CoprocessorTxSenderAlreadyRegistered(address coprocessorTxSenderAddress);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -4089,10 +4069,10 @@ error CurrentKmsContextCannotBeDestroyed(uint256 currentKmsContextId);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -4174,10 +4154,10 @@ error CustodianSignerAlreadyRegistered(address custodianSignerAddress);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -4259,10 +4239,10 @@ error CustodianTxSenderAlreadyRegistered(address custodianTxSenderAddress);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -4333,10 +4313,10 @@ error EmptyCoprocessors();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -4407,10 +4387,10 @@ error EmptyCustodians();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -4481,10 +4461,10 @@ error EmptyKmsNodes();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -4566,10 +4546,10 @@ error HostChainAlreadyDisabled(uint256 chainId);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -4649,10 +4629,10 @@ error HostChainAlreadyEnabled(uint256 chainId);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -4734,10 +4714,10 @@ error HostChainAlreadyRegistered(uint256 chainId);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -4817,10 +4797,10 @@ error HostChainNotDisabled(uint256 chainId);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -4900,10 +4880,10 @@ error HostChainNotRegistered(uint256 chainId);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -4997,10 +4977,10 @@ error InvalidHighCoprocessorThreshold(uint256 coprocessorThreshold, uint256 nCop
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -5094,10 +5074,10 @@ error InvalidHighKmsGenThreshold(uint256 kmsGenThreshold, uint256 nKmsNodes);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -5189,10 +5169,10 @@ error InvalidHighMpcThreshold(uint256 mpcThreshold, uint256 nKmsNodes);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -5288,10 +5268,10 @@ error InvalidHighPublicDecryptionThreshold(uint256 publicDecryptionThreshold, ui
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -5387,10 +5367,10 @@ error InvalidHighUserDecryptionThreshold(uint256 userDecryptionThreshold, uint25
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -5470,10 +5450,10 @@ error InvalidKmsContext(uint256 kmsContextId);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -5544,10 +5524,10 @@ error InvalidNullChainId();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -5620,10 +5600,10 @@ error InvalidNullCoprocessorThreshold();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -5694,10 +5674,10 @@ error InvalidNullKmsContextId();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -5770,10 +5750,10 @@ error InvalidNullKmsGenThreshold();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -5846,10 +5826,10 @@ error InvalidNullPublicDecryptionThreshold();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -5922,10 +5902,10 @@ error InvalidNullUserDecryptionThreshold();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -6019,10 +5999,10 @@ error KmsContextAlreadyRegistered(uint256 contextId, uint256 currentKmsContextId
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -6102,10 +6082,10 @@ error KmsSignerAlreadyRegistered(address kmsSignerAddress);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -6199,10 +6179,10 @@ error KmsSignerSetExceedsProofFormatLimit(uint256 signerCount, uint256 maxAllowe
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -6284,10 +6264,10 @@ error KmsTxSenderAlreadyRegistered(address kmsTxSenderAddress);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -6365,10 +6345,10 @@ error NotPauser(address account);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -6470,10 +6450,10 @@ error ThresholdExceedsProofFormatLimit(string thresholdName, uint256 threshold, 
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -8462,13 +8442,26 @@ function addHostChain(HostChain memory hostChain) external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -8612,13 +8605,26 @@ function destroyKmsContext(uint256 kmsContextId) external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -8762,13 +8768,26 @@ function disableHostChain(uint256 chainId) external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -8910,13 +8929,26 @@ function enableHostChain(uint256 chainId) external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -9061,16 +9093,29 @@ function getCoprocessor(address coprocessorTxSenderAddress) external view return
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getCoprocessorReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -9212,16 +9257,29 @@ function getCoprocessorMajorityThreshold() external view returns (uint256);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getCoprocessorMajorityThresholdReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -9369,16 +9427,29 @@ function getCoprocessorSigners() external view returns (address[] memory);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getCoprocessorSignersReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -9526,16 +9597,29 @@ function getCoprocessorTxSenders() external view returns (address[] memory);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getCoprocessorTxSendersReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -9677,16 +9761,29 @@ function getCurrentKmsContextId() external view returns (uint256);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getCurrentKmsContextIdReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -9827,16 +9924,29 @@ function getCustodian(address custodianTxSender) external view returns (Custodia
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getCustodianReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -9984,16 +10094,29 @@ function getCustodianSigners() external view returns (address[] memory);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getCustodianSignersReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -10141,16 +10264,29 @@ function getCustodianTxSenders() external view returns (address[] memory);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getCustodianTxSendersReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -10293,16 +10429,29 @@ function getHostChain(uint256 index) external view returns (HostChain memory);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getHostChainReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -10448,16 +10597,29 @@ function getHostChains() external view returns (HostChain[] memory);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getHostChainsReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -10599,16 +10761,29 @@ function getKmsGenThreshold() external view returns (uint256);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getKmsGenThresholdReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -10751,16 +10926,29 @@ function getKmsNode(address kmsTxSenderAddress) external view returns (KmsNode m
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getKmsNodeReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -10922,16 +11110,29 @@ function getKmsNodeForContext(uint256 contextId, address kmsTxSenderAddress) ext
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getKmsNodeForContextReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -11075,16 +11276,29 @@ function getKmsSigners() external view returns (address[] memory);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getKmsSignersReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -11241,16 +11455,29 @@ function getKmsSignersForContext(uint256 contextId) external view returns (addre
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getKmsSignersForContextReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -11396,16 +11623,29 @@ function getKmsTxSenders() external view returns (address[] memory);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getKmsTxSendersReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -11562,16 +11802,29 @@ function getKmsTxSendersForContext(uint256 contextId) external view returns (add
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getKmsTxSendersForContextReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -11711,16 +11964,29 @@ function getMpcThreshold() external view returns (uint256);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getMpcThresholdReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -11858,16 +12124,29 @@ function getProtocolMetadata() external view returns (ProtocolMetadata memory);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getProtocolMetadataReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -12018,16 +12297,29 @@ function getPublicDecryptionThresholdForContext(uint256 contextId) external view
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getPublicDecryptionThresholdForContextReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -12178,16 +12470,29 @@ function getUserDecryptionThresholdForContext(uint256 contextId) external view r
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getUserDecryptionThresholdForContextReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -12323,16 +12628,29 @@ function getVersion() external pure returns (string memory);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: getVersionReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -12479,16 +12797,29 @@ function isCoprocessorSigner(address signerAddress) external view returns (bool)
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: isCoprocessorSignerReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -12637,16 +12968,29 @@ function isCoprocessorTxSender(address coprocessorTxSenderAddress) external view
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: isCoprocessorTxSenderReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -12793,16 +13137,29 @@ function isCustodianSigner(address signerAddress) external view returns (bool);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: isCustodianSignerReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -12949,16 +13306,29 @@ function isCustodianTxSender(address txSenderAddress) external view returns (boo
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: isCustodianTxSenderReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -13107,16 +13477,29 @@ function isHostChainDisabled(uint256 chainId) external view returns (bool);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: isHostChainDisabledReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -13265,16 +13648,29 @@ function isHostChainRegistered(uint256 chainId) external view returns (bool);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: isHostChainRegisteredReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -13417,16 +13813,29 @@ function isKmsSigner(address signerAddress) external view returns (bool);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: isKmsSignerReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -13590,16 +13999,29 @@ function isKmsSignerForContext(uint256 contextId, address signerAddress) externa
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: isKmsSignerForContextReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -13744,16 +14166,29 @@ function isKmsTxSender(address kmsTxSenderAddress) external view returns (bool);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: isKmsTxSenderReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -13917,16 +14352,29 @@ function isKmsTxSenderForContext(uint256 contextId, address txSenderAddress) ext
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: isKmsTxSenderForContextReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -14069,16 +14517,29 @@ function isPauser(address account) external view returns (bool);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: isPauserReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -14227,16 +14688,29 @@ function isValidKmsContext(uint256 contextId) external view returns (bool);
                     })
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(|r| {
                         let r: isValidKmsContextReturn = r.into();
                         r._0
                     })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -14373,13 +14847,26 @@ function pauseAllGatewayContracts() external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -14521,13 +15008,26 @@ function removeHostChain(uint256 chainId) external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -14664,13 +15164,26 @@ function unpauseAllGatewayContracts() external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -14820,13 +15333,26 @@ function updateCoprocessorThreshold(uint256 newCoprocessorThreshold) external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -14991,13 +15517,26 @@ function updateCoprocessors(Coprocessor[] memory newCoprocessors, uint256 newCop
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -15147,13 +15686,26 @@ function updateCustodians(Custodian[] memory newCustodians) external;
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -15363,13 +15915,26 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -15530,13 +16095,26 @@ function updateKmsGenThresholdForContext(uint256 contextId, uint256 newKmsGenThr
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -15697,13 +16275,26 @@ function updateMpcThresholdForContext(uint256 contextId, uint256 newMpcThreshold
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -15866,13 +16457,26 @@ function updatePublicDecryptionThresholdForContext(uint256 contextId, uint256 ne
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -16035,20 +16639,33 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(
+            fn abi_decode_returns_with_config(
                 data: &[u8],
+                config: alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_with_config(
+                        data,
+                        config,
+                    )
                     .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                Self::abi_decode_returns_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
     ///Container for all the [`IGatewayConfig`](self) function calls.
     #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive()]
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IGatewayConfigCalls {
         #[allow(missing_docs)]
         addHostChain(addHostChainCall),
@@ -16507,15 +17124,31 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::default(),
+            )
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_with_config(
+            selector: [u8; 4],
+            data: &[u8],
+            config: alloy_sol_types::abi::AbiDecoderConfig,
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
+                alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<IGatewayConfigCalls>] = &[
                 {
                     fn updateCustodians(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <updateCustodiansCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <updateCustodiansCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::updateCustodians)
                     }
@@ -16524,9 +17157,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn updatePublicDecryptionThresholdForContext(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <updatePublicDecryptionThresholdForContextCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <updatePublicDecryptionThresholdForContextCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(
                                 IGatewayConfigCalls::updatePublicDecryptionThresholdForContext,
@@ -16537,9 +17172,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn getVersion(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::getVersion)
                     }
@@ -16548,9 +17185,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn getCoprocessorTxSenders(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getCoprocessorTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getCoprocessorTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::getCoprocessorTxSenders)
                     }
@@ -16559,9 +17198,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn isKmsSigner(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <isKmsSignerCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <isKmsSignerCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::isKmsSigner)
                     }
@@ -16570,9 +17211,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn getHostChains(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getHostChainsCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getHostChainsCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::getHostChains)
                     }
@@ -16581,9 +17224,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn getMpcThreshold(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getMpcThresholdCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getMpcThresholdCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::getMpcThreshold)
                     }
@@ -16592,9 +17237,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn getUserDecryptionThresholdForContext(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getUserDecryptionThresholdForContextCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getUserDecryptionThresholdForContextCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(
                                 IGatewayConfigCalls::getUserDecryptionThresholdForContext,
@@ -16605,9 +17252,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn getCustodianTxSenders(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getCustodianTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getCustodianTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::getCustodianTxSenders)
                     }
@@ -16616,9 +17265,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn isCoprocessorSigner(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <isCoprocessorSignerCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <isCoprocessorSignerCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::isCoprocessorSigner)
                     }
@@ -16627,9 +17278,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn isCoprocessorTxSender(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <isCoprocessorTxSenderCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <isCoprocessorTxSenderCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::isCoprocessorTxSender)
                     }
@@ -16638,9 +17291,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn getKmsNodeForContext(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getKmsNodeForContextCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getKmsNodeForContextCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::getKmsNodeForContext)
                     }
@@ -16649,9 +17304,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn updateKmsContext(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <updateKmsContextCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <updateKmsContextCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::updateKmsContext)
                     }
@@ -16660,9 +17317,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn isKmsTxSenderForContext(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <isKmsTxSenderForContextCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <isKmsTxSenderForContextCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::isKmsTxSenderForContext)
                     }
@@ -16671,8 +17330,12 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn isPauser(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <isPauserCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <isPauserCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(IGatewayConfigCalls::isPauser)
                     }
                     isPauser
@@ -16680,9 +17343,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn getProtocolMetadata(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getProtocolMetadataCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getProtocolMetadataCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::getProtocolMetadata)
                     }
@@ -16691,9 +17356,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn isCustodianTxSender(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <isCustodianTxSenderCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <isCustodianTxSenderCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::isCustodianTxSender)
                     }
@@ -16702,9 +17369,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn getKmsSignersForContext(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getKmsSignersForContextCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getKmsSignersForContextCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::getKmsSignersForContext)
                     }
@@ -16713,9 +17382,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn getCoprocessorMajorityThreshold(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getCoprocessorMajorityThresholdCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getCoprocessorMajorityThresholdCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::getCoprocessorMajorityThreshold)
                     }
@@ -16724,9 +17395,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn getKmsTxSenders(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getKmsTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getKmsTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::getKmsTxSenders)
                     }
@@ -16735,9 +17408,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn updateMpcThresholdForContext(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <updateMpcThresholdForContextCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <updateMpcThresholdForContextCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::updateMpcThresholdForContext)
                     }
@@ -16746,9 +17421,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn unpauseAllGatewayContracts(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <unpauseAllGatewayContractsCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <unpauseAllGatewayContractsCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::unpauseAllGatewayContracts)
                     }
@@ -16757,9 +17434,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn disableHostChain(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <disableHostChainCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <disableHostChainCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::disableHostChain)
                     }
@@ -16768,9 +17447,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn getKmsSigners(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getKmsSignersCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getKmsSignersCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::getKmsSigners)
                     }
@@ -16779,9 +17460,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn updateCoprocessors(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <updateCoprocessorsCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <updateCoprocessorsCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::updateCoprocessors)
                     }
@@ -16790,9 +17473,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn isCustodianSigner(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <isCustodianSignerCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <isCustodianSignerCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::isCustodianSigner)
                     }
@@ -16801,9 +17486,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn getCoprocessorSigners(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getCoprocessorSignersCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getCoprocessorSignersCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::getCoprocessorSigners)
                     }
@@ -16812,9 +17499,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn isKmsSignerForContext(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <isKmsSignerForContextCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <isKmsSignerForContextCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::isKmsSignerForContext)
                     }
@@ -16823,9 +17512,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn getCurrentKmsContextId(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getCurrentKmsContextIdCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getCurrentKmsContextIdCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::getCurrentKmsContextId)
                     }
@@ -16834,9 +17525,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn pauseAllGatewayContracts(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <pauseAllGatewayContractsCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <pauseAllGatewayContractsCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::pauseAllGatewayContracts)
                     }
@@ -16845,9 +17538,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn enableHostChain(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <enableHostChainCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <enableHostChainCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::enableHostChain)
                     }
@@ -16856,9 +17551,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn updateKmsGenThresholdForContext(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <updateKmsGenThresholdForContextCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <updateKmsGenThresholdForContextCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::updateKmsGenThresholdForContext)
                     }
@@ -16867,9 +17564,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn updateUserDecryptionThresholdForContext(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <updateUserDecryptionThresholdForContextCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <updateUserDecryptionThresholdForContextCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(
                                 IGatewayConfigCalls::updateUserDecryptionThresholdForContext,
@@ -16880,9 +17579,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn getKmsGenThreshold(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getKmsGenThresholdCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getKmsGenThresholdCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::getKmsGenThreshold)
                     }
@@ -16891,9 +17592,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn getCustodianSigners(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getCustodianSignersCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getCustodianSignersCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::getCustodianSigners)
                     }
@@ -16902,9 +17605,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn isValidKmsContext(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <isValidKmsContextCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <isValidKmsContextCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::isValidKmsContext)
                     }
@@ -16913,9 +17618,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn isHostChainRegistered(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <isHostChainRegisteredCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <isHostChainRegisteredCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::isHostChainRegistered)
                     }
@@ -16924,9 +17631,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn destroyKmsContext(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <destroyKmsContextCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <destroyKmsContextCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::destroyKmsContext)
                     }
@@ -16935,9 +17644,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn getPublicDecryptionThresholdForContext(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getPublicDecryptionThresholdForContextCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getPublicDecryptionThresholdForContextCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(
                                 IGatewayConfigCalls::getPublicDecryptionThresholdForContext,
@@ -16948,9 +17659,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn getKmsTxSendersForContext(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getKmsTxSendersForContextCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getKmsTxSendersForContextCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::getKmsTxSendersForContext)
                     }
@@ -16959,9 +17672,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn addHostChain(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <addHostChainCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <addHostChainCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::addHostChain)
                     }
@@ -16970,9 +17685,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn getCustodian(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getCustodianCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getCustodianCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::getCustodian)
                     }
@@ -16981,9 +17698,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn isHostChainDisabled(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <isHostChainDisabledCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <isHostChainDisabledCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::isHostChainDisabled)
                     }
@@ -16992,9 +17711,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn getHostChain(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getHostChainCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getHostChainCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::getHostChain)
                     }
@@ -17003,9 +17724,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn updateCoprocessorThreshold(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <updateCoprocessorThresholdCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <updateCoprocessorThresholdCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::updateCoprocessorThreshold)
                     }
@@ -17014,9 +17737,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn removeHostChain(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <removeHostChainCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <removeHostChainCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::removeHostChain)
                     }
@@ -17025,9 +17750,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn getKmsNode(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getKmsNodeCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getKmsNodeCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::getKmsNode)
                     }
@@ -17036,9 +17763,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn isKmsTxSender(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <isKmsTxSenderCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <isKmsTxSenderCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::isKmsTxSender)
                     }
@@ -17047,9 +17776,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn getCoprocessor(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getCoprocessorCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getCoprocessorCall as alloy_sol_types::SolCall>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigCalls::getCoprocessor)
                     }
@@ -17064,7 +17795,7 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data)
+            DECODE_SHIMS[idx](data, config)
         }
         #[inline]
         #[allow(non_snake_case)]
@@ -17072,566 +17803,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_VALIDATE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<IGatewayConfigCalls>] = &[
-                {
-                    fn updateCustodians(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <updateCustodiansCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::updateCustodians)
-                    }
-                    updateCustodians
-                },
-                {
-                    fn updatePublicDecryptionThresholdForContext(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <updatePublicDecryptionThresholdForContextCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                IGatewayConfigCalls::updatePublicDecryptionThresholdForContext,
-                            )
-                    }
-                    updatePublicDecryptionThresholdForContext
-                },
-                {
-                    fn getVersion(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::getVersion)
-                    }
-                    getVersion
-                },
-                {
-                    fn getCoprocessorTxSenders(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getCoprocessorTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::getCoprocessorTxSenders)
-                    }
-                    getCoprocessorTxSenders
-                },
-                {
-                    fn isKmsSigner(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <isKmsSignerCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::isKmsSigner)
-                    }
-                    isKmsSigner
-                },
-                {
-                    fn getHostChains(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getHostChainsCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::getHostChains)
-                    }
-                    getHostChains
-                },
-                {
-                    fn getMpcThreshold(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getMpcThresholdCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::getMpcThreshold)
-                    }
-                    getMpcThreshold
-                },
-                {
-                    fn getUserDecryptionThresholdForContext(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getUserDecryptionThresholdForContextCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                IGatewayConfigCalls::getUserDecryptionThresholdForContext,
-                            )
-                    }
-                    getUserDecryptionThresholdForContext
-                },
-                {
-                    fn getCustodianTxSenders(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getCustodianTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::getCustodianTxSenders)
-                    }
-                    getCustodianTxSenders
-                },
-                {
-                    fn isCoprocessorSigner(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <isCoprocessorSignerCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::isCoprocessorSigner)
-                    }
-                    isCoprocessorSigner
-                },
-                {
-                    fn isCoprocessorTxSender(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <isCoprocessorTxSenderCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::isCoprocessorTxSender)
-                    }
-                    isCoprocessorTxSender
-                },
-                {
-                    fn getKmsNodeForContext(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getKmsNodeForContextCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::getKmsNodeForContext)
-                    }
-                    getKmsNodeForContext
-                },
-                {
-                    fn updateKmsContext(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <updateKmsContextCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::updateKmsContext)
-                    }
-                    updateKmsContext
-                },
-                {
-                    fn isKmsTxSenderForContext(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <isKmsTxSenderForContextCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::isKmsTxSenderForContext)
-                    }
-                    isKmsTxSenderForContext
-                },
-                {
-                    fn isPauser(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <isPauserCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::isPauser)
-                    }
-                    isPauser
-                },
-                {
-                    fn getProtocolMetadata(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getProtocolMetadataCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::getProtocolMetadata)
-                    }
-                    getProtocolMetadata
-                },
-                {
-                    fn isCustodianTxSender(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <isCustodianTxSenderCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::isCustodianTxSender)
-                    }
-                    isCustodianTxSender
-                },
-                {
-                    fn getKmsSignersForContext(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getKmsSignersForContextCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::getKmsSignersForContext)
-                    }
-                    getKmsSignersForContext
-                },
-                {
-                    fn getCoprocessorMajorityThreshold(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getCoprocessorMajorityThresholdCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::getCoprocessorMajorityThreshold)
-                    }
-                    getCoprocessorMajorityThreshold
-                },
-                {
-                    fn getKmsTxSenders(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getKmsTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::getKmsTxSenders)
-                    }
-                    getKmsTxSenders
-                },
-                {
-                    fn updateMpcThresholdForContext(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <updateMpcThresholdForContextCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::updateMpcThresholdForContext)
-                    }
-                    updateMpcThresholdForContext
-                },
-                {
-                    fn unpauseAllGatewayContracts(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <unpauseAllGatewayContractsCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::unpauseAllGatewayContracts)
-                    }
-                    unpauseAllGatewayContracts
-                },
-                {
-                    fn disableHostChain(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <disableHostChainCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::disableHostChain)
-                    }
-                    disableHostChain
-                },
-                {
-                    fn getKmsSigners(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getKmsSignersCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::getKmsSigners)
-                    }
-                    getKmsSigners
-                },
-                {
-                    fn updateCoprocessors(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <updateCoprocessorsCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::updateCoprocessors)
-                    }
-                    updateCoprocessors
-                },
-                {
-                    fn isCustodianSigner(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <isCustodianSignerCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::isCustodianSigner)
-                    }
-                    isCustodianSigner
-                },
-                {
-                    fn getCoprocessorSigners(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getCoprocessorSignersCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::getCoprocessorSigners)
-                    }
-                    getCoprocessorSigners
-                },
-                {
-                    fn isKmsSignerForContext(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <isKmsSignerForContextCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::isKmsSignerForContext)
-                    }
-                    isKmsSignerForContext
-                },
-                {
-                    fn getCurrentKmsContextId(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getCurrentKmsContextIdCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::getCurrentKmsContextId)
-                    }
-                    getCurrentKmsContextId
-                },
-                {
-                    fn pauseAllGatewayContracts(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <pauseAllGatewayContractsCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::pauseAllGatewayContracts)
-                    }
-                    pauseAllGatewayContracts
-                },
-                {
-                    fn enableHostChain(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <enableHostChainCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::enableHostChain)
-                    }
-                    enableHostChain
-                },
-                {
-                    fn updateKmsGenThresholdForContext(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <updateKmsGenThresholdForContextCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::updateKmsGenThresholdForContext)
-                    }
-                    updateKmsGenThresholdForContext
-                },
-                {
-                    fn updateUserDecryptionThresholdForContext(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <updateUserDecryptionThresholdForContextCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                IGatewayConfigCalls::updateUserDecryptionThresholdForContext,
-                            )
-                    }
-                    updateUserDecryptionThresholdForContext
-                },
-                {
-                    fn getKmsGenThreshold(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getKmsGenThresholdCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::getKmsGenThreshold)
-                    }
-                    getKmsGenThreshold
-                },
-                {
-                    fn getCustodianSigners(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getCustodianSignersCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::getCustodianSigners)
-                    }
-                    getCustodianSigners
-                },
-                {
-                    fn isValidKmsContext(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <isValidKmsContextCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::isValidKmsContext)
-                    }
-                    isValidKmsContext
-                },
-                {
-                    fn isHostChainRegistered(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <isHostChainRegisteredCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::isHostChainRegistered)
-                    }
-                    isHostChainRegistered
-                },
-                {
-                    fn destroyKmsContext(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <destroyKmsContextCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::destroyKmsContext)
-                    }
-                    destroyKmsContext
-                },
-                {
-                    fn getPublicDecryptionThresholdForContext(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getPublicDecryptionThresholdForContextCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                IGatewayConfigCalls::getPublicDecryptionThresholdForContext,
-                            )
-                    }
-                    getPublicDecryptionThresholdForContext
-                },
-                {
-                    fn getKmsTxSendersForContext(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getKmsTxSendersForContextCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::getKmsTxSendersForContext)
-                    }
-                    getKmsTxSendersForContext
-                },
-                {
-                    fn addHostChain(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <addHostChainCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::addHostChain)
-                    }
-                    addHostChain
-                },
-                {
-                    fn getCustodian(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getCustodianCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::getCustodian)
-                    }
-                    getCustodian
-                },
-                {
-                    fn isHostChainDisabled(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <isHostChainDisabledCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::isHostChainDisabled)
-                    }
-                    isHostChainDisabled
-                },
-                {
-                    fn getHostChain(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getHostChainCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::getHostChain)
-                    }
-                    getHostChain
-                },
-                {
-                    fn updateCoprocessorThreshold(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <updateCoprocessorThresholdCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::updateCoprocessorThreshold)
-                    }
-                    updateCoprocessorThreshold
-                },
-                {
-                    fn removeHostChain(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <removeHostChainCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::removeHostChain)
-                    }
-                    removeHostChain
-                },
-                {
-                    fn getKmsNode(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getKmsNodeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::getKmsNode)
-                    }
-                    getKmsNode
-                },
-                {
-                    fn isKmsTxSender(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <isKmsTxSenderCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::isKmsTxSender)
-                    }
-                    isKmsTxSender
-                },
-                {
-                    fn getCoprocessor(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getCoprocessorCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::getCoprocessor)
-                    }
-                    getCoprocessor
-                },
-            ];
-            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
-            };
-            DECODE_VALIDATE_SHIMS[idx](data)
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+            )
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -18513,15 +18689,31 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::default(),
+            )
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_with_config(
+            selector: [u8; 4],
+            data: &[u8],
+            config: alloy_sol_types::abi::AbiDecoderConfig,
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
+                alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<IGatewayConfigErrors>] = &[
                 {
                     fn CoprocessorSignerAlreadyRegistered(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <CoprocessorSignerAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw(
+                        <CoprocessorSignerAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(
                                 IGatewayConfigErrors::CoprocessorSignerAlreadyRegistered,
@@ -18532,9 +18724,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn EmptyKmsNodes(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <EmptyKmsNodes as alloy_sol_types::SolError>::abi_decode_raw(
+                        <EmptyKmsNodes as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigErrors::EmptyKmsNodes)
                     }
@@ -18543,9 +18737,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn InvalidHighKmsGenThreshold(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InvalidHighKmsGenThreshold as alloy_sol_types::SolError>::abi_decode_raw(
+                        <InvalidHighKmsGenThreshold as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigErrors::InvalidHighKmsGenThreshold)
                     }
@@ -18554,9 +18750,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn InvalidNullKmsContextId(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InvalidNullKmsContextId as alloy_sol_types::SolError>::abi_decode_raw(
+                        <InvalidNullKmsContextId as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigErrors::InvalidNullKmsContextId)
                     }
@@ -18565,9 +18763,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn KmsSignerSetExceedsProofFormatLimit(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <KmsSignerSetExceedsProofFormatLimit as alloy_sol_types::SolError>::abi_decode_raw(
+                        <KmsSignerSetExceedsProofFormatLimit as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(
                                 IGatewayConfigErrors::KmsSignerSetExceedsProofFormatLimit,
@@ -18578,8 +18778,12 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn NotPauser(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <NotPauser as alloy_sol_types::SolError>::abi_decode_raw(data)
+                        <NotPauser as alloy_sol_types::SolError>::abi_decode_raw_with_config(
+                                data,
+                                config,
+                            )
                             .map(IGatewayConfigErrors::NotPauser)
                     }
                     NotPauser
@@ -18587,9 +18791,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn ThresholdExceedsProofFormatLimit(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <ThresholdExceedsProofFormatLimit as alloy_sol_types::SolError>::abi_decode_raw(
+                        <ThresholdExceedsProofFormatLimit as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigErrors::ThresholdExceedsProofFormatLimit)
                     }
@@ -18598,9 +18804,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn InvalidNullChainId(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InvalidNullChainId as alloy_sol_types::SolError>::abi_decode_raw(
+                        <InvalidNullChainId as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigErrors::InvalidNullChainId)
                     }
@@ -18609,9 +18817,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn CustodianSignerAlreadyRegistered(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <CustodianSignerAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw(
+                        <CustodianSignerAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigErrors::CustodianSignerAlreadyRegistered)
                     }
@@ -18620,9 +18830,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn InvalidNullKmsGenThreshold(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InvalidNullKmsGenThreshold as alloy_sol_types::SolError>::abi_decode_raw(
+                        <InvalidNullKmsGenThreshold as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigErrors::InvalidNullKmsGenThreshold)
                     }
@@ -18631,9 +18843,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn ChainIdNotUint64(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <ChainIdNotUint64 as alloy_sol_types::SolError>::abi_decode_raw(
+                        <ChainIdNotUint64 as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigErrors::ChainIdNotUint64)
                     }
@@ -18642,9 +18856,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn CurrentKmsContextCannotBeDestroyed(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <CurrentKmsContextCannotBeDestroyed as alloy_sol_types::SolError>::abi_decode_raw(
+                        <CurrentKmsContextCannotBeDestroyed as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(
                                 IGatewayConfigErrors::CurrentKmsContextCannotBeDestroyed,
@@ -18655,9 +18871,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn AllGatewayContractsAlreadyPaused(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <AllGatewayContractsAlreadyPaused as alloy_sol_types::SolError>::abi_decode_raw(
+                        <AllGatewayContractsAlreadyPaused as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigErrors::AllGatewayContractsAlreadyPaused)
                     }
@@ -18666,9 +18884,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn HostChainAlreadyEnabled(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <HostChainAlreadyEnabled as alloy_sol_types::SolError>::abi_decode_raw(
+                        <HostChainAlreadyEnabled as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigErrors::HostChainAlreadyEnabled)
                     }
@@ -18677,9 +18897,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn CustodianTxSenderAlreadyRegistered(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <CustodianTxSenderAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw(
+                        <CustodianTxSenderAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(
                                 IGatewayConfigErrors::CustodianTxSenderAlreadyRegistered,
@@ -18690,9 +18912,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn InvalidKmsContext(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InvalidKmsContext as alloy_sol_types::SolError>::abi_decode_raw(
+                        <InvalidKmsContext as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigErrors::InvalidKmsContext)
                     }
@@ -18701,9 +18925,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn AllGatewayContractsAlreadyUnpaused(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <AllGatewayContractsAlreadyUnpaused as alloy_sol_types::SolError>::abi_decode_raw(
+                        <AllGatewayContractsAlreadyUnpaused as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(
                                 IGatewayConfigErrors::AllGatewayContractsAlreadyUnpaused,
@@ -18714,9 +18940,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn InvalidHighPublicDecryptionThreshold(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InvalidHighPublicDecryptionThreshold as alloy_sol_types::SolError>::abi_decode_raw(
+                        <InvalidHighPublicDecryptionThreshold as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(
                                 IGatewayConfigErrors::InvalidHighPublicDecryptionThreshold,
@@ -18727,9 +18955,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn EmptyCoprocessors(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <EmptyCoprocessors as alloy_sol_types::SolError>::abi_decode_raw(
+                        <EmptyCoprocessors as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigErrors::EmptyCoprocessors)
                     }
@@ -18738,9 +18968,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn InvalidHighMpcThreshold(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InvalidHighMpcThreshold as alloy_sol_types::SolError>::abi_decode_raw(
+                        <InvalidHighMpcThreshold as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigErrors::InvalidHighMpcThreshold)
                     }
@@ -18749,9 +18981,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn HostChainAlreadyRegistered(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <HostChainAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw(
+                        <HostChainAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigErrors::HostChainAlreadyRegistered)
                     }
@@ -18760,9 +18994,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn InvalidHighCoprocessorThreshold(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InvalidHighCoprocessorThreshold as alloy_sol_types::SolError>::abi_decode_raw(
+                        <InvalidHighCoprocessorThreshold as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigErrors::InvalidHighCoprocessorThreshold)
                     }
@@ -18771,9 +19007,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn HostChainAlreadyDisabled(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <HostChainAlreadyDisabled as alloy_sol_types::SolError>::abi_decode_raw(
+                        <HostChainAlreadyDisabled as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigErrors::HostChainAlreadyDisabled)
                     }
@@ -18782,9 +19020,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn HostChainNotDisabled(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <HostChainNotDisabled as alloy_sol_types::SolError>::abi_decode_raw(
+                        <HostChainNotDisabled as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigErrors::HostChainNotDisabled)
                     }
@@ -18793,9 +19033,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn InvalidNullPublicDecryptionThreshold(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InvalidNullPublicDecryptionThreshold as alloy_sol_types::SolError>::abi_decode_raw(
+                        <InvalidNullPublicDecryptionThreshold as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(
                                 IGatewayConfigErrors::InvalidNullPublicDecryptionThreshold,
@@ -18806,9 +19048,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn InvalidNullCoprocessorThreshold(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InvalidNullCoprocessorThreshold as alloy_sol_types::SolError>::abi_decode_raw(
+                        <InvalidNullCoprocessorThreshold as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigErrors::InvalidNullCoprocessorThreshold)
                     }
@@ -18817,9 +19061,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn HostChainNotRegistered(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <HostChainNotRegistered as alloy_sol_types::SolError>::abi_decode_raw(
+                        <HostChainNotRegistered as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigErrors::HostChainNotRegistered)
                     }
@@ -18828,9 +19074,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn CoprocessorTxSenderAlreadyRegistered(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <CoprocessorTxSenderAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw(
+                        <CoprocessorTxSenderAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(
                                 IGatewayConfigErrors::CoprocessorTxSenderAlreadyRegistered,
@@ -18841,9 +19089,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn EmptyCustodians(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <EmptyCustodians as alloy_sol_types::SolError>::abi_decode_raw(
+                        <EmptyCustodians as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigErrors::EmptyCustodians)
                     }
@@ -18852,9 +19102,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn KmsContextAlreadyRegistered(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <KmsContextAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw(
+                        <KmsContextAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigErrors::KmsContextAlreadyRegistered)
                     }
@@ -18863,9 +19115,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn KmsTxSenderAlreadyRegistered(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <KmsTxSenderAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw(
+                        <KmsTxSenderAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigErrors::KmsTxSenderAlreadyRegistered)
                     }
@@ -18874,9 +19128,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn InvalidHighUserDecryptionThreshold(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InvalidHighUserDecryptionThreshold as alloy_sol_types::SolError>::abi_decode_raw(
+                        <InvalidHighUserDecryptionThreshold as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(
                                 IGatewayConfigErrors::InvalidHighUserDecryptionThreshold,
@@ -18887,9 +19143,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn InvalidNullUserDecryptionThreshold(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InvalidNullUserDecryptionThreshold as alloy_sol_types::SolError>::abi_decode_raw(
+                        <InvalidNullUserDecryptionThreshold as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(
                                 IGatewayConfigErrors::InvalidNullUserDecryptionThreshold,
@@ -18900,9 +19158,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 {
                     fn KmsSignerAlreadyRegistered(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <KmsSignerAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw(
+                        <KmsSignerAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IGatewayConfigErrors::KmsSignerAlreadyRegistered)
                     }
@@ -18917,7 +19177,7 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data)
+            DECODE_SHIMS[idx](data, config)
         }
         #[inline]
         #[allow(non_snake_case)]
@@ -18925,413 +19185,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_VALIDATE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<IGatewayConfigErrors>] = &[
-                {
-                    fn CoprocessorSignerAlreadyRegistered(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <CoprocessorSignerAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                IGatewayConfigErrors::CoprocessorSignerAlreadyRegistered,
-                            )
-                    }
-                    CoprocessorSignerAlreadyRegistered
-                },
-                {
-                    fn EmptyKmsNodes(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <EmptyKmsNodes as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigErrors::EmptyKmsNodes)
-                    }
-                    EmptyKmsNodes
-                },
-                {
-                    fn InvalidHighKmsGenThreshold(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InvalidHighKmsGenThreshold as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigErrors::InvalidHighKmsGenThreshold)
-                    }
-                    InvalidHighKmsGenThreshold
-                },
-                {
-                    fn InvalidNullKmsContextId(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InvalidNullKmsContextId as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigErrors::InvalidNullKmsContextId)
-                    }
-                    InvalidNullKmsContextId
-                },
-                {
-                    fn KmsSignerSetExceedsProofFormatLimit(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <KmsSignerSetExceedsProofFormatLimit as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                IGatewayConfigErrors::KmsSignerSetExceedsProofFormatLimit,
-                            )
-                    }
-                    KmsSignerSetExceedsProofFormatLimit
-                },
-                {
-                    fn NotPauser(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <NotPauser as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigErrors::NotPauser)
-                    }
-                    NotPauser
-                },
-                {
-                    fn ThresholdExceedsProofFormatLimit(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <ThresholdExceedsProofFormatLimit as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigErrors::ThresholdExceedsProofFormatLimit)
-                    }
-                    ThresholdExceedsProofFormatLimit
-                },
-                {
-                    fn InvalidNullChainId(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InvalidNullChainId as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigErrors::InvalidNullChainId)
-                    }
-                    InvalidNullChainId
-                },
-                {
-                    fn CustodianSignerAlreadyRegistered(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <CustodianSignerAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigErrors::CustodianSignerAlreadyRegistered)
-                    }
-                    CustodianSignerAlreadyRegistered
-                },
-                {
-                    fn InvalidNullKmsGenThreshold(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InvalidNullKmsGenThreshold as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigErrors::InvalidNullKmsGenThreshold)
-                    }
-                    InvalidNullKmsGenThreshold
-                },
-                {
-                    fn ChainIdNotUint64(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <ChainIdNotUint64 as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigErrors::ChainIdNotUint64)
-                    }
-                    ChainIdNotUint64
-                },
-                {
-                    fn CurrentKmsContextCannotBeDestroyed(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <CurrentKmsContextCannotBeDestroyed as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                IGatewayConfigErrors::CurrentKmsContextCannotBeDestroyed,
-                            )
-                    }
-                    CurrentKmsContextCannotBeDestroyed
-                },
-                {
-                    fn AllGatewayContractsAlreadyPaused(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <AllGatewayContractsAlreadyPaused as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigErrors::AllGatewayContractsAlreadyPaused)
-                    }
-                    AllGatewayContractsAlreadyPaused
-                },
-                {
-                    fn HostChainAlreadyEnabled(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <HostChainAlreadyEnabled as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigErrors::HostChainAlreadyEnabled)
-                    }
-                    HostChainAlreadyEnabled
-                },
-                {
-                    fn CustodianTxSenderAlreadyRegistered(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <CustodianTxSenderAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                IGatewayConfigErrors::CustodianTxSenderAlreadyRegistered,
-                            )
-                    }
-                    CustodianTxSenderAlreadyRegistered
-                },
-                {
-                    fn InvalidKmsContext(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InvalidKmsContext as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigErrors::InvalidKmsContext)
-                    }
-                    InvalidKmsContext
-                },
-                {
-                    fn AllGatewayContractsAlreadyUnpaused(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <AllGatewayContractsAlreadyUnpaused as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                IGatewayConfigErrors::AllGatewayContractsAlreadyUnpaused,
-                            )
-                    }
-                    AllGatewayContractsAlreadyUnpaused
-                },
-                {
-                    fn InvalidHighPublicDecryptionThreshold(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InvalidHighPublicDecryptionThreshold as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                IGatewayConfigErrors::InvalidHighPublicDecryptionThreshold,
-                            )
-                    }
-                    InvalidHighPublicDecryptionThreshold
-                },
-                {
-                    fn EmptyCoprocessors(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <EmptyCoprocessors as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigErrors::EmptyCoprocessors)
-                    }
-                    EmptyCoprocessors
-                },
-                {
-                    fn InvalidHighMpcThreshold(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InvalidHighMpcThreshold as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigErrors::InvalidHighMpcThreshold)
-                    }
-                    InvalidHighMpcThreshold
-                },
-                {
-                    fn HostChainAlreadyRegistered(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <HostChainAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigErrors::HostChainAlreadyRegistered)
-                    }
-                    HostChainAlreadyRegistered
-                },
-                {
-                    fn InvalidHighCoprocessorThreshold(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InvalidHighCoprocessorThreshold as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigErrors::InvalidHighCoprocessorThreshold)
-                    }
-                    InvalidHighCoprocessorThreshold
-                },
-                {
-                    fn HostChainAlreadyDisabled(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <HostChainAlreadyDisabled as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigErrors::HostChainAlreadyDisabled)
-                    }
-                    HostChainAlreadyDisabled
-                },
-                {
-                    fn HostChainNotDisabled(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <HostChainNotDisabled as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigErrors::HostChainNotDisabled)
-                    }
-                    HostChainNotDisabled
-                },
-                {
-                    fn InvalidNullPublicDecryptionThreshold(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InvalidNullPublicDecryptionThreshold as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                IGatewayConfigErrors::InvalidNullPublicDecryptionThreshold,
-                            )
-                    }
-                    InvalidNullPublicDecryptionThreshold
-                },
-                {
-                    fn InvalidNullCoprocessorThreshold(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InvalidNullCoprocessorThreshold as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigErrors::InvalidNullCoprocessorThreshold)
-                    }
-                    InvalidNullCoprocessorThreshold
-                },
-                {
-                    fn HostChainNotRegistered(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <HostChainNotRegistered as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigErrors::HostChainNotRegistered)
-                    }
-                    HostChainNotRegistered
-                },
-                {
-                    fn CoprocessorTxSenderAlreadyRegistered(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <CoprocessorTxSenderAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                IGatewayConfigErrors::CoprocessorTxSenderAlreadyRegistered,
-                            )
-                    }
-                    CoprocessorTxSenderAlreadyRegistered
-                },
-                {
-                    fn EmptyCustodians(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <EmptyCustodians as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigErrors::EmptyCustodians)
-                    }
-                    EmptyCustodians
-                },
-                {
-                    fn KmsContextAlreadyRegistered(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <KmsContextAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigErrors::KmsContextAlreadyRegistered)
-                    }
-                    KmsContextAlreadyRegistered
-                },
-                {
-                    fn KmsTxSenderAlreadyRegistered(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <KmsTxSenderAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigErrors::KmsTxSenderAlreadyRegistered)
-                    }
-                    KmsTxSenderAlreadyRegistered
-                },
-                {
-                    fn InvalidHighUserDecryptionThreshold(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InvalidHighUserDecryptionThreshold as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                IGatewayConfigErrors::InvalidHighUserDecryptionThreshold,
-                            )
-                    }
-                    InvalidHighUserDecryptionThreshold
-                },
-                {
-                    fn InvalidNullUserDecryptionThreshold(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InvalidNullUserDecryptionThreshold as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                IGatewayConfigErrors::InvalidNullUserDecryptionThreshold,
-                            )
-                    }
-                    InvalidNullUserDecryptionThreshold
-                },
-                {
-                    fn KmsSignerAlreadyRegistered(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <KmsSignerAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigErrors::KmsSignerAlreadyRegistered)
-                    }
-                    KmsSignerAlreadyRegistered
-                },
-            ];
-            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
-            };
-            DECODE_VALIDATE_SHIMS[idx](data)
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+            )
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -19709,6 +19567,423 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                     )
                 }
             }
+        }
+    }
+    #[automatically_derived]
+    impl IGatewayConfigErrors {
+        /**Creates a [`AllGatewayContractsAlreadyPaused`] error.
+
+```solidity
+error AllGatewayContractsAlreadyPaused()
+```*/
+        #[inline]
+        pub fn all_gateway_contracts_already_paused() -> Self {
+            Self::AllGatewayContractsAlreadyPaused(AllGatewayContractsAlreadyPaused)
+        }
+        /**Creates a [`AllGatewayContractsAlreadyUnpaused`] error.
+
+```solidity
+error AllGatewayContractsAlreadyUnpaused()
+```*/
+        #[inline]
+        pub fn all_gateway_contracts_already_unpaused() -> Self {
+            Self::AllGatewayContractsAlreadyUnpaused(AllGatewayContractsAlreadyUnpaused)
+        }
+        /**Creates a [`ChainIdNotUint64`] error.
+
+```solidity
+error ChainIdNotUint64(uint256)
+```*/
+        #[inline]
+        pub fn chain_id_not_uint_64(
+            chain_id: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::ChainIdNotUint64(ChainIdNotUint64 {
+                chainId: chain_id,
+            })
+        }
+        /**Creates a [`CoprocessorSignerAlreadyRegistered`] error.
+
+```solidity
+error CoprocessorSignerAlreadyRegistered(address)
+```*/
+        #[inline]
+        pub fn coprocessor_signer_already_registered(
+            coprocessor_signer_address: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::CoprocessorSignerAlreadyRegistered(CoprocessorSignerAlreadyRegistered {
+                coprocessorSignerAddress: coprocessor_signer_address,
+            })
+        }
+        /**Creates a [`CoprocessorTxSenderAlreadyRegistered`] error.
+
+```solidity
+error CoprocessorTxSenderAlreadyRegistered(address)
+```*/
+        #[inline]
+        pub fn coprocessor_tx_sender_already_registered(
+            coprocessor_tx_sender_address: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::CoprocessorTxSenderAlreadyRegistered(CoprocessorTxSenderAlreadyRegistered {
+                coprocessorTxSenderAddress: coprocessor_tx_sender_address,
+            })
+        }
+        /**Creates a [`CurrentKmsContextCannotBeDestroyed`] error.
+
+```solidity
+error CurrentKmsContextCannotBeDestroyed(uint256)
+```*/
+        #[inline]
+        pub fn current_kms_context_cannot_be_destroyed(
+            current_kms_context_id: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::CurrentKmsContextCannotBeDestroyed(CurrentKmsContextCannotBeDestroyed {
+                currentKmsContextId: current_kms_context_id,
+            })
+        }
+        /**Creates a [`CustodianSignerAlreadyRegistered`] error.
+
+```solidity
+error CustodianSignerAlreadyRegistered(address)
+```*/
+        #[inline]
+        pub fn custodian_signer_already_registered(
+            custodian_signer_address: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::CustodianSignerAlreadyRegistered(CustodianSignerAlreadyRegistered {
+                custodianSignerAddress: custodian_signer_address,
+            })
+        }
+        /**Creates a [`CustodianTxSenderAlreadyRegistered`] error.
+
+```solidity
+error CustodianTxSenderAlreadyRegistered(address)
+```*/
+        #[inline]
+        pub fn custodian_tx_sender_already_registered(
+            custodian_tx_sender_address: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::CustodianTxSenderAlreadyRegistered(CustodianTxSenderAlreadyRegistered {
+                custodianTxSenderAddress: custodian_tx_sender_address,
+            })
+        }
+        /**Creates a [`EmptyCoprocessors`] error.
+
+```solidity
+error EmptyCoprocessors()
+```*/
+        #[inline]
+        pub fn empty_coprocessors() -> Self {
+            Self::EmptyCoprocessors(EmptyCoprocessors)
+        }
+        /**Creates a [`EmptyCustodians`] error.
+
+```solidity
+error EmptyCustodians()
+```*/
+        #[inline]
+        pub fn empty_custodians() -> Self {
+            Self::EmptyCustodians(EmptyCustodians)
+        }
+        /**Creates a [`EmptyKmsNodes`] error.
+
+```solidity
+error EmptyKmsNodes()
+```*/
+        #[inline]
+        pub fn empty_kms_nodes() -> Self {
+            Self::EmptyKmsNodes(EmptyKmsNodes)
+        }
+        /**Creates a [`HostChainAlreadyDisabled`] error.
+
+```solidity
+error HostChainAlreadyDisabled(uint256)
+```*/
+        #[inline]
+        pub fn host_chain_already_disabled(
+            chain_id: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::HostChainAlreadyDisabled(HostChainAlreadyDisabled {
+                chainId: chain_id,
+            })
+        }
+        /**Creates a [`HostChainAlreadyEnabled`] error.
+
+```solidity
+error HostChainAlreadyEnabled(uint256)
+```*/
+        #[inline]
+        pub fn host_chain_already_enabled(
+            chain_id: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::HostChainAlreadyEnabled(HostChainAlreadyEnabled {
+                chainId: chain_id,
+            })
+        }
+        /**Creates a [`HostChainAlreadyRegistered`] error.
+
+```solidity
+error HostChainAlreadyRegistered(uint256)
+```*/
+        #[inline]
+        pub fn host_chain_already_registered(
+            chain_id: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::HostChainAlreadyRegistered(HostChainAlreadyRegistered {
+                chainId: chain_id,
+            })
+        }
+        /**Creates a [`HostChainNotDisabled`] error.
+
+```solidity
+error HostChainNotDisabled(uint256)
+```*/
+        #[inline]
+        pub fn host_chain_not_disabled(
+            chain_id: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::HostChainNotDisabled(HostChainNotDisabled {
+                chainId: chain_id,
+            })
+        }
+        /**Creates a [`HostChainNotRegistered`] error.
+
+```solidity
+error HostChainNotRegistered(uint256)
+```*/
+        #[inline]
+        pub fn host_chain_not_registered(
+            chain_id: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::HostChainNotRegistered(HostChainNotRegistered {
+                chainId: chain_id,
+            })
+        }
+        /**Creates a [`InvalidHighCoprocessorThreshold`] error.
+
+```solidity
+error InvalidHighCoprocessorThreshold(uint256,uint256)
+```*/
+        #[inline]
+        pub fn invalid_high_coprocessor_threshold(
+            coprocessor_threshold: alloy::sol_types::private::primitives::aliases::U256,
+            n_coprocessors: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::InvalidHighCoprocessorThreshold(InvalidHighCoprocessorThreshold {
+                coprocessorThreshold: coprocessor_threshold,
+                nCoprocessors: n_coprocessors,
+            })
+        }
+        /**Creates a [`InvalidHighKmsGenThreshold`] error.
+
+```solidity
+error InvalidHighKmsGenThreshold(uint256,uint256)
+```*/
+        #[inline]
+        pub fn invalid_high_kms_gen_threshold(
+            kms_gen_threshold: alloy::sol_types::private::primitives::aliases::U256,
+            n_kms_nodes: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::InvalidHighKmsGenThreshold(InvalidHighKmsGenThreshold {
+                kmsGenThreshold: kms_gen_threshold,
+                nKmsNodes: n_kms_nodes,
+            })
+        }
+        /**Creates a [`InvalidHighMpcThreshold`] error.
+
+```solidity
+error InvalidHighMpcThreshold(uint256,uint256)
+```*/
+        #[inline]
+        pub fn invalid_high_mpc_threshold(
+            mpc_threshold: alloy::sol_types::private::primitives::aliases::U256,
+            n_kms_nodes: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::InvalidHighMpcThreshold(InvalidHighMpcThreshold {
+                mpcThreshold: mpc_threshold,
+                nKmsNodes: n_kms_nodes,
+            })
+        }
+        /**Creates a [`InvalidHighPublicDecryptionThreshold`] error.
+
+```solidity
+error InvalidHighPublicDecryptionThreshold(uint256,uint256)
+```*/
+        #[inline]
+        pub fn invalid_high_public_decryption_threshold(
+            public_decryption_threshold: alloy::sol_types::private::primitives::aliases::U256,
+            n_kms_nodes: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::InvalidHighPublicDecryptionThreshold(InvalidHighPublicDecryptionThreshold {
+                publicDecryptionThreshold: public_decryption_threshold,
+                nKmsNodes: n_kms_nodes,
+            })
+        }
+        /**Creates a [`InvalidHighUserDecryptionThreshold`] error.
+
+```solidity
+error InvalidHighUserDecryptionThreshold(uint256,uint256)
+```*/
+        #[inline]
+        pub fn invalid_high_user_decryption_threshold(
+            user_decryption_threshold: alloy::sol_types::private::primitives::aliases::U256,
+            n_kms_nodes: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::InvalidHighUserDecryptionThreshold(InvalidHighUserDecryptionThreshold {
+                userDecryptionThreshold: user_decryption_threshold,
+                nKmsNodes: n_kms_nodes,
+            })
+        }
+        /**Creates a [`InvalidKmsContext`] error.
+
+```solidity
+error InvalidKmsContext(uint256)
+```*/
+        #[inline]
+        pub fn invalid_kms_context(
+            kms_context_id: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::InvalidKmsContext(InvalidKmsContext {
+                kmsContextId: kms_context_id,
+            })
+        }
+        /**Creates a [`InvalidNullChainId`] error.
+
+```solidity
+error InvalidNullChainId()
+```*/
+        #[inline]
+        pub fn invalid_null_chain_id() -> Self {
+            Self::InvalidNullChainId(InvalidNullChainId)
+        }
+        /**Creates a [`InvalidNullCoprocessorThreshold`] error.
+
+```solidity
+error InvalidNullCoprocessorThreshold()
+```*/
+        #[inline]
+        pub fn invalid_null_coprocessor_threshold() -> Self {
+            Self::InvalidNullCoprocessorThreshold(InvalidNullCoprocessorThreshold)
+        }
+        /**Creates a [`InvalidNullKmsContextId`] error.
+
+```solidity
+error InvalidNullKmsContextId()
+```*/
+        #[inline]
+        pub fn invalid_null_kms_context_id() -> Self {
+            Self::InvalidNullKmsContextId(InvalidNullKmsContextId)
+        }
+        /**Creates a [`InvalidNullKmsGenThreshold`] error.
+
+```solidity
+error InvalidNullKmsGenThreshold()
+```*/
+        #[inline]
+        pub fn invalid_null_kms_gen_threshold() -> Self {
+            Self::InvalidNullKmsGenThreshold(InvalidNullKmsGenThreshold)
+        }
+        /**Creates a [`InvalidNullPublicDecryptionThreshold`] error.
+
+```solidity
+error InvalidNullPublicDecryptionThreshold()
+```*/
+        #[inline]
+        pub fn invalid_null_public_decryption_threshold() -> Self {
+            Self::InvalidNullPublicDecryptionThreshold(
+                InvalidNullPublicDecryptionThreshold,
+            )
+        }
+        /**Creates a [`InvalidNullUserDecryptionThreshold`] error.
+
+```solidity
+error InvalidNullUserDecryptionThreshold()
+```*/
+        #[inline]
+        pub fn invalid_null_user_decryption_threshold() -> Self {
+            Self::InvalidNullUserDecryptionThreshold(InvalidNullUserDecryptionThreshold)
+        }
+        /**Creates a [`KmsContextAlreadyRegistered`] error.
+
+```solidity
+error KmsContextAlreadyRegistered(uint256,uint256)
+```*/
+        #[inline]
+        pub fn kms_context_already_registered(
+            context_id: alloy::sol_types::private::primitives::aliases::U256,
+            current_kms_context_id: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::KmsContextAlreadyRegistered(KmsContextAlreadyRegistered {
+                contextId: context_id,
+                currentKmsContextId: current_kms_context_id,
+            })
+        }
+        /**Creates a [`KmsSignerAlreadyRegistered`] error.
+
+```solidity
+error KmsSignerAlreadyRegistered(address)
+```*/
+        #[inline]
+        pub fn kms_signer_already_registered(
+            kms_signer_address: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::KmsSignerAlreadyRegistered(KmsSignerAlreadyRegistered {
+                kmsSignerAddress: kms_signer_address,
+            })
+        }
+        /**Creates a [`KmsSignerSetExceedsProofFormatLimit`] error.
+
+```solidity
+error KmsSignerSetExceedsProofFormatLimit(uint256,uint256)
+```*/
+        #[inline]
+        pub fn kms_signer_set_exceeds_proof_format_limit(
+            signer_count: alloy::sol_types::private::primitives::aliases::U256,
+            max_allowed: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::KmsSignerSetExceedsProofFormatLimit(KmsSignerSetExceedsProofFormatLimit {
+                signerCount: signer_count,
+                maxAllowed: max_allowed,
+            })
+        }
+        /**Creates a [`KmsTxSenderAlreadyRegistered`] error.
+
+```solidity
+error KmsTxSenderAlreadyRegistered(address)
+```*/
+        #[inline]
+        pub fn kms_tx_sender_already_registered(
+            kms_tx_sender_address: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::KmsTxSenderAlreadyRegistered(KmsTxSenderAlreadyRegistered {
+                kmsTxSenderAddress: kms_tx_sender_address,
+            })
+        }
+        /**Creates a [`NotPauser`] error.
+
+```solidity
+error NotPauser(address)
+```*/
+        #[inline]
+        pub fn not_pauser(account: alloy::sol_types::private::Address) -> Self {
+            Self::NotPauser(NotPauser { account: account })
+        }
+        /**Creates a [`ThresholdExceedsProofFormatLimit`] error.
+
+```solidity
+error ThresholdExceedsProofFormatLimit(string,uint256,uint256)
+```*/
+        #[inline]
+        pub fn threshold_exceeds_proof_format_limit(
+            threshold_name: alloy::sol_types::private::String,
+            threshold: alloy::sol_types::private::primitives::aliases::U256,
+            max_allowed: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::ThresholdExceedsProofFormatLimit(ThresholdExceedsProofFormatLimit {
+                thresholdName: threshold_name,
+                threshold: threshold,
+                maxAllowed: max_allowed,
+            })
         }
     }
     ///Container for all the [`IGatewayConfig`](self) events.
@@ -20162,6 +20437,251 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
             }
         }
     }
+    #[automatically_derived]
+    impl IGatewayConfigEvents {
+        /**Creates a [`AddHostChain`] event.
+
+```solidity
+event AddHostChain((uint256,address,address,string,string))
+```*/
+        #[inline]
+        pub fn add_host_chain(
+            host_chain: <HostChain as alloy::sol_types::SolType>::RustType,
+        ) -> Self {
+            Self::AddHostChain(AddHostChain {
+                hostChain: host_chain,
+            })
+        }
+        /**Creates a [`DestroyKmsContext`] event.
+
+```solidity
+event DestroyKmsContext(uint256)
+```*/
+        #[inline]
+        pub fn destroy_kms_context(
+            kms_context_id: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::DestroyKmsContext(DestroyKmsContext {
+                kmsContextId: kms_context_id,
+            })
+        }
+        /**Creates a [`DisableHostChain`] event.
+
+```solidity
+event DisableHostChain(uint256)
+```*/
+        #[inline]
+        pub fn disable_host_chain(
+            chain_id: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::DisableHostChain(DisableHostChain {
+                chainId: chain_id,
+            })
+        }
+        /**Creates a [`EnableHostChain`] event.
+
+```solidity
+event EnableHostChain(uint256)
+```*/
+        #[inline]
+        pub fn enable_host_chain(
+            chain_id: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::EnableHostChain(EnableHostChain {
+                chainId: chain_id,
+            })
+        }
+        /**Creates a [`InitializeGatewayConfig`] event.
+
+```solidity
+event InitializeGatewayConfig(uint256,(string,string),(uint256,uint256,uint256,uint256,uint256),(address,address,string,string)[],(address,address,string)[],(address,address,bytes)[])
+```*/
+        #[inline]
+        pub fn initialize_gateway_config(
+            kms_context_id: alloy::sol_types::private::primitives::aliases::U256,
+            metadata: <ProtocolMetadata as alloy::sol_types::SolType>::RustType,
+            thresholds: <Thresholds as alloy::sol_types::SolType>::RustType,
+            kms_nodes: alloy::sol_types::private::Vec<
+                <KmsNode as alloy::sol_types::SolType>::RustType,
+            >,
+            coprocessors: alloy::sol_types::private::Vec<
+                <Coprocessor as alloy::sol_types::SolType>::RustType,
+            >,
+            custodians: alloy::sol_types::private::Vec<
+                <Custodian as alloy::sol_types::SolType>::RustType,
+            >,
+        ) -> Self {
+            Self::InitializeGatewayConfig(InitializeGatewayConfig {
+                kmsContextId: kms_context_id,
+                metadata: metadata,
+                thresholds: thresholds,
+                kmsNodes: kms_nodes,
+                coprocessors: coprocessors,
+                custodians: custodians,
+            })
+        }
+        /**Creates a [`PauseAllGatewayContracts`] event.
+
+```solidity
+event PauseAllGatewayContracts()
+```*/
+        #[inline]
+        pub fn pause_all_gateway_contracts() -> Self {
+            Self::PauseAllGatewayContracts(PauseAllGatewayContracts)
+        }
+        /**Creates a [`RemoveHostChain`] event.
+
+```solidity
+event RemoveHostChain(uint256)
+```*/
+        #[inline]
+        pub fn remove_host_chain(
+            chain_id: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::RemoveHostChain(RemoveHostChain {
+                chainId: chain_id,
+            })
+        }
+        /**Creates a [`UnpauseAllGatewayContracts`] event.
+
+```solidity
+event UnpauseAllGatewayContracts()
+```*/
+        #[inline]
+        pub fn unpause_all_gateway_contracts() -> Self {
+            Self::UnpauseAllGatewayContracts(UnpauseAllGatewayContracts)
+        }
+        /**Creates a [`UpdateCoprocessorThreshold`] event.
+
+```solidity
+event UpdateCoprocessorThreshold(uint256)
+```*/
+        #[inline]
+        pub fn update_coprocessor_threshold(
+            new_coprocessor_threshold: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::UpdateCoprocessorThreshold(UpdateCoprocessorThreshold {
+                newCoprocessorThreshold: new_coprocessor_threshold,
+            })
+        }
+        /**Creates a [`UpdateCoprocessors`] event.
+
+```solidity
+event UpdateCoprocessors((address,address,string)[],uint256)
+```*/
+        #[inline]
+        pub fn update_coprocessors(
+            new_coprocessors: alloy::sol_types::private::Vec<
+                <Coprocessor as alloy::sol_types::SolType>::RustType,
+            >,
+            new_coprocessor_threshold: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::UpdateCoprocessors(UpdateCoprocessors {
+                newCoprocessors: new_coprocessors,
+                newCoprocessorThreshold: new_coprocessor_threshold,
+            })
+        }
+        /**Creates a [`UpdateCustodians`] event.
+
+```solidity
+event UpdateCustodians((address,address,bytes)[])
+```*/
+        #[inline]
+        pub fn update_custodians(
+            new_custodians: alloy::sol_types::private::Vec<
+                <Custodian as alloy::sol_types::SolType>::RustType,
+            >,
+        ) -> Self {
+            Self::UpdateCustodians(UpdateCustodians {
+                newCustodians: new_custodians,
+            })
+        }
+        /**Creates a [`UpdateKmsContext`] event.
+
+```solidity
+event UpdateKmsContext(uint256,(address,address,string,string)[],uint256,uint256,uint256,uint256)
+```*/
+        #[inline]
+        pub fn update_kms_context(
+            new_context_id: alloy::sol_types::private::primitives::aliases::U256,
+            new_kms_nodes: alloy::sol_types::private::Vec<
+                <KmsNode as alloy::sol_types::SolType>::RustType,
+            >,
+            new_mpc_threshold: alloy::sol_types::private::primitives::aliases::U256,
+            new_public_decryption_threshold: alloy::sol_types::private::primitives::aliases::U256,
+            new_user_decryption_threshold: alloy::sol_types::private::primitives::aliases::U256,
+            new_kms_gen_threshold: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::UpdateKmsContext(UpdateKmsContext {
+                newContextId: new_context_id,
+                newKmsNodes: new_kms_nodes,
+                newMpcThreshold: new_mpc_threshold,
+                newPublicDecryptionThreshold: new_public_decryption_threshold,
+                newUserDecryptionThreshold: new_user_decryption_threshold,
+                newKmsGenThreshold: new_kms_gen_threshold,
+            })
+        }
+        /**Creates a [`UpdateKmsGenThresholdForContext`] event.
+
+```solidity
+event UpdateKmsGenThresholdForContext(uint256,uint256)
+```*/
+        #[inline]
+        pub fn update_kms_gen_threshold_for_context(
+            context_id: alloy::sol_types::private::primitives::aliases::U256,
+            new_kms_gen_threshold: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::UpdateKmsGenThresholdForContext(UpdateKmsGenThresholdForContext {
+                contextId: context_id,
+                newKmsGenThreshold: new_kms_gen_threshold,
+            })
+        }
+        /**Creates a [`UpdateMpcThresholdForContext`] event.
+
+```solidity
+event UpdateMpcThresholdForContext(uint256,uint256)
+```*/
+        #[inline]
+        pub fn update_mpc_threshold_for_context(
+            context_id: alloy::sol_types::private::primitives::aliases::U256,
+            new_mpc_threshold: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::UpdateMpcThresholdForContext(UpdateMpcThresholdForContext {
+                contextId: context_id,
+                newMpcThreshold: new_mpc_threshold,
+            })
+        }
+        /**Creates a [`UpdatePublicDecryptionThresholdForContext`] event.
+
+```solidity
+event UpdatePublicDecryptionThresholdForContext(uint256,uint256)
+```*/
+        #[inline]
+        pub fn update_public_decryption_threshold_for_context(
+            context_id: alloy::sol_types::private::primitives::aliases::U256,
+            new_public_decryption_threshold: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::UpdatePublicDecryptionThresholdForContext(UpdatePublicDecryptionThresholdForContext {
+                contextId: context_id,
+                newPublicDecryptionThreshold: new_public_decryption_threshold,
+            })
+        }
+        /**Creates a [`UpdateUserDecryptionThresholdForContext`] event.
+
+```solidity
+event UpdateUserDecryptionThresholdForContext(uint256,uint256)
+```*/
+        #[inline]
+        pub fn update_user_decryption_threshold_for_context(
+            context_id: alloy::sol_types::private::primitives::aliases::U256,
+            new_user_decryption_threshold: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::UpdateUserDecryptionThresholdForContext(UpdateUserDecryptionThresholdForContext {
+                contextId: context_id,
+                newUserDecryptionThreshold: new_user_decryption_threshold,
+            })
+        }
+    }
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`IGatewayConfig`](self) contract instance.
 
@@ -20175,34 +20695,6 @@ See the [wrapper's documentation](`IGatewayConfigInstance`) for more details.*/
         __provider: P,
     ) -> IGatewayConfigInstance<P, N> {
         IGatewayConfigInstance::<P, N>::new(address, __provider)
-    }
-    /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-    #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
-        __provider: P,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<IGatewayConfigInstance<P, N>>,
-    > {
-        IGatewayConfigInstance::<P, N>::deploy(__provider)
-    }
-    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-    #[inline]
-    pub fn deploy_builder<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        IGatewayConfigInstance::<P, N>::deploy_builder(__provider)
     }
     /**A [`IGatewayConfig`](self) instance.
 
@@ -20246,31 +20738,6 @@ See the [wrapper's documentation](`IGatewayConfigInstance`) for more details.*/
                 provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
-        }
-        /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-        #[inline]
-        pub async fn deploy(
-            __provider: P,
-        ) -> alloy_contract::Result<IGatewayConfigInstance<P, N>> {
-            let call_builder = Self::deploy_builder(__provider);
-            let contract_address = call_builder.deploy().await?;
-            Ok(Self::new(contract_address, call_builder.provider))
-        }
-        /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-        #[inline]
-        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-            alloy_contract::RawCallBuilder::new_raw_deploy(
-                __provider,
-                ::core::clone::Clone::clone(&BYTECODE),
-            )
         }
         /// Returns a reference to the address.
         #[inline]

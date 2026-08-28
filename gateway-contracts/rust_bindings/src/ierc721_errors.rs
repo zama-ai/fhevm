@@ -132,26 +132,6 @@ interface IERC721Errors {
 pub mod IERC721Errors {
     use super::*;
     use alloy::sol_types as alloy_sol_types;
-    /// The creation / init bytecode of the contract.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
-    /// The runtime bytecode of the contract, as deployed on the network.
-    ///
-    /// ```text
-    ///0x
-    /// ```
-    #[rustfmt::skip]
-    #[allow(clippy::all)]
-    pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"",
-    );
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ERC721IncorrectOwner(address,uint256,address)` and selector `0x64283d7b`.
@@ -248,10 +228,10 @@ error ERC721IncorrectOwner(address sender, uint256 tokenId, address owner);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -345,10 +325,10 @@ error ERC721InsufficientApproval(address operator, uint256 tokenId);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -426,10 +406,10 @@ error ERC721InvalidApprover(address approver);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -507,10 +487,10 @@ error ERC721InvalidOperator(address operator);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -588,10 +568,10 @@ error ERC721InvalidOwner(address owner);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -669,10 +649,10 @@ error ERC721InvalidReceiver(address receiver);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -750,10 +730,10 @@ error ERC721InvalidSender(address sender);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -833,10 +813,10 @@ error ERC721NonexistentToken(uint256 tokenId);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                Self::abi_decode_raw_with_config(
+                    data,
+                    alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+                )
             }
         }
     };
@@ -970,15 +950,31 @@ error ERC721NonexistentToken(uint256 tokenId);
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::default(),
+            )
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_with_config(
+            selector: [u8; 4],
+            data: &[u8],
+            config: alloy_sol_types::abi::AbiDecoderConfig,
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
+                alloy_sol_types::abi::AbiDecoderConfig,
             ) -> alloy_sol_types::Result<IERC721ErrorsErrors>] = &[
                 {
                     fn ERC721InsufficientApproval(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IERC721ErrorsErrors> {
-                        <ERC721InsufficientApproval as alloy_sol_types::SolError>::abi_decode_raw(
+                        <ERC721InsufficientApproval as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IERC721ErrorsErrors::ERC721InsufficientApproval)
                     }
@@ -987,9 +983,11 @@ error ERC721NonexistentToken(uint256 tokenId);
                 {
                     fn ERC721InvalidOperator(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IERC721ErrorsErrors> {
-                        <ERC721InvalidOperator as alloy_sol_types::SolError>::abi_decode_raw(
+                        <ERC721InvalidOperator as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IERC721ErrorsErrors::ERC721InvalidOperator)
                     }
@@ -998,9 +996,11 @@ error ERC721NonexistentToken(uint256 tokenId);
                 {
                     fn ERC721IncorrectOwner(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IERC721ErrorsErrors> {
-                        <ERC721IncorrectOwner as alloy_sol_types::SolError>::abi_decode_raw(
+                        <ERC721IncorrectOwner as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IERC721ErrorsErrors::ERC721IncorrectOwner)
                     }
@@ -1009,9 +1009,11 @@ error ERC721NonexistentToken(uint256 tokenId);
                 {
                     fn ERC721InvalidReceiver(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IERC721ErrorsErrors> {
-                        <ERC721InvalidReceiver as alloy_sol_types::SolError>::abi_decode_raw(
+                        <ERC721InvalidReceiver as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IERC721ErrorsErrors::ERC721InvalidReceiver)
                     }
@@ -1020,9 +1022,11 @@ error ERC721NonexistentToken(uint256 tokenId);
                 {
                     fn ERC721InvalidSender(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IERC721ErrorsErrors> {
-                        <ERC721InvalidSender as alloy_sol_types::SolError>::abi_decode_raw(
+                        <ERC721InvalidSender as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IERC721ErrorsErrors::ERC721InvalidSender)
                     }
@@ -1031,9 +1035,11 @@ error ERC721NonexistentToken(uint256 tokenId);
                 {
                     fn ERC721NonexistentToken(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IERC721ErrorsErrors> {
-                        <ERC721NonexistentToken as alloy_sol_types::SolError>::abi_decode_raw(
+                        <ERC721NonexistentToken as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IERC721ErrorsErrors::ERC721NonexistentToken)
                     }
@@ -1042,9 +1048,11 @@ error ERC721NonexistentToken(uint256 tokenId);
                 {
                     fn ERC721InvalidOwner(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IERC721ErrorsErrors> {
-                        <ERC721InvalidOwner as alloy_sol_types::SolError>::abi_decode_raw(
+                        <ERC721InvalidOwner as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IERC721ErrorsErrors::ERC721InvalidOwner)
                     }
@@ -1053,9 +1061,11 @@ error ERC721NonexistentToken(uint256 tokenId);
                 {
                     fn ERC721InvalidApprover(
                         data: &[u8],
+                        config: alloy_sol_types::abi::AbiDecoderConfig,
                     ) -> alloy_sol_types::Result<IERC721ErrorsErrors> {
-                        <ERC721InvalidApprover as alloy_sol_types::SolError>::abi_decode_raw(
+                        <ERC721InvalidApprover as alloy_sol_types::SolError>::abi_decode_raw_with_config(
                                 data,
+                                config,
                             )
                             .map(IERC721ErrorsErrors::ERC721InvalidApprover)
                     }
@@ -1070,7 +1080,7 @@ error ERC721NonexistentToken(uint256 tokenId);
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data)
+            DECODE_SHIMS[idx](data, config)
         }
         #[inline]
         #[allow(non_snake_case)]
@@ -1078,107 +1088,11 @@ error ERC721NonexistentToken(uint256 tokenId);
             selector: [u8; 4],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_VALIDATE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<IERC721ErrorsErrors>] = &[
-                {
-                    fn ERC721InsufficientApproval(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IERC721ErrorsErrors> {
-                        <ERC721InsufficientApproval as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IERC721ErrorsErrors::ERC721InsufficientApproval)
-                    }
-                    ERC721InsufficientApproval
-                },
-                {
-                    fn ERC721InvalidOperator(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IERC721ErrorsErrors> {
-                        <ERC721InvalidOperator as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IERC721ErrorsErrors::ERC721InvalidOperator)
-                    }
-                    ERC721InvalidOperator
-                },
-                {
-                    fn ERC721IncorrectOwner(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IERC721ErrorsErrors> {
-                        <ERC721IncorrectOwner as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IERC721ErrorsErrors::ERC721IncorrectOwner)
-                    }
-                    ERC721IncorrectOwner
-                },
-                {
-                    fn ERC721InvalidReceiver(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IERC721ErrorsErrors> {
-                        <ERC721InvalidReceiver as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IERC721ErrorsErrors::ERC721InvalidReceiver)
-                    }
-                    ERC721InvalidReceiver
-                },
-                {
-                    fn ERC721InvalidSender(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IERC721ErrorsErrors> {
-                        <ERC721InvalidSender as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IERC721ErrorsErrors::ERC721InvalidSender)
-                    }
-                    ERC721InvalidSender
-                },
-                {
-                    fn ERC721NonexistentToken(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IERC721ErrorsErrors> {
-                        <ERC721NonexistentToken as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IERC721ErrorsErrors::ERC721NonexistentToken)
-                    }
-                    ERC721NonexistentToken
-                },
-                {
-                    fn ERC721InvalidOwner(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IERC721ErrorsErrors> {
-                        <ERC721InvalidOwner as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IERC721ErrorsErrors::ERC721InvalidOwner)
-                    }
-                    ERC721InvalidOwner
-                },
-                {
-                    fn ERC721InvalidApprover(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IERC721ErrorsErrors> {
-                        <ERC721InvalidApprover as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IERC721ErrorsErrors::ERC721InvalidApprover)
-                    }
-                    ERC721InvalidApprover
-                },
-            ];
-            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
-            };
-            DECODE_VALIDATE_SHIMS[idx](data)
+            Self::abi_decode_raw_with_config(
+                selector,
+                data,
+                alloy_sol_types::abi::AbiDecoderConfig::new().validate(true),
+            )
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -1279,6 +1193,115 @@ error ERC721NonexistentToken(uint256 tokenId);
             }
         }
     }
+    #[automatically_derived]
+    impl IERC721ErrorsErrors {
+        /**Creates a [`ERC721IncorrectOwner`] error.
+
+```solidity
+error ERC721IncorrectOwner(address,uint256,address)
+```*/
+        #[inline]
+        pub fn erc_721_incorrect_owner(
+            sender: alloy::sol_types::private::Address,
+            token_id: alloy::sol_types::private::primitives::aliases::U256,
+            owner: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::ERC721IncorrectOwner(ERC721IncorrectOwner {
+                sender: sender,
+                tokenId: token_id,
+                owner: owner,
+            })
+        }
+        /**Creates a [`ERC721InsufficientApproval`] error.
+
+```solidity
+error ERC721InsufficientApproval(address,uint256)
+```*/
+        #[inline]
+        pub fn erc_721_insufficient_approval(
+            operator: alloy::sol_types::private::Address,
+            token_id: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::ERC721InsufficientApproval(ERC721InsufficientApproval {
+                operator: operator,
+                tokenId: token_id,
+            })
+        }
+        /**Creates a [`ERC721InvalidApprover`] error.
+
+```solidity
+error ERC721InvalidApprover(address)
+```*/
+        #[inline]
+        pub fn erc_721_invalid_approver(
+            approver: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::ERC721InvalidApprover(ERC721InvalidApprover {
+                approver: approver,
+            })
+        }
+        /**Creates a [`ERC721InvalidOperator`] error.
+
+```solidity
+error ERC721InvalidOperator(address)
+```*/
+        #[inline]
+        pub fn erc_721_invalid_operator(
+            operator: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::ERC721InvalidOperator(ERC721InvalidOperator {
+                operator: operator,
+            })
+        }
+        /**Creates a [`ERC721InvalidOwner`] error.
+
+```solidity
+error ERC721InvalidOwner(address)
+```*/
+        #[inline]
+        pub fn erc_721_invalid_owner(owner: alloy::sol_types::private::Address) -> Self {
+            Self::ERC721InvalidOwner(ERC721InvalidOwner { owner: owner })
+        }
+        /**Creates a [`ERC721InvalidReceiver`] error.
+
+```solidity
+error ERC721InvalidReceiver(address)
+```*/
+        #[inline]
+        pub fn erc_721_invalid_receiver(
+            receiver: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::ERC721InvalidReceiver(ERC721InvalidReceiver {
+                receiver: receiver,
+            })
+        }
+        /**Creates a [`ERC721InvalidSender`] error.
+
+```solidity
+error ERC721InvalidSender(address)
+```*/
+        #[inline]
+        pub fn erc_721_invalid_sender(
+            sender: alloy::sol_types::private::Address,
+        ) -> Self {
+            Self::ERC721InvalidSender(ERC721InvalidSender {
+                sender: sender,
+            })
+        }
+        /**Creates a [`ERC721NonexistentToken`] error.
+
+```solidity
+error ERC721NonexistentToken(uint256)
+```*/
+        #[inline]
+        pub fn erc_721_nonexistent_token(
+            token_id: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> Self {
+            Self::ERC721NonexistentToken(ERC721NonexistentToken {
+                tokenId: token_id,
+            })
+        }
+    }
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`IERC721Errors`](self) contract instance.
 
@@ -1292,34 +1315,6 @@ See the [wrapper's documentation](`IERC721ErrorsInstance`) for more details.*/
         __provider: P,
     ) -> IERC721ErrorsInstance<P, N> {
         IERC721ErrorsInstance::<P, N>::new(address, __provider)
-    }
-    /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-    #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
-        __provider: P,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<IERC721ErrorsInstance<P, N>>,
-    > {
-        IERC721ErrorsInstance::<P, N>::deploy(__provider)
-    }
-    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-    #[inline]
-    pub fn deploy_builder<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        IERC721ErrorsInstance::<P, N>::deploy_builder(__provider)
     }
     /**A [`IERC721Errors`](self) instance.
 
@@ -1363,31 +1358,6 @@ See the [wrapper's documentation](`IERC721ErrorsInstance`) for more details.*/
                 provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
-        }
-        /**Deploys this contract using the given `provider` and constructor arguments, if any.
-
-Returns a new instance of the contract, if the deployment was successful.
-
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
-        #[inline]
-        pub async fn deploy(
-            __provider: P,
-        ) -> alloy_contract::Result<IERC721ErrorsInstance<P, N>> {
-            let call_builder = Self::deploy_builder(__provider);
-            let contract_address = call_builder.deploy().await?;
-            Ok(Self::new(contract_address, call_builder.provider))
-        }
-        /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
-
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-        #[inline]
-        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-            alloy_contract::RawCallBuilder::new_raw_deploy(
-                __provider,
-                ::core::clone::Clone::clone(&BYTECODE),
-            )
         }
         /// Returns a reference to the address.
         #[inline]
