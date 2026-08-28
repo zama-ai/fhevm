@@ -761,7 +761,10 @@ impl UserDecryptHandler {
                                 TIMEOUT_REASON_MISSING_MSG.to_string()
                             }
                         };
-                        let error_value = if error_msg == READINESS_CHECK_TIMEOUT_MSG {
+                        // A prefix rather than whole-string equality, matching the host ACL and
+                        // consensus arms below, so a stored reason may append per-request detail
+                        // without silently relabelling itself `response_timed_out`.
+                        let error_value = if error_msg.starts_with(READINESS_CHECK_TIMEOUT_MSG) {
                             V2ErrorResponseBody::readiness_check_timed_out(&error_msg)
                         } else {
                             V2ErrorResponseBody::response_timed_out(&error_msg)
