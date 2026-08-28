@@ -162,6 +162,8 @@ mod operand_boundary_mask_tests {
         is_allowed: bool,
     ) -> WorkItem {
         WorkItem {
+            group_id: None,
+            output_index: 0,
             output_handle: output,
             dependencies: deps,
             fhe_operation: SupportedFheOperations::FheAdd as i16,
@@ -248,7 +250,7 @@ mod operand_boundary_mask_tests {
         let txwork = vec![consumer, independent];
         let prepared = prepare_transaction_ops(&txwork, dcid.as_deref(), &dead).expect("prepared");
         assert_eq!(prepared.ops.len(), 1, "independent op still executes");
-        assert_eq!(prepared.ops[0].output_handle, handle(4));
+        assert_eq!(prepared.ops[0].outputs[0].handle, handle(4));
         assert_eq!(prepared.invalid_rows.len(), 1);
         assert_eq!(prepared.invalid_rows[0].0, handle(3));
         assert!(prepared.invalid_rows[0].1.contains("dead boundary input"));
@@ -315,7 +317,7 @@ mod operand_boundary_mask_tests {
         let consumer = prepared
             .ops
             .iter()
-            .find(|op| op.output_handle == handle(2))
+            .find(|op| op.outputs[0].handle == handle(2))
             .expect("consumer op");
         // handle(1) is produced by this transaction -> local; handle(9) is
         // not -> canonical persisted form.
@@ -393,7 +395,7 @@ mod operand_boundary_mask_tests {
         let prepared =
             prepare_transaction_ops(&txwork, dcid.as_deref(), &HashSet::new()).expect("prepared");
         assert_eq!(prepared.ops.len(), 1);
-        assert_eq!(prepared.ops[0].output_handle, handle(4));
+        assert_eq!(prepared.ops[0].outputs[0].handle, handle(4));
         let mut errored: Vec<Vec<u8>> = prepared
             .invalid_rows
             .iter()
@@ -474,18 +476,18 @@ mod operand_boundary_mask_tests {
         let foreign = prepared
             .ops
             .iter()
-            .find(|op| op.output_handle == handle(1))
+            .find(|op| op.outputs[0].handle == handle(1))
             .expect("foreign producer joined the graph");
         // Recompute-only: never eligible for results or persistence, even
         // though its own row is allowed.
-        assert!(!foreign.is_allowed);
+        assert!(!foreign.outputs[0].is_allowed);
         assert_eq!(input_kinds(foreign), ["boundary", "boundary"]);
         let ours_op = prepared
             .ops
             .iter()
-            .find(|op| op.output_handle == handle(2))
+            .find(|op| op.outputs[0].handle == handle(2))
             .expect("owned consumer");
-        assert!(ours_op.is_allowed);
+        assert!(ours_op.outputs[0].is_allowed);
         assert_eq!(input_kinds(ours_op), ["local", "boundary"]);
         // Foreign rows never anchor the batch's schedule order.
         assert_eq!(
@@ -518,7 +520,7 @@ mod operand_boundary_mask_tests {
         let prepared =
             prepare_transaction_ops(&txwork, Some(&ours), &HashSet::new()).expect("prepared");
         assert_eq!(prepared.ops.len(), 1);
-        assert_eq!(prepared.ops[0].output_handle, handle(2));
+        assert_eq!(prepared.ops[0].outputs[0].handle, handle(2));
     }
 
     use sqlx::postgres::PgPoolOptions;
@@ -2011,7 +2013,9 @@ fn prepare_transaction_ops(
     // `output_index`; a singleton is its own group. Rows are indexed by group
     // so the walk below emits one op per group rather than one per row.
     let group_key = |w: &WorkItem| -> Vec<u8> {
-        w.group_id.clone().unwrap_or_else(|| w.output_handle.clone())
+        w.group_id
+            .clone()
+            .unwrap_or_else(|| w.output_handle.clone())
     };
     let mut rows_by_group: HashMap<Vec<u8>, Vec<&WorkItem>> = HashMap::new();
     for w in txwork.iter() {
@@ -2078,8 +2082,7 @@ fn prepare_transaction_ops(
             for row in group_rows {
                 invalid_rows.push((
                     row.output_handle.clone(),
-                    "multi-output group does not start at output_index 0"
-                        .to_string(),
+                    "multi-output group does not start at output_index 0".to_string(),
                 ));
             }
             continue;
@@ -2250,8 +2253,7 @@ fn prepare_transaction_ops(
                     for handle in op.outputs.into_iter().map(|o| o.handle) {
                         invalid_rows.push((
                             handle,
-                            "transaction-local producer is terminally errored"
-                                .to_string(),
+                            "transaction-local producer is terminally errored".to_string(),
                         ));
                     }
                 }

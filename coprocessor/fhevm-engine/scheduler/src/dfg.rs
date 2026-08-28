@@ -854,10 +854,12 @@ mod tests {
 
     fn op(output: u8, input: DFGTaskInput, is_allowed: bool) -> DFGOp {
         DFGOp {
-            output_handle: handle(output),
+            outputs: vec![DFGOutput {
+                handle: handle(output),
+                is_allowed,
+            }],
             fhe_op: SupportedFheOperations::FheNot,
             inputs: vec![input],
-            is_allowed,
         }
     }
 
@@ -953,10 +955,12 @@ mod tests {
                 true,
             ),
             DFGOp {
-                output_handle: stale_handle.clone(),
+                outputs: vec![DFGOutput {
+                    handle: stale_handle.clone(),
+                    is_allowed: false,
+                }],
                 fhe_op: SupportedFheOperations::FheNot,
                 inputs: vec![DFGTaskInput::BoundaryDependence(handle(0xC0))],
-                is_allowed: false,
             },
         ];
 

@@ -14,8 +14,7 @@ use bigdecimal::num_bigint::BigInt;
 use host_listener::contracts::TfheContract::TfheContractEvents;
 use host_listener::database::tfhe_event_propagate::{
     operand_boundary_mask_from_minted, uniform_allowed_outputs, ClearConst,
-    Database as ListenerDatabase, Handle, LogTfhe,
-    ToType, Transaction,
+    Database as ListenerDatabase, Handle, LogTfhe, ToType, Transaction,
 };
 use sqlx::types::time::PrimitiveDateTime;
 use sqlx::PgPool;

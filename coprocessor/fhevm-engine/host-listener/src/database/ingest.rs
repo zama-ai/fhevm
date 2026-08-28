@@ -23,9 +23,9 @@ use crate::database::synthetic_ops::{
     SYNTHETIC_BLOCK_OFFSET,
 };
 use crate::database::tfhe_event_propagate::{
-    acl_result_handles, operand_boundary_mask_from_minted,
-    tfhe_result_handles, uniform_allowed_outputs, Chain, ChainHash, Database,
-    Handle as EventHandle, LogTfhe, TransactionHash,
+    acl_result_handles, operand_boundary_mask_from_minted, tfhe_result_handles,
+    uniform_allowed_outputs, Chain, ChainHash, Database, Handle as EventHandle,
+    LogTfhe, TransactionHash,
 };
 use crate::kms_generation::insert_kms_generation_events_tx;
 use crate::kms_generation::metrics::KMS_EVENT_DECODE_FAIL_COUNTER;
@@ -1611,13 +1611,14 @@ mod tests {
         log_index: Option<u64>,
         is_executor_minted: bool,
     ) -> LogTfhe {
+        let event = alloy::primitives::Log {
+            address: Address::ZERO,
+            data: event,
+        };
         LogTfhe {
-            event: alloy::primitives::Log {
-                address: Address::ZERO,
-                data: event,
-            },
+            allowed_outputs: uniform_allowed_outputs(&event, true),
+            event,
             transaction_hash: Some(tx),
-            is_allowed: true,
             block_number: 1,
             block_hash: FixedBytes::ZERO,
             block_timestamp: PrimitiveDateTime::MIN,
