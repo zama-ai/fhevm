@@ -201,8 +201,17 @@ pub async fn resolve_gcs_mode(database_url: &str) -> anyhow::Result<bool> {
     )
     .await?;
     let mut conn = PgConnection::connect_with(&options).await?;
+    // The versions are not final until setup finishes.
+    let setup_in_progress: bool =
+        sqlx::query_scalar("SELECT to_regclass('public._fhevm_versioning_bootstrap') IS NOT NULL")
+            .fetch_one(&mut conn)
+            .await?;
     let live = live_consensus_version(&mut conn).await?;
     let _ = conn.close().await;
+    anyhow::ensure!(
+        !setup_in_progress,
+        "database setup is still in progress; retry startup once it completes"
+    );
 
     let live = match live {
         Some(v) => v,
@@ -317,10 +326,10 @@ pub struct StaleStackError {
     pub live: i64,
 }
 
-/// True if `err` is Postgres `undefined_table` (SQLSTATE 42P01) — i.e. the
-/// `versioning` table does not exist yet (migrations not applied).
-fn is_undefined_table(err: &sqlx::Error) -> bool {
-    matches!(err, sqlx::Error::Database(db) if db.code().as_deref() == Some("42P01"))
+/// True if `err` is Postgres `undefined_table` (SQLSTATE 42P01) or `undefined_column`
+/// (SQLSTATE 42703) - i.e. the `versioning` row is not readable yet (migrations not applied).
+fn is_unmigrated(err: &sqlx::Error) -> bool {
+    matches!(err, sqlx::Error::Database(db) if matches!(db.code().as_deref(), Some("42P01" | "42703")))
 }
 
 /// Fetch the live consensus version singleton, or `None` if the `versioning` row is
@@ -338,10 +347,10 @@ async fn live_consensus_version(conn: &mut PgConnection) -> Result<Option<i64>, 
     .await
     {
         Ok(row) => row,
-        Err(err) if is_undefined_table(&err) => {
+        Err(err) if is_unmigrated(&err) => {
             warn!(
                     binary_consensus_version = CONSENSUS_PROTOCOL_VERSION,
-                    "versioning table does not exist yet (migrations not applied?); treating as unseeded"
+                    "versioning row is not readable yet (migrations not applied?); treating as unseeded"
                 );
             None
         }
