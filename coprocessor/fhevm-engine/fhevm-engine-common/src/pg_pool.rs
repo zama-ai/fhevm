@@ -84,19 +84,20 @@ impl PostgresPoolManager {
         gcs_mode: bool,
     ) -> Option<Self> {
         let database_url = crate::utils::DatabaseURL::from(url.to_owned());
+        // Postgres ignores a missing schema in search_path, so a green pool opened
+        // too early would write to `public`. Wait for the schema.
+        if gcs_mode {
+            if let Err(err) =
+                crate::versioning::wait_for_gcs_schema(url, crate::versioning::GCS_SCHEMA_WAIT)
+                    .await
+            {
+                error!(error = %err, "GCS schema never appeared");
+                return None;
+            }
+        }
         let pool = loop {
             if cancel_token.is_cancelled() {
                 return None;
-            }
-
-            // Postgres ignores a missing schema in search_path, so a green pool
-            // opened too early would write to `public`. Wait for the schema.
-            if gcs_mode {
-                if let Err(err) = crate::versioning::assert_gcs_schema_exists(url).await {
-                    error!(error = %err, "Waiting for the GCS schema before opening the pool");
-                    sleep(retry_db_conn_interval).await;
-                    continue;
-                }
             }
 
             let statement_timeout = std::cmp::max(acquire_timeout, Duration::from_secs(10));
