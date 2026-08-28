@@ -7,8 +7,7 @@ use fhevm_engine_common::types::{AllowEvents, COMPUTED_HANDLE_INDEX_MARKER, HAND
 use host_listener::contracts::TfheContract::TfheContractEvents;
 use host_listener::database::tfhe_event_propagate::{
     operand_boundary_mask_from_minted, uniform_allowed_outputs, ClearConst,
-    Database as ListenerDatabase, Handle, LogTfhe, OperandBoundaryMask,
-    TransactionHash,
+    Database as ListenerDatabase, Handle, LogTfhe, OperandBoundaryMask, TransactionHash,
 };
 use rand::Rng;
 use sqlx::types::time::PrimitiveDateTime;

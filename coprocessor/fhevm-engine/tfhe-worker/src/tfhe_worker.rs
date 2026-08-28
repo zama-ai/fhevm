@@ -254,6 +254,8 @@ mod operand_boundary_mask_tests {
         is_allowed: bool,
     ) -> WorkItem {
         WorkItem {
+            group_id: None,
+            output_index: 0,
             output_handle: output,
             dependencies: deps,
             fhe_operation: SupportedFheOperations::FheAdd as i16,
@@ -265,14 +267,7 @@ mod operand_boundary_mask_tests {
             schedule_order: PrimitiveDateTime::MIN,
             operand_boundary_mask: mask,
             dependence_chain_id: dcid,
-            // Singleton by default: a group is its own key when `group_id` is None.
-            group_id: None,
-            output_index: 0,
         }
-    }
-
-    fn op_handles(op: &DFGOp) -> Vec<Vec<u8>> {
-        op.outputs.iter().map(|o| o.handle.clone()).collect()
     }
 
     fn input_kinds(op: &DFGOp) -> Vec<&'static str> {
@@ -350,7 +345,7 @@ mod operand_boundary_mask_tests {
         let prepared = prepare_transaction_ops(&txwork, dcid.map(|d| vec![d]).as_deref(), &dead)
             .expect("prepared");
         assert_eq!(prepared.ops.len(), 1, "independent op still executes");
-        assert_eq!(op_handles(&prepared.ops[0]), vec![handle(4)]);
+        assert_eq!(prepared.ops[0].outputs[0].handle, handle(4));
         assert_eq!(prepared.invalid_rows.len(), 1);
         assert_eq!(prepared.invalid_rows[0].0, handle(3));
         assert!(prepared.invalid_rows[0].1.contains("dead boundary input"));
@@ -421,7 +416,7 @@ mod operand_boundary_mask_tests {
         let consumer = prepared
             .ops
             .iter()
-            .find(|op| op_handles(op) == vec![handle(2)])
+            .find(|op| op.outputs[0].handle == handle(2))
             .expect("consumer op");
         // handle(1) is produced by this transaction -> local; handle(9) is
         // not -> canonical persisted form.
@@ -501,7 +496,7 @@ mod operand_boundary_mask_tests {
             prepare_transaction_ops(&txwork, dcid.map(|d| vec![d]).as_deref(), &HashSet::new())
                 .expect("prepared");
         assert_eq!(prepared.ops.len(), 1);
-        assert_eq!(op_handles(&prepared.ops[0]), vec![handle(4)]);
+        assert_eq!(prepared.ops[0].outputs[0].handle, handle(4));
         let mut errored: Vec<Vec<u8>> = prepared
             .invalid_rows
             .iter()
@@ -593,18 +588,18 @@ mod operand_boundary_mask_tests {
         let foreign = prepared
             .ops
             .iter()
-            .find(|op| op_handles(op) == vec![handle(1)])
+            .find(|op| op.outputs[0].handle == handle(1))
             .expect("foreign producer joined the graph");
         // Recompute-only: never eligible for results or persistence, even
         // though its own row is allowed.
-        assert!(foreign.outputs.iter().all(|o| !o.is_allowed));
+        assert!(!foreign.outputs[0].is_allowed);
         assert_eq!(input_kinds(foreign), ["boundary", "boundary"]);
         let ours_op = prepared
             .ops
             .iter()
-            .find(|op| op_handles(op) == vec![handle(2)])
+            .find(|op| op.outputs[0].handle == handle(2))
             .expect("owned consumer");
-        assert!(ours_op.outputs.iter().any(|o| o.is_allowed));
+        assert!(ours_op.outputs[0].is_allowed);
         assert_eq!(input_kinds(ours_op), ["local", "boundary"]);
         // Foreign rows never anchor the batch's schedule order.
         assert_eq!(
@@ -638,7 +633,7 @@ mod operand_boundary_mask_tests {
             prepare_transaction_ops(&txwork, Some(std::slice::from_ref(&ours)), &HashSet::new())
                 .expect("prepared");
         assert_eq!(prepared.ops.len(), 1);
-        assert_eq!(op_handles(&prepared.ops[0]), vec![handle(2)]);
+        assert_eq!(prepared.ops[0].outputs[0].handle, handle(2));
     }
 
     async fn seed_computation(
@@ -3796,8 +3791,7 @@ fn prepare_transaction_ops(
             for row in group_rows {
                 invalid_rows.push((
                     row.output_handle.clone(),
-                    "multi-output group does not start at output_index 0"
-                        .to_string(),
+                    "multi-output group does not start at output_index 0".to_string(),
                 ));
             }
             continue;

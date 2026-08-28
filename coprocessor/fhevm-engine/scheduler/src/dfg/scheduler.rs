@@ -563,7 +563,10 @@ fn execute_partition(
                         node_outputs.iter().map(|o| o.handle.clone()).collect();
                     let opcode = node.opcode;
                     match op_result {
-                        Ok(working) => match validate_results(&node_outputs, &working) {
+                        Ok(working) => match validate_results(
+                            &node_outputs,
+                            &working.iter().map(|v| v.type_num()).collect::<Vec<_>>(),
+                        ) {
                             Ok(()) => {
                                 // Each consumer's representation of this output
                                 // is pinned on chain: the executor folded a
@@ -887,20 +890,19 @@ type OpResult = Result<Vec<SupportedFheCiphertexts>>;
 /// values, so a bad result fails the whole group rather than half-updating it.
 fn validate_results(
     outputs: &[DFGOutput],
-    results: &[SupportedFheCiphertexts],
+    produced_types: &[i16],
 ) -> std::result::Result<(), SchedulerError> {
-    if results.len() != outputs.len() {
+    if produced_types.len() != outputs.len() {
         return Err(SchedulerError::MultiOutputFailure(format!(
             "produced {} ciphertexts for {} handles",
-            results.len(),
+            produced_types.len(),
             outputs.len()
         )));
     }
-    for (index, (output, ct)) in outputs.iter().zip(results).enumerate() {
+    for (index, (output, &produced)) in outputs.iter().zip(produced_types).enumerate() {
         let asked_for = get_ct_type(&output.handle).map_err(|_| {
             SchedulerError::MultiOutputFailure(format!("output {index} has an invalid handle"))
         })?;
-        let produced = ct.type_num();
         if produced != asked_for {
             return Err(SchedulerError::MultiOutputFailure(format!(
                 "output {index} has type {produced} but was asked for {asked_for}"
@@ -1088,31 +1090,24 @@ mod tests {
         }
     }
 
-    fn ct(ct_type: i16) -> CompressedCiphertext {
-        CompressedCiphertext {
-            ct_type,
-            ct_bytes: vec![],
-        }
-    }
-
     #[test]
     fn accepts_matching_count_and_types() {
         let outputs = [output(4), output(5), output(4)];
-        let results = [ct(4), ct(5), ct(4)];
+        let results = [4i16, 5, 4];
         assert!(validate_results(&outputs, &results).is_ok());
     }
 
     #[test]
     fn rejects_a_count_mismatch() {
         let outputs = [output(4), output(4)];
-        assert!(validate_results(&outputs, &[ct(4)]).is_err());
-        assert!(validate_results(&outputs[..1], &[ct(4), ct(4)]).is_err());
+        assert!(validate_results(&outputs, &[4]).is_err());
+        assert!(validate_results(&outputs[..1], &[4, 4]).is_err());
     }
 
     #[test]
     fn rejects_a_wrong_type_at_the_last_output() {
         let outputs = [output(4), output(5)];
-        assert!(validate_results(&outputs, &[ct(4), ct(4)]).is_err());
+        assert!(validate_results(&outputs, &[4, 4]).is_err());
     }
 
     #[test]
@@ -1121,6 +1116,6 @@ mod tests {
             handle: vec![0u8; 8],
             is_allowed: true,
         }];
-        assert!(validate_results(&outputs, &[ct(4)]).is_err());
+        assert!(validate_results(&outputs, &[4]).is_err());
     }
 }

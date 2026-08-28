@@ -1621,13 +1621,13 @@ mod tests {
         log_index: Option<u64>,
         is_executor_minted: bool,
     ) -> LogTfhe {
-        let inner = alloy::primitives::Log {
+        let event = alloy::primitives::Log {
             address: Address::ZERO,
             data: event,
         };
         LogTfhe {
-            allowed_outputs: uniform_allowed_outputs(&inner, true),
-            event: inner,
+            allowed_outputs: uniform_allowed_outputs(&event, true),
+            event,
             transaction_hash: Some(tx),
             block_number: 1,
             block_hash: FixedBytes::ZERO,
