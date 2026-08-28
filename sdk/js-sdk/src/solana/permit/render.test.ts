@@ -146,7 +146,10 @@ describe('the calendar the timestamp is rendered through', () => {
   // The property a table of expected strings cannot give: it visits every month length, every leap
   // year, every century boundary and the year-9999 edge. The same sample the Rust canon walks, so a
   // disagreement about the calendar is a disagreement about the same days.
-  it('renders every admitted day as a date that converts back to that day', () => {
+  //
+  // A 70k-day sweep takes seconds on a loaded CI runner, so it carries its own timeout instead of
+  // the 5s default.
+  it('renders every admitted day as a date that converts back to that day', { timeout: 30_000 }, () => {
     const days = sample();
     expect(days).toHaveLength(70_846);
 

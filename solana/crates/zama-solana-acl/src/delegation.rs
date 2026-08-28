@@ -24,7 +24,7 @@ pub const DELEGATION_SEED: &[u8] = b"user-decryption-delegation";
 /// The sentinel a wildcard row carries in place of an encrypted value account authority.
 /// No real authority can collide with it: an encrypted value account authority must sign
 /// `fhe_execute`, and the sentinel has no key — and the connector independently refuses any
-/// encrypted value account naming it (its resolution guard), so a lineage carrying the
+/// encrypted value account naming it (its resolution guard), so an account carrying the
 /// sentinel never reaches a row read.
 pub const WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY: [u8; 32] = [0xff; 32];
 

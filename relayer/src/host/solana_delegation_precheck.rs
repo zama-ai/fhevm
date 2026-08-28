@@ -271,9 +271,11 @@ pub(crate) fn plan_row_reads(
         let Some(encrypted_value_account) = encrypted_value_account else {
             continue;
         };
-        let Some(authority) =
-            resolve_encrypted_value_account_authority(program_id, entry.encrypted_value_id, Some(&encrypted_value_account))
-        else {
+        let Some(authority) = resolve_encrypted_value_account_authority(
+            program_id,
+            entry.encrypted_value_id,
+            Some(&encrypted_value_account),
+        ) else {
             continue;
         };
         let (exact_address, wildcard_address) =
@@ -341,10 +343,7 @@ fn solana_pda(seeds: &[&[u8]], program_id: [u8; 32]) -> [u8; 32] {
 }
 
 /// The canonical `EncryptedValue` account address for an encrypted value id.
-fn solana_encrypted_value_address(
-    encrypted_value_id: &[u8; 32],
-    program_id: [u8; 32],
-) -> [u8; 32] {
+fn solana_encrypted_value_address(encrypted_value_id: &[u8; 32], program_id: [u8; 32]) -> [u8; 32] {
     solana_pda(
         &[zama_solana_acl::ENCRYPTED_VALUE_SEED, encrypted_value_id],
         program_id,
@@ -749,7 +748,11 @@ mod tests {
             SLOT,
         )
         .expect("a matching row count judges");
-        assert_eq!(refusals.len(), 1, "revoked exact row beside no wildcard row");
+        assert_eq!(
+            refusals.len(),
+            1,
+            "revoked exact row beside no wildcard row"
+        );
     }
 
     /// A row count that does not match the plan is a defect, never a misattribution — and a

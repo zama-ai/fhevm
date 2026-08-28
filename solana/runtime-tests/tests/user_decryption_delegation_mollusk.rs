@@ -314,9 +314,16 @@ fn a_grant_survives_a_record_address_prefunded_by_a_third_party() {
     let created = result
         .get_account(&actors.record_key)
         .expect("the record exists after the grant");
-    assert_eq!(created.owner, host::id(), "the donation did not block adoption");
+    assert_eq!(
+        created.owner,
+        host::id(),
+        "the donation did not block adoption"
+    );
     let record = decode_record(&created.data);
-    assert_eq!(record.delegation_counter, 1, "this is a first grant, not a re-grant");
+    assert_eq!(
+        record.delegation_counter, 1,
+        "this is a first grant, not a re-grant"
+    );
     assert!(
         created.lamports >= 5_000_000_000,
         "the donation stays on the record (more-than-rent-exempt is harmless)"
@@ -348,7 +355,9 @@ fn a_grant_refuses_a_record_address_owned_by_a_foreign_program() {
             EXPIRATION,
         ),
         &accounts,
-        &[custom_error(host::errors::ZamaHostError::PdaCreationMismatch)],
+        &[custom_error(
+            host::errors::ZamaHostError::PdaCreationMismatch,
+        )],
     );
 }
 
@@ -874,7 +883,7 @@ fn a_revocation_marks_the_record_revoked() {
 
 /// Only the delegator can revoke — not the delegate, and not a stranger.
 #[test]
-fn a_stranger_cannot_revoke_anothers_delegation() {
+fn a_stranger_cannot_revoke_a_delegation_they_did_not_grant() {
     let actors = actors();
     let existing = live_record(&actors);
     let stranger = Pubkey::new_unique();
@@ -1217,7 +1226,7 @@ fn a_vault_pda_revokes_its_delegation_via_cpi() {
 /// An executor cannot act through somebody else's vault: the wrapper holds the vault account
 /// to the seeds of *its own* executor, so the substitution dies before any CPI.
 #[test]
-fn an_executor_cannot_use_anothers_vault() {
+fn an_executor_cannot_use_another_executors_vault() {
     let actors = vault_actors();
     let stranger = Pubkey::new_unique();
     let (strangers_vault, _) = vault::vault_address(stranger);
@@ -1255,7 +1264,10 @@ fn sdk_fixture_delegation_address_and_instruction_bytes() {
     let authority = Pubkey::new_from_array([0x33; 32]);
 
     let (address, _) = host::user_decryption_delegation_address(delegator, delegate, authority);
-    assert_eq!(address.to_string(), "5bK6ZBSpCgC13c5JT5g2LHjRfTjBM6Fjaybcv8tQqUUX");
+    assert_eq!(
+        address.to_string(),
+        "5bK6ZBSpCgC13c5JT5g2LHjRfTjBM6Fjaybcv8tQqUUX"
+    );
 
     let grant = host::instruction::DelegateForUserDecryption {
         delegate,
@@ -1302,8 +1314,7 @@ fn relayer_fixture_wildcard_row_and_encrypted_value_addresses() {
     let delegate = Pubkey::new_from_array([0x22; 32]);
     let wildcard = Pubkey::new_from_array(host::WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY_BYTES);
 
-    let (wildcard_row, _) =
-        host::user_decryption_delegation_address(delegator, delegate, wildcard);
+    let (wildcard_row, _) = host::user_decryption_delegation_address(delegator, delegate, wildcard);
     assert_eq!(
         wildcard_row.to_string(),
         "DjwWqTLQmSDxxCEXS8KmJBqvvmjhYTWKGsZyh343cKJJ"
@@ -1321,7 +1332,10 @@ fn sdk_fixture_permit_invalidation_address_and_revoke_permits_bytes() {
     let user = Pubkey::new_from_array([0x44; 32]);
 
     let (address, _) = host::permit_invalidation_address(user);
-    assert_eq!(address.to_string(), "9mDnXemtzZPxnmXJ6ocXABXsmfXwATkWQC9basgU5q2U");
+    assert_eq!(
+        address.to_string(),
+        "9mDnXemtzZPxnmXJ6ocXABXsmfXwATkWQC9basgU5q2U"
+    );
 
     let revoke_permits = host::instruction::RevokePermits {}.data();
     assert_eq!(fixture_hex(&revoke_permits), "3319597d7d5ac882");

@@ -15,13 +15,13 @@
 //               The delegate then decrypts the DAO's value; a second proposal revokes it.
 //
 // What the connector authorizes is identical in both arcs — a live delegation row for
-// (delegator, delegate, authority-from-lineage) — which is the point: a record granted by a
-// vault PDA is indistinguishable from a wallet's.
+// (delegator, delegate, encrypted value account authority) — which is the point: a record
+// granted by a vault PDA is indistinguishable from a wallet's.
 
 import { describe, expect, test } from "bun:test";
 import { Connection } from "@solana/web3.js";
 import { getAddressEncoder, type Address, type Instruction, type TransactionSigner } from "@solana/kit";
-import type { SolanaDecryptTrust } from "@fhevm/sdk/solana";
+import type { SolanaDecryptTrust } from "@sdk-src/solana/index.js";
 
 import { paddedLabel, trivialEncryptPersistent } from "../../src/solana/fhe-vertical";
 import { runSolanaCurrentUserDecrypt } from "../../src/solana/current-user-decrypt";
@@ -48,7 +48,13 @@ const addressHex = (address: Address): string => hex(new Uint8Array(getAddressEn
 /** How far beyond the current slot every grant here lives. Hours of localnet, minutes of test. */
 const EXPIRATION_SLOTS_AHEAD = 100_000n;
 
-const sdkSolana = async () => import("@fhevm/sdk/solana");
+// The literal specifier stays opaque to tsc (the suite-wide pattern): CI type-checks against
+// the SDK *sources* via the `@sdk-src` alias and never builds the package this resolves to.
+type SdkSolanaModule = typeof import("@sdk-src/solana/index.js");
+const sdkSolana = async (): Promise<SdkSolanaModule> => {
+  const solanaModule = "@fhevm/sdk/solana";
+  return (await import(solanaModule)) as SdkSolanaModule;
+};
 
 /**
  * The SDK's delegation builders return unsigned instructions whose signer metas are noop

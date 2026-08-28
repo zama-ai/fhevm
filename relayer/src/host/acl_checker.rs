@@ -8,7 +8,7 @@ use crate::{
         error_redact::redact_alloy_error,
         handle_chain_id::{extract_chain_id_from_handle, extract_chain_id_from_u256},
         solana_delegation_precheck::{
-            judge_planned_entries, plan_row_reads, encrypted_value_read_addresses, DelegatedEntry,
+            encrypted_value_read_addresses, judge_planned_entries, plan_row_reads, DelegatedEntry,
             RawAccount,
         },
     },
@@ -607,15 +607,20 @@ impl HostAclChecker {
         }
 
         // Round 1: the encrypted value accounts, to learn each entry's authority.
-        let encrypted_value_addresses = encrypted_value_read_addresses(&delegated, chain.program_id);
+        let encrypted_value_addresses =
+            encrypted_value_read_addresses(&delegated, chain.program_id);
         let (_, encrypted_value_accounts) = self
             .solana_accounts_with_retry(job_id, chain, chain_id, &encrypted_value_addresses)
             .await?;
 
         // Entries whose encrypted value account this check cannot judge drop out of the plan
         // (indeterminate).
-        let plan = match plan_row_reads(chain.program_id, user_pubkey, delegated, encrypted_value_accounts)
-        {
+        let plan = match plan_row_reads(
+            chain.program_id,
+            user_pubkey,
+            delegated,
+            encrypted_value_accounts,
+        ) {
             Ok(plan) => plan,
             Err(defect) => {
                 warn!(
