@@ -427,7 +427,7 @@ fn execute_partition(
                                 // cross-transaction consumers need no separate
                                 // tracking.
                                 //
-                                // A multi-output op materialises each output
+                                // A multi-output op materializes each output
                                 // separately, so the rule above is applied per
                                 // handle rather than once per operation.
                                 let mut forwarded: Vec<Option<SupportedFheCiphertexts>> =
