@@ -207,12 +207,12 @@ pub async fn reconcile_stack_mode(pool: &Pool<Postgres>, mode: &StackMode) -> an
             live_consensus_version = live,
             "consensus version matches live; leaving GCS mode (now live stack)"
         );
-    } else if consensus_is_older_than(live) && !mode.is_paused() {
+    } else if !matches && !gcs_mode {
         mode.paused.store(true, Ordering::SeqCst);
         info!(
             binary_consensus_version = CONSENSUS_PROTOCOL_VERSION,
             live_consensus_version = live,
-            "consensus version is behind live; pausing into no-op mode"
+            "consensus version no longer matches live; pausing into no-op mode"
         );
     } else {
         info!(
