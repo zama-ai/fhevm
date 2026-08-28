@@ -51,7 +51,7 @@ use kms_worker::core::solana::{
     snapshot::SnapshotAccount,
     watermark::{WatermarkFailure, WindowFailure, permit_invalidation_address},
 };
-use kms_worker::core::solana_acl::SolanaPubkeyBytes;
+use kms_worker::core::solana_acl::{SolanaPubkeyBytes, WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY};
 use schema::{
     CONNECTOR_AUTH_VECTOR_SCHEMA, ConnectorAuthVector, ConnectorAuthVectorFile, Deployment,
     FailureClass, KmsPairStatus, Observation, RecordedAccount, VectorResult, WireHandleEntry,
@@ -1273,6 +1273,21 @@ fn delegation_scenarios() -> Vec<Scenario> {
         base_world().with_account(expected_key, other_tuple.account()),
     ));
 
+    let other_delegate =
+        DelegationFixture::live(delegator.pubkey(), Wallet::new(9).pubkey(), OBSERVED_SLOT);
+    out.push(Scenario::rejected(
+        "delegation-record-naming-another-delegate",
+        "The delegate half of the tuple rule: a record at the canonical address delegating to \
+         somebody else is refused. Sitting at the address derived from the delegate is not taken \
+         as proof of naming them.",
+        "delegated-current",
+        "the delegation address holds a record naming another delegate",
+        rule::DELEGATION_TUPLE_MISMATCH,
+        FailureClass::Terminal,
+        request.clone(),
+        base_world().with_account(expected_key, other_delegate.account()),
+    ));
+
     let mut foreign = delegation.account();
     foreign.owner = [0xee; 32];
     out.push(Scenario::rejected(
@@ -1319,7 +1334,43 @@ fn delegation_scenarios() -> Vec<Scenario> {
             .with_delegation(&revoked_wildcard),
     ));
 
-    let _ = (delegator, live, world);
+    // The sentinel is a row-address convention, not an authority an encrypted value account may
+    // name: with it as the account's authority, the authority-specific address derivation lands
+    // on the wildcard row itself, so the guard rejects the account before any row is read.
+    let sentinel_live = handle(0x2f, FHE_TYPE_UINT64);
+    let sentinel_encrypted_value_account = EncryptedValueAccountFixture::in_domain(
+        DOMAIN,
+        WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
+        LABEL,
+        sentinel_live,
+        &[delegator.pubkey()],
+    );
+    let sentinel_wildcard_row =
+        DelegationFixture::live_wildcard(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
+    out.push(Scenario::rejected(
+        "sentinel-authority-in-the-encrypted-value-account",
+        "An encrypted value account naming the wildcard sentinel as its authority is rejected at \
+         resolution, before any delegation row is read. A live wildcard row is present — exactly \
+         the row a sentinel authority would resolve to — so an implementation without this guard \
+         authorizes the request, with its authority-specific check structurally a wildcard check.",
+        "delegated-via-wildcard-row",
+        "the encrypted value account names the wildcard sentinel as its authority",
+        rule::ENCRYPTED_VALUE_ACCOUNT_SENTINEL_AUTHORITY,
+        FailureClass::Terminal,
+        RequestBuilder::new(&signer)
+            .delegated_current(
+                &sentinel_encrypted_value_account,
+                sentinel_live,
+                delegator.pubkey(),
+            )
+            .wire(),
+        World::at_slot(OBSERVED_SLOT)
+            .with_encrypted_value_account(&sentinel_encrypted_value_account)
+            .with_watermark(signer.pubkey(), 0)
+            .with_delegation(&sentinel_wildcard_row),
+    ));
+
+    let _ = (live, world);
     out
 }
 
@@ -1527,6 +1578,9 @@ fn rule_name(failure: &AuthorizationFailure) -> &'static str {
             }
             EncryptedValueAccountFailure::EncryptedValueIdMismatch { .. } => {
                 rule::ENCRYPTED_VALUE_ID_MISMATCH
+            }
+            EncryptedValueAccountFailure::SentinelAuthority { .. } => {
+                rule::ENCRYPTED_VALUE_ACCOUNT_SENTINEL_AUTHORITY
             }
             EncryptedValueAccountFailure::Snapshot(_) => panic!("a record carries one observation"),
         },

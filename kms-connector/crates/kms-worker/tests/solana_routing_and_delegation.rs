@@ -29,13 +29,15 @@
 mod solana_support;
 
 use kms_worker::core::solana::{
-    delegation::DelegationFailure,
+    delegation::{AuthorizedRow, DelegationFailure, check_delegation, wildcard_delegation_address},
+    encrypted_value_account::EncryptedValueAccountFailure,
     failure::{AuthorizationFailure, FailureClass},
     handle_binding::HandleBindingFailure,
     pipeline::{AuthorizationContext, AuthorizedRequest, authorize_request},
     request::SolanaUserDecryptRequest,
+    snapshot::{SnapshotAccount, SnapshotError, SnapshotKeys},
 };
-use kms_worker::core::solana_acl::SolanaPubkeyBytes;
+use kms_worker::core::solana_acl::{SolanaPubkeyBytes, WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY};
 use solana_support::*;
 
 const OBSERVED_SLOT: u64 = 500;
@@ -515,6 +517,108 @@ async fn a_wildcard_row_of_another_delegator_authorizes_nothing() {
     ));
 }
 
+/// The delegated scenario of this section, with an arbitrary account planted at the delegator's
+/// wildcard address and no authority-specific row beside it.
+async fn authorize_with_wildcard_account(
+    account: SnapshotAccount,
+) -> Result<AuthorizedRequest, AuthorizationFailure> {
+    let signer = Wallet::new(1);
+    let delegator = Wallet::new(2);
+    let live = handle(0x39, FHE_TYPE_UINT64);
+    let encrypted_value_account = EncryptedValueAccountFixture::new(live, &[delegator.pubkey()]);
+    let request = RequestBuilder::new(&signer)
+        .delegated_current(&encrypted_value_account, live, delegator.pubkey())
+        .typed();
+    let (wildcard_key, _) = live_wildcard().address();
+    let world =
+        world_with(&encrypted_value_account, signer.pubkey()).with_account(wildcard_key, account);
+    authorize_in(world, &request).await.0
+}
+
+/// An account under another program's ownership at the wildcard address is reported as what it
+/// is, beside the absent authority-specific row — not swallowed as "no wildcard row".
+#[tokio::test]
+async fn an_impostor_at_the_wildcard_address_is_named_beside_the_absent_exact_row() {
+    let mut impostor = live_wildcard().account();
+    impostor.owner = [0xee; 32];
+
+    let failure = authorize_with_wildcard_account(impostor)
+        .await
+        .expect_err("an account of another program is not a wildcard row");
+
+    match &failure {
+        AuthorizationFailure::Delegation {
+            index: 0,
+            source: DelegationFailure::NoLiveGrant { exact, wildcard },
+        } => {
+            assert!(matches!(**exact, DelegationFailure::Absent { .. }));
+            assert!(matches!(**wildcard, DelegationFailure::ForeignOwner { .. }));
+        }
+        other => panic!("expected both reasons, got {other}"),
+    }
+}
+
+/// A wildcard row storing a bump other than the canonical one for its address is not the record
+/// this reader reads — the same rule the authority-specific row is already held to.
+#[tokio::test]
+async fn a_wildcard_row_storing_a_non_canonical_bump_is_not_a_wildcard_row() {
+    let (_, canonical_bump) = live_wildcard().address();
+    let mut wrong_bump = live_wildcard().account();
+    let last = wrong_bump.data.len() - 1;
+    assert_eq!(
+        wrong_bump.data[last], canonical_bump,
+        "the fixture writes the canonical bump, or this test proves nothing"
+    );
+    wrong_bump.data[last] = canonical_bump.wrapping_sub(1);
+
+    let failure = authorize_with_wildcard_account(wrong_bump)
+        .await
+        .expect_err("a non-canonical bump is not this record");
+
+    match &failure {
+        AuthorizationFailure::Delegation {
+            index: 0,
+            source: DelegationFailure::NoLiveGrant { exact, wildcard },
+        } => {
+            assert!(matches!(**exact, DelegationFailure::Absent { .. }));
+            assert!(matches!(
+                **wildcard,
+                DelegationFailure::NotADelegationRecord { .. }
+            ));
+        }
+        other => panic!("expected both reasons, got {other}"),
+    }
+}
+
+/// A record naming another delegator, planted at *this* pair's wildcard address: it decodes, and
+/// its own fields betray it. The address alone is not taken as proof for the wildcard row either.
+#[tokio::test]
+async fn a_wildcard_row_naming_another_tuple_is_rejected() {
+    let stranger_row = DelegationFixture::live_wildcard(
+        Wallet::new(9).pubkey(),
+        Wallet::new(1).pubkey(),
+        OBSERVED_SLOT,
+    );
+
+    let failure = authorize_with_wildcard_account(stranger_row.account())
+        .await
+        .expect_err("a wildcard row must name the tuple it was read for");
+
+    match &failure {
+        AuthorizationFailure::Delegation {
+            index: 0,
+            source: DelegationFailure::NoLiveGrant { exact, wildcard },
+        } => {
+            assert!(matches!(**exact, DelegationFailure::Absent { .. }));
+            assert!(matches!(
+                **wildcard,
+                DelegationFailure::TupleMismatch { .. }
+            ));
+        }
+        other => panic!("expected both reasons, got {other}"),
+    }
+}
+
 /// The counter is decoded and ignored. Two records that differ only in it behave identically —
 /// which is what makes a permit reusable across unrelated delegation updates.
 #[tokio::test]
@@ -635,6 +739,42 @@ async fn a_delegation_record_naming_another_tuple_is_rejected() {
     ));
 }
 
+/// The delegate half of the same rule: a record at the canonical address naming a different
+/// delegate is refused too. Sitting at the address derived from the delegate is not the same as
+/// naming them.
+#[tokio::test]
+async fn a_delegation_record_naming_another_delegate_is_rejected() {
+    let signer = Wallet::new(1);
+    let delegator = Wallet::new(2);
+    let stranger = Wallet::new(9);
+    let live = handle(0x38, FHE_TYPE_UINT64);
+    let encrypted_value_account = EncryptedValueAccountFixture::new(live, &[delegator.pubkey()]);
+    let expected = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
+    let (expected_key, _) = expected.address();
+    // A record delegating to somebody else, planted at the address the request will read.
+    let other_delegate =
+        DelegationFixture::live(delegator.pubkey(), stranger.pubkey(), OBSERVED_SLOT);
+    let request = RequestBuilder::new(&signer)
+        .delegated_current(&encrypted_value_account, live, delegator.pubkey())
+        .typed();
+
+    let (outcome, _) = authorize_in(
+        world_with(&encrypted_value_account, signer.pubkey())
+            .with_account(expected_key, other_delegate.account()),
+        &request,
+    )
+    .await;
+
+    let failure = outcome.expect_err("a record delegating to somebody else authorizes nothing");
+    assert!(matches!(
+        failure,
+        AuthorizationFailure::Delegation {
+            index: 0,
+            source: DelegationFailure::TupleMismatch { account_key }
+        } if account_key == expected_key
+    ));
+}
+
 /// A record storing a bump other than the canonical one for its address is not the record this
 /// reader reads. Nothing an attacker can arrange — only the host program writes program-owned bytes,
 /// and the address was derived here — but a record written under another derivation is caught where
@@ -744,4 +884,314 @@ async fn the_same_permit_stops_working_once_the_delegation_is_revoked() {
         ),
         "the identical request must be re-authorized from scratch"
     );
+}
+
+// ---------------------------------------------------------------------------
+// The authorizing row
+// ---------------------------------------------------------------------------
+
+/// `check_delegation` names the row that authorized. The distinction is invisible in the request's
+/// outcome — either row authorizes identically — but an audit record of a delegated authorization
+/// has to tell an authority-scoped grant from a wildcard one, and only this function knows which
+/// row stood behind the entry.
+#[test]
+fn a_live_authority_specific_row_is_named_as_the_exact_row() {
+    let delegate = Wallet::new(1).pubkey();
+    let delegator = Wallet::new(2).pubkey();
+    let exact = DelegationFixture::live(delegator, delegate, OBSERVED_SLOT);
+    let (exact_key, _) = exact.address();
+    let (wildcard_key, _) = wildcard_delegation_address(PROGRAM_ID, delegator, delegate);
+    let snapshot = World::at_slot(OBSERVED_SLOT)
+        .with_delegation(&exact)
+        .read(&SnapshotKeys::new([exact_key, wildcard_key]))
+        .expect("both row addresses are in the planned key set");
+
+    let row = check_delegation(
+        &snapshot,
+        PROGRAM_ID,
+        delegator,
+        delegate,
+        exact.encrypted_value_account_authority,
+    )
+    .expect("a live authority-specific row authorizes");
+
+    assert_eq!(row, AuthorizedRow::Exact);
+}
+
+/// The same grant carried by the wildcard row alone is named as such: the row that authorized is
+/// reported, not merely the fact that one did.
+#[test]
+fn a_live_wildcard_row_is_named_as_the_wildcard_row() {
+    let delegate = Wallet::new(1).pubkey();
+    let delegator = Wallet::new(2).pubkey();
+    let wildcard = DelegationFixture::live_wildcard(delegator, delegate, OBSERVED_SLOT);
+    let (wildcard_key, _) = wildcard.address();
+    let exact = DelegationFixture::live(delegator, delegate, OBSERVED_SLOT);
+    let (exact_key, _) = exact.address();
+    let snapshot = World::at_slot(OBSERVED_SLOT)
+        .with_delegation(&wildcard)
+        .read(&SnapshotKeys::new([exact_key, wildcard_key]))
+        .expect("both row addresses are in the planned key set");
+
+    let row = check_delegation(
+        &snapshot,
+        PROGRAM_ID,
+        delegator,
+        delegate,
+        exact.encrypted_value_account_authority,
+    )
+    .expect("a live wildcard row authorizes an authority with no row of its own");
+
+    assert_eq!(row, AuthorizedRow::Wildcard);
+}
+
+/// With BOTH rows live, the authority-specific row is the one named. The request outcome is
+/// identical either way, so nothing but this assertion notices a reordering of the two checks —
+/// which would silently relabel every such authorization in the audit record as wildcard-carried.
+#[test]
+fn with_both_rows_live_the_authority_specific_row_is_the_one_named() {
+    let delegate = Wallet::new(1).pubkey();
+    let delegator = Wallet::new(2).pubkey();
+    let exact = DelegationFixture::live(delegator, delegate, OBSERVED_SLOT);
+    let wildcard = DelegationFixture::live_wildcard(delegator, delegate, OBSERVED_SLOT);
+    let (exact_key, _) = exact.address();
+    let (wildcard_key, _) = wildcard.address();
+    let snapshot = World::at_slot(OBSERVED_SLOT)
+        .with_delegation(&exact)
+        .with_delegation(&wildcard)
+        .read(&SnapshotKeys::new([exact_key, wildcard_key]))
+        .expect("both row addresses are in the planned key set");
+
+    let row = check_delegation(
+        &snapshot,
+        PROGRAM_ID,
+        delegator,
+        delegate,
+        exact.encrypted_value_account_authority,
+    )
+    .expect("two live rows authorize");
+
+    assert_eq!(row, AuthorizedRow::Exact);
+}
+
+// ---------------------------------------------------------------------------
+// Sentinel injection
+// ---------------------------------------------------------------------------
+
+/// An encrypted value account naming the wildcard sentinel as its authority is rejected at
+/// resolution, before any delegation row is read. The address of the authority-specific row is
+/// derived from that authority, and with the sentinel in it the derivation lands on the wildcard
+/// row itself — the authority-specific check would be structurally a wildcard check. On-chain the
+/// authority signs `fhe_execute`, so no legal encrypted value account carries the sentinel; one
+/// that does is rejected, not interpreted.
+///
+/// The world here holds a live wildcard row — exactly the row a sentinel authority resolves to —
+/// so an implementation without the guard authorizes this request.
+#[tokio::test]
+async fn a_sentinel_authority_in_the_encrypted_value_account_rejects_a_delegated_entry() {
+    let signer = Wallet::new(1);
+    let delegator = Wallet::new(2);
+    let live = handle(0x36, FHE_TYPE_UINT64);
+    let encrypted_value_account = EncryptedValueAccountFixture::in_domain(
+        DOMAIN,
+        WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
+        LABEL,
+        live,
+        &[delegator.pubkey()],
+    );
+    let wildcard =
+        DelegationFixture::live_wildcard(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
+    let request = RequestBuilder::new(&signer)
+        .delegated_current(&encrypted_value_account, live, delegator.pubkey())
+        .typed();
+
+    let (outcome, _) = authorize_in(
+        world_with(&encrypted_value_account, signer.pubkey()).with_delegation(&wildcard),
+        &request,
+    )
+    .await;
+
+    let failure = outcome
+        .expect_err("a sentinel authority must be rejected, not resolved to the wildcard row");
+    assert!(
+        matches!(
+            failure,
+            AuthorizationFailure::EncryptedValueAccount {
+                index: 0,
+                source: EncryptedValueAccountFailure::SentinelAuthority { .. }
+            }
+        ),
+        "the rejection belongs to the encrypted value account resolution, got {failure}"
+    );
+    assert_eq!(failure.class(), FailureClass::Terminal);
+}
+
+/// The guard lives in the resolution of the encrypted value account, so a direct entry under a
+/// sentinel authority is rejected the same way. Deliberate: such an account is illegitimate
+/// whether or not a delegation is in play, and one rule at the chokepoint beats a rule that only
+/// the delegated branch remembers to apply.
+#[tokio::test]
+async fn a_sentinel_authority_in_the_encrypted_value_account_rejects_a_direct_entry_too() {
+    let signer = Wallet::new(1);
+    let live = handle(0x37, FHE_TYPE_UINT64);
+    let encrypted_value_account = EncryptedValueAccountFixture::in_domain(
+        DOMAIN,
+        WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
+        LABEL,
+        live,
+        &[signer.pubkey()],
+    );
+    let request = RequestBuilder::new(&signer)
+        .direct_current(&encrypted_value_account, live)
+        .typed();
+
+    let (outcome, _) = authorize_in(
+        world_with(&encrypted_value_account, signer.pubkey()),
+        &request,
+    )
+    .await;
+
+    let failure = outcome.expect_err("the sentinel is not an authority any account may name");
+    assert!(matches!(
+        failure,
+        AuthorizationFailure::EncryptedValueAccount {
+            index: 0,
+            source: EncryptedValueAccountFailure::SentinelAuthority { .. }
+        }
+    ));
+    assert_eq!(failure.class(), FailureClass::Terminal);
+}
+
+// ---------------------------------------------------------------------------
+// What the delegated branch reads, and what it refuses to read
+// ---------------------------------------------------------------------------
+
+/// A delegation key the snapshot never read is an error of key planning, not a verdict about the
+/// delegation: it can never fold into "no live grant" and reach a client as a statement about the
+/// state of the world.
+#[test]
+fn a_delegation_key_the_snapshot_never_read_is_an_error_not_a_verdict() {
+    let delegate = Wallet::new(1).pubkey();
+    let delegator = Wallet::new(2).pubkey();
+    let mut revoked = DelegationFixture::live(delegator, delegate, OBSERVED_SLOT);
+    revoked.revoked = true;
+    let (exact_key, _) = revoked.address();
+    // The authority-specific row is dead, so the rule proceeds to the wildcard row — whose key
+    // was never planned.
+    let snapshot = World::at_slot(OBSERVED_SLOT)
+        .with_delegation(&revoked)
+        .read(&SnapshotKeys::new([exact_key]))
+        .expect("the planned key is readable");
+
+    let failure = check_delegation(
+        &snapshot,
+        PROGRAM_ID,
+        delegator,
+        delegate,
+        revoked.encrypted_value_account_authority,
+    )
+    .expect_err("a missing key cannot authorize");
+
+    assert!(matches!(
+        failure,
+        DelegationFailure::Snapshot(SnapshotError::KeyNotInSnapshot { .. })
+    ));
+}
+
+/// In a batch where delegated entries have different outcomes, the failure names the index of the
+/// entry whose delegation is dead — in request coordinates, so the client can point at the
+/// offending entry without re-deriving which entries were delegated.
+#[tokio::test]
+async fn a_mixed_batch_failure_names_the_entry_whose_delegation_is_dead() {
+    let signer = Wallet::new(1);
+    let first_delegator = Wallet::new(2);
+    let second_delegator = Wallet::new(3);
+    let own = handle(0x41, FHE_TYPE_UINT64);
+    let first = handle(0x42, FHE_TYPE_UINT64);
+    let second = handle(0x43, FHE_TYPE_UINT64);
+    let own_encrypted_value_account =
+        EncryptedValueAccountFixture::in_domain(DOMAIN, AUTHORITY, LABEL, own, &[signer.pubkey()]);
+    let mut first_label = LABEL;
+    first_label[0] = b'3';
+    let first_encrypted_value_account = EncryptedValueAccountFixture::in_domain(
+        DOMAIN,
+        AUTHORITY,
+        first_label,
+        first,
+        &[first_delegator.pubkey()],
+    );
+    let mut second_label = LABEL;
+    second_label[0] = b'4';
+    let second_encrypted_value_account = EncryptedValueAccountFixture::in_domain(
+        DOMAIN,
+        AUTHORITY,
+        second_label,
+        second,
+        &[second_delegator.pubkey()],
+    );
+    let first_delegation =
+        DelegationFixture::live(first_delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
+    let mut second_delegation =
+        DelegationFixture::live(second_delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
+    second_delegation.revoked = true;
+
+    let request = RequestBuilder::new(&signer)
+        .direct_current(&own_encrypted_value_account, own)
+        .delegated_current(
+            &first_encrypted_value_account,
+            first,
+            first_delegator.pubkey(),
+        )
+        .delegated_current(
+            &second_encrypted_value_account,
+            second,
+            second_delegator.pubkey(),
+        )
+        .typed();
+    let world = World::at_slot(OBSERVED_SLOT)
+        .with_encrypted_value_account(&own_encrypted_value_account)
+        .with_encrypted_value_account(&first_encrypted_value_account)
+        .with_encrypted_value_account(&second_encrypted_value_account)
+        .with_watermark(signer.pubkey(), 0)
+        .with_delegation(&first_delegation)
+        .with_delegation(&second_delegation);
+
+    let (outcome, _) = authorize_in(world, &request).await;
+
+    let failure = outcome.expect_err("one dead delegation rejects the request");
+    assert!(
+        matches!(
+            failure,
+            AuthorizationFailure::Delegation {
+                index: 2,
+                source: DelegationFailure::Revoked
+            }
+        ),
+        "the failure must name the entry whose delegation is dead, got {failure}"
+    );
+}
+
+/// The delegator's own permit watermark is not read. `revoke_permits` is the delegate-side lever
+/// — it invalidates permits the delegator signed as a *requester* — and the delegator's lever
+/// over delegated access is delegation revocation. A delegator who has revoked all their own
+/// permits has said nothing about their delegations.
+#[tokio::test]
+async fn the_delegators_permit_watermark_is_not_read() {
+    let signer = Wallet::new(1);
+    let delegator = Wallet::new(2);
+    let live = handle(0x44, FHE_TYPE_UINT64);
+    let encrypted_value_account = EncryptedValueAccountFixture::new(live, &[delegator.pubkey()]);
+    let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
+    let request = RequestBuilder::new(&signer)
+        .delegated_current(&encrypted_value_account, live, delegator.pubkey())
+        .typed();
+    // A watermark that would invalidate any permit — were it ever read for this request.
+    let world = world_with(&encrypted_value_account, signer.pubkey())
+        .with_delegation(&delegation)
+        .with_watermark(delegator.pubkey(), u64::MAX);
+
+    let (outcome, reads) = authorize_in(world, &request).await;
+
+    outcome.expect("the delegator's permit watermark plays no part in a delegated request");
+    assert_eq!(reads, 2, "no extra read fetches the delegator's watermark");
 }

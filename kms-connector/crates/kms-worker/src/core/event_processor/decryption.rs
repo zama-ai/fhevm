@@ -556,7 +556,7 @@ where
             deployment: &host.deployment,
             now_unix_seconds: Utc::now().timestamp() as u64,
         };
-        authorize_request(&host.reader, &pair_validator, context, &typed_request)
+        let authorized = authorize_request(&host.reader, &pair_validator, context, &typed_request)
             .await
             .map_err(|failure| {
                 let kind = RequestCheckKind::Acl;
@@ -569,9 +569,17 @@ where
                 }
             })?;
 
+        // The per-entry audit fields live in the pipeline's own log event; this line only says
+        // which branches the request exercised.
+        let delegated_entries = authorized
+            .entries()
+            .iter()
+            .filter(|entry| entry.subject != solana_identity)
+            .count();
         info!(
-            "Solana V2 user-decryption authorization passed for {} handles!",
-            ct_handles.len()
+            "Solana V2 user-decryption authorization passed for {} handles, {} of them delegated!",
+            ct_handles.len(),
+            delegated_entries
         );
         Ok(UserDecryptionExtraData::new_solana(
             solana_identity,

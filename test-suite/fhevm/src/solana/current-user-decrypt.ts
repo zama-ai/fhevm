@@ -26,6 +26,8 @@ type CurrentUserDecryptSdkInput = {
     handle: Uint8Array;
     encryptedValueId: Uint8Array;
     durationSeconds: bigint;
+    /** The delegator's pubkey on a delegated entry; absent on a direct one. */
+    subject?: Uint8Array | undefined;
   };
 };
 type CurrentUserDecryptSdkCall = (
@@ -96,7 +98,13 @@ const runPublicSdkUserDecrypt: CurrentUserDecryptSdkCall = async (input) => {
   const session = await client.signPermit({ wallet, durationSeconds: input.request.durationSeconds });
   return client.userDecrypt({
     session,
-    entries: [{ handle: input.request.handle, encryptedValueId: input.request.encryptedValueId }],
+    entries: [
+      {
+        handle: input.request.handle,
+        encryptedValueId: input.request.encryptedValueId,
+        ...(input.request.subject !== undefined ? { subject: input.request.subject } : {}),
+      },
+    ],
   });
 };
 
@@ -160,6 +168,11 @@ export const runSolanaCurrentUserDecrypt = async (
       handle: bytes(handle, "UD_HANDLE"),
       encryptedValueId: bytes32(environment, "UD_ACL_VALUE_KEY"),
       durationSeconds: BigInt(environment.UD_DURATION_SECONDS ?? "3600"),
+      // Optional: the delegated form. The signer stays UD_SECRET_KEY (the delegate); the
+      // subject names whose value is asked for.
+      ...(environment.UD_SUBJECT !== undefined && environment.UD_SUBJECT !== ""
+        ? { subject: bytes32(environment, "UD_SUBJECT") }
+        : {}),
     },
   });
   if (clearValues.length !== 1) {

@@ -94,6 +94,7 @@ function client() {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -162,5 +163,112 @@ describe('signing a permit through the client', () => {
 
     expect(session.warnings.map((warning) => warning.code)).toEqual(['PermissiveLongWindow']);
     expect(session.signedPermit.signature).toHaveLength(64);
+  });
+});
+
+////////////////////////////////////////////////////////////////////////////////
+
+describe('running a user decryption through the client', () => {
+  // What this pins is the client's routing of entry subjects — the one derived field of a
+  // delegated request: an explicit subject travels as given (the delegator), an omitted one
+  // defaults to the permit's own user. Everything below the client is stubbed at the network
+  // seam; the relayer refuses the request so the run ends after the submission whose body the
+  // test reads.
+  // A well-formed handle: bytes 22..30 embed the host chain id big-endian, byte 30 is the FHE
+  // type (5 = euint64), byte 31 the handle version.
+  const HANDLE = new Uint8Array(32).fill(0xab);
+  HANDLE.set([0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0x39], 22); // 9223372036854788153
+  HANDLE[30] = 5;
+  HANDLE[31] = 0;
+  const ENCRYPTED_VALUE_ID = new Uint8Array(32).fill(0xcd);
+  const DELEGATOR = new Uint8Array(32).fill(0x66);
+
+  const hex = (bytes: Uint8Array) =>
+    `0x${Array.from(bytes)
+      .map((byte) => byte.toString(16).padStart(2, '0'))
+      .join('')}`;
+
+  /** An EncryptedValue account whose current handle is [`HANDLE`]: zero leaves, zero peaks. */
+  function encryptedValueAccountBytes(): Uint8Array {
+    const body = new Uint8Array(8 + 32 * 4 + 4 + 8 + 4 + 1);
+    // `sha256("account:EncryptedValue")[..8]` — matched by the decoder before anything else.
+    body.set([0x9b, 0x03, 0x95, 0x3a, 0x84, 0x67, 0xc8, 0xa1], 0);
+    body.set(hexToBytes32(DOMAIN_KEY), 8);
+    body.fill(0x12, 40, 72); // encrypted value account authority
+    body.fill(0x13, 72, 104); // label
+    body.set(HANDLE, 104); // current handle
+    // subjects: empty vec (u32 0), leaf count 0 (u64), peaks: empty vec (u32 0), bump.
+    body[body.length - 1] = 0xfe;
+    return body;
+  }
+
+  function jsonResponse(body: unknown, status = 200): Response {
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
+  it('sends the delegated subject as given and defaults the direct one to the permit user', async () => {
+    const { wallet } = conformingWallet();
+    const decryptClient = client();
+    const session = await decryptClient.signPermit({ wallet, durationSeconds: 3_600n });
+
+    let capturedBody: { attestedPayload: { handles: readonly { subject: string }[] } } | undefined;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input instanceof Request ? input.url : input);
+        if (url.startsWith('http://rpc.local')) {
+          const request = JSON.parse(String(init?.body)) as { id: number };
+          return jsonResponse({
+            jsonrpc: '2.0',
+            id: request.id,
+            result: {
+              context: { slot: 1 },
+              value: {
+                data: [Buffer.from(encryptedValueAccountBytes()).toString('base64'), 'base64'],
+                executable: false,
+                lamports: 1_000_000,
+                owner: base58.encode(hexToBytes32(PROGRAM_ID)),
+                rentEpoch: 0,
+                space: encryptedValueAccountBytes().length,
+              },
+            },
+          });
+        }
+        if (url.startsWith('http://relayer.local')) {
+          capturedBody = JSON.parse(String(init?.body));
+          return jsonResponse(
+            {
+              status: 'failed',
+              error: {
+                label: 'validation_failed',
+                message: 'refused by the test relayer',
+                details: [{ field: 'handles', issue: 'refused by the test relayer' }],
+              },
+            },
+            400,
+          );
+        }
+        throw new Error(`unexpected fetch to ${url}`);
+      }),
+    );
+
+    await expect(
+      decryptClient.userDecrypt({
+        session,
+        entries: [
+          { handle: HANDLE, encryptedValueId: ENCRYPTED_VALUE_ID, subject: DELEGATOR },
+          { handle: HANDLE, encryptedValueId: ENCRYPTED_VALUE_ID },
+        ],
+        attempts: 1,
+      }),
+    ).rejects.toThrow('refused');
+
+    expect(capturedBody?.attestedPayload.handles.map((entry) => entry.subject)).toEqual([
+      hex(DELEGATOR),
+      hex(USER_PUBKEY),
+    ]);
   });
 });

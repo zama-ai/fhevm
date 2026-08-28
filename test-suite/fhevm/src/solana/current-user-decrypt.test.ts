@@ -99,6 +99,33 @@ describe("solana-current-user-decrypt", () => {
     });
   });
 
+  test("threads UD_SUBJECT through as the delegated entry's subject", async () => {
+    let received: { request?: { subject?: Uint8Array } } | undefined;
+    await runSolanaCurrentUserDecrypt(
+      { ...validEnvironment(), UD_SUBJECT: hex32("9") },
+      {
+        userDecrypt: async (input) => {
+          received = input as never;
+          return [{ value: 42n }];
+        },
+      },
+    );
+
+    expect(received?.request?.subject).toEqual(Uint8Array.from(Buffer.from("9".repeat(64), "hex")));
+  });
+
+  test("leaves the subject absent when UD_SUBJECT is not set — the direct entry", async () => {
+    let received: { request?: { subject?: Uint8Array } } | undefined;
+    await runSolanaCurrentUserDecrypt(validEnvironment(), {
+      userDecrypt: async (input) => {
+        received = input as never;
+        return [{ value: 42n }];
+      },
+    });
+
+    expect(received?.request?.subject).toBeUndefined();
+  });
+
   test("rejects an empty SDK result", async () => {
     await expect(runSolanaCurrentUserDecrypt(validEnvironment(), sdkReturning([]))).rejects.toThrow(
       "returned 0 clear values; expected exactly 1",

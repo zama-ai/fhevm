@@ -130,10 +130,21 @@ impl ReadinessChecker {
                     .check_unified_user_decrypt(job_id, handles, *user_address)
                     .await
             }
-            // RFC-021 Solana: the host-chain ACL is enforced off-gateway by the KMS Connector
-            // (`solana_acl` reads the on-chain Solana ACL at confirmed commitment), so the relayer
-            // performs no EVM-style host ACL check here.
-            UserDecryptRequest::SolanaSrfc38V1 { .. } => Ok(()),
+            // RFC-021 Solana: the authoritative host-chain ACL check stays with the KMS
+            // Connector (an atomic `confirmed` snapshot). What runs here is the advisory,
+            // negative-only delegation pre-check (`host::solana_delegation_precheck`): without
+            // it, a request whose delegation is revoked or expired would cost a gateway
+            // transaction and die by timeout — the Decryption contract has no rejection entry
+            // point, so a connector refusal is never observable at the relayer. Direct entries
+            // are not pre-checked: their authorization is membership in the encrypted value
+            // account, and there is no cheaper reading of it here than the connector's own.
+            // The chain is picked inside, from the permit's signed `chain_id` — the field the
+            // connector authorizes against — not from a handle's unsigned bytes.
+            UserDecryptRequest::SolanaSrfc38V1 { solana_request, .. } => {
+                self.host_acl
+                    .check_solana_delegated_user_decrypt(job_id, solana_request)
+                    .await
+            }
         };
         result.map_err(|e| match &e {
             HostAclError::NotAllowed { .. } => ReadinessCheckError::NotAllowedOnHostAcl(e),

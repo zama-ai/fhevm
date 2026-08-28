@@ -238,7 +238,8 @@ impl EncryptedValueAccountFailure {
             Self::ForeignOwner { .. }
             | Self::WrongAccountType { .. }
             | Self::Malformed { .. }
-            | Self::EncryptedValueIdMismatch { .. } => FailureClass::Terminal,
+            | Self::EncryptedValueIdMismatch { .. }
+            | Self::SentinelAuthority { .. } => FailureClass::Terminal,
             Self::Snapshot(source) => source.class(),
         }
     }

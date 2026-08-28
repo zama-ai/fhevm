@@ -260,6 +260,9 @@ pub mod rule {
     pub const ENCRYPTED_VALUE_ACCOUNT_MALFORMED: &str = "encrypted-value-account-malformed";
     /// The encrypted value account's own fields derive a different identity than the one claimed.
     pub const ENCRYPTED_VALUE_ID_MISMATCH: &str = "encrypted-value-id-mismatch";
+    /// The encrypted value account names the wildcard sentinel as its authority.
+    pub const ENCRYPTED_VALUE_ACCOUNT_SENTINEL_AUTHORITY: &str =
+        "encrypted-value-account-sentinel-authority";
     /// The named handle is not the encrypted value account's current handle.
     pub const HANDLE_NOT_CURRENT: &str = "handle-not-current";
     /// The subject is not a current member of the encrypted value account.
@@ -309,6 +312,7 @@ pub mod rule {
         ENCRYPTED_VALUE_ACCOUNT_WRONG_TYPE,
         ENCRYPTED_VALUE_ACCOUNT_MALFORMED,
         ENCRYPTED_VALUE_ID_MISMATCH,
+        ENCRYPTED_VALUE_ACCOUNT_SENTINEL_AUTHORITY,
         HANDLE_NOT_CURRENT,
         SUBJECT_NOT_A_MEMBER,
         INCLUSION_PROOF_DOES_NOT_VERIFY,

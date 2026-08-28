@@ -14,6 +14,7 @@ import { copyFile, lstat, mkdir, readFile, rm, writeFile } from "node:fs/promise
 import path from "node:path";
 
 import { REPO_ROOT } from "../layout";
+import { squadsGenesisExtras } from "./squads";
 import { run } from "../utils/process";
 import { until } from "../utils/until";
 
@@ -49,6 +50,14 @@ export const renderGeyserConfig = (template: string, pluginLibPath: string): str
 export const validatorStartArgs = (parameters: {
   readonly ledgerDir: string;
   readonly geyserConfigPath: string;
+  /**
+   * Foreign programs loaded at genesis at their canonical addresses — no keypair, no deploy
+   * transaction. The Squads e2e uses this: `solana program deploy --program-id` needs the
+   * program's keypair, which a mainnet program never gives us.
+   */
+  readonly genesisPrograms?: readonly { readonly address: string; readonly soPath: string }[];
+  /** Accounts loaded at genesis verbatim, in `solana account --output json` file shape. */
+  readonly genesisAccounts?: readonly { readonly address: string; readonly jsonPath: string }[];
 }): string[] => [
   "solana-test-validator",
   "--reset",
@@ -62,6 +71,8 @@ export const validatorStartArgs = (parameters: {
   "B8JJXCy5amZyWG9r7EnUYLwzXSXTxG7GZ1qZ1qggo83g",
   "--geyser-plugin-config",
   parameters.geyserConfigPath,
+  ...(parameters.genesisPrograms ?? []).flatMap((program) => ["--bpf-program", program.address, program.soPath]),
+  ...(parameters.genesisAccounts ?? []).flatMap((account) => ["--account", account.address, account.jsonPath]),
 ];
 
 /** Matches the lifecycle-owned ledger path shape `demo/lifecycle.ts` allocates. */
@@ -176,7 +187,14 @@ export const startGeyserValidator = async (options: ValidatorStartOptions): Prom
   // One shared descriptor for stdout+stderr — the same interleaving `>log 2>&1` produces; the
   // child holds its own duplicate, so the parent copy closes right away.
   const logFd = openSync(logPath, "w");
-  const proc = Bun.spawn(validatorStartArgs({ ledgerDir, geyserConfigPath }), {
+  // The real Squads v4 program at its canonical id, when the fetched fixtures are present.
+  const squadsExtras = await squadsGenesisExtras();
+  console.log(
+    squadsExtras
+      ? "    genesis extras: Squads v4 program + program config + treasury"
+      : "    genesis extras: none (Squads fixtures absent — run solana/scripts/e2e/fetch-squads-fixtures.sh)",
+  );
+  const proc = Bun.spawn(validatorStartArgs({ ledgerDir, geyserConfigPath, ...(squadsExtras ?? {}) }), {
     stdin: "ignore",
     stdout: logFd,
     stderr: logFd,
