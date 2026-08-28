@@ -4,6 +4,7 @@ use crate::{CiphertextAttestation, CiphertextFormat};
 use alloy_primitives::{Address, B256, U256};
 use std::{
     collections::{HashMap, HashSet},
+    fmt,
     num::NonZeroUsize,
 };
 use tracing::warn;
@@ -17,7 +18,7 @@ pub struct Consensus {
 }
 
 /// The ciphertext material a consensus group agreed on.
-#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ConsensusMaterial {
     pub key_id: U256,
     pub ciphertext_digest: B256,
@@ -32,6 +33,22 @@ pub struct ConsensusMaterial {
 pub struct ConsensusError {
     valid_signers: usize,
     threshold: NonZeroUsize,
+}
+
+impl fmt::Debug for ConsensusMaterial {
+    /// Compact form showing both digest prefixes, so a differing field is never hidden during a
+    /// real disagreement. Hand-written, not derived, and deliberately on `Debug` rather than
+    /// `Display`: digest values are operator-only, and `Display` is the rendering that fires
+    /// implicitly (`format!`, `%x` in tracing, a `thiserror` message). No `Display` impl exists
+    /// for this type — add one only if it is needed, and never with digest values in it. Same
+    /// audience as [`crate::tracker::Round`]'s hand-written `Debug`.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "ct:{:02x}..,sns:{:02x}..",
+            self.ciphertext_digest.0[0], self.sns_ciphertext_digest.0[0]
+        )
+    }
 }
 
 impl From<&CiphertextAttestation> for ConsensusMaterial {

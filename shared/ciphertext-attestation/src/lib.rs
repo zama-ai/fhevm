@@ -27,6 +27,22 @@ use serde::{Deserialize, Serialize};
 
 pub mod consensus;
 pub mod sign;
+pub mod tracker;
+
+/// Networked half of off-chain ciphertext attestation consensus: on-chain registry mirroring, S3
+/// `HEAD` attestation fetch, and the fan-out that evaluates consensus over the results. Behind
+/// the `client` feature so a consumer that only needs the wire types above is not made to pull in
+/// `alloy`, `tokio`, and the rest of this module's networked dependencies. See the module's own
+/// doc comment for the consumer flow.
+#[cfg(feature = "client")]
+pub mod client;
+
+#[cfg(feature = "client")]
+pub use client::{
+    BoundedClient, ConsensusCheckError, CoprocessorEntry, CoprocessorRegistry,
+    CoprocessorRegistrySnapshot, RegistryError, ResolvedConsensus,
+    fetch_attestations_and_check_consensus,
+};
 
 /// Domain separator for the canonical signed payload. Scopes the keccak hash to
 /// "FHEVM CT Attestation" and prevents collisions with any other hash computed
@@ -68,6 +84,11 @@ pub fn s3_ct64_key(handle: &[u8], coprocessor_context_id: U256) -> String {
         hex::encode(handle)
     )
 }
+
+/// Coprocessor context id for RFC-023 V1 deployments. Consensus-critical global state: it is
+/// signed into the attestation payload and baked into the object URL, so it is a wire-format
+/// constant, not per-service config. Retires when `GatewayConfig` gains Coprocessor contexts.
+pub const COPROCESSOR_CONTEXT_ID_V1: U256 = U256::ONE;
 
 /// Versioned encoding of the attestation. The version byte is part of the signed
 /// payload, so a stripped or downgraded `version` field flips signature recovery
@@ -186,6 +207,15 @@ pub enum AttestationError {
     Serde(#[from] serde_json::Error),
     #[error("signer error: {0}")]
     Signer(#[from] alloy_signer::Error),
+    /// The signature is genuine, but for a different bucket's key — cross-serving. See Gate 2 of
+    /// [`ValidAttestation::validate`](crate::tracker::ValidAttestation::validate): without this
+    /// check a bucket could serve another bucket's (validly signed) attestation and have it
+    /// counted as its own.
+    #[error("signer {embedded} is not the registered signer {registered} for this bucket")]
+    SignerNotRegisteredForBucket {
+        embedded: Address,
+        registered: Address,
+    },
 }
 
 pub(crate) mod hex_bytes {
