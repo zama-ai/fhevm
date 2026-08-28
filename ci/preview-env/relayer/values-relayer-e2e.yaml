@@ -94,8 +94,15 @@ configmapFiles:
         readiness_checker:
           host_acl_check:
             retry: {max_attempts: 3, retry_interval_ms: 1000}
+          # `source` is set inline here (rather than by env, unlike keyurl.source below) because
+          # every other key in this block is already a static per-deploy value in this same YAML;
+          # only `gateway_config_address` is dynamic and comes from a ConfigMap via env below.
           gw_ciphertext_check:
+            source: coprocessor_attestations
             retry: {max_attempts: 75, retry_interval_ms: 3000}
+            head_timeout_ms: 5000
+            request_timeout_ms: 240000
+            registry_refresh_ms: 60000
           public_decrypt: {max_concurrency: 250, capacity: 11000, safety_margin: 1000}
           user_decrypt: {max_concurrency: 250, capacity: 11000, safety_margin: 1000}
         contracts:
@@ -208,6 +215,12 @@ env:
     valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: decryption.address}}
   - name: APP_GATEWAY__CONTRACTS__INPUT_VERIFICATION_ADDRESS
     valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: input_verification.address}}
+
+  # --- gateway.readiness_checker.gw_ciphertext_check (dynamic part - see YAML block above) ---
+  # GatewayConfig: Coprocessor registry (signers, S3 buckets, majority threshold) for the
+  # off-chain Coprocessor attestation readiness check.
+  - name: APP_GATEWAY__READINESS_CHECKER__GW_CIPHERTEXT_CHECK__GATEWAY_CONFIG_ADDRESS
+    valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: gateway_config.address}}
 
   # --- keyurl (KMSGeneration poller) ---
   # `keyurl.source` selects where /v2/keyurl comes from (settings.rs: KeyUrlConfig)

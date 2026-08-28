@@ -10,7 +10,7 @@ use crate::common::validation_helper::{
     expect_v2_malformed_json, expect_v2_missing_field, expect_v2_validation_error, test_endpoint,
     test_endpoint_raw_body, with_invalid_field,
 };
-use alloy::primitives::B256;
+use alloy::primitives::{Bytes, B256};
 use ethereum_rpc_mock::Response;
 use fhevm_relayer::http::endpoints::v2::types::error::ApiResponseStatus;
 use fhevm_relayer::http::endpoints::v2::types::public_decrypt::PublicDecryptPostResponseJson;
@@ -137,7 +137,7 @@ async fn test_max_retries_exceeded_fails() {
     let payload = helpers::create_public_decrypt_payload();
 
     // Set up readiness check to pass
-    setup.fhevm_mock.set_readiness_success();
+    setup.ct_attestation().serve_attestations().await;
 
     // Queue more errors than max_attempts (3 errors > 2 max_attempts)
     setup.fhevm_mock.queue_tx_responses_for_selector(
@@ -173,7 +173,7 @@ async fn test_contract_paused_returns_503() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
     let payload = helpers::create_public_decrypt_payload();
 
-    setup.fhevm_mock.set_readiness_success();
+    setup.ct_attestation().serve_attestations().await;
     setup
         .fhevm_mock
         .on_public_decrypt_revert(constants::REVERT_ENFORCED_PAUSE);
@@ -201,7 +201,7 @@ async fn test_invalid_signature_returns_400() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
     let payload = helpers::create_public_decrypt_payload();
 
-    setup.fhevm_mock.set_readiness_success();
+    setup.ct_attestation().serve_attestations().await;
     setup
         .fhevm_mock
         .on_public_decrypt_revert(constants::REVERT_INVALID_SIGNATURE);
@@ -225,7 +225,7 @@ async fn test_insufficient_balance_returns_503() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
     let payload = helpers::create_public_decrypt_payload();
 
-    setup.fhevm_mock.set_readiness_success();
+    setup.ct_attestation().serve_attestations().await;
     setup
         .fhevm_mock
         .on_public_decrypt_revert(constants::REVERT_INSUFFICIENT_BALANCE);
@@ -253,7 +253,7 @@ async fn test_insufficient_allowance_returns_503() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
     let payload = helpers::create_public_decrypt_payload();
 
-    setup.fhevm_mock.set_readiness_success();
+    setup.ct_attestation().serve_attestations().await;
     setup
         .fhevm_mock
         .on_public_decrypt_revert(constants::REVERT_INSUFFICIENT_ALLOWANCE);
@@ -281,7 +281,7 @@ async fn test_unknown_selector_returns_500() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
     let payload = helpers::create_public_decrypt_payload();
 
-    setup.fhevm_mock.set_readiness_success();
+    setup.ct_attestation().serve_attestations().await;
     setup
         .fhevm_mock
         .on_public_decrypt_revert(constants::REVERT_UNKNOWN_SELECTOR);
@@ -443,7 +443,7 @@ async fn test_retry_after_failure_creates_new_job_id() {
     let payload = helpers::create_public_decrypt_payload();
 
     // Set up readiness check to pass
-    setup.fhevm_mock.set_readiness_success();
+    setup.ct_attestation().serve_attestations().await;
 
     // Configure mock to fail with max retries exceeded
     setup.fhevm_mock.queue_tx_responses_for_selector(
@@ -554,18 +554,18 @@ async fn test_timeout() {
     setup.shutdown().await;
 }
 
-/// Test that a readiness check contract error (RPC node unavailable) correctly
-/// transitions the request from 'queued' to 'failure' so V2 clients see failure.
-/// Before the fix, update_status_to_failure_on_tx_failed silently no-oped because
-/// the request was still in 'queued' state (not 'processing' or 'tx_in_flight').
+/// Test that a terminal readiness failure — Coprocessors serving attestations over divergent
+/// ciphertext material, so no group ever reaches the majority threshold — transitions the request
+/// from 'queued' straight to 'failure', without burning the retry budget that an
+/// as-yet-unattested ciphertext is entitled to.
 #[tokio::test]
-async fn test_readiness_contract_error_returns_failure_v2() {
+async fn test_readiness_no_consensus_returns_failure_v2() {
     let setup = TestSetup::new_with_minimal_readiness()
         .await
         .expect("Failed to create test setup");
 
-    // Configure readiness checks to return RPC error (node unavailable)
-    setup.fhevm_mock.set_readiness_contract_error();
+    // Every Coprocessor signs valid attestations, but over different material
+    setup.ct_attestation().serve_divergent_attestations().await;
 
     let payload = helpers::create_public_decrypt_payload();
     let job_id = helpers::submit_request(&setup, &payload).await;
@@ -577,7 +577,7 @@ async fn test_readiness_contract_error_returns_failure_v2() {
     assert_eq!(
         status,
         reqwest::StatusCode::INTERNAL_SERVER_ERROR,
-        "Expected 500 for readiness check contract error (RPC error is not a known revert)"
+        "Expected 500 when the Coprocessors cannot agree on the ciphertext material"
     );
     assert_eq!(body.status, ApiResponseStatus::Failed);
     assert!(body.result.is_none());
@@ -585,8 +585,8 @@ async fn test_readiness_contract_error_returns_failure_v2() {
     let error = body.error.as_ref().expect("Error should be present");
     assert_eq!(
         error.label(),
-        "internal_server_error",
-        "Expected label 'internal_server_error' for readiness check contract error"
+        "no_attestation_consensus",
+        "Expected label 'no_attestation_consensus', distinct from the retryable timeout label"
     );
 
     setup.shutdown().await;
@@ -601,8 +601,8 @@ async fn test_readiness_timeout_returns_503_with_correct_label() {
         .await
         .expect("Failed to create test setup");
 
-    // Configure readiness checks to always return false (ciphertext never ready)
-    setup.fhevm_mock.set_readiness_failure();
+    // No Coprocessor has published an attestation for the handle
+    setup.ct_attestation().serve_nothing().await;
 
     let payload = helpers::create_public_decrypt_payload();
     let job_id = helpers::submit_request(&setup, &payload).await;
@@ -623,6 +623,390 @@ async fn test_readiness_timeout_returns_503_with_correct_label() {
         "readiness_check_timed_out",
         "Expected label 'readiness_check_timed_out' for readiness timeout"
     );
+
+    setup.shutdown().await;
+}
+
+/// The overall request budget, not the retry counter, is what ends a check against unresponsive
+/// buckets.
+///
+/// Every bucket accepts the connection and then stalls, so each attempt costs a full
+/// `head_timeout` instead of returning fast the way a 404 does. The retry counter is set high
+/// enough (100 × 50ms) that exhausting it would take far longer than the 200ms budget, so a 503
+/// here can only have come from the budget expiring. Without that budget this shape of failure is
+/// what stretches a nominal four-minute retry policy into tens of minutes while holding a
+/// readiness throttler permit throughout.
+#[tokio::test]
+async fn test_stalled_buckets_are_bounded_by_the_request_budget() {
+    let setup = TestSetup::new_with_short_request_budget()
+        .await
+        .expect("Failed to create test setup");
+
+    setup
+        .ct_attestation()
+        .serve_stalled(std::time::Duration::from_secs(30))
+        .await;
+
+    let payload = helpers::create_public_decrypt_payload();
+    let started = std::time::Instant::now();
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+    let elapsed = started.elapsed();
+
+    assert_eq!(
+        status,
+        reqwest::StatusCode::SERVICE_UNAVAILABLE,
+        "A stalled fan-out must fail closed and stay retriable"
+    );
+    assert_eq!(body.status, ApiResponseStatus::Failed);
+    assert!(body.result.is_none());
+
+    let error = body.error.as_ref().expect("Error should be present");
+    assert_eq!(
+        error.label(),
+        "readiness_check_timed_out",
+        "The budget expiring reuses the existing timeout label, not a new one"
+    );
+
+    // 100 attempts × 50ms of sleeping alone is 5s before any probing is counted, so finishing well
+    // inside that is what distinguishes the budget from the retry counter.
+    assert!(
+        elapsed < std::time::Duration::from_secs(5),
+        "Expected the request budget to end the check early, took {elapsed:?}"
+    );
+
+    setup.shutdown().await;
+}
+
+/// The majority threshold, not the registry size, is what readiness requires.
+///
+/// Two of the three registered Coprocessors have published; the third 404s. The mocked
+/// `getCoprocessorMajorityThreshold()` reports 2, so the quorum is satisfied without the silent
+/// bucket and the request goes through. Substituting the registry size for the threshold — the
+/// off-by-one every all-buckets-agree test misses, since there the two numbers coincide — starves
+/// this round instead and turns the 200 into a 503.
+#[tokio::test]
+async fn test_partial_quorum_passes_readiness() {
+    let setup = TestSetup::new_with_fast_readiness()
+        .await
+        .expect("Failed to create test setup");
+
+    setup
+        .ct_attestation()
+        .serve_attestations_from_first(2)
+        .await;
+
+    let payload = helpers::create_public_decrypt_payload();
+    let handles = helpers::extract_ciphertext_handles_from_public_payload(&payload);
+    let plaintext_values = helpers::random_plaintext_values(handles.len());
+    setup.fhevm_mock.on_public_decrypt_success(
+        handles,
+        plaintext_values,
+        ethereum_rpc_mock::SubscriptionTarget::All,
+    );
+
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+
+    assert_eq!(
+        status,
+        reqwest::StatusCode::OK,
+        "A threshold-sized quorum is consensus; the third Coprocessor is not required"
+    );
+    assert_eq!(body.status, ApiResponseStatus::Succeeded);
+    assert!(body.result.is_some());
+
+    setup.shutdown().await;
+}
+
+/// The other side of the same boundary: one attestation short of the threshold is retriable, not
+/// terminal.
+///
+/// Only one of three buckets has published, so the leading group cannot reach the majority of 2.
+/// Nothing disagreed, though — a lone unanimous vote is a gap, not a split — so this must spend the
+/// retry budget and end on the retryable timeout label rather than `no_attestation_consensus`.
+/// Loosening the quorum check to "any valid attestation" would let this request through instead.
+///
+/// The vote is genuinely counted before the verdict: the mock holds the empty buckets back so the
+/// attestation is not overtaken by the two 404s, which would otherwise decide the round at zero
+/// votes and leave the quorum arithmetic untested.
+#[tokio::test]
+async fn test_below_quorum_is_retriable_not_terminal() {
+    let setup = TestSetup::new_with_minimal_readiness()
+        .await
+        .expect("Failed to create test setup");
+
+    setup
+        .ct_attestation()
+        .serve_attestations_from_first(1)
+        .await;
+
+    let payload = helpers::create_public_decrypt_payload();
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+
+    assert_eq!(
+        status,
+        reqwest::StatusCode::SERVICE_UNAVAILABLE,
+        "One attestation under a majority of 2 must fail closed"
+    );
+    assert_eq!(body.status, ApiResponseStatus::Failed);
+    assert!(body.result.is_none());
+
+    let error = body.error.as_ref().expect("Error should be present");
+    assert_eq!(
+        error.label(),
+        "readiness_check_timed_out",
+        "Agreement that merely lacks numbers stays retryable, so not 'no_attestation_consensus'"
+    );
+
+    setup.shutdown().await;
+}
+
+/// The evidence that explains a readiness give-up must reach the caller, not just the label.
+///
+/// Same shape as `test_below_quorum_is_retriable_not_terminal` (one attestation short of the
+/// majority of 2), but this test pins the response body's `message` rather than just its `label`:
+/// it must still start with the standard phrase — that prefix is what the status handler matches
+/// with `starts_with` to pick the `readiness_check_timed_out` label — and then carry detail past
+/// it explaining which handle, and how many attested.
+#[tokio::test]
+async fn test_readiness_timeout_message_carries_round_detail() {
+    let setup = TestSetup::new_with_minimal_readiness()
+        .await
+        .expect("Failed to create test setup");
+
+    setup
+        .ct_attestation()
+        .serve_attestations_from_first(1)
+        .await;
+
+    let payload = helpers::create_public_decrypt_payload();
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+
+    assert_eq!(status, reqwest::StatusCode::SERVICE_UNAVAILABLE);
+
+    let error = body.error.as_ref().expect("Error should be present");
+    assert_eq!(
+        error.label(),
+        "readiness_check_timed_out",
+        "the appended detail must not relabel the response"
+    );
+
+    let message = error.message();
+    assert!(
+        message.starts_with(fhevm_relayer::core::errors::READINESS_CHECK_TIMEOUT_MSG),
+        "message must still start with the standard phrase: {message}"
+    );
+    assert!(
+        message.len() > fhevm_relayer::core::errors::READINESS_CHECK_TIMEOUT_MSG.len(),
+        "message must carry detail past the standard phrase: {message}"
+    );
+    assert!(
+        message.contains("required attested"),
+        "message must carry the round's redacted summary: {message}"
+    );
+
+    setup.shutdown().await;
+}
+
+/// No digest value ever reaches the caller.
+///
+/// The redacted round rendering — the only one allowed in a stored reason or an HTTP response —
+/// omits digest values by construction. `"ct:"`/`"sns:"` are the markers the full-board (operator
+/// diagnostics only) rendering uses for them; their absence here is the pin against a future
+/// change accidentally routing the full board into a stored reason.
+#[tokio::test]
+async fn test_readiness_timeout_message_has_no_digest_values() {
+    let setup = TestSetup::new_with_minimal_readiness()
+        .await
+        .expect("Failed to create test setup");
+
+    setup
+        .ct_attestation()
+        .serve_attestations_from_first(1)
+        .await;
+
+    let payload = helpers::create_public_decrypt_payload();
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (_, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+
+    let error = body.error.as_ref().expect("Error should be present");
+    let message = error.message();
+
+    assert!(
+        !message.contains("ct:"),
+        "leaked ciphertext digest marker: {message}"
+    );
+    assert!(
+        !message.contains("sns:"),
+        "leaked SNS digest marker: {message}"
+    );
+
+    setup.shutdown().await;
+}
+
+/// A starved round is retried, and a later round that finds the attestations succeeds.
+///
+/// Every bucket 404s its first probe and serves from the second on, so the first readiness attempt
+/// is starved and the second reaches consensus. This is the only test that proves the retry loop
+/// converts a late attestation into a success: treating `Starved` as terminal would fail the
+/// request on the first miss with `no_attestation_consensus`.
+#[tokio::test]
+async fn test_starved_round_retries_then_passes() {
+    let setup = TestSetup::new_with_fast_readiness()
+        .await
+        .expect("Failed to create test setup");
+
+    setup.ct_attestation().serve_after_n_misses(1).await;
+
+    let payload = helpers::create_public_decrypt_payload();
+    let handles = helpers::extract_ciphertext_handles_from_public_payload(&payload);
+    let plaintext_values = helpers::random_plaintext_values(handles.len());
+    setup.fhevm_mock.on_public_decrypt_success(
+        handles,
+        plaintext_values,
+        ethereum_rpc_mock::SubscriptionTarget::All,
+    );
+
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+
+    assert_eq!(
+        status,
+        reqwest::StatusCode::OK,
+        "The second attempt finds the attestations, so the request must succeed"
+    );
+    assert_eq!(body.status, ApiResponseStatus::Succeeded);
+    assert!(body.result.is_some());
+
+    setup.shutdown().await;
+}
+
+// The same three readiness outcomes under `source: gateway_chain`. Kept as their own tests rather
+// than cases of the ones above: the two sources fail for unrelated reasons and only overlap on the
+// timeout label, so sharing a body would hide more than it saves.
+
+/// `isPublicDecryptionReady` answering true is enough on its own — this setup starts no attestation
+/// buckets at all, so nothing else could have let the request through.
+///
+/// The mock answers true only for a call carrying both handles and the request's `extra_data`, so
+/// this also pins what the checker forwards. Two handles, because a single one cannot catch a
+/// truncated or reordered vec.
+#[tokio::test]
+async fn test_gateway_chain_readiness_success() {
+    let setup = TestSetup::new_with_gateway_chain_readiness()
+        .await
+        .expect("Failed to create test setup");
+    let payload = json!({
+        "ciphertextHandles": [helpers::random_handle(), helpers::random_handle()],
+        "extraData": constants::EXTRA_DATA
+    });
+    let handles = helpers::extract_ciphertext_handles_from_public_payload(&payload);
+    let plaintext_values = helpers::random_plaintext_values(handles.len());
+
+    setup
+        .fhevm_mock
+        .set_readiness_success_for_handles(handles.clone(), Bytes::from(vec![0x00]));
+    setup.fhevm_mock.on_public_decrypt_success(
+        handles,
+        plaintext_values,
+        ethereum_rpc_mock::SubscriptionTarget::All,
+    );
+
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+
+    assert_eq!(status, reqwest::StatusCode::OK);
+    assert_eq!(body.status, ApiResponseStatus::Succeeded);
+    assert!(body.result.is_some());
+
+    setup.shutdown().await;
+}
+
+/// Readiness retries rather than giving up on the first "not ready": the Gateway answers false
+/// once, then true, and the request goes through.
+///
+/// The success and timeout tests either side of this one both stay green if the retry loop
+/// collapses to a single attempt, which in production would cut the wait-for-ciphertext budget to
+/// one poll and 503 every request that is merely early.
+#[tokio::test]
+async fn test_gateway_chain_readiness_retries_then_passes() {
+    let setup = TestSetup::new_with_gateway_chain_readiness()
+        .await
+        .expect("Failed to create test setup");
+    let payload = helpers::create_public_decrypt_payload();
+    let handles = helpers::extract_ciphertext_handles_from_public_payload(&payload);
+    let plaintext_values = helpers::random_plaintext_values(handles.len());
+
+    setup.fhevm_mock.set_readiness_success_after_n_failures(1);
+    setup.fhevm_mock.on_public_decrypt_success(
+        handles,
+        plaintext_values,
+        ethereum_rpc_mock::SubscriptionTarget::All,
+    );
+
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+
+    assert_eq!(
+        status,
+        reqwest::StatusCode::OK,
+        "The second readiness attempt answers true, so the request must succeed"
+    );
+    assert_eq!(body.status, ApiResponseStatus::Succeeded);
+    assert!(body.result.is_some());
+
+    setup.shutdown().await;
+}
+
+/// A ciphertext the Gateway never reports ready exhausts the retry budget and stays retryable —
+/// the same label an unattested handle earns off-chain, since both mean "not yet".
+#[tokio::test]
+async fn test_gateway_chain_readiness_timeout_returns_503() {
+    let setup = TestSetup::new_with_gateway_chain_readiness()
+        .await
+        .expect("Failed to create test setup");
+
+    setup.fhevm_mock.set_readiness_failure();
+
+    let payload = helpers::create_public_decrypt_payload();
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+
+    assert_eq!(status, reqwest::StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body.status, ApiResponseStatus::Failed);
+    assert!(body.result.is_none());
+
+    let error = body.error.as_ref().expect("Error should be present");
+    assert_eq!(error.label(), "readiness_check_timed_out");
+
+    setup.shutdown().await;
+}
+
+/// An unreachable gateway read node is a fault of the relayer's own dependency, not of the
+/// ciphertext, so it surfaces as a 500 rather than as the retryable readiness label. This is the
+/// only path that reaches `ReadinessCheckError::GwContractError`; the off-chain source has no
+/// counterpart to it.
+#[tokio::test]
+async fn test_gateway_chain_readiness_contract_error_returns_500() {
+    let setup = TestSetup::new_with_gateway_chain_readiness()
+        .await
+        .expect("Failed to create test setup");
+
+    setup.fhevm_mock.set_readiness_contract_error();
+
+    let payload = helpers::create_public_decrypt_payload();
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+
+    assert_eq!(status, reqwest::StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(body.status, ApiResponseStatus::Failed);
+    assert!(body.result.is_none());
+
+    let error = body.error.as_ref().expect("Error should be present");
+    assert_eq!(error.label(), "internal_server_error");
 
     setup.shutdown().await;
 }

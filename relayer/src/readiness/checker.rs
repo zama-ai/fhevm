@@ -8,8 +8,10 @@ use crate::{
     gateway::ciphertext_checker::CiphertextChecker,
     host::{HostAclChecker, HostAclError},
 };
-use alloy::primitives::{Bytes, FixedBytes};
-use std::fmt;
+use alloy::primitives::{Bytes, FixedBytes, B256};
+use ciphertext_attestation::tracker::Round;
+use std::{fmt, time::Duration};
+use tokio_util::sync::CancellationToken;
 
 /// Steps for readiness checker operations
 #[derive(Debug, Clone, Copy)]
@@ -31,11 +33,39 @@ impl fmt::Display for ReadinessStep {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum ReadinessCheckError {
+    /// Retries were exhausted while the ciphertext material was still unattested. Reachable
+    /// under the on-chain Gateway check (`source: gateway_chain`) and under the off-chain
+    /// Coprocessor attestation check's overall wall-clock budget (`source:
+    /// coprocessor_attestations`) — neither has a round to report, unlike
+    /// [`Self::AttestationsNotReady`].
+    #[error("{}", crate::core::errors::READINESS_CHECK_TIMEOUT_MSG)]
     GwTimeout,
+    /// An on-chain Gateway contract call failed. Reachable only under the on-chain Gateway check
+    /// (`source: gateway_chain`).
+    #[error("gateway chain contract call failed")]
     GwContractError(alloy::contract::Error),
+    /// The Coprocessors served enough attestations and disagreed on the material. Distinct from
+    /// [`Self::GwTimeout`] because it is terminal: the request cannot become ready by waiting.
+    /// Reachable only under the off-chain Coprocessor attestation check
+    /// (`source: coprocessor_attestations`).
+    #[error("no attestation consensus for handle {handle}: {round}")]
+    NoAttestationConsensus { handle: B256, round: Round },
+    /// Retries were exhausted while attestation consensus for `handle` was still short of
+    /// threshold. Carries `last_round` — unlike [`Self::GwTimeout`] — so the caller can explain
+    /// why. Reachable only under the off-chain Coprocessor attestation check
+    /// (`source: coprocessor_attestations`).
+    #[error("{}: {last_round}", crate::core::errors::READINESS_CHECK_TIMEOUT_MSG)]
+    AttestationsNotReady {
+        handle: B256,
+        attempts: u32,
+        elapsed: Duration,
+        last_round: Round,
+    },
+    #[error("not allowed on host ACL: {0}")]
     NotAllowedOnHostAcl(HostAclError),
+    #[error("host ACL check failed: {0}")]
     HostAclFailed(HostAclError),
 }
 
@@ -47,11 +77,12 @@ pub struct ReadinessChecker {
 }
 
 impl ReadinessChecker {
-    pub fn new(
+    pub async fn new(
         host_acl: HostAclChecker,
         gateway_config: &GatewayConfig,
+        cancel_token: CancellationToken,
     ) -> Result<Self, EventProcessingError> {
-        let ciphertext = CiphertextChecker::new(gateway_config)?;
+        let ciphertext = CiphertextChecker::new(gateway_config, cancel_token).await?;
         Ok(Self {
             host_acl,
             ciphertext,

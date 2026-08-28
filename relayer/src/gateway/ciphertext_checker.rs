@@ -1,51 +1,167 @@
+//! Ciphertext readiness: whether a decryption request's ciphertext material may be decrypted.
+//!
+//! Before a decryption request is forwarded to the Gateway, every handle it names must be
+//! confirmed ready. Two sources are selectable via `gw_ciphertext_check.source`:
+//!
+//! - `gateway_chain`: ask the Gateway chain directly, via `Decryption.isPublicDecryptionReady` /
+//!   `isUserDecryptionReady_1`.
+//! - `coprocessor_attestations`: evaluate Coprocessor attestation consensus off-chain, per handle
+//!   (RFC 023). The Coprocessor registry is mirrored from `GatewayConfig`, each bucket is probed
+//!   with an S3 `HEAD` request, and the attestations are validated and counted against the
+//!   on-chain majority threshold.
+//!
+//! Both sources fail closed — a handle that is not confirmed ready rejects the whole request
+//! before any Gateway transaction is sent.
+
 use crate::{
-    config::settings::{AppConfigError, GatewayConfig, RetrySettings},
+    config::settings::{AppConfigError, GatewayConfig, GwCiphertextCheckConfig, RetrySettings},
     core::{errors::EventProcessingError, event::HandleContractPair, job_id::JobId},
     gateway::arbitrum::bindings::Decryption,
-    host::redact_alloy_error,
+    host::{
+        provider::{build_gateway_provider, Provider},
+        redact_alloy_error,
+    },
     readiness::ReadinessCheckError,
 };
 use alloy::{
+    network::AnyNetwork,
     primitives::{Address, Bytes, FixedBytes},
-    providers::{fillers::FillProvider, ProviderBuilder, RootProvider},
+    transports::http::Client,
+};
+use ciphertext_attestation::{
+    fetch_attestations_and_check_consensus, BoundedClient, ConsensusCheckError,
+    CoprocessorRegistry, COPROCESSOR_CONTEXT_ID_V1,
 };
 use fhevm_gateway_bindings::decryption::Decryption::DecryptionInstance;
-use reqwest::Url;
+use futures::stream::{self, StreamExt};
+use std::num::NonZeroUsize;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
 use crate::readiness::ReadinessStep;
 
-type Provider = FillProvider<
-    alloy::providers::fillers::JoinFill<
-        alloy::providers::Identity,
-        alloy::providers::fillers::JoinFill<
-            alloy::providers::fillers::GasFiller,
-            alloy::providers::fillers::JoinFill<
-                alloy::providers::fillers::BlobGasFiller,
-                alloy::providers::fillers::JoinFill<
-                    alloy::providers::fillers::NonceFiller,
-                    alloy::providers::fillers::ChainIdFiller,
-                >,
-            >,
-        >,
-    >,
-    RootProvider<alloy::network::AnyNetwork>,
-    alloy::network::AnyNetwork,
->;
+/// Handles probed concurrently within one attempt, under the off-chain Coprocessor attestation
+/// check (`source: coprocessor_attestations`).
+///
+/// Each handle already fans out one `HEAD` per Coprocessor bucket, so requests in flight peak at
+/// this many times the registry size. Bounded rather than unbounded so a request naming a large
+/// handle set cannot spike that product, and fixed rather than configurable to keep the
+/// `gw_ciphertext_check` subtree to the knobs an operator actually tunes.
+const MAX_CONCURRENT_HANDLES: usize = 8;
 
-type GatewayDecryption = DecryptionInstance<Arc<Provider>, alloy::network::AnyNetwork>;
+/// Per-bucket ceiling on concurrent `HEAD` probes handed to [`BoundedClient`], under the
+/// off-chain Coprocessor attestation check.
+///
+/// The client requires this and offers no default, so the number is chosen here. For the relayer
+/// it is a backstop rather than a working limit: [`MAX_CONCURRENT_HANDLES`] already caps the outer
+/// fan-out at 8, and one handle issues at most one `HEAD` per bucket, so in-flight probes to any
+/// one bucket never approach this. It is fixed rather than configurable for the same reason
+/// [`MAX_CONCURRENT_HANDLES`] is — an operator has nothing to tune here. The value matches
+/// kms-connector's own per-bucket `HEAD` default, so the two consumers of this crate agree.
+const MAX_CONCURRENT_HEADS_PER_BUCKET: usize = 64;
 
-/// Checks gateway ciphertext readiness (isPublicDecryptionReady / isUserDecryptionReady).
-pub struct CiphertextChecker {
+type GatewayDecryption = DecryptionInstance<Arc<Provider>, AnyNetwork>;
+
+/// Checks whether ciphertext material is ready for decryption. One variant per
+/// `gw_ciphertext_check.source`; each keeps its own state, and only the public interface is
+/// shared.
+pub enum CiphertextChecker {
+    GatewayChain(GatewayChainCheck),
+    CoprocessorAttestations(CoprocessorAttestationCheck),
+}
+
+impl CiphertextChecker {
+    pub async fn new(
+        gateway_config: &GatewayConfig,
+        cancel_token: CancellationToken,
+    ) -> Result<Self, EventProcessingError> {
+        match &gateway_config.readiness_checker.gw_ciphertext_check {
+            // The on-chain Gateway check starts no background task, so it has nothing to cancel;
+            // only the Coprocessor registry's refresh task needs the shutdown token.
+            GwCiphertextCheckConfig::GatewayChain { retry } => Ok(Self::GatewayChain(
+                GatewayChainCheck::new(gateway_config, retry.clone())?,
+            )),
+            GwCiphertextCheckConfig::CoprocessorAttestations {
+                retry,
+                head_timeout_ms,
+                request_timeout_ms,
+                registry_refresh_ms,
+                gateway_config_address,
+            } => Ok(Self::CoprocessorAttestations(
+                CoprocessorAttestationCheck::new(
+                    gateway_config,
+                    retry.clone(),
+                    *head_timeout_ms,
+                    *request_timeout_ms,
+                    *registry_refresh_ms,
+                    gateway_config_address,
+                    cancel_token,
+                )
+                .await?,
+            )),
+        }
+    }
+
+    /// Checks public decryption readiness.
+    ///
+    /// `extra_data` is forwarded to the on-chain Gateway check. The off-chain Coprocessor
+    /// attestation check ignores it: the consensus verdict is a property of the ciphertext
+    /// material alone.
+    pub async fn check_public_decryption_readiness(
+        &self,
+        job_id: &JobId,
+        handles: Vec<FixedBytes<32>>,
+        extra_data: Bytes,
+    ) -> Result<(), ReadinessCheckError> {
+        match self {
+            Self::GatewayChain(c) => {
+                c.check_public_decryption_readiness(job_id, handles, extra_data)
+                    .await
+            }
+            Self::CoprocessorAttestations(a) => {
+                a.check_public_decryption_readiness(job_id, handles).await
+            }
+        }
+    }
+
+    /// Checks user decryption readiness, accepting core `HandleContractPair` types.
+    ///
+    /// `extra_data` is forwarded to the on-chain Gateway check. The off-chain Coprocessor
+    /// attestation check ignores it: the consensus verdict is a property of the ciphertext
+    /// material alone.
+    pub async fn check_user_decryption_readiness(
+        &self,
+        job_id: &JobId,
+        pairs: &[HandleContractPair],
+        extra_data: Bytes,
+    ) -> Result<(), ReadinessCheckError> {
+        match self {
+            Self::GatewayChain(c) => {
+                c.check_user_decryption_readiness(job_id, pairs, extra_data)
+                    .await
+            }
+            Self::CoprocessorAttestations(a) => {
+                a.check_user_decryption_readiness(job_id, pairs).await
+            }
+        }
+    }
+}
+
+/// The on-chain Gateway check: asks the Gateway chain (`isPublicDecryptionReady` /
+/// `isUserDecryptionReady_1`).
+pub struct GatewayChainCheck {
     retry_config: RetrySettings,
     gw_decryption: GatewayDecryption,
 }
 
-impl CiphertextChecker {
-    pub fn new(gateway_config: &GatewayConfig) -> Result<Self, EventProcessingError> {
+impl GatewayChainCheck {
+    fn new(
+        gateway_config: &GatewayConfig,
+        retry: RetrySettings,
+    ) -> Result<Self, EventProcessingError> {
         let decryption_address = Address::from_str(&gateway_config.contracts.decryption_address)
             .map_err(|_| {
                 EventProcessingError::ConfigError(AppConfigError::InvalidAddress(
@@ -53,32 +169,21 @@ impl CiphertextChecker {
                 ))
             })?;
 
-        let url = Url::parse(&gateway_config.blockchain_rpc.read_http_url).map_err(|e| {
-            EventProcessingError::ValidationFailed {
+        let provider = build_gateway_provider(&gateway_config.blockchain_rpc.read_http_url)
+            .map_err(|e| EventProcessingError::ValidationFailed {
                 field: "blockchain_rpc_url".to_string(),
-                reason: format!("invalid URL: {}", e),
-            }
-        })?;
-
-        let provider = Arc::new(
-            ProviderBuilder::new()
-                .network::<alloy::network::AnyNetwork>()
-                .connect_http(url),
-        );
+                reason: e.to_string(),
+            })?;
 
         let gw_decryption = Decryption::new(decryption_address, provider);
 
         Ok(Self {
-            retry_config: gateway_config
-                .readiness_checker
-                .gw_ciphertext_check
-                .retry
-                .clone(),
+            retry_config: retry,
             gw_decryption,
         })
     }
 
-    pub async fn check_public_decryption_readiness(
+    async fn check_public_decryption_readiness(
         &self,
         job_id: &JobId,
         handles: Vec<FixedBytes<32>>,
@@ -124,12 +229,12 @@ impl CiphertextChecker {
     /// Check user decryption readiness, accepting core `HandleContractPair` types.
     /// Converts to gateway binding types internally.
     ///
-    /// All attestation types (legacy direct/delegated and unified EIP-712)
-    /// route through the same `isUserDecryptionReady_1((bytes32,address)[],
-    /// bytes)` overload: the contract only checks that ciphertext material
-    /// exists for each handle, so per-pair contract addresses and the
+    /// All three request kinds (legacy direct, legacy delegated and unified
+    /// EIP-712) route through the same `isUserDecryptionReady_1((bytes32,
+    /// address)[], bytes)` overload: the contract only checks that ciphertext
+    /// material exists for each handle, so per-pair contract addresses and the
     /// requesting user/delegator address play no role here.
-    pub async fn check_user_decryption_readiness(
+    async fn check_user_decryption_readiness(
         &self,
         job_id: &JobId,
         pairs: &[HandleContractPair],
@@ -231,5 +336,348 @@ impl CiphertextChecker {
             );
             tokio::time::sleep(retry_interval).await;
         }
+    }
+}
+
+/// The off-chain Coprocessor attestation check: evaluates attestation consensus, per handle
+/// (RFC 023).
+pub struct CoprocessorAttestationCheck {
+    retry_config: RetrySettings,
+    registry: CoprocessorRegistry<Arc<Provider>, AnyNetwork>,
+    http_client: BoundedClient,
+    head_timeout: Duration,
+    request_timeout: Duration,
+}
+
+impl CoprocessorAttestationCheck {
+    /// Mirrors the Coprocessor registry from `GatewayConfig` and starts its refresh task.
+    ///
+    /// `cancel_token` is the relayer-wide shutdown token: the registry cancels it if a refresh
+    /// hits a condition no healthy protocol can produce (e.g. an invalid on-chain threshold),
+    /// since continuing would mean gating decryptions on a registry known to be wrong.
+    #[allow(clippy::too_many_arguments)]
+    async fn new(
+        gateway_config: &GatewayConfig,
+        retry: RetrySettings,
+        head_timeout_ms: u64,
+        request_timeout_ms: u64,
+        registry_refresh_ms: u64,
+        gateway_config_address: &str,
+        cancel_token: CancellationToken,
+    ) -> Result<Self, EventProcessingError> {
+        let gateway_config_address = Address::from_str(gateway_config_address).map_err(|_| {
+            EventProcessingError::ConfigError(AppConfigError::InvalidAddress(
+                "gw_ciphertext_check.gateway_config_address".to_owned(),
+            ))
+        })?;
+
+        let provider = build_gateway_provider(&gateway_config.blockchain_rpc.read_http_url)
+            .map_err(|e| EventProcessingError::ValidationFailed {
+                field: "blockchain_rpc_url".to_string(),
+                reason: e.to_string(),
+            })?;
+
+        let registry = CoprocessorRegistry::connect(
+            provider,
+            gateway_config_address,
+            Duration::from_millis(registry_refresh_ms),
+            cancel_token,
+        )
+        .await
+        .map_err(|e| EventProcessingError::ContractCallFailed(e.to_string()))?;
+
+        Ok(Self {
+            retry_config: retry,
+            registry,
+            http_client: BoundedClient::new(
+                Client::new(),
+                NonZeroUsize::new(MAX_CONCURRENT_HEADS_PER_BUCKET)
+                    .expect("MAX_CONCURRENT_HEADS_PER_BUCKET is non-zero"),
+            ),
+            head_timeout: Duration::from_millis(head_timeout_ms),
+            request_timeout: Duration::from_millis(request_timeout_ms),
+        })
+    }
+
+    async fn check_public_decryption_readiness(
+        &self,
+        job_id: &JobId,
+        handles: Vec<FixedBytes<32>>,
+    ) -> Result<(), ReadinessCheckError> {
+        info!(
+            step = %ReadinessStep::Started,
+            int_job_id = %job_id,
+            "Starting public decryption ciphertext attestation check"
+        );
+
+        let result = self.check_handles_with_retry(job_id, &handles).await;
+
+        match &result {
+            Ok(()) => info!(
+                step = %ReadinessStep::Passed,
+                int_job_id = %job_id,
+                "Public decryption ciphertext attestation check passed"
+            ),
+            Err(e) => error!(
+                step = %ReadinessStep::Failed,
+                int_job_id = %job_id,
+                error = ?e,
+                "Public decryption ciphertext attestation check failed"
+            ),
+        }
+
+        result
+    }
+
+    /// Checks user decryption readiness, accepting core `HandleContractPair` types.
+    ///
+    /// All three request kinds (legacy direct, legacy delegated and unified EIP-712) collapse to
+    /// the same per-handle check: consensus is a property of the ciphertext material alone, so the
+    /// per-pair contract address and the requesting user or delegator play no role. The same
+    /// reasoning is why the on-chain Gateway check routes all three through a single
+    /// `isUserDecryptionReady` overload.
+    async fn check_user_decryption_readiness(
+        &self,
+        job_id: &JobId,
+        pairs: &[HandleContractPair],
+    ) -> Result<(), ReadinessCheckError> {
+        info!(
+            step = %ReadinessStep::Started,
+            int_job_id = %job_id,
+            "Starting user decryption ciphertext attestation check"
+        );
+
+        let handles: Vec<FixedBytes<32>> = pairs.iter().map(|pair| pair.ct_handle.into()).collect();
+        let result = self.check_handles_with_retry(job_id, &handles).await;
+
+        match &result {
+            Ok(()) => info!(
+                step = %ReadinessStep::Passed,
+                int_job_id = %job_id,
+                "User decryption ciphertext attestation check passed"
+            ),
+            Err(e) => error!(
+                step = %ReadinessStep::Failed,
+                int_job_id = %job_id,
+                error = ?e,
+                "User decryption ciphertext attestation check failed"
+            ),
+        }
+
+        result
+    }
+
+    /// Retries the whole handle set while attestations are starved, under an overall wall-clock
+    /// budget, and gives up immediately once the Coprocessors have split.
+    ///
+    /// Two independent limits, whichever is reached first: `retry.max_attempts` bounds how many
+    /// times the handle set is re-probed, and `request_timeout_ms` bounds how long that may take in
+    /// total. The attempt count alone is not a time bound — an attempt waits out `head_timeout` per
+    /// unresponsive bucket, so a hanging Coprocessor would otherwise stretch the nominal budget by
+    /// an order of magnitude while holding a readiness throttler permit the whole time.
+    async fn check_handles_with_retry(
+        &self,
+        job_id: &JobId,
+        handles: &[FixedBytes<32>],
+    ) -> Result<(), ReadinessCheckError> {
+        match tokio::time::timeout(
+            self.request_timeout,
+            self.retry_while_starved(job_id, handles),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_elapsed) => {
+                // Same verdict as exhausting the attempts — retriable, `readiness_check_timed_out`
+                // — but a distinct log line, because the remedy differs: attempts exhausted means
+                // the attestations are late, whereas the budget expiring means the probes
+                // themselves are slow and a bucket is likely unresponsive.
+                warn!(
+                    step = %ReadinessStep::Failed,
+                    int_job_id = %job_id,
+                    request_timeout_ms = self.request_timeout.as_millis(),
+                    handles = handles.len(),
+                    "Ciphertext attestation check exceeded its overall request budget"
+                );
+                Err(ReadinessCheckError::GwTimeout)
+            }
+        }
+    }
+
+    /// Re-probes the handle set until it succeeds, becomes unreachable, or runs out of attempts.
+    /// Bounded in time only by its caller — see [`Self::check_handles_with_retry`].
+    async fn retry_while_starved(
+        &self,
+        job_id: &JobId,
+        handles: &[FixedBytes<32>],
+    ) -> Result<(), ReadinessCheckError> {
+        let max_attempts = self.retry_config.max_attempts;
+        let retry_interval = Duration::from_millis(self.retry_config.retry_interval_ms);
+        let mut attempts = 0;
+        let started = Instant::now();
+
+        loop {
+            match self.check_handles_once(handles).await {
+                Ok(()) => return Ok(()),
+                Err(ConsensusCheckError::Unreachable { handle, round }) => {
+                    error!(
+                        step = %ReadinessStep::Failed,
+                        int_job_id = %job_id,
+                        %handle,
+                        ?round,
+                        "Coprocessors did not agree on the ciphertext material"
+                    );
+                    return Err(ReadinessCheckError::NoAttestationConsensus { handle, round });
+                }
+                Err(ConsensusCheckError::MissedThisRound { handle, round }) => {
+                    attempts += 1;
+                    if attempts >= max_attempts {
+                        let elapsed = started.elapsed();
+                        error!(
+                            int_job_id = %job_id,
+                            %handle,
+                            attempts,
+                            elapsed_ms = elapsed.as_millis(),
+                            ?round,
+                            "Max retries reached for ciphertext attestation check"
+                        );
+                        return Err(ReadinessCheckError::AttestationsNotReady {
+                            handle,
+                            attempts,
+                            elapsed,
+                            last_round: round,
+                        });
+                    }
+
+                    warn!(
+                        step = %ReadinessStep::Retrying,
+                        int_job_id = %job_id,
+                        attempt = attempts,
+                        max_attempts,
+                        %handle,
+                        ?round,
+                        "Retrying ciphertext attestation check"
+                    );
+                    tokio::time::sleep(retry_interval).await;
+                }
+            }
+        }
+    }
+
+    /// Evaluates consensus for every handle once. A request is only as ready as its least-ready
+    /// handle, so any handle without consensus fails the whole request.
+    ///
+    /// A failing handle does not end the round, because the *kind* of failure decides
+    /// retriable-vs-terminal and an `Unreachable` verdict has to win wherever it sits in the set.
+    /// Reporting the first failure seen would hide an unreachable handle behind a retry budget
+    /// that can never satisfy it, and would make the user-facing verdict depend on which handle
+    /// happened to fail first — the same request reported as a 503 timeout or a 500 no-consensus
+    /// depending on position or timing. An `Unreachable` verdict short-circuits the round: it is
+    /// terminal, so there is nothing left to learn.
+    ///
+    /// Handles are probed concurrently, up to [`MAX_CONCURRENT_HANDLES`] at a time, so an attempt
+    /// costs about one `head_timeout` rather than one per handle. The reported `MissedThisRound`
+    /// is the one belonging to the lowest-indexed failing handle, so the message does not vary
+    /// with the order replies happen to arrive in.
+    async fn check_handles_once(
+        &self,
+        handles: &[FixedBytes<32>],
+    ) -> Result<(), ConsensusCheckError> {
+        let snapshot = self.registry.snapshot();
+
+        // Handles are copied out of the slice rather than borrowed: a borrow taken from the
+        // iterator would tie the closure to one anonymous lifetime, and the resulting future is
+        // not general enough for the `run_consumer` callers to hold across an await.
+        let mut verdicts = stream::iter(handles.iter().copied().enumerate())
+            .map(|(index, handle)| {
+                let snapshot = snapshot.clone();
+                async move {
+                    let outcome = fetch_attestations_and_check_consensus(
+                        &self.http_client,
+                        handle,
+                        &snapshot,
+                        self.head_timeout,
+                        COPROCESSOR_CONTEXT_ID_V1,
+                    )
+                    .await;
+                    (index, outcome)
+                }
+            })
+            .buffer_unordered(MAX_CONCURRENT_HANDLES);
+
+        let mut first_missed: Option<(usize, ConsensusCheckError)> = None;
+
+        while let Some((index, outcome)) = verdicts.next().await {
+            match outcome {
+                Ok(_) => (),
+                Err(e @ ConsensusCheckError::Unreachable { .. }) => return Err(e),
+                Err(e @ ConsensusCheckError::MissedThisRound { .. }) => {
+                    if first_missed.as_ref().is_none_or(|(at, _)| index < *at) {
+                        first_missed = Some((index, e));
+                    }
+                }
+            }
+        }
+
+        match first_missed {
+            Some((_, e)) => Err(e),
+            None => Ok(()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// A `GatewayChainCheck` whose `gw_decryption` is never dialed: `check_readiness_internal`
+    /// only reads `retry_config`, and the retry loop is driven entirely by the injected
+    /// `check_fn`, so the provider and address here are placeholders.
+    fn test_gateway_chain_check(retry_config: RetrySettings) -> GatewayChainCheck {
+        let provider = build_gateway_provider("http://localhost:1").expect("dummy rpc url parses");
+        let gw_decryption = Decryption::new(Address::ZERO, provider);
+        GatewayChainCheck {
+            retry_config,
+            gw_decryption,
+        }
+    }
+
+    fn dummy_contract_error() -> alloy::contract::Error {
+        alloy::contract::Error::AbiError(alloy::dyn_abi::Error::SolTypes(
+            alloy::sol_types::Error::Other("simulated transient RPC blip".into()),
+        ))
+    }
+
+    /// A transient RPC error on the first attempt, followed only by clean `Ok(false)` polls
+    /// until retries are exhausted, must not surface as a terminal `GwContractError` (HTTP 500).
+    /// `last_error` has to be cleared on every `Ok`, otherwise the stale error from the very
+    /// first attempt leaks through as the final verdict instead of the retryable `GwTimeout`
+    /// (HTTP 503).
+    #[tokio::test]
+    async fn transient_error_cleared_by_later_ok_yields_gw_timeout() {
+        let check = test_gateway_chain_check(RetrySettings {
+            max_attempts: 3,
+            retry_interval_ms: 0,
+        });
+        let attempt = AtomicUsize::new(0);
+
+        let result = check
+            .check_readiness_internal(&JobId::ZERO, || {
+                let this_attempt = attempt.fetch_add(1, Ordering::SeqCst);
+                async move {
+                    if this_attempt == 0 {
+                        Err(dummy_contract_error())
+                    } else {
+                        Ok(false)
+                    }
+                }
+            })
+            .await;
+
+        assert!(
+            matches!(result, Err(ReadinessCheckError::GwTimeout)),
+            "expected GwTimeout, got {result:?}"
+        );
     }
 }

@@ -104,7 +104,14 @@ pub async fn initialize_gateway(
             .retry
             .clone(),
     )?;
-    let readiness_checker = Arc::new(ReadinessChecker::new(host_acl_checker, &settings.gateway)?);
+    let readiness_checker = Arc::new(
+        ReadinessChecker::new(
+            host_acl_checker,
+            &settings.gateway,
+            dequeue_shutdown.clone(),
+        )
+        .await?,
+    );
 
     let threshold_resolver = Arc::new(
         ThresholdResolver::new(
