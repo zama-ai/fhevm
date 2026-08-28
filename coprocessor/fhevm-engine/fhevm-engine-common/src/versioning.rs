@@ -56,20 +56,20 @@ pub fn binary_matches(live: &str) -> bool {
     parse_version(STACK_VERSION) == parse_version(live)
 }
 
-/// True iff this binary's [`CONSENSUS_PROTOCOL_VERSION`] is above `live` — the
-/// incoming green stack.
-fn consensus_is_above(live: i64) -> bool {
+/// True if this binary's [`CONSENSUS_PROTOCOL_VERSION`] is strictly newer than `live`.
+fn consensus_is_newer_than(live: i64) -> bool {
     i64::from(CONSENSUS_PROTOCOL_VERSION) > live
 }
 
-/// True iff this binary's [`CONSENSUS_PROTOCOL_VERSION`] equals `live`.
+/// True if this binary's [`CONSENSUS_PROTOCOL_VERSION`] equals `live`.
 fn consensus_matches(live: i64) -> bool {
     i64::from(CONSENSUS_PROTOCOL_VERSION) == live
 }
 
-/// True iff this binary's [`CONSENSUS_PROTOCOL_VERSION`] is below `live` — it
-/// belongs to a retired stack.
-fn consensus_is_below(live: i64) -> bool {
+/// True if this binary's [`CONSENSUS_PROTOCOL_VERSION`] is strictly older than
+/// `live` — i.e. it belongs to a retired stack that should no longer touch the
+/// database.
+fn consensus_is_older_than(live: i64) -> bool {
     i64::from(CONSENSUS_PROTOCOL_VERSION) < live
 }
 
@@ -207,7 +207,7 @@ pub async fn reconcile_stack_mode(pool: &Pool<Postgres>, mode: &StackMode) -> an
             live_consensus_version = live,
             "consensus version matches live; leaving GCS mode (now live stack)"
         );
-    } else if consensus_is_below(live) && !mode.is_paused() {
+    } else if consensus_is_older_than(live) && !mode.is_paused() {
         mode.paused.store(true, Ordering::SeqCst);
         info!(
             binary_consensus_version = CONSENSUS_PROTOCOL_VERSION,
@@ -293,7 +293,7 @@ pub async fn resolve_gcs_mode(database_url: &str) -> anyhow::Result<bool> {
         }
     };
 
-    let gcs_mode = consensus_is_above(live);
+    let gcs_mode = consensus_is_newer_than(live);
     info!(
         binary_consensus_version = CONSENSUS_PROTOCOL_VERSION,
         live_consensus_version = live,
@@ -384,8 +384,8 @@ pub async fn wait_for_gcs_schema(database_url: &str, timeout: Duration) -> anyho
 }
 
 /// Error returned by [`begin_guarded_pool`] / [`begin_guarded_conn`] when this
-/// binary belongs to a retired stack — its consensus version is below the live
-/// `versioning.consensus_version`.
+/// binary belongs to a retired stack — its [`CONSENSUS_PROTOCOL_VERSION`] is
+/// strictly older than the live `versioning.consensus_version`.
 #[derive(Debug, thiserror::Error)]
 #[error(
     "consensus version {binary} is older than the active {live}; access denied (retired stack)"
@@ -429,9 +429,10 @@ async fn live_consensus_version(conn: &mut PgConnection) -> Result<Option<i64>, 
 }
 
 /// Re-read the live consensus version on `conn` and report whether this binary
-/// belongs to a retired stack (its [`crate::CONSENSUS_PROTOCOL_VERSION`] is below
-/// the live `versioning.consensus_version`). A missing `versioning` row is treated
-/// as not-retired, so a fresh/unseeded DB is not locked out.
+/// belongs to a retired stack (its [`CONSENSUS_PROTOCOL_VERSION`] is strictly
+/// older than the live `versioning.consensus_version`). A missing `versioning`
+/// row is treated as not-retired, mirroring [`resolve_gcs_mode`]'s permissive
+/// default so a fresh/unseeded DB is not locked out.
 ///
 /// This is the single source of truth for "should this stack stop touching the
 /// DB" — the same fence used by [`assert_not_retired`], [`resolve_gcs_mode`], and
@@ -440,15 +441,15 @@ async fn live_consensus_version(conn: &mut PgConnection) -> Result<Option<i64>, 
 pub async fn is_retired(conn: &mut PgConnection) -> Result<bool, sqlx::Error> {
     Ok(live_consensus_version(conn)
         .await?
-        .is_some_and(|live| i64::from(CONSENSUS_PROTOCOL_VERSION) < live))
+        .is_some_and(consensus_is_older_than))
 }
 
 /// Re-read the live consensus version on `conn` and fail if this binary is strictly
-/// below it (a retired stack). A missing `versioning` row is permissive, so a
-/// fresh/unseeded DB is not locked out.
+/// older (a retired stack). A missing `versioning` row is permissive, mirroring
+/// [`resolve_gcs_mode`]'s default, so a fresh/unseeded DB is not locked out.
 async fn assert_not_retired(conn: &mut PgConnection) -> Result<(), sqlx::Error> {
     if let Some(live) = live_consensus_version(conn).await? {
-        if i64::from(CONSENSUS_PROTOCOL_VERSION) < live {
+        if consensus_is_older_than(live) {
             return Err(sqlx::Error::Configuration(Box::new(StaleStackError {
                 binary: CONSENSUS_PROTOCOL_VERSION,
                 live,
@@ -619,7 +620,9 @@ pub async fn begin_write_guarded_conn(
 
 #[cfg(test)]
 mod tests {
-    use super::{consensus_is_above, consensus_is_below, consensus_matches, parse_version};
+    use super::{
+        consensus_is_newer_than, consensus_is_older_than, consensus_matches, parse_version,
+    };
     use crate::STACK_VERSION;
 
     #[test]
@@ -671,8 +674,8 @@ mod tests {
     fn consensus_relationships() {
         let live = i64::from(crate::CONSENSUS_PROTOCOL_VERSION);
         assert!(consensus_matches(live));
-        assert!(!consensus_is_above(live) && !consensus_is_below(live));
-        assert!(consensus_is_above(live - 1));
-        assert!(consensus_is_below(live + 1));
+        assert!(!consensus_is_newer_than(live) && !consensus_is_older_than(live));
+        assert!(consensus_is_newer_than(live - 1));
+        assert!(consensus_is_older_than(live + 1));
     }
 }
