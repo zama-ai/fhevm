@@ -1,3 +1,4 @@
+pub mod bootstrap_versioning;
 pub mod bridge;
 pub mod chain_id;
 pub mod crs;

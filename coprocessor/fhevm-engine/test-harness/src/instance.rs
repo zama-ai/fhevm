@@ -181,18 +181,18 @@ async fn create_database(
         }
         ImportMode::None => {
             sqlx::migrate!("./migrations").run(&pool).await?;
-            fhevm_engine_common::versioning::bootstrap_versioning(&pool).await?;
+            fhevm_engine_common::bootstrap_versioning::bootstrap_versioning(&pool).await?;
             info!("No keys imported");
         }
         ImportMode::WithKeysNoSns => {
             sqlx::migrate!("./migrations").run(&pool).await?;
-            fhevm_engine_common::versioning::bootstrap_versioning(&pool).await?;
+            fhevm_engine_common::bootstrap_versioning::bootstrap_versioning(&pool).await?;
             info!("Creating test keys, without SnS key...");
             setup_test_key(&pool, false).await?;
         }
         ImportMode::WithAllKeys => {
             sqlx::migrate!("./migrations").run(&pool).await?;
-            fhevm_engine_common::versioning::bootstrap_versioning(&pool).await?;
+            fhevm_engine_common::bootstrap_versioning::bootstrap_versioning(&pool).await?;
             info!("Creating test keys with all keys...");
             setup_test_key(&pool, true).await?;
         }
