@@ -1,0 +1,32 @@
+{
+  "name": "cli-fhevm-sdk",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "fhevm-sdk": "./bin/fhevm-sdk.mjs"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "cli": "node dist/index.mjs",
+    "cli:dev": "node --import tsx index.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "tsdown": "^0.22.2",
+    "tsx": "^4.21.0",
+    "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "@cli-fhevm-sdk/toolkit": "workspace:*",
+    "@commander-js/extra-typings": "^15.0.0",
+    "@fhevm/sdk": "0.13.2",
+    "@pnpm/tabtab": "^0.5.4",
+    "commander": "^15.0.0",
+    "consola": "^3.4.2",
+    "viem": "^2.50.4"
+  }
+}
