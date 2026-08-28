@@ -18,7 +18,7 @@ to the cluster.
 
    ```bash
    tailscale configure kubeconfig tailscale-operator-zws-dev.diplodocus-boa.ts.net
-   export NS=fhevm-ci-<actor>-<suffix|run-id>
+export NS="fhevm-ci-<actor>-<suffix-or-run-id>"
    kubectl get pods -n $NS   # sanity check
    ```
 
