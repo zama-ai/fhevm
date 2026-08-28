@@ -279,18 +279,6 @@ pub async fn resolve_gcs_mode(database_url: &str) -> anyhow::Result<bool> {
     )
     .await?;
     let mut conn = PgConnection::connect_with(&options).await?;
-    // While the setup marker exists the versions are not final yet. Starting now
-    // could pick the wrong role, so fail and let the next start see the result.
-    let setup_in_progress: bool =
-        sqlx::query_scalar("SELECT to_regclass('public._fhevm_versioning_bootstrap') IS NOT NULL")
-            .fetch_one(&mut conn)
-            .await?;
-    if setup_in_progress {
-        let _ = conn.close().await;
-        return Err(anyhow::anyhow!(
-            "database setup is still in progress; retry startup once it completes"
-        ));
-    }
     let live = live_consensus_version(&mut conn).await?;
     let _ = conn.close().await;
 
