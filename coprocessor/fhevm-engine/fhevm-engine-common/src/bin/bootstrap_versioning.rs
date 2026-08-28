@@ -8,5 +8,5 @@ async fn main() -> anyhow::Result<()> {
         connect_pool_with_options(&database_url, PgPoolOptions::new().max_connections(1), None)
             .await?;
 
-    fhevm_engine_common::versioning::bootstrap_versioning(&pool).await
+    fhevm_engine_common::bootstrap_versioning::bootstrap_versioning(&pool).await
 }

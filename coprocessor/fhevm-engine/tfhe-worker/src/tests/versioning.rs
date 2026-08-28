@@ -1,4 +1,5 @@
-use fhevm_engine_common::versioning::{bootstrap_versioning, resolve_gcs_mode};
+use fhevm_engine_common::bootstrap_versioning::bootstrap_versioning;
+use fhevm_engine_common::versioning::resolve_gcs_mode;
 use test_harness::instance::{setup_test_db, ImportMode};
 
 async fn set_consensus_version(db_url: &str, version: i64) {
