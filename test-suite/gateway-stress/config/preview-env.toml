@@ -28,7 +28,7 @@ handle = "0x2ba383e55ad5b728293550c4985946422eaa162d4dff00000000000030390500"
 
 # Configuration section for stress test using the Gateway chain
 [blockchain]
-# Gateway WebSocket RPC URL endpoint (required)
+# Gateway HTTP RPC URL endpoint (required)
 gateway_url = "http://anvil-gateway-anvil-node:8546"
 
 # Chain ID for the Host network (required)
