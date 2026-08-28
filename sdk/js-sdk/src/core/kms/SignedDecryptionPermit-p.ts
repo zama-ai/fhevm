@@ -64,6 +64,7 @@ export function serializeSignedDecryptionPermitToJSON(permit: SignedDecryptionPe
       eip712: Eip712Like;
       signature: string;
       signerAddress: string;
+      delegatorAddress?: string | undefined;
     } {
   assertIsSignedDecryptionPermit(permit, {});
 
@@ -88,6 +89,12 @@ export function serializeSignedDecryptionPermitToJSON(permit: SignedDecryptionPe
     eip712: _toJsonSafeEip712(permit.eip712),
     signature: permit.signature,
     signerAddress: permit.signerAddress,
+    // Unlike V1 (where delegation is embedded in eip712.message), V2 keeps
+    // delegation as metadata alongside the signed message — see
+    // SignedDecryptionPermitV2-p.ts — so it has to be serialized separately.
+    // Derived via the public getters (isDelegated / encryptedDataOwnerAddress),
+    // matching the "does not access private fields" contract of this function.
+    delegatorAddress: permit.isDelegated ? permit.encryptedDataOwnerAddress : undefined,
   };
 }
 
