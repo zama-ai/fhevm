@@ -7,7 +7,6 @@
 //! deployment and runs in GCS mode; an equal binary is the live (blue) stack and
 //! runs normally; an older one belongs to a retired stack and stops working.
 
-use std::cmp::Ordering as CmpOrdering;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -57,13 +56,21 @@ pub fn binary_matches(live: &str) -> bool {
     parse_version(STACK_VERSION) == parse_version(live)
 }
 
-/// Current role of a running service.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[repr(u8)]
-enum RuntimeStackMode {
-    Live = 0,
-    Candidate = 1,
-    Retired = 2,
+/// True iff this binary's [`CONSENSUS_PROTOCOL_VERSION`] is above `live` — the
+/// incoming green stack.
+fn consensus_is_above(live: i64) -> bool {
+    i64::from(CONSENSUS_PROTOCOL_VERSION) > live
+}
+
+/// True iff this binary's [`CONSENSUS_PROTOCOL_VERSION`] equals `live`.
+fn consensus_matches(live: i64) -> bool {
+    i64::from(CONSENSUS_PROTOCOL_VERSION) == live
+}
+
+/// True iff this binary's [`CONSENSUS_PROTOCOL_VERSION`] is below `live` — it
+/// belongs to a retired stack.
+fn consensus_is_below(live: i64) -> bool {
+    i64::from(CONSENSUS_PROTOCOL_VERSION) < live
 }
 
 /// Set the versions for a new database.
@@ -144,31 +151,6 @@ pub async fn bootstrap_versioning(pool: &Pool<Postgres>) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Choose a service role from its version and the active version.
-fn classify_consensus_version(binary: u32, live: i64) -> anyhow::Result<RuntimeStackMode> {
-    let live = u32::try_from(live)
-        .map_err(|_| anyhow::anyhow!("invalid active consensus version: {live}"))?;
-    match binary.cmp(&live) {
-        CmpOrdering::Less => Ok(RuntimeStackMode::Retired),
-        CmpOrdering::Equal => Ok(RuntimeStackMode::Live),
-        // Any newer consensus version runs green. One that skips ahead also runs
-        // green: nothing refuses it, but operators on different versions write to
-        // different schemas, never agree, and the attempt times out.
-        CmpOrdering::Greater => {
-            if live.checked_add(1) != Some(binary) {
-                warn!(
-                    binary,
-                    live,
-                    expected = live.saturating_add(1),
-                    "consensus version skips ahead of the active one; only the release \
-                     the proposal names can cut over"
-                );
-            }
-            Ok(RuntimeStackMode::Candidate)
-        }
-    }
-}
-
 /// Runtime stack mode, shared between a service's work loop and the
 /// version-upgrade listener ([`run_stack_version_listener`]).
 ///
@@ -212,19 +194,20 @@ pub async fn reconcile_stack_mode(pool: &Pool<Postgres>, mode: &StackMode) -> an
             .fetch_optional(pool)
             .await?;
     let Some((live,)) = row else {
+        warn!("versioning row missing during reconcile; leaving stack mode unchanged");
         return Ok(());
     };
 
-    let runtime_mode = classify_consensus_version(CONSENSUS_PROTOCOL_VERSION, live)?;
+    let matches = consensus_matches(live);
     let gcs_mode = mode.gcs_mode();
-    if runtime_mode == RuntimeStackMode::Live && gcs_mode {
+    if matches && gcs_mode {
         mode.gcs_mode.store(false, Ordering::SeqCst);
         info!(
             binary_consensus_version = CONSENSUS_PROTOCOL_VERSION,
             live_consensus_version = live,
             "consensus version matches live; leaving GCS mode (now live stack)"
         );
-    } else if runtime_mode == RuntimeStackMode::Retired && !mode.is_paused() {
+    } else if consensus_is_below(live) && !mode.is_paused() {
         mode.paused.store(true, Ordering::SeqCst);
         info!(
             binary_consensus_version = CONSENSUS_PROTOCOL_VERSION,
@@ -235,7 +218,7 @@ pub async fn reconcile_stack_mode(pool: &Pool<Postgres>, mode: &StackMode) -> an
         info!(
             binary_consensus_version = CONSENSUS_PROTOCOL_VERSION,
             live_consensus_version = live,
-            ?runtime_mode,
+            matches,
             gcs_mode,
             "stack-version-upgraded received; no mode change"
         );
@@ -322,12 +305,10 @@ pub async fn resolve_gcs_mode(database_url: &str) -> anyhow::Result<bool> {
         }
     };
 
-    let runtime_mode = classify_consensus_version(CONSENSUS_PROTOCOL_VERSION, live)?;
-    let gcs_mode = runtime_mode == RuntimeStackMode::Candidate;
+    let gcs_mode = consensus_is_above(live);
     info!(
         binary_consensus_version = CONSENSUS_PROTOCOL_VERSION,
         live_consensus_version = live,
-        ?runtime_mode,
         gcs_mode,
         "resolved gcs_mode from versioning table"
     );
@@ -585,12 +566,6 @@ async fn cutover_gate(
         .bind(CUTOVER_LOCK_ID)
         .execute(&mut **tx)
         .await?;
-
-    // Check again after taking the lock because a cutover may have just finished.
-    if is_retired(tx).await? {
-        return Ok(Some(GateBlock::Stop));
-    }
-
     if gcs_mode {
         if rollback_policy == GcsRollbackPolicy::Skip {
             let paused: bool = sqlx::query_scalar(
@@ -602,7 +577,7 @@ async fn cutover_gate(
         }
         return Ok(None);
     }
-    Ok(None)
+    Ok(is_retired(tx).await?.then_some(GateBlock::Stop))
 }
 
 /// Begin a **write** transaction fenced against cutover and rollback, in one call.
@@ -656,7 +631,7 @@ pub async fn begin_write_guarded_conn(
 
 #[cfg(test)]
 mod tests {
-    use super::{classify_consensus_version, parse_version, RuntimeStackMode};
+    use super::{consensus_is_above, consensus_is_below, consensus_matches, parse_version};
     use crate::STACK_VERSION;
 
     #[test]
@@ -705,13 +680,11 @@ mod tests {
     }
 
     #[test]
-    fn classifies_consensus_relationships() {
-        use RuntimeStackMode::{Candidate, Live, Retired};
-        assert_eq!(classify_consensus_version(7, 7).unwrap(), Live);
-        assert_eq!(classify_consensus_version(8, 7).unwrap(), Candidate);
-        assert_eq!(classify_consensus_version(6, 7).unwrap(), Retired);
-        // A version that skips ahead still runs green.
-        assert_eq!(classify_consensus_version(9, 7).unwrap(), Candidate);
-        assert!(classify_consensus_version(2, -1).is_err());
+    fn consensus_relationships() {
+        let live = i64::from(crate::CONSENSUS_PROTOCOL_VERSION);
+        assert!(consensus_matches(live));
+        assert!(!consensus_is_above(live) && !consensus_is_below(live));
+        assert!(consensus_is_above(live - 1));
+        assert!(consensus_is_below(live + 1));
     }
 }
