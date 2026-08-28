@@ -2062,6 +2062,12 @@ fn prepare_transaction_ops(
         }
     }
 
+    // A group shares one op, so a group-level rejection must stamp every row.
+    let group_error = |rows: &[&WorkItem], msg: String| -> Vec<(Vec<u8>, String)> {
+        rows.iter()
+            .map(|r| (r.output_handle.clone(), msg.clone()))
+            .collect()
+    };
     let mut ops: Vec<DFGOp> = vec![];
     let mut earliest_owned_allowed: Option<PrimitiveDateTime> = None;
     let mut invalid_rows: Vec<(Vec<u8>, String)> = vec![];
@@ -2083,27 +2089,23 @@ fn prepare_transaction_ops(
         // malformed and cannot be bound safely.
         let w = group_rows[0];
         if w.output_index != 0 {
-            for row in group_rows {
-                invalid_rows.push((
-                    row.output_handle.clone(),
-                    "multi-output group does not start at output_index 0".to_string(),
-                ));
-            }
+            invalid_rows.extend(group_error(
+                group_rows,
+                "multi-output group does not start at output_index 0".to_string(),
+            ));
             continue;
         }
         // Only the first row's index is checked above, so a group missing any
         // later row would otherwise run before the scheduler rejected it.
         if i64::try_from(group_rows.len()).unwrap_or(i64::MAX) != i64::from(w.output_count) {
-            for row in group_rows {
-                invalid_rows.push((
-                    row.output_handle.clone(),
-                    format!(
-                        "multi-output group has {} of {} declared outputs",
-                        group_rows.len(),
-                        w.output_count
-                    ),
-                ));
-            }
+            invalid_rows.extend(group_error(
+                group_rows,
+                format!(
+                    "multi-output group has {} of {} declared outputs",
+                    group_rows.len(),
+                    w.output_count
+                ),
+            ));
             continue;
         }
         let owned = row_is_owned(w);
@@ -2116,8 +2118,8 @@ fn prepare_transaction_ops(
                         hex::encode(&w.output_handle)
                     ));
                 }
-                invalid_rows.push((
-                    w.output_handle.clone(),
+                invalid_rows.extend(group_error(
+                    group_rows,
                     format!("invalid FHE operation: {e}"),
                 ));
                 continue;
@@ -2170,10 +2172,11 @@ fn prepare_transaction_ops(
             // ops of the same transaction keep computing. Foreign rows are
             // dropped without a stamp: the verdict is database-derived, so
             // their own chain reaches the same conclusion.
-            dead_input_rows.push(w.output_handle.clone());
+            // Whole group is dead; sole path in for a foreign group.
+            dead_input_rows.extend(group_rows.iter().map(|r| r.output_handle.clone()));
             if owned {
-                invalid_rows.push((
-                    w.output_handle.clone(),
+                invalid_rows.extend(group_error(
+                    group_rows,
                     format!(
                         "dead boundary input 0x{}: every producer row is terminally errored",
                         hex::encode(dh)
@@ -2191,8 +2194,8 @@ fn prepare_transaction_ops(
                     hex::encode(&w.output_handle)
                 ));
             }
-            invalid_rows.push((
-                w.output_handle.clone(),
+            invalid_rows.extend(group_error(
+                group_rows,
                 format!("invalid FHE operands: {e}"),
             ));
             continue;
@@ -2212,7 +2215,8 @@ fn prepare_transaction_ops(
             fhe_op,
             inputs,
         });
-        if owned && w.is_allowed {
+        // Permission is per output; row 0 alone drops sibling-only grants.
+        if owned && group_rows.iter().any(|r| r.is_allowed) {
             // Only account for owned allowed rows to avoid the reorg case
             // where colliding trivial encrypts of a fork sibling would
             // drag the batch's schedule anchor backwards.

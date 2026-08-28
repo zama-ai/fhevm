@@ -292,8 +292,8 @@ async fn errored_producer_drains_cross_transaction_consumer(
         .new_transaction()
         .await?
         .expect("new_transaction() returns Some on a live stack");
-    let lhs = next_handle();
-    let rhs = next_handle();
+    let lhs = next_handle_with_type(4);
+    let rhs = next_handle_with_type(5);
     insert_trivial_encrypt(&listener_db, &mut tx, producer_tx, 10, 4, lhs, false).await?;
     insert_trivial_encrypt(&listener_db, &mut tx, producer_tx, 20, 5, rhs, false).await?;
     let producer = next_handle_with_type(5);
@@ -327,7 +327,7 @@ async fn errored_producer_drains_cross_transaction_consumer(
         .new_transaction()
         .await?
         .expect("new_transaction() returns Some on a live stack");
-    let local = next_handle();
+    let local = next_handle_with_type(5);
     insert_trivial_encrypt(&listener_db, &mut tx, consumer_tx, 1, 5, local, false).await?;
     let consumer = next_handle_with_type(5);
     insert_event(
