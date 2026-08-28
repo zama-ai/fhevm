@@ -1131,6 +1131,203 @@ impl EvmListener {
         }
     }
 
+    /// Final catchup orchestrator: take an arbitrarily-large user-facing
+    /// [`CatchupPayload`], clamp it to the current **finalized head**, and
+    /// **compute** the bounded sub-payloads to publish on
+    /// `range-final-catchup`. The handler (the broker boundary) is
+    /// responsible for actually publishing them.
+    ///
+    /// # Behavior
+    /// - Fetches the current final block number once (the only RPC call here,
+    ///   using the configured finality strategy — tag or depth).
+    /// - If `block_start > final_height` → returns an empty `Vec` (skip).
+    ///   Final catchup is a bounded one-shot — the user asked for blocks that
+    ///   are not final yet. The caller can re-issue the request later.
+    /// - Otherwise, clamps `block_end` down to `final_height` and splits
+    ///   `[block_start, effective_end]` into chunks of `catchup_max_sub_range`
+    ///   blocks (configured via `catchup.catchup_max_sub_range`).
+    /// - Returns the chunks as ready-to-publish [`CatchupPayload`]s.
+    ///
+    /// # Upper bound
+    /// **Finalized head, never the raw chain head.** A final catchup must not
+    /// replay unfinalized blocks — replay within the unfinalized window is the
+    /// live catchup's job, where the caller takes the reorg risk.
+    pub async fn dispatch_final_catchup_range(
+        &self,
+        payload: CatchupPayload,
+    ) -> Result<Vec<CatchupPayload>, EvmListenerError> {
+        metrics::counter!(
+            "listener_catchup_iterations_total",
+            "chain_id" => self.chain_id.to_string()
+        )
+        .increment(1);
+
+        let final_height = self
+            .provider
+            .get_final_block_number()
+            .await
+            .map_err(|e| EvmListenerError::ChainHeightError { source: e })?;
+
+        if payload.block_start > final_height {
+            metrics::counter!(
+                "listener_catchup_skipped_above_head_total",
+                "chain_id" => self.chain_id.to_string()
+            )
+            .increment(1);
+            info!(
+                consumer_id = %payload.consumer_id,
+                block_start = payload.block_start,
+                block_end = payload.block_end,
+                final_height,
+                "Final catchup orchestrator: block_start above final height, skipping"
+            );
+            return Ok(Vec::new());
+        }
+
+        let effective_end = std::cmp::min(payload.block_end, final_height);
+        let chunks = split_catchup_range(
+            payload.block_start,
+            effective_end,
+            self.catchup_max_sub_range,
+        );
+
+        info!(
+            consumer_id = %payload.consumer_id,
+            range_start = payload.block_start,
+            range_end = effective_end,
+            sub_count = chunks.len(),
+            final_height,
+            "Final catchup orchestrator: computed sub-ranges"
+        );
+
+        Ok(chunks
+            .into_iter()
+            .map(|(start, end)| CatchupPayload {
+                consumer_id: payload.consumer_id.clone(),
+                block_start: start,
+                block_end: end,
+            })
+            .collect())
+    }
+
+    /// Fetch a single bounded sub-range of finalized blocks and publish it in
+    /// order on the `final-catchup-event` queue for `consumer_id`.
+    ///
+    /// This is the **inner** final catchup primitive — the worker behind the
+    /// `range-final-catchup` queue. The caller (typically
+    /// [`Self::dispatch_final_catchup_range`]) is responsible for clamping
+    /// `block_end` to the finalized head and chunking arbitrarily-large
+    /// requests into bounded sub-ranges of `catchup.catchup_max_sub_range`
+    /// blocks. This function trusts that contract and **does not re-check the
+    /// final height**.
+    ///
+    /// # Behavior
+    /// - Spawns the same parallel producer used by the live cursor
+    ///   ([`fetch_blocks_in_parallel`]) plus a sequential publish consumer
+    ///   ([`final_catchup_processing`]) over an [`AsyncSlotBuffer`].
+    /// - No DB writes, no parent-hash validation, no reorg handling — pure replay.
+    /// - No advisory lock. At-least-once: downstream dedupes by
+    ///   (block_number, block_hash).
+    pub async fn run_final_range_catchup(
+        &self,
+        payload: CatchupPayload,
+    ) -> Result<(), EvmListenerError> {
+        let range_start = payload.block_start;
+        let range_end = payload.block_end;
+        let range_length = (range_end - range_start + 1) as usize;
+
+        info!(
+            consumer_id = %payload.consumer_id,
+            range_start,
+            range_end,
+            range_length,
+            "Starting final catchup range"
+        );
+
+        // Shared producer/consumer state.
+        let range_start_time = Instant::now();
+        let buffer = AsyncSlotBuffer::<FetchedBlock>::new(range_length);
+        let cancel_token = CancellationToken::new();
+
+        // Spawn the same producer used by the live cursor: pure fetch,
+        // no DB or hash work — perfectly reusable.
+        let fetcher_handle = tokio::spawn(fetch_blocks_in_parallel(
+            self.clone(),
+            buffer.clone(),
+            cancel_token.clone(),
+            range_start,
+            range_length,
+        ));
+
+        // Spawn the final catchup consumer (in-order publish, no DB, no hashing).
+        let catchup_handle = tokio::spawn(final_catchup_processing(
+            self.clone(),
+            buffer,
+            cancel_token.clone(),
+            range_start,
+            range_length,
+            payload.consumer_id.clone(),
+        ));
+
+        // Join, classify like fetch_blocks_and_run_cursor.
+        let (catchup_join, fetcher_join) = tokio::join!(catchup_handle, fetcher_handle);
+
+        metrics::histogram!(
+            "listener_catchup_range_duration_seconds",
+            "chain_id" => self.chain_id.to_string()
+        )
+        .record(range_start_time.elapsed().as_secs_f64());
+
+        let catchup_outcome = catchup_join.map_err(|join_err| {
+            cancel_token.cancel();
+            error!(error = %join_err, "Final catchup consumer task panicked — this is a critical bug");
+            EvmListenerError::InvariantViolation {
+                message: format!("Final catchup consumer panicked: {}", join_err),
+            }
+        })?;
+
+        let fetcher_outcome = fetcher_join.map_err(|join_err| {
+            cancel_token.cancel();
+            error!(error = %join_err, "Final catchup fetcher task panicked — this is a critical bug");
+            EvmListenerError::InvariantViolation {
+                message: format!("Final catchup fetcher panicked: {}", join_err),
+            }
+        })?;
+
+        // Same priority logic as the live catchup path (no reorg branch):
+        //  - both Ok → success
+        //  - consumer cancelled by fetcher → return fetcher's root cause
+        //  - consumer real error → return it
+        //  - consumer Ok, fetcher Err → unexpected, log and treat as success
+        //    (consumer is authoritative; if all slots were read, all blocks were published)
+        match (catchup_outcome, fetcher_outcome) {
+            (Ok(()), Ok(())) => {
+                info!(range_start, range_end, "Final catchup range complete");
+                Ok(())
+            }
+            (
+                Err(EvmListenerError::CouldNotFetchBlock {
+                    source: BlockFetchError::Cancelled,
+                }),
+                Err(fetcher_err),
+            ) => {
+                error!(error = %fetcher_err, "Final catchup fetcher error caused consumer cancellation");
+                Err(fetcher_err)
+            }
+            (Err(consumer_err), _) => {
+                error!(error = %consumer_err, "Final catchup consumer error during iteration");
+                Err(consumer_err)
+            }
+            (Ok(()), Err(fetcher_err)) => {
+                warn!(
+                    error = %fetcher_err,
+                    "Final catchup fetcher errored despite consumer succeeding — unexpected"
+                );
+                Ok(())
+            }
+        }
+    }
+
     /// Validates the finality strategy and initializes the `final_blocks` table
     /// with an anchor block when it is empty.
     ///
@@ -1730,6 +1927,81 @@ async fn catchup_processing(
             slot = i + 1,
             total = range_length,
             "Catchup block published"
+        );
+    }
+
+    Ok(())
+}
+
+/// Sequential publisher for the final catchup pipeline (the "consumer"
+/// sibling of [`catchup_processing`] for the finality flow).
+///
+/// Reads blocks from the [`AsyncSlotBuffer`] in order (slot 0, 1, 2, …) and
+/// publishes each one to `{consumer_id}.final-catchup-event` via
+/// [`publisher::publish_final_catchup_block_events`]. **No** parent-hash
+/// validation, **no** DB writes, **no** reorg branch — this is pure replay of
+/// finalized blocks.
+///
+/// On publish failure, cancels the producer (no point fetching more blocks if
+/// we can't deliver them) and propagates the error so the handler can retry
+/// the entire range.
+///
+/// # Cancellation Safety
+/// `buffer.get()` is cancel-safe; the `tokio::select! { biased; … }` checks
+/// the cancel token first to avoid processing stale data after cancellation.
+async fn final_catchup_processing(
+    listener: EvmListener,
+    buffer: AsyncSlotBuffer<FetchedBlock>,
+    cancel_token: CancellationToken,
+    range_start: u64,
+    range_length: usize,
+    consumer_id: String,
+) -> Result<(), EvmListenerError> {
+    let chain_id_u64 = listener.repositories.chain_id() as u64;
+
+    for i in 0..range_length {
+        let block_number = range_start + i as u64;
+
+        let fetched_block = tokio::select! {
+            biased;
+            _ = cancel_token.cancelled() => {
+                error!(block_start=range_start, length=range_length, consumer_id=consumer_id, "final_catchup_processing has been canceled");
+                return Err(EvmListenerError::CouldNotFetchBlock {
+                    source: BlockFetchError::Cancelled,
+                });
+            }
+            block_opt = buffer.get(i) => {
+                block_opt.ok_or(EvmListenerError::SlotBufferError {
+                    source: BufferError::IndexOutOfBounds,
+                })?
+            }
+        };
+
+        // Publish to {consumer_id}.final-catchup-event. Errors stop the producer too.
+        // BlockFlow::FinalCatchup is hardcoded inside publish_final_catchup_block_events.
+        publisher::publish_final_catchup_block_events(
+            &listener.repositories,
+            &fetched_block,
+            chain_id_u64,
+            &consumer_id,
+            &listener.broker,
+            &listener.event_publisher,
+            &listener.publish_config,
+        )
+        .await
+        .map_err(|source| {
+            cancel_token.cancel();
+            EvmListenerError::PayloadBuildError { source }
+        })?;
+
+        info!(
+            consumer_id = %consumer_id,
+            block_number = block_number,
+            block_hash = %fetched_block.block.header.hash,
+            tx_count = fetched_block.transaction_count(),
+            slot = i + 1,
+            total = range_length,
+            "Final catchup block published"
         );
     }
 

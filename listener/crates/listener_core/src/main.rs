@@ -11,8 +11,8 @@ use listener_core::config::BrokerType;
 use listener_core::config::config::Settings;
 use listener_core::core::{
     CatchupHandler, Cleaner, CleanerHandler, EvmListener, FetchHandler, Filters,
-    FinalCleanerHandler, FinalityHandler, RangeCatchupHandler, ReorgHandler, UnwatchHandler,
-    WatchHandler,
+    FinalCatchupHandler, FinalCleanerHandler, FinalityHandler, RangeCatchupHandler,
+    RangeFinalCatchupHandler, ReorgHandler, UnwatchHandler, WatchHandler,
 };
 use listener_core::logging;
 use listener_core::store::repositories::Repositories;
@@ -434,6 +434,48 @@ async fn main() {
         }
     };
 
+    let final_catchup_consumer = match broker
+        .consumer(&Topic::new(routing::FINAL_CATCHUP).with_namespace(chain_id))
+        .group(routing::FINAL_CATCHUP)
+        .prefetch(settings.blockchain.catchup.prefetch)
+        .max_retries(5)
+        .redis_claim_min_idle(settings.blockchain.catchup.claim_min_idle_secs)
+        .redis_claim_interval(1)
+        .redis_block_ms(200)
+        .circuit_breaker(
+            settings.broker.circuit_breaker_threshold,
+            Duration::from_secs(settings.broker.circuit_breaker_cooldown_secs),
+        )
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            error!("Failed to build final-catchup consumer: {}", e);
+            process::exit(1);
+        }
+    };
+
+    let range_final_catchup_consumer = match broker
+        .consumer(&Topic::new(routing::RANGE_FINAL_CATCHUP).with_namespace(chain_id))
+        .group(routing::RANGE_FINAL_CATCHUP)
+        .prefetch(settings.blockchain.catchup.range_prefetch)
+        .max_retries(5)
+        .redis_claim_min_idle(settings.blockchain.catchup.claim_min_idle_secs)
+        .redis_claim_interval(1)
+        .redis_block_ms(200)
+        .circuit_breaker(
+            settings.broker.circuit_breaker_threshold,
+            Duration::from_secs(settings.broker.circuit_breaker_cooldown_secs),
+        )
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            error!("Failed to build range-final-catchup consumer: {}", e);
+            process::exit(1);
+        }
+    };
+
     // ── Define handlers ─────────────────────────────────────────────────
     let flow_lock = FlowLock::new(Arc::clone(&arc_pg_client), configured_chain_id);
     let fetch_handler = FetchHandler::new(
@@ -484,6 +526,10 @@ async fn main() {
 
     let catchup_handler = CatchupHandler::new(Arc::clone(&evm_listener), handler_publisher.clone());
     let range_catchup_handler = RangeCatchupHandler::new(Arc::clone(&evm_listener));
+
+    let final_catchup_handler =
+        FinalCatchupHandler::new(Arc::clone(&evm_listener), handler_publisher.clone());
+    let range_final_catchup_handler = RangeFinalCatchupHandler::new(Arc::clone(&evm_listener));
 
     // ── Ensure AMQP queues/bindings exist before checking depth ────────
     // Without this, AMQP silently drops the seed message because no queue
@@ -561,6 +607,18 @@ async fn main() {
     // ── Ensure range-catchup topology (no seed — sub-ranges come from the catchup orchestrator) ──
     if let Err(e) = range_catchup_consumer.ensure_topology().await {
         error!(error = %e, "Failed to set up range-catchup consumer topology");
+        process::exit(1);
+    }
+
+    // ── Ensure final-catchup topology (no seed — final catchup messages come from external producers) ──
+    if let Err(e) = final_catchup_consumer.ensure_topology().await {
+        error!(error = %e, "Failed to set up final-catchup consumer topology");
+        process::exit(1);
+    }
+
+    // ── Ensure range-final-catchup topology (no seed — sub-ranges come from the final catchup orchestrator) ──
+    if let Err(e) = range_final_catchup_consumer.ensure_topology().await {
+        error!(error = %e, "Failed to set up range-final-catchup consumer topology");
         process::exit(1);
     }
 
@@ -714,6 +772,8 @@ async fn main() {
         r = final_cleaner_consumer.run(final_cleaner_handler) => ("FinalCleaner", r),
         r = catchup_consumer.run(catchup_handler) => ("Catchup", r),
         r = range_catchup_consumer.run(range_catchup_handler) => ("RangeCatchup", r),
+        r = final_catchup_consumer.run(final_catchup_handler) => ("FinalCatchup", r),
+        r = range_final_catchup_consumer.run(range_final_catchup_handler) => ("RangeFinalCatchup", r),
     };
 
     error!("{consumer_name} consumer exited: {result:?}");

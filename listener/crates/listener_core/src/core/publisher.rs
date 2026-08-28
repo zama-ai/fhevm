@@ -12,7 +12,8 @@ use tracing::{error, info, warn};
 
 use primitives::event::{BlockFlow, BlockPayload, IndexedLog, TransactionPayload};
 use primitives::routing::{
-    consumer_catchup_event_routing, consumer_final_event_routing, consumer_new_event_routing,
+    consumer_catchup_event_routing, consumer_final_catchup_event_routing,
+    consumer_final_event_routing, consumer_new_event_routing,
 };
 
 use crate::blockchain::evm::evm_block_fetcher::FetchedBlock;
@@ -553,6 +554,81 @@ pub async fn publish_catchup_block_events(
         .next()
         .expect("payloads is non-empty (checked above)");
     let routing_key = consumer_catchup_event_routing(consumer_id.to_string());
+    publish_payload_to_consumer(
+        broker,
+        event_publisher,
+        publish_config,
+        consumer_id,
+        &routing_key,
+        &payload,
+        chain_id,
+    )
+    .await?;
+
+    Ok(())
+}
+
+/// Final-catchup variant of [`publish_catchup_block_events`]: publishes one
+/// finalized block's events to a single consumer on the
+/// `{consumer_id}.final-catchup-event` queue.
+///
+/// Same error pattern, retry/queue-existence semantics, and `publish_config`
+/// knobs as the live catchup path. Used by the final catchup handler when
+/// replaying historical finalized blocks for a single FINAL watcher in
+/// response to a `CatchupPayload`. The flow is always
+/// [`BlockFlow::FinalCatchup`]: finalized blocks never reorg.
+///
+/// Returns `Ok(())` when the consumer has no FINAL filters on this chain
+/// (no-op), matching the other paths' behavior for an empty filter set.
+pub async fn publish_final_catchup_block_events(
+    repositories: &Repositories,
+    fetched_block: &FetchedBlock,
+    chain_id: u64,
+    consumer_id: &str,
+    broker: &Broker,
+    event_publisher: &Publisher,
+    publish_config: &PublishConfig,
+) -> Result<(), PublisherError> {
+    // 1. Fetch this consumer's FINAL filters on this chain.
+    let filters = repositories
+        .filters
+        .get_final_filters_by_consumer_id(consumer_id)
+        .await
+        .map_err(|e| {
+            error!(error = %e, consumer_id, "Failed to fetch final filters for final catchup");
+            PublisherError::FilterFetchError {
+                message: e.to_string(),
+            }
+        })?;
+
+    if filters.is_empty() {
+        return Ok(());
+    }
+
+    // 2. Build a narrowly-scoped index + payload (same helpers as the live path).
+    let filter_index = FilterIndex::from_filters(filters);
+    let payloads =
+        filter_index.build_block_payloads(fetched_block, chain_id, BlockFlow::FinalCatchup)?;
+
+    // 3. Publish the target consumer's payload (if any) to final-catchup-event.
+    //    With single-consumer filters indexed, payloads contains 0 or 1 entry,
+    //    and that entry's cid is always `consumer_id` (upstream
+    //    get_final_filters_by_consumer_id guarantees it).
+    if payloads.is_empty() {
+        return Ok(());
+    }
+    if payloads.len() > 1 {
+        error!(
+            consumer_id,
+            payloads_len = payloads.len(),
+            "Expected at most 1 payload for single-consumer final catchup; using first"
+        );
+    }
+    let (_, payload) = payloads
+        .into_iter()
+        .next()
+        .expect("payloads is non-empty (checked above)");
+    let routing_key = consumer_final_catchup_event_routing(consumer_id.to_string());
     publish_payload_to_consumer(
         broker,
         event_publisher,
