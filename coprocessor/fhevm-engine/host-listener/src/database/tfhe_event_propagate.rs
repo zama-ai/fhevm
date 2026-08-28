@@ -469,6 +469,7 @@ impl Database {
             scalar_byte,
             None,
             0,
+            1,
             log,
         )
         .await
@@ -494,6 +495,7 @@ impl Database {
             scalar_byte,
             None,
             0,
+            1,
             log,
         )
         .await
@@ -533,6 +535,7 @@ impl Database {
                     scalar_byte,
                     Some(&group_id),
                     output_index,
+                    results.len() as i16,
                     log,
                 )
                 .await?;
@@ -551,6 +554,7 @@ impl Database {
         scalar_byte: &FixedBytes<1>,
         group_id: Option<&[u8]>,
         output_index: i16,
+        output_count: i16,
         log: &LogTfhe,
     ) -> Result<bool, SqlxError> {
         let is_scalar = !scalar_byte.is_zero();
@@ -563,6 +567,7 @@ impl Database {
             is_scalar,
             group_id,
             output_index,
+            output_count,
             log,
         )
         .await
@@ -578,6 +583,7 @@ impl Database {
         is_scalar: bool,
         group_id: Option<&[u8]>,
         output_index: i16,
+        output_count: i16,
         log: &LogTfhe,
     ) -> Result<bool, SqlxError> {
         let operand_boundary_mask = log.operand_boundary_mask.as_ref().ok_or_else(|| {
@@ -608,9 +614,10 @@ impl Database {
                 block_number,
                 operand_boundary_mask,
                 group_id,
-                output_index
+                output_index,
+                output_count
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9, $10, $11, $12, $13, $14)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9, $10, $11, $12, $13, $14, $15)
             ON CONFLICT (output_handle, transaction_id) DO NOTHING
             "#,
             output_handle,
@@ -630,6 +637,7 @@ impl Database {
             operand_boundary_mask.as_slice(),
             group_id_vec,
             output_index,
+            output_count,
         );
         query
             .execute(tx.deref_mut())

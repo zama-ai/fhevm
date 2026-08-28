@@ -61,6 +61,8 @@ struct WorkItem {
     group_id: Option<Vec<u8>>,
     /// Position of this output within its group; 0 for a single-output op.
     output_index: i16,
+    /// Outputs the operation declared, on every row; 1 for a singleton.
+    output_count: i16,
 }
 
 const OPERAND_BOUNDARY_MASK_BYTES: usize = 32;
@@ -164,6 +166,7 @@ mod operand_boundary_mask_tests {
         WorkItem {
             group_id: None,
             output_index: 0,
+            output_count: 1,
             output_handle: output,
             dependencies: deps,
             fhe_operation: SupportedFheOperations::FheAdd as i16,
@@ -1727,7 +1730,8 @@ SELECT
   c.operand_boundary_mask,
   c.dependence_chain_id,
   c.group_id,
-  c.output_index
+  c.output_index,
+  c.output_count
 FROM computations c
 WHERE c.transaction_id IN (
     SELECT DISTINCT
@@ -2083,6 +2087,21 @@ fn prepare_transaction_ops(
                 invalid_rows.push((
                     row.output_handle.clone(),
                     "multi-output group does not start at output_index 0".to_string(),
+                ));
+            }
+            continue;
+        }
+        // Only the first row's index is checked above, so a group missing any
+        // later row would otherwise run before the scheduler rejected it.
+        if i64::try_from(group_rows.len()).unwrap_or(i64::MAX) != i64::from(w.output_count) {
+            for row in group_rows {
+                invalid_rows.push((
+                    row.output_handle.clone(),
+                    format!(
+                        "multi-output group has {} of {} declared outputs",
+                        group_rows.len(),
+                        w.output_count
+                    ),
                 ));
             }
             continue;
