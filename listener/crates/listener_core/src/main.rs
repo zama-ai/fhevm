@@ -10,8 +10,9 @@ use listener_core::blockchain::evm::sem_evm_rpc_provider::SemEvmRpcProvider;
 use listener_core::config::BrokerType;
 use listener_core::config::config::Settings;
 use listener_core::core::{
-    CatchupHandler, Cleaner, CleanerHandler, EvmListener, FetchHandler, Filters, FinalityHandler,
-    RangeCatchupHandler, ReorgHandler, UnwatchHandler, WatchHandler,
+    CatchupHandler, Cleaner, CleanerHandler, EvmListener, FetchHandler, Filters,
+    FinalCleanerHandler, FinalityHandler, RangeCatchupHandler, ReorgHandler, UnwatchHandler,
+    WatchHandler,
 };
 use listener_core::logging;
 use listener_core::store::repositories::Repositories;
@@ -213,6 +214,7 @@ async fn main() {
 
     let seed_publisher = publisher.clone();
     let cleaner_publisher = publisher.clone();
+    let final_cleaner_publisher = publisher.clone();
     let handler_publisher = publisher;
 
     let repositories_for_filters = repositories.clone();
@@ -372,6 +374,24 @@ async fn main() {
         }
     };
 
+    let final_cleaner_consumer = match broker
+        .consumer(&Topic::new(routing::CLEAN_FINAL_BLOCKS).with_namespace(chain_id))
+        .group(routing::CLEAN_FINAL_BLOCKS)
+        .prefetch(1)
+        .max_retries(5)
+        .redis_claim_min_idle(settings.blockchain.cleaner.cron_secs + 25)
+        .redis_claim_interval(1)
+        .redis_block_ms(200)
+        .circuit_breaker(3, Duration::from_secs(30))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            error!("Failed to build final cleaner consumer: {}", e);
+            process::exit(1);
+        }
+    };
+
     let catchup_consumer = match broker
         .consumer(&Topic::new(routing::CATCHUP).with_namespace(chain_id))
         .group(routing::CATCHUP)
@@ -435,11 +455,22 @@ async fn main() {
 
     let cleaner = Arc::new(Cleaner::new(
         repositories_for_cleaner.blocks,
-        &settings.blockchain.cleaner,
+        repositories_for_cleaner.final_blocks,
+        &settings.blockchain,
     ));
     let cleaner_flow_lock = FlowLock::new_cleaner(Arc::clone(&arc_pg_client), configured_chain_id);
     let cleaner_handler =
         CleanerHandler::new(Arc::clone(&cleaner), cleaner_flow_lock, cleaner_publisher);
+
+    // Final cleaner: same worker, own queue + own salted lock, so the two
+    // cleaning loops never contend with each other or with the cursor flows.
+    let final_cleaner_flow_lock =
+        FlowLock::new_final_cleaner(Arc::clone(&arc_pg_client), configured_chain_id);
+    let final_cleaner_handler = FinalCleanerHandler::new(
+        Arc::clone(&cleaner),
+        final_cleaner_flow_lock,
+        final_cleaner_publisher,
+    );
 
     // Finality flow: own salted lock, so a stalled finality loop never blocks
     // (or is blocked by) the live cursor/reorg flows.
@@ -553,6 +584,41 @@ async fn main() {
         }
     }
 
+    // ── Ensure final-cleaner topology and seed ───────────────────────────
+    // Gated on cleaner.active AND finality_active: with the finality flow
+    // disabled, final_blocks gains no rows and the per-chain cron queries
+    // must not run at all.
+    if let Err(e) = final_cleaner_consumer.ensure_topology().await {
+        error!(error = %e, "Failed to set up final cleaner consumer topology");
+        process::exit(1);
+    }
+
+    let final_cleaner_topic = Topic::new(routing::CLEAN_FINAL_BLOCKS).with_namespace(chain_id);
+    let final_cleaner_is_empty = match broker
+        .is_empty(&final_cleaner_topic, routing::CLEAN_FINAL_BLOCKS)
+        .await
+    {
+        Ok(empty) => empty,
+        Err(e) => {
+            error!(error = %e, "Failed to check final cleaner queue depth");
+            process::exit(1);
+        }
+    };
+
+    if final_cleaner_is_empty
+        && settings.blockchain.cleaner.active
+        && settings.blockchain.finality_active
+    {
+        info!("Final cleaner queue empty — publishing seed to bootstrap final cleaner loop");
+        if let Err(e) = seed_publisher
+            .publish(routing::CLEAN_FINAL_BLOCKS, &serde_json::Value::Null)
+            .await
+        {
+            error!(error = %e, "Failed to publish final cleaner seed");
+            process::exit(1);
+        }
+    }
+
     // ── Ensure finality topology and seed ────────────────────────────────
     // The finality loop is fully independent from the fetch/reorg loop (own
     // lock, own queue), so its seed gate only checks its own queue emptiness —
@@ -645,6 +711,7 @@ async fn main() {
         r = watch_consumer.run(watch_handler) => ("Watch", r),
         r = unwatch_consumer.run(unwatch_handler) => ("Unwatch", r),
         r = cleaner_consumer.run(cleaner_handler) => ("Cleaner", r),
+        r = final_cleaner_consumer.run(final_cleaner_handler) => ("FinalCleaner", r),
         r = catchup_consumer.run(catchup_handler) => ("Catchup", r),
         r = range_catchup_consumer.run(range_catchup_handler) => ("RangeCatchup", r),
     };

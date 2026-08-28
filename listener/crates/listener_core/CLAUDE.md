@@ -56,7 +56,7 @@ Optional cryptographic verification: transaction root, receipt root, block hash.
 - Per-consumer infinite retry until broker ACK.
 
 ### Consumer Routing
-- Internal: `FETCH_NEW_BLOCKS`, `FETCH_FINAL_BLOCK`, `BACKTRACK_REORG`, `WATCH`, `UNWATCH`, `CLEAN_BLOCKS`
+- Internal: `FETCH_NEW_BLOCKS`, `FETCH_FINAL_BLOCK`, `BACKTRACK_REORG`, `WATCH`, `UNWATCH`, `CLEAN_BLOCKS`, `CLEAN_FINAL_BLOCKS`
 - External: `{consumer_id}.new-event` — dynamic from filters DB
 - All topics namespaced by `chain_id_to_namespace(chain_id)`
 

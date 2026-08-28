@@ -34,9 +34,9 @@ const MIN_BATCH_RANGE: usize = 1;
 
 /// 1 advisory-lock session + 1 concurrent query at least.
 const MIN_POOL_MIN_CONNECTIONS: u32 = 2;
-/// 3 advisory-lock sessions (fetch/reorg, cleaner, finality) + 4 concurrent
-/// handler queries (fetch/reorg, watch, unwatch, cleaner).
-const MIN_POOL_MAX_CONNECTIONS: u32 = 7;
+/// 4 advisory-lock sessions (fetch/reorg, cleaner, final-cleaner, finality)
+/// + 4 concurrent handler queries (fetch/reorg, watch, unwatch, cleaner).
+const MIN_POOL_MAX_CONNECTIONS: u32 = 8;
 const MAX_BATCH_RANGE: usize = 100;
 
 #[derive(Error, Debug)]
@@ -483,7 +483,9 @@ pub struct PoolConfig {
 }
 
 fn default_max_connections() -> u32 {
-    10
+    // 4 advisory-lock holders (fetch/reorg, cleaner, final-cleaner, finality)
+    // + concurrent handler queries, with headroom.
+    12
 }
 fn default_min_connections() -> u32 {
     2
@@ -1212,10 +1214,10 @@ mod tests {
 
     #[test]
     fn test_pool_max_connections_below_lock_floor() {
-        // 3 advisory-lock holders (fetch/reorg, cleaner, finality) + concurrent
-        // handler queries require at least 7 connections.
+        // 4 advisory-lock holders (fetch/reorg, cleaner, final-cleaner,
+        // finality) + concurrent handler queries require at least 8 connections.
         let config = PoolConfig {
-            max_connections: 6,
+            max_connections: 7,
             ..Default::default()
         };
         let result = config.validate();

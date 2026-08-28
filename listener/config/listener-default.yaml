@@ -23,7 +23,7 @@ database:
     enabled: false
     ssl_ca_path: "placeholder-overridden-by-env"
   pool:
-    max_connections: 10
+    max_connections: 12
     min_connections: 2
     acquire_timeout_secs: 30
     idle_timeout_secs: 600

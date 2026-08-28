@@ -5,6 +5,7 @@ pub const BACKTRACK_REORG: &str = "backtrack-reorg";
 pub const WATCH: &str = "control.watch";
 pub const UNWATCH: &str = "control.unwatch";
 pub const CLEAN_BLOCKS: &str = "clean-blocks";
+pub const CLEAN_FINAL_BLOCKS: &str = "clean-final-blocks";
 pub const NEW_EVENT: &str = "new-event";
 pub const FINAL_EVENT: &str = "final-event";
 // Catchup routing keys.

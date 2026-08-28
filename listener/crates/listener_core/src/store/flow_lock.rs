@@ -60,17 +60,26 @@ const CLEANER_LOCK_SALT: i64 = 0x434C_4541_4E45_5221; // "CLEANER!"
 /// block or be blocked by the live cursor.
 const FINALITY_LOCK_SALT: i64 = 0x4649_4E41_4C49_5459; // "FINALITY"
 
+/// Salt XORed into the chain_id to derive the final-cleaner lock key.
+/// Keeps final-cleaner mutual exclusion independent from every other flow
+/// lock: it holds its lock across the cron sleep and must never block or be
+/// blocked by the cursor, finality, or cleaner flows.
+const FINAL_CLEANER_LOCK_SALT: i64 = 0x464E_434C_4541_4E21; // "FNCLEAN!"
+
 /// Non-blocking distributed lock backed by `pg_try_advisory_lock`.
 ///
 /// Provides mutual exclusion per `chain_id` across all pods sharing the
 /// same PostgreSQL database. The fetch/reorg lock key IS the `chain_id`
-/// ([`new`](Self::new)); the cleaner and finality flows use salted keys
-/// ([`new_cleaner`](Self::new_cleaner), [`new_finality`](Self::new_finality))
-/// so the flows never contend with each other.
+/// ([`new`](Self::new)); the cleaner, finality, and final-cleaner flows use
+/// salted keys ([`new_cleaner`](Self::new_cleaner),
+/// [`new_finality`](Self::new_finality),
+/// [`new_final_cleaner`](Self::new_final_cleaner)) so the flows never contend
+/// with each other.
 /// Different chains on the same database are completely independent.
 ///
-/// Used to prevent concurrent execution of fetch, reorg, cleaner, and
-/// finality flows for the same chain under HPA (Horizontal Pod Autoscaling).
+/// Used to prevent concurrent execution of fetch, reorg, cleaner, finality,
+/// and final-cleaner flows for the same chain under HPA (Horizontal Pod
+/// Autoscaling).
 #[derive(Clone)]
 pub struct FlowLock {
     client: Arc<PgClient>,
@@ -102,6 +111,16 @@ impl FlowLock {
         Self {
             client,
             lock_key: chain_id ^ FINALITY_LOCK_SALT,
+        }
+    }
+
+    /// Lock for the final-cleaner flow: same mutual-exclusion semantics as
+    /// [`new`](Self::new) but on a salted key, so the final cleaner (which
+    /// holds its lock across the cron sleep) never starves any other flow.
+    pub fn new_final_cleaner(client: Arc<PgClient>, chain_id: i64) -> Self {
+        Self {
+            client,
+            lock_key: chain_id ^ FINAL_CLEANER_LOCK_SALT,
         }
     }
 

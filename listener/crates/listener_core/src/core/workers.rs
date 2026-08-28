@@ -144,6 +144,82 @@ impl Handler for CleanerHandler {
     }
 }
 
+// ── FinalCleanerHandler ─────────────────────────────────────────────────
+
+/// Manual [`Handler`] impl for the clean-final-blocks consumer.
+///
+/// Ignores the message payload (the message is just a wake-up signal) and
+/// calls [`Cleaner::run_final`]. DB errors are caught and skipped internally;
+/// only lock-acquire and broker publish failures bubble up as transient errors.
+/// Acquires a PostgreSQL advisory lock (final-cleaner-specific key, per
+/// chain_id) before processing. If the lock is held by another pod, the
+/// message is Acked (not requeued): a lock holder is already running the loop
+/// and will republish the next iteration itself.
+/// This provides HPA-safe mutual exclusion for the final-cleaner flow and
+/// prevents redelivered duplicates from multiplying the self-perpetuating
+/// clean loop.
+#[derive(Clone)]
+pub struct FinalCleanerHandler {
+    cleaner: Arc<Cleaner>,
+    flow_lock: FlowLock,
+    publisher: Publisher,
+}
+
+impl FinalCleanerHandler {
+    pub fn new(cleaner: Arc<Cleaner>, flow_lock: FlowLock, publisher: Publisher) -> Self {
+        Self {
+            cleaner,
+            flow_lock,
+            publisher,
+        }
+    }
+}
+
+#[async_trait]
+impl Handler for FinalCleanerHandler {
+    async fn call(&self, _msg: &Message) -> Result<AckDecision, HandlerError> {
+        // Step 1: Try to acquire the distributed lock (non-blocking).
+        let guard = match self.flow_lock.try_acquire().await {
+            Ok(Some(guard)) => guard,
+            Ok(None) => {
+                warn!(
+                    "FinalCleaner: advisory lock held by another processor, Acking and skipping this process, mostly duplicate."
+                );
+                return Ok(AckDecision::Ack);
+            }
+            Err(e) => {
+                return Err(classify_cleaner(CleanerError::AdvisoryLockError {
+                    message: format!("Failed to acquire advisory lock: {e}"),
+                }));
+            }
+        };
+
+        // Step 2: Process under lock. The lock spans the cron sleep inside
+        // `run_final()` on purpose: a redelivered duplicate arriving meanwhile
+        // must be skipped, or it would start a second self-perpetuating loop.
+        let reschedule = self.cleaner.run_final().await;
+
+        // Step 3: Release lock BEFORE publishing (eliminates race with other handlers).
+        if let Err(unlock_err) = guard.release().await {
+            warn!(error = %unlock_err, "Failed to explicitly release advisory lock");
+        }
+
+        // Step 4: Publish next iteration AFTER lock release, then Ack.
+        if reschedule {
+            self.publisher
+                .publish(routing::CLEAN_FINAL_BLOCKS, &serde_json::Value::Null)
+                .await
+                .map_err(|e| {
+                    error!(error = %e, "FinalCleaner: failed to publish next iteration");
+                    classify_cleaner(CleanerError::BrokerPublishError {
+                        message: format!("Broker publish failed: {e}"),
+                    })
+                })?;
+        }
+        Ok(AckDecision::Ack)
+    }
+}
+
 // ── FetchHandler ─────────────────────────────────────────────────────────
 
 /// Manual [`Handler`] impl for the fetch-new-blocks consumer.

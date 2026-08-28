@@ -5,9 +5,9 @@ http_port: 8081
 database:
   db_url: postgres://postgres:postgres@localhost:5432/listener
   pool:
-    # Floor: 3 advisory-lock sessions (fetch/reorg, cleaner, finality)
-    # + concurrent handler queries => max_connections must be >= 7.
-    max_connections: 10
+    # Floor: 4 advisory-lock sessions (fetch/reorg, cleaner, final-cleaner, finality)
+    # + concurrent handler queries => max_connections must be >= 8.
+    max_connections: 12
     min_connections: 2
 
 broker:
