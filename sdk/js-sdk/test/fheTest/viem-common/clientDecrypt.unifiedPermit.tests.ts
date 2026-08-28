@@ -177,11 +177,8 @@ export function defineClientDecryptUnifiedPermitTests(parameters: {
     });
 
     it('signs and parses a manually-built DELEGATED unified permit (createUnsignedUnifiedDecryptionPermitEip712)', async () => {
-      // Delegation is post-sign metadata for a V2 permit — not part of the signed
-      // eip712 message — so it must be attached to the object handed to
-      // parseSignedDecryptionPermit rather than derived from the eip712 itself.
-      // This is the offline-signing shape: build unsigned, sign out-of-process,
-      // reconstruct the permit object manually with `delegatorAddress` attached.
+      // Delegation is post-sign metadata, so it's attached to the permit object
+      // handed to parseSignedDecryptionPermit rather than derived from the eip712.
       const client = await createReadyClient();
       const transportKeyPair = await client.generateTransportKeyPair();
 

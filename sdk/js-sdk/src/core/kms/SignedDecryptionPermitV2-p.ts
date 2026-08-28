@@ -196,10 +196,8 @@ export async function parseSignedDecryptionPermitV2(
   assertRecordBytesHexProperty(permit, 'signature', permitName, options);
   assertRecordAddressProperty(permit, 'signerAddress', permitName, options);
 
-  // Delegation is post-sign metadata for a V2 permit (not part of the signed
-  // eip712 message — see createUnsignedDecryptionPermitEip712V2), so it has
-  // to be read from the permit object itself rather than derived from the
-  // eip712, mirroring the optional-address handling in signDecryptionPermitV2.
+  // Delegation is post-sign metadata, not part of the signed eip712 message,
+  // so it's read from the permit object itself (mirrors signDecryptionPermitV2).
   let delegatorAddress: ChecksummedAddress | undefined;
   if (isRecordNonNullableProperty(permit, 'delegatorAddress')) {
     assertRecordAddressProperty(permit, 'delegatorAddress', permitName, options);
