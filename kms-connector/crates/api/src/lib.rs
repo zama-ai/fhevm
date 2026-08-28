@@ -10,8 +10,8 @@ pub mod version;
 
 pub use error::{ErrorCode, ErrorResponse};
 pub use types::{
-    HandleEntry, PublicDecryptionPayload, PublicDecryptionRequest, PublicDecryptionResponse,
-    RequestValidity, UserDecryptionPayload, UserDecryptionRequest, UserDecryptionResponse,
+    HandleEntry, PublicDecryptionRequest, PublicDecryptionResponse, RequestValidity,
+    UserDecryptionRequest, UserDecryptionResponse,
 };
 pub use version::{
     INTERFACE_VERSION, PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE, VERSION_ROUTE,

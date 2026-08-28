@@ -14,17 +14,13 @@ version.workspace = true
 [dependencies]
 alloy = { version = "2", default-features = false, features = [
     "serde",
-    "signers",
     "sol-types",
 ] }
 serde = { version = "1", default-features = false, features = [
     "derive",
     "std",
 ] }
+strum = { version = "0.28", default-features = false, features = ["derive"] }
 
 [dev-dependencies]
-alloy = { version = "2", default-features = false, features = [
-    "signer-local",
-] }
 serde_json = { version = "1", default-features = false, features = ["std"] }
-tokio = { version = "1", default-features = false, features = ["macros", "rt"] }

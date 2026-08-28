@@ -4206,7 +4206,7 @@ dependencies = [
  "alloy",
  "serde",
  "serde_json",
- "tokio",
+ "strum 0.28.0",
 ]
 
 [[package]]
@@ -6640,6 +6640,9 @@ name = "strum"
 version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9628de9b8791db39ceda2b119bbe13134770b56c138ec1d3af810d045c04f9bd"
+dependencies = [
+ "strum_macros 0.28.0",
+]
 
 [[package]]
 name = "strum_macros"
