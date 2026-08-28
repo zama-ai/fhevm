@@ -28,6 +28,8 @@
     "prettier:ext": "./scripts/prettier/check-file-casing.sh && ./scripts/prettier/check-import-order.sh ./scripts/prettier/check-no-leading-comment.sh",
     "prettier:check": "prettier --check \"**/*.{js,json,md,sol,ts,yml}\"",
     "prettier:write": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\"",
+    "audit:sdk": "npm audit --omit=dev || { echo \"\\nPlease run:\\n\\n -----------------------\\n  npm run audit:sdk:fix\\n -----------------------\\n\"; false; }",
+    "audit:sdk:fix": "npm audit fix --omit=dev",
     "licenses:check": "license-checker --onlyAllow '0BSD; Apache-2.0; BSD-2-Clause; BSD-3-Clause; BlueOak-1.0.0; CC-BY-3.0; CC-BY-4.0; CC0-1.0; ISC; MIT; MPL-2.0; Python-2.0; WTFPL; PSF;'",
     "test:unit": "npx vitest run --config src/vitest.config.ts --coverage",
     "test:browser-smoke": "npx playwright test --config test/browser-smoke/playwright.config.ts",
