@@ -28,6 +28,7 @@ interface FHEEvents {
     event FheRand(address indexed caller, FheType randType, bytes16 seed, bytes32 result);
     event FheRandBounded(address indexed caller, uint256 upperBound, FheType randType, bytes16 seed, bytes32 result);
     event FheRem(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
+    event FheReverse(address indexed caller, bytes32[] values, bytes32[] results);
     event FheRotl(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
     event FheRotr(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
     event FheShl(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
@@ -853,6 +854,31 @@ interface FHEEvents {
         "type": "bytes32",
         "indexed": false,
         "internalType": "bytes32"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "FheReverse",
+    "inputs": [
+      {
+        "name": "caller",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "values",
+        "type": "bytes32[]",
+        "indexed": false,
+        "internalType": "bytes32[]"
+      },
+      {
+        "name": "results",
+        "type": "bytes32[]",
+        "indexed": false,
+        "internalType": "bytes32[]"
       }
     ],
     "anonymous": false
@@ -4465,6 +4491,139 @@ event FheRem(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Event with signature `FheReverse(address,bytes32[],bytes32[])` and selector `0x8c553417b6469a1b3b295d72ad3fe3adea3601c1454943e81b8169428dce1010`.
+```solidity
+event FheReverse(address indexed caller, bytes32[] values, bytes32[] results);
+```*/
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    #[derive(Clone)]
+    pub struct FheReverse {
+        #[allow(missing_docs)]
+        pub caller: alloy::sol_types::private::Address,
+        #[allow(missing_docs)]
+        pub values: alloy::sol_types::private::Vec<
+            alloy::sol_types::private::FixedBytes<32>,
+        >,
+        #[allow(missing_docs)]
+        pub results: alloy::sol_types::private::Vec<
+            alloy::sol_types::private::FixedBytes<32>,
+        >,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[automatically_derived]
+        impl alloy_sol_types::SolEvent for FheReverse {
+            type DataTuple<'a> = (
+                alloy::sol_types::sol_data::Array<
+                    alloy::sol_types::sol_data::FixedBytes<32>,
+                >,
+                alloy::sol_types::sol_data::Array<
+                    alloy::sol_types::sol_data::FixedBytes<32>,
+                >,
+            );
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type TopicList = (
+                alloy_sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Address,
+            );
+            const SIGNATURE: &'static str = "FheReverse(address,bytes32[],bytes32[])";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                140u8, 85u8, 52u8, 23u8, 182u8, 70u8, 154u8, 27u8, 59u8, 41u8, 93u8,
+                114u8, 173u8, 63u8, 227u8, 173u8, 234u8, 54u8, 1u8, 193u8, 69u8, 73u8,
+                67u8, 232u8, 27u8, 129u8, 105u8, 66u8, 141u8, 206u8, 16u8, 16u8,
+            ]);
+            const ANONYMOUS: bool = false;
+            #[allow(unused_variables)]
+            #[inline]
+            fn new(
+                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
+                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                Self {
+                    caller: topics.1,
+                    values: data.0,
+                    results: data.1,
+                }
+            }
+            #[inline]
+            fn check_signature(
+                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
+            ) -> alloy_sol_types::Result<()> {
+                if topics.0 != Self::SIGNATURE_HASH {
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
+                }
+                Ok(())
+            }
+            #[inline]
+            fn tokenize_body(&self) -> Self::DataToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Array<
+                        alloy::sol_types::sol_data::FixedBytes<32>,
+                    > as alloy_sol_types::SolType>::tokenize(&self.values),
+                    <alloy::sol_types::sol_data::Array<
+                        alloy::sol_types::sol_data::FixedBytes<32>,
+                    > as alloy_sol_types::SolType>::tokenize(&self.results),
+                )
+            }
+            #[inline]
+            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
+                (Self::SIGNATURE_HASH.into(), self.caller.clone())
+            }
+            #[inline]
+            fn encode_topics_raw(
+                &self,
+                out: &mut [alloy_sol_types::abi::token::WordToken],
+            ) -> alloy_sol_types::Result<()> {
+                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
+                    return Err(alloy_sol_types::Error::Overrun);
+                }
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
+                out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
+                    &self.caller,
+                );
+                Ok(())
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::private::IntoLogData for FheReverse {
+            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
+                From::from(self)
+            }
+            fn into_log_data(self) -> alloy_sol_types::private::LogData {
+                From::from(&self)
+            }
+        }
+        #[automatically_derived]
+        impl From<&FheReverse> for alloy_sol_types::private::LogData {
+            #[inline]
+            fn from(this: &FheReverse) -> alloy_sol_types::private::LogData {
+                alloy_sol_types::SolEvent::encode_log_data(this)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FheRotl(address,bytes32,bytes32,bytes1,bytes32)` and selector `0xeb0e4f8dc74058194d0602425fe602f955c222200f7f10c6fe67992f7b24c7e9`.
 ```solidity
 event FheRotl(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
@@ -5614,6 +5773,8 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
         #[allow(missing_docs)]
         FheRem(FheRem),
         #[allow(missing_docs)]
+        FheReverse(FheReverse),
+        #[allow(missing_docs)]
         FheRotl(FheRotl),
         #[allow(missing_docs)]
         FheRotr(FheRotr),
@@ -5714,6 +5875,11 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
                 174u8, 130u8, 247u8, 152u8, 60u8, 112u8, 4u8, 101u8, 30u8, 93u8,
             ],
             [
+                140u8, 85u8, 52u8, 23u8, 182u8, 70u8, 154u8, 27u8, 59u8, 41u8, 93u8,
+                114u8, 173u8, 63u8, 227u8, 173u8, 234u8, 54u8, 1u8, 193u8, 69u8, 73u8,
+                67u8, 232u8, 27u8, 129u8, 105u8, 66u8, 141u8, 206u8, 16u8, 16u8,
+            ],
+            [
                 140u8, 102u8, 77u8, 60u8, 60u8, 165u8, 131u8, 252u8, 88u8, 3u8, 184u8,
                 169u8, 28u8, 73u8, 100u8, 75u8, 189u8, 149u8, 80u8, 191u8, 168u8, 121u8,
                 103u8, 199u8, 58u8, 209u8, 222u8, 131u8, 2u8, 119u8, 104u8, 192u8,
@@ -5812,6 +5978,7 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
             ::core::stringify!(FheBitOr),
             ::core::stringify!(FheIfThenElse),
             ::core::stringify!(FheNe),
+            ::core::stringify!(FheReverse),
             ::core::stringify!(FheNeg),
             ::core::stringify!(FheIsIn),
             ::core::stringify!(FheEq),
@@ -5846,6 +6013,7 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
             <FheBitOr as alloy_sol_types::SolEvent>::SIGNATURE,
             <FheIfThenElse as alloy_sol_types::SolEvent>::SIGNATURE,
             <FheNe as alloy_sol_types::SolEvent>::SIGNATURE,
+            <FheReverse as alloy_sol_types::SolEvent>::SIGNATURE,
             <FheNeg as alloy_sol_types::SolEvent>::SIGNATURE,
             <FheIsIn as alloy_sol_types::SolEvent>::SIGNATURE,
             <FheEq as alloy_sol_types::SolEvent>::SIGNATURE,
@@ -5887,7 +6055,7 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for FHEEventsEvents {
         const NAME: &'static str = "FHEEventsEvents";
-        const COUNT: usize = 31usize;
+        const COUNT: usize = 32usize;
         fn decode_raw_log(
             topics: &[alloy_sol_types::Word],
             data: &[u8],
@@ -5999,6 +6167,13 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
                 Some(<FheRem as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
                     <FheRem as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::FheRem)
+                }
+                Some(<FheReverse as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
+                    <FheReverse as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
+                        .map(Self::FheReverse)
                 }
                 Some(<FheRotl as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
                     <FheRotl as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
@@ -6125,6 +6300,9 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
                 Self::FheRem(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
+                Self::FheReverse(inner) => {
+                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
+                }
                 Self::FheRotl(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
@@ -6220,6 +6398,9 @@ event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddre
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::FheRem(inner) => {
+                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
+                }
+                Self::FheReverse(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::FheRotl(inner) => {
@@ -6516,6 +6697,10 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ///Creates a new event filter for the [`FheRem`] event.
         pub fn FheRem_filter(&self) -> alloy_contract::Event<&P, FheRem, N> {
             self.event_filter::<FheRem>()
+        }
+        ///Creates a new event filter for the [`FheReverse`] event.
+        pub fn FheReverse_filter(&self) -> alloy_contract::Event<&P, FheReverse, N> {
+            self.event_filter::<FheReverse>()
         }
         ///Creates a new event filter for the [`FheRotl`] event.
         pub fn FheRotl_filter(&self) -> alloy_contract::Event<&P, FheRotl, N> {

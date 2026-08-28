@@ -743,6 +743,23 @@ pub fn check_fhe_operand_types(
 
                     Ok(())
                 }
+                // PROBE ONLY. Reordering imposes no relationship between the
+                // operands, so only the count is constrained; each output
+                // inherits the type of the input it receives.
+                SupportedFheOperations::FheReverse => {
+                    if input_handles.is_empty() || input_handles.len() > 8 {
+                        return Err(FhevmError::UnexpectedOperandCountForFheOperation {
+                            fhe_operation,
+                            fhe_operation_name: format!("{:?}", fhe_op),
+                            expected_operands: 8,
+                            got_operands: input_handles.len(),
+                        });
+                    }
+                    for handle in input_handles.iter() {
+                        get_ct_type(handle)?;
+                    }
+                    Ok(())
+                }
                 SupportedFheOperations::FheIsIn => {
                     const FHE_IS_IN_MAX_SET_SIZE_WIDE: usize = 60;
                     const FHE_IS_IN_MAX_SET_SIZE_NARROW: usize = 100;
@@ -966,6 +983,12 @@ pub fn perform_fhe_operation_impl(
 ) -> Result<SupportedFheCiphertexts, FhevmError> {
     let fhe_operation: SupportedFheOperations = fhe_operation_int.try_into()?;
     match fhe_operation {
+        // Multi-output ops are dispatched by
+        // `perform_multi_output_fhe_operation`; reaching here means the
+        // scheduler routed on a stale `is_multi_output()`.
+        SupportedFheOperations::FheReverse => {
+            Err(FhevmError::UnknownFheOperation(fhe_operation_int as i32))
+        }
         SupportedFheOperations::FheAdd => {
             assert_eq!(input_operands.len(), 2);
 
@@ -3567,10 +3590,21 @@ pub fn perform_fhe_operation_impl(
 /// outputs differ in type (a kv-store get, say) can produce each correctly.
 pub fn perform_multi_output_fhe_operation_impl(
     fhe_operation_int: i16,
-    _input_operands: &[SupportedFheCiphertexts],
+    input_operands: &[SupportedFheCiphertexts],
     _output_types: &[i16],
 ) -> Result<Vec<SupportedFheCiphertexts>, FhevmError> {
-    Err(FhevmError::UnknownFheOperation(fhe_operation_int as i32))
+    let fhe_operation: SupportedFheOperations = fhe_operation_int.try_into()?;
+    match fhe_operation {
+        // PROBE ONLY. No FHE work: reordering the operands is enough to drive
+        // the N-output path, and it makes a mis-bound output visible as a
+        // wrong value rather than a coincidentally correct one.
+        SupportedFheOperations::FheReverse => {
+            let mut out = input_operands.to_vec();
+            out.reverse();
+            Ok(out)
+        }
+        _ => Err(FhevmError::UnknownFheOperation(fhe_operation_int as i32)),
+    }
 }
 
 pub fn to_be_u4_bit(inp: &[u8]) -> u8 {

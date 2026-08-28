@@ -41,6 +41,9 @@ contract FHEEvents {
     event FheRand(address indexed caller, FheType randType, bytes16 seed, bytes32 result);
     event FheRandBounded(address indexed caller, uint256 upperBound, FheType randType, bytes16 seed, bytes32 result);
     event FheSum(address indexed caller, bytes32[] values, bytes32 result);
+    /// PROBE ONLY: synthetic multi-output operator used to exercise the
+    /// coprocessor's N-output path end to end. Not for production.
+    event FheReverse(address indexed caller, bytes32[] values, bytes32[] results);
     event FheIsIn(address indexed caller, bytes32 value, bytes32[] values, bytes32 result);
     event FheMulDiv(
         address indexed caller,

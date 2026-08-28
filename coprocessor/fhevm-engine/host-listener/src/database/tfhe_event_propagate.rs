@@ -476,8 +476,7 @@ impl Database {
     }
 
     // N rows sharing `group_id`, with `output_index` 0..N-1.
-    // Infrastructure for future multi-output ops; no callers in this PR.
-    #[allow(clippy::too_many_arguments, dead_code)]
+    #[allow(clippy::too_many_arguments)]
     async fn insert_multi_output_computation(
         &self,
         tx: &mut Transaction<'_>,
@@ -656,9 +655,9 @@ impl Database {
         let insert_computation_bytes = |tx, result, dependencies_handles, dependencies_bytes, scalar_byte| {
             self.insert_computation_bytes(tx, result, dependencies_handles, dependencies_bytes, fhe_operation, scalar_byte, log)
         };
-        // TODO: when adding a multi-output op, define a closure mirroring the two above,
-        // backed by `self.insert_multi_output_computation(...)`, which writes N rows
-        // sharing `group_id`.
+        let insert_multi_output_computation = |tx, results, dependencies, scalar_byte| {
+            self.insert_multi_output_computation(tx, results, dependencies, fhe_operation, scalar_byte, log)
+        };
 
         // Record the transaction if this is a computation event
         if !matches!(
@@ -717,6 +716,12 @@ impl Database {
 
             | E::TrivialEncrypt(C::TrivialEncrypt {pt, toType, result, ..})
             => insert_computation_bytes(tx, result, &[], &[as_bytes(pt), ty(toType)], &HAS_SCALAR).await,
+
+            E::FheReverse(C::FheReverse { values, results, .. }) => {
+                let deps: Vec<&Handle> = values.iter().collect();
+                let outs: Vec<&Handle> = results.iter().collect();
+                insert_multi_output_computation(tx, &outs, &deps, &NO_SCALAR).await
+            }
 
             E::FheSum(C::FheSum { values, result, .. }) => {
                 let deps: Vec<&Handle> = values.iter().collect();
@@ -2044,6 +2049,7 @@ fn event_to_op_int(op: &TfheContractEvents) -> FheOperation {
         E::FheRand(_) => O::FheRand as i32,
         E::FheRandBounded(_) => O::FheRandBounded as i32,
         E::FheSum(_) => O::FheSum as i32,
+        E::FheReverse(_) => O::FheReverse as i32,
         E::FheIsIn(_) => O::FheIsIn as i32,
         E::FheMulDiv(_) => O::FheMulDiv as i32,
         // Not tfhe ops
@@ -2082,6 +2088,7 @@ pub fn event_name(op: &TfheContractEvents) -> &'static str {
         E::FheRand(_) => "FheRand",
         E::FheRandBounded(_) => "FheRandBounded",
         E::FheSum(_) => "FheSum",
+        E::FheReverse(_) => "FheReverse",
         E::FheIsIn(_) => "FheIsIn",
         E::FheMulDiv(_) => "FheMulDiv",
         E::Initialized(_) => "Initialized",
@@ -2115,6 +2122,8 @@ pub fn tfhe_result_handles(op: &TfheContractEvents) -> Vec<Handle> {
     use TfheContract as C;
     use TfheContractEvents as E;
     match op {
+        // The only event carrying more than one result handle.
+        E::FheReverse(C::FheReverse { results, .. }) => results.clone(),
         E::Cast(C::Cast { result, .. })
         | E::FheAdd(C::FheAdd { result, .. })
         | E::FheBitAnd(C::FheBitAnd { result, .. })
@@ -2317,6 +2326,7 @@ pub fn tfhe_inputs_handle(op: &TfheContractEvents) -> Vec<Handle> {
 
         E::FheRand(_) | E::FheRandBounded(_) | E::TrivialEncrypt(_) => vec![],
 
+        E::FheReverse(C::FheReverse { values, .. }) => values.clone(),
         E::FheSum(C::FheSum { values, .. }) => values.clone(),
 
         E::FheIsIn(C::FheIsIn { value, values, .. }) => {
@@ -2501,7 +2511,8 @@ pub fn tfhe_encrypted_operand_positions(
             vec![]
         }
 
-        E::FheSum(C::FheSum { values, .. }) => {
+        E::FheSum(C::FheSum { values, .. })
+        | E::FheReverse(C::FheReverse { values, .. }) => {
             values.iter().copied().enumerate().collect()
         }
 

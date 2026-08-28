@@ -8952,6 +8952,26 @@ library FHE {
     /**
      * @dev Evaluates sum(euint8[] values) and returns the result.
      */
+    /**
+     * PROBE ONLY. Returns the inputs in reverse order as a single multi-output
+     * operation. Exists to exercise the coprocessor's N-output path; not for
+     * production use.
+     */
+    function reverse(euint64[] memory values) internal returns (euint64[] memory) {
+        bytes32[] memory handles = new bytes32[](values.length);
+        for (uint256 i = 0; i < values.length; i++) {
+            euint64 v = values[i];
+            if (!isInitialized(v)) v = asEuint64(0);
+            handles[i] = euint64.unwrap(v);
+        }
+        bytes32[] memory out = Impl.reverse(handles);
+        euint64[] memory results = new euint64[](out.length);
+        for (uint256 i = 0; i < out.length; i++) {
+            results[i] = euint64.wrap(out[i]);
+        }
+        return results;
+    }
+
     function sum(euint8[] memory values) internal returns (euint8) {
         bytes32[] memory handles = new bytes32[](values.length);
         for (uint256 i = 0; i < values.length; i++) {

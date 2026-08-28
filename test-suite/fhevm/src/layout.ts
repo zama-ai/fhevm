@@ -295,6 +295,8 @@ export const TEST_GREP: Record<string, string> = {
   "random-subset":
     "64 bits generate and decrypt|generating rand in reverting sub-call|64 bits generate with upper bound and decrypt",
   "operators": "test operator|FHEVM manual operations",
+  // PROBE ONLY: synthetic multi-output operator end-to-end.
+  "multi-output": "multi-output operations",
   "hcu-block-cap": "block cap scenarios",
   "erc20": "should transfer tokens between two users.",
   "cross-cutover-setup": "\\[cross-cutover-setup\\]",
