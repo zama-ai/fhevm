@@ -1,4 +1,0 @@
-node_modules
-
-# Solidity is formatted by `forge fmt`, never prettier.
-*.sol

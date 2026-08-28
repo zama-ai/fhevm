@@ -1,5 +1,5 @@
 {
-  "name": "@fhevm/sdk-common",
+  "name": "@fhevm/sdk-common-dev",
   "version": "0.0.0",
   "private": true,
   "type": "module",

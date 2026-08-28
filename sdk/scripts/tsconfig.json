@@ -1,0 +1,15 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "types": ["node"],
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    // These files are RUN by node, which strips types rather than compiling them. Anything that needs
+    // code generation — enum, namespace, parameter properties — would run differently than it typechecks.
+    "erasableSyntaxOnly": true,
+    "module": "nodenext",
+    "moduleResolution": "nodenext"
+  },
+  "include": ["./**/*.ts"]
+}

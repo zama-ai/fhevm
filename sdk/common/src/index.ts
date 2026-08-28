@@ -1,4 +1,4 @@
-// @fhevm/sdk-common — internal helpers shared by the sdk workspace. Never published.
+// @fhevm/sdk-common-dev — internal helpers shared by the sdk workspace. Never published.
 
 export {
   DEPLOYER_ADDRESS_INDEX,
@@ -13,3 +13,7 @@ export type { ContractVersion } from './contractVersions.ts';
 export { createPackageTarball, extractPackageTarball } from './tarball.ts';
 export { checkZamaLocalConfig } from './zamaConfig.ts';
 export type { ZamaLocalConfigCheck, ZamaLocalConfigEntry } from './zamaConfig.ts';
+export { startAnvil, stopAnvil, waitForAnvil } from './anvil.ts';
+export type { AnvilNode } from './anvil.ts';
+export { getContractAddressAtNonce, privateKeyFromMnemonic, privateKeyToAddress } from './viemUtils.ts';
+export type { PrivateKeyFromMnemonicArgs } from './viemUtils.ts';

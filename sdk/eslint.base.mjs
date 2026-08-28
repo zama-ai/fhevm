@@ -1,5 +1,4 @@
 // Shared ESLint config.
-
 import eslint from '@eslint/js';
 import tseslint from 'typescript-eslint';
 
@@ -42,11 +41,25 @@ const browserRestrictedGlobals = [
  * @param {string[]} options.nodeFiles      Tooling and tests: same rules, node globals allowed.
  * @param {string[]} [options.returnTypeFiles] Files requiring explicit function return types.
  *                                          Defaults to `publicFiles`.
+ * @param {string[]} [options.browserSafeFiles] Files that must avoid the Node-only globals.
+ *                                          Defaults to `publicFiles`, which is right whenever
+ *                                          "published" and "runs in a browser" are the same set. They
+ *                                          are not always: a Hardhat plugin is published AND Node-only,
+ *                                          so it passes `[]` here while keeping its payload in
+ *                                          `publicFiles` for the return-type and module-boundary rules.
+ *                                          Split out for the same reason `returnTypeFiles` was.
  * @param {string[]} [options.ignores]      Everything this package excludes — generated output,
  *                                          build dirs, fixtures.
  * @returns {import('typescript-eslint').ConfigArray}
  */
-export default function eslintBase({ packageDir, publicFiles, nodeFiles, returnTypeFiles, ignores = [] }) {
+export default function eslintBase({
+  packageDir,
+  publicFiles,
+  nodeFiles,
+  returnTypeFiles,
+  browserSafeFiles,
+  ignores = [],
+}) {
   if (typeof packageDir !== 'string' || packageDir.length === 0) {
     throw new TypeError(
       'eslint.base.mjs: packageDir is required — pass `import.meta.dirname` from the calling package. ' +
@@ -62,7 +75,7 @@ export default function eslintBase({ packageDir, publicFiles, nodeFiles, returnT
 
   const targetFiles = [...publicFiles, ...nodeFiles];
 
-  // A package may legitimately declare an empty half — `@fhevm/sdk-common` is private and unpublishable,
+  // A package may legitimately declare an empty half — `@fhevm/sdk-common-dev` is private and unpublishable,
   // so it has no `publicFiles` at all. ESLint rejects `files: []` outright ("Expected value to be a
   // non-empty array"), so those blocks are dropped rather than emitted empty. Filtering at the end keeps
   // the config below readable as one list instead of threading conditionals through it; the global
@@ -227,7 +240,7 @@ export default function eslintBase({ packageDir, publicFiles, nodeFiles, returnT
     },
 
     {
-      files: publicFiles,
+      files: browserSafeFiles ?? publicFiles,
       rules: {
         'no-restricted-globals': ['error', ...browserRestrictedGlobals],
       },

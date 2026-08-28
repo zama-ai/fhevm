@@ -2,10 +2,10 @@ import { deploy, precomputeAddresses } from '@fhevm/host-contracts-cleartext/ts'
 import { createPublicClient, http, type Address } from 'viem';
 import { foundry } from 'viem/chains';
 import { expect, test } from 'vitest';
-import { startAnvil, stopAnvil, waitForAnvil } from './utils/anvil.ts';
-import { getContractAddressAtNonce, privateKeyFromMnemonic, privateKeyToAddress } from './utils/ethUtils.ts';
+import { startAnvil, stopAnvil, waitForAnvil } from '@fhevm/sdk-common-dev';
+import { getContractAddressAtNonce, privateKeyFromMnemonic, privateKeyToAddress } from '@fhevm/sdk-common-dev';
 import { expectedHcuLimit } from './utils/expectedBootstrap.ts';
-import { createViemEthereumAdapters } from './utils/viemEthereumLib.ts';
+import { createViemEthereumAdapters } from '@fhevm/sdk-vendored-dev/viemEthereumLib.ts';
 
 test('published tarball can be consumed by a viem-backed TypeScript project', async () => {
   expect(typeof deploy).toBe('function');

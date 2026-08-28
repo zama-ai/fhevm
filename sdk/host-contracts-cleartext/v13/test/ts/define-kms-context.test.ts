@@ -3,9 +3,9 @@ import { createPublicClient, http, type Address } from 'viem';
 import { mnemonicToAccount } from 'viem/accounts';
 import { foundry } from 'viem/chains';
 import { expect, test } from 'vitest';
-import { startAnvil, stopAnvil, waitForAnvil } from './utils/anvil.ts';
-import { privateKeyFromMnemonic } from './utils/ethUtils.ts';
-import { createViemEthereumAdapters } from './utils/viemEthereumLib.ts';
+import { startAnvil, stopAnvil, waitForAnvil } from '@fhevm/sdk-common-dev';
+import { privateKeyFromMnemonic } from '@fhevm/sdk-common-dev';
+import { createViemEthereumAdapters } from '@fhevm/sdk-vendored-dev/viemEthereumLib.ts';
 
 const MNEMONIC = 'adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer';
 // The default KMS signer pool is derived from the FHEVM test mnemonic at m/44'/60'/0'/3/<i>.

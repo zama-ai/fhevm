@@ -147,5 +147,5 @@
     // "tsBuildInfoFile",
   },
   "include": [],
-  "exclude": ["node_modules", "artifacts", "cache", "typechain", "typechain-types", "out", "dependencies", "tarball"]
+  "exclude": ["node_modules", "artifacts", "cache", "typechain", "typechain-types", "out", "dependencies", "tarballs"]
 }

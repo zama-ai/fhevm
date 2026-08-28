@@ -1,6 +1,6 @@
 // Builds the tarball and installs it into the test/ts consumer fixture.
 
-import { createPackageTarball, extractPackageTarball } from '@fhevm/sdk-common';
+import { createPackageTarball, extractPackageTarball } from '@fhevm/sdk-common-dev';
 import { join } from 'node:path';
 import { PACKAGE_ROOT_ABS_PATH, PKG_DIR_ABS_PATH } from './constants.ts';
 

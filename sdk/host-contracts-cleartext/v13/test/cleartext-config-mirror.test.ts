@@ -449,7 +449,7 @@ void test('every recorded address is CREATE(deployer, its nonce)', () => {
  * `ZamaConfig`'s `CoprocessorConfig` field names, mapped to the role names the nonce table uses.
  *
  * `CoprocessorAddress` **is** the FHEVMExecutor address — the two names describe one contract, and reading
- * it as some other component is the easiest way to get this wrong. `@fhevm/sdk-common` carries the
+ * it as some other component is the easiest way to get this wrong. `@fhevm/sdk-common-dev` carries the
  * same mapping against its own key names, and says the same thing.
  */
 const ZAMA_FIELD_TO_ROLE: Readonly<Record<string, string>> = {

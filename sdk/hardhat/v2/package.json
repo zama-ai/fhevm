@@ -1,0 +1,51 @@
+{
+  "name": "@fhevm/hardhat-plugin-dev-v2",
+  "private": true,
+  "type": "module",
+  "description": "HARNESS for @fhevm/hardhat-plugin. Never published. The payload is ./pkg.",
+  "//": [
+    "This manifest carries every devDependency, every script and all tooling config; the published",
+    "manifest in ./pkg carries none of them. `.npmignore` cannot achieve that split -- it filters files,",
+    "not manifest fields.",
+    "`type: module` here against `type: commonjs` in ./pkg is the whole mechanism, not an inconsistency.",
+    "The nearest package.json decides a .ts file's module format under nodenext, so the harness tooling in",
+    "internal/ and test/ is ESM like every other harness in this workspace, while everything under pkg/ is",
+    "CommonJS -- which is what a Hardhat v2 plugin must be.",
+    "The payload is CJS-ONLY: no ESM output, no dual build. Hardhat v2 loads plugins with `require`, and",
+    "shipping an `import` condition would only create a second resolution path nothing exercises."
+  ],
+  "engines": {
+    "node": ">=22.6"
+  },
+  "scripts": {
+    "clean": "rm -rf pkg/_cjs pkg/_types *.tsbuildinfo internal/*.tsbuildinfo test/*.tsbuildinfo pkg/*.tsbuildinfo",
+    "build": "npm run clean && npm run prettier:check && npm run lint && npm run build:cjs && npm run build:types && npm run test:publint",
+    "build:cjs": "tsc --project ./tsconfig.build.cjs.json && printf '{\"type\":\"commonjs\"}' > ./pkg/_cjs/package.json",
+    "build:types": "tsc --project ./tsconfig.build.types.json",
+    "lint": "npm run check:lint-policy && eslint && tsc -b ./tsconfig.json --noEmit",
+    "check:lint-policy": "\"$(npm prefix)/scripts/check-lint-policy.sh\"",
+    "test:publint": "publint --strict ./pkg && attw --pack ./pkg",
+    "prettier:check": "prettier --check \"**/*.{js,json,md,mjs,ts,yml}\"",
+    "prettier:write": "prettier --write \"**/*.{js,json,md,mjs,ts,yml}\"",
+    "test": "node --test test/*.test.ts",
+    "pack:tarball": "\"$(npm prefix)/scripts/pack-tarball.ts\"",
+    "build:tarball": "npm run build && npm run pack:tarball"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
+    "@eslint/js": "^10.0.1",
+    "@fhevm/sdk": "^0.13.3",
+    "@fhevm/sdk-common-dev": "0.0.0",
+    "@nomicfoundation/hardhat-ethers": "^3.1.3",
+    "@types/debug": "^4.1.13",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^22.0.0",
+    "@types/resolve": "^1.20.6",
+    "eslint": "^10.0.2",
+    "hardhat": "^2.28.4",
+    "prettier": "^3.6.2",
+    "publint": "^0.2.12",
+    "typescript": "^6.0.2",
+    "typescript-eslint": "^8.58.2"
+  }
+}

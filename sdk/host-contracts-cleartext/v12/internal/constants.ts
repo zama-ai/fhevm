@@ -3,29 +3,29 @@
 //
 // This module is deliberately dependency-free: paths and literals only, no imports from generateTemplates
 // or its siblings. Everything in internal/ may import it, so a dependency of its own would risk a cycle.
-import { findWorkspaceRootAbsPath } from '@fhevm/sdk-common';
+import { findWorkspaceRootAbsPath } from '@fhevm/sdk-common-dev';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /**
  * This package's root directory, holding internal/, test/, scripts/ and pkg/.
  *
- * Stays HERE and can never move into @fhevm/sdk-common: it is derived from `import.meta.url`, so the
+ * Stays HERE and can never move into @fhevm/sdk-common-dev: it is derived from `import.meta.url`, so the
  * same expression evaluated inside the shared package would resolve to that package instead of this
  * one — and every path built from it would point at the wrong directory while still looking valid.
  * That is why the helpers below take it as an argument rather than inferring it.
  */
 export const PACKAGE_ROOT_ABS_PATH = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-/** The sdk workspace root. Tarballs go to TARBALL_DIR_ABS_PATH in @fhevm/sdk-common, not here. */
+/** The sdk workspace root. Tarballs go to TARBALL_DIR_ABS_PATH in @fhevm/sdk-common-dev, not here. */
 export const WORKSPACE_ROOT_ABS_PATH = findWorkspaceRootAbsPath(PACKAGE_ROOT_ABS_PATH);
 
 /** The pkg/ directory — the published payload, and the only part of the tree that ships. */
 export const PKG_DIR_ABS_PATH = join(PACKAGE_ROOT_ABS_PATH, 'pkg');
 
-// The local stack's deploy identity, defined in @fhevm/sdk-common because every generation shares it.
+// The local stack's deploy identity, defined in @fhevm/sdk-common-dev because every generation shares it.
 // Re-exported so all of internal/ keeps one import point for constants.
-export { DEPLOYER_ADDRESS_INDEX, MNEMONIC, ZAMA_LOCAL_CONFIG } from '@fhevm/sdk-common';
+export { DEPLOYER_ADDRESS_INDEX, MNEMONIC, ZAMA_LOCAL_CONFIG } from '@fhevm/sdk-common-dev';
 
 /**
  * The Solidity import prefix the contracts read their address set through — the left side of a Foundry

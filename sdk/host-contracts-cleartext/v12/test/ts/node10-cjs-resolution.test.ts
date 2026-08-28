@@ -10,7 +10,7 @@
 //
 // Built against the real packed artifact in the shared tarballs directory, not against pkg/ — an
 // `exports`/`files` change that omits the stub has to be caught in the thing that actually gets published.
-import { TARBALL_DIR_ABS_PATH } from '@fhevm/sdk-common';
+import { TARBALL_DIR_ABS_PATH } from '@fhevm/sdk-common-dev';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';

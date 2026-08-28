@@ -3,10 +3,10 @@ import { createPublicClient, createWalletClient, getAddress, http, type Address,
 import { privateKeyToAccount } from 'viem/accounts';
 import { foundry } from 'viem/chains';
 import { expect, test } from 'vitest';
-import { startAnvil, stopAnvil, waitForAnvil, type AnvilNode } from './utils/anvil.ts';
-import { privateKeyFromMnemonic, privateKeyToAddress } from './utils/ethUtils.ts';
+import { startAnvil, stopAnvil, waitForAnvil, type AnvilNode } from '@fhevm/sdk-common-dev';
+import { privateKeyFromMnemonic, privateKeyToAddress } from '@fhevm/sdk-common-dev';
 import { expectedHcuLimit } from './utils/expectedBootstrap.ts';
-import { createViemEthereumAdapters } from './utils/viemEthereumLib.ts';
+import { createViemEthereumAdapters } from '@fhevm/sdk-vendored-dev/viemEthereumLib.ts';
 
 // ERC-1967 implementation slot: keccak256("eip1967.proxy.implementation") - 1.
 const IMPL_SLOT = '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc' as const;

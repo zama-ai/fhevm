@@ -1,5 +1,6 @@
 dependencies
 pkg/src
+pkg/ts/types/ethereumLibTypes.ts
 pkg/abi
 internal/placeholders
 pkg/templates

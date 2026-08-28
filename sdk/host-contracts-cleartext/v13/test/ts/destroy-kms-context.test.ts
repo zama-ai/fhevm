@@ -7,9 +7,9 @@ import {
 import { createPublicClient, http, type Address } from 'viem';
 import { foundry } from 'viem/chains';
 import { expect, test } from 'vitest';
-import { startAnvil, stopAnvil, waitForAnvil } from './utils/anvil.ts';
-import { privateKeyFromMnemonic, privateKeyToAddress } from './utils/ethUtils.ts';
-import { createViemEthereumAdapters } from './utils/viemEthereumLib.ts';
+import { startAnvil, stopAnvil, waitForAnvil } from '@fhevm/sdk-common-dev';
+import { privateKeyFromMnemonic, privateKeyToAddress } from '@fhevm/sdk-common-dev';
+import { createViemEthereumAdapters } from '@fhevm/sdk-vendored-dev/viemEthereumLib.ts';
 
 const MNEMONIC = 'adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer';
 

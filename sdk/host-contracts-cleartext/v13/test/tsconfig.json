@@ -8,21 +8,5 @@
     "types": ["node"]
   },
   "include": ["./**/*.ts", "../internal/**/*.ts"],
-  "exclude": [
-    "./ts/adapter-nonce-diagnostics.test.ts",
-    "./ts/precompute-addresses.test.ts",
-    "./ts/ethers-adapter.test.ts",
-    "./ts/utils/ethersEthereumLib.ts",
-    "./ts/tarball-consumer.test.ts",
-    "./ts/acl-owner-upgrade.test.ts",
-    "./ts/deploy-v13.test.ts",
-    "./ts/create2-precompute.test.ts",
-    "./ts/fhe-rand.test.ts",
-    "./ts/define-kms-context.test.ts",
-    "./ts/destroy-kms-context.test.ts",
-    "./ts/upgrade-e2e.test.ts",
-    "./ts/utils/viemEthereumLib.ts",
-    "./ts/utils/ethUtils.ts",
-    "./ts/utils/deployStack.ts"
-  ]
+  "exclude": ["./ts/**", "node_modules"]
 }

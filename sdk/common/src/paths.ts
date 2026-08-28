@@ -81,7 +81,7 @@ export function zamaConfigAbsPath(): string {
     throw new Error(
       `ZamaConfig.sol not found. Tried:\n${candidates.map((candidate) => `     ${candidate}`).join('\n')}\n` +
         `   It is the source of truth for the localhost address set, so this check cannot be skipped: fix ` +
-        `the path in @fhevm/sdk-common (src/paths.ts) if the file moved.`,
+        `the path in @fhevm/sdk-common-dev (src/paths.ts) if the file moved.`,
     );
   }
 

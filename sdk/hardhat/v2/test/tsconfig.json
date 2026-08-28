@@ -1,0 +1,14 @@
+{
+  "//": "Harness tests. ESM, and may reach into internal/ — neither is published.",
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": "..",
+    "types": ["node"],
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "module": "nodenext",
+    "moduleResolution": "nodenext"
+  },
+  "include": ["./**/*.ts", "../internal/**/*.ts"]
+}

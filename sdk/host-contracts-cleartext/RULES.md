@@ -79,7 +79,7 @@ which means release automation, not hand-copying.
     Only the files cleartext actually vendors are covered; it carries a subset, and adopting a new
     upstream file is a deliberate decision.
 
-    **`forge fmt` is the one transformation allowed, and no other.** Vendored sources are *stored*
+    **`forge fmt` is the one transformation allowed, and no other.** Vendored sources are _stored_
     forge-formatted, and `scripts/check-vendored-sources.sh` normalises the upstream side before
     comparing. Everything else still holds: no hand edits, not even a "do not edit" header, and no
     other tool may rewrite these files.
@@ -87,7 +87,7 @@ which means release automation, not hand-copying.
     This is not a loosening for convenience. Upstream formats with `prettier-plugin-solidity` and this
     workspace formats with `forge`; the two cannot be reconciled by configuration — 20 prettier configs
     and 13 forge configs were measured and neither converges. A raw byte compare therefore forced the
-    directory to be excluded from `forge fmt`, which left two Solidity styles in one tree *and* left the
+    directory to be excluded from `forge fmt`, which left two Solidity styles in one tree _and_ left the
     files exposed: the VS Code formatter pipes buffer text to `forge fmt --raw` with no path, so
     `[fmt] ignore` cannot protect them and one save rewrote ~87 lines of `ACL.sol`. Storing them
     forge-formatted makes that save a **no-op**, which is a stronger guarantee than the exclusion it
@@ -655,3 +655,26 @@ which means release automation, not hand-copying.
     Vendored sources stay exempt throughout: `pkg/src/contracts/**` is upstream's (rule 6), so a gate
     that would flag it must exclude it instead — a permanently red gate is not enforcement, it is noise
     that teaches everyone to ignore the output.
+
+25. **A tsconfig may not name a path that does not exist.** Every literal entry in `include`, `exclude`,
+    `files`, `references[].path` or a relative `extends`, in every `tsconfig.json` and
+    `tsconfig.<task>.json`, must resolve to something on disk.
+
+    This is not tidiness. A stale entry is **invisible**: TypeScript ignores an `include` that matches
+    nothing as long as another entry matches, and an `exclude` for a deleted file is simply inert. So a
+    project goes on reporting success while checking less than it claims — `test/ts/tsconfig.e2e.json`
+    named five files, three of which had moved into `@fhevm/sdk-common-dev`, and `tsc` kept exiting 0.
+
+    Prefer a rule to a list. `"exclude": ["./ts/**"]` states which project owns a directory and cannot go
+    stale; enumerating the files in it must be re-edited on every rename, and drifts from the same
+    enumeration in `eslint.config.js` — which is exactly what happened before this rule existed.
+
+    Globs are exempt: `pkg/ts/**/*.test.ts` matching nothing today is legitimate. So are the build-output
+    names in `INTENTIONAL` (`node_modules`, `out`, `cache`, `tarballs`, …) — being absent is the point of
+    excluding them. Note that declaring `exclude` at all **replaces** tsc's default list, so
+    `node_modules` has to be named again whenever you write one.
+
+    Gated by `sdk/scripts/check-tsconfig-paths.ts`, which runs in the root `check` and therefore in
+    `build`. Its scope is the root's own tsconfigs, every declared workspace member and `sdk/scripts` —
+    derived from `workspaces`, so a new member is covered with no edit. `sdk/js-sdk` belongs to the outer
+    repo workspace and is deliberately out of scope, exactly as `check-dep-versions.ts` scopes itself.

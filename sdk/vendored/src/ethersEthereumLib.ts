@@ -37,7 +37,7 @@ import type {
   DeployParameters,
   DeployReturnType,
   EncodeCallParameters,
-} from '@fhevm/host-contracts-cleartext/ts';
+} from './ethereumLibTypes.ts';
 import { ethers as EthersT } from 'ethers';
 
 ////////////////////////////////////////////////////////////////////////////////

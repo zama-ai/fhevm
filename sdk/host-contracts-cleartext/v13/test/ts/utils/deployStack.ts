@@ -7,8 +7,8 @@
 // Usage: node test/ts/deployStack.ts <rpcUrl> [mnemonic]
 import { deploy, precomputeAddresses } from '@fhevm/host-contracts-cleartext/ts';
 
-import { privateKeyFromMnemonic, privateKeyToAddress } from './ethUtils.ts';
-import { createViemEthereumAdapters } from './viemEthereumLib.ts';
+import { privateKeyFromMnemonic, privateKeyToAddress } from '@fhevm/sdk-common-dev';
+import { createViemEthereumAdapters } from '@fhevm/sdk-vendored-dev/viemEthereumLib.ts';
 
 const DEFAULT_MNEMONIC =
   'adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer';

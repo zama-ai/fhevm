@@ -1,0 +1,13 @@
+{
+  "//": [
+    "Not a workspace member — a module-type marker, and nothing else.",
+    "",
+    "sdk/package.json deliberately declares no `type` (a subpackage omitting its own would inherit it, and",
+    "hardhat/v2 is commonjs), so under `nodenext` a bare `.ts` here would resolve as CommonJS and every",
+    "`import` would be an error. This one line makes scripts/ an ESM directory, for node and tsc alike.",
+    "",
+    "`private` so nothing can ever publish it."
+  ],
+  "type": "module",
+  "private": true
+}

@@ -48,8 +48,8 @@ import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from 'vitest';
-import { startAnvil, stopAnvil, waitForAnvil } from './utils/anvil.ts';
-import { createEthersEthereumProvider, createEthersEthereumUtils } from './utils/ethersEthereumLib.ts';
+import { startAnvil, stopAnvil, waitForAnvil } from '@fhevm/sdk-common-dev';
+import { createEthersEthereumProvider, createEthersEthereumUtils } from '@fhevm/sdk-vendored-dev/ethersEthereumLib.ts';
 
 /** The harness root, two levels up from `test/ts`. The coordinator must be spawned from there. */
 const PACKAGE_ROOT = join(import.meta.dirname, '..', '..');

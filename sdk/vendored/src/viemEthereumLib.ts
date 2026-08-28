@@ -27,17 +27,77 @@ import type {
   AbstractEthereumUtils,
   DeployParameters,
   DeployReturnType,
-} from '@fhevm/host-contracts-cleartext/ts';
+  EncodeCallParameters
+} from './ethereumLibTypes.ts';
+import {
+  encodeAbiParameters as viemEncodeAbiParameters,
+  encodeFunctionData,
+  getContractAddress as getViemContractAddress,
+  getCreate2Address as viemGetCreate2Address,
+  keccak256 as viemKeccak256,
+  parseAbiParameters,
+} from 'viem';
 import { createPublicClient, createTestClient, createWalletClient, http, type Address, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { foundry } from 'viem/chains';
-import { createViemEthereumUtils } from './ethUtils.ts';
+
+////////////////////////////////////////////////////////////////////////////////
 
 export type ViemEthereumAdapters = {
   provider: AbstractEthereumProvider;
   signer: AbstractEthereumSigner;
   utils: AbstractEthereumUtils;
 };
+
+////////////////////////////////////////////////////////////////////////////////
+
+export function createViemEthereumUtils(): AbstractEthereumUtils {
+  return {
+    getContractAddress(parameters: { readonly from: string; readonly nonce: bigint }): `0x${string}` {
+      return getViemContractAddress({
+        from: parameters.from as Address,
+        nonce: parameters.nonce,
+      });
+    },
+
+    encodeCall(parameters: EncodeCallParameters): Promise<`0x${string}`> {
+      return Promise.resolve(
+        encodeFunctionData({
+          abi: parameters.abi,
+          functionName: parameters.functionName,
+          args: parameters.args,
+        }),
+      );
+    },
+
+    keccak256(parameters: { readonly bytes: string }): `0x${string}` {
+      return viemKeccak256(parameters.bytes as Hex);
+    },
+
+    encodeAbiParameters(parameters: {
+      readonly types: readonly string[];
+      readonly values: readonly unknown[];
+    }): `0x${string}` {
+      // viem wants parsed parameter descriptors, not type strings; `parseAbiParameters` turns the
+      // comma-joined list into them. Standard encoding, which is what `abi.encode` in Solidity is.
+      return viemEncodeAbiParameters(parseAbiParameters(parameters.types.join(',')), parameters.values as never);
+    },
+
+    getCreate2Address(parameters: {
+      readonly from: string;
+      readonly salt: string;
+      readonly initCodeHash: string;
+    }): `0x${string}` {
+      return viemGetCreate2Address({
+        from: parameters.from as Address,
+        salt: parameters.salt as Hex,
+        bytecodeHash: parameters.initCodeHash as Hex,
+      });
+    },
+  };
+}
+
+////////////////////////////////////////////////////////////////////////////////
 
 export function createViemEthereumAdapters(args: {
   readonly rpcUrl: string;
@@ -109,3 +169,5 @@ export function createViemEthereumAdapters(args: {
     },
   };
 }
+
+////////////////////////////////////////////////////////////////////////////////

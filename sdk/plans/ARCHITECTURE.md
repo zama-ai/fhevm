@@ -219,7 +219,7 @@ Four parts, all of which already exist in v12 and v13 at parity:
 
 | part                                                            | v12 / v13 implementation                                        |
 | --------------------------------------------------------------- | --------------------------------------------------------------- |
-| a real tarball, in a gitignored `tarball/`                      | `pack:tarball` → `internal/cli/createPackageTarball.ts`         |
+| a real tarball, in the shared gitignored `sdk/tarballs/`        | `pack:tarball` → `sdk/scripts/pack-tarball.ts`                 |
 | a consumer fixture that installs it **by its published name**   | `prepare:tarball-consumer` → `test/ts/node_modules`             |
 | tests that run against the fixture, not against source          | `test:tarball:run` → `vitest --config test/ts/vitest.config.ts` |
 | a typecheck + lint of the consumer, in consumer resolution mode | `lint:tarball-consumer`                                         |
