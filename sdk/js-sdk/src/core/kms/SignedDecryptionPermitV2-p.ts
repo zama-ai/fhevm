@@ -4,7 +4,7 @@ import type { BytesHex, ChecksummedAddress, Uint8Number } from '../types/primiti
 import type { KmsSignDecryptionPermitContext, KmsSignDecryptionPermitParameters } from './SignedDecryptionPermit-p.js';
 import type { KmsExtraData } from '../types/kms-p.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
-import { assertRecordNonNullableProperty } from '../base/record.js';
+import { assertRecordNonNullableProperty, isRecordNonNullableProperty } from '../base/record.js';
 import { assertRecordBytesHexProperty } from '../base/bytes.js';
 import { addressToChecksummedAddress, assertIsAddress, assertRecordAddressProperty } from '../base/address.js';
 import { assertRecordStringProperty } from '../base/string.js';
@@ -196,6 +196,16 @@ export async function parseSignedDecryptionPermitV2(
   assertRecordBytesHexProperty(permit, 'signature', permitName, options);
   assertRecordAddressProperty(permit, 'signerAddress', permitName, options);
 
+  // Delegation is post-sign metadata for a V2 permit (not part of the signed
+  // eip712 message — see createUnsignedDecryptionPermitEip712V2), so it has
+  // to be read from the permit object itself rather than derived from the
+  // eip712, mirroring the optional-address handling in signDecryptionPermitV2.
+  let delegatorAddress: ChecksummedAddress | undefined;
+  if (isRecordNonNullableProperty(permit, 'delegatorAddress')) {
+    assertRecordAddressProperty(permit, 'delegatorAddress', permitName, options);
+    delegatorAddress = addressToChecksummedAddress(permit.delegatorAddress);
+  }
+
   const eip712 = permit.eip712;
   assertRecordStringProperty(eip712, 'primaryType', `${permitName}.eip712`, options);
   const primaryType = (eip712 as Record<string, unknown>).primaryType;
@@ -219,6 +229,7 @@ export async function parseSignedDecryptionPermitV2(
     signature: permit.signature,
     eip712,
     signerAddress,
+    delegatorAddress,
   });
 }
 

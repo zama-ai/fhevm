@@ -176,6 +176,77 @@ export function defineClientDecryptUnifiedPermitTests(parameters: {
       expect(permit.signerAddress.toLowerCase()).toBe(config.account.address.toLowerCase());
     });
 
+    it('signs and parses a manually-built DELEGATED unified permit (createUnsignedUnifiedDecryptionPermitEip712)', async () => {
+      // Delegation is post-sign metadata for a V2 permit — not part of the signed
+      // eip712 message — so it must be attached to the object handed to
+      // parseSignedDecryptionPermit rather than derived from the eip712 itself.
+      // This is the offline-signing shape: build unsigned, sign out-of-process,
+      // reconstruct the permit object manually with `delegatorAddress` attached.
+      const client = await createReadyClient();
+      const transportKeyPair = await client.generateTransportKeyPair();
+
+      const eip712 = await createUnsignedUnifiedDecryptionPermitEip712(client, {
+        transportKeyPair,
+        contractAddresses: [config.fheTestAddress],
+        durationSeconds: 24 * 3600,
+        startTimestamp: Math.floor(Date.now() / 1000) - 5,
+        signerAddress: config.bob.account.address,
+      });
+
+      const signature = await config.bob.account.signTypedData({
+        domain: eip712.domain,
+        types: eip712.types,
+        primaryType: 'UserDecryptRequestVerification',
+        message: eip712.message,
+      } as Parameters<typeof config.bob.account.signTypedData>[0]);
+
+      const permit = await client.parseSignedDecryptionPermit({
+        serializedPermit: {
+          version: 2,
+          eip712,
+          signature,
+          signerAddress: config.bob.account.address,
+          delegatorAddress: config.alice.account.address,
+        },
+        transportKeyPair,
+      });
+
+      expect(permit.version).toBe(2);
+      expect(permit.isDelegated).toBe(true);
+      expect(permit.signerAddress.toLowerCase()).toBe(config.bob.account.address.toLowerCase());
+      expect(permit.encryptedDataOwnerAddress.toLowerCase()).toBe(config.alice.account.address.toLowerCase());
+    });
+
+    it('should serialize, parse and verify a DELEGATED unified decryption permit', async () => {
+      const client = await createReadyClient();
+      const transportKeyPair = await client.generateTransportKeyPair();
+
+      const signedPermit = await client.signUnifiedDecryptionPermit({
+        transportKeyPair,
+        contractAddresses: [config.fheTestAddress],
+        durationSeconds: 24 * 3600,
+        startTimestamp: Math.floor(Date.now() / 1000) - 5,
+        signerAddress: config.bob.account.address,
+        signer: config.bob.account,
+        delegatorAddress: config.alice.account.address,
+      });
+      expect(signedPermit.version).toBe(2);
+      expect(signedPermit.isDelegated).toBe(true);
+
+      const serialized = await client.serializeSignedDecryptionPermit({ signedPermit });
+      expect(serialized.version).toBe(2);
+      expect(serialized.delegatorAddress?.toLowerCase()).toBe(config.alice.account.address.toLowerCase());
+
+      const parsed = await client.parseSignedDecryptionPermit({
+        serializedPermit: serialized,
+        transportKeyPair,
+      });
+      expect(parsed.version).toBe(2);
+      expect(parsed.isDelegated).toBe(true);
+      expect(parsed.signerAddress.toLowerCase()).toBe(config.bob.account.address.toLowerCase());
+      expect(parsed.encryptedDataOwnerAddress.toLowerCase()).toBe(config.alice.account.address.toLowerCase());
+    });
+
     // ┌─────────────────────────────────────────────────────────────────────┐
     // │  Per-type decrypt tests (V2 permit, routed through the v3 relayer   │
     // │  user-decrypt endpoint via fetchKmsSigncryptedSharesV2)             │
