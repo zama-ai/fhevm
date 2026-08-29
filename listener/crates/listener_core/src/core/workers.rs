@@ -838,7 +838,7 @@ impl Handler for FinalCatchupHandler {
         // semantics as the live catchup orchestrator.
         if !subranges.is_empty() {
             metrics::counter!(
-                "listener_catchup_subranges_total",
+                "listener_final_catchup_subranges_total",
                 "chain_id" => self.listener.chain_id().to_string()
             )
             .increment(subranges.len() as u64);

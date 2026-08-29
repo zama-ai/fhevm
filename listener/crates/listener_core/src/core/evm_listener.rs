@@ -1157,7 +1157,7 @@ impl EvmListener {
         payload: CatchupPayload,
     ) -> Result<Vec<CatchupPayload>, EvmListenerError> {
         metrics::counter!(
-            "listener_catchup_iterations_total",
+            "listener_final_catchup_iterations_total",
             "chain_id" => self.chain_id.to_string()
         )
         .increment(1);
@@ -1170,7 +1170,7 @@ impl EvmListener {
 
         if payload.block_start > final_height {
             metrics::counter!(
-                "listener_catchup_skipped_above_head_total",
+                "listener_final_catchup_skipped_above_head_total",
                 "chain_id" => self.chain_id.to_string()
             )
             .increment(1);
@@ -1273,7 +1273,7 @@ impl EvmListener {
         let (catchup_join, fetcher_join) = tokio::join!(catchup_handle, fetcher_handle);
 
         metrics::histogram!(
-            "listener_catchup_range_duration_seconds",
+            "listener_final_catchup_range_duration_seconds",
             "chain_id" => self.chain_id.to_string()
         )
         .record(range_start_time.elapsed().as_secs_f64());
@@ -1476,6 +1476,12 @@ impl EvmListener {
     /// This function does not panic. Task panics are caught via `JoinError`
     /// and converted to `EvmListenerError::InvariantViolation`.
     pub async fn fetch_final_blocks(&self) -> Result<(), EvmListenerError> {
+        metrics::counter!(
+            "listener_finality_iterations_total",
+            "chain_id" => self.chain_id.to_string()
+        )
+        .increment(1);
+
         // We don't need to dedup the message, the flow lock + ack will handle the deduplication by itself.
 
         // Step 1: Get the latest final block from DB (the finality tip).
@@ -1494,6 +1500,12 @@ impl EvmListener {
 
         let final_tip_number = final_tip.block_number;
 
+        metrics::gauge!(
+            "listener_final_tip_block_number",
+            "chain_id" => self.chain_id.to_string()
+        )
+        .set(final_tip_number as f64);
+
         debug!(
             final_tip_number = final_tip_number,
             final_tip_hash = %final_tip.block_hash,
@@ -1506,6 +1518,12 @@ impl EvmListener {
             .get_final_block_number()
             .await
             .map_err(|e| EvmListenerError::ChainHeightError { source: e })?;
+
+        metrics::gauge!(
+            "listener_final_height_block_number",
+            "chain_id" => self.chain_id.to_string()
+        )
+        .set(final_height as f64);
 
         // Step 3: If finality hasn't advanced beyond our tip, there's nothing to do
         if final_height <= final_tip_number {
@@ -1532,6 +1550,7 @@ impl EvmListener {
         );
 
         // Step 5: Create shared state for producer-consumer coordination
+        let range_start_time = Instant::now();
         let buffer = AsyncSlotBuffer::<FetchedBlock>::new(range_length);
         let cancel_token = CancellationToken::new();
 
@@ -1555,6 +1574,12 @@ impl EvmListener {
         // Step 7: Await both tasks to completion.
         // tokio::join! ensures neither task is abandoned even if the other completes/fails first.
         let (final_join_result, fetcher_join_result) = tokio::join!(final_handle, fetcher_handle);
+
+        metrics::histogram!(
+            "listener_finality_range_fetch_duration_seconds",
+            "chain_id" => self.chain_id.to_string()
+        )
+        .record(range_start_time.elapsed().as_secs_f64());
 
         // Step 8: Unwrap JoinHandle results — a JoinError means the task panicked,
         // which is a critical bug (we never panic in our code).

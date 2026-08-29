@@ -91,6 +91,17 @@ async fn main() {
         listener_core::metrics::describe_metrics();
         listener_core::metrics::init_gauges(settings.blockchain.chain_id);
         listener_core::metrics::init_counters(settings.blockchain.chain_id);
+        // Whether the finality flow runs on this chain — lets dashboards and
+        // alerts distinguish "finality off" from "finality stalled".
+        metrics::gauge!(
+            "listener_finality_active",
+            "chain_id" => settings.blockchain.chain_id.to_string()
+        )
+        .set(if settings.blockchain.finality_active {
+            1.0
+        } else {
+            0.0
+        });
     }
 
     // Initialize database connection
@@ -736,6 +747,30 @@ async fn main() {
             broker::metrics::QueueDepthPollTarget::new(
                 cleaner_topic.clone(),
                 routing::CLEAN_BLOCKS,
+            ),
+            broker::metrics::QueueDepthPollTarget::new(
+                final_cleaner_topic.clone(),
+                routing::CLEAN_FINAL_BLOCKS,
+            ),
+            broker::metrics::QueueDepthPollTarget::new(
+                finality_topic.clone(),
+                routing::FETCH_FINAL_BLOCK,
+            ),
+            broker::metrics::QueueDepthPollTarget::new(
+                Topic::new(routing::CATCHUP).with_namespace(chain_id),
+                routing::CATCHUP,
+            ),
+            broker::metrics::QueueDepthPollTarget::new(
+                Topic::new(routing::RANGE_CATCHUP).with_namespace(chain_id),
+                routing::RANGE_CATCHUP,
+            ),
+            broker::metrics::QueueDepthPollTarget::new(
+                Topic::new(routing::FINAL_CATCHUP).with_namespace(chain_id),
+                routing::FINAL_CATCHUP,
+            ),
+            broker::metrics::QueueDepthPollTarget::new(
+                Topic::new(routing::RANGE_FINAL_CATCHUP).with_namespace(chain_id),
+                routing::RANGE_FINAL_CATCHUP,
             ),
         ],
         Duration::from_secs(15),
