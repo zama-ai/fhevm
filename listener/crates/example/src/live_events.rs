@@ -24,7 +24,7 @@ use tracing::{info, warn};
 use crate::transfer::log_transfers;
 
 /// How far back to backfill once we know the live head.
-const CATCHUP_DEPTH: u64 = 2_000;
+const CATCHUP_DEPTH: u64 = 100;
 
 /// Build the raw WATCH command for the live flow: an address-level filter
 /// pinned to `token`, with `filter_type: None` (defaults to a LIVE watcher).

@@ -30,7 +30,7 @@ use crate::transfer::log_transfers;
 /// How far back to replay finalized blocks once we know the final head.
 /// The listener clamps the range to the finalized head anyway, so a request
 /// can never reach into the unfinalized window.
-const FINAL_CATCHUP_DEPTH: u64 = 200;
+const FINAL_CATCHUP_DEPTH: u64 = 100;
 
 /// Handles of the two spawned consumers: `(final, final_catchup)`.
 pub type FinalHandles = (
