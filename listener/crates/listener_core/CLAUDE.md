@@ -93,8 +93,10 @@ Optional cryptographic verification: transaction root, receipt root, block hash.
 ## Error Handling
 
 Handlers classify errors for the broker:
-- **Transient** (`HandlerError::Transient`): DB errors, RPC failures, broker publish failures, payload build errors → broker retries (max 5).
-- **Permanent** (`HandlerError::Permanent`): Invariant violations, deserialization failures → dead-letter queue, no retry.
+- **Transient** (`HandlerError::Transient`): DB errors, RPC failures, broker publish failures, payload build errors → broker retries indefinitely (delivery count not incremented).
+- **Permanent** (`HandlerError::Permanent`): Invariant violations, deserialization failures → dead-letter queue after `max_retries`.
+
+Full failure-behavior matrix (Postgres/broker/RPC outages, missing consumer queues, per flow): see `docs/error_flows.md` at the repo root.
 
 ## Known Accepted Limitations
 
