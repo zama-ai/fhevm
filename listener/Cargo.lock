@@ -2215,7 +2215,7 @@ dependencies = [
 
 [[package]]
 name = "consumer"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "alloy-primitives",
  "async-trait",
@@ -2774,7 +2774,7 @@ dependencies = [
 
 [[package]]
 name = "example"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "alloy",
  "alloy-primitives",
@@ -3941,7 +3941,7 @@ checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
 
 [[package]]
 name = "listener_core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "alloy",
  "anyhow",
@@ -4688,7 +4688,7 @@ dependencies = [
 
 [[package]]
 name = "primitives"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "alloy-primitives",
  "serde",
