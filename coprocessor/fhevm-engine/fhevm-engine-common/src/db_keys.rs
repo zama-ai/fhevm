@@ -245,7 +245,7 @@ impl DbKeyCache {
                 safe_deserialize_key(&server_key_blob)?
             };
 
-            check_re_randomization_support(&key_id, &sks)?;
+            log_re_randomization_support(&key_id, &sks);
 
             Ok(DbKey {
                 key_id,
@@ -297,7 +297,7 @@ impl DbKeyCache {
                     .collect::<Result<Vec<_>, _>>()?
             };
 
-            check_re_randomization_support(&key_id, &sks)?;
+            log_re_randomization_support(&key_id, &sks);
 
             Ok(DbKey {
                 key_id,
@@ -311,27 +311,18 @@ impl DbKeyCache {
     }
 }
 
-/// Every operation re-randomizes its inputs, so a server key without
-/// re-randomization material fails every computation. Reject it at key load
-/// instead of once per operation, and record which mode the key carries: the
-/// mode travels with the key material (the scheduler asks for
-/// `UseLegacyCPKIfNeeded` and takes whatever the key supports), so this is the
-/// only place a mode change coming from keygen becomes observable.
-fn check_re_randomization_support(key_id: &DbKeyId, sks: &tfhe::ServerKey) -> anyhow::Result<()> {
-    let support = sks.re_randomization_support();
-    if support == tfhe::ReRandomizationSupport::NoSupport {
-        anyhow::bail!(
-            "key {} carries no re-randomization material; keygen must enable \
-             ciphertext re-randomization",
-            hex::encode(key_id)
-        );
-    }
+/// Records which re-randomization mode a key carries. The mode travels with
+/// the key material (callers ask for `UseLegacyCPKIfNeeded` and take whatever
+/// the key supports), so a mode change coming from keygen is otherwise
+/// invisible. Loading is not refused here: the cache is shared with readers
+/// that never re-randomize under the server key, and a single unusable key
+/// must not fail the whole batch of keys it was queried with.
+fn log_re_randomization_support(key_id: &DbKeyId, sks: &tfhe::ServerKey) {
     info!(
         "Key re-randomization support: key_id={:?}, support={:?}",
         hex::encode(key_id),
-        support
+        sks.re_randomization_support()
     );
-    Ok(())
 }
 
 /// Returns the input `ServerKey` with noise-squashing material
@@ -378,6 +369,25 @@ pub struct DbKey {
     pub pks: tfhe::CompactPublicKey,
 
     pub cks: Option<tfhe::ClientKey>,
+}
+
+impl DbKey {
+    /// Fails unless this key can re-randomize under its server key. Callers
+    /// that re-randomize every operation input want this once per key rather
+    /// than an opaque failure on every operation; callers that re-randomize
+    /// under a compact public key of their own (zkproof-worker) do not need it
+    /// at all, which is why the requirement lives here and not at key load.
+    pub fn require_re_randomization_support(&self) -> anyhow::Result<tfhe::ReRandomizationSupport> {
+        let support = self.sks.re_randomization_support();
+        if support == tfhe::ReRandomizationSupport::NoSupport {
+            anyhow::bail!(
+                "key {} carries no re-randomization material; keygen must enable \
+                 ciphertext re-randomization",
+                hex::encode(&self.key_id)
+            );
+        }
+        Ok(support)
+    }
 }
 
 const CHUNK_SIZE: i32 = 64 * 1024; // 64KiB

@@ -2294,6 +2294,20 @@ async fn build_transaction_graph_and_execute<'a>(
             }
         };
 
+        // Every operation re-randomizes its inputs, so a key without
+        // re-randomization material cannot compute at all. Say so once here
+        // instead of failing every operation in the graph with a scheduler
+        // error that does not name the cause.
+        if let Err(err) = keys.require_re_randomization_support() {
+            let cerr = CoprocessorError::MissingKeys {
+                reason: err.to_string(),
+            };
+            error!(target: "tfhe_worker", { error = %cerr }, "unusable key");
+            telemetry::set_current_span_error(&cerr);
+            WORKER_ERRORS_COUNTER.inc();
+            return Err(cerr);
+        }
+
         // Schedule computations in parallel as dependences allow
         tfhe::set_server_key(keys.sks.clone());
         let mut sched = Scheduler::new(

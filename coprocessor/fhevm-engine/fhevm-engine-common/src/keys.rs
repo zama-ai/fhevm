@@ -254,4 +254,121 @@ mod tests {
         let decrypted: u64 = ct.decrypt(&client_key);
         assert_eq!(decrypted, clear);
     }
+
+    /// Regenerates the `fhevm-keys/xof-cks` and `fhevm-keys/xof-keyset` LFS
+    /// fixtures so that the keyset tests and benchmarks run on carries the
+    /// keyswitch-free re-randomization key.
+    ///
+    /// Every private key is reused verbatim: the only change to the client key
+    /// is the re-randomization mode it records, and the derived compact public
+    /// key is a function of the compute secret key it already holds. So the
+    /// ciphertext fixtures encrypted under these keys (notably
+    /// `sns-worker/ciphertext64.json`) stay valid across the rotation.
+    ///
+    /// The public material is regenerated, so the keyset bytes — and the
+    /// `xof_keyset_sha256` the benchmark harness records — do change. The
+    /// seeds are fixed because these are public test keys and reproducibility
+    /// is worth more here than fresh randomness.
+    ///
+    /// Run with:
+    ///   `cargo test --release -p fhevm-engine-common --lib -- --ignored \
+    ///       --nocapture regenerate_xof_fixtures_with_derived_re_randomization`
+    /// then commit the two updated LFS blobs.
+    #[test]
+    #[ignore = "regenerates the xof-cks/xof-keyset LFS fixtures"]
+    fn regenerate_xof_fixtures_with_derived_re_randomization() {
+        use crate::utils::{safe_deserialize_key, safe_serialize_key};
+        use tfhe::core_crypto::commons::math::random::RandomGenerator;
+        use tfhe::core_crypto::prelude::DefaultRandomGenerator;
+        use tfhe::xof_key_set::CompressedXofKeySet;
+        use tfhe::XofSeed;
+
+        const CKS_PATH: &str = "../fhevm-keys/xof-cks";
+        const KEYSET_PATH: &str = "../fhevm-keys/xof-keyset";
+
+        let client_key: ClientKey =
+            safe_deserialize_key(&std::fs::read(CKS_PATH).expect("read xof-cks fixture"))
+                .expect("deserialize xof-cks");
+
+        let (
+            integer_key,
+            dedicated_compact_private_key,
+            compression_key,
+            noise_squashing_key,
+            noise_squashing_compression_key,
+            previous_mode,
+            oprf_private_key,
+            tag,
+        ) = client_key.into_raw_parts();
+        println!(
+            "re-randomization mode: {previous_mode:?} -> {:?}",
+            tfhe_re_randomization_params()
+        );
+
+        let client_key = ClientKey::from_raw_parts(
+            integer_key,
+            dedicated_compact_private_key,
+            compression_key,
+            noise_squashing_key,
+            noise_squashing_compression_key,
+            Some(tfhe_re_randomization_params()),
+            oprf_private_key,
+            tag,
+        );
+
+        let public_seed = XofSeed::new(b"fhevm-test-keyset-public".to_vec(), *b"TFHE_GEN");
+        let private_generator = RandomGenerator::<DefaultRandomGenerator>::new(XofSeed::new(
+            b"fhevm-test-keyset-noise".to_vec(),
+            *b"TFHEKGen",
+        ));
+        let keyset = CompressedXofKeySet::generate_with_pre_seeded_generator(
+            public_seed,
+            &client_key,
+            private_generator,
+        )
+        .expect("generate CompressedXofKeySet");
+        assert!(keyset.has_re_randomization_key());
+        assert!(keyset.has_noise_squashing_key());
+        assert!(keyset.has_compression_key());
+
+        // Written before the (memory-hungry) decompression check below, so a
+        // machine that cannot decompress still produces the fixtures.
+        let keyset_bytes = safe_serialize_key(&keyset);
+        println!("writing {} ({} bytes)", KEYSET_PATH, keyset_bytes.len());
+        std::fs::write(KEYSET_PATH, &keyset_bytes).expect("write xof-keyset fixture");
+        std::fs::write(CKS_PATH, safe_serialize_key(&client_key)).expect("write xof-cks fixture");
+
+        let (compact_public_key, server_key) = keyset
+            .decompress()
+            .expect("decompress the regenerated keyset")
+            .into_raw_parts();
+            .into_raw_parts();
+        assert_eq!(
+            server_key.re_randomization_support(),
+            tfhe::ReRandomizationSupport::DerivedCPKWithoutKeySwitch
+        );
+
+        // The regenerated public material must still speak to the reused
+        // secret material: encrypt under the keyset's own public key,
+        // re-randomize the way the scheduler does, and decrypt with the
+        // client key we just wrote back.
+        use tfhe::prelude::{CiphertextList, FheDecrypt, ReRandomize};
+        set_server_key(server_key);
+        let mut builder = tfhe::CompactCiphertextList::builder(&compact_public_key);
+        builder.push(7u64);
+        let expanded = builder.build().expand().expect("expand compact list");
+        let mut ct: tfhe::FheUint64 = expanded.get(0).expect("get(0)").expect("element 0");
+
+        let mut context = tfhe::ReRandomizationContext::new(
+            *b"TFHE_Rrd",
+            [b"FheUint64".as_slice()],
+            *b"TFHE_Enc",
+        );
+        context.add_ciphertext(&ct);
+        let mut seed_gen = context.finalize();
+        ct.re_randomize(&compact_public_key, seed_gen.next_seed().unwrap())
+            .expect("re-randomize under the derived key");
+        let decrypted: u64 = ct.decrypt(&client_key);
+        assert_eq!(decrypted, 7u64);
+    }
 }
