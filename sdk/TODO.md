@@ -26,3 +26,4 @@ declare namespace WebAssembly {
 - remove check-lint from subpackages
 - add check-lint policy at the root
 - hardcoded const mnemonic = 'adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer'; is forbidden, import centralized constansts
+- cleanup /Users/alex/src/me/zama-ai/fhevm/sdk/scripts
