@@ -3,14 +3,14 @@ use std::sync::Arc;
 #[cfg(feature = "gpu")]
 use tfhe::core_crypto::gpu::get_number_of_gpus;
 #[cfg(feature = "gpu")]
-use tfhe::shortint::parameters::v1_5::meta::cpu::V1_5_META_PARAM_CPU_2_2_KS_PBS_PKE_TO_SMALL_ZKV2_TUNIFORM_2M128 as gpu_meta_parameters;
+use tfhe::shortint::parameters::v1_6::meta::cpu::V1_6_META_PARAM_CPU_2_2_KS_PBS_PKE_TO_SMALL_ZKV2_TUNIFORM_2M128 as gpu_meta_parameters;
 use tfhe::shortint::AtomicPatternParameters;
 use tfhe::{
     set_server_key,
     shortint::parameters::{
         meta::DedicatedCompactPublicKeyParameters,
-        v1_5::meta::cpu::V1_5_META_PARAM_CPU_2_2_KS_PBS_PKE_TO_SMALL_ZKV2_TUNIFORM_2M128 as cpu_meta_parameters,
-        CompressionParameters, MetaNoiseSquashingParameters, ShortintKeySwitchingParameters,
+        v1_6::meta::cpu::V1_6_META_PARAM_CPU_2_2_KS_PBS_PKE_TO_SMALL_ZKV2_TUNIFORM_2M128 as cpu_meta_parameters,
+        CompressionParameters, MetaNoiseSquashingParameters, ReRandomizationParameters,
     },
     zk::CompactPkeCrs,
     ClientKey, CompactPublicKey, CompressedServerKey, Config, ConfigBuilder, ServerKey,
@@ -31,9 +31,17 @@ pub const TFHE_COMPACT_PK_PARAMS: DedicatedCompactPublicKeyParameters = cpu_meta
 pub const TFHE_NOISE_SQUASHING_PARAMS: MetaNoiseSquashingParameters = cpu_meta_parameters
     .noise_squashing_parameters
     .expect("Missing noise squashing parameters");
-pub const TFHE_PKS_RERANDOMIZATION_PARAMS: ShortintKeySwitchingParameters = TFHE_COMPACT_PK_PARAMS
-    .re_randomization_parameters
-    .expect("Missing rerandomisation parameters");
+/// Re-randomization mode carried by the meta parameter set. The v1_6 sets
+/// resolve to [`ReRandomizationParameters::DerivedCPKWithoutKeySwitch`]: the
+/// zeros are encrypted under a compact public key derived from the compute
+/// key, so no keyswitch from the dedicated-CPK domain is needed (and no
+/// re-randomization keyswitching key is generated). Not a `const` because
+/// `MetaParameters::rerandomization_parameters` is not a `const fn`.
+pub fn tfhe_re_randomization_params() -> ReRandomizationParameters {
+    cpu_meta_parameters
+        .rerandomization_parameters()
+        .expect("Missing rerandomisation configuration")
+}
 
 #[cfg(feature = "gpu")]
 pub const TFHE_PARAMS: AtomicPatternParameters = gpu_meta_parameters.compute_parameters;
@@ -88,7 +96,7 @@ impl FhevmKeys {
             decompression_key,
             _noise_squashing_key,
             _noise_squashing_compression_key,
-            re_randomization_keyswitching_key,
+            re_randomization_key,
             _oprf_key,
             tag,
         ) = server_key.clone().into_raw_parts();
@@ -99,7 +107,7 @@ impl FhevmKeys {
             decompression_key,
             None, // noise squashing key excluded
             None, // noise squashing compression key excluded
-            re_randomization_keyswitching_key,
+            re_randomization_key,
             None, // oprf key excluded
             tag,
         );
@@ -130,7 +138,7 @@ impl FhevmKeys {
                 TFHE_COMPACT_PK_PARAMS.pke_params,
                 TFHE_COMPACT_PK_PARAMS.ksk_params,
             ))
-            .enable_ciphertext_re_randomization(TFHE_PKS_RERANDOMIZATION_PARAMS)
+            .enable_ciphertext_re_randomization(tfhe_re_randomization_params())
             .build()
     }
 
@@ -186,5 +194,64 @@ impl From<FhevmKeys> for SerializedFhevmKeys {
             server_key: safe_serialize_key(&f.server_key),
             server_key_without_ns: safe_serialize_key(&f.server_key_without_ns),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The re-randomization mode is fixed by the meta parameter set, and
+    /// changing it changes the bytes every coprocessor produces. Pin it here
+    /// so a parameter-set bump cannot flip it silently.
+    #[test]
+    fn re_randomization_is_derived_cpk_without_keyswitch() {
+        assert!(matches!(
+            tfhe_re_randomization_params(),
+            ReRandomizationParameters::DerivedCPKWithoutKeySwitch
+        ));
+    }
+
+    /// Exercises the keyswitch-free path against the compute and public-key
+    /// parameters this crate pins, the way the scheduler calls it: a
+    /// `CompactPublicKey` is still handed over (`UseLegacyCPKIfNeeded`), and a
+    /// derived-mode server key must ignore it, take the derived key and leave
+    /// the plaintext intact.
+    #[test]
+    fn derived_re_randomization_round_trip() {
+        use tfhe::prelude::{FheDecrypt, FheEncrypt, ReRandomize};
+        use tfhe::{FheUint64, ReRandomizationContext, ReRandomizationSupport};
+
+        // Compression and noise squashing are irrelevant here and dominate
+        // key generation time, so they are left out.
+        let config = ConfigBuilder::with_custom_parameters(TFHE_PARAMS)
+            .use_dedicated_compact_public_key_parameters((
+                TFHE_COMPACT_PK_PARAMS.pke_params,
+                TFHE_COMPACT_PK_PARAMS.ksk_params,
+            ))
+            .enable_ciphertext_re_randomization(tfhe_re_randomization_params())
+            .build();
+
+        let client_key = ClientKey::generate(config);
+        let compact_public_key = CompactPublicKey::new(&client_key);
+        let server_key = ServerKey::new(&client_key);
+        assert_eq!(
+            server_key.re_randomization_support(),
+            ReRandomizationSupport::DerivedCPKWithoutKeySwitch
+        );
+        set_server_key(server_key);
+
+        let clear = 0xdead_beef_u64;
+        let mut ct = FheUint64::encrypt(clear, &client_key);
+
+        let mut context =
+            ReRandomizationContext::new(*b"TFHE_Rrd", [b"FheUint64".as_slice()], *b"TFHE_Enc");
+        context.add_ciphertext(&ct);
+        let mut seed_gen = context.finalize();
+        ct.re_randomize(&compact_public_key, seed_gen.next_seed().unwrap())
+            .expect("re-randomize under the derived key");
+
+        let decrypted: u64 = ct.decrypt(&client_key);
+        assert_eq!(decrypted, clear);
     }
 }

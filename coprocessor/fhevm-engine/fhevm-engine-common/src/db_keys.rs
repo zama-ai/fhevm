@@ -245,6 +245,8 @@ impl DbKeyCache {
                 safe_deserialize_key(&server_key_blob)?
             };
 
+            check_re_randomization_support(&key_id, &sks)?;
+
             Ok(DbKey {
                 key_id,
                 sequence_number,
@@ -295,6 +297,8 @@ impl DbKeyCache {
                     .collect::<Result<Vec<_>, _>>()?
             };
 
+            check_re_randomization_support(&key_id, &sks)?;
+
             Ok(DbKey {
                 key_id,
                 sequence_number,
@@ -305,6 +309,29 @@ impl DbKeyCache {
             })
         }
     }
+}
+
+/// Every operation re-randomizes its inputs, so a server key without
+/// re-randomization material fails every computation. Reject it at key load
+/// instead of once per operation, and record which mode the key carries: the
+/// mode travels with the key material (the scheduler asks for
+/// `UseLegacyCPKIfNeeded` and takes whatever the key supports), so this is the
+/// only place a mode change coming from keygen becomes observable.
+fn check_re_randomization_support(key_id: &DbKeyId, sks: &tfhe::ServerKey) -> anyhow::Result<()> {
+    let support = sks.re_randomization_support();
+    if support == tfhe::ReRandomizationSupport::NoSupport {
+        anyhow::bail!(
+            "key {} carries no re-randomization material; keygen must enable \
+             ciphertext re-randomization",
+            hex::encode(key_id)
+        );
+    }
+    info!(
+        "Key re-randomization support: key_id={:?}, support={:?}",
+        hex::encode(key_id),
+        support
+    );
+    Ok(())
 }
 
 /// Returns the input `ServerKey` with noise-squashing material
@@ -321,7 +348,7 @@ fn strip_ns_from_server_key(server_key: tfhe::ServerKey) -> tfhe::ServerKey {
         decompression_key,
         _noise_squashing_key,
         _noise_squashing_compression_key,
-        re_randomization_keyswitching_key,
+        re_randomization_key,
         oprf_key,
         tag,
     ) = server_key.into_raw_parts();
@@ -332,7 +359,7 @@ fn strip_ns_from_server_key(server_key: tfhe::ServerKey) -> tfhe::ServerKey {
         decompression_key,
         None, // noise squashing key excluded
         None, // noise squashing compression key excluded
-        re_randomization_keyswitching_key,
+        re_randomization_key,
         oprf_key,
         tag,
     )
