@@ -9,7 +9,7 @@
 //      choose gets wrong.
 //   2. A failed broadcast must not consume a nonce. Driven with a stub signer, because making a real
 //      node reject one send mid-deploy is not reproducible.
-import { deploy, precomputeAddresses } from '@fhevm/host-contracts-cleartext/ts';
+import { deploy, precomputeAddresses } from '../../pkg/ts/index.ts';
 import { ethers as EthersT } from 'ethers';
 import { expect, test } from 'vitest';
 import { startAnvil, stopAnvil, waitForAnvil } from '@fhevm/sdk-common-dev';

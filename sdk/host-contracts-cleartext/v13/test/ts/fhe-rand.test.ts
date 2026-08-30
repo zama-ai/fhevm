@@ -1,4 +1,4 @@
-import { deploy } from '@fhevm/host-contracts-cleartext/ts';
+import { deploy } from '../../pkg/ts/index.ts';
 import { createPublicClient, createWalletClient, http, parseEventLogs, type Address, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { foundry } from 'viem/chains';

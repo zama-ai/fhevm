@@ -2,24 +2,11 @@
 // from the same account onto the same ZamaConfig addresses. Decided in sdk/cleartext-config.json, which
 // each generation's test/cleartext-config-mirror.test.ts checks these against.
 
-import { dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { workspaceTarballsDirAbsPath } from './paths.ts';
+/** Default port used by the local Anvil node. */
+export const ANVIL_PORT = 8545;
 
-/**
- * The one directory every workspace member packs its tarball into. Members only add to it; only the
- * workspace root clears it, so no caller may sweep `*.tgz` here.
- * @example
- * TARBALL_DIR_ABS_PATH; // '/repo/sdk/tarballs'
- */
-export const TARBALL_DIR_ABS_PATH = workspaceTarballsDirAbsPath(dirname(fileURLToPath(import.meta.url)));
-
-/**
- * Chain id of the local stack — anvil's default, and the one `ZamaConfig` returns its local branch on.
- * @example
- * LOCAL_CHAIN_ID; // 31337
- */
-export const LOCAL_CHAIN_ID = 31337;
+/** Default JSON-RPC URL exposed by the local Anvil node. */
+export const ANVIL_RPC_URL = 'http://127.0.0.1:8545';
 
 /**
  * Mnemonic the local stack is deployed from — deployer, admin accounts and anvil's funded set.
@@ -29,10 +16,18 @@ export const MNEMONIC =
   'adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer';
 
 /**
+ * Chain id of the local stack — anvil's default, and the one `ZamaConfig` returns its local branch on.
+ * @example
+ * LOCAL_CHAIN_ID; // 31337
+ */
+export const LOCAL_CHAIN_ID = 31337;
+
+/**
  * Account index of the deployer within {@link MNEMONIC}, at HD path `m/44'/60'/0'/0/5`.
  * Every stack address is `CREATE(deployer, nonce)`, so changing it moves the whole stack.
  */
 export const DEPLOYER_ADDRESS_INDEX = 5;
+export const DEPLOYER_ADDRESS = '0x8B8f5091f8b9817EF69cFC1E8B2f721BafF60DF4';
 
 /**
  * The three addresses `library-solidity/config/ZamaConfig.sol` returns from `_getLocalConfig()` on chain

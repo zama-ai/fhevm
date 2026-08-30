@@ -1,6 +1,7 @@
-// Declared in vendored/src/ethereumLibTypes.ts and copied here by scripts/sync-vendored-ts.ts, so an
+// Declared in common-vendored/src/ethereumLibTypes.ts and copied here by `fhevm-npm sync-vendored`, so an
 // adapter can be copied out of this repo without dragging the package in. Re-exported, not redeclared.
 import type {
+  AbstractEthereumHistory,
   AbstractEthereumProvider,
   AbstractEthereumSigner,
   AbstractEthereumUtils,
@@ -10,6 +11,7 @@ import type {
 } from './ethereumLibTypes.js';
 
 export type {
+  AbstractEthereumHistory,
   AbstractEthereumProvider,
   AbstractEthereumSigner,
   AbstractEthereumUtils,
@@ -96,42 +98,6 @@ export type Deployed = {
 ////////////////////////////////////////////////////////////////////////////////
 // verify
 ////////////////////////////////////////////////////////////////////////////////
-
-/**
- * The read-only chain access `verify` needs beyond `AbstractEthereumProvider`.
- *
- * A separate, optional interface rather than three more members on `AbstractEthereumProvider`, for two
- * reasons. Every existing adapter keeps compiling — this package's core flows never needed history. And
- * the capability becomes explicit at the call site: a consumer who does not pass `history` gets checks
- * reported as SKIPPED with the reason, instead of silently weaker verification.
- *
- * Both methods are a few lines over viem or ethers.
- */
-export interface AbstractEthereumHistory {
-  /** Latest block height. Bounds the event scans to the blocks an upgrade actually spanned. */
-  getBlockNumber(): Promise<bigint>;
-
-  /**
-   * Raw storage at a slot. Needed for the ERC-1967 implementation slot: a proxy's CODE is identical
-   * before and after it is pointed at a real implementation, so nothing else can tell them apart.
-   */
-  getStorageAt(parameters: { readonly address: string; readonly slot: string }): Promise<string>;
-
-  /**
-   * Logs for the named events of `abi`, emitted by `address` in `[fromBlock, toBlock]`.
-   *
-   * Only the event NAME is needed back, because every use here asserts an empty result: the question is
-   * always "did this happen at all", never "with what arguments". Decoding is left to the adapter, whose
-   * web3 library already does it.
-   */
-  getLogs(parameters: {
-    readonly address: string;
-    readonly abi: readonly unknown[];
-    readonly eventNames: readonly string[];
-    readonly fromBlock: bigint;
-    readonly toBlock: bigint | 'latest';
-  }): Promise<ReadonlyArray<{ readonly eventName: string }>>;
-}
 
 /** One verification result. `skip` means the check could not run — never that a value looked acceptable. */
 export type VerifyCheck = {

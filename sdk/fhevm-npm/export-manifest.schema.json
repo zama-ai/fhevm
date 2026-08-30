@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/zama-ai/fhevm/sdk/fhevm-npm/export-manifest.schema.json",
+  "title": "fhevm-npm export manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["packageSpecifier", "outputs", "blocks", "dummies"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "//": { "$ref": "#/$defs/comment" },
+    "packageSpecifier": { "type": "string", "minLength": 1 },
+    "printWidth": { "type": "integer", "minimum": 40, "maximum": 400, "default": 120 },
+    "outputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["exports", "testConsumers"],
+      "properties": {
+        "exports": { "$ref": "#/$defs/outputPath" },
+        "testConsumers": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "cjs": { "$ref": "#/$defs/outputPath" },
+            "esm": { "$ref": "#/$defs/outputPath" }
+          }
+        }
+      }
+    },
+    "blocks": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/exportBlock" }
+    },
+    "dummies": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["preamble", "values"],
+      "properties": {
+        "//": { "$ref": "#/$defs/comment" },
+        "preamble": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/dummyPreamble" }
+        },
+        "values": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/dummyValue" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "comment": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "array", "items": { "type": "string" } }
+      ]
+    },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$"
+    },
+    "outputPath": {
+      "type": "string",
+      "pattern": "^\\./(?:(?!\\.{1,2}(?:/|$))[A-Za-z0-9._-]+/)*(?!\\.{1,2}$)[A-Za-z0-9._-]+$"
+    },
+    "valueKind": {
+      "enum": ["function", "string", "number", "bigint", "boolean", "object", "array"]
+    },
+    "typeExportEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "//": { "$ref": "#/$defs/comment" },
+        "name": { "$ref": "#/$defs/identifier" },
+        "comment": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "valueExportEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "kind"],
+      "properties": {
+        "//": { "$ref": "#/$defs/comment" },
+        "name": { "$ref": "#/$defs/identifier" },
+        "kind": { "$ref": "#/$defs/valueKind" },
+        "member": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/identifier" },
+          "additionalProperties": { "$ref": "#/$defs/valueKind" }
+        },
+        "element": { "$ref": "#/$defs/valueKind" },
+        "comment": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "exportBlock": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["module", "typeOnly", "exports"],
+          "properties": {
+            "//": { "$ref": "#/$defs/comment" },
+            "comment": { "type": "array", "items": { "type": "string" } },
+            "module": { "type": "string", "minLength": 1 },
+            "typeOnly": { "const": true },
+            "exports": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/typeExportEntry" }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["module", "exports"],
+          "properties": {
+            "//": { "$ref": "#/$defs/comment" },
+            "comment": { "type": "array", "items": { "type": "string" } },
+            "module": { "type": "string", "minLength": 1 },
+            "typeOnly": { "const": false },
+            "exports": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/valueExportEntry" }
+            }
+          }
+        }
+      ]
+    },
+    "dummyPreamble": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type", "expression"],
+      "properties": {
+        "//": { "$ref": "#/$defs/comment" },
+        "name": { "$ref": "#/$defs/identifier" },
+        "type": { "type": "string", "minLength": 1 },
+        "expression": { "type": "string", "minLength": 1 }
+      }
+    },
+    "dummyValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "dummy"],
+      "properties": {
+        "//": { "$ref": "#/$defs/comment" },
+        "type": { "$ref": "#/$defs/identifier" },
+        "dummy": {
+          "oneOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "array", "minItems": 1, "items": { "type": "string" } }
+          ]
+        }
+      }
+    }
+  }
+}

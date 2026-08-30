@@ -24,7 +24,7 @@ Everything below was executed, not inferred.
 | 1 | A referenced project may not disable emit | `error TS6310: Referenced project '…/v12/pkg/ts/tsconfig.json' may not disable emit.` |
 | 2 | A **solution root** (`files: []`) referencing a `noEmit` project is fine | builds clean, no TS6310 |
 | 3 | Build order comes from the edges, not the root list | root referenced only v13; `tsc -b` built v12 first |
-| 4 | References work across the workspace symlink | `@fhevm/host-contracts-cleartext-dev-v12/pkg/ts/index.js` resolved through a project reference |
+| 4 | References work across the workspace symlink | `@fhevm/host-contracts-cleartext-v12-dev/pkg/ts/index.js` resolved through a project reference |
 | 5 | Incremental works | `up to date because newest input is older than output` |
 | 6 | Cross-package breakage is caught | changed v12's signature → `v13/pkg/ts/index.ts(2,51): error TS2554` |
 | 7 | `pkg/ts/tsconfig.json` and `tsconfig.build.esm.json` cover an identical file set | no `*.test.ts` / `*.bench.ts` under `pkg/ts` |
@@ -267,7 +267,7 @@ behaviour changes, so the reference work does not arrive mixed with 6 file renam
    `references: [{ "path": "../../v12/pkg/ts/tsconfig.types.json" }]`. The edge belongs on `test`,
    never on `pkg/ts`: the published payload must not depend on the previous generation. The import
    it serves is `test/ts/upgrade-e2e.test.ts:9`, `@fhevm/host-contracts-cleartext-v12/ts`.
-8. `v13/package.json` — add `@fhevm/host-contracts-cleartext-dev-v12` to `devDependencies`.
+8. `v13/package.json` — add `@fhevm/host-contracts-cleartext-v12-dev` to `devDependencies`.
 9. New `sdk/tsconfig.json` (IDE) and `sdk/tsconfig.build.json` (the `tsc -b` entry point). Verify
    the build entry orders v12 before v13.
 10. **Decide what `tsc -b` at `sdk/` means.** This is the open question, not a mechanical step: with

@@ -1,0 +1,32 @@
+{
+  "//": [
+    "Typechecks the payload sources as CommonJS, which is what pkg/package.json declares them to be.",
+    "Separate from tsconfig.build.cjs.json so `lint` can check without emitting."
+  ],
+  "extends": "../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": "src",
+    // `mocha` is required by hardhat's own config.d.ts, which types its `mocha` field as Mocha.MochaOptions.
+    "types": ["node", "mocha"],
+    "noEmit": true,
+    "module": "CommonJS",
+    "moduleResolution": "node10",
+    // node10 is deprecated in TypeScript 6 and removed in 7. It is still the resolution a Hardhat v2
+    // consumer uses, so the payload keeps being compiled and checked under it until v2 support is dropped.
+    "ignoreDeprecations": "6.0",
+    "verbatimModuleSyntax": false,
+    "esModuleInterop": true,
+
+    // `@fhevm/sdk`'s node10 marker at `core/chains/package.json` points at `../../_types/chains`, but the
+    // declarations are at `_types/core/chains`. Types only — Node uses `exports` and resolves it correctly.
+    // Remove once upstream fixes that field.
+    "paths": {
+      "@fhevm/sdk/chains": [
+        "./node_modules/@fhevm/sdk/_types/core/chains/index.d.ts",
+        "../../../../node_modules/@fhevm/sdk/_types/core/chains/index.d.ts"
+      ]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}

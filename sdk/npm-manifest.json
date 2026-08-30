@@ -1,0 +1,265 @@
+{
+  "$schema": "./npm-manifest.schema.json",
+  "inventory": {
+    "exclude": ["./js-sdk"]
+  },
+  "dependencies": {
+    "forbidden": ["solhint"]
+  },
+  "foundry": {
+    "version": "1.5.1-stable"
+  },
+  "packageJson": {
+    "published": {
+      "required": ["name", "version", "description", "license", "repository"],
+      "excluded": ["private"]
+    },
+    "dev": {
+      "required": [],
+      "excluded": []
+    },
+    "shared-helper": {
+      "required": [],
+      "excluded": []
+    },
+    "internal-consumer": {
+      "required": [],
+      "excluded": []
+    },
+    "standalone": {
+      "required": [],
+      "excluded": []
+    },
+    "non-package": {
+      "required": [],
+      "excluded": []
+    },
+    "workspace-root": {
+      "required": [],
+      "excluded": []
+    }
+  },
+  "packages": {
+    ".": {
+      "kind": "workspace-root",
+      "type": "esm",
+      "browser": false,
+      "name": "fhevm-sdk-workspace",
+      "private": true,
+      "member": false,
+      "note": "Declares the member list and the toolchain every member shares. Not a member of anything itself."
+    },
+    "./common": {
+      "kind": "shared-helper",
+      "type": "esm",
+      "browser": false,
+      "name": "@fhevm/sdk-common-dev",
+      "private": true,
+      "member": true,
+      "note": "Importable only by code that is itself never published; a published package importing it would ship an unresolvable specifier."
+    },
+    "./common-vendored": {
+      "kind": "shared-helper",
+      "type": "esm",
+      "browser": false,
+      "name": "@fhevm/sdk-vendored-dev",
+      "private": true,
+      "member": true,
+      "note": "Source of truth for files that are copied rather than imported. Its manifest.json drives `fhevm-npm sync-vendored`."
+    },
+    "./scripts": {
+      "kind": "non-package",
+      "type": "esm",
+      "browser": false,
+      "private": true,
+      "member": false,
+      "note": "Sets `type: module` so the shared .ts scripts resolve as ESM. Deliberately not a member: a script is run by relative path."
+    },
+    "./host-contracts-cleartext/v12": {
+      "kind": "dev",
+      "type": "esm",
+      "browser": false,
+      "name": "@fhevm/host-contracts-cleartext-v12-dev",
+      "private": true,
+      "member": true,
+      "publishedRelPath": "./host-contracts-cleartext/v12/pkg",
+      "dependencyGroup": "host-contracts-cleartext/v12",
+      "note": "Older generation. Reachable as @fhevm/host-contracts-cleartext-v12-dev/pkg/... only because this manifest declares no `exports`."
+    },
+    "./host-contracts-cleartext/v12/pkg": {
+      "kind": "published",
+      "type": "dual",
+      "browser": false,
+      "name": "@fhevm/host-contracts-cleartext",
+      "member": false,
+      "dependencyGroup": "host-contracts-cleartext/v12",
+      "mirror": {
+        "repository": "https://github.com/zama-ai/host-contracts-cleartext"
+      },
+      "note": "Deliberately not a member: it shares its published name with v13/pkg, and listing both would make that name ambiguous.",
+      "vendored": [
+        {
+          "relPath": "./src/contracts",
+          "source": {
+            "repository": "https://github.com/zama-ai/fhevm",
+            "tag": "v0.12.5",
+            "commit": "ac18e49ea85dd3c26788fc66f9ac0ea7cfe48519",
+            "from": "host-contracts/contracts"
+          },
+          "reason": "Upstream ships Solidity with no npm package a consumer could import, so the sources are copied and frozen per generation."
+        },
+        {
+          "relPath": "./ts/types",
+          "files": ["ethereumLibTypes.ts"],
+          "source": "./sdk/common-vendored/src",
+          "reason": "A published package cannot depend on the private @fhevm/sdk-vendored-dev, so it receives a copy instead."
+        }
+      ]
+    },
+    "./host-contracts-cleartext/v12/pkg/ts": {
+      "kind": "non-package",
+      "type": "dual",
+      "browser": false,
+      "member": false,
+      "note": "Sets the module type for the optional TypeScript layer inside the published package."
+    },
+    "./host-contracts-cleartext/v12/test-consumer/cjs": {
+      "kind": "standalone",
+      "type": "cjs",
+      "browser": false,
+      "name": "host-contracts-cleartext-v12-consumer-cjs",
+      "private": true,
+      "member": false,
+      "dependencyGroup": "host-contracts-cleartext/v12",
+      "note": "A standard external CommonJS TypeScript consumer copied to a temporary directory by the owning dev package's test:consumer script."
+    },
+    "./host-contracts-cleartext/v12/test-consumer/esm": {
+      "kind": "standalone",
+      "type": "esm",
+      "browser": false,
+      "name": "host-contracts-cleartext-v12-consumer-esm",
+      "private": true,
+      "member": false,
+      "dependencyGroup": "host-contracts-cleartext/v12",
+      "note": "A standard external ESM TypeScript consumer copied to a temporary directory by the owning dev package's test:consumer script."
+    },
+    "./host-contracts-cleartext/v13": {
+      "kind": "dev",
+      "type": "esm",
+      "browser": false,
+      "name": "@fhevm/host-contracts-cleartext-v13-dev",
+      "private": true,
+      "member": true,
+      "publishedRelPath": "./host-contracts-cleartext/v13/pkg",
+      "dependencyGroup": "host-contracts-cleartext/v13",
+      "note": "Current generation, and the reference implementation every older generation is derived from."
+    },
+    "./host-contracts-cleartext/v13/pkg": {
+      "kind": "published",
+      "type": "dual",
+      "browser": false,
+      "name": "@fhevm/host-contracts-cleartext",
+      "member": true,
+      "dependencyGroup": "host-contracts-cleartext/v13",
+      "mirror": {
+        "repository": "https://github.com/zama-ai/host-contracts-cleartext"
+      },
+      "note": "The only generation whose published package is a member, so the shared name resolves to exactly one directory.",
+      "vendored": [
+        {
+          "relPath": "./src/contracts",
+          "source": {
+            "repository": "https://github.com/zama-ai/fhevm",
+            "tag": "v0.13.2",
+            "commit": "07fb05fb75f0aa6cea934088640ddb4539d0b1b9",
+            "from": "host-contracts/contracts"
+          },
+          "reason": "Upstream ships Solidity with no npm package a consumer could import, so the sources are copied and frozen per generation."
+        },
+        {
+          "relPath": "./ts/types",
+          "files": ["ethereumLibTypes.ts"],
+          "source": "./sdk/common-vendored/src",
+          "reason": "A published package cannot depend on the private @fhevm/sdk-vendored-dev, so it receives a copy instead."
+        }
+      ]
+    },
+    "./host-contracts-cleartext/v13/pkg/ts": {
+      "kind": "non-package",
+      "type": "dual",
+      "browser": false,
+      "member": false,
+      "note": "Sets the module type for the optional TypeScript layer inside the published package."
+    },
+    "./host-contracts-cleartext/v13/test-consumer/cjs": {
+      "kind": "standalone",
+      "type": "cjs",
+      "browser": false,
+      "name": "host-contracts-cleartext-v13-consumer-cjs",
+      "private": true,
+      "member": false,
+      "dependencyGroup": "host-contracts-cleartext/v13",
+      "note": "A standard external CommonJS TypeScript consumer copied to a temporary directory by the owning dev package's test:consumer script."
+    },
+    "./host-contracts-cleartext/v13/test-consumer/esm": {
+      "kind": "standalone",
+      "type": "esm",
+      "browser": false,
+      "name": "host-contracts-cleartext-v13-consumer-esm",
+      "private": true,
+      "member": false,
+      "dependencyGroup": "host-contracts-cleartext/v13",
+      "note": "A standard external ESM TypeScript consumer copied to a temporary directory by the owning dev package's test:consumer script."
+    },
+    "./hardhat/v2/plugin": {
+      "kind": "dev",
+      "type": "esm",
+      "browser": false,
+      "name": "@fhevm/hardhat-plugin-v2-dev",
+      "private": true,
+      "member": true,
+      "publishedRelPath": "./hardhat/v2/plugin/pkg",
+      "dependencyGroup": "hardhat/v2",
+      "note": "Declares no `version`, which the version rule says should be 0.0.0."
+    },
+    "./hardhat/v2/plugin/pkg": {
+      "kind": "published",
+      "type": "cjs",
+      "browser": false,
+      "name": "@fhevm/hardhat-plugin",
+      "member": true,
+      "dependencyGroup": "hardhat/v2",
+      "vendored": [
+        {
+          "relPath": "./src/internal/vendored",
+          "files": ["ethersEthereumLib.ts"],
+          "source": "./sdk/common-vendored/src",
+          "reason": "A published package cannot depend on the private @fhevm/sdk-vendored-dev; the copy's sibling type import is rewritten to @fhevm/host-contracts-cleartext."
+        }
+      ]
+    },
+    "./hardhat/v2/e2e": {
+      "kind": "internal-consumer",
+      "type": "cjs",
+      "browser": false,
+      "name": "@fhevm/hardhat-plugin-v2-e2e-dev",
+      "private": true,
+      "member": true,
+      "dependencyGroup": "hardhat/v2",
+      "note": "Links the plugin as a member rather than installing a tarball; the packed-artifact check lives in the template instead."
+    },
+    "./hardhat/v2/fhevm-hardhat-template": {
+      "kind": "standalone",
+      "type": "cjs",
+      "browser": false,
+      "name": "fhevm-hardhat-template-v2",
+      "member": false,
+      "dependencyGroup": "hardhat/v2",
+      "dependencyExceptions": ["solhint"],
+      "mirror": {
+        "repository": "https://github.com/zama-ai/fhevm-hardhat-template"
+      },
+      "note": "A tracked workspace copy of github.com/zama-ai/fhevm-hardhat-template, mirrored byte-for-byte except for its declared workspace package.json transformation, omitted upstream CI files, and regenerated lockfile."
+    }
+  }
+}

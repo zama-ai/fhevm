@@ -1,10 +1,29 @@
 // Building and unpacking `npm pack` tarballs, for any package in the workspace.
 
-import { TARBALL_DIR_ABS_PATH } from './constants.ts';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { workspaceTarballsDirAbsPath } from './paths.ts';
+
+/** This module's own directory — the anchor for the workspace lookup below. */
+const THIS_DIR = dirname(fileURLToPath(import.meta.url));
+
+/**
+ * The one directory every workspace member packs its tarball into. Members only add to it; only the
+ * workspace root clears it, so no caller may sweep `*.tgz` here.
+ *
+ * A function, not a const: it throws outside the workspace, and this module is reachable from the
+ * package root export, so computing it eagerly broke every out-of-tree consumer fixture on import.
+ *
+ * @throws if called from outside the sdk workspace.
+ * @example
+ * tarballDirAbsPath(); // '/repo/sdk/tarballs'
+ */
+export function tarballDirAbsPath(): string {
+  return workspaceTarballsDirAbsPath(THIS_DIR);
+}
 
 /**
  * Cache `npm pack` runs against, shared by every caller. Its own rather than the user's: sharing that one
@@ -53,7 +72,7 @@ function _parseNpmPackOutput(stdout: string): string {
  *
  * @param parameters.packageDir Directory holding the package.json to pack — the PUBLISHED manifest where
  *        a package keeps its payload and its harness apart.
- * @param parameters.outDir Destination directory, created if missing. Defaults to TARBALL_DIR_ABS_PATH.
+ * @param parameters.outDir Destination directory, created if missing. Defaults to tarballDirAbsPath().
  * @param parameters.clean Delete existing `*.tgz` in `outDir` first. Defaults to false.
  * @throws if npm fails, or reports a filename that did not land in `outDir`.
  * @example
@@ -64,7 +83,7 @@ export function createPackageTarball(parameters: {
   readonly outDir?: string;
   readonly clean?: boolean;
 }): string {
-  const outDir = resolve(parameters.outDir ?? TARBALL_DIR_ABS_PATH);
+  const outDir = resolve(parameters.outDir ?? tarballDirAbsPath());
   mkdirSync(outDir, { recursive: true });
 
   if (parameters.clean === true) {

@@ -1,29 +1,28 @@
 {
   "name": "@fhevm/sdk-common-dev",
   "version": "0.0.0",
+  "description": "Internal helpers shared by the sdk workspace's harnesses. Never published.",
   "private": true,
   "type": "module",
-  "description": "Internal helpers shared by the sdk workspace's harnesses. Never published.",
-  "//": [
-    "- Private, never published. Holds helpers that every generation's harness needs.",
-    "- Nothing under a `pkg/` may import it: it would ship a specifier no consumer can resolve.",
-    "  `test:tarball:run` installs the real tarball and fails if that happens.",
-    "- version stays 0.0.0: there are no consumers to promise anything to. Dependents pin \"0.0.0\" exactly.",
-    "- `exports` points at TypeScript source, no build step. All consumers are internal tooling run",
-    "  through node type stripping, tsx or vitest.",
-    "- `type: module` is declared here because sdk/package.json has no `type` field to inherit."
-  ],
   "engines": {
     "node": ">=22.6"
   },
   "exports": {
     ".": "./src/index.ts",
+    "./anvil.ts": "./src/anvil.ts",
     "./package.json": "./package.json"
   },
   "scripts": {
-    "lint": "npm run check:lint-policy && eslint && tsc -p ./tsconfig.json --noEmit",
-    "check:lint-policy": "\"$(npm prefix)/scripts/check-lint-policy.sh\"",
+    "lint": "eslint && tsc -p ./tsconfig.json --noEmit",
     "prettier:check": "prettier --check \"**/*.{js,json,md,mjs,ts,yml}\"",
     "prettier:write": "prettier --write \"**/*.{js,json,md,mjs,ts,yml}\""
+  },
+  "dependencies": {
+    "viem": "2.55.19"
+  },
+  "devDependencies": {
+    "eslint": "^10.0.2",
+    "prettier": "^3.8.3",
+    "typescript": "^6.0.2"
   }
 }

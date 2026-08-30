@@ -136,7 +136,7 @@ copy (rule 6).
 On the 0.12 line there is nothing to leave out: upstream and vendored are both 16 files and
 byte-identical. 0.13 adds five (`ProtocolConfig`, `KMSGeneration`, their two interfaces, and
 `shared/Structs.sol`) for 21 — which is the shape of a sync that genuinely adopts new upstream files, and
-where `npm run check:vendored --verbose` starts listing upstream-only files to accept or decline.
+where `npm run test:vendored -- --verbose` checks the declared vendored sources.
 
 ## 3. Update the cleartext variants
 Update the cleartext variants
@@ -303,7 +303,7 @@ npm run test                 # includes the forge-vs-template equivalence test
 The rule 6 gate — vendored sources byte-identical to the declared commit:
 
 ```sh
-npm run check:vendored            # or ./scripts/check-vendored-sources.sh --verbose
+npm run test:vendored             # validate npm-manifest.json vendored sources
 #   🔎 rule 6: src/contracts must match host-contracts/contracts at v0.12.5 (ac18e49ea85d)
 #      ✅ 16 vendored files identical to upstream (16 upstream files scanned)
 ```
@@ -345,5 +345,3 @@ below (and still not part of `npm run test` — see RULES.md rule 17).
   there too or the patching tests fail.
 - The bootstrap config types (`BootstrapConfig` and friends in `pkg/ts/types/public.ts`) change
   whenever upstream adds an initializer parameter.
-- `npm run clean` deletes the tarball-consumer fixture, so editors report unresolved imports in
-  `test/ts` until a build or `npm run prepare:tarball-consumer` recreates it.

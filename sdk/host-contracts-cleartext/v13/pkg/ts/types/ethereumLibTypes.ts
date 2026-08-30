@@ -1,8 +1,8 @@
 // The interfaces an `*EthereumLib.ts` adapter implements. THIS FILE IS THE SOURCE OF TRUTH for them.
 //
 // Declared here rather than in the package so an adapter is self-contained: copy an adapter and this
-// file into your project and nothing else is needed. sdk/scripts/sync-vendored-ts.ts copies it to every
-// destination in vendored/manifest.json — including each generation pkg/ts/types/, whose public.ts
+// file into your project and nothing else is needed. `fhevm-npm sync-vendored` copies it to every
+// destination in common-vendored/manifest.json — including each generation pkg/ts/types/, whose public.ts
 // re-exports from the copy rather than declaring these types itself. So there is one definition, and
 // the gate proves every copy is byte-identical to it.
 
@@ -75,6 +75,21 @@ export interface AbstractEthereumProvider {
   // Number of transactions sent from `address` at the latest block (its next nonce). Used to
   // precompute deterministic deploy addresses when the caller does not supply them.
   getTransactionCount(parameters: { readonly address: string }): Promise<number>;
+}
+
+/** The read-only chain history used by deployment verification beyond the core provider interface. */
+export interface AbstractEthereumHistory {
+  getBlockNumber(): Promise<bigint>;
+
+  getStorageAt(parameters: { readonly address: string; readonly slot: string }): Promise<string>;
+
+  getLogs(parameters: {
+    readonly address: string;
+    readonly abi: readonly unknown[];
+    readonly eventNames: readonly string[];
+    readonly fromBlock: bigint;
+    readonly toBlock: bigint | 'latest';
+  }): Promise<ReadonlyArray<{ readonly eventName: string }>>;
 }
 
 export type DeployReturnType = { contractAddress: string };

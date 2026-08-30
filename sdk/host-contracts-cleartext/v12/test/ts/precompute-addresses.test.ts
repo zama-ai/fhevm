@@ -19,7 +19,7 @@
 //
 // Runs against the installed tarball fixture, so it checks the built package rather than the sources. No
 // node required: `precomputeAddresses` reaches the chain only through the injected `ethUtils`.
-import { precomputeAddresses, type AbstractEthereumUtils } from '@fhevm/host-contracts-cleartext/ts';
+import { precomputeAddresses, type AbstractEthereumUtils } from '../../pkg/ts/index.ts';
 import { getContractAddress, type Address } from 'viem';
 import { expect, test } from 'vitest';
 

@@ -1,0 +1,33 @@
+[profile.default]
+extends = "../../../foundry.base.toml"
+libs = ["dependencies", "node_modules", "../../../node_modules"]
+solc_version = "0.8.24"
+optimizer = true
+optimizer_runs = 800
+evm_version = "cancun"
+via_ir = false
+src = "contracts"
+out = "out"
+# Not the default "cache", and not nested inside it either: Hardhat owns ./cache and writes its own
+# solidity-files-cache.json there, so sharing the path makes the two clobber each other (the loser logs
+# a parse error and recompiles everything), and nesting under it means `hardhat clean` silently wipes
+# forge's cache. A sibling directory leaves both tools with a working incremental cache.
+cache_path = "cache-forge"
+bytecode_hash = "none"
+
+[lint]
+exclude_lints = [
+    "unsafe-typecast",
+    "incorrect-shift",
+    "mixed-case-variable",
+    "mixed-case-function",
+    "named-struct-fields",
+    "screaming-snake-case-const",
+    "pascal-case-struct",
+    "asm-keccak256",
+    "unwrapped-modifier-logic",
+    "unsafe-cheatcode"
+]
+
+[dependencies]
+forge-std = "1.11.0"

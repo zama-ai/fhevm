@@ -136,7 +136,7 @@ copy (rule 6).
 On the 0.13 line there is nothing to leave out: upstream and vendored are both 21 files and byte-identical
 (confirmed against `release/0.13.x`, whose 4 commits since `v0.13.2` touch nothing under
 `host-contracts/contracts`). The first real judgement call arrives with 0.14 — `contracts/bridge/` exists
-on `main` and on no 0.11/0.12/0.13 tag, so that sync is where `npm run check:vendored --verbose` will start
+on `main` and on no 0.11/0.12/0.13 tag, so that sync is where `npm run test:vendored -- --verbose` will start
 listing upstream-only files for you to accept or decline.
 
 ## 3. Update the cleartext variants
@@ -196,7 +196,7 @@ Three groups, in increasing order of effort:
 
 1. **The previous-generation edge** — `internal/constants.ts` (`PREVIOUS_GENERATION_DIR_ABS_PATH`),
    the devDependency pin in `package.json`, and the import specifier
-   `@fhevm/host-contracts-cleartext-dev-v12/pkg/ts/index.ts` in `test/ts/upgrade-e2e.test.ts`.
+   `@fhevm/host-contracts-cleartext-v12-dev/pkg/ts/index.ts` in `test/ts/upgrade-e2e.test.ts`.
 
    Much smaller than it used to be. The e2e once built v(N-1), packed it, and extracted it under an
    alias in `test/ts/node_modules` just to obtain an importable copy — a whole `prepareTestV12Consumer`
@@ -330,7 +330,7 @@ npm run test                 # includes the forge-vs-template equivalence test
 The rule 6 gate — vendored sources byte-identical to the declared commit:
 
 ```sh
-npm run check:vendored            # or ./scripts/check-vendored-sources.sh --verbose
+npm run test:vendored             # validate npm-manifest.json vendored sources
 #   🔎 rule 6: src/contracts must match host-contracts/contracts at v0.13.2 (07fb05fb75f0)
 #      ✅ 21 vendored files identical to upstream (21 upstream files scanned)
 ```
@@ -372,5 +372,3 @@ below (and still not part of `npm run test` — see RULES.md rule 17).
   there too or the patching tests fail.
 - The bootstrap config types (`BootstrapConfig` and friends in `pkg/ts/types/public.ts`) change
   whenever upstream adds an initializer parameter.
-- `npm run clean` deletes the tarball-consumer fixture, so editors report unresolved imports in
-  `test/ts` until a build or `npm run prepare:tarball-consumer` recreates it.

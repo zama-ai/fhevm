@@ -32,7 +32,7 @@ exist in v12. Copy-paste leftover from v13.
 
 `sdk/host-contracts-cleartext/v13/test/ts/tsconfig.e2e.json` includes five files; three no longer exist.
 `utils/anvil.ts` and `utils/ethUtils.ts` moved into `@fhevm/sdk-common-dev`; `utils/viemEthereumLib.ts`
-moved into a different package, `@fhevm/sdk-vendored-dev` (`sdk/vendored`).
+moved into a different package, `@fhevm/sdk-vendored-dev` (`sdk/common-vendored`).
 
 TypeScript ignores a missing `include` entry as long as one entry matches, so `runUpgradeE2e`'s
 `tsc --project tsconfig.e2e.json --noEmit` exits 0 today while checking less than intended.
@@ -188,7 +188,7 @@ moved out of the subpackages entirely.
 - **Change:** extend A7's script (or add a sibling): for every workspace, if `pkg/package.json` exists and
   is not `private`, require a `pack:tarball` script. Turns `--if-present`'s silence into a named error.
 - **Scope confirmed:** the rule catches exactly `v12/pkg`, `v13/pkg` and `hardhat/v2/pkg`. `common/`
-  (`@fhevm/sdk-common-dev`) and `vendored/` (`@fhevm/sdk-vendored-dev`) are both `private: true` with no
+  (`@fhevm/sdk-common-dev`) and `common-vendored/` (`@fhevm/sdk-vendored-dev`) are both `private: true` with no
   `pkg/`, so they are correctly excluded.
 - **Verify:** passes after B2; fails if `pack:tarball` is removed from any generation.
 

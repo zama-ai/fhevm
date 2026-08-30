@@ -1,0 +1,34 @@
+{
+  "//": "Shared by the CJS and the declaration build. Neither is composite, so rootDir only shapes outDir.",
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "./pkg/src",
+    // `mocha` is required by hardhat's own config.d.ts, which types its `mocha` field as Mocha.MochaOptions.
+    "types": ["node", "mocha"],
+    "noEmitOnError": true,
+    "sourceMap": true,
+
+    // Hardhat v2 loads plugins with `require`, so both builds compile the payload the way a v2 consumer
+    // resolves it: a subpath or types entry node10 cannot see fails here, not in somebody's project.
+    "module": "CommonJS",
+    "moduleResolution": "node10",
+    // node10 is deprecated in TypeScript 6 and removed in 7. Required until Hardhat v2 support is dropped.
+    "ignoreDeprecations": "6.0",
+    // Required, not preference: with `verbatimModuleSyntax` on, tsc refuses ESM syntax in a file it emits
+    // as CommonJS. Off lets the source stay ordinary ESM and lets tsc do the downlevelling.
+    "verbatimModuleSyntax": false,
+    "esModuleInterop": true,
+
+    // `@fhevm/sdk`'s node10 marker at `core/chains/package.json` points at `../../_types/chains`, but the
+    // declarations are at `_types/core/chains`. Types only — Node uses `exports` and resolves it correctly.
+    // Remove once upstream fixes that field.
+    "paths": {
+      "@fhevm/sdk/chains": [
+        "./node_modules/@fhevm/sdk/_types/core/chains/index.d.ts",
+        "../../../node_modules/@fhevm/sdk/_types/core/chains/index.d.ts"
+      ]
+    }
+  },
+  "include": ["pkg/src"],
+  "exclude": ["pkg/src/**/*.test.ts", "pkg/src/**/*.test-d.ts"]
+}

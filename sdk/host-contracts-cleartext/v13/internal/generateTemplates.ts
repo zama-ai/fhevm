@@ -2,6 +2,7 @@
 
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { basename, join, relative } from 'node:path';
+import { assessContractSizes, EIP_170_RUNTIME_SIZE_LIMIT } from './checkContractSizes.ts';
 import { ADDRESS_NAMES, PACKAGE_ROOT_ABS_PATH, PKG_DIR_ABS_PATH, type ContractName } from './constants.ts';
 import { normalizeHex, readJson, toJsonLiteral, writeJson, writeTypeScript } from './utils.ts';
 
@@ -158,7 +159,19 @@ function _loadArtifact(target: TargetContract): { artifact: Artifact; artifactPa
     throw new Error(`${relative(process.cwd(), artifactPath)} does not contain an ABI array`);
   }
   normalizeHex(artifact.bytecode.object, `${target.contractName}.bytecode.object`);
-  normalizeHex(artifact.deployedBytecode.object, `${target.contractName}.deployedBytecode.object`);
+  const deployedBytecode = normalizeHex(
+    artifact.deployedBytecode.object,
+    `${target.contractName}.deployedBytecode.object`,
+  );
+  const sourcePath = `pkg/${target.sourcePath}`;
+  const runtimeSize = deployedBytecode.length / 2;
+  const report = assessContractSizes([{ sourcePath, contractName: target.contractName, runtimeSize }]);
+  if (report.violations.length > 0) {
+    throw new Error(
+      `${sourcePath}:${target.contractName} deployed runtime is ${runtimeSize.toLocaleString('en-US')} B; ` +
+        `EIP-170 permits at most ${EIP_170_RUNTIME_SIZE_LIMIT.toLocaleString('en-US')} B`,
+    );
+  }
 
   return { artifact, artifactPath };
 }
@@ -269,6 +282,8 @@ export function patchSiteCounts(references: Record<string, AddressReference>): R
  */
 export async function writeTemplates(): Promise<void> {
   const addresses = _parseAddressConfig();
+  // Validate every input, including its EIP-170 runtime size, before deleting any committed output.
+  const loadedTargets = TARGET_CONTRACTS.map((target) => ({ target, ..._loadArtifact(target) }));
   const abiDir = join(PKG_DIR_ABS_PATH, 'abi');
   const templateDir = join(PKG_DIR_ABS_PATH, 'templates');
   const tsArtifactDir = join(PKG_DIR_ABS_PATH, 'ts', 'artifacts');
@@ -282,8 +297,7 @@ export async function writeTemplates(): Promise<void> {
 
   await _writeArtifactTypes(tsArtifactDir);
 
-  for (const target of TARGET_CONTRACTS) {
-    const { artifact, artifactPath } = _loadArtifact(target);
+  for (const { target, artifact, artifactPath } of loadedTargets) {
     const addressReferences = _addressReferencesFor(artifact, addresses);
     const template = {
       contractName: target.contractName,

@@ -10,7 +10,7 @@
 // matters here is the message a nonce failure produces, so the failure is injected directly.
 //
 // Runs against the installed tarball fixture, so it checks the built package rather than the sources.
-import { setupACLOwner } from '@fhevm/host-contracts-cleartext/ts';
+import { setupACLOwner } from '../../pkg/ts/index.ts';
 import { expect, test } from 'vitest';
 
 const ACL_ADDRESS = '0x50157CFfD6bBFA2DECe204a89ec419c23ef5755D';

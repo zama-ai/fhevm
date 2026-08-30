@@ -1,12 +1,24 @@
 {
   "name": "@fhevm/host-contracts-cleartext",
   "version": "0.12.0",
+  "description": "FHEVM host contracts cleartext Solidity contracts",
   "license": "BSD-3-Clause-Clear",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zama-ai/fhevm.git"
+  },
   "main": "./ts/_cjs/index.js",
   "module": "./ts/_esm/index.js",
   "types": "./ts/_types/index.d.ts",
   "typings": "./ts/_types/index.d.ts",
+  "typesVersions": {
+    "*": {
+      "ts": [
+        "./ts/_types/index.d.ts"
+      ]
+    }
+  },
   "sideEffects": false,
   "files": [
     "src",
@@ -34,13 +46,6 @@
     "./src/*": "./src/*",
     "./forge/*": "./forge/*",
     "./package.json": "./package.json"
-  },
-  "typesVersions": {
-    "*": {
-      "ts": [
-        "./ts/_types/index.d.ts"
-      ]
-    }
   },
   "dependencies": {
     "@openzeppelin/contracts": "5.1.0",

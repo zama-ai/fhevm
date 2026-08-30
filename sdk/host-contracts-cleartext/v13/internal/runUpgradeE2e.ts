@@ -16,13 +16,12 @@ import { PACKAGE_ROOT_ABS_PATH } from './constants.ts';
  *
  * What removed the skip was not a stricter check but a simpler dependency. v12 is a WORKSPACE MEMBER,
  * so `npm install` links it and the test imports it like any other package
- * (`@fhevm/host-contracts-cleartext-dev-v12/pkg/ts/index.ts`). There is no build, no pack, no install
+ * (`@fhevm/host-contracts-cleartext-v12-dev/pkg/ts/index.ts`). There is no build, no pack, no install
  * and therefore no "v12 unavailable" state left to detect. If that specifier does not resolve, the
  * workspace itself is broken, and vitest fails loudly — which is the correct outcome.
  *
- * The v13 side still goes through a tarball, deliberately: v13 is the package being published here,
- * and consuming it by its published name is what puts `exports` and `files` on trial. A
- * workspace link is strictly less faithful and would test nothing about the artifact.
+ * The v13 side reads `pkg/ts` directly. Consuming the PUBLISHED artifact is the test-consumer
+ * fixtures' job, and they do it against a physically installed copy rather than an extracted tarball.
  *
  * Calls process.exit directly rather than returning a status: a failed child process's code has to
  * reach the caller unchanged.
@@ -35,10 +34,7 @@ export function runUpgradeE2e(): void {
     }
   }
 
-  run('npm', ['run', 'clean:tarball-consumer']);
   run('npm', ['run', 'build:templates']);
-  // No prepare:tarball-consumer here: `build` ends with it, and `build` is also what deletes the fixture
-  // (its first step is `clean`), so it is obliged to leave one behind.
   run('npm', ['run', 'build']);
 
   const TEST_TS = join(PACKAGE_ROOT_ABS_PATH, 'test', 'ts');

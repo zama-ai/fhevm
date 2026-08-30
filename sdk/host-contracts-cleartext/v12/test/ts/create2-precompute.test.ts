@@ -36,20 +36,18 @@
 // version, every baked-in address and the whole ownership chain must check out against it. If any single
 // address were wrong, that call collapses — the reads would hit the wrong contract, or nothing at all.
 
-import {
-  CREATE2_ROLES,
-  precomputeCreate2Addresses,
-  verify,
-  type AbstractEthereumHistory,
-  type Deployed,
-} from '@fhevm/host-contracts-cleartext/ts';
-import { Interface, JsonRpcProvider } from 'ethers';
+import { CREATE2_ROLES, precomputeCreate2Addresses, verify, type Deployed } from '../../pkg/ts/index.ts';
+import { JsonRpcProvider } from 'ethers';
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from 'vitest';
 import { startAnvil, stopAnvil, waitForAnvil } from '@fhevm/sdk-common-dev';
-import { createEthersEthereumProvider, createEthersEthereumUtils } from '@fhevm/sdk-vendored-dev/ethersEthereumLib.ts';
+import {
+  createEthersEthereumHistory,
+  createEthersEthereumProvider,
+  createEthersEthereumUtils,
+} from '@fhevm/sdk-vendored-dev/ethersEthereumLib.ts';
 
 /** The harness root, two levels up from `test/ts`. The coordinator must be spawned from there. */
 const PACKAGE_ROOT = join(import.meta.dirname, '..', '..');
@@ -81,40 +79,6 @@ type Manifest = {
   readonly version: string;
   readonly factory: string;
 };
-
-/**
- * `AbstractEthereumHistory` over ethers.
- *
- * Supplied rather than omitted because the check that matters most here is the ERC-1967 one: a proxy's code
- * is identical before and after it is pointed at an implementation, so without `getStorageAt` "the address
- * is right" and "the address is right AND materialized" are indistinguishable. `getLogs` is only reached by
- * `mode: 'upgrade'`, but it is implemented properly anyway — a throwing stub in a shipped adapter is a
- * landmine for whoever copies it.
- */
-function createEthersHistory(rpcUrl: string): AbstractEthereumHistory {
-  const provider = new JsonRpcProvider(rpcUrl, undefined, { staticNetwork: true });
-  return {
-    getBlockNumber: async () => BigInt(await provider.getBlockNumber()),
-    getStorageAt: async ({ address, slot }) => await provider.getStorage(address, slot),
-    getLogs: async ({ address, abi, eventNames, fromBlock, toBlock }) => {
-      const itf = new Interface(abi as never);
-      const wanted = new Map(
-        eventNames
-          .map((name) => itf.getEvent(name))
-          .filter((e): e is NonNullable<typeof e> => e !== null)
-          .map((e) => [e.topicHash, e.name]),
-      );
-      if (wanted.size === 0) return [];
-      const logs = await provider.getLogs({
-        address,
-        topics: [[...wanted.keys()]],
-        fromBlock: Number(fromBlock),
-        toBlock: toBlock === 'latest' ? 'latest' : Number(toBlock),
-      });
-      return logs.map((log) => ({ eventName: wanted.get(log.topics[0] ?? '') ?? '' }));
-    },
-  };
-}
 
 /**
  * Runs the coordinator, reporting progress on a timer and keeping the whole output for a failure message.
@@ -262,7 +226,7 @@ test('precomputeCreate2Addresses predicts where a real create2 deploy actually l
     // Every predicted address must hold code. Checked per role before `verify` runs, so a single wrong
     // prediction is reported as "nothing at PAUSER_SET_ADDRESS" rather than as whichever downstream read
     // happened to revert first.
-    const history = createEthersHistory(anvil.rpcUrl);
+    const history = createEthersEthereumHistory(anvil.rpcUrl);
     const provider = new JsonRpcProvider(anvil.rpcUrl, undefined, { staticNetwork: true });
     try {
       const empty: string[] = [];

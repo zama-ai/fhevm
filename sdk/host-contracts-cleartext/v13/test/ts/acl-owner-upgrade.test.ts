@@ -1,4 +1,4 @@
-import { deploy, precomputeAddresses, type BootstrapConfig } from '@fhevm/host-contracts-cleartext/ts';
+import { deploy, precomputeAddresses, type BootstrapConfig } from '../../pkg/ts/index.ts';
 import { createPublicClient, createWalletClient, getAddress, http, type Address, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { foundry } from 'viem/chains';

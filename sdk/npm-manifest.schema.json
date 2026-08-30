@@ -1,0 +1,431 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/zama-ai/fhevm/blob/main/sdk/npm-manifest.schema.json",
+  "title": "fhevm sdk npm manifest",
+  "description": "Inventory of every source package.json in the sdk/ discovery universe defined by fhevm-npm/npm-rules.md, plus repository-wide npm and toolchain policy.",
+  "$comment": "This schema enforces manifest-local shape and kind invariants. A TypeScript validator must enforce filesystem, package.json and cross-entry invariants: complete discovery, key/path containment, member/workspaces equality, package names and privacy, required published package.json fields, private version 0.0.0, exports, dependency rules, dev/published ownership cardinality, and the conventional test:publint, test:consumer, conditional test:vendored and conditional test:mirror scripts.",
+  "type": "object",
+  "required": ["packageJson", "packages"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "const": "./npm-manifest.schema.json",
+      "description": "Path to this schema, so editors validate the manifest as it is typed."
+    },
+    "inventory": {
+      "type": "object",
+      "description": "Filesystem scope controls for package.json inventory discovery.",
+      "required": ["exclude"],
+      "additionalProperties": false,
+      "properties": {
+        "exclude": {
+          "type": "array",
+          "description": "Directory trees below sdk/ that are outside the fhevm-npm inventory scope.",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/prefixedRelativePath" }
+        }
+      }
+    },
+    "dependencies": {
+      "type": "object",
+      "description": "Repository-wide policy for dependency declarations.",
+      "required": ["forbidden"],
+      "additionalProperties": false,
+      "properties": {
+        "forbidden": {
+          "type": "array",
+          "description": "Package names forbidden from every dependency section unless the exact package entry declares an exception.",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "foundry": {
+      "type": "object",
+      "description": "Repository-wide Foundry toolchain policy. This is the single source of truth; packages must not carry .foundry-version files.",
+      "required": ["version"],
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "type": "string",
+          "description": "Exact version reported by the first line of `forge --version`, without the `forge Version:` prefix.",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?$"
+        }
+      }
+    },
+    "packageJson": {
+      "type": "object",
+      "description": "Required and excluded package.json fields, selected by manifest package kind.",
+      "additionalProperties": false,
+      "properties": {
+        "published": { "$ref": "#/$defs/packageJsonKindPolicy" },
+        "dev": { "$ref": "#/$defs/packageJsonKindPolicy" },
+        "shared-helper": { "$ref": "#/$defs/packageJsonKindPolicy" },
+        "internal-consumer": { "$ref": "#/$defs/packageJsonKindPolicy" },
+        "standalone": { "$ref": "#/$defs/packageJsonKindPolicy" },
+        "non-package": { "$ref": "#/$defs/packageJsonKindPolicy" },
+        "workspace-root": { "$ref": "#/$defs/packageJsonKindPolicy" }
+      },
+      "minProperties": 1
+    },
+    "packages": {
+      "type": "object",
+      "description": "Every in-scope source package.json under sdk/, keyed by its directory relative to sdk/ — leading `./`, no trailing slash, and `.` for the workspace root itself.",
+      "$comment": "Keyed by relative path and not by package name, because a name is neither always present nor unique: five non-package manifests have no `name` at all, and v12/pkg and v13/pkg both publish as @fhevm/host-contracts-cleartext. Relative paths are unique by construction, so the key doubles as the identity `publishedRelPath` points at. Non-members are included too: a standalone project and a non-package manifest are invisible to `workspaces` yet both change how resolution behaves.",
+      "minProperties": 1,
+      "required": ["."],
+      "propertyNames": { "$ref": "#/$defs/packageKey" },
+      "properties": {
+        ".": {
+          "allOf": [
+            { "$ref": "#/$defs/package" },
+            {
+              "properties": { "kind": { "const": "workspace-root" } },
+              "required": ["kind"]
+            }
+          ]
+        }
+      },
+      "patternProperties": {
+        "^\\./": {
+          "allOf": [
+            { "$ref": "#/$defs/package" },
+            {
+              "not": {
+                "properties": { "kind": { "const": "workspace-root" } },
+                "required": ["kind"]
+              }
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "packageJsonKindPolicy": {
+      "type": "object",
+      "description": "Top-level package.json fields required or excluded for one package kind.",
+      "required": ["required", "excluded"],
+      "additionalProperties": false,
+      "properties": {
+        "required": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/packageJsonFieldName" }
+        },
+        "excluded": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/packageJsonFieldName" }
+        }
+      }
+    },
+    "packageJsonFieldName": {
+      "type": "string",
+      "description": "One top-level package.json field name.",
+      "pattern": "^[A-Za-z][A-Za-z0-9._-]*$"
+    },
+    "packageKey": {
+      "type": "string",
+      "description": "The workspace root `.` or a path below it with leading `./`; `.` and `..` are forbidden as segments.",
+      "pattern": "^\\.(?:/(?!\\.{1,2}(?:/|$))[A-Za-z0-9._-]+)*$"
+    },
+    "prefixedRelativePath": {
+      "type": "string",
+      "description": "A non-empty relative path with leading `./`; `.` and `..` are forbidden as segments.",
+      "pattern": "^\\.(?:/(?!\\.{1,2}(?:/|$))[A-Za-z0-9._-]+)+$"
+    },
+    "unprefixedRelativePath": {
+      "type": "string",
+      "description": "A non-empty relative path without leading `./`; `.` and `..` are forbidden as segments.",
+      "pattern": "^(?!\\.{1,2}(?:/|$))[A-Za-z0-9._-]+(?:/(?!\\.{1,2}(?:/|$))[A-Za-z0-9._-]+)*$"
+    },
+    "filename": {
+      "type": "string",
+      "description": "One filename, not a path; `.` and `..` are forbidden.",
+      "pattern": "^(?!\\.{1,2}$)[A-Za-z0-9._-]+$"
+    },
+    "mirror": {
+      "type": "object",
+      "description": "An independent Git repository kept synchronized with this package entry. Mirroring is an optional capability, not a package kind.",
+      "required": ["repository"],
+      "additionalProperties": false,
+      "properties": {
+        "repository": {
+          "type": "string",
+          "description": "Canonical HTTPS URL of the independent repository.",
+          "pattern": "^https://[^\\s]+$"
+        }
+      }
+    },
+    "pinnedSource": {
+      "type": "object",
+      "title": "Pinned external source",
+      "description": "A directory in another repository, frozen at one commit. Mirrors `fhevm.vendoredFrom` in the published package.json, so a gate can compare the two.",
+      "$comment": "`to` from that field is deliberately not repeated here: the destination is the element's own `relPath`, and one fact recorded twice is one fact that can disagree with itself.",
+      "required": ["repository", "tag", "commit", "from"],
+      "additionalProperties": false,
+      "properties": {
+        "repository": {
+          "type": "string",
+          "description": "Clone URL of the repository the bytes came from.",
+          "$comment": "A pattern rather than `format: uri`, which needs an optional validator plug-in and is silently ignored without one.",
+          "pattern": "^https://[^\\s]+$"
+        },
+        "tag": {
+          "type": "string",
+          "description": "Release tag the copy was taken at. Human-readable, and the thing a reader compares against upstream.",
+          "minLength": 1
+        },
+        "commit": {
+          "type": "string",
+          "description": "Full 40-character commit SHA the copy was taken at.",
+          "$comment": "Required alongside the tag because a tag can be moved and a commit cannot. The tag says which release was intended; the commit is what makes the copy reproducible.",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "from": {
+          "description": "Directory inside that repository, relative to its root. Written without a leading `./`, matching `fhevm.vendoredFrom.from` byte-for-byte.",
+          "$comment": "The one relative path in this file with no `./`, so it stays comparable to the published field it mirrors. Do not normalise it.",
+          "$ref": "#/$defs/unprefixedRelativePath"
+        }
+      }
+    },
+    "vendoredElement": {
+      "type": "object",
+      "description": "One directory of byte-for-byte copies: the whole directory when `files` is absent, otherwise only the files named.",
+      "required": ["relPath", "source", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "relPath": {
+          "description": "Directory holding the copies, relative to this entry's own key and written with a leading `./`.",
+          "$ref": "#/$defs/prefixedRelativePath"
+        },
+        "files": {
+          "type": "array",
+          "description": "Filenames inside `relPath` that are copies. Omit to mean the whole directory is vendored.",
+          "$comment": "Naming files rather than the directory keeps a vendored copy and hand-written code side by side in one directory, which is how sdk/common-vendored/src lands in pkg/ts/types today.",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/filename" }
+        },
+        "source": {
+          "description": "Where the bytes come from. A string when the source is a directory in this repository; an object when it is a pinned point in another repository.",
+          "$comment": "Two shapes because there are two kinds of copy. A directory in this repository is always in step with the working tree, so a relative path is the whole answer. A copy from elsewhere is frozen at one commit, and without that commit nothing can tell a legitimate upstream change from drift in the copy.",
+          "oneOf": [
+            {
+              "title": "In-repository directory",
+              "description": "Relative path to the source directory, relative to the FHEVM REPO ROOT — not to sdk/ — with a leading `./`. Example: `./sdk/common-vendored/src`.",
+              "$comment": "Repo root rather than sdk/, because a vendored source is not always inside sdk/. Anchoring there avoids `../` segments that would read as though they could escape the checkout.",
+              "$ref": "#/$defs/prefixedRelativePath"
+            },
+            { "$ref": "#/$defs/pinnedSource" }
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "description": "Why the original cannot simply be imported. Prose, one sentence.",
+          "$comment": "Required, and the most important field here. A copy whose reason no longer holds is a copy to delete, and nothing else in the repository records why one was made.",
+          "minLength": 1
+        }
+      }
+    },
+    "package": {
+      "type": "object",
+      "required": ["kind", "type", "browser", "member"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "description": "Which of the seven kinds in fhevm-npm/npm-rules.md § Definitions this directory is.",
+          "$comment": "A closed set on purpose. Left open, each gate invents its own vocabulary and the manifest stops being a single answer.",
+          "oneOf": [
+            {
+              "const": "published",
+              "description": "The only kind that reaches npmjs.com. Not private, declares `exports`, and always sits in a `pkg/` subdirectory."
+            },
+            {
+              "const": "dev",
+              "description": "The member directory wrapping exactly one published package, holding its scripts, config and tests. Private, named `…-dev`."
+            },
+            {
+              "const": "shared-helper",
+              "description": "Private code that several dev packages import, with no published counterpart of its own. Private, named `…-dev`."
+            },
+            {
+              "const": "internal-consumer",
+              "description": "A member that installs the published packages in order to test them, and ships nothing itself. Private, named `…-dev`."
+            },
+            {
+              "const": "standalone",
+              "description": "A consumer deliberately left out of `workspaces`, keeping its own lockfile and running its own install."
+            },
+            {
+              "const": "non-package",
+              "description": "An unnamed package.json that supplies directory-local metadata inside another package or project, without defining an independently installable package."
+            },
+            {
+              "const": "workspace-root",
+              "description": "`sdk/` itself: the member list plus the toolchain every member shares. Private, never published, a member of nothing."
+            }
+          ]
+        },
+        "type": {
+          "description": "Module formats this package.json exposes or executes.",
+          "enum": ["cjs", "esm", "dual"]
+        },
+        "browser": {
+          "type": "boolean",
+          "description": "Whether this package is designed and supported to run in a browser environment."
+        },
+        "name": {
+          "type": "string",
+          "description": "The package.json `name`. Absent only for a non-package manifest, which has no independent npm identity.",
+          "minLength": 1
+        },
+        "member": {
+          "type": "boolean",
+          "description": "Whether the root package.json `workspaces` array lists this entry's key.",
+          "$comment": "Duplicating `workspaces` deliberately: the gate that compares the two is what catches a member added in one place and forgotten in the other."
+        },
+        "private": {
+          "type": "boolean",
+          "description": "The package.json `private` field when relevant. Required true for dev packages, shared helpers, internal consumers and the workspace root; forbidden on published packages."
+        },
+        "publishedRelPath": {
+          "description": "For kind `dev`: the directory of the published package this one wraps. Same form as a key in `packages` — relative to sdk/, leading `./` — always a subdirectory of this entry's own key, and always the key of another entry whose `kind` is `published`.",
+          "$comment": "A relative path and not a package name, because a name is not unique here: v12/pkg and v13/pkg both publish as @fhevm/host-contracts-cleartext, so only the relative path says which one. It must be written exactly as that entry's key, `./` included, since matching the two is how a reader follows the link. This is the relationship npm cannot express — a dev package and its published package share no field tying them together, only the directory nesting, and nesting is a convention rather than a guarantee.",
+          "$ref": "#/$defs/prefixedRelativePath"
+        },
+        "dependencyGroup": {
+          "description": "The dependency-alignment group this package belongs to, as a relative path prefix. Omitted by anything that spans groups, such as a shared helper or the workspace root.",
+          "$comment": "What makes the sibling-agreement rule checkable: siblings sharing a dependency group must declare identical ranges, while different groups are free to differ. It is a safe open path rather than an enum so adding a group does not require a schema or rule edit; the TypeScript validator checks that it is a prefix of the entry key.",
+          "$ref": "#/$defs/unprefixedRelativePath"
+        },
+        "dependencyExceptions": {
+          "type": "array",
+          "description": "Forbidden dependency names exceptionally allowed in this exact package.json only.",
+          "$comment": "The TypeScript validator checks that each value is globally forbidden and actually declared by this package.",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "mirror": {
+          "$ref": "#/$defs/mirror"
+        },
+        "vendored": {
+          "type": "array",
+          "description": "Directories or files inside this package that are byte-for-byte copies of something else, because importing the original is impossible. Omitted when the package vendors nothing.",
+          "$comment": "Vendoring is a last resort, so every element states why importing was impossible. Listing copies here makes them reviewable: a reason that has stopped being true is the signal to delete the copy and import instead. The implementation of the check is deliberately not stored per element; the TypeScript validator requires one conventional test:vendored script on the test owner, and CI executes it.",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/vendoredElement" }
+        },
+        "note": {
+          "type": "string",
+          "description": "Anything else a reader needs that no package.json field can hold. Prose, one sentence.",
+          "minLength": 1
+        }
+      },
+      "allOf": [
+        {
+          "$comment": "A published package is named and omits private entirely. Its member status remains variable because only one package generation carrying a shared published name may be a workspace member.",
+          "if": { "properties": { "kind": { "const": "published" } }, "required": ["kind"] },
+          "then": {
+            "required": ["name"],
+            "not": {
+              "anyOf": [{ "required": ["private"] }, { "required": ["publishedRelPath"] }]
+            }
+          }
+        },
+        {
+          "$comment": "Every dev package, shared helper and internal consumer is a named private workspace member with the visible `-dev` suffix. The matching `version: 0.0.0` rule is checked in package.json by the TypeScript validator.",
+          "if": {
+            "properties": { "kind": { "enum": ["dev", "shared-helper", "internal-consumer"] } },
+            "required": ["kind"]
+          },
+          "then": {
+            "required": ["name", "private", "member"],
+            "properties": {
+              "private": { "const": true },
+              "member": { "const": true },
+              "name": { "type": "string", "pattern": "-dev$" }
+            }
+          }
+        },
+        {
+          "$comment": "A dev package exists to wrap exactly one published package; recording which is the whole point of the entry.",
+          "if": { "properties": { "kind": { "const": "dev" } }, "required": ["kind"] },
+          "then": {
+            "required": ["publishedRelPath"],
+            "properties": { "publishedRelPath": { "pattern": "/pkg$" } }
+          }
+        },
+        {
+          "$comment": "Only a dev package owns a published package. Other kinds cannot carry publishedRelPath.",
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "published",
+                  "shared-helper",
+                  "internal-consumer",
+                  "standalone",
+                  "non-package",
+                  "workspace-root"
+                ]
+              }
+            },
+            "required": ["kind"]
+          },
+          "then": { "not": { "required": ["publishedRelPath"] } }
+        },
+        {
+          "$comment": "A non-package manifest is never a member, has no package name and carries no ownership, dependency-group or content-distribution metadata.",
+          "if": { "properties": { "kind": { "const": "non-package" } }, "required": ["kind"] },
+          "then": {
+            "properties": { "member": { "const": false } },
+            "not": {
+              "anyOf": [
+                { "required": ["name"] },
+                { "required": ["publishedRelPath"] },
+                { "required": ["dependencyGroup"] },
+                { "required": ["dependencyExceptions"] },
+                { "required": ["mirror"] },
+                { "required": ["vendored"] }
+              ]
+            }
+          }
+        },
+        {
+          "$comment": "A standalone project is deliberately outside `workspaces` so it keeps its own lockfile.",
+          "if": { "properties": { "kind": { "const": "standalone" } }, "required": ["kind"] },
+          "then": {
+            "required": ["name"],
+            "properties": { "member": { "const": false } }
+          }
+        },
+        {
+          "$comment": "The workspace root is the required `.` entry, is private, and is not a member of itself. It has no owner, dependency-group or content-distribution metadata.",
+          "if": { "properties": { "kind": { "const": "workspace-root" } }, "required": ["kind"] },
+          "then": {
+            "required": ["name", "private", "member"],
+            "properties": {
+              "private": { "const": true },
+              "member": { "const": false }
+            },
+            "not": {
+              "anyOf": [
+                { "required": ["publishedRelPath"] },
+                { "required": ["dependencyGroup"] },
+                { "required": ["dependencyExceptions"] },
+                { "required": ["mirror"] },
+                { "required": ["vendored"] }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

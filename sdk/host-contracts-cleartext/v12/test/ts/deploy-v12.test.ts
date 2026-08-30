@@ -8,8 +8,7 @@ import {
   CONTRACT_VERSIONS,
   snapshotStack,
   verify,
-  type AbstractEthereumHistory,
-} from '@fhevm/host-contracts-cleartext/ts';
+} from '../../pkg/ts/index.ts';
 import { createPublicClient, createWalletClient, http, parseEventLogs, type Address, type Hex } from 'viem';
 import { mnemonicToAccount, privateKeyToAccount } from 'viem/accounts';
 import { foundry } from 'viem/chains';
@@ -17,7 +16,7 @@ import { expect, test } from 'vitest';
 import { startAnvil, stopAnvil, waitForAnvil } from '@fhevm/sdk-common-dev';
 import { privateKeyFromMnemonic, privateKeyToAddress } from '@fhevm/sdk-common-dev';
 import { expectedHcuLimit } from './utils/expectedBootstrap.ts';
-import { createViemEthereumAdapters } from '@fhevm/sdk-vendored-dev/viemEthereumLib.ts';
+import { createViemEthereumAdapters, createViemEthereumHistory } from '@fhevm/sdk-vendored-dev/viemEthereumLib.ts';
 
 // ERC-1967 implementation slot: keccak256("eip1967.proxy.implementation") - 1.
 const IMPL_SLOT = '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc' as const;
@@ -566,35 +565,6 @@ test('deploy with no config registers the signers the SDK derives', async () => 
  * Written out here rather than shipped as a helper on purpose: it is the reference implementation a
  * consumer copies, so if it is longer than a few lines the interface is wrong. It is not.
  */
-function createViemHistory(rpcUrl: string): AbstractEthereumHistory {
-  const client = createPublicClient({ chain: foundry, transport: http(rpcUrl) });
-  return {
-    async getBlockNumber() {
-      return await client.getBlockNumber();
-    },
-    async getStorageAt(parameters) {
-      return (
-        (await client.getStorageAt({ address: parameters.address as Address, slot: parameters.slot as Hex })) ?? '0x'
-      );
-    },
-    async getLogs(parameters) {
-      const events = (parameters.abi as ReadonlyArray<{ type?: string; name?: string }>).filter(
-        (entry) => entry.type === 'event' && parameters.eventNames.includes(entry.name ?? ''),
-      );
-      // An ABI with none of the named events would make getLogs return every log from the address, which
-      // would read as a spurious failure. Empty means "nothing to look for", so answer that directly.
-      if (events.length === 0) return [];
-      const logs = await client.getLogs({
-        address: parameters.address as Address,
-        events: events as never,
-        fromBlock: parameters.fromBlock,
-        toBlock: parameters.toBlock,
-      });
-      return logs.map((log) => ({ eventName: (log as { eventName?: string }).eventName ?? '' }));
-    },
-  };
-}
-
 test('verify reports a freshly deployed stack as sound', async () => {
   const deployerKey = privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: 5 });
   const adminKey = privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: 6 });
@@ -605,7 +575,7 @@ test('verify reports a freshly deployed stack as sound', async () => {
 
     const adapters = createViemEthereumAdapters({ rpcUrl: anvil.rpcUrl, privateKey: deployerKey });
     const adminAdapters = createViemEthereumAdapters({ rpcUrl: anvil.rpcUrl, privateKey: adminKey });
-    const history = createViemHistory(anvil.rpcUrl);
+    const history = createViemEthereumHistory(anvil.rpcUrl);
 
     const deployed = await deploy({
       ethProvider: adapters.provider,
@@ -669,7 +639,7 @@ test('verify catches a stack whose admin never accepted ownership', async () => 
     const report = await verify({
       mode: 'deploy',
       ethProvider: adapters.provider,
-      history: createViemHistory(anvil.rpcUrl),
+      history: createViemEthereumHistory(anvil.rpcUrl),
       deployed,
       // Deliberately wrong: claim an admin that never took ownership.
       expected: {
@@ -695,7 +665,7 @@ test('snapshotStack captures every readable value, and verify needs one for upgr
     await waitForAnvil(anvil.rpcUrl);
 
     const adapters = createViemEthereumAdapters({ rpcUrl: anvil.rpcUrl, privateKey: deployerKey });
-    const history = createViemHistory(anvil.rpcUrl);
+    const history = createViemEthereumHistory(anvil.rpcUrl);
     const deployed = await deploy({
       ethProvider: adapters.provider,
       ethUtils: adapters.utils,

@@ -1,4 +1,4 @@
-import { deploy, defineNewKmsContext } from '@fhevm/host-contracts-cleartext/ts';
+import { deploy, defineNewKmsContext } from '../../pkg/ts/index.ts';
 import { createPublicClient, http, type Address } from 'viem';
 import { mnemonicToAccount } from 'viem/accounts';
 import { foundry } from 'viem/chains';

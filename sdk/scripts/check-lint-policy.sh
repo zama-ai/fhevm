@@ -39,6 +39,12 @@
 #     directives come along with the source. Flagging them would make this gate permanently red with
 #     no legal fix. This is the same carve-out `[lint] ignore` already makes in foundry.toml.
 #   - node_modules/ and dependencies/ are EXCLUDED: installed tarball fixtures and forge deps.
+#   - `hardhat/v2/fhevm-hardhat-template/` is EXCLUDED from checks 1-3 as well as 4. It is a CONSUMER
+#     project, mirrored byte-for-byte to github.com/zama-ai/fhevm-hardhat-template, which lints with
+#     solhint like most Hardhat projects do. The ban has nothing to protect there: no foundry.toml
+#     covers that directory, so `forge lint` never reads its Solidity and there is no second rule set
+#     to disagree with. Enforcing it would leave the choice between a permanently red gate and a
+#     template that cannot be mirrored.
 #   - Only workspace MEMBERS are scanned (host-contracts-cleartext/v*). Everything else under sdk/
 #     — js-sdk/contracts/src/v0.*, the host-contracts-cleartext-v* payload snapshots — is a copy of
 #     upstream Solidity held for reference, not code this workspace lints.
@@ -56,12 +62,16 @@ if [ ! -d "$SDK_ROOT/host-contracts-cleartext" ]; then
     exit 1
 fi
 
+# A consumer project that is mirrored to a public repo which uses solhint. See SCOPE above.
+MIRRORED_TEMPLATE="$SDK_ROOT/hardhat/v2/fhevm-hardhat-template"
+
 HITS=""
 add_hits() { [ -n "$1" ] && HITS="$HITS$1"$'\n'; return 0; }
 
 # 1. Manifests.
 MANIFESTS="$(
     find "$SDK_ROOT" -name package.json -not -path '*/node_modules/*' -not -path '*/tarballs/*' \
+        -not -path "$MIRRORED_TEMPLATE/*" \
         -print0 2> /dev/null | xargs -0 grep -n "$TOOL" 2> /dev/null || true
 )"
 add_hits "$MANIFESTS"
@@ -69,17 +79,22 @@ add_hits "$MANIFESTS"
 # 2. Config files. Matched by NAME, so an empty or commented-out config still counts.
 CONFIGS="$(
     find "$SDK_ROOT" \( -name ".${TOOL}*" -o -name "${TOOL}.config.*" \) \
-        -not -path '*/node_modules/*' -not -path '*/tarballs/*' 2> /dev/null || true
+        -not -path '*/node_modules/*' -not -path '*/tarballs/*' \
+        -not -path "$MIRRORED_TEMPLATE/*" 2> /dev/null || true
 )"
 add_hits "$CONFIGS"
 
 # 3. An installed binary anywhere in the workspace — runnable even with no manifest entry.
 BINARIES="$(
-    find "$SDK_ROOT" -path "*/node_modules/.bin/$TOOL" 2> /dev/null || true
+    find "$SDK_ROOT" -path "*/node_modules/.bin/$TOOL" \
+        -not -path "$MIRRORED_TEMPLATE/*" 2> /dev/null || true
 )"
 add_hits "$BINARIES"
 
-# 4. Directives in Solidity this workspace owns. See SCOPE OF 4 above for every exclusion.
+# ------------------------------------------------------------------------------
+# 4. Directives in Solidity this workspace owns. See SCOPE OF 4 above for 
+#    every exclusion.
+# ------------------------------------------------------------------------------
 DIRECTIVES="$(
     find "$SDK_ROOT"/host-contracts-cleartext/v* -name '*.sol' \
         -not -path '*/node_modules/*' \
@@ -110,8 +125,9 @@ the single place a Solidity rule may be turned off (ARCHITECTURE.md I14).
                                   equivalent forge rule in [lint] exclude_lints instead
   - prose about this ban        -> ARCHITECTURE.md, never a package.json
 
-Vendored sources under pkg/src/contracts are exempt and are not scanned: they are upstream's, and
-rule 6 forbids editing them.
+Two things are exempt and are not scanned: vendored sources under pkg/src/contracts (upstream's, and
+rule 6 forbids editing them), and hardhat/v2/fhevm-hardhat-template (a consumer project mirrored to a
+public repo that lints with $TOOL; no foundry.toml covers it, so nothing here lints its Solidity).
 EOF
     exit 1
 fi

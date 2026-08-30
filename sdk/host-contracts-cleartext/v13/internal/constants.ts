@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
  */
 export const PACKAGE_ROOT_ABS_PATH = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-/** The sdk workspace root. Tarballs go to TARBALL_DIR_ABS_PATH in @fhevm/sdk-common-dev, not here. */
+/** The sdk workspace root. Tarballs go to tarballDirAbsPath() in @fhevm/sdk-common-dev, not here. */
 export const WORKSPACE_ROOT_ABS_PATH = findWorkspaceRootAbsPath(PACKAGE_ROOT_ABS_PATH);
 
 /** The pkg/ directory — the published payload, and the only part of the tree that ships. */
@@ -28,7 +28,7 @@ export const PKG_DIR_ABS_PATH = join(PACKAGE_ROOT_ABS_PATH, 'pkg');
  * processes, and cleaning its build output. `test/e2e/create2-upgrade.test.ts` is the only caller.
  *
  * TypeScript that merely wants v12's code must NOT come through here. v12 is a workspace member, so
- * it is imported like any dependency — `@fhevm/host-contracts-cleartext-dev-v12/pkg/ts/index.ts`,
+ * it is imported like any dependency — `@fhevm/host-contracts-cleartext-v12-dev/pkg/ts/index.ts`,
  * resolved through the link npm created, with types and go-to-definition intact. The upgrade e2e used
  * to build v12, pack it and extract it under an alias in `test/ts/node_modules` purely to get an
  * importable copy; a workspace link does that already, and the whole apparatus is gone.

@@ -85,9 +85,9 @@ Each generation is a pair: a private harness and the payload published to npm.
 
 | directory  | name                                      | version  | published? | workspace member? |
 | ---------- | ----------------------------------------- | -------- | ---------- | ----------------- |
-| `v12/`     | `@fhevm/host-contracts-cleartext-dev-v12` | `0.12.0` | no         | **yes**           |
+| `v12/`     | `@fhevm/host-contracts-cleartext-v12-dev` | `0.12.0` | no         | **yes**           |
 | `v12/pkg/` | `@fhevm/host-contracts-cleartext`         | `0.12.0` | yes        | **no**            |
-| `v13/`     | `@fhevm/host-contracts-cleartext-dev-v13` | `0.13.0` | no         | **yes**           |
+| `v13/`     | `@fhevm/host-contracts-cleartext-v13-dev` | `0.13.0` | no         | **yes**           |
 | `v13/pkg/` | `@fhevm/host-contracts-cleartext`         | `0.13.0` | yes        | **yes**           |
 
 A harness carries a version even though it is never published, and each harness version equals its
@@ -110,8 +110,8 @@ listing two of them is what npm rejects. Older generations are still reachable, 
 harness:
 
 ```
-@fhevm/host-contracts-cleartext-dev-v12/pkg/ts/…      TypeScript
-@fhevm/host-contracts-cleartext-dev-v12/pkg/src/…     Solidity
+@fhevm/host-contracts-cleartext-v12-dev/pkg/ts/…      TypeScript
+@fhevm/host-contracts-cleartext-v12-dev/pkg/src/…     Solidity
 ```
 
 This works because package `exports` are opt-in and **the harness manifests declare none**. That is
@@ -359,7 +359,7 @@ Remaining:
    stricter check — by removing the reason a check was needed. The e2e used to build v12, pack it and
    extract it under an alias in `test/ts/node_modules` just to obtain an importable copy, and each of
    those steps could fail into a printed line and `exit 0`. v12 is a **workspace member**, so it is now
-   imported like any dependency — `@fhevm/host-contracts-cleartext-dev-v12/pkg/ts/index.ts` — and there
+   imported like any dependency — `@fhevm/host-contracts-cleartext-v12-dev/pkg/ts/index.ts` — and there
    is no build, pack or install left to fail. Both skip paths, the fixture sentinel and the whole of
    `internal/prepareTestV12Consumer.ts` are deleted; `PREVIOUS_GENERATION_FIXTURE_ALIAS` with them.
 

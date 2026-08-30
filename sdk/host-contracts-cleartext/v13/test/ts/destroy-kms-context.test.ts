@@ -1,9 +1,4 @@
-import {
-  defineNewKmsContext,
-  deploy,
-  destroyKmsContext,
-  precomputeAddresses,
-} from '@fhevm/host-contracts-cleartext/ts';
+import { defineNewKmsContext, deploy, destroyKmsContext, precomputeAddresses } from '../../pkg/ts/index.ts';
 import { createPublicClient, http, type Address } from 'viem';
 import { foundry } from 'viem/chains';
 import { expect, test } from 'vitest';

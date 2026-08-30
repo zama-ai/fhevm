@@ -10,15 +10,7 @@
 //
 // ## Why these are literals rather than an import
 //
-// The obvious version of this file imports `CLEARTEXT_*_HCU_*` from `internal/cleartext-config.ts`. That
-// does not compile, and the reason it does not is a guarantee worth more than the import:
-// `test/ts/tsconfig.json` sets `rootDir: "."`, so nothing under `test/ts/` can reach the source tree
-// (TS6059). That boundary is what stops a test in this suite from importing our SOURCE when the suite's
-// whole purpose is to exercise the PUBLISHED package — `tarball-consumer.test.ts` would otherwise be able
-// to pass while the published artifact was broken. Relaxing `rootDir` to save one copy would trade a real
-// guarantee for a small convenience.
-//
-// The published package cannot supply them either: `pkg/ts/index.ts` does not export the cleartext config.
+// `pkg/ts/index.ts` does not export the cleartext config, so the payload cannot supply them.
 // Whether it should is an open decision — plans/CLEARTEXT_CONFIG_SOURCE_OF_TRUTH_PLAN.md item 3.
 //
 // So this file is a FACE of `sdk/cleartext-config.json` in exactly the sense RULES.md rule 23 means, like
