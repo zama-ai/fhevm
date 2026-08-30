@@ -46,6 +46,24 @@ pub struct Args {
     #[arg(long, default_value_t = 32)]
     pub coprocessor_fhe_threads: usize,
 
+    /// Bind re-randomization seeds to each materialized output's dependency
+    /// closure (RFC 019 output-rooted scope) instead of to each individual
+    /// operation.
+    ///
+    /// CONSENSUS PARAMETER: this changes computed ciphertext bytes, so every
+    /// coprocessor in the deployment must set it identically. Intended for
+    /// performance comparison against the normative per-operation rule.
+    #[arg(long, default_value_t = false)]
+    pub rerand_output_rooted_subdag: bool,
+
+    /// Cutoff for `--rerand-output-rooted-subdag`: a transaction uses the
+    /// rooted scope only when at most this many nodes are shared between the
+    /// per-output closures, because each shared node is evaluated once per
+    /// root. Zero means "only when the closures are disjoint", i.e. never
+    /// recompute. Also a consensus parameter.
+    #[arg(long, default_value_t = 0)]
+    pub rerand_subdag_max_shared_intermediates: usize,
+
     /// Tokio Async IO threads
     #[arg(long, default_value_t = 4)]
     pub tokio_threads: usize,

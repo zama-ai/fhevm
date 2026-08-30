@@ -78,6 +78,8 @@ async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) {
         dependence_chains_per_batch: 2000,
         key_cache_size: 4,
         coprocessor_fhe_threads: 64,
+        rerand_output_rooted_subdag: false,
+        rerand_subdag_max_shared_intermediates: 0,
         tokio_threads: 32,
         pg_pool_max_connections: 2,
         metrics_addr: None,

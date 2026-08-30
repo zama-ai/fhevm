@@ -16,7 +16,10 @@ use lazy_static::lazy_static;
 use prometheus::{register_histogram, register_int_counter, Histogram, IntCounter};
 use scheduler::dfg::types::{CompressedCiphertext, DFGTxInput, SchedulerError};
 use scheduler::dfg::{build_component_nodes, ComponentNode, DFComponentGraph, DFGOp};
-use scheduler::dfg::{scheduler::Scheduler, types::DFGTaskInput};
+use scheduler::dfg::{
+    scheduler::{RerandScope, Scheduler},
+    types::DFGTaskInput,
+};
 use sqlx::types::Uuid;
 use sqlx::{postgres::PgListener, query, Postgres};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -1211,6 +1214,7 @@ async fn tfhe_worker_cycle(
             &mut trx,
             &dcid_mngr,
             gcs_mode,
+            rerand_scope_from_args(args),
         )
         .instrument(loop_span.clone())
         .await
@@ -2211,6 +2215,19 @@ fn prepare_transaction_ops(
 }
 
 #[tracing::instrument(name = "build_and_execute", skip_all)]
+/// Re-randomization scope from configuration (RFC 019). Defaults to the
+/// normative per-operation rule; the rooted scope is opt-in and, because it
+/// changes computed bytes, must be configured identically fleet-wide.
+fn rerand_scope_from_args(args: &crate::daemon_cli::Args) -> RerandScope {
+    if args.rerand_output_rooted_subdag {
+        RerandScope::OutputRootedSubDag {
+            max_shared_intermediates: args.rerand_subdag_max_shared_intermediates,
+        }
+    } else {
+        RerandScope::PerOperation
+    }
+}
+
 async fn build_transaction_graph_and_execute<'a>(
     txs: &mut Vec<ComponentNode>,
     db_key_cache: DbKeyCache,
@@ -2218,6 +2235,7 @@ async fn build_transaction_graph_and_execute<'a>(
     trx: &mut sqlx::Transaction<'a, Postgres>,
     dcid_mngr: &dependence_chain::LockMngr,
     gcs_mode: bool,
+    rerand_scope: RerandScope,
 ) -> Result<DFComponentGraph, CoprocessorError> {
     let mut tx_graph = DFComponentGraph::default();
     if txs.is_empty() {
@@ -2304,7 +2322,8 @@ async fn build_transaction_graph_and_execute<'a>(
             #[cfg(feature = "gpu")]
             keys.gpu_sks.clone(),
             health_check.activity_heartbeat.clone(),
-        );
+        )
+        .with_rerand_scope(rerand_scope);
         sched
             .schedule()
             .await
