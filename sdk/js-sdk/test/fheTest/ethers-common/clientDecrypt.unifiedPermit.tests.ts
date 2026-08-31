@@ -201,6 +201,75 @@ export function defineClientDecryptUnifiedPermitTests(parameters: {
       expect(permit.signerAddress.toLowerCase()).toBe(config.wallet.address.toLowerCase());
     });
 
+    it('signs and parses a manually-built DELEGATED unified permit (createUnsignedUnifiedDecryptionPermitEip712)', async () => {
+      // Delegation is post-sign metadata, so it's attached to the permit object
+      // handed to parseSignedDecryptionPermit rather than derived from the eip712.
+      const client = await createReadyClient();
+      const transportKeyPair = await client.generateTransportKeyPair();
+
+      const eip712 = await createUnsignedUnifiedDecryptionPermitEip712(client, {
+        transportKeyPair,
+        contractAddresses: [config.fheTestAddress],
+        durationSeconds: 24 * 3600,
+        startTimestamp: Math.floor(Date.now() / 1000) - 5,
+        signerAddress: config.bob.wallet.address,
+      });
+
+      // Strip EIP712Domain — ethers derives it from `domain`.
+      const { EIP712Domain: _domainType, ...requestTypes } = eip712.types;
+      const signature = await config.bob.wallet.signTypedData(
+        eip712.domain as ethers.TypedDataDomain,
+        requestTypes as Record<string, ethers.TypedDataField[]>,
+        eip712.message,
+      );
+
+      const permit = await client.parseSignedDecryptionPermit({
+        serializedPermit: {
+          version: 2,
+          eip712,
+          signature,
+          signerAddress: config.bob.wallet.address,
+          delegatorAddress: config.alice.wallet.address,
+        },
+        transportKeyPair,
+      });
+
+      expect(permit.version).toBe(2);
+      expect(permit.isDelegated).toBe(true);
+      expect(permit.signerAddress.toLowerCase()).toBe(config.bob.wallet.address.toLowerCase());
+      expect(permit.encryptedDataOwnerAddress.toLowerCase()).toBe(config.alice.wallet.address.toLowerCase());
+    });
+
+    it('should serialize, parse and verify a DELEGATED unified decryption permit', async () => {
+      const client = await createReadyClient();
+      const transportKeyPair = await client.generateTransportKeyPair();
+
+      const signedPermit = await client.signUnifiedDecryptionPermit({
+        transportKeyPair,
+        contractAddresses: [config.fheTestAddress],
+        durationSeconds: 24 * 3600,
+        startTimestamp: Math.floor(Date.now() / 1000) - 5,
+        signerAddress: config.bob.wallet.address,
+        signer: config.bob.signer,
+        delegatorAddress: config.alice.wallet.address,
+      });
+      expect(signedPermit.version).toBe(2);
+      expect(signedPermit.isDelegated).toBe(true);
+
+      const serialized = await client.serializeSignedDecryptionPermit({ signedPermit });
+      expect(serialized.version).toBe(2);
+      expect(serialized.delegatorAddress?.toLowerCase()).toBe(config.alice.wallet.address.toLowerCase());
+
+      const parsed = await client.parseSignedDecryptionPermit({
+        serializedPermit: serialized,
+        transportKeyPair,
+      });
+      expect(parsed.version).toBe(2);
+      expect(parsed.isDelegated).toBe(true);
+      expect(parsed.signerAddress.toLowerCase()).toBe(config.bob.wallet.address.toLowerCase());
+      expect(parsed.encryptedDataOwnerAddress.toLowerCase()).toBe(config.alice.wallet.address.toLowerCase());
+    });
+
     // ┌─────────────────────────────────────────────────────────────────────┐
     // │  Per-type decrypt tests (V2 permit, routed through the v3 relayer   │
     // │  user-decrypt endpoint via fetchKmsSigncryptedSharesV2)             │

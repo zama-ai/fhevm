@@ -94,6 +94,22 @@ export function isSignedDecryptionPermitV2(value: unknown): value is SignedDecry
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// _assertSignerIsNotDelegator
+////////////////////////////////////////////////////////////////////////////////
+
+function _assertSignerIsNotDelegator(
+  signerAddress: ChecksummedAddress,
+  delegatorAddress: ChecksummedAddress | undefined,
+): void {
+  if (delegatorAddress !== undefined && signerAddress.toLowerCase() === delegatorAddress.toLowerCase()) {
+    throw new Error(
+      'signerAddress and delegatorAddress must be different. ' +
+        'Use a non-delegated permit to decrypt your own values.',
+    );
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // _createSignedDecryptionPermitV2
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -107,6 +123,8 @@ async function _createSignedDecryptionPermitV2(
   },
 ): Promise<SignedDecryptionPermitV2> {
   const { eip712, signature } = parameters;
+
+  _assertSignerIsNotDelegator(parameters.signerAddress, parameters.delegatorAddress);
 
   // Enforced here (the choke point shared by signDecryptionPermitV2 and
   // parseSignedDecryptionPermitV2). The message field is a validated uint256
@@ -150,6 +168,7 @@ export async function signDecryptionPermitV2(
   if (delegatorAddressArg !== undefined) {
     assertIsAddress(delegatorAddressArg, {});
     delegatorAddress = addressToChecksummedAddress(delegatorAddressArg);
+    _assertSignerIsNotDelegator(signerAddress, delegatorAddress);
   }
 
   // All message construction (KMS context read + extraData version assert, duration
@@ -195,6 +214,7 @@ export async function parseSignedDecryptionPermitV2(
   // step below auto-detects EOA vs ERC-1271 against `eip712.message.userAddress`.
   assertRecordBytesHexProperty(permit, 'signature', permitName, options);
   assertRecordAddressProperty(permit, 'signerAddress', permitName, options);
+  const signerAddress = addressToChecksummedAddress(permit.signerAddress);
 
   // Delegation is post-sign metadata, not part of the signed eip712 message,
   // so it's read from the permit object itself (mirrors signDecryptionPermitV2).
@@ -202,6 +222,7 @@ export async function parseSignedDecryptionPermitV2(
   if (isRecordNonNullableProperty(permit, 'delegatorAddress')) {
     assertRecordAddressProperty(permit, 'delegatorAddress', permitName, options);
     delegatorAddress = addressToChecksummedAddress(permit.delegatorAddress);
+    _assertSignerIsNotDelegator(signerAddress, delegatorAddress);
   }
 
   const eip712 = permit.eip712;
@@ -213,8 +234,6 @@ export async function parseSignedDecryptionPermitV2(
   }
 
   assertIsKmsUserDecryptEip712V2(eip712, `${permitName}.eip712`, options);
-
-  const signerAddress = addressToChecksummedAddress(permit.signerAddress);
 
   if (eip712.message.publicKey.toLowerCase() !== transportKeyPair.publicKey.toLowerCase()) {
     throw new Error(
