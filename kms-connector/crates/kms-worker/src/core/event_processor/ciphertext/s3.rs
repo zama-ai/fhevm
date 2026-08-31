@@ -24,6 +24,7 @@ use ciphertext_attestation::{
     consensus::ConsensusMaterial, s3_ct128_key,
 };
 use connector_utils::types::handle::extract_fhe_type_from_handle;
+use kms_connector_api::ErrorCode;
 use kms_grpc::kms::v1::{CiphertextFormat as GrpcCiphertextFormat, TypedCiphertext};
 use sha3::{
     Digest, Keccak256,
@@ -140,16 +141,18 @@ impl BoundedClient {
     ) -> Result<TypedCiphertext, ProcessingError> {
         // A handle that carries no valid FHE type is malformed; retrying cannot fix it.
         let fhe_type = extract_fhe_type_from_handle(handle.as_slice()).map_err(|e| {
-            ProcessingError::Irrecoverable(anyhow!(
-                "cannot extract FHE type from handle {handle}: {e}"
-            ))
+            ProcessingError::irrecoverable(
+                ErrorCode::Unprocessable,
+                anyhow!("cannot extract FHE type from handle {handle}: {e}"),
+            )
         })?;
         let ct_format = grpc_ciphertext_format(material.format);
 
         if winning_buckets.is_empty() {
-            return Err(ProcessingError::Recoverable(anyhow!(
-                "no winning-group bucket resolved for handle {handle}"
-            )));
+            return Err(ProcessingError::recoverable(
+                ErrorCode::CoproConsensusFailed,
+                anyhow!("no winning-group bucket resolved for handle {handle}"),
+            ));
         }
 
         let mut last_error = "no retrieval attempt made".to_string();
@@ -206,10 +209,13 @@ impl BoundedClient {
         if digest_mismatch {
             warn!(%handle, "All winning-group buckets failed ciphertext digest verification");
         }
-        Err(ProcessingError::Recoverable(anyhow!(
-            "ciphertext unavailable for handle {handle}: all retrieval attempts failed \
-             (last: {last_error})"
-        )))
+        Err(ProcessingError::recoverable(
+            ErrorCode::CiphertextNotFound,
+            anyhow!(
+                "ciphertext unavailable for handle {handle}: all retrieval attempts failed \
+                 (last: {last_error})"
+            ),
+        ))
     }
 
     /// Retrieves a ciphertext body directly via HTTP, holding at most `max_ciphertext_size` of it.
@@ -337,6 +343,7 @@ impl BoundedClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::event_processor::ProcessingErrorClass;
     use alloy::primitives::U256;
     use connector_utils::tests::net::black_hole_server;
     use tokio::{io::AsyncWriteExt, task::JoinHandle};
@@ -422,7 +429,7 @@ mod tests {
         )
         .await
         .expect("retrieval should have resumed");
-        assert!(matches!(result, Err(ProcessingError::Recoverable(_))));
+        assert!(matches!(result, Err(ref e) if e.class == ProcessingErrorClass::Recoverable));
     }
 
     /// Every request the client issues carries a deadline — the `HEAD` its own, the `GET` the
@@ -453,7 +460,7 @@ mod tests {
         )
         .await
         .expect("the GET should have ended on its own deadline");
-        assert!(matches!(get, Err(ProcessingError::Recoverable(_))));
+        assert!(matches!(get, Err(ref e) if e.class == ProcessingErrorClass::Recoverable));
 
         accept_loop.abort();
     }

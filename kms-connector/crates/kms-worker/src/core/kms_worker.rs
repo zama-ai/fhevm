@@ -5,8 +5,8 @@ use crate::{
         event_picker::{DbEventPicker, EventPicker},
         event_processor::{
             CiphertextManager, DbContextManager, DbEventProcessor, DecryptionProcessor,
-            EventProcessor, HostRpcClient, KMSGenerationProcessor, KmsClient,
-            ProtocolConfigProcessor,
+            EventProcessor, HostRpcClient, KMSGenerationProcessor, KmsClient, ProcessingError,
+            ProcessingErrorClass, ProtocolConfigProcessor,
         },
         kms_response_publisher::DbKmsResponsePublisher,
     },
@@ -19,7 +19,7 @@ use anyhow::anyhow;
 use connector_utils::{
     conn::{DefaultProvider, connect_to_db, connect_to_rpc_node, connect_to_rpc_node_with_bounds},
     tasks::spawn_with_limit,
-    types::{KmsResponse, ProtocolEvent},
+    types::{KmsResponse, ProtocolEvent, ProtocolEventKind},
 };
 use fhevm_host_bindings::acl::ACL;
 use std::collections::HashMap;
@@ -37,6 +37,9 @@ pub struct KmsWorker<E, Proc> {
 
     /// The entity responsible for publishing KMS Core's responses.
     response_publisher: DbKmsResponsePublisher,
+
+    /// The maximum number of decryption attempts.
+    max_decryption_attempts: u16,
 }
 
 impl<E, Proc> KmsWorker<E, Proc>
@@ -49,11 +52,13 @@ where
         event_picker: E,
         event_processor: Proc,
         response_publisher: DbKmsResponsePublisher,
+        max_decryption_attempts: u16,
     ) -> Self {
         Self {
             event_picker,
             event_processor,
             response_publisher,
+            max_decryption_attempts,
         }
     }
 
@@ -81,9 +86,16 @@ where
         for event in events {
             let event_processor = self.event_processor.clone();
             let response_publisher = self.response_publisher.clone();
+            let max_decryption_attempts = self.max_decryption_attempts;
 
             spawn_with_limit(async move {
-                Self::handle_event(event_processor, response_publisher, event).await
+                Self::handle_event(
+                    event_processor,
+                    response_publisher,
+                    event,
+                    max_decryption_attempts,
+                )
+                .await
             })
             .await;
         }
@@ -95,11 +107,26 @@ where
         mut event_processor: Proc,
         response_publisher: DbKmsResponsePublisher,
         mut event: ProtocolEvent,
+        max_decryption_attempts: u16,
     ) {
         let otlp_context = event.otlp_context.clone();
         tracing::Span::current().set_parent(otlp_context.extract());
 
-        let Some(response_kind) = event_processor.process(&mut event).await else {
+        info!("Starting to process {:?}...", event.kind);
+        let response_kind = match event_processor.process(&mut event).await {
+            Ok(response_kind) => response_kind,
+            Err(error) => {
+                return Self::handle_processing_error(
+                    &response_publisher,
+                    event,
+                    error,
+                    max_decryption_attempts,
+                )
+                .await;
+            }
+        };
+        info!("Event successfully processed!");
+        let Some(response_kind) = response_kind else {
             return;
         };
 
@@ -111,6 +138,54 @@ where
             }
         } else {
             register_event_latency(&event);
+        }
+    }
+
+    async fn handle_processing_error(
+        response_publisher: &DbKmsResponsePublisher,
+        event: ProtocolEvent,
+        error: ProcessingError,
+        max_decryption_attempts: u16,
+    ) {
+        match (error.class, &event.kind) {
+            (ProcessingErrorClass::Irrecoverable, _) => {
+                error!("{error}");
+                if let Err(e) = response_publisher.mark_event_as_failed(event).await {
+                    warn!("{e}");
+                }
+            }
+            (ProcessingErrorClass::Aborted, _) => {
+                warn!("{error}");
+                if let Err(e) = response_publisher.mark_event_as_aborted(event).await {
+                    warn!("{e}");
+                }
+            }
+            // For now, we only check the error counter for public and user decryptions as they are
+            // the most frequent operations, and we want to avoid infinite retry loop for them.
+            // For key management operations, as they are not frequent at all, we currently rely on
+            // a manual cleanup of the DB in such case. We want to avoid to "accidentally" remove a
+            // key management operation at all cost.
+            (
+                ProcessingErrorClass::Recoverable,
+                ProtocolEventKind::PublicDecryption(_)
+                | ProtocolEventKind::UserDecryption(_)
+                | ProtocolEventKind::UserDecryptionV2(_),
+            ) if event.error_counter as u16 >= max_decryption_attempts => {
+                error!(
+                    "Processing failed with irrecoverable error: {:#}. Maximum number of \
+                     decryption attempts reached: {}",
+                    error.source, event.error_counter
+                );
+                if let Err(e) = response_publisher.mark_event_as_failed(event).await {
+                    warn!("{e}");
+                }
+            }
+            (ProcessingErrorClass::Recoverable, _) => {
+                error!("{error}");
+                if let Err(e) = response_publisher.mark_event_as_pending(event).await {
+                    warn!("{e}");
+                }
+            }
         }
     }
 }
@@ -175,7 +250,6 @@ impl
             decryption_processor,
             kms_generation_processor,
             protocol_config_processor,
-            config.max_decryption_attempts,
             db_pool.clone(),
         );
         let response_publisher = DbKmsResponsePublisher::new(db_pool.clone());
@@ -188,7 +262,12 @@ impl
             kms_health_client,
             config.healthcheck_timeout,
         );
-        let kms_worker = KmsWorker::new(event_picker, event_processor, response_publisher);
+        let kms_worker = KmsWorker::new(
+            event_picker,
+            event_processor,
+            response_publisher,
+            config.max_decryption_attempts,
+        );
         Ok((kms_worker, state))
     }
 }

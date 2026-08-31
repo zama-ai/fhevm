@@ -1,29 +1,100 @@
 use crate::monitoring::metrics::REQUEST_CHECK_ERRORS;
 use anyhow::anyhow;
+use kms_connector_api::ErrorCode;
 use thiserror::Error;
 use tonic::Code;
 use user_decryption_signature::Erc1271Error;
 
-#[derive(Debug, Error)]
-pub enum ProcessingError {
-    #[error("Processing failed with irrecoverable error: {0:#}")]
-    Irrecoverable(anyhow::Error),
-    #[error("Processing failed: {0:#}")]
-    Recoverable(anyhow::Error),
-    #[error("Processing stopped: the operation was aborted on the KMS Core")]
+#[derive(Debug)]
+pub struct ProcessingError {
+    pub class: ProcessingErrorClass,
+    /// Caller-facing error code, stored in the error response row for HTTP-sourced decryption.
+    /// Unused for non-decryption events and gateway-sourced decryption.
+    pub code: ErrorCode,
+    pub source: anyhow::Error,
+}
+
+/// Recoverability classification of a [`ProcessingError`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProcessingErrorClass {
+    Recoverable,
+    Irrecoverable,
     Aborted,
 }
 
 impl ProcessingError {
-    /// Converts GRPC status of the polling of a KMS Response into a `ProcessingError`.
-    pub fn from_response_status(value: tonic::Status) -> Self {
-        match value.code() {
-            Code::Aborted => Self::Aborted,
-            Code::DeadlineExceeded | Code::Unavailable | Code::ResourceExhausted => {
-                Self::Recoverable(anyhow!("KMS GRPC error: {value}"))
-            }
-            _ => Self::Irrecoverable(anyhow!("KMS GRPC error: {value}")),
+    pub fn recoverable(code: ErrorCode, source: impl Into<anyhow::Error>) -> Self {
+        Self {
+            class: ProcessingErrorClass::Recoverable,
+            code,
+            source: source.into(),
         }
+    }
+
+    pub fn irrecoverable(code: ErrorCode, source: impl Into<anyhow::Error>) -> Self {
+        Self {
+            class: ProcessingErrorClass::Irrecoverable,
+            code,
+            source: source.into(),
+        }
+    }
+
+    /// The KMS Core aborted the operation.
+    pub fn aborted() -> Self {
+        Self {
+            class: ProcessingErrorClass::Aborted,
+            code: ErrorCode::Unprocessable,
+            source: anyhow!("the KMS Core aborted the operation"),
+        }
+    }
+
+    /// Generic transient infra failure (DB / RPC / transport).
+    pub fn transient(source: impl Into<anyhow::Error>) -> Self {
+        Self::recoverable(ErrorCode::UpstreamTransient, source)
+    }
+
+    /// Converts the GRPC status of a KMS Core send/poll into a `ProcessingError`.
+    pub fn from_grpc_status(status: tonic::Status) -> Self {
+        match status.code() {
+            Code::Aborted => Self::aborted(),
+            Code::DeadlineExceeded | Code::Unavailable | Code::ResourceExhausted => {
+                Self::recoverable(
+                    ErrorCode::UpstreamTransient,
+                    anyhow!("KMS GRPC error: {status}"),
+                )
+            }
+            _ => Self::irrecoverable(
+                ErrorCode::Unprocessable,
+                anyhow!("KMS GRPC error: {status}"),
+            ),
+        }
+    }
+
+    /// Wraps the inner error with additional context.
+    pub fn context(mut self, ctx: String) -> Self {
+        self.source = self.source.context(ctx);
+        self
+    }
+
+    pub fn details(&self) -> String {
+        format!("{:#}", self.source)
+    }
+}
+
+impl std::fmt::Display for ProcessingError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let prefix = match self.class {
+            ProcessingErrorClass::Irrecoverable => "Processing failed with irrecoverable error",
+            ProcessingErrorClass::Recoverable => "Processing failed",
+            ProcessingErrorClass::Aborted => "Processing aborted",
+        };
+        write!(f, "{prefix}: {:#}", self.source)
+    }
+}
+
+impl std::error::Error for ProcessingError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(self.source.as_ref())
     }
 }
 
@@ -35,11 +106,12 @@ impl From<Erc1271Error> for ProcessingError {
     fn from(err: Erc1271Error) -> Self {
         match err {
             Erc1271Error::EoaMismatchNoCode(_) | Erc1271Error::EmptySigOnEoa(_) => {
-                Self::Irrecoverable(anyhow::Error::new(err))
+                Self::irrecoverable(ErrorCode::UserSignatureRejected, err)
             }
-            Erc1271Error::Transport(_)
-            | Erc1271Error::WrongMagic(..)
-            | Erc1271Error::Rejected(..) => Self::Recoverable(anyhow::Error::new(err)),
+            Erc1271Error::Transport(_) => Self::transient(err),
+            Erc1271Error::WrongMagic(..) | Erc1271Error::Rejected(..) => {
+                Self::recoverable(ErrorCode::UserSignatureRejected, err)
+            }
         }
     }
 }
@@ -92,37 +164,33 @@ pub struct RequestCheckError {
 }
 
 impl RequestCheckError {
-    pub fn recoverable(kind: RequestCheckKind, source: anyhow::Error) -> Self {
-        Self {
-            kind,
-            source: ProcessingError::Recoverable(source),
-        }
+    pub fn new(kind: RequestCheckKind, source: ProcessingError) -> Self {
+        Self { kind, source }
     }
 
-    pub fn irrecoverable(kind: RequestCheckKind, source: anyhow::Error) -> Self {
-        Self {
-            kind,
-            source: ProcessingError::Irrecoverable(source),
-        }
+    pub fn recoverable(
+        kind: RequestCheckKind,
+        code: ErrorCode,
+        source: impl Into<anyhow::Error>,
+    ) -> Self {
+        Self::new(kind, ProcessingError::recoverable(code, source))
+    }
+
+    pub fn irrecoverable(
+        kind: RequestCheckKind,
+        code: ErrorCode,
+        source: impl Into<anyhow::Error>,
+    ) -> Self {
+        Self::new(kind, ProcessingError::irrecoverable(code, source))
     }
 
     pub fn network(err: impl Into<anyhow::Error>) -> Self {
-        // Network errors are always considered as recoverable
-        Self {
-            kind: RequestCheckKind::Network,
-            source: ProcessingError::Recoverable(err.into()),
-        }
+        Self::new(RequestCheckKind::Network, ProcessingError::transient(err))
     }
 
     /// Wraps the inner error with additional context.
     pub fn context(mut self, ctx: String) -> Self {
-        self.source = match self.source {
-            ProcessingError::Irrecoverable(e) => ProcessingError::Irrecoverable(e.context(ctx)),
-            ProcessingError::Recoverable(e) => ProcessingError::Recoverable(e.context(ctx)),
-            // `Aborted` has no inner error (inferred from gRPC status returned by the KMS Core),
-            // so the context is dropped for now.
-            ProcessingError::Aborted => ProcessingError::Aborted,
-        };
+        self.source = self.source.context(ctx);
         self
     }
 
@@ -142,9 +210,6 @@ impl From<Erc1271Error> for RequestCheckError {
             | Erc1271Error::Rejected(..)
             | Erc1271Error::WrongMagic(..) => RequestCheckKind::Signature,
         };
-        Self {
-            kind,
-            source: err.into(),
-        }
+        Self::new(kind, err.into())
     }
 }
