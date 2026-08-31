@@ -28,6 +28,10 @@ pub enum ErrorCode {
     CiphertextNotFound,
     /// Coprocessor ciphertext-attestation consensus could not confirm the material.
     CoproConsensusFailed,
+    /// The referenced KMS context/epoch is not currently valid/active on-chain (kms_worker row).
+    KmsContextInvalid,
+    /// The referenced KMS context/epoch has been destroyed (kms_worker row).
+    KmsContextDestroyed,
     /// Irrecoverable rejection: malformed handle, handles resolving to different key ids,
     /// invalid `extra_data`, terminal KMS Core error (kms_worker row).
     Unprocessable,
@@ -46,6 +50,8 @@ impl ErrorCode {
             Self::InvalidUserSignature | Self::SenderAuthenticationFailed => 401,
             Self::AclDenied | Self::UserSignatureRejected => 403,
             Self::CiphertextNotFound => 404,
+            Self::KmsContextDestroyed => 410,
+            Self::KmsContextInvalid => 412,
             Self::Unprocessable => 422,
             Self::RateLimited => 429,
             Self::CoproConsensusFailed | Self::UpstreamTransient => 502,
@@ -66,6 +72,7 @@ impl ErrorCode {
             Self::Malformed
             | Self::InvalidUserSignature
             | Self::SenderAuthenticationFailed
+            | Self::KmsContextDestroyed
             | Self::Unprocessable
             | Self::Unknown => false,
             Self::RateLimited
@@ -74,6 +81,7 @@ impl ErrorCode {
             | Self::UserSignatureRejected
             | Self::CiphertextNotFound
             | Self::CoproConsensusFailed
+            | Self::KmsContextInvalid
             | Self::UpstreamTransient => true,
         }
     }
