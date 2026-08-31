@@ -2366,25 +2366,12 @@ fn mollusk_fhe_execute_batches_multiple_created_public_outputs_in_step_order() {
     assert_created_public_batch(&result, &execution.outputs);
 }
 
-/// Largest create count the builder's instruction-trace model admits for a
-/// public-output execution. The `fhe_execute_boundary/all_created_public`
-/// snapshot pins the host wall at the same count (heap, one step from trace).
-fn max_created_public_creates() -> usize {
-    (0..=host::MAX_FHE_EXECUTION_STEPS)
-        .take_while(|creates| {
-            zama_fhe::instruction_trace_floor(*creates, false, true)
-                <= zama_fhe::TRANSACTION_INSTRUCTION_TRACE_LIMIT
-        })
-        .last()
-        .expect("zero creates always fit")
-}
-
 #[test]
 fn mollusk_fhe_execute_maximum_created_public_batch_fits_one_cpi() {
     // The largest executable all-created-public execution still emits its DD-038 lifecycle records in
     // exactly one execution CPI. (The full MAX_FHE_EXECUTION_STEPS execution serialization is covered by the
     // event-transport unit test; the host wall itself lives in fhe_execute_boundary.rs.)
-    let created_public_steps = max_created_public_creates();
+    let created_public_steps = zama_fhe::MAX_PERSISTENT_CREATES;
     let execution = created_public_batch(
         created_public_steps,
         &(0..created_public_steps).collect::<Vec<_>>(),

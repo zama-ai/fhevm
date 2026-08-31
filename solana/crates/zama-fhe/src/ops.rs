@@ -17,7 +17,6 @@ use zama_host::{
 
 use crate::acl::{BoundedU64UpperBound, Output};
 use crate::builder::FheExecutionBuilder;
-use crate::heap_tally::TalliedVec;
 use crate::operand::{Operand, OperandKind};
 use crate::types::{
     binary_rhs_operand, BinaryRhs, Bool, Encrypted, FheBitwise, FheEq, FheIsIn, FheNeg, FheNot,
@@ -576,23 +575,13 @@ impl<'id> FheExecutionBuilder<'id> {
         let max_operands = max_reduction_operands(fhe_type);
         let operands = operands.into_iter();
         let step_index = self.commit_step(fhe_type, move |lowering| {
-            let (hinted, _) = operands.size_hint();
-            let reserved = hinted.min(max_operands);
-            let mut lowered = TalliedVec::try_with_capacity(lowering.budget(), reserved)?;
-            for operand in operands {
-                let op = operand.into().operand();
-                if matches!(op.0, OperandKind::Scalar(_)) {
-                    return Err(FheExecutionBuildError::ScalarEncryptedOperand);
-                }
-                if lowered.len() == max_operands {
-                    return Err(FheExecutionBuildError::TooManyReductionOperands);
-                }
-                let lowered_op = lowering.operand(op)?;
-                lowered.try_push(lowering.budget(), lowered_op)?;
-            }
+            let lowered = lowering.reduction_operands(
+                operands.map(|operand| operand.into().operand()),
+                max_operands,
+            )?;
             let output = lowering.output(output)?;
             Ok(FheExecuteStep::Sum {
-                operands: lowered.into_inner(),
+                operands: lowered,
                 fhe_type,
                 output,
             })
@@ -618,24 +607,12 @@ impl<'id> FheExecutionBuilder<'id> {
         let bool_type = FheType::BOOL.byte();
         let step_index = self.commit_step(bool_type, move |lowering| {
             let value = lowering.operand(value_op)?;
-            let (hinted, _) = set.size_hint();
-            let reserved = hinted.min(max_operands);
-            let mut set_lowered = TalliedVec::try_with_capacity(lowering.budget(), reserved)?;
-            for operand in set {
-                let op = operand.into().operand();
-                if matches!(op.0, OperandKind::Scalar(_)) {
-                    return Err(FheExecutionBuildError::ScalarEncryptedOperand);
-                }
-                if set_lowered.len() == max_operands {
-                    return Err(FheExecutionBuildError::TooManyReductionOperands);
-                }
-                let lowered_op = lowering.operand(op)?;
-                set_lowered.try_push(lowering.budget(), lowered_op)?;
-            }
+            let set = lowering
+                .reduction_operands(set.map(|operand| operand.into().operand()), max_operands)?;
             let output = lowering.output(output)?;
             Ok(FheExecuteStep::IsIn {
                 value,
-                set: set_lowered.into_inner(),
+                set,
                 fhe_type,
                 output,
             })

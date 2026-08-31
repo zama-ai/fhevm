@@ -121,7 +121,7 @@ pub(crate) fn shared_audience_update_shape(
 
 /// The chain shape at full depth with the first `outputs.len()` steps writing persistent
 /// outputs and the rest staying transient, the value threading through all of them. With one
-/// create this is the dep-chain / load-smoke shape; with `MAX_BUILDABLE_CREATES` creates it is
+/// create this is the dep-chain / load-smoke shape; with `MAX_PERSISTENT_CREATES` creates it is
 /// the heaviest create-load the builder admits.
 pub(crate) fn chain_with_outputs(
     steps: usize,

@@ -381,9 +381,9 @@ not when the threat model changes.
       1,232 bytes (`ExceedsCpiInstructionDataLimit`).
     - **Build heap** — the builder admits every byte it requests from the
       allocator against `BUILD_HEAP_BUDGET_BYTES` (24 KiB) before the
-      allocator serves it (`HeapBudget`: intern tables grow through
-      `try_push`, exact-size allocations through `admit` / `alloc_vec`, so a
-      forgotten site does not compile), leaving `APP_HEAP_RESERVE_BYTES`
+      allocator serves it (`HeapBudget`: intern tables cannot grow except
+      through `try_push`; exact-size sites go through `try_with_capacity` /
+      `try_filled`), leaving `APP_HEAP_RESERVE_BYTES`
       (8 KiB) of the fixed 32 KB region for what the builder genuinely cannot
       see: Anchor's account deserialization and the app's own allocations
       (`ExceedsBuildHeapBudget`). The tally can never cross the budget even

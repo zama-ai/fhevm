@@ -26,7 +26,8 @@
 //!   [`crate::APP_HEAP_RESERVE_BYTES`] for what it genuinely cannot see: Anchor's account
 //!   deserialization and the app's own allocations
 //!   ([`FheExecutionBuildError::ExceedsBuildHeapBudget`]). Intern tables grow through
-//!   `TalliedVec::try_push`; exact-size allocations through `admit` / `alloc_vec`. Packet and
+//!   `TalliedVec::try_push` (there is no `DerefMut` to the `Vec`); exact-size sites go
+//!   through `try_with_capacity` / `try_filled`. Packet and
 //!   invoke terms land at `finish`, where they are first known. The tally is validated
 //!   byte-for-byte against a counting allocator across the whole shape frontier in `heap_budget`,
 //!   and the never-crosses claim has its own adversarial test there.
@@ -51,7 +52,7 @@ use crate::acl::Output;
 use crate::execution::FheExecution;
 use crate::heap_tally::{HeapBudget, TalliedVec};
 use crate::lower::{lower_operand, lower_output, StepTables};
-use crate::operand::{BuilderIdentity, Operand};
+use crate::operand::{BuilderIdentity, Operand, OperandKind};
 use crate::validate::{
     validate_encrypted_value_account_authority, validate_lowered_execution,
     validate_rand_steps_anchor_persistent_output,
@@ -96,7 +97,7 @@ pub struct FheExecutionBuilder<'id> {
     /// Whether any committed output is `make_public` (the host emits one public-outputs event CPI).
     pub(crate) has_public_output: bool,
     /// The one running total of every byte this build has admitted. Intern tables grow through
-    /// it; exact-size allocations charge it; `finish` tests packet and invoke against it.
+    /// it; exact-size sites charge it; `finish` tests packet and invoke against it.
     pub(crate) budget: HeapBudget,
 }
 
@@ -122,6 +123,29 @@ impl StepLowering<'_> {
         self.tables.budget()
     }
 
+    /// Lowers a reduction's operand iterator into one exact-size table. Scalar checks and the
+    /// operand cap live here so `sum` / `is_in` do not each carry a copy of the admission loop.
+    pub(crate) fn reduction_operands(
+        &mut self,
+        operands: impl Iterator<Item = Operand>,
+        max: usize,
+    ) -> Result<Vec<FheExecuteOperand>> {
+        let (hinted, _) = operands.size_hint();
+        let reserved = hinted.min(max);
+        let mut lowered = TalliedVec::try_with_capacity(self.budget(), reserved)?;
+        for operand in operands {
+            if matches!(operand.0, OperandKind::Scalar(_)) {
+                return Err(FheExecutionBuildError::ScalarEncryptedOperand);
+            }
+            if lowered.len() == max {
+                return Err(FheExecutionBuildError::TooManyReductionOperands);
+            }
+            let lowered_op = self.operand(operand)?;
+            lowered.try_push(self.budget(), lowered_op)?;
+        }
+        Ok(lowered.into_inner())
+    }
+
     pub(crate) fn output(&mut self, output: Output) -> Result<FheExecuteOutput> {
         lower_output(
             &mut self.tables,
@@ -142,7 +166,7 @@ impl<'id> FheExecutionBuilder<'id> {
     /// This is also the canonical [`TooManySteps`](FheExecutionBuildError::TooManySteps) gate:
     /// steps only ever grow through here, so the op methods and `finish` do not re-check it.
     /// Heap admission lives on [`HeapBudget`]: intern tables grow through `try_push`, exact-size
-    /// allocations through `admit` / `alloc_vec`. Packet and invoke land at `finish`.
+    /// sites through `try_with_capacity`. Packet and invoke land at `finish`.
     ///
     /// Ordering dependency inside a step: `operand()` reads `persistent_producers`, which still
     /// holds the pre-step state only because every op lowers its operands before its output. An op
@@ -331,8 +355,17 @@ impl<'id> FheExecutionBuilder<'id> {
         {
             return Err(FheExecutionBuildError::ExceedsBuildHeapBudget);
         }
-        self.budget.admit(bitmap_bytes)?;
-        validate_lowered_execution(&args.steps, &self.remaining_accounts, &args.dictionary)?;
+        let remaining_len = self.remaining_accounts.len();
+        let dictionary_len = args.dictionary.len();
+        let mut used_accounts = TalliedVec::try_filled(&mut self.budget, remaining_len, false)?;
+        let mut used_dictionary = TalliedVec::try_filled(&mut self.budget, dictionary_len, false)?;
+        validate_lowered_execution(
+            &args.steps,
+            &self.remaining_accounts,
+            &args.dictionary,
+            used_accounts.as_mut_slice(),
+            used_dictionary.as_mut_slice(),
+        )?;
         validate_rand_steps_anchor_persistent_output(&args.steps)?;
         let build_heap_bytes = self.budget.total();
         let cost = crate::cost::FheExecutionCost {

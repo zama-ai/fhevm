@@ -1,9 +1,10 @@
 //! Lowers builder operands/outputs to the interned wire format.
 //!
-//! Intern tables are [`TalliedVec`]s that grow through a [`HeapBudget`]. Exact-size allocations
-//! (attestation embeds, subject index lists) go through [`StepTables::tally_bytes`]. Purpose
-//! lists are a stack array and never touch the heap. On drop, an uncommitted step rolls back
-//! interned tables in place so a failed step leaves the builder as it found them.
+//! Intern tables are [`TalliedVec`]s that grow through a [`HeapBudget`]. Exact-size
+//! allocations (attestation embeds, subject index lists) go through [`HeapBudget::admit`] and
+//! [`TalliedVec::try_with_capacity`]. Purpose lists are a stack array and never touch the heap.
+//! On drop, an uncommitted step rolls back interned tables in place so a failed step leaves
+//! the builder as it found them.
 
 use zama_host::{CoprocessorInputAttestation, FheExecuteOperand, FheExecuteOutput};
 
@@ -134,11 +135,6 @@ impl<'b> StepTables<'b> {
         Ok(index)
     }
 
-    /// Pays an exact-size allocation into the budget before the allocator serves it.
-    pub(crate) fn tally_bytes(&mut self, bytes: usize) -> Result<()> {
-        self.budget.admit(bytes)
-    }
-
     /// Interns a 32-byte constant into the execution dictionary, reusing an existing entry
     /// byte-for-byte.
     pub(crate) fn dictionary_index(&mut self, bytes: [u8; 32]) -> Result<u8> {
@@ -197,19 +193,17 @@ pub(crate) fn lower_operand(
         } => {
             let attestation = verified_inputs
                 .get(attestation_index as usize)
-                .ok_or(FheExecutionBuildError::MissingVerifiedInput)?
-                .clone();
-            // The embed is the attestation's boxed clone: the box itself plus the exact bytes
-            // of its three cloned tables. Reusing one verified input across steps pays this per
-            // consuming step.
-            tables.tally_bytes(
+                .ok_or(FheExecutionBuildError::MissingVerifiedInput)?;
+            // Admit from the borrowed tables, then clone. On the never-freeing bump a rejected
+            // embed must not have already spent those bytes.
+            tables.budget.admit(
                 std::mem::size_of::<CoprocessorInputAttestation>()
                     + attestation.ct_handles.len() * std::mem::size_of::<[u8; 32]>()
                     + attestation.extra_data.len()
                     + attestation.signatures.len() * std::mem::size_of::<[u8; 65]>(),
             )?;
             Ok(FheExecuteOperand::VerifiedInput {
-                attestation: Box::new(attestation),
+                attestation: Box::new(attestation.clone()),
             })
         }
         OperandKind::Scalar(value) => Ok(FheExecuteOperand::Scalar {
@@ -251,9 +245,11 @@ pub(crate) fn lower_output(
                     ))?)
                 };
             // One exact allocation for the index list, sized explicitly so the tally is exact.
-            let mut output_subject_indexes = tables.budget().alloc_vec(binding.subjects.len())?;
+            let mut output_subject_indexes =
+                TalliedVec::try_with_capacity(tables.budget(), binding.subjects.len())?;
             for subject in &binding.subjects {
-                output_subject_indexes.push(tables.dictionary_index(subject.to_bytes())?);
+                let index = tables.dictionary_index(subject.to_bytes())?;
+                output_subject_indexes.try_push(tables.budget(), index)?;
             }
             let output = FheExecuteOutput::StoredValue {
                 output_encrypted_value_index,
@@ -261,7 +257,7 @@ pub(crate) fn lower_output(
                 output_domain_index: tables.dictionary_index(binding.domain.pubkey().to_bytes())?,
                 output_account_index: tables.dictionary_index(output_authority.to_bytes())?,
                 output_label_index: tables.dictionary_index(binding.label)?,
-                output_subject_indexes,
+                output_subject_indexes: output_subject_indexes.into_inner(),
                 previous_state: binding.previous.map(|previous| zama_host::PreviousState {
                     handle: previous.handle,
                     subjects: previous.subjects,

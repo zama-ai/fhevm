@@ -7,7 +7,9 @@ use anchor_lang::prelude::Pubkey;
 use zama_host::MAX_FHE_EXECUTION_STEPS;
 
 use crate::builder::FheExecutionBuilder;
-use crate::cost::{instruction_trace_floor, TRANSACTION_INSTRUCTION_TRACE_LIMIT};
+use crate::cost::{
+    instruction_trace_floor, MAX_PERSISTENT_CREATES, TRANSACTION_INSTRUCTION_TRACE_LIMIT,
+};
 use crate::{
     Domain, Encrypted, EncryptedValueId, EncryptedValueLabel,
     ExecutionEncryptedValueAccountAuthority, FheExecution, Output, Scalar, Uint, Uint64Handle,
@@ -16,7 +18,6 @@ use crate::{
 use super::frontier::frontier_shapes;
 use super::harness::{
     balance_handle, counted_bytes, try_measure, ShapeBuilder, ADMITTED_FRONTIER_SHAPES,
-    MAX_BUILDABLE_CREATES,
 };
 use super::shapes::*;
 
@@ -29,7 +30,7 @@ use super::shapes::*;
 /// `build`'s admission and the host's survival — fhevm-internal#1872.
 #[test]
 fn the_builder_admits_what_the_host_heap_cannot_hold() {
-    for creates in [15, 16, MAX_BUILDABLE_CREATES] {
+    for creates in [15, 16, MAX_PERSISTENT_CREATES] {
         FheExecution::build(
             ExecutionEncryptedValueAccountAuthority::new(Pubkey::new_unique()),
             shared_audience_public_creates_shape(creates),
@@ -43,7 +44,7 @@ fn the_builder_admits_what_the_host_heap_cannot_hold() {
     assert_eq!(
         FheExecution::build(
             ExecutionEncryptedValueAccountAuthority::new(Pubkey::new_unique()),
-            shared_audience_public_creates_shape(MAX_BUILDABLE_CREATES + 1),
+            shared_audience_public_creates_shape(MAX_PERSISTENT_CREATES + 1),
         )
         .unwrap_err(),
         crate::FheExecutionBuildError::ExceedsInstructionTraceLimit,
@@ -108,7 +109,7 @@ fn the_tally_never_crosses_the_budget_even_transiently() {
     // Subject-heavy creates: every output interns eight fresh subjects, driving the
     // dictionary and account tables through their doublings — and the rejections are ignored,
     // as a buggy app would, so the ratchet past the first rejection is probed too.
-    let (input, outputs) = persist_shape_data(PersistKind::Create, MAX_BUILDABLE_CREATES, 8);
+    let (input, outputs) = persist_shape_data(PersistKind::Create, MAX_PERSISTENT_CREATES, 8);
     let _ = FheExecution::build(
         ExecutionEncryptedValueAccountAuthority::new(Pubkey::new_unique()),
         |builder| {
@@ -133,7 +134,7 @@ fn the_tally_never_crosses_the_budget_even_transiently() {
     );
 
     // Maximum-size attestations: the embeds go through the explicit counter rather than a
-    // table, so this drives `tally_bytes`' admission into rejection.
+    // table, so this drives `admit`'s admission into rejection.
     let _ = FheExecution::build(
         ExecutionEncryptedValueAccountAuthority::new(Pubkey::new_unique()),
         |builder| {
@@ -181,9 +182,9 @@ fn the_tally_never_crosses_the_budget_even_transiently() {
 fn the_heap_tally_matches_a_counting_allocator_for_every_admitted_shape() {
     // The ceilings that define "admitted" hold where this file assumes they do.
     assert_eq!(
-        instruction_trace_floor(MAX_BUILDABLE_CREATES, true, true),
+        instruction_trace_floor(MAX_PERSISTENT_CREATES, true, true),
         TRANSACTION_INSTRUCTION_TRACE_LIMIT,
-        "MAX_BUILDABLE_CREATES is stale against the trace model"
+        "MAX_PERSISTENT_CREATES is stale against the trace model"
     );
     let mut admitted = 0;
     for (name, build) in frontier_shapes() {
@@ -227,7 +228,7 @@ fn the_shapes_past_each_ceiling_are_rejected_with_their_own_error() {
         build(Box::new(persist_shape(
             PersistKind::Create,
             MAX_FHE_EXECUTION_STEPS,
-            MAX_BUILDABLE_CREATES + 1,
+            MAX_PERSISTENT_CREATES + 1,
             1,
         ))),
         crate::FheExecutionBuildError::ExceedsInstructionTraceLimit,
@@ -238,7 +239,7 @@ fn the_shapes_past_each_ceiling_are_rejected_with_their_own_error() {
         build(Box::new(persist_shape(
             PersistKind::Create,
             MAX_FHE_EXECUTION_STEPS,
-            MAX_BUILDABLE_CREATES,
+            MAX_PERSISTENT_CREATES,
             zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS,
         ))),
         crate::FheExecutionBuildError::ExceedsBuildHeapBudget,

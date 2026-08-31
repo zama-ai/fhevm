@@ -7,9 +7,10 @@
 //! Both models are validated against a counting global allocator in `heap_budget`, which is
 //! what keeps them honest if `Vec`'s growth strategy or Anchor's codegen ever changes.
 //!
-//! [`HeapBudget`] is the one running total. [`TalliedVec::try_push`] and
-//! [`HeapBudget::alloc_vec`] admit bytes against it before the allocator serves them, so a
-//! forgotten site does not compile.
+//! [`HeapBudget`] is the one running total. Intern tables grow only through
+//! [`TalliedVec::try_push`] — there is no `DerefMut` to the `Vec`, so a forgotten `.push`
+//! does not compile. Exact-size sites go through [`TalliedVec::try_with_capacity`] (and
+//! [`TalliedVec::try_filled`] for the finish bitmaps), never a raw `Vec`.
 
 use crate::{FheExecutionBuildError, Result};
 
@@ -77,44 +78,42 @@ impl HeapBudget {
     pub(crate) fn fits_with(&self, extra: usize) -> bool {
         self.total.saturating_add(extra) <= crate::cost::BUILD_HEAP_BUDGET_BYTES
     }
-
-    /// Admits an exact-size reservation and returns a vector of that capacity.
-    pub(crate) fn alloc_vec<T>(&mut self, len: usize) -> Result<Vec<T>> {
-        self.admit(len * std::mem::size_of::<T>())?;
-        Ok(Vec::with_capacity(len))
-    }
 }
 
-/// A `Vec` that cannot forget to tally: every allocation it makes is recorded on the vector
-/// itself, and growth goes through [`try_push`](Self::try_push) so it is admitted against a
-/// [`HeapBudget`] before the allocator serves it.
+/// A `Vec` that cannot forget to tally: growth goes through [`try_push`](Self::try_push) so it
+/// is admitted against a [`HeapBudget`] before the allocator serves it.
 ///
 /// Reads go through `Deref<Target = [T]>`. There is deliberately no `DerefMut` to the `Vec`:
 /// the only mutation paths are the ones that keep the tally honest. `truncate` keeps the
-/// requested bytes — on the bump region a rolled-back request is spent all the same.
+/// charged bytes — on the bump region a rolled-back request is spent all the same.
 #[derive(Debug, Clone)]
 pub(crate) struct TalliedVec<T> {
     vec: Vec<T>,
-    requested: usize,
 }
 
 impl<T> TalliedVec<T> {
     /// An empty table that has requested nothing yet.
     pub(crate) fn new() -> Self {
-        Self {
-            vec: Vec::new(),
-            requested: 0,
-        }
+        Self { vec: Vec::new() }
     }
 
     /// A table with its bound reserved up front — the reservation is charged to `budget`.
     pub(crate) fn try_with_capacity(budget: &mut HeapBudget, capacity: usize) -> Result<Self> {
-        let requested = capacity * std::mem::size_of::<T>();
-        budget.admit(requested)?;
+        budget.admit(capacity * std::mem::size_of::<T>())?;
         Ok(Self {
             vec: Vec::with_capacity(capacity),
-            requested,
         })
+    }
+
+    /// Admits an exact-size buffer and fills it. Length stays within the reserved capacity, so
+    /// filling does not allocate again.
+    pub(crate) fn try_filled(budget: &mut HeapBudget, len: usize, fill: T) -> Result<Self>
+    where
+        T: Clone,
+    {
+        let mut this = Self::try_with_capacity(budget, len)?;
+        this.vec.resize(len, fill);
+        Ok(this)
     }
 
     /// Admits the next push against `budget` before the allocator serves it.
@@ -122,7 +121,6 @@ impl<T> TalliedVec<T> {
         let upcoming = pushes_request(&self.vec, 1);
         if upcoming > 0 {
             budget.admit(upcoming)?;
-            self.requested += upcoming;
         }
         self.vec.push(value);
         Ok(())
@@ -132,12 +130,10 @@ impl<T> TalliedVec<T> {
     /// states to exercise `finish` validation; those paths are not production admission.
     #[cfg(test)]
     pub(crate) fn push(&mut self, value: T) {
-        let upcoming = pushes_request(&self.vec, 1);
-        self.requested += upcoming;
         self.vec.push(value);
     }
 
-    /// Shortens the table, keeping the requested bytes: the allocator already served them.
+    /// Shortens the table, keeping the charged bytes: the allocator already served them.
     pub(crate) fn truncate(&mut self, len: usize) {
         self.vec.truncate(len);
     }
@@ -146,10 +142,8 @@ impl<T> TalliedVec<T> {
         self.vec.get_mut(index)
     }
 
-    /// Every byte this table has requested from the allocator so far.
-    #[allow(dead_code)] // retained for diagnostics next to HeapBudget::total
-    pub(crate) fn requested_bytes(&self) -> usize {
-        self.requested
+    pub(crate) fn as_mut_slice(&mut self) -> &mut [T] {
+        &mut self.vec
     }
 
     /// Hands the underlying `Vec` over (to the wire args, or the finished execution). The

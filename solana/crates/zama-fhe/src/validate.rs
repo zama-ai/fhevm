@@ -67,7 +67,11 @@ pub(crate) fn validate_lowered_execution(
     steps: &[FheExecuteStep],
     remaining_accounts: &[ExecutionAccountMeta],
     dictionary: &[[u8; 32]],
+    used_accounts: &mut [bool],
+    used_dictionary: &mut [bool],
 ) -> Result<()> {
+    debug_assert_eq!(used_accounts.len(), remaining_accounts.len());
+    debug_assert_eq!(used_dictionary.len(), dictionary.len());
     if u8::try_from(remaining_accounts.len()).is_err() {
         return Err(FheExecutionBuildError::TooManyRemainingAccounts);
     }
@@ -86,10 +90,8 @@ pub(crate) fn validate_lowered_execution(
         }
     }
 
-    let mut used_accounts = vec![false; remaining_accounts.len()];
-    let mut used_dictionary = vec![false; dictionary.len()];
     for (step_index, step) in steps.iter().enumerate() {
-        validate_lowered_step(step, step_index, &mut used_accounts, &mut used_dictionary)?;
+        validate_lowered_step(step, step_index, used_accounts, used_dictionary)?;
     }
     if used_accounts.iter().any(|used| !*used) {
         return Err(FheExecutionBuildError::InvalidRemainingAccountReference);

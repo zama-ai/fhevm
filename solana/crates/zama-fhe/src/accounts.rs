@@ -308,8 +308,8 @@ pub(crate) fn resolve_execution_accounts<'info>(
         {
             return Err(ExecutionAccountResolutionError::DuplicateDynamicAccount { pubkey });
         }
-        // Read off the stored metas directly: the requirement view clones its purposes table
-        // per item, which would put an untallied allocation inside every comparison here.
+        // Read off the stored metas directly: the requirement view is the public API, and
+        // looking it up per comparison would rebuild a PurposeList for every candidate.
         let Some(required) = execution
             .remaining_accounts
             .iter()

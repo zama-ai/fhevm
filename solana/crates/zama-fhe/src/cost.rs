@@ -82,6 +82,12 @@ pub const CPI_INSTRUCTION_DATA_LIMIT: usize = 10 * 1024;
 /// rent exemption, so counting three never under-counts.
 pub const CPIS_PER_PERSISTENT_CREATE: usize = 3;
 
+/// Persistent creates one execution can carry. The 21st create's three host CPIs push the
+/// transaction's instruction trace past [`TRANSACTION_INSTRUCTION_TRACE_LIMIT`] even in the
+/// cheapest wrapper (no event CPIs). Event kinds only spend remaining headroom; they never
+/// move this cap. Pinned by [`instruction_trace_floor`].
+pub const MAX_PERSISTENT_CREATES: usize = 20;
+
 /// The instructions a transaction is guaranteed to execute for one `fhe_execute` invocation in
 /// the minimal production wrapper: the app instruction, its `fhe_execute` CPI, three
 /// system-program CPIs per created persistent output, and one event CPI per event kind emitted
@@ -165,9 +171,15 @@ mod tests {
         assert_eq!(instruction_trace_floor(0, false, false), 2);
         // Each create is three system CPIs; each event kind is one CPI.
         assert_eq!(instruction_trace_floor(1, false, false), 5);
-        assert_eq!(instruction_trace_floor(20, true, true), 64);
-        // The first create past twenty cannot land in any transaction.
-        assert_eq!(instruction_trace_floor(21, false, false), 65);
+        assert_eq!(
+            instruction_trace_floor(MAX_PERSISTENT_CREATES, true, true),
+            TRANSACTION_INSTRUCTION_TRACE_LIMIT
+        );
+        // The first create past the cap cannot land in any transaction.
+        assert_eq!(
+            instruction_trace_floor(MAX_PERSISTENT_CREATES + 1, false, false),
+            TRANSACTION_INSTRUCTION_TRACE_LIMIT + 1
+        );
     }
 
     #[test]

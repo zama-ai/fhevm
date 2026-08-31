@@ -53,10 +53,6 @@ static ALLOCATOR: CountingAllocator = CountingAllocator;
 /// number and the documented tables with it.
 pub(crate) const ADMITTED_FRONTIER_SHAPES: usize = 49;
 
-/// The most persistent creates one execution can carry: the builder rejects the create whose
-/// three host CPIs push the transaction's instruction trace past its limit.
-pub(crate) const MAX_BUILDABLE_CREATES: usize = 20;
-
 /// A boxed shape constructor, so the frontier can hold shapes of different closure types.
 pub(crate) type ShapeBuilder =
     Box<dyn for<'id> FnOnce(&mut FheExecutionBuilder<'id>) -> crate::Result<()>>;

@@ -480,19 +480,6 @@ fn reduction_heavy_case(steps: usize, authority: Pubkey) -> ProbeCase {
     }
 }
 
-/// The largest create count `zama-fhe`'s instruction-trace model admits: the greatest count
-/// whose floor — including the app wrapper instruction the builder budgets for — still fits the
-/// transaction's trace.
-fn max_creates_the_builder_admits(make_public: bool) -> usize {
-    (0..=host::MAX_FHE_EXECUTION_STEPS)
-        .take_while(|creates| {
-            zama_fhe::instruction_trace_floor(*creates, false, make_public)
-                <= zama_fhe::TRANSACTION_INSTRUCTION_TRACE_LIMIT
-        })
-        .last()
-        .expect("zero creates always fit")
-}
-
 /// What a shape's sweep must prove beyond matching the snapshot: the per-shape tie between the
 /// builder's admission model and the measured wall.
 enum WallPin {
@@ -619,16 +606,16 @@ fn assert_wall_pin(profile: &str, pin: &WallPin, sweep: &SweptBoundary) {
         WallPin::SnapshotOnly => {}
         WallPin::BuilderCapCoversWall => {
             assert!(
-                max_creates_the_builder_admits(true) <= sweep.max_ok,
+                zama_fhe::MAX_PERSISTENT_CREATES <= sweep.max_ok,
                 "{profile}: the builder admits {} created-public outputs but the host wall is {}",
-                max_creates_the_builder_admits(true),
+                zama_fhe::MAX_PERSISTENT_CREATES,
                 sweep.max_ok,
             );
         }
         WallPin::TraceOneUnderBuilderCap => {
             assert_eq!(sweep.limited_by, "instruction_trace", "{profile}");
             assert_eq!(
-                max_creates_the_builder_admits(false) + 1,
+                zama_fhe::MAX_PERSISTENT_CREATES + 1,
                 sweep.max_ok,
                 "{profile}: the measured trace wall no longer sits one wrapper instruction \
                  past the builder's cap",
@@ -645,12 +632,12 @@ fn assert_wall_pin(profile: &str, pin: &WallPin, sweep: &SweptBoundary) {
             // gap has closed — retire invariant #61, the builder-side pin, and this arm
             // together.
             assert!(
-                sweep.max_ok < max_creates_the_builder_admits(true),
+                sweep.max_ok < zama_fhe::MAX_PERSISTENT_CREATES,
                 "{profile}: the host's CPI frame now holds every builder-admitted \
                  shared-audience public create ({} measured vs {} admitted) — invariant #61's \
                  gap has closed",
                 sweep.max_ok,
-                max_creates_the_builder_admits(true),
+                zama_fhe::MAX_PERSISTENT_CREATES,
             );
         }
     }
