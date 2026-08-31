@@ -55,6 +55,24 @@ pub(crate) static KEY_DIGEST_MISMATCH_COUNTER: LazyLock<IntCounter> =
         .unwrap()
     });
 
+pub(crate) static COMPRESSED_MATERIAL_SUCCESS_COUNTER: LazyLock<IntCounter> =
+    LazyLock::new(|| {
+        register_int_counter!(
+            "coprocessor_host_listener_compressed_key_material_success_counter",
+            "Number of compressed key materials downloaded and staged by host listener"
+        )
+        .unwrap()
+    });
+
+pub(crate) static COMPRESSED_MATERIAL_FAIL_COUNTER: LazyLock<IntCounter> =
+    LazyLock::new(|| {
+        register_int_counter!(
+            "coprocessor_host_listener_compressed_key_material_fail_counter",
+            "Number of compressed key materials that failed download or validation in host listener"
+        )
+        .unwrap()
+    });
+
 pub(crate) static KMS_EVENT_DECODE_FAIL_COUNTER: LazyLock<IntCounter> =
     LazyLock::new(|| {
         register_int_counter!(

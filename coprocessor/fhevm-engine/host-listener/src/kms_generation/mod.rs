@@ -28,6 +28,7 @@ use crate::kms_generation::digest::{digest_crs, digest_key};
 use crate::kms_generation::metrics::{
     ACTIVATE_CRS_FAIL_COUNTER, ACTIVATE_CRS_SUCCESS_COUNTER,
     ACTIVATE_KEY_FAIL_COUNTER, ACTIVATE_KEY_SUCCESS_COUNTER,
+    COMPRESSED_MATERIAL_FAIL_COUNTER, COMPRESSED_MATERIAL_SUCCESS_COUNTER,
     CRS_DIGEST_MISMATCH_COUNTER, KEY_DIGEST_MISMATCH_COUNTER,
 };
 use crate::kms_generation::sks_key::{
@@ -251,16 +252,39 @@ pub async fn process_kms_generation_activations<
     // do all downloads
     download_and_store_key_activations(&mut tx, &s3_client, key_activations)
         .await?;
-    download_and_store_compressed_key_materials(
-        &mut tx,
-        &s3_client,
-        compressed_materials,
-    )
-    .await?;
+    let compressed_material_failures =
+        download_and_store_compressed_key_materials(
+            &mut tx,
+            &s3_client,
+            compressed_materials,
+        )
+        .await?;
     download_and_store_crs_activations(&mut tx, &s3_client, crs_activations)
         .await?;
-    info!("Downloading succeeded for KMSGeneration and CRS");
+    let newly_applied_compressed_materials =
+        apply_ready_compressed_key_materials(&mut tx, rpc_finalized_block)
+            .await?;
+    if compressed_material_failures == 0 {
+        info!("Downloading succeeded for KMSGeneration and CRS");
+    } else {
+        warn!(
+            compressed_material_failures,
+            "KMSGeneration downloads completed with compressed key material failures"
+        );
+    }
     tx.commit().await?;
+    for material in newly_applied_compressed_materials {
+        info!(
+            chain_id = material.chain_id,
+            block_hash = %hex::encode(&material.block_hash),
+            block_number = material.block_number,
+            transaction_hash = ?material.transaction_hash.as_deref().map(hex::encode),
+            key_id = %hex::encode(&material.key_id),
+            existing_key_id = %hex::encode(&material.existing_key_id),
+            key_digest = %hex::encode(&material.key_digest),
+            "Compressed key material applied"
+        );
+    }
     let remain_pending = count_key_activation_remaining_pending(&db_pool)
         .await?
         + count_crs_activation_remaining_pending(&db_pool).await?;
@@ -296,7 +320,8 @@ async fn download_and_store_compressed_key_materials<
     tx: &mut Transaction<'_, Postgres>,
     s3_client: &A,
     materials: Vec<PendingCompressedKeyMaterial>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<usize> {
+    let mut failures = 0;
     for material in materials {
         if let Err(error) =
             download_and_store_compressed_key_material(tx, s3_client, &material)
@@ -309,9 +334,13 @@ async fn download_and_store_compressed_key_materials<
                 &material,
             )
             .await;
+            COMPRESSED_MATERIAL_FAIL_COUNTER.inc();
+            failures += 1;
+        } else {
+            COMPRESSED_MATERIAL_SUCCESS_COUNTER.inc();
         }
     }
-    Ok(())
+    Ok(failures)
 }
 
 async fn download_and_store_compressed_key_material<

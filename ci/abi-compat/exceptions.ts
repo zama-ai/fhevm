@@ -28,6 +28,7 @@ export const ABI_COMPAT_EXCEPTIONS: Partial<Record<PackageName, Partial<Record<s
     KMSGeneration: [
       "event PrepKeygenRequest(uint256,uint8,bytes)",
       "event KeygenRequest(uint256,uint256,bytes)",
+      "event ActivateKey(uint256,string[],(uint8,bytes)[])",
       "function keygen(uint8)",
     ],
   },
