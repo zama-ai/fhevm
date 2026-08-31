@@ -498,30 +498,29 @@ impl CoprocessorAttestationCheck {
         loop {
             match self.require_consensus_once(handles).await {
                 Ok(()) => return Ok(()),
-                Err(ConsensusCheckError::Unreachable { handle, round }) => {
+                Err(ConsensusCheckError::Unreachable(round)) => {
                     error!(
                         step = %ReadinessStep::Failed,
                         int_job_id = %job_id,
-                        %handle,
+                        handle = %round.handle,
                         ?round,
                         "Coprocessors did not agree on the ciphertext material"
                     );
-                    return Err(ReadinessCheckError::NoAttestationConsensus { handle, round });
+                    return Err(ReadinessCheckError::NoAttestationConsensus { round });
                 }
-                Err(ConsensusCheckError::MissedThisRound { handle, round }) => {
+                Err(ConsensusCheckError::MissedThisRound(round)) => {
                     attempts += 1;
                     if attempts >= max_attempts {
                         let elapsed = started.elapsed();
                         error!(
                             int_job_id = %job_id,
-                            %handle,
+                            handle = %round.handle,
                             attempts,
                             elapsed_ms = elapsed.as_millis(),
                             ?round,
                             "Max retries reached for ciphertext attestation check"
                         );
                         return Err(ReadinessCheckError::AttestationsNotReady {
-                            handle,
                             attempts,
                             elapsed,
                             last_round: round,
@@ -533,7 +532,7 @@ impl CoprocessorAttestationCheck {
                         int_job_id = %job_id,
                         attempt = attempts,
                         max_attempts,
-                        %handle,
+                        handle = %round.handle,
                         ?round,
                         "Retrying ciphertext attestation check"
                     );

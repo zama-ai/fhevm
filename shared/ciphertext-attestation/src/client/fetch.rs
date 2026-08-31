@@ -20,12 +20,12 @@ use tracing::{debug, warn};
 pub enum ConsensusCheckError {
     /// No group reached the threshold. Retriable: attestations are published asynchronously, so
     /// this is the normal early state.
-    #[error("no attestation consensus yet for handle {handle}: {round}")]
-    MissedThisRound { handle: B256, round: Round },
+    #[error("no attestation consensus yet: {0}")]
+    MissedThisRound(Round),
 
     /// The Coprocessors that answered disagree. Terminal: cast votes do not change.
-    #[error("attestation consensus unreachable for handle {handle}: {round}")]
-    Unreachable { handle: B256, round: Round },
+    #[error("attestation consensus unreachable: {0}")]
+    Unreachable(Round),
 }
 
 /// A reached consensus together with the buckets to fetch the ciphertext from.
@@ -60,7 +60,7 @@ pub async fn fetch_attestations_and_check_consensus(
     }
 
     let signers = registry.coprocessors.iter().map(|entry| entry.signer);
-    let tracker = ConsensusTracker::new(signers, registry.threshold);
+    let tracker = ConsensusTracker::new(handle, signers, registry.threshold);
 
     resolve_round(
         fetch_attestation_tasks,
@@ -117,7 +117,7 @@ async fn resolve_round(
         debug!(%signer, %handle, ?reply, "Coprocessor reply recorded");
 
         let verdict = tracker.record(signer, reply);
-        if let Some(result) = resolve(handle, registry, verdict) {
+        if let Some(result) = resolve(registry, verdict) {
             if result.is_ok() {
                 debug!(
                     %handle,
@@ -137,14 +137,13 @@ async fn resolve_round(
     for entry in &registry.coprocessors {
         verdict = tracker.record(entry.signer, Reply::NoReply);
     }
-    resolve(handle, registry, verdict)
+    resolve(registry, verdict)
         .expect("every registered signer's slot is filled after the sweep, so the round is closed")
 }
 
 /// Converts a freshly recomputed verdict into this function's return type, or `None` if the round
 /// is still open.
 fn resolve(
-    handle: B256,
     registry: &CoprocessorRegistrySnapshot,
     verdict: ThresholdStatus,
 ) -> Option<Result<ResolvedConsensus, ConsensusCheckError>> {
@@ -159,11 +158,9 @@ fn resolve(
             }))
         }
         ThresholdStatus::MissedThisRound(round) => {
-            Some(Err(ConsensusCheckError::MissedThisRound { handle, round }))
+            Some(Err(ConsensusCheckError::MissedThisRound(round)))
         }
-        ThresholdStatus::Unreachable(round) => {
-            Some(Err(ConsensusCheckError::Unreachable { handle, round }))
-        }
+        ThresholdStatus::Unreachable(round) => Some(Err(ConsensusCheckError::Unreachable(round))),
     }
 }
 
@@ -250,12 +247,12 @@ mod tests {
         panicking_task(&mut tasks);
 
         let signers = registry.coprocessors.iter().map(|e| e.signer);
-        let tracker = ConsensusTracker::new(signers, registry.threshold);
+        let tracker = ConsensusTracker::new(HANDLE, signers, registry.threshold);
 
         let result = resolve_round(tasks, HANDLE, CONTEXT_ID, &registry, tracker).await;
 
         match result {
-            Err(ConsensusCheckError::MissedThisRound { round, .. }) => {
+            Err(ConsensusCheckError::MissedThisRound(round)) => {
                 assert_eq!(round.attested(), vec![s1.address()]);
                 assert!(
                     round.outstanding().is_empty(),

@@ -125,9 +125,9 @@ impl From<ReadinessCheckError> for EventProcessingError {
             ReadinessCheckError::GwContractError(err) => {
                 EventProcessingError::ContractCallFailed(redact_alloy_error(&err))
             }
-            ReadinessCheckError::NoAttestationConsensus { handle, round } => {
+            ReadinessCheckError::NoAttestationConsensus { round } => {
                 EventProcessingError::NoAttestationConsensus {
-                    reason: format!("handle {handle}: {round}"),
+                    reason: round.to_string(),
                 }
             }
             ReadinessCheckError::AttestationsNotReady { last_round, .. } => {

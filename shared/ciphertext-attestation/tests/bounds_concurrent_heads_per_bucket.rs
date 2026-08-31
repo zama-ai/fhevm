@@ -110,7 +110,7 @@ async fn per_bucket_head_ceiling_is_never_exceeded() {
         .expect_err("every bucket answers 404, so consensus is never reached");
     assert!(matches!(
         err,
-        ConsensusCheckError::MissedThisRound { ref round, .. } if round.attested().is_empty()
+        ConsensusCheckError::MissedThisRound(ref round) if round.attested().is_empty()
     ));
 
     let observed = peak.load(Ordering::SeqCst);

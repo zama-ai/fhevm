@@ -8,7 +8,7 @@ use crate::{
     gateway::ciphertext_checker::CiphertextChecker,
     host::{HostAclChecker, HostAclError},
 };
-use alloy::primitives::{Bytes, FixedBytes, B256};
+use alloy::primitives::{Bytes, FixedBytes};
 use ciphertext_attestation::tracker::Round;
 use std::{fmt, time::Duration};
 use tokio_util::sync::CancellationToken;
@@ -50,15 +50,14 @@ pub enum ReadinessCheckError {
     /// [`Self::GwTimeout`] because it is terminal: the request cannot become ready by waiting.
     /// Reachable only under the off-chain Coprocessor attestation check
     /// (`source: coprocessor_attestations`).
-    #[error("no attestation consensus for handle {handle}: {round}")]
-    NoAttestationConsensus { handle: B256, round: Round },
-    /// Retries were exhausted while attestation consensus for `handle` was still short of
-    /// threshold. Carries `last_round` — unlike [`Self::GwTimeout`] — so the caller can explain
-    /// why. Reachable only under the off-chain Coprocessor attestation check
+    #[error("no attestation consensus: {round}")]
+    NoAttestationConsensus { round: Round },
+    /// Retries were exhausted while attestation consensus was still short of threshold. Carries
+    /// `last_round` — unlike [`Self::GwTimeout`] — so the caller can explain why. Reachable only
+    /// under the off-chain Coprocessor attestation check
     /// (`source: coprocessor_attestations`).
     #[error("{}: {last_round}", crate::core::errors::READINESS_CHECK_TIMEOUT_MSG)]
     AttestationsNotReady {
-        handle: B256,
         attempts: u32,
         elapsed: Duration,
         last_round: Round,

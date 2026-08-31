@@ -46,6 +46,8 @@ pub enum Reply {
 /// `Display` is redacted (no digest values); `Debug` is the full board, operator diagnostics only.
 #[derive(Clone)]
 pub struct Round {
+    /// The handle this round is about.
+    pub handle: B256,
     pub threshold: NonZeroUsize,
     /// One slot per registered Coprocessor, in roster order. Filled in place as replies arrive.
     pub replies: Vec<(Address, Reply)>,
@@ -141,9 +143,14 @@ pub struct ConsensusTracker {
 impl ConsensusTracker {
     /// Builds the board from the roster: one slot per registered signer, all
     /// [`Reply::Outstanding`].
-    pub fn new(signers: impl IntoIterator<Item = Address>, threshold: NonZeroUsize) -> Self {
+    pub fn new(
+        handle: B256,
+        signers: impl IntoIterator<Item = Address>,
+        threshold: NonZeroUsize,
+    ) -> Self {
         Self {
             round: Round {
+                handle,
                 threshold,
                 replies: signers
                     .into_iter()
@@ -205,7 +212,8 @@ impl std::fmt::Display for Round {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{} of {} required attested",
+            "handle {}: {} of {} required attested",
+            self.handle,
             self.agreeing(),
             self.threshold.get()
         )?;
@@ -227,7 +235,7 @@ impl std::fmt::Display for Round {
 
 impl std::fmt::Debug for Round {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "need {}: ", self.threshold.get())?;
+        write!(f, "handle {}: need {}: ", self.handle, self.threshold.get())?;
         for (i, (addr, reply)) in self.replies.iter().enumerate() {
             if i > 0 {
                 write!(f, ", ")?;
@@ -329,7 +337,7 @@ mod tests {
         // second matching reply, not the first, is what flips the verdict.
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random();
-        let mut tracker = ConsensusTracker::new([s1.address(), s2.address()], nz(2));
+        let mut tracker = ConsensusTracker::new(HANDLE, [s1.address(), s2.address()], nz(2));
 
         let (signer, reply) = reply_from(&s1).await;
         assert!(matches!(
@@ -352,7 +360,7 @@ mod tests {
         // Old: `pending_while_replies_outstanding`. One vote in, two roster slots still
         // Outstanding: the round must stay open rather than resolve early.
         let s1 = PrivateKeySigner::random();
-        let mut tracker = ConsensusTracker::new([s1.address(), filler(), filler()], nz(2));
+        let mut tracker = ConsensusTracker::new(HANDLE, [s1.address(), filler(), filler()], nz(2));
 
         let (signer, reply) = reply_from(&s1).await;
         let status = tracker.record(signer, reply);
@@ -367,7 +375,7 @@ mod tests {
         let s1 = PrivateKeySigner::random();
         let s2 = filler();
         let s3 = filler();
-        let mut tracker = ConsensusTracker::new([s1.address(), s2, s3], nz(2));
+        let mut tracker = ConsensusTracker::new(HANDLE, [s1.address(), s2, s3], nz(2));
 
         let (signer, reply) = reply_from(&s1).await;
         tracker.record(signer, reply);
@@ -390,7 +398,7 @@ mod tests {
         // 2: both answer validly but disagree. Nobody left to vote.
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random();
-        let mut tracker = ConsensusTracker::new([s1.address(), s2.address()], nz(2));
+        let mut tracker = ConsensusTracker::new(HANDLE, [s1.address(), s2.address()], nz(2));
 
         let (signer, reply) = reply_from(&s1).await;
         tracker.record(signer, reply);
@@ -415,7 +423,7 @@ mod tests {
         // there is no disagreement to be terminal about, so the round must stay retriable.
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random();
-        let mut tracker = ConsensusTracker::new([s1.address(), s2.address()], nz(3));
+        let mut tracker = ConsensusTracker::new(HANDLE, [s1.address(), s2.address()], nz(3));
 
         let (signer, reply) = reply_from(&s1).await;
         tracker.record(signer, reply);
@@ -439,7 +447,7 @@ mod tests {
         let signers: Vec<PrivateKeySigner> = (0..4).map(|_| PrivateKeySigner::random()).collect();
         let mut roster: Vec<Address> = signers.iter().map(|s| s.address()).collect();
         roster.push(filler());
-        let mut tracker = ConsensusTracker::new(roster, nz(3));
+        let mut tracker = ConsensusTracker::new(HANDLE, roster, nz(3));
 
         let mut status = ThresholdStatus::AwaitingReplies;
         for (i, signer) in signers.iter().enumerate() {
@@ -464,7 +472,7 @@ mod tests {
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random();
         let s3 = filler();
-        let mut tracker = ConsensusTracker::new([s1.address(), s2.address(), s3], nz(3));
+        let mut tracker = ConsensusTracker::new(HANDLE, [s1.address(), s2.address(), s3], nz(3));
 
         let (signer, reply) = reply_from(&s1).await;
         tracker.record(signer, reply);
@@ -490,7 +498,7 @@ mod tests {
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random();
         let s3 = filler();
-        let mut tracker = ConsensusTracker::new([s1.address(), s2.address(), s3], nz(2));
+        let mut tracker = ConsensusTracker::new(HANDLE, [s1.address(), s2.address(), s3], nz(2));
 
         let (signer, reply) = reply_from(&s1).await;
         tracker.record(signer, reply);
@@ -512,7 +520,7 @@ mod tests {
         // Old: `empty_round_is_starved_not_split`. Zero Coprocessors: vacuously "full
         // participation" with zero failures. Nothing has disagreed, so this must not read as
         // proven disagreement.
-        let tracker = ConsensusTracker::new(std::iter::empty(), nz(1));
+        let tracker = ConsensusTracker::new(HANDLE, std::iter::empty(), nz(1));
 
         match tracker.verdict() {
             ThresholdStatus::MissedThisRound(round) => {
@@ -531,7 +539,7 @@ mod tests {
         // `ConsensusTracker::record`) used to get wrong: a signer voting twice could not
         // fabricate a second group here, since one signer has exactly one slot.
         let s1 = PrivateKeySigner::random();
-        let mut tracker = ConsensusTracker::new([s1.address()], nz(2));
+        let mut tracker = ConsensusTracker::new(HANDLE, [s1.address()], nz(2));
 
         let (signer, reply) = reply_from(&s1).await;
         let status = tracker.record(signer, reply);
@@ -554,7 +562,7 @@ mod tests {
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random();
         let s3 = filler();
-        let mut tracker = ConsensusTracker::new([s1.address(), s2.address(), s3], nz(3));
+        let mut tracker = ConsensusTracker::new(HANDLE, [s1.address(), s2.address(), s3], nz(3));
 
         let (signer, reply) = reply_from(&s1).await;
         tracker.record(signer, reply.clone());
@@ -581,7 +589,7 @@ mod tests {
         // everyone answered, no group reaches 3.
         let signers: Vec<PrivateKeySigner> = (0..4).map(|_| PrivateKeySigner::random()).collect();
         let roster: Vec<Address> = signers.iter().map(|s| s.address()).collect();
-        let mut tracker = ConsensusTracker::new(roster, nz(3));
+        let mut tracker = ConsensusTracker::new(HANDLE, roster, nz(3));
 
         let (signer, reply) = reply_from(&signers[0]).await;
         tracker.record(signer, reply);
@@ -609,7 +617,7 @@ mod tests {
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random();
         let roster = vec![s1.address(), s2.address(), filler(), filler(), filler()];
-        let mut tracker = ConsensusTracker::new(roster, nz(2));
+        let mut tracker = ConsensusTracker::new(HANDLE, roster, nz(2));
 
         let (signer, reply) = reply_from(&s1).await;
         tracker.record(signer, reply);
@@ -653,7 +661,7 @@ mod tests {
         // signer, one slot, first write wins.
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random();
-        let mut tracker = ConsensusTracker::new([s1.address(), s2.address()], nz(2));
+        let mut tracker = ConsensusTracker::new(HANDLE, [s1.address(), s2.address()], nz(2));
 
         let (signer, first_reply) = reply_from(&s1).await;
         tracker.record(signer, first_reply);
@@ -684,7 +692,7 @@ mod tests {
     async fn disagreeing_round() -> Round {
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random();
-        let mut tracker = ConsensusTracker::new([s1.address(), s2.address()], nz(2));
+        let mut tracker = ConsensusTracker::new(HANDLE, [s1.address(), s2.address()], nz(2));
 
         let (signer, reply) = reply_from(&s1).await;
         tracker.record(signer, reply);
@@ -758,7 +766,7 @@ mod tests {
         let s2 = PrivateKeySigner::random();
         // Threshold 3 with only 2 Coprocessors keeps this off the `Reached` path: the test is
         // about ordering, not about winning.
-        let mut tracker = ConsensusTracker::new([s1.address(), s2.address()], nz(3));
+        let mut tracker = ConsensusTracker::new(HANDLE, [s1.address(), s2.address()], nz(3));
 
         let (signer1, reply1) = reply_from(&s1).await;
         let (signer2, reply2) = dissenting_reply_from(&s2, B256::repeat_byte(0xDD)).await;

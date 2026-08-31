@@ -189,7 +189,7 @@ async fn under_threshold_is_missed_this_round() {
     assert!(
         matches!(
             err,
-            ConsensusCheckError::MissedThisRound { ref round, .. } if round.threshold.get() == 2
+            ConsensusCheckError::MissedThisRound(ref round) if round.threshold.get() == 2
         ),
         "expected MissedThisRound with threshold 2, got {err:?}"
     );
@@ -213,7 +213,7 @@ async fn cross_bucket_disagreement_is_no_consensus() {
     assert!(
         matches!(
             err,
-            ConsensusCheckError::Unreachable { ref round, .. }
+            ConsensusCheckError::Unreachable(ref round)
                 if round.attested().len() == 3 && round.agreeing() == 1
         ),
         "expected Unreachable with 3 attested and 1 agreeing, got {err:?}"
@@ -241,7 +241,7 @@ async fn unregistered_signers_are_missed_this_round() {
     assert!(
         matches!(
             err,
-            ConsensusCheckError::MissedThisRound { ref round, .. }
+            ConsensusCheckError::MissedThisRound(ref round)
                 if round.attested().is_empty() && round.threshold.get() == 2
         ),
         "expected MissedThisRound with 0 attested and threshold 2, got {err:?}"
@@ -266,7 +266,7 @@ async fn head_timeout_is_missed_this_round() {
     assert!(
         matches!(
             err,
-            ConsensusCheckError::MissedThisRound { ref round, .. }
+            ConsensusCheckError::MissedThisRound(ref round)
                 if round.attested().is_empty() && round.threshold.get() == 2
         ),
         "expected MissedThisRound with 0 attested and threshold 2, got {err:?}"
@@ -294,7 +294,7 @@ async fn attestation_for_another_handle_is_rejected() {
     assert!(
         matches!(
             err,
-            ConsensusCheckError::MissedThisRound { ref round, .. }
+            ConsensusCheckError::MissedThisRound(ref round)
                 if round.attested().is_empty() && round.threshold.get() == 2
         ),
         "expected MissedThisRound with 0 attested and threshold 2, got {err:?}"
@@ -320,7 +320,7 @@ async fn cross_served_attestation_is_missed_this_round() {
     assert!(
         matches!(
             err,
-            ConsensusCheckError::MissedThisRound { ref round, .. }
+            ConsensusCheckError::MissedThisRound(ref round)
                 if round.attested().is_empty() && round.threshold.get() == 2
         ),
         "expected MissedThisRound with 0 attested and threshold 2, got {err:?}"
