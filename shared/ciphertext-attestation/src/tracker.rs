@@ -354,8 +354,8 @@ mod tests {
 
     #[tokio::test]
     async fn reaches_consensus_at_threshold() {
-        // Old: `reaches_consensus_at_threshold`. Pins the Reached transition itself: the
-        // second matching reply, not the first, is what flips the verdict.
+        // Pins the threshold boundary: the reply that meets it flips the verdict, not an earlier
+        // one.
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random();
         let mut tracker =
@@ -379,8 +379,6 @@ mod tests {
 
     #[tokio::test]
     async fn awaiting_replies_while_replies_outstanding() {
-        // Old: `pending_while_replies_outstanding`. One vote in, two roster slots still
-        // Outstanding: the round must stay open rather than resolve early.
         let s1 = PrivateKeySigner::random();
         let mut tracker =
             ConsensusTracker::new(HANDLE, entries([s1.address(), filler(), filler()]), nz(2));
@@ -392,9 +390,7 @@ mod tests {
 
     #[tokio::test]
     async fn missed_this_round_when_failures_make_round_unwinnable() {
-        // Old: `starved_when_failures_make_round_unwinnable`. 3 Coprocessors, threshold 2: one
-        // attestation, two NoReply. The round cannot reach threshold, but nobody disagreed —
-        // this must be MissedThisRound, never Unreachable.
+        // Nobody disagreed, so an unwinnable round is MissedThisRound, never Unreachable.
         let s1 = PrivateKeySigner::random();
         let s2 = filler();
         let s3 = filler();
@@ -417,8 +413,7 @@ mod tests {
 
     #[tokio::test]
     async fn unreachable_when_every_coprocessor_answered_and_disagreed() {
-        // Old: `split_when_every_coprocessor_answered_and_disagreed`. 2 Coprocessors, threshold
-        // 2: both answer validly but disagree. Nobody left to vote.
+        // Terminal rather than retriable because nobody is left to vote.
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random();
         let mut tracker =
@@ -440,11 +435,9 @@ mod tests {
 
     #[tokio::test]
     async fn unanimous_agreement_below_threshold_is_missed_not_unreachable() {
-        // Old: `unanimous_agreement_below_threshold_is_starved_not_split`. 2 reachable
-        // Coprocessors but a threshold of 3 — the shape a partially-onboarded deployment
-        // produces, since Coprocessors registered without an S3 bucket URL are dropped from the
-        // snapshot while the threshold still comes from chain. Both answer and agree perfectly:
-        // there is no disagreement to be terminal about, so the round must stay retriable.
+        // The shape a partially-onboarded deployment produces: Coprocessors registered without an
+        // S3 bucket URL are dropped from the snapshot while the threshold still comes from chain.
+        // Unanimity is not disagreement, so there is nothing to be terminal about.
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random();
         let mut tracker =
@@ -466,9 +459,8 @@ mod tests {
 
     #[tokio::test]
     async fn unreachable_before_the_last_reply_arrives() {
-        // Old: `disagreement_is_terminal_before_the_last_reply_arrives`. 5 Coprocessors,
-        // threshold 3: four disagree four ways, the fifth has not answered. Whatever it says
-        // builds a group of at most 2, so no future round reaches 3.
+        // Terminal before every reply is in: whatever the outstanding Coprocessor says joins a
+        // group too small to ever reach threshold.
         let signers: Vec<PrivateKeySigner> = (0..4).map(|_| PrivateKeySigner::random()).collect();
         let mut roster: Vec<Address> = signers.iter().map(|s| s.address()).collect();
         roster.push(filler());
@@ -491,9 +483,8 @@ mod tests {
 
     #[tokio::test]
     async fn unreachable_with_a_failure_when_unwinnable() {
-        // Old: `disagreement_with_a_failure_is_terminal_when_unwinnable`. 3 Coprocessors,
-        // threshold 3: two disagree, the third fails to answer. A retry turning that failure
-        // into an attestation still only builds a group of 2 — terminal despite the failure.
+        // A retry turning the failure into an attestation would still fall short of threshold, so
+        // the failure does not make the round retriable.
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random();
         let s3 = filler();
@@ -517,10 +508,8 @@ mod tests {
 
     #[tokio::test]
     async fn missed_this_round_with_a_failure_when_a_returning_vote_can_win() {
-        // Old: `disagreement_with_a_failure_stays_starved_when_a_returning_vote_can_win`. The
-        // other side of that frontier: same shape, threshold 2. A retry where the third answers
-        // with the first signer's material seats a group of 2 and wins — so this round must stay
-        // retriable rather than terminal.
+        // The retriable side of that frontier: a retry where the failing Coprocessor answers with
+        // an already-attested material would meet the threshold.
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random();
         let s3 = filler();
@@ -544,9 +533,8 @@ mod tests {
 
     #[test]
     fn empty_round_is_missed_not_unreachable() {
-        // Old: `empty_round_is_starved_not_split`. Zero Coprocessors: vacuously "full
-        // participation" with zero failures. Nothing has disagreed, so this must not read as
-        // proven disagreement.
+        // An empty roster is vacuously full participation with zero failures, which must not read
+        // as proven disagreement.
         let tracker = ConsensusTracker::new(HANDLE, entries(std::iter::empty()), nz(1));
 
         match tracker.verdict() {
@@ -560,11 +548,8 @@ mod tests {
 
     #[tokio::test]
     async fn lone_coprocessor_below_threshold_is_missed_not_unreachable() {
-        // Old: `lone_coprocessor_below_threshold_is_starved_not_split`. 1 Coprocessor, threshold
-        // 2: it answered, so participation is full and there are no failures — but a single
-        // voter cannot constitute a disagreement. This is also the shape bug 3 (see
-        // `ConsensusTracker::record`) used to get wrong: a signer voting twice could not
-        // fabricate a second group here, since one signer has exactly one slot.
+        // Participation is full and nothing failed, but a single voter cannot constitute a
+        // disagreement.
         let s1 = PrivateKeySigner::random();
         let mut tracker = ConsensusTracker::new(HANDLE, entries([s1.address()]), nz(2));
 
@@ -582,10 +567,8 @@ mod tests {
 
     #[tokio::test]
     async fn replayed_vote_from_one_signer_counts_once() {
-        // Old: `repeated_vote_from_one_signer_counts_once`. 3 Coprocessors, threshold 3. One
-        // signer's slot is written twice with the same material, plus a dissenting reply from a
-        // second signer: the verdict is terminal either way, but only first-write-wins keeps
-        // `agreeing()` honest — a tracker that let the replay refill the slot would fail open.
+        // The verdict is terminal either way; the count is the point. Only first-write-wins keeps
+        // `agreeing()` honest — a tracker that let a replay refill the slot would fail open.
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random();
         let s3 = filler();
@@ -613,8 +596,6 @@ mod tests {
 
     #[tokio::test]
     async fn unreachable_with_more_than_two_coprocessors() {
-        // Old: `split_with_more_than_two_coprocessors`. 4 Coprocessors, threshold 3, split 2-2:
-        // everyone answered, no group reaches 3.
         let signers: Vec<PrivateKeySigner> = (0..4).map(|_| PrivateKeySigner::random()).collect();
         let roster: Vec<Address> = signers.iter().map(|s| s.address()).collect();
         let mut tracker = ConsensusTracker::new(HANDLE, entries(roster), nz(3));
@@ -640,8 +621,6 @@ mod tests {
 
     #[tokio::test]
     async fn reached_while_replies_outstanding() {
-        // Old: `reached_early_even_with_replies_outstanding`. 5 Coprocessors, threshold 2: two
-        // agreeing replies reach consensus before the other three have answered.
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random();
         let roster = vec![s1.address(), s2.address(), filler(), filler(), filler()];
