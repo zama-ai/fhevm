@@ -13,7 +13,7 @@ use crate::{
 use alloy::primitives::{Address, B256, U256};
 use std::{collections::HashSet, time::Duration};
 use tokio::task::JoinSet;
-use tracing::{debug, error, warn};
+use tracing::{debug, warn};
 
 /// Why a handle has no attestation consensus this round.
 #[derive(Debug, thiserror::Error)]
@@ -139,27 +139,8 @@ async fn resolve_round(
     for entry in &registry.coprocessors {
         verdict = tracker.record(entry.signer, Reply::NoReply);
     }
-    resolve(handle, registry, verdict).unwrap_or_else(|| {
-        // Failing open (letting an unattested handle through) would be worse than failing shut
-        // on a request-serving path, so this logs loudly and hands back the same retriable
-        // verdict an all-silent round would produce.
-        error!(
-            %handle,
-            "Post-sweep consensus verdict was still open after every registered signer's slot \
-             was filled; this should be unreachable. Falling back to a retriable verdict."
-        );
-        Err(ConsensusCheckError::MissedThisRound {
-            handle,
-            round: Round {
-                threshold: registry.threshold,
-                replies: registry
-                    .coprocessors
-                    .iter()
-                    .map(|entry| (entry.signer, Reply::NoReply))
-                    .collect(),
-            },
-        })
-    })
+    resolve(handle, registry, verdict)
+        .expect("every registered signer's slot is filled after the sweep, so the round is closed")
 }
 
 /// Converts a freshly recomputed verdict into this function's return type, or `None` if the round
