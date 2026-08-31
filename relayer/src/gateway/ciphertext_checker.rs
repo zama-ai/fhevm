@@ -1,17 +1,9 @@
 //! Ciphertext readiness: whether a decryption request's ciphertext material may be decrypted.
 //!
-//! Before a decryption request is forwarded to the Gateway, every handle it names must be
-//! confirmed ready. Two sources are selectable via `gw_ciphertext_check.source`:
-//!
-//! - `gateway_chain`: ask the Gateway chain directly, via `Decryption.isPublicDecryptionReady` /
-//!   `isUserDecryptionReady_1`.
-//! - `coprocessor_attestations`: evaluate Coprocessor attestation consensus off-chain, per handle
-//!   (RFC 023). The Coprocessor registry is mirrored from `GatewayConfig`, each bucket is probed
-//!   with an S3 `HEAD` request, and the attestations are validated and counted against the
-//!   on-chain majority threshold.
-//!
-//! Both sources fail closed — a handle that is not confirmed ready rejects the whole request
-//! before any Gateway transaction is sent.
+//! Two sources are selectable via `gw_ciphertext_check.source`: `gateway_chain` asks the Gateway
+//! chain directly; `coprocessor_attestations` evaluates Coprocessor attestation consensus
+//! off-chain, per handle (RFC 023). Both fail closed — a handle that is not confirmed ready
+//! rejects the whole request before any Gateway transaction is sent.
 
 use crate::{
     config::settings::{AppConfigError, GatewayConfig, GwCiphertextCheckConfig, RetrySettings},
@@ -567,18 +559,9 @@ impl CoprocessorAttestationCheck {
     /// Evaluates consensus for every handle once. A request is only as ready as its least-ready
     /// handle, so any handle without consensus fails the whole request.
     ///
-    /// A failing handle does not end the round, because the *kind* of failure decides
-    /// retriable-vs-terminal and an `Unreachable` verdict has to win wherever it sits in the set.
-    /// Reporting the first failure seen would hide an unreachable handle behind a retry budget
-    /// that can never satisfy it, and would make the user-facing verdict depend on which handle
-    /// happened to fail first — the same request reported as a 503 timeout or a 500 no-consensus
-    /// depending on position or timing. An `Unreachable` verdict short-circuits the round: it is
-    /// terminal, so there is nothing left to learn.
-    ///
-    /// Handles are probed concurrently, up to [`MAX_CONCURRENT_HANDLES`] at a time, so an attempt
-    /// costs about one `head_timeout` rather than one per handle. The reported `MissedThisRound`
-    /// is the one belonging to the lowest-indexed failing handle, so the message does not vary
-    /// with the order replies happen to arrive in.
+    /// An `Unreachable` verdict has to win wherever it sits in the set, and short-circuits the
+    /// round. The reported `MissedThisRound` is the one belonging to the lowest-indexed failing
+    /// handle, so the message does not vary with the order replies happen to arrive in.
     async fn check_handles_once(
         &self,
         handles: &[FixedBytes<32>],
