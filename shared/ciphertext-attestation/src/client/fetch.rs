@@ -64,7 +64,7 @@ pub async fn fetch_attestations_and_check_consensus(
     let signers = registry.coprocessors.iter().map(|entry| entry.signer);
     let tracker = ConsensusTracker::new(signers, registry.threshold);
 
-    drain(
+    resolve_round(
         fetch_attestation_tasks,
         handle,
         context_id,
@@ -75,7 +75,7 @@ pub async fn fetch_attestations_and_check_consensus(
 }
 
 /// Drains `tasks`, feeding each reply to `tracker`, and returns the round's verdict.
-async fn drain(
+async fn resolve_round(
     mut tasks: JoinSet<(Address, Result<CiphertextAttestation, BucketError>)>,
     handle: B256,
     context_id: U256,
@@ -268,7 +268,7 @@ mod tests {
         let signers = registry.coprocessors.iter().map(|e| e.signer);
         let tracker = ConsensusTracker::new(signers, registry.threshold);
 
-        let result = drain(tasks, HANDLE, CONTEXT_ID, &registry, tracker).await;
+        let result = resolve_round(tasks, HANDLE, CONTEXT_ID, &registry, tracker).await;
 
         match result {
             Err(ConsensusCheckError::MissedThisRound { round, .. }) => {
