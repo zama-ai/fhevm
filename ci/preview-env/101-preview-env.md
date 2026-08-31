@@ -70,7 +70,14 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
 - `deploy_polygon` — also add a second Polygon Amoy (`80002`) host chain (default
   `false`). Fresh local anvil, reuses the ETH KMS key; roughly doubles the
   host-side stack. With `automated_tests` on it also runs a Polygon e2e suite.
-  See the multichain section in `README.md`.
+  See the multichain section in `README.md`. Incompatible with
+  `use_blockchain_dev`.
+- `use_blockchain_dev` — skip per-namespace Anvil and connect to the shared
+  `blockchain-dev` Geth (host chain id `1337`) + Nitro (gateway `412346`).
+  Generates a unique mnemonic, funds the derived wallets from the in-cluster
+  faucets, and still deploys **this preview's own contracts**. Dispatch-only
+  (PR labels stay on Anvil). After teardown the contracts remain on the shared
+  chain. Do not combine with `deploy_polygon`.
 
 **Versions** — three kinds:
 - **fhevm's own images** (`coprocessor_version`, `test_suite_version`, …)
@@ -87,7 +94,9 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
   (`relayer_sdk_version` keeps a real default; emptying it skips the
   relayer-sdk suite.)
 
-- **Namespace:** `fhevm-ci-<actor>-<run-id digest>`
+- **Namespace:** `fhevm-ci-<actor>-<run-id-base36>` (dispatch) or
+  `fhevm-ci-<pr-author>-<pr-number>` (PR). Actor is truncated if needed so
+  the whole name stays under 28 chars.
 - **Results:** run summary (deployment plan + e2e report if `automated_tests`).
 - **Teardown:** **manual** — a dispatch env is not tied to a PR, so nothing
   destroys it automatically. Run **preview-env-destroy** with the namespace (see
@@ -109,6 +118,20 @@ gh api --method POST \
   -f "inputs[automated_tests]=true" \
   -f "inputs[nb_coprocessor]=1" \
   -f "inputs[nb_kms_core]=4" \
+  -f "inputs[deploy_polygon]=false" \
+  -f "inputs[use_blockchain_dev]=false"
+```
+
+Connect to the shared `blockchain-dev` Geth + Nitro (no Anvil). The namespace
+is derived automatically from this run's id (base36) — there is no
+`namespace_suffix` input:
+
+```bash
+gh api --method POST \
+  -H "Accept: application/vnd.github+json" \
+  /repos/zama-ai/fhevm/actions/workflows/preview-env-deploy.yml/dispatches \
+  -f "ref=<your-branch>" \
+  -f "inputs[use_blockchain_dev]=true" \
   -f "inputs[deploy_polygon]=false"
 ```
 
@@ -220,3 +243,10 @@ kubectl delete namespace <namespace>
   workers/Postgres/S3). Keep it `1` unless you're specifically testing multi-party.
 - **Manual (dispatch) envs never auto-destroy** — run **preview-env-destroy** with
   the namespace to clean up (see [Destroy an environment](#destroy-an-environment)).
+- **`use_blockchain_dev` is dispatch-only.** PR labels always deploy Anvil.
+  Faucet-funded wallets are unique per run. The namespace is
+  `fhevm-ci-<actor>-<run-id-base36>` (read it from the run summary).
+  Destroying the namespace does **not** remove contracts from the shared
+  Geth/Nitro — they stay on `blockchain-dev` (see explorers
+  `host-explorer-blockchain-dev` / `gateway-explorer-blockchain-dev`).
+  Automated tests use Hardhat network `zwsDev` (live path: HCU cheat tests skip).

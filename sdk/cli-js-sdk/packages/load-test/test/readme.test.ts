@@ -13,7 +13,8 @@ describe("README capability contract", () => {
     expect(readme).toContain(
       "`POLYGON_AMOY_RPC_URL` for `testnet-amoy` and `devnet-amoy`",
     );
-    expect(readme).toContain("`MAINNET_RPC_URL` for");
+    expect(readme).toContain("`MAINNET_RPC_URL` for `mainnet`");
+    expect(readme).toContain("`POLYGON_RPC_URL` for `polygon`");
     expect(readme).not.toContain("when the DB collector is on");
   });
 

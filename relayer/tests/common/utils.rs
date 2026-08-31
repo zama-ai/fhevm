@@ -2,7 +2,7 @@ use anyhow::Context;
 use ethereum_rpc_mock::{
     fhevm::FhevmMockWrapper, MockConfig, MockServer, MockServerHandle, Response, UsageLimit,
 };
-use fhevm_relayer::config::settings::{HostChainConfig, Settings, StorageConfig};
+use fhevm_relayer::config::settings::{HostChainConfig, KeyUrlConfig, Settings, StorageConfig};
 use fhevm_relayer::run_fhevm_relayer;
 use fhevm_relayer::store::sql::client::PgClient;
 use fhevm_relayer::tracing::init_tracing_once;
@@ -67,17 +67,27 @@ impl HostMock {
 
         register_default_host_acl_allow_all(&server, &settings.host_chains);
 
-        // The relayer gates startup on the `/v2/keyurl` poller's first successful poll, so these
-        // have to answer before it boots.
-        let kms_generation_addr = Address::from_str(&settings.keyurl.kms_generation_address)
-            .expect("Invalid kms_generation_address in test config");
         let protocol_config_addr = Address::from_str(&settings.protocol_config.address)
             .expect("Invalid protocol_config address in test config");
-        register_default_keyurl_poller_responses(
-            &server,
-            kms_generation_addr,
-            protocol_config_addr,
-        );
+        match &settings.keyurl {
+            // The relayer gates startup on the `/v2/keyurl` poller's first successful poll, so
+            // these have to answer before it boots.
+            KeyUrlConfig::Chain {
+                kms_generation_address,
+                ..
+            } => {
+                let kms_generation_addr = Address::from_str(kms_generation_address)
+                    .expect("Invalid kms_generation_address in test config");
+                register_default_keyurl_poller_responses(
+                    &server,
+                    kms_generation_addr,
+                    protocol_config_addr,
+                );
+            }
+            KeyUrlConfig::Config { .. } => {
+                register_missing_kms_context_getters(&server, protocol_config_addr);
+            }
+        }
 
         Ok(HostMock {
             port,
@@ -1143,6 +1153,29 @@ fn register_default_keyurl_poller_responses(
         address: protocol_config_address,
         data: event.encode_log_data(),
     });
+}
+
+/// Wire the `ProtocolConfig` KMS-context getters to revert with a bare `0x`, reproducing a
+/// protocol v0.13 deployment that does not implement them. Registered rather than left
+/// unregistered so a relayer that wrongly polled fails as it does against the real deployment.
+fn register_missing_kms_context_getters(
+    host_server: &MockServer,
+    protocol_config_address: Address,
+) {
+    for selector in [
+        IProtocolConfig::getCurrentKmsContextAndEpochCall::SELECTOR,
+        IProtocolConfig::getKmsContextAnchorCall::SELECTOR,
+    ] {
+        host_server.on_call(
+            move |params| {
+                params.to == protocol_config_address
+                    && params.input.len() >= 4
+                    && params.input[0..4] == selector
+            },
+            Response::revert("0x".to_string()),
+            UsageLimit::Unlimited,
+        );
+    }
 }
 
 /// Register an ACL multicall pattern that returns an RPC error.

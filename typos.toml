@@ -32,6 +32,9 @@ extend-exclude = [
     # Protocol buffers (generated)
     "proto/",
 
+    # cargo-chef recipe (generated; embeds crate names like `writeable`)
+    "listener/recipe.json",
+
     # Lock files and binaries
     "*.lock",
     "*.pdf",
