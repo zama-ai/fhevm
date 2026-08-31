@@ -6,6 +6,8 @@
 //! would trigger N+1 RPC calls, so the [`CoprocessorRegistry`] holds a whole snapshot behind a
 //! short TTL and tolerates registration changes within one refresh window.
 
+pub use crate::tracker::CoprocessorEntry;
+
 use alloy::{
     network::{Ethereum, Network},
     primitives::Address,
@@ -29,15 +31,6 @@ use tracing::{error, warn};
 pub struct CoprocessorRegistry<P: Provider<N>, N: Network = Ethereum> {
     gateway_config_contract: GatewayConfigInstance<P, N>,
     snapshot: Arc<RwLock<Arc<CoprocessorRegistrySnapshot>>>,
-}
-
-/// One registered Coprocessor's on-chain identity triple: which tx sender it is, which signer it
-/// is bound to, and which bucket serves its attestations. (`getCoprocessor(txSender)`)
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CoprocessorEntry {
-    pub tx_sender: Address,
-    pub signer: Address,
-    pub bucket: String,
 }
 
 /// An immutable snapshot of the Coprocessor registry at one point in time.

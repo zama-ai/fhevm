@@ -59,8 +59,8 @@ pub async fn fetch_attestations_and_check_consensus(
         });
     }
 
-    let signers = registry.coprocessors.iter().map(|entry| entry.signer);
-    let tracker = ConsensusTracker::new(handle, signers, registry.threshold);
+    let entries = registry.coprocessors.iter().cloned();
+    let tracker = ConsensusTracker::new(handle, entries, registry.threshold);
 
     resolve_round(
         fetch_attestation_tasks,
@@ -117,7 +117,7 @@ async fn resolve_round(
         debug!(%signer, %handle, ?reply, "Coprocessor reply recorded");
 
         let verdict = tracker.record(signer, reply);
-        if let Some(result) = resolve(registry, verdict) {
+        if let Some(result) = resolve(verdict) {
             if result.is_ok() {
                 debug!(
                     %handle,
@@ -137,41 +137,25 @@ async fn resolve_round(
     for entry in &registry.coprocessors {
         verdict = tracker.record(entry.signer, Reply::NoReply);
     }
-    resolve(registry, verdict)
+    resolve(verdict)
         .expect("every registered signer's slot is filled after the sweep, so the round is closed")
 }
 
 /// Converts a freshly recomputed verdict into this function's return type, or `None` if the round
 /// is still open.
-fn resolve(
-    registry: &CoprocessorRegistrySnapshot,
-    verdict: ThresholdStatus,
-) -> Option<Result<ResolvedConsensus, ConsensusCheckError>> {
+fn resolve(verdict: ThresholdStatus) -> Option<Result<ResolvedConsensus, ConsensusCheckError>> {
     match verdict {
         ThresholdStatus::AwaitingReplies => None,
-        ThresholdStatus::Reached { material, signers } => {
-            let winning_buckets = winning_buckets(registry, &signers);
-            Some(Ok(ResolvedConsensus {
-                material,
-                signers,
-                winning_buckets,
-            }))
-        }
+        ThresholdStatus::Reached { material, winners } => Some(Ok(ResolvedConsensus {
+            material,
+            signers: winners.iter().map(|entry| entry.signer).collect(),
+            winning_buckets: winners.into_iter().map(|entry| entry.bucket).collect(),
+        })),
         ThresholdStatus::MissedThisRound(round) => {
             Some(Err(ConsensusCheckError::MissedThisRound(round)))
         }
         ThresholdStatus::Unreachable(round) => Some(Err(ConsensusCheckError::Unreachable(round))),
     }
-}
-
-/// Collects the URLs of the buckets whose registered signer is in the winning group.
-fn winning_buckets(registry: &CoprocessorRegistrySnapshot, signers: &[Address]) -> Vec<String> {
-    registry
-        .coprocessors
-        .iter()
-        .filter(|entry| signers.contains(&entry.signer))
-        .map(|entry| entry.bucket.clone())
-        .collect()
 }
 
 #[cfg(test)]
@@ -246,8 +230,8 @@ mod tests {
         tasks.spawn(async move { (s1_addr, Ok(att)) });
         panicking_task(&mut tasks);
 
-        let signers = registry.coprocessors.iter().map(|e| e.signer);
-        let tracker = ConsensusTracker::new(HANDLE, signers, registry.threshold);
+        let entries = registry.coprocessors.iter().cloned();
+        let tracker = ConsensusTracker::new(HANDLE, entries, registry.threshold);
 
         let result = resolve_round(tasks, HANDLE, CONTEXT_ID, &registry, tracker).await;
 

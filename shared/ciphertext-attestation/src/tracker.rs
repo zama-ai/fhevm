@@ -29,6 +29,18 @@ pub fn validate(
     Ok(ConsensusMaterial::from(attestation))
 }
 
+/// One registered Coprocessor's on-chain identity triple: which tx sender it is, which signer it
+/// is bound to, and which bucket serves its attestations. (`getCoprocessor(txSender)`)
+///
+/// Lives here rather than in `client::registry` because [`Round`] holds one per slot, and
+/// `tracker` is not behind the `client` feature. `registry` re-exports it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CoprocessorEntry {
+    pub tx_sender: Address,
+    pub signer: Address,
+    pub bucket: String,
+}
+
 /// What one registered Coprocessor did this round.
 #[derive(Clone, Debug)]
 pub enum Reply {
@@ -50,7 +62,7 @@ pub struct Round {
     pub handle: B256,
     pub threshold: NonZeroUsize,
     /// One slot per registered Coprocessor, in roster order. Filled in place as replies arrive.
-    pub replies: Vec<(Address, Reply)>,
+    pub replies: Vec<(CoprocessorEntry, Reply)>,
 }
 
 impl Round {
@@ -79,27 +91,27 @@ impl Round {
     pub fn agreeing(&self) -> usize {
         self.groups()
             .first()
-            .map_or(0, |(_, signers)| signers.len())
+            .map_or(0, |(_, entries)| entries.len())
     }
 
     /// Attested slots bucketed by agreed-on material, largest group first. Ties are broken by
     /// material — the same tie-break `consensus::evaluate` uses.
-    pub fn groups(&self) -> Vec<(ConsensusMaterial, Vec<Address>)> {
-        let mut grouped: HashMap<&ConsensusMaterial, Vec<Address>> = HashMap::new();
-        for (addr, reply) in &self.replies {
+    pub fn groups(&self) -> Vec<(ConsensusMaterial, Vec<CoprocessorEntry>)> {
+        let mut grouped: HashMap<&ConsensusMaterial, Vec<CoprocessorEntry>> = HashMap::new();
+        for (entry, reply) in &self.replies {
             if let Reply::Attested(material) = reply {
-                grouped.entry(material).or_default().push(*addr);
+                grouped.entry(material).or_default().push(entry.clone());
             }
         }
-        let mut groups: Vec<(ConsensusMaterial, Vec<Address>)> = grouped
+        let mut groups: Vec<(ConsensusMaterial, Vec<CoprocessorEntry>)> = grouped
             .into_iter()
-            .map(|(material, signers)| (material.clone(), signers))
+            .map(|(material, entries)| (material.clone(), entries))
             .collect();
         groups.sort_by(
-            |(left_material, left_signers), (right_material, right_signers)| {
-                right_signers
+            |(left_material, left_entries), (right_material, right_entries)| {
+                right_entries
                     .len()
-                    .cmp(&left_signers.len())
+                    .cmp(&left_entries.len())
                     .then_with(|| left_material.cmp(right_material))
             },
         );
@@ -110,7 +122,7 @@ impl Round {
         self.replies
             .iter()
             .filter(|(_, reply)| pred(reply))
-            .map(|(addr, _)| *addr)
+            .map(|(entry, _)| entry.signer)
             .collect()
     }
 }
@@ -120,10 +132,11 @@ impl Round {
 pub enum ThresholdStatus {
     /// Not everyone has answered and the threshold is still reachable this round.
     AwaitingReplies,
-    /// A group of at least `threshold` distinct signers agreed on the same material.
+    /// A group of at least `threshold` distinct signers agreed on the same material. `winners`
+    /// are their roster entries, so the caller reads both the signers and their buckets off it.
     Reached {
         material: ConsensusMaterial,
-        signers: Vec<Address>,
+        winners: Vec<CoprocessorEntry>,
     },
     /// Every Coprocessor answered or failed; no group reached the threshold. Retriable.
     MissedThisRound(Round),
@@ -145,16 +158,16 @@ impl ConsensusTracker {
     /// [`Reply::Outstanding`].
     pub fn new(
         handle: B256,
-        signers: impl IntoIterator<Item = Address>,
+        entries: impl IntoIterator<Item = CoprocessorEntry>,
         threshold: NonZeroUsize,
     ) -> Self {
         Self {
             round: Round {
                 handle,
                 threshold,
-                replies: signers
+                replies: entries
                     .into_iter()
-                    .map(|signer| (signer, Reply::Outstanding))
+                    .map(|entry| (entry, Reply::Outstanding))
                     .collect(),
             },
         }
@@ -168,7 +181,7 @@ impl ConsensusTracker {
             .round
             .replies
             .iter_mut()
-            .find_map(|(addr, slot)| (*addr == signer).then_some(slot))
+            .find_map(|(entry, slot)| (entry.signer == signer).then_some(slot))
         {
             Some(slot @ Reply::Outstanding) => *slot = reply,
             Some(_) => {}
@@ -185,18 +198,18 @@ impl ConsensusTracker {
         let round = &self.round;
         let threshold = round.threshold.get();
         let groups = round.groups();
-        let largest = groups.first().map_or(0, |(_, signers)| signers.len());
+        let largest = groups.first().map_or(0, |(_, entries)| entries.len());
         let outstanding = round.outstanding().len();
         // Deliberately not `outstanding`: a Coprocessor that merely failed still counts as
         // reachable next round.
         let missing = round.asked() - round.attested().len();
 
         if largest >= threshold {
-            let (material, signers) = groups
+            let (material, winners) = groups
                 .into_iter()
                 .next()
                 .expect("largest >= threshold > 0 implies a leading group exists");
-            return ThresholdStatus::Reached { material, signers };
+            return ThresholdStatus::Reached { material, winners };
         }
         if largest + outstanding >= threshold {
             return ThresholdStatus::AwaitingReplies;
@@ -236,11 +249,11 @@ impl std::fmt::Display for Round {
 impl std::fmt::Debug for Round {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "handle {}: need {}: ", self.handle, self.threshold.get())?;
-        for (i, (addr, reply)) in self.replies.iter().enumerate() {
+        for (i, (entry, reply)) in self.replies.iter().enumerate() {
             if i > 0 {
                 write!(f, ", ")?;
             }
-            write!(f, "{}→", short_addr(addr))?;
+            write!(f, "{}→", short_addr(&entry.signer))?;
             match reply {
                 Reply::Attested(material) => write!(f, "attested{{{material:?}}}")?,
                 Reply::NoReply => write!(f, "no reply")?,
@@ -331,13 +344,26 @@ mod tests {
         PrivateKeySigner::random().address()
     }
 
+    /// Roster entries for `signers`, each bound to the bucket a real registry would give it.
+    fn entries(signers: impl IntoIterator<Item = Address>) -> Vec<CoprocessorEntry> {
+        signers
+            .into_iter()
+            .map(|signer| CoprocessorEntry {
+                tx_sender: signer,
+                signer,
+                bucket: format!("http://bucket-{signer}"),
+            })
+            .collect()
+    }
+
     #[tokio::test]
     async fn reaches_consensus_at_threshold() {
         // Old: `reaches_consensus_at_threshold`. Pins the Reached transition itself: the
         // second matching reply, not the first, is what flips the verdict.
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random();
-        let mut tracker = ConsensusTracker::new(HANDLE, [s1.address(), s2.address()], nz(2));
+        let mut tracker =
+            ConsensusTracker::new(HANDLE, entries([s1.address(), s2.address()]), nz(2));
 
         let (signer, reply) = reply_from(&s1).await;
         assert!(matches!(
@@ -347,8 +373,8 @@ mod tests {
 
         let (signer, reply) = reply_from(&s2).await;
         match tracker.record(signer, reply) {
-            ThresholdStatus::Reached { material, signers } => {
-                assert_eq!(signers.len(), 2);
+            ThresholdStatus::Reached { material, winners } => {
+                assert_eq!(winners.len(), 2);
                 assert_eq!(material.ciphertext_digest, CT_DIGEST);
             }
             other => panic!("expected Reached, got {other:?}"),
@@ -360,7 +386,8 @@ mod tests {
         // Old: `pending_while_replies_outstanding`. One vote in, two roster slots still
         // Outstanding: the round must stay open rather than resolve early.
         let s1 = PrivateKeySigner::random();
-        let mut tracker = ConsensusTracker::new(HANDLE, [s1.address(), filler(), filler()], nz(2));
+        let mut tracker =
+            ConsensusTracker::new(HANDLE, entries([s1.address(), filler(), filler()]), nz(2));
 
         let (signer, reply) = reply_from(&s1).await;
         let status = tracker.record(signer, reply);
@@ -375,7 +402,7 @@ mod tests {
         let s1 = PrivateKeySigner::random();
         let s2 = filler();
         let s3 = filler();
-        let mut tracker = ConsensusTracker::new(HANDLE, [s1.address(), s2, s3], nz(2));
+        let mut tracker = ConsensusTracker::new(HANDLE, entries([s1.address(), s2, s3]), nz(2));
 
         let (signer, reply) = reply_from(&s1).await;
         tracker.record(signer, reply);
@@ -398,7 +425,8 @@ mod tests {
         // 2: both answer validly but disagree. Nobody left to vote.
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random();
-        let mut tracker = ConsensusTracker::new(HANDLE, [s1.address(), s2.address()], nz(2));
+        let mut tracker =
+            ConsensusTracker::new(HANDLE, entries([s1.address(), s2.address()]), nz(2));
 
         let (signer, reply) = reply_from(&s1).await;
         tracker.record(signer, reply);
@@ -423,7 +451,8 @@ mod tests {
         // there is no disagreement to be terminal about, so the round must stay retriable.
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random();
-        let mut tracker = ConsensusTracker::new(HANDLE, [s1.address(), s2.address()], nz(3));
+        let mut tracker =
+            ConsensusTracker::new(HANDLE, entries([s1.address(), s2.address()]), nz(3));
 
         let (signer, reply) = reply_from(&s1).await;
         tracker.record(signer, reply);
@@ -447,7 +476,7 @@ mod tests {
         let signers: Vec<PrivateKeySigner> = (0..4).map(|_| PrivateKeySigner::random()).collect();
         let mut roster: Vec<Address> = signers.iter().map(|s| s.address()).collect();
         roster.push(filler());
-        let mut tracker = ConsensusTracker::new(HANDLE, roster, nz(3));
+        let mut tracker = ConsensusTracker::new(HANDLE, entries(roster), nz(3));
 
         let mut status = ThresholdStatus::AwaitingReplies;
         for (i, signer) in signers.iter().enumerate() {
@@ -472,7 +501,8 @@ mod tests {
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random();
         let s3 = filler();
-        let mut tracker = ConsensusTracker::new(HANDLE, [s1.address(), s2.address(), s3], nz(3));
+        let mut tracker =
+            ConsensusTracker::new(HANDLE, entries([s1.address(), s2.address(), s3]), nz(3));
 
         let (signer, reply) = reply_from(&s1).await;
         tracker.record(signer, reply);
@@ -498,7 +528,8 @@ mod tests {
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random();
         let s3 = filler();
-        let mut tracker = ConsensusTracker::new(HANDLE, [s1.address(), s2.address(), s3], nz(2));
+        let mut tracker =
+            ConsensusTracker::new(HANDLE, entries([s1.address(), s2.address(), s3]), nz(2));
 
         let (signer, reply) = reply_from(&s1).await;
         tracker.record(signer, reply);
@@ -520,7 +551,7 @@ mod tests {
         // Old: `empty_round_is_starved_not_split`. Zero Coprocessors: vacuously "full
         // participation" with zero failures. Nothing has disagreed, so this must not read as
         // proven disagreement.
-        let tracker = ConsensusTracker::new(HANDLE, std::iter::empty(), nz(1));
+        let tracker = ConsensusTracker::new(HANDLE, entries(std::iter::empty()), nz(1));
 
         match tracker.verdict() {
             ThresholdStatus::MissedThisRound(round) => {
@@ -539,7 +570,7 @@ mod tests {
         // `ConsensusTracker::record`) used to get wrong: a signer voting twice could not
         // fabricate a second group here, since one signer has exactly one slot.
         let s1 = PrivateKeySigner::random();
-        let mut tracker = ConsensusTracker::new(HANDLE, [s1.address()], nz(2));
+        let mut tracker = ConsensusTracker::new(HANDLE, entries([s1.address()]), nz(2));
 
         let (signer, reply) = reply_from(&s1).await;
         let status = tracker.record(signer, reply);
@@ -562,7 +593,8 @@ mod tests {
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random();
         let s3 = filler();
-        let mut tracker = ConsensusTracker::new(HANDLE, [s1.address(), s2.address(), s3], nz(3));
+        let mut tracker =
+            ConsensusTracker::new(HANDLE, entries([s1.address(), s2.address(), s3]), nz(3));
 
         let (signer, reply) = reply_from(&s1).await;
         tracker.record(signer, reply.clone());
@@ -589,7 +621,7 @@ mod tests {
         // everyone answered, no group reaches 3.
         let signers: Vec<PrivateKeySigner> = (0..4).map(|_| PrivateKeySigner::random()).collect();
         let roster: Vec<Address> = signers.iter().map(|s| s.address()).collect();
-        let mut tracker = ConsensusTracker::new(HANDLE, roster, nz(3));
+        let mut tracker = ConsensusTracker::new(HANDLE, entries(roster), nz(3));
 
         let (signer, reply) = reply_from(&signers[0]).await;
         tracker.record(signer, reply);
@@ -617,7 +649,7 @@ mod tests {
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random();
         let roster = vec![s1.address(), s2.address(), filler(), filler(), filler()];
-        let mut tracker = ConsensusTracker::new(HANDLE, roster, nz(2));
+        let mut tracker = ConsensusTracker::new(HANDLE, entries(roster), nz(2));
 
         let (signer, reply) = reply_from(&s1).await;
         tracker.record(signer, reply);
@@ -661,7 +693,8 @@ mod tests {
         // signer, one slot, first write wins.
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random();
-        let mut tracker = ConsensusTracker::new(HANDLE, [s1.address(), s2.address()], nz(2));
+        let mut tracker =
+            ConsensusTracker::new(HANDLE, entries([s1.address(), s2.address()]), nz(2));
 
         let (signer, first_reply) = reply_from(&s1).await;
         tracker.record(signer, first_reply);
@@ -692,7 +725,8 @@ mod tests {
     async fn disagreeing_round() -> Round {
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random();
-        let mut tracker = ConsensusTracker::new(HANDLE, [s1.address(), s2.address()], nz(2));
+        let mut tracker =
+            ConsensusTracker::new(HANDLE, entries([s1.address(), s2.address()]), nz(2));
 
         let (signer, reply) = reply_from(&s1).await;
         tracker.record(signer, reply);
@@ -766,7 +800,8 @@ mod tests {
         let s2 = PrivateKeySigner::random();
         // Threshold 3 with only 2 Coprocessors keeps this off the `Reached` path: the test is
         // about ordering, not about winning.
-        let mut tracker = ConsensusTracker::new(HANDLE, [s1.address(), s2.address()], nz(3));
+        let mut tracker =
+            ConsensusTracker::new(HANDLE, entries([s1.address(), s2.address()]), nz(3));
 
         let (signer1, reply1) = reply_from(&s1).await;
         let (signer2, reply2) = dissenting_reply_from(&s2, B256::repeat_byte(0xDD)).await;
