@@ -89,7 +89,6 @@ export function serializeSignedDecryptionPermitToJSON(permit: SignedDecryptionPe
     eip712: _toJsonSafeEip712(permit.eip712),
     signature: permit.signature,
     signerAddress: permit.signerAddress,
-    // V2 keeps delegation as metadata alongside the signed message, not inside it
     delegatorAddress: permit.isDelegated ? permit.encryptedDataOwnerAddress : undefined,
   };
 }

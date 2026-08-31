@@ -17,7 +17,6 @@ export type SerializeSignedDecryptionPermitReturnType = {
   readonly eip712: Eip712Like;
   readonly signature: string;
   readonly signerAddress: string;
-  /** V2 (unified) permits only — delegation is metadata alongside the signed message, not part of it. */
   readonly delegatorAddress?: string | undefined;
 };
 

@@ -270,6 +270,42 @@ export function defineClientDecryptUnifiedPermitTests(parameters: {
       expect(parsed.encryptedDataOwnerAddress.toLowerCase()).toBe(config.alice.wallet.address.toLowerCase());
     });
 
+    it('rejects signing a DELEGATED unified permit when signerAddress equals delegatorAddress', async () => {
+      const client = await createReadyClient();
+      const transportKeyPair = await client.generateTransportKeyPair();
+
+      await expect(
+        client.signUnifiedDecryptionPermit({
+          transportKeyPair,
+          contractAddresses: [config.fheTestAddress],
+          durationSeconds: 24 * 3600,
+          startTimestamp: Math.floor(Date.now() / 1000) - 5,
+          signerAddress: config.bob.wallet.address,
+          signer: config.bob.signer,
+          delegatorAddress: config.bob.wallet.address,
+        }),
+      ).rejects.toThrow('signerAddress and delegatorAddress must be different');
+    });
+
+    it('rejects parsing a DELEGATED unified permit when signerAddress equals delegatorAddress', async () => {
+      const client = await createReadyClient();
+      const transportKeyPair = await client.generateTransportKeyPair();
+      const address = config.bob.wallet.address;
+
+      await expect(
+        client.parseSignedDecryptionPermit({
+          serializedPermit: {
+            version: 2,
+            eip712: { primaryType: 'UserDecryptRequestVerification', message: {} },
+            signature: `0x${'11'.repeat(65)}`,
+            signerAddress: address,
+            delegatorAddress: address,
+          },
+          transportKeyPair,
+        }),
+      ).rejects.toThrow('signerAddress and delegatorAddress must be different');
+    });
+
     // ┌─────────────────────────────────────────────────────────────────────┐
     // │  Per-type decrypt tests (V2 permit, routed through the v3 relayer   │
     // │  user-decrypt endpoint via fetchKmsSigncryptedSharesV2)             │
