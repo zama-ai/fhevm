@@ -999,7 +999,8 @@ pub const COMPUTED_HANDLE_INDEX_MARKER: u8 = 0xff;
 /// constant in `host-contracts/contracts/shared/Constants.sol`.
 pub const HANDLE_VERSION: u8 = 0;
 
-/// Technical bound only; each operation sets its own smaller cap.
+/// Ingest-time sanity ceiling against a malformed event declaring a huge group;
+/// fits one byte and `output_index SMALLINT`. Real caps are per-op and smaller.
 pub const MAX_MULTI_OUTPUT_ARITY: usize = u8::MAX as usize;
 
 /// Enforced at ingestion by the host-listener.
