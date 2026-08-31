@@ -38,6 +38,7 @@ const DEDUP_TTL: Duration = Duration::from_secs(60);
 /// A handler that counts what it is given, optionally waits for a permit before finishing,
 /// and optionally panics once it has.
 struct TestHandler {
+    entered: Arc<AtomicUsize>,
     handled: Arc<AtomicUsize>,
     gate: Option<Arc<Semaphore>>,
     panics: bool,
@@ -46,6 +47,8 @@ struct TestHandler {
 #[async_trait]
 impl EventHandler<RelayerEvent> for TestHandler {
     async fn handle_event(&self, _event: RelayerEvent) {
+        self.entered.fetch_add(1, Ordering::SeqCst);
+
         if let Some(gate) = &self.gate {
             let permit = gate.acquire().await.expect("gate open");
             permit.forget();
@@ -65,6 +68,7 @@ struct Harness {
     repositories: Repositories,
     schema: TestSchema,
     handled_events: Arc<HandledEvents>,
+    entered: Arc<AtomicUsize>,
     handled: Arc<AtomicUsize>,
 }
 
@@ -92,10 +96,12 @@ impl Harness {
             tracker,
         );
 
+        let entered = Arc::new(AtomicUsize::new(0));
         let handled = Arc::new(AtomicUsize::new(0));
         orchestrator.register_handler(
             &[GatewayChainEventId::PublicDecryptionResponse.into()],
             Arc::new(TestHandler {
+                entered: entered.clone(),
                 handled: handled.clone(),
                 gate,
                 panics,
@@ -113,6 +119,7 @@ impl Harness {
             repositories,
             schema,
             handled_events,
+            entered,
             handled,
         })
     }
@@ -126,7 +133,7 @@ impl Harness {
             .unwrap_or(0)
     }
 
-    /// Wait up to a second for the cursor to reach `block_number`, reporting where it got to.
+    /// Wait for the cursor to reach `block_number`, reporting where it got to.
     async fn await_cursor(&self, block_number: u64) {
         if !await_until(|| async { self.cursor().await >= block_number }).await {
             panic!(
@@ -136,13 +143,25 @@ impl Harness {
         }
     }
 
-    /// Wait up to a second for `count` events to have been handled.
+    /// Wait for `count` events to have been handled.
     async fn await_handled(&self, count: usize) {
         let handled = self.handled.clone();
         if !await_until(|| async { handled.load(Ordering::SeqCst) >= count }).await {
             panic!(
                 "{} events handled instead of {count}",
                 handled.load(Ordering::SeqCst)
+            );
+        }
+    }
+
+    /// Wait for `count` events to have reached the handler. Behind a gate that is the moment
+    /// an event is provably in flight and provably unfinished.
+    async fn await_entered(&self, count: usize) {
+        let entered = self.entered.clone();
+        if !await_until(|| async { entered.load(Ordering::SeqCst) >= count }).await {
+            panic!(
+                "{} events reached the handler instead of {count}",
+                entered.load(Ordering::SeqCst)
             );
         }
     }
@@ -155,13 +174,17 @@ impl Harness {
     }
 }
 
-/// Poll `condition` for up to a second, reporting whether it came true.
+/// Poll `condition` for up to five seconds, reporting whether it came true.
+///
+/// The budget asserts nothing about latency - it only keeps a condition that will never come
+/// true from hanging CI, so it is sized for the slowest passing run: every poll is a query,
+/// and the suite's threads share one Postgres.
 async fn await_until<F, Fut>(condition: F) -> bool
 where
     F: Fn() -> Fut,
     Fut: std::future::Future<Output = bool>,
 {
-    for _ in 0..100 {
+    for _ in 0..500 {
         if condition().await {
             return true;
         }
@@ -248,7 +271,9 @@ async fn test_a_stalled_handler_holds_the_cursor_until_it_returns() {
         .record_and_dispatch(Vec::new(), range(130), INSTANCE_ID)
         .await;
 
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    // Waited on rather than slept through: on a loaded machine a sleep can expire before
+    // block 121 is dispatched at all, where the cursor still reads 120 and this passes vacuously.
+    harness.await_entered(1).await;
     assert_eq!(
         harness.cursor().await,
         120,
