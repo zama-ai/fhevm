@@ -401,106 +401,101 @@ fn execute_partition(
                     let producer_handles: Vec<Handle> =
                         outputs.iter().map(|o| o.handle.clone()).collect();
                     let opcode = node.opcode;
-                    match op_result {
-                        Ok(working) => match validate_results(
-                            &outputs,
-                            &working.iter().map(|v| v.type_num()).collect::<Vec<_>>(),
-                        ) {
-                            Ok(()) => {
-                                // Each consumer's representation of this output
-                                // is pinned on chain: the executor folded a
-                                // boundary bit per operand into the consuming
-                                // handle, zero for operands minted in the
-                                // consuming transaction. Every in-graph edge here
-                                // is by definition that case, so all of them
-                                // forward the raw working value — no
-                                // compress/decompress round-trip for
-                                // same-transaction consumers, and no byte-equality
-                                // obligation against differently-sourced aliases,
-                                // which now mint different handles.
-                                //
-                                // An output is compressed iff it is allowed:
-                                // persistence needs the bytes, and any
-                                // cross-transaction consumer must have been
-                                // granted a persistent allowance first (transient
-                                // allowances are transaction-scoped), so
-                                // cross-transaction consumers need no separate
-                                // tracking.
-                                //
-                                // A multi-output op materializes each output
-                                // separately, so the rule above is applied per
-                                // handle rather than once per operation.
-                                let mut forwarded: Vec<Option<SupportedFheCiphertexts>> =
-                                    Vec::with_capacity(working.len());
-                                for (output, value) in outputs.iter().zip(working) {
-                                    if !output.is_allowed {
-                                        forwarded.push(Some(value));
-                                        continue;
-                                    }
-                                    match compress_output(&value, &tid, opcode) {
-                                        Ok(compressed_ct) => {
-                                            res.insert(
-                                                output.handle.clone(),
-                                                Ok(TaskResult {
-                                                    compressed_ct,
-                                                    is_allowed: output.is_allowed,
-                                                    transaction_id: tid.clone(),
-                                                }),
-                                            );
-                                            forwarded.push(Some(value));
-                                        }
-                                        Err(e) => {
-                                            // The block fails on this allowed
-                                            // handle anyway; forward nothing so
-                                            // downstream ops fail as missing
-                                            // inputs instead of computing results
-                                            // destined to be discarded.
-                                            res.insert(output.handle.clone(), Err(e));
-                                            forwarded.push(None);
-                                        }
-                                    }
-                                }
-                                // Route each output to the consumers that name it:
-                                // an edge carries the consuming input slot, and the
-                                // handle in that slot selects which output feeds it.
-                                for edge in edges.edges_directed(nidx, Direction::Outgoing) {
-                                    let child_index = edge.target();
-                                    let input_idx = *edge.weight() as usize;
-                                    let Some(child_node) = dfg.graph.node_weight_mut(child_index)
-                                    else {
-                                        error!(target: "scheduler", {index = ?child_index.index() }, "Wrong dataflow graph index");
-                                        continue;
-                                    };
-                                    let dep_handle = match child_node.inputs.get(input_idx) {
-                                        Some(DFGTaskInput::LocalDependence(dh))
-                                        | Some(DFGTaskInput::BoundaryDependence(dh)) => dh.clone(),
-                                        _ => continue,
-                                    };
-                                    let Some(out_idx) =
-                                        producer_handles.iter().position(|h| h == &dep_handle)
-                                    else {
-                                        error!(target: "scheduler",
-                                        { handle = ?hex::encode(&dep_handle) },
-                                        "Consumer dependence handle not found in producer outputs - graph inconsistency");
-                                        continue;
-                                    };
-                                    if let Some(Some(value)) = forwarded.get(out_idx) {
-                                        child_node.inputs[input_idx] =
-                                            DFGTaskInput::Value(value.clone());
-                                    }
-                                }
+                    let working = match op_result {
+                        Ok(working) => working,
+                        Err(e) => {
+                            fan_out_error(&producer_handles, e, &mut res);
+                            continue;
+                        }
+                    };
+                    let produced: Vec<i16> = working.iter().map(|v| v.type_num()).collect();
+                    if let Err(error) = validate_results(&outputs, &produced) {
+                        error!(target: "scheduler", { error = %error },
+                        "Dispatch result does not match the operation's declared outputs");
+                        fan_out_error(&producer_handles, error.into(), &mut res);
+                        continue;
+                    }
+                    // Each consumer's representation of this output
+                    // is pinned on chain: the executor folded a
+                    // boundary bit per operand into the consuming
+                    // handle, zero for operands minted in the
+                    // consuming transaction. Every in-graph edge here
+                    // is by definition that case, so all of them
+                    // forward the raw working value — no
+                    // compress/decompress round-trip for
+                    // same-transaction consumers, and no byte-equality
+                    // obligation against differently-sourced aliases,
+                    // which now mint different handles.
+                    //
+                    // An output is compressed iff it is allowed:
+                    // persistence needs the bytes, and any
+                    // cross-transaction consumer must have been
+                    // granted a persistent allowance first (transient
+                    // allowances are transaction-scoped), so
+                    // cross-transaction consumers need no separate
+                    // tracking.
+                    //
+                    // A multi-output op materializes each output
+                    // separately, so the rule above is applied per
+                    // handle rather than once per operation.
+                    let mut forwarded: Vec<Option<SupportedFheCiphertexts>> =
+                        Vec::with_capacity(working.len());
+                    for (output, value) in outputs.iter().zip(working) {
+                        if !output.is_allowed {
+                            forwarded.push(Some(value));
+                            continue;
+                        }
+                        match compress_output(&value, &tid, opcode) {
+                            Ok(compressed_ct) => {
+                                res.insert(
+                                    output.handle.clone(),
+                                    Ok(TaskResult {
+                                        compressed_ct,
+                                        is_allowed: output.is_allowed,
+                                        transaction_id: tid.clone(),
+                                    }),
+                                );
+                                forwarded.push(Some(value));
                             }
-                            Err(error) => {
-                                // Nothing is forwarded or published: a wrong count
-                                // or type means the results cannot be matched to
-                                // the handles, so the whole group fails rather
-                                // than binding ciphertexts to the wrong handles.
-                                error!(target: "scheduler", { error = %error },
-                                "Dispatch result does not match the operation's declared outputs");
-                                fan_out_error(&producer_handles, error.into(), &mut res);
+                            Err(e) => {
+                                // The block fails on this allowed
+                                // handle anyway; forward nothing so
+                                // downstream ops fail as missing
+                                // inputs instead of computing results
+                                // destined to be discarded.
+                                res.insert(output.handle.clone(), Err(e));
+                                forwarded.push(None);
                             }
-                        },
-                        Err(e) => fan_out_error(&producer_handles, e, &mut res),
+                        }
+                    }
+                    // Route each output to the consumers that name it:
+                    // an edge carries the consuming input slot, and the
+                    // handle in that slot selects which output feeds it.
+                    for edge in edges.edges_directed(nidx, Direction::Outgoing) {
+                        let child_index = edge.target();
+                        let input_idx = *edge.weight() as usize;
+                        let Some(child_node) = dfg.graph.node_weight_mut(child_index) else {
+                            error!(target: "scheduler", {index = ?child_index.index() }, "Wrong dataflow graph index");
+                            continue;
+                        };
+                        let dep_handle = match child_node.inputs.get(input_idx) {
+                            Some(DFGTaskInput::LocalDependence(dh))
+                            | Some(DFGTaskInput::BoundaryDependence(dh)) => dh.clone(),
+                            _ => continue,
+                        };
+                        let Some(out_idx) = producer_handles.iter().position(|h| h == &dep_handle)
+                        else {
+                            error!(target: "scheduler",
+                            { handle = ?hex::encode(&dep_handle) },
+                            "Consumer dependence handle not found in producer outputs - graph inconsistency");
+                            continue;
+                        };
+                        // Inner None means compression failed and was
+                        // already stamped: forward nothing so the consumer
+                        // fails as a missing input instead of twice.
+                        if let Some(Some(value)) = forwarded.get(out_idx) {
+                            child_node.inputs[input_idx] = DFGTaskInput::Value(value.clone());
+                        }
                     }
                 }
                 Err(e) => {
