@@ -99,16 +99,15 @@ async fn per_bucket_head_ceiling_is_never_exceeded() {
     // terminal — after the very first failure, aborting the rest before they even start.
     let registry = CoprocessorRegistrySnapshot::new(coprocessors, NonZeroUsize::new(1).unwrap());
 
-    let client = BoundedClient::new(Client::new(), NonZeroUsize::new(CAP).unwrap());
-    let err = fetch_attestations_and_check_consensus(
-        &client,
-        HANDLE,
-        &registry,
+    let client = BoundedClient::for_attestations_only(
+        Client::new(),
+        NonZeroUsize::new(CAP).unwrap(),
         Duration::from_secs(5),
         CONTEXT_ID,
-    )
-    .await
-    .expect_err("every bucket answers 404, so consensus is never reached");
+    );
+    let err = fetch_attestations_and_check_consensus(&client, HANDLE, &registry)
+        .await
+        .expect_err("every bucket answers 404, so consensus is never reached");
     assert!(matches!(
         err,
         ConsensusCheckError::MissedThisRound { ref round, .. } if round.attested().is_empty()

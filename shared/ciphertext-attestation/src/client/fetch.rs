@@ -5,13 +5,13 @@ use crate::{
     CiphertextAttestation,
     client::{
         registry::CoprocessorRegistrySnapshot,
-        s3::{BoundedClient, BucketError},
+        s3::{BoundedClient, FetchAttestationError},
     },
     consensus::ConsensusMaterial,
     tracker::{ConsensusTracker, Reply, Round, ThresholdStatus, ValidAttestation},
 };
 use alloy::primitives::{Address, B256, U256};
-use std::{collections::HashSet, time::Duration};
+use std::collections::HashSet;
 use tokio::task::JoinSet;
 use tracing::{debug, warn};
 
@@ -46,17 +46,15 @@ pub async fn fetch_attestations_and_check_consensus(
     client: &BoundedClient,
     handle: B256,
     registry: &CoprocessorRegistrySnapshot,
-    head_timeout: Duration,
-    context_id: U256,
 ) -> Result<ResolvedConsensus, ConsensusCheckError> {
+    let context_id = client.context_id();
+
     let mut fetch_attestation_tasks = JoinSet::new();
     for entry in &registry.coprocessors {
-        let (client, head_timeout) = (client.clone(), head_timeout);
+        let client = client.clone();
         let (bucket, signer) = (entry.bucket.clone(), entry.signer);
         fetch_attestation_tasks.spawn(async move {
-            let result = client
-                .fetch_single_attestation(&bucket, handle, head_timeout, context_id)
-                .await;
+            let result = client.fetch_single_attestation(&bucket, handle).await;
             (signer, result)
         });
     }
@@ -76,7 +74,10 @@ pub async fn fetch_attestations_and_check_consensus(
 
 /// Drains `tasks`, feeding each reply to `tracker`, and returns the round's verdict.
 async fn resolve_round(
-    mut tasks: JoinSet<(Address, Result<CiphertextAttestation, BucketError>)>,
+    mut tasks: JoinSet<(
+        Address,
+        Result<CiphertextAttestation, FetchAttestationError>,
+    )>,
     handle: B256,
     context_id: U256,
     registry: &CoprocessorRegistrySnapshot,
@@ -97,23 +98,22 @@ async fn resolve_round(
             }
             Ok((signer, fetch_result)) => {
                 outstanding.remove(&signer);
-                let outcome: Result<ConsensusMaterial, BucketError> =
-                    fetch_result.and_then(|attestation| {
-                        ValidAttestation::validate(&attestation, handle, context_id, signer)
-                            .map(|valid| valid.material().clone())
-                            .map_err(BucketError::from)
-                    });
-                match outcome {
-                    Ok(material) => (signer, Reply::Attested(material)),
-                    Err(BucketError::Invalid(e)) => {
-                        warn!(%signer, %handle, "Discarding invalid attestation: {e}");
-                        (signer, Reply::Rejected)
-                    }
+                let reply = match fetch_result {
                     Err(e) => {
                         warn!(%signer, %handle, "Failed to fetch attestation: {e}");
-                        (signer, Reply::NoReply)
+                        Reply::NoReply
                     }
-                }
+                    Ok(attestation) => {
+                        match ValidAttestation::validate(&attestation, handle, context_id, signer) {
+                            Ok(valid) => Reply::Attested(valid.material().clone()),
+                            Err(e) => {
+                                warn!(%signer, %handle, "Discarding invalid attestation: {e}");
+                                Reply::Rejected
+                            }
+                        }
+                    }
+                };
+                (signer, reply)
             }
         };
         debug!(%signer, %handle, ?reply, "Coprocessor reply recorded");
@@ -223,7 +223,12 @@ mod tests {
 
     /// A probe that never joins with a signer at all — the case a `JoinError` produces (task
     /// panic or abort) and which no HTTP mock can trigger.
-    fn panicking_task(tasks: &mut JoinSet<(Address, Result<CiphertextAttestation, BucketError>)>) {
+    fn panicking_task(
+        tasks: &mut JoinSet<(
+            Address,
+            Result<CiphertextAttestation, FetchAttestationError>,
+        )>,
+    ) {
         tasks.spawn(async { panic!("simulates a JoinSet task panicking mid-probe") });
     }
 

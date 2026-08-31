@@ -160,17 +160,13 @@ async fn check(
     registry: &CoprocessorRegistrySnapshot,
     head_timeout: Duration,
 ) -> Result<ResolvedConsensus, ConsensusCheckError> {
-    fetch_attestations_and_check_consensus(
-        &BoundedClient::new(
-            Client::new(),
-            NonZeroUsize::new(UNBINDING_HEAD_CEILING).expect("ceiling is non-zero"),
-        ),
-        HANDLE,
-        registry,
+    let client = BoundedClient::for_attestations_only(
+        Client::new(),
+        NonZeroUsize::new(UNBINDING_HEAD_CEILING).expect("ceiling is non-zero"),
         head_timeout,
         CONTEXT_ID,
-    )
-    .await
+    );
+    fetch_attestations_and_check_consensus(&client, HANDLE, registry).await
 }
 
 /// Not enough buckets have published yet. Retryable: the missing ones may still upload.

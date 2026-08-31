@@ -337,7 +337,6 @@ pub struct CoprocessorAttestationCheck {
     retry_config: RetrySettings,
     registry: CoprocessorRegistry<Arc<Provider>, AnyNetwork>,
     http_client: BoundedClient,
-    head_timeout: Duration,
     request_timeout: Duration,
 }
 
@@ -381,12 +380,13 @@ impl CoprocessorAttestationCheck {
         Ok(Self {
             retry_config: retry,
             registry,
-            http_client: BoundedClient::new(
+            http_client: BoundedClient::for_attestations_only(
                 Client::new(),
                 NonZeroUsize::new(MAX_CONCURRENT_HEADS_PER_BUCKET)
                     .expect("MAX_CONCURRENT_HEADS_PER_BUCKET is non-zero"),
+                Duration::from_millis(head_timeout_ms),
+                COPROCESSOR_CONTEXT_ID_V1,
             ),
-            head_timeout: Duration::from_millis(head_timeout_ms),
             request_timeout: Duration::from_millis(request_timeout_ms),
         })
     }
@@ -579,8 +579,6 @@ impl CoprocessorAttestationCheck {
                         &self.http_client,
                         handle,
                         &snapshot,
-                        self.head_timeout,
-                        COPROCESSOR_CONTEXT_ID_V1,
                     )
                     .await;
                     (index, outcome)

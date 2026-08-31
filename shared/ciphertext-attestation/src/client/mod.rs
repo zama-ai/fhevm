@@ -14,4 +14,4 @@ pub use fetch::{ConsensusCheckError, ResolvedConsensus, fetch_attestations_and_c
 pub use registry::{
     CoprocessorEntry, CoprocessorRegistry, CoprocessorRegistrySnapshot, RegistryError,
 };
-pub use s3::BoundedClient;
+pub use s3::{BoundedClient, FetchAttestationError, FetchCiphertextError};
