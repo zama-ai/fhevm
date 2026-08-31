@@ -12,8 +12,6 @@ use strum::IntoStaticStr;
 pub enum ErrorCode {
     /// Malformed body, bad handle format, unsupported chain id (connector endpoint).
     Malformed,
-    /// Invalid user EIP-712 signature on user-decrypt, pure crypto check (connector endpoint).
-    InvalidUserSignature,
     /// Sender authentication failure (connector proxy).
     SenderAuthenticationFailed,
     /// Per-sender rate limit exceeded (connector proxy).
@@ -47,7 +45,7 @@ impl ErrorCode {
     pub fn http_status(self) -> u16 {
         match self {
             Self::Malformed => 400,
-            Self::InvalidUserSignature | Self::SenderAuthenticationFailed => 401,
+            Self::SenderAuthenticationFailed => 401,
             Self::AclDenied | Self::UserSignatureRejected => 403,
             Self::CiphertextNotFound => 404,
             Self::KmsContextDestroyed => 410,
@@ -70,7 +68,6 @@ impl ErrorCode {
     pub fn retryable(self) -> bool {
         match self {
             Self::Malformed
-            | Self::InvalidUserSignature
             | Self::SenderAuthenticationFailed
             | Self::KmsContextDestroyed
             | Self::Unprocessable
