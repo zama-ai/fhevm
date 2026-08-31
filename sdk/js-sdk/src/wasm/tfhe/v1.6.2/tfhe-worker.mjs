@@ -3,10 +3,7 @@ function ___isNodeLike() {
 }
 
 function ___isBrowserLike() {
-  // Same as environment.ts. bun is Node-like (`process.versions.node`) even
-  // though its worker_threads also expose addEventListener.
   return (
-    typeof Bun === 'undefined' &&
     !___isNodeLike() &&
     typeof addEventListener === 'function' &&
     typeof removeEventListener === 'function'

@@ -35,7 +35,7 @@ const _assets = Object.freeze({
     worker: Object.freeze({
       filename: 'tfhe-worker.v1.5.3.mjs',
       localRelativePath: './v1.5.3/tfhe-worker.mjs',
-      sha256: '4ec9baf3d30feb97f19ce910f196e1e97e0fab858fdea612b840d652d0116d25',
+      sha256: '68a581e4ae063a2e3360b042e4085932781baf148de51ad567bbabb0df67c2c5',
     }),
   }),
   '1.6.2': Object.freeze({
@@ -47,7 +47,7 @@ const _assets = Object.freeze({
     worker: Object.freeze({
       filename: 'tfhe-worker.v1.6.2.mjs',
       localRelativePath: './v1.6.2/tfhe-worker.mjs',
-      sha256: 'feef21682073b8e4f5d0993141ca7b1cb8993bb6f1f322bfb04aa91d502c62f6',
+      sha256: '04d562e4732edc602d119f2f1cc338ba2fa9da4d04ced104439b31169713386c',
     }),
   }),
 });
