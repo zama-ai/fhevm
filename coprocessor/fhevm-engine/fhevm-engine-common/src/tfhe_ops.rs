@@ -917,15 +917,17 @@ pub fn perform_fhe_operation(
 pub fn perform_multi_output_fhe_operation(
     fhe_operation_int: i16,
     input_operands: &[SupportedFheCiphertexts],
+    output_types: &[i16],
     _: usize,
 ) -> Result<Vec<SupportedFheCiphertexts>, FhevmError> {
-    perform_multi_output_fhe_operation_impl(fhe_operation_int, input_operands)
+    perform_multi_output_fhe_operation_impl(fhe_operation_int, input_operands, output_types)
 }
 
 #[cfg(feature = "gpu")]
 pub fn perform_multi_output_fhe_operation(
     fhe_operation_int: i16,
     input_operands: &[SupportedFheCiphertexts],
+    output_types: &[i16],
     gpu_idx: usize,
 ) -> Result<Vec<SupportedFheCiphertexts>, FhevmError> {
     use crate::gpu_memory::{get_op_size_on_gpu, release_memory_on_gpu, reserve_memory_on_gpu};
@@ -935,7 +937,8 @@ pub fn perform_multi_output_fhe_operation(
         .iter()
         .for_each(|i| gpu_mem_res += i.get_size_on_gpu());
     reserve_memory_on_gpu(gpu_mem_res, gpu_idx);
-    let res = perform_multi_output_fhe_operation_impl(fhe_operation_int, input_operands);
+    let res =
+        perform_multi_output_fhe_operation_impl(fhe_operation_int, input_operands, output_types);
     release_memory_on_gpu(gpu_mem_res, gpu_idx);
     res
 }
@@ -3560,9 +3563,12 @@ pub fn perform_fhe_operation_impl(
 }
 
 /// Placeholder dispatch for multi-output ops; no ops are wired up yet.
+/// `output_types` carries one type per declared output, so an operation whose
+/// outputs differ in type (a kv-store get, say) can produce each correctly.
 pub fn perform_multi_output_fhe_operation_impl(
     fhe_operation_int: i16,
     _input_operands: &[SupportedFheCiphertexts],
+    _output_types: &[i16],
 ) -> Result<Vec<SupportedFheCiphertexts>, FhevmError> {
     Err(FhevmError::UnknownFheOperation(fhe_operation_int as i32))
 }

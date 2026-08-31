@@ -580,13 +580,19 @@ fn try_execute_node(
         RERAND_LATENCY_BATCH_HISTOGRAM.observe(elapsed.as_secs_f64());
     }
     let opcode = node.opcode;
-    let output_type = get_ct_type(&node.outputs[0].handle).map_err(|e| {
-        error!(target: "scheduler",
-            { handle = ?handle, outputs, error = ?e },
-            "Invalid result handle: cannot read type byte");
-        telemetry::set_current_span_error(&e);
-        SchedulerError::SchedulerError
-    })?;
+    // One type per declared output: outputs of one operation can differ in type.
+    let output_types = node
+        .outputs
+        .iter()
+        .map(|o| get_ct_type(&o.handle))
+        .collect::<std::result::Result<Vec<i16>, _>>()
+        .map_err(|e| {
+            error!(target: "scheduler",
+                { handle = ?handle, outputs, error = ?e },
+                "Invalid result handle: cannot read type byte");
+            telemetry::set_current_span_error(&e);
+            SchedulerError::SchedulerError
+        })?;
 
     let result = std::panic::catch_unwind(|| {
         run_computation(
@@ -595,7 +601,7 @@ fn try_execute_node(
             node_index,
             gpu_idx,
             transaction_id,
-            output_type,
+            &output_types,
         )
     });
     match result {
@@ -735,7 +741,7 @@ fn run_computation(
     graph_node_index: usize,
     gpu_idx: usize,
     transaction_id: &Handle,
-    output_type: i16,
+    output_types: &[i16],
 ) -> (usize, OpResult) {
     let txn_id_short = telemetry::short_hex_id(transaction_id);
 
@@ -754,6 +760,7 @@ fn run_computation(
             let result = fhevm_engine_common::tfhe_ops::perform_multi_output_fhe_operation(
                 operation as i16,
                 &inputs,
+                output_types,
                 gpu_idx,
             );
 
@@ -789,7 +796,8 @@ fn run_computation(
                 tracing::Span::current().record("input_type", inputs[0].type_name());
             }
 
-            let result = perform_fhe_operation(operation as i16, &inputs, gpu_idx, output_type);
+            // A single-output op has exactly one declared output.
+            let result = perform_fhe_operation(operation as i16, &inputs, gpu_idx, output_types[0]);
 
             match result {
                 Ok(result) => (graph_node_index, Ok(vec![result])),
