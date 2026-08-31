@@ -461,33 +461,7 @@ impl Database {
             .map(|d| d.to_vec())
             .collect::<Vec<_>>();
         let dependencies = [&dependencies_handles, dependencies_bytes].concat();
-        self.insert_computation_inner(
-            tx,
-            result,
-            dependencies,
-            fhe_operation,
-            scalar_byte,
-            None,
-            0,
-            1,
-            log,
-        )
-        .await
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    async fn insert_computation(
-        &self,
-        tx: &mut Transaction<'_>,
-        result: &Handle,
-        dependencies: &[&Handle],
-        fhe_operation: FheOperation,
-        scalar_byte: &FixedBytes<1>,
-        log: &LogTfhe,
-    ) -> Result<bool, SqlxError> {
-        let dependencies =
-            dependencies.iter().map(|d| d.to_vec()).collect::<Vec<_>>();
-        self.insert_computation_inner(
+        self.insert_computation(
             tx,
             result,
             dependencies,
@@ -527,7 +501,7 @@ impl Database {
         for (idx, result) in results.iter().enumerate() {
             let output_index = idx as i16;
             let inserted = self
-                .insert_computation_inner(
+                .insert_computation(
                     tx,
                     result,
                     dependencies.clone(),
@@ -545,7 +519,7 @@ impl Database {
     }
 
     #[allow(clippy::too_many_arguments)]
-    async fn insert_computation_inner(
+    async fn insert_computation(
         &self,
         tx: &mut Transaction<'_>,
         result: &Handle,
@@ -666,8 +640,18 @@ impl Database {
             "txn_id",
             log.transaction_hash.as_ref(),
         );
-        let insert_computation = |tx, result, dependencies, scalar_byte| {
-            self.insert_computation(tx, result, dependencies, fhe_operation, scalar_byte, log)
+        let insert_computation = |tx, result, dependencies: &[&Handle], scalar_byte| {
+            self.insert_computation(
+                tx,
+                result,
+                dependencies.iter().map(|d| d.to_vec()).collect(),
+                fhe_operation,
+                scalar_byte,
+                None,
+                0,
+                1,
+                log,
+            )
         };
         let insert_computation_bytes = |tx, result, dependencies_handles, dependencies_bytes, scalar_byte| {
             self.insert_computation_bytes(tx, result, dependencies_handles, dependencies_bytes, fhe_operation, scalar_byte, log)
