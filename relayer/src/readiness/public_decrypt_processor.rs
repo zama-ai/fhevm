@@ -155,11 +155,9 @@ impl PublicDecryptReadinessProcessor {
             }
 
             Err(e @ ReadinessCheckError::NoAttestationConsensus { .. }) => {
-                // `?e` is the derived Debug of `ReadinessCheckError`, which for this variant
-                // dispatches to `Round`'s hand-written Debug — the full board with digest
-                // prefixes. Fine here: this is an operator log, never the stored reason (that
-                // conversion, and its `{round}` Display redaction, live solely in the `From`
-                // impl below, so there is exactly one place that decides what a caller sees).
+                // Operator log: a digest value may legitimately appear here. What a caller sees —
+                // the stored reason and the HTTP response — is decided solely by the `From` impl
+                // below.
                 error!(job_id = %task.job_id, error = ?e, "No Coprocessor attestation consensus");
 
                 Self::dispatch_failure(

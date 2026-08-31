@@ -811,12 +811,8 @@ async fn test_readiness_timeout_message_carries_round_detail() {
     setup.shutdown().await;
 }
 
-/// No digest value ever reaches the caller.
-///
-/// The redacted round rendering — the only one allowed in a stored reason or an HTTP response —
-/// omits digest values by construction. `"ct:"`/`"sns:"` are the markers the full-board (operator
-/// diagnostics only) rendering uses for them; their absence here is the pin against a future
-/// change accidentally routing the full board into a stored reason.
+/// No digest value may reach the caller. This pins the HTTP response against a future change
+/// routing the operator-only board into a stored reason.
 #[tokio::test]
 async fn test_readiness_timeout_message_has_no_digest_values() {
     let setup = TestSetup::new_with_minimal_readiness()
@@ -835,13 +831,16 @@ async fn test_readiness_timeout_message_has_no_digest_values() {
     let error = body.error.as_ref().expect("Error should be present");
     let message = error.message();
 
+    // The digests the mock attests.
+    for leaked in [B256::repeat_byte(0xBB), B256::repeat_byte(0xCC)] {
+        assert!(
+            !message.contains(&format!("{leaked:x}")),
+            "leaked digest {leaked}: {message}"
+        );
+    }
     assert!(
-        !message.contains("ct:"),
-        "leaked ciphertext digest marker: {message}"
-    );
-    assert!(
-        !message.contains("sns:"),
-        "leaked SNS digest marker: {message}"
+        message.contains("required attested"),
+        "message must still carry the round's redacted summary: {message}"
     );
 
     setup.shutdown().await;

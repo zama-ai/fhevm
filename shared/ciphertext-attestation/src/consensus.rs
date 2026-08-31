@@ -4,7 +4,6 @@ use crate::{CiphertextAttestation, CiphertextFormat};
 use alloy_primitives::{Address, B256, U256};
 use std::{
     collections::{HashMap, HashSet},
-    fmt,
     num::NonZeroUsize,
 };
 use tracing::warn;
@@ -19,9 +18,9 @@ pub struct Consensus {
 
 /// The ciphertext material a consensus group agreed on.
 ///
-/// Digest values are operator-only: `Debug` shows their prefixes and no `Display` impl exists —
-/// add one only if it is needed, and never with digest values in it.
-#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+/// Digest values are operator-only. There is deliberately no `Display` impl; if one is ever
+/// needed, it must not carry digest values.
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ConsensusMaterial {
     pub key_id: U256,
     pub ciphertext_digest: B256,
@@ -36,16 +35,6 @@ pub struct ConsensusMaterial {
 pub struct ConsensusError {
     valid_signers: usize,
     threshold: NonZeroUsize,
-}
-
-impl fmt::Debug for ConsensusMaterial {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "ct:{:02x}..,sns:{:02x}..",
-            self.ciphertext_digest.0[0], self.sns_ciphertext_digest.0[0]
-        )
-    }
 }
 
 impl From<&CiphertextAttestation> for ConsensusMaterial {

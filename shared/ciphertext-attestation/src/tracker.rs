@@ -253,7 +253,7 @@ impl std::fmt::Debug for Round {
             if i > 0 {
                 write!(f, ", ")?;
             }
-            write!(f, "{}→", short_addr(&entry.signer))?;
+            write!(f, "{}→", entry.signer)?;
             match reply {
                 Reply::Attested(material) => write!(f, "attested{{{material:?}}}")?,
                 Reply::NoReply => write!(f, "no reply")?,
@@ -263,11 +263,6 @@ impl std::fmt::Debug for Round {
         }
         Ok(())
     }
-}
-
-/// Short form for the operator-log board: `0x` plus the address's leading byte.
-fn short_addr(addr: &Address) -> String {
-    format!("0x{:02x}..", addr.0[0])
 }
 
 /// Full addresses, comma-separated. Signer addresses are fine in user-facing strings — public
@@ -291,6 +286,7 @@ mod tests {
     const KEY_ID: U256 = U256::from_limbs([0xdead_beef, 0, 0, 0]);
     const CT_DIGEST: B256 = B256::repeat_byte(0xBB);
     const SNS_DIGEST: B256 = B256::repeat_byte(0xCC);
+    const DISSENTING_SNS_DIGEST: B256 = B256::repeat_byte(0xDD);
     const FORMAT: CiphertextFormat = CiphertextFormat::UncompressedOnCpu;
 
     fn nz(threshold: usize) -> NonZeroUsize {
@@ -720,8 +716,8 @@ mod tests {
         assert!(matches!(status, ThresholdStatus::Reached { .. }));
     }
 
-    /// A disagreeing, terminal round: both digests differ between the two attested materials,
-    /// so a rendering that leaked digest values would show it.
+    /// A disagreeing, terminal round holding three distinct digest values, so a rendering that
+    /// leaked any one of them would show it.
     async fn disagreeing_round() -> Round {
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random();
@@ -730,7 +726,7 @@ mod tests {
 
         let (signer, reply) = reply_from(&s1).await;
         tracker.record(signer, reply);
-        let (signer, reply) = dissenting_reply_from(&s2, B256::repeat_byte(0xDD)).await;
+        let (signer, reply) = dissenting_reply_from(&s2, DISSENTING_SNS_DIGEST).await;
         match tracker.record(signer, reply) {
             ThresholdStatus::Unreachable(round) => round,
             other => panic!("expected Unreachable, got {other:?}"),
@@ -739,51 +735,32 @@ mod tests {
 
     #[tokio::test]
     async fn display_is_redacted_no_digest_values() {
-        // The rendering that fires implicitly (`{round}`, `%round`, `.to_string()`, any
-        // `#[error("...{round}")]`) must never carry digest values. `"ct:"`/`"sns:"` are the
-        // markers the full-board `Debug` uses for them; their absence here is the pin.
+        // `Display` fires implicitly wherever a `Round` is interpolated, including from an error
+        // type's own message, so it must never carry digest values.
         let round = disagreeing_round().await;
         let rendered = round.to_string();
 
-        assert!(
-            !rendered.contains("ct:"),
-            "leaked ciphertext digest marker: {rendered}"
-        );
-        assert!(
-            !rendered.contains("sns:"),
-            "leaked SNS digest marker: {rendered}"
-        );
+        for leaked in [CT_DIGEST, SNS_DIGEST, DISSENTING_SNS_DIGEST] {
+            assert!(
+                !rendered.contains(&format!("{leaked:x}")),
+                "leaked digest {leaked}: {rendered}"
+            );
+        }
     }
 
     #[tokio::test]
-    async fn debug_is_full_board_with_digest_prefixes() {
-        // The diagnostics rendering (`?round`) must show both materials in a real disagreement,
-        // not just the winner — a differing field must never be hidden.
+    async fn debug_is_full_board_with_digest_values() {
+        // The diagnostics rendering must show every attested material in a disagreement, not just
+        // the winner — a differing field must never be hidden from an operator.
         let round = disagreeing_round().await;
         let rendered = format!("{round:?}");
 
-        assert!(
-            rendered.contains("ct:"),
-            "missing ciphertext digest marker: {rendered}"
-        );
-        assert!(
-            rendered.contains("sns:"),
-            "missing SNS digest marker: {rendered}"
-        );
-        // CT_DIGEST (0xBB, shared by both), s1's SNS_DIGEST (0xCC), and s2's dissenting SNS
-        // digest (0xDD) each show up as their own two-hex-digit prefix.
-        assert!(
-            rendered.contains("bb.."),
-            "missing shared ct digest prefix: {rendered}"
-        );
-        assert!(
-            rendered.contains("cc.."),
-            "missing s1's sns digest prefix: {rendered}"
-        );
-        assert!(
-            rendered.contains("dd.."),
-            "missing s2's sns digest prefix: {rendered}"
-        );
+        for expected in [CT_DIGEST, SNS_DIGEST, DISSENTING_SNS_DIGEST] {
+            assert!(
+                rendered.contains(&format!("{expected:x}")),
+                "missing digest {expected}: {rendered}"
+            );
+        }
     }
 
     #[tokio::test]
