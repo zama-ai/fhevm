@@ -9,8 +9,9 @@
 //!
 //! [`HeapBudget`] is the one running total. Intern tables grow only through
 //! [`TalliedVec::try_push`] — there is no `DerefMut` to the `Vec`, so a forgotten `.push`
-//! does not compile. Exact-size sites go through [`TalliedVec::try_with_capacity`] (and
-//! [`TalliedVec::try_filled`] for the finish bitmaps), never a raw `Vec`.
+//! does not compile. Exact-size `Vec` sites go through [`TalliedVec::try_with_capacity`].
+//! Attestation embeds [`HeapBudget::admit`] then clone. [`TalliedVec::into_inner`] is the
+//! wire seam (`FheExecuteStep`, `FheExecuteArgs`).
 
 use crate::{FheExecutionBuildError, Result};
 
@@ -105,17 +106,6 @@ impl<T> TalliedVec<T> {
         })
     }
 
-    /// Admits an exact-size buffer and fills it. Length stays within the reserved capacity, so
-    /// filling does not allocate again.
-    pub(crate) fn try_filled(budget: &mut HeapBudget, len: usize, fill: T) -> Result<Self>
-    where
-        T: Clone,
-    {
-        let mut this = Self::try_with_capacity(budget, len)?;
-        this.vec.resize(len, fill);
-        Ok(this)
-    }
-
     /// Admits the next push against `budget` before the allocator serves it.
     pub(crate) fn try_push(&mut self, budget: &mut HeapBudget, value: T) -> Result<()> {
         let upcoming = pushes_request(&self.vec, 1);
@@ -140,10 +130,6 @@ impl<T> TalliedVec<T> {
 
     pub(crate) fn get_mut(&mut self, index: usize) -> Option<&mut T> {
         self.vec.get_mut(index)
-    }
-
-    pub(crate) fn as_mut_slice(&mut self) -> &mut [T] {
-        &mut self.vec
     }
 
     /// Hands the underlying `Vec` over (to the wire args, or the finished execution). The

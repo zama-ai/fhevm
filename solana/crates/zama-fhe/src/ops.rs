@@ -581,7 +581,7 @@ impl<'id> FheExecutionBuilder<'id> {
             )?;
             let output = lowering.output(output)?;
             Ok(FheExecuteStep::Sum {
-                operands: lowered,
+                operands: lowered.into_inner(),
                 fhe_type,
                 output,
             })
@@ -612,7 +612,7 @@ impl<'id> FheExecutionBuilder<'id> {
             let output = lowering.output(output)?;
             Ok(FheExecuteStep::IsIn {
                 value,
-                set,
+                set: set.into_inner(),
                 fhe_type,
                 output,
             })

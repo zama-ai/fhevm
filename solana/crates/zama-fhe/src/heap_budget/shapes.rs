@@ -241,8 +241,8 @@ pub(crate) fn shared_audience_public_creates_shape(
     chain_with_outputs(MAX_FHE_EXECUTION_STEPS, input, outputs)
 }
 
-/// Which reduction op a reduction-heavy shape drives — the two ops whose operand tables carry
-/// hand-written tallies in `ops.rs`, which is exactly why the frontier must exercise them.
+/// Which reduction op a reduction-heavy shape drives — the only caller-sized operand
+/// tables, admitted through `reduction_operands`.
 #[derive(Clone, Copy)]
 pub(crate) enum ReductionKind {
     Sum,

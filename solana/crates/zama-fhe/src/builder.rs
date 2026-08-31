@@ -26,8 +26,8 @@
 //!   [`crate::APP_HEAP_RESERVE_BYTES`] for what it genuinely cannot see: Anchor's account
 //!   deserialization and the app's own allocations
 //!   ([`FheExecutionBuildError::ExceedsBuildHeapBudget`]). Intern tables grow through
-//!   `TalliedVec::try_push` (there is no `DerefMut` to the `Vec`); exact-size sites go
-//!   through `try_with_capacity` / `try_filled`. Packet and
+//!   `TalliedVec::try_push` (there is no `DerefMut` to the `Vec`); exact-size `Vec` sites go
+//!   through `try_with_capacity`; attestation embeds `admit` then clone. Packet and
 //!   invoke terms land at `finish`, where they are first known. The tally is validated
 //!   byte-for-byte against a counting allocator across the whole shape frontier in `heap_budget`,
 //!   and the never-crosses claim has its own adversarial test there.
@@ -125,11 +125,12 @@ impl StepLowering<'_> {
 
     /// Lowers a reduction's operand iterator into one exact-size table. Scalar checks and the
     /// operand cap live here so `sum` / `is_in` do not each carry a copy of the admission loop.
+    /// `into_inner` happens at `FheExecuteStep` construction — the wire seam.
     pub(crate) fn reduction_operands(
         &mut self,
         operands: impl Iterator<Item = Operand>,
         max: usize,
-    ) -> Result<Vec<FheExecuteOperand>> {
+    ) -> Result<TalliedVec<FheExecuteOperand>> {
         let (hinted, _) = operands.size_hint();
         let reserved = hinted.min(max);
         let mut lowered = TalliedVec::try_with_capacity(self.budget(), reserved)?;
@@ -143,7 +144,7 @@ impl StepLowering<'_> {
             let lowered_op = self.operand(operand)?;
             lowered.try_push(self.budget(), lowered_op)?;
         }
-        Ok(lowered.into_inner())
+        Ok(lowered)
     }
 
     pub(crate) fn output(&mut self, output: Output) -> Result<FheExecuteOutput> {
@@ -166,7 +167,7 @@ impl<'id> FheExecutionBuilder<'id> {
     /// This is also the canonical [`TooManySteps`](FheExecutionBuildError::TooManySteps) gate:
     /// steps only ever grow through here, so the op methods and `finish` do not re-check it.
     /// Heap admission lives on [`HeapBudget`]: intern tables grow through `try_push`, exact-size
-    /// sites through `try_with_capacity`. Packet and invoke land at `finish`.
+    /// `Vec` sites through `try_with_capacity`. Packet and invoke land at `finish`.
     ///
     /// Ordering dependency inside a step: `operand()` reads `persistent_producers`, which still
     /// holds the pre-step state only because every op lowers its operands before its output. An op
@@ -245,16 +246,15 @@ impl<'id> FheExecutionBuilder<'id> {
                 if floor > crate::cost::TRANSACTION_INSTRUCTION_TRACE_LIMIT {
                     return Err(FheExecutionBuildError::ExceedsInstructionTraceLimit);
                 }
+                // Push while Drop still rolls intern tables. `steps` / `produced_types` are
+                // not borrowed by lowering; the budget is.
+                steps.try_push(lowering.budget(), step)?;
+                produced_types.try_push(lowering.budget(), produced_type)?;
                 *persistent_creates += usize::from(creates_account);
                 *persistent_updates += usize::from(updates_account);
                 *has_rand_step |= is_rand;
                 *has_public_output |= makes_public;
                 lowering.tables.commit();
-                drop(lowering);
-                // Both stay within their up-front reservation (the step cap was checked above);
-                // try_push keeps the total honest if that ever changes.
-                steps.try_push(budget, step)?;
-                produced_types.try_push(budget, produced_type)?;
                 Ok(op_index)
             }
             Err(error) => Err(error),
@@ -311,12 +311,11 @@ impl<'id> FheExecutionBuilder<'id> {
     /// verified input, and no persistent output — with `FheExecuteUnanchoredUnderBlockCap`
     /// (fhevm-internal#1744). Give such an execution a persistent output (the bootstrap/mint path) or a
     /// verified input if it must run under a finite cap.
-    pub(crate) fn finish(mut self) -> Result<FheExecution> {
+    pub(crate) fn finish(self) -> Result<FheExecution> {
         validate_encrypted_value_account_authority(self.encrypted_value_account_authority)?;
         if self.steps.is_empty() {
             return Err(FheExecutionBuildError::EmptySteps);
         }
-        let bitmap_bytes = self.remaining_accounts.len() + self.dictionary.len();
         let dynamic_accounts = self
             .remaining_accounts
             .iter()
@@ -347,24 +346,19 @@ impl<'id> FheExecutionBuilder<'id> {
         if packet_bytes > crate::cost::CPI_INSTRUCTION_DATA_LIMIT {
             return Err(FheExecutionBuildError::ExceedsCpiInstructionDataLimit);
         }
-        // Bitmaps, packet, and invoke tables are everything still uncharged. One comparison
-        // before the bitmaps allocate, so a shape that cannot land does not spend them.
-        if !self
-            .budget
-            .fits_with(bitmap_bytes + packet_bytes + invoke_heap_bytes)
-        {
+        // Packet and invoke tables are everything still uncharged. Finish's used-entry
+        // bitmaps live on the stack: wire indexes are `u8`.
+        if !self.budget.fits_with(packet_bytes + invoke_heap_bytes) {
             return Err(FheExecutionBuildError::ExceedsBuildHeapBudget);
         }
-        let remaining_len = self.remaining_accounts.len();
-        let dictionary_len = args.dictionary.len();
-        let mut used_accounts = TalliedVec::try_filled(&mut self.budget, remaining_len, false)?;
-        let mut used_dictionary = TalliedVec::try_filled(&mut self.budget, dictionary_len, false)?;
+        let mut used_accounts = [false; 256];
+        let mut used_dictionary = [false; 256];
         validate_lowered_execution(
             &args.steps,
             &self.remaining_accounts,
             &args.dictionary,
-            used_accounts.as_mut_slice(),
-            used_dictionary.as_mut_slice(),
+            &mut used_accounts[..self.remaining_accounts.len()],
+            &mut used_dictionary[..args.dictionary.len()],
         )?;
         validate_rand_steps_anchor_persistent_output(&args.steps)?;
         let build_heap_bytes = self.budget.total();

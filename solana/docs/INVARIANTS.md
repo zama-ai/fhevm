@@ -382,8 +382,9 @@ not when the threat model changes.
     - **Build heap** — the builder admits every byte it requests from the
       allocator against `BUILD_HEAP_BUDGET_BYTES` (24 KiB) before the
       allocator serves it (`HeapBudget`: intern tables cannot grow except
-      through `try_push`; exact-size sites go through `try_with_capacity` /
-      `try_filled`), leaving `APP_HEAP_RESERVE_BYTES`
+      through `try_push`; exact-size `Vec` sites go through
+      `try_with_capacity`; attestation embeds admit then clone), leaving
+      `APP_HEAP_RESERVE_BYTES`
       (8 KiB) of the fixed 32 KB region for what the builder genuinely cannot
       see: Anchor's account deserialization and the app's own allocations
       (`ExceedsBuildHeapBudget`). The tally can never cross the budget even
@@ -408,9 +409,9 @@ not when the threat model changes.
     for resolve + CPI tables), so an untallied allocation cannot ship; the
     at-cap dep-chain specimen proves the chain shape under SBF with the
     uncounted costs on top. For scale, the heaviest admitted totals
-    (build + packet + invoke): full 32-step chain 13,812 bytes; 20 creates
-    20,722; 20 creates x 2 subjects 21,422; four maximum attestations 20,898;
-    one 60-operand sum 16,486 — the frontier grid is printed by that
+    (build + packet + invoke): full 32-step chain 13,794 bytes; 20 creates
+    20,656; 20 creates x 2 subjects 21,336; four maximum attestations 20,897;
+    one 60-operand sum 16,484 — the frontier grid is printed by that
     directory's `print_build_frontier_grid` (`#[ignore]`d — run with
     `--ignored --nocapture`).
 
