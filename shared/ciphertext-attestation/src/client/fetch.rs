@@ -118,8 +118,8 @@ async fn resolve_round(
         };
         debug!(%signer, %handle, ?reply, "Coprocessor reply recorded");
 
-        let status = tracker.record(signer, reply);
-        if let Some(result) = resolve(handle, registry, status) {
+        let verdict = tracker.record(signer, reply);
+        if let Some(result) = resolve(handle, registry, verdict) {
             if result.is_ok() {
                 debug!(
                     %handle,
@@ -135,11 +135,11 @@ async fn resolve_round(
     // Only reachable when a probe panicked and left its slot `Outstanding`. `record` is
     // idempotent for an already-filled slot, so sweeping every registered signer to `NoReply`
     // only fills the ones a panicked probe left open.
-    let mut status = tracker.status();
+    let mut verdict = tracker.verdict();
     for entry in &registry.coprocessors {
-        status = tracker.record(entry.signer, Reply::NoReply);
+        verdict = tracker.record(entry.signer, Reply::NoReply);
     }
-    resolve(handle, registry, status).unwrap_or_else(|| {
+    resolve(handle, registry, verdict).unwrap_or_else(|| {
         // Failing open (letting an unattested handle through) would be worse than failing shut
         // on a request-serving path, so this logs loudly and hands back the same retriable
         // verdict an all-silent round would produce.
@@ -167,9 +167,9 @@ async fn resolve_round(
 fn resolve(
     handle: B256,
     registry: &CoprocessorRegistrySnapshot,
-    status: ThresholdStatus,
+    verdict: ThresholdStatus,
 ) -> Option<Result<ResolvedConsensus, ConsensusCheckError>> {
-    match status {
+    match verdict {
         ThresholdStatus::AwaitingReplies => None,
         ThresholdStatus::Reached { material, signers } => {
             let winning_buckets = winning_buckets(registry, &signers);

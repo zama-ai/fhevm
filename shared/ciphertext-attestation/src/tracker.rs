@@ -190,11 +190,11 @@ impl ConsensusTracker {
                 "record() called for signer {signer}, not in the roster"
             ),
         }
-        self.status()
+        self.verdict()
     }
 
     /// Reads the board without changing it.
-    pub fn status(&self) -> ThresholdStatus {
+    pub fn verdict(&self) -> ThresholdStatus {
         let round = &self.round;
         let threshold = round.threshold.get();
         let groups = round.groups();
@@ -538,7 +538,7 @@ mod tests {
         // proven disagreement.
         let tracker = ConsensusTracker::new(std::iter::empty(), nz(1));
 
-        match tracker.status() {
+        match tracker.verdict() {
             ThresholdStatus::MissedThisRound(round) => {
                 assert_eq!(round.attested().len(), 0);
                 assert_eq!(round.threshold.get(), 1);

@@ -101,16 +101,15 @@ impl CoprocessorRegistrySnapshot {
             )));
         }
 
-        let coprocessors: Vec<CoprocessorEntry> = try_join_all(
-            tx_senders
-                .into_iter()
-                .map(|tx_sender| async move { get_copro_entry(contract, tx_sender).await }),
-        )
-        .await
-        .map_err(RegistryError::Transient)?
-        .into_iter()
-        .flatten()
-        .collect();
+        let coprocessors: Vec<CoprocessorEntry> =
+            try_join_all(tx_senders.into_iter().map(|tx_sender| async move {
+                fetch_coprocessor_entry(contract, tx_sender).await
+            }))
+            .await
+            .map_err(RegistryError::Transient)?
+            .into_iter()
+            .flatten()
+            .collect();
 
         if coprocessors.is_empty() {
             return Err(RegistryError::Transient(anyhow::anyhow!(
@@ -165,7 +164,7 @@ fn redact_rpc_url(err: impl std::fmt::Display) -> String {
 
 /// Resolves the signer↔bucket binding of a single Coprocessor. An empty `s3BucketUrl` is skipped
 /// with a warning: it is persistent on-chain state, so failing on it would crash-loop the caller.
-async fn get_copro_entry<P: Provider<N>, N: Network>(
+async fn fetch_coprocessor_entry<P: Provider<N>, N: Network>(
     contract: &GatewayConfigInstance<P, N>,
     copro_tx_sender_addr: Address,
 ) -> anyhow::Result<Option<CoprocessorEntry>> {
