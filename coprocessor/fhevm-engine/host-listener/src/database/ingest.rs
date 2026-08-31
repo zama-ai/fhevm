@@ -1231,6 +1231,7 @@ pub async fn synthesize_finalized_fallback_grants(
         return Ok(());
     }
     let mut logs: Vec<LogTfhe> = Vec::with_capacity(rows.len());
+    let mut dst_handles: Vec<EventHandle> = Vec::with_capacity(rows.len());
     for (row_index, row) in rows.into_iter().enumerate() {
         let dst_handle: Vec<u8> = row.get("dst_handle");
         let plaintext: Vec<u8> = row.get("plaintext");
@@ -1302,6 +1303,7 @@ pub async fn synthesize_finalized_fallback_grants(
             address: Address::ZERO,
             data,
         };
+        dst_handles.push(EventHandle::from(handle_bytes));
         logs.push(LogTfhe {
             // Forced allowed, exactly like inline synthesis: governance
             // ensures the handle is in the ACL.
@@ -1335,11 +1337,7 @@ pub async fn synthesize_finalized_fallback_grants(
     // cannot change the outcome, so neither flag is threaded through here.
     let chains =
         dependence_chains(&mut logs, &db.dependence_chain, false, false).await;
-    for log in &logs {
-        let dst_handle = tfhe_result_handles(&log.event)
-            .into_iter()
-            .next()
-            .expect("synthetic TrivialEncrypt has a result handle");
+    for (log, dst_handle) in logs.iter().zip(&dst_handles) {
         db.insert_tfhe_event(tx, log).await?;
         db.insert_pbs_computations(
             tx,
