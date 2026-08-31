@@ -62,7 +62,7 @@ pub const APP_HEAP_RESERVE_BYTES: usize = 8 * 1024;
 
 /// What one build, its serialized packet, and the invoke-side account tables together may
 /// request from the program heap: the builder tallies every byte it asks the allocator for —
-/// validated byte-for-byte against a counting allocator in `heap_budget.rs` — and `finish`
+/// validated byte-for-byte against a counting allocator in `heap_budget/` — and `finish`
 /// rejects an execution over this budget with
 /// [`FheExecutionBuildError::ExceedsBuildHeapBudget`](crate::FheExecutionBuildError::ExceedsBuildHeapBudget),
 /// because on the never-freeing bump region an over-budget build aborts the instruction with
@@ -118,14 +118,14 @@ pub struct FheExecutionCost {
     pub packet_bytes: usize,
     /// Every byte the build requested from the program heap, tallied at each allocation the
     /// builder performs and validated byte-for-byte against a counting allocator
-    /// (`heap_budget.rs`). With [`packet_bytes`](Self::packet_bytes) and
+    /// (`heap_budget/`). With [`packet_bytes`](Self::packet_bytes) and
     /// [`invoke_heap_bytes`](Self::invoke_heap_bytes) on top this is what
     /// [`BUILD_HEAP_BUDGET_BYTES`] bounds.
     pub build_heap_bytes: usize,
     /// Heap the crate's invoke path requests after the build: `resolve_accounts`'s three
     /// exact-sized vectors plus the CPI account meta/info tables, an exact function of the
     /// account counts (`invoke_table_heap_bytes`), validated byte-for-byte against a counting
-    /// allocator (`heap_budget.rs`).
+    /// allocator (`heap_budget/`).
     pub invoke_heap_bytes: usize,
     /// Dynamic accounts the invocation appends after the fixed `fhe_execute` account list.
     pub remaining_accounts: usize,

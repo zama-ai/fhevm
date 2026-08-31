@@ -3,7 +3,7 @@
 //! DEPENDENT add chain (each step's operand is the previous step's transient result). Extending at
 //! full depth builds and invokes a maximum execution inside the specimen program, so this test is
 //! what verifies under SBF that an at-cap on-chain build — tables, packet, account resolution,
-//! Anchor deserialization — fits the fixed 32 KB program heap that `heap_budget.rs` counts
+//! Anchor deserialization — fits the fixed 32 KB program heap that `heap_budget/` counts
 //! host-side. It also proves the kit's cleartext oracle replays transient intermediates and that a
 //! full-depth chain fits one instruction's compute budget.
 

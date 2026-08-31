@@ -152,7 +152,7 @@ ID…).
     account. The counterexample is pinned from both sides: the builder admits
     20 shared-audience eight-subject `make_public` creates
     (`the_builder_admits_what_the_host_heap_cannot_hold` in
-    `solana/crates/zama-fhe/src/heap_budget.rs` builds them `Ok`), and the
+    `solana/crates/zama-fhe/src/heap_budget/` builds them `Ok`), and the
     host's measured wall is 15
     (`fhe_execute_boundary/subject_heavy_public_creates`: the 16th aborts in
     the host's CPI frame). Executions in the 16–20 band build cleanly and die
@@ -379,44 +379,39 @@ not when the threat model changes.
       and held under the 10 KiB a CPI may carry; an `fhe_execute` packet
       always travels by CPI because a transaction itself carries at most
       1,232 bytes (`ExceedsCpiInstructionDataLimit`).
-    - **Build heap** — the builder tallies every byte it requests from the
-      allocator (the ~10 KB up-front table reservations, growth past them,
-      per-step operand tables, attestation embeds) and holds
-      build + packet + the invoke-side account tables under
-      `BUILD_HEAP_BUDGET_BYTES` (24 KiB), leaving `APP_HEAP_RESERVE_BYTES`
+    - **Build heap** — the builder admits every byte it requests from the
+      allocator against `BUILD_HEAP_BUDGET_BYTES` (24 KiB) before the
+      allocator serves it (`HeapBudget`: intern tables grow through
+      `try_push`, exact-size allocations through `admit` / `alloc_vec`, so a
+      forgotten site does not compile), leaving `APP_HEAP_RESERVE_BYTES`
       (8 KiB) of the fixed 32 KB region for what the builder genuinely cannot
       see: Anchor's account deserialization and the app's own allocations
-      (`ExceedsBuildHeapBudget`). The build term is enforced pre-emptively:
-      every allocation the builder makes — table growth, dictionary
-      interning, caller-sized reduction operand tables, attestation embeds —
-      is admitted against the budget before the allocator serves it, so the
-      tally can never cross the budget even transiently and the builder alone
-      can never exhaust the region, whatever the app does with a rejection
-      (proven adversarially by
+      (`ExceedsBuildHeapBudget`). The tally can never cross the budget even
+      transiently (proven by
       `the_tally_never_crosses_the_budget_even_transiently` in
-      `heap_budget.rs`). The packet and
-      invoke-table terms land at `finish`, where they are first known. The
-      invoke-side term prices `resolve_accounts` plus the CPI meta/info
-      tables as an exact function of the account counts, so an admitted
-      execution's whole lifecycle in the app's CPI frame — build, serialize,
-      resolve, invoke — fits the budget.
+      `heap_budget`). The packet and invoke-table terms land at `finish`,
+      where they are first known. The invoke-side term prices
+      `resolve_accounts` plus the CPI meta/info tables as an exact function
+      of the account counts, so an admitted execution's whole lifecycle in
+      the app's CPI frame — build, serialize, resolve, invoke — fits the
+      budget.
 
     Lowering an execution never copies the builder's intern tables or the
     app's subject lists (the binding moves them), the packet serializes once
     into a right-sized buffer, and resolve and invoke reserve their exact
     table sizes up front. Both tallies are proven equal to a counting
-    allocator byte-for-byte across a 122-shape frontier (43 admitted) by
-    `solana/crates/zama-fhe/src/heap_budget.rs`
+    allocator byte-for-byte across a 122-shape frontier (49 admitted) by
+    `solana/crates/zama-fhe/src/heap_budget/`
     (`the_heap_tally_matches_a_counting_allocator_for_every_admitted_shape`
     for build + packet,
     `the_invoke_model_matches_a_counting_allocator_for_every_admitted_shape`
     for resolve + CPI tables), so an untallied allocation cannot ship; the
     at-cap dep-chain specimen proves the chain shape under SBF with the
     uncounted costs on top. For scale, the heaviest admitted totals
-    (build + packet + invoke): full 32-step chain 13,828 bytes; 20 creates
-    21,595; 20 creates x 2 subjects 22,295; four maximum attestations 21,730;
-    one 60-operand sum 21,278 — the frontier grid is printed by that file's
-    `print_build_frontier_grid` (`#[ignore]`d — run with
+    (build + packet + invoke): full 32-step chain 13,812 bytes; 20 creates
+    20,722; 20 creates x 2 subjects 21,422; four maximum attestations 20,898;
+    one 60-operand sum 16,486 — the frontier grid is printed by that
+    directory's `print_build_frontier_grid` (`#[ignore]`d — run with
     `--ignored --nocapture`).
 
     What the ceilings cannot see stays measured, not guessed. The host-side

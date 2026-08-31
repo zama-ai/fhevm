@@ -1529,26 +1529,29 @@ fn rejects_more_than_max_ops() {
 #[test]
 fn step_tables_rollback_undoes_promotions_and_appends() {
     let shared = Pubkey::new_unique();
+    let mut budget = crate::heap_tally::HeapBudget::new();
     let mut remaining_accounts = crate::heap_tally::TalliedVec::new();
-    remaining_accounts.push(ExecutionAccountMeta::readonly(
-        shared,
-        ExecutionAccountPurpose::PersistentInputAcl,
-    ));
+    remaining_accounts
+        .try_push(
+            &mut budget,
+            ExecutionAccountMeta::readonly(shared, ExecutionAccountPurpose::PersistentInputAcl),
+        )
+        .unwrap();
     let mut dictionary = crate::heap_tally::TalliedVec::new();
-    dictionary.push(handle(1));
+    dictionary.try_push(&mut budget, handle(1)).unwrap();
     let mut persistent_producers = crate::heap_tally::TalliedVec::new();
-    persistent_producers.push(Pubkey::new_unique());
+    persistent_producers
+        .try_push(&mut budget, Pubkey::new_unique())
+        .unwrap();
     let accounts_before = remaining_accounts.clone();
     let dictionary_before = dictionary.clone();
     let producers_before = persistent_producers.clone();
 
-    let mut explicit_bytes = 0;
     let mut tables = StepTables::open(
         &mut remaining_accounts,
         &mut dictionary,
         &mut persistent_producers,
-        &mut explicit_bytes,
-        0,
+        &mut budget,
     );
     // Promote the same entry twice — first writable, then signer — so undoing in the wrong order
     // would leave the entry with the flags the first promotion set.
@@ -1581,7 +1584,7 @@ fn step_tables_rollback_undoes_promotions_and_appends() {
     );
     assert_eq!(tables.dictionary_index(handle(2)).unwrap(), 1);
     assert_eq!(tables.dictionary_index(handle(1)).unwrap(), 0);
-    tables.rollback();
+    // Uncommitted drop rolls back interned tables.
     drop(tables);
 
     assert_eq!(remaining_accounts, accounts_before);

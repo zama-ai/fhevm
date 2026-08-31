@@ -1,14 +1,20 @@
-//! The crate's model of the SBF bump allocator, and the vector type that pays into it.
+//! The crate's model of the SBF bump allocator, and the types that pay into it.
 //!
 //! Crate-private on purpose: app programs budget against the *numbers* in [`crate::cost`] —
 //! the ceiling constants and [`crate::cost::FheExecutionCost`] — and never against the growth
 //! model that produces them. Everything here exists so the builder can tally, byte for byte,
 //! what one execution requests from the program's fixed, never-freeing 32 KB heap (DD-046).
-//! Both models are validated against a counting global allocator in `heap_budget.rs`, which is
+//! Both models are validated against a counting global allocator in `heap_budget`, which is
 //! what keeps them honest if `Vec`'s growth strategy or Anchor's codegen ever changes.
+//!
+//! [`HeapBudget`] is the one running total. [`TalliedVec::try_push`] and
+//! [`HeapBudget::alloc_vec`] admit bytes against it before the allocator serves them, so a
+//! forgotten site does not compile.
+
+use crate::{FheExecutionBuildError, Result};
 
 /// `RawVec`'s first non-zero capacity for an element size — the other half of the growth model
-/// [`tally_push`] and [`invoke_table_heap_bytes`] share.
+/// [`pushes_request`] and [`invoke_table_heap_bytes`] share.
 fn minimum_nonzero_capacity(elem_size: usize) -> usize {
     if elem_size == 1 {
         8
@@ -25,10 +31,8 @@ fn grown_capacity(capacity: usize, elem_size: usize) -> usize {
     std::cmp::max(2 * capacity, minimum_nonzero_capacity(elem_size))
 }
 
-/// Bytes `new_elements` further pushes into `vec` will request from the allocator, under the
-/// same growth model as [`tally_push`] — the projection callers use to admit a growth against
-/// a budget *before* the allocator serves it.
-pub(crate) fn pushes_request<T>(vec: &Vec<T>, new_elements: usize) -> usize {
+/// Bytes `new_elements` further pushes into `vec` will request from the allocator.
+fn pushes_request<T>(vec: &Vec<T>, new_elements: usize) -> usize {
     let elem_size = std::mem::size_of::<T>();
     let mut capacity = vec.capacity();
     let mut requested = 0;
@@ -41,25 +45,49 @@ pub(crate) fn pushes_request<T>(vec: &Vec<T>, new_elements: usize) -> usize {
     requested
 }
 
-/// Tallies the bytes the next `push` will request from the allocator, modeling `Vec` growth
-/// the way the never-freeing bump region pays for it: a full vector reallocates to double its
-/// capacity (or to `RawVec`'s minimum first capacity), and the outgrown buffer is never
-/// reclaimed. Call immediately before the push.
-pub(crate) fn tally_push<T>(vec: &Vec<T>, tally: &mut usize) {
-    if vec.len() < vec.capacity() {
-        return;
-    }
-    let elem_size = std::mem::size_of::<T>();
-    *tally += grown_capacity(vec.capacity(), elem_size) * elem_size;
+/// Running total of every byte this build has admitted against
+/// [`crate::cost::BUILD_HEAP_BUDGET_BYTES`]. Owned by the builder; borrowed by lowering for
+/// the duration of a step. Packet and invoke costs are not charged here — they have not
+/// allocated yet at `finish` — they are tested with [`fits_with`](Self::fits_with).
+#[derive(Debug)]
+pub(crate) struct HeapBudget {
+    total: usize,
 }
 
-/// A `Vec` that cannot forget to tally: every allocation it makes — the up-front reservation
-/// and every growth past it — is recorded on the vector itself, and
-/// [`requested_bytes`](Self::requested_bytes) reports the total. The builder's tables are all
-/// `TalliedVec`s, so a new push site is paid for by construction instead of by remembering to
-/// call [`tally_push`] next to it; the exact-size allocations that are not a growing table
-/// (attestation embeds, subject index lists, purpose tables) stay on the explicit counter in
-/// `StepTables`.
+impl HeapBudget {
+    pub(crate) fn new() -> Self {
+        Self { total: 0 }
+    }
+
+    pub(crate) fn total(&self) -> usize {
+        self.total
+    }
+
+    /// Admits `upcoming` bytes against the budget and charges them. Zero is always admitted.
+    pub(crate) fn admit(&mut self, upcoming: usize) -> Result<()> {
+        let next = self.total.saturating_add(upcoming);
+        if next > crate::cost::BUILD_HEAP_BUDGET_BYTES {
+            return Err(FheExecutionBuildError::ExceedsBuildHeapBudget);
+        }
+        self.total = next;
+        Ok(())
+    }
+
+    /// Whether `extra` bytes that have not allocated yet still fit with the charged total.
+    pub(crate) fn fits_with(&self, extra: usize) -> bool {
+        self.total.saturating_add(extra) <= crate::cost::BUILD_HEAP_BUDGET_BYTES
+    }
+
+    /// Admits an exact-size reservation and returns a vector of that capacity.
+    pub(crate) fn alloc_vec<T>(&mut self, len: usize) -> Result<Vec<T>> {
+        self.admit(len * std::mem::size_of::<T>())?;
+        Ok(Vec::with_capacity(len))
+    }
+}
+
+/// A `Vec` that cannot forget to tally: every allocation it makes is recorded on the vector
+/// itself, and growth goes through [`try_push`](Self::try_push) so it is admitted against a
+/// [`HeapBudget`] before the allocator serves it.
 ///
 /// Reads go through `Deref<Target = [T]>`. There is deliberately no `DerefMut` to the `Vec`:
 /// the only mutation paths are the ones that keep the tally honest. `truncate` keeps the
@@ -79,16 +107,33 @@ impl<T> TalliedVec<T> {
         }
     }
 
-    /// A table with its bound reserved up front — the reservation is the request.
-    pub(crate) fn with_capacity(capacity: usize) -> Self {
-        Self {
+    /// A table with its bound reserved up front — the reservation is charged to `budget`.
+    pub(crate) fn try_with_capacity(budget: &mut HeapBudget, capacity: usize) -> Result<Self> {
+        let requested = capacity * std::mem::size_of::<T>();
+        budget.admit(requested)?;
+        Ok(Self {
             vec: Vec::with_capacity(capacity),
-            requested: capacity * std::mem::size_of::<T>(),
-        }
+            requested,
+        })
     }
 
+    /// Admits the next push against `budget` before the allocator serves it.
+    pub(crate) fn try_push(&mut self, budget: &mut HeapBudget, value: T) -> Result<()> {
+        let upcoming = pushes_request(&self.vec, 1);
+        if upcoming > 0 {
+            budget.admit(upcoming)?;
+            self.requested += upcoming;
+        }
+        self.vec.push(value);
+        Ok(())
+    }
+
+    /// Test-only: grow the table without a [`HeapBudget`]. Fixture builders inject illegal
+    /// states to exercise `finish` validation; those paths are not production admission.
+    #[cfg(test)]
     pub(crate) fn push(&mut self, value: T) {
-        tally_push(&self.vec, &mut self.requested);
+        let upcoming = pushes_request(&self.vec, 1);
+        self.requested += upcoming;
         self.vec.push(value);
     }
 
@@ -102,20 +147,14 @@ impl<T> TalliedVec<T> {
     }
 
     /// Every byte this table has requested from the allocator so far.
+    #[allow(dead_code)] // retained for diagnostics next to HeapBudget::total
     pub(crate) fn requested_bytes(&self) -> usize {
         self.requested
     }
 
-    /// The bytes the next [`push`](Self::push) will request from the allocator — zero while
-    /// the table still fits its capacity. Lets a caller admit a growth against a budget
-    /// *before* the allocator serves it.
-    pub(crate) fn next_push_request(&self) -> usize {
-        pushes_request(&self.vec, 1)
-    }
-
     /// Hands the underlying `Vec` over (to the wire args, or the finished execution). The
-    /// caller must have folded [`requested_bytes`](Self::requested_bytes) into its total first —
-    /// the request does not travel with the `Vec`.
+    /// request has already been charged to the [`HeapBudget`] and does not travel with the
+    /// `Vec`.
     pub(crate) fn into_inner(self) -> Vec<T> {
         self.vec
     }
@@ -155,7 +194,7 @@ fn pushes_from_empty(count: usize, elem_size: usize) -> (usize, usize) {
 }
 
 /// Fixed accounts on the host's `fhe_execute` CPI account struct (payer through the event CPI
-/// program). The invoke-measurement test in `heap_budget.rs` pins this against the real Anchor
+/// program). The invoke-measurement test in `heap_budget` pins this against the real Anchor
 /// struct, so it cannot drift silently when the host's account list changes.
 pub(crate) const FHE_EXECUTE_FIXED_CPI_ACCOUNTS: usize = 9;
 
@@ -164,7 +203,7 @@ pub(crate) const FHE_EXECUTE_FIXED_CPI_ACCOUNTS: usize = 9;
 /// function of the account counts the builder already knows, charged against
 /// [`crate::cost::BUILD_HEAP_BUDGET_BYTES`] at `finish` — an execution admitted by `build()`
 /// fits the whole instruction, not just its own construction. Kept honest by the invoke
-/// measurement in `heap_budget.rs`, which runs the real assembly under a counting allocator.
+/// measurement in `heap_budget`, which runs the real assembly under a counting allocator.
 ///
 /// Assumes the minimal invoke: zero per-transaction deny-subject witnesses (each deny record an
 /// app's transaction adds costs one more `AccountMeta` plus one more `AccountInfo` slot,

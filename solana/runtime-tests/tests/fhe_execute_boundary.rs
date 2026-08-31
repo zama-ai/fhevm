@@ -381,7 +381,7 @@ fn all_created_public_case(steps: usize, authority: Pubkey) -> ProbeCase {
 }
 
 /// Every step writes a plain persistent create (no `make_public`) — the exact shape
-/// `zama-fhe`'s `heap_budget.rs` measures on the app side, so its host-side wall is on record
+/// `zama-fhe`'s `heap_budget/` measures on the app side, so its host-side wall is on record
 /// next to the app-side byte count that motivates the single step ceiling.
 fn all_private_creates_case(steps: usize, authority: Pubkey) -> ProbeCase {
     let all: Vec<usize> = (0..steps).collect();
@@ -513,7 +513,7 @@ enum WallPin {
     /// (build + packet + invoke tables), and no app-side number can see this driver: with a
     /// shared audience the dictionary interns eight subjects once, so the builder admits the
     /// trace-capped twenty such creates (`the_builder_admits_what_the_host_heap_cannot_hold`
-    /// in zama-fhe's `heap_budget.rs` pins `build()` Ok at 15, 16, and 20) while the host
+    /// in zama-fhe's `heap_budget/` pins `build()` Ok at 15, 16, and 20) while the host
     /// survives fifteen. Until the host's side gets its own typed ceiling (or a policy cap on
     /// the public payload), this wall is measured, not typed: the snapshot pins it, and the
     /// boundary matrix is the guidance — fhevm-internal#1872.

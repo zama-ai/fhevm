@@ -2137,7 +2137,7 @@ Why not ship an allocator:
    created output's CPIs could no longer fit any transaction, `ExceedsCpiInstructionDataLimit`
    where the packet outgrows what a CPI may carry, and `ExceedsBuildHeapBudget` where the
    builder's own byte tally — build, packet, and the invoke-side account tables together,
-   proven equal to a counting allocator across the shape frontier in `heap_budget.rs` — says
+   proven equal to a counting allocator across the shape frontier in `heap_budget/` — says
    the instruction cannot survive the fixed region — plus a clean revert
    committing nothing host-side. The forward-growing custom-allocator
    pattern degrades past the mapped region into a VM access violation instead of a clean error,

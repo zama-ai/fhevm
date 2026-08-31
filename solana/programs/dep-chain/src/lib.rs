@@ -14,7 +14,7 @@
 //! entrypoint's fixed 32 KB bump heap (DD-046: the heap is fixed and cannot be raised), and its
 //! Mollusk test extending at full depth is what proves a maximum execution — build, packet,
 //! account resolution and Anchor's own deserialization — actually fits that heap under SBF, on
-//! top of `zama-fhe`'s host-side byte count in `heap_budget.rs`.
+//! top of `zama-fhe`'s host-side byte count in `heap_budget/`.
 //!
 //! Executions assume `grant_deny_list_enabled = false` and no binding HCU cap: `hcu_block_meter`
 //! and `hcu_trusted_app_record` are hardcoded `None` (the PoC host fixtures never enable them),

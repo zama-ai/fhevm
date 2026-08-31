@@ -113,7 +113,7 @@ pub fn created_public_batch(
 /// [`created_public_batch`] with a caller-fixed authority (for boundary sweeps recorded in the
 /// cost snapshot: PDA bump searches are part of measured compute, so recorded profiles need
 /// stable keys) and a caller-chosen `make_public` — `false` gives the plain persistent create,
-/// the shape `zama-fhe`'s `heap_budget.rs` measures on the app side.
+/// the shape `zama-fhe`'s `heap_budget/` measures on the app side.
 pub fn persistent_creates_batch(
     step_count: usize,
     created_public_steps: &[usize],

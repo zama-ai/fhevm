@@ -16,8 +16,8 @@ use crate::accounts::{
     resolve_execution_accounts, ExecutionAccountResolutionError, ResolvedExecutionAccounts,
 };
 use crate::accounts::{
-    ExecutionAccountMeta, ExecutionAccountPurpose, ExecutionAccountRequirement,
-    ExecutionEncryptedValueAccountAuthority, ExecutionOutputAuthorityRequirement,
+    ExecutionAccountMeta, ExecutionAccountRequirement, ExecutionEncryptedValueAccountAuthority,
+    ExecutionOutputAuthorityRequirement,
 };
 use crate::builder::FheExecutionBuilder;
 #[cfg(feature = "cpi")]
@@ -154,11 +154,7 @@ impl FheExecution {
     pub fn additional_output_authorities(&self) -> impl Iterator<Item = Pubkey> + '_ {
         self.remaining_accounts
             .iter()
-            .filter(|account| {
-                account
-                    .purposes
-                    .contains(&ExecutionAccountPurpose::PersistentOutputAuthority)
-            })
+            .filter(|account| account.requires_output_authority())
             .map(|account| account.pubkey)
     }
 

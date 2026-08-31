@@ -20,13 +20,88 @@ pub enum ExecutionAccountPurpose {
     PersistentOutputAuthority,
 }
 
+/// At most one of each [`ExecutionAccountPurpose`]. Three variants, so a stack array — never a
+/// heap allocation, never a tally site.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct PurposeList {
+    items: [ExecutionAccountPurpose; 3],
+    len: u8,
+}
+
+impl PartialEq for PurposeList {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_slice() == other.as_slice()
+    }
+}
+
+impl Eq for PurposeList {}
+
+impl PurposeList {
+    pub(crate) fn one(purpose: ExecutionAccountPurpose) -> Self {
+        Self {
+            items: [purpose; 3],
+            len: 1,
+        }
+    }
+
+    pub(crate) fn as_slice(&self) -> &[ExecutionAccountPurpose] {
+        &self.items[..self.len as usize]
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.len as usize
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    pub(crate) fn truncate(&mut self, len: usize) {
+        debug_assert!(len <= self.len as usize);
+        self.len = len as u8;
+    }
+
+    pub(crate) fn contains(&self, purpose: ExecutionAccountPurpose) -> bool {
+        self.as_slice().contains(&purpose)
+    }
+
+    pub(crate) fn try_insert(&mut self, purpose: ExecutionAccountPurpose) -> bool {
+        if self.contains(purpose) {
+            return false;
+        }
+        debug_assert!(self.len < 3);
+        self.items[self.len as usize] = purpose;
+        self.len += 1;
+        true
+    }
+
+    pub(crate) fn requires_dynamic_account(&self) -> bool {
+        self.as_slice()
+            .iter()
+            .any(|purpose| *purpose != ExecutionAccountPurpose::PersistentOutputAuthority)
+    }
+
+    pub(crate) fn requires_output_authority(&self) -> bool {
+        self.contains(ExecutionAccountPurpose::PersistentOutputAuthority)
+    }
+}
+
+impl IntoIterator for PurposeList {
+    type Item = ExecutionAccountPurpose;
+    type IntoIter = std::iter::Take<std::array::IntoIter<ExecutionAccountPurpose, 3>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.items.into_iter().take(self.len as usize)
+    }
+}
+
 /// Public view of one dynamic account required by an execution.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutionAccountRequirement {
     pubkey: Pubkey,
     is_writable: bool,
     is_signer: bool,
-    purposes: Vec<ExecutionAccountPurpose>,
+    purposes: PurposeList,
 }
 
 impl ExecutionAccountRequirement {
@@ -43,21 +118,19 @@ impl ExecutionAccountRequirement {
     }
 
     pub fn has_purpose(&self, purpose: ExecutionAccountPurpose) -> bool {
-        self.purposes.contains(&purpose)
+        self.purposes.contains(purpose)
     }
 
     pub fn purposes(&self) -> &[ExecutionAccountPurpose] {
-        &self.purposes
+        self.purposes.as_slice()
     }
 
     pub fn requires_dynamic_account(&self) -> bool {
-        self.purposes
-            .iter()
-            .any(|purpose| *purpose != ExecutionAccountPurpose::PersistentOutputAuthority)
+        self.purposes.requires_dynamic_account()
     }
 
     pub fn requires_output_authority(&self) -> bool {
-        self.has_purpose(ExecutionAccountPurpose::PersistentOutputAuthority)
+        self.purposes.requires_output_authority()
     }
 }
 
@@ -67,7 +140,7 @@ pub(crate) struct ExecutionAccountMeta {
     pub(crate) pubkey: Pubkey,
     pub(crate) is_writable: bool,
     pub(crate) is_signer: bool,
-    pub(crate) purposes: Vec<ExecutionAccountPurpose>,
+    pub(crate) purposes: PurposeList,
 }
 
 impl ExecutionAccountMeta {
@@ -76,7 +149,7 @@ impl ExecutionAccountMeta {
             pubkey,
             is_writable: false,
             is_signer: false,
-            purposes: vec![purpose],
+            purposes: PurposeList::one(purpose),
         }
     }
 
@@ -85,7 +158,7 @@ impl ExecutionAccountMeta {
             pubkey,
             is_writable: true,
             is_signer: false,
-            purposes: vec![purpose],
+            purposes: PurposeList::one(purpose),
         }
     }
 
@@ -94,23 +167,16 @@ impl ExecutionAccountMeta {
             pubkey,
             is_writable: false,
             is_signer: true,
-            purposes: vec![purpose],
+            purposes: PurposeList::one(purpose),
         }
     }
 
-    /// Same predicate as [`ExecutionAccountRequirement::requires_dynamic_account`], on the
-    /// stored meta directly so resolution never clones a purposes table just to ask.
     pub(crate) fn requires_dynamic_account(&self) -> bool {
-        self.purposes
-            .iter()
-            .any(|purpose| *purpose != ExecutionAccountPurpose::PersistentOutputAuthority)
+        self.purposes.requires_dynamic_account()
     }
 
-    /// Same predicate as [`ExecutionAccountRequirement::requires_output_authority`], on the
-    /// stored meta directly.
     pub(crate) fn requires_output_authority(&self) -> bool {
-        self.purposes
-            .contains(&ExecutionAccountPurpose::PersistentOutputAuthority)
+        self.purposes.requires_output_authority()
     }
 }
 
@@ -120,7 +186,7 @@ impl From<&ExecutionAccountMeta> for ExecutionAccountRequirement {
             pubkey: meta.pubkey,
             is_writable: meta.is_writable,
             is_signer: meta.is_signer,
-            purposes: meta.purposes.clone(),
+            purposes: meta.purposes,
         }
     }
 }

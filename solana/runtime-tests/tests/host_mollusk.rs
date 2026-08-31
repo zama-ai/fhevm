@@ -2366,25 +2366,28 @@ fn mollusk_fhe_execute_batches_multiple_created_public_outputs_in_step_order() {
     assert_created_public_batch(&result, &execution.outputs);
 }
 
-/// The measured maximum of all-created-public creates that execute in one instruction. The 32 KB
-/// heap and the transaction's 64-entry instruction trace (each created output issues ~3 CPIs)
-/// coincide within one step of this wall — before the decode-once cache the trace bound 21 first,
-/// after it the heap does — so neither raising the heap nor trimming CPIs would move the number
-/// by more than a step. The generated `fhe_execute_boundary/all_created_public` snapshot entry
-/// carries the authoritative number and its wall; this constant tracks it for the two behavior
-/// tests below.
-const MAX_CREATED_PUBLIC_CREATES_ON_DEFAULT_HEAP: usize = 20;
+/// Largest create count the builder's instruction-trace model admits for a
+/// public-output execution. The `fhe_execute_boundary/all_created_public`
+/// snapshot pins the host wall at the same count (heap, one step from trace).
+fn max_created_public_creates() -> usize {
+    (0..=host::MAX_FHE_EXECUTION_STEPS)
+        .take_while(|creates| {
+            zama_fhe::instruction_trace_floor(*creates, false, true)
+                <= zama_fhe::TRANSACTION_INSTRUCTION_TRACE_LIMIT
+        })
+        .last()
+        .expect("zero creates always fit")
+}
 
 #[test]
 fn mollusk_fhe_execute_maximum_created_public_batch_fits_one_cpi() {
     // The largest executable all-created-public execution still emits its DD-038 lifecycle records in
     // exactly one execution CPI. (The full MAX_FHE_EXECUTION_STEPS execution serialization is covered by the
-    // event-transport unit test; executions with more than the measured create budget cannot
-    // execute — see `mollusk_fhe_execute_created_public_heap_boundary`.)
-    let created_public_steps = (0..MAX_CREATED_PUBLIC_CREATES_ON_DEFAULT_HEAP).collect::<Vec<_>>();
+    // event-transport unit test; the host wall itself lives in fhe_execute_boundary.rs.)
+    let created_public_steps = max_created_public_creates();
     let execution = created_public_batch(
-        MAX_CREATED_PUBLIC_CREATES_ON_DEFAULT_HEAP,
-        &created_public_steps,
+        created_public_steps,
+        &(0..created_public_steps).collect::<Vec<_>>(),
     );
     let result = mollusk().process_and_validate_instruction(
         &execution.instruction,
@@ -2393,43 +2396,6 @@ fn mollusk_fhe_execute_maximum_created_public_batch_fits_one_cpi() {
     );
     assert_created_public_batch(&result, &execution.outputs);
 }
-
-#[test]
-fn mollusk_fhe_execute_created_public_heap_boundary() {
-    // Pins the measured heap boundary behind MAX_FHE_EXECUTION_STEPS (fhevm-internal#1853 W8): one
-    // create past the measured budget exhausts the 32KB bump heap and reverts cleanly,
-    // committing nothing. Raising this boundary requires a custom allocator, not a larger cap.
-    let over = MAX_CREATED_PUBLIC_CREATES_ON_DEFAULT_HEAP + 1;
-    let failing = created_public_batch(over, &(0..over).collect::<Vec<_>>());
-    let result = mollusk().process_instruction(&failing.instruction, &failing.accounts);
-    assert!(result.program_result.is_err());
-    for (_, output) in &failing.outputs {
-        let account = result.get_account(output).unwrap();
-        assert_eq!(account.owner, system_program::ID, "no output may commit");
-    }
-}
-
-// ===========================================================================
-// Capacity boundary matrix (fhevm-internal#1872).
-//
-// Every runtime wall here — heap, compute units, instruction trace — is
-// invisible per run: there is no "heap used" number, only "did it abort", so
-// capacity is established by probing. Each probe names the wall it hit
-// (`failure_axis`), because a sweep that only checks pass/fail converges on
-// whichever wall comes first and then gets attributed to whatever wall the
-// author expected: the all-created-public boundary at 20 was long asserted to
-// be a heap ceiling on no evidence — the first sweep showed the transaction's
-// 64-entry instruction trace binding first (each created output issues ~3
-// CPIs), and after the decode-once cache the two walls trade places within
-// one step of each other. Only the recorded `limited_by` keeps that straight.
-//
-// One shape is not enough. Heap and trace consumption per step differ by
-// multiples across step shapes — a 32-step transient chain executes while 21
-// created-public creates do not — so the sweep runs a matrix of worst-case
-// shapes and the recorded boundary carries the wall it hit and the cost of the
-// largest passing run. `cost_snapshot::assert_boundary_snapshot` pins all of
-// it, so a boundary that moves (or changes walls) arrives as a reviewed diff.
-// ===========================================================================
 
 #[test]
 fn mollusk_fhe_execute_wrong_event_authority_fails_without_output() {
