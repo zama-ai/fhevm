@@ -30,15 +30,16 @@
     "codegen": "../../library-solidity/codegen/codegen.mjs lib --config ./codegen.config.json --verbose",
     "codegen:overloads": "../../library-solidity/codegen/codegen.mjs overloads --config ./codegen.config.json --verbose --force",
     "prettier": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\"",
-    "tsc": "tsc --noEmit -p tsconfig.json"
+    "tsc": "tsc --noEmit -p tsconfig.json",
+    "sdk:local": "./scripts/install-sdk.sh local",
+    "sdk:registry": "./scripts/install-sdk.sh registry"
   },
   "dependencies": {
-    "@fhevm/sdk": "0.14.0-0",
     "@fhevm/solidity": "*",
     "@openzeppelin/contracts": "^5.3.0",
     "@safe-global/safe-contracts": "1.4.1-2",
     "bigint-buffer": "^1.1.5",
     "dotenv": "^16.0.3",
-    "encrypted-types": "^0.0.4"
+    "ethers": "^6.15.0"
   }
 }

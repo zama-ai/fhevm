@@ -1,10 +1,15 @@
 import { defineConfig } from '@playwright/test';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const viteConfigPath = resolve(__dirname, 'vite.config.ts');
 
 export default defineConfig({
   testDir: './specs',
   timeout: 300_000,
   webServer: {
-    command: 'npx vite --config test/browser-smoke/vite.config.ts',
+    command: `npx vite --config ${JSON.stringify(viteConfigPath)}`,
     port: 3333,
     reuseExistingServer: !process.env.CI,
   },
