@@ -117,10 +117,6 @@ impl ExecutionAccountRequirement {
         self.is_signer
     }
 
-    pub fn has_purpose(&self, purpose: ExecutionAccountPurpose) -> bool {
-        self.purposes.contains(purpose)
-    }
-
     pub fn purposes(&self) -> &[ExecutionAccountPurpose] {
         self.purposes.as_slice()
     }
