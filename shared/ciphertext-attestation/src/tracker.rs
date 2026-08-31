@@ -10,43 +10,23 @@ use crate::{AttestationError, CiphertextAttestation};
 use alloy_primitives::{Address, B256, U256};
 use std::{collections::HashMap, num::NonZeroUsize};
 
-/// An attestation that passed both gates for the specific bucket that served it.
-#[derive(Clone, Debug)]
-pub struct ValidAttestation {
-    material: ConsensusMaterial,
-    signer: Address,
-}
-
-impl ValidAttestation {
-    /// Validates that the signature recovers to the embedded signer and that this signer equals
-    /// `registered_signer`. Without the second check, an attacker controlling one Coprocessor's
-    /// bucket could serve a *different* Coprocessor's genuine attestation as its own — cross-serving.
-    pub fn validate(
-        attestation: &CiphertextAttestation,
-        handle: B256,
-        coprocessor_context_id: U256,
-        registered_signer: Address,
-    ) -> Result<Self, AttestationError> {
-        attestation.verify(handle, coprocessor_context_id)?;
-        if attestation.signer != registered_signer {
-            return Err(AttestationError::SignerNotRegisteredForBucket {
-                embedded: attestation.signer,
-                registered: registered_signer,
-            });
-        }
-        Ok(Self {
-            material: ConsensusMaterial::from(attestation),
-            signer: attestation.signer,
-        })
+/// Validates that the signature recovers to the embedded signer and that this signer equals
+/// `registered_signer`. Without the second check, an attacker controlling one Coprocessor's
+/// bucket could serve a *different* Coprocessor's genuine attestation as its own — cross-serving.
+pub fn validate(
+    attestation: &CiphertextAttestation,
+    handle: B256,
+    coprocessor_context_id: U256,
+    registered_signer: Address,
+) -> Result<ConsensusMaterial, AttestationError> {
+    attestation.verify(handle, coprocessor_context_id)?;
+    if attestation.signer != registered_signer {
+        return Err(AttestationError::SignerNotRegisteredForBucket {
+            embedded: attestation.signer,
+            registered: registered_signer,
+        });
     }
-
-    pub fn signer(&self) -> Address {
-        self.signer
-    }
-
-    pub fn material(&self) -> &ConsensusMaterial {
-        &self.material
-    }
+    Ok(ConsensusMaterial::from(attestation))
 }
 
 /// What one registered Coprocessor did this round.
@@ -316,10 +296,8 @@ mod tests {
     /// attestation.
     async fn reply_from(signer: &PrivateKeySigner) -> (Address, Reply) {
         let att = signed(signer).await;
-        let valid =
-            ValidAttestation::validate(&att, HANDLE, COPROCESSOR_CONTEXT_ID, signer.address())
-                .unwrap();
-        (valid.signer(), Reply::Attested(valid.material().clone()))
+        let material = validate(&att, HANDLE, COPROCESSOR_CONTEXT_ID, signer.address()).unwrap();
+        (signer.address(), Reply::Attested(material))
     }
 
     /// A dissenting `(signer, reply)` pair: same handle, different SNS digest.
@@ -336,10 +314,8 @@ mod tests {
         .sign(signer)
         .await
         .unwrap();
-        let valid =
-            ValidAttestation::validate(&att, HANDLE, COPROCESSOR_CONTEXT_ID, signer.address())
-                .unwrap();
-        (valid.signer(), Reply::Attested(valid.material().clone()))
+        let material = validate(&att, HANDLE, COPROCESSOR_CONTEXT_ID, signer.address()).unwrap();
+        (signer.address(), Reply::Attested(material))
     }
 
     /// A filler roster slot that never replies this round.
@@ -649,8 +625,7 @@ mod tests {
         let mut att = signed(&s1).await;
         att.sns_ciphertext_digest = B256::repeat_byte(0xEE);
 
-        let err = ValidAttestation::validate(&att, HANDLE, COPROCESSOR_CONTEXT_ID, s1.address())
-            .unwrap_err();
+        let err = validate(&att, HANDLE, COPROCESSOR_CONTEXT_ID, s1.address()).unwrap_err();
         assert!(matches!(err, AttestationError::SignerMismatch { .. }));
     }
 
@@ -661,8 +636,7 @@ mod tests {
         let s2 = PrivateKeySigner::random();
         let att = signed(&s1).await;
 
-        let err = ValidAttestation::validate(&att, HANDLE, COPROCESSOR_CONTEXT_ID, s2.address())
-            .unwrap_err();
+        let err = validate(&att, HANDLE, COPROCESSOR_CONTEXT_ID, s2.address()).unwrap_err();
         assert!(matches!(
             err,
             AttestationError::SignerNotRegisteredForBucket { embedded, registered }

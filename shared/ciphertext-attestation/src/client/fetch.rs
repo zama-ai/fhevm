@@ -8,7 +8,7 @@ use crate::{
         s3::{BoundedClient, FetchAttestationError},
     },
     consensus::ConsensusMaterial,
-    tracker::{ConsensusTracker, Reply, Round, ThresholdStatus, ValidAttestation},
+    tracker::{ConsensusTracker, Reply, Round, ThresholdStatus, validate},
 };
 use alloy::primitives::{Address, B256, U256};
 use std::collections::HashSet;
@@ -103,15 +103,13 @@ async fn resolve_round(
                         warn!(%signer, %handle, "Failed to fetch attestation: {e}");
                         Reply::NoReply
                     }
-                    Ok(attestation) => {
-                        match ValidAttestation::validate(&attestation, handle, context_id, signer) {
-                            Ok(valid) => Reply::Attested(valid.material().clone()),
-                            Err(e) => {
-                                warn!(%signer, %handle, "Discarding invalid attestation: {e}");
-                                Reply::Rejected
-                            }
+                    Ok(attestation) => match validate(&attestation, handle, context_id, signer) {
+                        Ok(material) => Reply::Attested(material),
+                        Err(e) => {
+                            warn!(%signer, %handle, "Discarding invalid attestation: {e}");
+                            Reply::Rejected
                         }
-                    }
+                    },
                 };
                 (signer, reply)
             }
