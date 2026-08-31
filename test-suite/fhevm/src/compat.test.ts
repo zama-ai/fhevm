@@ -784,7 +784,7 @@ describe("compat", () => {
     expect(supportsCanonicalProtocolConfigSeeding(stateFor("v0.13.0"))).toBe(false);
 
     // Ships the task, but it takes its input as command-line flags.
-    for (const version of ["v0.13.1", "v0.13.3", "v0.14.0-0", "v0.14.0-8"]) {
+    for (const version of ["v0.13.1", "v0.13.3", "v0.14.0-0", "v0.14.0-8", "v0.14.0-9"]) {
       expect(supportsCanonicalProtocolConfigSeeding(stateFor(version))).toBe(true);
       expect(canonicalProtocolConfigSeedingUsesEnv(stateFor(version))).toBe(false);
     }
@@ -798,7 +798,7 @@ describe("compat", () => {
     }
 
     // Builds at or above the build floor read the CANONICAL_* env variables.
-    for (const version of ["v0.14.0-9", "v0.14.0-10"]) {
+    for (const version of ["v0.14.0-10", "v0.14.0-11"]) {
       expect(canonicalProtocolConfigSeedingUsesEnv(stateFor(version))).toBe(true);
     }
 
