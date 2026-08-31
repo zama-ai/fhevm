@@ -8,6 +8,7 @@ import {
   diagnosticLogArgs,
   diagnosticLogOutput,
   createRolloutReceipt,
+  formatStateHashComparison,
   kmsConnectorPartyIds,
   receiptJsonlPath,
   receiptMarkdownPath,
@@ -295,6 +296,8 @@ describe("rollout runbook", () => {
         { image: "image", imageId: "id", name: "fhevm-relayer", state: "running" },
         { image: "image", imageId: "id", name: "coprocessor-gcs-tfhe-worker", state: "running" },
         { image: "image", imageId: "id", name: "coprocessor1-gcs-zkproof-worker", state: "running" },
+        { image: "image", imageId: "id", name: "coprocessor-gcs-consensus-detector", state: "running" },
+        { image: "image", imageId: "id", name: "coprocessor1-gcs-upgrade-controller", state: "running" },
         { image: "image", imageId: "id", name: "coprocessor-sns-worker", state: "exited" },
         { image: "image", imageId: "id", name: "kms-core-2", state: "running" },
         { image: "image", imageId: "id", name: "host-node", state: "running" },
@@ -303,9 +306,26 @@ describe("rollout runbook", () => {
       "fhevm-relayer",
       "coprocessor-gcs-tfhe-worker",
       "coprocessor1-gcs-zkproof-worker",
+      "coprocessor-gcs-consensus-detector",
+      "coprocessor1-gcs-upgrade-controller",
       "coprocessor-sns-worker",
       "kms-core-2",
     ]);
+  });
+
+  test("pinpoints divergent or missing Blue/Green state hashes", () => {
+    expect(
+      formatStateHashComparison([
+        { database: "coprocessor", rows: ["1|100|aaa|t", "1|101|bbb|t"] },
+        { database: "coprocessor_1", rows: ["1|100|aaa|t", "1|101|ccc|t", "2|50|ddd|f"] },
+      ]),
+    ).toBe(
+      [
+        "3 anchor(s) compared across coprocessor, coprocessor_1; 2 mismatch(es)",
+        "1:101 coprocessor=bbb|uploaded=t coprocessor_1=ccc|uploaded=t",
+        "2:50 coprocessor=missing coprocessor_1=ddd|uploaded=f",
+      ].join("\n"),
+    );
   });
 
   test("records a failed required Docker snapshot before rejecting it", async () => {

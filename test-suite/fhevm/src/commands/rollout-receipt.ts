@@ -54,6 +54,13 @@ type DiagnosticSection = {
   error?: string;
 };
 
+type StateHashSnapshot = {
+  database: string;
+  command: string;
+  rows: string[];
+  error?: string;
+};
+
 const receiptDir = () => path.join(STATE_DIR, "rollout");
 export const receiptJsonlPath = () => path.join(receiptDir(), "receipt.jsonl");
 export const receiptMarkdownPath = () => path.join(receiptDir(), "receipt.md");
@@ -165,6 +172,65 @@ const containerLogs = async (container: string): Promise<DiagnosticSection> => {
   };
 };
 
+const stateHashSnapshot = async (database: string): Promise<StateHashSnapshot> => {
+  const sql = `select chain_id, block_number, state_hash, s3_uploaded_at is not null
+from "gcs-v0.15.0".state_hash
+order by chain_id, block_number;`;
+  const args = [
+    "docker",
+    "exec",
+    "coprocessor-and-kms-db",
+    "psql",
+    "-U",
+    "postgres",
+    "-d",
+    database,
+    "-At",
+    "-F",
+    "|",
+    "-c",
+    sql,
+  ];
+  const result = await run(args, { allowFailure: true });
+  return {
+    database,
+    command: args.join(" "),
+    rows: result.code === 0 ? result.stdout.trim().split(/\r?\n/).filter(Boolean) : [],
+    error: result.code === 0 ? undefined : (result.stderr || result.stdout).trim() || `psql exited ${result.code}`,
+  };
+};
+
+export const formatStateHashComparison = (snapshots: Array<Pick<StateHashSnapshot, "database" | "rows" | "error">>) => {
+  const readable = snapshots.filter((snapshot) => !snapshot.error);
+  if (readable.length < 2) {
+    return `comparison unavailable: ${readable.length} operator database(s) readable`;
+  }
+  const hashes = new Map<string, Map<string, string>>();
+  for (const snapshot of readable) {
+    for (const row of snapshot.rows) {
+      const [chainId, blockNumber, stateHash, uploaded] = row.split("|");
+      const key = `${chainId}:${blockNumber}`;
+      const byDatabase = hashes.get(key) ?? new Map<string, string>();
+      byDatabase.set(snapshot.database, `${stateHash}|uploaded=${uploaded}`);
+      hashes.set(key, byDatabase);
+    }
+  }
+  const mismatches = [...hashes.entries()].filter(([, byDatabase]) => {
+    const values = readable.map((snapshot) => byDatabase.get(snapshot.database));
+    return values.some((value) => value === undefined) || new Set(values).size !== 1;
+  });
+  const summary = `${hashes.size} anchor(s) compared across ${readable.map(({ database }) => database).join(", ")}; ${mismatches.length} mismatch(es)`;
+  if (!mismatches.length) {
+    return summary;
+  }
+  return [
+    summary,
+    ...mismatches.map(([key, byDatabase]) =>
+      `${key} ${readable.map(({ database }) => `${database}=${byDatabase.get(database) ?? "missing"}`).join(" ")}`,
+    ),
+  ].join("\n");
+};
+
 const diagnosticSql = {
   relayer: `
 select ext_job_id, req_status, err_reason, accepted, created_at, updated_at
@@ -186,12 +252,27 @@ where table_schema = 'public'
   and (table_name ilike '%proof%' or table_name ilike '%ciphertext%' or table_name ilike '%transaction%')
 order by table_name;
 
-select relname as table_name, n_live_tup as estimated_rows
+select schemaname as table_schema, relname as table_name, n_live_tup as estimated_rows
 from pg_stat_user_tables
 where relname ilike '%proof%'
    or relname ilike '%ciphertext%'
    or relname ilike '%transaction%'
-order by relname;
+order by schemaname, relname;
+
+select stack_role, host_chain_id, state, status, encode(proposal_id, 'hex') as proposal_id,
+       proposal_block, version, start_block, end_block, gw_start_block,
+       gw_dry_run_started, host_consensus_reached, gw_consensus_reached,
+       last_error, updated_at
+from upgrade_state
+order by stack_role, host_chain_id;
+
+select 'public' as table_schema, chain_id, block_number, state_hash, s3_uploaded_at
+from public.state_hash
+order by chain_id, block_number;
+
+select 'gcs-v0.15.0' as table_schema, chain_id, block_number, state_hash, s3_uploaded_at
+from "gcs-v0.15.0".state_hash
+order by chain_id, block_number;
 `,
   kmsConnector: `
 select 'prep_keygen_requests' as table_name, status, count(*) from prep_keygen_requests group by status
@@ -263,7 +344,7 @@ export const failureDiagnosticContainerNames = (containers: ReceiptContainer[]) 
         /^kms-core(?:-|$)/.test(name) ||
         /^kms-connector(?:-|$)/.test(name) ||
         name === "fhevm-relayer" ||
-        /^coprocessor\d*(?:-gcs)?-(?:tfhe|zkproof|sns)-worker$/.test(name),
+        /^coprocessor\d*(?:-gcs)?-(?:(?:tfhe|zkproof|sns)-worker|consensus-detector|upgrade-controller)$/.test(name),
     );
 
 const collectFailureDiagnostics = async (containers: ReceiptContainer[]) => {
@@ -275,9 +356,21 @@ const collectFailureDiagnostics = async (containers: ReceiptContainer[]) => {
     sections.push(await psql("coprocessor-and-kms-db", kmsConnectorDbName(party), diagnosticSql.kmsConnector));
   }
   sections.push(await psql("fhevm-relayer-db", "relayer_db", diagnosticSql.relayer));
-  for (const database of ["coprocessor", "coprocessor_1", "coprocessor_2"]) {
+  const coprocessorDatabases = ["coprocessor", "coprocessor_1", "coprocessor_2"];
+  for (const database of coprocessorDatabases) {
     sections.push(await psql("coprocessor-and-kms-db", database, diagnosticSql.coprocessor));
   }
+  const stateHashes = await Promise.all(coprocessorDatabases.map(stateHashSnapshot));
+  sections.push({
+    title: "Blue/Green GCS state-hash comparison",
+    command: stateHashes.map(({ command }) => command).join("\n"),
+    output: formatStateHashComparison(stateHashes),
+    error:
+      stateHashes
+        .filter(({ error }) => error)
+        .map(({ database, error }) => `${database}: ${error}`)
+        .join("\n") || undefined,
+  });
   return sections;
 };
 
