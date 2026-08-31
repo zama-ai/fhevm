@@ -24189,7 +24189,7 @@ function getWasmInfo() {
       },
       {
         filename: "tfhe-worker.mjs",
-        sha256: "3f93fe86a8dfa6e25ae5fcfe28d19833219cba8f45f81c6dd05c2f3cc5323c52",
+        sha256: "6e4b745fadd500bb55b0624774053d979b2155258a51bad709d080f3e458d5d1",
       }
     ],
     memory:

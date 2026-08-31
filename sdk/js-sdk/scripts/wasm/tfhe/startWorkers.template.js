@@ -43,6 +43,8 @@
  *  - Partial worker-pool failure: successful workers are terminated before throw.
  *  - Concurrent failures: only the first error is surfaced.
  *  - __waitForMsgType has no timeout — a silent worker hangs startWorkers().
+ *  - The embedded worker must listen on parentPort in node:worker_threads
+ *    even when addEventListener exists (bun 1.4+ Node-parity message routing).
  *
  * Resources:
  *  - Blob URLs are revoked on both success and synchronous-constructor failure.

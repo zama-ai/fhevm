@@ -1,16 +1,17 @@
-function ___isBrowserLike() {
-  return (
-    typeof addEventListener === 'function' &&
-    typeof removeEventListener === 'function'
-  );
-}
-
 async function ___getTarget() {
-  if (___isBrowserLike()) return self;
-  const nodeModuleName = 'worker_threads';
-  const nodeModuleId = `node:${nodeModuleName}`;
-  const { parentPort } = await import(/* @vite-ignore */ nodeModuleId);
-  return parentPort;
+  // Prefer parentPort whenever this is a node:worker_threads worker.
+  // `addEventListener` is not a browser signal: Bun exposes EventTarget APIs
+  // inside worker_threads, but bun >= 1.4 delivers parent messages only to
+  // parentPort (Node parity). Listening on `self` hangs startWorkers().
+  try {
+    const nodeModuleName = 'worker_threads';
+    const nodeModuleId = `node:${nodeModuleName}`;
+    const { parentPort } = await import(/* @vite-ignore */ nodeModuleId);
+    if (parentPort) return parentPort;
+  } catch {
+    // Browser / edge: node:worker_threads is not importable.
+  }
+  return self;
 }
 
 function ___waitForMsgType(target, type) {
