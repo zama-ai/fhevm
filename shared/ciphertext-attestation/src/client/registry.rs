@@ -5,10 +5,6 @@
 //! attestation HEAD requests at) plus the majority threshold. Querying these on every request
 //! would trigger N+1 RPC calls, so the [`CoprocessorRegistry`] holds a whole snapshot behind a
 //! short TTL and tolerates registration changes within one refresh window.
-//!
-//! Keeping the triple together (rather than a flat signer set plus a separate bucket map) is
-//! what lets a caller validate each reply locally: a bucket's reply only counts if it recovers to
-//! *that bucket's* registered signer, not merely to some registered signer.
 
 use alloy::{
     network::{Ethereum, Network},
@@ -28,17 +24,10 @@ use tracing::{error, warn};
 
 /// A periodically-synced mirror of the on-chain Coprocessor registry.
 ///
-/// `N` defaults to [`Ethereum`] but any [`Network`] the caller's provider is built for (e.g.
-/// `alloy::network::AnyNetwork`) works: it is threaded through so this type fits whichever
-/// network the consumer's provider stack already uses.
+/// `N` defaults to [`Ethereum`] but any [`Network`] the caller's provider is built for works.
 #[derive(Clone)]
 pub struct CoprocessorRegistry<P: Provider<N>, N: Network = Ethereum> {
-    /// Used to (re)load the registry snapshot.
     gateway_config_contract: GatewayConfigInstance<P, N>,
-
-    /// The current registry snapshot.
-    // Cheap to clone: the outer `Arc` shares the lock across clones; the `RwLock` gives interior
-    // mutability for the swap; the inner `Arc` makes reads snapshot-and-release.
     snapshot: Arc<RwLock<Arc<CoprocessorRegistrySnapshot>>>,
 }
 
@@ -96,8 +85,6 @@ impl CoprocessorRegistrySnapshot {
         )
         .map_err(|e| RegistryError::Transient(anyhow::anyhow!("{}", redact_rpc_url(e))))?;
 
-        // A zero or oversized threshold can never come from a healthy `GatewayConfig`: treat it
-        // as critical so the caller refuses to run.
         let threshold = threshold_u256
             .try_into()
             .ok()
@@ -131,10 +118,9 @@ impl CoprocessorRegistrySnapshot {
             )));
         }
 
-        // Defense-in-depth: `GatewayConfig.sol:992-997` reverts registration with
-        // `CoprocessorTxSenderAlreadyRegistered` / `CoprocessorSignerAlreadyRegistered`, so a
-        // duplicate here can only mean a broken invariant somewhere upstream. Fail closed rather
-        // than silently letting one bucket vote twice or one signer's vote count for two buckets.
+        // Defense-in-depth: `GatewayConfig.sol` reverts duplicate registrations, so a duplicate
+        // here can only mean a broken invariant somewhere upstream. Fail closed rather than
+        // silently letting one bucket vote twice.
         let mut seen_tx_senders = HashSet::with_capacity(coprocessors.len());
         let mut seen_signers = HashSet::with_capacity(coprocessors.len());
         for entry in &coprocessors {
@@ -152,14 +138,7 @@ impl CoprocessorRegistrySnapshot {
             }
         }
 
-        // Registered Coprocessors without a bucket URL were dropped above, but the threshold comes
-        // from chain and is validated there only against the number of *registered* Coprocessors.
-        // If more were dropped than the margin allows, no round can ever reach threshold: every
-        // request is rejected until the registration is completed. That fails closed, which is
-        // right, but the retriable verdict it produces is indistinguishable from "attestations not
-        // uploaded yet" — so say plainly what is wrong, on every load, rather than leaving an
-        // operator to infer it from a timeout. Not `Critical`: crash-looping the caller over
-        // persistent on-chain state would be worse than serving a loud, retriable failure.
+        // Not `Critical`: crash-looping the caller over persistent on-chain state would be worse.
         if coprocessors.len() < threshold.get() {
             error!(
                 reachable = coprocessors.len(),
@@ -175,11 +154,7 @@ impl CoprocessorRegistrySnapshot {
 }
 
 /// Stringifies an RPC error, stripping the ` for url (…)` suffix that `reqwest::Error::Display`
-/// appends.
-///
-/// Gateway RPC endpoints can carry embedded API keys, so the URL must never reach a log line or an
-/// error surfaced to a caller. Applied at every point an RPC error becomes a [`RegistryError`], so
-/// consumers get a redacted message without having to remember to redact it themselves.
+/// appends: Gateway RPC endpoints can carry embedded API keys.
 fn redact_rpc_url(err: impl std::fmt::Display) -> String {
     let msg = err.to_string();
     match msg.find(" for url (") {
@@ -188,10 +163,8 @@ fn redact_rpc_url(err: impl std::fmt::Display) -> String {
     }
 }
 
-/// Resolves the signer↔bucket binding of a single Coprocessor.
-///
-/// An empty `s3BucketUrl` is skipped with a warning: it is persistent on-chain state, so
-/// failing on it would crash-loop the caller. Transient RPC failures still propagate.
+/// Resolves the signer↔bucket binding of a single Coprocessor. An empty `s3BucketUrl` is skipped
+/// with a warning: it is persistent on-chain state, so failing on it would crash-loop the caller.
 async fn get_copro_entry<P: Provider<N>, N: Network>(
     contract: &GatewayConfigInstance<P, N>,
     copro_tx_sender_addr: Address,
@@ -217,10 +190,8 @@ where
     P: Provider<N> + Clone + 'static,
     N: Network,
 {
-    /// Loads the initial snapshot and spawns the background refresh task.
-    ///
-    /// `cancel_token` is the caller-wide shutdown token: the refresh task cancels it on a
-    /// critical failure (see [`Self::spawn_refresh_task`]).
+    /// Loads the initial snapshot and spawns the background refresh task. `cancel_token` is the
+    /// caller-wide shutdown token: the refresh task cancels it on a critical failure.
     pub async fn connect(
         provider: P,
         gateway_config_address: Address,
@@ -248,10 +219,6 @@ where
     }
 
     /// Spawns the background task that reloads the registry on the configured TTL.
-    ///
-    /// A transient reload failure keeps the previous snapshot. A critical failure (invalid
-    /// on-chain threshold or a poisoned snapshot lock) cancels `cancel_token` to bring the whole
-    /// caller down.
     fn spawn_refresh_task(&self, refresh_interval: Duration, cancel_token: CancellationToken) {
         let this = self.clone();
         tokio::spawn(async move {
@@ -284,7 +251,6 @@ where
         });
     }
 
-    /// Swaps in a fresh snapshot.
     fn store_snapshot(&self, snapshot: CoprocessorRegistrySnapshot) -> Result<(), RegistryError> {
         let mut guard = self.snapshot.write().map_err(|_| {
             RegistryError::Critical("Coprocessor registry lock poisoned".to_string())

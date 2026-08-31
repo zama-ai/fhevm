@@ -18,6 +18,9 @@ pub struct Consensus {
 }
 
 /// The ciphertext material a consensus group agreed on.
+///
+/// Digest values are operator-only: `Debug` shows their prefixes and no `Display` impl exists —
+/// add one only if it is needed, and never with digest values in it.
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ConsensusMaterial {
     pub key_id: U256,
@@ -36,12 +39,6 @@ pub struct ConsensusError {
 }
 
 impl fmt::Debug for ConsensusMaterial {
-    /// Compact form showing both digest prefixes, so a differing field is never hidden during a
-    /// real disagreement. Hand-written, not derived, and deliberately on `Debug` rather than
-    /// `Display`: digest values are operator-only, and `Display` is the rendering that fires
-    /// implicitly (`format!`, `%x` in tracing, a `thiserror` message). No `Display` impl exists
-    /// for this type — add one only if it is needed, and never with digest values in it. Same
-    /// audience as [`crate::tracker::Round`]'s hand-written `Debug`.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -64,14 +61,10 @@ impl From<&CiphertextAttestation> for ConsensusMaterial {
 
 /// Validates every fetched attestations and evaluates the majority threshold for a handle.
 ///
-/// The address of the coprocessor's tx-sender is attached to each attestation for debugging.
 /// An attestation counts only if its signature recovers to its embedded `signer` and that signer
-/// is in the `allowed_signers` set.
-/// Survivors are grouped by material tuple; the largest group wins if it gathers at least
-/// `threshold` distinct signers.
-///
-/// `threshold` is a [`NonZeroUsize`]: a zero threshold would let any single attestation win,
-/// so it is unrepresentable here and rejected where the threshold is loaded.
+/// is in the `allowed_signers` set. Survivors are grouped by material tuple; the largest group
+/// wins if it gathers at least `threshold` distinct signers. `threshold` is a [`NonZeroUsize`]:
+/// a zero threshold would let any single attestation win.
 pub fn evaluate(
     handle: B256,
     coprocessor_context_id: U256,

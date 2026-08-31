@@ -7,8 +7,6 @@ license = "BSD-3-Clause-Clear"
 
 [features]
 # Networked half (on-chain registry mirroring, S3 HEAD attestation fetch, consensus fan-out).
-# Opt-in: a consumer that only needs the wire types, signing, and `consensus::evaluate` should
-# not be made to pull in alloy, tokio, and the rest of this feature's dependencies.
 client = ["dep:alloy", "dep:anyhow", "dep:futures", "dep:tokio", "dep:tokio-util", "dep:fhevm_gateway_bindings"]
 
 [dependencies]

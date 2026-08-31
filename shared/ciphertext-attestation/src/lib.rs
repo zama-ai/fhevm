@@ -3,23 +3,6 @@
 //! Both producer and consumer must encode, sign, and verify attestations byte-identically.
 //! This crate is the single source of truth for that encoding.
 //!
-//! Producer flow:
-//!
-//! ```ignore
-//! let attestation: CiphertextAttestation =
-//!     CiphertextAttestationPayload::new(version, handle, key_id, ctx, ct, sns, format)
-//!         .sign(&signer)
-//!         .await?;
-//! s3_push(url, serde_json::to_string(&attestation)?);
-//! ```
-//!
-//! Verifier flow:
-//!
-//! ```ignore
-//! let attestation: CiphertextAttestation = serde_json::from_str(&s3_metadata)?;
-//! attestation.verify(handle, coprocessor_context_id)?;
-//! ```
-//!
 //! See RFC-023 (Off-chain ciphertext commits handling).
 
 use alloy_primitives::{Address, B256, U256};
@@ -29,11 +12,6 @@ pub mod consensus;
 pub mod sign;
 pub mod tracker;
 
-/// Networked half of off-chain ciphertext attestation consensus: on-chain registry mirroring, S3
-/// `HEAD` attestation fetch, and the fan-out that evaluates consensus over the results. Behind
-/// the `client` feature so a consumer that only needs the wire types above is not made to pull in
-/// `alloy`, `tokio`, and the rest of this module's networked dependencies. See the module's own
-/// doc comment for the consumer flow.
 #[cfg(feature = "client")]
 pub mod client;
 
@@ -44,9 +22,7 @@ pub use client::{
     fetch_attestations_and_check_consensus,
 };
 
-/// Domain separator for the canonical signed payload. Scopes the keccak hash to
-/// "FHEVM CT Attestation" and prevents collisions with any other hash computed
-/// over similar-looking inputs.
+/// Domain separator for the canonical signed payload.
 pub const DOMAIN_TAG: [u8; 8] = *b"FHEVMCTA";
 
 /// Ceiling on the serialized size of an SNS ciphertext in bytes.
@@ -131,13 +107,8 @@ pub enum CiphertextFormat {
     CompressedOnGpu = 21,
 }
 
-/// The full set of fields bound by an attestation signature. Construct, optionally
-/// inspect via [`Self::canonical_bytes`] / [`Self::canonical_digest`], then call
-/// [`Self::sign`] to produce a [`CiphertextAttestation`] for the wire.
-///
-/// Not serializable: `handle` and `coprocessor_context_id` are intentionally
-/// stripped from the wire form (the verifier reconstructs them from the S3
-/// lookup path).
+/// The full set of fields bound by an attestation signature. [`Self::sign`] produces a
+/// [`CiphertextAttestation`] for the wire.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CiphertextAttestationPayload {
     pub version: Version,
@@ -171,13 +142,11 @@ impl CiphertextAttestationPayload {
     }
 }
 
-/// Signed wire form persisted as the S3 metadata header
-/// [`S3_METADATA_ATTESTATION_HEADER`].
+/// Signed wire form persisted as the S3 metadata header [`S3_METADATA_ATTESTATION_HEADER`].
 ///
-/// `handle` and `coprocessor_context_id` are intentionally absent — the verifier
-/// reconstructs them from the S3 lookup path and supplies them to
-/// [`Self::verify`]. Both are bound by the signature, so any path/attestation
-/// mismatch surfaces as a signature failure.
+/// `handle` and `coprocessor_context_id` are intentionally absent — the verifier reconstructs
+/// them from the S3 lookup path and supplies them to [`Self::verify`]. Both are bound by the
+/// signature, so any path/attestation mismatch surfaces as a signature failure.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CiphertextAttestation {
     pub version: Version,
@@ -207,10 +176,7 @@ pub enum AttestationError {
     Serde(#[from] serde_json::Error),
     #[error("signer error: {0}")]
     Signer(#[from] alloy_signer::Error),
-    /// The signature is genuine, but for a different bucket's key — cross-serving. See Gate 2 of
-    /// [`ValidAttestation::validate`](crate::tracker::ValidAttestation::validate): without this
-    /// check a bucket could serve another bucket's (validly signed) attestation and have it
-    /// counted as its own.
+    /// The signature is genuine, but for a different bucket's key.
     #[error("signer {embedded} is not the registered signer {registered} for this bucket")]
     SignerNotRegisteredForBucket {
         embedded: Address,

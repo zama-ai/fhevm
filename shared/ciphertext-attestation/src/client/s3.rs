@@ -1,12 +1,8 @@
 //! Interactions with the Coprocessors' S3 buckets: attestation fetching via `HEAD` requests.
 //!
 //! The attestation lives in an S3 metadata header of the ciphertext object (see
-//! [`rfc023_ciphertext_url`]). Bucket URLs are resolved from a
-//! [`crate::client::registry::CoprocessorRegistrySnapshot`], the single source of on-chain
-//! Coprocessor metadata.
-//!
-//! Retrieving and verifying the ciphertext bytes themselves is out of scope for this crate: that
-//! is KMS-only behavior that stays in `kms-connector`.
+//! [`rfc023_ciphertext_url`]). Retrieving the ciphertext bytes themselves is out of scope for
+//! this crate: that is KMS-only behavior that stays in `kms-connector`.
 
 use crate::{
     AttestationError, CiphertextAttestation, S3_METADATA_ATTESTATION_HEADER, s3_ct128_key,
@@ -26,32 +22,16 @@ use tokio::sync::Semaphore;
 /// An HTTP client with a ceiling on the `HEAD` probes it may have in flight against any one
 /// Coprocessor bucket at once.
 ///
-/// This mirrors kms-connector's own `BoundedClient`
-/// (`kms-connector/crates/kms-worker/src/core/event_processor/ciphertext/s3.rs`): a
-/// [`tokio::sync::Semaphore`] per bucket, created on first use and shared by every caller of this
-/// client. An unbounded fan-out is what stood between kms-connector and adopting this crate's
-/// client in place of its own duplicate — matching its mechanism here, rather than merely
-/// bounding concurrency some other way, is what makes that adoption possible later.
-///
-/// The ceiling is required at construction and this crate offers no default for it. Each consumer
-/// fans out differently — the relayer probes a handful of handles behind its own outer bound,
-/// kms-worker probes a far larger set with no such bound — so a value that is right for one is
-/// wrong for the other, and a shared default would be a number nobody chose deliberately.
+/// The ceiling is required at construction and this crate offers no default for it: each consumer
+/// fans out differently, so a value that is right for one is wrong for the other.
 #[derive(Clone)]
 pub struct BoundedClient {
-    /// The inner HTTP client.
     client: Client,
-
-    /// The per-bucket `HEAD` ceiling.
     head_semaphores: Arc<Mutex<HashMap<String, Arc<Semaphore>>>>,
-
-    /// The maximum number of concurrent `HEAD` requests per bucket.
     max_concurrent_heads_per_bucket: NonZeroUsize,
 }
 
 impl BoundedClient {
-    /// Wraps `client`, capping concurrent `HEAD`s to any one bucket at
-    /// `max_concurrent_heads_per_bucket`.
     pub fn new(client: Client, max_concurrent_heads_per_bucket: NonZeroUsize) -> Self {
         Self {
             client,
@@ -61,7 +41,6 @@ impl BoundedClient {
     }
 
     /// Fetches the attestation for a `handle` from the specified bucket, using a `HEAD` request.
-    ///
     /// Waits for a ceiling permit first if `bucket` is already at its cap.
     pub(super) async fn fetch_single_attestation(
         &self,
@@ -120,11 +99,7 @@ pub fn rfc023_ciphertext_url(bucket_url: &str, handle: B256, context_id: U256) -
     )
 }
 
-/// Every reason one bucket produced no usable attestation: fetch, parse, or validation. Not
-/// public: nothing outside the `client` module matches on it (`pub(super)`, not `pub(crate)` —
-/// the merge into `ciphertext-attestation` widened `pub(crate)` to the whole base crate, which
-/// would let it leak into a non-client module by accident), it only feeds the per-bucket `warn!`
-/// in [`crate::client::fetch::fetch_attestations_and_check_consensus`].
+/// Every reason one bucket produced no usable attestation: fetch, parse, or validation.
 #[derive(Debug, thiserror::Error)]
 pub(super) enum BucketError {
     #[error("HEAD request timed out")]

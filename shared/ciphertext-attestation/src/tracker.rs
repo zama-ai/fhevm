@@ -1,32 +1,9 @@
 //! Incremental consensus tracking over one fan-out round.
 //!
 //! [`ConsensusTracker::record`] returns a freshly computed [`ThresholdStatus`] after every
-//! single reply, not once at the end. This lets a caller act on a verdict while other replies
-//! are still outstanding: this crate's `client` module does exactly that, matching
-//! the returned status after each reply and only continuing to poll on
-//! [`ThresholdStatus::AwaitingReplies`]; anything else ends the round immediately, abandoning
-//! whatever requests are still in flight.
-//!
-//! Acting on a mid-round verdict is only safe because every verdict is monotone: a slot, once
-//! filled, is never overwritten (see [`ConsensusTracker::record`]), so a later reply can only
+//! single reply, not once at the end. Acting on a mid-round verdict is safe because every
+//! verdict is monotone: a slot, once filled, is never overwritten, so a later reply can only
 //! reinforce a verdict already given, never contradict it.
-//!
-//! [`ThresholdStatus`] has four variants rather than the obvious three — reached, pending,
-//! failed — because "failed" itself splits along two independent questions:
-//!
-//! - **Can this round still reach threshold?** Splits
-//!   [`AwaitingReplies`](ThresholdStatus::AwaitingReplies) from a decided round.
-//! - **Can any future round reach threshold?** Splits
-//!   [`MissedThisRound`](ThresholdStatus::MissedThisRound) (retriable) from
-//!   [`Unreachable`](ThresholdStatus::Unreachable) (terminal, but only for the current round's
-//!   registered signer set — a later on-chain change to that set could still succeed).
-//!
-//! A Coprocessor that failed to answer (timeout, HTTP error, a missing or malformed header) is
-//! dead for *this* round but alive for the *next* one — "has not published yet" is not "voted
-//! against" — and that asymmetry between outstanding replies and non-attesting ones is the
-//! entire reason [`MissedThisRound`](ThresholdStatus::MissedThisRound) and
-//! [`Unreachable`](ThresholdStatus::Unreachable) are distinct. See
-//! [`ConsensusTracker::status`] for the exact arithmetic.
 
 use crate::consensus::ConsensusMaterial;
 use crate::{AttestationError, CiphertextAttestation};
@@ -41,20 +18,9 @@ pub struct ValidAttestation {
 }
 
 impl ValidAttestation {
-    /// Validates one fetched attestation against two gates.
-    ///
-    /// # Gates
-    /// - **Gate 1** — the signature recovers to the embedded signer
-    ///   ([`CiphertextAttestation::verify`]).
-    /// - **Gate 2** — that embedded signer equals `registered_signer`, the signer this bucket is
-    ///   registered to on-chain. Without this gate, an attacker controlling one Coprocessor's
-    ///   bucket could copy a *different* Coprocessor's genuine attestation into their own
-    ///   bucket's S3 object: Gate 1 alone would pass it, since the signature really is valid,
-    ///   and it would be counted as though that bucket had attested to it itself — cross-serving.
-    ///
-    /// # Errors
-    /// Returns [`AttestationError`]: a signature-recovery variant if Gate 1 fails, or
-    /// [`AttestationError::SignerNotRegisteredForBucket`] if Gate 2 fails.
+    /// Validates that the signature recovers to the embedded signer and that this signer equals
+    /// `registered_signer`. Without the second check, an attacker controlling one Coprocessor's
+    /// bucket could serve a *different* Coprocessor's genuine attestation as its own — cross-serving.
     pub fn validate(
         attestation: &CiphertextAttestation,
         handle: B256,
@@ -86,11 +52,10 @@ impl ValidAttestation {
 /// What one registered Coprocessor did this round.
 #[derive(Clone, Debug)]
 pub enum Reply {
-    /// It answered, and this is what it attested to.
     Attested(ConsensusMaterial),
     /// It never answered: timeout, HTTP error, missing or malformed header.
     NoReply,
-    /// It answered, but the attestation failed validation (see [`ValidAttestation::validate`]).
+    /// It answered, but the attestation failed validation.
     Rejected,
     /// It has not answered yet.
     Outstanding,
@@ -98,9 +63,7 @@ pub enum Reply {
 
 /// One round of asking every registered Coprocessor for an attestation.
 ///
-/// One slot per registered Coprocessor, in roster order, filled in place as replies arrive —
-/// this is the board [`ConsensusTracker`] keeps and every number in [`ThresholdStatus`] is
-/// derived from it. No stored counts, no summary structs.
+/// `Display` is redacted (no digest values); `Debug` is the full board, operator diagnostics only.
 #[derive(Clone)]
 pub struct Round {
     pub threshold: NonZeroUsize,
@@ -109,28 +72,23 @@ pub struct Round {
 }
 
 impl Round {
-    /// Number of registered Coprocessors asked this round — the roster size, not the number of
-    /// replies received.
+    /// The roster size, not the number of replies received.
     pub fn asked(&self) -> usize {
         self.replies.len()
     }
 
-    /// Coprocessors that attested, in roster order.
     pub fn attested(&self) -> Vec<Address> {
         self.addresses_where(|r| matches!(r, Reply::Attested(_)))
     }
 
-    /// Coprocessors that never answered, in roster order.
     pub fn silent(&self) -> Vec<Address> {
         self.addresses_where(|r| matches!(r, Reply::NoReply))
     }
 
-    /// Coprocessors whose attestation failed validation, in roster order.
     pub fn rejected(&self) -> Vec<Address> {
         self.addresses_where(|r| matches!(r, Reply::Rejected))
     }
 
-    /// Coprocessors that have not answered yet, in roster order.
     pub fn outstanding(&self) -> Vec<Address> {
         self.addresses_where(|r| matches!(r, Reply::Outstanding))
     }
@@ -143,8 +101,7 @@ impl Round {
     }
 
     /// Attested slots bucketed by agreed-on material, largest group first. Ties are broken by
-    /// material — the same tie-break `consensus::evaluate` uses — so the leading group here is
-    /// always the same one `evaluate` would pick from the same attestations.
+    /// material — the same tie-break `consensus::evaluate` uses.
     pub fn groups(&self) -> Vec<(ConsensusMaterial, Vec<Address>)> {
         let mut grouped: HashMap<&ConsensusMaterial, Vec<Address>> = HashMap::new();
         for (addr, reply) in &self.replies {
@@ -177,47 +134,26 @@ impl Round {
 }
 
 /// Where a round stands, recomputed after every reply.
-///
-/// Four variants rather than the obvious three (reached / pending / failed): "failed" splits
-/// into whether *this* round can still succeed and whether *any* round with this roster ever
-/// could, and those two questions have different answers on real failures — see the module docs
-/// for the full derivation and [`ConsensusTracker::status`] for the arithmetic that produces it.
 #[derive(Clone, Debug)]
 pub enum ThresholdStatus {
-    /// Not everyone has answered and the threshold is still reachable this round. Only
-    /// meaningful mid-round: its only consumer is `continue`, it carries no payload, and no
-    /// caller surfaces it to its own callers.
+    /// Not everyone has answered and the threshold is still reachable this round.
     AwaitingReplies,
     /// A group of at least `threshold` distinct signers agreed on the same material.
-    ///
-    /// This is the verdict for one handle, not "the request succeeded" — a caller may have other
-    /// handles still to resolve, or may still fail downstream for reasons this crate knows
-    /// nothing about (it has no notion of HTTP, or of a "request").
     Reached {
         material: ConsensusMaterial,
         signers: Vec<Address>,
     },
-    /// Every Coprocessor answered or failed; no group reached the threshold. A later round
-    /// could: either every attestation so far agrees and there simply aren't enough of them
-    /// yet, or enough Coprocessors have yet to answer that one could still tip the leading group
-    /// over threshold. Retriable.
+    /// Every Coprocessor answered or failed; no group reached the threshold. Retriable.
     MissedThisRound(Round),
-    /// The Coprocessors that answered disagree, and even the best possible outcome — every
-    /// Coprocessor that has not answered joining the largest group — would still fall short of
-    /// threshold. Terminal for this round's registered signer set: cast attestations are
-    /// immutable, so every future round with the same roster replays the same dead end. Not a
-    /// claim of permanent failure — a later change to the on-chain signer set could still
-    /// succeed.
+    /// The Coprocessors that answered disagree, and even the best possible outcome would still
+    /// fall short of threshold. Terminal for this round's registered signer set: cast
+    /// attestations are immutable.
     Unreachable(Round),
 }
 
 /// Incremental consensus over one fan-out round. No network, no time, no I/O: the caller feeds
 /// it exactly one reply per registered Coprocessor and reads a freshly recomputed verdict back
 /// after each one.
-///
-/// The board makes a repeated or out-of-roster reply structurally harmless — see
-/// [`Self::record`] — rather than relying on the caller's one-event-per-Coprocessor contract to
-/// hold.
 pub struct ConsensusTracker {
     round: Round,
 }
@@ -237,14 +173,9 @@ impl ConsensusTracker {
         }
     }
 
-    /// Fills `signer`'s slot and returns the freshly recomputed verdict.
-    ///
-    /// Two cases are handled rather than assumed away:
-    /// - **Unknown signer** (not in the roster): ignored, loudly in debug builds
-    ///   (`debug_assert!`) since it means the caller and the roster have drifted.
-    /// - **Already-filled slot**: first write wins: a later reply for the same signer — even a
-    ///   *different* one — is dropped. This is what makes a single Coprocessor structurally
-    ///   unable to occupy two groups at once.
+    /// Fills `signer`'s slot and returns the freshly recomputed verdict. First write wins: a
+    /// later reply for the same signer is dropped, which makes a single Coprocessor structurally
+    /// unable to occupy two groups at once. An unknown signer is ignored (`debug_assert!`).
     pub fn record(&mut self, signer: Address, reply: Reply) -> ThresholdStatus {
         match self
             .round
@@ -253,7 +184,7 @@ impl ConsensusTracker {
             .find_map(|(addr, slot)| (*addr == signer).then_some(slot))
         {
             Some(slot @ Reply::Outstanding) => *slot = reply,
-            Some(_) => {} // Already-filled slot: first write wins, this one is dropped.
+            Some(_) => {}
             None => debug_assert!(
                 false,
                 "record() called for signer {signer}, not in the roster"
@@ -263,27 +194,14 @@ impl ConsensusTracker {
     }
 
     /// Reads the board without changing it.
-    ///
-    /// ```text
-    /// groups      = Attested slots bucketed by material -> set of signers
-    /// largest     = size of the largest group
-    /// outstanding = count of Reply::Outstanding
-    /// missing     = count of slots that are NOT Attested (Outstanding + NoReply + Rejected)
-    ///
-    /// largest >= threshold                          -> Reached { material, signers }
-    /// largest + outstanding >= threshold            -> AwaitingReplies
-    /// groups.len() > 1 && largest + missing < threshold -> Unreachable(round)
-    /// otherwise                                     -> MissedThisRound(round)
-    /// ```
     pub fn status(&self) -> ThresholdStatus {
         let round = &self.round;
         let threshold = round.threshold.get();
         let groups = round.groups();
         let largest = groups.first().map_or(0, |(_, signers)| signers.len());
         let outstanding = round.outstanding().len();
-        // Deliberately not `outstanding`: `missing` excludes only successfully attested slots,
-        // so a Coprocessor that merely failed still counts as reachable next round — the whole
-        // reason `MissedThisRound` and `Unreachable` are distinct.
+        // Deliberately not `outstanding`: a Coprocessor that merely failed still counts as
+        // reachable next round.
         let missing = round.asked() - round.attested().len();
 
         if largest >= threshold {
@@ -304,10 +222,6 @@ impl ConsensusTracker {
 }
 
 impl std::fmt::Display for Round {
-    /// Redacted: counts plus who was absent, no digest values. This is the rendering that fires
-    /// implicitly — `format!("{round}")`, `%round` in tracing, `.to_string()`, and every
-    /// `#[error("...{round}")]` — so it is the only one allowed to reach a stored error string
-    /// or an API response. See [`std::fmt::Debug`] for the full board.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -332,10 +246,6 @@ impl std::fmt::Display for Round {
 }
 
 impl std::fmt::Debug for Round {
-    /// The full board: every slot, in roster order, with digest prefixes for attested material.
-    /// Hand-written, not derived — a derived `Debug` would dump raw struct internals and full
-    /// digests. Operator diagnostics only (`?round` in tracing); never interpolate this into a
-    /// user-facing string.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "need {}: ", self.threshold.get())?;
         for (i, (addr, reply)) in self.replies.iter().enumerate() {
@@ -360,7 +270,7 @@ fn short_addr(addr: &Address) -> String {
 }
 
 /// Full addresses, comma-separated. Signer addresses are fine in user-facing strings — public
-/// on-chain state, and they tell a caller whether the fault is theirs.
+/// on-chain state.
 fn format_addrs(addrs: &[Address]) -> String {
     addrs
         .iter()

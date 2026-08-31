@@ -16,31 +16,22 @@ use tokio::task::JoinSet;
 use tracing::{debug, error, warn};
 
 /// Why a handle has no attestation consensus this round.
-///
-/// The two variants call for opposite responses, which is why they are distinguished here rather
-/// than collapsed into one opaque error: [`Self::MissedThisRound`] is the expected early state,
-/// since Coprocessors publish attestations asynchronously, so it is worth retrying.
-/// [`Self::Unreachable`] means the signers that answered disagree and no vote still to come could
-/// break the tie — retrying re-reads the same disagreement.
 #[derive(Debug, thiserror::Error)]
 pub enum ConsensusCheckError {
-    /// Every registered Coprocessor answered or failed this round and no group reached the
-    /// threshold. Retriable: attestations are published asynchronously, so this is the normal
-    /// early state.
+    /// No group reached the threshold. Retriable: attestations are published asynchronously, so
+    /// this is the normal early state.
     #[error("no attestation consensus yet for handle {handle}: {round}")]
     MissedThisRound { handle: B256, round: Round },
 
-    /// The Coprocessors that answered disagree, and even every vote still outstanding joining the
-    /// largest group would fall short of the threshold. Terminal: cast votes do not change.
+    /// The Coprocessors that answered disagree. Terminal: cast votes do not change.
     #[error("attestation consensus unreachable for handle {handle}: {round}")]
     Unreachable { handle: B256, round: Round },
 }
 
 /// A reached consensus together with the buckets to fetch the ciphertext from.
 ///
-/// `winning_buckets` (the buckets whose registered signer is in the winning group) exists only so
-/// a ciphertext-retrieving consumer (e.g. the KMS Connector) can fetch the ciphertext bytes from a
-/// winning-group bucket; a consumer that only needs the consensus verdict can ignore it.
+/// `winning_buckets` are the buckets whose registered signer is in the winning group; a consumer
+/// that only needs the consensus verdict can ignore it.
 #[derive(Debug)]
 pub struct ResolvedConsensus {
     pub material: ConsensusMaterial,
@@ -49,13 +40,8 @@ pub struct ResolvedConsensus {
 }
 
 /// Fetches the attestation for a `handle` from the registered Coprocessor buckets concurrently
-/// and evaluates the consensus.
-///
-/// Tries to evaluate the consensus as soon as enough attestations are received, without waiting
+/// and evaluates the consensus as soon as enough attestations are received, without waiting
 /// for slow or unreachable buckets.
-///
-/// On success returns the winning material together with the URLs of the winning-group buckets
-/// (those whose registered signer vouches for the winning material).
 pub async fn fetch_attestations_and_check_consensus(
     client: &BoundedClient,
     handle: B256,
@@ -89,11 +75,6 @@ pub async fn fetch_attestations_and_check_consensus(
 }
 
 /// Drains `tasks`, feeding each reply to `tracker`, and returns the round's verdict.
-///
-/// Split out from [`fetch_attestations_and_check_consensus`] so the post-drain sweep (see below)
-/// can be unit-tested against a `JoinSet` built directly, including one task that genuinely
-/// panics — something no HTTP mock can trigger, since `reqwest`/`hyper` guarantee a `Result` for
-/// every malformed or hostile response, never a panic.
 async fn drain(
     mut tasks: JoinSet<(Address, Result<CiphertextAttestation, BucketError>)>,
     handle: B256,
@@ -101,20 +82,16 @@ async fn drain(
     registry: &CoprocessorRegistrySnapshot,
     mut tracker: ConsensusTracker,
 ) -> Result<ResolvedConsensus, ConsensusCheckError> {
-    // Signers whose probe has not yet joined: still in flight, or its task panicked and its
-    // signer was never learned (see the `Err(e)` arm below). Client-owned probe-fate knowledge,
-    // used only to log what an early exit on `Reached` abandons.
+    // Signers whose probe has not yet joined: used only to log what an early exit on `Reached`
+    // abandons.
     let mut outstanding: HashSet<Address> =
         registry.coprocessors.iter().map(|e| e.signer).collect();
 
-    // Every one of the `registry.coprocessors.len()` spawned tasks either feeds the tracker
-    // exactly one reply below, or panics and is left for the post-loop sweep — that is what makes
-    // the verdict, once the `JoinSet` drains, always terminal.
     while let Some(joined) = tasks.join_next().await {
         let (signer, reply) = match joined {
             Err(e) => {
-                // No signer: a `JoinError` carries no result, so this slot cannot be addressed
-                // here. It stays `Outstanding` until the post-loop sweep turns it into `NoReply`.
+                // A `JoinError` carries no result, so this slot stays `Outstanding` until the
+                // post-loop sweep turns it into `NoReply`.
                 warn!(%handle, "Attestation fetch task panicked: {e}");
                 continue;
             }
@@ -155,35 +132,17 @@ async fn drain(
         }
     }
 
-    // The `JoinSet` is drained with no verdict returned above: only possible when a probe
-    // panicked and left its slot `Outstanding` (see the `Err(e)` arm above) — a healthy last
-    // reply always resolves the round from inside the loop, since at that point no slot is left
-    // `Outstanding`. `record` is idempotent for an already-filled slot, so sweeping every
-    // registered signer to `NoReply` only fills the ones a panicked probe left open, then the
-    // verdict is recomputed one last time. With an empty registry this loop never runs and the
-    // pre-loop `status` — already terminal for zero signers — is used as-is.
+    // Only reachable when a probe panicked and left its slot `Outstanding`. `record` is
+    // idempotent for an already-filled slot, so sweeping every registered signer to `NoReply`
+    // only fills the ones a panicked probe left open.
     let mut status = tracker.status();
     for entry in &registry.coprocessors {
         status = tracker.record(entry.signer, Reply::NoReply);
     }
     resolve(handle, registry, status).unwrap_or_else(|| {
-        // Every registered signer's slot is filled after the sweep above, which should make the
-        // verdict terminal; reaching this arm means it somehow did not. Failing open (letting an
-        // unattested handle through) would be worse than failing shut on a request-serving path,
-        // so this logs loudly and hands back the same retriable verdict an all-silent round would
-        // produce, rather than panicking here as a prior revision of this function did.
-        //
-        // Provably unreachable *today*, but only because the registry cannot contain a duplicate
-        // signer: `ConsensusTracker::new` would give a duplicated address two slots, `record`'s
-        // `find_map` only ever fills the first one it finds, and the second would stay
-        // `Outstanding` forever — surviving the sweep above (which calls `record` once per
-        // registry entry, including the duplicate, and still only reaches that same first slot)
-        // and landing exactly here, where the fabricated all-`NoReply` board below would then
-        // silently misreport that Coprocessor's slot. What closes this off is
-        // `CoprocessorRegistrySnapshot::load` rejecting a duplicate signer as
-        // `RegistryError::Critical` before a registry ever reaches this code, pinned by
-        // `registry::tests::load_rejects_duplicate_signer_as_critical`. If that invariant is ever
-        // relaxed, this fallback stops being a defensive no-op and starts being reachable.
+        // Failing open (letting an unattested handle through) would be worse than failing shut
+        // on a request-serving path, so this logs loudly and hands back the same retriable
+        // verdict an all-silent round would produce.
         error!(
             %handle,
             "Post-sweep consensus verdict was still open after every registered signer's slot \
@@ -282,7 +241,7 @@ mod tests {
     }
 
     /// A probe that never joins with a signer at all — the case a `JoinError` produces (task
-    /// panic or abort) and which no HTTP mock can trigger (see [`drain`]'s doc comment).
+    /// panic or abort) and which no HTTP mock can trigger.
     fn panicking_task(tasks: &mut JoinSet<(Address, Result<CiphertextAttestation, BucketError>)>) {
         tasks.spawn(async { panic!("simulates a JoinSet task panicking mid-probe") });
     }
