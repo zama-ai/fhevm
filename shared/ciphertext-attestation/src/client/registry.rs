@@ -16,7 +16,6 @@ use alloy::{
 use fhevm_gateway_bindings::gateway_config::GatewayConfig::{self, GatewayConfigInstance};
 use futures::future::try_join_all;
 use std::{
-    collections::HashSet,
     num::NonZeroUsize,
     sync::{Arc, RwLock},
     time::Duration,
@@ -108,26 +107,6 @@ impl CoprocessorRegistrySnapshot {
             return Err(RegistryError::Transient(anyhow::anyhow!(
                 "Not a single Coprocessor with a non-empty S3 bucket URL in the registry"
             )));
-        }
-
-        // Defense-in-depth: `GatewayConfig.sol` reverts duplicate registrations, so a duplicate
-        // here can only mean a broken invariant somewhere upstream. Fail closed rather than
-        // silently letting one bucket vote twice.
-        let mut seen_tx_senders = HashSet::with_capacity(coprocessors.len());
-        let mut seen_signers = HashSet::with_capacity(coprocessors.len());
-        for entry in &coprocessors {
-            if !seen_tx_senders.insert(entry.tx_sender) {
-                return Err(RegistryError::Critical(format!(
-                    "duplicate Coprocessor tx sender in registry: {}",
-                    entry.tx_sender
-                )));
-            }
-            if !seen_signers.insert(entry.signer) {
-                return Err(RegistryError::Critical(format!(
-                    "duplicate Coprocessor signer in registry: {}",
-                    entry.signer
-                )));
-            }
         }
 
         // Not `Critical`: crash-looping the caller over persistent on-chain state would be worse.
@@ -345,40 +324,6 @@ mod tests {
         let asserter = Asserter::new();
         asserter.push_success(&vec![addr(0x06)].abi_encode());
         asserter.push_success(&U256::ZERO.abi_encode());
-
-        let err = CoprocessorRegistrySnapshot::load(&mocked_contract(&asserter))
-            .await
-            .unwrap_err();
-        assert!(matches!(err, RegistryError::Critical(_)));
-    }
-
-    #[tokio::test]
-    async fn load_rejects_duplicate_tx_sender_as_critical() {
-        let asserter = Asserter::new();
-        let dup = addr(0x07);
-        mock_registry_load(&asserter, &[dup, dup], &["http://a", "http://b"]);
-
-        let err = CoprocessorRegistrySnapshot::load(&mocked_contract(&asserter))
-            .await
-            .unwrap_err();
-        assert!(matches!(err, RegistryError::Critical(_)));
-    }
-
-    #[tokio::test]
-    async fn load_rejects_duplicate_signer_as_critical() {
-        let asserter = Asserter::new();
-        // Two distinct tx senders, but `mock_registry_load` binds both to `signer(0)` here since
-        // both `getCoprocessor` responses are built with the same explicit `signerAddress`.
-        asserter.push_success(&vec![addr(0x08), addr(0x09)].abi_encode());
-        asserter.push_success(&U256::ONE.abi_encode());
-        for tx_sender in [addr(0x08), addr(0x09)] {
-            let coprocessor = Coprocessor {
-                signerAddress: signer(0),
-                s3BucketUrl: format!("http://{tx_sender}"),
-                ..Default::default()
-            };
-            asserter.push_success(&coprocessor.abi_encode());
-        }
 
         let err = CoprocessorRegistrySnapshot::load(&mocked_contract(&asserter))
             .await
