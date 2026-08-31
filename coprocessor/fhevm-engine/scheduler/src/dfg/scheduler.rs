@@ -490,10 +490,10 @@ fn execute_partition(
                             "Consumer dependence handle not found in producer outputs - graph inconsistency");
                             continue;
                         };
-                        // Inner None means compression failed and was
-                        // already stamped: forward nothing so the consumer
-                        // fails as a missing input instead of twice.
-                        if let Some(Some(value)) = forwarded.get(out_idx) {
+                        // None: compression failed and was already stamped, so
+                        // forward nothing and let the consumer fail as a missing
+                        // input rather than reporting it twice.
+                        if let Some(value) = &forwarded[out_idx] {
                             child_node.inputs[input_idx] = DFGTaskInput::Value(value.clone());
                         }
                     }
