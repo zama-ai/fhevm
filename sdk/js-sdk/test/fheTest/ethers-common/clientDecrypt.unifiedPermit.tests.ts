@@ -296,7 +296,7 @@ export function defineClientDecryptUnifiedPermitTests(parameters: {
         client.parseSignedDecryptionPermit({
           serializedPermit: {
             version: 2,
-            eip712: { primaryType: 'UserDecryptRequestVerification', message: {} },
+            eip712: { primaryType: 'UserDecryptRequestVerification', domain: {}, types: {}, message: {} },
             signature: `0x${'11'.repeat(65)}`,
             signerAddress: address,
             delegatorAddress: address,

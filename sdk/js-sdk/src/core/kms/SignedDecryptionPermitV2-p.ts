@@ -101,7 +101,7 @@ function _assertSignerIsNotDelegator(
   signerAddress: ChecksummedAddress,
   delegatorAddress: ChecksummedAddress | undefined,
 ): void {
-  if (delegatorAddress !== undefined && signerAddress.toLowerCase() === delegatorAddress.toLowerCase()) {
+  if (signerAddress.toLowerCase() === delegatorAddress?.toLowerCase()) {
     throw new Error(
       'signerAddress and delegatorAddress must be different. ' +
         'Use a non-delegated permit to decrypt your own values.',
