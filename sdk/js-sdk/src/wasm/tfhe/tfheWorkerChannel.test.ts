@@ -83,7 +83,7 @@ describe('tfhe worker message channel', () => {
     }
   });
 
-  it('listens on parentPort even when addEventListener exists (bun 1.4 worker_threads)', async () => {
+  it('listens on parentPort when Node-like even if addEventListener exists', async () => {
     const helpers = extractChannelHelpers(template);
     const result = await runInWorker<{
       readonly usesParentPort: boolean;
@@ -106,7 +106,7 @@ describe('tfhe worker message channel', () => {
     expect(result.usesSelf).toBe(false);
   });
 
-  it('receives wasm_bindgen_worker_init on parentPort under a bun-like EventTarget leak', async () => {
+  it('receives wasm_bindgen_worker_init on parentPort if addEventListener is also present', async () => {
     const helpers = extractChannelHelpers(template);
     const workerCode = `
       if (typeof addEventListener !== 'function') {
