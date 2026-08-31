@@ -305,8 +305,10 @@ ID…).
     accounts. Classic Token and extension-free Token-2022 are supported.
     Token-2022 mint extensions are rejected unless explicitly allowlisted;
     today none are allowlisted. Token accounts allow only `ImmutableOwner`.
-57. **[HOLDS]** Frozen underlying token accounts cannot enter or leave the
-    wrapper through wrap or redeem. Token-2022 transfer-fee, transfer-hook,
+57. **[HOLDS]** Frozen underlying token accounts cannot wrap, confidential-transfer, burn, or
+    redeem. Transfer checks both owners' canonical associated token accounts for the wrapped
+    mint; burn checks the burner's (absent ATA = not frozen). Wrap and redeem keep checking the
+    accounts they actually move. Cancel-pending-burn is not freeze-gated. Token-2022 transfer-fee, transfer-hook,
     non-transferable, and confidential-transfer behavior cannot be inherited
     accidentally because those mint extensions fail closed under #56.
 58. **[HOLDS]** Only `ConfidentialMint.authority` can add or remove subjects on

@@ -462,6 +462,7 @@ export async function depositToVault(
       batcher: roots.batcher,
       batch: batch.addresses.batch,
       joinConfidentialMint: roots.joinConfidentialMint,
+      joinUnderlyingMint: roots.joinUnderlyingMint,
       hostConfig: config.hostConfig,
       computeUnitLimit: JOIN_COMPUTE_UNIT_LIMIT,
       onTransactionSigned: (transaction) => {

@@ -76,6 +76,7 @@ export const confidentialBurn = async (
   params: {
     readonly owner: TransactionSigner;
     readonly mint: Address;
+    readonly underlyingMint: Address;
     readonly amountAttestation: CoprocessorInputAttestationArgs;
   },
 ): Promise<void> => {
@@ -90,6 +91,8 @@ export const confidentialBurn = async (
   const instruction = await getConfidentialBurnInstructionAsync({
     owner: params.owner,
     mint: params.mint,
+    underlyingMint: params.underlyingMint,
+    ownerUnderlying: await associatedTokenAddress(params.owner.address, params.underlyingMint),
     tokenAccount: target.tokenAccount,
     balanceValue,
     totalSupplyValue,

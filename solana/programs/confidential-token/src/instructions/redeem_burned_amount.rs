@@ -42,12 +42,11 @@ pub struct RedeemBurnedAmount<'info> {
         constraint = vault_usdc.owner == vault_authority.key() @ ConfidentialTokenError::VaultAuthorityMismatch
     )]
     pub vault_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
-    /// Signer's destination USDC token account (any SPL account of the right mint owned by the
-    /// signer, not necessarily the ATA).
+    /// Signer's destination USDC token account (any SPL account of the right mint). Ownership is
+    /// not required: the token-account owner must still sign, which is what prevents theft.
     #[account(
         mut,
-        constraint = destination_usdc.mint == underlying_mint.key() @ ConfidentialTokenError::UnderlyingMintMismatch,
-        constraint = destination_usdc.owner == owner.key() @ ConfidentialTokenError::OwnerMismatch
+        constraint = destination_usdc.mint == underlying_mint.key() @ ConfidentialTokenError::UnderlyingMintMismatch
     )]
     pub destination_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
     /// CHECK: PDA authority for the underlying-token vault.

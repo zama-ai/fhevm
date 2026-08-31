@@ -52,6 +52,7 @@ use zama_solana_test_kit::{
     read_spl_amount, serialized_account, spl_mint_account, spl_token_account, system_account,
     u256_be, Ctx, HostConfigParams, BALANCE_FHE_TYPE, DECRYPTION_CONTRACT, GATEWAY_CHAIN_ID,
 };
+use anchor_spl::associated_token::get_associated_token_address_with_program_id;
 
 // ---------------------------------------------------------------------------
 // Harness
@@ -204,6 +205,7 @@ struct TokenFixture {
     owner: Pubkey,
     bob_owner: Pubkey,
     mint: Pubkey,
+    underlying_mint: Pubkey,
     compute_signer: Pubkey,
     host_config: Pubkey,
     alice_token: Pubkey,
@@ -232,10 +234,13 @@ impl TokenFixture {
         let bob_token = token::token_account_address(mint, bob_owner).0;
         let alice_balance_value = token::balance_encrypted_value_address(mint, alice_token).0;
         let bob_balance_value = token::balance_encrypted_value_address(mint, bob_token).0;
+        let underlying_mint =
+            Pubkey::find_program_address(&[b"test-underlying", mint.as_ref()], &token::id()).0;
         Self {
             owner,
             bob_owner,
             mint,
+            underlying_mint,
             compute_signer,
             host_config,
             alice_token,
@@ -254,7 +259,7 @@ impl TokenFixture {
                 authority: self.owner,
                 domain: self.mint,
                 compute_signer: self.compute_signer,
-                underlying_mint: Pubkey::new_unique(),
+                underlying_mint: self.underlying_mint,
                 decimals: 6,
                 total_supply_encrypted_value: token::total_supply_encrypted_value_address(
                     self.mint,
@@ -328,6 +333,9 @@ impl TokenFixture {
             ),
             (event_authority(host::id()), system_account(0)),
             (event_authority(token::id()), system_account(0)),
+            (self.underlying_mint, spl_mint_account(None, 0)),
+            (self.owner_ata(self.owner), system_account(0)),
+            (self.owner_ata(self.bob_owner), system_account(0)),
         ])
     }
 
@@ -338,6 +346,19 @@ impl TokenFixture {
             token::encrypted_transferred_amount_label(),
         )
         .0
+    }
+
+    fn owner_ata(&self, owner: Pubkey) -> Pubkey {
+        get_associated_token_address_with_program_id(&owner, &self.underlying_mint, &spl_token::id())
+    }
+
+    fn underlying_ata_for_token(&self, token: Pubkey) -> Pubkey {
+        let owner = if token == self.bob_token {
+            self.bob_owner
+        } else {
+            self.owner
+        };
+        self.owner_ata(owner)
     }
 }
 
@@ -472,6 +493,9 @@ fn confidential_transfer_ix_with_block_cap_accounts(
             owner: fixture.owner,
             payer: fixture.owner,
             mint: fixture.mint,
+            underlying_mint: fixture.underlying_mint,
+            from_underlying: fixture.underlying_ata_for_token(from_token),
+            to_underlying: fixture.underlying_ata_for_token(to_token),
             from_account: from_token,
             to_account: to_token,
             compute_signer: fixture.compute_signer,
@@ -517,6 +541,9 @@ fn confidential_transfer_from_value_ix(
             owner: signer_owner,
             payer: signer_owner,
             mint: fixture.mint,
+            underlying_mint: fixture.underlying_mint,
+            from_underlying: fixture.underlying_ata_for_token(from_token),
+            to_underlying: fixture.underlying_ata_for_token(to_token),
             from_account: from_token,
             to_account: to_token,
             compute_signer: fixture.compute_signer,
@@ -1148,6 +1175,62 @@ fn mollusk_confidential_transfer_self_transfer_is_no_op() {
         &context,
         fixture.transferred_amount_value_address(fixture.alice_token)
     ));
+}
+
+#[test]
+fn mollusk_confidential_transfer_rejects_frozen_sender_ata() {
+    let fixture = TokenFixture::new();
+    let mut accounts = fixture.base_accounts();
+    accounts.insert(
+        fixture.owner_ata(fixture.owner),
+        frozen_spl_token_account(fixture.underlying_mint, fixture.owner),
+    );
+    let context = mollusk().with_context(accounts);
+    let amount_handle = handle_for_chain(9, BALANCE_FHE_TYPE);
+    let attestation = amount_attestation_for(amount_handle, fixture.owner, fixture.compute_signer);
+    let transfer = confidential_transfer_ix(
+        &fixture,
+        fixture.alice_token,
+        fixture.bob_token,
+        fixture.alice_balance_value,
+        fixture.bob_balance_value,
+        attestation,
+    );
+
+    context.process_and_validate_instruction(
+        &transfer,
+        &[token_error(
+            token::ConfidentialTokenError::UnderlyingTokenAccountFrozen,
+        )],
+    );
+}
+
+#[test]
+fn mollusk_confidential_transfer_rejects_frozen_recipient_ata() {
+    let fixture = TokenFixture::new();
+    let mut accounts = fixture.base_accounts();
+    accounts.insert(
+        fixture.owner_ata(fixture.bob_owner),
+        frozen_spl_token_account(fixture.underlying_mint, fixture.bob_owner),
+    );
+    let context = mollusk().with_context(accounts);
+    let amount_handle = handle_for_chain(9, BALANCE_FHE_TYPE);
+    let attestation = amount_attestation_for(amount_handle, fixture.owner, fixture.compute_signer);
+    let transfer = confidential_transfer_ix(
+        &fixture,
+        fixture.alice_token,
+        fixture.bob_token,
+        fixture.alice_balance_value,
+        fixture.bob_balance_value,
+        attestation,
+    );
+
+    context.process_and_validate_instruction(
+        &transfer,
+        &[token_error(
+            token::ConfidentialTokenError::UnderlyingTokenAccountFrozen,
+        )],
+    );
 }
 
 #[test]
@@ -2353,6 +2436,31 @@ fn token_2022_non_transferable_mint_account(decimals: u8) -> Account {
     }
 }
 
+fn frozen_spl_token_account(mint: Pubkey, owner: Pubkey) -> Account {
+    let mut data = vec![0u8; spl_token::state::Account::LEN];
+    spl_token::state::Account::pack(
+        spl_token::state::Account {
+            mint,
+            owner,
+            amount: 0,
+            delegate: COption::None,
+            state: spl_token::state::AccountState::Frozen,
+            is_native: COption::None,
+            delegated_amount: 0,
+            close_authority: COption::None,
+        },
+        &mut data,
+    )
+    .unwrap();
+    Account {
+        lamports: 1_000_000_000,
+        data,
+        owner: spl_token::id(),
+        executable: false,
+        rent_epoch: 0,
+    }
+}
+
 fn token_2022_token_account(
     mint: Pubkey,
     owner: Pubkey,
@@ -2644,9 +2752,18 @@ impl BurnRedeemFixture {
             ),
             (event_authority(host::id()), system_account(0)),
             (event_authority(token::id()), system_account(0)),
+            (self.owner_ata(), system_account(0)),
             mollusk_svm_programs_token::token::keyed_account(),
             mollusk_svm_programs_token::token2022::keyed_account(),
         ])
+    }
+
+    fn owner_ata(&self) -> Pubkey {
+        get_associated_token_address_with_program_id(
+            &self.owner,
+            &self.underlying_mint,
+            &self.token_program,
+        )
     }
 }
 
@@ -2737,6 +2854,8 @@ fn confidential_burn_ix(
         token::accounts::ConfidentialBurn {
             owner: fixture.owner,
             mint: fixture.mint,
+            underlying_mint: fixture.underlying_mint,
+            owner_underlying: fixture.owner_ata(),
             token_account: fixture.token_account,
             compute_signer: fixture.compute_signer,
             total_supply_authority: fixture.total_supply_authority,
@@ -2774,6 +2893,8 @@ fn confidential_burn_from_value_ix(
             owner,
             payer,
             mint: fixture.mint,
+            underlying_mint: fixture.underlying_mint,
+            owner_underlying: fixture.owner_ata(),
             token_account: fixture.token_account,
             compute_signer: fixture.compute_signer,
             total_supply_authority: fixture.total_supply_authority,
@@ -2921,6 +3042,26 @@ fn run_burn(
     let ix = confidential_burn_ix(fixture, attestation, pending_burn);
     context.process_and_validate_instruction(&ix, &[Check::success()]);
     read_encrypted_value(context, fixture.burned_amount_value).current_handle
+}
+
+#[test]
+fn mollusk_confidential_burn_rejects_frozen_owner_ata() {
+    let fixture = BurnRedeemFixture::new();
+    let mut accounts = fixture.accounts(1_000);
+    accounts.insert(
+        fixture.owner_ata(),
+        frozen_spl_token_account(fixture.underlying_mint, fixture.owner),
+    );
+    let context = burn_redeem_mollusk().with_context(accounts);
+    let pending_burn = prepare_empty_pending_burn(&context, &fixture);
+    let amount_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
+    let attestation = amount_attestation_for(amount_handle, fixture.owner, fixture.compute_signer);
+    context.process_and_validate_instruction(
+        &confidential_burn_ix(&fixture, attestation, pending_burn),
+        &[token_error(
+            token::ConfidentialTokenError::UnderlyingTokenAccountFrozen,
+        )],
+    );
 }
 
 #[test]
@@ -3333,17 +3474,16 @@ fn mollusk_redeem_rejects_destroyed_kms_context() {
     assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 1_000);
 }
 
-/// The destination token account must be owned by the signer: an account of the right mint owned by
-/// someone else is rejected by the `destination_usdc.owner == owner` constraint, before any payout.
+/// The destination token account may be owned by a third party: owner signature is the
+/// theft-prevention, not `destination_usdc.owner == owner`.
 #[test]
-fn mollusk_redeem_rejects_destination_not_owned_by_signer() {
+fn mollusk_redeem_pays_destination_not_owned_by_signer() {
     let fixture = BurnRedeemFixture::new();
     let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
     let proof = single_burn_public_decrypt_proof(&fixture, first_handle);
 
     let mut accounts = fixture.accounts(1_000);
     seed_single_burn_value_account(&fixture, &mut accounts, first_handle);
-    // Re-own the destination account by a stranger (right mint, wrong owner).
     let stranger = Pubkey::new_unique();
     accounts.insert(
         fixture.destination_usdc,
@@ -3364,9 +3504,10 @@ fn mollusk_redeem_rejects_destination_not_owned_by_signer() {
             proof,
             pending_burn,
         ),
-        &[token_error(token::ConfidentialTokenError::OwnerMismatch)],
+        &[Check::success()],
     );
-    assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 1_000);
+    assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 500);
+    assert_eq!(read_spl_amount(&context, fixture.destination_usdc), 500);
 }
 
 /// The deny-list controls future ACL grants, not token settlement. An owner who is denied from new

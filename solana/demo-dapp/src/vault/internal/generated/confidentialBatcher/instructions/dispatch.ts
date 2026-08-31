@@ -53,6 +53,8 @@ export type DispatchInstruction<
   TAccountBatch extends string | AccountMeta<string> = string,
   TAccountBatchAuthority extends string | AccountMeta<string> = string,
   TAccountJoinConfidentialMint extends string | AccountMeta<string> = string,
+  TAccountJoinUnderlyingMint extends string | AccountMeta<string> = string,
+  TAccountBatchAuthorityUnderlying extends string | AccountMeta<string> = string,
   TAccountJoinComputeSigner extends string | AccountMeta<string> = string,
   TAccountTotalSupplyAuthority extends string | AccountMeta<string> = string,
   TAccountBatchJoinTokenAccount extends string | AccountMeta<string> = string,
@@ -80,6 +82,12 @@ export type DispatchInstruction<
       TAccountJoinConfidentialMint extends string
         ? WritableAccount<TAccountJoinConfidentialMint>
         : TAccountJoinConfidentialMint,
+      TAccountJoinUnderlyingMint extends string
+        ? ReadonlyAccount<TAccountJoinUnderlyingMint>
+        : TAccountJoinUnderlyingMint,
+      TAccountBatchAuthorityUnderlying extends string
+        ? ReadonlyAccount<TAccountBatchAuthorityUnderlying>
+        : TAccountBatchAuthorityUnderlying,
       TAccountJoinComputeSigner extends string ? ReadonlyAccount<TAccountJoinComputeSigner> : TAccountJoinComputeSigner,
       TAccountTotalSupplyAuthority extends string
         ? ReadonlyAccount<TAccountTotalSupplyAuthority>
@@ -137,6 +145,8 @@ export type DispatchAsyncInput<
   TAccountBatch extends string = string,
   TAccountBatchAuthority extends string = string,
   TAccountJoinConfidentialMint extends string = string,
+  TAccountJoinUnderlyingMint extends string = string,
+  TAccountBatchAuthorityUnderlying extends string = string,
   TAccountJoinComputeSigner extends string = string,
   TAccountTotalSupplyAuthority extends string = string,
   TAccountBatchJoinTokenAccount extends string = string,
@@ -160,6 +170,8 @@ export type DispatchAsyncInput<
   batchAuthority?: Address<TAccountBatchAuthority>;
   /** Confidential mint whose encrypted total supply the burn decreases. */
   joinConfidentialMint: Address<TAccountJoinConfidentialMint>;
+  joinUnderlyingMint: Address<TAccountJoinUnderlyingMint>;
+  batchAuthorityUnderlying: Address<TAccountBatchAuthorityUnderlying>;
   joinComputeSigner: Address<TAccountJoinComputeSigner>;
   totalSupplyAuthority: Address<TAccountTotalSupplyAuthority>;
   /** token CPI and pinned below. */
@@ -187,6 +199,8 @@ export async function getDispatchInstructionAsync<
   TAccountBatch extends string,
   TAccountBatchAuthority extends string,
   TAccountJoinConfidentialMint extends string,
+  TAccountJoinUnderlyingMint extends string,
+  TAccountBatchAuthorityUnderlying extends string,
   TAccountJoinComputeSigner extends string,
   TAccountTotalSupplyAuthority extends string,
   TAccountBatchJoinTokenAccount extends string,
@@ -208,6 +222,8 @@ export async function getDispatchInstructionAsync<
     TAccountBatch,
     TAccountBatchAuthority,
     TAccountJoinConfidentialMint,
+    TAccountJoinUnderlyingMint,
+    TAccountBatchAuthorityUnderlying,
     TAccountJoinComputeSigner,
     TAccountTotalSupplyAuthority,
     TAccountBatchJoinTokenAccount,
@@ -231,6 +247,8 @@ export async function getDispatchInstructionAsync<
     TAccountBatch,
     TAccountBatchAuthority,
     TAccountJoinConfidentialMint,
+    TAccountJoinUnderlyingMint,
+    TAccountBatchAuthorityUnderlying,
     TAccountJoinComputeSigner,
     TAccountTotalSupplyAuthority,
     TAccountBatchJoinTokenAccount,
@@ -258,6 +276,14 @@ export async function getDispatchInstructionAsync<
     joinConfidentialMint: {
       value: input.joinConfidentialMint ?? null,
       isWritable: true,
+    },
+    joinUnderlyingMint: {
+      value: input.joinUnderlyingMint ?? null,
+      isWritable: false,
+    },
+    batchAuthorityUnderlying: {
+      value: input.batchAuthorityUnderlying ?? null,
+      isWritable: false,
     },
     joinComputeSigner: {
       value: input.joinComputeSigner ?? null,
@@ -328,6 +354,8 @@ export async function getDispatchInstructionAsync<
       getAccountMeta('batch', accounts.batch),
       getAccountMeta('batchAuthority', accounts.batchAuthority),
       getAccountMeta('joinConfidentialMint', accounts.joinConfidentialMint),
+      getAccountMeta('joinUnderlyingMint', accounts.joinUnderlyingMint),
+      getAccountMeta('batchAuthorityUnderlying', accounts.batchAuthorityUnderlying),
       getAccountMeta('joinComputeSigner', accounts.joinComputeSigner),
       getAccountMeta('totalSupplyAuthority', accounts.totalSupplyAuthority),
       getAccountMeta('batchJoinTokenAccount', accounts.batchJoinTokenAccount),
@@ -351,6 +379,8 @@ export async function getDispatchInstructionAsync<
     TAccountBatch,
     TAccountBatchAuthority,
     TAccountJoinConfidentialMint,
+    TAccountJoinUnderlyingMint,
+    TAccountBatchAuthorityUnderlying,
     TAccountJoinComputeSigner,
     TAccountTotalSupplyAuthority,
     TAccountBatchJoinTokenAccount,
@@ -373,6 +403,8 @@ export type DispatchInput<
   TAccountBatch extends string = string,
   TAccountBatchAuthority extends string = string,
   TAccountJoinConfidentialMint extends string = string,
+  TAccountJoinUnderlyingMint extends string = string,
+  TAccountBatchAuthorityUnderlying extends string = string,
   TAccountJoinComputeSigner extends string = string,
   TAccountTotalSupplyAuthority extends string = string,
   TAccountBatchJoinTokenAccount extends string = string,
@@ -396,6 +428,8 @@ export type DispatchInput<
   batchAuthority: Address<TAccountBatchAuthority>;
   /** Confidential mint whose encrypted total supply the burn decreases. */
   joinConfidentialMint: Address<TAccountJoinConfidentialMint>;
+  joinUnderlyingMint: Address<TAccountJoinUnderlyingMint>;
+  batchAuthorityUnderlying: Address<TAccountBatchAuthorityUnderlying>;
   joinComputeSigner: Address<TAccountJoinComputeSigner>;
   totalSupplyAuthority: Address<TAccountTotalSupplyAuthority>;
   /** token CPI and pinned below. */
@@ -423,6 +457,8 @@ export function getDispatchInstruction<
   TAccountBatch extends string,
   TAccountBatchAuthority extends string,
   TAccountJoinConfidentialMint extends string,
+  TAccountJoinUnderlyingMint extends string,
+  TAccountBatchAuthorityUnderlying extends string,
   TAccountJoinComputeSigner extends string,
   TAccountTotalSupplyAuthority extends string,
   TAccountBatchJoinTokenAccount extends string,
@@ -444,6 +480,8 @@ export function getDispatchInstruction<
     TAccountBatch,
     TAccountBatchAuthority,
     TAccountJoinConfidentialMint,
+    TAccountJoinUnderlyingMint,
+    TAccountBatchAuthorityUnderlying,
     TAccountJoinComputeSigner,
     TAccountTotalSupplyAuthority,
     TAccountBatchJoinTokenAccount,
@@ -466,6 +504,8 @@ export function getDispatchInstruction<
   TAccountBatch,
   TAccountBatchAuthority,
   TAccountJoinConfidentialMint,
+  TAccountJoinUnderlyingMint,
+  TAccountBatchAuthorityUnderlying,
   TAccountJoinComputeSigner,
   TAccountTotalSupplyAuthority,
   TAccountBatchJoinTokenAccount,
@@ -492,6 +532,14 @@ export function getDispatchInstruction<
     joinConfidentialMint: {
       value: input.joinConfidentialMint ?? null,
       isWritable: true,
+    },
+    joinUnderlyingMint: {
+      value: input.joinUnderlyingMint ?? null,
+      isWritable: false,
+    },
+    batchAuthorityUnderlying: {
+      value: input.batchAuthorityUnderlying ?? null,
+      isWritable: false,
     },
     joinComputeSigner: {
       value: input.joinComputeSigner ?? null,
@@ -557,6 +605,8 @@ export function getDispatchInstruction<
       getAccountMeta('batch', accounts.batch),
       getAccountMeta('batchAuthority', accounts.batchAuthority),
       getAccountMeta('joinConfidentialMint', accounts.joinConfidentialMint),
+      getAccountMeta('joinUnderlyingMint', accounts.joinUnderlyingMint),
+      getAccountMeta('batchAuthorityUnderlying', accounts.batchAuthorityUnderlying),
       getAccountMeta('joinComputeSigner', accounts.joinComputeSigner),
       getAccountMeta('totalSupplyAuthority', accounts.totalSupplyAuthority),
       getAccountMeta('batchJoinTokenAccount', accounts.batchJoinTokenAccount),
@@ -580,6 +630,8 @@ export function getDispatchInstruction<
     TAccountBatch,
     TAccountBatchAuthority,
     TAccountJoinConfidentialMint,
+    TAccountJoinUnderlyingMint,
+    TAccountBatchAuthorityUnderlying,
     TAccountJoinComputeSigner,
     TAccountTotalSupplyAuthority,
     TAccountBatchJoinTokenAccount,
@@ -611,25 +663,27 @@ export type ParsedDispatchInstruction<
     batchAuthority: TAccountMetas[3];
     /** Confidential mint whose encrypted total supply the burn decreases. */
     joinConfidentialMint: TAccountMetas[4];
-    joinComputeSigner: TAccountMetas[5];
-    totalSupplyAuthority: TAccountMetas[6];
+    joinUnderlyingMint: TAccountMetas[5];
+    batchAuthorityUnderlying: TAccountMetas[6];
+    joinComputeSigner: TAccountMetas[7];
+    totalSupplyAuthority: TAccountMetas[8];
     /** token CPI and pinned below. */
-    batchJoinTokenAccount: TAccountMetas[7];
+    batchJoinTokenAccount: TAccountMetas[9];
     /** replaced as the burn's balance output (the whole-balance alias). */
-    batchBalanceValue: TAccountMetas[8];
-    totalSupplyValue: TAccountMetas[9];
+    batchBalanceValue: TAccountMetas[10];
+    totalSupplyValue: TAccountMetas[11];
     /** decryptable; created by the token CPI (first and only burn per batch). */
-    batchBurnedAmountValue: TAccountMetas[10];
-    pendingBurn: TAccountMetas[11];
-    zamaEventAuthority: TAccountMetas[12];
+    batchBurnedAmountValue: TAccountMetas[12];
+    pendingBurn: TAccountMetas[13];
+    zamaEventAuthority: TAccountMetas[14];
     /** ZamaHost program (FHE compute + ACL). */
-    zamaProgram: TAccountMetas[13];
-    hostConfig: TAccountMetas[14];
-    confidentialTokenEventAuthority: TAccountMetas[15];
+    zamaProgram: TAccountMetas[15];
+    hostConfig: TAccountMetas[16];
+    confidentialTokenEventAuthority: TAccountMetas[17];
     /** confidential-token program composed via CPI. */
-    confidentialTokenProgram: TAccountMetas[16];
+    confidentialTokenProgram: TAccountMetas[18];
     /** System program used for ACL account creation. */
-    systemProgram: TAccountMetas[17];
+    systemProgram: TAccountMetas[19];
   };
   data: DispatchInstructionData;
 };
@@ -637,10 +691,10 @@ export type ParsedDispatchInstruction<
 export function parseDispatchInstruction<TProgram extends string, TAccountMetas extends readonly AccountMeta[]>(
   instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>,
 ): ParsedDispatchInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 18) {
+  if (instruction.accounts.length < 20) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
-      expectedAccountMetas: 18,
+      expectedAccountMetas: 20,
     });
   }
   let accountIndex = 0;
@@ -657,6 +711,8 @@ export function parseDispatchInstruction<TProgram extends string, TAccountMetas 
       batch: getNextAccount(),
       batchAuthority: getNextAccount(),
       joinConfidentialMint: getNextAccount(),
+      joinUnderlyingMint: getNextAccount(),
+      batchAuthorityUnderlying: getNextAccount(),
       joinComputeSigner: getNextAccount(),
       totalSupplyAuthority: getNextAccount(),
       batchJoinTokenAccount: getNextAccount(),

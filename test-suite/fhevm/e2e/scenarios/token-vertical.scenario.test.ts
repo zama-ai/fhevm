@@ -121,6 +121,7 @@ describe("solana confidential-token consume vertical", () => {
       await confidentialBurn(context, {
         owner: wallet.signer,
         mint,
+        underlyingMint,
         amountAttestation: {
           inputHandle: amountHandle,
           ctHandles: submission.handles.map((handle) => hexToBytes(handle.bytes32Hex)),

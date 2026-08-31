@@ -22,6 +22,7 @@
 //! (join = shares, payout = underlying).
 
 use anchor_lang::{prelude::system_program, AccountDeserialize};
+use anchor_spl::associated_token::get_associated_token_address_with_program_id;
 use anchor_spl::token::spl_token;
 use confidential_batcher as batcher;
 use confidential_token as token;
@@ -714,6 +715,10 @@ fn open_batch_ix(
     )
 }
 
+fn owner_ata(owner: Pubkey, underlying_mint: Pubkey) -> Pubkey {
+    get_associated_token_address_with_program_id(&owner, &underlying_mint, &spl_token::id())
+}
+
 fn join_ix(
     fixture: &BatcherFixture,
     keys: &BatchKeys,
@@ -731,6 +736,12 @@ fn join_ix(
             batch_authority: keys.batch_authority,
             join_record: keys.join_record(user.user),
             join_confidential_mint: fixture.join_mint().mint,
+            join_underlying_mint: fixture.join_mint().underlying_mint,
+            user_underlying: owner_ata(user.user, fixture.join_mint().underlying_mint),
+            batch_authority_underlying: owner_ata(
+                keys.batch_authority,
+                fixture.join_mint().underlying_mint,
+            ),
             join_compute_signer: fixture.join_mint().compute_signer,
             user_token_account: user_join.token_account,
             batch_join_token_account: keys.join_token_account,
@@ -761,6 +772,12 @@ fn quit_ix(fixture: &BatcherFixture, keys: &BatchKeys, user: &UserKeys) -> Instr
             batch_authority: keys.batch_authority,
             join_record: keys.join_record(user.user),
             join_confidential_mint: fixture.join_mint().mint,
+            join_underlying_mint: fixture.join_mint().underlying_mint,
+            batch_authority_underlying: owner_ata(
+                keys.batch_authority,
+                fixture.join_mint().underlying_mint,
+            ),
+            user_underlying: owner_ata(user.user, fixture.join_mint().underlying_mint),
             join_compute_signer: fixture.join_mint().compute_signer,
             batch_join_token_account: keys.join_token_account,
             user_token_account: user_join.token_account,
@@ -788,6 +805,11 @@ fn dispatch_ix(fixture: &BatcherFixture, keys: &BatchKeys) -> Instruction {
             batch: keys.batch,
             batch_authority: keys.batch_authority,
             join_confidential_mint: fixture.join_mint().mint,
+            join_underlying_mint: fixture.join_mint().underlying_mint,
+            batch_authority_underlying: owner_ata(
+                keys.batch_authority,
+                fixture.join_mint().underlying_mint,
+            ),
             join_compute_signer: fixture.join_mint().compute_signer,
             total_supply_authority: fixture.join_mint().total_supply_authority,
             batch_join_token_account: keys.join_token_account,
@@ -906,6 +928,12 @@ fn claim_ix(fixture: &BatcherFixture, keys: &BatchKeys, user: &UserKeys) -> Inst
             pending_join_value: keys.pending_join_value(user.user),
             claim_amount_value: keys.claim_amount_value(user.user),
             payout_confidential_mint: fixture.payout_mint().mint,
+            payout_underlying_mint: fixture.payout_mint().underlying_mint,
+            batch_authority_payout_underlying: owner_ata(
+                keys.batch_authority,
+                fixture.payout_mint().underlying_mint,
+            ),
+            user_payout_underlying: owner_ata(user.user, fixture.payout_mint().underlying_mint),
             payout_compute_signer: fixture.payout_mint().compute_signer,
             batch_payout_token_account: keys.payout_token_account,
             user_payout_token_account: user_payout.token_account,
@@ -938,7 +966,7 @@ fn initialize_and_open_first_batch(
         &[Check::success()],
     );
     let keys = BatchKeys::new(fixture, 0);
-    ensure_open_batch_accounts(context, &keys);
+    ensure_open_batch_accounts(context, fixture, &keys);
     context.process_and_validate_instruction(
         &open_batch_ix(fixture, &keys, None),
         &[Check::success()],
@@ -946,7 +974,7 @@ fn initialize_and_open_first_batch(
     keys
 }
 
-fn ensure_open_batch_accounts(context: &Ctx, keys: &BatchKeys) {
+fn ensure_open_batch_accounts(context: &Ctx, fixture: &BatcherFixture, keys: &BatchKeys) {
     ensure_system_accounts(
         context,
         &[
@@ -958,6 +986,8 @@ fn ensure_open_batch_accounts(context: &Ctx, keys: &BatchKeys) {
             keys.payout_balance_value,
             keys.join_underlying,
             keys.payout_underlying,
+            owner_ata(keys.batch_authority, fixture.join_mint().underlying_mint),
+            owner_ata(keys.batch_authority, fixture.payout_mint().underlying_mint),
         ],
     );
 }
@@ -991,6 +1021,8 @@ fn run_join(
             keys.join_record(user.user),
             fixture.user_join(user).transferred_value,
             keys.pending_join_value(user.user),
+            owner_ata(user.user, fixture.join_mint().underlying_mint),
+            owner_ata(keys.batch_authority, fixture.join_mint().underlying_mint),
         ],
     );
     let attestation =
@@ -1013,6 +1045,7 @@ fn run_dispatch(
         &[
             keys.burned_amount_value,
             keys.pending_burn(fixture.join_mint().mint),
+            owner_ata(keys.batch_authority, fixture.join_mint().underlying_mint),
         ],
     );
     let ix = dispatch_ix(fixture, keys);
@@ -1076,6 +1109,8 @@ fn run_claim(
         &[
             keys.claim_amount_value(user.user),
             keys.payout_transferred_value,
+            owner_ata(keys.batch_authority, fixture.payout_mint().underlying_mint),
+            owner_ata(user.user, fixture.payout_mint().underlying_mint),
         ],
     );
     let ix = claim_ix(fixture, keys, user);
@@ -1513,7 +1548,7 @@ fn mollusk_zero_total_batch_cancels_at_settle() {
 
     // The next batch opens against the canceled one.
     let next = BatchKeys::new(&fixture, 1);
-    ensure_open_batch_accounts(&context, &next);
+    ensure_open_batch_accounts(&context, &fixture, &next);
     context.process_and_validate_instruction(
         &open_batch_ix(&fixture, &next, Some(keys.batch)),
         &[Check::success()],
@@ -2183,6 +2218,8 @@ fn mollusk_join_quit_and_claim_respect_batch_status() {
         &[
             keys.claim_amount_value(fixture.alice.user),
             keys.payout_transferred_value,
+            owner_ata(keys.batch_authority, fixture.payout_mint().underlying_mint),
+            owner_ata(fixture.alice.user, fixture.payout_mint().underlying_mint),
         ],
     );
     context.process_and_validate_instruction(
@@ -2259,7 +2296,7 @@ fn mollusk_open_batch_requires_previous_batch_not_pending() {
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
 
     let next = BatchKeys::new(&fixture, 1);
-    ensure_open_batch_accounts(&context, &next);
+    ensure_open_batch_accounts(&context, &fixture, &next);
     context.process_and_validate_instruction(
         &open_batch_ix(&fixture, &next, Some(keys.batch)),
         &[batcher_error(
@@ -2329,7 +2366,7 @@ fn snapshot_lifecycle(
     context
         .process_and_validate_instruction(&initialize_batcher_ix(fixture, 0), &[Check::success()]);
     let keys = BatchKeys::new(fixture, 0);
-    ensure_open_batch_accounts(context, &keys);
+    ensure_open_batch_accounts(context, fixture, &keys);
     let open = open_batch_ix(fixture, &keys, None);
     let open_result = context.process_and_validate_instruction(&open, &[Check::success()]);
     assert_batcher_cost(&format!("{prefix}open_batch"), &open, &open_result);
@@ -2343,6 +2380,8 @@ fn snapshot_lifecycle(
             keys.join_record(fixture.alice.user),
             fixture.user_join(&fixture.alice).transferred_value,
             keys.pending_join_value(fixture.alice.user),
+            owner_ata(fixture.alice.user, fixture.join_mint().underlying_mint),
+            owner_ata(keys.batch_authority, fixture.join_mint().underlying_mint),
         ],
     );
     let join = join_ix(
@@ -2364,6 +2403,7 @@ fn snapshot_lifecycle(
         &[
             keys.burned_amount_value,
             keys.pending_burn(fixture.join_mint().mint),
+            owner_ata(keys.batch_authority, fixture.join_mint().underlying_mint),
         ],
     );
     let dispatch = dispatch_ix(fixture, &keys);
@@ -2393,6 +2433,8 @@ fn snapshot_lifecycle(
         &[
             keys.claim_amount_value(fixture.alice.user),
             keys.payout_transferred_value,
+            owner_ata(keys.batch_authority, fixture.payout_mint().underlying_mint),
+            owner_ata(fixture.alice.user, fixture.payout_mint().underlying_mint),
         ],
     );
     let claim = claim_ix(fixture, &keys, &fixture.alice);

@@ -185,8 +185,8 @@ export type RedeemBurnedAmountAsyncInput<
   /** Program vault USDC token account. */
   vaultUsdc: Address<TAccountVaultUsdc>;
   /**
-   * Signer's destination USDC token account (any SPL account of the right mint owned by the
-   * signer, not necessarily the ATA).
+   * Signer's destination USDC token account (any SPL account of the right mint). Ownership is
+   * not required: the token-account owner must still sign, which is what prevents theft.
    */
   destinationUsdc: Address<TAccountDestinationUsdc>;
   vaultAuthority?: Address<TAccountVaultAuthority>;
@@ -393,8 +393,8 @@ export type RedeemBurnedAmountInput<
   /** Program vault USDC token account. */
   vaultUsdc: Address<TAccountVaultUsdc>;
   /**
-   * Signer's destination USDC token account (any SPL account of the right mint owned by the
-   * signer, not necessarily the ATA).
+   * Signer's destination USDC token account (any SPL account of the right mint). Ownership is
+   * not required: the token-account owner must still sign, which is what prevents theft.
    */
   destinationUsdc: Address<TAccountDestinationUsdc>;
   vaultAuthority: Address<TAccountVaultAuthority>;
@@ -577,8 +577,8 @@ export type ParsedRedeemBurnedAmountInstruction<
     /** Program vault USDC token account. */
     vaultUsdc: TAccountMetas[4];
     /**
-     * Signer's destination USDC token account (any SPL account of the right mint owned by the
-     * signer, not necessarily the ATA).
+     * Signer's destination USDC token account (any SPL account of the right mint). Ownership is
+     * not required: the token-account owner must still sign, which is what prevents theft.
      */
     destinationUsdc: TAccountMetas[5];
     vaultAuthority: TAccountMetas[6];

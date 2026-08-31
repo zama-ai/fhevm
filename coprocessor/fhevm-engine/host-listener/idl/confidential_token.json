@@ -447,6 +447,12 @@
           "writable": true
         },
         {
+          "name": "underlying_mint"
+        },
+        {
+          "name": "owner_underlying"
+        },
+        {
           "name": "token_account",
           "docs": [
             "Token account whose balance is decreased."
@@ -641,6 +647,12 @@
           "writable": true
         },
         {
+          "name": "underlying_mint"
+        },
+        {
+          "name": "owner_underlying"
+        },
+        {
           "name": "token_account",
           "docs": [
             "Token account whose balance is decreased."
@@ -828,6 +840,15 @@
           ]
         },
         {
+          "name": "underlying_mint"
+        },
+        {
+          "name": "from_underlying"
+        },
+        {
+          "name": "to_underlying"
+        },
+        {
           "name": "from_account",
           "docs": [
             "Sender token account."
@@ -983,6 +1004,15 @@
           "docs": [
             "Confidential mint."
           ]
+        },
+        {
+          "name": "underlying_mint"
+        },
+        {
+          "name": "from_underlying"
+        },
+        {
+          "name": "to_underlying"
         },
         {
           "name": "from_account",
@@ -1774,8 +1804,8 @@
         {
           "name": "destination_usdc",
           "docs": [
-            "Signer's destination USDC token account (any SPL account of the right mint owned by the",
-            "signer, not necessarily the ATA)."
+            "Signer's destination USDC token account (any SPL account of the right mint). Ownership is",
+            "not required: the token-account owner must still sign, which is what prevents theft."
           ],
           "writable": true
         },
@@ -2700,6 +2730,11 @@
       "code": 6050,
       "name": "TotalSupplyValueMismatch",
       "msg": "encrypted total supply value is not canonical"
+    },
+    {
+      "code": 6051,
+      "name": "UnderlyingAssociatedAccountMismatch",
+      "msg": "underlying associated token account does not match"
     }
   ],
   "types": [

@@ -42,6 +42,7 @@ const BYTES32 = /^0x[0-9a-f]{64}$/i;
 export type Holder = { owner: string; keypairPath: string; secretKey: string };
 export type TwoHolderScenario = {
   mint: string;
+  underlyingMint: string;
   computeSigner: string;
   alice: Holder;
   bob: Holder;
@@ -165,7 +166,7 @@ export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig>
       await initializeConfidentialTokenAccount(context, { payer: alice.signer, owner: alice.signer.address, mint });
       await wrapUnderlying(context, { owner: alice.signer, mint, underlyingMint, amount: 1000n });
       await initializeConfidentialTokenAccount(context, { payer: bob.signer, owner: bob.signer.address, mint });
-      return { mint, computeSigner, alice: alice.holder, bob: bob.holder };
+      return { mint, underlyingMint, computeSigner, alice: alice.holder, bob: bob.holder };
     },
     async readBalance(scenario, holder) {
       return readTokenBalanceState(context, { mint: address(scenario.mint), owner: address(holder.owner) });
@@ -189,6 +190,7 @@ export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig>
           TRANSFER_OWNER: scenario.alice.owner,
           TRANSFER_RECIPIENT: scenario.bob.owner,
           TRANSFER_MINT: scenario.mint,
+          TRANSFER_UNDERLYING_MINT: scenario.underlyingMint,
           TRANSFER_COMPUTE_SIGNER: scenario.computeSigner,
           TRANSFER_FROM_ACCOUNT: alice.tokenAccount,
           TRANSFER_TO_ACCOUNT: bob.tokenAccount,

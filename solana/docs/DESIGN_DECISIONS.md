@@ -1445,11 +1445,12 @@ in [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
   reducing attack surface enough to justify the churn.
 - **Compliance / freeze / TokenInterface (fhevm-internal#1862) — PARTIALLY CLOSED by DD-045.** Product stance:
   no token-owned sanctions list; host deny remains grant-path only; compliance for underlying exit
-  is the SPL freeze authority on the wrapped mint (mockUSDC OK in PoC). Confidential transfers are
-  not freeze-gated today. ATA-like UX is intentional (`token_account_address(mint, owner)` +
+  is the SPL freeze authority on the wrapped mint (mockUSDC OK in PoC). Confidential transfers,
+  burns, wrap, and redeem are freeze-gated against the owner's canonical associated token account
+  for that mint. An absent ATA is treated as not frozen. `cancel_pending_burn` is not freeze-gated
+  (no underlying movement). The host grant deny-list is not this check. ATA-like UX is intentional (`token_account_address(mint, owner)` +
   create-for / separate payer; demo get-or-create in `demo-dapp`). `TokenInterface`, classic Token,
-  extension-free Token-2022, fail-closed extension checks, and frozen wrap/redeem tests are shipped.
-  Confidential-transfer freeze policy remains deferred.
+  extension-free Token-2022, fail-closed extension checks, and frozen wrap/transfer/burn/redeem tests are shipped.
 
 ## DD-037: `fhe_execute` Events — `emit_cpi!`-Only, No `emit!` Log Fallback (DD-033 addendum)
 
@@ -2094,7 +2095,20 @@ The wrapper accepts classic Token and extension-free Token-2022 through `TokenIn
 underlying mint's owner selects the token program, and mint/token-account ownership is revalidated on
 every initialize, wrap, and redeem. Token-2022 mint
 extensions fail closed; token accounts permit only `ImmutableOwner`. Frozen source or destination
-accounts cannot cross the wrapper boundary. Supporting transfer fees, hooks, non-transferable tokens,
+accounts cannot cross the wrapper boundary. Confidential transfer and burn also reject a frozen
+canonical associated token account for the token-account owner (absent ATA = not frozen). Cancel
+does not check freeze. Redeem destination ownership is not required: the confidential token-account
+owner must sign, which is the theft check; `destination_usdc.owner == owner` was only a
+no-unwrap-to-third-party policy and is not enforced.
+
+Wrap credits use the same saturating `ge → select` pattern as burn debits (`tryIncrease` parity).
+The clamp is unreachable while wrap stays 1:1 with an SPL `u64` vault.
+
+A wrapper/mint pauser with governance unpause, and a mint-wide observer over every handle, remain
+launch work. They are not in this PoC. Host pause and per-account subjects stay as they are.
+Async delegated spend stays out of this program.
+
+Supporting transfer fees, hooks, non-transferable tokens,
 or Token-2022 confidential transfer requires a separate decision because each changes conservation or
 transfer semantics.
 

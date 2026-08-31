@@ -171,6 +171,7 @@ export const dispatchVaultBatch = async (
         batcher: roots.batcher,
         batch: position.batch,
         joinConfidentialMint: roots.joinConfidentialMint,
+        joinUnderlyingMint: roots.joinUnderlyingMint,
         hostConfig: session.config.hostConfig,
       }),
     ],

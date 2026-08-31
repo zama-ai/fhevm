@@ -9,6 +9,7 @@ import {
   tokenAccountAddress,
 } from './internal/batcherPdas.js';
 import {
+  associatedTokenAddress,
   balanceValueAddress,
   computeSignerAddress,
   tokenEventAuthorityAddress,
@@ -33,6 +34,8 @@ export type SolanaVaultDispatchParameters = {
   readonly batch: Address;
   /** Confidential mint the batch total is burned on (`batcher.join_confidential_mint`). */
   readonly joinConfidentialMint: Address;
+  /** SPL mint wrapped by `joinConfidentialMint`. Freeze checks the batch authority's canonical ATA. */
+  readonly joinUnderlyingMint: Address;
   /** ZamaHost config PDA (demo-config `hostConfig`). */
   readonly hostConfig: Address;
 };
@@ -53,6 +56,8 @@ export async function buildDispatchBatchInstruction(parameters: SolanaVaultDispa
     batch: parameters.batch,
     batchAuthority,
     joinConfidentialMint,
+    joinUnderlyingMint: parameters.joinUnderlyingMint,
+    batchAuthorityUnderlying: await associatedTokenAddress(batchAuthority, parameters.joinUnderlyingMint),
     joinComputeSigner: await computeSignerAddress(joinConfidentialMint),
     totalSupplyAuthority,
     batchJoinTokenAccount,

@@ -84,6 +84,7 @@ const buildClaimInstructions = async (
       batcher: roots.batcher,
       batch: position.batch,
       payoutConfidentialMint: roots.payoutConfidentialMint,
+      payoutUnderlyingMint: roots.payoutUnderlyingMint,
       hostConfig: session.config.hostConfig,
     }),
   );
