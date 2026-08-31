@@ -847,14 +847,14 @@ async fn test_readiness_timeout_message_has_no_digest_values() {
     setup.shutdown().await;
 }
 
-/// A starved round is retried, and a later round that finds the attestations succeeds.
+/// A round that missed is retried, and a later round that finds the attestations succeeds.
 ///
 /// Every bucket 404s its first probe and serves from the second on, so the first readiness attempt
-/// is starved and the second reaches consensus. This is the only test that proves the retry loop
-/// converts a late attestation into a success: treating `Starved` as terminal would fail the
-/// request on the first miss with `no_attestation_consensus`.
+/// misses and the second reaches consensus. This is the only test that proves the retry loop
+/// converts a late attestation into a success: treating `MissedThisRound` as terminal would fail
+/// the request on the first miss with `no_attestation_consensus`.
 #[tokio::test]
-async fn test_starved_round_retries_then_passes() {
+async fn test_missed_round_retries_then_passes() {
     let setup = TestSetup::new_with_fast_readiness()
         .await
         .expect("Failed to create test setup");

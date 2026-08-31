@@ -188,7 +188,7 @@ impl GatewayChainCheck {
         );
 
         let result = self
-            .check_readiness_internal(job_id, || {
+            .retry_until_ready(job_id, || {
                 let decryption = self.gw_decryption.clone();
                 let handles = handles.clone();
                 let extra_data = extra_data.clone();
@@ -244,7 +244,7 @@ impl GatewayChainCheck {
             .collect();
 
         let result = self
-            .check_readiness_internal(job_id, || {
+            .retry_until_ready(job_id, || {
                 let decryption = self.gw_decryption.clone();
                 let pairs = contract_pairs.clone();
                 let extra_data = extra_data.clone();
@@ -274,7 +274,7 @@ impl GatewayChainCheck {
         result
     }
 
-    async fn check_readiness_internal<F, Fut>(
+    async fn retry_until_ready<F, Fut>(
         &self,
         job_id: &JobId,
         check_fn: F,
@@ -459,8 +459,8 @@ impl CoprocessorAttestationCheck {
         result
     }
 
-    /// Retries the whole handle set while attestations are starved, under an overall wall-clock
-    /// budget, and gives up immediately once the Coprocessors have split.
+    /// Retries the whole handle set while attestations are still missing, under an overall
+    /// wall-clock budget, and gives up immediately once the Coprocessors have disagreed.
     ///
     /// Two independent limits, whichever is reached first: `retry.max_attempts` bounds how many
     /// times the handle set is re-probed, and `request_timeout_ms` bounds how long that may take in
@@ -474,7 +474,7 @@ impl CoprocessorAttestationCheck {
     ) -> Result<(), ReadinessCheckError> {
         match tokio::time::timeout(
             self.request_timeout,
-            self.retry_while_starved(job_id, handles),
+            self.retry_while_missing(job_id, handles),
         )
         .await
         {
@@ -498,7 +498,7 @@ impl CoprocessorAttestationCheck {
 
     /// Re-probes the handle set until it succeeds, becomes unreachable, or runs out of attempts.
     /// Bounded in time only by its caller — see [`Self::check_handles_with_retry`].
-    async fn retry_while_starved(
+    async fn retry_while_missing(
         &self,
         job_id: &JobId,
         handles: &[FixedBytes<32>],
@@ -509,7 +509,7 @@ impl CoprocessorAttestationCheck {
         let started = Instant::now();
 
         loop {
-            match self.check_handles_once(handles).await {
+            match self.require_consensus_once(handles).await {
                 Ok(()) => return Ok(()),
                 Err(ConsensusCheckError::Unreachable { handle, round }) => {
                     error!(
@@ -562,7 +562,7 @@ impl CoprocessorAttestationCheck {
     /// An `Unreachable` verdict has to win wherever it sits in the set, and short-circuits the
     /// round. The reported `MissedThisRound` is the one belonging to the lowest-indexed failing
     /// handle, so the message does not vary with the order replies happen to arrive in.
-    async fn check_handles_once(
+    async fn require_consensus_once(
         &self,
         handles: &[FixedBytes<32>],
     ) -> Result<(), ConsensusCheckError> {
@@ -614,7 +614,7 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    /// A `GatewayChainCheck` whose `gw_decryption` is never dialed: `check_readiness_internal`
+    /// A `GatewayChainCheck` whose `gw_decryption` is never dialed: `retry_until_ready`
     /// only reads `retry_config`, and the retry loop is driven entirely by the injected
     /// `check_fn`, so the provider and address here are placeholders.
     fn test_gateway_chain_check(retry_config: RetrySettings) -> GatewayChainCheck {
@@ -646,7 +646,7 @@ mod tests {
         let attempt = AtomicUsize::new(0);
 
         let result = check
-            .check_readiness_internal(&JobId::ZERO, || {
+            .retry_until_ready(&JobId::ZERO, || {
                 let this_attempt = attempt.fetch_add(1, Ordering::SeqCst);
                 async move {
                     if this_attempt == 0 {

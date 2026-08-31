@@ -179,8 +179,8 @@ impl CtAttestationMock {
     /// material, the remaining buckets 404.
     ///
     /// This is what separates the majority threshold from the registry size. At or above the
-    /// threshold, consensus is reached without the silent buckets; below it the round is starved
-    /// and therefore retriable, because agreement that merely lacks numbers is not a split.
+    /// threshold, consensus is reached without the silent buckets; below it the round has merely
+    /// missed and is therefore retriable, because agreement that lacks numbers is not disagreement.
     ///
     /// The silent buckets answer last, by [`MISS_DELAY`], so the votes are counted before the
     /// failures and the verdict is not a race.
