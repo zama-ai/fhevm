@@ -19,7 +19,9 @@ use crate::contracts::{
 };
 use crate::database::dependence_chains::dependence_chains;
 use crate::database::tfhe_event_propagate::{
-    acl_result_handles, tfhe_result_handle, Chain, ChainHash, Database, LogTfhe,
+    acl_result_handles, operand_boundary_mask_from_minted, tfhe_result_handle,
+    Chain, ChainHash, Database, Handle as EventHandle, LogTfhe,
+    TransactionHash,
 };
 use crate::kms_generation::insert_kms_generation_events_tx;
 use crate::kms_generation::metrics::KMS_EVENT_DECODE_FAIL_COUNTER;
@@ -57,6 +59,101 @@ fn block_date_time_utc(timestamp: u64) -> PrimitiveDateTime {
             OffsetDateTime::now_utc()
         });
     PrimitiveDateTime::new(offset.date(), offset.time())
+}
+
+/// Derive the executor's operand-origin bits before any row is written.
+///
+/// The executor's transient minted set is transaction-scoped and journaled by
+/// EVM reverts. Successful event logs are therefore the authoritative
+/// off-chain reconstruction: inspect an operation's inputs first, then add
+/// its result only when the event came from the executor itself. In
+/// particular, bridge fallback synthesis creates a `TrivialEncrypt`-shaped
+/// computation row but did not execute the executor, so it must not mint a
+/// later operand in the same transaction.
+/// Counts fail-closed rejections of operand-origin mask derivation. The
+/// rejected block is retried (and rejected again) on every pass, so a
+/// sustained nonzero rate on this counter means ingestion is STALLED on a
+/// block whose logs the RPC provider serves malformed (missing/duplicate
+/// log metadata) — page on it; the stall does not self-announce otherwise
+/// and never resolves without a healthy refetch or an operator fix.
+static OPERAND_MASK_DERIVATION_REJECTS_COUNTER: std::sync::LazyLock<
+    prometheus::IntCounter,
+> = std::sync::LazyLock::new(|| {
+    prometheus::register_int_counter!(
+        "coprocessor_host_listener_operand_mask_derivation_rejects_counter",
+        "Fail-closed rejections of operand-origin mask derivation (block ingest stalled on malformed provider logs)"
+    )
+    .unwrap()
+});
+
+fn refuse_mask_derivation(reason: &'static str) -> sqlx::Error {
+    OPERAND_MASK_DERIVATION_REJECTS_COUNTER.inc();
+    error!(target: "host_listener", reason, "refusing operand-origin mask derivation; block ingest will stall and retry");
+    sqlx::Error::Protocol(reason.into())
+}
+
+fn populate_operand_boundary_masks(
+    logs: &mut [LogTfhe],
+) -> Result<(), sqlx::Error> {
+    let mask_bearing = |log: &LogTfhe| tfhe_result_handle(&log.event).is_some();
+    for log in logs.iter().filter(|log| mask_bearing(log)) {
+        if log.transaction_hash.is_none() {
+            return Err(refuse_mask_derivation(
+                "refusing computation event without transaction hash for operand-origin derivation",
+            ));
+        }
+        if log.log_index.is_none() {
+            return Err(refuse_mask_derivation(
+                "refusing computation event without log index for operand-origin derivation",
+            ));
+        }
+    }
+
+    // `log_index` is globally ordered within the block. A stable order is
+    // deterministic even if a malformed provider supplied duplicate indexes;
+    // reject those instead of allowing the minted-set reconstruction to
+    // depend on input delivery order.
+    logs.sort_by_key(|log| log.log_index.unwrap_or(u64::MAX));
+    let mut previous_index = None;
+    for log in logs.iter().filter(|log| mask_bearing(log)) {
+        let log_index =
+            log.log_index.expect("validated mask-bearing log index");
+        if previous_index == Some(log_index) {
+            return Err(refuse_mask_derivation(
+                "refusing duplicate computation log index for operand-origin derivation",
+            ));
+        }
+        previous_index = Some(log_index);
+    }
+
+    let mut minted_by_transaction: HashMap<
+        TransactionHash,
+        HashSet<EventHandle>,
+    > = HashMap::new();
+    for log in logs.iter_mut().filter(|log| mask_bearing(log)) {
+        let transaction_hash = log
+            .transaction_hash
+            .expect("validated mask-bearing transaction hash");
+        let minted = minted_by_transaction.entry(transaction_hash).or_default();
+        let mask = operand_boundary_mask_from_minted(&log.event, |handle| {
+            minted.contains(handle)
+        })
+        .map_err(|reason| {
+            OPERAND_MASK_DERIVATION_REJECTS_COUNTER.inc();
+            error!(target: "host_listener", %reason, "refusing operand-origin mask derivation; block ingest will stall and retry");
+            sqlx::Error::Protocol(reason)
+        })?;
+        log.operand_boundary_mask = Some(mask);
+
+        // This happens strictly after the mask above, exactly as the executor
+        // computes the preimage before calling `_markMinted`.
+        if log.is_executor_minted {
+            if let Some(result) = tfhe_result_handle(&log.event) {
+                minted.insert(result);
+            }
+        }
+    }
+    Ok(())
 }
 
 fn propagate_slow_lane_to_dependents(
@@ -293,6 +390,8 @@ pub async fn ingest_block_logs(
                     dependence_chain: Default::default(),
                     tx_depth_size: 0,
                     log_index: log.log_index,
+                    operand_boundary_mask: None,
+                    is_executor_minted: true,
                 };
                 tfhe_event_log.push(log);
                 continue;
@@ -349,16 +448,33 @@ pub async fn ingest_block_logs(
                         block_hash.as_ref(),
                     )
                     .await?;
+                    // Materialization is finality-gated: once the async
+                    // compute pipeline picks up the synthetic computation its
+                    // ciphertext cannot be retracted on a reorg, and whether
+                    // those bytes or a later bridge copy win the copy's
+                    // ON CONFLICT would then depend on per-node fork
+                    // visibility — a fleet consensus hazard. The observation
+                    // above is durable either way; synthesis for a
+                    // not-yet-final block happens when the block finalizes
+                    // (see `synthesize_finalized_fallback_grants`).
+                    if !block_logs.finalized {
+                        info!(
+                            dst_handle = ?dst_handle,
+                            block_number,
+                            "Deferring FallbackGrantedPlaintext synthesis until finality"
+                        );
+                        continue;
+                    }
                     // The contract specifies that if multiple fallback events
                     // are emitted for the same handle, only the first one is
                     // the source of truth: skip duplicates within this block
                     // and grants from a different transaction. The SAME grant
                     // re-observed in another block context (fork sibling or
-                    // canonical re-inclusion after a reorg) is synthesized
-                    // again for its own context, so cleanup of one fork never
-                    // erases the grant from the surviving fork. A handle
-                    // materialized by a bridge association (ciphertext copy
-                    // without a computations row) also stays write-once.
+                    // canonical re-inclusion after a reorg) is re-synthesized
+                    // idempotently (every insert no-ops on its conflict key).
+                    // A handle materialized by a bridge association
+                    // (ciphertext copy without a computations row) also stays
+                    // write-once.
                     let first_in_block =
                         seen_fallback_handles.insert(dst_handle.to_vec());
                     if !first_in_block
@@ -367,7 +483,6 @@ pub async fn ingest_block_logs(
                                 &mut tx,
                                 dst_handle.as_slice(),
                                 &log.transaction_hash,
-                                block_hash.as_ref(),
                             )
                             .await?
                     {
@@ -410,6 +525,11 @@ pub async fn ingest_block_logs(
                         tx_depth_size: 0,
 
                         log_index: log.log_index,
+                        operand_boundary_mask: None,
+                        // This row is synthesized by the listener after a
+                        // bridge event; the executor never called
+                        // `_markMinted` for it.
+                        is_executor_minted: false,
                     });
                     at_least_one_insertion |= db
                         .insert_pbs_computations(
@@ -417,7 +537,6 @@ pub async fn ingest_block_logs(
                             &[dst_handle.to_vec()],
                             log.transaction_hash.map(|h| h.to_vec()),
                             block_number,
-                            block_hash.as_ref(),
                         )
                         .await?;
                 } else {
@@ -464,6 +583,12 @@ pub async fn ingest_block_logs(
             };
     }
 
+    // Must happen before dependence grouping and database insertion. The
+    // boundary mask is consensus-critical execution metadata, so ordering or
+    // provenance gaps are fatal for this block instead of falling back to
+    // database-local inference.
+    populate_operand_boundary_masks(&mut tfhe_event_log)?;
+
     let chains = dependence_chains(
         &mut tfhe_event_log,
         &db.dependence_chain,
@@ -494,13 +619,8 @@ pub async fn ingest_block_logs(
     }
 
     // ACL events are processed only after every tfhe compute event for this
-    // block has been inserted into computations_branch. handle_acl_event
-    // resolves each allowed handle's producer block by matching
-    // computations_branch against the current-branch ancestry (which includes
-    // this block); a handle produced *and* allowed within this same block only
-    // has its producer row once the loop above has run. Resolving ACL events
-    // earlier would miss the same-block producer and fall back to branchless,
-    // spuriously incrementing host_listener_unresolved_producer_block_total.
+    // block has been inserted, so a handle produced *and* allowed within this
+    // same block already has its computation row when the allow is recorded.
     for (event, transaction_hash) in acl_event_log {
         let inserted = db
             .handle_acl_event(
@@ -902,6 +1022,188 @@ async fn notify_coprocessor_upgrade_proposed(
     Ok(())
 }
 
+/// Synthesizes the pending fallback-grant materializations for a block that
+/// just finalized. Ingest records every `FallbackGrantedPlaintext`
+/// observation durably but defers the synthetic TrivialEncrypt for
+/// not-yet-final blocks: once the async compute pipeline materializes a
+/// ciphertext it cannot be retracted on a reorg, and whether the fallback
+/// bytes or a later bridge copy win the copy's ON CONFLICT would then depend
+/// on per-node fork visibility — a fleet consensus hazard. Finalized blocks
+/// are fleet-uniform, so synthesizing here is safe.
+///
+/// Idempotent: the computation insert no-ops on
+/// `(output_handle, transaction_id)`, the PBS insert on its own key, and
+/// `fallback_grant_conflicts` keeps the contract's first-grant-wins
+/// semantics across transactions and against bridge-copied handles.
+///
+/// The synthetic op is dependency-free, so its dependence chain is a
+/// singleton; the cross-block producer cache is deliberately not primed
+/// (consumers in blocks ingested before finality already treated the handle
+/// as an external producer).
+///
+/// Like every finality-gated feature (state-hash stamping, the bridge
+/// src-finality gate, KMS activations), this runs only where finalization
+/// runs: a consumer-mode (broker-fed) ingest must be paired with a
+/// finalizing listener/poller or deferred grants never materialize.
+pub async fn synthesize_finalized_fallback_grants(
+    db: &Database,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    block_number: i64,
+    block_hash: &BlockHash,
+) -> Result<(), sqlx::Error> {
+    use sqlx::Row;
+    let rows = sqlx::query(
+        "SELECT dst_handle, plaintext, transaction_id, created_at
+           FROM fallback_granted_events
+          WHERE dst_chain_id = $1 AND block_hash = $2
+          ORDER BY id",
+    )
+    .bind(db.chain_id.as_i64())
+    .bind(block_hash.as_slice())
+    .fetch_all(&mut **tx)
+    .await?;
+    if rows.is_empty() {
+        return Ok(());
+    }
+    let mut logs: Vec<LogTfhe> = Vec::with_capacity(rows.len());
+    for (row_index, row) in rows.into_iter().enumerate() {
+        let dst_handle: Vec<u8> = row.get("dst_handle");
+        let plaintext: Vec<u8> = row.get("plaintext");
+        let transaction_id: Option<Vec<u8>> = row.get("transaction_id");
+        let created_at: OffsetDateTime = row.get("created_at");
+        let Ok(handle_bytes) = <[u8; 32]>::try_from(dst_handle.as_slice())
+        else {
+            warn!(?dst_handle, "Skipping fallback grant with malformed handle");
+            continue;
+        };
+        // Re-validated at synthesis time so a rule tightened between
+        // observation and finality is enforced.
+        if !is_valid_fallback_dst_handle(&handle_bytes, db.chain_id) {
+            continue;
+        }
+        let transaction_hash = transaction_id
+            .as_deref()
+            .and_then(|t| <[u8; 32]>::try_from(t).ok())
+            .map(alloy::primitives::FixedBytes::from);
+        if db
+            .fallback_grant_conflicts(tx, &handle_bytes, &transaction_hash)
+            .await?
+        {
+            warn!(
+                dst_handle = ?handle_bytes,
+                "Skipping finalized FallbackGrantedPlaintext: dstHandle is already materialized"
+            );
+            continue;
+        }
+        // The computation row needs a transaction id (NOT NULL, part of the
+        // primary key), but `fallback_granted_events.transaction_id` is
+        // nullable and None is a normal value here. A grant observed without
+        // one gets the deterministic zero sentinel: for a synthesized row
+        // the id is bookkeeping — the handle and its bytes are what
+        // consensus sees — and dropping the grant instead would trade a
+        // block wedge for a silent per-handle liveness hole.
+        let transaction_hash =
+            transaction_hash.or(Some(alloy::primitives::FixedBytes::ZERO));
+        // `created_at` (the observation's ingest time) stands in for the
+        // block timestamp, which host_chain_blocks_valid does not record. It
+        // only feeds scheduling hints (schedule_order, chain last_updated_at),
+        // never consensus-compared data.
+        let data = TfheContract::TfheContractEvents::TrivialEncrypt(
+            TfheContract::TrivialEncrypt {
+                caller: Address::ZERO,
+                pt: alloy::primitives::U256::from_be_slice(&plaintext),
+                toType: handle_bytes[30],
+                result: alloy::primitives::FixedBytes::from(handle_bytes),
+            },
+        );
+        // Derived per event from its shape with an EMPTY minted set, NOT
+        // through the block-level derivation:
+        // `fallback_granted_events.transaction_id` is nullable and None is a
+        // normal value on this path (tolerated by the conflict check and the
+        // pbs insert below), while the block-level pass fail-closes on a
+        // missing transaction hash — one NULL row would wedge the
+        // finalization loop forever to compute a value that cannot depend on
+        // the missing input. The empty closure is correct by construction,
+        // not just for today's shape: the executor never ran
+        // (`is_executor_minted: false`), so nothing synthesized can be a
+        // transaction-local operand — the TrivialEncrypt has no encrypted
+        // operands and derives the all-zero mask, and if the synthesized
+        // shape ever gained one, every bit would correctly derive as
+        // boundary.
+        let operand_boundary_mask =
+            operand_boundary_mask_from_minted(&data, |_| false)
+                .map_err(sqlx::Error::Protocol)?;
+        logs.push(LogTfhe {
+            event: alloy::primitives::Log {
+                address: Address::ZERO,
+                data,
+            },
+            transaction_hash,
+            // Forced allowed, exactly like inline synthesis: governance
+            // ensures the handle is in the ACL.
+            is_allowed: true,
+            block_number: block_number as u64,
+            block_hash: *block_hash,
+            block_timestamp: PrimitiveDateTime::new(
+                created_at.date(),
+                created_at.time(),
+            ),
+            tx_depth_size: 0,
+            dependence_chain: Default::default(),
+            // Deterministic (ORDER BY id = observation order); a real index
+            // also keeps ensure_logs_order from warning on every pass.
+            log_index: Some(row_index as u64),
+            operand_boundary_mask: Some(operand_boundary_mask),
+            // Synthesized by the listener from a finalized bridge grant; the
+            // executor never ran, so `_markMinted` never recorded this
+            // handle and it must not become a same-transaction minted
+            // operand for a later real executor operation.
+            is_executor_minted: false,
+        });
+    }
+    if logs.is_empty() {
+        return Ok(());
+    }
+    let block_timestamp = logs[0].block_timestamp;
+    // Dependency-free singletons: connexity/cross-block grouping options
+    // cannot change the outcome, so neither flag is threaded through here.
+    let chains =
+        dependence_chains(&mut logs, &db.dependence_chain, false, false).await;
+    for log in &logs {
+        let dst_handle = tfhe_result_handle(&log.event)
+            .expect("synthetic TrivialEncrypt has a result handle");
+        db.insert_tfhe_event(tx, log).await?;
+        db.insert_pbs_computations(
+            tx,
+            &[dst_handle.to_vec()],
+            log.transaction_hash.map(|h| h.to_vec()),
+            block_number as u64,
+        )
+        .await?;
+        info!(
+            dst_handle = ?dst_handle,
+            block_number,
+            "Synthesized finalized FallbackGrantedPlaintext"
+        );
+    }
+    let summary = BlockSummary {
+        number: block_number as u64,
+        hash: *block_hash,
+        // Only `hash` and `number` are read by update_dependence_chain.
+        parent_hash: BlockHash::ZERO,
+        timestamp: 0,
+    };
+    db.update_dependence_chain(
+        tx,
+        chains,
+        block_timestamp,
+        &summary,
+        &HashSet::new(),
+    )
+    .await?;
+    Ok(())
+}
+
 pub async fn update_finalized_blocks(
     db: &mut Database,
     log_iter: &mut InfiniteLogIter,
@@ -1026,14 +1328,38 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
             .await
         {
             Ok(Some(orphaned_hashes)) => {
+                // Orphaned work/ACL rows are deliberately left in place
+                // (pre-wave1 semantics): handles are fork-scoped by
+                // construction, so orphaned state is unreferenced on the
+                // canonical branch and benign. Bridge/authorization event
+                // rows are keyed by observation block instead and must be
+                // retracted with the branch that carried them.
                 if let Err(err) = db
-                    .cleanup_orphaned_branch_state(&mut tx, &orphaned_hashes)
+                    .retract_orphaned_event_state(&mut tx, &orphaned_hashes)
                     .await
                 {
                     error!(
                         block_number,
                         ?err,
-                        "Failed to clean orphaned branch state during finalization"
+                        "Failed to retract orphaned event state during finalization"
+                    );
+                    return;
+                }
+                // The block just became final: materialize its deferred
+                // fallback grants in the same transaction, so the synthesis
+                // is atomic with the finalization it is gated on.
+                if let Err(err) = synthesize_finalized_fallback_grants(
+                    db,
+                    &mut tx,
+                    block_number,
+                    &block_hash,
+                )
+                .await
+                {
+                    error!(
+                        block_number,
+                        ?err,
+                        "Failed to synthesize finalized fallback grants"
                     );
                     return;
                 }
@@ -1085,7 +1411,10 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
 
 #[cfg(test)]
 mod tests {
-    use alloy::primitives::FixedBytes;
+    use crate::contracts::TfheContract;
+    use crate::contracts::TfheContract::TfheContractEvents;
+    use crate::database::tfhe_event_propagate::ClearConst;
+    use alloy::primitives::{Address, FixedBytes};
 
     use super::*;
 
@@ -1106,6 +1435,150 @@ mod tests {
             before_size: 0,
             new_chain: true,
         }
+    }
+
+    fn mask_log(
+        event: TfheContractEvents,
+        tx: TransactionHash,
+        log_index: Option<u64>,
+        is_executor_minted: bool,
+    ) -> LogTfhe {
+        LogTfhe {
+            event: alloy::primitives::Log {
+                address: Address::ZERO,
+                data: event,
+            },
+            transaction_hash: Some(tx),
+            is_allowed: true,
+            block_number: 1,
+            block_hash: FixedBytes::ZERO,
+            block_timestamp: PrimitiveDateTime::MIN,
+            tx_depth_size: 0,
+            dependence_chain: tx,
+            log_index,
+            operand_boundary_mask: None,
+            is_executor_minted,
+        }
+    }
+
+    fn handle(byte: u8) -> EventHandle {
+        FixedBytes::from([byte; 32])
+    }
+
+    #[test]
+    fn derives_executor_compatible_masks_and_leaves_scalar_bits_clear() {
+        let tx = handle(0x11);
+        let local = handle(0x21);
+        let boundary = handle(0x22);
+        let scalar = handle(0x23);
+        let mut logs = vec![
+            mask_log(
+                TfheContractEvents::TrivialEncrypt(
+                    TfheContract::TrivialEncrypt {
+                        caller: Address::ZERO,
+                        pt: ClearConst::from(7_u8),
+                        toType: 5,
+                        result: local,
+                    },
+                ),
+                tx,
+                Some(1),
+                true,
+            ),
+            // `local` is executor-minted earlier in this transaction, while
+            // `boundary` is not: bit 0 stays clear and bit 1 is set.
+            mask_log(
+                TfheContractEvents::FheAdd(TfheContract::FheAdd {
+                    caller: Address::ZERO,
+                    lhs: local,
+                    rhs: boundary,
+                    scalarByte: FixedBytes::ZERO,
+                    result: handle(0x24),
+                }),
+                tx,
+                Some(2),
+                true,
+            ),
+            // A scalar RHS occupies dependency position 1 but must retain a
+            // zero boundary bit even though its bytes are not minted.
+            mask_log(
+                TfheContractEvents::FheAdd(TfheContract::FheAdd {
+                    caller: Address::ZERO,
+                    lhs: boundary,
+                    rhs: scalar,
+                    scalarByte: FixedBytes::from([1]),
+                    result: handle(0x25),
+                }),
+                tx,
+                Some(3),
+                true,
+            ),
+        ];
+
+        populate_operand_boundary_masks(&mut logs)
+            .expect("ordered logs derive masks");
+        assert_eq!(logs[0].operand_boundary_mask.unwrap()[31], 0);
+        assert_eq!(logs[1].operand_boundary_mask.unwrap()[31], 0b10);
+        assert_eq!(logs[2].operand_boundary_mask.unwrap()[31], 0b01);
+    }
+
+    #[test]
+    fn synthetic_bridge_trivial_encrypt_is_not_treated_as_executor_minted() {
+        let tx = handle(0x31);
+        let synthetic = handle(0x32);
+        let boundary = handle(0x33);
+        let mut logs = vec![
+            mask_log(
+                TfheContractEvents::TrivialEncrypt(
+                    TfheContract::TrivialEncrypt {
+                        caller: Address::ZERO,
+                        pt: ClearConst::from(7_u8),
+                        toType: 5,
+                        result: synthetic,
+                    },
+                ),
+                tx,
+                Some(1),
+                false,
+            ),
+            mask_log(
+                TfheContractEvents::FheAdd(TfheContract::FheAdd {
+                    caller: Address::ZERO,
+                    lhs: synthetic,
+                    rhs: boundary,
+                    scalarByte: FixedBytes::ZERO,
+                    result: handle(0x34),
+                }),
+                tx,
+                Some(2),
+                true,
+            ),
+        ];
+
+        populate_operand_boundary_masks(&mut logs)
+            .expect("ordered logs derive masks");
+        assert_eq!(
+            logs[1].operand_boundary_mask.unwrap()[31],
+            0b11,
+            "fallback synthesis was not marked in executor transient storage"
+        );
+    }
+
+    #[test]
+    fn rejects_missing_mask_provenance() {
+        let mut logs = vec![mask_log(
+            TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
+                caller: Address::ZERO,
+                pt: ClearConst::from(7_u8),
+                toType: 5,
+                result: handle(0x41),
+            }),
+            handle(0x40),
+            None,
+            true,
+        )];
+
+        assert!(populate_operand_boundary_masks(&mut logs).is_err());
     }
 
     #[test]

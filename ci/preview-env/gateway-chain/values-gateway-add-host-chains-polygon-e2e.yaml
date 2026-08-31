@@ -1,0 +1,51 @@
+# charts/contracts overlay that registers the SECOND (Polygon) host chain into
+# the shared GatewayConfig, only when deploy_polygon=true. Companion to
+# values-gateway-add-host-chains-e2e.yaml (which registers the ETH chain).
+#
+# task:addHostChainsToGatewayConfig calls gatewayConfig.addHostChain() per entry
+# (additive - see gateway-contracts/tasks/addHostChains.ts), so this second call
+# APPENDS chain 80002 without disturbing the ETH registration. Runs after both
+# the shared gateway-contracts AND host-contracts-polygon have deployed.
+#
+# Deployed as (see preview-env-deploy.yml, gated on deploy_polygon):
+#   helm upgrade --install gateway-add-host-chains-polygon <contracts chart> -n <ns> -f this-file
+#
+# Reuses gateway-contracts' PVC (create: false) so --use-internal-proxy-address
+# true reads GATEWAY_CONFIG_ADDRESS from addresses/.env.gateway written there.
+scDeploy:
+  enabled: true
+  image:
+    name: hub.zama.org/ghcr/zama-ai/fhevm/gateway-contracts
+    tag: latest
+  configmap:
+    name: gw-sc-addresses
+  env:
+    - {name: HARDHAT_NETWORK, value: "staging"}
+    - {name: MNEMONIC, value: "test test test test test test test test test test test junk"}
+    - {name: RPC_URL, value: "http://anvil-gateway-anvil-node:8546"}
+    - {name: DEPLOYER_PRIVATE_KEY, value: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"}
+    - {name: NUM_HOST_CHAINS, value: "1"}
+    - {name: HOST_CHAIN_CHAIN_ID_0, value: "80002"}
+    - {name: HOST_CHAIN_NAME_0, value: "fhevm-ci polygon host chain"}
+    - {name: HOST_CHAIN_WEBSITE_0, value: "https://example.invalid"}
+    - name: HOST_CHAIN_FHEVM_EXECUTOR_ADDRESS_0
+      valueFrom:
+        configMapKeyRef:
+          name: polygon-sc-addresses
+          key: fhevm_executor.address
+    - name: HOST_CHAIN_ACL_ADDRESS_0
+      valueFrom:
+        configMapKeyRef:
+          name: polygon-sc-addresses
+          key: acl.address
+  deployCommands:
+    - npx hardhat task:addHostChainsToGatewayConfig --use-internal-proxy-address true
+  verifyContracts: false
+persistence:
+  enabled: true
+  mountPath: /app/addresses
+  volumeClaim:
+    name: gateway-sc-deploy-workdir
+    create: false
+scUpgrade:
+  enabled: false

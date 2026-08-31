@@ -6,6 +6,9 @@
 # commit the deployed image resolves from (the PR's base commit, ~ current
 # main - there is no version pin anymore). A missing required field crashes
 # the pod at startup ('missing configuration field "x.y"'); fix it here.
+# e.g. keyurl.* is a KMSGeneration-contract poller (KeyUrlConfig), not the old
+# static fhe_public_key/crs storage URLs. A manual workflow_dispatch pinning an
+# OLDER relayer image may need the old schema.
 #
 # Settings::new() layers a `config/local.yaml` file (relative to CWD, i.e.
 # this chart's configmapFiles mount below) with APP_-prefixed env var
@@ -112,7 +115,10 @@ configmapFiles:
       # on our anvil, so poll fast (prod example uses 12000).
       keyurl:
         poll_interval_ms: 2000
-      # Gas cap for the ERC-1271 signature check (local.yaml.example default).
+      # Required top-level block on HEAD relayer (settings.rs:
+      # UserDecryptSignatureCheckConfig): gas cap for the ERC-1271
+      # isValidSignature static call. Its absence aborts startup with
+      # 'missing configuration field "user_decrypt_signature_check"'.
       user_decrypt_signature_check:
         erc1271_gas_limit: 100000
       log:
@@ -204,9 +210,17 @@ env:
     valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: input_verification.address}}
 
   # --- keyurl (KMSGeneration poller) ---
-  # The relayer polls KMSGeneration on-chain for the active key/CRS ids and
-  # storage URLs itself, so only the contract address is wired here. NB:
-  # charts/contracts appends ".address" to every ConfigMap key, hence the suffix.
+  # `keyurl.source` selects where /v2/keyurl comes from (settings.rs: KeyUrlConfig)
+  # and is required: its absence aborts startup with
+  # 'missing configuration field "keyurl.source"'.
+  # `chain` polls the active key/CRS/KMS context straight from the KMSGeneration
+  # contract on the host chain, resolving them itself once the real DKG ceremony
+  # reaches consensus, so only the contract address is wired here (poll_interval_ms
+  # is in local.yaml above). The alternative, `config`, serves static
+  # fhe_public_key/crs values and is only for protocol deployments that predate
+  # ProtocolConfig.getCurrentKmsContextAndEpoch.
+  # NB: charts/contracts appends ".address" to every ConfigMap key, hence the suffix.
+  - {name: APP_KEYURL__SOURCE, value: "chain"}
   - name: APP_KEYURL__KMS_GENERATION_ADDRESS
     valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_generation.address}}
 

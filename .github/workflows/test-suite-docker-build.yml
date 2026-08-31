@@ -67,6 +67,7 @@ jobs:
           - '.github/workflows/test-suite-docker-build.yml'
           - 'test-suite/e2e/**'
           - 'library-solidity/**'
+          - 'sdk/cli-js-sdk/**'
 
   build:
     needs: [is-latest-commit, check-changes]

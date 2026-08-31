@@ -1,10 +1,8 @@
-use std::net::TcpListener;
-
 use anyhow::Context;
 use ethereum_rpc_mock::{
     fhevm::FhevmMockWrapper, MockConfig, MockServer, MockServerHandle, Response, UsageLimit,
 };
-use fhevm_relayer::config::settings::{HostChainConfig, Settings, StorageConfig};
+use fhevm_relayer::config::settings::{HostChainConfig, KeyUrlConfig, Settings, StorageConfig};
 use fhevm_relayer::run_fhevm_relayer;
 use fhevm_relayer::store::sql::client::PgClient;
 use fhevm_relayer::tracing::init_tracing_once;
@@ -48,15 +46,14 @@ pub struct HostMock {
 }
 
 impl HostMock {
-    /// Start a host-chain mock on `port` and register the responses every test relies on:
-    /// ACL allow-all for the configured host chains, plus the `KMSGeneration` / `ProtocolConfig`
-    /// getters the `/v2/keyurl` poller reads. `settings` is only read for contract addresses, so
-    /// it can be an unwired copy of the test config.
+    /// Start a host-chain mock on an OS-assigned port, reported as `self.port`, and register
+    /// the responses every test relies on: ACL allow-all for the configured host chains, plus
+    /// the `KMSGeneration` / `ProtocolConfig` getters the `/v2/keyurl` poller reads. `settings`
+    /// is only read for contract addresses, so it can be an unwired copy of the test config.
     #[allow(dead_code)]
-    pub async fn start(port: u16, settings: &Settings) -> anyhow::Result<Self> {
-        tracing::debug!("Creating Host chain MockServer on port {}", port);
+    pub async fn start(settings: &Settings) -> anyhow::Result<Self> {
         let config = MockConfig {
-            port,
+            port: 0,
             ..MockConfig::new()
         };
         let server = MockServer::new(config);
@@ -65,20 +62,32 @@ impl HostMock {
             .start()
             .await
             .context("Failed to start host mock server")?;
+        let port = handle.port();
+        tracing::debug!("Started Host chain MockServer on port {}", port);
 
         register_default_host_acl_allow_all(&server, &settings.host_chains);
 
-        // The relayer gates startup on the `/v2/keyurl` poller's first successful poll, so these
-        // have to answer before it boots.
-        let kms_generation_addr = Address::from_str(&settings.keyurl.kms_generation_address)
-            .expect("Invalid kms_generation_address in test config");
         let protocol_config_addr = Address::from_str(&settings.protocol_config.address)
             .expect("Invalid protocol_config address in test config");
-        register_default_keyurl_poller_responses(
-            &server,
-            kms_generation_addr,
-            protocol_config_addr,
-        );
+        match &settings.keyurl {
+            // The relayer gates startup on the `/v2/keyurl` poller's first successful poll, so
+            // these have to answer before it boots.
+            KeyUrlConfig::Chain {
+                kms_generation_address,
+                ..
+            } => {
+                let kms_generation_addr = Address::from_str(kms_generation_address)
+                    .expect("Invalid kms_generation_address in test config");
+                register_default_keyurl_poller_responses(
+                    &server,
+                    kms_generation_addr,
+                    protocol_config_addr,
+                );
+            }
+            KeyUrlConfig::Config { .. } => {
+                register_missing_kms_context_getters(&server, protocol_config_addr);
+            }
+        }
 
         Ok(HostMock {
             port,
@@ -99,13 +108,13 @@ pub struct GatewayMock {
 }
 
 impl GatewayMock {
-    /// Start a gateway-chain mock on `port`. The FHEVM patterns are registered before the server
-    /// starts listening, so the relayer cannot observe a half-configured gateway.
+    /// Start a gateway-chain mock on an OS-assigned port, reported as `self.port`. The FHEVM
+    /// patterns are registered before the server starts listening, so the relayer cannot
+    /// observe a half-configured gateway.
     #[allow(dead_code)]
-    pub async fn start(port: u16) -> anyhow::Result<Self> {
-        tracing::debug!("Creating Gateway chain MockServer on port {}", port);
+    pub async fn start() -> anyhow::Result<Self> {
         let config = MockConfig {
-            port,
+            port: 0,
             ..MockConfig::new()
         };
         let server = MockServer::new(config);
@@ -121,6 +130,8 @@ impl GatewayMock {
             .start()
             .await
             .context("Failed to start gateway mock server")?;
+        let port = handle.port();
+        tracing::debug!("Started Gateway chain MockServer on port {}", port);
 
         Ok(GatewayMock {
             port,
@@ -295,16 +306,6 @@ impl TestSetup {
             test_schema.schema_name()
         );
 
-        // Get free ports for mock servers (they don't support :0 yet)
-        let host_port = get_free_port()?;
-        let gateway_port = get_free_port()?;
-
-        tracing::info!(
-            "Setting up isolated test - mock servers on ports {} (host), {} (gateway)",
-            host_port,
-            gateway_port
-        );
-
         // Create settings from config file (default or custom)
         let config_path_str = config_path.map(|p| p.to_string_lossy().to_string());
         let mut settings =
@@ -313,8 +314,15 @@ impl TestSetup {
         // Initialize tracing once with settings
         init_tracing_once(&settings.log);
 
-        let host = HostMock::start(host_port, &settings).await?;
-        let gateway = GatewayMock::start(gateway_port).await?;
+        let host = HostMock::start(&settings).await?;
+        let gateway = GatewayMock::start().await?;
+        let (host_port, gateway_port) = (host.port, gateway.port);
+
+        tracing::info!(
+            "Mock servers listening on ports {} (host), {} (gateway)",
+            host_port,
+            gateway_port
+        );
 
         wire_settings_to_mocks(
             &mut settings,
@@ -616,18 +624,6 @@ pub fn create_timeout_test_config(
     std::fs::write(&temp_config_path, modified_content).context("Failed to write temp config")?;
 
     Ok(temp_config_path)
-}
-
-/// Get a free port by binding to port 0
-/// This is needed for mock servers that don't support dynamic port allocation yet
-#[allow(dead_code)]
-pub fn get_free_port() -> anyhow::Result<u16> {
-    let listener = TcpListener::bind("127.0.0.1:0").context("Failed to bind to free port")?;
-    let port = listener
-        .local_addr()
-        .context("Failed to get local address")?
-        .port();
-    Ok(port)
 }
 
 /// Generate a random Ethereum address for testing
@@ -1157,6 +1153,29 @@ fn register_default_keyurl_poller_responses(
         address: protocol_config_address,
         data: event.encode_log_data(),
     });
+}
+
+/// Wire the `ProtocolConfig` KMS-context getters to revert with a bare `0x`, reproducing a
+/// protocol v0.13 deployment that does not implement them. Registered rather than left
+/// unregistered so a relayer that wrongly polled fails as it does against the real deployment.
+fn register_missing_kms_context_getters(
+    host_server: &MockServer,
+    protocol_config_address: Address,
+) {
+    for selector in [
+        IProtocolConfig::getCurrentKmsContextAndEpochCall::SELECTOR,
+        IProtocolConfig::getKmsContextAnchorCall::SELECTOR,
+    ] {
+        host_server.on_call(
+            move |params| {
+                params.to == protocol_config_address
+                    && params.input.len() >= 4
+                    && params.input[0..4] == selector
+            },
+            Response::revert("0x".to_string()),
+            UsageLimit::Unlimited,
+        );
+    }
 }
 
 /// Register an ACL multicall pattern that returns an RPC error.

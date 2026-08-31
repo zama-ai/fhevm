@@ -72,10 +72,10 @@ async fn poller_catches_up_to_safe_tip(
         .bind(chain_id.as_i64())
         .execute(&pool)
         .await?;
-    sqlx::query("DELETE FROM computations_branch")
+    sqlx::query("DELETE FROM computations")
         .execute(&pool)
         .await?;
-    sqlx::query("DELETE FROM allowed_handles_branch")
+    sqlx::query("DELETE FROM allowed_handles")
         .execute(&pool)
         .await?;
 
@@ -213,16 +213,14 @@ async fn poller_catches_up_to_safe_tip(
     poller_handle.abort();
     let _ = poller_handle.await;
 
-    let computations_count = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM computations_branch",
-    )
-    .fetch_one(&pool)
-    .await?;
-    let allowed_count = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM allowed_handles_branch",
-    )
-    .fetch_one(&pool)
-    .await?;
+    let computations_count =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM computations")
+            .fetch_one(&pool)
+            .await?;
+    let allowed_count =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM allowed_handles")
+            .fetch_one(&pool)
+            .await?;
     let last_valid_block = sqlx::query_scalar::<_, Option<i64>>(
         "SELECT MAX(block_number) FROM host_chain_blocks_valid \
          WHERE chain_id = $1",
