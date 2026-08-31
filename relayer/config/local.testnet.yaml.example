@@ -133,6 +133,8 @@ gateway:
       request_timeout_ms: 240000
       # Coprocessor registry snapshot refresh interval.
       registry_refresh_ms: 60000
+      # Handles probed concurrently within one attempt; also the per-bucket HEAD ceiling.
+      max_concurrent_handles: 8
       # GatewayConfig: Coprocessor registry (signers, S3 buckets, majority
       # threshold) for this check.
       gateway_config_address: "0x94153006067B89399e059284f5a7Fe016940E332"

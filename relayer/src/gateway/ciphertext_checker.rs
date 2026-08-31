@@ -35,26 +35,6 @@ use tracing::{error, info, warn};
 
 use crate::readiness::ReadinessStep;
 
-/// Handles probed concurrently within one attempt, under the off-chain Coprocessor attestation
-/// check (`source: coprocessor_attestations`).
-///
-/// Each handle already fans out one `HEAD` per Coprocessor bucket, so requests in flight peak at
-/// this many times the registry size. Bounded rather than unbounded so a request naming a large
-/// handle set cannot spike that product, and fixed rather than configurable to keep the
-/// `gw_ciphertext_check` subtree to the knobs an operator actually tunes.
-const MAX_CONCURRENT_HANDLES: usize = 8;
-
-/// Per-bucket ceiling on concurrent `HEAD` probes handed to [`BoundedClient`], under the
-/// off-chain Coprocessor attestation check.
-///
-/// The client requires this and offers no default, so the number is chosen here. For the relayer
-/// it is a backstop rather than a working limit: [`MAX_CONCURRENT_HANDLES`] already caps the outer
-/// fan-out at 8, and one handle issues at most one `HEAD` per bucket, so in-flight probes to any
-/// one bucket never approach this. It is fixed rather than configurable for the same reason
-/// [`MAX_CONCURRENT_HANDLES`] is — an operator has nothing to tune here. The value matches
-/// kms-connector's own per-bucket `HEAD` default, so the two consumers of this crate agree.
-const MAX_CONCURRENT_HEADS_PER_BUCKET: usize = 64;
-
 type GatewayDecryption = DecryptionInstance<Arc<Provider>, AnyNetwork>;
 
 /// Checks whether ciphertext material is ready for decryption. One variant per
@@ -81,6 +61,7 @@ impl CiphertextChecker {
                 head_timeout_ms,
                 request_timeout_ms,
                 registry_refresh_ms,
+                max_concurrent_handles,
                 gateway_config_address,
             } => Ok(Self::CoprocessorAttestations(
                 CoprocessorAttestationCheck::new(
@@ -89,6 +70,7 @@ impl CiphertextChecker {
                     *head_timeout_ms,
                     *request_timeout_ms,
                     *registry_refresh_ms,
+                    *max_concurrent_handles,
                     gateway_config_address,
                     cancel_token,
                 )
@@ -338,6 +320,7 @@ pub struct CoprocessorAttestationCheck {
     registry: CoprocessorRegistry<Arc<Provider>, AnyNetwork>,
     http_client: BoundedClient,
     request_timeout: Duration,
+    max_concurrent_handles: NonZeroUsize,
 }
 
 impl CoprocessorAttestationCheck {
@@ -353,6 +336,7 @@ impl CoprocessorAttestationCheck {
         head_timeout_ms: u64,
         request_timeout_ms: u64,
         registry_refresh_ms: u64,
+        max_concurrent_handles: NonZeroUsize,
         gateway_config_address: &str,
         cancel_token: CancellationToken,
     ) -> Result<Self, EventProcessingError> {
@@ -380,14 +364,17 @@ impl CoprocessorAttestationCheck {
         Ok(Self {
             retry_config: retry,
             registry,
+            // A handle issues at most one `HEAD` per bucket, so with `max_concurrent_handles`
+            // handles in flight, per-bucket concurrency is that same number — whatever the
+            // registry size. The outer bound is therefore the per-bucket ceiling too.
             http_client: BoundedClient::for_attestations_only(
                 Client::new(),
-                NonZeroUsize::new(MAX_CONCURRENT_HEADS_PER_BUCKET)
-                    .expect("MAX_CONCURRENT_HEADS_PER_BUCKET is non-zero"),
+                max_concurrent_handles,
                 Duration::from_millis(head_timeout_ms),
                 COPROCESSOR_CONTEXT_ID_V1,
             ),
             request_timeout: Duration::from_millis(request_timeout_ms),
+            max_concurrent_handles,
         })
     }
 
@@ -584,7 +571,7 @@ impl CoprocessorAttestationCheck {
                     (index, outcome)
                 }
             })
-            .buffer_unordered(MAX_CONCURRENT_HANDLES);
+            .buffer_unordered(self.max_concurrent_handles.get());
 
         let mut first_missed: Option<(usize, ConsensusCheckError)> = None;
 

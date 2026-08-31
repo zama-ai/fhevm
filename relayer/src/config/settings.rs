@@ -7,6 +7,7 @@ use serde::{de::Error, Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fmt;
+use std::num::NonZeroUsize;
 use std::time::Duration;
 
 // Listener pool configuration limits
@@ -317,6 +318,9 @@ pub enum GwCiphertextCheckConfig {
         request_timeout_ms: u64,
         /// Coprocessor registry snapshot refresh interval, in milliseconds.
         registry_refresh_ms: u64,
+        /// Handles probed concurrently within one attempt. Each handle fans out one `HEAD` per
+        /// Coprocessor bucket, so this also bounds per-bucket concurrency.
+        max_concurrent_handles: NonZeroUsize,
         /// `GatewayConfig` contract, source of the Coprocessor registry (signers, S3 buckets and
         /// majority threshold) used by this check. Only this check consumes it, so it lives here
         /// rather than on the shared `contracts` block.
@@ -1428,6 +1432,13 @@ mod tests {
     }
 
     #[test]
+    fn test_gw_ciphertext_check_max_concurrent_handles_is_required() {
+        assert_field_is_required(
+            "gateway.readiness_checker.gw_ciphertext_check.max_concurrent_handles",
+        );
+    }
+
+    #[test]
     fn test_gw_ciphertext_check_gateway_config_address_is_required() {
         // Without the GatewayConfig address there is no Coprocessor registry at all, so startup
         // must fail rather than silently degrade the readiness gate.
@@ -1474,6 +1485,7 @@ mod tests {
             head_timeout_ms,
             request_timeout_ms,
             registry_refresh_ms,
+            max_concurrent_handles: NonZeroUsize::new(8).unwrap(),
             gateway_config_address: "0x576Ea67208b146E63C5255d0f90104E25e3e04c7".to_string(),
         }
     }
@@ -1567,10 +1579,10 @@ mod tests {
         );
     }
 
-    // `head_timeout_ms`, `request_timeout_ms`, `registry_refresh_ms`, and
-    // `gateway_config_address` are covered by `test_gw_ciphertext_check_head_timeout_is_required`
-    // and friends above, run against the example's `source: coprocessor_attestations` block;
-    // `retry` is the remaining one of the five.
+    // `head_timeout_ms`, `request_timeout_ms`, `registry_refresh_ms`, `max_concurrent_handles`,
+    // and `gateway_config_address` are covered by
+    // `test_gw_ciphertext_check_head_timeout_is_required` and friends above, run against the
+    // example's `source: coprocessor_attestations` block; `retry` is the remaining one of the six.
     #[test]
     fn test_gw_ciphertext_check_coprocessor_attestations_requires_retry() {
         assert_field_is_required("gateway.readiness_checker.gw_ciphertext_check.retry");
@@ -2287,19 +2299,21 @@ mod tests {
         assert_eq!(settings.gateway.contracts.user_decrypt_shares_threshold, 5);
 
         // gw_ciphertext_check: YAML has source: coprocessor_attestations, 5000/240000/60000; env
-        // overrides to 7000/300000/90000 and a different gateway_config_address (source itself
-        // comes from the YAML base, untouched by env).
+        // overrides to 7000/300000/90000 and a different gateway_config_address (source and
+        // max_concurrent_handles come from the YAML base, untouched by env).
         match &settings.gateway.readiness_checker.gw_ciphertext_check {
             GwCiphertextCheckConfig::CoprocessorAttestations {
                 head_timeout_ms,
                 request_timeout_ms,
                 registry_refresh_ms,
+                max_concurrent_handles,
                 gateway_config_address,
                 ..
             } => {
                 assert_eq!(*head_timeout_ms, 7000);
                 assert_eq!(*request_timeout_ms, 300000);
                 assert_eq!(*registry_refresh_ms, 90000);
+                assert_eq!(max_concurrent_handles.get(), 8);
                 assert_eq!(
                     gateway_config_address,
                     "0x1C5d0A5B44e0B3D1A3d1c05A0f5aC2C2b64f1d3C"
