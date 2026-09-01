@@ -22,7 +22,7 @@ use fhevm_host_bindings::ikms_generation::IKMSGeneration::IKMSGenerationInstance
 use tokio::sync::watch;
 use tracing::{error, info, warn};
 
-use crate::config::settings::{KeyUrlConfig, ProtocolConfigSettings};
+use crate::config::settings::ProtocolConfigSettings;
 use crate::host::error_redact::{redact_alloy_error, redact_error};
 use crate::host::provider::{build_host_provider, Provider};
 use crate::http::endpoints::v2::types::keyurl::{KeyData, KeyUrlResponseJson};
@@ -42,6 +42,12 @@ struct KmsStorageNode {
     storage_prefix: String,
 }
 
+/// The canonical 32-byte big-endian hex encoding of an on-chain key/CRS id, lowercase, no `0x`
+/// prefix. Used both as the URL path segment and, `0x`-prefixed, as the served `dataId`.
+fn id_hex(id: U256) -> String {
+    hex::encode(id.to_be_bytes::<32>())
+}
+
 /// Build the full object URL the KMS Core writes to:
 /// `{storage_url}/{storage_prefix}/{segment}/{id_hex}` (`segment` = `PublicKey`|`CRS`, `id_hex` =
 /// 32-byte big-endian id, lowercase, no `0x`). The getters return only `storage_url`.
@@ -50,13 +56,12 @@ struct KmsStorageNode {
 /// equivalent; the served response carries a single URL (the SDK requires exactly one), built
 /// from the first context node.
 fn build_object_url(node: &KmsStorageNode, segment: &str, id: U256) -> String {
-    let id_hex = hex::encode(id.to_be_bytes::<32>());
     format!(
         "{}/{}/{}/{}",
         node.storage_url.trim_end_matches('/'),
         node.storage_prefix,
         segment,
-        id_hex
+        id_hex(id)
     )
 }
 
@@ -128,15 +133,16 @@ pub struct KeyUrlPoller {
 }
 
 impl KeyUrlPoller {
-    /// Build the poller. Reads the KMSGeneration contract addressed by `keyurl` and the
+    /// Build the poller. Reads the KMSGeneration contract at `kms_generation_address` and the
     /// ProtocolConfig contract from `protocol_config`, both over the same host-chain provider.
     pub fn new(
         protocol_config: &ProtocolConfigSettings,
-        keyurl: &KeyUrlConfig,
+        kms_generation_address: &str,
+        poll_interval_ms: u64,
     ) -> anyhow::Result<Self> {
         let provider = build_host_provider(&protocol_config.ethereum_http_rpc_url)?;
 
-        let kms_generation_address = Address::from_str(&keyurl.kms_generation_address)
+        let kms_generation_address = Address::from_str(kms_generation_address)
             .map_err(|e| anyhow::anyhow!("Invalid kms_generation_address: {e}"))?;
         let protocol_config_address = Address::from_str(&protocol_config.address)
             .map_err(|e| anyhow::anyhow!("Invalid protocol_config address: {e}"))?;
@@ -144,7 +150,7 @@ impl KeyUrlPoller {
         Ok(Self {
             kms_generation: IKMSGeneration::new(kms_generation_address, provider.clone()),
             protocol_config: IProtocolConfig::new(protocol_config_address, provider),
-            poll_interval: Duration::from_millis(keyurl.poll_interval_ms),
+            poll_interval: Duration::from_millis(poll_interval_ms),
             retry: protocol_config.retry.clone(),
             last_seen: None,
         })
@@ -211,11 +217,11 @@ impl KeyUrlPoller {
 
         Ok(KeyUrlResponseJson::new(
             KeyData {
-                data_id: ids.key_id.to_string(),
+                data_id: format!("0x{}", id_hex(ids.key_id)),
                 urls: vec![build_object_url(node, "PublicKey", ids.key_id)],
             },
             KeyData {
-                data_id: ids.crs_id.to_string(),
+                data_id: format!("0x{}", id_hex(ids.crs_id)),
                 urls: vec![build_object_url(node, "CRS", ids.crs_id)],
             },
         ))

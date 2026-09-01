@@ -20,6 +20,7 @@ import {
   toClearValueType,
   fheTypeNameFromTypeName,
   typeNameFromFheTypeName,
+  resolveRawValueTypeName,
 } from './FheType.js';
 import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
 
@@ -420,6 +421,31 @@ describe('FheType', () => {
       expect(typeNameFromFheTypeName('euint128')).toBe('uint128');
       expect(typeNameFromFheTypeName('euint256')).toBe('uint256');
       expect(typeNameFromFheTypeName('eaddress')).toBe('address');
+    });
+  });
+
+  //////////////////////////////////////////////////////////////////////////////
+  // resolveRawValueTypeName
+  //////////////////////////////////////////////////////////////////////////////
+
+  describe('resolveRawValueTypeName', () => {
+    it('resolves FHE type aliases to their clear ValueTypeName', () => {
+      expect(resolveRawValueTypeName('ebool')).toBe('bool');
+      expect(resolveRawValueTypeName('euint8')).toBe('uint8');
+      expect(resolveRawValueTypeName('euint16')).toBe('uint16');
+      expect(resolveRawValueTypeName('euint32')).toBe('uint32');
+      expect(resolveRawValueTypeName('euint64')).toBe('uint64');
+      expect(resolveRawValueTypeName('euint128')).toBe('uint128');
+      expect(resolveRawValueTypeName('euint256')).toBe('uint256');
+      expect(resolveRawValueTypeName('eaddress')).toBe('address');
+    });
+
+    it('returns non-FHE type names unchanged', () => {
+      expect(resolveRawValueTypeName('bool')).toBe('bool');
+      expect(resolveRawValueTypeName('uint8')).toBe('uint8');
+      expect(resolveRawValueTypeName('address')).toBe('address');
+      expect(resolveRawValueTypeName('uint160')).toBe('uint160');
+      expect(resolveRawValueTypeName('not-a-type')).toBe('not-a-type');
     });
   });
 

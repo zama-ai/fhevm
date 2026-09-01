@@ -1,4 +1,3 @@
-pub mod branch;
 pub mod bridge;
 pub mod chain_id;
 pub mod crs;
@@ -13,11 +12,13 @@ pub mod host_chains;
 pub mod keys;
 pub mod metrics_server;
 pub mod pg_pool;
+pub mod synthetic_input;
 pub mod telemetry;
 pub mod tfhe_ops;
 pub mod types;
 pub mod utils;
 pub mod versioning;
+pub mod zk_aux;
 
 pub mod common {
     tonic::include_proto!("fhevm.common");

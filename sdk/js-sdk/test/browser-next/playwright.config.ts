@@ -38,7 +38,7 @@ export default defineConfig({
   use: {
     baseURL: 'http://127.0.0.1:3334',
   },
-  // dod.sh selects which project(s) to run via --project (default: chromium only).
+  // run-tests.sh selects which project(s) to run via --project (default: chromium only).
   // firefox/webkit require: npx playwright install firefox webkit
   projects: [
     { name: 'chromium', use: { browserName: 'chromium' } },

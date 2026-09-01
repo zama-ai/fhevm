@@ -286,23 +286,25 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     // -----------------------------------------------------------------------------------------
 
     /// @inheritdoc IProtocolConfig
-    /// @dev Context-switch: governance opens a new signer set + epoch, both Pending.
-    /// @dev The DAO must not open a switch while another is in flight: at most one context and one
-    ///      epoch may be non-active (Pending/Created) at a time. Settle the in-flight one first by
-    ///      completing it (confirmKmsContextCreation then confirmEpochActivation).
+    /// @dev Context-switch: governance opens a new signer set as Pending; its first epoch is created
+    ///      once creation is confirmed (see confirmKmsContextCreation).
+    /// @dev Reverts while another lifecycle operation is in flight. Settle the in-flight one first
+    ///      by completing it (confirmKmsContextCreation then confirmEpochActivation) or by
+    ///      destroying it (destroyKmsContext).
     function defineNewKmsContextAndEpoch(
         KmsNodeParams[] calldata kmsNodeParams,
         KmsThresholds calldata thresholds,
         string calldata softwareVersion,
         PcrValues[] calldata pcrValues
     ) external virtual onlyACLOwner {
+        _checkNoKmsLifecycleOperationInFlight();
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
 
-        // Store the new signer set and open its first epoch as Pending.
+        // Store the new signer set as Pending. Its first epoch is created once the creation quorum
+        // is reached, so the (context, epoch) pair announced to connectors is correct by construction.
         uint256 previousContextId = $.latestActiveKmsContextId;
         uint256 contextId = _storeNextKmsContext(kmsNodeParams, thresholds);
         $.contextState[contextId] = ContextState.Pending;
-        _createPendingEpoch(contextId);
 
         // Cache the number of previous-committee confirmations confirmKmsContextCreation requires.
         // The previous committee has `n` nodes, of which at most `t` (its MPC threshold) are assumed
@@ -327,10 +329,10 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
 
     /// @inheritdoc IProtocolConfig
     /// @dev Same-set resharing: governance opens a new Pending epoch under the active context, no signer change.
-    /// @dev The DAO must not open a switch while another is in flight: at most one context and one
-    ///      epoch may be non-active (Pending/Created) at a time. Settle the in-flight one first by
-    ///      completing it (confirmEpochActivation).
+    /// @dev Reverts while another lifecycle operation is in flight. Settle the in-flight one first
+    ///      by completing it (confirmEpochActivation).
     function defineNewEpochForCurrentKmsContext() external virtual onlyACLOwner {
+        _checkNoKmsLifecycleOperationInFlight();
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         uint256 latestActiveKmsContextId = $.latestActiveKmsContextId;
         uint256 epochId = _createPendingEpoch(latestActiveKmsContextId);
@@ -380,9 +382,8 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         // All new nodes + (n - t) previous nodes confirm to tell Connectors the epoch transition may start.
         if (_hasContextCreationQuorum(kmsContextId)) {
             $.contextState[kmsContextId] = ContextState.Created;
-            // The context-switch created this context and its epoch as a paired (Pending, Pending). The DAO
-            // settles each switch before opening another, so the latest-issued epoch is this context's Pending epoch.
-            uint256 epochId = $.epochCounter;
+            // Create the confirmed context's first epoch here, pairing it with the context by construction.
+            uint256 epochId = _createPendingEpoch(kmsContextId);
             // Connectors must read previous key/CRS material from the last block before this epoch request.
             emit NewKmsEpoch(kmsContextId, epochId, previousContextId, $.latestActiveEpochId, block.number - 1);
         }
@@ -414,6 +415,12 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
 
         if (!_isLiveKmsContext(contextId)) {
             revert InvalidKmsContext(contextId);
+        }
+
+        // Activation requires one key and one CRS attestation from the signer. An empty array skips its loop
+        // below, so the vote would be recorded without checking that attestation.
+        if (keys.length == 0 || crsList.length == 0) {
+            revert EmptyEpochActivationAttestation(epochId);
         }
 
         address signer = $.kmsNodeByTxSenderForContext[contextId][msg.sender].signerAddress;
@@ -451,8 +458,9 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
 
         // Confirm epoch activation: add this signer's vote under that hash, activate the epoch once all signers agree.
         // Record one confirmation per signer, counted by data hash so quorum requires all signers on the same result.
-        // Unanimity is required by design: a single divergent dataHash splits the vote so no hash reaches quorum,
-        // leaving the epoch Pending until the signers converge on a single result.
+        // Unanimity is required by design: a single divergent dataHash splits the vote so no hash reaches quorum.
+        // Confirmations are one-shot per signer, so a divergent vote can never converge — the epoch stays
+        // Pending until governance settles it with destroyKmsEpoch() and re-triggers the rotation.
         if ($.epochActivationConfirmedBySigner[epochId][signer]) {
             revert EpochActivationAlreadyConfirmed(signer, epochId);
         }
@@ -490,9 +498,10 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         // Mark the context destroyed, clear its epoch (if any), and wipe context-creation bookkeeping.
         $.destroyedContexts[kmsContextId] = true;
         $.contextState[kmsContextId] = ContextState.None;
-        // Contexts and epochs are issued in pairs, so the latest-issued epoch is this context's epoch.
-        // Clear it whether it is still Pending (aborted switch) or already Active, so no live epoch
-        // is left pointing at a destroyed context.
+        // A confirmed switch created this context's epoch as the latest-issued one: clear it whether
+        // it is still Pending or already Active, so no live epoch is left pointing at a destroyed
+        // context. A switch destroyed before its creation quorum has no epoch yet, so there is
+        // nothing to clear and the ownership check below is false.
         uint256 latestEpochId = $.epochCounter;
         if ($.contextForEpoch[latestEpochId] == kmsContextId) {
             _clearEpoch(latestEpochId);
@@ -511,7 +520,21 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         if (epochId == $.latestActiveEpochId) {
             revert LatestActiveKmsEpochCannotBeDestroyed(epochId);
         }
-        if ($.epochState[epochId] != EpochState.Active) {
+
+        // Destroyable cases, everything else reverts:
+        // - Active: retire a superseded epoch so its old shares stop being served.
+        // - Pending under an Active context: abort a stuck same-set rotation. Activation
+        //   confirmations are one-shot per signer, so a divergent vote can never reach unanimity
+        //   and the epoch would otherwise stay Pending forever — with its context still current,
+        //   neither destroyKmsContext() (reverts for the latest-active context) nor completion
+        //   could ever settle it. The pending epoch of an in-flight context switch (context
+        //   Pending/Created) is settled by destroyKmsContext() instead, which clears its paired
+        //   epoch itself.
+        EpochState state = $.epochState[epochId];
+        bool isEpochActive = state == EpochState.Active;
+        bool isEpochPendingUnderActiveContext = state == EpochState.Pending &&
+            $.contextState[$.contextForEpoch[epochId]] == ContextState.Active;
+        if (!isEpochActive && !isEpochPendingUnderActiveContext) {
             revert InvalidKmsEpoch(epochId);
         }
 
@@ -661,6 +684,12 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     }
 
     /// @inheritdoc IProtocolConfig
+    function getCurrentKmsContextIdCounter() external view virtual returns (uint256) {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        return $.currentKmsContextId;
+    }
+
+    /// @inheritdoc IProtocolConfig
     function getCurrentKmsContextAndEpoch() external view virtual returns (uint256 contextId, uint256 epochId) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         contextId = $.latestActiveKmsContextId;
@@ -681,6 +710,16 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     /// @inheritdoc IProtocolConfig
     function isValidKmsContext(uint256 kmsContextId) external view virtual returns (bool) {
         return _isValidKmsContext(kmsContextId);
+    }
+
+    /// @inheritdoc IProtocolConfig
+    function isLiveKmsContext(uint256 kmsContextId) external view virtual returns (bool) {
+        return _isLiveKmsContext(kmsContextId);
+    }
+
+    /// @inheritdoc IProtocolConfig
+    function getContextCreationPreviousTxSenderThreshold(uint256 kmsContextId) external view virtual returns (uint256) {
+        return _getProtocolConfigStorage().contextCreationPreviousTxSenderThreshold[kmsContextId];
     }
 
     /// @inheritdoc IProtocolConfig
@@ -736,8 +775,10 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         uint256 kmsContextId,
         address txSender
     ) external view virtual returns (KmsNode memory) {
-        // `_isLiveKmsContext` is used so a `Created` (not yet `Active`) context's nodes are readable during resharing.
-        if (!_isLiveKmsContext(kmsContextId)) {
+        // Existence-based, not liveness: a context's nodes stay readable for its whole lifecycle —
+        // Pending/Created during resharing, and even once it is destroyed — so key/CRS material
+        // generated under it can still resolve its storage nodes. Only a never-created context reverts.
+        if (!_kmsContextExists(kmsContextId)) {
             revert InvalidKmsContext(kmsContextId);
         }
         return _getProtocolConfigStorage().kmsNodeByTxSenderForContext[kmsContextId][txSender];
@@ -1032,6 +1073,21 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
             )
         );
         return keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
+    }
+
+    /**
+     * @dev Reverts when a context switch or epoch rotation is still settling. In flight means the
+     *      latest-issued context is Pending/Created or the latest-issued epoch is Pending. Destroyed
+     *      entries are None and do not count, so the destroy paths reopen the gate.
+     */
+    function _checkNoKmsLifecycleOperationInFlight() internal view virtual {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        ContextState latestContextState = $.contextState[$.currentKmsContextId];
+        bool contextInFlight = latestContextState == ContextState.Pending || latestContextState == ContextState.Created;
+        bool epochPending = $.epochState[$.epochCounter] == EpochState.Pending;
+        if (contextInFlight || epochPending) {
+            revert KmsLifecycleOperationInFlight($.currentKmsContextId, $.epochCounter);
+        }
     }
 
     /**

@@ -1,4 +1,5 @@
 import { expect } from 'chai';
+import { hexlify, randomBytes } from 'ethers';
 import { ethers } from 'hardhat';
 
 import { ERC1271OwnerWallet, EncryptedERC20, SmartWalletWithDelegation, UserDecrypt } from '../../types';
@@ -9,21 +10,23 @@ import {
   relayerUrl,
   verifyingContractAddressDecryption,
 } from '../instance';
-import { Signers, getSigners, initSigners } from '../signers';
-import { FhevmInstances } from '../types';
-import { waitForBlock } from '../utils';
 import { isLiveNetwork } from '../network';
+import { FhevmSdk } from '../sdk/fhevm-sdk/sdk';
 import type { UnifiedConfig, UnifiedDecryptRequest } from '../sdk/unified/unifiedUserDecrypt';
 import {
   backdatedStartTimestamp,
   delegatedHandle,
   directHandle,
+  expectGatewayRevert,
   expectRelayerAclRejection,
   expectStuckAtKms,
   isSignatureRejection,
   requestUnifiedUserDecrypt,
   submitUnifiedRequest,
 } from '../sdk/unified/unifiedUserDecrypt';
+import { Signers, getSigners, initSigners } from '../signers';
+import { FhevmInstances } from '../types';
+import { waitForBlock } from '../utils';
 
 const DURATION_SECONDS = 7 * 24 * 60 * 60;
 const POSITIVE_TIMEOUT_MS = 3 * 60 * 1000;
@@ -37,6 +40,23 @@ const TIMEOUT_MARGIN_MS = 60 * 1000;
 // cannot false-pass a negative that would have succeeded a moment later.
 const NEGATIVE_WINDOW_FLOOR_MS = 60 * 1000;
 const NEGATIVE_WINDOW_CAP_MS = 4 * 60 * 1000;
+// Budget for negatives that must reach a TERMINAL verdict (relayer-`failed`).
+// These are NOT observation windows: `expectStuckAtKms` asserts that nothing
+// happens, so burning its window IS the assertion and calibrating it to the
+// positive latency is right.
+//
+// A terminal verdict is not all one thing, and the difference decides the
+// budget. An ACL rejection is decided inline, before the request is queued, so
+// it lands in ~2s on any network. A Gateway revert is not: the request is
+// pushed to the transaction throttler
+// (relayer/src/gateway/user_decrypt_handler.rs `send_to_gateway`) and the
+// verdict only exists once the tx processor's submit attempt fails and
+// dispatches InternalFailure
+// (relayer/src/gateway/arbitrum/transaction/tx_processor.rs). That is queue-
+// and chain-bound, so it deserves the budget a positive gets rather than an
+// observation window. Polling returns the moment the job goes terminal, so
+// this costs nothing on a fast stack — the same test takes ~2s locally.
+const TERMINAL_NEGATIVE_TIMEOUT_MS = POSITIVE_TIMEOUT_MS;
 const SLOW_TEST_TIMEOUT_MS = 10 * 60 * 1000;
 // Blocks to wait after an on-chain ACL delegation before the KMS Connector's
 // host-chain reads observe it (same wait the delegated-user-decryption suite uses).
@@ -129,14 +149,22 @@ describe('Unified user decryption', function () {
       durationSeconds: DURATION_SECONDS,
     };
     const startedAt = Date.now();
-    const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.alice }, {
-      waitForTerminal: true,
-      timeoutMs: POSITIVE_TIMEOUT_MS,
-    });
+    const { post, poll } = await requestUnifiedUserDecrypt(
+      cfg,
+      req,
+      { kind: 'eoa', signer: signers.alice },
+      {
+        waitForTerminal: true,
+        timeoutMs: POSITIVE_TIMEOUT_MS,
+      },
+    );
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
     expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
-    // Decrypt the same handle through the public SDK (which builds the same
-    // unified envelope on protocol >= 0.14) and assert the known plaintext.
+    // Assert the ciphertext really decrypts to the known plaintext. NOTE the
+    // route: this helper uses the SDK's LEGACY permit (relayer `/v2`), so it
+    // proves the value, NOT that the unified envelope works through the SDK —
+    // the v3 envelope is asserted by the `succeeded` poll above, and end to end
+    // through the public SDK by the dedicated unified-SDK test below.
     const clear = await instances.alice.userDecryptSingleHandle({
       handle,
       contractAddress: aliceContractAddress,
@@ -146,6 +174,32 @@ describe('Unified user decryption', function () {
     // Calibrate the async-negative observation window to this stack's latency.
     const elapsedMs = Date.now() - startedAt;
     negativeWindowMs = Math.min(Math.max(NEGATIVE_WINDOW_FLOOR_MS, 3 * elapsedMs), NEGATIVE_WINDOW_CAP_MS);
+  });
+
+  it('test unified user decrypt decrypts through the public SDK unified permit path (v3)', async function () {
+    this.timeout(POSITIVE_TIMEOUT_MS + TIMEOUT_MARGIN_MS);
+    // The gap this closes: every other plaintext assertion in this suite goes
+    // through the SDK's LEGACY permit (`/v2`), so none of them proves the v3
+    // envelope is usable through the public SDK — only that the raw envelope is
+    // accepted by the relayer. This drives `signUnifiedDecryptionPermit`, the
+    // path a real 0.14 dapp takes.
+    const sdk = instances.alice;
+    if (!(sdk instanceof FhevmSdk)) {
+      // Legacy @zama-fhe/relayer-sdk adapter: no unified permit to exercise.
+      this.skip();
+    }
+    const handle = await aliceContract.xUint64();
+    const clear = await sdk.userDecryptSingleHandleUnified({
+      handle,
+      contractAddress: aliceContractAddress,
+      signer: signers.alice,
+    });
+    if (clear === undefined) {
+      // Relayer does not advertise the v3 route on this deployment; the raw
+      // envelope tests above already fail loudly if it should have been there.
+      this.skip();
+    }
+    expect(clear).to.equal(18446744073709551600n);
   });
 
   it('test unified user decrypt app-bounded mode (allowedContracts=[app]) succeeds', async function () {
@@ -159,10 +213,15 @@ describe('Unified user decryption', function () {
       startTimestamp: backdatedStartTimestamp(),
       durationSeconds: DURATION_SECONDS,
     };
-    const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.alice }, {
-      waitForTerminal: true,
-      timeoutMs: POSITIVE_TIMEOUT_MS,
-    });
+    const { post, poll } = await requestUnifiedUserDecrypt(
+      cfg,
+      req,
+      { kind: 'eoa', signer: signers.alice },
+      {
+        waitForTerminal: true,
+        timeoutMs: POSITIVE_TIMEOUT_MS,
+      },
+    );
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
     expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
     const clear = await instances.alice.userDecryptSingleHandle({
@@ -188,10 +247,15 @@ describe('Unified user decryption', function () {
       startTimestamp: backdatedStartTimestamp(),
       durationSeconds: DURATION_SECONDS,
     };
-    const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.alice }, {
-      waitForTerminal: true,
-      timeoutMs: POSITIVE_TIMEOUT_MS,
-    });
+    const { post, poll } = await requestUnifiedUserDecrypt(
+      cfg,
+      req,
+      { kind: 'eoa', signer: signers.alice },
+      {
+        waitForTerminal: true,
+        timeoutMs: POSITIVE_TIMEOUT_MS,
+      },
+    );
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
     expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
     const clear = await instances.alice.userDecryptSingleHandle({
@@ -217,10 +281,15 @@ describe('Unified user decryption', function () {
       startTimestamp: backdatedStartTimestamp(),
       durationSeconds: DURATION_SECONDS,
     };
-    const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.bob }, {
-      waitForTerminal: true,
-      timeoutMs: POSITIVE_TIMEOUT_MS,
-    });
+    const { post, poll } = await requestUnifiedUserDecrypt(
+      cfg,
+      req,
+      { kind: 'eoa', signer: signers.bob },
+      {
+        waitForTerminal: true,
+        timeoutMs: POSITIVE_TIMEOUT_MS,
+      },
+    );
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
     expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
     const clear32 = await instances.bob.userDecryptSingleHandle({
@@ -285,10 +354,15 @@ describe('Unified user decryption', function () {
       startTimestamp: backdatedStartTimestamp(),
       durationSeconds: DURATION_SECONDS,
     };
-    const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.alice }, {
-      waitForTerminal: true,
-      timeoutMs: negativeWindowMs,
-    });
+    const { post, poll } = await requestUnifiedUserDecrypt(
+      cfg,
+      req,
+      { kind: 'eoa', signer: signers.alice },
+      {
+        waitForTerminal: true,
+        timeoutMs: negativeWindowMs,
+      },
+    );
     // Signature is valid, so the relayer accepts; the contract-allowance check
     // is enforced only by the KMS Connector, which rejects without responding —
     // the job stays queued.
@@ -307,16 +381,21 @@ describe('Unified user decryption', function () {
       startTimestamp: backdatedStartTimestamp(),
       durationSeconds: DURATION_SECONDS,
     };
-    const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.alice }, {
-      waitForTerminal: true,
-      timeoutMs: negativeWindowMs,
-    });
+    const { post, poll } = await requestUnifiedUserDecrypt(
+      cfg,
+      req,
+      { kind: 'eoa', signer: signers.alice },
+      {
+        waitForTerminal: true,
+        timeoutMs: negativeWindowMs,
+      },
+    );
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
     expectStuckAtKms(poll);
   });
 
   it('test unified user decrypt rejects a spoofed ownerAddress (handle not owned by userAddress)', async function () {
-    this.timeout(negativeWindowMs + TIMEOUT_MARGIN_MS);
+    this.timeout(TERMINAL_NEGATIVE_TIMEOUT_MS + TIMEOUT_MARGIN_MS);
     const handle = await aliceContract.xUint64(); // owned by alice, not bob
     const req: UnifiedDecryptRequest = {
       handles: [directHandle(handle, aliceContractAddress, signers.bob.address)],
@@ -326,10 +405,15 @@ describe('Unified user decryption', function () {
       startTimestamp: backdatedStartTimestamp(),
       durationSeconds: DURATION_SECONDS,
     };
-    const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.bob }, {
-      waitForTerminal: true,
-      timeoutMs: negativeWindowMs,
-    });
+    const { post, poll } = await requestUnifiedUserDecrypt(
+      cfg,
+      req,
+      { kind: 'eoa', signer: signers.bob },
+      {
+        waitForTerminal: true,
+        timeoutMs: TERMINAL_NEGATIVE_TIMEOUT_MS,
+      },
+    );
     // bob's signature is valid, so the POST is accepted; the per-job host-ACL
     // check then fails (isAllowed(handle, bob) == false) and the job terminates
     // as failed with not_allowed_on_host_acl.
@@ -338,7 +422,7 @@ describe('Unified user decryption', function () {
   });
 
   it('test unified user decrypt rejects a delegated handle entry when no delegation exists', async function () {
-    this.timeout(negativeWindowMs + TIMEOUT_MARGIN_MS);
+    this.timeout(TERMINAL_NEGATIVE_TIMEOUT_MS + TIMEOUT_MARGIN_MS);
     // ownerAddress = alice != userAddress = bob triggers the delegated branch:
     // isHandleDelegatedForUserDecryption(alice, bob, contract, handle). No
     // delegation alice -> bob exists, so the ACL check fails (the "ownerAddress
@@ -352,16 +436,21 @@ describe('Unified user decryption', function () {
       startTimestamp: backdatedStartTimestamp(),
       durationSeconds: DURATION_SECONDS,
     };
-    const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.bob }, {
-      waitForTerminal: true,
-      timeoutMs: negativeWindowMs,
-    });
+    const { post, poll } = await requestUnifiedUserDecrypt(
+      cfg,
+      req,
+      { kind: 'eoa', signer: signers.bob },
+      {
+        waitForTerminal: true,
+        timeoutMs: TERMINAL_NEGATIVE_TIMEOUT_MS,
+      },
+    );
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
     expectRelayerAclRejection(poll);
   });
 
   it('test unified user decrypt rejects a batch containing one bad handle', async function () {
-    this.timeout(negativeWindowMs + TIMEOUT_MARGIN_MS);
+    this.timeout(TERMINAL_NEGATIVE_TIMEOUT_MS + TIMEOUT_MARGIN_MS);
     // One legitimate bob-owned handle plus one alice-owned handle claimed as
     // bob's: authorization is all-or-nothing per request, so a single bad
     // handle rejects the whole batch — the good handle is not decrypted.
@@ -378,10 +467,15 @@ describe('Unified user decryption', function () {
       startTimestamp: backdatedStartTimestamp(),
       durationSeconds: DURATION_SECONDS,
     };
-    const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.bob }, {
-      waitForTerminal: true,
-      timeoutMs: negativeWindowMs,
-    });
+    const { post, poll } = await requestUnifiedUserDecrypt(
+      cfg,
+      req,
+      { kind: 'eoa', signer: signers.bob },
+      {
+        waitForTerminal: true,
+        timeoutMs: TERMINAL_NEGATIVE_TIMEOUT_MS,
+      },
+    );
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
     expectRelayerAclRejection(poll);
   });
@@ -412,7 +506,31 @@ describe('Unified user decryption', function () {
     // Tag byte (0x07 for contextId, 0x08 for epochId) followed by 31 bytes of value.
     const taggedHex32 = (tag: number, v: bigint) => tag.toString(16).padStart(2, '0') + v.toString(16).padStart(62, '0');
 
+    // KMS context/epoch ids are tagged in their high byte — [0x07 | 31 counter
+    // bytes] for context ids, [0x08 | 31 counter bytes] for epoch ids (see
+    // host-contracts/contracts/shared/Constants.sol). The relayer's extraData
+    // format validation now enforces this tag syntactically, so fabricated
+    // "unknown"/"inactive" ids used below must still carry the right tag to
+    // reach the KMS Connector's semantic checks instead of being bounced by
+    // the relayer's format check.
+    const KMS_CONTEXT_TAG = 0x07n << 248n;
+    const EPOCH_TAG = 0x08n << 248n;
+
+    /**
+     * A context id that cannot exist, generated FRESH PER RUN.
+     *
+     * A fixed literal would assume nothing ever registered it — true on a
+     * devnet redeployed every boot, unverifiable on a long-lived shared
+     * environment. Drawing 16 random bytes inside the tag's counter space makes
+     * a collision impossible in practice, so a failure of the test below can
+     * never be explained away by "something registered that id earlier".
+     */
+    const unknownContextId = KMS_CONTEXT_TAG | (BigInt(hexlify(randomBytes(16))) || 1n);
+
     before(async function () {
+      if (!protocolConfigAddress) {
+        throw new Error('PROTOCOL_CONFIG_CONTRACT_ADDRESS is required');
+      }
       // Fresh re-encryption key: the relayer dedups requests on
       // (handles, userAddress, allowedContracts, publicKey, extraData) — a
       // fresh key guarantees these are real jobs, not cache hits from the
@@ -443,10 +561,15 @@ describe('Unified user decryption', function () {
         durationSeconds: DURATION_SECONDS,
         extraData: '0x00',
       };
-      const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.alice }, {
-        waitForTerminal: true,
-        timeoutMs: POSITIVE_TIMEOUT_MS,
-      });
+      const { post, poll } = await requestUnifiedUserDecrypt(
+        cfg,
+        req,
+        { kind: 'eoa', signer: signers.alice },
+        {
+          waitForTerminal: true,
+          timeoutMs: POSITIVE_TIMEOUT_MS,
+        },
+      );
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
       expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
       const clear = await instances.alice.userDecryptSingleHandle({
@@ -473,10 +596,15 @@ describe('Unified user decryption', function () {
         durationSeconds: DURATION_SECONDS,
         extraData: `0x01${hex32(currentContextId)}`,
       };
-      const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.alice }, {
-        waitForTerminal: true,
-        timeoutMs: POSITIVE_TIMEOUT_MS,
-      });
+      const { post, poll } = await requestUnifiedUserDecrypt(
+        cfg,
+        req,
+        { kind: 'eoa', signer: signers.alice },
+        {
+          waitForTerminal: true,
+          timeoutMs: POSITIVE_TIMEOUT_MS,
+        },
+      );
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
       expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
       const clear = await instances.alice.userDecryptSingleHandle({
@@ -504,10 +632,15 @@ describe('Unified user decryption', function () {
         durationSeconds: DURATION_SECONDS,
         extraData: `0x02${hex32(currentContextId)}${hex32(currentEpochId)}`,
       };
-      const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.alice }, {
-        waitForTerminal: true,
-        timeoutMs: POSITIVE_TIMEOUT_MS,
-      });
+      const { post, poll } = await requestUnifiedUserDecrypt(
+        cfg,
+        req,
+        { kind: 'eoa', signer: signers.alice },
+        {
+          waitForTerminal: true,
+          timeoutMs: POSITIVE_TIMEOUT_MS,
+        },
+      );
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
       expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
       const clear = await instances.alice.userDecryptSingleHandle({
@@ -521,11 +654,9 @@ describe('Unified user decryption', function () {
     it('test unified user decrypt rejects extraData v2 with an inactive epochId', async function () {
       this.timeout(negativeWindowMs + TIMEOUT_MARGIN_MS);
       // Empirical pin: epoch validation is LIVE on the unified path. A v2
-      // extraData with the correct contextId but a fabricated (0x08-tagged,
-      // non-active) epochId passes the relayer's format check and is
-      // rejected by the connector: "Epoch #... of context #... is not active
-      // on-chain".
-      expect(currentContextId, 'stack reports no current KMS context id').to.not.equal(0n);
+      // extraData with the correct contextId but epoch counter 0 (tagged, but
+      // never activated — the js-sdk's pre-epoch default) is rejected by the
+      // connector: "Epoch #0 of context #... is not active on-chain".
       const handle = await aliceContract.xUint64();
       const req: UnifiedDecryptRequest = {
         handles: [directHandle(handle, aliceContractAddress, signers.alice.address)],
@@ -534,23 +665,71 @@ describe('Unified user decryption', function () {
         publicKey: extraDataPublicKey,
         startTimestamp: backdatedStartTimestamp(),
         durationSeconds: DURATION_SECONDS,
-        extraData: `0x02${hex32(currentContextId)}${taggedHex32(0x08, 0xdeadbeefn)}`,
+        extraData: `0x02${hex32(currentContextId)}${hex32(EPOCH_TAG)}`,
       };
-      const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.alice }, {
-        waitForTerminal: true,
-        timeoutMs: negativeWindowMs,
-      });
+      const { post, poll } = await requestUnifiedUserDecrypt(
+        cfg,
+        req,
+        { kind: 'eoa', signer: signers.alice },
+        {
+          waitForTerminal: true,
+          timeoutMs: negativeWindowMs,
+        },
+      );
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
       expectStuckAtKms(poll);
     });
 
     it('test unified user decrypt rejects extraData with an unknown contextId', async function () {
-      this.timeout(negativeWindowMs + TIMEOUT_MARGIN_MS);
-      // Versioned extraData is NOT decorative: the connector validates the
-      // embedded contextId against its context store. A fabricated, but
-      // properly 0x07-tagged, id passes the relayer's format check (and the
-      // signature covers it), but the KMS Connector rejects it and the job
-      // never succeeds.
+      this.timeout(TERMINAL_NEGATIVE_TIMEOUT_MS + TIMEOUT_MARGIN_MS);
+      // Versioned extraData is NOT decorative: the Gateway validates the
+      // embedded contextId at request time, before the decryption fee is
+      // collected (matching the legacy request paths). A fabricated id passes
+      // the relayer's format check (and the signature covers it), but the
+      // request transaction reverts with InvalidKmsContext during the
+      // relayer's simulation — no request is opened and no fee is charged.
+      // PRECONDITION: prove the Gateway itself considers this context invalid
+      // BEFORE we assert it rejects the request. Without this, a stuck request
+      // is ambiguous — "the Gateway failed to validate" and "the Gateway was
+      // right and our id happened to exist here" look identical from the
+      // client. Asserting it up front turns the later failure into a specific
+      // claim: the Gateway HAD the information to reject and did not.
+      //
+      // The current context is queried first as a positive control: a wrong
+      // address or a mismatched ABI would return false for everything and let
+      // the real check pass vacuously.
+      const gatewayRpcUrl = process.env.GATEWAY_RPC_URL;
+      const gatewayConfigAddress = process.env.GATEWAY_CONFIG_ADDRESS;
+      if (gatewayRpcUrl && gatewayConfigAddress) {
+        const gatewayConfig = new ethers.Contract(
+          gatewayConfigAddress,
+          ['function isValidKmsContext(uint256) view returns (bool)'],
+          new ethers.JsonRpcProvider(gatewayRpcUrl),
+        );
+        expect(
+          await gatewayConfig.isValidKmsContext(currentContextId),
+          `gateway probe is not trustworthy: the CURRENT context ${currentContextId} reads as invalid at ` +
+            `${gatewayConfigAddress}. Check GATEWAY_CONFIG_ADDRESS/GATEWAY_RPC_URL before reading the next assert.`,
+        ).to.equal(true);
+        expect(
+          await gatewayConfig.isValidKmsContext(unknownContextId),
+          `the fabricated context ${unknownContextId} exists on this gateway, so this test's premise does ` +
+            `not hold here. It is drawn from 16 random bytes per run, so this should be impossible.`,
+        ).to.equal(false);
+        console.log(
+          `[unified] gateway confirms the fabricated context is invalid (checked at ${gatewayConfigAddress})`,
+        );
+      } else {
+        console.log(
+          '[unified] SKIPPED the gateway precondition: GATEWAY_RPC_URL/GATEWAY_CONFIG_ADDRESS unset. ' +
+            'A failure below cannot distinguish "gateway did not validate" from "the id exists here".',
+        );
+      }
+
+      // Print the id: it is random per run, so without this a failure cannot be
+      // correlated with on-chain state afterwards.
+      console.log(`[unified] fabricated unknown contextId: ${hex32(unknownContextId)}`);
+
       const handle = await aliceContract.xUint64();
       const req: UnifiedDecryptRequest = {
         handles: [directHandle(handle, aliceContractAddress, signers.alice.address)],
@@ -559,14 +738,21 @@ describe('Unified user decryption', function () {
         publicKey: extraDataPublicKey,
         startTimestamp: backdatedStartTimestamp(),
         durationSeconds: DURATION_SECONDS,
-        extraData: `0x01${taggedHex32(0x07, 0xdeadbeefn)}`,
+        extraData: `0x01${hex32(unknownContextId)}`,
       };
-      const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.alice }, {
-        waitForTerminal: true,
-        timeoutMs: negativeWindowMs,
-      });
+      const { post, poll } = await requestUnifiedUserDecrypt(
+        cfg,
+        req,
+        { kind: 'eoa', signer: signers.alice },
+        {
+          waitForTerminal: true,
+          timeoutMs: TERMINAL_NEGATIVE_TIMEOUT_MS,
+        },
+      );
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-      expectStuckAtKms(poll);
+      // InvalidKmsContext(<unknownContextId>) — selector 0x77ddbe81. The id is
+      // random per run, so this cannot pass or fail because of leftover state.
+      expectGatewayRevert(poll, /0x77ddbe81/i);
     });
 
     it('test unified user decrypt rejects a malformed extraData version', async function () {
@@ -698,10 +884,15 @@ describe('Unified user decryption', function () {
         startTimestamp: backdatedStartTimestamp(),
         durationSeconds: DURATION_SECONDS,
       };
-      const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.bob }, {
-        waitForTerminal: true,
-        timeoutMs: POSITIVE_TIMEOUT_MS,
-      });
+      const { post, poll } = await requestUnifiedUserDecrypt(
+        cfg,
+        req,
+        { kind: 'eoa', signer: signers.bob },
+        {
+          waitForTerminal: true,
+          timeoutMs: POSITIVE_TIMEOUT_MS,
+        },
+      );
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
       expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
       // Assert the known plaintexts of both legs through the public SDK: the
@@ -739,16 +930,21 @@ describe('Unified user decryption', function () {
         startTimestamp: backdatedStartTimestamp(),
         durationSeconds: DURATION_SECONDS,
       };
-      const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'erc1271', ownerSigner: signers.bob }, {
-        waitForTerminal: true,
-        timeoutMs: POSITIVE_TIMEOUT_MS,
-      });
+      const { post, poll } = await requestUnifiedUserDecrypt(
+        cfg,
+        req,
+        { kind: 'erc1271', ownerSigner: signers.bob },
+        {
+          waitForTerminal: true,
+          timeoutMs: POSITIVE_TIMEOUT_MS,
+        },
+      );
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
       expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
     });
 
     it('test unified user decrypt rejects a delegated handle with a fabricated contractAddress', async function () {
-      this.timeout(negativeWindowMs + TIMEOUT_MARGIN_MS);
+      this.timeout(TERMINAL_NEGATIVE_TIMEOUT_MS + TIMEOUT_MARGIN_MS);
       // The delegation smartWallet -> bob exists via tokenAddress only.
       // Substituting a different contractAddress in the (unsigned) HandleEntry
       // must fail isHandleDelegatedForUserDecryption — delegation is
@@ -761,10 +957,15 @@ describe('Unified user decryption', function () {
         startTimestamp: backdatedStartTimestamp(),
         durationSeconds: DURATION_SECONDS,
       };
-      const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.bob }, {
-        waitForTerminal: true,
-        timeoutMs: negativeWindowMs,
-      });
+      const { post, poll } = await requestUnifiedUserDecrypt(
+        cfg,
+        req,
+        { kind: 'eoa', signer: signers.bob },
+        {
+          waitForTerminal: true,
+          timeoutMs: TERMINAL_NEGATIVE_TIMEOUT_MS,
+        },
+      );
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
       expectRelayerAclRejection(poll);
     });
@@ -787,10 +988,15 @@ describe('Unified user decryption', function () {
         startTimestamp: backdatedStartTimestamp(),
         durationSeconds: DURATION_SECONDS,
       };
-      const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.dave }, {
-        waitForTerminal: true,
-        timeoutMs: negativeWindowMs,
-      });
+      const { post, poll } = await requestUnifiedUserDecrypt(
+        cfg,
+        req,
+        { kind: 'eoa', signer: signers.dave },
+        {
+          waitForTerminal: true,
+          timeoutMs: TERMINAL_NEGATIVE_TIMEOUT_MS,
+        },
+      );
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
       expectRelayerAclRejection(poll);
     });
@@ -824,10 +1030,15 @@ describe('Unified user decryption', function () {
         startTimestamp: backdatedStartTimestamp(),
         durationSeconds: DURATION_SECONDS,
       };
-      const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.eve }, {
-        waitForTerminal: true,
-        timeoutMs: negativeWindowMs,
-      });
+      const { post, poll } = await requestUnifiedUserDecrypt(
+        cfg,
+        req,
+        { kind: 'eoa', signer: signers.eve },
+        {
+          waitForTerminal: true,
+          timeoutMs: TERMINAL_NEGATIVE_TIMEOUT_MS,
+        },
+      );
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
       expectRelayerAclRejection(poll);
     });

@@ -52,6 +52,33 @@ describe('InputVerification', function () {
   // Define extra data for version 0
   const extraDataV0 = hre.ethers.solidityPacked(['uint8'], [0]);
 
+  // ERC-7201 base slot of InputVerificationStorage, from the INPUT_VERIFICATION_STORAGE_LOCATION
+  // constant in InputVerification.sol, plus the index of the deprecated priority marker mappings in
+  // the struct: `priorityVerifyProofConsensusTxSender` (12) and
+  // `priorityRejectProofConsensusTxSender` (13).
+  const INPUT_VERIFICATION_STORAGE_LOCATION = BigInt(
+    '0x4544165ce1653264fdcb09b029891e3d4c8d8583486821172f882e19a149a800',
+  );
+  const PRIORITY_VERIFY_CONSENSUS_SLOT = INPUT_VERIFICATION_STORAGE_LOCATION + 12n;
+  const PRIORITY_REJECT_CONSENSUS_SLOT = INPUT_VERIFICATION_STORAGE_LOCATION + 13n;
+
+  // The priority markers can no longer be written through the contract, so historical records are
+  // reproduced by writing the mapping entry directly.
+  async function setPriorityConsensusTxSender(
+    proxyAddress: string,
+    mappingSlot: bigint,
+    proofId: number,
+    txSenderAddress: string,
+  ): Promise<void> {
+    await hre.network.provider.send('hardhat_setStorageAt', [
+      proxyAddress,
+      hre.ethers.keccak256(
+        hre.ethers.AbiCoder.defaultAbiCoder().encode(['uint256', 'uint256'], [proofId, mappingSlot]),
+      ),
+      hre.ethers.zeroPadValue(txSenderAddress, 32),
+    ]);
+  }
+
   describe('Deployment', function () {
     let inputVerificationFactory: InputVerification__factory;
     let inputVerification: InputVerification;
@@ -409,6 +436,33 @@ describe('InputVerification', function () {
       expect(proofVerificationConsensusTxSenders3).to.deep.equal(expectedCoprocessorTxSenders3);
     });
 
+    // The removed priority coprocessor feature let a single designated sender finalize consensus
+    // alone, and the `VerifyProofResponse` emitted for such a proof carries that sender's signature
+    // by itself. The raw responder list keeps growing past finalization, so the deprecated marker is
+    // still read to keep the getter consistent with that event. Nothing can write the marker anymore,
+    // hence the direct storage write.
+    it('Should report only the priority sender for a proof verified under the priority feature', async function () {
+      const priorityTxSender = coprocessorTxSenders[0].address;
+
+      // Reach consensus, then let the remaining coprocessor append itself to the raw responder list.
+      for (const [i, txSender] of coprocessorTxSenders.entries()) {
+        await inputVerification.connect(txSender).verifyProofResponse(zkProofId, ctHandles, signatures[i], extraDataV0);
+      }
+      expect(await inputVerification.getVerifyProofConsensusTxSenders(zkProofId)).to.deep.equal(
+        coprocessorTxSenders.map((s) => s.address),
+      );
+
+      // Mark the proof as priority-finalized, the way a pre-upgrade record would be.
+      await setPriorityConsensusTxSender(
+        await inputVerification.getAddress(),
+        PRIORITY_VERIFY_CONSENSUS_SLOT,
+        zkProofId,
+        priorityTxSender,
+      );
+
+      expect(await inputVerification.getVerifyProofConsensusTxSenders(zkProofId)).to.deep.equal([priorityTxSender]);
+    });
+
     it('Should get all valid coprocessor transaction senders from proof verification consensus and ignore malicious ones', async function () {
       // Trigger 2 valid proof verification responses
       await inputVerification
@@ -464,94 +518,6 @@ describe('InputVerification', function () {
       // are the first 2 coprocessor transaction senders (the third one is ignored because it rejected the proof)
       const proofVerificationConsensusTxSenders = await inputVerification.getVerifyProofConsensusTxSenders(zkProofId);
       expect(proofVerificationConsensusTxSenders).to.deep.equal(expectedCoprocessorTxSenders);
-    });
-
-    it('Should keep proof verification consensus Zama-only when a priority coprocessor is set', async function () {
-      const zamaTxSender = coprocessorTxSenders[0];
-      const partnerTxSender = coprocessorTxSenders[1];
-      const priorityModeZkProofId = 2;
-
-      await inputVerification.connect(pauser).pause();
-      await gatewayConfig.connect(owner).updateCoprocessors([coprocessors[0]], 1);
-      await gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(zamaTxSender.address);
-      await gatewayConfig.connect(owner).updateCoprocessors(coprocessors, 2);
-      await inputVerification.connect(owner).unpause();
-
-      await inputVerification
-        .connect(tokenFundedTxSender)
-        .verifyProofRequest(contractChainId, contractAddress, userAddress, ciphertextWithZKProof, extraDataV0);
-
-      const partnerTx = await inputVerification
-        .connect(partnerTxSender)
-        .verifyProofResponse(priorityModeZkProofId, ctHandles, signatures[1], extraDataV0);
-
-      await expect(partnerTx).to.not.emit(inputVerification, 'VerifyProofResponse');
-      expect(await inputVerification.getVerifyProofConsensusTxSenders(priorityModeZkProofId)).to.deep.equal([]);
-
-      const zamaTx = await inputVerification
-        .connect(zamaTxSender)
-        .verifyProofResponse(priorityModeZkProofId, ctHandles, signatures[0], extraDataV0);
-
-      await expect(zamaTx)
-        .to.emit(inputVerification, 'VerifyProofResponse')
-        .withArgs(priorityModeZkProofId, ctHandles, [signatures[0]]);
-      expect(await inputVerification.getVerifyProofConsensusTxSenders(priorityModeZkProofId)).to.deep.equal([
-        zamaTxSender.address,
-      ]);
-    });
-
-    it('Should require the full threshold again after the priority coprocessor is removed', async function () {
-      const zamaTxSender = coprocessorTxSenders[0];
-      const partnerTxSender = coprocessorTxSenders[1];
-      const afterRemovalZkProofId = 2;
-
-      // Set up priority mode: all coprocessors registered with threshold 2, but Zama set as the priority
-      // sender so it alone finalizes
-      await inputVerification.connect(pauser).pause();
-      await gatewayConfig.connect(owner).updateCoprocessors([coprocessors[0]], 1);
-      await gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(zamaTxSender.address);
-      await gatewayConfig.connect(owner).updateCoprocessors(coprocessors, 2);
-      await inputVerification.connect(owner).unpause();
-
-      // While a priority sender is set the threshold is inert: Zama alone finalizes the proof requested in
-      // the beforeEach (zkProofId = 1) even though the coprocessor threshold is 2
-      const priorityZamaTx = await inputVerification
-        .connect(zamaTxSender)
-        .verifyProofResponse(zkProofId, ctHandles, signatures[0], extraDataV0);
-      await expect(priorityZamaTx)
-        .to.emit(inputVerification, 'VerifyProofResponse')
-        .withArgs(zkProofId, ctHandles, [signatures[0]]);
-      expect(await inputVerification.getVerifyProofConsensusTxSenders(zkProofId)).to.deep.equal([zamaTxSender.address]);
-
-      // Switch back to threshold consensus: one batched gateway tx (re)asserts the threshold and removes
-      // priority. The threshold is inert while priority is set, so this flip is effectively atomic.
-      await gatewayConfig.connect(owner).updateCoprocessorThreshold(2);
-      await gatewayConfig.connect(owner).removePriorityCoprocessorTxSender();
-
-      // A fresh proof requested after priority was removed
-      await inputVerification
-        .connect(tokenFundedTxSender)
-        .verifyProofRequest(contractChainId, contractAddress, userAddress, ciphertextWithZKProof, extraDataV0);
-
-      // A single Zama response no longer finalizes — priority is gone and the threshold of 2 is now in force,
-      // so consensus is not reached yet (the tx-sender list stays empty until the threshold is met)
-      const firstTx = await inputVerification
-        .connect(zamaTxSender)
-        .verifyProofResponse(afterRemovalZkProofId, ctHandles, signatures[0], extraDataV0);
-      await expect(firstTx).to.not.emit(inputVerification, 'VerifyProofResponse');
-      expect(await inputVerification.getVerifyProofConsensusTxSenders(afterRemovalZkProofId)).to.deep.equal([]);
-
-      // A second response from a distinct (formerly partner) coprocessor reaches the 2-of-3 threshold and
-      // finalizes with both signatures
-      const secondTx = await inputVerification
-        .connect(partnerTxSender)
-        .verifyProofResponse(afterRemovalZkProofId, ctHandles, signatures[1], extraDataV0);
-      await expect(secondTx)
-        .to.emit(inputVerification, 'VerifyProofResponse')
-        .withArgs(afterRemovalZkProofId, ctHandles, signatures.slice(0, 2));
-      expect(await inputVerification.getVerifyProofConsensusTxSenders(afterRemovalZkProofId)).to.deep.equal(
-        coprocessorTxSenders.slice(0, 2).map((s) => s.address),
-      );
     });
 
     it('Should revert in case of invalid zkProofId in verify proof response', async function () {
@@ -833,6 +799,28 @@ describe('InputVerification', function () {
       expect(proofRejectionConsensusTxSenders3).to.deep.equal(expectedCoprocessorTxSenders3);
     });
 
+    // See the equivalent proof-verification test: the deprecated marker keeps rejections finalized
+    // under the removed priority coprocessor feature aligned with their emitted event.
+    it('Should report only the priority sender for a proof rejected under the priority feature', async function () {
+      const priorityTxSender = coprocessorTxSenders[0].address;
+
+      for (const txSender of coprocessorTxSenders) {
+        await inputVerification.connect(txSender).rejectProofResponse(zkProofId, extraDataV0);
+      }
+      expect(await inputVerification.getRejectProofConsensusTxSenders(zkProofId)).to.deep.equal(
+        coprocessorTxSenders.map((s) => s.address),
+      );
+
+      await setPriorityConsensusTxSender(
+        await inputVerification.getAddress(),
+        PRIORITY_REJECT_CONSENSUS_SLOT,
+        zkProofId,
+        priorityTxSender,
+      );
+
+      expect(await inputVerification.getRejectProofConsensusTxSenders(zkProofId)).to.deep.equal([priorityTxSender]);
+    });
+
     it('Should get all valid coprocessor transaction senders from proof rejection consensus and ignore the one from proof verification', async function () {
       // Trigger 2 valid proof rejection responses using different coprocessor transaction senders
       await inputVerification.connect(coprocessorTxSenders[0]).rejectProofResponse(zkProofId, extraDataV0);
@@ -863,24 +851,6 @@ describe('InputVerification', function () {
       // are the first 2 coprocessor transaction senders (the third one is ignored because it verified the proof)
       const proofRejectionConsensusTxSenders = await inputVerification.getRejectProofConsensusTxSenders(zkProofId);
       expect(proofRejectionConsensusTxSenders).to.deep.equal(expectedCoprocessorTxSenders);
-    });
-
-    it('Should keep proof rejection consensus Zama-only when a priority coprocessor is set', async function () {
-      const zamaTxSender = coprocessorTxSenders[0];
-      const partnerTxSender = coprocessorTxSenders[1];
-
-      await inputVerification.connect(pauser).pause();
-      await gatewayConfig.connect(owner).updateCoprocessors([coprocessors[0]], 1);
-      await gatewayConfig.connect(owner).setPriorityCoprocessorTxSender(zamaTxSender.address);
-      await gatewayConfig.connect(owner).updateCoprocessors(coprocessors, 2);
-
-      const partnerTx = await inputVerification.connect(partnerTxSender).rejectProofResponse(zkProofId, extraDataV0);
-      await expect(partnerTx).to.not.emit(inputVerification, 'RejectProofResponse');
-
-      const zamaTx = await inputVerification.connect(zamaTxSender).rejectProofResponse(zkProofId, extraDataV0);
-
-      await expect(zamaTx).to.emit(inputVerification, 'RejectProofResponse').withArgs(zkProofId);
-      expect(await inputVerification.getRejectProofConsensusTxSenders(zkProofId)).to.deep.equal([zamaTxSender.address]);
     });
 
     it('Should revert in case of invalid zkProofId in reject proof response', async function () {

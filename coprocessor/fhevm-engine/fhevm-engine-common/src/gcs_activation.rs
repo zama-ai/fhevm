@@ -41,9 +41,28 @@ pub const EVENT_GW_DRY_RUN_STARTED: &str = "event_gw_dry_run_started";
 /// on it to re-pause without waiting for the fallback poll.
 pub const EVENT_DRY_RUN_ROLLED_BACK: &str = "event_dry_run_rolled_back";
 
+/// pg_notify channel the `tfhe-worker` listens on for newly queued FHE work.
+///
+/// In `public` this is fired by the `work_updated_trigger_from_computations_insertions`
+/// trigger on every `computations` insert. The GCS schema has no such trigger -
+/// `CREATE TABLE ... (LIKE public.X INCLUDING ALL)` copies defaults, constraints and
+/// indexes but *not* triggers - so inserts into `gcs.computations` wake nobody, and the
+/// upgrade-controller fires this explicitly instead.
+pub const WORK_AVAILABLE_CHANNEL: &str = "work_available";
+
 /// Sentinel for the activation atomic: the GCS row has not yet been observed in
 /// `DryRunStarted`. Any other value is the real `start_block`.
 pub const GCS_NOT_ACTIVATED: i64 = -1;
+
+/// Re-check cadence for a worker's GCS activation gate, shared by the tfhe-, sns- and
+/// zkproof-workers so they park at one consistent latency.
+///
+/// Deliberately NOT a worker's database polling interval. Those are tuned for how often to
+/// query Postgres for work (tens of seconds); this gate is a single atomic load. Reusing the
+/// polling interval means the release is only noticed up to a full interval late, which lands
+/// squarely on the most timing-sensitive moment of an upgrade - the dry-run window has a
+/// consensus timeout, and every second parked here is a second not spent anchoring.
+pub const GCS_GATE_RECHECK: Duration = Duration::from_millis(1000);
 
 /// Pause flag for the tfhe/sns workers: run from `start_block` while dry-running,
 /// keep the released value through cutover (`UpgradeAuthorized`/`LIVE`), pause on
@@ -100,10 +119,14 @@ pub async fn run_gcs_activation_watcher(
         // `start_block` column is populated one state earlier (UpgradeActivated),
         // before BCS has settled up to start_block and before pre-start rows are
         // pruned — too early to begin computing.
-        let row: Option<(String, Option<i64>)> =
-            sqlx::query_as("SELECT state, start_block FROM upgrade_state WHERE stack_role = 'GCS'")
-                .fetch_optional(pool)
-                .await?;
+        let row: Option<(String, Option<i64>)> = sqlx::query_as(
+            "SELECT state, start_block FROM upgrade_state
+              WHERE stack_role = 'GCS'
+              ORDER BY proposal_block DESC NULLS LAST, host_chain_id
+              LIMIT 1",
+        )
+        .fetch_optional(pool)
+        .await?;
 
         let current = state.load(Ordering::SeqCst);
         let next = row.as_ref().map_or(current, |(fsm_state, start_block)| {
@@ -175,7 +198,10 @@ pub async fn run_gcs_gw_activation_watcher(
         // early to begin re-randomizing. A `PAUSED` row (rolled-back dry-run)
         // re-pauses the worker.
         let row: Option<(String, bool, Option<i64>)> = sqlx::query_as(
-            "SELECT state, gw_dry_run_started, gw_start_block FROM upgrade_state WHERE stack_role = 'GCS'",
+            "SELECT state, gw_dry_run_started, gw_start_block FROM upgrade_state
+              WHERE stack_role = 'GCS'
+              ORDER BY proposal_block DESC NULLS LAST, host_chain_id
+              LIMIT 1",
         )
         .fetch_optional(pool)
         .await?;

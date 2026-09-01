@@ -1,3 +1,10 @@
+[workspace]
+members = ["test-support/ethereum_rpc_mock"]
+# docker/relayer-migrate/Dockerfile builds this crate from its own directory
+# with --locked, so it keeps its own lockfile.
+exclude = ["relayer-migrate"]
+resolver = "2"
+
 [package]
 name = "fhevm-relayer"
 version = "0.14.0"
@@ -12,7 +19,7 @@ path = "src/lib.rs"
 default = []
 tracing-chrome = ["dep:tracing-chrome"]
 long-running-tests = []
-integration-tests = []
+integration-tests = ["dep:ethereum_rpc_mock"]
 
 [dependencies]
 alloy = { version = "2.2.0", features = [

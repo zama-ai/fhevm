@@ -1,0 +1,72 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT zk_proof_id, chain_id, contract_address, user_address, handles, verified, retry_count, extra_data, transaction_id\n             FROM verify_proofs\n             WHERE (verified = TRUE OR (verified = FALSE AND handles IS NOT NULL))\n               AND retry_count < $1\n               AND zk_proof_id < $3\n             ORDER BY zk_proof_id\n             LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "zk_proof_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "chain_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "contract_address",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "user_address",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "handles",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
+        "name": "verified",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "retry_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "extra_data",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 8,
+        "name": "transaction_id",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "84cabecdf429e48de030f75b0a123fbcacb99edeabea565a7cf65bb929719add"
+}

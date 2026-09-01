@@ -20,9 +20,14 @@ else
   RESET  := $(shell tput -Txterm sgr0 2>/dev/null)
 endif
 
-MOCK_RPC_MANIFEST := test-support/ethereum_rpc_mock/Cargo.toml
 COMPOSE_FILE := dev/docker-compose.yaml
-DATABASE_URL := postgresql://postgres:postgres@localhost:5433/relayer_db
+DOCKER_COMPOSE := docker compose -f $(COMPOSE_FILE)
+# These must match dev/docker-compose.yaml, which creates the database.
+# _db-probe checks both against it, so drift fails a run rather than
+# connecting somewhere the database is not.
+DB_PORT := 5433
+DB_NAME := relayer_db
+DATABASE_URL := postgresql://postgres:postgres@localhost:$(DB_PORT)/$(DB_NAME)
 
 # Docker image defaults (override on CLI: make docker-build TAG=v0.9.0-rc.1)
 DOCKER_REGISTRY ?= ghcr.io/zama-ai/console
@@ -53,6 +58,9 @@ NO  ?=
 
 # Cargo test command without sccache wrapper (avoids permission issues)
 CARGO_TEST := RUSTC_WRAPPER= cargo test
+# Tests run under nextest, which schedules every test across one pool rather
+# than one binary at a time. CARGO_TEST stays for --no-run builds.
+CARGO_NEXTEST := RUSTC_WRAPPER= cargo nextest run
 CARGO_LLVM_COV := RUSTC_WRAPPER= cargo llvm-cov
 
 # ---------------------------------------------------------------------------
@@ -64,9 +72,12 @@ _check-docker:
 
 _check-postgres: _check-docker
 ifndef CI
-	@docker compose -f $(COMPOSE_FILE) ps --status running 2>/dev/null | grep -q postgres || { \
-		echo "$(RED)Error: Postgres is not running. Run: make db-start$(RESET)"; exit 1; }
+	@$(MAKE) --no-print-directory _db-probe
 endif
+
+_check-nextest:
+	@command -v cargo-nextest >/dev/null 2>&1 || { \
+		echo "$(RED)Error: cargo-nextest not installed. Run: cargo install cargo-nextest --locked$(RESET)"; exit 1; }
 
 _check-cargo-watch:
 	@command -v cargo-watch >/dev/null 2>&1 || { \
@@ -103,11 +114,23 @@ _check-coverage-tools:
 _clean-profraw:
 	@find . -name '*.profraw' -delete
 
+# Verify Postgres is serving on the port and database the relayer and tests use.
+_db-probe: _check-docker
+	@grep -q '"$(DB_PORT):5432"' $(COMPOSE_FILE) && grep -q 'POSTGRES_DB: $(DB_NAME)' $(COMPOSE_FILE) || { \
+		echo "$(RED)Error: DB_PORT/DB_NAME in this Makefile no longer match $(COMPOSE_FILE)$(RESET)"; exit 1; }
+	@published=$$($(DOCKER_COMPOSE) port postgres 5432 2>/dev/null | sed 's/.*://'); \
+		test "$$published" = "$(DB_PORT)" || { \
+			echo "$(RED)Error: Postgres is published on port $${published:-<none>}, not $(DB_PORT).$(RESET)"; \
+			echo "  Start it with: make db-start"; exit 1; }
+	@$(DOCKER_COMPOSE) exec -T postgres pg_isready -U postgres -q >/dev/null 2>&1 || { \
+		echo "$(RED)Error: Postgres is published on $(DB_PORT) but not serving yet. Inspect with: make db-logs$(RESET)"; exit 1; }
+	@echo "$(GREEN)Postgres ready on port $(DB_PORT) (database: $(DB_NAME))$(RESET)"
+
 # Wait for Postgres to accept connections (max 30s)
 _db-wait:
 	@echo "Waiting for Postgres to accept connections..."
 	@for i in $$(seq 1 30); do \
-		docker compose -f $(COMPOSE_FILE) exec -T postgres pg_isready -U postgres >/dev/null 2>&1 && { \
+		$(MAKE) --no-print-directory _db-probe >/dev/null 2>&1 && { \
 			echo "$(GREEN)Postgres is ready$(RESET)"; exit 0; }; \
 		sleep 1; \
 	done; \
@@ -283,24 +306,22 @@ _approve-payment: _check-cast
 # ---------------------------------------------------------------------------
 
 db-start: _check-docker ## Start local Postgres (port 5433)
-	@docker compose -f $(COMPOSE_FILE) up -d
+	@$(DOCKER_COMPOSE) up -d
 	@$(MAKE) _db-wait
 
 db-stop: _check-docker ## Stop local Postgres (preserves data)
-	@docker compose -f $(COMPOSE_FILE) down
+	@$(DOCKER_COMPOSE) down
 
 db-destroy: _check-docker ## Stop local Postgres and wipe all data
-	@docker compose -f $(COMPOSE_FILE) down -v
+	@$(DOCKER_COMPOSE) down -v
 
 db-status: _check-docker ## Show Postgres container status and test connection
-	@docker compose -f $(COMPOSE_FILE) ps
+	@$(DOCKER_COMPOSE) ps
 	@echo ""
-	@docker compose -f $(COMPOSE_FILE) exec -T postgres pg_isready -U postgres 2>/dev/null \
-		&& echo "$(GREEN)Connection: OK$(RESET)" \
-		|| echo "$(RED)Connection: FAILED$(RESET)"
+	@$(MAKE) --no-print-directory _db-probe
 
 db-logs: _check-docker ## Tail Postgres container logs
-	@docker compose -f $(COMPOSE_FILE) logs -f postgres
+	@$(DOCKER_COMPOSE) logs -f postgres
 
 db-migrate: _check-postgres ## Run database migrations (uses relayer-migrate binary)
 	@DATABASE_URL="$(DATABASE_URL)" MAX_ATTEMPTS=20 \
@@ -313,7 +334,7 @@ db-reset: _check-docker ## Wipe database and re-run migrations from scratch
 	@$(MAKE) db-migrate
 
 db-shell: _check-postgres ## Open psql shell into local database
-	@docker compose -f $(COMPOSE_FILE) exec postgres psql -U postgres -d relayer_db
+	@$(DOCKER_COMPOSE) exec postgres psql -U postgres -d $(DB_NAME)
 
 # ---------------------------------------------------------------------------
 ##@ Database - sqlx-cli
@@ -322,8 +343,15 @@ db-shell: _check-postgres ## Open psql shell into local database
 sqlx-migrate: _check-sqlx-cli _check-postgres ## Run migrations via sqlx-cli
 	@cd relayer-migrate && cargo sqlx migrate run --database-url "$(DATABASE_URL)"
 
+# --all-features is required, not cosmetic: the integration test targets only compile with
+# the `integration-tests` feature, and without it prepare fails on those targets.
 sqlx-prepare: _check-sqlx-cli _check-postgres ## Prepare sqlx offline data for CI (run after schema changes)
-	@cargo sqlx prepare --database-url "$(DATABASE_URL)" -- --all-targets
+	@cargo sqlx prepare --database-url "$(DATABASE_URL)" -- --all-targets --all-features
+
+# CI compiles with SQLX_OFFLINE, which trusts .sqlx rather than checking it. Data left
+# behind by a schema change therefore compiles fine and misdescribes the database.
+sqlx-check: _check-sqlx-cli _check-postgres ## Fail if .sqlx no longer matches the migrations
+	@cargo sqlx prepare --check --database-url "$(DATABASE_URL)" -- --all-targets --all-features
 
 # ---------------------------------------------------------------------------
 ##@ Development
@@ -366,51 +394,108 @@ health: ## Check relayer health endpoints (requires running relayer)
 # ---------------------------------------------------------------------------
 ##@ Testing
 # ---------------------------------------------------------------------------
-test-unit: ## Run unit tests (no Postgres needed)
-	@$(CARGO_TEST) --lib
+# A group is either an API flow (public-decrypt) or a cross-cutting feature the
+# flows share (listener-redundancy). Each group lists the test binaries it runs,
+# so what a group covers is read here rather than worked out. Group names carry
+# no endpoint version; test file names do, so retiring a version deletes a file
+# and the line naming it. Add a tests/*.rs, add it to a group below:
+# test-groups-check fails the build until you do, and CI runs that check.
+GROUPS := user-decrypt delegated-user-decrypt public-decrypt input-proof \
+          admin-endpoint health keyurl keyurl-poller recovery \
+          schema-isolation threshold-resolver listener-redundancy common
 
-test-integration-mock-rpc: ## Run tests with ethereum_rpc_mock (no Postgres needed)
-	@$(CARGO_TEST) --manifest-path $(MOCK_RPC_MANIFEST) --lib
+BINS_user-decrypt           := user_decrypt_v2_test user_decrypt_v3_test
+BINS_delegated-user-decrypt := delegated_user_decrypt_v2_test
+BINS_public-decrypt         := public_decrypt_v2_test
+BINS_input-proof            := input_proof_v2_test
+BINS_admin-endpoint         := admin_endpoint_test
+BINS_health                 := health_test
+BINS_keyurl                 := keyurl_test
+BINS_keyurl-poller          := keyurl_poller_test
+BINS_recovery               := recovery_test
+BINS_schema-isolation       := schema_isolation_test
+BINS_threshold-resolver     := threshold_resolver_test
+BINS_listener-redundancy    := listener_redundancy_test
+BINS_common                 := common_test
 
-test-build: ## Build all test binaries (no Postgres needed — uses sqlx offline data)
+group_bins = $(foreach g,$(1),$(BINS_$(g)))
+
+group_args = $(addprefix --test ,$(call group_bins,$(1)))
+
+TEST_FEATURES := integration-tests
+
+# Hand the tests the connection details derived from the compose file, so the
+# fallback baked into tests/common/test_schema.rs is never the deciding value.
+# CI sets TEST_DATABASE_URL itself; ?= leaves that in place.
+TEST_DATABASE_URL ?= $(DATABASE_URL)
+export TEST_DATABASE_URL
+
+# Concurrent test processes, across every binary at once under nextest. Each
+# test holds about three Postgres connections, so the ceiling is the server's
+# max_connections. CI runs on a 4-CPU runner against a Postgres service with the
+# default limit of 100, which 8 stays well inside. Local Postgres allows 500
+# (dev/docker-compose.yaml), so a larger override is available here:
+# make test-integration TEST_THREADS=32
+TEST_THREADS ?= 8
+# Substring filters for `test-group`: CASE selects, SKIP excludes.
+CASE ?=
+SKIP ?=
+# Both reach nextest as one filterset, e.g. `test(acl) and not test(timeout)`.
+case_expr := $(if $(CASE),test($(CASE)))
+skip_expr := $(if $(SKIP),not test($(SKIP)))
+filter_expr := $(strip $(case_expr) $(if $(case_expr),$(if $(skip_expr),and)) $(skip_expr))
+NEXTEST_FILTER := $(if $(filter_expr),-E '$(filter_expr)')
+
+test: test-unit test-integration ## Run the full suite, exactly as CI runs it
+
+test-unit: _check-nextest ## Run unit tests and doctests from src/ (no Postgres needed)
+	@$(CARGO_NEXTEST) --lib
+	# nextest does not run doctests, so they need cargo to themselves.
+	@$(CARGO_TEST) --workspace --doc
+
+# Every tests/*.rs is selected here, so a new test file runs without being
+# named anywhere.
+test-integration: _check-postgres _check-nextest ## Run all integration tests (mock RPC crate + every test file)
+	@$(CARGO_NEXTEST) -p ethereum_rpc_mock --test-threads=$(TEST_THREADS)
+	@$(CARGO_NEXTEST) --features $(TEST_FEATURES) --test '*' \
+	  --test-threads=$(TEST_THREADS)
+
+test-build: ## Compile every test binary without running it (no Postgres — uses sqlx offline data)
 	@echo "Building all test binaries..."
 	@$(CARGO_TEST) --lib --no-run
-	@$(CARGO_TEST) --manifest-path $(MOCK_RPC_MANIFEST) --no-run
-	@$(CARGO_TEST) --features integration-tests --test input_proof_v2_test --no-run
-	@$(CARGO_TEST) --features integration-tests --test public_decrypt_v2_test --no-run
-	@$(CARGO_TEST) --features integration-tests --test user_decrypt_v2_test --no-run
-	@$(CARGO_TEST) --features integration-tests --test delegated_user_decrypt_v2_test --no-run
-	@$(CARGO_TEST) --features integration-tests --test user_decrypt_v3_test --no-run
-	@$(CARGO_TEST) --features integration-tests --test solana_v0_teardown --no-run
-	@$(CARGO_TEST) --features integration-tests --test health_tests --no-run
-	@$(CARGO_TEST) --features integration-tests --test keyurl_test --no-run
+	@$(CARGO_TEST) -p ethereum_rpc_mock --no-run
+	@$(CARGO_TEST) --features $(TEST_FEATURES) --test '*' --no-run
 
-test-run: _check-postgres ## Run pre-built test binaries
-	@echo "Running pre-built test binaries..."
-	@$(CARGO_TEST) --manifest-path $(MOCK_RPC_MANIFEST) -- --test-threads=1
-	@$(CARGO_TEST) --features integration-tests --test input_proof_v2_test -- --test-threads=1
-	@$(CARGO_TEST) --features integration-tests --test public_decrypt_v2_test -- --test-threads=1
-	@$(CARGO_TEST) --features integration-tests --test user_decrypt_v2_test -- --test-threads=1
-	@$(CARGO_TEST) --features integration-tests --test delegated_user_decrypt_v2_test -- --test-threads=1
-	@$(CARGO_TEST) --features integration-tests --test user_decrypt_v3_test -- --test-threads=1
-	# The v0 teardown grep gate. It does not touch the database, but it lives with the other
-	# integration binaries so the whole tree is run from one list.
-	#
-	# `solana_host_payload_parity` used to sit here too. It pinned the relayer's own encoder
-	# against the connector-auth vectors, back when the relayer and the connector each had one.
-	# They now share `zama-solana-request`, so the vectors pin that one implementation from the
-	# connector suite instead, and the relayer half had nothing left to assert.
-	@$(CARGO_TEST) --features integration-tests --test solana_v0_teardown -- --test-threads=1
-	@$(CARGO_TEST) --features integration-tests --test health_tests -- --test-threads=1
-	@$(CARGO_TEST) --features integration-tests --test keyurl_test -- --test-threads=1
+test-group: _check-postgres _check-nextest ## Run one group: GROUP=public-decrypt [CASE=acl] [SKIP=timeout]
+	@test -n "$(GROUP)" || { \
+	  printf '$(RED)GROUP is required.$(RESET)\n'; \
+	  printf '  make test-group GROUP=<name> [CASE=<substring>] [SKIP=<substring>]\n\n'; \
+	  $(MAKE) --no-print-directory test-groups; exit 1; }
+	@test -n "$(filter $(GROUP),$(GROUPS))" || { \
+	  printf '$(RED)Unknown group: $(GROUP)$(RESET)\n\n'; \
+	  $(MAKE) --no-print-directory test-groups; exit 1; }
+	@$(CARGO_NEXTEST) --features $(TEST_FEATURES) $(call group_args,$(GROUP)) \
+	  $(NEXTEST_FILTER) --test-threads=$(TEST_THREADS)
 
-test-long-running: _check-postgres ## Run long-running redundancy tests (requires --features long-running-tests)
-	@echo "Running long-running redundancy tests..."
-	@$(CARGO_TEST) --features long-running-tests test_listener_redundancy -- --test-threads=1
+test-groups: ## List the group names accepted by 'make test-group GROUP=...'
+	@echo "$(GROUPS)" | tr ' ' '\n' | sort | sed 's/^/  /'
 
-test-all: test-build test-run test-long-running ## Build and run all tests including long-running (unit + integration + long-running)
+# The groups above say which test files should exist; the disk says which do.
+# Every tests/*.rs is a cargo test binary, so a file in no group is a file CI
+# never runs.
+listed_tests := $(sort $(addprefix tests/,$(addsuffix .rs,$(call group_bins,$(GROUPS)))))
+actual_tests := $(sort $(wildcard tests/*.rs))
+ungrouped    := $(filter-out $(listed_tests),$(actual_tests))
+missing      := $(filter-out $(actual_tests),$(listed_tests))
 
-test-all-no-long-running: test-build test-run ## Build and run all tests except long-running tests (unit + integration only)
+test-groups-check: ## Fail if a test file belongs to no group, or a group names a missing file
+	@test -z "$(ungrouped)" || { \
+	  echo "$(RED)Test file in no group: $(ungrouped)$(RESET)"; \
+	  echo "  Add it to a BINS_<group> in this Makefile, or CI will not run it."; exit 1; }
+	@test -z "$(missing)" || { \
+	  echo "$(RED)Group names a test file that does not exist: $(missing)$(RESET)"; \
+	  echo "  Remove it from its BINS_<group> in this Makefile."; exit 1; }
+	@echo "$(GREEN)All $(words $(GROUPS)) groups resolve, and every test file belongs to one$(RESET)"
 
 # ---------------------------------------------------------------------------
 ##@ Testing - Coverage
@@ -423,31 +508,6 @@ test-coverage-report-html: _check-coverage-tools  ## Run unit tests with coverag
 test-coverage-report-cmdline: _check-coverage-tools ## Run unit tests with coverage summary
 	@$(CARGO_LLVM_COV) --lib --json --no-cfg-coverage | jq -r -f coverage-format.jq | awk -F'\t' '{printf "%-70s %s\n", $$1, $$2}'
 	@$(MAKE) _clean-profraw
-
-test-health-endpoints: _check-postgres ## Run health endpoint tests
-	@$(CARGO_TEST) --test health_tests -- --test-threads=1
-
-# ---------------------------------------------------------------------------
-##@ Testing - Smoke V2
-# ---------------------------------------------------------------------------
-
-test-smoke-ok-all-v2: _check-postgres ## Run smoke test on ok (happy path) for v2 endpoints (user-decrypt, public-decrypt, input-proof)
-	@echo "Building v2 tests..."
-	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --features integration-tests --test public_decrypt_v2_test --test user_decrypt_v2_test --test input_proof_v2_test --no-run
-	@echo "Running v2 tests..."
-	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --features integration-tests --test public_decrypt_v2_test test_success_single_request -- --test-threads=4
-	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --features integration-tests --test user_decrypt_v2_test test_success_single_request -- --test-threads=4
-	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --features integration-tests --test input_proof_v2_test test_success_single_request -- --test-threads=4
-
-test-smoke-ok-input-proof-v2: _check-postgres ## Run smoke test on ok (happy path) for input-proof v2
-	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --features integration-tests --test input_proof_v2_test test_success_single_request -- --test-threads=4
-
-test-smoke-ok-user-decrypt-v2: _check-postgres ## Run smoke test on ok (happy path) for user-decrypt v2
-	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --features integration-tests --test user_decrypt_v2_test test_success_single_request -- --test-threads=4
-
-test-smoke-ok-public-decrypt-v2: _check-postgres ## Run smoke test on ok (happy path) for public-decrypt v2
-	@RUSTFLAGS="-A warnings" $(CARGO_TEST) --features integration-tests --test public_decrypt_v2_test test_success_single_request -- --test-threads=4
-
 
 # ---------------------------------------------------------------------------
 ##@ Workflows
@@ -469,21 +529,18 @@ fix: ## Auto-fix formatting and clippy issues
 # ---------------------------------------------------------------------------
 
 clippy: ## Check code with clippy (no fixes)
-	@cargo clippy --all-targets --all-features -- -D warnings
-	@cargo clippy --all-targets --all-features --manifest-path $(MOCK_RPC_MANIFEST) -- -D warnings
+	@cargo clippy --workspace --all-targets --all-features -- -D warnings
 
 clippy-fix: ## Fix code issues with clippy
-	@cargo clippy --all-targets --all-features --fix --allow-dirty --allow-staged
-	@cargo clippy --all-targets --all-features --fix --allow-dirty --allow-staged --manifest-path $(MOCK_RPC_MANIFEST)
+	@cargo clippy --workspace --all-targets --all-features --fix --allow-dirty --allow-staged
 
-# Scope fmt to owned packages; generated path dependencies are excluded.
+# Name the owned packages; --all would also reach the generated path
+# dependencies, which are not ours to format.
 fmt: ## Check code formatting
-	@cargo fmt --package fhevm-relayer -- --check
-	@cargo fmt --manifest-path $(MOCK_RPC_MANIFEST) -- --check
+	@cargo fmt --package fhevm-relayer --package ethereum_rpc_mock -- --check
 
 fmt-fix: ## Fix code formatting
-	@cargo fmt
-	@cargo fmt --manifest-path $(MOCK_RPC_MANIFEST)
+	@cargo fmt --package fhevm-relayer --package ethereum_rpc_mock
 
 openapi-view: ## Preview OpenAPI spec in browser (requires npx)
 	@command -v npx >/dev/null 2>&1 || { echo "$(RED)Error: npx not found. Install Node.js$(RESET)"; exit 1; }

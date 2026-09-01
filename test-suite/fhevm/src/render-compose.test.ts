@@ -77,11 +77,6 @@ const relayerOverrideState: State = {
   overrides: [{ group: "relayer" }],
 };
 
-const solanaProofServiceOverrideState: State = {
-  ...state,
-  overrides: [{ group: "solana-proof-service" }],
-};
-
 const listenerCoreOverrideState: State = {
   ...state,
   overrides: [{ group: "listener-core" }],
@@ -147,19 +142,16 @@ describe("render-compose", () => {
     });
   });
 
-  test("persists kms-core private vault and supplies both keygen CLI formats", async () => {
+  test("persists kms-core private vault across container recreates", async () => {
     const doc = await loadMergedComposeDoc("core");
-    const minio = (await loadMergedComposeDoc("minio")) as typeof doc & {
-      volumes?: Record<string, { name?: string }>;
-    };
     const volumes = doc.services["kms-core"]?.volumes as string[] | undefined;
-    const entrypoint = JSON.stringify(doc.services["kms-core"]?.entrypoint);
     expect(doc.services["kms-core"]?.user).toBe("root");
     expect(volumes).toContain("fhevm_kms_core_keys:/app/kms/core/service/keys");
-    expect(volumes?.some((mount) => mount.endsWith("config/kms-gen-keys.toml"))).toBe(true);
-    expect(entrypoint).toContain("--public-storage");
-    expect(entrypoint).toContain("--config-file config/kms-gen-keys.toml");
-    expect(minio.volumes?.minio_secrets?.name).toBe("fhevm_minio_secrets");
+  });
+
+  test("keeps localhost MinIO URLs reachable from the e2e container", async () => {
+    const doc = await loadMergedComposeDoc("test-suite");
+    expect(doc.services["test-suite-e2e-debug"]?.network_mode).toBe("container:fhevm-minio");
   });
 
   test("renders listener-core local override for the publisher only", async () => {
@@ -278,12 +270,14 @@ describe("render-compose", () => {
       await writeFile(envPath("coprocessor"), "\n");
       await generateComposeOverrides(gatewayContractsOverrideState, stackSpecForState(gatewayContractsOverrideState));
       const doc = YAML.parse(await readFile(composePath("gateway-sc"), "utf8")) as {
-        services: Record<string, { image?: string; build?: unknown }>;
+        services: Record<string, { image?: string; build?: unknown; command?: string[] }>;
       };
       expect(doc.services["gateway-sc-trigger-keygen"]?.image).toContain(":fhevm-local");
       expect(doc.services["gateway-sc-trigger-keygen"]?.build).toBeTruthy();
+      expect(doc.services["gateway-sc-trigger-keygen"]?.command?.[0]).toContain("${KEYGEN_PARAMS_TYPE:-0}");
       expect(doc.services["gateway-sc-trigger-crsgen"]?.image).toContain(":fhevm-local");
       expect(doc.services["gateway-sc-trigger-crsgen"]?.build).toBeTruthy();
+      expect(doc.services["gateway-sc-trigger-crsgen"]?.command?.[0]).toContain("${KEYGEN_PARAMS_TYPE:-0}");
     });
   });
 
@@ -294,51 +288,14 @@ describe("render-compose", () => {
       await writeFile(envPath("coprocessor.1"), "\n");
       await generateComposeOverrides(relayerOverrideState, stackSpecForState(relayerOverrideState));
       const doc = YAML.parse(await readFile(composePath("relayer"), "utf8")) as {
-        services: Record<
-          string,
-          { image?: string; platform?: string; build?: { context?: string; dockerfile?: string } }
-        >;
+        services: Record<string, { image?: string; build?: { context?: string; dockerfile?: string } }>;
       };
-      expect(doc.services["relayer-db"]?.platform).toBeUndefined();
-      expect(doc.services["relayer-db-migration"]?.platform).toBeUndefined();
       expect(doc.services["relayer-db-migration"]?.image).toContain(":fhevm-local");
       expect(doc.services["relayer-db-migration"]?.build?.dockerfile).toContain(
         "relayer/docker/relayer-migrate/Dockerfile",
       );
-      expect(doc.services["relayer"]?.platform).toBeUndefined();
       expect(doc.services["relayer"]?.image).toContain(":fhevm-local");
       expect(doc.services["relayer"]?.build?.dockerfile).toContain("relayer/docker/relayer/Dockerfile");
-
-      // Relayer override must not piggyback the standalone proof image.
-      await expect(readFile(composePath("solana-proof-service"), "utf8")).rejects.toMatchObject({
-        code: "ENOENT",
-      });
-    });
-  });
-
-  test("retags solana-proof-service for local builds when its override group is set", async () => {
-    await withTempStateDir(async () => {
-      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
-      await writeFile(envPath("coprocessor"), "\n");
-      await writeFile(envPath("coprocessor.1"), "\n");
-      await generateComposeOverrides(
-        solanaProofServiceOverrideState,
-        stackSpecForState(solanaProofServiceOverrideState),
-      );
-      const proofDoc = YAML.parse(await readFile(composePath("solana-proof-service"), "utf8")) as {
-        services: Record<
-          string,
-          { image?: string; platform?: string; build?: { context?: string; dockerfile?: string } }
-        >;
-      };
-      expect(proofDoc.services["solana-proof-service"]?.platform).toBeUndefined();
-      expect(proofDoc.services["solana-proof-service"]?.image).toBe(
-        "${SOLANA_PROOF_SERVICE_IMAGE_REPOSITORY:-solana-proof-service}:fhevm-local",
-      );
-      expect(proofDoc.services["solana-proof-service"]?.build?.dockerfile).toContain(
-        "solana-proof-service/Dockerfile",
-      );
-      expect(proofDoc.services["solana-proof-db"]).toBeUndefined();
     });
   });
 
@@ -530,6 +487,7 @@ gcs:
             container_name?: string;
             image?: string;
             build?: { args?: Record<string, string> } | undefined;
+            environment?: Record<string, string>;
           }
         >;
       };
@@ -546,57 +504,57 @@ gcs:
       expect(doc.services["coprocessor-db-migration"]?.build).toBeDefined();
       expect(doc.services["coprocessor-db-migration"]?.image).not.toContain(":v0.13.0");
       expect(doc.services["coprocessor-gcs-tfhe-worker"]?.build).toBeDefined();
+      expect(
+        doc.services["coprocessor-host-listener"]?.environment
+          ?.CANONICAL_PROTOCOL_CONFIG_CHAIN_ID,
+      ).toBeUndefined();
+      expect(
+        doc.services["coprocessor-host-listener-poller"]?.environment
+          ?.CANONICAL_PROTOCOL_CONFIG_CHAIN_ID,
+      ).toBeUndefined();
+      expect(
+        doc.services["coprocessor-gcs-host-listener"]?.environment
+          ?.CANONICAL_PROTOCOL_CONFIG_CHAIN_ID,
+      ).toBeUndefined();
       expect(doc.services["coprocessor-gcs-upgrade-controller"]?.container_name).toBe(
         "coprocessor-gcs-upgrade-controller",
       );
     });
   });
 
-  test("builds coprocessor and kms-connector images from the branch-local workspace Dockerfiles", async () => {
+  test("blue-green shims the BCS fleet from its pinned tag, not the resolved bundle", async () => {
+    const pinnedBcsScenario = resolveBlueGreenScenario(
+      path.join("/tmp", "blue-green-pinned-bcs.yaml"),
+      parseBlueGreenScenario(`
+version: 1
+kind: blue-green
+bcs:
+  source:
+    mode: registry
+    tag: v0.14.0-7
+gcs:
+  source: { mode: local }
+  stackVersion: "0.15.0"
+`),
+    );
+    const bgState: State = { ...state, scenario: pinnedBcsScenario };
     await withTempStateDir(async () => {
       await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
-      await writeFile(envPath("coprocessor"), "\n");
-      await writeFile(envPath("coprocessor.1"), "\n");
-      const kmsState: State = { ...state, overrides: [{ group: "coprocessor" }, { group: "kms-connector" }] };
-      await generateComposeOverrides(kmsState, stackSpecForState(kmsState));
-      type BuildDoc = { services: Record<string, { build?: { dockerfile?: string; target?: string } }> };
-      const coprocessor = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as BuildDoc;
-      const connector = YAML.parse(await readFile(composePath("kms-connector"), "utf8")) as BuildDoc;
-      const buildFor = (doc: BuildDoc, service: string) => doc.services[service]?.build ?? {};
-      // Every coprocessor image builds from the shared workspace Dockerfile (one cargo pass for
-      // all binaries) with a per-image runtime target.
-      const coprocessorTargets: Record<string, string> = {
-        "coprocessor-db-migration": "db-migration",
-        "coprocessor-host-listener": "host-listener",
-        "coprocessor-host-listener-poller": "host-listener",
-        "coprocessor-host-listener-consumer": "host-listener",
-        "coprocessor-gw-listener": "gw-listener",
-        "coprocessor-tfhe-worker": "tfhe-worker",
-        "coprocessor-zkproof-worker": "zkproof-worker",
-        "coprocessor-sns-worker": "sns-worker",
-        "coprocessor-transaction-sender": "transaction-sender",
+      await writeFile(envPath("coprocessor"), "BUCKET_NAME=coproc-0\n");
+      await generateComposeOverrides(bgState, stackSpecForState(bgState));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { command?: string[] }>;
       };
-      for (const [service, target] of Object.entries(coprocessorTargets)) {
-        const build = buildFor(coprocessor, service);
-        expect(build.dockerfile).toContain("coprocessor/fhevm-engine/Dockerfile.workspace");
-        expect(build.target).toBe(target);
-      }
-      // The kms-connector worker images build from their shared workspace Dockerfile; connector-db
-      // was never workspace-built (sqlx-cli install, not a workspace member) and keeps its own
-      // per-image Dockerfile.
-      const connectorTargets: Record<string, string> = {
-        "kms-connector-gw-listener": "gw-listener",
-        "kms-connector-kms-worker": "kms-worker",
-        "kms-connector-tx-sender": "tx-sender",
-      };
-      for (const [service, target] of Object.entries(connectorTargets)) {
-        const build = buildFor(connector, service);
-        expect(build.dockerfile).toContain("kms-connector/Dockerfile.workspace");
-        expect(build.target).toBe(target);
-      }
-      const connectorDb = buildFor(connector, "kms-connector-db-migration");
-      expect(connectorDb.dockerfile).toContain("kms-connector/connector-db/Dockerfile");
-      expect(connectorDb.target).toBe("prod");
+      // BCS runs the v0.14 image, which predates the unified --bucket-name flag,
+      // even though the resolved bundle points at HEAD.
+      const bcsCommand = doc.services["coprocessor-sns-worker"]?.command ?? [];
+      expect(bcsCommand).toContain("--bucket-name-ct128=coproc-0");
+      expect(bcsCommand).toContain("--bucket-name-ct64=coproc-0");
+      expect(bcsCommand).not.toContain("--bucket-name=coproc-0");
+      // GCS builds from the working tree, so it keeps the modern flag.
+      const gcsCommand = doc.services["coprocessor-gcs-sns-worker"]?.command ?? [];
+      expect(gcsCommand).toContain("--bucket-name=coproc-0");
+      expect(gcsCommand.filter((arg) => arg.startsWith("--bucket-name-"))).toEqual([]);
     });
   });
 });

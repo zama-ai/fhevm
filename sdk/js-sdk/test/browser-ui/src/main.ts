@@ -279,7 +279,7 @@ async function decrypt(): Promise<void> {
     if (options.userDecrypt) {
       setBusy(true, 'Signing permit and running user decrypt...');
       const transportKeyPair = await state.client.generateTransportKeyPair();
-      const signedPermit = await state.client.signDecryptionPermit({
+      const signedPermit = await state.client.signLegacyDecryptionPermit({
         transportKeyPair,
         contractAddresses: [state.fheTestAddress],
         durationSeconds: 24 * 3600,

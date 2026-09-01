@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 import { defineConfig } from 'vitest/config';
+import { VitestConsoleReporter } from './vitestConsoleReporter.js';
 
 const chain = process.env.CHAIN ?? 'sepolia';
 
@@ -29,10 +30,16 @@ export default defineConfig({
   },
   test: {
     include: ['test/fheTest/**/*.test.ts'],
+    reporters: [new VitestConsoleReporter()],
     testTimeout: 120_000,
     hookTimeout: 120_000,
     retry: 0,
     fileParallelism: false,
+    // Type-check the suite alongside the runtime tests (mirrors src/vitest.config.ts).
+    // Catches sync→async regressions where an un-awaited Promise is used as its
+    // resolved type. NOTE: it will NOT catch a Promise passed into an `any` sink
+    // (e.g. JSON.stringify) — those slip through the type system entirely.
+    typecheck: { enabled: true },
     env: {
       CHAIN: chain,
     },

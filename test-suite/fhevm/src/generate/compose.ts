@@ -8,6 +8,8 @@ import YAML from "yaml";
 
 import {
   type CompatPolicy,
+  type CoprocessorArgPolicy,
+  compatArgPolicyForPinnedTag,
   compatPolicyForState,
   supportsConsensusDetector,
   supportsHostListenerConsumer,
@@ -199,9 +201,7 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
     "host-sc-epoch-rotation": buildSpec("../../..", "host-contracts/Dockerfile"),
   },
   "test-suite": {
-    "test-suite-e2e-debug": buildSpec("../../..", "test-suite/e2e/Dockerfile", {
-      args: { RELAYER_SDK_VERSION: "${RELAYER_SDK_VERSION}" },
-    }),
+    "test-suite-e2e-debug": buildSpec("../../..", "test-suite/e2e/Dockerfile"),
   },
 };
 const localBuildSpecFor = (component: string, service: string) => COMPONENT_BUILD_SPECS[component]?.[service];
@@ -335,8 +335,12 @@ const applyInstanceAdjustments = (
       }
       filtered.push(value);
     }
+    // Emit each extra as a single `--flag=value` token, matching the compose
+    // files' own convention. As two tokens, `mergeArgs` would dedupe the bare
+    // value against an identical earlier token, so two flags sharing one value
+    // (e.g. one bucket name for both legacy ct64/ct128 flags) would lose it.
     const extras = (compatArgs[key] ?? []).flatMap(([flag, source]) =>
-      "value" in source ? [flag, source.value] : envVars[source.env] ? [flag, envVars[source.env]] : [],
+      "value" in source ? [`${flag}=${source.value}`] : envVars[source.env] ? [`${flag}=${envVars[source.env]}`] : [],
     );
     next.command = extras.length ? mergeArgs(filtered, extras) : filtered;
   }
@@ -463,6 +467,20 @@ const applyCoprocessorSource = (
   }
 };
 
+/**
+ * Picks the command-shaping policy for one instance's fleet.
+ *
+ * `plan`-derived compat describes the resolved bundle. An instance pinned with
+ * `source.mode: registry` runs a tag the bundle never mentions — blue-green's BCS
+ * fleet pins the previous release while the bundle describes HEAD — so its shims
+ * must be evaluated against that tag instead.
+ */
+const argPolicyForInstance = (
+  compat: CoprocessorArgPolicy,
+  instance: ResolvedCoprocessorScenarioInstance,
+): CoprocessorArgPolicy =>
+  instance.source.mode === "registry" ? compatArgPolicyForPinnedTag(instance.source.tag) : compat;
+
 // Green-side services omitted from BCS so it matches the previous-release shape.
 const GCS_ONLY_SERVICES = new Set([...GCS_ONLY_SUFFIXES].map((suffix) => `coprocessor-${suffix}`));
 
@@ -495,6 +513,7 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
     if (isBlueGreen) {
       localServices.add("coprocessor-db-migration");
     }
+    const argPolicy = argPolicyForInstance(compat, instance);
     const envName = instance.index === 0 ? "coprocessor" : `coprocessor.${instance.index}`;
     const envFileValue = envPath(envName);
     const instanceEnv = await readEnvFile(envFileValue);
@@ -515,8 +534,8 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
         envFileValue,
         instanceEnv,
         instance,
-        locallyBuilt ? {} : compat.coprocessorArgs,
-        locallyBuilt ? {} : compat.coprocessorDropFlags,
+        locallyBuilt ? {} : argPolicy.coprocessorArgs,
+        locallyBuilt ? {} : argPolicy.coprocessorDropFlags,
       );
       adjusted.container_name = serviceName;
       applyCoprocessorSource(adjusted, name, instance, locallyBuilt);
@@ -555,17 +574,20 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
         }
         const suffix = baseName.replace(/^coprocessor-/, "");
         const serviceName = `${gcsPrefix}${suffix}`;
+        const buildSpec = localBuildSpecFor("coprocessor", baseName);
+        // A service with a build spec runs the locally built binary, which speaks
+        // the working tree's flag contract. Shimming it to any older contract
+        // would feed it flags it does not accept — same guard as the BCS loop.
         const adjusted = applyInstanceAdjustments(
           baseName,
           service,
           gcsEnvFileValue,
           gcsInstanceEnv,
           gcsInstance,
-          compat.coprocessorArgs,
-          compat.coprocessorDropFlags,
+          buildSpec ? {} : compat.coprocessorArgs,
+          buildSpec ? {} : compat.coprocessorDropFlags,
         );
         adjusted.container_name = serviceName;
-        const buildSpec = localBuildSpecFor("coprocessor", baseName);
         if (buildSpec) {
           adjusted.image = retagLocal(service.image, `gcs-${gcs.stackVersion}`);
           // GCS compiles the newer stack version (build arg enables the override feature),
@@ -765,6 +787,7 @@ const buildExtraCoprocessorListenerOverride = async (
         : instance.source.mode === "inherit"
           ? inheritedBuildServices
           : new Set<string>();
+    const argPolicy = argPolicyForInstance(compat, instance);
     const prefix = instance.index === 0 ? "coprocessor-" : `coprocessor${instance.index}-`;
     const envName = `coprocessor-${chain.key}.${instance.index}`;
     const envFileValue = envPath(envName);
@@ -781,15 +804,67 @@ const buildExtraCoprocessorListenerOverride = async (
         envFileValue,
         instanceEnv,
         instance,
-        locallyBuilt ? {} : compat.coprocessorArgs,
-        locallyBuilt ? {} : compat.coprocessorDropFlags,
+        locallyBuilt ? {} : argPolicy.coprocessorArgs,
+        locallyBuilt ? {} : argPolicy.coprocessorDropFlags,
       );
       adjusted.container_name = cloneName;
+      // Extra chains keep their env canonical id (default chain), so they don't decode proposals.
       applyCoprocessorSource(adjusted, baseName, instance, locallyBuilt);
       delete adjusted.depends_on;
       services[cloneName] = adjusted;
     }
   }
+
+  // Blue-green: clone the GCS host-listeners per extra chain too, so the
+  // GCS stack can ingest and dry-run each chain.
+  if (plan.blueGreen) {
+    const gcs = plan.blueGreen.gcs;
+    for (const instance of plan.coprocessor.instances) {
+      const prefix = instance.index === 0 ? "coprocessor-" : `coprocessor${instance.index}-`;
+      const gcsPrefix = `${prefix}gcs-`;
+      const envFileValue = envPath(`coprocessor-${chain.key}.${instance.index}`);
+      const instanceEnv = await readEnvFile(envFileValue);
+      const gcsInstance: ResolvedCoprocessorScenarioInstance = {
+        index: instance.index,
+        source: gcs.source,
+        env: gcs.env,
+        args: gcs.args,
+      };
+      for (const baseName of listenerServices) {
+        const suffix = baseName.replace(/^coprocessor-/, "");
+        const cloneName = `${gcsPrefix}${suffix}${chainSuffix}`;
+        const baseService = doc.services[baseName];
+        if (!baseService) continue;
+        // GCS is always local-built and retagged to its stack version, so — as in
+        // buildCoprocessorOverride — a built service speaks the working tree's
+        // flag contract and must not be shimmed to an older one.
+        const buildSpec = localBuildSpecFor("coprocessor", baseName);
+        const adjusted = applyInstanceAdjustments(
+          baseName,
+          baseService,
+          envFileValue,
+          instanceEnv,
+          gcsInstance,
+          buildSpec ? {} : compat.coprocessorArgs,
+          buildSpec ? {} : compat.coprocessorDropFlags,
+        );
+        adjusted.container_name = cloneName;
+        if (buildSpec) {
+          adjusted.image = retagLocal(baseService.image, `gcs-${gcs.stackVersion}`);
+          adjusted.build = {
+            ...buildSpec,
+            args: {
+              ...(buildSpec.args as Record<string, string> | undefined),
+              BUILD_STACK_VERSION: gcs.stackVersion,
+            },
+          };
+        }
+        delete adjusted.depends_on;
+        services[cloneName] = adjusted;
+      }
+    }
+  }
+
   return { services };
 };
 

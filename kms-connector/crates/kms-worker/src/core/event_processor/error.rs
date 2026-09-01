@@ -6,9 +6,9 @@ use user_decryption_signature::Erc1271Error;
 
 #[derive(Debug, Error)]
 pub enum ProcessingError {
-    #[error("Processing failed with irrecoverable error: {0}")]
+    #[error("Processing failed with irrecoverable error: {0:#}")]
     Irrecoverable(anyhow::Error),
-    #[error("Processing failed: {0}")]
+    #[error("Processing failed: {0:#}")]
     Recoverable(anyhow::Error),
     #[error("Processing stopped: the operation was aborted on the KMS Core")]
     Aborted,
@@ -120,6 +120,18 @@ impl RequestCheckError {
     /// The natural inverse of [`RequestCheckError::record`].
     pub fn from_processing(kind: RequestCheckKind, source: ProcessingError) -> Self {
         Self { kind, source }
+    }
+
+    /// Wraps the inner error with additional context.
+    pub fn context(mut self, ctx: String) -> Self {
+        self.source = match self.source {
+            ProcessingError::Irrecoverable(e) => ProcessingError::Irrecoverable(e.context(ctx)),
+            ProcessingError::Recoverable(e) => ProcessingError::Recoverable(e.context(ctx)),
+            // `Aborted` has no inner error (inferred from gRPC status returned by the KMS Core),
+            // so the context is dropped for now.
+            ProcessingError::Aborted => ProcessingError::Aborted,
+        };
+        self
     }
 
     /// Records the error in [`REQUEST_CHECK_ERRORS`] and unwraps it into a [`ProcessingError`].

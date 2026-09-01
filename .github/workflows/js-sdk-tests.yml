@@ -104,7 +104,7 @@ jobs:
         run: cd contracts && forge soldeer install
 
       - name: Setup playwright
-        run: cd test/browser && npx playwright install --with-deps
+        run: cd test/browser-smoke && npx playwright install --with-deps
 
       - name: Set .env
         run: |
