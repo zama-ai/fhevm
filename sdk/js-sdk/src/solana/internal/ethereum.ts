@@ -18,6 +18,8 @@ export const solanaEthereumModule: EthereumModuleFactory = () => {
     ethereum: Object.freeze({
       recoverTypedDataAddress: () => notSupported('recoverTypedDataAddress'),
       signTypedData: () => notSupported('signTypedData'),
+      hashTypedData: () => notSupported('hashTypedData'),
+      call: () => notSupported('call'),
       readContract: () => notSupported('readContract'),
       encode: () => notSupported('encode'),
       encodePacked: () => notSupported('encodePacked'),

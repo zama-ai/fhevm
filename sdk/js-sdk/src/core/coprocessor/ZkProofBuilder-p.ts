@@ -28,6 +28,7 @@ import { createTypedValue, TypedValueArrayBuilder } from '../base/typedValue.js'
 import { toZkProof } from './ZkProof-p.js';
 import { encryptionBitsFromFheType, fheTypeNameFromTypeName } from '../handle/FheType.js';
 import { fetchFheEncryptionKeyWasm } from '../key/fetchFheEncryptionKey.js';
+import { createFhevmClientFrozenContext } from '../frozenContext/fhevmClientFrozenContext-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -255,9 +256,7 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
         message: 'TFHE version is required to build a ZK proof',
       });
     }
-    // EVM callers thread a frozen context; Solana callers pin TFHE on `context.tfheVersion`.
-    // deserializeFheEncryptionKey only reads `tfheVersion` from the context object.
-    const keyContext = fhevmContext ?? ({ tfheVersion } as FhevmClientFrozenContext);
+    const keyContext = fhevmContext ?? createFhevmClientFrozenContext({ tfheVersion });
     const fheEncryptionKeyWasm = await fetchFheEncryptionKeyWasm(context, { fhevmContext: keyContext });
 
     if (this.#totalBits === 0) {

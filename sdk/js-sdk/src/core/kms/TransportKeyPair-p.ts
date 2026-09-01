@@ -3,7 +3,7 @@ import type { FhevmRuntime, WithDecrypt } from '../types/coreFhevmRuntime.js';
 import type { Bytes, BytesHex } from '../types/primitives.js';
 import type { TkmsPrivateKey } from '../types/tkms-p.js';
 import type { TkmsVersion } from '../../wasm/tkms/KmsLibApi.js';
-import type { OptionalNativeClient } from '../types/coreFhevmClient.js';
+import type { NativeClient, OptionalNativeClient } from '../types/coreFhevmClient.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { assertIsBytesOrBytesHex, bytesToHexLarge, hexToBytesFaster } from '../base/bytes.js';

@@ -14,6 +14,7 @@ import type { ZkProof, SolanaZkProof } from './zkProof-p.js';
 import type { WithEncrypt } from './coreFhevmRuntime.js';
 import type { FhevmChain } from './fhevmChain.js';
 import type { FhevmClientFrozenContext } from './fhevmClientFrozenContext-p.js';
+import type { TfheVersion } from './moduleVersions.js';
 
 export interface ZkProofBuilder {
   addBool(value: boolean | number | bigint | BoolValueLike): this;

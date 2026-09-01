@@ -874,7 +874,6 @@ mod tests {
         rpc::types::Transaction as RpcTransaction,
         signers::{SignerSync, local::PrivateKeySigner},
         sol_types::SolValue,
-        transports::http::reqwest,
     };
     use connector_utils::{
         tests::rand::{rand_address, rand_digest, rand_handle, rand_public_key, rand_u256},

@@ -23,7 +23,11 @@ import { createTrustedClient } from '../modules/ethereum/createTrustedClient.js'
 import { asFhevmRuntimeWith, assertIsFhevmRuntime, assertIsFhevmRuntimeWith } from './CoreFhevmRuntime-p.js';
 import { globalFheEncryptionKeyCache } from '../key/FheEncryptionKeyCache-p.js';
 import { cloneModuleVersions } from '../runtimeConfig-p.js';
-import { cloneFhevmClientFrozenContext } from '../frozenContext/fhevmClientFrozenContext-p.js';
+import {
+  cloneFhevmClientFrozenContext,
+  createFhevmClientFrozenContext,
+  type CreateFhevmClientFrozenContextParameters,
+} from '../frozenContext/fhevmClientFrozenContext-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -716,7 +720,10 @@ export async function initPublicAction(fhevm: unknown): Promise<FhevmClientFroze
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export function setFrozenContext(fhevm: FhevmBase, frozenContext: FhevmClientFrozenContext): void {
+export function setFrozenContext(
+  fhevm: FhevmBase<FhevmChain | undefined, FhevmRuntime, OptionalNativeClient>,
+  frozenContext: FhevmClientFrozenContext,
+): void {
   const f = asCoreFhevm(fhevm) as CoreFhevm & { readonly [SET_FROZEN_CONTEXT]: SetFrozenContextFn };
   f[SET_FROZEN_CONTEXT](frozenContext);
 }
@@ -738,7 +745,7 @@ export function setResolvedTfheVersion(
   if (current.tryTfheVersion === tfheVersion) {
     return;
   }
-  setFrozenContext(fhevm, { ...current, tfheVersion } as FhevmClientFrozenContext);
+  setFrozenContext(fhevm, withFrozenModuleVersions(current, { tfheVersion }));
 }
 
 export function setResolvedTkmsVersion(
@@ -752,7 +759,17 @@ export function setResolvedTkmsVersion(
   if (current.tryTkmsVersion === tkmsVersion) {
     return;
   }
-  setFrozenContext(fhevm, { ...current, tkmsVersion } as FhevmClientFrozenContext);
+  setFrozenContext(fhevm, withFrozenModuleVersions(current, { tkmsVersion }));
+}
+
+function withFrozenModuleVersions(
+  current: FhevmClientFrozenContext,
+  patch: { readonly tfheVersion?: TfheVersion; readonly tkmsVersion?: TkmsVersion },
+): FhevmClientFrozenContext {
+  return createFhevmClientFrozenContext({
+    ...(cloneFhevmClientFrozenContext(current).toJSON() as CreateFhevmClientFrozenContextParameters),
+    ...patch,
+  });
 }
 
 export function getResolvedProtocolVersion(fhevm: unknown): ProtocolVersionResolution | undefined {

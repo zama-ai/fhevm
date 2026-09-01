@@ -433,26 +433,24 @@ contract InputVerification is
         emit VerifyProofResponseCall(zkProofId, ctHandles, signature, msg.sender, extraData);
 
         // Send the event if and only if the consensus is reached in the current response call.
-        // Shares the priority-sender finalization path with the EVM `verifyProofResponse`, so a
-        // Solana-originated request is indistinguishable downstream from an EVM one.
-        if (!$.verifiedZKProofs[zkProofId] && !$.rejectedZKProofs[zkProofId]) {
-            (bool canFinalize, bool finalizedByPriority) = _canFinalizeCoprocessorConsensus(
-                msg.sender,
-                currentSignatures.length
-            );
-            if (canFinalize) {
-                $.verifiedZKProofs[zkProofId] = true;
-                $.verifyProofConsensusDigest[zkProofId] = digest;
-                if (finalizedByPriority) {
-                    $.priorityVerifyProofConsensusTxSender[zkProofId] = msg.sender;
+        // This means a "late" response will not be reverted, just ignored and no event will be emitted
+        // Make sure the proof has neither been verified nor rejected yet: this prevents "lazy"
+        // coprocessors to be able to send both a verification and a rejection response by waiting for
+        // a coprocessor threshold decrement before sending some responses.
+        if (
+            !$.verifiedZKProofs[zkProofId] &&
+            !$.rejectedZKProofs[zkProofId] &&
+            _isConsensusReached(currentSignatures.length)
+        ) {
+            $.verifiedZKProofs[zkProofId] = true;
 
-                    bytes[] memory prioritySignatures = new bytes[](1);
-                    prioritySignatures[0] = signature;
-                    emit VerifyProofResponse(zkProofId, ctHandles, prioritySignatures);
-                } else {
-                    emit VerifyProofResponse(zkProofId, ctHandles, currentSignatures);
-                }
-            }
+            // A "late" valid coprocessor could still see its transaction sender address be added to
+            // the list after consensus. This storage variable is here to be able to retrieve this list
+            // later by only knowing the zkProofId, since a consensus can only happen once per proof
+            // verification request.
+            $.verifyProofConsensusDigest[zkProofId] = digest;
+
+            emit VerifyProofResponse(zkProofId, ctHandles, currentSignatures);
         }
     }
 

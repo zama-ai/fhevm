@@ -24,7 +24,7 @@ use kms_worker::core::{
     },
 };
 use sqlx::{Pool, Postgres};
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 use tokio_util::sync::CancellationToken;
 
 /// Mocks the Gateway RPC responses for the initial Coprocessor registry load of the
@@ -86,6 +86,9 @@ where
     let kms_worker = KmsWorker::new(event_picker, event_processor, response_publisher);
     Ok(kms_worker)
 }
+
+/// Registry refresh interval used by the tests: long enough that the refresh task never fires.
+pub const TEST_COPRO_REGISTRY_REFRESH: Duration = Duration::from_hours(24);
 
 pub fn create_mock_user_decryption_request_tx(
     tx_hash: FixedBytes<32>,
