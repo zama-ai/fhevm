@@ -435,7 +435,7 @@ fn execute_partition(
     //
     // Scoped to the PARTITION, not the batch, on purpose: a partition runs on
     // one thread with one server key installed, so entries are created on the
-    // device that consumes them and need no synchronisation. A batch-wide
+    // device that consumes them and need no synchronization. A batch-wide
     // cache would have to be shared across partition threads and would pin
     // every boundary value to whichever device populated it.
     //
