@@ -13,7 +13,7 @@ pkg/ts/_types
 pkg/ts/_types-cjs
 out
 tarball
-test/ts/.vitest-cache
+.vitest-cache/
 test/ts/node_modules
 .deploy-config
 broadcast

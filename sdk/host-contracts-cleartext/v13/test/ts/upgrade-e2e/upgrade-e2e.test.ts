@@ -449,12 +449,12 @@ test('e2e: deploy a v12 cleartext stack, then upgrade it to v13 — cleartext su
     };
 
     const dbGet = async (handle: Hex): Promise<bigint> =>
-      (await publicClient.readContract({
+      await publicClient.readContract({
         address: cleartextDb,
         abi: CLEARTEXT_DB_ABI,
         functionName: 'get',
         args: [handle],
-      }));
+      });
 
     // --- 2. Pre-upgrade round-trip: fill the DB under the v12 executor. ---
     //
