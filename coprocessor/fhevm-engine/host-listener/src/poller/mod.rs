@@ -177,7 +177,6 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         acl_address,
         tfhe_address,
         kms_generation_address,
-        protocol_config_address,
         confidential_bridge_address,
         config.retry_interval,
         config.max_http_retries,
