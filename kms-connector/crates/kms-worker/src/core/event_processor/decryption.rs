@@ -945,7 +945,7 @@ mod tests {
             ExpectedOutcome::Irrecoverable => {
                 assert_kind(&result, &expected);
                 let expected_msg = expected_error_msg.unwrap();
-                let msg = result.unwrap_err().details();
+                let msg = format!("{:#}", result.unwrap_err().source);
                 assert!(
                     msg.contains(expected_msg),
                     "Expected error message to contain '{expected_msg}', got: {msg}",

@@ -75,10 +75,6 @@ impl ProcessingError {
         self.source = self.source.context(ctx);
         self
     }
-
-    pub fn details(&self) -> String {
-        format!("{:#}", self.source)
-    }
 }
 
 impl std::fmt::Display for ProcessingError {
