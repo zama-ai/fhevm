@@ -63,6 +63,7 @@ describe('buildDispatchBatchInstruction', () => {
       batch,
       joinConfidentialMint,
       joinUnderlyingMint,
+      tokenProgram: SPL_TOKEN,
       hostConfig,
     });
 
@@ -123,6 +124,7 @@ describe('buildDispatchBatchInstruction', () => {
       batch,
       joinConfidentialMint,
       joinUnderlyingMint,
+      tokenProgram: SPL_TOKEN,
       hostConfig,
     });
     const addresses = instruction.accounts!.map((a) => a.address);

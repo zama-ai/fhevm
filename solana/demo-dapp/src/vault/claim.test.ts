@@ -68,6 +68,7 @@ describe('buildClaimInstruction', () => {
       batch,
       payoutConfidentialMint,
       payoutUnderlyingMint,
+      tokenProgram: SPL_TOKEN,
       hostConfig,
     });
 
@@ -132,6 +133,7 @@ describe('buildClaimInstruction', () => {
       batch,
       payoutConfidentialMint,
       payoutUnderlyingMint,
+      tokenProgram: SPL_TOKEN,
       hostConfig,
     });
     const addresses = instruction.accounts!.map((a) => a.address);

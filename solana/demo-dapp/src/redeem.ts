@@ -14,6 +14,7 @@ import {
   getCurrentBatch,
   getJoinRecord,
   joinBatch,
+  TOKEN_PROGRAM_ADDRESS,
 } from './vault/index.js';
 
 import type { BatchPosition } from './batchTypes';
@@ -389,6 +390,7 @@ export const joinRedeemBatch = async (
       batch: batch.addresses.batch,
       joinConfidentialMint: roots.joinConfidentialMint,
       joinUnderlyingMint: roots.joinUnderlyingMint,
+      tokenProgram: TOKEN_PROGRAM_ADDRESS,
       hostConfig: config.hostConfig,
       computeUnitLimit: JOIN_COMPUTE_UNIT_LIMIT,
       onTransactionSigned: (transaction) => {

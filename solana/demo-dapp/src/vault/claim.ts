@@ -9,7 +9,6 @@ import {
 } from './internal/batcherPdas.js';
 import {
   associatedTokenAddress,
-  TOKEN_PROGRAM_ADDRESS,
   balanceValueAddress,
   computeSignerAddress,
   tokenEventAuthorityAddress,
@@ -40,8 +39,10 @@ export type SolanaVaultClaimParameters = {
   readonly batch: Address;
   /** Confidential mint claims pay out in (`batcher.payout_confidential_mint`). */
   readonly payoutConfidentialMint: Address;
-  /** SPL mint wrapped by `payoutConfidentialMint`. Freeze checks canonical ATAs on this mint. */
+  /** SPL mint wrapped by `payoutConfidentialMint`. Freeze checks the payout owners' ATAs on this mint. */
   readonly payoutUnderlyingMint: Address;
+  /** Token program that owns `payoutUnderlyingMint` (`Tokenkeg` or Token-2022). */
+  readonly tokenProgram: Address;
   /** ZamaHost config PDA (demo-config `hostConfig`). */
   readonly hostConfig: Address;
 };
@@ -69,9 +70,9 @@ export async function buildClaimInstruction(parameters: SolanaVaultClaimParamete
     batchAuthorityPayoutAta: await associatedTokenAddress(
       batchAuthority,
       parameters.payoutUnderlyingMint,
-      TOKEN_PROGRAM_ADDRESS,
+      parameters.tokenProgram,
     ),
-    userPayoutAta: await associatedTokenAddress(user, parameters.payoutUnderlyingMint, TOKEN_PROGRAM_ADDRESS),
+    userPayoutAta: await associatedTokenAddress(user, parameters.payoutUnderlyingMint, parameters.tokenProgram),
     payoutComputeSigner: await computeSignerAddress(payoutConfidentialMint),
     batchPayoutTokenAccount,
     userPayoutTokenAccount,

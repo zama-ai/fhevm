@@ -104,7 +104,7 @@ export {
 // The mint's compute-signer PDA — the contract identity an input proof binds to. Exported so demo
 // consumers derive it from the mint root instead of restating the `fhe-compute` seed; the other
 // confidential-token encrypted-value-account derivations stay internal because every action derives them itself.
-export { computeSignerAddress } from './internal/tokenValueAccount.js';
+export { computeSignerAddress, TOKEN_PROGRAM_ADDRESS } from './internal/tokenValueAccount.js';
 export { confidentialBalanceValueAccount } from './internal/tokenValueAccount.js';
 // The canonical `EncryptedValue` PDA for an arbitrary `(domain, account, label)` triple. Exported
 // for the e2e scenarios' raw fhe_execute driver, which binds persistent outputs to scenario-owned

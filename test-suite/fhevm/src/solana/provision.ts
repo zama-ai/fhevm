@@ -269,6 +269,7 @@ export const wrapUnderlying = async (
       owner: params.owner,
       mint: params.mint,
       underlyingMint: params.underlyingMint,
+      tokenProgram: SPL_TOKEN_PROGRAM_ADDRESS,
       hostConfig: await hostConfigAddress(),
       amount: params.amount,
     }),

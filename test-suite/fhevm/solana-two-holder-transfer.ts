@@ -7,7 +7,7 @@ import fs from 'node:fs/promises';
 import { defineFhevmSolanaChain } from '@fhevm/sdk/chains';
 import { createFhevmEncryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/solana';
 import type { Bytes32Hex } from '@fhevm/sdk/types';
-import { confidentialTransfer } from '@demo-dapp/vault/index.js';
+import { confidentialTransfer, TOKEN_PROGRAM_ADDRESS } from '@demo-dapp/vault/index.js';
 import {
   address,
   createKeyPairSignerFromBytes,
@@ -75,6 +75,7 @@ const signature = await confidentialTransfer({ solanaChain: chain, aclProgramAdd
   feePayer: owner,
   mint: address(required('TRANSFER_MINT')),
   underlyingMint: address(required('TRANSFER_UNDERLYING_MINT')),
+  tokenProgram: TOKEN_PROGRAM_ADDRESS,
   fromAccount: address(required('TRANSFER_FROM_ACCOUNT')),
   toAccount: address(required('TRANSFER_TO_ACCOUNT')),
   toOwner: address(required('TRANSFER_RECIPIENT')),

@@ -16,6 +16,7 @@ import {
   getDeactivateLookupTableInstruction,
   getJoinRecord,
   settleBatch,
+  TOKEN_PROGRAM_ADDRESS,
 } from './vault/index.js';
 
 import {
@@ -172,6 +173,7 @@ export const dispatchVaultBatch = async (
         batch: position.batch,
         joinConfidentialMint: roots.joinConfidentialMint,
         joinUnderlyingMint: roots.joinUnderlyingMint,
+        tokenProgram: TOKEN_PROGRAM_ADDRESS,
         hostConfig: session.config.hostConfig,
       }),
     ],

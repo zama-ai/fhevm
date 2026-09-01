@@ -26,6 +26,7 @@ import { base58 } from '@scure/base';
 
 import { confidentialTransfer, type SolanaConfidentialTransferParameters } from './confidentialTransfer.js';
 import { findComputeSignerPda } from '../internal/generated/confidentialToken/pdas/computeSigner.js';
+import { TOKEN_PROGRAM_ADDRESS } from '../internal/tokenValueAccount.js';
 
 const CHAIN_ID = (1n << 63n) | 12345n;
 const ACL = `0x${'11'.repeat(32)}` as Bytes32Hex;
@@ -78,6 +79,7 @@ async function parameters(overrides: Partial<SolanaConfidentialTransferParameter
     feePayer: signer(key(3)),
     mint,
     underlyingMint: key(9),
+    tokenProgram: TOKEN_PROGRAM_ADDRESS,
     fromAccount: key(4),
     toAccount: key(5),
     toOwner: key(10),
