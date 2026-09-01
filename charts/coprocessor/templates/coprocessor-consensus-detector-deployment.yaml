@@ -1,27 +1,32 @@
-{{- if .Values.snsWorker.enabled -}}
-{{- $disabled := default (list) .Values.snsWorker.disabledArgs -}}
+{{- if .Values.consensusDetector.enabled -}}
+{{- $disabled := default (list) .Values.consensusDetector.disabledArgs -}}
+{{- $myBucket := .Values.consensusDetector.myBucket | default dict -}}
+{{- if not (or $myBucket.value $myBucket.valueFrom) -}}
+{{- $myBucket = ((.Values.snsWorker.config).s3BucketName) | default dict -}}
+{{- end -}}
+{{- $s3Endpoint := .Values.consensusDetector.s3Endpoint | default dict -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
-    app: coprocessor-sns-worker
-    app.kubernetes.io/name: {{ include "snsWorkerName" . }}
-  name: {{ include "snsWorkerName" . }}
+    app: coprocessor-consensus-detector
+    app.kubernetes.io/name: {{ include "consensusDetectorName" . }}
+  name: {{ include "consensusDetectorName" . }}
 spec:
-  replicas: {{ .Values.snsWorker.replicas }}
+  replicas: {{ .Values.consensusDetector.replicas }}
   selector:
     matchLabels:
-      app: coprocessor-sns-worker
+      app: coprocessor-consensus-detector
       {{- include "coprocessor.extraSelectorLabels" . | nindent 6 }}
-  {{- if .Values.snsWorker.updateStrategy }}
+  {{- if .Values.consensusDetector.updateStrategy }}
   strategy:
-    {{- toYaml .Values.snsWorker.updateStrategy | nindent 4 }}
+    {{- toYaml .Values.consensusDetector.updateStrategy | nindent 4 }}
   {{- end }}
   template:
     metadata:
       labels:
-        app: coprocessor-sns-worker
-        app.kubernetes.io/name: {{ include "snsWorkerName" . }}
+        app: coprocessor-consensus-detector
+        app.kubernetes.io/name: {{ include "consensusDetectorName" . }}
         {{- include "coprocessor.extraSelectorLabels" . | nindent 8 }}
         {{- with .Values.commonConfig.stackVersion }}
         app.kubernetes.io/version: {{ . | quote }}
@@ -29,7 +34,7 @@ spec:
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-        {{- with .Values.snsWorker.podLabels }}
+        {{- with .Values.consensusDetector.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
       {{- with .Values.podAnnotations }}
@@ -40,29 +45,29 @@ spec:
       imagePullSecrets:
         - name: registry-credentials
       restartPolicy: Always
-      {{- with .Values.snsWorker.nodeSelector }}
+      {{- with .Values.consensusDetector.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.snsWorker.affinity }}
+      {{- with .Values.consensusDetector.affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.snsWorker.tolerations }}
+      {{- with .Values.consensusDetector.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if .Values.snsWorker.serviceAccountName }}
-      serviceAccountName: {{ .Values.snsWorker.serviceAccountName }}
+      {{- if .Values.consensusDetector.serviceAccountName }}
+      serviceAccountName: {{ .Values.consensusDetector.serviceAccountName }}
       {{- end }}
       containers:
-        - name: coprocessor-sns-worker
-          image: {{ .Values.snsWorker.image.name }}:{{ .Values.snsWorker.image.tag }}
-          command: ["sns_worker"]
+        - name: coprocessor-consensus-detector
+          image: {{ .Values.consensusDetector.image.name }}:{{ .Values.consensusDetector.image.tag }}
+          command: ["consensus-detector"]
           {{- if .Values.commonConfig.stackVersionProbe.enabled }}
           startupProbe:
             exec:
-              command: ["sns_worker", "--stack-version"]
+              command: ["consensus-detector", "--stack-version"]
             periodSeconds: {{ .Values.commonConfig.stackVersionProbe.periodSeconds | default 10 }}
             failureThreshold: {{ .Values.commonConfig.stackVersionProbe.failureThreshold | default 30 }}
           {{- end }}
@@ -70,33 +75,19 @@ spec:
             {{- if not (has "database-url" $disabled) }}
             - --database-url=$(DATABASE_URL)
             {{- end }}
-            {{- with .Values.commonConfig.tenantApiKey }}
-            {{- if and (or .value .valueFrom) (not (has "tenant-api-key" $disabled)) }}
-            - --tenant-api-key=$(TENANT_API_KEY)
+            {{- if not (has "gw-url" $disabled) }}
+            - --gw-url=$(GATEWAY_URL)
             {{- end }}
+            {{- if and (or .Values.commonConfig.gatewayContractAddresses.gatewayConfig.value .Values.commonConfig.gatewayContractAddresses.gatewayConfig.valueFrom) (not (has "gateway-config-address" $disabled)) }}
+            - --gateway-config-address=$(GATEWAY_CONFIG_ADDRESS)
             {{- end }}
-            {{- if not (has "bucket-name" $disabled) }}
-            - --bucket-name=$(S3_BUCKET_NAME)
+            {{- if and (or $myBucket.value $myBucket.valueFrom) (not (has "my-bucket" $disabled)) }}
+            - --my-bucket=$(S3_BUCKET_NAME)
             {{- end }}
-            {{- if .Values.snsWorker.wallet.enabled }}
-            {{- if not (has "signer-type" $disabled) }}
-            {{- if .Values.snsWorker.wallet.awsKms.enabled }}
-            - --signer-type=aws-kms
-            {{- else }}
-            - --signer-type=private-key
+            {{- if and (or $s3Endpoint.value $s3Endpoint.valueFrom) (not (has "s3-endpoint" $disabled)) }}
+            - --s3-endpoint=$(S3_ENDPOINT)
             {{- end }}
-            {{- end }}
-            {{- if and (not .Values.snsWorker.wallet.awsKms.enabled) (not (has "private-key" $disabled)) }}
-            - --private-key=$(TX_SENDER_PRIVATE_KEY)
-            {{- end }}
-            {{- end }}
-            {{- if not (has "metrics-addr" $disabled) }}
-            - --metrics-addr=0.0.0.0:{{ .Values.snsWorker.ports.metrics }}
-            {{- end }}
-            {{- if not (has "health-check-port" $disabled) }}
-            - --health-check-port={{ .Values.snsWorker.ports.healthcheck }}
-            {{- end }}
-            {{- with .Values.snsWorker.extraArgs }}
+            {{- with .Values.consensusDetector.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
           env:
@@ -149,8 +140,8 @@ spec:
             {{- include "coprocessor.databaseSslRootCertEnv" . | nindent 12 }}
             {{- end }}
             {{- end }}
-            {{- with .Values.commonConfig.tenantApiKey }}
-            - name: TENANT_API_KEY
+            {{- with .Values.commonConfig.gatewayUrl }}
+            - name: GATEWAY_URL
               {{- if .value }}
               value: {{ .value | quote }}
               {{- else if .valueFrom }}
@@ -158,85 +149,59 @@ spec:
                 {{- toYaml .valueFrom | nindent 16 }}
               {{- end }}
             {{- end }}
-            {{- with .Values.snsWorker.config.s3BucketName }}
+            {{- with .Values.commonConfig.gatewayContractAddresses.gatewayConfig }}
+            - name: GATEWAY_CONFIG_ADDRESS
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- if or $myBucket.value $myBucket.valueFrom }}
             - name: S3_BUCKET_NAME
-              {{- if .value }}
-              value: {{ .value | quote }}
-              {{- else if .valueFrom }}
+              {{- if $myBucket.value }}
+              value: {{ $myBucket.value | quote }}
+              {{- else if $myBucket.valueFrom }}
               valueFrom:
-                {{- toYaml .valueFrom | nindent 16 }}
+                {{- toYaml $myBucket.valueFrom | nindent 16 }}
               {{- end }}
             {{- end }}
-            {{- with .Values.snsWorker.config.s3Migration }}
-            {{- with .mode }}
-            - name: S3_MIGRATION_MODE
-              value: {{ . | quote }}
-            {{- end }}
-            {{- with .sleepDuration }}
-            - name: S3_MIGRATION_SLEEP_DURATION
-              value: {{ . | quote }}
-            {{- end }}
-            {{- with .maxRetries }}
-            - name: S3_MIGRATION_MAX_RETRIES
-              value: {{ . | quote }}
-            {{- end }}
-            {{- end }}
-            {{- if .Values.snsWorker.wallet.enabled }}
-            {{- if .Values.snsWorker.wallet.awsKms.enabled }}
-            - name: AWS_KEY_ID
+            {{- if or $s3Endpoint.value $s3Endpoint.valueFrom }}
+            - name: S3_ENDPOINT
+              {{- if $s3Endpoint.value }}
+              value: {{ $s3Endpoint.value | quote }}
+              {{- else if $s3Endpoint.valueFrom }}
               valueFrom:
-                configMapKeyRef:
-                  name: {{ .Values.snsWorker.wallet.awsKms.configmap.name | quote }}
-                  key: {{ .Values.snsWorker.wallet.awsKms.configmap.key | quote }}
-            {{- else if .Values.snsWorker.wallet.secret.value }}
-            - name: TX_SENDER_PRIVATE_KEY
-              value: {{ .Values.snsWorker.wallet.secret.value | quote }}
-            {{- else }}
-            - name: TX_SENDER_PRIVATE_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.snsWorker.wallet.secret.name | quote }}
-                  key: {{ .Values.snsWorker.wallet.secret.key | quote }}
+                {{- toYaml $s3Endpoint.valueFrom | nindent 16 }}
+              {{- end }}
             {{- end }}
-            {{- end }}
-          {{- if default .Values.commonConfig.tracing.enabled .Values.snsWorker.tracing.enabled }}
+          {{- if default .Values.commonConfig.tracing.enabled .Values.consensusDetector.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.commonConfig.tracing.endpoint | quote }}
             - name: OTEL_SERVICE_NAME
-              {{- if .Values.snsWorker.tracing.service }}
-              value: {{ .Values.snsWorker.tracing.service | quote }}
-              {{- else }}
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.name
-              {{- end }}
+              value: {{ .Values.consensusDetector.tracing.service | quote }}
           {{- end }}
           {{- with .Values.commonConfig.env }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with .Values.snsWorker.env }}
+          {{- with .Values.consensusDetector.env }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          ports:
-            {{- range $portName, $portValue := .Values.snsWorker.ports }}
-            - name: {{ $portName }}
-              containerPort: {{ $portValue }}
-              protocol: TCP
-            {{- end }}
           resources:
             requests:
-              cpu: {{ .Values.snsWorker.resources.requests.cpu | default "100m" }}
-              memory: {{ .Values.snsWorker.resources.requests.memory | default "256Mi" }}
+              cpu: {{ .Values.consensusDetector.resources.requests.cpu | default "100m" }}
+              memory: {{ .Values.consensusDetector.resources.requests.memory | default "256Mi" }}
             limits:
-              cpu: {{ .Values.snsWorker.resources.limits.cpu | default "500m" }}
-              memory: {{ .Values.snsWorker.resources.limits.memory | default "512Mi" }}
-          {{- if and .Values.snsWorker.probes .Values.snsWorker.probes.liveness.enabled }}
+              cpu: {{ .Values.consensusDetector.resources.limits.cpu | default "500m" }}
+              memory: {{ .Values.consensusDetector.resources.limits.memory | default "512Mi" }}
+          {{- if and .Values.consensusDetector.probes .Values.consensusDetector.probes.liveness.enabled }}
           livenessProbe:
-            {{- toYaml (omit .Values.snsWorker.probes.liveness "enabled") | nindent 12 }}
+            {{- toYaml (omit .Values.consensusDetector.probes.liveness "enabled") | nindent 12 }}
           {{- end }}
-          {{- if and .Values.snsWorker.probes .Values.snsWorker.probes.readiness.enabled }}
+          {{- if and .Values.consensusDetector.probes .Values.consensusDetector.probes.readiness.enabled }}
           readinessProbe:
-            {{- toYaml (omit .Values.snsWorker.probes.readiness "enabled") | nindent 12 }}
+            {{- toYaml (omit .Values.consensusDetector.probes.readiness "enabled") | nindent 12 }}
           {{- end }}
           {{- if eq (include "coprocessor.databaseSslRootCertMountEnabled" .) "true" }}
           {{- include "coprocessor.databaseSslRootCertVolumeMount" . | nindent 10 }}

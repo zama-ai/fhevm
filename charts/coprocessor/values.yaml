@@ -10,6 +10,7 @@
 # - ZK proof worker (zero-knowledge proof generation)
 # - SNS worker (notification service)
 # - Transaction sender (blockchain transaction submission)
+# - Upgrade controller / consensus detector (RFC-021 GCS control plane, off by default)
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -91,6 +92,10 @@ commonConfig:
   # `app.kubernetes.io/version` pod label so blue/green tooling can select pods
   # by stack version. Should mirror the STACK_VERSION compiled into the images.
   stackVersion: ""
+  # Extra Deployment/Service matchLabels. Leave empty for a single release
+  # (selector stays immutable). Set when installing a second fleet in the same
+  # namespace (blue-green BCS + GCS), e.g. {fhevm.zama.ai/fleet: bcs}.
+  extraSelectorLabels: {}
   # Optional startup probe that runs `<binary> --stack-version` in-cluster to
   # confirm the deployed image exposes the expected stack-version flag. Disabled
   # by default so it does not affect existing deployments.
@@ -1512,6 +1517,110 @@ txSender:
   podLabels: {}
 
   # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
+  nodeSelector:
+  affinity:
+  tolerations:
+
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+# -----------------------------------------------------------------------------
+# Upgrade controller (RFC-021 GCS control plane)
+# -----------------------------------------------------------------------------
+# Owns the per-operator upgrade FSM and execute_cutover. Enable only on the
+# green fleet. Disabled by default so existing installs are unchanged.
+upgradeController:
+  enabled: false
+  nameOverride:
+
+  image:
+    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/upgrade-controller
+    tag: v0.14.0
+
+  replicas: 1
+  env: []
+  disabledArgs: []
+  extraArgs: []
+
+  serviceAccountName:
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  probes:
+    liveness:
+      enabled: false
+    readiness:
+      enabled: false
+
+  tracing:
+    enabled: false
+    service: "upgrade-controller"
+
+  podLabels: {}
+  nodeSelector:
+  affinity:
+  tolerations:
+
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+# -----------------------------------------------------------------------------
+# Consensus detector (RFC-021 GCS control plane)
+# -----------------------------------------------------------------------------
+# Uploads per-block stateCommitment to this operator's S3 and waits for
+# unanimity across all N operators. Enable only on the green fleet.
+consensusDetector:
+  enabled: false
+  nameOverride:
+
+  image:
+    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/consensus-detector
+    tag: v0.14.0
+
+  replicas: 1
+  env: []
+  disabledArgs: []
+  extraArgs: []
+
+  # This operator's S3 bucket (RFC-021 --my-bucket). Empty falls back to
+  # snsWorker.config.s3BucketName so BCS and GCS share the party bucket.
+  myBucket: {}
+  # Optional S3 endpoint override (--s3-endpoint), e.g. in-cluster MinIO.
+  s3Endpoint: {}
+
+  serviceAccountName:
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  probes:
+    liveness:
+      enabled: false
+    readiness:
+      enabled: false
+
+  tracing:
+    enabled: false
+    service: "consensus-detector"
+
+  podLabels: {}
   nodeSelector:
   affinity:
   tolerations:

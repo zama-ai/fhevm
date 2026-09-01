@@ -1,27 +1,27 @@
-{{- if .Values.zkProofWorker.enabled -}}
-{{- $disabled := default (list) .Values.zkProofWorker.disabledArgs -}}
+{{- if .Values.upgradeController.enabled -}}
+{{- $disabled := default (list) .Values.upgradeController.disabledArgs -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
-    app: coprocessor-zkproof-worker
-    app.kubernetes.io/name: {{ include "zkProofWorkerName" . }}
-  name: {{ include "zkProofWorkerName" . }}
+    app: coprocessor-upgrade-controller
+    app.kubernetes.io/name: {{ include "upgradeControllerName" . }}
+  name: {{ include "upgradeControllerName" . }}
 spec:
-  replicas: {{ .Values.zkProofWorker.replicas }}
+  replicas: {{ .Values.upgradeController.replicas }}
   selector:
     matchLabels:
-      app: coprocessor-zkproof-worker
+      app: coprocessor-upgrade-controller
       {{- include "coprocessor.extraSelectorLabels" . | nindent 6 }}
-  {{- if .Values.zkProofWorker.updateStrategy }}
+  {{- if .Values.upgradeController.updateStrategy }}
   strategy:
-    {{- toYaml .Values.zkProofWorker.updateStrategy | nindent 4 }}
+    {{- toYaml .Values.upgradeController.updateStrategy | nindent 4 }}
   {{- end }}
   template:
     metadata:
       labels:
-        app: coprocessor-zkproof-worker
-        app.kubernetes.io/name: {{ include "zkProofWorkerName" . }}
+        app: coprocessor-upgrade-controller
+        app.kubernetes.io/name: {{ include "upgradeControllerName" . }}
         {{- include "coprocessor.extraSelectorLabels" . | nindent 8 }}
         {{- with .Values.commonConfig.stackVersion }}
         app.kubernetes.io/version: {{ . | quote }}
@@ -29,7 +29,7 @@ spec:
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-        {{- with .Values.zkProofWorker.podLabels }}
+        {{- with .Values.upgradeController.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
       {{- with .Values.podAnnotations }}
@@ -40,29 +40,29 @@ spec:
       imagePullSecrets:
         - name: registry-credentials
       restartPolicy: Always
-      {{- with .Values.zkProofWorker.nodeSelector }}
+      {{- with .Values.upgradeController.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.zkProofWorker.affinity }}
+      {{- with .Values.upgradeController.affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.zkProofWorker.tolerations }}
+      {{- with .Values.upgradeController.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if .Values.zkProofWorker.serviceAccountName }}
-      serviceAccountName: {{ .Values.zkProofWorker.serviceAccountName }}
+      {{- if .Values.upgradeController.serviceAccountName }}
+      serviceAccountName: {{ .Values.upgradeController.serviceAccountName }}
       {{- end }}
       containers:
-        - name: coprocessor-zkproof-worker
-          image: {{ .Values.zkProofWorker.image.name }}:{{ .Values.zkProofWorker.image.tag }}
-          command: ["zkproof_worker"]
+        - name: coprocessor-upgrade-controller
+          image: {{ .Values.upgradeController.image.name }}:{{ .Values.upgradeController.image.tag }}
+          command: ["upgrade-controller"]
           {{- if .Values.commonConfig.stackVersionProbe.enabled }}
           startupProbe:
             exec:
-              command: ["zkproof_worker", "--stack-version"]
+              command: ["upgrade-controller", "--stack-version"]
             periodSeconds: {{ .Values.commonConfig.stackVersionProbe.periodSeconds | default 10 }}
             failureThreshold: {{ .Values.commonConfig.stackVersionProbe.failureThreshold | default 30 }}
           {{- end }}
@@ -70,13 +70,7 @@ spec:
             {{- if not (has "database-url" $disabled) }}
             - --database-url=$(DATABASE_URL)
             {{- end }}
-            {{- if not (has "metrics-addr" $disabled) }}
-            - --metrics-addr=0.0.0.0:{{ .Values.zkProofWorker.ports.metrics }}
-            {{- end }}
-            {{- if not (has "health-check-port" $disabled) }}
-            - --health-check-port={{ .Values.zkProofWorker.ports.healthcheck }}
-            {{- end }}
-            {{- with .Values.zkProofWorker.extraArgs }}
+            {{- with .Values.upgradeController.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
           env:
@@ -129,44 +123,32 @@ spec:
             {{- include "coprocessor.databaseSslRootCertEnv" . | nindent 12 }}
             {{- end }}
             {{- end }}
-          {{- if default .Values.commonConfig.tracing.enabled .Values.zkProofWorker.tracing.enabled }}
+          {{- if default .Values.commonConfig.tracing.enabled .Values.upgradeController.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.commonConfig.tracing.endpoint | quote }}
             - name: OTEL_SERVICE_NAME
-              {{- if .Values.zkProofWorker.tracing.service }}
-              value: {{ .Values.zkProofWorker.tracing.service | quote }}
-              {{- else }}
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.name
-              {{- end }}
+              value: {{ .Values.upgradeController.tracing.service | quote }}
           {{- end }}
           {{- with .Values.commonConfig.env }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with .Values.zkProofWorker.env }}
+          {{- with .Values.upgradeController.env }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          ports:
-            {{- range $portName, $portValue := .Values.zkProofWorker.ports }}
-            - name: {{ $portName }}
-              containerPort: {{ $portValue }}
-              protocol: TCP
-            {{- end }}
           resources:
             requests:
-              cpu: {{ .Values.zkProofWorker.resources.requests.cpu | default "100m" }}
-              memory: {{ .Values.zkProofWorker.resources.requests.memory | default "256Mi" }}
+              cpu: {{ .Values.upgradeController.resources.requests.cpu | default "100m" }}
+              memory: {{ .Values.upgradeController.resources.requests.memory | default "256Mi" }}
             limits:
-              cpu: {{ .Values.zkProofWorker.resources.limits.cpu | default "500m" }}
-              memory: {{ .Values.zkProofWorker.resources.limits.memory | default "512Mi" }}
-          {{- if and .Values.zkProofWorker.probes .Values.zkProofWorker.probes.liveness.enabled }}
+              cpu: {{ .Values.upgradeController.resources.limits.cpu | default "500m" }}
+              memory: {{ .Values.upgradeController.resources.limits.memory | default "512Mi" }}
+          {{- if and .Values.upgradeController.probes .Values.upgradeController.probes.liveness.enabled }}
           livenessProbe:
-            {{- toYaml (omit .Values.zkProofWorker.probes.liveness "enabled") | nindent 12 }}
+            {{- toYaml (omit .Values.upgradeController.probes.liveness "enabled") | nindent 12 }}
           {{- end }}
-          {{- if and .Values.zkProofWorker.probes .Values.zkProofWorker.probes.readiness.enabled }}
+          {{- if and .Values.upgradeController.probes .Values.upgradeController.probes.readiness.enabled }}
           readinessProbe:
-            {{- toYaml (omit .Values.zkProofWorker.probes.readiness "enabled") | nindent 12 }}
+            {{- toYaml (omit .Values.upgradeController.probes.readiness "enabled") | nindent 12 }}
           {{- end }}
           {{- if eq (include "coprocessor.databaseSslRootCertMountEnabled" .) "true" }}
           {{- include "coprocessor.databaseSslRootCertVolumeMount" . | nindent 10 }}

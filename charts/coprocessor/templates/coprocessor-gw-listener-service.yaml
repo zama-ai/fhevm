@@ -17,5 +17,6 @@ spec:
   selector:
     app: coprocessor-gw-listener
     app.kubernetes.io/name: {{ include "gwListenerName" . }}
+    {{- include "coprocessor.extraSelectorLabels" . | nindent 4 }}
   type: ClusterIP
 {{- end }}

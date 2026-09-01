@@ -12,6 +12,7 @@ spec:
   selector:
     matchLabels:
       app: coprocessor-gw-listener
+      {{- include "coprocessor.extraSelectorLabels" . | nindent 6 }}
   {{- if .Values.gwListener.updateStrategy }}
   strategy:
     {{- toYaml .Values.gwListener.updateStrategy | nindent 4 }}
@@ -21,6 +22,7 @@ spec:
       labels:
         app: coprocessor-gw-listener
         app.kubernetes.io/name: {{ include "gwListenerName" . }}
+        {{- include "coprocessor.extraSelectorLabels" . | nindent 8 }}
         {{- with .Values.commonConfig.stackVersion }}
         app.kubernetes.io/version: {{ . | quote }}
         {{- end }}
