@@ -446,6 +446,66 @@ fn accepting_scenarios() -> Vec<Scenario> {
             .with_delegation(&delegation_b),
     ));
 
+    // The scope a delegation actually has, pinned as behavior rather than left to the reader of
+    // the PDA seeds: one row is keyed by an authority, so it authorizes every value of that
+    // authority — including values in domains the grant never named, because the domain is not a
+    // seed. Same authority, same single row, two domains, both accepted. For the confidential
+    // token program this is the intended scope (its authority PDA is derived from the mint, which
+    // is also the domain, so nothing crosses a mint); an application that reuses one authority
+    // across domains is granting across all of them, and must derive a per-domain authority if it
+    // wants otherwise.
+    let signer = Wallet::new(1);
+    let delegator = Wallet::new(2);
+    let second_domain: SolanaPubkeyBytes = [0x62; 32];
+    let handle_here = handle(0x73, FHE_TYPE_UINT64);
+    let handle_elsewhere = handle(0x74, FHE_TYPE_UINT64);
+    // Only the domain differs: the encrypted value id derives from (domain, authority, label), so
+    // one label is enough to give these two accounts different addresses.
+    let encrypted_value_account_here = EncryptedValueAccountFixture::in_domain(
+        DOMAIN,
+        AUTHORITY,
+        LABEL,
+        handle_here,
+        &[delegator.pubkey()],
+    );
+    let encrypted_value_account_elsewhere = EncryptedValueAccountFixture::in_domain(
+        second_domain,
+        AUTHORITY,
+        LABEL,
+        handle_elsewhere,
+        &[delegator.pubkey()],
+    );
+    assert_ne!(
+        encrypted_value_account_here.account_key, encrypted_value_account_elsewhere.account_key,
+        "the two domains must give two accounts, or this proves nothing about domain scope"
+    );
+    let one_row = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
+    out.push(Scenario::accepted(
+        "delegated-one-authority-spans-domains",
+        "A single delegation row authorizes the delegator's values in two different domains: the \
+         row is keyed by (delegator, delegate, encrypted value account authority) and the domain \
+         is not among the PDA's seeds. The signed scope still has to name both domains — that is \
+         the permit's rule, not the delegation's.",
+        RequestBuilder::new(&signer)
+            .permit(PermitBuilder::new(signer.pubkey()).scope(&[DOMAIN, second_domain]))
+            .delegated_current(
+                &encrypted_value_account_here,
+                handle_here,
+                delegator.pubkey(),
+            )
+            .delegated_current(
+                &encrypted_value_account_elsewhere,
+                handle_elsewhere,
+                delegator.pubkey(),
+            )
+            .wire(),
+        World::at_slot(OBSERVED_SLOT)
+            .with_encrypted_value_account(&encrypted_value_account_here)
+            .with_encrypted_value_account(&encrypted_value_account_elsewhere)
+            .with_watermark(signer.pubkey(), 0)
+            .with_delegation(&one_row),
+    ));
+
     // Many handles in one request. There is no limit here to sit on the boundary of — the request
     // budget is enforced on chain, before the request exists — so the count is a plain number,
     // large enough that the read plan covers many accounts at once.

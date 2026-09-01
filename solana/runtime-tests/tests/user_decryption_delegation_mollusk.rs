@@ -1284,7 +1284,11 @@ fn sdk_fixture_delegation_address_and_instruction_bytes() {
     let revoke = host::instruction::RevokeDelegationForUserDecryption {}.data();
     assert_eq!(fixture_hex(&revoke), "931b7e35412576e1");
 
-    // The record as the program serializes it, for the SDK's hand-rolled account decoder.
+    // The record as the program serializes it, for the SDK's hand-rolled account decoder. The
+    // bump is the canonical one of the address above — the only value the program ever stores,
+    // and the SDK's fetch now validates it against its own derivation.
+    let (_, canonical_bump) = host::user_decryption_delegation_address(delegator, delegate, authority);
+    assert_eq!(canonical_bump, 255);
     let record = serialized(UserDecryptionDelegation {
         delegator,
         delegate,
@@ -1293,14 +1297,14 @@ fn sdk_fixture_delegation_address_and_instruction_bytes() {
         delegation_counter: 7,
         last_update_slot: 400,
         revoked: false,
-        bump: 254,
+        bump: canonical_bump,
     });
     assert_eq!(
         fixture_hex(&record),
         "25058b21493501f81111111111111111111111111111111111111111111111111111111111111111\
          2222222222222222222222222222222222222222222222222222222222222222\
          3333333333333333333333333333333333333333333333333333333333333333\
-         f4010000000000000700000000000000900100000000000000fe"
+         f4010000000000000700000000000000900100000000000000ff"
     );
 }
 

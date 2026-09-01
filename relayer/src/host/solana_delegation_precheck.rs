@@ -8,15 +8,25 @@
 //! the only safe way an advisory check can be:
 //!
 //! * it refuses ONLY what the authoritative check could not possibly authorize — the
-//!   delegation rows of the entry's tuple are definitively dead (absent, revoked, or expired)
-//!   at the slot of this read;
+//!   delegation rows of the entry's tuple are dead (absent, revoked, or expired) at the slot
+//!   of this read. "At the slot of this read" is a real caveat for the absent case: a node
+//!   lagging at `confirmed` shows a freshly granted delegation as absent, and the refusal is
+//!   then one the connector, reading later, would not repeat. That window is accepted policy
+//!   rather than an oversight — the EVM pre-check reading `latest` has carried the same
+//!   exposure since it was born, passing absent rows through would send the common case (no
+//!   grant ever existed) to a doomed gateway transaction, and a caller inside the window
+//!   succeeds by resubmitting;
 //! * every ambiguity of *data* passes: a live row, an unreadable or misshapen account, an
 //!   unresolvable encrypted value account. A false pass costs one doomed gateway transaction (what the
 //!   connector-side check is for); a false refusal would block an authorized user, so a
 //!   fetched world this check cannot judge always passes;
 //! * a *transport* failure is not ambiguity: an RPC that cannot be read at all, retries
 //!   exhausted, refuses the request (`HostAclError::CallFailed`) — the same policy as the EVM
-//!   pre-check, so the client-visible contract does not fork by host chain.
+//!   pre-check, so the client-visible contract does not fork by host chain. A node that is
+//!   merely *behind* is not that failure: the row read requires the encrypted-value read's slot
+//!   (`minContextSlot`) and is re-checked against it on arrival, and a node that never catches
+//!   up passes rather than refusing. The two reads are therefore never two views of the chain
+//!   in the wrong order — the ordering the connector gets from its own `deciding_after` gate.
 //!
 //! Direct entries (`subject == user_pubkey`) are not pre-checked at all: their authorization
 //! is membership in the encrypted value account, and there is no cheaper reading of it here

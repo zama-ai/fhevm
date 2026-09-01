@@ -178,13 +178,14 @@ fn check_row(
     // two paths cannot drift on the byte layout. Every failure it can report — wrong length,
     // wrong discriminator, an invalid field — says the same thing about these bytes, which is
     // what the variant below is named for.
-    let Ok(record) =
+    let Ok(witness) =
         decode_user_decryption_delegation_witness(account_key, account.owner, &account.data)
     else {
         return Ok(RowOutcome::NotLive(
             DelegationFailure::NotADelegationRecord { account_key },
         ));
     };
+    let record = &witness.record;
 
     // The address is not taken as proof of what the record says.
     if record.delegator != delegator

@@ -13,12 +13,25 @@ import {
   type FetchAccountConfig,
   type Instruction,
   type MaybeEncodedAccount,
+  type ProgramDerivedAddress,
+  type TransactionSigner,
 } from '@solana/kit';
 
 import type { SolanaRpc } from '../encryptedValueAccount.js';
 import { getDelegateForUserDecryptionInstructionAsync } from '../internal/generated/zamaHost/instructions/delegateForUserDecryption.js';
 import { getRevokeDelegationForUserDecryptionInstructionAsync } from '../internal/generated/zamaHost/instructions/revokeDelegationForUserDecryption.js';
+import { findHostConfigPda } from '../internal/generated/zamaHost/pdas/hostConfig.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../internal/generated/zamaHost/programAddress.js';
+
+/**
+ * Which zama-host deployment to address. Every entry point of this module defaults to the
+ * canonical deployment id; a deployment not at that address (a local validator, a fork) passes
+ * its configured id — the same value the decrypt path takes as `chain.fhevm.verifyingProgramId`.
+ */
+export type SolanaZamaHostAddressConfig = {
+  /** The zama-host program id; defaults to [`ZAMA_HOST_PROGRAM_ADDRESS`]. */
+  readonly programAddress?: Address | undefined;
+};
 
 /** Seed of the user-decryption delegation record PDA. */
 export const SOLANA_USER_DECRYPTION_DELEGATION_SEED = new TextEncoder().encode('user-decryption-delegation');
@@ -32,27 +45,43 @@ export const SOLANA_USER_DECRYPTION_DELEGATION_SEED = new TextEncoder().encode('
 export const SOLANA_WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY =
   'JEKNVnkbo3jma5nREBBJCDoXFVeKkD56V3xKrvRmWxFG' as Address<'JEKNVnkbo3jma5nREBBJCDoXFVeKkD56V3xKrvRmWxFG'>;
 
-/** The tuple a delegation record is keyed by. */
+/**
+ * The tuple a delegation record is keyed by.
+ *
+ * The scope worth knowing before granting: a delegation is keyed by an *authority*, never by an
+ * encrypted value id. One grant therefore covers every value that names that authority and lists
+ * the delegator as a subject — the balance, a transferred amount, a burned amount, and their
+ * historical handles alike — for as long as the row is live. The domain is not one of the PDA's
+ * seeds, so it does not narrow this either.
+ *
+ * For the confidential-token program that scope is exactly the intended one: the token account
+ * authority PDA is derived from the mint, which is also the domain, so a grant cannot reach
+ * another mint. An application that reuses one wallet or PDA as the authority of several domains
+ * grants across all of them at once; where that is not wanted, derive a per-domain authority and
+ * grant against it.
+ */
 export type SolanaUserDecryptionDelegationTuple = {
   /** The user granting delegated decrypt rights. */
   readonly delegator: Address;
   /** The party allowed to request user decryption of the delegator's values. */
   readonly delegate: Address;
   /**
-   * The encrypted value account authority the delegation is scoped over, or
+   * The encrypted value account authority the delegation is scoped over — every value of that
+   * authority, not one value id (see the type's own note) — or
    * [`SOLANA_WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY`] for a grant across every authority of
    * the delegator's.
    */
   readonly encryptedValueAccountAuthority: Address;
 };
 
-/** The canonical delegation record address of a tuple — the address the Connector reads. */
-export async function solanaUserDecryptionDelegationAddress(
+/** The full record PDA of a tuple — address and canonical bump — under one deployment. */
+async function solanaUserDecryptionDelegationPda(
   tuple: SolanaUserDecryptionDelegationTuple,
-): Promise<Address> {
+  programAddress: Address,
+): Promise<ProgramDerivedAddress> {
   const encoder = getAddressEncoder();
-  const [derived] = await getProgramDerivedAddress({
-    programAddress: ZAMA_HOST_PROGRAM_ADDRESS,
+  return await getProgramDerivedAddress({
+    programAddress,
     seeds: [
       SOLANA_USER_DECRYPTION_DELEGATION_SEED,
       encoder.encode(tuple.delegator),
@@ -60,6 +89,17 @@ export async function solanaUserDecryptionDelegationAddress(
       encoder.encode(tuple.encryptedValueAccountAuthority),
     ],
   });
+}
+
+/** The canonical delegation record address of a tuple — the address the Connector reads. */
+export async function solanaUserDecryptionDelegationAddress(
+  tuple: SolanaUserDecryptionDelegationTuple,
+  config?: SolanaZamaHostAddressConfig,
+): Promise<Address> {
+  const [derived] = await solanaUserDecryptionDelegationPda(
+    tuple,
+    config?.programAddress ?? ZAMA_HOST_PROGRAM_ADDRESS,
+  );
   return derived;
 }
 
@@ -89,50 +129,97 @@ export function solanaDelegationWarnings(params: {
   return [];
 }
 
-/** Parameters of a delegation grant. Plain addresses and a slot — renderable in a proposal UI. */
-export type SolanaDelegateForUserDecryptionParameters = SolanaUserDecryptionDelegationTuple & {
-  /** Pays rent if the record must be created. May differ from the delegator. */
-  readonly payer: Address;
+/**
+ * A signing account in the form the caller can actually produce. Pass the `TransactionSigner`
+ * of a wallet you hold — the kit's signing pipeline then signs the built instruction as
+ * written. Pass a bare `Address` for a signer nothing at hand can sign: the instruction then
+ * carries a noop placeholder in that signer meta — the form a Squads proposal renderer or a
+ * CPI-signing program needs — and the validator refuses the transaction unless something else
+ * supplies the signature.
+ */
+export type SolanaSignerOrAddress = Address | TransactionSigner;
+
+function resolvedSigner(value: SolanaSignerOrAddress): TransactionSigner {
+  return typeof value === 'string' ? createNoopSigner(value) : value;
+}
+
+function resolvedAddress(value: SolanaSignerOrAddress): Address {
+  return typeof value === 'string' ? value : value.address;
+}
+
+/** Parameters of a delegation grant. Signers where held, bare addresses where only named. */
+export type SolanaDelegateForUserDecryptionParameters = Omit<
+  SolanaUserDecryptionDelegationTuple,
+  'delegator'
+> & {
+  /** The user granting delegated decrypt rights (see [`SolanaSignerOrAddress`]). */
+  readonly delegator: SolanaSignerOrAddress;
+  /**
+   * Pays rent if the record must be created. May differ from the delegator (see
+   * [`SolanaSignerOrAddress`]).
+   */
+  readonly payer: SolanaSignerOrAddress;
   /** The last slot the delegation is live at, inclusive. Must lie beyond the current slot. */
   readonly expirationSlot: bigint;
   /** Canonical singleton host config; defaults to the host config PDA when omitted. */
   readonly hostConfig?: Address | undefined;
   /** The record address; defaults to the canonical PDA of the tuple when omitted. */
   readonly delegationRecord?: Address | undefined;
-};
+} & SolanaZamaHostAddressConfig;
 
 /**
  * Builds the `zama_host::delegate_for_user_decryption` instruction: grants, or refreshes, the
- * delegation of the tuple. The instruction is returned unsigned — the delegator signs as part of
- * whatever transaction carries it, which is what lets a program-controlled delegator (a multisig
- * vault) sign via CPI instead of a wallet. Check [`solanaDelegationWarnings`] before offering a
- * wildcard grant to a user.
+ * delegation of the tuple. A wallet-held delegator passes its `TransactionSigner` and the kit's
+ * signing pipeline signs the instruction as built; a delegator nothing at hand signs for — a
+ * Squads proposal, a program-controlled vault signing via CPI — passes its bare address, and
+ * the instruction carries a noop placeholder for the transaction that eventually signs it.
+ * Check [`solanaDelegationWarnings`] before offering a wildcard grant to a user.
  */
 export async function buildDelegateForUserDecryptionInstruction(
   params: SolanaDelegateForUserDecryptionParameters,
 ): Promise<Instruction> {
-  const delegationRecord = params.delegationRecord ?? (await solanaUserDecryptionDelegationAddress(params));
-  return getDelegateForUserDecryptionInstructionAsync({
-    payer: createNoopSigner(params.payer),
-    delegator: createNoopSigner(params.delegator),
-    ...(params.hostConfig !== undefined ? { hostConfig: params.hostConfig } : {}),
-    delegationRecord,
+  const programAddress = params.programAddress ?? ZAMA_HOST_PROGRAM_ADDRESS;
+  const tuple: SolanaUserDecryptionDelegationTuple = {
+    delegator: resolvedAddress(params.delegator),
     delegate: params.delegate,
     encryptedValueAccountAuthority: params.encryptedValueAccountAuthority,
-    expirationSlot: params.expirationSlot,
-  });
+  };
+  const delegationRecord =
+    params.delegationRecord ?? (await solanaUserDecryptionDelegationAddress(tuple, { programAddress }));
+  // The host config is resolved here, not left to the generated builder: its default resolver
+  // derives the PDA under the canonical program id even when the instruction targets another.
+  const hostConfig = params.hostConfig ?? (await findHostConfigPda({ programAddress }))[0];
+  return getDelegateForUserDecryptionInstructionAsync(
+    {
+      payer: resolvedSigner(params.payer),
+      delegator: resolvedSigner(params.delegator),
+      hostConfig,
+      delegationRecord,
+      delegate: params.delegate,
+      encryptedValueAccountAuthority: params.encryptedValueAccountAuthority,
+      expirationSlot: params.expirationSlot,
+    },
+    { programAddress },
+  );
 }
 
 /** Parameters of a delegation revocation: the tuple, or an explicit record address. */
-export type SolanaRevokeDelegationForUserDecryptionParameters = SolanaUserDecryptionDelegationTuple & {
+export type SolanaRevokeDelegationForUserDecryptionParameters = Omit<
+  SolanaUserDecryptionDelegationTuple,
+  'delegator'
+> & {
+  /** The user revoking their grant (see [`SolanaSignerOrAddress`]). */
+  readonly delegator: SolanaSignerOrAddress;
   /** Canonical singleton host config; defaults to the host config PDA when omitted. */
   readonly hostConfig?: Address | undefined;
   /** The record address; defaults to the canonical PDA of the tuple when omitted. */
   readonly delegationRecord?: Address | undefined;
-};
+} & SolanaZamaHostAddressConfig;
 
 /**
- * Builds the `zama_host::revoke_delegation_for_user_decryption` instruction. Revocation takes
+ * Builds the `zama_host::revoke_delegation_for_user_decryption` instruction. The delegator
+ * signs the way it signed the grant: a wallet passes its `TransactionSigner`, a proposal or
+ * CPI-signing program passes its bare address (see [`SolanaSignerOrAddress`]). Revocation takes
  * effect on the Connector's next request against the record — there is no cached authorization
  * to outlive it. A wildcard row is a separate record: narrowing one authority takes revoking
  * both.
@@ -140,12 +227,25 @@ export type SolanaRevokeDelegationForUserDecryptionParameters = SolanaUserDecryp
 export async function buildRevokeDelegationForUserDecryptionInstruction(
   params: SolanaRevokeDelegationForUserDecryptionParameters,
 ): Promise<Instruction> {
-  const delegationRecord = params.delegationRecord ?? (await solanaUserDecryptionDelegationAddress(params));
-  return getRevokeDelegationForUserDecryptionInstructionAsync({
-    delegator: createNoopSigner(params.delegator),
-    ...(params.hostConfig !== undefined ? { hostConfig: params.hostConfig } : {}),
-    delegationRecord,
-  });
+  const programAddress = params.programAddress ?? ZAMA_HOST_PROGRAM_ADDRESS;
+  const tuple: SolanaUserDecryptionDelegationTuple = {
+    delegator: resolvedAddress(params.delegator),
+    delegate: params.delegate,
+    encryptedValueAccountAuthority: params.encryptedValueAccountAuthority,
+  };
+  const delegationRecord =
+    params.delegationRecord ?? (await solanaUserDecryptionDelegationAddress(tuple, { programAddress }));
+  // Resolved here for the same reason as in the delegate builder: the generated default is
+  // pinned to the canonical program id.
+  const hostConfig = params.hostConfig ?? (await findHostConfigPda({ programAddress }))[0];
+  return getRevokeDelegationForUserDecryptionInstructionAsync(
+    {
+      delegator: resolvedSigner(params.delegator),
+      hostConfig,
+      delegationRecord,
+    },
+    { programAddress },
+  );
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -269,33 +369,68 @@ export interface SolanaUserDecryptionDelegationRows {
  * transferring lamports to the PDA — reads as absent (`null`), not as an error: no record
  * exists, and a third party must not be able to make this read throw.
  *
+ * A host-owned account that decodes but contradicts its own address — naming another tuple, or
+ * storing a non-canonical bump — throws like the layout checks do. The Connector refuses such a
+ * record too (its rule: the address is not taken as proof of what the record says); only a host
+ * program defect can write one, and reporting it beats presenting it as a delegation of the
+ * queried tuple.
+ *
  * @param rpc - The Solana RPC to read through.
  * @param tuple - The delegation tuple.
- * @param config - Standard fetch passthrough, e.g. `{ commitment: 'confirmed' }`.
- * @throws If an existing zama-host-owned account does not decode as a delegation record.
+ * @param config - Standard fetch passthrough, e.g. `{ commitment: 'confirmed' }`, plus the
+ * optional `programAddress` of a deployment not at the canonical id.
+ * @throws If an existing zama-host-owned account does not decode as a delegation record of the
+ * queried tuple with the canonical bump.
  */
 export async function fetchSolanaUserDecryptionDelegation(
   rpc: SolanaRpc,
   tuple: SolanaUserDecryptionDelegationTuple,
-  config?: FetchAccountConfig,
+  config?: FetchAccountConfig & SolanaZamaHostAddressConfig,
 ): Promise<SolanaUserDecryptionDelegationRows> {
-  const [exactAddress, wildcardAddress] = await Promise.all([
-    solanaUserDecryptionDelegationAddress(tuple),
-    solanaUserDecryptionDelegationAddress({
-      ...tuple,
-      encryptedValueAccountAuthority: SOLANA_WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
-    }),
+  // Split off before the fetch: `programAddress` is this module's key, not RPC passthrough.
+  const { programAddress = ZAMA_HOST_PROGRAM_ADDRESS, ...fetchConfig } = config ?? {};
+  const wildcardTuple: SolanaUserDecryptionDelegationTuple = {
+    ...tuple,
+    encryptedValueAccountAuthority: SOLANA_WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
+  };
+  const [exactPda, wildcardPda] = await Promise.all([
+    solanaUserDecryptionDelegationPda(tuple, programAddress),
+    solanaUserDecryptionDelegationPda(wildcardTuple, programAddress),
   ]);
   const [exactAccount, wildcardAccount] = await Promise.all([
-    fetchEncodedAccount(rpc, exactAddress, config),
-    fetchEncodedAccount(rpc, wildcardAddress, config),
+    fetchEncodedAccount(rpc, exactPda[0], fetchConfig),
+    fetchEncodedAccount(rpc, wildcardPda[0], fetchConfig),
   ]);
-  const rowOrNull = (account: MaybeEncodedAccount, address: Address) =>
-    account.exists && account.programAddress === ZAMA_HOST_PROGRAM_ADDRESS
-      ? decodeSolanaUserDecryptionDelegation(account.data, address)
-      : null;
+  const rowOrNull = (
+    account: MaybeEncodedAccount,
+    [address, bump]: ProgramDerivedAddress,
+    queried: SolanaUserDecryptionDelegationTuple,
+  ): SolanaUserDecryptionDelegationRecord | null => {
+    if (!account.exists || account.programAddress !== programAddress) {
+      return null;
+    }
+    const record = decodeSolanaUserDecryptionDelegation(account.data, address);
+    if (
+      record.delegator !== queried.delegator ||
+      record.delegate !== queried.delegate ||
+      record.encryptedValueAccountAuthority !== queried.encryptedValueAccountAuthority
+    ) {
+      throw new Error(
+        `delegation record ${address} names a (delegator, delegate, authority) tuple other than ` +
+          `the one its address derives from — only the host program writes here, so one of the ` +
+          `two is not what this reader believes it is`,
+      );
+    }
+    if (record.bump !== bump) {
+      throw new Error(
+        `delegation record ${address}: stored bump ${record.bump} is not the canonical bump ${bump} ` +
+          `of its own address`,
+      );
+    }
+    return record;
+  };
   return {
-    exact: rowOrNull(exactAccount, exactAddress),
-    wildcard: rowOrNull(wildcardAccount, wildcardAddress),
+    exact: rowOrNull(exactAccount, exactPda, tuple),
+    wildcard: rowOrNull(wildcardAccount, wildcardPda, wildcardTuple),
   };
 }

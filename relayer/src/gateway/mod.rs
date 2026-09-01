@@ -79,12 +79,7 @@ pub async fn initialize_gateway(
     // Create ReadinessChecker (host ACL + gateway ciphertext) to be shared by decrypt handlers
     let host_acl_checker = HostAclChecker::new(
         &settings.host_chains,
-        settings
-            .gateway
-            .readiness_checker
-            .host_acl_check
-            .retry
-            .clone(),
+        &settings.gateway.readiness_checker.host_acl_check,
     )?;
     let readiness_checker = Arc::new(ReadinessChecker::new(host_acl_checker, &settings.gateway)?);
 

@@ -29,44 +29,24 @@ pub type HandleBytes = [u8; 32];
 // The record layout, its decoder and the wildcard sentinel live in the shared crate, so every
 // off-chain reader (this connector's authoritative check, the relayer's advisory pre-check)
 // decodes the same bytes through one implementation.
+pub use zama_solana_acl::UserDecryptionDelegationRecord;
 pub use zama_solana_acl::WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY;
 pub use zama_solana_acl::delegation::DELEGATION_SEED;
 
 pub const HOST_CONFIG_SEED: &[u8] = b"host-config";
 const ANCHOR_DISCRIMINATOR_LEN: usize = 8;
 
+/// A decoded delegation record together with where it was read from.
+///
+/// The record is the shared crate's, held whole rather than restated field by field: a field
+/// added there reaches this reader without a copy to keep in step, and the liveness rule is
+/// asked of the very bytes that were decoded — `record.is_live_at`, whose one definition in
+/// `zama-solana-acl` this reader shares with the relayer's advisory pre-check.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UserDecryptionDelegationWitness {
     pub account_key: SolanaPubkeyBytes,
     pub owner: SolanaPubkeyBytes,
-    pub delegator: SolanaPubkeyBytes,
-    pub delegate: SolanaPubkeyBytes,
-    pub encrypted_value_account_authority: SolanaPubkeyBytes,
-    pub expiration_slot: u64,
-    pub delegation_counter: u64,
-    pub last_update_slot: u64,
-    pub revoked: bool,
-    pub bump: u8,
-}
-
-impl UserDecryptionDelegationWitness {
-    /// The shared crate's liveness rule, asked of this witness — the boundary (revocation
-    /// wins; the expiration slot itself is inside the life) has exactly one definition, in
-    /// `zama-solana-acl`, so this reader cannot drift from the relayer's on it. The witness is
-    /// the decoded record plus provenance, so rebuilding the record is a field-for-field copy.
-    pub fn is_live_at(&self, slot: u64) -> bool {
-        zama_solana_acl::UserDecryptionDelegationRecord {
-            delegator: self.delegator,
-            delegate: self.delegate,
-            encrypted_value_account_authority: self.encrypted_value_account_authority,
-            expiration_slot: self.expiration_slot,
-            delegation_counter: self.delegation_counter,
-            last_update_slot: self.last_update_slot,
-            revoked: self.revoked,
-            bump: self.bump,
-        }
-        .is_live_at(slot)
-    }
+    pub record: UserDecryptionDelegationRecord,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -137,14 +117,7 @@ pub fn decode_user_decryption_delegation_witness(
     Ok(UserDecryptionDelegationWitness {
         account_key,
         owner,
-        delegator: record.delegator,
-        delegate: record.delegate,
-        encrypted_value_account_authority: record.encrypted_value_account_authority,
-        expiration_slot: record.expiration_slot,
-        delegation_counter: record.delegation_counter,
-        last_update_slot: record.last_update_slot,
-        revoked: record.revoked,
-        bump: record.bump,
+        record,
     })
 }
 
@@ -205,14 +178,16 @@ mod tests {
         UserDecryptionDelegationWitness {
             account_key,
             owner: HOST_PROGRAM_ID,
-            delegator: OWNER,
-            delegate: DELEGATE,
-            encrypted_value_account_authority,
-            expiration_slot: OBSERVED_SLOT + 20,
-            delegation_counter: 9,
-            last_update_slot: OBSERVED_SLOT - 1,
-            revoked: false,
-            bump,
+            record: UserDecryptionDelegationRecord {
+                delegator: OWNER,
+                delegate: DELEGATE,
+                encrypted_value_account_authority,
+                expiration_slot: OBSERVED_SLOT + 20,
+                delegation_counter: 9,
+                last_update_slot: OBSERVED_SLOT - 1,
+                revoked: false,
+                bump,
+            },
         }
     }
 
@@ -221,15 +196,16 @@ mod tests {
     }
 
     fn encode_delegation(delegation: &UserDecryptionDelegationWitness) -> Vec<u8> {
+        let record = &delegation.record;
         let mut data = anchor_account_discriminator("UserDecryptionDelegation").to_vec();
-        data.extend_from_slice(&delegation.delegator);
-        data.extend_from_slice(&delegation.delegate);
-        data.extend_from_slice(&delegation.encrypted_value_account_authority);
-        data.extend_from_slice(&delegation.expiration_slot.to_le_bytes());
-        data.extend_from_slice(&delegation.delegation_counter.to_le_bytes());
-        data.extend_from_slice(&delegation.last_update_slot.to_le_bytes());
-        data.push(delegation.revoked as u8);
-        data.push(delegation.bump);
+        data.extend_from_slice(&record.delegator);
+        data.extend_from_slice(&record.delegate);
+        data.extend_from_slice(&record.encrypted_value_account_authority);
+        data.extend_from_slice(&record.expiration_slot.to_le_bytes());
+        data.extend_from_slice(&record.delegation_counter.to_le_bytes());
+        data.extend_from_slice(&record.last_update_slot.to_le_bytes());
+        data.push(record.revoked as u8);
+        data.push(record.bump);
         data
     }
 

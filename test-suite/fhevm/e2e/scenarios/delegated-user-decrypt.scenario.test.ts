@@ -20,7 +20,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { Connection } from "@solana/web3.js";
-import { getAddressEncoder, type Address, type Instruction, type TransactionSigner } from "@solana/kit";
+import { getAddressEncoder, type Address } from "@solana/kit";
 import type { SolanaDecryptTrust } from "@sdk-src/solana/index.js";
 
 import { paddedLabel, trivialEncryptPersistent } from "../../src/solana/fhe-vertical";
@@ -55,20 +55,6 @@ const sdkSolana = async (): Promise<SdkSolanaModule> => {
   const solanaModule = "@fhevm/sdk/solana";
   return (await import(solanaModule)) as SdkSolanaModule;
 };
-
-/**
- * The SDK's delegation builders return unsigned instructions whose signer metas are noop
- * placeholders (a Squads proposal renderer never signs). To send one directly with the kit
- * harness, the placeholders of the addresses we actually hold keys for are swapped for the
- * real signers.
- */
-const withSigners = (instruction: Instruction, signers: readonly TransactionSigner[]): Instruction => ({
-  ...instruction,
-  accounts: instruction.accounts?.map((account) => {
-    const signer = signers.find((candidate) => candidate.address === account.address);
-    return signer !== undefined && "signer" in account ? { ...account, signer } : account;
-  }),
-});
 
 /** The env-shaped inputs of one delegated decrypt: the delegate signs, the subject names whose. */
 const delegatedDecryptEnvironment = (
@@ -106,6 +92,11 @@ const currentSlot = async (setup: VerticalTestSetup): Promise<bigint> =>
 // The Squads fixtures are fetched, not committed (no executable binaries in the repo); when they
 // are absent the validator booted without the program and the squads arc cannot run.
 const squadsAvailable = (await squadsGenesisExtras()) !== undefined;
+// Where this arc is the point of the run — the CI lane — its absence is a failure rather than a
+// skip: this is the only place a real 2-of-3 multisig delegation is exercised, and a green run
+// without it proves less than it appears to. `bun run demo up` fails earlier for the same
+// reason; this is the second gate, for a suite run against a stack that already booted.
+const squadsRequired = process.env.SOLANA_E2E_REQUIRE_SQUADS === "1";
 
 describe("solana delegated user-decrypt", () => {
   test(
@@ -135,14 +126,16 @@ describe("solana delegated user-decrypt", () => {
       await stack.waitForSnsCommit(hex(result.handle));
 
       // Grant: delegator -> delegate, scoped to the value's authority (the encrypting wallet).
+      // The wallet-held path: the builder takes the signer itself, so the kit pipeline signs
+      // the instruction as built (the Squads arc below is the bare-address path).
       const grant = await solana.buildDelegateForUserDecryptionInstruction({
-        payer: delegator.signer.address,
-        delegator: delegator.signer.address,
+        payer: delegator.signer,
+        delegator: delegator.signer,
         delegate: delegate.signer.address,
         encryptedValueAccountAuthority: wallet.signer.address,
         expirationSlot: (await currentSlot(setup)) + EXPIRATION_SLOTS_AHEAD,
       });
-      await context.sendTransaction(delegator.signer, [withSigners(grant, [delegator.signer])]);
+      await context.sendTransaction(delegator.signer, [grant]);
 
       // The rows the connector will read, checked the way a dapp would before paying for a job.
       const rows = await solana.fetchSolanaUserDecryptionDelegation(context.rpc, {
@@ -231,27 +224,38 @@ describe("solana delegated user-decrypt", () => {
       // advisory pre-check (`not_allowed_on_host_acl`) — the connector's own terminal
       // rejection has no channel back (see 09-rejection-path-findings).
       const revoke = await solana.buildRevokeDelegationForUserDecryptionInstruction({
-        delegator: delegator.signer.address,
+        delegator: delegator.signer,
         delegate: delegate.signer.address,
         encryptedValueAccountAuthority: wallet.signer.address,
       });
-      await context.sendTransaction(delegator.signer, [withSigners(revoke, [delegator.signer])]);
+      await context.sendTransaction(delegator.signer, [revoke]);
       const revokedRows = await solana.fetchSolanaUserDecryptionDelegation(context.rpc, {
         delegator: delegator.signer.address,
         delegate: delegate.signer.address,
         encryptedValueAccountAuthority: wallet.signer.address,
       });
       expect(revokedRows.exact?.revoked).toBe(true);
-      await expect(runSolanaCurrentUserDecrypt(environment)).rejects.toThrow(
-        /not_allowed_on_host_acl/,
-      );
+      // The typed label, not the message text: the label IS the relayer's contract, while the
+      // message it is rendered into is prose. `kind` is deliberately left unpinned — it says
+      // whether the client had seen the job queued before the refusal arrived, which is the
+      // transport's timing rather than anything the revocation decides.
+      await expect(runSolanaCurrentUserDecrypt(environment)).rejects.toMatchObject({
+        rejection: { label: "not_allowed_on_host_acl" },
+      });
     },
     SCENARIO_TIMEOUT_MS,
   );
 
-  test.skipIf(!squadsAvailable)(
+  test.skipIf(!squadsAvailable && !squadsRequired)(
     "[squads] a 2-of-3 multisig grants through its vault -> delegate decrypts the DAO's 42 -> revokes",
     async () => {
+      if (!squadsAvailable) {
+        throw new Error(
+          "Squads fixtures are absent while SOLANA_E2E_REQUIRE_SQUADS=1: this lane requires the " +
+            "2-of-3 multisig arc. Run solana/scripts/e2e/fetch-squads-fixtures.sh (it needs mainnet " +
+            "access), or unset the variable to go back to skipping it.",
+        );
+      }
       const setup = await verticalSetup();
       const { stack, context, wallet, walletHex } = setup;
       const solana = await sdkSolana();
@@ -337,9 +341,10 @@ describe("solana delegated user-decrypt", () => {
         encryptedValueAccountAuthority: wallet.signer.address,
       });
       expect(revokedRows.exact?.revoked).toBe(true);
-      await expect(runSolanaCurrentUserDecrypt(environment)).rejects.toThrow(
-        /not_allowed_on_host_acl/,
-      );
+      // Pinned the same way as the headless arc above: the label, not the rendered message.
+      await expect(runSolanaCurrentUserDecrypt(environment)).rejects.toMatchObject({
+        rejection: { label: "not_allowed_on_host_acl" },
+      });
     },
     SCENARIO_TIMEOUT_MS,
   );

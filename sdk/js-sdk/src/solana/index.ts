@@ -65,8 +65,10 @@ export type {
   SolanaDelegationWarning,
   SolanaRevokeDelegationForUserDecryptionParameters,
   SolanaUserDecryptionDelegationRecord,
+  SolanaSignerOrAddress,
   SolanaUserDecryptionDelegationRows,
   SolanaUserDecryptionDelegationTuple,
+  SolanaZamaHostAddressConfig,
 } from './actions/userDecryptionDelegation.js';
 export {
   SOLANA_PERMIT_INVALIDATION_SEED,
