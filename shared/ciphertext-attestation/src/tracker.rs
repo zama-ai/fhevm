@@ -9,6 +9,7 @@ use crate::consensus::ConsensusMaterial;
 use crate::{AttestationError, CiphertextAttestation};
 use alloy_primitives::{Address, B256, U256};
 use std::{collections::HashMap, num::NonZeroUsize};
+use tracing::warn;
 
 /// Validates that the signature recovers to the embedded signer and that this signer equals
 /// `registered_signer`. Without the second check, an attacker controlling one Coprocessor's
@@ -161,8 +162,8 @@ impl ConsensusTracker {
 
     /// Fills `signer`'s slot and returns the freshly recomputed verdict. First write wins: a later
     /// reply for the same signer is dropped even when it carries different material, which makes a
-    /// single Coprocessor structurally unable to occupy two groups at once. An unknown signer is
-    /// ignored (`debug_assert!`).
+    /// single Coprocessor structurally unable to occupy two groups at once. A reply from an
+    /// unknown signer is dropped with a `warn!`.
     pub fn record(&mut self, signer: Address, reply: Reply) -> ThresholdStatus {
         match self
             .round
@@ -172,10 +173,9 @@ impl ConsensusTracker {
         {
             Some(slot @ Reply::Outstanding) => *slot = reply,
             Some(_) => {}
-            None => debug_assert!(
-                false,
-                "record() called for signer {signer}, not one of the registered Coprocessors"
-            ),
+            None => {
+                warn!("dropping a reply for {signer}, not a Coprocessor registered this round")
+            }
         }
         self.verdict()
     }
