@@ -12,5 +12,16 @@ export function assertValidSolanaChainId(chainId: bigint): void {
 
 export function defineFhevmSolanaChain<const chain extends FhevmSolanaChain>(fhevmSolanaChain: chain): chain {
   assertValidSolanaChainId(fhevmSolanaChain.id);
+  const kms = fhevmSolanaChain.fhevm.kms;
+  // Response verification is fail-closed: an empty signer set authenticates nothing, so a chain
+  // declaring `kms` with no signers could never decrypt. Refuse it here, at definition time.
+  if (kms !== undefined) {
+    if (kms.signers.length === 0) {
+      throw new Error('fhevm.kms.signers must name at least one registered KMS signer address');
+    }
+    if (kms.verifyingProgramId.length === 0) {
+      throw new Error('fhevm.kms.verifyingProgramId must be the base58 host program address');
+    }
+  }
   return simpleDeepFreeze(fhevmSolanaChain);
 }

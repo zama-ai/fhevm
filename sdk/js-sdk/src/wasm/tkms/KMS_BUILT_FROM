@@ -1,5 +1,5 @@
 # Provenance of the vendored TKMS WASM (regen-tkms-wasm.sh). Do not hand-edit.
 kms_branch=solana
-kms_head=5632e9333b9f2abe18d8a5299a853b3fe9093e7c
+kms_head=79de4926d6b6393ed51ef8dc23d9b25eaf37e5d3
 kms_base=4efe27825e94bf59227f0c51b7b88dcb8bb9a04b
-tkms_wasm_version=v0.15.0-0-solana.5632e933
+tkms_wasm_version=v0.15.0-0-solana.79de4926

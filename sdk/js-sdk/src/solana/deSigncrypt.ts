@@ -11,12 +11,17 @@ import initSolanaTkms, {
   ml_kem_pke_keygen,
   ml_kem_pke_get_pk,
   ml_kem_pke_pk_to_u8vec,
+  new_server_id_addr,
+  new_solana_client,
   process_user_decryption_resp_solana_from_js,
   type PublicEncKeyMlKem512,
   type PrivateEncKeyMlKem512,
-} from '../wasm/tkms/kms_lib.v0.15.0-0-solana.68ba21ba.js';
-import { tkmsWasmBase64 } from '../wasm/tkms/kms_lib_bg.v0.15.0-0-solana.68ba21ba.wasm.base64.js';
+} from '../wasm/tkms/kms_lib.v0.15.0-0-solana.79de4926.js';
+import { tkmsWasmBase64 } from '../wasm/tkms/kms_lib_bg.v0.15.0-0-solana.79de4926.wasm.base64.js';
+import { base58 } from '@scure/base';
+import type { FhevmSolanaKms } from '../core/types/fhevmSolanaChain.js';
 import { bytesToHexNo0x } from '../core/base/bytes.js';
+import { uint32ToBytes32 } from '../core/base/uint.js';
 import { remove0x } from '../core/base/string.js';
 
 let initialized: Promise<void> | undefined;
@@ -51,10 +56,11 @@ export type SolanaSigncryptedShare = {
 };
 
 /**
- * De-signcrypt the aggregated KMS shares to cleartext, entirely in-SDK. The Solana de-signcryption
- * derives the receiver id from `solanaUserPubkey` and the verification key from the response payload,
- * so the request only needs the bound `enc_key` + handles; the link is keccak `compute_link_solana`
- * over (enc_key, handles, pubkey, hostChainId). Returns one big-endian byte array per handle.
+ * De-signcrypt the aggregated KMS shares to cleartext, entirely in-SDK. Verification is
+ * fail-closed: each share must carry a valid node signature — from one of `kms.signers`, under
+ * `kms.responseDomain` — over the Solana user-decryption link, recomputed here from the
+ * (`kms.verifyingProgramId`, `hostChainId`) deployment pair, `solanaUserPubkey`, the handles, the
+ * transport key and `extraData`. Returns one big-endian byte array per handle.
  */
 export async function deSigncryptSolanaUserDecrypt(params: {
   readonly keyPair: SolanaTransportKeyPair;
@@ -62,18 +68,36 @@ export async function deSigncryptSolanaUserDecrypt(params: {
   readonly handles: readonly string[];
   readonly solanaUserPubkey: Uint8Array;
   readonly hostChainId: bigint;
+  /** The request's `extra_data` bytes, exactly as sent to the relayer (hex, 0x optional). */
+  readonly extraData: string;
+  readonly kms: FhevmSolanaKms;
 }): Promise<ReadonlyArray<{ bytes: Uint8Array; fheType: number }>> {
   await ensureInit();
-  // The de-signcryption only reads `enc_key` + `ciphertext_handles`; the other fields exist solely
-  // because the current WASM reuses the EVM-shaped request struct. They are dropped once the slimmed
-  // Solana wrapper blob lands (FI#1543 B / FI#1546).
+  const serverAddrs = params.kms.signers.map((signer, index) => new_server_id_addr(index + 1, signer));
+  const client = new_solana_client(serverAddrs, params.kms.fheParameter ?? 'default');
+  // The de-signcryption only reads `enc_key`, `ciphertext_handles` and `extra_data`; the EVM-shaped
+  // address fields exist solely because the WASM reuses the EVM-shaped request struct, and the
+  // Solana path ignores them.
   const request = {
     signature: undefined,
     client_address: '0x0000000000000000000000000000000000000000',
     enc_key: bytesToHexNo0x(params.keyPair.publicKeyBytes),
     ciphertext_handles: params.handles.map(remove0x),
     eip712_verifying_contract: '0x0000000000000000000000000000000000000000',
-    extra_data: '00',
+    extra_data: remove0x(params.extraData),
+  };
+  const solanaRequest = {
+    user_pubkey: bytesToHexNo0x(params.solanaUserPubkey),
+    // A Solana chain id sets bit 63 and does not fit a JS number, so it travels as a decimal string.
+    host_chain_id: params.hostChainId.toString(),
+    verifying_program_id: bytesToHexNo0x(base58.decode(params.kms.verifyingProgramId)),
+  };
+  const responseDomain = {
+    name: params.kms.responseDomain.name,
+    version: params.kms.responseDomain.version,
+    chain_id: uint32ToBytes32(params.kms.responseDomain.chainId),
+    verifying_contract: params.kms.responseDomain.verifyingContract,
+    salt: null,
   };
   const aggResp = params.shares.map((s) => ({
     signature: remove0x(s.signature),
@@ -81,12 +105,13 @@ export async function deSigncryptSolanaUserDecrypt(params: {
     extra_data: remove0x(s.extraData),
   }));
   const plaintexts = process_user_decryption_resp_solana_from_js(
+    client,
     request,
-    params.solanaUserPubkey,
-    params.hostChainId,
+    solanaRequest,
     aggResp,
     params.keyPair.publicKey,
     params.keyPair.secretKey,
+    responseDomain,
   );
   // The wrapper already converts LE -> BE, so `bytes` is the big-endian plaintext.
   return plaintexts.map((p) => ({ bytes: p.bytes, fheType: p.fhe_type }));

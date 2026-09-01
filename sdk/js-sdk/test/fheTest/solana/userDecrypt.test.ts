@@ -38,15 +38,29 @@ const { generateSolanaTransportKeyPair } = await import('../../../src/solana/deS
 
 const SEED = new Uint8Array(32).fill(0x42);
 const ZERO_BYTES32 = '0x' + '00'.repeat(32);
+// A Solana host chain id must set bit 63 (the RFC-021 chain-type bit).
+const TEST_CHAIN_ID = (1n << 63n) | 12_345n;
 const ACL_VALUE_KEY = new Uint8Array(32).fill(0x55);
 
 // Test fixture: a Solana host chain built through the public factory. There is no shipped
 // placeholder Solana chain — consumers (and this test) construct one from their deployment.
 const testChain = defineFhevmSolanaChain({
-  id: 12_345n,
+  id: TEST_CHAIN_ID,
   fhevm: {
     relayerUrl: 'http://localhost:9000',
     acl: { domainKeys: [ZERO_BYTES32 as Bytes32Hex] },
+    // The de-signcrypt module is mocked above, so these values are never used cryptographically —
+    // they only satisfy the fail-closed requirement that a decrypting chain names its trust anchor.
+    kms: {
+      signers: ['0x' + '11'.repeat(20)],
+      verifyingProgramId: '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu',
+      responseDomain: {
+        name: 'Decryption',
+        version: '1',
+        chainId: 54_321,
+        verifyingContract: '0x' + '22'.repeat(20),
+      },
+    },
   },
 });
 
@@ -55,14 +69,14 @@ function hexToBytes(hex: string): Uint8Array {
   return Uint8Array.from(Buffer.from(s, 'hex'));
 }
 
-// A well-formed 32-byte ciphertext handle on the Solana host chain id (12345),
+// A well-formed 32-byte ciphertext handle on the Solana host chain id (TEST_CHAIN_ID),
 // version 0, fheType euint64 (id 5 → "uint64"). Layout per FhevmHandle.ts.
 function buildHandleHex(): string {
   const bytes = new Uint8Array(32);
   bytes.fill(0x11, 0, 21); // hash21
   bytes[21] = 0; // index (external)
-  // chainId 12345 big-endian in bytes 22..29
-  const chainId = 12_345n;
+  // chainId TEST_CHAIN_ID big-endian in bytes 22..29
+  const chainId = TEST_CHAIN_ID;
   const view = new DataView(bytes.buffer);
   view.setBigUint64(22, chainId, false);
   bytes[30] = 5; // fheTypeId (euint64)
@@ -76,7 +90,7 @@ describe('solanaSignerFromSecretKey', () => {
     expect(Buffer.from(signer.publicKey).toString('hex')).toBe(Buffer.from(ed25519.getPublicKey(SEED)).toString('hex'));
 
     const signingMessage = solanaUserDecryptSigningMessage({
-      contractsChainId: 12_345n,
+      contractsChainId: TEST_CHAIN_ID,
       publicKey: new TextEncoder().encode('pk'),
       handles: [new Uint8Array(32).fill(0x03)],
       identity: signer.publicKey,
@@ -213,7 +227,7 @@ describe('createFhevmDecryptClient(...).userDecrypt', () => {
 
     // The top-level signature verifies against the canonical wallet-safe message.
     const signingMessage = solanaUserDecryptSigningMessage({
-      contractsChainId: 12_345n,
+      contractsChainId: TEST_CHAIN_ID,
       publicKey: hexToBytes('0x' + 'ab'.repeat(16)),
       handles: [hexToBytes(handleHex)],
       identity: signer.publicKey,

@@ -44,5 +44,5 @@ export type { SolanaSubmitInputProofParameters, SolanaSubmitInputProofResult } f
 export type { SolanaEncryptActions } from './clients/decorators/encrypt.js';
 export type { SolanaZkProof, SolanaZkProofLike } from '../core/types/zkProof-p.js';
 
-export type { FhevmSolanaChain } from '../core/types/fhevmSolanaChain.js';
+export type { FhevmSolanaChain, FhevmSolanaKms } from '../core/types/fhevmSolanaChain.js';
 export { defineFhevmSolanaChain } from '../core/chains/utilsSolana.js';

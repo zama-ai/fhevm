@@ -194,6 +194,13 @@ export async function userDecrypt(
   if (parameters.handles.length !== 1) {
     throw new Error('Exactly one handle is required');
   }
+  const kms = chain.fhevm.kms;
+  if (kms === undefined) {
+    throw new Error(
+      'userDecrypt requires `fhevm.kms` on the chain definition: response verification is ' +
+        'fail-closed, so the KMS signer set, verifying program id and response domain must be supplied',
+    );
+  }
 
   const identity = signer.publicKey;
   const handles: readonly Handle[] = parameters.handles.map((h) => toFhevmHandle(h));
@@ -303,6 +310,18 @@ export async function userDecrypt(
     ...parameters.options,
   };
 
+  // Built once and reused in step 4: these exact bytes travel SDK -> relayer -> gateway event ->
+  // KMS connector into the KMS request, whose signed Solana link binds them, so de-signcryption
+  // must recompute the link over the same bytes.
+  const extraDataHex = bytesToHex(
+    buildSolanaUserDecryptMmrProofExtraData(
+      contextId,
+      aclValueKey,
+      mmrProof?.proofSlot ?? 0n,
+      mmrProof?.mmrProofBytes ?? new Uint8Array(0),
+    ),
+  );
+
   const relayerPayload = {
     attestationType: SOLANA_USER_DECRYPT_ATTESTATION_TYPE,
     attestedPayload: {
@@ -320,14 +339,7 @@ export async function userDecrypt(
         durationSeconds: durationSeconds.toString(),
       },
       publicKey: bytesToHex(publicKey),
-      extraData: bytesToHex(
-        buildSolanaUserDecryptMmrProofExtraData(
-          contextId,
-          aclValueKey,
-          mmrProof?.proofSlot ?? 0n,
-          mmrProof?.mmrProofBytes ?? new Uint8Array(0),
-        ),
-      ),
+      extraData: extraDataHex,
       solanaUserIdentity: bytesToHex(identity),
       solanaNonce: bytesToHex(nonce),
       solanaAllowedAclDomainKeys: allowedAclDomainKeys.map((k) => bytesToHex(k)),
@@ -358,6 +370,8 @@ export async function userDecrypt(
     handles: handlesHex,
     solanaUserPubkey: identity,
     hostChainId: chain.id,
+    extraData: extraDataHex,
+    kms,
   });
 
   return plaintexts.map((plaintext, i) => {
