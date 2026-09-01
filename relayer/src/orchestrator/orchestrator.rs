@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::sync::{Arc, RwLock};
 use tokio_util::sync::CancellationToken;
+use tokio_util::task::TaskTracker;
 use tracing::{error, instrument};
 use uuid::Uuid;
 
@@ -16,14 +17,24 @@ pub struct Orchestrator {
     event_dispatcher: Arc<TokioEventDispatcher>,
     health_checker: Arc<RwLock<HealthChecker>>,
     task_manager: TaskManager,
+    /// Short-lived, unbounded-in-number detached work that has no place in the named-task
+    /// JoinSet, all of it resumable from what Postgres and the chain cursor already hold:
+    ///
+    /// - per-event dispatch
+    /// - `handled_events`' dispatch-then-complete follow-up
+    detached_tasks: TaskTracker,
 }
 
 impl Orchestrator {
-    pub fn new(event_dispatcher: Arc<TokioEventDispatcher>) -> Arc<Self> {
+    pub fn new(
+        event_dispatcher: Arc<TokioEventDispatcher>,
+        detached_tasks: TaskTracker,
+    ) -> Arc<Self> {
         Arc::new(Self {
             event_dispatcher,
             health_checker: Arc::new(RwLock::new(HealthChecker::new())),
             task_manager: TaskManager::new(),
+            detached_tasks,
         })
     }
 
@@ -90,6 +101,22 @@ impl Orchestrator {
         self.event_dispatcher.dispatch_event(event).await
     }
 
+    /// Dispatch and wait for every subscribed handler to finish (see
+    /// `TokioEventDispatcher::dispatch_event_and_wait`).
+    pub async fn dispatch_event_and_wait(&self, event: RelayerEvent) -> Result<(), Error> {
+        self.event_dispatcher.dispatch_event_and_wait(event).await
+    }
+
+    /// Spawn a detached task into the same tracker a dispatch handler goes into, for work that
+    /// must outlive the call that started it - `handled_events`' dispatch-then-complete
+    /// follow-up being the case this exists for.
+    pub fn spawn_detached<F>(&self, future: F)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        self.detached_tasks.spawn(future);
+    }
+
     pub fn register_handler(&self, event_ids: &[u8], handler: Arc<dyn EventHandler<RelayerEvent>>) {
         self.event_dispatcher.register_handler(event_ids, handler);
     }
@@ -117,8 +144,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_orchestrator() {
-        let pubsub = Arc::new(TokioEventDispatcher::new());
-        let orchestrator = Orchestrator::new(pubsub.clone());
+        let detached_tasks = tokio_util::task::TaskTracker::new();
+        let pubsub = Arc::new(TokioEventDispatcher::new(detached_tasks.clone()));
+        let orchestrator = Orchestrator::new(pubsub.clone(), detached_tasks);
 
         let _id = orchestrator.new_internal_request_id();
 

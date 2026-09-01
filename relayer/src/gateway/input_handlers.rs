@@ -12,7 +12,7 @@ use crate::{
         arbitrum::{
             bindings::InputVerification,
             transaction::{
-                helper::{TransactionHelper, TransactionType, TxResult},
+                helper::{TransactionHelper, TransactionType, TxClaimOutcome, TxResult},
                 tx_throttler::{DynTxHook, GatewayTxTask, TxThrottlingSender},
                 TxLifecycleHooks,
             },
@@ -21,6 +21,7 @@ use crate::{
         utils::{classify_revert_selector, extract_revert_selector},
     },
     logging::InputProofStep,
+    metrics,
     orchestrator::{
         traits::{Event, EventHandler},
         Orchestrator,
@@ -33,7 +34,7 @@ use crate::{
 use std::str::FromStr;
 use std::time::Duration;
 
-use alloy::primitives::{Address, FixedBytes, TxHash};
+use alloy::primitives::{Address, TxHash};
 
 use alloy::sol_types::SolEvent;
 use async_trait::async_trait;
@@ -73,7 +74,8 @@ impl InputProofGatewayHandler {
                 InputProofEventId::RespRcvdFromGw.into(),
                 // NOTE: We don't use Failed Event Id here, to allow notifying users
                 InputProofEventId::InternalFailure.into(),
-                GatewayChainEventId::EventLogRcvd.into(),
+                GatewayChainEventId::VerifyProofResponse.into(),
+                GatewayChainEventId::RejectProofResponse.into(),
             ],
             handler.clone() as Arc<dyn EventHandler<RelayerEvent>>,
         );
@@ -102,35 +104,27 @@ impl EventHandler<RelayerEvent> for InputProofGatewayHandler {
                 }
             },
 
-            RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd {
+            RelayerEventData::GatewayChain(GatewayChainEventData::VerifyProofResponse {
                 ref log,
                 tx_hash,
             }) => {
-                if let Some(topic0) = log.topic0() {
-                    let topic0_fixed = FixedBytes::<32>::from_slice(topic0.as_slice());
-
-                    match topic0_fixed {
-                        InputVerification::VerifyProofResponse::SIGNATURE_HASH => {
-                            debug!(
-                                step = %InputProofStep::GwEventReceived,
-                                "Observed gateway input-proof accept response"
-                            );
-                            self.complete_proof_verification(event.clone(), log, *tx_hash)
-                                .await
-                        }
-                        InputVerification::RejectProofResponse::SIGNATURE_HASH => {
-                            debug!(
-                                step = %InputProofStep::GwEventReceived,
-                                "Observed gateway input-proof reject response"
-                            );
-                            self.reject_proof_verification(event.clone(), log, *tx_hash)
-                                .await
-                        }
-                        _ => return,
-                    }
-                } else {
-                    return;
-                }
+                debug!(
+                    step = %InputProofStep::GwEventReceived,
+                    "Observed gateway input-proof accept response"
+                );
+                self.complete_proof_verification(event.clone(), log, *tx_hash)
+                    .await
+            }
+            RelayerEventData::GatewayChain(GatewayChainEventData::RejectProofResponse {
+                ref log,
+                tx_hash,
+            }) => {
+                debug!(
+                    step = %InputProofStep::GwEventReceived,
+                    "Observed gateway input-proof reject response"
+                );
+                self.reject_proof_verification(event.clone(), log, *tx_hash)
+                    .await
             }
             _ => return,
         };
@@ -416,7 +410,8 @@ impl InputProofGatewayHandler {
                         }
                         InputProofCompletionOutcome::NotFound => {
                             if attempt == retry_config.max_retries {
-                                debug!(
+                                metrics::increment_unmatched_gateway_event("verify_proof_response");
+                                info!(
                                     step = %InputProofStep::GwEventRetrying,
                                     gw_reference_id = ?request_event.zkProofId,
                                     max_retries = retry_config.max_retries,
@@ -606,7 +601,8 @@ impl InputProofGatewayHandler {
                         }
                         InputProofCompletionOutcome::NotFound => {
                             if attempt == retry_config.max_retries {
-                                debug!(
+                                metrics::increment_unmatched_gateway_event("reject_proof_response");
+                                info!(
                                     step = %InputProofStep::GwEventRetrying,
                                     gw_reference_id = ?reject_proof_response.zkProofId,
                                     max_retries = retry_config.max_retries,
@@ -689,15 +685,28 @@ impl InputProofGatewayHandler {
 
 #[async_trait]
 impl TxLifecycleHooks for InputProofGatewayHandler {
-    async fn on_tx_in_flight(&self, job_id: &JobId) -> Result<(), EventProcessingError> {
-        self.input_proof_repo
+    async fn on_tx_in_flight(
+        &self,
+        job_id: &JobId,
+    ) -> Result<TxClaimOutcome, EventProcessingError> {
+        let rows_affected = self
+            .input_proof_repo
             .update_status_to_tx_in_flight(job_id.as_ref())
             .await
-            .map(|_| ())
             .map_err(|e| EventProcessingError::SqlOperationFailed {
                 operation: "input_proof.update_status_to_tx_in_flight".to_string(),
                 reason: e.to_string(),
-            })
+            })?;
+
+        if rows_affected == 0 {
+            info!(
+                int_job_id = %job_id,
+                "Tx-in-flight claim did not apply for input proof request, skipping send"
+            );
+            return Ok(TxClaimOutcome::ClaimLost);
+        }
+
+        Ok(TxClaimOutcome::Claimed)
     }
 
     async fn on_receipt_received(

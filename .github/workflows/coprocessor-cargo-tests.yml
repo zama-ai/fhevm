@@ -31,6 +31,7 @@ jobs:
               - .github/workflows/coprocessor-cargo-tests.yml
               - coprocessor/fhevm-engine/**
               - coprocessor/proto/**
+              - host-contracts/rust_bindings/**
   cargo-tests:
     name: coprocessor-cargo-test/${{ matrix.service }}
     needs: check-changes

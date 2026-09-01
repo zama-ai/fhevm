@@ -3,7 +3,9 @@ use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::crs::{Crs, CrsCache};
 use fhevm_engine_common::db_keys::DbKey;
 use fhevm_engine_common::db_keys::DbKeyCache;
-use fhevm_engine_common::gcs_activation::{run_gcs_gw_activation_watcher, GCS_NOT_ACTIVATED};
+use fhevm_engine_common::gcs_activation::{
+    run_gcs_gw_activation_watcher, GCS_GATE_RECHECK, GCS_NOT_ACTIVATED,
+};
 use fhevm_engine_common::host_chains::HostChainsCache;
 use fhevm_engine_common::pg_pool::{PostgresPoolManager, ServiceError};
 use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, extract_ct_list};
@@ -303,8 +305,11 @@ async fn execute_worker(
         // diverge across operators — exactly what the gw_start_block alignment
         // prevents.
         if conf.gcs_mode && gw_start_block_state.load(Ordering::SeqCst) == GCS_NOT_ACTIVATED {
-            debug!("GCS not yet activated; sleeping before re-check");
-            tokio::time::sleep(Duration::from_secs(conf.pg_polling_interval as u64)).await;
+            info!("GCS not yet activated; sleeping before re-check");
+            tokio::select! {
+                _ = token.cancelled() => return Ok(()),
+                _ = tokio::time::sleep(GCS_GATE_RECHECK) => {}
+            }
             continue;
         }
 

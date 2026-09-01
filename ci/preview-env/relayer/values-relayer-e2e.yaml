@@ -76,6 +76,9 @@ configmapFiles:
           polling_max_attempts: 40
           recycle_interval_mins: 30
           poll_interval_ms: 2000
+          # Widest block span a single eth_getLogs may ask for. Chunks the catch-up after
+          # downtime so the listener never asks for a range the provider rejects.
+          max_blocks_per_query: 1000
           dedup_ttl_seconds: 5
           dedup_max_capacity: 100000
         tx_engine:

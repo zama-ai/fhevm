@@ -58,8 +58,7 @@ impl ErrorCode {
         }
     }
 
-    /// The canonical wire name of this code — the string used in JSON bodies and in the
-    /// `error_code` column of the response tables.
+    /// The string used in JSON bodies for this error code.
     pub fn as_str(self) -> &'static str {
         self.into()
     }
