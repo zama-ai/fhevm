@@ -33,6 +33,7 @@ export const SOLANA_TWO_HOLDER_TRANSFER_DESCRIPTION =
 const RPC_URL = "http://127.0.0.1:8899";
 const WS_URL = "ws://127.0.0.1:8900";
 const RELAYER_URL = "http://127.0.0.1:3000";
+const GATEWAY_RPC_URL = "http://127.0.0.1:8546";
 const ACL_PROGRAM = SOLANA_ACL_PROGRAM;
 const DEFAULT_USER_DECRYPT_CONTEXT = SOLANA_DEFAULT_USER_DECRYPT_CONTEXT;
 const SDK_WORKER = path.join(REPO_ROOT, "test-suite/fhevm/solana-two-holder-transfer.ts");
@@ -57,6 +58,8 @@ export type TwoHolderConfig = {
   readonly rpcUrl: string;
   readonly wsUrl: string;
   readonly relayerUrl: string;
+  /** Gateway RPC the decrypt step resolves the KMS trust anchor from. */
+  readonly gatewayRpcUrl: string;
   readonly aclProgram: string;
   readonly userDecryptContext: string;
 };
@@ -110,6 +113,7 @@ const resolveConfig = (config: Partial<TwoHolderConfig>): TwoHolderConfig => ({
   rpcUrl: config.rpcUrl ?? RPC_URL,
   wsUrl: config.wsUrl ?? WS_URL,
   relayerUrl: config.relayerUrl ?? RELAYER_URL,
+  gatewayRpcUrl: config.gatewayRpcUrl ?? GATEWAY_RPC_URL,
   aclProgram: config.aclProgram ?? ACL_PROGRAM,
   userDecryptContext: config.userDecryptContext ?? solanaUserDecryptContext(),
 });
@@ -193,6 +197,7 @@ export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig>
     decrypt: (scenario, holder, state, expected) =>
       runSolanaCurrentUserDecrypt({
         UD_RELAYER_URL: cfg.relayerUrl,
+        UD_GATEWAY_RPC_URL: cfg.gatewayRpcUrl,
         UD_CONTRACTS_CHAIN_ID: state.chainId,
         UD_HANDLE: state.currentHandle,
         UD_SECRET_KEY: holder.secretKey,

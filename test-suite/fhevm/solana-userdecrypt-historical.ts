@@ -11,6 +11,7 @@ import {
   type SolanaUserDecryptParameters,
 } from '@fhevm/sdk/solana';
 import type { Bytes32Hex, BytesHex } from '@fhevm/sdk/types';
+import { resolveSolanaKmsTrustAnchor } from './src/solana/kms-trust-anchor';
 
 function reqEnv(name: string): string {
   const value = process.env[name];
@@ -34,9 +35,10 @@ const allowedAclDomainKeys = reqEnv('UD_ALLOWED_DOMAIN_KEYS')
   .split(',')
   .map((value) => value.trim())
   .filter(Boolean) as Bytes32Hex[];
+const kms = await resolveSolanaKmsTrustAnchor(process.env);
 const chain = defineFhevmSolanaChain({
   id: BigInt(reqEnv('UD_CONTRACTS_CHAIN_ID')),
-  fhevm: { relayerUrl: reqEnv('UD_RELAYER_URL'), acl: { domainKeys: allowedAclDomainKeys } },
+  fhevm: { relayerUrl: reqEnv('UD_RELAYER_URL'), acl: { domainKeys: allowedAclDomainKeys }, kms },
 });
 setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: process.env.ZAMA_FHEVM_API_KEY ?? 'local' } });
 

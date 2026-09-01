@@ -42,6 +42,7 @@ export const verticalSetup = async (): Promise<VerticalTestSetup> => {
   const config: FheVerticalConfig = {
     relayerUrl: env.relayerUrl,
     proofServiceUrl: env.proofServiceUrl,
+    gatewayRpcUrl: env.gatewayRpcUrl,
     // From the live HostConfig account, not the env: the decrypts must bind the chain id the
     // deployed host actually signs for.
     chainId: await readHostChainId(context),

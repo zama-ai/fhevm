@@ -71,6 +71,7 @@ import {
 } from "@solana/kit";
 
 import { loadPersonas, until } from "../harness";
+import { resolveSolanaKmsTrustAnchor } from "../../src/solana/kms-trust-anchor";
 import { withHostReachableFetch } from "../harness/solana/sdkEncrypt";
 import { depositRoots, type VaultDemoRoots } from "../../demo/config";
 import { readCurrentDemoAuthorization } from "../../demo/lifecycle";
@@ -129,7 +130,11 @@ type SolanaSdkSurface = {
   setFhevmRuntimeConfig(config: { auth: { type: "ApiKeyHeader"; value: string } }): void;
   defineFhevmSolanaChain(definition: {
     id: bigint;
-    fhevm: { relayerUrl: string; acl: { domainKeys: readonly `0x${string}`[] } };
+    fhevm: {
+      relayerUrl: string;
+      acl: { domainKeys: readonly `0x${string}`[] };
+      kms?: import("../../src/solana/kms-trust-anchor").SolanaKmsTrustAnchor;
+    };
   }): unknown;
   createFhevmEncryptClient(parameters: { chain: unknown; aclProgramAddress: `0x${string}` }): {
     buildInputProof(parameters: {
@@ -352,9 +357,12 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       solanaSdk.setFhevmRuntimeConfig({
         auth: { type: "ApiKeyHeader", value: process.env.ZAMA_FHEVM_API_KEY ?? "local" },
       });
+      // The decrypt phase's fail-closed verification needs the KMS trust anchor; the same chain
+      // object also serves the encrypt client, which ignores it.
+      const kms = await resolveSolanaKmsTrustAnchor({ ...process.env, UD_GATEWAY_RPC_URL: env.gatewayRpcUrl });
       const chain = solanaSdk.defineFhevmSolanaChain({
         id: BigInt(config.chainId),
-        fhevm: { relayerUrl: env.relayerUrl, acl: { domainKeys: [asBytes32Hex(config.mints.joinConfidential)] } },
+        fhevm: { relayerUrl: env.relayerUrl, acl: { domainKeys: [asBytes32Hex(config.mints.joinConfidential)] }, kms },
       }) as FhevmSolanaChain;
       const encryptClient = solanaSdk.createFhevmEncryptClient({ chain, aclProgramAddress: config.aclProgram });
       const { batch, batchAuthority, batchJoinTokenAccount } = batchBeforeJoin.addresses;

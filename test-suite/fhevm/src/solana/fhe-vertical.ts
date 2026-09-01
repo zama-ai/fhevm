@@ -48,6 +48,8 @@ const addressHex = (value: Address): string => hex(addressBytes(value));
 export type FheVerticalConfig = {
   readonly relayerUrl: string;
   readonly proofServiceUrl: string;
+  /** Gateway RPC the decrypt steps resolve the KMS trust anchor from (signers, domain). */
+  readonly gatewayRpcUrl: string;
   /** The Solana host chain id (`HostConfig.chain_id`, high bit set). */
   readonly chainId: bigint;
   /** KMS public-decrypt context id, 0x-hex bytes32. */
@@ -382,6 +384,7 @@ export const historicalUserDecryptExpect = async (
     cwd: WORKER_DIR,
     env: {
       UD_RELAYER_URL: config.relayerUrl,
+      UD_GATEWAY_RPC_URL: config.gatewayRpcUrl,
       UD_CONTRACTS_CHAIN_ID: config.chainId.toString(),
       UD_HANDLE: hex(params.oldHandle),
       UD_SECRET_KEY: params.secretKey,

@@ -1,4 +1,5 @@
 import { PreflightError } from "../errors";
+import { resolveSolanaKmsTrustAnchor } from "./kms-trust-anchor";
 
 export const SOLANA_CURRENT_USER_DECRYPT_PROFILE = "solana-current-user-decrypt";
 export const SOLANA_CURRENT_USER_DECRYPT_DESCRIPTION =
@@ -19,6 +20,8 @@ type CurrentUserDecryptSdkInput = {
   apiKey: string;
   secretKey: Uint8Array;
   request: CurrentUserDecryptRequest;
+  /** Source for the KMS trust anchor (`resolveSolanaKmsTrustAnchor`); the injected-mock seam ignores it. */
+  environment: Environment;
 };
 type CurrentUserDecryptSdkCall = (
   input: CurrentUserDecryptSdkInput,
@@ -76,9 +79,10 @@ const optionalValidity = (environment: Environment): CurrentUserDecryptRequest["
 const runPublicSdkUserDecrypt: CurrentUserDecryptSdkCall = async (input) => {
   const solanaModule = "@fhevm/sdk/solana";
   const solana = await import(solanaModule);
+  const kms = await resolveSolanaKmsTrustAnchor(input.environment);
   const chain = solana.defineFhevmSolanaChain({
     id: input.chainId,
-    fhevm: { relayerUrl: input.relayerUrl, acl: { domainKeys: input.request.allowedAclDomainKeys } },
+    fhevm: { relayerUrl: input.relayerUrl, acl: { domainKeys: input.request.allowedAclDomainKeys }, kms },
   });
   solana.setFhevmRuntimeConfig({ auth: { type: "ApiKeyHeader", value: input.apiKey } });
   const signer = solana.solanaSignerFromSecretKey(input.secretKey);
@@ -119,6 +123,7 @@ export const runSolanaCurrentUserDecrypt = async (
     apiKey: environment.ZAMA_FHEVM_API_KEY ?? "local",
     secretKey: bytes32(environment, "UD_SECRET_KEY"),
     request,
+    environment,
   });
   if (clearValues.length !== 1) {
     throw new Error(`user-decrypt returned ${clearValues.length} clear values; expected exactly 1`);

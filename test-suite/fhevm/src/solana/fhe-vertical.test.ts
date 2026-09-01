@@ -14,6 +14,7 @@ import { fetchHistoricalAccessProof, type FheVerticalConfig } from "./fhe-vertic
 const CONFIG: FheVerticalConfig = {
   relayerUrl: "http://relayer:3000",
   proofServiceUrl: "http://proof:8080/",
+  gatewayRpcUrl: "http://gateway:8546",
   chainId: 1n,
   publicDecryptContextId: `0x${"00".repeat(32)}`,
   userDecryptContextId: "0",

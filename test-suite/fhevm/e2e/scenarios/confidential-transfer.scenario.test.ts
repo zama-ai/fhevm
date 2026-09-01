@@ -54,6 +54,7 @@ describe("solana confidential-transfer scenario", () => {
           rpcUrl: env.rpcUrl,
           wsUrl: env.wsUrl,
           relayerUrl: env.relayerUrl,
+          gatewayRpcUrl: env.gatewayRpcUrl,
           aclProgram: env.aclProgram,
           userDecryptContext: solanaUserDecryptContext(env.userDecryptContextId),
         }),

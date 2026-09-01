@@ -86,6 +86,7 @@ describe("solana fhe_execute decrypt vertical", () => {
       // the value's domain, so its pubkey is both the signer identity and the allowed domain key.
       const decrypted = await runSolanaCurrentUserDecrypt({
         UD_RELAYER_URL: config.relayerUrl,
+        UD_GATEWAY_RPC_URL: config.gatewayRpcUrl,
         UD_CONTRACTS_CHAIN_ID: config.chainId.toString(),
         UD_HANDLE: hex(result.handle),
         UD_SECRET_KEY: secretKey,
