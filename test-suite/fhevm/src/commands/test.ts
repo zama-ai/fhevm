@@ -6,6 +6,9 @@ import { type DecryptionRunner, runKmsGenerationProfile } from "./kms-generation
 import { runKmsGenerationAbortProfile } from "./kms-generation-abort";
 import { runKmsContextSwitchProfile } from "./kms-context-switch";
 import { DRIFT_CLEANUP_SQL, DRIFT_INSTALL_SQL, parseDriftInstanceIndex, parsePositiveInteger } from "../drift";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { PreflightError, formatCliError } from "../errors";
 import { dockerInspect } from "../flow/readiness";
 import { pause, shellEscape, unpause } from "../flow/up-flow";
@@ -274,35 +277,73 @@ const coprocessorGwListeners = async () => {
     .filter((line) => /^coprocessor(\d+)?-gw-listener$/.test(line));
 };
 
-/** Every GCS host-listener container of the highest-index operator: the listener, the
- *  poller and the consumer, on every host chain, so nothing of that operator ingests.
- *  Multi-chain scenarios suffix the extra chains (`…-host-listener-poller-chain-b`), so
- *  this matches on prefix rather than anchoring the end. */
-const lastOperatorGcsListeners = async () => {
-  const result = await run(["docker", "ps", "--format", "{{.Names}}"], { allowFailure: true });
+/** Turns off the synthetic work a GCS listener injects to anchor consensus. */
+const SYNTHETIC_OPS_OFF = "--disable-synthetic-ops";
+
+/** Every GCS host-listener container, on every operator and host chain. Multi-chain
+ *  scenarios suffix the extra chains, so this matches on prefix. */
+const gcsHostListeners = async () => {
+  const result = await run(["docker", "ps", "-a", "--format", "{{.Names}}"], { allowFailure: true });
   if (result.code !== 0) {
     throw new PreflightError(result.stderr.trim() || "docker ps failed");
   }
-  const listeners = result.stdout
+  return result.stdout
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .filter((line) => /^coprocessor(\d+)?-gcs-host-listener(-|$)/.test(line));
-  const prefixes = [...new Set(listeners.map((name) => name.split("-gcs-")[0]!))].sort();
-  const last = prefixes[prefixes.length - 1];
-  return listeners.filter((name) => name.startsWith(`${last}-gcs-`)).sort();
+    .filter((line) => /^coprocessor(\d+)?-gcs-host-listener(-|$)/.test(line))
+    .sort();
 };
 
-/** Starts or stops a container, failing loudly so a missed step cannot pass silently.
- *  Stops kill immediately: the default 10s grace per container would outlast the
- *  dry-run window these are stopped for. */
-const dockerLifecycle = async (action: "stop" | "start", container: string) => {
-  const argv = action === "stop"
-    ? ["docker", "stop", "-t", "0", container]
-    : ["docker", "start", container];
-  const result = await run(argv, { allowFailure: true });
-  if (result.code !== 0) {
-    throw new Error(`docker ${action} ${container} failed: ${result.stderr.trim()}`);
+/** Recreates every GCS host-listener with synthetic-op injection on or off.
+ *
+ *  `--disable-synthetic-ops` is a command argument fixed when the container is created,
+ *  so restarting cannot change it. Write a compose override carrying the adjusted
+ *  command and recreate the services from it. */
+const setSyntheticOps = async (enabled: boolean) => {
+  const containers = await gcsHostListeners();
+  if (containers.length === 0) {
+    throw new Error("found no GCS host-listener containers");
   }
+  const meta = await run(
+    ["docker", "inspect", ...containers, "--format",
+      '{{index .Config.Labels "com.docker.compose.project"}}\t' +
+      '{{index .Config.Labels "com.docker.compose.project.config_files"}}\t' +
+      '{{index .Config.Labels "com.docker.compose.service"}}\t' +
+      "{{json .Config.Cmd}}"],
+    { allowFailure: true },
+  );
+  if (meta.code !== 0) {
+    throw new Error(`docker inspect failed: ${meta.stderr.trim()}`);
+  }
+  const rows = meta.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+    .map((line) => line.split("\t"));
+  const project = rows[0]?.[0];
+  const configFiles = rows[0]?.[1];
+  if (!project || !configFiles) {
+    throw new Error("GCS host-listeners carry no compose project labels");
+  }
+
+  const services: Record<string, { command: string[] }> = {};
+  for (const [, , service, commandJson] of rows) {
+    if (!service || !commandJson || commandJson === "null") {
+      throw new Error(`cannot read the command of GCS host-listener service "${service}"`);
+    }
+    const base = (JSON.parse(commandJson) as string[]).filter((arg) => arg !== SYNTHETIC_OPS_OFF);
+    services[service] = { command: enabled ? base : [...base, SYNTHETIC_OPS_OFF] };
+  }
+
+  // Compose parses YAML, and JSON is valid YAML — no serializer needed.
+  const overridePath = join(tmpdir(), `fhevm-synthetic-ops-${enabled ? "on" : "off"}.yml`);
+  await Bun.write(overridePath, JSON.stringify({ services }));
+
+  const argv = ["docker", "compose", "-p", project];
+  for (const file of configFiles.split(",")) argv.push("-f", file);
+  argv.push("-f", overridePath, "up", "-d", "--force-recreate", "--no-deps", ...Object.keys(services));
+  const up = await run(argv, { allowFailure: true });
+  if (up.code !== 0) {
+    throw new Error(`recreating the GCS host-listeners failed: ${up.stderr.trim()}`);
+  }
+  return Object.keys(services);
 };
 
 /** Finds the expected drift warning for a specific injected handle. */
@@ -1028,13 +1069,13 @@ const runBlueGreenProfile = async (
     return `[${tuples.join(",")}]`;
   };
 
-  // The GCS listeners inject synthetic ops, so a chain anchors on work of its own and
-  // an idle chain no longer withholds cutover. Unanimity now fails only when an operator
-  // cannot take part: stop one operator's host-listeners so it ingests nothing and never
-  // reports a matching hash. Its consensus-detector keeps running, so it still arms and
-  // fires the timeout — true even with a single operator. [4/11] starts them again, and
-  // the successful upgrade from [6/11] runs with injection active on every operator.
-  console.log(`\n[2/11] failed upgrade: one operator cannot report (no unanimity → no cutover)`);
+  // Host chains stay quiet (no non-trivial FHE op) while [3/11] anchors the Gateway
+  // track with one input. Recreate the GCS listeners with injection off first, so
+  // nothing manufactures work of its own and the window times out into the rollback
+  // this asserts. [4/11] turns it back on for the upgrade that succeeds.
+  console.log(`\n[2/11] failed upgrade: Gateway input, hosts quiet (no non-trivial host \u2192 no cutover)`);
+  const disabled = await setSyntheticOps(false);
+  console.log(`OK:   recreated ${disabled.length} GCS host-listener service(s) with synthetic ops disabled`);
   const failGwBlock = Number((await run(
     ["cast", "block-number", "--rpc-url", gatewayRpcUrl],
   )).stdout.trim());
@@ -1052,29 +1093,6 @@ const runBlueGreenProfile = async (
   console.log(
     `OK:   activation emitted (windows=${failWindows} gw_start=${failGwStartBlock})`,
   );
-
-  // The GCS host-listener writes the upgrade_state row, so stop it only once every
-  // operator has one. DryRunStarted still follows, driven by blue's progress.
-  for (const db of operatorDatabases) {
-    await waitUntil({
-      label: `${db}  upgrade_state rows written`,
-      timeoutSecs: 60,
-      check: async () =>
-        (await psqlQuery(
-          db,
-          `SELECT CASE WHEN COUNT(*)=${hostChains.length} THEN 'ready' ELSE 'waiting' END
-             FROM upgrade_state WHERE stack_role='GCS';`,
-        )) === "ready",
-    });
-  }
-  const silencedListeners = await lastOperatorGcsListeners();
-  if (silencedListeners.length === 0) {
-    throw new Error("found no GCS host-listener containers to silence");
-  }
-  for (const container of silencedListeners) {
-    await dockerLifecycle("stop", container);
-  }
-  console.log(`OK:   stopped ${silencedListeners.join(", ")} — that operator ingests nothing`);
 
   console.log(`\n[3/11] failed upgrade: wait for GCS DryRunStarted, then submit a Gateway-only input proof`);
   for (const db of operatorDatabases) {
@@ -1149,10 +1167,8 @@ const runBlueGreenProfile = async (
     }
     console.log(`OK:   ${db}  PAUSED/failed, latches cleared, v0.14 kept, gcs schema recreated empty`);
   }
-  for (const container of silencedListeners) {
-    await dockerLifecycle("start", container);
-  }
-  console.log(`OK:   restarted ${silencedListeners.join(", ")} — every operator ingests again`);
+  const reenabled = await setSyntheticOps(true);
+  console.log(`OK:   recreated ${reenabled.length} GCS host-listener service(s) with synthetic ops enabled`);
 
   // Deploy ERC20 + mint before the proposal so the balance handle lands in
   // public.ciphertexts with block_number < start_block. Transfers during the
