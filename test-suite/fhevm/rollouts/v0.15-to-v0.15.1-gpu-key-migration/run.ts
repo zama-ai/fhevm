@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 import type { RolloutRunContext } from "../../src/commands/rollout-run";
@@ -22,7 +24,7 @@ import {
   assertLocalConnectorUpgrade,
   assertOperatorMaterialAgreement,
 } from "../v0.14-to-v0.15-gpu-key-migration/checks";
-import { migrationPhaseVersions, migrationVersions, versionSources } from "./versions";
+import { coprocessorVersionKeys, migrationPhaseVersions, migrationVersions, versionSources } from "./versions";
 
 const CONNECTOR_PARTIES = 4;
 const OPERATOR_COUNT = 2;
@@ -31,7 +33,82 @@ const KEY_WORKERS = ["tfhe-worker", "zkproof-worker", "sns-worker"] as const;
 const EAGER_KEY_WORKERS = ["zkproof-worker", "sns-worker"] as const;
 const ACTIVE_MIGRATION_SERVICES = ["host-listener", "host-listener-poller", "host-listener-consumer", ...KEY_WORKERS];
 
+export const predecessorImagePlan = [
+  { image: "db-migration", target: "db-migration" },
+  { image: "host-listener", target: "host-listener" },
+  { image: "gw-listener", target: "gw-listener" },
+  { image: "tfhe-worker", target: "tfhe-worker" },
+  { image: "zkproof-worker", target: "zkproof-worker" },
+  { image: "sns-worker", target: "sns-worker" },
+  { image: "tx-sender", target: "transaction-sender" },
+  { image: "consensus-detector", target: "consensus-detector" },
+  { image: "upgrade-controller", target: "upgrade-controller" },
+] as const;
+
+const predecessorVersionChecks = [
+  ["host-listener", "host_listener"],
+  ["host-listener", "host_listener_poller"],
+  ["host-listener", "host_listener_consumer"],
+  ["gw-listener", "gw_listener"],
+  ["tfhe-worker", "tfhe_worker"],
+  ["zkproof-worker", "zkproof_worker"],
+  ["sns-worker", "sns_worker"],
+  ["tx-sender", "transaction_sender"],
+  ["consensus-detector", "consensus-detector"],
+  ["upgrade-controller", "upgrade-controller"],
+] as const;
+
 const logPhase = (label: string) => console.log(`\n[GPU key migration] ${label}`);
+
+const predecessorImage = (image: string, tag: string) =>
+  `ghcr.io/zama-ai/fhevm/coprocessor/${image}:${tag}`;
+
+const buildPredecessorImages = async (ref: string, tag: string) => {
+  const tempRoot = await mkdtemp(path.join(tmpdir(), "rfc029-v015-"));
+  const archive = path.join(tempRoot, "source.tar");
+  const source = path.join(tempRoot, "source");
+  try {
+    await mkdir(source);
+    await run(["git", "archive", "--format=tar", `--output=${archive}`, ref]);
+    await run(["tar", "-xf", archive, "-C", source]);
+    const toolchain = await Bun.file(path.join(source, "coprocessor/fhevm-engine/rust-toolchain.toml")).text();
+    const rustVersion = toolchain.match(/^\s*channel\s*=\s*"([^"]+)"/m)?.[1];
+    if (!rustVersion) {
+      throw new Error(`cannot resolve the Rust toolchain from 0.15 predecessor ${ref}`);
+    }
+    const dockerfile = path.join(source, "coprocessor/fhevm-engine/Dockerfile.workspace");
+    for (const { image, target } of predecessorImagePlan) {
+      await runStreaming([
+        "docker",
+        "buildx",
+        "build",
+        "--load",
+        "--file",
+        dockerfile,
+        "--target",
+        target,
+        "--build-arg",
+        `RUST_IMAGE_VERSION=${rustVersion}`,
+        "--build-arg",
+        "BUILD_STACK_VERSION=0.15.0",
+        "--tag",
+        predecessorImage(image, tag),
+        source,
+      ]);
+    }
+  } finally {
+    await rm(tempRoot, { force: true, recursive: true });
+  }
+};
+
+const assertPredecessorStackVersion = async (tag: string) => {
+  for (const [image, executable] of predecessorVersionChecks) {
+    const result = await run(["docker", "run", "--rm", predecessorImage(image, tag), executable, "--stack-version"]);
+    if (result.stdout.trim() !== "0.15.0") {
+      throw new Error(`${image}:${tag} ${executable} reports ${result.stdout.trim() || "no stack version"}; expected 0.15.0`);
+    }
+  }
+};
 
 const runKeyContinuity = async (mode: "prepare" | "reuse", contract?: string) => {
   const result = await run([
@@ -108,9 +185,9 @@ const kmsTopology = `kms:
   threshold: 1
   fheParams: Test`;
 
-export const adoptionScenario = (blueTag: string) => `version: 1
+export const adoptionScenario = (blueTag: string, greenTag: string) => `version: 1
 kind: blue-green
-name: RFC 029 0.15 to 0.15.1 compressed key adoption
+name: RFC 029 0.14 to 0.15 to 0.15.1 compressed key adoption
 ${hostChains}
 topology:
   count: ${OPERATOR_COUNT}
@@ -123,9 +200,13 @@ bcs:
     FORCE_LEGACY_SERVER_KEY: "true"
 gcs:
   source:
-    mode: local
-  stackVersion: "0.15.1"
+    mode: registry
+    tag: ${JSON.stringify(greenTag)}
+    compatTag: v0.15.0
+  stackVersion: "0.15.0"
   deferredStart: true
+  env:
+    FORCE_LEGACY_SERVER_KEY: "true"
 ${kmsTopology}
 `;
 
@@ -310,6 +391,18 @@ const assertGreenSafeguard = async () => {
   }
 };
 
+const assertGreenForcedLegacy = async () => {
+  for (let operator = 0; operator < OPERATOR_COUNT; operator += 1) {
+    const prefix = operator === 0 ? "coprocessor-" : `coprocessor${operator}-`;
+    for (const worker of KEY_WORKERS) {
+      const green = `${prefix}gcs-${worker}`;
+      if (!(await forcesLegacyServerKey(green))) {
+        throw new Error(`${green} is not forced to use legacy material`);
+      }
+    }
+  }
+};
+
 const assertGreenAbsent = async () => {
   const result = await run(["docker", "ps", "-a", "--format", "{{.Names}}"]);
   const greenContainers = result.stdout.split("\n").filter((name) => /^coprocessor\d*-gcs-/.test(name));
@@ -409,7 +502,7 @@ const upgradeContracts = async (ctx: RolloutRunContext, targetLock: string) => {
   }
 };
 
-/** Reconstructs the migrated 0.15 state proven by the preceding rollout PR. */
+/** Executes the complete 0.14 to 0.15 rollout and returns the continuity probe. */
 export const reconstructMigrated015Fixture = async (ctx: RolloutRunContext): Promise<string> => {
   const versions = migrationVersions();
   const baselineLock = await ctx.resolveVersionLock("rfc029-00-baseline", {
@@ -444,9 +537,13 @@ export const reconstructMigrated015Fixture = async (ctx: RolloutRunContext): Pro
     sources: versionSources,
   });
   const scenario = path.join(ctx.stateDir(), "rollout", "rfc029-adoption.yaml");
-  await Bun.write(scenario, adoptionScenario(versions.baselineTag));
+  await Bun.write(scenario, adoptionScenario(versions.baselineTag, versions.blueTag));
 
-  logPhase("00 restore production-style legacy state before the 0.15 rollout");
+  logPhase("00 build and verify the exact 0.15.0 predecessor");
+  await buildPredecessorImages(versions.blueRef, versions.blueTag);
+  await assertPredecessorStackVersion(versions.blueTag);
+
+  logPhase("01 restore production-style legacy state before the 0.15 rollout");
   await ctx.up({
     lockFile: baselineLock,
     scenario,
@@ -477,13 +574,13 @@ export const reconstructMigrated015Fixture = async (ctx: RolloutRunContext): Pro
     ),
   );
 
-  logPhase("01 upgrade every changed Gateway and Host contract without invoking migration");
+  logPhase("02 upgrade every changed Gateway and Host contract without invoking migration");
   await upgradeContracts(ctx, contractLock);
   await ctx.test("input-proof-compute-decrypt", { parallel: false });
   await ctx.test("public-decryption", { parallel: false });
   await ctx.test("user-decryption", { parallel: false });
 
-  logPhase("02 upgrade Relayer after contracts and before runtime consumers");
+  logPhase("03 upgrade Relayer after contracts and before runtime consumers");
   await ctx.upgradeRuntimeGroup("relayer", { lockFile: relayerLock });
   await ctx.test("input-proof-compute-decrypt", { parallel: false });
   const state = await ctx.readState();
@@ -502,7 +599,7 @@ export const reconstructMigrated015Fixture = async (ctx: RolloutRunContext): Pro
   };
   const deploymentBoundary = await currentHostBlock();
 
-  logPhase("03 upgrade one KMS Core and Connector pair and prove a mixed fleet blocks migration");
+  logPhase("04 upgrade one KMS Core and Connector pair and prove a mixed fleet blocks migration");
   const baselineConnectorImages = (await connectorObservation(1)).images;
   await ctx.upgradeKmsOperators([1], {
     lockFile: connectorLock,
@@ -527,7 +624,7 @@ export const reconstructMigrated015Fixture = async (ctx: RolloutRunContext): Pro
     throw new Error("connector gate accepted a mixed connector deployment");
   }
 
-  logPhase("04 upgrade every remaining KMS operator to 0.15 and establish listener boundaries");
+  logPhase("05 upgrade every remaining KMS operator to 0.15 and establish listener boundaries");
   for (const operator of [2, 3, 4]) {
     await ctx.upgradeKmsOperators([operator], {
       lockFile: connectorLock,
@@ -559,37 +656,38 @@ export const reconstructMigrated015Fixture = async (ctx: RolloutRunContext): Pro
   await ctx.test("public-decryption", { parallel: false });
   await ctx.test("user-decryption", { parallel: false });
 
-  logPhase("05 upgrade listener-core before the 0.15 coprocessor fleet");
+  logPhase("06 upgrade listener-core before the 0.15 coprocessor fleet");
   await ctx.upgradeRuntimeGroup("listener-core", { lockFile: listenerCoreLock });
 
-  logPhase("06 reconstruct active 0.15 workers and pin them to legacy material");
-  await ctx.upgradeRuntimeGroup("coprocessor", {
+  logPhase("07 start exact 0.15.0 Green with the legacy-material safeguard");
+  await ctx.applyVersionLock("RFC 029 0.15 Green runtime metadata", {
     lockFile: blueLock,
-    bcsTag: versions.blueTag,
-    bcsCompatTag: "v0.15.0",
+    allowedVersionKeys: [...coprocessorVersionKeys],
   });
+  await ctx.startDeferredGreen();
+  await assertActiveSafeguard();
+  await assertGreenForcedLegacy();
+  await assertGreenWorkersParked();
+
+  logPhase("08 cut over from 0.14 Blue to exact 0.15.0 Green");
+  process.env.FHEVM_SKIP_BLUE_GREEN_ROLLBACK = "1";
+  await ctx.test("blue-green", { parallel: false });
+
+  logPhase("09 re-home promoted 0.15.0 as Blue and stage deferred 0.15.1 Green");
+  await ctx.restagePromotedGreen({ stackVersion: "0.15.1" });
   await assertActiveSafeguard();
   await assertActiveImageTag(versions.blueTag);
   await assertGreenAbsent();
   await ctx.test("input-proof-compute-decrypt", { parallel: false });
-  // The preceding rollout already proved the 0.14 -> 0.15 cutover. This fixture
-  // swaps in that exact 0.15 fleet, so mirror the version marker written by the
-  // proven cutover before testing the separate 0.15 -> 0.15.1 boundary.
   for (let operator = 0; operator < OPERATOR_COUNT; operator += 1) {
     const database = coprocessorDatabaseName(operator);
-    const version = await sqlScalar(
-      database,
-      "WITH updated AS (" +
-        "UPDATE versioning SET stack_version = 'v0.15.0', updated_at = NOW() " +
-        "WHERE singleton = TRUE RETURNING stack_version" +
-        ") SELECT stack_version FROM updated;",
-    );
+    const version = await sqlScalar(database, "SELECT stack_version FROM versioning WHERE singleton = TRUE;");
     if (version !== "v0.15.0") {
-      throw new Error(`${database} did not reconstruct the proven v0.15.0 stack marker`);
+      throw new Error(`${database} did not retain the promoted v0.15.0 stack marker`);
     }
   }
 
-  logPhase("07 request compressed material for the existing active Test key");
+  logPhase("10 request compressed material for the existing active Test key");
   const keyIdHex = await sqlScalar(
     coprocessorDatabaseName(0),
     "SELECT encode(key_id, 'hex') FROM keys ORDER BY sequence_number DESC LIMIT 1;",
@@ -605,7 +703,7 @@ export const reconstructMigrated015Fixture = async (ctx: RolloutRunContext): Pro
     `npx hardhat task:triggerKeygen --params-type ${paramsType} --existing-key-id ${keyId} --use-internal-proxy-address true`,
   );
 
-  logPhase("08 wait until KMS and every active operator expose identical material");
+  logPhase("11 wait until KMS and every active operator expose identical material");
   await waitUntil("every KMS operator serves both representations under the original key ID", async () => {
     const legacy = await kmsPublicMaterialDigests("ServerKey", keyIdHex);
     if (new Set(legacy).size !== 1) {
@@ -662,7 +760,7 @@ export const reconstructMigrated015Fixture = async (ctx: RolloutRunContext): Pro
 export default async function runMigrationAndAdoption(ctx: RolloutRunContext) {
   const continuityContract = await reconstructMigrated015Fixture(ctx);
 
-  logPhase("09 deploy 0.15.1 Green only after every Blue database has applied material");
+  logPhase("12 deploy 0.15.1 Green only after every Blue database has applied material");
   const greenStartedAt = new Date().toISOString();
   await ctx.startDeferredGreen();
   await assertActiveSafeguard();
@@ -671,12 +769,11 @@ export default async function runMigrationAndAdoption(ctx: RolloutRunContext) {
   await assertWorkerRepresentation("Green", EAGER_KEY_WORKERS, "compressed-xof", greenStartedAt);
   await ctx.test("input-proof-compute-decrypt", { parallel: false });
 
-  logPhase("10 run blue-green unanimity and cutover");
-  process.env.FHEVM_SKIP_BLUE_GREEN_ROLLBACK = "1";
+  logPhase("13 cut over from 0.15.0 Blue to 0.15.1 Green");
   await ctx.test("blue-green", { blueGreenPredecessorVersion: "v0.15.0", parallel: false });
   await assertWorkerRepresentation("Green", ["tfhe-worker"], "compressed-xof", greenStartedAt);
 
-  logPhase("11 verify post-cutover protocol paths with compressed material");
+  logPhase("14 verify post-cutover protocol paths with compressed material");
   await runKeyContinuity("reuse", continuityContract);
   await ctx.test("rollout-standard", { parallel: false });
   await ctx.test("public-decryption", { parallel: false });
