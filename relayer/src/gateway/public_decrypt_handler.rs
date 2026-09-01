@@ -22,6 +22,7 @@ use crate::{
         utils::{classify_revert_selector, extract_revert_selector},
     },
     logging::PublicDecryptStep,
+    metrics,
     orchestrator::{
         traits::{Event, EventHandler},
         ContentHasher, Orchestrator,
@@ -494,7 +495,10 @@ impl GatewayHandler {
                         }
                         PublicDecryptCompletionOutcome::NotFound => {
                             if attempt == retry_config.max_retries {
-                                debug!(
+                                metrics::increment_unmatched_gateway_event(
+                                    "public_decryption_response",
+                                );
+                                info!(
                                     step = %PublicDecryptStep::GwEventRetrying,
                                     gw_reference_id = %public_decryption_id,
                                     max_retries = retry_config.max_retries,

@@ -2,7 +2,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::{
     config::settings::GatewayConfig,
-    gateway::arbitrum::bindings::{gateway_chain_event_for_log, Decryption, InputVerification},
+    gateway::arbitrum::bindings::{gateway_chain_event_for_log, gateway_chain_event_signatures},
     gateway::handled_events::{EventKey, HandledEvents, ObservedEvent, RangeObserved},
     logging::ListenerStep,
     orchestrator::HealthCheck,
@@ -13,7 +13,6 @@ use alloy::{
     primitives::Address,
     providers::{Provider, ProviderBuilder},
     rpc::types::{BlockNumberOrTag, Filter, Log},
-    sol_types::SolEvent,
 };
 use async_trait::async_trait;
 use std::{str::FromStr, sync::Arc, time::Duration};
@@ -107,14 +106,7 @@ impl PollingListener {
                 .map_err(|_| anyhow::anyhow!("Invalid InputVerification address"))?;
         let contract_addresses = vec![decryption_address, input_verification_address];
 
-        // All gateway response events the relayer handles
-        let event_signatures = vec![
-            Decryption::UserDecryptionResponse::SIGNATURE_HASH,
-            Decryption::UserDecryptionResponseThresholdReached::SIGNATURE_HASH,
-            Decryption::PublicDecryptionResponse::SIGNATURE_HASH,
-            InputVerification::VerifyProofResponse::SIGNATURE_HASH,
-            InputVerification::RejectProofResponse::SIGNATURE_HASH,
-        ];
+        let event_signatures = gateway_chain_event_signatures();
 
         let mut consecutive_failures: u32 = 0;
         let max_attempts = self.gateway_config.listener_pool.polling_max_attempts;
@@ -286,7 +278,7 @@ impl PollingListener {
         let gateway_event = match gateway_chain_event_for_log(event_log.clone(), tx_hash) {
             Some(gateway_event) => gateway_event,
             None => {
-                debug!(
+                warn!(
                     step = %ListenerStep::EventUnroutable,
                     instance_id = self.pool_index,
                     block_number = block_number,

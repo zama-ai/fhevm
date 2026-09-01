@@ -2,7 +2,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::{
     config::settings::GatewayConfig,
-    gateway::arbitrum::bindings::gateway_chain_event_for_log,
+    gateway::arbitrum::bindings::{gateway_chain_event_for_log, gateway_chain_event_signatures},
     gateway::handled_events::{EventKey, HandledEvents, ObservedEvent},
     logging::ListenerStep,
     orchestrator::HealthCheck,
@@ -289,7 +289,7 @@ impl ArbitrumListener {
                                     event: gateway_event,
                                 }],
                                 None => {
-                                    debug!(
+                                    warn!(
                                         step = %ListenerStep::EventUnroutable,
                                         instance_id = self.pool_index,
                                         block_number = block_number,
@@ -339,7 +339,9 @@ impl ArbitrumListener {
         provider: &Arc<dyn Provider<AnyNetwork> + Send + Sync>,
         contract_addresses: &[Address],
     ) -> anyhow::Result<Subscription<Log>> {
-        let filter = Filter::new().address(contract_addresses.to_vec());
+        let filter = Filter::new()
+            .address(contract_addresses.to_vec())
+            .event_signature(gateway_chain_event_signatures());
 
         provider
             .subscribe_logs(&filter)

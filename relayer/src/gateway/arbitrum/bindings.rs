@@ -18,31 +18,53 @@ sol! {
     event Transfer(address indexed from, address indexed to, uint256 value);
 }
 
-/// Resolves a gateway log's `topic0` (event signature hash) to the specific
-/// `GatewayChainEventData` variant it represents. Both the polling and
-/// WebSocket listeners route every log through this function so the
-/// topic-to-event mapping cannot drift between the two paths.
+type IntoEvent = fn(Log, TxHash) -> GatewayChainEventData;
+
+/// Every gateway event the relayer routes. Both listeners filter `topic0` against this table
+/// and both decode through it, so a subscribed signature is always decodable.
+fn gateway_chain_events() -> [(FixedBytes<32>, IntoEvent); 5] {
+    [
+        (
+            Decryption::UserDecryptionResponse::SIGNATURE_HASH,
+            |log, tx_hash| GatewayChainEventData::UserDecryptionResponse { log, tx_hash },
+        ),
+        (
+            Decryption::UserDecryptionResponseThresholdReached::SIGNATURE_HASH,
+            |log, tx_hash| GatewayChainEventData::UserDecryptionResponseThresholdReached {
+                log,
+                tx_hash,
+            },
+        ),
+        (
+            Decryption::PublicDecryptionResponse::SIGNATURE_HASH,
+            |log, tx_hash| GatewayChainEventData::PublicDecryptionResponse { log, tx_hash },
+        ),
+        (
+            InputVerification::VerifyProofResponse::SIGNATURE_HASH,
+            |log, tx_hash| GatewayChainEventData::VerifyProofResponse { log, tx_hash },
+        ),
+        (
+            InputVerification::RejectProofResponse::SIGNATURE_HASH,
+            |log, tx_hash| GatewayChainEventData::RejectProofResponse { log, tx_hash },
+        ),
+    ]
+}
+
+pub fn gateway_chain_event_signatures() -> Vec<FixedBytes<32>> {
+    gateway_chain_events()
+        .iter()
+        .map(|(topic0, _)| *topic0)
+        .collect()
+}
+
+/// Resolves a gateway log's `topic0` to the `GatewayChainEventData` variant it represents.
 pub fn gateway_chain_event_for_log(log: Log, tx_hash: TxHash) -> Option<GatewayChainEventData> {
     let topic0 = FixedBytes::<32>::from_slice(log.topic0()?.as_slice());
+    let (_, into_event) = gateway_chain_events()
+        .into_iter()
+        .find(|(signature, _)| *signature == topic0)?;
 
-    Some(match topic0 {
-        t if t == Decryption::UserDecryptionResponse::SIGNATURE_HASH => {
-            GatewayChainEventData::UserDecryptionResponse { log, tx_hash }
-        }
-        t if t == Decryption::UserDecryptionResponseThresholdReached::SIGNATURE_HASH => {
-            GatewayChainEventData::UserDecryptionResponseThresholdReached { log, tx_hash }
-        }
-        t if t == Decryption::PublicDecryptionResponse::SIGNATURE_HASH => {
-            GatewayChainEventData::PublicDecryptionResponse { log, tx_hash }
-        }
-        t if t == InputVerification::VerifyProofResponse::SIGNATURE_HASH => {
-            GatewayChainEventData::VerifyProofResponse { log, tx_hash }
-        }
-        t if t == InputVerification::RejectProofResponse::SIGNATURE_HASH => {
-            GatewayChainEventData::RejectProofResponse { log, tx_hash }
-        }
-        _ => return None,
-    })
+    Some(into_event(log, tx_hash))
 }
 
 #[cfg(test)]
