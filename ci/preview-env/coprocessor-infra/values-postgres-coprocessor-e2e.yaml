@@ -72,6 +72,15 @@ env:
   # is not empty" complaint on volume backends that seed a lost+found dir.
   - {name: PGDATA, value: "/var/lib/postgresql/data/pgdata"}
 
+# RFC-021 BCS+GCS roughly doubles coprocessor clients on this instance
+# (two fleets of listeners/workers plus upgrade-controller / consensus-detector).
+# Alpine Postgres defaults to 100; beyond that kubectl exec psql and the
+# DryRunStarted wait fail with "sorry, too many clients already". First arg
+# must start with '-' so the official image's entrypoint prepends `postgres`.
+args:
+  - -c
+  - max_connections=300
+
 service:
   enabled: true
   ports:
