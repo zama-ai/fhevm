@@ -438,35 +438,47 @@ fn execute_partition(
                     // A multi-output op materializes each output
                     // separately, so the rule above is applied per
                     // handle rather than once per operation.
-                    let mut forwarded: Vec<Option<SupportedFheCiphertexts>> =
-                        Vec::with_capacity(working.len());
-                    for (output, value) in outputs.iter().zip(working) {
+                    //
+                    // Compress all allowed outputs before recording any: a late
+                    // failure must not leave earlier siblings completed.
+                    let mut compressed: Vec<Option<CompressedCiphertext>> =
+                        Vec::with_capacity(outputs.len());
+                    let mut compression_failure: Option<anyhow::Error> = None;
+                    for (output, value) in outputs.iter().zip(working.iter()) {
                         if !output.is_allowed {
-                            forwarded.push(Some(value));
+                            compressed.push(None);
                             continue;
                         }
-                        match compress_output(&value, &tid, opcode) {
-                            Ok(compressed_ct) => {
-                                res.insert(
-                                    output.handle.clone(),
-                                    Ok(TaskResult {
-                                        compressed_ct,
-                                        is_allowed: output.is_allowed,
-                                        transaction_id: tid.clone(),
-                                    }),
-                                );
-                                forwarded.push(Some(value));
-                            }
+                        match compress_output(value, &tid, opcode) {
+                            Ok(compressed_ct) => compressed.push(Some(compressed_ct)),
                             Err(e) => {
-                                // The block fails on this allowed
-                                // handle anyway; forward nothing so
-                                // downstream ops fail as missing
-                                // inputs instead of computing results
-                                // destined to be discarded.
-                                res.insert(output.handle.clone(), Err(e));
-                                forwarded.push(None);
+                                compression_failure = Some(e);
+                                break;
                             }
                         }
+                    }
+                    if let Some(e) = compression_failure {
+                        error!(target: "scheduler", { error = %e },
+                        "Compression failed for an allowed output; failing the whole operation");
+                        fan_out_error(&producer_handles, e, &mut res);
+                        continue;
+                    }
+                    let mut forwarded: Vec<SupportedFheCiphertexts> =
+                        Vec::with_capacity(working.len());
+                    for ((output, value), compressed_ct) in
+                        outputs.iter().zip(working).zip(compressed)
+                    {
+                        if let Some(compressed_ct) = compressed_ct {
+                            res.insert(
+                                output.handle.clone(),
+                                Ok(TaskResult {
+                                    compressed_ct,
+                                    is_allowed: output.is_allowed,
+                                    transaction_id: tid.clone(),
+                                }),
+                            );
+                        }
+                        forwarded.push(value);
                     }
                     // Route each output to the consumers that name it:
                     // an edge carries the consuming input slot, and the
@@ -490,12 +502,8 @@ fn execute_partition(
                             "Consumer dependence handle not found in producer outputs - graph inconsistency");
                             continue;
                         };
-                        // None: compression failed and was already stamped, so
-                        // forward nothing and let the consumer fail as a missing
-                        // input rather than reporting it twice.
-                        if let Some(value) = &forwarded[out_idx] {
-                            child_node.inputs[input_idx] = DFGTaskInput::Value(value.clone());
-                        }
+                        child_node.inputs[input_idx] =
+                            DFGTaskInput::Value(forwarded[out_idx].clone());
                     }
                 }
                 Err(e) => {
@@ -581,18 +589,23 @@ fn try_execute_node(
     }
     let opcode = node.opcode;
     // One type per declared output: outputs of one operation can differ in type.
+    // Terminal: the generic SchedulerError is left unstamped and retried forever.
     let output_types = node
         .outputs
         .iter()
-        .map(|o| get_ct_type(&o.handle))
-        .collect::<std::result::Result<Vec<i16>, _>>()
-        .map_err(|e| {
-            error!(target: "scheduler",
-                { handle = ?handle, outputs, error = ?e },
-                "Invalid result handle: cannot read type byte");
-            telemetry::set_current_span_error(&e);
-            SchedulerError::SchedulerError
-        })?;
+        .enumerate()
+        .map(|(index, o)| {
+            get_ct_type(&o.handle).map_err(|e| {
+                error!(target: "scheduler",
+                    { handle = ?handle, outputs, error = ?e },
+                    "Invalid result handle: cannot read type byte");
+                telemetry::set_current_span_error(&e);
+                SchedulerError::MultiOutputFailure(format!(
+                    "output {index} has an invalid handle: {e}"
+                ))
+            })
+        })
+        .collect::<std::result::Result<Vec<i16>, _>>()?;
 
     let result = std::panic::catch_unwind(|| {
         run_computation(
