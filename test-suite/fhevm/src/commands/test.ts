@@ -6,18 +6,18 @@ import { type DecryptionRunner, runKmsGenerationProfile } from "./kms-generation
 import { runKmsGenerationAbortProfile } from "./kms-generation-abort";
 import { runKmsContextSwitchProfile } from "./kms-context-switch";
 import { DRIFT_CLEANUP_SQL, DRIFT_INSTALL_SQL, parseDriftInstanceIndex, parsePositiveInteger } from "../drift";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 import { PreflightError, formatCliError } from "../errors";
 import { dockerInspect } from "../flow/readiness";
 import { pause, shellEscape, unpause } from "../flow/up-flow";
 import { hostReachableRpcUrl, readEnvFile, withHexPrefix } from "../utils/fs";
-import { run, runWithHeartbeat } from "../utils/process";
+import { composeEnv, run, runWithHeartbeat } from "../utils/process";
 import { loadState } from "../state/state";
 import { topologyForState } from "../stack-spec/stack-spec";
 import {
   COPROCESSOR_DB_CONTAINER,
+  PROJECT,
+  composePath,
   DEFAULT_CHAIN_ID,
   DEFAULT_POSTGRES_DB,
   DEFAULT_POSTGRES_PASSWORD,
@@ -296,54 +296,68 @@ const gcsHostListeners = async () => {
 
 /** Recreates every GCS host-listener with synthetic-op injection on or off.
  *
- *  `--disable-synthetic-ops` is a command argument fixed when the container is created,
- *  so restarting cannot change it. Write a compose override carrying the adjusted
- *  command and recreate the services from it. */
+ *  A container's command is fixed when it is created, so restarting cannot change it.
+ *  Each host chain has its own compose file, so the listeners are grouped by the file
+ *  set their own labels name and every group is brought up from that set. */
 const setSyntheticOps = async (enabled: boolean) => {
   const containers = await gcsHostListeners();
   if (containers.length === 0) {
-    throw new Error("found no GCS host-listener containers");
+    throw new PreflightError("found no GCS host-listener containers");
   }
-  const meta = await run(
-    ["docker", "inspect", ...containers, "--format",
-      '{{index .Config.Labels "com.docker.compose.project"}}\t' +
-      '{{index .Config.Labels "com.docker.compose.project.config_files"}}\t' +
-      '{{index .Config.Labels "com.docker.compose.service"}}\t' +
-      "{{json .Config.Cmd}}"],
-    { allowFailure: true },
-  );
+  const format = [
+    '{{index .Config.Labels "com.docker.compose.project.config_files"}}',
+    '{{index .Config.Labels "com.docker.compose.service"}}',
+    "{{json .Config.Cmd}}",
+  ].join("\t");
+  const meta = await run(["docker", "inspect", ...containers, "--format", format], { allowFailure: true });
   if (meta.code !== 0) {
-    throw new Error(`docker inspect failed: ${meta.stderr.trim()}`);
-  }
-  const rows = meta.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
-    .map((line) => line.split("\t"));
-  const project = rows[0]?.[0];
-  const configFiles = rows[0]?.[1];
-  if (!project || !configFiles) {
-    throw new Error("GCS host-listeners carry no compose project labels");
+    throw new PreflightError(`docker inspect failed: ${meta.stderr.trim()}`);
   }
 
-  const services: Record<string, { command: string[] }> = {};
-  for (const [, , service, commandJson] of rows) {
-    if (!service || !commandJson || commandJson === "null") {
-      throw new Error(`cannot read the command of GCS host-listener service "${service}"`);
+  const groups = new Map<string, Record<string, { command: string[] }>>();
+  for (const line of meta.stdout.split(/\r?\n/).map((entry) => entry.trim()).filter(Boolean)) {
+    const [files, service, commandJson] = line.split("\t");
+    if (!files || !service || !commandJson || commandJson === "null") {
+      throw new PreflightError(`compose labels are missing on "${service || containers.join(", ")}"`);
     }
-    const base = (JSON.parse(commandJson) as string[]).filter((arg) => arg !== SYNTHETIC_OPS_OFF);
-    services[service] = { command: enabled ? base : [...base, SYNTHETIC_OPS_OFF] };
+    const command = (JSON.parse(commandJson) as string[]).filter((entry) => entry !== SYNTHETIC_OPS_OFF);
+    if (!enabled) {
+      command.push(SYNTHETIC_OPS_OFF);
+    }
+    const group = groups.get(files) ?? {};
+    group[service] = { command };
+    groups.set(files, group);
   }
 
-  // Compose parses YAML, and JSON is valid YAML — no serializer needed.
-  const overridePath = join(tmpdir(), `fhevm-synthetic-ops-${enabled ? "on" : "off"}.yml`);
-  await Bun.write(overridePath, JSON.stringify({ services }));
-
-  const argv = ["docker", "compose", "-p", project];
-  for (const file of configFiles.split(",")) argv.push("-f", file);
-  argv.push("-f", overridePath, "up", "-d", "--force-recreate", "--no-deps", ...Object.keys(services));
-  const up = await run(argv, { allowFailure: true });
-  if (up.code !== 0) {
-    throw new Error(`recreating the GCS host-listeners failed: ${up.stderr.trim()}`);
+  const env = await composeEnv("coprocessor");
+  const recreated: string[] = [];
+  for (const [index, [files, services]] of [...groups].entries()) {
+    // Compose parses YAML, and JSON is valid YAML — no serializer needed.
+    const override = composePath(`synthetic-ops-${index}`);
+    await Bun.write(override, JSON.stringify({ services }));
+    const up = await run(
+      [
+        "docker",
+        "compose",
+        "-p",
+        PROJECT,
+        ...files.split(",").flatMap((file) => ["-f", file]),
+        "-f",
+        override,
+        "up",
+        "-d",
+        "--force-recreate",
+        "--no-deps",
+        ...Object.keys(services),
+      ],
+      { env, allowFailure: true },
+    );
+    if (up.code !== 0) {
+      throw new PreflightError(`recreating the GCS host-listeners failed: ${up.stderr.trim()}`);
+    }
+    recreated.push(...Object.keys(services));
   }
-  return Object.keys(services);
+  return recreated.sort();
 };
 
 /** Finds the expected drift warning for a specific injected handle. */
