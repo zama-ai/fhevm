@@ -991,7 +991,7 @@ const startContinuousErc20Traffic = (targets: TrafficTarget[], streams: number):
  */
 const runBlueGreenProfile = async (
   state: State,
-  options: Pick<TestOptions, "network" | "noHardhatCompile">,
+  options: Pick<TestOptions, "blueGreenPredecessorVersion" | "network" | "noHardhatCompile">,
 ): Promise<boolean> => {
   if (state.scenario.kind !== "blue-green") {
     throw new PreflightError(
@@ -1003,6 +1003,7 @@ const runBlueGreenProfile = async (
   // The proposal names the release the GCS image was built as.
   const gcsStackVersion = await gcsBinaryRelease();
   const gcsVersionLive = gcsStackVersion;
+  const predecessorVersion = options.blueGreenPredecessorVersion ?? "v0.14";
   const opCount = state.scenario.topology.count;
 
   const operatorDatabases: string[] = [];
@@ -1026,8 +1027,8 @@ const runBlueGreenProfile = async (
   console.log(`\n[1/11] verify initial state`);
   for (const db of operatorDatabases) {
     const version = await psqlQuery(db, "SELECT stack_version FROM versioning;");
-    if (version !== "v0.14") {
-      throw new Error(`${db}.versioning = "${version}", expected "v0.14" (prior test residue?)`);
+    if (version !== predecessorVersion) {
+      throw new Error(`${db}.versioning = "${version}", expected "${predecessorVersion}" (prior test residue?)`);
     }
     const rows = await psqlQuery(db, "SELECT count(*) FROM upgrade_state;");
     if (rows !== "0") {
@@ -1041,7 +1042,9 @@ const runBlueGreenProfile = async (
       throw new Error(`${db} missing schema "gcs-${gcsStackVersion}" (GCS upgrade-controller didn't create it)`);
     }
   }
-  console.log(`OK:   ${opCount} DB(s) at v0.14, empty upgrade_state, gcs-${gcsStackVersion} schema present`);
+  console.log(
+    `OK:   ${opCount} DB(s) at ${predecessorVersion}, empty upgrade_state, gcs-${gcsStackVersion} schema present`,
+  );
 
   const gatewayRpcUrl = hostReachableRpcUrl(state.discovery!.endpoints.gateway.http);
 
@@ -1184,8 +1187,10 @@ const runBlueGreenProfile = async (
       );
     }
     const version = await psqlQuery(db, "SELECT stack_version FROM versioning;");
-    if (version !== "v0.14") {
-      throw new Error(`${db}.versioning = "${version}" after failed upgrade, expected "v0.14"`);
+    if (version !== predecessorVersion) {
+      throw new Error(
+        `${db}.versioning = "${version}" after failed upgrade, expected "${predecessorVersion}"`,
+      );
     }
     const schema = await psqlQuery(
       db,
@@ -1202,7 +1207,9 @@ const runBlueGreenProfile = async (
     if (residue !== "0") {
       throw new Error(`${db} gcs schema not reset: ${residue} residual computations/state_hash rows`);
     }
-    console.log(`OK:   ${db}  PAUSED/failed, latches cleared, v0.14 kept, gcs schema recreated empty`);
+    console.log(
+      `OK:   ${db}  PAUSED/failed, latches cleared, ${predecessorVersion} kept, gcs schema recreated empty`,
+    );
   }
   const reenabled = await setSyntheticOps(true);
   console.log(`OK:   recreated ${reenabled.length} GCS host-listener service(s) with synthetic ops enabled`);
