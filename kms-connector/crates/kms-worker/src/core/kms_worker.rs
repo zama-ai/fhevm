@@ -17,10 +17,9 @@ use crate::{
         metrics::register_event_latency,
     },
 };
-use alloy::transports::http::reqwest;
 use anyhow::anyhow;
 use connector_utils::{
-    conn::{DefaultProvider, connect_to_db, connect_to_rpc_node},
+    conn::{DefaultProvider, connect_to_db, connect_to_rpc_node, connect_to_rpc_node_with_bounds},
     tasks::spawn_with_limit,
     types::{KmsResponse, ProtocolEvent},
 };
@@ -129,7 +128,7 @@ impl
         config: Config,
         cancel_token: CancellationToken,
     ) -> anyhow::Result<(Self, State<DefaultProvider>)> {
-        let host_chain_backends = register_host_chain_backends(&config.host_chains).await?;
+        let host_chain_backends = register_host_chain_backends(&config).await?;
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
 
         let gateway_provider =
@@ -139,18 +138,13 @@ impl
 
         let kms_client = KmsClient::connect(&config).await?;
         let kms_health_client = KmsHealthClient::connect(&config.kms_core_endpoints).await?;
-        let s3_client = reqwest::Client::builder()
-            .connect_timeout(config.s3_connect_timeout)
-            .build()
-            .map_err(|e| anyhow!("Failed to create HTTP client: {}", e))?;
 
         let event_picker = DbEventPicker::connect(db_pool.clone(), &config).await?;
 
         let context_manager =
             DbContextManager::new(db_pool.clone(), &config, ethereum_provider.clone());
         let ciphertext_manager =
-            CiphertextManager::connect(gateway_provider.clone(), s3_client, &config, cancel_token)
-                .await?;
+            CiphertextManager::connect(gateway_provider.clone(), &config, cancel_token).await?;
         let decryption_processor = DecryptionProcessor::new(
             &config,
             context_manager.clone(),
@@ -158,10 +152,11 @@ impl
             host_chain_backends,
             ciphertext_manager,
         );
-        let kms_generation_processor = KMSGenerationProcessor::new(&config, context_manager);
+        let kms_generation_processor = KMSGenerationProcessor::new(&config);
         let protocol_config_processor = ProtocolConfigProcessor::new(&config, ethereum_provider);
         let event_processor = DbEventProcessor::new(
             kms_client.clone(),
+            context_manager,
             decryption_processor,
             kms_generation_processor,
             protocol_config_processor,
@@ -184,16 +179,16 @@ impl
 }
 
 async fn register_host_chain_backends(
-    host_chains: &[HostChainConfig],
+    config: &Config,
 ) -> anyhow::Result<HashMap<u64, HostChainAclBackend<DefaultProvider>>> {
-    validate_host_chain_configs(host_chains)?;
+    validate_host_chain_configs(&config.host_chains)?;
 
-    let mut backends = HashMap::with_capacity(host_chains.len());
+    let mut backends = HashMap::with_capacity(config.host_chains.len());
     // The workspace `reqwest`, not alloy's re-export: alloy now vendors a different major, and
     // `SolanaV2Fetcher` is typed against the workspace crate.
     let solana_client = ::reqwest::Client::new();
 
-    for host_chain in host_chains {
+    for host_chain in &config.host_chains {
         let backend = match host_chain.chain_kind {
             HostChainKind::Evm => {
                 let acl_address = host_chain.acl_address.ok_or_else(|| {
@@ -202,8 +197,13 @@ async fn register_host_chain_backends(
                         host_chain.chain_id
                     )
                 })?;
-                let provider =
-                    connect_to_rpc_node(host_chain.url.clone(), host_chain.chain_id).await?;
+                let provider = connect_to_rpc_node_with_bounds(
+                    host_chain.url.clone(),
+                    host_chain.chain_id,
+                    config.host_rpc_max_concurrent_calls,
+                    config.host_rpc_call_timeout,
+                )
+                .await?;
                 HostChainAclBackend::Evm(ACL::new(acl_address, provider))
             }
             HostChainKind::Solana => {
@@ -324,12 +324,14 @@ mod tests {
 
     #[tokio::test]
     async fn registers_evm_and_solana_backends_once() {
-        let backends = register_host_chain_backends(&[
+        let mut config = Config::default();
+        config.host_chains = vec![
             host_chain(1, HostChainKind::Evm),
             host_chain(2, HostChainKind::Solana),
-        ])
-        .await
-        .expect("valid host chains should register");
+        ];
+        let backends = register_host_chain_backends(&config)
+            .await
+            .expect("valid host chains should register");
 
         assert!(matches!(
             backends.get(&1),

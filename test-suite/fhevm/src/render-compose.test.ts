@@ -557,4 +557,52 @@ gcs:
       expect(gcsCommand.filter((arg) => arg.startsWith("--bucket-name-"))).toEqual([]);
     });
   });
+
+  test("builds coprocessor and kms-connector images from the branch-local workspace Dockerfiles", async () => {
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor.1"), "\n");
+      const kmsState: State = { ...state, overrides: [{ group: "coprocessor" }, { group: "kms-connector" }] };
+      await generateComposeOverrides(kmsState, stackSpecForState(kmsState));
+      type BuildDoc = { services: Record<string, { build?: { dockerfile?: string; target?: string } }> };
+      const coprocessor = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as BuildDoc;
+      const connector = YAML.parse(await readFile(composePath("kms-connector"), "utf8")) as BuildDoc;
+      const buildFor = (doc: BuildDoc, service: string) => doc.services[service]?.build ?? {};
+      // Every coprocessor image builds from the shared workspace Dockerfile (one cargo pass for
+      // all binaries) with a per-image runtime target.
+      const coprocessorTargets: Record<string, string> = {
+        "coprocessor-db-migration": "db-migration",
+        "coprocessor-host-listener": "host-listener",
+        "coprocessor-host-listener-poller": "host-listener",
+        "coprocessor-host-listener-consumer": "host-listener",
+        "coprocessor-gw-listener": "gw-listener",
+        "coprocessor-tfhe-worker": "tfhe-worker",
+        "coprocessor-zkproof-worker": "zkproof-worker",
+        "coprocessor-sns-worker": "sns-worker",
+        "coprocessor-transaction-sender": "transaction-sender",
+      };
+      for (const [service, target] of Object.entries(coprocessorTargets)) {
+        const build = buildFor(coprocessor, service);
+        expect(build.dockerfile).toContain("coprocessor/fhevm-engine/Dockerfile.workspace");
+        expect(build.target).toBe(target);
+      }
+      // The kms-connector worker images build from their shared workspace Dockerfile; connector-db
+      // was never workspace-built (sqlx-cli install, not a workspace member) and keeps its own
+      // per-image Dockerfile.
+      const connectorTargets: Record<string, string> = {
+        "kms-connector-gw-listener": "gw-listener",
+        "kms-connector-kms-worker": "kms-worker",
+        "kms-connector-tx-sender": "tx-sender",
+      };
+      for (const [service, target] of Object.entries(connectorTargets)) {
+        const build = buildFor(connector, service);
+        expect(build.dockerfile).toContain("kms-connector/Dockerfile.workspace");
+        expect(build.target).toBe(target);
+      }
+      const connectorDb = buildFor(connector, "kms-connector-db-migration");
+      expect(connectorDb.dockerfile).toContain("kms-connector/connector-db/Dockerfile");
+      expect(connectorDb.target).toBe("prod");
+    });
+  });
 });

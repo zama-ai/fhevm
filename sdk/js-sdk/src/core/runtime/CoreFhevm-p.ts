@@ -721,40 +721,50 @@ export function setFrozenContext(fhevm: FhevmBase, frozenContext: FhevmClientFro
   f[SET_FROZEN_CONTEXT](frozenContext);
 }
 
+export function getFrozenContext(fhevm: unknown): FhevmClientFrozenContext | undefined {
+  const f = asCoreFhevm(fhevm) as CoreFhevm & { readonly [GET_FROZEN_CONTEXT]: GetFrozenContextFn };
+  return f[GET_FROZEN_CONTEXT]();
+}
+
+/** Solana encrypt pins TFHE onto the frozen context (no on-chain protocol context). */
 export function setResolvedTfheVersion(
   fhevm: FhevmBase<FhevmChain | undefined, FhevmRuntime, OptionalNativeClient>,
   tfheVersion: TfheVersion,
 ): void {
-  const f = asCoreFhevm(fhevm) as CoreFhevm & { readonly [SET_TFHE_VERSION]: SetTfheVersionFn };
-  f[SET_TFHE_VERSION](tfheVersion);
+  const current = getFrozenContext(fhevm);
+  if (current === undefined) {
+    throw new Error(UNRESOLVED_FHEVM_CONTEXT_MESSAGE);
+  }
+  if (current.tryTfheVersion === tfheVersion) {
+    return;
+  }
+  setFrozenContext(fhevm, { ...current, tfheVersion } as FhevmClientFrozenContext);
 }
 
 export function setResolvedTkmsVersion(
   fhevm: FhevmBase<FhevmChain | undefined, FhevmRuntime, OptionalNativeClient>,
   tkmsVersion: TkmsVersion,
 ): void {
-  const f = asCoreFhevm(fhevm) as CoreFhevm & { readonly [SET_TKMS_VERSION]: SetTkmsVersionFn };
-  f[SET_TKMS_VERSION](tkmsVersion);
+  const current = getFrozenContext(fhevm);
+  if (current === undefined) {
+    throw new Error(UNRESOLVED_FHEVM_CONTEXT_MESSAGE);
+  }
+  if (current.tryTkmsVersion === tkmsVersion) {
+    return;
+  }
+  setFrozenContext(fhevm, { ...current, tkmsVersion } as FhevmClientFrozenContext);
 }
 
 export function getResolvedProtocolVersion(fhevm: unknown): ProtocolVersionResolution | undefined {
-  const f = asCoreFhevm(fhevm) as CoreFhevm & { readonly [GET_PROTOCOL_VERSION]: GetProtocolVersionFn };
-  return f[GET_PROTOCOL_VERSION]();
+  return getFrozenContext(fhevm)?.tryProtocolVersion;
 }
 
 export function getResolvedTfheVersion(fhevm: unknown): TfheVersion | undefined {
-  const f = asCoreFhevm(fhevm) as CoreFhevm & { readonly [GET_TFHE_VERSION]: GetTfheVersionFn };
-  return f[GET_TFHE_VERSION]();
+  return getFrozenContext(fhevm)?.tryTfheVersion;
 }
 
 export function getResolvedTkmsVersion(fhevm: unknown): TkmsVersion | undefined {
-  const f = asCoreFhevm(fhevm) as CoreFhevm & { readonly [GET_TKMS_VERSION]: GetTkmsVersionFn };
-  return f[GET_TKMS_VERSION]();
-}
-
-export function getFrozenContext(fhevm: unknown): FhevmClientFrozenContext | undefined {
-  const f = asCoreFhevm(fhevm) as CoreFhevm & { readonly [GET_FROZEN_CONTEXT]: GetFrozenContextFn };
-  return f[GET_FROZEN_CONTEXT]();
+  return getFrozenContext(fhevm)?.tryTkmsVersion;
 }
 
 export function setFrozenContextPromise(

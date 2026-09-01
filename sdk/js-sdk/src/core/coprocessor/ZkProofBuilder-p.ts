@@ -34,6 +34,7 @@ import { fetchFheEncryptionKeyWasm } from '../key/fetchFheEncryptionKey.js';
 type Context = {
   readonly chain: FhevmChain;
   readonly runtime: WithEncrypt;
+  readonly tfheVersion?: TfheVersion;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -160,7 +161,7 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
       aclContractAddress,
       ciphertextWithZkProof,
       extraData: finalExtraData,
-    } = await this.#encodeAndProve(context, contractAddress, userAddress, asBytesHex(extraData));
+    } = await this.#encodeAndProve(context, contractAddress, userAddress, asBytesHex(extraData), fhevmContext);
 
     if (isSolanaHostChainId(chainId)) {
       throw new ZkProofError({
@@ -241,14 +242,23 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
     contractAddress: string,
     userAddress: string,
     extraData: BytesHex,
+    fhevmContext?: FhevmClientFrozenContext,
   ): Promise<{
     readonly chainId: bigint | number;
     readonly aclContractAddress: string;
     readonly ciphertextWithZkProof: Uint8Array;
     readonly extraData: BytesHex;
   }> {
-    // Fetch the FheEncryptionKey (in wasm format) from the global cache.
-    const fheEncryptionKeyWasm = await fetchFheEncryptionKeyWasm(context, { fhevmContext });
+    const tfheVersion = fhevmContext?.tryTfheVersion ?? context.tfheVersion;
+    if (tfheVersion === undefined) {
+      throw new ZkProofError({
+        message: 'TFHE version is required to build a ZK proof',
+      });
+    }
+    // EVM callers thread a frozen context; Solana callers pin TFHE on `context.tfheVersion`.
+    // deserializeFheEncryptionKey only reads `tfheVersion` from the context object.
+    const keyContext = fhevmContext ?? ({ tfheVersion } as FhevmClientFrozenContext);
+    const fheEncryptionKeyWasm = await fetchFheEncryptionKeyWasm(context, { fhevmContext: keyContext });
 
     if (this.#totalBits === 0) {
       throw new ZkProofError({
@@ -285,7 +295,7 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
         fheEncryptionKey: fheEncryptionKeyWasm,
         metaData,
         extraData: asBytesHex(extraData),
-        tfheVersion: fhevmContext.tfheVersion,
+        tfheVersion,
       });
 
     return {

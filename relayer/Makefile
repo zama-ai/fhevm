@@ -402,7 +402,7 @@ health: ## Check relayer health endpoints (requires running relayer)
 # test-groups-check fails the build until you do, and CI runs that check.
 GROUPS := user-decrypt delegated-user-decrypt public-decrypt input-proof \
           admin-endpoint health keyurl keyurl-poller recovery \
-          schema-isolation threshold-resolver listener-redundancy common
+          schema-isolation threshold-resolver listener-redundancy common solana
 
 BINS_user-decrypt           := user_decrypt_v2_test user_decrypt_v3_test
 BINS_delegated-user-decrypt := delegated_user_decrypt_v2_test
@@ -417,6 +417,7 @@ BINS_schema-isolation       := schema_isolation_test
 BINS_threshold-resolver     := threshold_resolver_test
 BINS_listener-redundancy    := listener_redundancy_test
 BINS_common                 := common_test
+BINS_solana                 := solana_v0_teardown solana_envelope_fixture
 
 group_bins = $(foreach g,$(1),$(BINS_$(g)))
 

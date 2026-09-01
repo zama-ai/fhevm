@@ -975,8 +975,7 @@ mod tests {
             )]),
             TestHostBackend::Missing => HashMap::new(),
         };
-        let ciphertext_manager =
-            CiphertextManager::for_test(mock_provider.clone(), reqwest::Client::new());
+        let ciphertext_manager = CiphertextManager::for_test(mock_provider.clone());
         DecryptionProcessor::new(
             &config,
             MockContextManager,

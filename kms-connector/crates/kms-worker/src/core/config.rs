@@ -16,9 +16,7 @@ use connector_utils::{
     monitoring::{health::default_healthcheck_timeout, server::default_monitoring_endpoint},
     tasks::default_task_limit,
 };
-#[cfg(test)]
-use serde::Serialize;
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 use solana_pubkey::Pubkey;
 use std::{net::SocketAddr, num::NonZeroUsize, str::FromStr, time::Duration};
 
