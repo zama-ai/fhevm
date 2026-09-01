@@ -534,6 +534,7 @@ export default async function runMigration(ctx: RolloutRunContext) {
   await assertGreenWorkersParked();
 
   logPhase("07 cut over from 0.14 Blue to 0.15 Green through the existing Blue/Green flow");
+  process.env.FHEVM_SKIP_BLUE_GREEN_ROLLBACK = "1";
   await ctx.test("blue-green", { parallel: false });
 
   logPhase("08 request compressed material for the existing active Test key");

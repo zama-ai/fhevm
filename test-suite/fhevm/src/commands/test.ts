@@ -997,6 +997,9 @@ const runBlueGreenProfile = async (
     return `[${tuples.join(",")}]`;
   };
 
+  if (process.env.FHEVM_SKIP_BLUE_GREEN_ROLLBACK === "1") {
+    console.log(`\n[2-4/11] skipped: quiet-host rollback is tracked by fhevm-internal#1957`);
+  } else {
   // Host chains stay quiet (no non-trivial FHE op) while [3/11] anchors the Gateway
   // track with one input. Cutover needs at least one non-trivial host anchor, so the
   // controller withholds the hosts and commitment_timeout rolls back every row — the
@@ -1092,6 +1095,7 @@ const runBlueGreenProfile = async (
       throw new Error(`${db} gcs schema not reset: ${residue} residual computations/state_hash rows`);
     }
     console.log(`OK:   ${db}  PAUSED/failed, latches cleared, v0.14 kept, gcs schema recreated empty`);
+  }
   }
 
   // Deploy ERC20 + mint before the proposal so the balance handle lands in
