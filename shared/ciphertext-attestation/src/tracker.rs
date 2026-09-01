@@ -59,7 +59,7 @@ pub struct Round {
     /// The handle this round is about.
     pub handle: B256,
     pub threshold: NonZeroUsize,
-    /// One slot per registered Coprocessor, in roster order. Filled in place as replies arrive.
+    /// One slot per registered Coprocessor, in the order given. Filled in place as replies arrive.
     pub replies: Vec<(CoprocessorEntry, Reply)>,
 }
 
@@ -68,7 +68,7 @@ impl Round {
         self.addresses_where(|r| matches!(r, Reply::Attested(_)))
     }
 
-    fn silent(&self) -> Vec<Address> {
+    fn never_replied(&self) -> Vec<Address> {
         self.addresses_where(|r| matches!(r, Reply::NoReply))
     }
 
@@ -142,8 +142,7 @@ pub struct ConsensusTracker {
 }
 
 impl ConsensusTracker {
-    /// Builds the board from the roster: one slot per registered signer, all
-    /// [`Reply::Outstanding`].
+    /// Opens the round: one slot per registered Coprocessor, all [`Reply::Outstanding`].
     pub fn new(
         handle: B256,
         entries: impl IntoIterator<Item = CoprocessorEntry>,
@@ -175,13 +174,13 @@ impl ConsensusTracker {
             Some(_) => {}
             None => debug_assert!(
                 false,
-                "record() called for signer {signer}, not in the roster"
+                "record() called for signer {signer}, not one of the registered Coprocessors"
             ),
         }
         self.verdict()
     }
 
-    /// Reads the board without changing it.
+    /// Reads the round without changing it.
     pub fn verdict(&self) -> ThresholdStatus {
         let round = &self.round;
         let threshold = round.threshold.get();
@@ -218,9 +217,9 @@ impl std::fmt::Display for Round {
             self.agreeing(),
             self.threshold.get()
         )?;
-        let silent = self.silent();
-        if !silent.is_empty() {
-            write!(f, ", {} never replied", format_addrs(&silent))?;
+        let never_replied = self.never_replied();
+        if !never_replied.is_empty() {
+            write!(f, ", {} never replied", format_addrs(&never_replied))?;
         }
         let rejected = self.rejected();
         if !rejected.is_empty() {
@@ -304,8 +303,7 @@ mod tests {
         (signer.address(), Reply::Attested(material))
     }
 
-    /// A dissenting `(signer, reply)` pair: same handle, different SNS digest.
-    async fn dissenting_reply_from(signer: &PrivateKeySigner, sns: B256) -> (Address, Reply) {
+    async fn reply_from_with_sns(signer: &PrivateKeySigner, sns: B256) -> (Address, Reply) {
         let att = CiphertextAttestationPayload::new(
             Version::V1,
             HANDLE,
@@ -322,7 +320,8 @@ mod tests {
         (signer.address(), Reply::Attested(material))
     }
 
-    /// Roster entries for `signers`, each bound to the bucket a real registry would give it.
+    /// One entry per registered Coprocessor in `signers`, each bound to the bucket a real registry
+    /// would give it.
     fn entries(signers: impl IntoIterator<Item = Address>) -> Vec<CoprocessorEntry> {
         signers
             .into_iter()
@@ -410,7 +409,7 @@ mod tests {
 
         let (signer, reply) = reply_from(&s1).await;
         tracker.record(signer, reply);
-        let (signer, reply) = dissenting_reply_from(&s2, B256::repeat_byte(0xDD)).await;
+        let (signer, reply) = reply_from_with_sns(&s2, B256::repeat_byte(0xDD)).await;
         let status = tracker.record(signer, reply);
 
         match status {
@@ -451,13 +450,13 @@ mod tests {
         // Terminal before every reply is in: whatever the outstanding Coprocessor says joins a
         // group too small to ever reach threshold.
         let signers: Vec<PrivateKeySigner> = (0..4).map(|_| PrivateKeySigner::random()).collect();
-        let mut roster: Vec<Address> = signers.iter().map(|s| s.address()).collect();
-        roster.push(PrivateKeySigner::random().address());
-        let mut tracker = ConsensusTracker::new(HANDLE, entries(roster), nz(3));
+        let mut addresses: Vec<Address> = signers.iter().map(|s| s.address()).collect();
+        addresses.push(PrivateKeySigner::random().address());
+        let mut tracker = ConsensusTracker::new(HANDLE, entries(addresses), nz(3));
 
         let mut status = ThresholdStatus::AwaitingReplies;
         for (i, signer) in signers.iter().enumerate() {
-            let (addr, reply) = dissenting_reply_from(signer, B256::repeat_byte(i as u8)).await;
+            let (addr, reply) = reply_from_with_sns(signer, B256::repeat_byte(i as u8)).await;
             status = tracker.record(addr, reply);
         }
 
@@ -482,7 +481,7 @@ mod tests {
 
         let (signer, reply) = reply_from(&s1).await;
         tracker.record(signer, reply);
-        let (signer, reply) = dissenting_reply_from(&s2, B256::repeat_byte(0xDD)).await;
+        let (signer, reply) = reply_from_with_sns(&s2, B256::repeat_byte(0xDD)).await;
         tracker.record(signer, reply);
         let status = tracker.record(s3, Reply::NoReply);
 
@@ -507,7 +506,7 @@ mod tests {
 
         let (signer, reply) = reply_from(&s1).await;
         tracker.record(signer, reply);
-        let (signer, reply) = dissenting_reply_from(&s2, B256::repeat_byte(0xDD)).await;
+        let (signer, reply) = reply_from_with_sns(&s2, B256::repeat_byte(0xDD)).await;
         tracker.record(signer, reply);
         let status = tracker.record(s3, Reply::NoReply);
 
@@ -522,8 +521,8 @@ mod tests {
 
     #[test]
     fn empty_round_is_missed_not_unreachable() {
-        // An empty roster is vacuously full participation with zero failures, which must not read
-        // as proven disagreement.
+        // With no registered Coprocessors there is nothing to answer and nothing to fail, and that
+        // must not read as proven disagreement.
         let tracker = ConsensusTracker::new(HANDLE, entries(std::iter::empty()), nz(1));
 
         match tracker.verdict() {
@@ -567,7 +566,7 @@ mod tests {
         let (signer, reply) = reply_from(&s1).await;
         tracker.record(signer, reply.clone());
         tracker.record(signer, reply);
-        let (signer, reply) = dissenting_reply_from(&s2, B256::repeat_byte(0xDD)).await;
+        let (signer, reply) = reply_from_with_sns(&s2, B256::repeat_byte(0xDD)).await;
         let status = tracker.record(signer, reply);
 
         match status {
@@ -586,17 +585,17 @@ mod tests {
     #[tokio::test]
     async fn unreachable_with_more_than_two_coprocessors() {
         let signers: Vec<PrivateKeySigner> = (0..4).map(|_| PrivateKeySigner::random()).collect();
-        let roster: Vec<Address> = signers.iter().map(|s| s.address()).collect();
-        let mut tracker = ConsensusTracker::new(HANDLE, entries(roster), nz(3));
+        let addresses: Vec<Address> = signers.iter().map(|s| s.address()).collect();
+        let mut tracker = ConsensusTracker::new(HANDLE, entries(addresses), nz(3));
 
         let (signer, reply) = reply_from(&signers[0]).await;
         tracker.record(signer, reply);
         let (signer, reply) = reply_from(&signers[1]).await;
         tracker.record(signer, reply);
-        let dissent = B256::repeat_byte(0xDD);
-        let (signer, reply) = dissenting_reply_from(&signers[2], dissent).await;
+        let other_sns = B256::repeat_byte(0xDD);
+        let (signer, reply) = reply_from_with_sns(&signers[2], other_sns).await;
         tracker.record(signer, reply);
-        let (signer, reply) = dissenting_reply_from(&signers[3], dissent).await;
+        let (signer, reply) = reply_from_with_sns(&signers[3], other_sns).await;
         let status = tracker.record(signer, reply);
 
         match status {
@@ -612,14 +611,14 @@ mod tests {
     async fn reached_while_replies_outstanding() {
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random();
-        let roster = vec![
+        let addresses = vec![
             s1.address(),
             s2.address(),
             PrivateKeySigner::random().address(),
             PrivateKeySigner::random().address(),
             PrivateKeySigner::random().address(),
         ];
-        let mut tracker = ConsensusTracker::new(HANDLE, entries(roster), nz(2));
+        let mut tracker = ConsensusTracker::new(HANDLE, entries(addresses), nz(2));
 
         let (signer, reply) = reply_from(&s1).await;
         tracker.record(signer, reply);
@@ -657,7 +656,7 @@ mod tests {
     #[tokio::test]
     async fn second_different_vote_from_same_signer_does_not_create_second_group() {
         // New: spec 1.6 bug 3. One signer answers, then a *different* attestation arrives for
-        // the same signer (e.g. a stray retry). Before the slot board this could occupy a
+        // the same signer (e.g. a stray retry). Before one slot per signer, this could occupy a
         // second group and, at threshold 2 with one other Coprocessor, fabricate a Reached
         // verdict from a single voter. The slot model makes it structurally impossible: one
         // signer, one slot, first write wins.
@@ -672,14 +671,14 @@ mod tests {
             other => panic!("expected Attested, got {other:?}"),
         };
         tracker.record(signer, first_reply);
-        let (_, second_reply) = dissenting_reply_from(&s1, B256::repeat_byte(0xDD)).await;
+        let (_, second_reply) = reply_from_with_sns(&s1, B256::repeat_byte(0xDD)).await;
         let status = tracker.record(signer, second_reply);
 
         assert!(
             matches!(status, ThresholdStatus::AwaitingReplies),
             "expected AwaitingReplies, got {status:?}"
         );
-        // The board itself, not just the verdict: one slot is filled, so no second group can
+        // The replies themselves, not just the verdict: one slot is filled, so no second group can
         // exist, and the winner still holds the *first* material.
         assert_eq!(tracker.round.attested(), vec![s1.address()]);
         let (material, _) = tracker
@@ -711,24 +710,24 @@ mod tests {
             nz(2),
         );
 
-        let dissent = B256::repeat_byte(0xDD);
+        let other_sns = B256::repeat_byte(0xDD);
         assert!(
-            SNS_DIGEST < dissent,
+            SNS_DIGEST < other_sns,
             "the majority must hold the larger material, or a material-only comparator would pass"
         );
 
         // The minority group opens first, and the majority forms on the losing material.
         let (signer, reply) = reply_from(&s3).await;
         tracker.record(signer, reply);
-        let (signer, reply) = dissenting_reply_from(&s1, dissent).await;
+        let (signer, reply) = reply_from_with_sns(&s1, other_sns).await;
         tracker.record(signer, reply);
-        let (signer, reply) = dissenting_reply_from(&s2, dissent).await;
+        let (signer, reply) = reply_from_with_sns(&s2, other_sns).await;
         let status = tracker.record(signer, reply);
 
         match status {
             ThresholdStatus::Reached { material, winners } => {
                 assert_eq!(winners.len(), 2);
-                assert_eq!(material.sns_ciphertext_digest, dissent);
+                assert_eq!(material.sns_ciphertext_digest, other_sns);
             }
             other => panic!("expected Reached, got {other:?}"),
         }
@@ -748,7 +747,7 @@ mod tests {
             ConsensusTracker::new(HANDLE, entries([s1.address(), s2.address()]), nz(3));
 
         let (signer1, reply1) = reply_from(&s1).await;
-        let (signer2, reply2) = dissenting_reply_from(&s2, B256::repeat_byte(0xDD)).await;
+        let (signer2, reply2) = reply_from_with_sns(&s2, B256::repeat_byte(0xDD)).await;
         let material1 = match &reply1 {
             Reply::Attested(material) => material.clone(),
             other => panic!("expected Attested, got {other:?}"),

@@ -265,7 +265,7 @@ mod tests {
         let s2 = PrivateKeySigner::random();
         let s3 = PrivateKeySigner::random();
         let signers = signer_set(&[&s1, &s2, &s3]);
-        // s1+s2 agree on the default tuple; s3 dissents with a different format.
+        // s1+s2 agree on the default tuple; s3 attests a different format.
         let atts = vec![
             default_att(&s1).await,
             default_att(&s2).await,

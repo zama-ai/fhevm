@@ -681,7 +681,7 @@ async fn test_stalled_buckets_are_bounded_by_the_request_budget() {
 /// The majority threshold, not the registry size, is what readiness requires.
 ///
 /// Two of the three registered Coprocessors have published; the third 404s. The mocked
-/// `getCoprocessorMajorityThreshold()` reports 2, so the quorum is satisfied without the silent
+/// `getCoprocessorMajorityThreshold()` reports 2, so the quorum is satisfied without the third
 /// bucket and the request goes through. Substituting the registry size for the threshold — the
 /// off-by-one every all-buckets-agree test misses, since there the two numbers coincide — starves
 /// this round instead and turns the 200 into a 503.
@@ -812,7 +812,7 @@ async fn test_readiness_timeout_message_carries_round_detail() {
 }
 
 /// No digest value may reach the caller. This pins the HTTP response against a future change
-/// routing the operator-only board into a stored reason.
+/// routing the operator-only round summary into a stored reason.
 #[tokio::test]
 async fn test_readiness_timeout_message_has_no_digest_values() {
     let setup = TestSetup::new_with_minimal_readiness()

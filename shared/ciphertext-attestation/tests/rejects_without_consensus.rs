@@ -183,7 +183,7 @@ async fn under_threshold_is_missed_this_round() {
     let err = check(&snapshot_trusting_buckets(&buckets, 2), HEAD_TIMEOUT)
         .await
         .expect_err("one attestation must not satisfy a threshold of two");
-    // The board's exact contents are deliberately not pinned: the round is abandoned as soon as
+    // The exact replies are deliberately not pinned: the round is abandoned as soon as
     // it becomes unwinnable, which happens once both misses are in — whether or not the one good
     // attestation has arrived by then. What must hold is that it is retriable, not terminal.
     assert!(
