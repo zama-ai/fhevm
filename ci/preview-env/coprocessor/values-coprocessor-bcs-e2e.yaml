@@ -11,3 +11,17 @@ commonConfig:
     fhevm.zama.ai/fleet: bcs
   # Anvil host chain id. apply-chain-env.sh overwrites this for blockchain-dev.
   canonicalProtocolConfigChainId: "12345"
+
+# v0.14.0-7 still takes --bucket-name-ct64/--bucket-name-ct128 (same bucket,
+# prefix paths). HEAD unified those to --bucket-name; the template injects
+# the new flag, which this image rejects. extraArgs replaces the e2e list.
+snsWorker:
+  disabledArgs: ["bucket-name"]
+  extraArgs:
+    - --pg-listen-channels
+    - event_pbs_computations
+    - event_ciphertext_computed
+    - --pg-notify-channel
+    - event_ciphertext128_computed
+    - --bucket-name-ct64=$(S3_BUCKET_NAME)
+    - --bucket-name-ct128=$(S3_BUCKET_NAME)
