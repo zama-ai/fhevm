@@ -30,7 +30,7 @@ new push re-deploys it fresh (an in-flight run is cancelled).
 | --- | --- |
 | `preview-env-e2e` | Deploy the stack, **building fresh images from the PR branch** first (only changed components; the rest resolve to the base commit's images). In-repo charts (`charts/*`) install straight from the checkout. |
 | `preview-env-e2e-tests` | Same, **and** auto-run the e2e test DAG, posting a pass/fail report back to the PR. Deploys the env on its own. |
-| `preview-env-blue-green` | Deploy [RFC-021](https://github.com/zama-ai/tech-spec/pull/443) BCS+GCS on each party (forces `nb_coprocessor=2`). Enough on its own; add `preview-env-e2e-tests` if you also want the e2e DAG. Incompatible with `deploy_polygon`. |
+| `preview-env-blue-green` | Deploy [RFC-021](https://github.com/zama-ai/tech-spec/pull/443) BCS+GCS on each party (forces `nb_coprocessor=2`). Enough on its own. Combined with `preview-env-e2e-tests`: propose after the relayer is up, run e2e during `DryRunStarted` (assert GCS `computations > 0`), wait for `versioning=v0.15`, then run e2e again on green. Incompatible with `deploy_polygon`. |
 
 On PRs, images are **always** built fresh from the branch - there is no
 pinned-only PR path (use a `workflow_dispatch` run with `build_images=false`
@@ -174,6 +174,9 @@ kubectl port-forward -n <namespace> svc/jaeger 16686:16686    # http://localhost
 - **With auto-tests** (`preview-env-e2e-tests` label or `automated_tests=true`):
   the workflow runs the e2e DAG for both `@fhevm/sdk` and `@zama-fhe/relayer-sdk`
   and posts a per-test pass/fail table to the PR comment / run summary.
+  Combined with `preview-env-blue-green`, that DAG runs **twice**: once during
+  `DryRunStarted` (BCS live; CI asserts each party's `"gcs-0.15.0".computations`
+  is non-empty) and once after cutover (`versioning=v0.15`, GCS live).
 - **Without:** the stack is deployed with an idle test-suite Job — run tests
   yourself against the namespace, or re-label with `preview-env-e2e-tests`.
 
