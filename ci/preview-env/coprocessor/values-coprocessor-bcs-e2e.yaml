@@ -1,0 +1,13 @@
+# BCS (blue) overlay for RFC-021 preview-env. Applied on top of
+# values-coprocessor-e2e.yaml for release coprocessor-<i>.
+#
+# Images stay on the previous-release registry pin (workflow --set
+# v0.14.0-7). Helm stackVersion is a label only; mode is the compiled
+# STACK_VERSION in that pin. extraSelectorLabels let this release coexist
+# with coprocessor-<i>-gcs in the same namespace.
+commonConfig:
+  stackVersion: "0.14.0"
+  extraSelectorLabels:
+    fhevm.zama.ai/fleet: bcs
+  # Anvil host chain id. apply-chain-env.sh overwrites this for blockchain-dev.
+  canonicalProtocolConfigChainId: "12345"

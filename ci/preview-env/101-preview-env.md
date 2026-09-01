@@ -30,6 +30,7 @@ new push re-deploys it fresh (an in-flight run is cancelled).
 | --- | --- |
 | `preview-env-e2e` | Deploy the stack, **building fresh images from the PR branch** first (only changed components; the rest resolve to the base commit's images). In-repo charts (`charts/*`) install straight from the checkout. |
 | `preview-env-e2e-tests` | Same, **and** auto-run the e2e test DAG, posting a pass/fail report back to the PR. Deploys the env on its own. |
+| `preview-env-blue-green` | Layer [RFC-021](https://github.com/zama-ai/tech-spec/pull/443) BCS+GCS on each party (forces `nb_coprocessor=2`). Not a deploy request by itself — add `preview-env-e2e` or `preview-env-e2e-tests` too. Incompatible with `deploy_polygon`. |
 
 On PRs, images are **always** built fresh from the branch - there is no
 pinned-only PR path (use a `workflow_dispatch` run with `build_images=false`
@@ -65,8 +66,10 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
   default; see [Observe your environment](#observe-your-environment)).
 **Topology**
 - `nb_kms_core` — number of KMS parties (default `4`).
-- `nb_coprocessor` — number of independent coprocessor stacks (default `1`).
-  `> 1` multiplies cluster capacity — see the resource caveat in `README.md`.
+- `nb_coprocessor` — number of independent coprocessor **identities** (default
+  `1`). `> 1` is N-party consensus (separate wallets/DBs/S3), **not**
+  blue-green. `2` on a dispatch **is** RFC-021 blue-green (BCS+GCS on each
+  of the two parties). `3`/`5` stay N-party only. See `README.md`.
 - `deploy_polygon` — also add a second Polygon Amoy (`80002`) host chain (default
   `false`). Fresh local anvil, reuses the ETH KMS key; roughly doubles the
   host-side stack. With `automated_tests` on it also runs a Polygon e2e suite.
