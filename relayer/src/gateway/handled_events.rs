@@ -123,6 +123,9 @@ impl PhaseCache {
 /// One attested range, and the dispatches that must finish before the cursor may pass it.
 struct PendingRange {
     to_block: u64,
+
+    /// The range's unfinished dispatches. Each decrements it on its way out, and whichever
+    /// takes it to zero releases the range - the listener moved on the moment it dispatched.
     outstanding: Arc<AtomicUsize>,
 }
 
