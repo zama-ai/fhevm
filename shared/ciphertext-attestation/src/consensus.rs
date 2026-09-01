@@ -17,9 +17,6 @@ pub struct Consensus {
 }
 
 /// The ciphertext material a consensus group agreed on.
-///
-/// Digest values are operator-only. There is deliberately no `Display` impl; if one is ever
-/// needed, it must not carry digest values.
 #[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ConsensusMaterial {
     pub key_id: U256,

@@ -29,13 +29,11 @@ pub enum ConsensusCheckError {
 }
 
 /// A reached consensus together with the buckets to fetch the ciphertext from.
-///
-/// `winning_buckets` are the buckets whose registered signer is in the winning group; a consumer
-/// that only needs the consensus verdict can ignore it.
 #[derive(Debug)]
 pub struct ResolvedConsensus {
     pub material: ConsensusMaterial,
     pub signers: Vec<Address>,
+    /// The buckets whose registered signer is in the winning group.
     pub winning_buckets: Vec<String>,
 }
 

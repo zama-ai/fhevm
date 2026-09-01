@@ -80,9 +80,6 @@ jobs:
 
       - name: Run Tests
         run: |
-          # --all-features: ciphertext-attestation's `client` feature (and any future feature on
-          # a crate sharing this template) is off by default, so a bare `cargo test` would run
-          # clean while silently skipping its tests forever.
           RUST_BACKTRACE=full cargo test --all-features
 
   test-ciphertext-attestation:

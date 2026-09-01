@@ -54,8 +54,6 @@ pub enum Reply {
 }
 
 /// One round of asking every registered Coprocessor for an attestation.
-///
-/// `Display` is redacted (no digest values); `Debug` is the full board, operator diagnostics only.
 #[derive(Clone)]
 pub struct Round {
     /// The handle this round is about.
@@ -132,8 +130,7 @@ impl Round {
 pub enum ThresholdStatus {
     /// Not everyone has answered and the threshold is still reachable this round.
     AwaitingReplies,
-    /// A group of at least `threshold` distinct signers agreed on the same material. `winners`
-    /// are their roster entries, so the caller reads both the signers and their buckets off it.
+    /// A group of at least `threshold` distinct signers agreed on the same material.
     Reached {
         material: ConsensusMaterial,
         winners: Vec<CoprocessorEntry>,
