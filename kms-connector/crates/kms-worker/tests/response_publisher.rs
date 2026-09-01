@@ -711,7 +711,7 @@ async fn test_user_payload_response_overrides_previous_error() -> anyhow::Result
     let rand_decryption_id = rand_u256();
     insert_rand_request(
         test_instance.db(),
-        TestEventType::UserDecryption,
+        TestEventType::UserDecryptionV2,
         InsertRequestOptions::default()
             .with_id(rand_decryption_id)
             .with_source(RequestSource::Http),
