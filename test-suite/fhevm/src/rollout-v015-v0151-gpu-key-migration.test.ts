@@ -10,6 +10,7 @@ import {
   adoptionScenario,
   gatewayContractUpgradePlan,
   hostContractUpgradePlan,
+  predecessorImagePlan,
 } from "../rollouts/v0.15-to-v0.15.1-gpu-key-migration/run";
 import {
   connectorVersionKeys,
@@ -38,26 +39,47 @@ const material = (overrides: Partial<OperatorMaterial> = {}): OperatorMaterial =
 describe("RFC 029 rollout gates", () => {
   test("requires an exact 0.15 Blue tag", () => {
     expect(() => migrationVersions({})).toThrow("RFC029_BLUE_TAG is required");
-    expect(() => migrationVersions({ RFC029_BLUE_TAG: "latest" })).toThrow("release tag or an exact commit SHA");
+    expect(() => migrationVersions({ RFC029_BLUE_TAG: "latest" })).toThrow("release tag or a full commit SHA");
     expect(migrationVersions({ RFC029_BLUE_TAG: "v0.15.0-0" }).blueTag).toBe("v0.15.0-0");
-    expect(migrationVersions({ RFC029_BLUE_TAG: "04fb072ac5f4d46e562c56f0f1ff1aea94df1c4c" }).blueTag).toBe("04fb072");
+    expect(() => migrationVersions({ RFC029_BLUE_TAG: "04fb072" })).toThrow("full commit SHA");
+    const versions = migrationVersions({ RFC029_BLUE_TAG: "04fb072ac5f4d46e562c56f0f1ff1aea94df1c4c" });
+    expect(versions.blueRef).toBe("04fb072ac5f4d46e562c56f0f1ff1aea94df1c4c");
+    expect(versions.blueTag).toBe("04fb072");
   });
 
-  test("uses the last published 0.14 images only to reconstruct migrated 0.15 state", () => {
+  test("uses the last published 0.14 images as the first rollout predecessor", () => {
     const versions = migrationVersions({ RFC029_BLUE_TAG: "v0.15.0-0" });
     expect(versions.baselineTag).toBe("v0.14.0-10");
     expect(versions.baseline.HOST_VERSION).toBe("v0.14.0-9");
     expect(versions.baseline.GATEWAY_VERSION).toBe("v0.14.0-10");
   });
 
-  test("forces Blue to legacy and leaves the safeguard off Green", () => {
-    const scenario = parseBlueGreenScenario(adoptionScenario("v0.14.0-10"), "generated RFC 029 adoption scenario");
+  test("starts exact 0.15 Green with the legacy safeguard", () => {
+    const scenario = parseBlueGreenScenario(
+      adoptionScenario("v0.14.0-10", "04fb072"),
+      "generated RFC 029 adoption scenario",
+    );
     expect(scenario.bcs?.env?.FORCE_LEGACY_SERVER_KEY).toBe("true");
-    expect(scenario.gcs.env?.FORCE_LEGACY_SERVER_KEY).toBeUndefined();
+    expect(scenario.gcs.source).toEqual({ mode: "registry", tag: "04fb072", compatTag: "v0.15.0" });
+    expect(scenario.gcs.env?.FORCE_LEGACY_SERVER_KEY).toBe("true");
     expect(scenario.gcs.deferredStart).toBe(true);
-    expect(scenario.gcs.stackVersion).toBe("0.15.1");
+    expect(scenario.gcs.stackVersion).toBe("0.15.0");
     expect(scenario.hostChains).toHaveLength(2);
     expect(scenario.kms).toEqual({ mode: "threshold", parties: 4, threshold: 1, fheParams: "Test" });
+  });
+
+  test("builds every 0.15 coprocessor image used by the first cutover", () => {
+    expect(predecessorImagePlan.map(({ image }) => image)).toEqual([
+      "db-migration",
+      "host-listener",
+      "gw-listener",
+      "tfhe-worker",
+      "zkproof-worker",
+      "sns-worker",
+      "tx-sender",
+      "consensus-detector",
+      "upgrade-controller",
+    ]);
   });
 
   test("uses the proven contract upgrade order", () => {
