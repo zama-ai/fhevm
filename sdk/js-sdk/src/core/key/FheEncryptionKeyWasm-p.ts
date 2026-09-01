@@ -4,6 +4,7 @@ import type {
   FheEncryptionCrs,
   FheEncryptionKeyMetadata,
   FheEncryptionKeyWasm,
+  FheEncryptionKeyWasmBrand,
   FheEncryptionPublicKey,
 } from '../types/fheEncryptionKey.js';
 import { assertOwnedBy } from '../runtime/CoreFhevmRuntime-p.js';
@@ -18,6 +19,8 @@ const VERIFY_FUNC = Symbol('FheEncryptionKeyWasm.verify');
 ////////////////////////////////////////////////////////////////////////////////
 
 class FheEncryptionKeyWasmImpl implements FheEncryptionKeyWasm {
+  declare readonly [FheEncryptionKeyWasmBrand]: never;
+
   readonly #owner: WeakRef<FhevmRuntime>;
   readonly #crs: FheEncryptionCrs;
   readonly #publicKey: FheEncryptionPublicKey;

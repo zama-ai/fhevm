@@ -47,6 +47,7 @@ export type FheEncryptionKeySource = {
 
 export declare const FheEncryptionPublicKeyBrand: unique symbol;
 export declare const FheEncryptionCrsBrand: unique symbol;
+export declare const FheEncryptionKeyWasmBrand: unique symbol;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -72,7 +73,8 @@ export type FheEncryptionCrs = {
 };
 
 export type FheEncryptionCrsBytes = Prettify<
-  Omit<FheEncryptionCrs, typeof FheEncryptionCrsBrand> & {
+  Omit<FheEncryptionCrs, typeof FheEncryptionCrsBrand | 'capacity'> & {
+    readonly capacity: number;
     readonly bytes: Bytes;
   }
 >;
@@ -84,7 +86,19 @@ export type FheEncryptionKeyMetadata = {
   readonly chainId: number;
 };
 
+/** Chain-authenticated SHAKE-256 digests of serialized FHE key material. */
+export type FheEncryptionKeyDigests = {
+  readonly publicKeyDigest: `0x${string}`;
+  readonly crsDigest: `0x${string}`;
+};
+
+/** Static or rotating trust anchor for relayer-supplied FHE key material. */
+export type FheEncryptionKeyTrust =
+  | FheEncryptionKeyDigests
+  | ((metadata: FheEncryptionKeyMetadata) => FheEncryptionKeyDigests | Promise<FheEncryptionKeyDigests>);
+
 export type FheEncryptionKeyWasm = {
+  readonly [FheEncryptionKeyWasmBrand]: never;
   readonly publicKey: FheEncryptionPublicKey;
   readonly crs: FheEncryptionCrs;
   readonly metadata: FheEncryptionKeyMetadata;

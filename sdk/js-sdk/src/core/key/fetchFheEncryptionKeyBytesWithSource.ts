@@ -34,7 +34,7 @@ export async function fetchFheEncryptionKeyBytesWithSource(
       bytes: pkeCrsBytes,
     }),
     metadata: Object.freeze({ ...source.metadata }),
-  }) as FheEncryptionKeyBytes;
+  });
 }
 
 ////////////////////////////////////////////////////////////////////////////////

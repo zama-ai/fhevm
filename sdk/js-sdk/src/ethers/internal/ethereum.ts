@@ -111,7 +111,9 @@ export async function readContract(
   parameters: ReadContractParameters,
 ): Promise<unknown> {
   const contract = getEthersContract<EthersT.Contract>(hostPublicClient, parameters.address, parameters.abi);
-  const result = (await contract.getFunction(parameters.functionName).staticCall(...parameters.args)) as unknown;
+  const callArgs =
+    parameters.blockTag === undefined ? parameters.args : [...parameters.args, { blockTag: parameters.blockTag }];
+  const result = (await contract.getFunction(parameters.functionName).staticCall(...callArgs)) as unknown;
   return result;
 }
 

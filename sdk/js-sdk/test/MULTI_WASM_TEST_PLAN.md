@@ -81,9 +81,9 @@ If this topology is used, the helper must pass two ACL addresses and two complet
 
 ### Relayer URL Requirement
 
-The FHE encryption key cache is global and keyed by `relayerUrl`. Coexistence tests that fetch encryption keys must use distinct relayer URLs/key sources unless the purpose of the test is explicitly to cover same-relayer cache behavior.
+The FHE encryption key cache is global and scoped by mode, chain ID, and relayer URL; the authenticated digest identity lives inside that scope. Coexistence tests that fetch encryption keys must use distinct scopes/key sources unless the purpose of the test is explicitly to cover same-scope cache rotation or reuse.
 
-Add a separate contamination guard for the same-relayer case so the suite does not accidentally pass by reusing the first cached key.
+Add a separate contamination guard for the same-scope case so the suite does not accidentally pass by reusing the first cached digest identity.
 
 ## Test Tiers
 
@@ -371,21 +371,21 @@ Boundary above).
 Notes: fast and cheap. An "init happened exactly once" assertion needs a spy/counter hook;
 otherwise assert stability + post-init health as a proxy.
 
-### #3 - Single-slot cache contention + post-failure recovery - HIGH
+### #3 - Authenticated-byte cache contention + post-failure recovery - HIGH
 
-Goal: stress the cache's in-flight chaining under concurrency and prove failed
-deserialization self-evicts without poisoning the slot/module.
+Goal: stress authenticated-byte promise deduplication under concurrency and prove
+failed deserialization evicts only the runtime/version wrapper without poisoning
+authenticated bytes.
 
 Mechanism:
 
-- (a) Contention: prime one slot, then fire many concurrent `build()`s against the same
-  `relayerUrl` slot. Assert all succeed with consistent results.
-- (b) Recovery: trigger the known failing case (`1.5.3` + `key.1.6.1`) so the slot
-  self-evicts on deserialize failure, then re-prime that slot with a compatible key and
-  build. Assert success.
+- (a) Contention: fire many concurrent `build()`s against one authenticated key
+  identity. Assert all succeed with consistent results.
+- (b) Recovery: trigger the known failing case (`1.5.3` + `key.1.6.1`), then build
+  with a compatible runtime/version wrapper over authenticated bytes. Assert success.
 
-Catches: `globalFheEncryptionKeyCache` `ensureBytes`/`ensureWasm` pending-promise chaining
-races (`_pendingChained`), self-eviction poisoning, in-flight dedupe bugs.
+Catches: authenticated-byte promise dedupe bugs, runtime/version wrapper eviction
+bugs, and cross-runtime cache poisoning.
 
 Notes: "only one deserialize happened" is observable only with a spy/counter; otherwise
 assert all-succeed + consistency as the signal. Complements the Phase 3 case 4 relayer

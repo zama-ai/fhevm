@@ -7,6 +7,7 @@
 import { generateZkProof } from '@fhevm/sdk/actions/encrypt';
 import { defineFhevmChain } from '@fhevm/sdk/chains';
 import { CURRENT_SLOT } from '../_diag/slots.js';
+import { optionalFheEncryptionKeyTrust } from '../_diag/fheEncryptionKeyTrust.js';
 
 export const LIB = process.env.NEXT_PUBLIC_FHEVM_TEST_LIB ?? 'viem';
 export const THREADS = process.env.NEXT_PUBLIC_FHEVM_TEST_THREADS ?? 'st';
@@ -22,25 +23,31 @@ async function fetchChain(origin, slot) {
     throw new Error(`GET /gw/${slot}/config -> ${res.status}`);
   }
   const cfg = await res.json();
-  return defineFhevmChain({
-    id: cfg.chainId,
-    fhevm: {
-      contracts: {
-        acl: { address: cfg.contracts.acl },
-        inputVerifier: { address: cfg.contracts.inputVerifier },
-        kmsVerifier: { address: cfg.contracts.kmsVerifier },
-        protocolConfig: { address: cfg.contracts.protocolConfig },
-      },
-      relayerUrl: `${origin}/gw/${slot}/relayer`,
-      gateway: {
-        id: cfg.gateway.id,
+  return {
+    chain: defineFhevmChain({
+      id: cfg.chainId,
+      fhevm: {
         contracts: {
-          decryption: { address: cfg.gateway.contracts.decryption },
-          inputVerification: { address: cfg.gateway.contracts.inputVerification },
+          acl: { address: cfg.contracts.acl },
+          inputVerifier: { address: cfg.contracts.inputVerifier },
+          kmsVerifier: { address: cfg.contracts.kmsVerifier },
+          protocolConfig: { address: cfg.contracts.protocolConfig },
+          ...(cfg.contracts.kmsGeneration === undefined
+            ? {}
+            : { kmsGeneration: { address: cfg.contracts.kmsGeneration } }),
+        },
+        relayerUrl: `${origin}/gw/${slot}/relayer`,
+        gateway: {
+          id: cfg.gateway.id,
+          contracts: {
+            decryption: { address: cfg.gateway.contracts.decryption },
+            inputVerification: { address: cfg.gateway.contracts.inputVerification },
+          },
         },
       },
-    },
-  });
+    }),
+    fheEncryptionKeyTrust: optionalFheEncryptionKeyTrust(cfg),
+  };
 }
 
 function applyRuntimeConfig(has, set, logger) {
@@ -53,7 +60,7 @@ function applyRuntimeConfig(has, set, logger) {
   }
 }
 
-async function createClient(chain, rpcUrl, logger) {
+async function createClient(chain, rpcUrl, logger, fheEncryptionKeyTrust) {
   if (LIB === 'viem') {
     const { createFhevmClient, hasFhevmRuntimeConfig, setFhevmRuntimeConfig } = await import('@fhevm/sdk/viem');
     const { createPublicClient, http } = await import('viem');
@@ -62,13 +69,18 @@ async function createClient(chain, rpcUrl, logger) {
     return createFhevmClient({
       chain,
       publicClient: createPublicClient({ chain: { ...anvil, id: chain.id }, transport: http(rpcUrl) }),
+      options: { fheEncryptionKeyTrust },
     });
   }
   if (LIB === 'ethers') {
     const { createFhevmClient, hasFhevmRuntimeConfig, setFhevmRuntimeConfig } = await import('@fhevm/sdk/ethers');
     const { ethers } = await import('ethers');
     applyRuntimeConfig(hasFhevmRuntimeConfig, setFhevmRuntimeConfig, logger);
-    return createFhevmClient({ chain, provider: new ethers.JsonRpcProvider(rpcUrl) });
+    return createFhevmClient({
+      chain,
+      provider: new ethers.JsonRpcProvider(rpcUrl),
+      options: { fheEncryptionKeyTrust },
+    });
   }
   throw new Error(`Unknown NEXT_PUBLIC_FHEVM_TEST_LIB: ${LIB}`);
 }
@@ -78,8 +90,8 @@ async function createClient(chain, rpcUrl, logger) {
 // does not), so the caller computes it. `log`/`logger` come from createTestLogger.
 // Returns the resolved thread count.
 export async function runEncryptLeg(origin, expectMultiThread, log, logger) {
-  const chain = await fetchChain(origin, CURRENT_SLOT);
-  const client = await createClient(chain, `${origin}/gw/${CURRENT_SLOT}/rpc`, logger);
+  const { chain, fheEncryptionKeyTrust } = await fetchChain(origin, CURRENT_SLOT);
+  const client = await createClient(chain, `${origin}/gw/${CURRENT_SLOT}/rpc`, logger, fheEncryptionKeyTrust);
   await client.init();
 
   const info = await client.runtime.encrypt.getTfheModuleInfo({ tfheVersion: client.tfheVersion });

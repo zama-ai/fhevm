@@ -8,7 +8,7 @@ import type { TfheVersion } from '../../../src/wasm/tfhe/loadTfheLib.js';
 import type { TkmsVersion } from '../../../src/wasm/tkms/loadKmsLib.js';
 import type { FheEncryptionCrsBytes, FheEncryptionKeyBytes } from '../../../src/core/types/fheEncryptionKey.js';
 import type { FhevmChain } from '../../../src/core/types/fhevmChain.js';
-import type { FhevmRuntime, WithDecrypt, WithEncrypt } from '../../../src/core/types/coreFhevmRuntime.js';
+import type { WithDecrypt, WithEncrypt } from '../../../src/core/types/coreFhevmRuntime.js';
 import type { ZkProof } from '../../../src/core/types/zkProof-p.js';
 import { setFhevmRuntimeConfig } from '../../../src/ethers/index.js';
 import { createLogger } from './common.js';
@@ -17,8 +17,8 @@ import { encryptModule } from '../../../src/core/modules/encrypt/module/index.js
 import { decryptModule } from '../../../src/core/modules/decrypt/module/index.js';
 import { defineFhevmChain } from '../../../src/core/chains/utils.js';
 import { createZkProofBuilder } from '../../../src/core/coprocessor/ZkProofBuilder-p.js';
-import { globalFheEncryptionKeyCache } from '../../../src/core/key/FheEncryptionKeyCache-p.js';
-import { createFhevmClientFrozenContext } from '../../../src/core/frozenContext/fhevmClientFrozenContext-p.js';
+import { createFheEncryptionKeyPolicy } from '../../../src/core/key/FheEncryptionKeyPolicy-p.js';
+import { createFheEncryptionKeyProvider } from '../../../src/core/key/FheEncryptionKeyProvider-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // Versions + resource budget
@@ -298,13 +298,11 @@ export function toFheEncryptionKeyBytes(keyFile: SerializedKeyFile, chain: Fhevm
 }
 
 /**
- * Loads test/keys/key.<keyTfheVersion>.json and injects it into `chain`'s cache
- * slot (its relayer URL), so an encryption can resolve the key offline.
+ * Loads test/keys/key.<keyTfheVersion>.json for caller-pinned encryption.
  */
-export async function loadAndCacheKey(runtime: FhevmRuntime, chain: FhevmChain, keyTfheVersion: string): Promise<void> {
+export async function loadKey(chain: FhevmChain, keyTfheVersion: string): Promise<FheEncryptionKeyBytes> {
   const keyFile = await fetchSerializedKeyFile(keyTfheVersion);
-  const keyBytes = toFheEncryptionKeyBytes(keyFile, chain);
-  globalFheEncryptionKeyCache.setBytes(runtime, chain.fhevm.relayerUrl, keyBytes);
+  return toFheEncryptionKeyBytes(keyFile, chain);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -313,24 +311,27 @@ export async function loadAndCacheKey(runtime: FhevmRuntime, chain: FhevmChain, 
 
 /**
  * Builds a real ZK proof for a single uint64 on `chain` using the `tfheVersion`
- * module. The key must already be cached for `chain` (see loadAndCacheKey).
+ * module using caller-pinned key bytes.
  */
 export async function buildUint64Proof(
   runtime: WithEncrypt,
   chain: FhevmChain,
   tfheVersion: TfheVersion,
+  keyBytes: FheEncryptionKeyBytes,
 ): Promise<ZkProof> {
   const builder = createZkProofBuilder();
   builder.addUint64(42n);
+  const fheEncryptionKeyProvider = createFheEncryptionKeyProvider({
+    chain,
+    runtime,
+    policy: createFheEncryptionKeyPolicy({ fheEncryptionKey: keyBytes }, chain),
+  });
   return builder.build(
-    { chain, runtime },
+    { chain, runtime, tfheVersion, fheEncryptionKeyProvider },
     {
       contractAddress: DUMMY_CONTRACT_ADDRESS,
       userAddress: DUMMY_USER_ADDRESS,
       extraData: '0x00',
-      // No real client here — synthesize the frozen version basis carrying the
-      // TFHE version under test; build() reads its tfheVersion from this.
-      fhevmContext: createFhevmClientFrozenContext({ tfheVersion }),
     },
   );
 }

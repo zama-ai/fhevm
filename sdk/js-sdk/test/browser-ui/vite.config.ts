@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { ViteDevServer } from 'vite';
+import type { FheEncryptionKeyDigests } from '../../src/core/types/fheEncryptionKey.js';
 import { execFile } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
@@ -7,6 +8,7 @@ import { dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { defineConfig } from 'vite';
+import { parseFheEncryptionKeyDigests, usesConfiguredKmsGeneration } from '../fheTest/fheEncryptionKeyTrust.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
@@ -29,6 +31,8 @@ type BrowserUiConfig = {
       readonly rpcUrl: string;
       readonly mnemonic: string;
       readonly fheTestAddress: string;
+      readonly fheEncryptionKeyTrust?: FheEncryptionKeyDigests | undefined;
+      readonly usesConfiguredKmsGeneration: boolean;
     }
   >;
 };
@@ -120,9 +124,9 @@ function loadBrowserUiConfig(): BrowserUiConfig {
 
   return {
     targets: {
-      testnet: resolveBrowserUiTarget(testDir, 'sepolia', defaults, sharedMnemonic),
-      localstack: resolveBrowserUiTarget(testDir, 'localstack', defaults, sharedMnemonic),
-      localcleartext: resolveBrowserUiTarget(testDir, 'localcleartext', defaults, sharedMnemonic),
+      testnet: resolveBrowserUiTarget(testDir, 'sepolia', defaults, sharedEnv, sharedMnemonic),
+      localstack: resolveBrowserUiTarget(testDir, 'localstack', defaults, sharedEnv, sharedMnemonic),
+      localcleartext: resolveBrowserUiTarget(testDir, 'localcleartext', defaults, sharedEnv, sharedMnemonic),
     },
   };
 }
@@ -131,8 +135,15 @@ function resolveBrowserUiTarget(
   testDir: string,
   chainKey: string,
   defaults: Record<string, ChainDefaults>,
+  sharedEnv: Record<string, string>,
   sharedMnemonic: string | undefined,
-): { readonly rpcUrl: string; readonly mnemonic: string; readonly fheTestAddress: string } {
+): {
+  readonly rpcUrl: string;
+  readonly mnemonic: string;
+  readonly fheTestAddress: string;
+  readonly fheEncryptionKeyTrust?: FheEncryptionKeyDigests | undefined;
+  readonly usesConfiguredKmsGeneration: boolean;
+} {
   const entry = defaults[chainKey];
   if (entry === undefined) {
     throw new Error(`Missing "${chainKey}" entry in ${chainDefaultsPath}`);
@@ -149,7 +160,14 @@ function resolveBrowserUiTarget(
   if (entry.fheTestAddress === undefined || entry.fheTestAddress === '') {
     throw new Error(`Missing "${chainKey}.fheTestAddress" in ${chainDefaultsPath}`);
   }
-  return { rpcUrl, mnemonic, fheTestAddress: entry.fheTestAddress };
+  const fheEncryptionKeyTrust = parseFheEncryptionKeyDigests(chainEnv, sharedEnv);
+  return {
+    rpcUrl,
+    mnemonic,
+    fheTestAddress: entry.fheTestAddress,
+    fheEncryptionKeyTrust,
+    usesConfiguredKmsGeneration: usesConfiguredKmsGeneration(chainKey),
+  };
 }
 
 async function ensureSignerFunds(req: IncomingMessage, res: ServerResponse): Promise<void> {

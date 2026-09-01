@@ -73,6 +73,8 @@ export type SlotTopology = {
   readonly tfheVersion: string;
   /** Basename of the key file under `test/keys`. */
   readonly keyFile: string;
+  /** Explicit trust pins for the key material served by this slot. */
+  readonly fheEncryptionKeyTrust: GatewaySlot['fheEncryptionKeyTrust'];
   /**
    * Deployer mnemonic for this slot's anvil. Omit to use the deploy's built-in
    * default (the committed addresses; its FHEVMHostAddresses.sol stays clean). Set
@@ -95,6 +97,7 @@ export const TOPOLOGY: readonly SlotTopology[] = (Object.keys(SLOT_INFO) as Slot
     chainId: info.chainId,
     tfheVersion: info.tfheVersion,
     keyFile: info.keyFile,
+    fheEncryptionKeyTrust: info.fheEncryptionKeyTrust,
     deployerMnemonic: info.deployerMnemonic,
   };
 });
@@ -155,6 +158,7 @@ export function gatewayConfig(): GatewayConfig {
   for (const t of TOPOLOGY) {
     slots[t.slot] = {
       keyFilePath: resolve(dir, t.keyFile),
+      fheEncryptionKeyTrust: t.fheEncryptionKeyTrust,
       rpcUrl: `http://127.0.0.1:${String(t.port)}`,
       chainConfig: slotChainConfig(t.chainId, slotMnemonic(t), t.foundryProfile),
     };
@@ -170,6 +174,7 @@ export function gatewayConfig(): GatewayConfig {
   if (legacy !== undefined && current !== undefined) {
     slots[OLD_MODULE_NEW_KEY_SLOT] = {
       keyFilePath: resolve(dir, current.keyFile),
+      fheEncryptionKeyTrust: current.fheEncryptionKeyTrust,
       rpcUrl: `http://127.0.0.1:${String(legacy.port)}`,
       chainConfig: slotChainConfig(legacy.chainId, slotMnemonic(legacy), legacy.foundryProfile),
     };

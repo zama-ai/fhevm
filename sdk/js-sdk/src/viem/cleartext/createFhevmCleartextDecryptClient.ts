@@ -1,7 +1,7 @@
 import type { PublicClient } from 'viem';
 import type { FhevmChain } from '../../core/types/fhevmChain.js';
 import type { WithDecrypt } from '../../core/types/coreFhevmRuntime.js';
-import type { FhevmDecryptOptions } from '../../core/types/coreFhevmClient.js';
+import type { FhevmCleartextDecryptOptions } from '../../core/types/coreFhevmClient.js';
 import type { FhevmDecryptClient } from '../../core/types/fhevmClient.js';
 import { createFhevmCleartextBaseClient } from './createFhevmCleartextBaseClient.js';
 import { decryptActions } from './decorators/decrypt.js';
@@ -14,7 +14,7 @@ export function createFhevmCleartextDecryptClient<
 >(parameters: {
   readonly publicClient: publicClient;
   readonly chain: chain;
-  readonly options?: FhevmDecryptOptions | undefined;
+  readonly options?: FhevmCleartextDecryptOptions | undefined;
 }): FhevmDecryptClient<chain, WithDecrypt, publicClient> {
   const c = createFhevmCleartextBaseClient(parameters);
   return c.extend(decryptActions);

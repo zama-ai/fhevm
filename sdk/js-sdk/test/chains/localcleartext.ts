@@ -16,6 +16,7 @@ export const localcleartext = /*#__PURE__*/ defineFhevmChain({
       protocolConfig: {
         address: '0x44aA028fd264C76BF4A8f8B4d8A5272f6AE25CAc',
       },
+      kmsGeneration: undefined,
     },
     relayerUrl: 'http://localhost:8545',
     gateway: {

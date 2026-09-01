@@ -17,6 +17,7 @@ import { useEffect, useState } from 'react';
 import { generateZkProof } from '@fhevm/sdk/actions/encrypt';
 import { defineFhevmChain } from '@fhevm/sdk/chains';
 import { createTestLogger, logError, DiagnosticsView } from '../_diag/diagnostics.jsx';
+import { optionalFheEncryptionKeyTrust } from '../_diag/fheEncryptionKeyTrust.js';
 import { CURRENT_SLOT } from '../_diag/slots.js';
 
 const LIB = process.env.NEXT_PUBLIC_FHEVM_TEST_LIB ?? 'viem';
@@ -34,25 +35,31 @@ async function fetchChain(origin, slot) {
     throw new Error(`GET /gw/${slot}/config -> ${res.status}`);
   }
   const cfg = await res.json();
-  return defineFhevmChain({
-    id: cfg.chainId,
-    fhevm: {
-      contracts: {
-        acl: { address: cfg.contracts.acl },
-        inputVerifier: { address: cfg.contracts.inputVerifier },
-        kmsVerifier: { address: cfg.contracts.kmsVerifier },
-        protocolConfig: { address: cfg.contracts.protocolConfig },
-      },
-      relayerUrl: `${origin}/gw/${slot}/relayer`,
-      gateway: {
-        id: cfg.gateway.id,
+  return {
+    chain: defineFhevmChain({
+      id: cfg.chainId,
+      fhevm: {
         contracts: {
-          decryption: { address: cfg.gateway.contracts.decryption },
-          inputVerification: { address: cfg.gateway.contracts.inputVerification },
+          acl: { address: cfg.contracts.acl },
+          inputVerifier: { address: cfg.contracts.inputVerifier },
+          kmsVerifier: { address: cfg.contracts.kmsVerifier },
+          protocolConfig: { address: cfg.contracts.protocolConfig },
+          ...(cfg.contracts.kmsGeneration === undefined
+            ? {}
+            : { kmsGeneration: { address: cfg.contracts.kmsGeneration } }),
+        },
+        relayerUrl: `${origin}/gw/${slot}/relayer`,
+        gateway: {
+          id: cfg.gateway.id,
+          contracts: {
+            decryption: { address: cfg.gateway.contracts.decryption },
+            inputVerification: { address: cfg.gateway.contracts.inputVerification },
+          },
         },
       },
-    },
-  });
+    }),
+    fheEncryptionKeyTrust: optionalFheEncryptionKeyTrust(cfg),
+  };
 }
 
 // Route every TFHE asset (tfhe_bg.v*.wasm, tfhe-worker.v*.mjs) at the gateway's
@@ -77,21 +84,25 @@ function applyRuntimeConfig(has, set, origin, log, logger) {
   }
 }
 
-async function createClient(chain, rpcUrl, origin, log, logger) {
+async function createClient(chain, rpcUrl, origin, log, logger, fheEncryptionKeyTrust) {
   if (LIB === 'viem') {
     const { createFhevmEncryptClient, hasFhevmRuntimeConfig, setFhevmRuntimeConfig } = await import('@fhevm/sdk/viem');
     const { createPublicClient, http } = await import('viem');
     const { anvil } = await import('viem/chains');
     applyRuntimeConfig(hasFhevmRuntimeConfig, setFhevmRuntimeConfig, origin, log, logger);
     const publicClient = createPublicClient({ chain: { ...anvil, id: chain.id }, transport: http(rpcUrl) });
-    return createFhevmEncryptClient({ chain, publicClient });
+    return createFhevmEncryptClient({ chain, publicClient, options: { fheEncryptionKeyTrust } });
   }
   if (LIB === 'ethers') {
     const { createFhevmEncryptClient, hasFhevmRuntimeConfig, setFhevmRuntimeConfig } =
       await import('@fhevm/sdk/ethers');
     const { ethers } = await import('ethers');
     applyRuntimeConfig(hasFhevmRuntimeConfig, setFhevmRuntimeConfig, origin, log, logger);
-    return createFhevmEncryptClient({ chain, provider: new ethers.JsonRpcProvider(rpcUrl) });
+    return createFhevmEncryptClient({
+      chain,
+      provider: new ethers.JsonRpcProvider(rpcUrl),
+      options: { fheEncryptionKeyTrust },
+    });
   }
   throw new Error(`Unknown NEXT_PUBLIC_FHEVM_TEST_LIB: ${LIB}`);
 }
@@ -108,8 +119,15 @@ export default function Page() {
         const origin = window.location.origin;
         log(`lib=${LIB} threads=${THREADS} wasmLoad=${WASM_LOAD}`);
 
-        const chain = await fetchChain(origin, CURRENT_SLOT);
-        const client = await createClient(chain, `${origin}/gw/${CURRENT_SLOT}/rpc`, origin, log, logger);
+        const { chain, fheEncryptionKeyTrust } = await fetchChain(origin, CURRENT_SLOT);
+        const client = await createClient(
+          chain,
+          `${origin}/gw/${CURRENT_SLOT}/rpc`,
+          origin,
+          log,
+          logger,
+          fheEncryptionKeyTrust,
+        );
 
         await client.init();
         const info = await client.runtime.encrypt.getTfheModuleInfo({ tfheVersion: client.tfheVersion });

@@ -1,7 +1,7 @@
 import type { ethers as EthersT } from 'ethers';
 import type { FhevmChain } from '../../core/types/fhevmChain.js';
 import type { WithAll } from '../../core/types/coreFhevmRuntime.js';
-import type { FhevmOptions } from '../../core/types/coreFhevmClient.js';
+import type { FhevmCleartextOptions } from '../../core/types/coreFhevmClient.js';
 import type { FhevmClient } from '../../core/types/fhevmClient.js';
 import { createFhevmCleartextBaseClient } from './createFhevmCleartextBaseClient.js';
 import { encryptActions } from './decorators/encrypt.js';
@@ -15,7 +15,7 @@ export function createFhevmCleartextClient<
 >(parameters: {
   readonly provider: provider;
   readonly chain: chain;
-  readonly options?: FhevmOptions | undefined;
+  readonly options?: FhevmCleartextOptions | undefined;
 }): FhevmClient<chain, WithAll, provider> {
   const c = createFhevmCleartextBaseClient(parameters);
 

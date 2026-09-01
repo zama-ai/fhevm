@@ -56,10 +56,11 @@ export type SlotId = typeof LEGACY_SLOT | typeof CURRENT_SLOT;
 export type FoundryProfile = SlotId;
 
 // Gateway-only alias slot: serves the CURRENT key (newer TFHE) but proxies the
-// LEGACY anvil (older ACL → older module). It exists as a distinct id/URL so the
-// SDK's relayer-URL-keyed key cache does not collide with the real current slot —
-// letting old-module + new-key fail for the right reason (deserialization), not a
-// cache clash. No anvil backs it; it reuses the legacy anvil.
+// LEGACY anvil (older ACL → older module). It exists as a distinct id/URL and
+// explicit trusted-digest slot so the authenticated key identity is distinct from
+// the real current slot — letting old-module + new-key fail for the right reason
+// (deserialization/version matching), not a cache clash. No anvil backs it; it
+// reuses the legacy anvil.
 export const OLD_MODULE_NEW_KEY_SLOT = 'oldmod-newkey';
 
 // Per-slot constants. Each slot MUST use a distinct chainId (Foundry broadcast
@@ -78,6 +79,10 @@ export const SLOT_INFO = {
     chainId: 31337,
     tfheVersion: '1.5.4',
     keyFile: 'key.1.5.4.json',
+    fheEncryptionKeyTrust: {
+      publicKeyDigest: '0x97ecc83d5745447165c9d681e45ebfdb63962d8881bdb6f9ce5257114fead7b2',
+      crsDigest: '0x17ff006c1386ccf22d03bac451f183a19694a42bdbfcdd63724a1bef04e0c35f',
+    },
     deployerMnemonic: FIRST_ANVIL_MNEMONIC,
   },
   [CURRENT_SLOT]: {
@@ -87,6 +92,10 @@ export const SLOT_INFO = {
     chainId: 31338,
     tfheVersion: '1.6.2',
     keyFile: 'key.1.6.1.json',
+    fheEncryptionKeyTrust: {
+      publicKeyDigest: '0x31af0c20b32f48203029809aaeb5c275f50c6e03352ba6657ccb706dd29f2aa1',
+      crsDigest: '0xeac94eb2a99aac508a2373e3f7f0ebfe04ddc0411ccabab70658555439fcdb11',
+    },
     deployerMnemonic: undefined,
   },
 } as const;

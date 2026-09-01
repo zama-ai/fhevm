@@ -1,5 +1,5 @@
 import type { FhevmChain } from '@fhevm/sdk/chains';
-import type { EncryptedValue, TypedValue } from '@fhevm/sdk/types';
+import type { EncryptedValue, FheEncryptionKeyTrust, TypedValue } from '@fhevm/sdk/types';
 import type { ProtocolVersion } from '../../src/core/types/coreFhevmClient.js';
 import type { FhevmModuleVersions } from '../../src/core/types/moduleVersions.js';
 import type { Logger } from '../../src/core/types/logger.js';
@@ -19,6 +19,7 @@ import { ingen_trex_cleartext } from '../chains/ingen_trex_cleartext.js';
 import { hoodi_cleartext } from '../chains/hoodi_cleartext.js';
 import { mainnet, sepolia, sepolia as testnet } from '@fhevm/sdk/chains';
 import { localcleartext_legacy } from '../chains/localcleartext_legacy.js';
+import { resolveFheEncryptionKeyTrust } from './fheEncryptionKeyTrust.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -57,6 +58,7 @@ export type FheTestBaseEnv = {
   readonly fheTestVersion: FheTestVersion;
   readonly protocolVersion: ProtocolVersion;
   readonly fheEncryptionKeyTfheVersion: string;
+  readonly fheEncryptionKeyTrust?: FheEncryptionKeyTrust | undefined;
   readonly moduleVersions?: FhevmModuleVersions | undefined;
 };
 
@@ -600,6 +602,7 @@ function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
   runPreliminaryFheTestSetup(chainName, mnemonic, rpcUrl, fheTestAddress);
 
   const tfheVersion = getTfheVersion(chainName);
+  const fheEncryptionKeyTrust = resolveFheEncryptionKeyTrust(chainName, chainEnv, sharedEnv);
   _baseEnv = {
     chainName,
     fhevmChain,
@@ -610,6 +613,7 @@ function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
     fheTestVersion,
     protocolVersion: getExpectedProtocolVersion(chainName),
     fheEncryptionKeyTfheVersion: getFheEncryptionKeyTfheVersion(chainName),
+    fheEncryptionKeyTrust,
     moduleVersions: tfheVersion === undefined ? undefined : { tfhe: tfheVersion },
   };
 

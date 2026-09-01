@@ -15,6 +15,7 @@ import { useEffect, useState } from 'react';
 import { generateZkProof } from '@fhevm/sdk/actions/encrypt';
 import { defineFhevmChain } from '@fhevm/sdk/chains';
 import { createTestLogger, logError, DiagnosticsView } from '../_diag/diagnostics.jsx';
+import { fetchOptionalFheEncryptionKeyTrust } from '../_diag/fheEncryptionKeyTrust.js';
 import { CURRENT_SLOT } from '../_diag/slots.js';
 
 const LIB = process.env.NEXT_PUBLIC_FHEVM_TEST_LIB ?? 'viem';
@@ -60,21 +61,21 @@ function applyRuntimeConfig(has, set, logger) {
 }
 
 // Create a client with the selected lib. Each branch imports only its own deps.
-async function createClient(chain, rpcUrl, logger) {
+async function createClient(chain, rpcUrl, logger, fheEncryptionKeyTrust) {
   if (LIB === 'viem') {
     const { createFhevmClient, hasFhevmRuntimeConfig, setFhevmRuntimeConfig } = await import('@fhevm/sdk/viem');
     const { createPublicClient, http } = await import('viem');
     const { anvil } = await import('viem/chains');
     applyRuntimeConfig(hasFhevmRuntimeConfig, setFhevmRuntimeConfig, logger);
     const publicClient = createPublicClient({ chain: { ...anvil, id: chain.id }, transport: http(rpcUrl) });
-    return createFhevmClient({ chain, publicClient });
+    return createFhevmClient({ chain, publicClient, options: { fheEncryptionKeyTrust } });
   }
   if (LIB === 'ethers') {
     const { createFhevmClient, hasFhevmRuntimeConfig, setFhevmRuntimeConfig } = await import('@fhevm/sdk/ethers');
     const { ethers } = await import('ethers');
     applyRuntimeConfig(hasFhevmRuntimeConfig, setFhevmRuntimeConfig, logger);
     const provider = new ethers.JsonRpcProvider(rpcUrl);
-    return createFhevmClient({ chain, provider });
+    return createFhevmClient({ chain, provider, options: { fheEncryptionKeyTrust } });
   }
   throw new Error(`Unknown NEXT_PUBLIC_FHEVM_TEST_LIB: ${LIB}`);
 }
@@ -92,8 +93,9 @@ export default function Page() {
         log(`lib=${LIB} threads=${THREADS}`);
 
         const chain = v13Chain(origin);
+        const fheEncryptionKeyTrust = await fetchOptionalFheEncryptionKeyTrust(origin, CURRENT_SLOT);
         log('createFhevmClient...');
-        const client = await createClient(chain, `${origin}/gw/${CURRENT_SLOT}/rpc`, logger);
+        const client = await createClient(chain, `${origin}/gw/${CURRENT_SLOT}/rpc`, logger, fheEncryptionKeyTrust);
 
         log('client.init()...');
         await client.init();

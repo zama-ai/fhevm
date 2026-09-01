@@ -1,5 +1,6 @@
 import type { FhevmChain } from '../../../src/core/chains/index.js';
 import type { FhevmModuleVersions } from '../../../src/core/types/moduleVersions.js';
+import type { FheEncryptionKeyDigests } from '../../../src/core/types/fheEncryptionKey.js';
 import type { WasmAssetLoadMode } from '../../../src/core/types/wasmAssets.js';
 import type { TypedValue } from '../../../src/core/types/index.js';
 import type { TkmsVersion } from '../../../src/wasm/tkms/loadKmsLib.js';
@@ -132,6 +133,7 @@ async function run() {
     const rpcUrl = requiredQuery(query, 'rpcUrl');
     const mnemonic = requiredQuery(query, 'mnemonic');
     const fheTestAddress = requiredQuery(query, 'fheTestAddress');
+    const fheEncryptionKeyTrust = optionalFheEncryptionKeyTrust(query);
 
     if (!WASM_ASSET_LOAD_MODES.includes(mode as WasmAssetLoadMode)) {
       throw new Error(`Unknown wasmAssetLoadMode: ${mode}`);
@@ -193,7 +195,7 @@ async function run() {
     const client = createFhevmClient({
       chain: fhevmChain,
       provider,
-      options: { moduleVersions },
+      options: fheEncryptionKeyTrust === undefined ? { moduleVersions } : { moduleVersions, fheEncryptionKeyTrust },
     });
 
     log('Initializing FHEVM client...');
@@ -273,6 +275,25 @@ function requiredQuery(query: URLSearchParams, name: string): string {
     throw new Error(`Missing query parameter: ${name}`);
   }
   return value;
+}
+
+function optionalFheEncryptionKeyTrust(query: URLSearchParams): FheEncryptionKeyDigests | undefined {
+  const publicKeyDigest = query.get('publicKeyDigest');
+  const crsDigest = query.get('crsDigest');
+  if ((publicKeyDigest === null || publicKeyDigest === '') && (crsDigest === null || crsDigest === '')) {
+    return undefined;
+  }
+  return {
+    publicKeyDigest: validDigestQuery(publicKeyDigest, 'publicKeyDigest'),
+    crsDigest: validDigestQuery(crsDigest, 'crsDigest'),
+  };
+}
+
+function validDigestQuery(value: string | null, name: string): FheEncryptionKeyDigests['publicKeyDigest'] {
+  if (value === null || value === '' || !/^0x[0-9a-fA-F]{64}$/.test(value)) {
+    throw new Error(`Invalid 32-byte digest query parameter: ${name}`);
+  }
+  return value as FheEncryptionKeyDigests['publicKeyDigest'];
 }
 
 function resolveAssetUrls(matrix: Matrix, versionPair: VersionPair, cdn: string): AssetUrlSet {

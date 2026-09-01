@@ -4,17 +4,14 @@ import type { BytesHex, ChecksummedAddress, TypedValue } from '../types/primitiv
 import type { RelayerInputProofOptions } from '../types/relayer.js';
 import type { InputHandle } from '../types/encryptedTypes-p.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
+import type { Fhevm } from '../types/coreFhevmClient.js';
 import { fetchVerifiedInputProof } from './fetchVerifiedInputProof.js';
 import { createZkProof } from './ZkProofBuilder-p.js';
+import { getFheEncryptionKeyProvider } from '../runtime/CoreFhevm-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type Context = {
-  readonly chain: FhevmChain;
-  readonly runtime: WithEncrypt;
-  readonly client: NonNullable<object>;
-  readonly options: { readonly batchRpcCalls: boolean };
-};
+type Context = Fhevm<FhevmChain, WithEncrypt>;
 
 type Parameters = {
   readonly contractAddress: ChecksummedAddress;
@@ -35,8 +32,18 @@ export async function encrypt(context: Context, parameters: Parameters): Promise
   const hardCodedExtraData = '0x00' as BytesHex;
 
   const zkProof = await createZkProof(
-    { chain: context.chain, runtime: context.runtime },
-    { ...parameters, extraData: hardCodedExtraData, fhevmContext: parameters.fhevmContext },
+    {
+      chain: context.chain,
+      runtime: context.runtime,
+      tfheVersion: parameters.fhevmContext.tfheVersion,
+      fheEncryptionKeyProvider: getFheEncryptionKeyProvider(context),
+    },
+    {
+      contractAddress: parameters.contractAddress,
+      userAddress: parameters.userAddress,
+      values: parameters.values,
+      extraData: hardCodedExtraData,
+    },
   );
 
   const inputProof = await fetchVerifiedInputProof(context, {

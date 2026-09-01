@@ -111,11 +111,13 @@ type FhevmBaseOptions = {
 };
 
 type FhevmOptions = FhevmBaseOptions & {
+  readonly fheEncryptionKeyTrust?: FheEncryptionKeyTrust | undefined;
   readonly fheEncryptionKey?: FheEncryptionKeyBytes | undefined;
   readonly moduleVersions?: FhevmModuleVersions | undefined;
 };
 
 type FhevmEncryptOptions = FhevmBaseOptions & {
+  readonly fheEncryptionKeyTrust?: FheEncryptionKeyTrust | undefined;
   readonly fheEncryptionKey?: FheEncryptionKeyBytes | undefined;
   readonly moduleVersions?: FhevmEncryptModuleVersions | undefined;
 };
@@ -124,6 +126,13 @@ type FhevmDecryptOptions = FhevmBaseOptions & {
   readonly moduleVersions?: FhevmDecryptModuleVersions | undefined;
 };
 ```
+
+Encryption-capable clients accept `fheEncryptionKeyTrust` for application-authenticated
+digests or `fheEncryptionKey` for complete pinned bytes. Presets with a configured
+KMSGeneration contract read active key/CRS digests on-chain, reject application
+digest overrides, and accept pinned bytes only when they match those digests.
+Chains without that address fail closed before real encryption when no explicit
+trust source is supplied. Cleartext clients reject both options.
 
 ### Client lifecycle members
 
@@ -435,4 +444,3 @@ the full catalog and handling patterns.
 - [Clients](clients.md) · [Encryption](encryption.md) · [Decryption](decryption.md)
 - [Chains](chains.md) · [Runtime configuration](runtime-configuration.md) · [Types](types.md)
 ```
-

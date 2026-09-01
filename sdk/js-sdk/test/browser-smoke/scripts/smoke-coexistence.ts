@@ -11,7 +11,7 @@ import {
   buildUint64Proof,
   errorMessage,
   initAllModules,
-  loadAndCacheKey,
+  loadKey,
   log,
   makeDummyChain,
   runSmokePage,
@@ -39,8 +39,8 @@ type ChainDefinition = {
 };
 
 function defineChainDefinition(tfheVersion: TfheVersion, keyTfheVersion: string, shouldRun: boolean): ChainDefinition {
-  // The relayer URL is unique per (module, key) so each chain gets its own cache
-  // slot (the global key cache is keyed by relayer URL, first-write-wins per slot).
+  // The relayer URL is unique per (module, key) so each dummy chain has a stable
+  // authenticated key identity while pinned key bytes are supplied explicitly.
   const chain = makeDummyChain(`${DUMMY_RELAYER_BASE_URL}/${tfheVersion}/${keyTfheVersion}`);
   return { tfheVersion, keyTfheVersion, shouldRun, chain };
 }
@@ -71,9 +71,9 @@ void runSmokePage(async () => {
   log(`Running ${CHAIN_DEFINITIONS.length} per-chain mini encryptions concurrently...`);
   const results = await Promise.all(
     CHAIN_DEFINITIONS.map(async (definition) => {
-      await loadAndCacheKey(runtime, definition.chain, definition.keyTfheVersion);
+      const keyBytes = await loadKey(definition.chain, definition.keyTfheVersion);
       const outcome = await attempt(async () => {
-        const zkProof = await buildUint64Proof(runtime, definition.chain, definition.tfheVersion);
+        const zkProof = await buildUint64Proof(runtime, definition.chain, definition.tfheVersion, keyBytes);
         assertWellFormedProof(zkProof, 1);
       });
       return { definition, outcome };

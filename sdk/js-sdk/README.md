@@ -9,7 +9,7 @@ The JavaScript/TypeScript SDK for building applications on **FHEVM** chains. Enc
 - **Read public values** that contracts have marked as publicly decryptable
 - **Dual adapter support** — identical API for both ethers.js v6 and viem
 - **Tree-shakable** — only load the WASM modules you need (encrypt-only, decrypt-only, or both)
-- **Zero config** — works out of the box with built-in chain definitions for Ethereum mainnet and Sepolia
+- **Built-in chain definitions** — Mainnet and Sepolia include chain-configured KMSGeneration trust; other chains can use explicit digests or pinned key bytes
 
 ## Installation
 
@@ -37,6 +37,12 @@ const client = createFhevmClient({ chain: sepolia, provider });
 // Resolve protocol versions and load WASM once, before encrypting or decrypting.
 await client.ready;
 ```
+
+The built-in Mainnet and Sepolia definitions authenticate relayer key material by
+reading the active public-key and CRS digests from the configured host-chain
+KMSGeneration contract. For chains without a configured KMSGeneration address,
+encryption fails closed unless the application supplies explicit authenticated
+digests or trusted pinned key bytes; see [Security](docs/security.md).
 
 ### 2. Encrypt values
 

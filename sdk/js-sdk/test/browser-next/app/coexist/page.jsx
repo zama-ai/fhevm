@@ -18,6 +18,7 @@ import { useEffect, useState } from 'react';
 import { generateZkProof } from '@fhevm/sdk/actions/encrypt';
 import { defineFhevmChain } from '@fhevm/sdk/chains';
 import { createTestLogger, logError, DiagnosticsView } from '../_diag/diagnostics.jsx';
+import { requireFheEncryptionKeyTrust } from '../_diag/fheEncryptionKeyTrust.js';
 import { CURRENT_SLOT, LEGACY_SLOT, OLD_MODULE_NEW_KEY_SLOT } from '../_diag/slots.js';
 
 const LIB = process.env.NEXT_PUBLIC_FHEVM_TEST_LIB ?? 'viem';
@@ -40,9 +41,9 @@ async function fetchSlotConfig(origin, slot) {
 }
 
 // Build a FhevmChain from a slot config. `relayerSlot` (defaults to the config's own
-// slot) selects the relayer URL — and thus the global key-cache slot, which is keyed
-// by relayer URL. The cleartext leg passes a UNIQUE relayerSlot so its mock (deadbeef)
-// key never lands in a real slot's cache and poisons a real proof.
+// slot) selects the relayer URL used by that slot. Real key cache identity includes
+// mode, chain id, relayer URL, and authenticated digests; WASM wrappers additionally
+// include the owning runtime and TFHE version.
 function buildChain(origin, cfg, relayerSlot) {
   return defineFhevmChain({
     id: cfg.chainId,
@@ -92,7 +93,12 @@ async function libAdapter(logger) {
       createPublicClient({ chain: { ...anvil, id: chain.id }, transport: http(rpcUrl) });
     applyRuntimeConfig(real.hasFhevmRuntimeConfig, real.setFhevmRuntimeConfig, logger);
     return {
-      mkReal: (chain, rpcUrl) => real.createFhevmClient({ chain, publicClient: mkPublic(chain, rpcUrl) }),
+      mkReal: (chain, rpcUrl, fheEncryptionKeyTrust) =>
+        real.createFhevmClient({
+          chain,
+          publicClient: mkPublic(chain, rpcUrl),
+          options: { fheEncryptionKeyTrust },
+        }),
       mkCleartext: (chain, rpcUrl) =>
         ct.createFhevmCleartextEncryptClient({ chain, publicClient: mkPublic(chain, rpcUrl) }),
     };
@@ -104,7 +110,8 @@ async function libAdapter(logger) {
     const mkProvider = (rpcUrl) => new ethers.JsonRpcProvider(rpcUrl);
     applyRuntimeConfig(real.hasFhevmRuntimeConfig, real.setFhevmRuntimeConfig, logger);
     return {
-      mkReal: (chain, rpcUrl) => real.createFhevmClient({ chain, provider: mkProvider(rpcUrl) }),
+      mkReal: (chain, rpcUrl, fheEncryptionKeyTrust) =>
+        real.createFhevmClient({ chain, provider: mkProvider(rpcUrl), options: { fheEncryptionKeyTrust } }),
       mkCleartext: (chain, rpcUrl) => ct.createFhevmCleartextEncryptClient({ chain, provider: mkProvider(rpcUrl) }),
     };
   }
@@ -200,19 +207,30 @@ export default function Page() {
           fetchSlotConfig(origin, CURRENT_SLOT),
           fetchSlotConfig(origin, OLD_MODULE_NEW_KEY_SLOT),
         ]);
-        const v12 = adapter.mkReal(buildChain(origin, v12Cfg, LEGACY_SLOT), `${origin}/gw/${LEGACY_SLOT}/rpc`);
-        const v13 = adapter.mkReal(buildChain(origin, v13Cfg, CURRENT_SLOT), `${origin}/gw/${CURRENT_SLOT}/rpc`);
-        // Cleartext leg: reuse the current slot's addresses but a UNIQUE relayer URL
-        // (its mock returns deadbeef bytes — under the real relayer it would poison
-        // the real key).
+        const v12 = adapter.mkReal(
+          buildChain(origin, v12Cfg, LEGACY_SLOT),
+          `${origin}/gw/${LEGACY_SLOT}/rpc`,
+          requireFheEncryptionKeyTrust(v12Cfg),
+        );
+        const v13 = adapter.mkReal(
+          buildChain(origin, v13Cfg, CURRENT_SLOT),
+          `${origin}/gw/${CURRENT_SLOT}/rpc`,
+          requireFheEncryptionKeyTrust(v13Cfg),
+        );
+        // Cleartext leg: reuse the current slot's addresses but a unique relayer URL.
+        // Cleartext policy uses mock material and remains separate from real
+        // authenticated key identities.
         const clear = adapter.mkCleartext(buildChain(origin, v13Cfg, 'cleartext'), `${origin}/gw/${CURRENT_SLOT}/rpc`);
         // Dedicated alias slot: current key over the legacy anvil (older ACL → older
-        // module), at its OWN relayer URL so the global key cache does not collide
-        // with the real current leg → older module + newer key fails for real. Its
-        // /config returns the legacy addresses (it proxies the legacy anvil).
+        // module), at its own relayer URL and explicit trusted digests so the
+        // authenticated key identity is distinct from the real current leg. The
+        // older-module + newer-key path must fail at deserialization/version matching,
+        // not because of cache mixing. Its /config returns the legacy addresses (it
+        // proxies the legacy anvil).
         const mismatch = adapter.mkReal(
           buildChain(origin, mismatchCfg, OLD_MODULE_NEW_KEY_SLOT),
           `${origin}/gw/${OLD_MODULE_NEW_KEY_SLOT}/rpc`,
+          requireFheEncryptionKeyTrust(mismatchCfg),
         );
 
         log('initializing legacy + current + cleartext + expected-fail concurrently...');

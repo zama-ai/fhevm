@@ -1,4 +1,5 @@
 import type { FhevmChain } from '../../../src/core/chains/index.js';
+import type { FheEncryptionKeyDigests } from '../../../src/core/types/fheEncryptionKey.js';
 import type { FhevmModuleVersions } from '../../../src/core/types/moduleVersions.js';
 import type { WasmAssetLoadMode } from '../../../src/core/types/wasmAssets.js';
 import type { TkmsVersion } from '../../../src/wasm/tkms/loadKmsLib.js';
@@ -19,6 +20,8 @@ type BrowserUiConfig = {
       readonly rpcUrl: string;
       readonly mnemonic: string;
       readonly fheTestAddress: string;
+      readonly fheEncryptionKeyTrust?: FheEncryptionKeyDigests | undefined;
+      readonly usesConfiguredKmsGeneration: boolean;
     }
   >;
 };
@@ -341,7 +344,16 @@ async function createClientContext(
   const client =
     options.chainTarget === 'localcleartext'
       ? createFhevmCleartextClient({ chain, provider, options: { moduleVersions } })
-      : createFhevmClient({ chain, provider, options: { moduleVersions } });
+      : createFhevmClient({
+          chain,
+          provider,
+          options: {
+            moduleVersions,
+            ...(targetConfig.usesConfiguredKmsGeneration
+              ? {}
+              : { fheEncryptionKeyTrust: optionalFheEncryptionKeyTrust(targetConfig) }),
+          },
+        });
 
   log(`Target: ${options.chainTarget}`);
   log(`RPC URL: ${targetConfig.rpcUrl}`);
@@ -358,6 +370,12 @@ async function createClientContext(
     signer,
     walletAddress: wallet.address,
   };
+}
+
+function optionalFheEncryptionKeyTrust(
+  targetConfig: BrowserUiConfig['targets'][ChainTarget],
+): FheEncryptionKeyDigests | undefined {
+  return targetConfig.fheEncryptionKeyTrust;
 }
 
 async function assertContractDeployed(

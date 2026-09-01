@@ -3,4 +3,12 @@ export type { TypedValue } from './primitives.js';
 export type { EncryptedValue, EncryptedValueLike } from './encryptedTypes.js';
 export type { Eip712Like } from './kms.js';
 export type { FhevmEncryptClient, FhevmDecryptClient } from './fhevmClient.js';
+export type {
+  FheEncryptionCrsBytes,
+  FheEncryptionKeyBytes,
+  FheEncryptionKeyDigests,
+  FheEncryptionKeyMetadata,
+  FheEncryptionKeyTrust,
+  FheEncryptionPublicKeyBytes,
+} from './fheEncryptionKey.js';
 export { asEncryptedValue, isEncryptedValue } from '../handle/EncryptedValue.js';

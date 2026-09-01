@@ -1,5 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import type { FheEncryptionKeyDigests } from '../../../src/core/types/fheEncryptionKey.js';
+import { parseFheEncryptionKeyDigests } from '../../fheTest/fheEncryptionKeyTrust.js';
 
 const chainDefaultsPath = resolve(import.meta.dirname, '../../chains/chain-defaults.json');
 const envPath = resolve(import.meta.dirname, '../../.env');
@@ -8,6 +10,7 @@ export type LocalstackChainDefaults = {
   readonly rpcUrl: string;
   readonly mnemonic: string;
   readonly fheTestAddress: string;
+  readonly fheEncryptionKeyTrust?: FheEncryptionKeyDigests | undefined;
 };
 
 export function loadLocalstackChainDefaults(chainName: string): LocalstackChainDefaults {
@@ -36,10 +39,14 @@ export function loadLocalstackChainDefaults(chainName: string): LocalstackChainD
   if (entry.fheTestAddress === undefined || entry.fheTestAddress === '') {
     throw new Error(`Missing "${chainName}.fheTestAddress" in ${chainDefaultsPath}`);
   }
+  const chainEnv = parseEnvFile(resolve(import.meta.dirname, `../../.env.${chainName}`));
+  const sharedEnv = parseEnvFile(envPath);
+  const fheEncryptionKeyTrust = parseFheEncryptionKeyDigests(chainEnv, sharedEnv);
   return Object.freeze({
     rpcUrl: entry.rpcUrl,
     mnemonic,
     fheTestAddress: entry.fheTestAddress,
+    fheEncryptionKeyTrust,
   });
 }
 

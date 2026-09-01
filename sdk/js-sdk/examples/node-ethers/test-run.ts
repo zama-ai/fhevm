@@ -107,6 +107,7 @@ async function main(): Promise<void> {
   step('Create FhevmClient');
   const client = createFhevmClient({ chain: sepolia, provider });
   console.log('  uid:', client.uid);
+  await client.ready;
 
   // Preload WASM and resolve protocol/TFHE/TKMS versions before encrypting or
   // decrypting. `await client.ready` (or `await client.init()`) is required

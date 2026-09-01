@@ -16,6 +16,7 @@ export const localTestnet = /*#__PURE__*/ defineFhevmChain({
       protocolConfig: {
         address: '0x52054F36036811ca418be59e41Fc6DD1b9e4F4c8',
       },
+      kmsGeneration: undefined,
     },
     relayerUrl: 'http://localhost:9000',
     gateway: {

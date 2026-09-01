@@ -98,13 +98,22 @@ modules:
 
 1. **Generate a ZK proof** (encrypt module, TFHE WASM). Locally proves the
    plaintext was encrypted correctly under the Fully Homomorphic Encryption (FHE) public key without revealing
-   it. The public key is fetched from the Relayer and cached.
+   it. In this SDK-managed pipeline, before cache admission or native
+   deserialization, the key and CRS bytes fetched from the Relayer are
+   authenticated against the configured KMSGeneration contract, explicit
+   trusted digests, or caller-pinned bytes.
 2. **Fetch a verified input proof** (relayer module). The Relayer's coprocessors
    verify the proof and sign it, yielding the `inputProof` a contract trusts.
 
 These stages are also exposed as the standalone actions `generateZkProof` and
 `fetchEncryptedValues`, so advanced callers can separate proof creation from
 verification.
+
+The lower-level functions exposed through `client.runtime.relayer` and
+`client.runtime.encrypt` are extension primitives, not authenticated client
+actions. In particular, direct calls to the raw key fetch and native
+deserializers bypass the encryption-key trust policy and must receive material
+the caller has authenticated independently.
 
 ## The private-decryption pipeline
 
@@ -146,4 +155,3 @@ The internals follow a consistent set of rules:
 - [Actions](actions.md) — the standalone functional layer.
 - [Glossary](GLOSSARY.md) — the vocabulary used across these layers.
 ```
-

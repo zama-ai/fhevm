@@ -1,6 +1,6 @@
 import type { FhevmChain } from './fhevmChain.js';
 import type { FhevmRuntime } from './coreFhevmRuntime.js';
-import type { FheEncryptionKeyBytes } from './fheEncryptionKey.js';
+import type { FheEncryptionKeyBytes, FheEncryptionKeyTrust } from './fheEncryptionKey.js';
 import type {
   FhevmDecryptModuleVersions,
   FhevmEncryptModuleVersions,
@@ -15,19 +15,38 @@ export type FhevmBaseOptions = {
   readonly batchRpcCalls?: boolean | undefined;
 };
 
-export type FhevmEncryptOptions = FhevmBaseOptions & {
+type FhevmEncryptionKeyOptions = {
+  /** Explicitly authenticates relayer-supplied FHE key/CRS bytes for chains with no configured KMSGeneration anchor. */
+  readonly fheEncryptionKeyTrust?: FheEncryptionKeyTrust | undefined;
+  /** Supplies immutable FHE key/CRS bytes; configured chains still authenticate them against KMSGeneration. */
   readonly fheEncryptionKey?: FheEncryptionKeyBytes | undefined;
-  readonly moduleVersions?: FhevmEncryptModuleVersions | undefined;
 };
+
+export type FhevmEncryptOptions = FhevmBaseOptions &
+  FhevmEncryptionKeyOptions & {
+    readonly moduleVersions?: FhevmEncryptModuleVersions | undefined;
+  };
 
 export type FhevmDecryptOptions = FhevmBaseOptions & {
   readonly moduleVersions?: FhevmDecryptModuleVersions | undefined;
 };
 
-export type FhevmOptions = FhevmBaseOptions & {
-  readonly fheEncryptionKey?: FheEncryptionKeyBytes | undefined;
+/** Cleartext full/base clients deliberately exclude real-key trust material. */
+export type FhevmCleartextOptions = FhevmBaseOptions & {
   readonly moduleVersions?: FhevmModuleVersions | undefined;
 };
+
+/** Cleartext encrypt clients deliberately exclude real-key trust material. */
+export type FhevmCleartextEncryptOptions = FhevmBaseOptions & {
+  readonly moduleVersions?: FhevmEncryptModuleVersions | undefined;
+};
+
+export type FhevmCleartextDecryptOptions = FhevmDecryptOptions;
+
+export type FhevmOptions = FhevmBaseOptions &
+  FhevmEncryptionKeyOptions & {
+    readonly moduleVersions?: FhevmModuleVersions | undefined;
+  };
 
 export type ResolvedFhevmOptions = {
   readonly batchRpcCalls: boolean;

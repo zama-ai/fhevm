@@ -214,6 +214,10 @@ export type DeserializeFheEncryptionPublicKeyParameters = {
 export type DeserializeFheEncryptionPublicKeyReturnType = FheEncryptionPublicKey;
 
 export type DeserializeFheEncryptionPublicKeyModuleFunction = {
+  /**
+   * Low-level native deserializer. This does not authenticate bytes against the
+   * client's FHE encryption-key trust policy.
+   */
   deserializeFheEncryptionPublicKey(
     parameters: DeserializeFheEncryptionPublicKeyParameters,
   ): Promise<DeserializeFheEncryptionPublicKeyReturnType>;
@@ -231,6 +235,10 @@ export type DeserializeFheEncryptionCrsParameters = {
 export type DeserializeFheEncryptionCrsReturnType = FheEncryptionCrs;
 
 export type DeserializeFheEncryptionCrsModuleFunction = {
+  /**
+   * Low-level native deserializer. This does not authenticate bytes against the
+   * client's FHE encryption-key trust policy.
+   */
   deserializeFheEncryptionCrs(
     parameters: DeserializeFheEncryptionCrsParameters,
   ): Promise<DeserializeFheEncryptionCrsReturnType>;

@@ -17,6 +17,18 @@ export const baseAcceptsBoth: BaseOptions = { moduleVersions: { tfhe: '1.6.2', k
 export const clientAcceptsBoth: Options = { moduleVersions: { tfhe: '1.6.2', kms: '0.13.20-0' } };
 export const encryptAcceptsTfhe: EncryptOptions = { moduleVersions: { tfhe: '1.6.2' } };
 export const decryptAcceptsKms: DecryptOptions = { moduleVersions: { kms: '0.13.20-0' } };
+export const decryptRejectsFheEncryptionKeyTrust: DecryptOptions = {
+  // @ts-expect-error Decrypt-only options must not accept FHE encryption-key trust anchors.
+  fheEncryptionKeyTrust: {
+    publicKeyDigest: '0x452298f972e0848bb511d582524a5c516067ee4c662f33a1ef1110d26d6d0ff1',
+    crsDigest: '0x1ee0d74e24ad79124e48c2073599ae15b89b1866cfc20dfa80d15807cee1cc62',
+  },
+};
+
+export const decryptRejectsFheEncryptionKey: DecryptOptions = {
+  // @ts-expect-error Decrypt-only options must not accept caller-pinned FHE encryption keys.
+  fheEncryptionKey: undefined,
+};
 
 export const encryptRejectsKms: EncryptOptions = {
   moduleVersions: {
@@ -34,6 +46,16 @@ export const decryptRejectsTfhe: DecryptOptions = {
 
 export const cleartextEncryptAcceptsTfhe: CleartextEncryptOptions = { moduleVersions: { tfhe: '1.6.2' } };
 export const cleartextDecryptAcceptsKms: CleartextDecryptOptions = { moduleVersions: { kms: '0.13.20-0' } };
+
+export const cleartextEncryptRejectsTrust: CleartextEncryptOptions = {
+  // @ts-expect-error Cleartext clients must not accept real-key trust material.
+  fheEncryptionKeyTrust: undefined,
+};
+
+export const cleartextEncryptRejectsPinnedKey: CleartextEncryptOptions = {
+  // @ts-expect-error Cleartext clients must not accept pinned real-key material.
+  fheEncryptionKey: undefined,
+};
 
 export const cleartextEncryptRejectsKms: CleartextEncryptOptions = {
   moduleVersions: {

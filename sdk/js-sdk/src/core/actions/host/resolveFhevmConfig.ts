@@ -31,6 +31,7 @@ export type ResolveFhevmConfigParameters = {
       readonly inputVerifier?: OptionalChainContract | undefined;
       readonly kmsVerifier: { readonly address: string };
       readonly protocolConfig?: OptionalChainContract | undefined;
+      readonly kmsGeneration?: OptionalChainContract | undefined;
     };
     readonly gateway?:
       | {
@@ -55,6 +56,7 @@ export type ResolveFhevmConfigReturnType = {
   readonly inputVerifier: InputVerifierContractData;
   readonly kmsVerifier: KmsVerifierContractData;
   readonly protocolConfig: ChecksummedAddress | undefined;
+  readonly kmsGeneration: ChecksummedAddress | undefined;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -70,6 +72,10 @@ export async function resolveFhevmConfig(
   const protocolConfigAddress = parameters.fhevm.contracts.protocolConfig?.address;
   if (protocolConfigAddress !== undefined) {
     assertIsAddress(protocolConfigAddress, {});
+  }
+  const kmsGenerationAddress = parameters.fhevm.contracts.kmsGeneration?.address;
+  if (kmsGenerationAddress !== undefined) {
+    assertIsAddress(kmsGenerationAddress, {});
   }
 
   // no context needed
@@ -133,6 +139,7 @@ export async function resolveFhevmConfig(
     inputVerifier: inputVerifierData,
     kmsVerifier: kmsVerifierData,
     protocolConfig: protocolConfigAddress ? addressToChecksummedAddress(protocolConfigAddress) : undefined,
+    kmsGeneration: kmsGenerationAddress ? addressToChecksummedAddress(kmsGenerationAddress) : undefined,
   };
 
   return Object.freeze(returnValue);

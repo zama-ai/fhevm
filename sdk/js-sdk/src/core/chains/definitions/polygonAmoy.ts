@@ -17,6 +17,7 @@ export const polygonAmoy: FhevmChain = /*#__PURE__*/ defineFhevmChain({
       protocolConfig: {
         address: '0x4CcF009Aba90D04f52b31fc7aDdE240578aFe10F',
       },
+      kmsGeneration: undefined,
     },
     relayerUrl: 'https://relayer.testnet.zama.org',
     gateway: {
