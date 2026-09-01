@@ -1,0 +1,86 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\nSELECT\n  c.output_handle,\n  c.dependencies,\n  c.fhe_operation,\n  c.is_scalar,\n  c.is_allowed,\n  c.is_error,\n  c.error_message,\n  c.transaction_id,\n  c.schedule_order,\n  c.operand_boundary_mask,\n  c.dependence_chain_id\nFROM computations c\nWHERE c.transaction_id IN (\n    SELECT transaction_id\n    FROM (\n      SELECT\n        dependence_chain_id,\n        transaction_id,\n        MIN(schedule_order) AS schedule_order,\n        ROW_NUMBER() OVER (\n          PARTITION BY dependence_chain_id\n          ORDER BY MIN(schedule_order), transaction_id\n        ) AS dcid_transaction_rank\n      FROM computations\n      WHERE is_completed = FALSE\n        AND (is_error = FALSE OR error_message LIKE '%' || $5 || '%')\n        AND is_allowed = TRUE\n        AND ($1::bytea[] IS NULL OR dependence_chain_id = ANY($1))\n        -- Same lockless-fallback fairness clause as the non-adaptive\n        -- query below: deferred transactions sit out their cooldown.\n        AND NOT (transaction_id = ANY($4::bytea[]))\n      GROUP BY dependence_chain_id, transaction_id\n    ) AS adaptive_schedule_order\n    WHERE adaptive_schedule_order.dcid_transaction_rank <= $2\n    ORDER BY schedule_order ASC, transaction_id ASC\n    LIMIT $3\n)\n  -- Like the non-adaptive query below: load ALL rows of the selected\n  -- transactions, fork-retained siblings included; ownership is re-applied\n  -- in code, which turns rows of other chains into recompute-only\n  -- producers excluded from results, persistence and completion.\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "output_handle",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "dependencies",
+        "type_info": "ByteaArray"
+      },
+      {
+        "ordinal": 2,
+        "name": "fhe_operation",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 3,
+        "name": "is_scalar",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "is_allowed",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "is_error",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "error_message",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "transaction_id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 8,
+        "name": "schedule_order",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 9,
+        "name": "operand_boundary_mask",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 10,
+        "name": "dependence_chain_id",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "ByteaArray",
+        "Int8",
+        "Int8",
+        "ByteaArray",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "f8734574960010119fa00899b7d2d12220f4e50ec8bc037e33b202b30cd1cb0a"
+}

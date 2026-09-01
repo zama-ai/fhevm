@@ -34,7 +34,7 @@ use host_listener::cmd::InfiniteLogIter;
 use host_listener::database::ingest::{
     ingest_block_logs, update_finalized_blocks, BlockLogs, IngestOptions,
 };
-use host_listener::database::tfhe_event_propagate::{Database, ToType};
+use host_listener::database::tfhe_event_propagate::{Chain, Database, ToType};
 
 mod common;
 use common::{
@@ -2136,5 +2136,110 @@ async fn test_host_listener_recovers_after_revert() -> Result<(), anyhow::Error>
     assert_eq!(acl, expected, "allowed_handles after revert");
 
     listener.abort();
+    Ok(())
+}
+
+/// F1 regression: a new chain joining cross-block parents must be gated on
+/// exactly the parents that can still deliver a release decrement. An
+/// incomplete parent gains the child in `dependents` and contributes to
+/// `dependency_count`; a `processed` parent and an unknown (cache-drifted)
+/// parent contribute nothing.
+#[tokio::test]
+#[serial(db)]
+async fn test_cross_block_join_gates_on_incomplete_parents(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let test_instance =
+        test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
+            .await?;
+    let chain_id = ChainId::try_from(42_u64)?;
+    let db = Database::new(&test_instance.db_url, chain_id, 128).await?;
+    let pool = db.pool.read().await.clone();
+
+    let parent_incomplete = FixedBytes::<32>::from([0xA1; 32]);
+    let parent_processed = FixedBytes::<32>::from([0xA2; 32]);
+    let parent_unknown = FixedBytes::<32>::from([0xA3; 32]);
+    let child = FixedBytes::<32>::from([0xC1; 32]);
+    for (hash, status) in [
+        (parent_incomplete, "updated"),
+        (parent_processed, "processed"),
+    ] {
+        sqlx::query(
+            "INSERT INTO dependence_chain(
+                dependence_chain_id, status, last_updated_at,
+                dependency_count, dependents, block_hash, block_height,
+                schedule_priority
+             ) VALUES ($1, $2, NOW(), 0, '{}', $3, 1, 1)",
+        )
+        .bind(hash.as_slice())
+        .bind(status)
+        .bind([0x0B_u8; 32].as_slice())
+        .execute(&pool)
+        .await?;
+    }
+
+    let chains = vec![Chain {
+        hash: child,
+        dependencies: vec![],
+        split_dependencies: vec![
+            parent_incomplete,
+            parent_processed,
+            parent_unknown,
+        ],
+        dependents: vec![],
+        allowed_handle: vec![],
+        size: 5,
+        before_size: 0,
+        new_chain: true,
+    }];
+    let mut tx = db.new_transaction().await?.expect("live stack transaction");
+    let block_summary = BlockSummary {
+        number: 2,
+        hash: FixedBytes::<32>::from([0x0C; 32]),
+        parent_hash: FixedBytes::<32>::from([0x0B; 32]),
+        timestamp: 1_700_000_000,
+    };
+    let now = time::OffsetDateTime::now_utc();
+    let block_timestamp = time::PrimitiveDateTime::new(now.date(), now.time());
+    db.update_dependence_chain(
+        &mut tx,
+        chains,
+        block_timestamp,
+        &block_summary,
+        &std::collections::HashSet::new(),
+    )
+    .await?;
+    tx.commit().await?;
+
+    let (count, status): (i32, String) = sqlx::query_as(
+        "SELECT dependency_count, status FROM dependence_chain
+         WHERE dependence_chain_id = $1",
+    )
+    .bind(child.as_slice())
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(count, 1, "only the incomplete parent gates the join chain");
+    assert_eq!(status, "updated");
+
+    let incomplete_dependents: Vec<Vec<u8>> = sqlx::query_scalar(
+        "SELECT unnest(dependents) FROM dependence_chain
+         WHERE dependence_chain_id = $1",
+    )
+    .bind(parent_incomplete.as_slice())
+    .fetch_all(&pool)
+    .await?;
+    assert_eq!(incomplete_dependents, vec![child.as_slice().to_vec()]);
+
+    let processed_dependents: Vec<Vec<u8>> = sqlx::query_scalar(
+        "SELECT unnest(dependents) FROM dependence_chain
+         WHERE dependence_chain_id = $1",
+    )
+    .bind(parent_processed.as_slice())
+    .fetch_all(&pool)
+    .await?;
+    assert!(
+        processed_dependents.is_empty(),
+        "a processed parent must not adopt the child: no future release \
+         will decrement it"
+    );
     Ok(())
 }

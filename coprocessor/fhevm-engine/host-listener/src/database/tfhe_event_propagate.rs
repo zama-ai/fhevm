@@ -79,6 +79,13 @@ pub struct Chain {
     pub new_chain: bool,
 }
 pub type ChainCache = Arc<RwLock<lru::LruCache<Handle, ChainHash>>>;
+/// Cross-batch record of which transaction consumed a boundary handle. A
+/// DIFFERENT consumer of the same handle in a later ingest batch is a fork:
+/// it must form its own (gated) chain instead of extending the producer's
+/// chain, or independent branches serialize on one DCID. (One transaction
+/// consuming a handle several times — e.g. FheAdd(x, x) — is not a fork.)
+pub type ConsumedBoundaryGuard =
+    Arc<RwLock<lru::LruCache<Handle, TransactionHash>>>;
 pub type OrderedChains = Vec<Chain>;
 
 const MINIMUM_BUCKET_CACHE_SIZE: u16 = 16;
@@ -163,6 +170,7 @@ pub struct Database {
     pool_refresh_handle: Arc<RwLock<PoolRefreshHandle>>,
     pub chain_id: ChainId,
     pub dependence_chain: ChainCache,
+    pub consumed_boundaries: ConsumedBoundaryGuard,
     pub tick: HeartBeat,
     /// When true, every connection in this pool sets
     /// `search_path = gcs,public` so writes resolve to the GCS schema.
@@ -234,12 +242,21 @@ impl Database {
                 .unwrap()
                 .into(),
             )));
+        let consumed_boundaries =
+            Arc::new(tokio::sync::RwLock::new(lru::LruCache::new(
+                std::num::NonZeroU16::new(
+                    dependence_cache_size.max(MINIMUM_BUCKET_CACHE_SIZE),
+                )
+                .unwrap()
+                .into(),
+            )));
         let db = Database {
             url: url.clone(),
             chain_id,
             pool: Arc::new(RwLock::new(pool)),
             pool_refresh_handle: Arc::new(RwLock::new(pool_refresh_handle)),
             dependence_chain: bucket_cache,
+            consumed_boundaries,
             tick: HeartBeat::default(),
             gcs_mode,
         };
@@ -1900,6 +1917,68 @@ impl Database {
                 .iter()
                 .map(|h| h.to_vec())
                 .collect::<Vec<_>>();
+            // Cross-block parents (in split_dependencies but not in the
+            // in-block dependencies) gate this chain only if they are still
+            // incomplete at ingest commit. Register the child in each such
+            // parent's dependents so the worker's release decrement reaches
+            // it, and count the rows actually updated: a parent already
+            // 'processed' delivers no future decrement and must not be
+            // counted (park-retry remains the correctness backstop for every
+            // race; the gate is an optimization, so under-counting is safe
+            // and over-counting is not).
+            //
+            // SKIP LOCKED, not a plain FOR UPDATE. A parent row locked by
+            // another session is precisely one a worker is releasing right
+            // now, and skipping it is the safe direction — it under-counts,
+            // which the gate tolerates by design. Waiting instead would
+            // (a) hold this ingest transaction behind an FHE-batch release
+            // and (b) close a deadlock cycle: this statement runs once per
+            // chain inside the enclosing loop, so the ORDER BY only sorts
+            // within one execution while the loop's chain inserts take
+            // further row locks in listener order, against a worker release
+            // that locks its held parents and their dependents in plan
+            // order.
+            let outer_dependencies = chain
+                .split_dependencies
+                .iter()
+                .filter(|dep| !chain.dependencies.contains(dep))
+                .map(|h| h.to_vec())
+                .collect::<Vec<_>>();
+            let gated_outer_count = if chain.new_chain
+                && !outer_dependencies.is_empty()
+            {
+                sqlx::query_scalar!(
+                    r#"
+                    WITH parents AS (
+                        SELECT dependence_chain_id
+                        FROM dependence_chain
+                        WHERE dependence_chain_id = ANY($1::bytea[])
+                          AND status <> 'processed'
+                        ORDER BY dependence_chain_id
+                        FOR UPDATE SKIP LOCKED
+                    ),
+                    updated AS (
+                        UPDATE dependence_chain dc
+                        SET dependents = (
+                            SELECT ARRAY(
+                                SELECT DISTINCT d
+                                FROM unnest(dc.dependents || $2::bytea[]) AS d
+                            )
+                        )
+                        FROM parents
+                        WHERE dc.dependence_chain_id = parents.dependence_chain_id
+                        RETURNING 1
+                    )
+                    SELECT count(*) AS "count!" FROM updated
+                    "#,
+                    &outer_dependencies,
+                    &[chain.hash.to_vec()],
+                )
+                .fetch_one(tx.deref_mut())
+                .await?
+            } else {
+                0
+            };
             sqlx::query!(
                 r#"
                 INSERT INTO dependence_chain(
@@ -1934,7 +2013,7 @@ impl Database {
                 "#,
                 chain.hash.to_vec(),
                 last_updated_at,
-                chain.dependencies.len() as i64,
+                chain.dependencies.len() as i32 + gated_outer_count as i32,
                 &dependents,
                 block_summary.hash.to_vec(),
                 block_summary.number as i64,

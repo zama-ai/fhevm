@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT unnest(dependents) AS \"dependent_id!\"\n            FROM dependence_chain\n            WHERE worker_id = $1 AND dependence_chain_id = ANY($2)\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "dependent_id!",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "ByteaArray"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "7676044fbeb25a6b3682e4dfcd4fe38a96e89a4d60bc7cbeca02ea0997b46a03"
+}
