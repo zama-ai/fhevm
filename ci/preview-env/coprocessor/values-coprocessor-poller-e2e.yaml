@@ -45,6 +45,8 @@ commonConfig:
     valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_generation.address}}
   protocolConfigContractAddress:
     valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: protocol_config.address}}
+  # Anvil host chain id. apply-chain-env.sh overwrites this for blockchain-dev.
+  canonicalProtocolConfigChainId: "12345"
 
 # Migration + real-time listener already handled by the coprocessor-<i> release.
 dbMigration:
