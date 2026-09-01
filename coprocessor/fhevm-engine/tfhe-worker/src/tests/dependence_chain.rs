@@ -1,8 +1,8 @@
 use crate::dependence_chain::{
     delete_old_processed_dependence_chains, rearm_demoted_chains, LockMngr, LockingReason,
 };
-use fhevm_engine_common::types::SchedulePriority;
 use crate::tests::utils::{setup_test_db_without_worker, TestInstance};
+use fhevm_engine_common::types::SchedulePriority;
 use serial_test::serial;
 use sqlx::postgres::PgPoolOptions;
 use tokio::time::{sleep, Duration};
@@ -29,8 +29,16 @@ async fn test_acquire_next_lock() {
 
     for dependence_chain_id in dependence_chain_ids.iter() {
         info!(target: "deps_chain", ?dependence_chain_id, "Testing acquire_next_lock");
-        let mut mgr =
-            LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None, 3);
+        let mut mgr = LockMngr::new_with_conf(
+            Uuid::new_v4(),
+            pool.clone(),
+            3600,
+            false,
+            None,
+            None,
+            None,
+            3,
+        );
 
         let (acquired, locking) = mgr.acquire_next_lock().await.unwrap();
         assert_eq!(acquired, Some(dependence_chain_id.clone()));
@@ -96,13 +104,29 @@ async fn test_acquire_next_lock_prefers_fast_lane() {
     .await
     .unwrap();
 
-    let mut mgr_fast =
-        LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None, 3);
+    let mut mgr_fast = LockMngr::new_with_conf(
+        Uuid::new_v4(),
+        pool.clone(),
+        3600,
+        false,
+        None,
+        None,
+        None,
+        3,
+    );
     let (acquired_fast, _) = mgr_fast.acquire_next_lock().await.unwrap();
     assert_eq!(acquired_fast, Some(fast_id.clone()));
 
-    let mut mgr_slow =
-        LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None, 3);
+    let mut mgr_slow = LockMngr::new_with_conf(
+        Uuid::new_v4(),
+        pool.clone(),
+        3600,
+        false,
+        None,
+        None,
+        None,
+        3,
+    );
     let (acquired_slow, _) = mgr_slow.acquire_next_lock().await.unwrap();
     assert_eq!(acquired_slow, Some(slow_id.clone()));
 }
@@ -225,13 +249,29 @@ async fn test_acquire_early_lock_ignores_priority() {
     .await
     .unwrap();
 
-    let mut mgr_slow =
-        LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None, 3);
+    let mut mgr_slow = LockMngr::new_with_conf(
+        Uuid::new_v4(),
+        pool.clone(),
+        3600,
+        false,
+        None,
+        None,
+        None,
+        3,
+    );
     let (acquired_slow, _) = mgr_slow.acquire_early_lock().await.unwrap();
     assert_eq!(acquired_slow, Some(slow_id.clone()));
 
-    let mut mgr_fast =
-        LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None, 3);
+    let mut mgr_fast = LockMngr::new_with_conf(
+        Uuid::new_v4(),
+        pool.clone(),
+        3600,
+        false,
+        None,
+        None,
+        None,
+        3,
+    );
     let (acquired_fast, _) = mgr_fast.acquire_early_lock().await.unwrap();
     assert_eq!(acquired_fast, Some(fast_id.clone()));
 }
@@ -257,8 +297,16 @@ async fn test_work_stealing() {
         info!(?dependence_chain_id, "Testing acquire_next_lock");
 
         let worker = Uuid::new_v4();
-        let mut mgr =
-            LockMngr::new_with_conf(worker, pool.clone(), lock_ttl_sec, false, None, None, None, 3);
+        let mut mgr = LockMngr::new_with_conf(
+            worker,
+            pool.clone(),
+            lock_ttl_sec,
+            false,
+            None,
+            None,
+            None,
+            3,
+        );
         let acquired = mgr.acquire_next_lock().await.unwrap().0;
         assert_eq!(acquired, Some(dependence_chain_id.clone()));
 
@@ -605,8 +653,16 @@ async fn test_batched_release_decrements_per_parent() {
         .unwrap();
     }
 
-    let mut mgr =
-        LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None, 3);
+    let mut mgr = LockMngr::new_with_conf(
+        Uuid::new_v4(),
+        pool.clone(),
+        3600,
+        false,
+        None,
+        None,
+        None,
+        3,
+    );
     let locks = mgr.acquire_next_locks(10).await.unwrap();
     let acquired: Vec<_> = locks.iter().filter_map(|(id, _)| id.clone()).collect();
     assert_eq!(acquired.len(), 2, "both parents acquired in one batch");
@@ -687,8 +743,16 @@ async fn test_release_completed_lock_refills_batch_slot() {
         .unwrap();
     }
 
-    let mut mgr =
-        LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None, 3);
+    let mut mgr = LockMngr::new_with_conf(
+        Uuid::new_v4(),
+        pool.clone(),
+        3600,
+        false,
+        None,
+        None,
+        None,
+        3,
+    );
     let acquired = mgr.acquire_next_locks(2).await.unwrap();
     assert_eq!(
         acquired
@@ -764,8 +828,16 @@ async fn test_release_completed_lock_preserves_listener_refresh() {
     .await
     .unwrap();
 
-    let mut mgr =
-        LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None, 3);
+    let mut mgr = LockMngr::new_with_conf(
+        Uuid::new_v4(),
+        pool.clone(),
+        3600,
+        false,
+        None,
+        None,
+        None,
+        3,
+    );
     assert_eq!(
         mgr.acquire_next_lock().await.unwrap().0,
         Some(parent.clone())
@@ -865,8 +937,16 @@ async fn test_extend_keeps_the_locks_it_renewed() {
         .expect("inserted chains");
     let (stolen, kept) = (chains[0].clone(), chains[1].clone());
 
-    let mut mgr =
-        LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None, 3);
+    let mut mgr = LockMngr::new_with_conf(
+        Uuid::new_v4(),
+        pool.clone(),
+        3600,
+        false,
+        None,
+        None,
+        None,
+        3,
+    );
     let acquired = mgr.acquire_next_locks(2).await.unwrap();
     assert_eq!(
         acquired
@@ -989,8 +1069,16 @@ async fn test_worker_does_not_steal_back_its_own_expired_lease() {
     assert_eq!(mgr.get_current_lock_ids(), chains);
 
     // Another worker can still take it, which is what the expiry is for.
-    let mut other =
-        LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None, 3);
+    let mut other = LockMngr::new_with_conf(
+        Uuid::new_v4(),
+        pool.clone(),
+        3600,
+        false,
+        None,
+        None,
+        None,
+        3,
+    );
     sqlx::query("UPDATE dependence_chain SET lock_expires_at = NOW() - INTERVAL '1 second'")
         .execute(&pool)
         .await
@@ -1035,8 +1123,16 @@ async fn test_release_locks_discharges_on_the_flip_not_the_parameter() {
     .await
     .unwrap();
 
-    let mut mgr =
-        LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None, 3);
+    let mut mgr = LockMngr::new_with_conf(
+        Uuid::new_v4(),
+        pool.clone(),
+        3600,
+        false,
+        None,
+        None,
+        None,
+        3,
+    );
     let acquired = mgr.acquire_next_locks(4).await.unwrap();
     assert_eq!(
         acquired
@@ -1071,18 +1167,25 @@ async fn test_release_locks_discharges_on_the_flip_not_the_parameter() {
         "a refreshed parent has not retired, so its dependent stays gated"
     );
 
-    let parent_status: String = sqlx::query_scalar(
-        "SELECT status FROM dependence_chain WHERE dependence_chain_id = $1",
-    )
-    .bind(&parent)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let parent_status: String =
+        sqlx::query_scalar("SELECT status FROM dependence_chain WHERE dependence_chain_id = $1")
+            .bind(&parent)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert_eq!(parent_status, "updated");
 
     // The same call on a parent that really is 'processing' does discharge.
-    let mut mgr2 =
-        LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None, 3);
+    let mut mgr2 = LockMngr::new_with_conf(
+        Uuid::new_v4(),
+        pool.clone(),
+        3600,
+        false,
+        None,
+        None,
+        None,
+        3,
+    );
     assert!(!mgr2.acquire_next_locks(4).await.unwrap().is_empty());
     mgr2.release_locks(std::slice::from_ref(&parent), true, None)
         .await
@@ -1127,8 +1230,16 @@ async fn test_acquire_stale_gated_lock_recovers_stranded_chain() {
     .await
     .unwrap();
 
-    let mut mgr =
-        LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None, 3);
+    let mut mgr = LockMngr::new_with_conf(
+        Uuid::new_v4(),
+        pool.clone(),
+        3600,
+        false,
+        None,
+        None,
+        None,
+        3,
+    );
 
     // Invisible to normal acquisition (dependency_count > 0).
     let (acquired, _) = mgr.acquire_next_lock().await.unwrap();
@@ -1145,8 +1256,16 @@ async fn test_acquire_stale_gated_lock_recovers_stranded_chain() {
 
     // ...while another worker past the gate acquires it like any other
     // chain.
-    let mut mgr =
-        LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None, 3);
+    let mut mgr = LockMngr::new_with_conf(
+        Uuid::new_v4(),
+        pool.clone(),
+        3600,
+        false,
+        None,
+        None,
+        None,
+        3,
+    );
     let (acquired, locking) = mgr.acquire_stale_gated_lock(60.0).await.unwrap();
     assert_eq!(acquired, Some(stranded_id.clone()));
     assert_eq!(locking, LockingReason::StaleGateRepair);
@@ -1197,16 +1316,32 @@ async fn test_stale_gated_lock_respects_live_producers() {
     .await
     .unwrap();
 
-    let mut mgr =
-        LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None, 3);
+    let mut mgr = LockMngr::new_with_conf(
+        Uuid::new_v4(),
+        pool.clone(),
+        3600,
+        false,
+        None,
+        None,
+        None,
+        3,
+    );
 
     // The producer is unprocessed, so the gate is legitimate: the repair
     // path must leave the gated chain alone however old it looks.
     let (acquired, _) = mgr.acquire_stale_gated_lock(60.0).await.unwrap();
     assert_eq!(acquired, None);
     // Fresh manager: sidestep the per-manager probe throttle.
-    let mut mgr =
-        LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None, 3);
+    let mut mgr = LockMngr::new_with_conf(
+        Uuid::new_v4(),
+        pool.clone(),
+        3600,
+        false,
+        None,
+        None,
+        None,
+        3,
+    );
 
     // Once the producer is processed (its release decremented nothing here,
     // simulating a lost decrement), the gate is provably stale and the
@@ -1410,38 +1545,34 @@ async fn test_demote_retire_sweep_and_retention_loop() {
         .unwrap();
     // Only 'processed' rows are deletable, so put the re-armed chain back —
     // this is the state a sweep leaves behind once its retry also fails.
-    sqlx::query(
-        "UPDATE dependence_chain SET status = 'processed' WHERE dependence_chain_id = $1",
-    )
-    .bind(&demoted_chain)
-    .execute(&pool)
-    .await
-    .unwrap();
+    sqlx::query("UPDATE dependence_chain SET status = 'processed' WHERE dependence_chain_id = $1")
+        .bind(&demoted_chain)
+        .execute(&pool)
+        .await
+        .unwrap();
 
     delete_old_processed_dependence_chains(&pool, 100, 3600)
         .await
         .unwrap();
 
-    let survives: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM dependence_chain WHERE dependence_chain_id = $1",
-    )
-    .bind(&demoted_chain)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let survives: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM dependence_chain WHERE dependence_chain_id = $1")
+            .bind(&demoted_chain)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert_eq!(
         survives, 1,
         "a chain still owning retryable work must not be deleted — the chain row \
          is the only handle on it, and nothing TTL-deletes computations"
     );
 
-    let terminal_gone: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM dependence_chain WHERE dependence_chain_id = $1",
-    )
-    .bind(&terminal_chain)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let terminal_gone: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM dependence_chain WHERE dependence_chain_id = $1")
+            .bind(&terminal_chain)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert_eq!(
         terminal_gone, 0,
         "a chain whose incomplete rows are all verdicts must still age out"
@@ -1499,8 +1630,16 @@ async fn test_release_completed_lock_keeps_chain_with_retryable_stamp() {
     )
     .await;
 
-    let mut mgr =
-        LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None, 3);
+    let mut mgr = LockMngr::new_with_conf(
+        Uuid::new_v4(),
+        pool.clone(),
+        3600,
+        false,
+        None,
+        None,
+        None,
+        3,
+    );
     let acquired: Vec<_> = mgr
         .acquire_next_locks(2)
         .await
@@ -1571,8 +1710,16 @@ async fn test_listener_refresh_discharges_a_child_exactly_once() {
     seed_chain(&pool, &child, 2, &[]).await;
     seed_computation_row(&pool, &parent, b"refresh-once-out0", true, false, None).await;
 
-    let mut mgr =
-        LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None, 3);
+    let mut mgr = LockMngr::new_with_conf(
+        Uuid::new_v4(),
+        pool.clone(),
+        3600,
+        false,
+        None,
+        None,
+        None,
+        3,
+    );
     assert_eq!(
         mgr.acquire_next_lock().await.unwrap().0,
         Some(parent.clone())
@@ -1638,8 +1785,16 @@ async fn test_release_completed_lock_handles_parent_and_child_in_one_batch() {
     seed_computation_row(&pool, &parent, b"same-batch-out-p0", true, false, None).await;
     seed_computation_row(&pool, &child, b"same-batch-out-c0", true, false, None).await;
 
-    let mut mgr =
-        LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None, 3);
+    let mut mgr = LockMngr::new_with_conf(
+        Uuid::new_v4(),
+        pool.clone(),
+        3600,
+        false,
+        None,
+        None,
+        None,
+        3,
+    );
     assert_eq!(
         mgr.acquire_next_lock().await.unwrap().0,
         Some(parent.clone())
@@ -1679,8 +1834,16 @@ async fn test_release_current_lock_does_not_decrement_a_stolen_lease() {
     seed_chain(&pool, &parent, 0, std::slice::from_ref(&child)).await;
     seed_chain(&pool, &child, 2, &[]).await;
 
-    let mut mgr =
-        LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None, 3);
+    let mut mgr = LockMngr::new_with_conf(
+        Uuid::new_v4(),
+        pool.clone(),
+        3600,
+        false,
+        None,
+        None,
+        None,
+        3,
+    );
     assert_eq!(
         mgr.acquire_next_lock().await.unwrap().0,
         Some(parent.clone())
@@ -1707,7 +1870,7 @@ async fn test_release_current_lock_does_not_decrement_a_stolen_lease() {
     );
 }
 
-/// The listener arms a cross-block gate by INSERTing a brand-new child row
+/// The listener arms a cross-block gate by inserting a brand-new child row
 /// while the worker's release waits on the parent's row lock. A row created by
 /// a transaction that commits after a statement started is invisible to that
 /// statement — EvalPlanQual only re-reads rows the snapshot already saw — so
@@ -1733,8 +1896,16 @@ async fn test_release_completed_lock_sees_a_child_armed_during_the_release() {
     let child = b"late-armed-child00".to_vec();
     seed_chain(&pool, &parent, 0, &[]).await;
 
-    let mut mgr =
-        LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None, 3);
+    let mut mgr = LockMngr::new_with_conf(
+        Uuid::new_v4(),
+        pool.clone(),
+        3600,
+        false,
+        None,
+        None,
+        None,
+        3,
+    );
     assert_eq!(
         mgr.acquire_next_lock().await.unwrap().0,
         Some(parent.clone())
