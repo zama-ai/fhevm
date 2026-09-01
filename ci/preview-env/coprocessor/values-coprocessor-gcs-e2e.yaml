@@ -2,9 +2,9 @@
 # values-coprocessor-e2e.yaml for release coprocessor-<i>-gcs.
 #
 # Same party identity as BCS (wallet, Postgres, Redis, S3, IRSA). Images
-# are built from this branch with BUILD_STACK_VERSION=0.15.0. db-migration
-# stays on the BCS release (HEAD migrator) so GCS schema tables exist
-# before this fleet starts. Control-plane binaries run only here.
+# come from the regular coprocessor CI build with BUILD_STACK_VERSION=0.15.0.
+# db-migration stays on the BCS release (HEAD migrator) so GCS schema tables
+# exist before this fleet starts. Control-plane binaries run only here.
 commonConfig:
   stackVersion: "0.15.0"
   extraSelectorLabels:

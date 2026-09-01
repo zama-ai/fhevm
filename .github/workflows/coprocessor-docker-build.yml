@@ -16,6 +16,11 @@ on:
         type: boolean
         default: true
         required: false
+      build_stack_version:
+        description: "Optional compiled STACK_VERSION (BUILD_STACK_VERSION). When set, force-builds worker images so GCS is not a retag of the baseline."
+        type: string
+        default: ""
+        required: false
     secrets:
       AWS_ACCESS_KEY_S3_USER:
         required: true
@@ -95,6 +100,11 @@ on:
         description: "Enable/disable build for Coprocessor's Upgrade Controller"
         type: boolean
         default: true
+      build_stack_version:
+        description: "Optional compiled STACK_VERSION (BUILD_STACK_VERSION). Empty keeps the hardcoded baseline."
+        type: string
+        default: ""
+        required: false
   push:
     branches: ['main', 'release/*']
 
@@ -313,15 +323,23 @@ jobs:
             // - release: always build
             // - push: only act if latest commit; build if changes, retag otherwise
             // - workflow_call: build if changes detected, otherwise skip
+            // - workflow_call + build_stack_version: force-build workers (arg
+            //   changes the binary even when source paths are unchanged)
             // - workflow_dispatch: build if input is true, otherwise skip
             const event = process.env.EVENT_NAME;
             const needs = JSON.parse(process.env.NEEDS);
             const inputs = JSON.parse(process.env.INPUTS);
             const isLatestCommit = needs['is-latest-commit'].outputs?.is_latest === 'true';
             const isWorkflowCall = inputs.is_workflow_call ?? false;
+            const forceStackVersion = Boolean(inputs.build_stack_version);
+            const stackVersionServices = new Set([
+              'gw_listener', 'host_listener', 'sns_worker', 'tfhe_worker',
+              'tx_sender', 'zkproof_worker', 'consensus_detector', 'upgrade_controller',
+            ]);
 
-            const decideAction = (changes, manualInput) => {
+            const decideAction = (name, changes, manualInput) => {
               if (event === 'release') return 'build';
+              if (forceStackVersion && isWorkflowCall && stackVersionServices.has(name)) return 'build';
               if (event === 'push') return isLatestCommit ? (changes ? 'build' : 'retag') : 'skip';
               if (isWorkflowCall) return changes ? 'build' : 'skip';
               if (!isWorkflowCall && event === 'workflow_dispatch') return manualInput ? 'build' : 'skip';
@@ -340,9 +358,9 @@ jobs:
               upgrade_controller: { changes: needs['check-changes-upgrade-controller'].outputs?.changes, build_input: inputs.build_upgrade_controller },
             };
 
-            core.info(`Event: ${event}, Is latest commit: ${isLatestCommit}, Is workflow call: ${isWorkflowCall}`);
+            core.info(`Event: ${event}, Is latest commit: ${isLatestCommit}, Is workflow call: ${isWorkflowCall}, build_stack_version: ${inputs.build_stack_version || ''}`);
             for (const [name, { changes, build_input }] of Object.entries(services)) {
-              const action = decideAction(changes === 'true', build_input ?? false);
+              const action = decideAction(name, changes === 'true', build_input ?? false);
               core.setOutput(name, action);
               core.info(`${name}: ${action} (changes: ${changes}, build_input: ${build_input})`);
             }
@@ -353,7 +371,7 @@ jobs:
   build-db-migration:
     needs: build-decisions
     if: always() && needs.build-decisions.outputs.db_migration == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@d13c806c229167a30eab20c228b87467d0e2e470 # v1.0.12
     secrets: &docker_secrets
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
       AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
@@ -377,6 +395,7 @@ jobs:
       # cache-miss Rust builds the longest job on the merge-queue critical path.
       runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
+      build-args: ${{ inputs.build_stack_version != '' && format('BUILD_STACK_VERSION={0}', inputs.build_stack_version) || '' }}
 
   re-tag-db-migration-image:
     needs: [build-decisions, check-changes-db-migration]
@@ -398,7 +417,7 @@ jobs:
   build-gw-listener:
     needs: build-decisions
     if: always() && needs.build-decisions.outputs.gw_listener == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@d13c806c229167a30eab20c228b87467d0e2e470 # v1.0.12
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
@@ -411,6 +430,7 @@ jobs:
       # cache-miss Rust builds the longest job on the merge-queue critical path.
       runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
+      build-args: ${{ inputs.build_stack_version != '' && format('BUILD_STACK_VERSION={0}', inputs.build_stack_version) || '' }}
 
   re-tag-gw-listener-image:
     needs: [build-decisions, check-changes-gw-listener]
@@ -428,7 +448,7 @@ jobs:
   build-host-listener:
     needs: build-decisions
     if: always() && needs.build-decisions.outputs.host_listener == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@d13c806c229167a30eab20c228b87467d0e2e470 # v1.0.12
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
@@ -441,6 +461,7 @@ jobs:
       # cache-miss Rust builds the longest job on the merge-queue critical path.
       runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
+      build-args: ${{ inputs.build_stack_version != '' && format('BUILD_STACK_VERSION={0}', inputs.build_stack_version) || '' }}
 
   re-tag-host-listener-image:
     needs: [build-decisions, check-changes-host-listener]
@@ -458,7 +479,7 @@ jobs:
   build-sns-worker:
     needs: build-decisions
     if: always() && needs.build-decisions.outputs.sns_worker == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@d13c806c229167a30eab20c228b87467d0e2e470 # v1.0.12
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
@@ -471,6 +492,7 @@ jobs:
       # cache-miss Rust builds the longest job on the merge-queue critical path.
       runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
+      build-args: ${{ inputs.build_stack_version != '' && format('BUILD_STACK_VERSION={0}', inputs.build_stack_version) || '' }}
 
   re-tag-sns-worker-image:
     needs: [build-decisions, check-changes-sns-worker]
@@ -488,7 +510,7 @@ jobs:
   build-tfhe-worker:
     needs: build-decisions
     if: always() && needs.build-decisions.outputs.tfhe_worker == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@d13c806c229167a30eab20c228b87467d0e2e470 # v1.0.12
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
@@ -501,6 +523,7 @@ jobs:
       # cache-miss Rust builds the longest job on the merge-queue critical path.
       runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
+      build-args: ${{ inputs.build_stack_version != '' && format('BUILD_STACK_VERSION={0}', inputs.build_stack_version) || '' }}
 
   re-tag-tfhe-worker-image:
     needs: [build-decisions, check-changes-tfhe-worker]
@@ -518,7 +541,7 @@ jobs:
   build-tx-sender:
     needs: build-decisions
     if: always() && needs.build-decisions.outputs.tx_sender == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@d13c806c229167a30eab20c228b87467d0e2e470 # v1.0.12
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
@@ -531,6 +554,7 @@ jobs:
       # cache-miss Rust builds the longest job on the merge-queue critical path.
       runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
+      build-args: ${{ inputs.build_stack_version != '' && format('BUILD_STACK_VERSION={0}', inputs.build_stack_version) || '' }}
 
   re-tag-tx-sender-image:
     needs: [build-decisions, check-changes-tx-sender]
@@ -548,7 +572,7 @@ jobs:
   build-zkproof-worker:
     needs: build-decisions
     if: always() && needs.build-decisions.outputs.zkproof_worker == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@d13c806c229167a30eab20c228b87467d0e2e470 # v1.0.12
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
@@ -561,6 +585,7 @@ jobs:
       # cache-miss Rust builds the longest job on the merge-queue critical path.
       runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
+      build-args: ${{ inputs.build_stack_version != '' && format('BUILD_STACK_VERSION={0}', inputs.build_stack_version) || '' }}
 
   re-tag-zkproof-worker-image:
     needs: [build-decisions, check-changes-zkproof-worker]
@@ -578,7 +603,7 @@ jobs:
   build-consensus-detector:
     needs: build-decisions
     if: always() && needs.build-decisions.outputs.consensus_detector == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@d13c806c229167a30eab20c228b87467d0e2e470 # v1.0.12
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
@@ -591,6 +616,7 @@ jobs:
       # cache-miss Rust builds the longest job on the merge-queue critical path.
       runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
+      build-args: ${{ inputs.build_stack_version != '' && format('BUILD_STACK_VERSION={0}', inputs.build_stack_version) || '' }}
 
   re-tag-consensus-detector-image:
     needs: [build-decisions, check-changes-consensus-detector]
@@ -608,7 +634,7 @@ jobs:
   build-upgrade-controller:
     needs: build-decisions
     if: always() && needs.build-decisions.outputs.upgrade_controller == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@d13c806c229167a30eab20c228b87467d0e2e470 # v1.0.12
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
@@ -621,6 +647,7 @@ jobs:
       # cache-miss Rust builds the longest job on the merge-queue critical path.
       runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
+      build-args: ${{ inputs.build_stack_version != '' && format('BUILD_STACK_VERSION={0}', inputs.build_stack_version) || '' }}
 
   re-tag-upgrade-controller-image:
     needs: [build-decisions, check-changes-upgrade-controller]
