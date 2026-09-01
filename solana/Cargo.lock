@@ -5034,6 +5034,7 @@ dependencies = [
  "solana-packet 3.0.0",
  "solana-program",
  "solana-sdk",
+ "zama-fhe",
  "zama-host",
  "zama-solana-acl",
  "zama-solana-test-kit",

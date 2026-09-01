@@ -1,26 +1,33 @@
 {
-  "deposit": {
-    "compute_units": 14814,
-    "unique_accounts": 10,
-    "instruction_data_bytes": 16,
-    "cpi_instructions": 2,
-    "total_cpi_instruction_data_bytes": 19,
-    "max_cpi_instruction_data_bytes": 10
+  "toolchain": {
+    "anchor": "anchor-cli 1.1.2",
+    "rustc": "rustc 1.91.1 (ed61e7d7e 2025-11-07)",
+    "solana": "solana-cli 4.1.2 (src:182084b8; feat:c763ae0a, client:Agave)"
   },
-  "harvest": {
-    "compute_units": 7070,
-    "unique_accounts": 7,
-    "instruction_data_bytes": 16,
-    "cpi_instructions": 1,
-    "total_cpi_instruction_data_bytes": 10,
-    "max_cpi_instruction_data_bytes": 10
-  },
-  "withdraw": {
-    "compute_units": 14838,
-    "unique_accounts": 10,
-    "instruction_data_bytes": 16,
-    "cpi_instructions": 2,
-    "total_cpi_instruction_data_bytes": 19,
-    "max_cpi_instruction_data_bytes": 10
+  "measurements": {
+    "deposit": {
+      "compute_units": 14814,
+      "unique_accounts": 10,
+      "instruction_data_bytes": 16,
+      "cpi_instructions": 2,
+      "total_cpi_instruction_data_bytes": 19,
+      "max_cpi_instruction_data_bytes": 10
+    },
+    "harvest": {
+      "compute_units": 7070,
+      "unique_accounts": 7,
+      "instruction_data_bytes": 16,
+      "cpi_instructions": 1,
+      "total_cpi_instruction_data_bytes": 10,
+      "max_cpi_instruction_data_bytes": 10
+    },
+    "withdraw": {
+      "compute_units": 14838,
+      "unique_accounts": 10,
+      "instruction_data_bytes": 16,
+      "cpi_instructions": 2,
+      "total_cpi_instruction_data_bytes": 19,
+      "max_cpi_instruction_data_bytes": 10
+    }
   }
 }

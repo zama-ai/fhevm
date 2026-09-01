@@ -1,82 +1,89 @@
 {
-  "claim": {
-    "compute_units": 275632,
-    "unique_accounts": 22,
-    "instruction_data_bytes": 8,
-    "cpi_instructions": 12,
-    "total_cpi_instruction_data_bytes": 1847,
-    "max_cpi_instruction_data_bytes": 699
+  "toolchain": {
+    "anchor": "anchor-cli 1.1.2",
+    "rustc": "rustc 1.91.1 (ed61e7d7e 2025-11-07)",
+    "solana": "solana-cli 4.1.2 (src:182084b8; feat:c763ae0a, client:Agave)"
   },
-  "dispatch": {
-    "compute_units": 292585,
-    "unique_accounts": 19,
-    "instruction_data_bytes": 8,
-    "cpi_instructions": 12,
-    "total_cpi_instruction_data_bytes": 1445,
-    "max_cpi_instruction_data_bytes": 633
-  },
-  "join": {
-    "compute_units": 329582,
-    "unique_accounts": 20,
-    "instruction_data_bytes": 223,
-    "cpi_instructions": 14,
-    "total_cpi_instruction_data_bytes": 2489,
-    "max_cpi_instruction_data_bytes": 1093
-  },
-  "open_batch": {
-    "compute_units": 214864,
-    "unique_accounts": 24,
-    "instruction_data_bytes": 16,
-    "cpi_instructions": 20,
-    "total_cpi_instruction_data_bytes": 1408,
-    "max_cpi_instruction_data_bytes": 242
-  },
-  "redeem_claim": {
-    "compute_units": 316133,
-    "unique_accounts": 22,
-    "instruction_data_bytes": 8,
-    "cpi_instructions": 12,
-    "total_cpi_instruction_data_bytes": 1847,
-    "max_cpi_instruction_data_bytes": 699
-  },
-  "redeem_dispatch": {
-    "compute_units": 234086,
-    "unique_accounts": 19,
-    "instruction_data_bytes": 8,
-    "cpi_instructions": 12,
-    "total_cpi_instruction_data_bytes": 1445,
-    "max_cpi_instruction_data_bytes": 633
-  },
-  "redeem_join": {
-    "compute_units": 322083,
-    "unique_accounts": 20,
-    "instruction_data_bytes": 223,
-    "cpi_instructions": 14,
-    "total_cpi_instruction_data_bytes": 2489,
-    "max_cpi_instruction_data_bytes": 1093
-  },
-  "redeem_open_batch": {
-    "compute_units": 211865,
-    "unique_accounts": 24,
-    "instruction_data_bytes": 16,
-    "cpi_instructions": 20,
-    "total_cpi_instruction_data_bytes": 1408,
-    "max_cpi_instruction_data_bytes": 242
-  },
-  "redeem_settle": {
-    "compute_units": 298841,
-    "unique_accounts": 35,
-    "instruction_data_bytes": 110,
-    "cpi_instructions": 14,
-    "total_cpi_instruction_data_bytes": 1576,
-    "max_cpi_instruction_data_bytes": 552
-  },
-  "settle": {
-    "compute_units": 313799,
-    "unique_accounts": 35,
-    "instruction_data_bytes": 110,
-    "cpi_instructions": 14,
-    "total_cpi_instruction_data_bytes": 1576,
-    "max_cpi_instruction_data_bytes": 552
+  "measurements": {
+    "claim": {
+      "compute_units": 224877,
+      "unique_accounts": 22,
+      "instruction_data_bytes": 8,
+      "cpi_instructions": 12,
+      "total_cpi_instruction_data_bytes": 1847,
+      "max_cpi_instruction_data_bytes": 699
+    },
+    "dispatch": {
+      "compute_units": 230506,
+      "unique_accounts": 19,
+      "instruction_data_bytes": 8,
+      "cpi_instructions": 12,
+      "total_cpi_instruction_data_bytes": 1445,
+      "max_cpi_instruction_data_bytes": 633
+    },
+    "join": {
+      "compute_units": 287858,
+      "unique_accounts": 20,
+      "instruction_data_bytes": 223,
+      "cpi_instructions": 14,
+      "total_cpi_instruction_data_bytes": 2489,
+      "max_cpi_instruction_data_bytes": 1093
+    },
+    "open_batch": {
+      "compute_units": 199686,
+      "unique_accounts": 24,
+      "instruction_data_bytes": 16,
+      "cpi_instructions": 20,
+      "total_cpi_instruction_data_bytes": 1408,
+      "max_cpi_instruction_data_bytes": 242
+    },
+    "redeem_claim": {
+      "compute_units": 245878,
+      "unique_accounts": 22,
+      "instruction_data_bytes": 8,
+      "cpi_instructions": 12,
+      "total_cpi_instruction_data_bytes": 1847,
+      "max_cpi_instruction_data_bytes": 699
+    },
+    "redeem_dispatch": {
+      "compute_units": 193007,
+      "unique_accounts": 19,
+      "instruction_data_bytes": 8,
+      "cpi_instructions": 12,
+      "total_cpi_instruction_data_bytes": 1445,
+      "max_cpi_instruction_data_bytes": 633
+    },
+    "redeem_join": {
+      "compute_units": 281859,
+      "unique_accounts": 20,
+      "instruction_data_bytes": 223,
+      "cpi_instructions": 14,
+      "total_cpi_instruction_data_bytes": 2489,
+      "max_cpi_instruction_data_bytes": 1093
+    },
+    "redeem_open_batch": {
+      "compute_units": 201187,
+      "unique_accounts": 24,
+      "instruction_data_bytes": 16,
+      "cpi_instructions": 20,
+      "total_cpi_instruction_data_bytes": 1408,
+      "max_cpi_instruction_data_bytes": 242
+    },
+    "redeem_settle": {
+      "compute_units": 278911,
+      "unique_accounts": 35,
+      "instruction_data_bytes": 110,
+      "cpi_instructions": 14,
+      "total_cpi_instruction_data_bytes": 1576,
+      "max_cpi_instruction_data_bytes": 552
+    },
+    "settle": {
+      "compute_units": 286369,
+      "unique_accounts": 35,
+      "instruction_data_bytes": 110,
+      "cpi_instructions": 14,
+      "total_cpi_instruction_data_bytes": 1576,
+      "max_cpi_instruction_data_bytes": 552
+    }
   }
 }

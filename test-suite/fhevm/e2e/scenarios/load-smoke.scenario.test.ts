@@ -11,10 +11,11 @@
 // 32-deep handle outlives the shared 240s materialization budget.
 //
 // The Mollusk twin (`runtime-tests/tests/dep_chain_mollusk.rs`) proves the same dependent shape
-// in-process through the specimen program's CPI at the on-chain builder's 16-step ceiling
-// (`zama_fhe::MAX_ON_CHAIN_EXECUTION_STEPS`, Anchor's default-heap budget); this scenario builds
-// the execution OFF-chain through the raw typed client, which is what makes the host's full
-// 32-step ceiling reachable — and means the live lane needs no extra program deployment.
+// in-process through the specimen program's CPI at the host's full 32-step ceiling
+// (`MAX_FHE_EXECUTION_STEPS` — the one step cap, on-chain and off, since the separate on-chain
+// budget was deleted); this scenario builds the execution OFF-chain through the raw typed client
+// against the running coprocessor, which is what the Mollusk twin cannot exercise — and means the
+// live lane needs no extra program deployment.
 
 import { describe, expect, test } from "bun:test";
 

@@ -34,6 +34,9 @@ zama-solana-acl = { path = "../crates/zama-solana-acl" }
 zama-solana-test-kit = { path = "../test-kit" }
 
 [dev-dependencies]
+# The builder's instruction-trace model, tied to the measured boundary sweeps: the host's
+# probed wall and the builder's build-time cap must sit exactly one wrapper instruction apart.
+zama-fhe = { path = "../crates/zama-fhe" }
 # Serializes a full legacy `Transaction` to its wire bytes for the packet-size regression tests.
 bincode = "1.3"
 # `PACKET_DATA_SIZE` (1232) — the wire-size ceiling asserted by the packet-size regression tests.

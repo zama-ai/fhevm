@@ -171,26 +171,14 @@ pub fn batcher_encrypted_value_address(
     batch_authority: Pubkey,
     encrypted_value_label: [u8; 32],
 ) -> (Pubkey, u8) {
-    zama_host::encrypted_value_address(zama_solana_acl_encrypted_value_id(
+    // Delegate to zama-fhe's EncryptedValueId so the batcher and host agree exactly; the id
+    // derives the PDA once at construction, so read it back instead of deriving again.
+    zama_fhe::EncryptedValueId::new(
         zama_fhe::Domain::new(batch),
         batch_authority,
-        encrypted_value_label,
-    ))
-}
-
-fn zama_solana_acl_encrypted_value_id(
-    domain: zama_fhe::Domain,
-    encrypted_value_account_authority: Pubkey,
-    encrypted_value_label: [u8; 32],
-) -> [u8; 32] {
-    // Delegate to the shared derivation through zama-fhe's EncryptedValueId so the
-    // batcher and host agree exactly.
-    zama_fhe::EncryptedValueId::new(
-        domain,
-        encrypted_value_account_authority,
         zama_fhe::EncryptedValueLabel::new(encrypted_value_label),
     )
-    .encrypted_value_id()
+    .address_with_bump()
 }
 
 /// Computes the informational payout rate of a settled batch, rounded DOWN

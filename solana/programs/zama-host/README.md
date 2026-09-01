@@ -73,8 +73,9 @@ paths remain event-free (`docs/DESIGN_DECISIONS.md` DD-033/DD-038).
 
 Admission invariants for `fhe_execute`:
 
-- The execution must contain 1 to 16 steps, and an execution with a rand step must declare at least one
-  persistent output (the rand seed is anchored to the execution's persistent writes).
+- The execution must contain 1 to 32 steps (`MAX_FHE_EXECUTION_STEPS`), and an execution with a rand
+  step must declare at least one persistent output (the rand seed is anchored to the execution's
+  persistent writes).
 - Every dynamic account passed through `remaining_accounts` must be unique and referenced by an
   operand or output, and every referenced account index must be present.
 - The optional instructions sysvar account must be present only for steps that need instruction

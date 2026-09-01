@@ -1,26 +1,33 @@
 {
-  "fhe_execute/max_steps": {
-    "compute_units": 151018,
-    "unique_accounts": 9,
-    "instruction_data_bytes": 449,
-    "cpi_instructions": 3,
-    "total_cpi_instruction_data_bytes": 60,
-    "max_cpi_instruction_data_bytes": 36
+  "toolchain": {
+    "anchor": "anchor-cli 1.1.2",
+    "rustc": "rustc 1.91.1 (ed61e7d7e 2025-11-07)",
+    "solana": "solana-cli 4.1.2 (src:182084b8; feat:c763ae0a, client:Agave)"
   },
-  "fhe_execute/three_steps": {
-    "compute_units": 41927,
-    "unique_accounts": 9,
-    "instruction_data_bytes": 188,
-    "cpi_instructions": 3,
-    "total_cpi_instruction_data_bytes": 60,
-    "max_cpi_instruction_data_bytes": 36
-  },
-  "verify_public_decrypt/happy": {
-    "compute_units": 40875,
-    "unique_accounts": 4,
-    "instruction_data_bytes": 158,
-    "cpi_instructions": 0,
-    "total_cpi_instruction_data_bytes": 0,
-    "max_cpi_instruction_data_bytes": 0
+  "measurements": {
+    "fhe_execute/max_steps": {
+      "compute_units": 79569,
+      "unique_accounts": 9,
+      "instruction_data_bytes": 449,
+      "cpi_instructions": 3,
+      "total_cpi_instruction_data_bytes": 60,
+      "max_cpi_instruction_data_bytes": 36
+    },
+    "fhe_execute/three_steps": {
+      "compute_units": 32683,
+      "unique_accounts": 9,
+      "instruction_data_bytes": 188,
+      "cpi_instructions": 3,
+      "total_cpi_instruction_data_bytes": 60,
+      "max_cpi_instruction_data_bytes": 36
+    },
+    "verify_public_decrypt/happy": {
+      "compute_units": 40875,
+      "unique_accounts": 4,
+      "instruction_data_bytes": 158,
+      "cpi_instructions": 0,
+      "total_cpi_instruction_data_bytes": 0,
+      "max_cpi_instruction_data_bytes": 0
+    }
   }
 }

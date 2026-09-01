@@ -7,7 +7,7 @@ use anchor_lang::{
         instruction::{AccountMeta, Instruction},
         program::invoke_signed,
     },
-    InstructionData, Key, ToAccountInfos, ToAccountMetas,
+    Key, ToAccountInfos, ToAccountMetas,
 };
 
 #[cfg(feature = "cpi")]
@@ -38,7 +38,7 @@ pub struct ExecutionCpiAccounts<'a, 'info> {
 }
 
 #[cfg(feature = "cpi")]
-trait ExecutionAccountResolver<'info> {
+pub(crate) trait ExecutionAccountResolver<'info> {
     fn resolve_execution_account(&self, pubkey: Pubkey) -> Option<AccountInfo<'info>>;
 }
 
@@ -53,7 +53,7 @@ impl<'info> ExecutionAccountResolver<'info> for ResolvedExecutionAccounts<'info>
 /// App-facing surface: [`FheExecution::invoke`].
 #[cfg(feature = "cpi")]
 pub(crate) fn invoke_execution_signed_resolved<'a, 'info>(
-    execution: &FheExecution,
+    execution: &mut FheExecution,
     accounts: ExecutionCpiAccounts<'a, 'info>,
     resolved_accounts: &ResolvedExecutionAccounts<'info>,
     signer_seeds: &[&[&[u8]]],
@@ -63,7 +63,7 @@ pub(crate) fn invoke_execution_signed_resolved<'a, 'info>(
 
 #[cfg(feature = "cpi")]
 fn invoke_execution_signed_with_resolver<'a, 'info, R>(
-    execution: &FheExecution,
+    execution: &mut FheExecution,
     accounts: ExecutionCpiAccounts<'a, 'info>,
     resolver: &R,
     signer_seeds: &[&[&[u8]]],
@@ -88,8 +88,47 @@ where
         event_authority: accounts.event_authority,
         program: accounts.program,
     };
+    let (account_metas, account_infos) =
+        fhe_execute_account_tables(&fixed_accounts, execution, resolver, deny_subject_records)?;
+
+    // The execution self-describes its `remaining_accounts` length (DD-033). Deny-record
+    // witnesses are appended per transaction, so the final count is only known here — stamped in
+    // place: `invoke` consumed the execution, so nothing can observe the mutation.
+    execution.args.account_count =
+        u8::try_from(execution.remaining_accounts.len() + deny_subject_records.len())
+            .map_err(|_| anchor_lang::error::ErrorCode::AccountNotEnoughKeys)?;
+
+    let instruction = Instruction {
+        program_id: fixed_accounts.program.key(),
+        accounts: account_metas,
+        data: crate::execution::fhe_execute_instruction_data(&execution.args),
+    };
+
+    invoke_signed(&instruction, &account_infos, signer_seeds)?;
+    Ok(())
+}
+
+/// Assembles the `fhe_execute` CPI account tables exactly as
+/// [`crate::heap_tally::invoke_table_heap_bytes`] charges them at `build()`: Anchor's generated
+/// accessors grow the fixed accounts from empty, then one exact reservation sizes the dynamic
+/// tail — no doubling on the never-freeing bump heap past the fixed accounts. The heap-budget
+/// invoke measurement runs this function under a counting allocator, so the model and this
+/// assembly cannot drift apart silently.
+#[cfg(feature = "cpi")]
+pub(crate) fn fhe_execute_account_tables<'info, R>(
+    fixed_accounts: &zama_host::cpi::accounts::FheExecute<'info>,
+    execution: &FheExecution,
+    resolver: &R,
+    deny_subject_records: &[AccountInfo<'info>],
+) -> anchor_lang::prelude::Result<(Vec<AccountMeta>, Vec<AccountInfo<'info>>)>
+where
+    R: ExecutionAccountResolver<'info> + ?Sized,
+{
     let mut account_metas = fixed_accounts.to_account_metas(None);
     let mut account_infos = fixed_accounts.to_account_infos();
+    let dynamic_tail = execution.remaining_accounts.len() + deny_subject_records.len();
+    account_metas.reserve_exact(dynamic_tail);
+    account_infos.reserve_exact(dynamic_tail);
     for required in &execution.remaining_accounts {
         let account = resolver
             .resolve_execution_account(required.pubkey)
@@ -106,20 +145,5 @@ where
         account_metas.push(AccountMeta::new_readonly(record.key(), false));
         account_infos.push(record);
     }
-
-    // The execution self-describes its `remaining_accounts` length (DD-033). Deny-record
-    // witnesses are appended per transaction, so the final count is only known here.
-    let mut args = execution.args.clone();
-    args.account_count =
-        u8::try_from(execution.remaining_accounts.len() + deny_subject_records.len())
-            .map_err(|_| anchor_lang::error::ErrorCode::AccountNotEnoughKeys)?;
-
-    let instruction = Instruction {
-        program_id: fixed_accounts.program.key(),
-        accounts: account_metas,
-        data: zama_host::instruction::FheExecute { args }.data(),
-    };
-
-    invoke_signed(&instruction, &account_infos, signer_seeds)?;
-    Ok(())
+    Ok((account_metas, account_infos))
 }

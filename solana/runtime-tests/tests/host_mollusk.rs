@@ -43,29 +43,19 @@ use zama_solana_test_kit::{
     host_svm_without_previous_bank_hash as mollusk_without_previous_bank_hash, label,
     new_encrypted_value as new_encrypted_value_account, read_encrypted_value,
     read_encrypted_value_from_result, readonly, readonly_signer, serialized_account, signing,
-    system_account, system_program_account, writable, HostConfigParams, DECRYPTION_CONTRACT,
-    GATEWAY_CHAIN_ID, INPUT_VERIFICATION_CONTRACT,
+    system_account, system_program_account, writable, DECRYPTION_CONTRACT, GATEWAY_CHAIN_ID,
+    INPUT_VERIFICATION_CONTRACT,
+};
+
+mod host_fixtures;
+use host_fixtures::{
+    created_public_batch, fhe_execute_ix, fhe_execute_ix_with_deny_records, host_config_account,
+    host_config_account_with_flags,
 };
 
 // ---------------------------------------------------------------------------
 // Harness
 // ---------------------------------------------------------------------------
-
-fn host_config_account_with_flags(
-    admin: Pubkey,
-    paused: bool,
-    grant_deny_list_enabled: bool,
-) -> (Pubkey, Account) {
-    zama_solana_test_kit::host_config_account(&HostConfigParams {
-        paused,
-        grant_deny_list_enabled,
-        ..HostConfigParams::new(admin)
-    })
-}
-
-fn host_config_account(admin: Pubkey) -> (Pubkey, Account) {
-    host_config_account_with_flags(admin, false, false)
-}
 
 fn paused_host_config_account(admin: Pubkey) -> (Pubkey, Account) {
     host_config_account_with_flags(admin, true, false)
@@ -319,27 +309,6 @@ fn make_handle_public_ix_with_deny(
     )
 }
 
-/// Builds an `fhe_execute` instruction. `remaining` accounts are appended in
-/// order and referenced by index from `args`.
-fn fhe_execute_ix(
-    payer: Pubkey,
-    compute_subject: Pubkey,
-    encrypted_value_account_authority: Pubkey,
-    host_config: Pubkey,
-    args: FheExecuteArgs,
-    remaining: Vec<AccountMeta>,
-) -> Instruction {
-    fhe_execute_ix_with_deny_records(
-        payer,
-        compute_subject,
-        encrypted_value_account_authority,
-        host_config,
-        args,
-        remaining,
-        Vec::new(),
-    )
-}
-
 fn fhe_execute_ix_with_deny(
     payer: Pubkey,
     compute_subject: Pubkey,
@@ -358,43 +327,6 @@ fn fhe_execute_ix_with_deny(
         remaining,
         deny_subject_record.into_iter().collect(),
     )
-}
-
-fn fhe_execute_ix_with_deny_records(
-    payer: Pubkey,
-    compute_subject: Pubkey,
-    encrypted_value_account_authority: Pubkey,
-    host_config: Pubkey,
-    mut args: FheExecuteArgs,
-    remaining: Vec<AccountMeta>,
-    deny_subject_records: Vec<Pubkey>,
-) -> Instruction {
-    // The execution self-describes its `remaining_accounts` length (DD-033); fixtures
-    // build the account list here, so the declared count is stamped here too.
-    args.account_count = u8::try_from(remaining.len() + deny_subject_records.len())
-        .expect("fixture remaining accounts fit u8");
-    let mut ix = anchor_ix(
-        host::id(),
-        host::accounts::FheExecute {
-            payer,
-            compute_subject,
-            encrypted_value_account_authority,
-            host_config,
-            system_program: system_program::ID,
-            // Unrestricted block cap (u64::MAX) in every existing fixture: block_cap
-            // short-circuits before touching the optional accounts, so the two HCU
-            // witnesses stay absent.
-            hcu_block_meter: None,
-            hcu_trusted_app_record: None,
-            event_authority: event_authority(host::id()),
-            program: host::id(),
-        },
-        host::instruction::FheExecute { args },
-    );
-    ix.accounts.extend(remaining);
-    ix.accounts
-        .extend(deny_subject_records.into_iter().map(readonly));
-    ix
 }
 
 #[test]
@@ -2317,80 +2249,6 @@ fn mollusk_fhe_execute_updates_persistent_output_with_previous_state() {
 // fhe_execute: narrow produced-public lifecycle execution
 // ---------------------------------------------------------------------------
 
-struct CreatedPublicBatch {
-    instruction: Instruction,
-    accounts: Vec<(Pubkey, Account)>,
-    outputs: Vec<(u16, Pubkey)>,
-}
-
-fn created_public_batch(step_count: usize, created_public_steps: &[usize]) -> CreatedPublicBatch {
-    let authority = Pubkey::new_unique();
-    let (host_config, host_config_account) = host_config_account(authority);
-    let mut output_metas = Vec::new();
-    let mut output_accounts = Vec::new();
-    let mut outputs = Vec::new();
-    let mut steps = Vec::with_capacity(step_count);
-    let mut dictionary = ExecutionDictionary::default();
-
-    for step_index in 0..step_count {
-        let output = if created_public_steps.contains(&step_index) {
-            let output_label = label(&format!("created-public-{step_index}"));
-            let encrypted_value_id = zama_solana_acl::derive_encrypted_value_id(
-                authority.to_bytes(),
-                authority.to_bytes(),
-                output_label,
-            );
-            let output_address = host::encrypted_value_address(encrypted_value_id).0;
-            let output_index = u8::try_from(output_metas.len()).unwrap();
-            output_metas.push(writable(output_address));
-            output_accounts.push((output_address, empty_system_account()));
-            outputs.push((step_index as u16, output_address));
-            FheExecuteOutput::StoredValue {
-                output_encrypted_value_index: output_index,
-                output_authority_index: None,
-                output_domain_index: dictionary.intern_key(authority),
-                output_account_index: dictionary.intern_key(authority),
-                output_label_index: dictionary.intern(output_label),
-                output_subject_indexes: dictionary.intern_subjects([authority]),
-                previous_state: None,
-                make_public: true,
-            }
-        } else {
-            FheExecuteOutput::Transient
-        };
-        steps.push(FheExecuteStep::TrivialEncrypt {
-            plaintext: [(step_index + 1) as u8; 32],
-            fhe_type: 5,
-            output,
-        });
-    }
-
-    let instruction = fhe_execute_ix(
-        authority,
-        authority,
-        authority,
-        host_config,
-        FheExecuteArgs {
-            account_count: 0,
-            dictionary: dictionary.into_entries(),
-            steps,
-        },
-        output_metas,
-    );
-    let mut accounts = vec![
-        (system_program::ID, system_program_account()),
-        (authority, funded_system_account()),
-        (host_config, host_config_account),
-        (event_authority(host::id()), Account::default()),
-    ];
-    accounts.extend(output_accounts);
-    CreatedPublicBatch {
-        instruction,
-        accounts,
-        outputs,
-    }
-}
-
 /// The bytes an event-CPI inner instruction starts with: Anchor's event-CPI instruction tag, then
 /// the event's own discriminator.
 fn event_cpi_prefix<T: Discriminator>() -> Vec<u8> {
@@ -2508,22 +2366,15 @@ fn mollusk_fhe_execute_batches_multiple_created_public_outputs_in_step_order() {
     assert_created_public_batch(&result, &execution.outputs);
 }
 
-/// The measured heap budget for the heap-heaviest legal execution shape: all steps created-public
-/// persistent creates. The Anchor default bump allocator serves a fixed 32KB region (never freed,
-/// and NOT extended by a compute-budget heap-execution request), and 20 creates is the measured
-/// maximum that executes within it (fhevm-internal#1853 W8).
-const MAX_CREATED_PUBLIC_CREATES_ON_DEFAULT_HEAP: usize = 20;
-
 #[test]
 fn mollusk_fhe_execute_maximum_created_public_batch_fits_one_cpi() {
     // The largest executable all-created-public execution still emits its DD-038 lifecycle records in
     // exactly one execution CPI. (The full MAX_FHE_EXECUTION_STEPS execution serialization is covered by the
-    // event-transport unit test; executions with more than the measured create budget cannot
-    // execute — see `mollusk_fhe_execute_created_public_heap_boundary`.)
-    let created_public_steps = (0..MAX_CREATED_PUBLIC_CREATES_ON_DEFAULT_HEAP).collect::<Vec<_>>();
+    // event-transport unit test; the host wall itself lives in fhe_execute_boundary.rs.)
+    let created_public_steps = zama_fhe::MAX_PERSISTENT_CREATES;
     let execution = created_public_batch(
-        MAX_CREATED_PUBLIC_CREATES_ON_DEFAULT_HEAP,
-        &created_public_steps,
+        created_public_steps,
+        &(0..created_public_steps).collect::<Vec<_>>(),
     );
     let result = mollusk().process_and_validate_instruction(
         &execution.instruction,
@@ -2531,21 +2382,6 @@ fn mollusk_fhe_execute_maximum_created_public_batch_fits_one_cpi() {
         &[Check::success()],
     );
     assert_created_public_batch(&result, &execution.outputs);
-}
-
-#[test]
-fn mollusk_fhe_execute_created_public_heap_boundary() {
-    // Pins the measured heap boundary behind MAX_FHE_EXECUTION_STEPS (fhevm-internal#1853 W8): one
-    // create past the measured budget exhausts the 32KB bump heap and reverts cleanly,
-    // committing nothing. Raising this boundary requires a custom allocator, not a larger cap.
-    let over = MAX_CREATED_PUBLIC_CREATES_ON_DEFAULT_HEAP + 1;
-    let failing = created_public_batch(over, &(0..over).collect::<Vec<_>>());
-    let result = mollusk().process_instruction(&failing.instruction, &failing.accounts);
-    assert!(result.program_result.is_err());
-    for (_, output) in &failing.outputs {
-        let account = result.get_account(output).unwrap();
-        assert_eq!(account.owner, system_program::ID, "no output may commit");
-    }
 }
 
 #[test]
