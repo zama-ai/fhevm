@@ -174,7 +174,7 @@ const containerLogs = async (container: string): Promise<DiagnosticSection> => {
 
 const stateHashSnapshot = async (database: string): Promise<StateHashSnapshot> => {
   const sql = `select chain_id, block_number, state_hash, s3_uploaded_at is not null
-from "gcs-v0.15.0".state_hash
+from "gcs-0.15.0".state_hash
 order by chain_id, block_number;`;
   const args = [
     "docker",
@@ -270,8 +270,8 @@ select 'public' as table_schema, chain_id, block_number, state_hash, s3_uploaded
 from public.state_hash
 order by chain_id, block_number;
 
-select 'gcs-v0.15.0' as table_schema, chain_id, block_number, state_hash, s3_uploaded_at
-from "gcs-v0.15.0".state_hash
+select 'gcs-0.15.0' as table_schema, chain_id, block_number, state_hash, s3_uploaded_at
+from "gcs-0.15.0".state_hash
 order by chain_id, block_number;
 `,
   kmsConnector: `
