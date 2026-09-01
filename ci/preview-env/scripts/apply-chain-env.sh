@@ -93,7 +93,8 @@ for f in "${root}/coprocessor/values-coprocessor-e2e.yaml" \
   ' "${f}"
 done
 for f in "${root}/coprocessor/values-coprocessor-bcs-e2e.yaml" \
-         "${root}/coprocessor/values-coprocessor-gcs-e2e.yaml"; do
+         "${root}/coprocessor/values-coprocessor-gcs-e2e.yaml" \
+         "${root}/coprocessor/values-coprocessor-poller-e2e.yaml"; do
   HOST_CHAIN_ID="${HOST_CHAIN_ID}" yq -i \
     '.commonConfig.canonicalProtocolConfigChainId = strenv(HOST_CHAIN_ID)' \
     "${f}"
