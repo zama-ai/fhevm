@@ -7,7 +7,8 @@ import { createFhevmClientFrozenContext } from '../frozenContext/fhevmClientFroz
 
 describe('generateTransportKeyPair', () => {
   it('generates a key pair from the decrypt runtime and a frozen TKMS version', async () => {
-    const tkmsPrivateKey = {} as TkmsPrivateKey;
+    const free = vi.fn();
+    const tkmsPrivateKey = { free } as unknown as TkmsPrivateKey;
     const generateTkmsPrivateKey = vi.fn().mockResolvedValue(tkmsPrivateKey);
     const serializeTkmsPrivateKey = vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3]));
     const getTkmsPublicKeyHex = vi.fn().mockResolvedValue('0x010203');
@@ -29,5 +30,6 @@ describe('generateTransportKeyPair', () => {
     expect(generateTkmsPrivateKey).toHaveBeenCalledWith({ tkmsVersion: '0.13.20-0' });
     expect(serializeTkmsPrivateKey).toHaveBeenCalledWith({ tkmsPrivateKey, tkmsVersion: '0.13.20-0' });
     expect(getTkmsPublicKeyHex).toHaveBeenCalledWith({ tkmsPrivateKey, tkmsVersion: '0.13.20-0' });
+    expect(free).toHaveBeenCalledOnce();
   });
 });

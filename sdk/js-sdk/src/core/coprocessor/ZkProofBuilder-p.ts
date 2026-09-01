@@ -250,14 +250,15 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
     readonly ciphertextWithZkProof: Uint8Array;
     readonly extraData: BytesHex;
   }> {
+    // Fetch before address/chainId checks (main and feature/solana). Tests omit
+    // fhevmContext; Solana encrypt still has context.tfheVersion for the key fetch.
     const tfheVersion = fhevmContext?.tryTfheVersion ?? context.tfheVersion;
-    if (tfheVersion === undefined) {
-      throw new ZkProofError({
-        message: 'TFHE version is required to build a ZK proof',
-      });
-    }
-    const keyContext = fhevmContext ?? createFhevmClientFrozenContext({ tfheVersion });
-    const fheEncryptionKeyWasm = await fetchFheEncryptionKeyWasm(context, { fhevmContext: keyContext });
+    const keyContext =
+      fhevmContext ??
+      (tfheVersion !== undefined ? createFhevmClientFrozenContext({ tfheVersion }) : undefined);
+    const fheEncryptionKeyWasm = await fetchFheEncryptionKeyWasm(context, {
+      fhevmContext: keyContext as FhevmClientFrozenContext,
+    });
 
     if (this.#totalBits === 0) {
       throw new ZkProofError({
