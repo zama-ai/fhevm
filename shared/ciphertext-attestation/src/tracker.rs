@@ -30,11 +30,9 @@ pub fn validate(
     Ok(ConsensusMaterial::from(attestation))
 }
 
-/// One registered Coprocessor's on-chain identity triple: which tx sender it is, which signer it
-/// is bound to, and which bucket serves its attestations. (`getCoprocessor(txSender)`)
+/// The on-chain identity of a registered Coprocessor.
 ///
-/// Lives here rather than in `client::registry` because [`Round`] holds one per slot, and
-/// `tracker` is not behind the `client` feature. `registry` re-exports it.
+/// Lives here, not in `client::registry`, because `tracker` is not behind the `client` feature.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CoprocessorEntry {
     pub tx_sender: Address,

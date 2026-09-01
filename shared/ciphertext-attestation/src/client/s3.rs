@@ -24,11 +24,9 @@ use std::{
 };
 use tokio::sync::Semaphore;
 
-/// An HTTP client with a ceiling on the `HEAD` probes it may have in flight against any one
-/// Coprocessor bucket at once.
+/// An HTTP client with a ceiling on the requests it may have in flight.
 ///
-/// Every bound is required at construction and this crate offers no default for any of them: each
-/// consumer fans out differently, so a value that is right for one is wrong for the other.
+/// Every bound is required at construction, with no default: each consumer fans out differently.
 #[derive(Clone)]
 pub struct BoundedClient {
     client: Client,

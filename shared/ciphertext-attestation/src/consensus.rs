@@ -49,8 +49,7 @@ impl From<&CiphertextAttestation> for ConsensusMaterial {
 ///
 /// An attestation counts only if its signature recovers to its embedded `signer` and that signer
 /// is in the `allowed_signers` set. Survivors are grouped by material tuple; the largest group
-/// wins if it gathers at least `threshold` distinct signers. `threshold` is a [`NonZeroUsize`]:
-/// a zero threshold would let any single attestation win.
+/// wins if it gathers at least `threshold` distinct signers.
 pub fn evaluate(
     handle: B256,
     coprocessor_context_id: U256,
