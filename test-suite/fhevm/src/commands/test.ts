@@ -292,9 +292,14 @@ const lastOperatorGcsListeners = async () => {
   return listeners.filter((name) => name.startsWith(`${last}-gcs-`)).sort();
 };
 
-/** Starts or stops a container, failing loudly so a missed step cannot pass silently. */
+/** Starts or stops a container, failing loudly so a missed step cannot pass silently.
+ *  Stops kill immediately: the default 10s grace per container would outlast the
+ *  dry-run window these are stopped for. */
 const dockerLifecycle = async (action: "stop" | "start", container: string) => {
-  const result = await run(["docker", action, container], { allowFailure: true });
+  const argv = action === "stop"
+    ? ["docker", "stop", "-t", "0", container]
+    : ["docker", "start", container];
+  const result = await run(argv, { allowFailure: true });
   if (result.code !== 0) {
     throw new Error(`docker ${action} ${container} failed: ${result.stderr.trim()}`);
   }
@@ -1030,6 +1035,17 @@ const runBlueGreenProfile = async (
   // fires the timeout — true even with a single operator. [4/11] starts them again, and
   // the successful upgrade from [6/11] runs with injection active on every operator.
   console.log(`\n[2/11] failed upgrade: one operator cannot report (no unanimity → no cutover)`);
+  // Silence the operator before proposing: the window opens 15 blocks out and closes
+  // at 45, and stopping containers after the proposal would spend that window here.
+  const silencedListeners = await lastOperatorGcsListeners();
+  if (silencedListeners.length === 0) {
+    throw new Error("found no GCS host-listener containers to silence");
+  }
+  for (const container of silencedListeners) {
+    await dockerLifecycle("stop", container);
+  }
+  console.log(`OK:   stopped ${silencedListeners.join(", ")} — that operator ingests nothing`);
+
   const failGwBlock = Number((await run(
     ["cast", "block-number", "--rpc-url", gatewayRpcUrl],
   )).stdout.trim());
@@ -1047,14 +1063,6 @@ const runBlueGreenProfile = async (
   console.log(
     `OK:   activation emitted (windows=${failWindows} gw_start=${failGwStartBlock})`,
   );
-  const silencedListeners = await lastOperatorGcsListeners();
-  if (silencedListeners.length === 0) {
-    throw new Error("found no GCS host-listener containers to silence");
-  }
-  for (const container of silencedListeners) {
-    await dockerLifecycle("stop", container);
-  }
-  console.log(`OK:   stopped ${silencedListeners.join(", ")} — that operator ingests nothing`);
 
   console.log(`\n[3/11] failed upgrade: wait for GCS DryRunStarted, then submit a Gateway-only input proof`);
   for (const db of operatorDatabases) {
