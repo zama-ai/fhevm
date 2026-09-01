@@ -373,20 +373,10 @@ jobs:
     uses: ./.github/workflows/coprocessor-docker-build.yml
     permissions: *docker_permissions
     secrets: *docker_secrets
-
-  build-coprocessor-gcs:
-    name: build/coprocessor-gcs
-    needs: check-labels
-    if: >-
-      needs.check-labels.outputs.should_deploy == 'true' &&
-      needs.check-labels.outputs.build_images == 'true' &&
-      needs.check-labels.outputs.build_test_suite_only != 'true' &&
-      needs.check-labels.outputs.blue_green == 'true'
-    uses: ./.github/workflows/coprocessor-gcs-docker-build.yml
-    permissions: *docker_permissions
-    secrets: *docker_secrets
     with:
-      build_stack_version: "0.15.0"
+      # Blue-green GCS is the same CI images compiled as 0.15.0. BCS stays
+      # the registry pin v0.14.0-7. Empty keeps the hardcoded 0.14.0 baseline.
+      build_stack_version: ${{ needs.check-labels.outputs.blue_green == 'true' && '0.15.0' || '' }}
 
   build-listener:
     name: build/listener
@@ -432,7 +422,6 @@ jobs:
       - build-gateway-contracts
       - build-kms-connector
       - build-coprocessor
-      - build-coprocessor-gcs
       - build-listener
       - build-relayer
       - build-test-suite
@@ -477,12 +466,12 @@ jobs:
   ##########################################################################
   deploy:
     name: deploy
-    needs: [check-labels, resolve-tags, build-coprocessor-gcs]
+    needs: [check-labels, resolve-tags, build-coprocessor]
     if: >-
       !cancelled() &&
       needs.check-labels.outputs.should_deploy == 'true' &&
       needs.resolve-tags.result == 'success' &&
-      (needs.check-labels.outputs.blue_green != 'true' || needs.build-coprocessor-gcs.result == 'success')
+      (needs.check-labels.outputs.blue_green != 'true' || needs.build-coprocessor.result == 'success')
     runs-on: "runs-on=${{ github.run_id }}/runner=8cpu-linux-x64/spot=false"
     # 90m covers a plain deploy; the automated_tests run adds the sequential
     # e2e DAG (8 tests, each recompiling contracts), so allow headroom for it.
@@ -500,7 +489,6 @@ jobs:
       OBSERVABILITY: ${{ needs.check-labels.outputs.observability }}
       BLUE_GREEN: ${{ needs.check-labels.outputs.blue_green }}
       NB_COPROCESSOR: ${{ needs.check-labels.outputs.nb_coprocessor }}
-      GCS_TAG: ${{ needs.build-coprocessor-gcs.outputs.image_tag }}
       # Previous-release pin for the BCS fleet (compiled STACK_VERSION=0.14.0).
       BCS_IMAGE_TAG: "v0.14.0-7"
       # In-namespace Jaeger's OTLP gRPC endpoint.
@@ -540,11 +528,12 @@ jobs:
             echo "::error::RFC-021 first-iteration blue-green is incompatible with deploy_polygon."
             exit 1
           fi
-          if [[ -z "${GCS_TAG}" ]]; then
-            echo "::error::blue-green requires GCS images (build_images=true). GCS_TAG is empty."
+          gcs=$(jq -r .coprocessor_tfhe_worker <<<"${TAGS_JSON}")
+          if [[ -z "${gcs}" || "${gcs}" == "null" ]]; then
+            echo "::error::blue-green requires GCS images (build_images=true). coprocessor_tfhe_worker tag is empty."
             exit 1
           fi
-          echo "RFC-021 blue-green: N=${NB_COPROCESSOR} BCS=${BCS_IMAGE_TAG} GCS=${GCS_TAG}"
+          echo "RFC-021 blue-green: N=${NB_COPROCESSOR} BCS=${BCS_IMAGE_TAG} GCS=${gcs} (compiled 0.15.0)"
 
       ######################################################################
       # CHART SOURCES: every in-repo chart installs from this checkout's
@@ -1190,7 +1179,21 @@ jobs:
             for i in $(seq 1 "${NB_COPROCESSOR}"); do
               privkey=$(jq -r --argjson party "${i}" '.[] | select(.party == $party) | .privateKey' <<<"${COPROC_WALLETS_JSON}")
               mapfile -t common_args < <(party_common "${i}" "${privkey}" "-gcs")
-              mapfile -t gcs_images < <(image_tags "${GCS_TAG}")
+              # Same repos/tags as the regular coprocessor CI build (compiled 0.15.0).
+              gcs_images=(
+                --set-string "gwListener.image.tag=$(jq -r .coprocessor_gw_listener <<<"${TAGS_JSON}")"
+                --set-string "hostListenerShared.image.tag=$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")"
+                --set-string "hostListenerPollerShared.image.tag=$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")"
+                --set-string "hostListenerCatchupOnlyShared.image.tag=$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")"
+                --set-string "hostListenerConsumerShared.image.tag=$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")"
+                --set-string "snsWorker.image.tag=$(jq -r .coprocessor_sns_worker <<<"${TAGS_JSON}")"
+                --set-string "tfheWorker.image.tag=$(jq -r .coprocessor_tfhe_worker <<<"${TAGS_JSON}")"
+                --set-string "txSender.image.tag=$(jq -r .coprocessor_tx_sender <<<"${TAGS_JSON}")"
+                --set-string "zkProofWorker.image.tag=$(jq -r .coprocessor_zkproof_worker <<<"${TAGS_JSON}")"
+                # UC/CD share this run's SHA with the force-built workers (not in TAGS_JSON).
+                --set-string "upgradeController.image.tag=$(jq -r .coprocessor_tfhe_worker <<<"${TAGS_JSON}")"
+                --set-string "consensusDetector.image.tag=$(jq -r .coprocessor_tfhe_worker <<<"${TAGS_JSON}")"
+              )
               helm upgrade --install "coprocessor-${i}-gcs" "${COPROCESSOR_CHART}" \
                 -n "${NAMESPACE}" -f ci/preview-env/coprocessor/values-coprocessor-e2e.yaml \
                 -f ci/preview-env/coprocessor/values-coprocessor-gcs-e2e.yaml \
@@ -1198,8 +1201,6 @@ jobs:
                 --set-string "fullnameOverride=coprocessor-${i}-gcs" \
                 --set-string "upgradeController.serviceAccountName=coprocessor-${i}" \
                 --set-string "consensusDetector.serviceAccountName=coprocessor-${i}" \
-                --set-string "upgradeController.image.tag=${GCS_TAG}" \
-                --set-string "consensusDetector.image.tag=${GCS_TAG}" \
                 --set "snsWorker.config.s3BucketName.valueFrom.configMapKeyRef.name=coprocessor-${i}" \
                 "${common_args[@]}" \
                 "${gcs_images[@]}"
@@ -1580,7 +1581,7 @@ jobs:
             echo
             echo "Namespace \`${NAMESPACE}\` on zws-dev."
             echo
-            echo "Topology: **${NB_KMS_CORE}** KMS core parties · **${NB_COPROCESSOR}** coprocessor parties (each a full independent stack: its own Postgres, S3 bucket, tx-sender identity, listener producer, Redis broker and host-listener-consumer)$([[ "${BLUE_GREEN}" == "true" ]] && echo ' · RFC-021 blue-green (BCS v0.14.0-7 + GCS ${GCS_TAG})')$([[ "${DEPLOY_POLYGON}" == "true" ]] && echo ' · a second Polygon Amoy (80002) host chain reusing the ETH KMS key'). Note: each coprocessor party requests substantial tfhe/sns worker capacity on the coprocessor nodepool, so nb_coprocessor > 1 multiplies the cluster resources needed."
+            echo "Topology: **${NB_KMS_CORE}** KMS core parties · **${NB_COPROCESSOR}** coprocessor parties (each a full independent stack: its own Postgres, S3 bucket, tx-sender identity, listener producer, Redis broker and host-listener-consumer)$([[ "${BLUE_GREEN}" == "true" ]] && echo " · RFC-021 blue-green (BCS v0.14.0-7 + GCS from this build compiled 0.15.0)")$([[ "${DEPLOY_POLYGON}" == "true" ]] && echo " · a second Polygon Amoy (80002) host chain reusing the ETH KMS key"). Note: each coprocessor party requests substantial tfhe/sns worker capacity on the coprocessor nodepool, so nb_coprocessor > 1 multiplies the cluster resources needed."
             echo
             echo "Connect:"
             echo '```bash'
