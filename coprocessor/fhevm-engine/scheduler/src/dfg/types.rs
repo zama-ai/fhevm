@@ -41,7 +41,7 @@ impl std::fmt::Debug for DFGTxInput {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Value(_) => write!(f, "DecCT"),
-            Self::Compressed(_) => write!(f, "ComCT"),
+            Self::Compressed(..) => write!(f, "ComCT"),
         }
     }
 }
@@ -49,7 +49,10 @@ impl std::fmt::Debug for DFGTxInput {
 #[derive(Clone)]
 pub enum DFGTaskInput {
     Value(SupportedFheCiphertexts),
-    Compressed(CompressedCiphertext),
+    /// A boundary operand in its canonical compressed form, tagged with the
+    /// handle it belongs to so the executor can memoize `Decompress(cmp(h))`
+    /// per partition instead of repeating it for every consuming op.
+    Compressed(Handle, CompressedCiphertext),
     /// An operand minted by an earlier successful operation in this EVM
     /// transaction. It must resolve to a producer in the same transaction
     /// and is forwarded in its raw working representation.
@@ -63,7 +66,7 @@ impl std::fmt::Debug for DFGTaskInput {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Value(_) => write!(f, "DecCT"),
-            Self::Compressed(_) => write!(f, "ComCT"),
+            Self::Compressed(..) => write!(f, "ComCT"),
             Self::LocalDependence(_) => write!(f, "LocalDepHL"),
             Self::BoundaryDependence(_) => write!(f, "BoundaryDepHL"),
         }

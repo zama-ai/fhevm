@@ -31,12 +31,61 @@ pub struct Args {
     pub generate_fhe_keys: bool,
 
     /// Work items batch size
-    #[arg(long, default_value_t = 100)]
+    #[arg(long, value_parser = parse_positive_i32, default_value_t = 100)]
     pub work_items_batch_size: i32,
 
     /// Number of dependence chains to fetch per worker
-    #[arg(long, default_value_t = 20)]
+    #[arg(long, value_parser = parse_positive_i32, default_value_t = 20)]
     pub dependence_chains_per_batch: i32,
+
+    /// Acquire and execute independent dependence chains in one worker
+    /// schedule. This is enabled by default so DB acquisition and boundary
+    /// preparation can overlap FHE execution; set
+    /// `FHEVM_DCID_BATCH_EXECUTION=false` only when explicitly investigating
+    /// single-DCID scheduling.
+    #[arg(long, env = "FHEVM_DCID_BATCH_EXECUTION", default_value_t = true)]
+    pub dcid_batch_execution: bool,
+
+    /// Share each bounded work window across acquired DCIDs, so one large
+    /// chain cannot monopolize the worker batch while unrelated ready chains
+    /// wait. Enabled by default: it is the fairness mitigation for the
+    /// head-of-line blocking that `--dcid-batch-execution` introduces, and
+    /// shipping the two apart leaves the blocking without its remedy.
+    ///
+    /// NOTE: this also changes the unit of `--work-items-batch-size`. The
+    /// adaptive window counts (dependence chain, transaction) groups; the
+    /// non-adaptive one counts computation rows, with no residual row cap. A
+    /// value tuned for rows therefore admits roughly
+    /// `work_items_batch_size * average rows per transaction` rows here, so
+    /// the two flags must be retuned together.
+    #[arg(
+        long,
+        env = "FHEVM_DCID_ADAPTIVE_BATCH_EXECUTION",
+        default_value_t = true
+    )]
+    pub dcid_adaptive_batch_execution: bool,
+
+    /// How many times a RETRYABLE stamp may be re-applied to the same
+    /// computation in one lane pass before the row is DEMOTED to the slow
+    /// lane.
+    ///
+    /// Demotion is not condemnation. The row keeps its retryable stamp and
+    /// stays pending; it merely stops consuming fast-lane batch slots, and
+    /// its chain is allowed to retire so dependents discharge. The slow
+    /// sweep re-arms the chain at `SchedulePriority::Slow` and resets this
+    /// count, so a transient failure heals on a later pass and a permanent
+    /// one costs a bounded trickle instead of a verdict.
+    ///
+    /// Small on purpose: the old value of 20 existed because exhausting the
+    /// budget used to promote the row to TERMINAL, which condemns the whole
+    /// downstream cone. Nothing is terminalised for running out of attempts
+    /// any more, so there is no reason to be generous.
+    #[arg(
+        long,
+        env = "FHEVM_COMPUTATION_RETRY_DEMOTE_THRESHOLD",
+        default_value_t = 3
+    )]
+    pub computation_retry_demote_threshold: i16,
 
     /// Key cache size
     #[arg(long, default_value_t = 32, alias = "tenant-key-cache-size")]
@@ -45,6 +94,23 @@ pub struct Args {
     /// Coprocessor FHE processing threads
     #[arg(long, default_value_t = 32)]
     pub coprocessor_fhe_threads: usize,
+
+    /// Maximum time a GPU operation may wait for memory capacity before it
+    /// fails (and its batch retries) instead of spinning while holding
+    /// resources. CPU builds ignore this setting.
+    #[arg(
+        long,
+        env = "FHEVM_GPU_MEMORY_RESERVATION_TIMEOUT_MS",
+        default_value_t = 300_000
+    )]
+    pub gpu_memory_reservation_timeout_ms: u64,
+
+    /// Maximum number of concurrent CUDA streams allocated per visible GPU.
+    /// CPU builds ignore this setting. Single-stream execution serializes
+    /// partition dispatch and measurably regresses block-scoped workloads
+    /// versus unbounded main; 16 is the measured plateau on H100.
+    #[arg(long, env = "FHEVM_GPU_STREAMS_PER_DEVICE", value_parser = parse_nonzero_usize, default_value_t = 16)]
+    pub gpu_streams_per_device: usize,
 
     /// Tokio Async IO threads
     #[arg(long, default_value_t = 4)]
@@ -151,6 +217,28 @@ pub struct Args {
     pub drift_revert_watcher_timeouts: WatcherTimeouts,
 }
 
+fn parse_positive_i32(value: &str) -> Result<i32, String> {
+    let parsed = value
+        .parse::<i32>()
+        .map_err(|error| format!("must be a positive integer: {error}"))?;
+    if parsed < 1 {
+        Err("must be at least 1".to_owned())
+    } else {
+        Ok(parsed)
+    }
+}
+
+fn parse_nonzero_usize(value: &str) -> Result<usize, String> {
+    let parsed = value
+        .parse::<usize>()
+        .map_err(|error| format!("must be a positive integer: {error}"))?;
+    if parsed == 0 {
+        Err("must be at least 1".to_owned())
+    } else {
+        Ok(parsed)
+    }
+}
+
 pub fn parse_args() -> Args {
     fhevm_engine_common::handle_stack_version_flag();
     let args = Args::parse();
@@ -158,4 +246,50 @@ pub fn parse_args() -> Args {
     let _ = scheduler::RERAND_LATENCY_BATCH_HISTOGRAM_CONF.set(args.metric_rerand_batch_latency);
     let _ = scheduler::FHE_BATCH_LATENCY_HISTOGRAM_CONF.set(args.metric_fhe_batch_latency);
     args
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    #[test]
+    fn dcid_batch_execution_defaults_to_enabled() {
+        let command = Args::command();
+        let argument = command
+            .get_arguments()
+            .find(|argument| argument.get_id() == "dcid_batch_execution")
+            .expect("dcid batch execution argument is present");
+        assert_eq!(argument.get_default_values(), ["true"]);
+    }
+
+    #[test]
+    fn dcid_adaptive_batch_execution_defaults_to_enabled() {
+        let command = Args::command();
+        let argument = command
+            .get_arguments()
+            .find(|argument| argument.get_id() == "dcid_adaptive_batch_execution")
+            .expect("adaptive dcid batch execution argument is present");
+        assert_eq!(argument.get_default_values(), ["true"]);
+    }
+
+    /// The pairing is the point: batching creates the head-of-line blocking
+    /// that the adaptive window exists to mitigate, so shipping one without
+    /// the other is the configuration this test exists to prevent.
+    #[test]
+    fn batching_and_its_fairness_mitigation_ship_together() {
+        let command = Args::command();
+        let default_of = |id: &str| {
+            command
+                .get_arguments()
+                .find(|argument| argument.get_id() == id)
+                .unwrap_or_else(|| panic!("{id} argument is present"))
+                .get_default_values()
+                .to_vec()
+        };
+        assert_eq!(
+            default_of("dcid_batch_execution"),
+            default_of("dcid_adaptive_batch_execution")
+        );
+    }
 }
