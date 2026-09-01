@@ -461,7 +461,7 @@ const assertGreenWorkersParked = async () => {
          SELECT 1
            FROM upgrade_state
           WHERE stack_role = 'GCS'
-            AND (state = 'DryRunStarted' OR gw_dry_run_started)
+            AND state = 'DryRunStarted'
        )::int;`,
     );
     if (activated !== "0") {
