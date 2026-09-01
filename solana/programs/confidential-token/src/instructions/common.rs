@@ -40,10 +40,10 @@ pub(crate) struct TransferAccounts<'a, 'info> {
     pub(crate) hcu_trusted_app_record: Option<AccountInfo<'info>>,
     /// Underlying SPL mint whose owner is the token program. Freeze checks read this account.
     pub(crate) underlying_mint: AccountInfo<'info>,
-    /// Canonical ATA of `from_account.owner` on `underlying_mint`. Absent means not frozen.
-    pub(crate) from_underlying: AccountInfo<'info>,
-    /// Canonical ATA of `to_account.owner` on `underlying_mint`. May alias `from_underlying`.
-    pub(crate) to_underlying: AccountInfo<'info>,
+    /// ATA of `from_account.owner` on `underlying_mint`.
+    pub(crate) from_ata: AccountInfo<'info>,
+    /// ATA of `to_account.owner` on `underlying_mint`. May alias `from_ata` on self-transfer.
+    pub(crate) to_ata: AccountInfo<'info>,
 }
 
 /// Where a transfer's amount comes from. The `ge -> sub -> select` debit and `add` credit that
@@ -105,17 +105,17 @@ pub(crate) fn execute_transfer<'info>(
     require_keys_eq!(to.mint, mint_key, ConfidentialTokenError::MintMismatch);
     assert_confidential_token_account_shape(from, mint_key, from.owner)?;
     assert_confidential_token_account_shape(to, mint_key, to.owner)?;
-    assert_underlying_owner_not_frozen(
+    check_underlying_ata_not_frozen(
         accounts.mint,
         from.owner,
         &accounts.underlying_mint,
-        &accounts.from_underlying,
+        &accounts.from_ata,
     )?;
-    assert_underlying_owner_not_frozen(
+    check_underlying_ata_not_frozen(
         accounts.mint,
         to.owner,
         &accounts.underlying_mint,
-        &accounts.to_underlying,
+        &accounts.to_ata,
     )?;
     require_keys_eq!(
         accounts.compute_signer.key(),
@@ -553,14 +553,18 @@ pub(crate) fn assert_supported_underlying_token_account(
     Ok(())
 }
 
-/// Issuer freeze follows the owner's canonical ATA for the wrapped mint. An absent ATA is not
-/// frozen (Circle/Tether freeze an existing account). Confidential transfer and burn use this
-/// instead of the host grant deny-list.
-pub(crate) fn assert_underlying_owner_not_frozen(
+/// Issuer freeze (V3 `_requireNotBlocked` on the underlying).
+///
+/// `ata` must be the associated token account for `owner` on `mint.underlying_mint`
+/// (`get_associated_token_address_with_program_id`, token program = `underlying_mint.owner`).
+/// Uninitialized at that address (system-owned, empty) → not frozen: Circle/Tether freeze an
+/// existing token account. Confidential transfer and burn use this; wrap and redeem freeze-check
+/// the SPL accounts they move instead. Not the host grant deny-list.
+pub(crate) fn check_underlying_ata_not_frozen(
     mint: &ConfidentialMint,
     owner: Pubkey,
     underlying_mint: &AccountInfo,
-    underlying_ata: &AccountInfo,
+    ata: &AccountInfo,
 ) -> Result<()> {
     require_keys_eq!(
         underlying_mint.key(),
@@ -573,60 +577,45 @@ pub(crate) fn assert_underlying_owner_not_frozen(
         ConfidentialTokenError::UnderlyingTokenProgramMismatch
     );
     require_keys_eq!(
-        underlying_ata.key(),
+        ata.key(),
         get_associated_token_address_with_program_id(&owner, &mint.underlying_mint, &token_program),
         ConfidentialTokenError::UnderlyingAssociatedAccountMismatch
     );
-    if underlying_ata.owner == &System::id() && underlying_ata.data_is_empty() {
+    if ata.owner == &System::id() && ata.data_is_empty() {
         require!(
-            !underlying_ata.executable,
+            !ata.executable,
             ConfidentialTokenError::UnderlyingAssociatedAccountMismatch
         );
         return Ok(());
     }
     require_keys_eq!(
-        *underlying_ata.owner,
+        *ata.owner,
         token_program,
         ConfidentialTokenError::UnderlyingTokenProgramMismatch
     );
-    if token_program == anchor_spl::token_2022::ID {
-        use anchor_spl::token_interface::spl_token_2022::extension::StateWithExtensions;
-        let data = underlying_ata.try_borrow_data()?;
-        let state = StateWithExtensions::<
-            anchor_spl::token_interface::spl_token_2022::state::Account,
-        >::unpack(&data)
-        .map_err(|_| error!(ConfidentialTokenError::UnderlyingAssociatedAccountMismatch))?;
-        require_keys_eq!(
-            state.base.mint,
-            mint.underlying_mint,
-            ConfidentialTokenError::UnderlyingMintMismatch
-        );
-        require_keys_eq!(
-            state.base.owner,
-            owner,
-            ConfidentialTokenError::OwnerMismatch
-        );
-        require!(
-            state.base.state
-                != anchor_spl::token_interface::spl_token_2022::state::AccountState::Frozen,
-            ConfidentialTokenError::UnderlyingTokenAccountFrozen
-        );
-    } else {
-        let account = anchor_spl::token::spl_token::state::Account::unpack(
-            &underlying_ata.try_borrow_data()?,
+    // Classic 165-byte accounts unpack through Token-2022 `StateWithExtensions`.
+    use anchor_spl::token_interface::spl_token_2022::extension::StateWithExtensions;
+    let data = ata.try_borrow_data()?;
+    let state =
+        StateWithExtensions::<anchor_spl::token_interface::spl_token_2022::state::Account>::unpack(
+            &data,
         )
         .map_err(|_| error!(ConfidentialTokenError::UnderlyingAssociatedAccountMismatch))?;
-        require_keys_eq!(
-            account.mint,
-            mint.underlying_mint,
-            ConfidentialTokenError::UnderlyingMintMismatch
-        );
-        require_keys_eq!(account.owner, owner, ConfidentialTokenError::OwnerMismatch);
-        require!(
-            account.state != anchor_spl::token::spl_token::state::AccountState::Frozen,
-            ConfidentialTokenError::UnderlyingTokenAccountFrozen
-        );
-    }
+    require_keys_eq!(
+        state.base.mint,
+        mint.underlying_mint,
+        ConfidentialTokenError::UnderlyingMintMismatch
+    );
+    require_keys_eq!(
+        state.base.owner,
+        owner,
+        ConfidentialTokenError::OwnerMismatch
+    );
+    require!(
+        state.base.state
+            != anchor_spl::token_interface::spl_token_2022::state::AccountState::Frozen,
+        ConfidentialTokenError::UnderlyingTokenAccountFrozen
+    );
     Ok(())
 }
 

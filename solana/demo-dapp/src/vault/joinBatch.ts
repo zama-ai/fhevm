@@ -44,6 +44,7 @@ import {
 } from './internal/batcherPdas.js';
 import {
   associatedTokenAddress,
+  TOKEN_PROGRAM_ADDRESS,
   balanceValueAddress,
   transferredAmountValueAddress,
 } from './internal/tokenValueAccount.js';
@@ -152,8 +153,8 @@ export async function joinBatch(
     batch: parameters.batch,
     joinConfidentialMint,
     joinUnderlyingMint: parameters.joinUnderlyingMint,
-    userUnderlying: await associatedTokenAddress(user.address, parameters.joinUnderlyingMint),
-    batchAuthorityUnderlying: await associatedTokenAddress(batchAuthority, parameters.joinUnderlyingMint),
+    userAta: await associatedTokenAddress(user.address, parameters.joinUnderlyingMint, TOKEN_PROGRAM_ADDRESS),
+    batchAuthorityAta: await associatedTokenAddress(batchAuthority, parameters.joinUnderlyingMint, TOKEN_PROGRAM_ADDRESS),
     joinComputeSigner,
     userTokenAccount,
     batchJoinTokenAccount,

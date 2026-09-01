@@ -289,10 +289,10 @@
           "name": "payout_underlying_mint"
         },
         {
-          "name": "batch_authority_payout_underlying"
+          "name": "batch_authority_payout_ata"
         },
         {
-          "name": "user_payout_underlying"
+          "name": "user_payout_ata"
         },
         {
           "name": "payout_compute_signer"
@@ -441,7 +441,7 @@
           "name": "join_underlying_mint"
         },
         {
-          "name": "batch_authority_underlying"
+          "name": "batch_authority_ata"
         },
         {
           "name": "join_compute_signer"
@@ -718,10 +718,10 @@
           "name": "join_underlying_mint"
         },
         {
-          "name": "user_underlying"
+          "name": "user_ata"
         },
         {
-          "name": "batch_authority_underlying"
+          "name": "batch_authority_ata"
         },
         {
           "name": "join_compute_signer"
@@ -1218,10 +1218,10 @@
           "name": "join_underlying_mint"
         },
         {
-          "name": "batch_authority_underlying"
+          "name": "batch_authority_ata"
         },
         {
-          "name": "user_underlying"
+          "name": "user_ata"
         },
         {
           "name": "join_compute_signer"

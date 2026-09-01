@@ -737,8 +737,8 @@ fn join_ix(
             join_record: keys.join_record(user.user),
             join_confidential_mint: fixture.join_mint().mint,
             join_underlying_mint: fixture.join_mint().underlying_mint,
-            user_underlying: owner_ata(user.user, fixture.join_mint().underlying_mint),
-            batch_authority_underlying: owner_ata(
+            user_ata: owner_ata(user.user, fixture.join_mint().underlying_mint),
+            batch_authority_ata: owner_ata(
                 keys.batch_authority,
                 fixture.join_mint().underlying_mint,
             ),
@@ -773,11 +773,11 @@ fn quit_ix(fixture: &BatcherFixture, keys: &BatchKeys, user: &UserKeys) -> Instr
             join_record: keys.join_record(user.user),
             join_confidential_mint: fixture.join_mint().mint,
             join_underlying_mint: fixture.join_mint().underlying_mint,
-            batch_authority_underlying: owner_ata(
+            batch_authority_ata: owner_ata(
                 keys.batch_authority,
                 fixture.join_mint().underlying_mint,
             ),
-            user_underlying: owner_ata(user.user, fixture.join_mint().underlying_mint),
+            user_ata: owner_ata(user.user, fixture.join_mint().underlying_mint),
             join_compute_signer: fixture.join_mint().compute_signer,
             batch_join_token_account: keys.join_token_account,
             user_token_account: user_join.token_account,
@@ -806,7 +806,7 @@ fn dispatch_ix(fixture: &BatcherFixture, keys: &BatchKeys) -> Instruction {
             batch_authority: keys.batch_authority,
             join_confidential_mint: fixture.join_mint().mint,
             join_underlying_mint: fixture.join_mint().underlying_mint,
-            batch_authority_underlying: owner_ata(
+            batch_authority_ata: owner_ata(
                 keys.batch_authority,
                 fixture.join_mint().underlying_mint,
             ),
@@ -929,11 +929,11 @@ fn claim_ix(fixture: &BatcherFixture, keys: &BatchKeys, user: &UserKeys) -> Inst
             claim_amount_value: keys.claim_amount_value(user.user),
             payout_confidential_mint: fixture.payout_mint().mint,
             payout_underlying_mint: fixture.payout_mint().underlying_mint,
-            batch_authority_payout_underlying: owner_ata(
+            batch_authority_payout_ata: owner_ata(
                 keys.batch_authority,
                 fixture.payout_mint().underlying_mint,
             ),
-            user_payout_underlying: owner_ata(user.user, fixture.payout_mint().underlying_mint),
+            user_payout_ata: owner_ata(user.user, fixture.payout_mint().underlying_mint),
             payout_compute_signer: fixture.payout_mint().compute_signer,
             batch_payout_token_account: keys.payout_token_account,
             user_payout_token_account: user_payout.token_account,

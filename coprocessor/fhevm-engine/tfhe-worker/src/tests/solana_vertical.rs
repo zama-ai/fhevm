@@ -16,6 +16,7 @@ use anchor_lang::{
     prelude::{system_instruction, system_program},
     AccountDeserialize, AccountSerialize, InstructionData, ToAccountMetas,
 };
+use anchor_spl::associated_token::get_associated_token_address_with_program_id;
 use anchor_spl::token::spl_token;
 use fhevm_engine_common::{tfhe_ops::current_ciphertext_version, types::SupportedFheCiphertexts};
 use host_listener::{
@@ -297,6 +298,9 @@ struct TokenFixture {
     token_program_id: Pubkey,
     alice: Keypair,
     mint: Keypair,
+    underlying_mint: Pubkey,
+    alice_ata: Pubkey,
+    bob_ata: Pubkey,
     compute_signer: Pubkey,
     alice_token: Pubkey,
     bob_token: Pubkey,
@@ -465,6 +469,19 @@ fn token_fixture() -> TokenFixture {
         .expect("expected Bob initial ACL")
         .current_handle;
 
+    let alice_ata = get_associated_token_address_with_program_id(
+        &alice.pubkey(),
+        &underlying_mint.pubkey(),
+        &spl_token::id(),
+    );
+    let bob_ata = get_associated_token_address_with_program_id(
+        &bob.pubkey(),
+        &underlying_mint.pubkey(),
+        &spl_token::id(),
+    );
+    seed_empty_system_account(&mut svm, alice_ata);
+    seed_empty_system_account(&mut svm, bob_ata);
+
     TokenFixture {
         svm,
         host_program_id,
@@ -472,6 +489,9 @@ fn token_fixture() -> TokenFixture {
         token_program_id,
         alice,
         mint,
+        underlying_mint: underlying_mint.pubkey(),
+        alice_ata,
+        bob_ata,
         compute_signer,
         alice_token,
         bob_token,
@@ -557,6 +577,9 @@ fn transfer_ix(
             owner: fixture.alice.pubkey(),
             payer: fixture.alice.pubkey(),
             mint: fixture.mint.pubkey(),
+            underlying_mint: fixture.underlying_mint,
+            from_ata: fixture.alice_ata,
+            to_ata: fixture.bob_ata,
             from_account: fixture.alice_token,
             to_account: fixture.bob_token,
             compute_signer: fixture.compute_signer,
@@ -647,6 +670,20 @@ fn amount_attestation_for(
         signatures: vec![secp_sign(&key, &digest)],
     }
 }
+fn seed_empty_system_account(svm: &mut LiteSVM, address: Pubkey) {
+    svm.set_account(
+        address,
+        Account {
+            lamports: 0,
+            data: vec![],
+            owner: system_program::ID,
+            executable: false,
+            rent_epoch: 0,
+        },
+    )
+    .unwrap();
+}
+
 fn create_spl_mint(svm: &mut LiteSVM, payer: &Keypair, mint: &Keypair, decimals: u8) {
     let rent = svm.minimum_balance_for_rent_exemption(spl_token::state::Mint::LEN);
     send_many_with_signers(

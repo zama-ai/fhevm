@@ -7,6 +7,7 @@ import { findTotalSupplyAuthorityPda } from './internal/generated/confidentialTo
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from './internal/generated/confidentialToken/programAddress.js';
 import {
   associatedTokenAddress,
+  TOKEN_PROGRAM_ADDRESS,
   balanceValueAddress,
   totalSupplyValueAddress,
   tokenEventAuthorityAddress,
@@ -44,8 +45,8 @@ export async function buildWrapUsdcInstruction(parameters: SolanaVaultWrapUsdcPa
     mint,
     tokenAccount,
     underlyingMint,
-    userUsdc: await associatedTokenAddress(owner.address, underlyingMint),
-    vaultUsdc: await associatedTokenAddress(mintVaultAuthority, underlyingMint),
+    userUsdc: await associatedTokenAddress(owner.address, underlyingMint, TOKEN_PROGRAM_ADDRESS),
+    vaultUsdc: await associatedTokenAddress(mintVaultAuthority, underlyingMint, TOKEN_PROGRAM_ADDRESS),
     balanceValue: await balanceValueAddress(mint, tokenAccount),
     totalSupplyValue: await totalSupplyValueAddress(mint, totalSupplyAuthority),
     zamaEventAuthority: await zamaEventAuthorityAddress(),

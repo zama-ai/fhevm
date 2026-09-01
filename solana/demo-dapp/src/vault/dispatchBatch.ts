@@ -10,6 +10,7 @@ import {
 } from './internal/batcherPdas.js';
 import {
   associatedTokenAddress,
+  TOKEN_PROGRAM_ADDRESS,
   balanceValueAddress,
   computeSignerAddress,
   tokenEventAuthorityAddress,
@@ -57,7 +58,11 @@ export async function buildDispatchBatchInstruction(parameters: SolanaVaultDispa
     batchAuthority,
     joinConfidentialMint,
     joinUnderlyingMint: parameters.joinUnderlyingMint,
-    batchAuthorityUnderlying: await associatedTokenAddress(batchAuthority, parameters.joinUnderlyingMint),
+    batchAuthorityAta: await associatedTokenAddress(
+      batchAuthority,
+      parameters.joinUnderlyingMint,
+      TOKEN_PROGRAM_ADDRESS,
+    ),
     joinComputeSigner: await computeSignerAddress(joinConfidentialMint),
     totalSupplyAuthority,
     batchJoinTokenAccount,

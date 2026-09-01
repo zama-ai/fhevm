@@ -19,7 +19,6 @@ use anchor_lang::prelude::*;
 use anchor_lang::solana_program::{
     instruction::AccountMeta,
     program::{invoke, invoke_signed},
-    program_pack::Pack,
     system_instruction,
 };
 use anchor_lang::AccountSerialize;

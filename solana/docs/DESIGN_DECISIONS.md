@@ -1445,9 +1445,12 @@ in [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
   reducing attack surface enough to justify the churn.
 - **Compliance / freeze / TokenInterface (fhevm-internal#1862) — PARTIALLY CLOSED by DD-045.** Product stance:
   no token-owned sanctions list; host deny remains grant-path only; compliance for underlying exit
-  is the SPL freeze authority on the wrapped mint (mockUSDC OK in PoC). Confidential transfers,
-  burns, wrap, and redeem are freeze-gated against the owner's canonical associated token account
-  for that mint. An absent ATA is treated as not frozen. `cancel_pending_burn` is not freeze-gated
+  is the SPL freeze authority on the wrapped mint (mockUSDC OK in PoC). Wrap and redeem freeze-check
+  the SPL accounts they actually move. Confidential transfer and burn use
+  `check_underlying_ata_not_frozen` on each relevant owner's associated token account
+  (`from_ata`/`to_ata`/`owner_ata`); that address must be
+  `get_associated_token_address_with_program_id(owner, mint.underlying_mint, underlying_mint.owner)`.
+  Uninitialized at that address (system-owned, empty) is treated as not frozen. `cancel_pending_burn` is not freeze-gated
   (no underlying movement). The host grant deny-list is not this check. ATA-like UX is intentional (`token_account_address(mint, owner)` +
   create-for / separate payer; demo get-or-create in `demo-dapp`). `TokenInterface`, classic Token,
   extension-free Token-2022, fail-closed extension checks, and frozen wrap/transfer/burn/redeem tests are shipped.
@@ -2096,7 +2099,8 @@ underlying mint's owner selects the token program, and mint/token-account owners
 every initialize, wrap, and redeem. Token-2022 mint
 extensions fail closed; token accounts permit only `ImmutableOwner`. Frozen source or destination
 accounts cannot cross the wrapper boundary. Confidential transfer and burn also reject a frozen
-canonical associated token account for the token-account owner (absent ATA = not frozen). Cancel
+associated token account for each relevant owner (`from_ata`/`to_ata`/`owner_ata`). Uninitialized
+at that address is treated as not frozen. Cancel
 does not check freeze. Redeem destination ownership is not required: the confidential token-account
 owner must sign, which is the theft check; `destination_usdc.owner == owner` was only a
 no-unwrap-to-third-party policy and is not enforced.

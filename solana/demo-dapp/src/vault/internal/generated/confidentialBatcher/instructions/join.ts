@@ -67,8 +67,8 @@ export type JoinInstruction<
   TAccountJoinRecord extends string | AccountMeta<string> = string,
   TAccountJoinConfidentialMint extends string | AccountMeta<string> = string,
   TAccountJoinUnderlyingMint extends string | AccountMeta<string> = string,
-  TAccountUserUnderlying extends string | AccountMeta<string> = string,
-  TAccountBatchAuthorityUnderlying extends string | AccountMeta<string> = string,
+  TAccountUserAta extends string | AccountMeta<string> = string,
+  TAccountBatchAuthorityAta extends string | AccountMeta<string> = string,
   TAccountJoinComputeSigner extends string | AccountMeta<string> = string,
   TAccountUserTokenAccount extends string | AccountMeta<string> = string,
   TAccountBatchJoinTokenAccount extends string | AccountMeta<string> = string,
@@ -103,10 +103,8 @@ export type JoinInstruction<
       TAccountJoinUnderlyingMint extends string
         ? ReadonlyAccount<TAccountJoinUnderlyingMint>
         : TAccountJoinUnderlyingMint,
-      TAccountUserUnderlying extends string ? ReadonlyAccount<TAccountUserUnderlying> : TAccountUserUnderlying,
-      TAccountBatchAuthorityUnderlying extends string
-        ? ReadonlyAccount<TAccountBatchAuthorityUnderlying>
-        : TAccountBatchAuthorityUnderlying,
+      TAccountUserAta extends string ? ReadonlyAccount<TAccountUserAta> : TAccountUserAta,
+      TAccountBatchAuthorityAta extends string ? ReadonlyAccount<TAccountBatchAuthorityAta> : TAccountBatchAuthorityAta,
       TAccountJoinComputeSigner extends string ? ReadonlyAccount<TAccountJoinComputeSigner> : TAccountJoinComputeSigner,
       TAccountUserTokenAccount extends string ? WritableAccount<TAccountUserTokenAccount> : TAccountUserTokenAccount,
       TAccountBatchJoinTokenAccount extends string
@@ -217,8 +215,8 @@ export type JoinAsyncInput<
   TAccountJoinRecord extends string = string,
   TAccountJoinConfidentialMint extends string = string,
   TAccountJoinUnderlyingMint extends string = string,
-  TAccountUserUnderlying extends string = string,
-  TAccountBatchAuthorityUnderlying extends string = string,
+  TAccountUserAta extends string = string,
+  TAccountBatchAuthorityAta extends string = string,
   TAccountJoinComputeSigner extends string = string,
   TAccountUserTokenAccount extends string = string,
   TAccountBatchJoinTokenAccount extends string = string,
@@ -251,8 +249,8 @@ export type JoinAsyncInput<
   /** Confidential mint users join batches with. */
   joinConfidentialMint: Address<TAccountJoinConfidentialMint>;
   joinUnderlyingMint: Address<TAccountJoinUnderlyingMint>;
-  userUnderlying: Address<TAccountUserUnderlying>;
-  batchAuthorityUnderlying: Address<TAccountBatchAuthorityUnderlying>;
+  userAta: Address<TAccountUserAta>;
+  batchAuthorityAta: Address<TAccountBatchAuthorityAta>;
   joinComputeSigner: Address<TAccountJoinComputeSigner>;
   /** by the token CPI. */
   userTokenAccount: Address<TAccountUserTokenAccount>;
@@ -292,8 +290,8 @@ export async function getJoinInstructionAsync<
   TAccountJoinRecord extends string,
   TAccountJoinConfidentialMint extends string,
   TAccountJoinUnderlyingMint extends string,
-  TAccountUserUnderlying extends string,
-  TAccountBatchAuthorityUnderlying extends string,
+  TAccountUserAta extends string,
+  TAccountBatchAuthorityAta extends string,
   TAccountJoinComputeSigner extends string,
   TAccountUserTokenAccount extends string,
   TAccountBatchJoinTokenAccount extends string,
@@ -318,8 +316,8 @@ export async function getJoinInstructionAsync<
     TAccountJoinRecord,
     TAccountJoinConfidentialMint,
     TAccountJoinUnderlyingMint,
-    TAccountUserUnderlying,
-    TAccountBatchAuthorityUnderlying,
+    TAccountUserAta,
+    TAccountBatchAuthorityAta,
     TAccountJoinComputeSigner,
     TAccountUserTokenAccount,
     TAccountBatchJoinTokenAccount,
@@ -346,8 +344,8 @@ export async function getJoinInstructionAsync<
     TAccountJoinRecord,
     TAccountJoinConfidentialMint,
     TAccountJoinUnderlyingMint,
-    TAccountUserUnderlying,
-    TAccountBatchAuthorityUnderlying,
+    TAccountUserAta,
+    TAccountBatchAuthorityAta,
     TAccountJoinComputeSigner,
     TAccountUserTokenAccount,
     TAccountBatchJoinTokenAccount,
@@ -382,9 +380,9 @@ export async function getJoinInstructionAsync<
       value: input.joinUnderlyingMint ?? null,
       isWritable: false,
     },
-    userUnderlying: { value: input.userUnderlying ?? null, isWritable: false },
-    batchAuthorityUnderlying: {
-      value: input.batchAuthorityUnderlying ?? null,
+    userAta: { value: input.userAta ?? null, isWritable: false },
+    batchAuthorityAta: {
+      value: input.batchAuthorityAta ?? null,
       isWritable: false,
     },
     joinComputeSigner: {
@@ -471,8 +469,8 @@ export async function getJoinInstructionAsync<
       getAccountMeta('joinRecord', accounts.joinRecord),
       getAccountMeta('joinConfidentialMint', accounts.joinConfidentialMint),
       getAccountMeta('joinUnderlyingMint', accounts.joinUnderlyingMint),
-      getAccountMeta('userUnderlying', accounts.userUnderlying),
-      getAccountMeta('batchAuthorityUnderlying', accounts.batchAuthorityUnderlying),
+      getAccountMeta('userAta', accounts.userAta),
+      getAccountMeta('batchAuthorityAta', accounts.batchAuthorityAta),
       getAccountMeta('joinComputeSigner', accounts.joinComputeSigner),
       getAccountMeta('userTokenAccount', accounts.userTokenAccount),
       getAccountMeta('batchJoinTokenAccount', accounts.batchJoinTokenAccount),
@@ -499,8 +497,8 @@ export async function getJoinInstructionAsync<
     TAccountJoinRecord,
     TAccountJoinConfidentialMint,
     TAccountJoinUnderlyingMint,
-    TAccountUserUnderlying,
-    TAccountBatchAuthorityUnderlying,
+    TAccountUserAta,
+    TAccountBatchAuthorityAta,
     TAccountJoinComputeSigner,
     TAccountUserTokenAccount,
     TAccountBatchJoinTokenAccount,
@@ -526,8 +524,8 @@ export type JoinInput<
   TAccountJoinRecord extends string = string,
   TAccountJoinConfidentialMint extends string = string,
   TAccountJoinUnderlyingMint extends string = string,
-  TAccountUserUnderlying extends string = string,
-  TAccountBatchAuthorityUnderlying extends string = string,
+  TAccountUserAta extends string = string,
+  TAccountBatchAuthorityAta extends string = string,
   TAccountJoinComputeSigner extends string = string,
   TAccountUserTokenAccount extends string = string,
   TAccountBatchJoinTokenAccount extends string = string,
@@ -560,8 +558,8 @@ export type JoinInput<
   /** Confidential mint users join batches with. */
   joinConfidentialMint: Address<TAccountJoinConfidentialMint>;
   joinUnderlyingMint: Address<TAccountJoinUnderlyingMint>;
-  userUnderlying: Address<TAccountUserUnderlying>;
-  batchAuthorityUnderlying: Address<TAccountBatchAuthorityUnderlying>;
+  userAta: Address<TAccountUserAta>;
+  batchAuthorityAta: Address<TAccountBatchAuthorityAta>;
   joinComputeSigner: Address<TAccountJoinComputeSigner>;
   /** by the token CPI. */
   userTokenAccount: Address<TAccountUserTokenAccount>;
@@ -601,8 +599,8 @@ export function getJoinInstruction<
   TAccountJoinRecord extends string,
   TAccountJoinConfidentialMint extends string,
   TAccountJoinUnderlyingMint extends string,
-  TAccountUserUnderlying extends string,
-  TAccountBatchAuthorityUnderlying extends string,
+  TAccountUserAta extends string,
+  TAccountBatchAuthorityAta extends string,
   TAccountJoinComputeSigner extends string,
   TAccountUserTokenAccount extends string,
   TAccountBatchJoinTokenAccount extends string,
@@ -627,8 +625,8 @@ export function getJoinInstruction<
     TAccountJoinRecord,
     TAccountJoinConfidentialMint,
     TAccountJoinUnderlyingMint,
-    TAccountUserUnderlying,
-    TAccountBatchAuthorityUnderlying,
+    TAccountUserAta,
+    TAccountBatchAuthorityAta,
     TAccountJoinComputeSigner,
     TAccountUserTokenAccount,
     TAccountBatchJoinTokenAccount,
@@ -654,8 +652,8 @@ export function getJoinInstruction<
   TAccountJoinRecord,
   TAccountJoinConfidentialMint,
   TAccountJoinUnderlyingMint,
-  TAccountUserUnderlying,
-  TAccountBatchAuthorityUnderlying,
+  TAccountUserAta,
+  TAccountBatchAuthorityAta,
   TAccountJoinComputeSigner,
   TAccountUserTokenAccount,
   TAccountBatchJoinTokenAccount,
@@ -689,9 +687,9 @@ export function getJoinInstruction<
       value: input.joinUnderlyingMint ?? null,
       isWritable: false,
     },
-    userUnderlying: { value: input.userUnderlying ?? null, isWritable: false },
-    batchAuthorityUnderlying: {
-      value: input.batchAuthorityUnderlying ?? null,
+    userAta: { value: input.userAta ?? null, isWritable: false },
+    batchAuthorityAta: {
+      value: input.batchAuthorityAta ?? null,
       isWritable: false,
     },
     joinComputeSigner: {
@@ -767,8 +765,8 @@ export function getJoinInstruction<
       getAccountMeta('joinRecord', accounts.joinRecord),
       getAccountMeta('joinConfidentialMint', accounts.joinConfidentialMint),
       getAccountMeta('joinUnderlyingMint', accounts.joinUnderlyingMint),
-      getAccountMeta('userUnderlying', accounts.userUnderlying),
-      getAccountMeta('batchAuthorityUnderlying', accounts.batchAuthorityUnderlying),
+      getAccountMeta('userAta', accounts.userAta),
+      getAccountMeta('batchAuthorityAta', accounts.batchAuthorityAta),
       getAccountMeta('joinComputeSigner', accounts.joinComputeSigner),
       getAccountMeta('userTokenAccount', accounts.userTokenAccount),
       getAccountMeta('batchJoinTokenAccount', accounts.batchJoinTokenAccount),
@@ -795,8 +793,8 @@ export function getJoinInstruction<
     TAccountJoinRecord,
     TAccountJoinConfidentialMint,
     TAccountJoinUnderlyingMint,
-    TAccountUserUnderlying,
-    TAccountBatchAuthorityUnderlying,
+    TAccountUserAta,
+    TAccountBatchAuthorityAta,
     TAccountJoinComputeSigner,
     TAccountUserTokenAccount,
     TAccountBatchJoinTokenAccount,
@@ -837,8 +835,8 @@ export type ParsedJoinInstruction<
     /** Confidential mint users join batches with. */
     joinConfidentialMint: TAccountMetas[6];
     joinUnderlyingMint: TAccountMetas[7];
-    userUnderlying: TAccountMetas[8];
-    batchAuthorityUnderlying: TAccountMetas[9];
+    userAta: TAccountMetas[8];
+    batchAuthorityAta: TAccountMetas[9];
     joinComputeSigner: TAccountMetas[10];
     /** by the token CPI. */
     userTokenAccount: TAccountMetas[11];
@@ -889,8 +887,8 @@ export function parseJoinInstruction<TProgram extends string, TAccountMetas exte
       joinRecord: getNextAccount(),
       joinConfidentialMint: getNextAccount(),
       joinUnderlyingMint: getNextAccount(),
-      userUnderlying: getNextAccount(),
-      batchAuthorityUnderlying: getNextAccount(),
+      userAta: getNextAccount(),
+      batchAuthorityAta: getNextAccount(),
       joinComputeSigner: getNextAccount(),
       userTokenAccount: getNextAccount(),
       batchJoinTokenAccount: getNextAccount(),

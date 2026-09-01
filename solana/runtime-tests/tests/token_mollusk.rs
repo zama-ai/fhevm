@@ -26,6 +26,7 @@
 //! those clear values to the handles emitted by the host.
 
 use anchor_lang::{prelude::system_program, AccountDeserialize};
+use anchor_spl::associated_token::get_associated_token_address_with_program_id;
 use confidential_token as token;
 use mollusk_svm::{
     result::{Check, InstructionResult},
@@ -52,7 +53,6 @@ use zama_solana_test_kit::{
     read_spl_amount, serialized_account, spl_mint_account, spl_token_account, system_account,
     u256_be, Ctx, HostConfigParams, BALANCE_FHE_TYPE, DECRYPTION_CONTRACT, GATEWAY_CHAIN_ID,
 };
-use anchor_spl::associated_token::get_associated_token_address_with_program_id;
 
 // ---------------------------------------------------------------------------
 // Harness
@@ -349,7 +349,11 @@ impl TokenFixture {
     }
 
     fn owner_ata(&self, owner: Pubkey) -> Pubkey {
-        get_associated_token_address_with_program_id(&owner, &self.underlying_mint, &spl_token::id())
+        get_associated_token_address_with_program_id(
+            &owner,
+            &self.underlying_mint,
+            &spl_token::id(),
+        )
     }
 
     fn underlying_ata_for_token(&self, token: Pubkey) -> Pubkey {
@@ -494,8 +498,8 @@ fn confidential_transfer_ix_with_block_cap_accounts(
             payer: fixture.owner,
             mint: fixture.mint,
             underlying_mint: fixture.underlying_mint,
-            from_underlying: fixture.underlying_ata_for_token(from_token),
-            to_underlying: fixture.underlying_ata_for_token(to_token),
+            from_ata: fixture.underlying_ata_for_token(from_token),
+            to_ata: fixture.underlying_ata_for_token(to_token),
             from_account: from_token,
             to_account: to_token,
             compute_signer: fixture.compute_signer,
@@ -542,8 +546,8 @@ fn confidential_transfer_from_value_ix(
             payer: signer_owner,
             mint: fixture.mint,
             underlying_mint: fixture.underlying_mint,
-            from_underlying: fixture.underlying_ata_for_token(from_token),
-            to_underlying: fixture.underlying_ata_for_token(to_token),
+            from_ata: fixture.underlying_ata_for_token(from_token),
+            to_ata: fixture.underlying_ata_for_token(to_token),
             from_account: from_token,
             to_account: to_token,
             compute_signer: fixture.compute_signer,
@@ -2855,7 +2859,7 @@ fn confidential_burn_ix(
             owner: fixture.owner,
             mint: fixture.mint,
             underlying_mint: fixture.underlying_mint,
-            owner_underlying: fixture.owner_ata(),
+            owner_ata: fixture.owner_ata(),
             token_account: fixture.token_account,
             compute_signer: fixture.compute_signer,
             total_supply_authority: fixture.total_supply_authority,
@@ -2894,7 +2898,7 @@ fn confidential_burn_from_value_ix(
             payer,
             mint: fixture.mint,
             underlying_mint: fixture.underlying_mint,
-            owner_underlying: fixture.owner_ata(),
+            owner_ata: fixture.owner_ata(),
             token_account: fixture.token_account,
             compute_signer: fixture.compute_signer,
             total_supply_authority: fixture.total_supply_authority,

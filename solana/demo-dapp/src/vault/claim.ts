@@ -9,6 +9,7 @@ import {
 } from './internal/batcherPdas.js';
 import {
   associatedTokenAddress,
+  TOKEN_PROGRAM_ADDRESS,
   balanceValueAddress,
   computeSignerAddress,
   tokenEventAuthorityAddress,
@@ -65,8 +66,12 @@ export async function buildClaimInstruction(parameters: SolanaVaultClaimParamete
     claimAmountValue: (await claimAmountValueAccount(parameters.batch, batchAuthority, user)).encryptedValueAddress,
     payoutConfidentialMint,
     payoutUnderlyingMint: parameters.payoutUnderlyingMint,
-    batchAuthorityPayoutUnderlying: await associatedTokenAddress(batchAuthority, parameters.payoutUnderlyingMint),
-    userPayoutUnderlying: await associatedTokenAddress(user, parameters.payoutUnderlyingMint),
+    batchAuthorityPayoutAta: await associatedTokenAddress(
+      batchAuthority,
+      parameters.payoutUnderlyingMint,
+      TOKEN_PROGRAM_ADDRESS,
+    ),
+    userPayoutAta: await associatedTokenAddress(user, parameters.payoutUnderlyingMint, TOKEN_PROGRAM_ADDRESS),
     payoutComputeSigner: await computeSignerAddress(payoutConfidentialMint),
     batchPayoutTokenAccount,
     userPayoutTokenAccount,

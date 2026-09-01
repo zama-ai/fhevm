@@ -166,7 +166,7 @@ pub enum ConfidentialTokenError {
     /// The encrypted total-supply value is not the canonical mint-scoped account.
     #[msg("encrypted total supply value is not canonical")]
     TotalSupplyValueMismatch,
-    /// Freeze checks bind the owner's canonical associated token account for the wrapped mint.
+    /// Freeze checks bind the owner's associated token account for the wrapped mint.
     #[msg("underlying associated token account does not match")]
     UnderlyingAssociatedAccountMismatch,
 }

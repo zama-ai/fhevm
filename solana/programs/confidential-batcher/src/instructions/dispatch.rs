@@ -28,8 +28,8 @@ pub struct Dispatch<'info> {
     pub join_confidential_mint: Box<Account<'info, ct::ConfidentialMint>>,
     /// CHECK: underlying SPL mint wrapped by `join_confidential_mint`. Token program is its owner.
     pub join_underlying_mint: UncheckedAccount<'info>,
-    /// CHECK: canonical ATA of `batch_authority` on `join_underlying_mint`. Absent = not frozen.
-    pub batch_authority_underlying: UncheckedAccount<'info>,
+    /// CHECK: ATA of `batch_authority` on `join_underlying_mint`. Uninitialized → not frozen.
+    pub batch_authority_ata: UncheckedAccount<'info>,
     /// CHECK: join mint compute-signer PDA; validated by the token CPI.
     pub join_compute_signer: UncheckedAccount<'info>,
     /// CHECK: mint-scoped total-supply authority PDA; validated by the token CPI.
@@ -109,7 +109,7 @@ pub fn dispatch(ctx: Context<Dispatch>) -> Result<()> {
             payer: ctx.accounts.payer.to_account_info(),
             mint: ctx.accounts.join_confidential_mint.to_account_info(),
             underlying_mint: ctx.accounts.join_underlying_mint.to_account_info(),
-            owner_underlying: ctx.accounts.batch_authority_underlying.to_account_info(),
+            owner_ata: ctx.accounts.batch_authority_ata.to_account_info(),
             token_account: ctx.accounts.batch_join_token_account.to_account_info(),
             compute_signer: ctx.accounts.join_compute_signer.to_account_info(),
             total_supply_authority: ctx.accounts.total_supply_authority.to_account_info(),

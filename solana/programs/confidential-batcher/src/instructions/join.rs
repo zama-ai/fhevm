@@ -45,10 +45,10 @@ pub struct Join<'info> {
     pub join_confidential_mint: Box<Account<'info, ct::ConfidentialMint>>,
     /// CHECK: underlying SPL mint wrapped by `join_confidential_mint`. Token program is its owner.
     pub join_underlying_mint: UncheckedAccount<'info>,
-    /// CHECK: canonical ATA of `user` on `join_underlying_mint`. Absent = not frozen.
-    pub user_underlying: UncheckedAccount<'info>,
-    /// CHECK: canonical ATA of `batch_authority` on `join_underlying_mint`. Absent = not frozen.
-    pub batch_authority_underlying: UncheckedAccount<'info>,
+    /// CHECK: ATA of `user` on `join_underlying_mint`. Uninitialized → not frozen.
+    pub user_ata: UncheckedAccount<'info>,
+    /// CHECK: ATA of `batch_authority` on `join_underlying_mint`. Uninitialized → not frozen.
+    pub batch_authority_ata: UncheckedAccount<'info>,
     /// CHECK: join mint compute-signer PDA; validated by the token CPI.
     pub join_compute_signer: UncheckedAccount<'info>,
     /// CHECK: user's confidential token account (transfer source); validated
@@ -123,8 +123,8 @@ pub fn join<'info>(
                 payer: ctx.accounts.payer.to_account_info(),
                 mint: ctx.accounts.join_confidential_mint.to_account_info(),
                 underlying_mint: ctx.accounts.join_underlying_mint.to_account_info(),
-                from_underlying: ctx.accounts.user_underlying.to_account_info(),
-                to_underlying: ctx.accounts.batch_authority_underlying.to_account_info(),
+                from_ata: ctx.accounts.user_ata.to_account_info(),
+                to_ata: ctx.accounts.batch_authority_ata.to_account_info(),
                 from_account: ctx.accounts.user_token_account.to_account_info(),
                 to_account: ctx.accounts.batch_join_token_account.to_account_info(),
                 compute_signer: ctx.accounts.join_compute_signer.to_account_info(),

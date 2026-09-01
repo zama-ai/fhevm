@@ -450,7 +450,7 @@
           "name": "underlying_mint"
         },
         {
-          "name": "owner_underlying"
+          "name": "owner_ata"
         },
         {
           "name": "token_account",
@@ -650,7 +650,7 @@
           "name": "underlying_mint"
         },
         {
-          "name": "owner_underlying"
+          "name": "owner_ata"
         },
         {
           "name": "token_account",
@@ -843,10 +843,10 @@
           "name": "underlying_mint"
         },
         {
-          "name": "from_underlying"
+          "name": "from_ata"
         },
         {
-          "name": "to_underlying"
+          "name": "to_ata"
         },
         {
           "name": "from_account",
@@ -1009,10 +1009,10 @@
           "name": "underlying_mint"
         },
         {
-          "name": "from_underlying"
+          "name": "from_ata"
         },
         {
-          "name": "to_underlying"
+          "name": "to_ata"
         },
         {
           "name": "from_account",

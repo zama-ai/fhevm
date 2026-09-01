@@ -71,14 +71,19 @@ export const tokenEventAuthorityAddress = (): Promise<Address> =>
 /** The zama-host program's Anchor event-authority PDA (the instruction `zamaEventAuthority`). */
 export const zamaEventAuthorityAddress = (): Promise<Address> => pda(ZAMA_HOST_PROGRAM_ADDRESS, [EVENT_AUTHORITY_SEED]);
 
+export const TOKEN_PROGRAM_ADDRESS = SPL_TOKEN_PROGRAM_ADDRESS;
+
 /**
- * The canonical associated token account for `owner` and SPL `mint` on the classic token program
- * (`get_associated_token_address_with_program_id`) — the same derivation `derive.ts` uses for the
- * batcher's underlying vaults.
+ * Associated token account for `owner` and SPL `mint` under `tokenProgram`
+ * (`get_associated_token_address_with_program_id`).
  */
-export const associatedTokenAddress = (owner: Address, mint: Address): Promise<Address> =>
+export const associatedTokenAddress = (
+  owner: Address,
+  mint: Address,
+  tokenProgram: Address,
+): Promise<Address> =>
   pda(ASSOCIATED_TOKEN_PROGRAM_ADDRESS, [
     encodeAddress(owner),
-    encodeAddress(SPL_TOKEN_PROGRAM_ADDRESS),
+    encodeAddress(tokenProgram),
     encodeAddress(mint),
   ]);

@@ -14,8 +14,8 @@ pub struct ConfidentialBurn<'info> {
     pub mint: Box<Account<'info, ConfidentialMint>>,
     /// CHECK: underlying SPL mint wrapped by `mint`. Token program is this account's owner.
     pub underlying_mint: UncheckedAccount<'info>,
-    /// CHECK: canonical ATA of `token_account.owner` on `underlying_mint`. Absent = not frozen.
-    pub owner_underlying: UncheckedAccount<'info>,
+    /// CHECK: ATA of `token_account.owner` on `underlying_mint`. Uninitialized → not frozen.
+    pub owner_ata: UncheckedAccount<'info>,
     /// Token account whose balance is decreased.
     #[account(mut)]
     pub token_account: Box<Account<'info, ConfidentialTokenAccount>>,
@@ -88,7 +88,7 @@ impl<'info> ConfidentialBurn<'info> {
                 .as_ref()
                 .map(|account| account.to_account_info()),
             underlying_mint: self.underlying_mint.to_account_info(),
-            owner_underlying: self.owner_underlying.to_account_info(),
+            owner_ata: self.owner_ata.to_account_info(),
         }
     }
 }
@@ -158,8 +158,8 @@ pub struct ConfidentialBurnFromValue<'info> {
     pub mint: Box<Account<'info, ConfidentialMint>>,
     /// CHECK: underlying SPL mint wrapped by `mint`. Token program is this account's owner.
     pub underlying_mint: UncheckedAccount<'info>,
-    /// CHECK: canonical ATA of `token_account.owner` on `underlying_mint`. Absent = not frozen.
-    pub owner_underlying: UncheckedAccount<'info>,
+    /// CHECK: ATA of `token_account.owner` on `underlying_mint`. Uninitialized → not frozen.
+    pub owner_ata: UncheckedAccount<'info>,
     /// Token account whose balance is decreased.
     #[account(mut)]
     pub token_account: Box<Account<'info, ConfidentialTokenAccount>>,
@@ -239,7 +239,7 @@ impl<'info> ConfidentialBurnFromValue<'info> {
                 .as_ref()
                 .map(|account| account.to_account_info()),
             underlying_mint: self.underlying_mint.to_account_info(),
-            owner_underlying: self.owner_underlying.to_account_info(),
+            owner_ata: self.owner_ata.to_account_info(),
         }
     }
 }
@@ -345,7 +345,7 @@ struct BurnAccounts<'a, 'info> {
     hcu_block_meter: Option<AccountInfo<'info>>,
     hcu_trusted_app_record: Option<AccountInfo<'info>>,
     underlying_mint: AccountInfo<'info>,
-    owner_underlying: AccountInfo<'info>,
+    owner_ata: AccountInfo<'info>,
 }
 
 /// Everything the burn handlers need to emit their app-local history events.
@@ -391,11 +391,11 @@ fn execute_burn<'info>(
         ConfidentialTokenError::MintMismatch
     );
     assert_confidential_token_account_shape(token_account, mint_key, owner)?;
-    assert_underlying_owner_not_frozen(
+    check_underlying_ata_not_frozen(
         accounts.mint,
         owner,
         &accounts.underlying_mint,
-        &accounts.owner_underlying,
+        &accounts.owner_ata,
     )?;
     require_keys_eq!(
         accounts.compute_signer.key(),

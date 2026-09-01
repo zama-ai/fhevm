@@ -34,7 +34,12 @@ import { readDemoAllowedOriginFromEnv, readDemoAuthorizationFromEnv } from "./au
 import { readDemoConfig } from "./config";
 import { serveFaucet, type UsdcMinter } from "./faucet";
 import { DEMO_KEYPAIRS } from "./loadDemoEnv";
-import { associatedTokenAddress, createIdempotentAtaInstruction, mintToInstruction } from "../src/solana/spl";
+import {
+  associatedTokenAddress,
+  createIdempotentAtaInstruction,
+  mintToInstruction,
+  SPL_TOKEN_PROGRAM_ADDRESS,
+} from "../src/solana/spl";
 
 /** Builds a `UsdcMinter` that mints mock USDC to a recipient's ATA on the live validator. */
 const buildUsdcMinter = async (options: {
@@ -51,7 +56,7 @@ const buildUsdcMinter = async (options: {
   const authority = await createKeyPairSignerFromBytes(keypairBytes);
 
   return async (recipient: Address, baseUnits: bigint): Promise<string> => {
-    const ata = await associatedTokenAddress(recipient, options.mint);
+    const ata = await associatedTokenAddress(recipient, options.mint, SPL_TOKEN_PROGRAM_ADDRESS);
     const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
     const base = setTransactionMessageFeePayerSigner(authority, createTransactionMessage({ version: 0 }));
     const withLifetime = setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, base);
