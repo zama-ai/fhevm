@@ -767,7 +767,6 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         Ok(())
     }
 
-
     fn reset_sleep_duration(&self, sleep_duration: &mut u64) {
         *sleep_duration = self.conf.error_sleep_initial_secs as u64;
     }
