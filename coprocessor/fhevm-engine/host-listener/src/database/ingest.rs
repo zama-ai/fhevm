@@ -916,9 +916,11 @@ async fn handle_protocol_config_log(
                 };
                 notify_coprocessor_upgrade_proposed(tx, chain_id, proposed, proposal_block).await?;
             }
-            other => {
+            _ => {
+                // ProtocolConfigEvents has no Debug impl; topic0 identifies
+                // the unhandled variant.
                 warn!(
-                    ?other,
+                    topic0 = ?log.topic0(),
                     block_number = ?log.block_number,
                     tx_hash = ?log.transaction_hash,
                     log_index = ?log.log_index,
