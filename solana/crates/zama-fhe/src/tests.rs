@@ -297,7 +297,8 @@ fn finish_preflights_lowered_transient_order_and_account_uniqueness() {
         output_fhe_type: FheType::UINT64.byte(),
         output: FheExecuteOutput::Transient,
     });
-    builder.produced_types = vec![FheType::UINT64.byte(), FheType::UINT64.byte()];
+    builder.produced_types.push(FheType::UINT64.byte());
+    builder.produced_types.push(FheType::UINT64.byte());
 
     assert_eq!(
         builder.finish().unwrap_err(),
@@ -1383,7 +1384,7 @@ fn persistent_output_create_matches_batch_lowering() {
                 .iter()
                 .map(|index| execution.args.dictionary_key(*index).unwrap())
                 .collect();
-            assert_eq!(output_subjects, binding.host_subjects());
+            assert_eq!(output_subjects, binding.subjects());
             assert_eq!(*previous_state, binding.previous_state());
         }
         other => panic!("unexpected step: {other:?}"),
@@ -1503,19 +1504,6 @@ fn finish_rejects_empty_steps() {
     ));
 }
 
-/// Off-chain the builder keeps the host's own ceiling: a client, a test, or the e2e live client can
-/// build any execution the host would accept, because none of them runs on Anchor's 32 KB heap. What
-/// the on-chain ceiling is worth is measured in `heap_budget.rs`, which derives its step count from
-/// `MAX_ON_CHAIN_EXECUTION_STEPS` so the enforced number and the measured one cannot drift apart.
-#[test]
-fn off_chain_builds_keep_the_host_step_ceiling() {
-    assert_eq!(
-        crate::builder::step_limit(),
-        MAX_FHE_EXECUTION_STEPS,
-        "a host-side build pays no bump-heap budget, so it should not inherit the on-chain ceiling"
-    );
-}
-
 #[test]
 fn rejects_more_than_max_ops() {
     let primary_authority = Pubkey::new_unique();
@@ -1541,12 +1529,20 @@ fn rejects_more_than_max_ops() {
 #[test]
 fn step_tables_rollback_undoes_promotions_and_appends() {
     let shared = Pubkey::new_unique();
-    let mut remaining_accounts = vec![ExecutionAccountMeta::readonly(
-        shared,
-        ExecutionAccountPurpose::PersistentInputAcl,
-    )];
-    let mut dictionary = vec![handle(1)];
-    let mut persistent_producers = vec![Pubkey::new_unique()];
+    let mut budget = crate::heap_tally::HeapBudget::new();
+    let mut remaining_accounts = crate::heap_tally::TalliedVec::new();
+    remaining_accounts
+        .try_push(
+            &mut budget,
+            ExecutionAccountMeta::readonly(shared, ExecutionAccountPurpose::PersistentInputAcl),
+        )
+        .unwrap();
+    let mut dictionary = crate::heap_tally::TalliedVec::new();
+    dictionary.try_push(&mut budget, handle(1)).unwrap();
+    let mut persistent_producers = crate::heap_tally::TalliedVec::new();
+    persistent_producers
+        .try_push(&mut budget, Pubkey::new_unique())
+        .unwrap();
     let accounts_before = remaining_accounts.clone();
     let dictionary_before = dictionary.clone();
     let producers_before = persistent_producers.clone();
@@ -1555,6 +1551,7 @@ fn step_tables_rollback_undoes_promotions_and_appends() {
         &mut remaining_accounts,
         &mut dictionary,
         &mut persistent_producers,
+        &mut budget,
     );
     // Promote the same entry twice — first writable, then signer — so undoing in the wrong order
     // would leave the entry with the flags the first promotion set.
@@ -1587,7 +1584,8 @@ fn step_tables_rollback_undoes_promotions_and_appends() {
     );
     assert_eq!(tables.dictionary_index(handle(2)).unwrap(), 1);
     assert_eq!(tables.dictionary_index(handle(1)).unwrap(), 0);
-    tables.rollback();
+    // Uncommitted drop rolls back interned tables.
+    drop(tables);
 
     assert_eq!(remaining_accounts, accounts_before);
     assert_eq!(dictionary, dictionary_before);

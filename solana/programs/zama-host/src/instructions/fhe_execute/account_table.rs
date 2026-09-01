@@ -20,6 +20,14 @@ pub(super) struct ExecutionAccountTable<'a, 'info> {
     /// close to the 32KB heap ceiling. (For the same reason the table caches
     /// no derived PDAs: the single walk derives each output PDA exactly once.)
     persistent_outputs_claimed: Vec<Pubkey>,
+    /// Decode-once cache for canonical `EncryptedValue`s, parallel to `accounts`.
+    /// Each decode allocates the full subject and peak vectors on the never-freeing
+    /// bump heap, and one execution reads the same account from up to three places
+    /// (anchor collection, operand admission, the output write). Boxed so an empty
+    /// slot costs a pointer, not the ~200-byte struct: an unboxed
+    /// `Vec<Option<EncryptedValue>>` sized to the account list measurably lowered
+    /// the all-created-public heap boundary, which never decodes at all.
+    decoded_encrypted_values: Vec<Option<Box<EncryptedValue>>>,
 }
 
 /// Result of deriving a persistent output's canonical address: the PDA, its bump,
@@ -49,7 +57,41 @@ impl<'a, 'info> ExecutionAccountTable<'a, 'info> {
             accounts,
             used: vec![false; accounts.len()],
             persistent_outputs_claimed: Vec::with_capacity(MAX_FHE_EXECUTION_STEPS),
+            decoded_encrypted_values: (0..accounts.len()).map(|_| None).collect(),
         })
+    }
+
+    /// Decode-once, validate-once read of a canonical `EncryptedValue`: the first read decodes
+    /// through `read_canonical_encrypted_value`, later reads reuse it. Safe against staleness
+    /// because within one execution every read of an account precedes its single write (the
+    /// one-write claim plus the read-after-write operand rejection, `preflight.rs`), and the
+    /// write path goes through [`Self::take_canonical_encrypted_value`], which empties the slot.
+    /// The contract is pinned by `cached_read_survives_byte_changes_and_take_invalidates` below.
+    pub(super) fn canonical_encrypted_value(&mut self, index: u16) -> Result<&EncryptedValue> {
+        let account = self.account(index)?;
+        let slot = self
+            .decoded_encrypted_values
+            .get_mut(index as usize)
+            .ok_or_else(|| error!(ZamaHostError::InvalidFheExecuteAccount))?;
+        if slot.is_none() {
+            *slot = Some(Box::new(read_canonical_encrypted_value(account)?));
+        }
+        Ok(slot.as_deref().expect("slot was just filled"))
+    }
+
+    /// The write path's decode: takes the cached value (or decodes when nothing read the account
+    /// earlier), transferring ownership to the caller who will mutate and rewrite it. Taking
+    /// doubles as cache invalidation — after the write, a fresh read would decode the new state.
+    pub(super) fn take_canonical_encrypted_value(&mut self, index: u16) -> Result<EncryptedValue> {
+        let account = self.account(index)?;
+        match self
+            .decoded_encrypted_values
+            .get_mut(index as usize)
+            .and_then(Option::take)
+        {
+            Some(value) => Ok(*value),
+            None => read_canonical_encrypted_value(account),
+        }
     }
 
     pub(super) fn account(&self, index: u16) -> Result<&'a AccountInfo<'info>> {
@@ -184,6 +226,83 @@ mod tests {
         assert!(table.account(1).is_err());
         table.mark(0).unwrap();
         table.assert_all_used().unwrap();
+    }
+
+    /// A canonical encrypted value account: program-owned, PDA-addressed for its own
+    /// `(domain, authority, label)` triple, with the discriminator `read_canonical_encrypted_value`
+    /// checks. Returns the account and the value serialized into it.
+    fn canonical_value_account(tag: u8) -> (AccountInfo<'static>, EncryptedValue) {
+        let mut value = EncryptedValue {
+            domain: Pubkey::new_unique(),
+            encrypted_value_account_authority: Pubkey::new_unique(),
+            label: [tag; 32],
+            current_handle: [tag; 32],
+            subjects: vec![Pubkey::new_unique()],
+            leaf_count: 0,
+            peaks: Vec::new(),
+            bump: 0,
+        };
+        let (key, bump) = encrypted_value_address(value.encrypted_value_id());
+        value.bump = bump;
+        let mut data = Vec::new();
+        value.try_serialize(&mut data).expect("serializes");
+        let info = AccountInfo::new(
+            Box::leak(Box::new(key)),
+            false,
+            true,
+            Box::leak(Box::new(0)),
+            Box::leak(data.into_boxed_slice()),
+            Box::leak(Box::new(crate::ID)),
+            false,
+        );
+        (info, value)
+    }
+
+    /// The cache contract the doc comments promise: repeated reads return the first decode even
+    /// if the account bytes change underneath (within one execution every read of an account
+    /// precedes its single write, so serving the cached decode is correct), and `take` both hands
+    /// out that decode and empties the slot so the next read decodes the current bytes.
+    #[test]
+    fn cached_read_survives_byte_changes_and_take_invalidates() {
+        let (info, original) = canonical_value_account(7);
+        let accounts = vec![info];
+        let mut table = ExecutionAccountTable::new(&accounts).unwrap();
+
+        let first = table.canonical_encrypted_value(0).unwrap();
+        assert_eq!(first.current_handle, original.current_handle);
+
+        // Rewrite the account with a same-size value that differs only in its handle — still
+        // canonical for the same PDA, so a fresh decode would return it and pass validation.
+        // Only the cache distinguishes the two.
+        let mut rewritten = original.clone();
+        rewritten.current_handle = [9; 32];
+        let mut fresh_bytes = Vec::new();
+        rewritten
+            .try_serialize(&mut fresh_bytes)
+            .expect("serializes");
+        accounts[0]
+            .try_borrow_mut_data()
+            .unwrap()
+            .copy_from_slice(&fresh_bytes);
+
+        let cached = table.canonical_encrypted_value(0).unwrap();
+        assert_eq!(cached.current_handle, original.current_handle);
+
+        let taken = table.take_canonical_encrypted_value(0).unwrap();
+        assert_eq!(taken.current_handle, original.current_handle);
+
+        let after_take = table.canonical_encrypted_value(0).unwrap();
+        assert_eq!(after_take.current_handle, rewritten.current_handle);
+    }
+
+    #[test]
+    fn take_without_prior_read_decodes_the_account() {
+        let (info, original) = canonical_value_account(3);
+        let accounts = vec![info];
+        let mut table = ExecutionAccountTable::new(&accounts).unwrap();
+        let taken = table.take_canonical_encrypted_value(0).unwrap();
+        assert_eq!(taken.current_handle, original.current_handle);
+        assert_eq!(taken.subjects, original.subjects);
     }
 
     #[test]

@@ -142,6 +142,24 @@ ID…).
     `compile_fail` doctest on `FheExecution::build`. One runtime check remains, the
     producer-index bounds check, which protects the wire against hand-built
     args (fhevm-internal#1859 §4).
+61. **[ANTI]** `FheExecution::build` does **not** guarantee the host's side of
+    the CPI survives. `build`'s promise is the app-side instruction (#54); the
+    host runs in its own fresh 32 KB heap frame, and what it allocates there
+    scales with created outputs times subjects per output — the created
+    accounts' subject tables plus the public-outputs event payload — which no
+    app-side number can price: the builder's packet interns a shared audience
+    once in the dictionary, while the host materializes it per created
+    account. The counterexample is pinned from both sides: the builder admits
+    20 shared-audience eight-subject `make_public` creates
+    (`the_builder_admits_what_the_host_heap_cannot_hold` in
+    `solana/crates/zama-fhe/src/heap_budget/` builds them `Ok`), and the
+    host's measured wall is 15
+    (`fhe_execute_boundary/subject_heavy_public_creates`: the 16th aborts in
+    the host's CPI frame). Executions in the 16–20 band build cleanly and die
+    on-chain with no error. Until this wall gets a typed policy cap or a
+    host-side heap model (a design decision tracked in fhevm-internal#1872),
+    apps creating many wide-audience public outputs must budget against the
+    sweep, not against `build`'s admission.
 
 ## D. Entry & exit trust
 
@@ -342,30 +360,69 @@ not when the threat model changes.
     close crank retries on the next batch preparation. One composition function
     fills the table and compresses against it, so provisioned and consumed
     membership cannot diverge (`solana/demo-dapp/src/vault`).
-54. **[HOLDS]** Lowering an execution never copies the builder's intern tables,
-    but a step still costs about a kilobyte of heap. What has to fit Anchor's
-    32 KB default bump heap is the whole instruction, not just the build: the
-    region is never freed, and after the build the CPI helper deep-clones
-    `FheExecuteArgs` and borsh-serializes the packet. Measured for steps that
-    each write a persistent output:
-    - **16 steps** — 19,454 bytes (14,446 building, 5,008 for the packet). This
-      is the documented budget.
-    - **24 steps** — 32,158 bytes, which clears the region by only 610 bytes.
-    - **28 steps** — 34,254 bytes: does not fit.
-    - **32 steps** (the largest execution the host accepts) — 41,726 bytes, so it
-      has to be built off-chain, or by a program that installs its own allocator.
+54. **[HOLDS]** An execution `FheExecution::build` returns is one whose
+    *app-side instruction* fits every wall the builder can see — the step cap,
+    the instruction trace, the CPI packet, and the app's heap frame. Four
+    typed ceilings hold that, each an exact function of the execution's
+    shape, each rejected at build time instead of aborting at runtime. (What
+    `build` deliberately does *not* promise is the host's side of the CPI —
+    see #61.)
+    - **Steps** — the host's `MAX_FHE_EXECUTION_STEPS`, the one step ceiling,
+      on-chain and off (`TooManySteps`).
+    - **Instruction trace** — three system CPIs per created output plus the
+      event CPIs, checked per step against the transaction's 64-instruction
+      trace including the app wrapper instruction; at most 20 creates fit one
+      execution (`ExceedsInstructionTraceLimit`). The boundary sweep
+      `fhe_execute_boundary/all_private_creates` asserts the measured wall
+      sits exactly one wrapper instruction past this cap (21 top-level).
+    - **CPI packet** — the serialized packet is counted exactly at `finish`
+      and held under the 10 KiB a CPI may carry; an `fhe_execute` packet
+      always travels by CPI because a transaction itself carries at most
+      1,232 bytes (`ExceedsCpiInstructionDataLimit`).
+    - **Build heap** — the builder admits every byte it requests from the
+      allocator against `BUILD_HEAP_BUDGET_BYTES` (24 KiB) before the
+      allocator serves it (`HeapBudget`: intern tables cannot grow except
+      through `try_push`; exact-size `Vec` sites go through
+      `try_with_capacity`; attestation embeds admit then clone), leaving
+      `APP_HEAP_RESERVE_BYTES`
+      (8 KiB) of the fixed 32 KB region for what the builder genuinely cannot
+      see: Anchor's account deserialization and the app's own allocations
+      (`ExceedsBuildHeapBudget`). The tally can never cross the budget even
+      transiently (proven by
+      `the_tally_never_crosses_the_budget_even_transiently` in
+      `heap_budget`). The packet and invoke-table terms land at `finish`,
+      where they are first known. The invoke-side term prices
+      `resolve_accounts` plus the CPI meta/info tables as an exact function
+      of the account counts, so an admitted execution's whole lifecycle in
+      the app's CPI frame — build, serialize, resolve, invoke — fits the
+      budget.
 
-    Account resolution and Anchor's own account deserialization sit on top of
-    those figures, which is why the budget is 16 and not 24. The SDK enforces that budget on-chain
-    (`MAX_ON_CHAIN_EXECUTION_STEPS`, lifted by the `raised-heap` feature for a program
-    that installs its own allocator) so a program past it gets
-    `TooManyStepsForDefaultHeap` instead of an allocator abort with no error of
-    its own. Two of these figures are asserted by
-    `solana/crates/zama-fhe/src/heap_budget.rs`, and they are the two that matter:
-    16 steps fit the region with the reserve, and the 32-step maximum does not fit
-    at all. The rest of the table is measurement, printed by that file's
-    `print_measurement_table` (`#[ignore]`d — run it with `--ignored --nocapture`),
-    so read the intermediate rows as the last measurement rather than as a bound.
+    Lowering an execution never copies the builder's intern tables or the
+    app's subject lists (the binding moves them), the packet serializes once
+    into a right-sized buffer, and resolve and invoke reserve their exact
+    table sizes up front. Both tallies are proven equal to a counting
+    allocator byte-for-byte across a 122-shape frontier (49 admitted) by
+    `solana/crates/zama-fhe/src/heap_budget/`
+    (`the_heap_tally_matches_a_counting_allocator_for_every_admitted_shape`
+    for build + packet,
+    `the_invoke_model_matches_a_counting_allocator_for_every_admitted_shape`
+    for resolve + CPI tables), so an untallied allocation cannot ship; the
+    at-cap dep-chain specimen proves the chain shape under SBF with the
+    uncounted costs on top. For scale, the heaviest admitted totals
+    (build + packet + invoke): full 32-step chain 13,794 bytes; 20 creates
+    20,656; 20 creates x 2 subjects 21,336; four maximum attestations 20,897;
+    one 60-operand sum 16,484 — the frontier grid is printed by that
+    directory's `print_build_frontier_grid` (`#[ignore]`d — run with
+    `--ignored --nocapture`).
+
+    What the ceilings cannot see stays measured, not guessed. The host-side
+    heap cost of persistent updates grows with the stored value's MMR peak
+    count — on-chain state invisible at build time — and is swept per
+    maturity (`fhe_execute_boundary/mature_updates_peaks_8` 11 steps, `_32` 6,
+    the 55-peak extreme 4), alongside the operand-width axis
+    (`fhe_execute_boundary/reduction_heavy`, host heap wall at 5 steps of
+    60-operand sums; the builder's budget stops the same shape earlier on the
+    app side).
 
 ## I. Roadmap
 

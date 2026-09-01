@@ -11,6 +11,6 @@ pub enum DepChainError {
     InvalidFheExecution,
     #[msg("tail encrypted value account mismatch")]
     TailValueInvalid,
-    #[msg("chain length must be between 1 and 16 steps")]
+    #[msg("chain length must be between 1 and 32 steps")]
     InvalidChainLength,
 }

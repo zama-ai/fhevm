@@ -250,7 +250,7 @@
     {
       "code": 6002,
       "name": "InvalidChainLength",
-      "msg": "chain length must be between 1 and 16 steps"
+      "msg": "chain length must be between 1 and 32 steps"
     }
   ],
   "types": [
@@ -281,7 +281,7 @@
         "",
         "PDA: `[ENCRYPTED_VALUE_SEED, encrypted_value_id]` where `encrypted_value_id =",
         "zama_solana_acl::derive_encrypted_value_id(domain, encrypted_value_account_authority, label)`.",
-        "The account name must stay exactly `EncryptedValue` \u2014 Anchor derives the",
+        "The account name must stay exactly `EncryptedValue` — Anchor derives the",
         "discriminator from the type name, and it must match",
         "`zama_solana_acl::encrypted_value_discriminator()`."
       ],
@@ -299,9 +299,9 @@
             "name": "encrypted_value_account_authority",
             "docs": [
               "The account that controls this encrypted value: it must sign to create it, update its",
-              "handle, or replace its subject list \u2014 including out-of-band `allow_subjects` /",
+              "handle, or replace its subject list — including out-of-band `allow_subjects` /",
               "`remove_subject` (decrypt subjects are not co-admins). Enforced by address rather than by",
-              "comparing this field \u2014 the signer must equal the authority declared in the execution",
+              "comparing this field — the signer must equal the authority declared in the execution",
               "(`assert_output_acl_metadata`) and the account written to must be the PDA rederived from",
               "that declared triple, which is what ties the signer to the stored value on update. For a",
               "token balance this is the token account itself."
