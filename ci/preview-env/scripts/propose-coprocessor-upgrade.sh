@@ -14,8 +14,20 @@ set -euo pipefail
 # generate-mnemonic.cjs (DEPLOYER_KEY_9 on GITHUB_ENV).
 DEPLOYER_KEY_9="${DEPLOYER_KEY_9:-0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6}"
 GCS_VERSION="${GCS_VERSION:-v0.15.0}"
+# Caller-supplied; contract does not enforce uniqueness. Default the Actions
+# run id so a reused namespace can re-propose after a rollback.
+PROPOSAL_ID="${PROPOSAL_ID:-${GITHUB_RUN_ID:-1}}"
 WINDOW_START_OFFSET="${WINDOW_START_OFFSET:-5}"
-WINDOW_END_OFFSET="${WINDOW_END_OFFSET:-80}"
+# Continuously-mining blockchain-dev (~6s/block) needs a window that covers
+# the first e2e DAG; Anvil only advances on txs so the historical 80 is enough
+# for unanimity to fire during the suite.
+if [[ -z "${WINDOW_END_OFFSET:-}" ]]; then
+  if [[ "${USE_BLOCKCHAIN_DEV:-false}" == "true" ]]; then
+    WINDOW_END_OFFSET=1500
+  else
+    WINDOW_END_OFFSET=80
+  fi
+fi
 GW_START_OFFSET="${GW_START_OFFSET:-5}"
 TIMEOUT_SECS="${TIMEOUT_SECS:-420}"
 # Live DB stores major.minor (compose e2e: v0.15 from v0.15.0).
@@ -62,7 +74,16 @@ trap cleanup EXIT
 if [[ "${SKIP_PROPOSE}" == "true" ]]; then
   echo "Skipping on-chain propose (SKIP_PROPOSE=true)"
 else
-echo "proposeCoprocessorUpgrade id=1 version=${GCS_VERSION} windows=${windows} gw_start=${gw_start}"
+echo "proposeCoprocessorUpgrade id=${PROPOSAL_ID} version=${GCS_VERSION} windows=${windows} gw_start=${gw_start}"
+
+if [[ -n "${GITHUB_ENV:-}" ]]; then
+  {
+    echo "UPGRADE_PROPOSAL_ID=${PROPOSAL_ID}"
+    echo "UPGRADE_START_BLOCK=${start}"
+    echo "UPGRADE_END_BLOCK=${end}"
+    echo "UPGRADE_GW_START=${gw_start}"
+  } >> "${GITHUB_ENV}"
+fi
 
 kubectl create secret generic "${job}" -n "${NAMESPACE}" \
   --from-literal=protocol_config="${protocol_config}" \
@@ -71,6 +92,7 @@ kubectl create secret generic "${job}" -n "${NAMESPACE}" \
   --from-literal=version="${GCS_VERSION}" \
   --from-literal=windows="${windows}" \
   --from-literal=gw_start="${gw_start}" \
+  --from-literal=proposal_id="${PROPOSAL_ID}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl delete pod -n "${NAMESPACE}" "${job}" --ignore-not-found >/dev/null
@@ -94,7 +116,7 @@ spec:
             --rpc-url "\$HOST_HTTP" \
             --private-key "\$DEPLOYER_KEY" \
             "proposeCoprocessorUpgrade(uint256,string,(uint64,uint64,uint64)[],uint64)" \
-            "1" "\$GCS_VERSION" "\$WINDOWS" "\$GW_START"
+            "\$PROPOSAL_ID" "\$GCS_VERSION" "\$WINDOWS" "\$GW_START"
       env:
         - name: PROTOCOL_CONFIG
           valueFrom: {secretKeyRef: {name: ${job}, key: protocol_config}}
@@ -108,6 +130,8 @@ spec:
           valueFrom: {secretKeyRef: {name: ${job}, key: windows}}
         - name: GW_START
           valueFrom: {secretKeyRef: {name: ${job}, key: gw_start}}
+        - name: PROPOSAL_ID
+          valueFrom: {secretKeyRef: {name: ${job}, key: proposal_id}}
 EOF
 
 kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/"${job}" -n "${NAMESPACE}" --timeout=90s
@@ -120,6 +144,10 @@ psql_party() {
     env PGPASSWORD=zama psql -U zama -d fhevm_e2e -tAqc "${sql}"
 }
 
+# After in-window e2e, cutover may already have flipped the row to
+# UpgradeAuthorized/LIVE. Skip the DryRunStarted gate when we only want
+# the versioning assert.
+if [[ "${SKIP_PROPOSE}" != "true" || "${ASSERT_CUTOVER}" != "true" ]]; then
 deadline=$((SECONDS + TIMEOUT_SECS))
 for i in $(seq 1 "${NB_COPROCESSOR}"); do
   echo "Waiting for party ${i} GCS DryRunStarted..."
@@ -138,6 +166,7 @@ for i in $(seq 1 "${NB_COPROCESSOR}"); do
     sleep 5
   done
 done
+fi
 
 if [[ "${ASSERT_CUTOVER}" != "true" ]]; then
   echo "DryRunStarted on ${NB_COPROCESSOR} operator DB(s). Set ASSERT_CUTOVER=true after in-window traffic to wait for ${LIVE_VERSION}."
