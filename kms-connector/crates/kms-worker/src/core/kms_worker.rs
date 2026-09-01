@@ -19,7 +19,7 @@ use anyhow::anyhow;
 use connector_utils::{
     conn::{DefaultProvider, connect_to_db, connect_to_rpc_node, connect_to_rpc_node_with_bounds},
     tasks::spawn_with_limit,
-    types::{KmsResponse, ProtocolEvent, ProtocolEventKind},
+    types::{KmsResponse, ProtocolEvent, ProtocolEventKind, db::RequestSource},
 };
 use fhevm_host_bindings::acl::ACL;
 use std::collections::HashMap;
@@ -102,7 +102,7 @@ where
     }
 
     /// Processes an event coming from the Gateway.
-    #[tracing::instrument(skip(event_processor, response_publisher), fields(event = % event.kind))]
+    #[tracing::instrument(skip(event_processor, response_publisher, max_decryption_attempts), fields(event = % event.kind))]
     async fn handle_event(
         mut event_processor: Proc,
         response_publisher: DbKmsResponsePublisher,
@@ -130,12 +130,16 @@ where
             return;
         };
 
-        let response = KmsResponse::new(response_kind, otlp_context);
+        let response = KmsResponse::new(response_kind, otlp_context, event.source);
         if let Err(e) = response_publisher.publish_response(response).await {
-            error!("Failed to publish response: {e}");
-            if let Err(e) = response_publisher.mark_event_as_pending(event).await {
-                warn!("{e}");
-            }
+            event.error_counter += 1;
+            Self::handle_processing_error(
+                &response_publisher,
+                event,
+                ProcessingError::transient(anyhow!("Failed to publish response: {e}")),
+                max_decryption_attempts,
+            )
+            .await;
         } else {
             register_event_latency(&event);
         }
@@ -147,16 +151,22 @@ where
         error: ProcessingError,
         max_decryption_attempts: u16,
     ) {
+        // For HTTP-sourced requests: the caller is waiting on a held connection, so any failure
+        // is stored as an error response row instead of being retried internally.
+        if event.source == RequestSource::Http {
+            return Self::reject_http_decryption(response_publisher, &event, error).await;
+        }
+
         match (error.kind, &event.kind) {
             (ProcessingErrorKind::Irrecoverable, _) => {
                 error!("{error}");
-                if let Err(e) = response_publisher.mark_event_as_failed(event).await {
+                if let Err(e) = response_publisher.mark_event_as_failed(&event).await {
                     warn!("{e}");
                 }
             }
             (ProcessingErrorKind::Aborted, _) => {
                 warn!("{error}");
-                if let Err(e) = response_publisher.mark_event_as_aborted(event).await {
+                if let Err(e) = response_publisher.mark_event_as_aborted(&event).await {
                     warn!("{e}");
                 }
             }
@@ -176,15 +186,69 @@ where
                      decryption attempts reached: {}",
                     error.source, event.error_counter
                 );
-                if let Err(e) = response_publisher.mark_event_as_failed(event).await {
+                if let Err(e) = response_publisher.mark_event_as_failed(&event).await {
                     warn!("{e}");
                 }
             }
             (ProcessingErrorKind::Recoverable, _) => {
                 error!("{error}");
-                if let Err(e) = response_publisher.mark_event_as_pending(event).await {
+                if let Err(e) = response_publisher.mark_event_as_pending(&event).await {
                     warn!("{e}");
                 }
+            }
+        }
+    }
+
+    /// Stores the failure of an HTTP-sourced decryption request as an error response row.
+    async fn reject_http_decryption(
+        response_publisher: &DbKmsResponsePublisher,
+        event: &ProtocolEvent,
+        error: ProcessingError,
+    ) {
+        error!(
+            "{error}. Storing `{}` error response for the HTTP-sourced request...",
+            error.code.as_str()
+        );
+
+        let details = format!("{error:#}");
+        let result = match &event.kind {
+            ProtocolEventKind::PublicDecryption(req) => {
+                response_publisher
+                    .publish_public_decryption_error(
+                        req.decryptionId,
+                        error.code,
+                        &details,
+                        &req.extraData,
+                        &event.otlp_context,
+                    )
+                    .await
+            }
+            ProtocolEventKind::UserDecryptionV2(req) => {
+                response_publisher
+                    .publish_user_decryption_error(
+                        req.decryptionId,
+                        error.code,
+                        &details,
+                        &req.payload.extraData,
+                        &event.otlp_context,
+                    )
+                    .await
+            }
+            kind => {
+                error!(
+                    "Unexpected HTTP-sourced {kind}: only decryption requests can be HTTP-sourced"
+                );
+                if let Err(e) = response_publisher.mark_event_as_failed(event).await {
+                    warn!("{e}");
+                }
+                return;
+            }
+        };
+
+        if let Err(e) = result {
+            error!("Failed to store the error response: {e}");
+            if let Err(e) = response_publisher.mark_event_as_failed(event).await {
+                warn!("{e}");
             }
         }
     }

@@ -1,11 +1,14 @@
+use alloy::primitives::U256;
 use connector_utils::{
     monitoring::otlp::PropagationContext,
     types::{
         CrsgenResponse, EpochResultResponse, KeygenResponse, KmsResponse, KmsResponseKind,
         NewKmsContextResponse, PrepKeygenResponse, ProtocolEvent, PublicDecryptionResponse,
-        UserDecryptionResponse, db::KeyDigestDbItem,
+        UserDecryptionResponse,
+        db::{KeyDigestDbItem, OperationStatus, RequestSource},
     },
 };
+use kms_connector_api::ErrorCode;
 use sqlx::{
     Pool, Postgres,
     postgres::PgQueryResult,
@@ -40,13 +43,14 @@ impl KmsResponsePublisher for DbKmsResponsePublisher {
 
         let created_at = response.created_at;
         let otlp_context = response.otlp_context;
+        let source = response.source;
         let query_result = match response.kind {
             KmsResponseKind::PublicDecryption(r) => {
-                self.publish_public_decryption(r, created_at, otlp_context)
+                self.publish_public_decryption(r, created_at, otlp_context, source)
                     .await?
             }
             KmsResponseKind::UserDecryption(r) => {
-                self.publish_user_decryption(r, created_at, otlp_context)
+                self.publish_user_decryption(r, created_at, otlp_context, source)
                     .await?
             }
             KmsResponseKind::PrepKeygen(r) => {
@@ -75,47 +79,92 @@ impl KmsResponsePublisher for DbKmsResponsePublisher {
 }
 
 impl DbKmsResponsePublisher {
+    /// Stores the response and completes the associated request row in a single statement.
+    ///
+    /// A retry may override a previous error row, but never a successful response.
     async fn publish_public_decryption(
         &self,
         response: PublicDecryptionResponse,
         created_at: DateTime<Utc>,
         otlp_ctx: PropagationContext,
+        source: RequestSource,
     ) -> anyhow::Result<PgQueryResult> {
         sqlx::query!(
-            "INSERT INTO public_decryption_responses(
-                decryption_id, decrypted_result, signature, extra_data, created_at, otlp_context
+            "WITH response AS (
+                INSERT INTO public_decryption_responses(
+                    decryption_id, decrypted_result, signature, extra_data, created_at,
+                    otlp_context, source, status
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                ON CONFLICT (decryption_id) DO UPDATE SET
+                    decrypted_result = EXCLUDED.decrypted_result,
+                    signature = EXCLUDED.signature,
+                    extra_data = EXCLUDED.extra_data,
+                    created_at = EXCLUDED.created_at,
+                    otlp_context = EXCLUDED.otlp_context,
+                    source = EXCLUDED.source,
+                    status = EXCLUDED.status,
+                    error_code = NULL,
+                    error_details = NULL
+                WHERE public_decryption_responses.decrypted_result IS NULL
+                RETURNING decryption_id
             )
-            VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
+            UPDATE public_decryption_requests SET status = 'completed'
+            WHERE decryption_id IN (SELECT decryption_id FROM response)",
             response.decryption_id.as_le_slice(),
             response.decrypted_result,
             response.signature,
             response.extra_data,
             created_at,
-            bc2wrap::serialize(&otlp_ctx)?
+            bc2wrap::serialize(&otlp_ctx)?,
+            source as RequestSource,
+            decryption_insert_status(source) as OperationStatus,
         )
         .execute(&self.db_pool)
         .await
         .map_err(anyhow::Error::from)
     }
 
+    /// Stores the response and completes the associated request row in a single statement.
+    ///
+    /// A retry may override a previous error row, but never a successful response.
     async fn publish_user_decryption(
         &self,
         response: UserDecryptionResponse,
         created_at: DateTime<Utc>,
         otlp_ctx: PropagationContext,
+        source: RequestSource,
     ) -> anyhow::Result<PgQueryResult> {
         sqlx::query!(
-            "INSERT INTO user_decryption_responses(
-                decryption_id, user_decrypted_shares, signature, extra_data, created_at,
-                otlp_context
+            "WITH response AS (
+                INSERT INTO user_decryption_responses(
+                    decryption_id, user_decrypted_shares, signature, extra_data, created_at,
+                    otlp_context, source, status
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                ON CONFLICT (decryption_id) DO UPDATE SET
+                    user_decrypted_shares = EXCLUDED.user_decrypted_shares,
+                    signature = EXCLUDED.signature,
+                    extra_data = EXCLUDED.extra_data,
+                    created_at = EXCLUDED.created_at,
+                    otlp_context = EXCLUDED.otlp_context,
+                    source = EXCLUDED.source,
+                    status = EXCLUDED.status,
+                    error_code = NULL,
+                    error_details = NULL
+                WHERE user_decryption_responses.user_decrypted_shares IS NULL
+                RETURNING decryption_id
             )
-            VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
+            UPDATE user_decryption_requests SET status = 'completed'
+            WHERE decryption_id IN (SELECT decryption_id FROM response)",
             response.decryption_id.as_le_slice(),
             response.user_decrypted_shares,
             response.signature,
             response.extra_data,
             created_at,
-            bc2wrap::serialize(&otlp_ctx)?
+            bc2wrap::serialize(&otlp_ctx)?,
+            source as RequestSource,
+            decryption_insert_status(source) as OperationStatus,
         )
         .execute(&self.db_pool)
         .await
@@ -223,17 +272,128 @@ impl DbKmsResponsePublisher {
     }
 
     /// Sets the `status` field of the event to `pending` in the database.
-    pub async fn mark_event_as_pending(&self, event: ProtocolEvent) -> anyhow::Result<()> {
+    pub async fn mark_event_as_pending(&self, event: &ProtocolEvent) -> anyhow::Result<()> {
         event.mark_as_pending(&self.db_pool).await
     }
 
     /// Sets the `status` field of the event to `failed` in the database.
-    pub async fn mark_event_as_failed(&self, event: ProtocolEvent) -> anyhow::Result<()> {
+    pub async fn mark_event_as_failed(&self, event: &ProtocolEvent) -> anyhow::Result<()> {
         event.mark_as_failed(&self.db_pool).await
     }
 
     /// Sets the `status` field of the event to `aborted` in the database.
-    pub async fn mark_event_as_aborted(&self, event: ProtocolEvent) -> anyhow::Result<()> {
+    pub async fn mark_event_as_aborted(&self, event: &ProtocolEvent) -> anyhow::Result<()> {
         event.mark_as_aborted(&self.db_pool).await
+    }
+
+    /// Stores the rejection of an HTTP-sourced public decryption request.
+    ///
+    /// A retry may override a previous error row, but never a successful response.
+    pub async fn publish_public_decryption_error(
+        &self,
+        decryption_id: U256,
+        error_code: ErrorCode,
+        error_details: &str,
+        extra_data: &[u8],
+        otlp_ctx: &PropagationContext,
+    ) -> anyhow::Result<()> {
+        let query_result = sqlx::query!(
+            "WITH response AS (
+                INSERT INTO public_decryption_responses(
+                    decryption_id, error_code, error_details, extra_data, created_at,
+                    otlp_context, source, status
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, 'http', 'completed')
+                ON CONFLICT (decryption_id) DO UPDATE SET
+                    error_code = EXCLUDED.error_code,
+                    error_details = EXCLUDED.error_details,
+                    extra_data = EXCLUDED.extra_data,
+                    created_at = EXCLUDED.created_at,
+                    otlp_context = EXCLUDED.otlp_context,
+                    source = EXCLUDED.source,
+                    status = EXCLUDED.status
+                WHERE public_decryption_responses.decrypted_result IS NULL
+                RETURNING decryption_id
+            )
+            UPDATE public_decryption_requests SET status = 'failed'
+            WHERE decryption_id IN (SELECT decryption_id FROM response)",
+            decryption_id.as_le_slice(),
+            error_code.as_str(),
+            error_details,
+            extra_data,
+            Utc::now(),
+            bc2wrap::serialize(otlp_ctx)?,
+        )
+        .execute(&self.db_pool)
+        .await?;
+        log_error_publication_result(query_result, error_code);
+        Ok(())
+    }
+
+    /// Stores the rejection of an HTTP-sourced user decryption request.
+    ///
+    /// A retry may override a previous error row, but never a successful response.
+    pub async fn publish_user_decryption_error(
+        &self,
+        decryption_id: U256,
+        error_code: ErrorCode,
+        error_details: &str,
+        extra_data: &[u8],
+        otlp_ctx: &PropagationContext,
+    ) -> anyhow::Result<()> {
+        let query_result = sqlx::query!(
+            "WITH response AS (
+                INSERT INTO user_decryption_responses(
+                    decryption_id, error_code, error_details, extra_data, created_at,
+                    otlp_context, source, status
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, 'http', 'completed')
+                ON CONFLICT (decryption_id) DO UPDATE SET
+                    error_code = EXCLUDED.error_code,
+                    error_details = EXCLUDED.error_details,
+                    extra_data = EXCLUDED.extra_data,
+                    created_at = EXCLUDED.created_at,
+                    otlp_context = EXCLUDED.otlp_context,
+                    source = EXCLUDED.source,
+                    status = EXCLUDED.status
+                WHERE user_decryption_responses.user_decrypted_shares IS NULL
+                RETURNING decryption_id
+            )
+            UPDATE user_decryption_requests SET status = 'failed'
+            WHERE decryption_id IN (SELECT decryption_id FROM response)",
+            decryption_id.as_le_slice(),
+            error_code.as_str(),
+            error_details,
+            extra_data,
+            Utc::now(),
+            bc2wrap::serialize(otlp_ctx)?,
+        )
+        .execute(&self.db_pool)
+        .await?;
+        log_error_publication_result(query_result, error_code);
+        Ok(())
+    }
+}
+
+fn decryption_insert_status(source: RequestSource) -> OperationStatus {
+    match source {
+        // Onchain-sourced decryption are pending until the tx-sender publishes them on-chain.
+        RequestSource::OnChain => OperationStatus::Pending,
+        // HTTP-sourced decryption have no on-chain step so they are terminal on insert.
+        RequestSource::Http => OperationStatus::Completed,
+    }
+}
+
+fn log_error_publication_result(query_result: PgQueryResult, error_code: ErrorCode) {
+    if query_result.rows_affected() == 1 {
+        info!(
+            "Successfully stored `{}` error response in DB!",
+            error_code.as_str()
+        );
+    } else {
+        warn!(
+            "Error response `{}` not stored: a successful response row already exists",
+            error_code.as_str()
+        );
     }
 }

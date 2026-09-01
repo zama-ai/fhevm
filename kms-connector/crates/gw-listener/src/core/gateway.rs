@@ -14,7 +14,10 @@ use alloy::{
 use anyhow::anyhow;
 use connector_utils::{
     monitoring::otlp::PropagationContext,
-    types::{ProtocolEvent, db::EventType},
+    types::{
+        ProtocolEvent,
+        db::{EventType, RequestSource},
+    },
 };
 use fhevm_gateway_bindings::decryption::Decryption::DecryptionEvents;
 use sqlx::{Pool, Postgres};
@@ -184,6 +187,7 @@ where
                 event_kind,
                 log.transaction_hash,
                 otlp_ctx,
+                RequestSource::OnChain,
             ));
         }
         Ok(events)

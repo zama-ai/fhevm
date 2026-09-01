@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH response AS (\n                INSERT INTO user_decryption_responses(\n                    decryption_id, error_code, error_details, extra_data, created_at,\n                    otlp_context, source, status\n                )\n                VALUES ($1, $2, $3, $4, $5, $6, 'http', 'completed')\n                ON CONFLICT (decryption_id) DO UPDATE SET\n                    error_code = EXCLUDED.error_code,\n                    error_details = EXCLUDED.error_details,\n                    extra_data = EXCLUDED.extra_data,\n                    created_at = EXCLUDED.created_at,\n                    otlp_context = EXCLUDED.otlp_context,\n                    source = EXCLUDED.source,\n                    status = EXCLUDED.status\n                WHERE user_decryption_responses.user_decrypted_shares IS NULL\n                RETURNING decryption_id\n            )\n            UPDATE user_decryption_requests SET status = 'failed'\n            WHERE decryption_id IN (SELECT decryption_id FROM response)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Text",
+        "Text",
+        "Bytea",
+        "Timestamptz",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d55e840e3a96ff72e262e622a972a917f0b8ba64d4541fb6c796696a3c2254a8"
+}
