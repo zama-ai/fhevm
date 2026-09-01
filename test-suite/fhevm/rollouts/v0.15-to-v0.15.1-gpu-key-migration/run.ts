@@ -677,7 +677,10 @@ export const reconstructMigrated015Fixture = async (ctx: RolloutRunContext): Pro
   await ctx.test("blue-green", { parallel: false });
 
   logPhase("09 re-home promoted 0.15.0 as Blue and stage deferred 0.15.1 Green");
-  await ctx.restagePromotedGreen({ stackVersion: "0.15.1" });
+  await ctx.restagePromotedGreen({
+    stackVersion: "0.15.1",
+    env: { FORCE_LEGACY_SERVER_KEY: "false" },
+  });
   await assertActiveSafeguard();
   await assertActiveImageTag(versions.blueTag);
   await assertGreenAbsent();
