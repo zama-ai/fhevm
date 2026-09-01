@@ -1,5 +1,6 @@
 pub mod arbitrum;
 pub mod ciphertext_checker;
+pub mod handled_events;
 pub mod input_handlers;
 pub mod public_decrypt_handler;
 pub mod throttlers;
@@ -12,6 +13,7 @@ pub use user_decrypt_handler::GatewayHandler as UserDecryptGatewayHandler;
 
 use crate::config::settings::{ListenerType, Settings};
 use crate::gateway::arbitrum::transaction::tx_processor::GatewayTxProcessor;
+use crate::gateway::handled_events::HandledEvents;
 use crate::gateway::throttlers::GatewayThrottlers;
 use crate::host::{HostAclChecker, ThresholdResolver};
 use crate::orchestrator::{HealthCheck, Orchestrator};
@@ -22,13 +24,12 @@ use crate::readiness::{
 use crate::store::sql::repositories::Repositories;
 use alloy::primitives::Address;
 use arbitrum::{
-    event_deduplicator::EventDeduplicator,
     transaction::{
         helper::GatewayTransactionEngine, TransactionHelper as GatewayTransactionHelper,
     },
-    ArbitrumListener, PollingListener,
+    ArbitrumListener, PollingListener, WsRecycleStagger,
 };
-use std::{str::FromStr, sync::Arc};
+use std::{str::FromStr, sync::Arc, time::Duration};
 use tracing::{error, info};
 
 /// Initialize all gateway components including handlers and listeners.
@@ -170,11 +171,14 @@ pub async fn initialize_gateway(
         gateway_tx_helper.clone() as Arc<dyn HealthCheck>,
     );
 
-    // Create shared event deduplicator
+    // Every listener hands its logs to one place, so a log seen by several instances is
+    // dispatched once and the cursor only passes events that have been handled.
     let pool_config = &settings.gateway.listener_pool;
-    let deduplicator = Arc::new(EventDeduplicator::new(
-        pool_config.dedup_ttl_seconds,
-        pool_config.dedup_max_capacity,
+    let handled_events = Arc::new(HandledEvents::new(
+        Duration::from_secs(pool_config.dedup_ttl_seconds),
+        pool_config.dedup_max_capacity as u64,
+        repositories.chain_cursor.clone(),
+        orchestrator.clone(),
     ));
 
     // Count only WebSocket listeners for stagger calculation
@@ -193,18 +197,19 @@ pub async fn initialize_gateway(
         num_listeners - num_ws_listeners
     );
 
-    // Track WS-specific index for stagger calculation
-    let mut ws_instance_idx = 0;
+    // Counts subscription listeners only, so it staggers their recycles without gaps. Reaches
+    // the listener inside a `WsRecycleStagger` and never as its identity - see that type.
+    let mut ws_stagger_index = 0;
 
     // Initialize and spawn listeners based on their type
-    for (instance_id, listener_config) in pool_config.listeners.iter().enumerate() {
+    for (pool_index, listener_config) in pool_config.listeners.iter().enumerate() {
         let url = &listener_config.url;
 
         match listener_config.listener_type {
             ListenerType::Subscription => {
                 info!(
-                    instance_id = instance_id,
-                    ws_instance_idx = ws_instance_idx,
+                    instance_id = pool_index,
+                    ws_stagger_index = ws_stagger_index,
                     url = %url,
                     "Initializing WebSocket subscription listener"
                 );
@@ -212,28 +217,29 @@ pub async fn initialize_gateway(
                 let listener = Arc::new(
                     ArbitrumListener::new(
                         settings.gateway.clone(),
-                        orchestrator.clone(),
-                        repositories.block_number.clone(),
-                        deduplicator.clone(),
-                        ws_instance_idx,
+                        handled_events.clone(),
+                        pool_index,
                         url.clone(),
-                        num_ws_listeners,
+                        WsRecycleStagger {
+                            index: ws_stagger_index,
+                            total: num_ws_listeners,
+                        },
                     )
                     .await
                     .map_err(|e| {
                         anyhow::anyhow!(
                             "Failed to initialize subscription listener {}: {}",
-                            instance_id,
+                            pool_index,
                             e
                         )
                     })?,
                 );
 
-                let task_name = format!("gateway_listener_{}", instance_id);
+                let task_name = format!("gateway_listener_{}", pool_index);
 
                 // Register health check
                 orchestrator.add_health_check(
-                    format!("gateway_listener_{}", instance_id),
+                    format!("gateway_listener_{}", pool_index),
                     listener.clone() as Arc<dyn HealthCheck>,
                 );
 
@@ -245,7 +251,7 @@ pub async fn initialize_gateway(
                         &task_name,
                         async move {
                             if let Err(e) = listener_clone.run().await {
-                                error!("Subscription listener {} failed: {}", instance_id, e);
+                                error!("Subscription listener {} failed: {}", pool_index, e);
                             }
                         },
                         async move { health_listener.check().await },
@@ -254,16 +260,16 @@ pub async fn initialize_gateway(
                     .map_err(|e| {
                         anyhow::anyhow!(
                             "Failed to start subscription listener {}: {}",
-                            instance_id,
+                            pool_index,
                             e
                         )
                     })?;
 
-                ws_instance_idx += 1;
+                ws_stagger_index += 1;
             }
             ListenerType::Polling => {
                 info!(
-                    instance_id = instance_id,
+                    instance_id = pool_index,
                     url = %url,
                     "Initializing HTTP polling listener"
                 );
@@ -271,26 +277,25 @@ pub async fn initialize_gateway(
                 let listener = Arc::new(
                     PollingListener::new(
                         settings.gateway.clone(),
-                        orchestrator.clone(),
-                        repositories.block_number.clone(),
-                        deduplicator.clone(),
-                        instance_id,
+                        repositories.chain_cursor.clone(),
+                        handled_events.clone(),
+                        pool_index,
                         url.clone(),
                     )
                     .map_err(|e| {
                         anyhow::anyhow!(
                             "Failed to initialize polling listener {}: {}",
-                            instance_id,
+                            pool_index,
                             e
                         )
                     })?,
                 );
 
-                let task_name = format!("gateway_listener_{}", instance_id);
+                let task_name = format!("gateway_listener_{}", pool_index);
 
                 // Register health check
                 orchestrator.add_health_check(
-                    format!("gateway_listener_{}", instance_id),
+                    format!("gateway_listener_{}", pool_index),
                     listener.clone() as Arc<dyn HealthCheck>,
                 );
 
@@ -302,14 +307,14 @@ pub async fn initialize_gateway(
                         &task_name,
                         async move {
                             if let Err(e) = listener_clone.run().await {
-                                error!("Polling listener {} failed: {}", instance_id, e);
+                                error!("Polling listener {} failed: {}", pool_index, e);
                             }
                         },
                         async move { health_listener.check().await },
                     )
                     .await
                     .map_err(|e| {
-                        anyhow::anyhow!("Failed to start polling listener {}: {}", instance_id, e)
+                        anyhow::anyhow!("Failed to start polling listener {}: {}", pool_index, e)
                     })?;
             }
         }

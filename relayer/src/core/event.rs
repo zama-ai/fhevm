@@ -23,7 +23,11 @@ use tracing::info;
 #[derive(Debug)]
 /// Event Ids corresponding the events of GatewayChainEvent type.
 pub enum GatewayChainEventId {
-    EventLogRcvd = 50,
+    UserDecryptionResponse = 50,
+    UserDecryptionResponseThresholdReached = 51,
+    PublicDecryptionResponse = 52,
+    VerifyProofResponse = 53,
+    RejectProofResponse = 54,
 }
 
 impl From<GatewayChainEventId> for u8 {
@@ -221,20 +225,56 @@ impl AsRef<str> for RelayerEventData {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum GatewayChainEventData {
-    /// Event representing a raw blockchain event log received from gateway chain.
-    EventLogRcvd { log: Log, tx_hash: TxHash },
+    /// Individual KMS share for a user decryption request.
+    UserDecryptionResponse { log: Log, tx_hash: TxHash },
+    /// Consensus reached across KMS shares for a user decryption request.
+    UserDecryptionResponseThresholdReached { log: Log, tx_hash: TxHash },
+    /// Gateway response to a public decryption request.
+    PublicDecryptionResponse { log: Log, tx_hash: TxHash },
+    /// Gateway accepted an input proof verification.
+    VerifyProofResponse { log: Log, tx_hash: TxHash },
+    /// Gateway rejected an input proof verification.
+    RejectProofResponse { log: Log, tx_hash: TxHash },
 }
 
 impl GatewayChainEventData {
     pub fn event_name(&self) -> &'static str {
         match self {
-            GatewayChainEventData::EventLogRcvd { .. } => "GatewayChain::EventLogRcvd",
+            GatewayChainEventData::UserDecryptionResponse { .. } => {
+                "GatewayChain::UserDecryptionResponse"
+            }
+            GatewayChainEventData::UserDecryptionResponseThresholdReached { .. } => {
+                "GatewayChain::UserDecryptionResponseThresholdReached"
+            }
+            GatewayChainEventData::PublicDecryptionResponse { .. } => {
+                "GatewayChain::PublicDecryptionResponse"
+            }
+            GatewayChainEventData::VerifyProofResponse { .. } => {
+                "GatewayChain::VerifyProofResponse"
+            }
+            GatewayChainEventData::RejectProofResponse { .. } => {
+                "GatewayChain::RejectProofResponse"
+            }
         }
     }
 
     pub fn event_id(&self) -> u8 {
         match self {
-            GatewayChainEventData::EventLogRcvd { .. } => GatewayChainEventId::EventLogRcvd.into(),
+            GatewayChainEventData::UserDecryptionResponse { .. } => {
+                GatewayChainEventId::UserDecryptionResponse.into()
+            }
+            GatewayChainEventData::UserDecryptionResponseThresholdReached { .. } => {
+                GatewayChainEventId::UserDecryptionResponseThresholdReached.into()
+            }
+            GatewayChainEventData::PublicDecryptionResponse { .. } => {
+                GatewayChainEventId::PublicDecryptionResponse.into()
+            }
+            GatewayChainEventData::VerifyProofResponse { .. } => {
+                GatewayChainEventId::VerifyProofResponse.into()
+            }
+            GatewayChainEventData::RejectProofResponse { .. } => {
+                GatewayChainEventId::RejectProofResponse.into()
+            }
         }
     }
 }
