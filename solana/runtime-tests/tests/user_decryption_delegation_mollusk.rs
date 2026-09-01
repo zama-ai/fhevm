@@ -1287,7 +1287,8 @@ fn sdk_fixture_delegation_address_and_instruction_bytes() {
     // The record as the program serializes it, for the SDK's hand-rolled account decoder. The
     // bump is the canonical one of the address above — the only value the program ever stores,
     // and the SDK's fetch now validates it against its own derivation.
-    let (_, canonical_bump) = host::user_decryption_delegation_address(delegator, delegate, authority);
+    let (_, canonical_bump) =
+        host::user_decryption_delegation_address(delegator, delegate, authority);
     assert_eq!(canonical_bump, 255);
     let record = serialized(UserDecryptionDelegation {
         delegator,
