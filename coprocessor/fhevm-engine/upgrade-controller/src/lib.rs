@@ -1170,8 +1170,14 @@ async fn cleanup_orphaned_dependence_chains(
           WHERE EXISTS (SELECT 1 FROM cutover_touched_chains t
                          WHERE t.dependence_chain_id = d.dependence_chain_id)",
     );
-    for schema in ["public", GCS_SCHEMA_QUOTED] {
-        for comp_table in COMPUTATION_TABLES {
+    // `computations_branch` is public-only (`duplicated: false`). Walking it
+    // on the GCS schema is what failed cutover with
+    // `relation "gcs-*.computations_branch" does not exist`.
+    for (schema, tables) in [
+        ("public", COMPUTATION_TABLES),
+        (GCS_SCHEMA_QUOTED, &["computations"][..]),
+    ] {
+        for comp_table in tables {
             sql.push_str(&format!(
                 " AND NOT EXISTS (SELECT 1 FROM {schema}.{comp_table} c
                                    WHERE c.dependence_chain_id = d.dependence_chain_id)"

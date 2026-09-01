@@ -1188,6 +1188,15 @@ jobs:
                   -l app=coprocessor-db-migration,app.kubernetes.io/name="coprocessor-${i}-db-migration" \
                   job -n "${NAMESPACE}" --timeout=180s
             done
+            # BCS zkproof (v0.14.0-7) snapshots host_chains once at process
+            # start. helm applies the Deployment in parallel with db-migration,
+            # so a party whose seed finishes a second later keeps
+            # `chain_id = ANY('{}')` forever and never claims proofs. Restart
+            # after seed so both parties see 1337.
+            for i in $(seq 1 "${NB_COPROCESSOR}"); do
+              kubectl rollout restart "deploy/coprocessor-${i}-zkproof-worker" -n "${NAMESPACE}"
+              kubectl rollout status "deploy/coprocessor-${i}-zkproof-worker" -n "${NAMESPACE}" --timeout=180s
+            done
             for i in $(seq 1 "${NB_COPROCESSOR}"); do
               privkey=$(jq -r --argjson party "${i}" '.[] | select(.party == $party) | .privateKey' <<<"${COPROC_WALLETS_JSON}")
               party_common "${i}" "${privkey}" "-gcs"
