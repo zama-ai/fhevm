@@ -62,6 +62,7 @@ where
             extra_data: prep_keygen_request.extraData.to_vec(),
             // Used to generate other types of key, but not planned to be supported by the Gateway
             keyset_config: Some(UNCOMPRESSED_KEY_SET_CONFIG),
+            signing_schemes: vec![],
         }))
     }
 
@@ -87,6 +88,7 @@ where
             // Used to generate other types of key, but not planned to be supported by the Gateway
             keyset_config: Some(UNCOMPRESSED_KEY_SET_CONFIG),
             keyset_added_info: None,
+            signing_schemes: vec![],
         }))
     }
 
@@ -120,6 +122,7 @@ where
             max_num_bits,
             epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
             context_id: parsed_extra_data.context_id.map(u256_to_request_id),
+            signing_schemes: vec![],
         }))
     }
 }

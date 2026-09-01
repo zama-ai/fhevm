@@ -204,14 +204,18 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
             ProtocolEventKind::UserDecryptionSolana(req) => {
                 // RFC-021: the ed25519 auth fields are typed on the event. The check verifies the
                 // ed25519 binding + Solana ACL before the typed pubkey is sent to KMS.
-                self.decryption_processor
+                let verifying_program_id = self
+                    .decryption_processor
                     .check_user_decryption_request_solana(req)
                     .await
                     .map_err(RequestCheckError::record)?;
                 let payload = &req.payload;
                 let handles: Vec<B256> = req.handles.iter().map(|h| h.handle).collect();
                 let user_decrypt_data =
-                    DecryptionProcessor::<GP, HP, C>::user_decryption_extra_data_for_solana(req);
+                    DecryptionProcessor::<GP, HP, C>::user_decryption_extra_data_for_solana(
+                        req,
+                        verifying_program_id,
+                    );
                 self.decryption_processor
                     .prepare_decryption_request(
                         req.decryptionId,

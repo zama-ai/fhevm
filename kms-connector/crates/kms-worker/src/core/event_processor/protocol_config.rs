@@ -89,6 +89,7 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
             previous_epoch: Some(previous_epoch),
             domain: Some(self.domain.clone()),
             extra_data: extra_data_v2_payload(event.kmsContextId, event.epochId),
+            signing_schemes: vec![],
         }))
     }
 
@@ -246,6 +247,9 @@ fn build_new_kms_context_grpc_from_event(
             // Public keys allowed to sign transactions on behalf of this KMS node, i.e. the
             // connector transaction sender's address of this node
             extra_signer_addresses: vec![n.txSenderAddress.to_vec()],
+            // The gateway event only carries the ECDSA signer address; `signer_address`
+            // above remains the accepted way to declare it until its 0.16 removal.
+            scheme_digests: vec![],
         })
         .collect();
 
