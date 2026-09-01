@@ -3413,6 +3413,16 @@ fn is_terminal_verdict(error: Option<&CoprocessorError>) -> bool {
             // Type-check, opcode and scalar-shape rules. Every one is decided
             // from the operand types and the operation id, both of which come
             // from the chain.
+            //
+            // The list must cover the verdicts raised at EXECUTION time, not
+            // only the ones `check_fhe_operand_types` catches before the graph
+            // is built: `UnsupportedFheTypes` is the engine's most common type
+            // verdict and every one of its raise sites is a match on the
+            // operation id and the operand type names. Leaving it to the
+            // retryable default arm did more than retry it until demotion —
+            // the dead-producer predicate reads the stamp, so the errored
+            // producer never counted as dead and its cross-transaction
+            // consumers deferred as missing-inputs forever.
             FhevmError::UnknownFheOperation(_)
             | FhevmError::UnknownFheType(_)
             | FhevmError::CannotCompressScalar
@@ -3426,7 +3436,17 @@ fn is_terminal_verdict(error: Option<&CoprocessorError>) -> bool {
             | FhevmError::FheOperationDoesntSupportEbytesAsInput { .. }
             | FhevmError::UnexpectedOperandCountForFheOperation { .. }
             | FhevmError::OperationDoesntSupportBooleanInputs { .. }
-            | FhevmError::FheIfThenElseUnexpectedOperandTypes { .. } => true,
+            | FhevmError::FheIfThenElseUnexpectedOperandTypes { .. }
+            | FhevmError::FheIfThenElseMismatchingSecondAndThirdOperatorTypes { .. }
+            | FhevmError::UnexpectedCastOperandTypes { .. }
+            | FhevmError::UnexpectedCastOperandSizeForScalarOperand { .. }
+            | FhevmError::UnknownCastType { .. }
+            | FhevmError::AllInputsForTrivialEncryptionMustBeScalar { .. }
+            | FhevmError::UnexpectedTrivialEncryptionOperandSizeForScalarOperand { .. }
+            | FhevmError::UnexpectedRandOperandSizeForOutputType { .. }
+            | FhevmError::RandOperationUpperBoundCannotBeZero { .. }
+            | FhevmError::RandOperationInputsMustAllBeScalar { .. }
+            | FhevmError::UnsupportedFheTypes { .. } => true,
             // NOT terminal, and this is the correction that motivated turning
             // the list into a rule: a `tfhe::Error` out of expansion or
             // compression can be a device fault that surfaced as `Err` rather
@@ -3443,6 +3463,59 @@ fn is_terminal_verdict(error: Option<&CoprocessorError>) -> bool {
         // A non-Coprocessor error reaching the stamp is unclassifiable, which
         // is not the same as deterministic.
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod terminal_verdict_tests {
+    use super::*;
+
+    /// The type verdicts raised at EXECUTION time, not just the ones the
+    /// pre-execution check catches. `UnsupportedFheTypes` is the one the
+    /// engine raises most, and classifying it as retryable is not a private
+    /// matter of pacing: the dead-producer predicate reads the stamp, so a
+    /// retryable producer is never dead and its cross-transaction consumers
+    /// defer as missing-inputs forever.
+    #[test]
+    fn execution_time_type_verdicts_are_terminal() {
+        for error in [
+            FhevmError::UnsupportedFheTypes {
+                fhe_operation: "FheSub".to_string(),
+                input_types: vec!["FheUint32", "FheUint64"],
+            },
+            FhevmError::UnknownCastType {
+                fhe_operation: "FheCast".to_string(),
+                type_to_cast_to: 123,
+            },
+            FhevmError::RandOperationUpperBoundCannotBeZero {
+                fhe_operation: 27,
+                fhe_operation_name: "FheRandBounded".to_string(),
+                upper_bound_value: "0".to_string(),
+            },
+        ] {
+            let message = error.to_string();
+            assert!(
+                is_terminal_verdict(Some(&CoprocessorError::FhevmError(error))),
+                "expected a terminal verdict for {message}"
+            );
+        }
+    }
+
+    /// The polarity of the default arm, unchanged: a failure that says
+    /// nothing about the operands stays reversible.
+    #[test]
+    fn transient_failures_stay_retryable() {
+        assert!(!is_terminal_verdict(Some(&CoprocessorError::FhevmError(
+            FhevmError::DeserializationError(Box::new(std::io::Error::other("truncated")))
+        ))));
+        assert!(!is_terminal_verdict(Some(
+            &CoprocessorError::SchedulerError(SchedulerError::ExecutionPanic(
+                "device pressure".to_string()
+            ))
+        )));
+        assert!(is_terminal_verdict(Some(
+            &CoprocessorError::SchedulerError(SchedulerError::CyclicDependence)
+        )));
     }
 }
 
