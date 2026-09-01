@@ -12,16 +12,16 @@ name: preview-env-deploy
 # in-cluster faucets, and still deploys this preview's own contracts (which
 # remain on the shared chain after namespace teardown). PR labels ignore it.
 #
-# Two PR labels control deployment (see check-labels below):
+# Three PR labels control deployment (see check-labels below):
 #   - preview-env-e2e: deploy the PR branch. On PRs images are ALWAYS built
 #     fresh from the PR HEAD (only changed components; the rest resolve to the
 #     change-detection base commit's images). In-repo charts (charts/*) install
 #     from this branch's checkout.
 #   - preview-env-e2e-tests: same, plus auto-run the e2e test DAG and report
 #     pass/fail back to the PR.
-#   - preview-env-blue-green: RFC-021 BCS+GCS on each party (forces
-#     nb_coprocessor=2 on PRs). Dispatch encodes the same path as
-#     nb_coprocessor=2. Incompatible with deploy_polygon and with N=1.
+#   - preview-env-blue-green: deploy RFC-021 BCS+GCS on each party (forces
+#     nb_coprocessor=2). Dispatch encodes the same path as nb_coprocessor=2.
+#     Incompatible with deploy_polygon and with N=1.
 # The dedicated KMS (env.KMS_REPO_REF/KMS_CORE_TAG) is never built here.
 # (A pinned-only run with no builds is still possible via workflow_dispatch
 # with build_images=false.)
@@ -216,9 +216,10 @@ env:
 
 jobs:
   ##########################################################################
-  # Gate: only PRs labeled preview-env-e2e(-tests) get a preview. On PRs images
-  # are always built fresh from the PR branch. workflow_dispatch always deploys
-  # (the dispatch itself is the request); build_images comes from its input.
+  # Gate: PRs labeled preview-env-e2e(-tests) or preview-env-blue-green get a
+  # preview. On PRs images are always built fresh from the PR branch.
+  # workflow_dispatch always deploys (the dispatch itself is the request);
+  # build_images comes from its input.
   ##########################################################################
   check-labels:
     name: check-labels
@@ -297,11 +298,10 @@ jobs:
           fi
           if echo "$PR_LABELS" | jq -e '.[] | select(. == "preview-env-blue-green")' > /dev/null; then
             blue_green=true
+            should_deploy=true
             if [[ "${nb_coprocessor}" == "1" ]]; then
               nb_coprocessor=2
             fi
-            # The blue-green label is not a deploy request on its own; it
-            # layers BCS+GCS onto preview-env-e2e(-tests).
           fi
           # On PRs we always build fresh images from the PR branch: any preview
           # label that triggers a deploy also builds. There is no pinned-only PR
